@@ -19,6 +19,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -1587,7 +1588,7 @@ def scan_workflow_checkout_ordering(path: Path, text: str, root: Path | None = N
     return findings
 
 
-def tracked_consumer_paths(root: Path) -> list[Path]:
+def tracked_paths(root: Path) -> list[Path]:
     git_dir = root / ".git"
     raw_paths: list[Path] = []
     if git_dir.exists():
@@ -1616,7 +1617,97 @@ def tracked_consumer_paths(root: Path) -> list[Path]:
                 continue
             if path.is_file():
                 raw_paths.append(rel)
+    return raw_paths
 
+
+MAX_GUIDE_SIZE_BYTES = 4 * 1024 * 1024  # 4 MiB
+MAX_AGGREGATE_GUIDE_BYTES = 32 * 1024 * 1024  # 32 MiB
+MAX_GUIDE_LINE_LENGTH = 100_000
+
+# Text that restates the uv version goes stale on the next uv update (the requirements
+# guide still said 0.13.1 after the manifest moved to 0.13.6). Decision records and the
+# changelog describe their own moment and keep their numbers.
+_UV_VERSION_NUMBER = r"\b(?:v\d+|\d+)\.\d+\.\d+\b"
+UV_VERSION_ECHO = re.compile(
+    rf"\b(?:uv_version|vmafx-uv-version)\b.{{0,40}}?{_UV_VERSION_NUMBER}"
+    r"|"
+    rf"{_UV_VERSION_NUMBER}.{{0,40}}?\b(?:uv_version|vmafx-uv-version)\b"
+    r"|"
+    rf"\buv\b[\s`'\"*()\[\]/:,=@~><-]{{0,25}}(?:\bversion\b[\s:]*)?[\s`'\"*()\[\]/:,=@~><-]{{0,25}}{_UV_VERSION_NUMBER}"
+)
+UV_VERSION_HISTORY_PREFIXES = (
+    "changelog.d/",
+    "docs/adr/",
+    "docs/changelog-archive/",
+    "docs/rebase-notes.d/",
+    "docs/research/",
+)
+# docs/state.md rows and rebase notes are dated records of what happened then;
+# docs/rebase-notes.md is also rendered, so a pull request may not edit it (ADR-2197).
+UV_VERSION_HISTORY_EXACT = ("CHANGELOG.md", "docs/rebase-notes.md", "docs/state.md")
+
+
+def is_uv_version_history_path(relative: Path) -> bool:
+    """True when the path is a dated record (changelog, decision, research, rebase note, state row)."""
+    posix = relative.as_posix()
+    return posix in UV_VERSION_HISTORY_EXACT or posix.startswith(UV_VERSION_HISTORY_PREFIXES)
+
+
+def scan_uv_version_echo(relative: Path, content: Iterable[str] | str) -> list[str]:
+    """Report each line of a guide that restates the reviewed uv version."""
+    if relative.suffix.lower() != ".md" or is_uv_version_history_path(relative):
+        return []
+    line_iter: Iterable[str] = content.splitlines() if isinstance(content, str) else content
+    problems: list[str] = []
+    for number, raw_line in enumerate(line_iter, start=1):
+        line = raw_line.rstrip("\r\n")
+        if len(line) > MAX_GUIDE_LINE_LENGTH:
+            problems.append(
+                f"{relative}:{number}: line of {len(line)} characters exceeds the scan limit "
+                f"of {MAX_GUIDE_LINE_LENGTH}; split it so the uv version scan can read it"
+            )
+        elif UV_VERSION_ECHO.search(line):
+            problems.append(
+                f"{relative}:{number}: names a uv version; point at uv_version in {MANIFEST_PATH}"
+            )
+    return problems
+
+
+def _scan_guides(root: Path, all_tracked: list[Path]) -> list[str]:
+    """Scan tracked non-history Markdown guides for restated uv versions."""
+    problems: list[str] = []
+    total_bytes = 0
+    for relative in all_tracked:
+        if relative.suffix.lower() != ".md" or is_uv_version_history_path(relative):
+            continue
+        guide = root / relative
+        try:
+            st = guide.stat()
+            if not stat.S_ISREG(st.st_mode):
+                continue
+            size = st.st_size
+            total_bytes += size
+            if size > MAX_GUIDE_SIZE_BYTES:
+                problems.append(
+                    f"{relative}: file size {size} exceeds maximum guide limit of {MAX_GUIDE_SIZE_BYTES} bytes"
+                )
+                continue
+            if total_bytes > MAX_AGGREGATE_GUIDE_BYTES:
+                problems.append(
+                    f"aggregate guide size {total_bytes} exceeds limit of {MAX_AGGREGATE_GUIDE_BYTES} bytes"
+                )
+                break
+            with guide.open("r", encoding="utf-8", errors="replace") as stream:
+                problems.extend(scan_uv_version_echo(relative, stream))
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            problems.append(f"{relative}: cannot read guide: {error}")
+    return problems
+
+
+def tracked_consumer_paths(root: Path, all_paths: list[Path] | None = None) -> list[Path]:
+    raw_paths = tracked_paths(root) if all_paths is None else all_paths
     paths = []
     for relative in raw_paths:
         parts = relative.parts
@@ -1772,7 +1863,10 @@ def check(root: Path) -> int:
             if str(lock_file) not in outputs_paths:
                 problems.append(f"unregistered lock file {lock_file} not present in manifest")
 
-        for relative in tracked_consumer_paths(root):
+        all_tracked = tracked_paths(root)
+        problems.extend(_scan_guides(root, all_tracked))
+
+        for relative in tracked_consumer_paths(root, all_paths=all_tracked):
             try:
                 text = (root / relative).read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as error:

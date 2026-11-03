@@ -8,10 +8,13 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
+import re
+import stat
 import subprocess
 import sys
 import tempfile
 import unittest
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, cast
 from unittest import mock
@@ -1885,6 +1888,271 @@ dependencies = ["numpy>=2.5.3"]
 [tool.demo]
 version = "7"
 """
+
+
+class UvVersionEchoTests(unittest.TestCase):
+    """A guide that restates the uv version goes stale on the next uv update."""
+
+    checker: Any
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.checker = load_checker()
+
+    def test_overlong_line_is_refused_not_skipped(self) -> None:
+        limit = self.checker.MAX_GUIDE_LINE_LENGTH
+        text = "uv 0.13.1 " + "x" * limit + "\n"
+        problems = self.checker.scan_uv_version_echo(Path("docs/guide.md"), text)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("docs/guide.md:1:", problems[0])
+        self.assertIn("exceeds the scan limit", problems[0])
+
+    def test_planted_restated_version_is_refused(self) -> None:
+        text = "1. x\n   - Pinned generator `uv_version` is exact (`0.13.1`).\n"
+        problems = self.checker.scan_uv_version_echo(Path("requirements/AGENTS.md"), text)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("requirements/AGENTS.md:2:", problems[0])
+
+    def test_new_forms_and_reversed_orders_are_refused(self) -> None:
+        forms = [
+            "uv 0.13.5",
+            "uv v0.13.5",
+            "uv==0.13.6",
+            "uv==v0.13.6",
+            "uv@0.13.5",
+            "uv@v0.13.5",
+            "uv @ 0.13.5",
+            "uv @ v0.13.5",
+            "`uv` (`0.13.5`)",
+            "`uv` (`v0.13.5`)",
+            "pinned uv 0.13.5",
+            "pinned uv v0.13.5",
+            "version of `uv` (`0.13.5`)",
+            "version of `uv` (`v0.13.5`)",
+            "uv_version: 0.13.5",
+            "uv_version: v0.13.5",
+            "0.13.5 (uv_version)",
+            "v0.13.5 (uv_version)",
+            "vmafx-uv-version: 0.13.5",
+            "vmafx-uv-version: v0.13.5",
+            "0.13.5 (vmafx-uv-version)",
+            "v0.13.5 (vmafx-uv-version)",
+            "uv version 0.13.5",
+            "uv version v0.13.5",
+            "uv (version 0.13.5)",
+            "uv: 0.13.5",
+            "uv: v0.13.5",
+        ]
+        for line in forms:
+            with self.subTest(line=line):
+                problems = self.checker.scan_uv_version_echo(Path("docs/guide.md"), line)
+                self.assertEqual(
+                    len(problems), 1, f"Expected 1 problem for {line!r}, got {problems}"
+                )
+
+    def test_negatives_do_not_match(self) -> None:
+        negatives = [
+            "uvicorn 0.29.0",
+            "uvloop 0.19.0",
+            "uv " + ("x" * 39) + " 0.13.5",
+            "Python 3.11.0 with uv",
+            "Run with uv on Python 3.11.0",
+            "Install uv for Python 3.12.0",
+            "using uv with CPython 3.10.4",
+            "uv and pip 24.0.0",
+            "uv with pytest 8.0.0",
+            "use uv to test against python 3.11.0",
+        ]
+        for line in negatives:
+            with self.subTest(line=line):
+                problems = self.checker.scan_uv_version_echo(Path("docs/guide.md"), line)
+                self.assertEqual(problems, [], f"Expected no problems for {line!r}, got {problems}")
+
+    def test_streaming_scan_uv_version_echo(self) -> None:
+        def line_stream() -> Iterable[str]:
+            yield "intro line\n"
+            yield "pinned uv v0.13.5\n"
+            yield "conclusion\n"
+
+        problems = self.checker.scan_uv_version_echo(Path("docs/guide.md"), line_stream())
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("docs/guide.md:2:", problems[0])
+
+    def test_pointer_without_number_passes(self) -> None:
+        text = "version of `uv` (`uv_version` in `requirements/locks/manifest.json`).\n"
+        self.assertEqual(self.checker.scan_uv_version_echo(Path("docs/development/x.md"), text), [])
+
+    def test_history_and_non_guides_keep_their_numbers(self) -> None:
+        text = "binary (`uv_version: 0.12.18`).\n"
+        for name in (
+            "docs/adr/1305-x.md",
+            "CHANGELOG.md",
+            "changelog.d/security/x.md",
+            "docs/changelog-archive/1.0.0-rc.1.md",
+            "docs/rebase-notes.md",
+            "docs/rebase-notes.d/x.md",
+            "docs/research/1305-x.md",
+            "docs/state.md",
+            "a.py",
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(self.checker.scan_uv_version_echo(Path(name), text), [])
+        self.assertEqual(len(self.checker.scan_uv_version_echo(Path("docs/adr.md"), text)), 1)
+        self.assertEqual(
+            len(self.checker.scan_uv_version_echo(Path("CHANGELOG.md-foo.md"), text)), 1
+        )
+
+    def test_planted_guide_in_temp_root_fails_check(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            manifest_dir = temp_root / "requirements" / "locks"
+            manifest_dir.mkdir(parents=True)
+            manifest_file = manifest_dir / "manifest.json"
+            manifest_file.write_text(
+                json.dumps({"uv_version": "0.13.6", "locks": []}),
+                encoding="utf-8",
+            )
+            self.assertEqual(self.checker.check(temp_root), 0)
+            guide = temp_root / "docs" / "guide.md"
+            guide.parent.mkdir(parents=True)
+            guide.write_text("pinned uv 0.13.6\n", encoding="utf-8")
+            self.assertEqual(self.checker.check(temp_root), 1)
+
+    def test_oversized_guide_fails_check(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            manifest_dir = temp_root / "requirements" / "locks"
+            manifest_dir.mkdir(parents=True)
+            manifest_file = manifest_dir / "manifest.json"
+            manifest_file.write_text(
+                json.dumps({"uv_version": "0.13.6", "locks": []}),
+                encoding="utf-8",
+            )
+            guide = temp_root / "docs" / "oversized.md"
+            guide.parent.mkdir(parents=True)
+            with guide.open("wb") as f:
+                f.seek(self.checker.MAX_GUIDE_SIZE_BYTES + 1)
+                f.write(b"\n")
+            self.assertEqual(self.checker.check(temp_root), 1)
+
+    def test_check_integration_exempts_history_paths_with_version_echo(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            manifest_dir = temp_root / "requirements" / "locks"
+            manifest_dir.mkdir(parents=True)
+            manifest_file = manifest_dir / "manifest.json"
+            manifest_file.write_text(
+                json.dumps({"uv_version": "0.13.6", "locks": []}),
+                encoding="utf-8",
+            )
+            history_adr = temp_root / "docs" / "adr" / "1000-historical.md"
+            history_adr.parent.mkdir(parents=True)
+            history_adr.write_text(
+                "binary (`uv_version: 0.12.18`)\npinned uv 0.13.6\n", encoding="utf-8"
+            )
+
+            history_changelog = temp_root / "CHANGELOG.md"
+            history_changelog.write_text("uv 0.13.5 released\n", encoding="utf-8")
+
+            history_rebase = temp_root / "docs" / "rebase-notes.md"
+            history_rebase.write_text("uv 0.13.1 used\n", encoding="utf-8")
+
+            history_state = temp_root / "docs" / "state.md"
+            history_state.write_text("| 2026-10-01 | uv 0.13.0 |\n", encoding="utf-8")
+
+            self.assertEqual(self.checker.check(temp_root), 0)
+
+            guide = temp_root / "docs" / "guide.md"
+            guide.write_text("pinned uv 0.13.6\n", encoding="utf-8")
+            self.assertEqual(self.checker.check(temp_root), 1)
+
+    def test_pre_commit_exclude_anchors_exact_files(self) -> None:
+        pre_commit_path = ROOT / ".pre-commit-config.yaml"
+        text = pre_commit_path.read_text(encoding="utf-8")
+        match = re.search(
+            r"id:\s*check-python-dependency-locks.*?exclude:\s*'([^']*)'",
+            text,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Hook exclude pattern not found in .pre-commit-config.yaml")
+        pattern = re.compile(cast(re.Match[str], match).group(1))
+
+        exact_history = [
+            "CHANGELOG.md",
+            "docs/rebase-notes.md",
+            "docs/state.md",
+            "changelog.d/feature.md",
+            "docs/adr/1000.md",
+            "docs/changelog-archive/1.0.0.md",
+            "docs/rebase-notes.d/note.md",
+            "docs/research/paper.md",
+        ]
+        for path in exact_history:
+            with self.subTest(path=path):
+                self.assertIsNotNone(pattern.search(path), f"Expected {path} to be excluded")
+
+        non_history_guides = [
+            "CHANGELOG.md-foo.md",
+            "CHANGELOG.md.bak",
+            "docs/rebase-notes.md.bak",
+            "docs/state.md-old.md",
+            "docs/guide.md",
+            "docs/adr.md",
+        ]
+        for path in non_history_guides:
+            with self.subTest(path=path):
+                self.assertIsNone(pattern.search(path), f"Expected {path} not to be excluded")
+
+    def test_inaccessible_tracked_guide_is_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            guide = temp_root / "docs" / "inaccessible.md"
+            guide.parent.mkdir(parents=True)
+            guide.write_text("content\n", encoding="utf-8")
+
+            orig_stat = Path.stat
+
+            def fake_stat(path_obj: Path, *args: Any, **kwargs: Any) -> Any:
+                if path_obj == guide:
+                    raise PermissionError(13, "Permission denied")
+                return orig_stat(path_obj, *args, **kwargs)
+
+            def fake_is_file(path_obj: Path, *args: Any, **kwargs: Any) -> bool:
+                try:
+                    st = path_obj.stat(*args, **kwargs)
+                except OSError:
+                    return False
+                return stat.S_ISREG(st.st_mode)
+
+            with (
+                mock.patch.object(Path, "stat", fake_stat),
+                mock.patch.object(Path, "is_file", fake_is_file),
+            ):
+                problems = self.checker._scan_guides(temp_root, [Path("docs/inaccessible.md")])
+            self.assertEqual(len(problems), 1, problems)
+            self.assertIn("docs/inaccessible.md: cannot read guide: ", problems[0])
+            self.assertIn("Permission denied", problems[0])
+
+            missing_problems = self.checker._scan_guides(temp_root, [Path("docs/missing.md")])
+            self.assertEqual(missing_problems, [])
+
+            dir_guide = temp_root / "docs" / "directory.md"
+            dir_guide.mkdir(parents=True)
+            dir_problems = self.checker._scan_guides(temp_root, [Path("docs/directory.md")])
+            self.assertEqual(dir_problems, [])
+
+    def test_repository_guides_do_not_restate_the_version(self) -> None:
+        problems = [
+            problem
+            for relative in self.checker.tracked_paths(ROOT)
+            if relative.suffix.lower() == ".md"
+            and not self.checker.is_uv_version_history_path(relative)
+            and (ROOT / relative).is_file()
+            for problem in self.checker.scan_uv_version_echo(
+                relative, (ROOT / relative).read_text(encoding="utf-8", errors="replace")
+            )
+        ]
+        self.assertEqual(problems, [])
 
 
 class FingerprintTests(unittest.TestCase):
