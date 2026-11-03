@@ -17,9 +17,9 @@ the same scoring path, recommends a CRF for the next pass. Built with
  doc/filters.texi               |  151 ++
  libavfilter/Makefile           |    2 +
  libavfilter/allfilters.c       |    2 +
- libavfilter/vf_vmafx.c         | 2975 ++++++++++++++++++++++++++++++++
+ libavfilter/vf_vmafx.c         | 2981 ++++++++++++++++++++++++++++++++
  libavfilter/vf_vmafx_options.h |  152 ++
- 6 files changed, 3287 insertions(+)
+ 6 files changed, 3293 insertions(+)
  create mode 100644 libavfilter/vf_vmafx.c
  create mode 100644 libavfilter/vf_vmafx_options.h
 
@@ -250,10 +250,10 @@ index 5ecf9a8698318dd84d5d3723df2053a2c9f20304..b923bf9ec16ee0818b64509ca8af9f18
  extern const FFFilter ff_vf_w3fdif;
 diff --git a/libavfilter/vf_vmafx.c b/libavfilter/vf_vmafx.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..daa8a2317e8ec7710b077628d53cd81e4b32fc90
+index 0000000000000000000000000000000000000000..7ab47832db138b39a1ef256ca903def233be376f
 --- /dev/null
 +++ b/libavfilter/vf_vmafx.c
-@@ -0,0 +1,2975 @@
+@@ -0,0 +1,2981 @@
 +/*
 + * Copyright 2026 Lusoris
 + *
@@ -378,8 +378,8 @@ index 0000000000000000000000000000000000000000..daa8a2317e8ec7710b077628d53cd81e
 +    int output_created_by_probe;
 +    int logged_download;
 +    int color_set; /* input colorimetry handed to libvmafx (ADR-2093 / ADR-2094) */
-+    VMAFXColorTags first_ref_color;
-+    VMAFXColorTags first_dist_color;
++    VMAFXColorTags ref_color;
++    VMAFXColorTags dist_color;
 +    /* The pairing contract of the two inputs (do_vmafx()): main frames that had
 +     * no reference frame, and pairs whose timestamps differ by more than half
 +     * a frame, are counted and reported, never scored silently. */
@@ -2184,30 +2184,36 @@ index 0000000000000000000000000000000000000000..daa8a2317e8ec7710b077628d53cd81e
 +
 +/* Once, on the first frame pair, before anything is read: declare the colour of
 + * the reference and distorted input to VMAFx for a model's conversion_target.
-+ * Subsequent pairs must match the first pair's colour tags; a mid-stream change
-+ * is rejected before any frame import. */
++ * On subsequent pairs with differing colour tags, re-declare it: a model with a
++ * conversion_target rejects the change (VMAFX_E_BUSY) once a pair was converted,
++ * while a model without conversion_target ignores colour and continues scoring. */
 +static int vmafx_declare_input_color(AVFilterContext *ctx, VMAFXContext *s, const AVFrame *ref,
 +                                     const AVFrame *dist)
 +{
 +    const VMAFXColorTags ref_tags = frame_color_tags(ref);
 +    const VMAFXColorTags dist_tags = frame_color_tags(dist);
++    const VmafxColor *const r = ref_tags.supported ? &ref_tags.color : NULL;
++    const VmafxColor *const d = dist_tags.supported ? &dist_tags.color : NULL;
 +    VmafxError *error = NULL;
 +
 +    if (s->color_set) {
-+        if (!color_tags_equal(&ref_tags, &s->first_ref_color) ||
-+            !color_tags_equal(&dist_tags, &s->first_dist_color)) {
-+            av_log(ctx, AV_LOG_ERROR, "vmafx: input colour metadata changed between frames\n");
-+            return AVERROR(EINVAL);
++        if (!color_tags_equal(&ref_tags, &s->ref_color) ||
++            !color_tags_equal(&dist_tags, &s->dist_color)) {
++            const VmafxStatus st = vmafx_context_set_default_color(s->context, r, d, &error);
++            if (st != VMAFX_OK) {
++                av_log(ctx, AV_LOG_ERROR, "vmafx: input colour metadata changed between frames\n");
++                return vmafx_fail(ctx, st, error, "vmafx_context_set_default_color");
++            }
++            s->ref_color = ref_tags;
++            s->dist_color = dist_tags;
 +        }
 +        return 0;
 +    }
-+    const VmafxColor *const r = ref_tags.supported ? &ref_tags.color : NULL;
-+    const VmafxColor *const d = dist_tags.supported ? &dist_tags.color : NULL;
 +    const VmafxStatus st = vmafx_context_set_default_color(s->context, r, d, &error);
 +    if (st != VMAFX_OK)
 +        return vmafx_fail(ctx, st, error, "vmafx_context_set_default_color");
-+    s->first_ref_color = ref_tags;
-+    s->first_dist_color = dist_tags;
++    s->ref_color = ref_tags;
++    s->dist_color = dist_tags;
 +    s->color_set = 1;
 +    return 0;
 +}

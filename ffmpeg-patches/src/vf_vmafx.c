@@ -122,8 +122,8 @@ typedef struct VMAFXContext {
     int output_created_by_probe;
     int logged_download;
     int color_set; /* input colorimetry handed to libvmafx (ADR-2093 / ADR-2094) */
-    VMAFXColorTags first_ref_color;
-    VMAFXColorTags first_dist_color;
+    VMAFXColorTags ref_color;
+    VMAFXColorTags dist_color;
     /* The pairing contract of the two inputs (do_vmafx()): main frames that had
      * no reference frame, and pairs whose timestamps differ by more than half
      * a frame, are counted and reported, never scored silently. */
@@ -1928,30 +1928,36 @@ static int color_tags_equal(const VMAFXColorTags *a, const VMAFXColorTags *b)
 
 /* Once, on the first frame pair, before anything is read: declare the colour of
  * the reference and distorted input to VMAFx for a model's conversion_target.
- * Subsequent pairs must match the first pair's colour tags; a mid-stream change
- * is rejected before any frame import. */
+ * On subsequent pairs with differing colour tags, re-declare it: a model with a
+ * conversion_target rejects the change (VMAFX_E_BUSY) once a pair was converted,
+ * while a model without conversion_target ignores colour and continues scoring. */
 static int vmafx_declare_input_color(AVFilterContext *ctx, VMAFXContext *s, const AVFrame *ref,
                                      const AVFrame *dist)
 {
     const VMAFXColorTags ref_tags = frame_color_tags(ref);
     const VMAFXColorTags dist_tags = frame_color_tags(dist);
+    const VmafxColor *const r = ref_tags.supported ? &ref_tags.color : NULL;
+    const VmafxColor *const d = dist_tags.supported ? &dist_tags.color : NULL;
     VmafxError *error = NULL;
 
     if (s->color_set) {
-        if (!color_tags_equal(&ref_tags, &s->first_ref_color) ||
-            !color_tags_equal(&dist_tags, &s->first_dist_color)) {
-            av_log(ctx, AV_LOG_ERROR, "vmafx: input colour metadata changed between frames\n");
-            return AVERROR(EINVAL);
+        if (!color_tags_equal(&ref_tags, &s->ref_color) ||
+            !color_tags_equal(&dist_tags, &s->dist_color)) {
+            const VmafxStatus st = vmafx_context_set_default_color(s->context, r, d, &error);
+            if (st != VMAFX_OK) {
+                av_log(ctx, AV_LOG_ERROR, "vmafx: input colour metadata changed between frames\n");
+                return vmafx_fail(ctx, st, error, "vmafx_context_set_default_color");
+            }
+            s->ref_color = ref_tags;
+            s->dist_color = dist_tags;
         }
         return 0;
     }
-    const VmafxColor *const r = ref_tags.supported ? &ref_tags.color : NULL;
-    const VmafxColor *const d = dist_tags.supported ? &dist_tags.color : NULL;
     const VmafxStatus st = vmafx_context_set_default_color(s->context, r, d, &error);
     if (st != VMAFX_OK)
         return vmafx_fail(ctx, st, error, "vmafx_context_set_default_color");
-    s->first_ref_color = ref_tags;
-    s->first_dist_color = dist_tags;
+    s->ref_color = ref_tags;
+    s->dist_color = dist_tags;
     s->color_set = 1;
     return 0;
 }

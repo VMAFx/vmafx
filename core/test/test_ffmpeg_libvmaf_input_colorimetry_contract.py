@@ -33,6 +33,17 @@ MAPPINGS = (
 UNSPECIFIED = "if (!c.range || !c.primaries || !c.trc || !c.matrix)\n        return 0;"
 CALL = "vmafx_context_set_default_color(s->context,"
 SITE = "int ret = vmafx_declare_input_color(ctx, s, ref, dist);"
+CHANGE_BRANCH = (
+    "if (!color_tags_equal(&ref_tags, &s->ref_color) || !color_tags_equal(&dist_tags, &s->dist_color)) {"
+    " const VmafxStatus st = vmafx_context_set_default_color(s->context, r, d, &error);"
+    " if (st != VMAFX_OK) {"
+    ' av_log(ctx, AV_LOG_ERROR, "vmafx: input colour metadata changed between frames\\n");'
+    ' return vmafx_fail(ctx, st, error, "vmafx_context_set_default_color");'
+    " }"
+    " s->ref_color = ref_tags;"
+    " s->dist_color = dist_tags;"
+    " }"
+)
 
 
 def flat(text: str) -> str:
@@ -62,7 +73,7 @@ class InputColorimetryTests(unittest.TestCase):
         self.assertIn(flat("? &dist_tags.color : NULL"), self.flat_text)
 
     def test_declared_once_before_the_first_read(self) -> None:
-        self.assertEqual(self.flat_text.count(flat(CALL)), 1)
+        self.assertEqual(self.flat_text.count(flat(CALL)), 2)
         self.assertIn(flat("if (s->color_set)"), self.flat_text)
         self.assertEqual(self.flat_text.count(flat(SITE)), 1)
 
@@ -70,19 +81,8 @@ class InputColorimetryTests(unittest.TestCase):
         self.assertNotIn(flat(CALL), self.flat_text.replace(flat(CALL), ""))
 
     def test_midstream_color_change_rejected(self) -> None:
-        """Negative: mid-stream change in colour metadata returns an error before import."""
-        self.assertIn(
-            flat("if (!color_tags_equal(&ref_tags, &s->first_ref_color) ||"),
-            self.flat_text,
-        )
-        self.assertIn(
-            flat("!color_tags_equal(&dist_tags, &s->first_dist_color))"),
-            self.flat_text,
-        )
-        self.assertIn(
-            flat("return AVERROR(EINVAL);"),
-            self.flat_text,
-        )
+        """Negative: mid-stream change in colour metadata calls set_default_color and rejects on non-OK status."""
+        self.assertIn(flat(CHANGE_BRANCH), self.flat_text)
 
     def test_unchanged_color_passes(self) -> None:
         """Positive: matching colour tags between frames pass with 0."""
@@ -93,16 +93,29 @@ class InputColorimetryTests(unittest.TestCase):
         """Planted defect: omitting the midstream colour change check fails."""
         mutated = self.flat_text.replace(
             flat(
-                "if (!color_tags_equal(&ref_tags, &s->first_ref_color) || !color_tags_equal(&dist_tags, &s->first_dist_color))"
+                "if (!color_tags_equal(&ref_tags, &s->ref_color) || !color_tags_equal(&dist_tags, &s->dist_color))"
             ),
             flat("if (0)"),
         )
         self.assertNotIn(
             flat(
-                "if (!color_tags_equal(&ref_tags, &s->first_ref_color) || !color_tags_equal(&dist_tags, &s->first_dist_color))"
+                "if (!color_tags_equal(&ref_tags, &s->ref_color) || !color_tags_equal(&dist_tags, &s->dist_color))"
             ),
             mutated,
         )
+
+    def test_planted_unconditional_einval_on_tag_change_fails(self) -> None:
+        """Planted defect: returning AVERROR(EINVAL) on a tag change without calling set_default_color fails."""
+        round1_branch = (
+            "if (!color_tags_equal(&ref_tags, &s->ref_color) || !color_tags_equal(&dist_tags, &s->dist_color)) {"
+            ' av_log(ctx, AV_LOG_ERROR, "vmafx: input colour metadata changed between frames\\n");'
+            " return AVERROR(EINVAL);"
+            "}"
+        )
+        mutated = self.flat_text.replace(flat(CHANGE_BRANCH), flat(round1_branch))
+        self.assertNotEqual(mutated, self.flat_text)
+        self.assertNotIn(flat(CHANGE_BRANCH), mutated)
+        self.assertEqual(mutated.count(flat(CALL)), 1)
 
 
 class MidstreamColorChangeSimulationTests(unittest.TestCase):
