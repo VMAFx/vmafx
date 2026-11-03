@@ -39,6 +39,7 @@
 #include <stdio.h>
 
 #include "adm_angle_flag.h"
+#include "float_bits.h"
 #include "test.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -119,7 +120,8 @@ static char *test_cos_constant_is_one_float_everywhere(void)
     /* The int64 helper hard-codes the significand of that float; if the
      * constant ever moves, MC/D must move with it. */
     mu_assert("ADM_ANGLE_FLAG_MC must be the exact significand of the constant",
-              (double)ADM_ANGLE_FLAG_COS_1DEG_SQ * 16777216.0 == (double)ADM_ANGLE_FLAG_MC);
+              vmaf_test_identical_f64((double)ADM_ANGLE_FLAG_COS_1DEG_SQ * 16777216.0,
+                                      (double)ADM_ANGLE_FLAG_MC));
     mu_assert("ADM_ANGLE_FLAG_D must be 2^24 - MC",
               ADM_ANGLE_FLAG_D == UINT64_C(16777216) - ADM_ANGLE_FLAG_MC);
     return NULL;

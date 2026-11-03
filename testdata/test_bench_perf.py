@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -82,3 +83,46 @@ def test_parse_args_backend_override_does_not_keep_default_all() -> None:
     args = bench_perf.parse_args(["--backend", "cpu"])
 
     assert args.backend == ["cpu"]
+
+
+def test_run_vmaf_records_an_output_flood_as_a_failed_result(tmp_path: Path) -> None:
+    test = bench_perf.build_tests(tmp_path)[1]
+    backend = bench_perf.backend_definitions(sycl_device="/dev/dri/renderD128")[0]
+    flood = bench_perf.CommandOutputLimitExceeded(("ffmpeg",), 64, "", "")
+    with patch.object(bench_perf, "run_command", side_effect=flood):
+        pooled, nframes, _elapsed, error = bench_perf.run_vmaf(
+            test,
+            backend,
+            log_path=tmp_path / "log.json",
+            ffmpeg=Path("/opt/ffmpeg/bin/ffmpeg"),
+            timeout_s=5,
+            ld_library_path=None,
+        )
+    assert pooled is None and nframes == 0
+    assert error is not None and error.startswith("OUTPUT LIMIT")
+
+
+def test_ffmpeg_executable_resolves_relative_paths_only(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert bench_perf.ffmpeg_executable(Path("ffmpeg")) == Path("ffmpeg")
+    assert bench_perf.ffmpeg_executable(Path("/opt/ff/ffmpeg")) == Path("/opt/ff/ffmpeg")
+    assert bench_perf.ffmpeg_executable(Path("build/ffmpeg")) == tmp_path.resolve() / "build/ffmpeg"
+
+
+def test_run_vmaf_launches_a_relative_ffmpeg_path(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    test = bench_perf.build_tests(tmp_path)[1]
+    backend = bench_perf.backend_definitions(sycl_device="/dev/dri/renderD128")[0]
+    with patch.object(bench_perf, "run_command", side_effect=OSError("stop")) as run:
+        with pytest.raises(OSError):
+            bench_perf.run_vmaf(
+                test,
+                backend,
+                log_path=tmp_path / "log.json",
+                ffmpeg=Path("build/ffmpeg"),
+                timeout_s=5,
+                ld_library_path=None,
+            )
+    argv = run.call_args.args[0]
+    assert argv[0] == str(tmp_path.resolve() / "build/ffmpeg")
+    assert run.call_args.kwargs["allowed_executables"] == [argv[0]]

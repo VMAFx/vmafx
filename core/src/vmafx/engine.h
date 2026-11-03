@@ -20,8 +20,13 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "config.h"
+
 #include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
+#ifdef HAVE_CUDA
+#include "libvmaf/libvmaf_cuda.h"
+#endif
 #include "libvmaf/model.h"
 /* Declares vmaf_set_perceptual_weight_enabled() / _strength(), which the forced
  * engine_names_gen.h renames to vmaf_engine_*; declared once, with the public
@@ -158,5 +163,10 @@ typedef struct VmafEngineRunInfo {
 } VmafEngineRunInfo;
 
 int vmaf_engine_run_info(const VmafContext *vmaf, VmafEngineRunInfo *out);
+
+#ifdef HAVE_CUDA
+/* The CUDA state imported into `vmaf` via vmaf_cuda_import_state(), or NULL. */
+const VmafCudaState *vmaf_engine_cuda_state(const VmafContext *vmaf);
+#endif
 
 #endif /* VMAFX_ENGINE_H */

@@ -4,15 +4,10 @@
 
 import json
 import os
-import subprocess
 
-# Resolve the repo root so this script works from any worktree.
+# The repository root is the parent of testdata/, in any worktree.
 # Override with VMAF_TESTDATA to point at a different directory.
-_repo_root = subprocess.run(
-    ["git", "rev-parse", "--show-toplevel"],
-    capture_output=True,
-    text=True,
-).stdout.strip() or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _default_testdata = os.path.join(_repo_root, "testdata")
 os.chdir(os.environ.get("VMAF_TESTDATA", _default_testdata))
 

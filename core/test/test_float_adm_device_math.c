@@ -402,14 +402,14 @@ static char *test_decouple_divides(void)
         const float od = float_of(divide_cases[i].o);
         const float td = float_of(divide_cases[i].t);
         const volatile float k = td / (od + FADM_EPS);
-        const volatile float quotient = k * od;
+        const volatile float ieee_quotient = k * od;
         const uint32_t cpu = bits_of(s.cpu[0][2u * (size_t)DIVIDE_CASES + i]);
         const uint32_t dev = bits_of(fadm_decouple_band(&a, od, td, 0));
         if (cpu != divide_cases[i].quotient || dev != divide_cases[i].quotient) {
             (void)fprintf(stderr, "\ndecouple case %zu: quotient=%08x cpu=%08x header=%08x\n", i,
                           divide_cases[i].quotient, cpu, dev);
         }
-        if (bits_of(quotient) != divide_cases[i].quotient) {
+        if (bits_of(ieee_quotient) != divide_cases[i].quotient) {
             msg = "the IEEE quotient of a decouple case is not the recorded one";
         } else if (cpu != divide_cases[i].quotient) {
             msg = "adm_decouple_s() does not restore with the IEEE quotient";

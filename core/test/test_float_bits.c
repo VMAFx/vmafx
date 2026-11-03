@@ -80,6 +80,21 @@ static char *test_nan_is_never_identical(void)
     return NULL;
 }
 
+/* Zero tolerance is bit identity: -0 against +0 fails it; a positive one
+ * admits the difference it names and nothing beyond. */
+static char *test_within_tolerance(void)
+{
+    mu_assert("zero tolerance refuses -0 for +0", !vmaf_test_within_f64(0.0, -0.0, 0.0));
+    mu_assert("zero tolerance accepts identity", vmaf_test_within_f64(0.25, 0.25, 0.0));
+    mu_assert("zero tolerance refuses the successor",
+              !vmaf_test_within_f64(1.0, nextafter(1.0, 2.0), 0.0));
+    mu_assert("a positive tolerance accepts -0 for +0", vmaf_test_within_f64(0.0, -0.0, 1e-9));
+    mu_assert("a tolerance admits its own difference", vmaf_test_within_f64(1.0, 1.5, 0.5));
+    mu_assert("a tolerance refuses a larger difference", !vmaf_test_within_f64(1.0, 1.75, 0.5));
+    mu_assert("a NaN is within nothing", !vmaf_test_within_f64((double)NAN, 1.0, 1.0));
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_bits_are_the_ieee_patterns);
@@ -87,6 +102,7 @@ char *run_tests(void)
     mu_run_test(test_signed_zeros_differ);
     mu_run_test(test_neighbours_differ);
     mu_run_test(test_nan_is_never_identical);
+    mu_run_test(test_within_tolerance);
     return NULL;
 }
 

@@ -96,6 +96,26 @@ class ForkPythonSubprocess(unittest.TestCase):
                 path.write_text(f"import os, stat\nos.chmod('x', {mode})\n", encoding="utf-8")
                 self.assertEqual(bool(MOD.mode_findings(str(path))), wide, mode)
 
+    def test_real_tree_passes(self) -> None:
+        """Positive: every fork file under python/ and testdata/ in the tree passes.
+
+        Pre-commit hands the check only the changed files, so a pull request that adds
+        the check never saw the existing files; the push run on master checks them all.
+        """
+        repo = SCRIPT.parents[2]
+        files = sorted(
+            path.relative_to(repo).as_posix()
+            for scope in ("python", "testdata")
+            for path in (repo / scope).rglob("*.py")
+        )
+        self.assertTrue(files, "python/ and testdata/ hold no Python files")
+        cwd = Path.cwd()
+        os.chdir(repo)
+        try:
+            self.assertEqual(int(MOD.main(files)), 0)
+        finally:
+            os.chdir(cwd)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,62 +1,82 @@
 # AGENTS.md — pkg/libvmaf
 
-Go wrapper around libvmaf C ABI. Provides three scoring surfaces:
+Go wrapper around libvmaf. Provides three scoring surfaces plus tiny-AI session:
 
-- `Scorer.Score` — subprocess delegation to `vmaf` CLI binary (legacy).
-- `ScoreDirect` — direct cgo into `libvmaf.so` for file pair (ADR-0931 Phase 1+).
-- `StreamScorer` — stateful cgo context for in-memory per-frame scoring of
-  raw-byte stream, backing gRPC `ScoreStream` RPC (`stream.go`, ADR-0933
-  Phase 2).
+- `Scorer.Score` / `Scorer.Run` — subprocess delegation to the `vmaf` CLI binary
+  (`libvmaf.go`, `run.go`, `readers_unix.go`); stays subprocess.
+- `ScoreDirect` — in-process scoring of file pair (ADR-0931 Phase 1+), on the
+  generated `pkg/vmafx` binding (`direct.go`).
+- `StreamScorer` — stateful context for in-memory per-frame scoring of raw-byte
+  stream, backing gRPC `ScoreStream` RPC (`stream.go`, ADR-0933 Phase 2), on the
+  same binding.
+- `DNNSession` — standalone ONNX Runtime session (`dnn.go`); only file of the
+  package that still imports `"C"`.
+
+Issue 2434: `ScoreDirect` and `StreamScorer` share one session (`engine.go`:
+context, model, host frames, submit, flush, pooled score) and one validation
+(`validate.go`); both call `pkg/vmafx` only. C call `pkg/vmafx` lacks is added
+to `scripts/codegen/vmafx_api/emit_go.py`, never as second cgo copy here.
 
 ## Rebase-sensitive invariants
 
-1. **Locale pin** (`direct.go::init`): `setlocale(LC_NUMERIC, "C")` runs
-   once on package import via `score_direct_set_locale_c` cgo helper.
-   ADR-0137 makes this mandatory before any libvmaf function reading
-   or writing floating-point string. Removing init() pin
-   re-introduces locale-leak bug class (German `","` decimal
-   separator parsed as `0`).
+1. **Locale pin** (`pkg/vmafx/api_gen.go::init`, emitted by `emit_go.py`):
+   `setlocale(LC_NUMERIC, "C")` runs once on package import. ADR-0137 makes
+   this mandatory before any libvmaf function reading or writing
+   floating-point string. Removing pin re-introduces locale-leak bug
+   class (German `","` decimal separator parsed as `0`). This package no
+   longer carries its own pin; generated init is only one.
 
-2. **Picture ownership transfer** (`direct.go::ScoreDirect`): every
-   `vmaf_picture_alloc` MUST pair with either subsequent
-   `vmaf_read_pictures` call (transfers ownership to libvmaf) OR
-   explicit `vmaf_picture_unref` on Go side. Current loop uses this
-   structure:
+2. **Frame ownership transfer** (`engine.go::scoringSession.submitPair`,
+   `direct.go::readAndQueueDirectFrame`, `stream.go::PushFrame`): every
+   `vmafx.NewHostFrame` pair is either consumed by `Context.Submit`
+   (`vmafx_submit` takes both references on every path, success or failure;
+   Go `Frame` handle is cleared by `takeHandle`) or released by a
+   deferred `Frame.Close`. After submit deferred `Close` is no-op.
 
    ```text
-   vmaf_picture_alloc(ref); vmaf_picture_alloc(dis)
-   // on error before read: unref both, return
-   vmaf_read_pictures(ctx, &ref, &dis, idx)  // ownership transferred
-   // MUST NOT call unref after this point
+   NewHostFrame(ref); NewHostFrame(dis); defer ref.Close(); defer dis.Close()
+   // on error before submit: the deferred Close releases both
+   ctx.Submit(ref, dis, idx)  // ownership transferred, Close is now a no-op
    ```
 
-   Adding early-return between alloc and read without unref leaks
-   `posix_memalign`-backed plane storage. Add unit test for any new
-   error path.
+   Adding path that hands frame to C without `takeHandle`, or closes it
+   twice through another route, leaks or double-frees plane storage. Add unit
+   test for any new error path.
 
-3. **Errno mapping = contract-frozen** (`errors.go::mapErrno`): four
-   typed sentinels (`ErrInvalidArgument`, `ErrOutOfMemory`,
-   `ErrModelNotFound`, `ErrPictureRead`) + stdlib wrapping
-   (`os.ErrInvalid`, `os.ErrNotExist`) pinned by ADR-0931. Callers
-   branch via `errors.Is`; renaming or unwrapping breaks contract.
-   Extensions require ADR amendment.
+3. **Errno mapping = contract-frozen** (`errors.go::mapErrno`,
+   `vmafx_errors.go::mapVmafxError`): four typed sentinels
+   (`ErrInvalidArgument`, `ErrOutOfMemory`, `ErrModelNotFound`,
+   `ErrPictureRead`) + stdlib wrapping (`os.ErrInvalid`, `os.ErrNotExist`)
+   pinned by ADR-0931. Callers branch via `errors.Is`; renaming or unwrapping
+   breaks contract. Extensions require ADR amendment. #2434 migration note:
+   `pkg/vmafx` fails with `*vmafx.Error` (stable `Status`), not bare errno,
+   so status selects errno (`StatusEInvalid` EINVAL, `StatusENoMem`
+   ENOMEM, `StatusENotFound` ENOENT, `StatusEIO` EIO) and sentinel;
+   any other status keeps engine errno in numeric fallback;
+   `StatusEDevice` is never read as errno. The `*vmafx.Error` stays in the
+   chain (`errors.As`). One difference is deliberate: vmafx reports missing
+   model file as `StatusEIO`, so `engine.go::loadScoringModel` stats path
+   after failed load and returns `ErrModelNotFound`. Pinned by
+   `TestMapVmafxErrorKeepsTheErrnoContract`, `TestLoadScoringModelErrors`.
 
 4. **`ScoreDirect` = CPU-only in Phase 1**: `cpumask=0, gpumask=0` in
-   `vmaf_init` configuration. GPU backends land in Phase 2 via
-   matching backend-init calls (`vmaf_cuda_init` etc.) — never flip
-   gpumask without wiring runtime first.
+   the `vmafx.ContextConfig` (`engine.go::newScoringConfig`). GPU backends land
+   in Phase 2 via matching backend-init calls — never flip gpumask without wiring
+   runtime first.
 
 5. **Phase 1 model scope = SVM only**: `ScoreDirect` calls
-   `vmaf_model_load_from_path`, routes by file extension. `.onnx`
+   `vmafx_model_load_file`, routes by file extension. `.onnx`
    models hit different code path inside libvmaf needing ONNX
    Runtime session — Phase 3 scope. MCP dispatcher
    (`cmd/vmafx-mcp/impl_direct.go`) routes `.onnx`
    to subprocess fallback; never silently accept `.onnx` here.
 
-6. **CGO linking fails closed**: `libvmaf.go` deliberately has no `#cgo
-   LDFLAGS` fallback. Every build caller must set `CGO_LDFLAGS` to a verified
-   fork library: local Make/CI use `core/build-cpu/src`; production container
-   stages use `/usr/local/lib`. This prevents missing build directory from
+6. **CGO linking fails closed**: `pkg/vmafx`, `dnn.go` and `libvmaf.go`
+   deliberately have no `#cgo LDFLAGS` fallback (package `-I` flag lives in
+   `dnn.go`; `libvmaf.go` has no cgo). Every build caller must set
+   `CGO_LDFLAGS` to verified fork library: local Make/CI use
+   `core/build-cpu/src`; production container stages use `/usr/local/lib`.
+   This prevents missing build directory from
    silently resolving unrelated distro libvmaf. Keep Make targets,
    `go-ci.yml`, `Dockerfile.go-server`, `docker/Dockerfile.node`, dev
    container, `scripts/ci/test_go_workflow_contract.py`, and documented
@@ -70,22 +90,22 @@ Go wrapper around libvmaf C ABI. Provides three scoring surfaces:
 
 8. **`StreamScorer` harvests per-frame scores AFTER flush** (`stream.go`,
    ADR-0933): temporal VMAF features (notably motion) only finalise once
-   `vmaf_read_pictures(NULL, NULL, 0)` flushes engine. `Finish`
-   therefore calls `vmaf_score_at_index` / `vmaf_feature_score_at_index`
+   `vmafx_flush` flushes engine. `Finish`
+   therefore calls `vmafx_score_frame` / `vmafx_feature_score`
    only after flush — never inside `PushFrame`. Never "optimise" by
    trying to emit per-frame score moment frame pushed; motion feature
    for frame N unavailable until sequence flushed — any such change
    silently corrupts motion-dependent scores. Same
-   picture-ownership-transfer rule as invariant 2 applies
-   to every `PushFrame` alloc/read pair.
+   frame-ownership-transfer rule as invariant 2 applies
+   to every `PushFrame` frame pair.
 
 9. **`StreamScorer.streamFeatures` = model's registered feature names**
    (`stream.go`): per-feature lookup keys passed to
-   `vmaf_feature_score_at_index` = exact strings from model JSON's
+   `vmafx_feature_score` = exact strings from model JSON's
    `feature_names` (e.g. `VMAF_integer_feature_adm2_score`), NOT alias
    names (`integer_adm2`) or CLI/JSON pooled-metric keys (`adm2`). Wrong
-   name does not error loudly — `vmaf_feature_score_at_index` returns
-   non-zero rc code silently skips, producing empty feature
+   name does not error loudly — `Context.FeatureScore` returns an
+   error that `featuresAtIndex` silently skips, producing empty feature
    map. On changing models or feature set, re-verify names against
    `model/<name>.json` `model_dict.feature_names`.
 
@@ -107,14 +127,15 @@ Go wrapper around libvmaf C ABI. Provides three scoring surfaces:
     which only runs against ORT-enabled libvmaf — Go CI job builds one.
 
 12. **Context teardown is exact-zero and dependency ordered**
-    (`direct.go::cgoScoringOwner`, `stream.go::StreamScorer.Close`):
-    `vmaf_close` returning anything other than zero retains teardown-only
-    context. Never destroy registered model until close attempt returns
-    zero. Stateful `StreamScorer.Close` returns error and may be retried;
-    `PushFrame` and `Finish` stay disabled after teardown begins. Function-
-    scoped `ScoreDirect` and constructor unwinds make one immediate retry and
-    deliberately retain C owners after persistent failure rather than
-    create use-after-free.
+    (`engine.go::cgoScoringOwner`, `stream.go::StreamScorer.Close`):
+    `Context.Close` (`vmafx_context_destroy`) failing retains the
+    teardown-only context (ADR-1336). Never drop registered model until the
+    close attempt succeeds. Stateful `StreamScorer.Close` returns error and may
+    be retried; `PushFrame` and `Finish` stay disabled after teardown begins.
+    Function-scoped `ScoreDirect` and constructor unwinds make one immediate
+    retry and deliberately retain owners after persistent failure rather
+    than create use-after-free. `mapCloseRC` stays exact-zero: positive
+    status fails closed.
 
 13. **`ScoreReaders` streams through inherited pipes** (`readers_unix.go`,
     ADR-1526): read ends passed as `cmd.ExtraFiles` -> `/dev/fd/3`,
@@ -125,8 +146,19 @@ Go wrapper around libvmaf C ABI. Provides three scoring surfaces:
     `ErrStreamInputsUnsupported`; never fall back to a temp file.
 
 14. **Package doc names every path into libvmaf** (`doc.go`): subprocess
-    `Scorer`, cgo `ScoreDirect`, `StreamScorer`, `DNNSession`. New cgo entry
-    point -> add to doc + `PACKAGE_DOC_SURFACES` in
+    `Scorer`, in-process `ScoreDirect`, `StreamScorer`, cgo `DNNSession`. New
+    entry point -> add to doc + `PACKAGE_DOC_SURFACES` in
     `scripts/ci/tests/test_go_libvmaf_linkage_docs.py`. No Go package importing
     this one (or cgo with libvmaf) may claim it does not link libvmaf; same
     test fails.
+
+15. **One implementation per call (#2434)**: no `import "C"` for scoring in
+    this package (`git grep -n 'import "C"' -- pkg/libvmaf` lists `dnn.go`
+    only). bit-exact test `TestPooledMeanBitExactAcrossBindings` compares
+    pooled mean of `vmaf_v1.0.16_3d0h` through `ScoreDirect`, `pkg/vmafx`
+    and C API (`testdata/c_api_pooled_mean.c`) by IEEE-754 bits; change
+    to numeric path that moves one bit fails it. subprocess path shares
+    `newCLICommand`, `cliFailure`, `prepareRun` and `parseReport` between
+    `Score`/`Run` and `ScoreReaders`; add to these, not second copy. `DNNSession`
+    is not collapsed yet: `pkg/vmafx` has no DNN session handle in its Go
+    binding.

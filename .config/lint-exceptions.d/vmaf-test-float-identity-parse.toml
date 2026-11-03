@@ -1,0 +1,423 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Files in which Semgrep reports a parse diagnostic, so the rule
+# vmaf-test-float-identity-via-float-bits (.semgrep.yml) cannot see every comparison in them.
+# scripts/ci/tests/test_semgrep_float_identity.py fails on a diagnostic in any file not listed
+# here, on an expired entry, and on a listed file that parses cleanly. Repair work: issue 3252
+# (unit vmafx-float-eq-parse-repair-20261101); each repaired file drops its entry. Format and
+# rules: scripts/ci/lint_exceptions.py.
+
+[[exception]]
+path = "core/test/compat_conformance_table_gen.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/dnn/test_model_loader.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/dnn/test_tiny_model_verify.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/dnn/test_vmaf_use_tiny_model.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/float_bits.h"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/hip_float_adm_math_sample.h"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test.h"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_async_extractor_thread_pool.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_cambi_dispatch_invariance.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_collector_owns_mounted_model.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_convolution_horizontal.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_cuda_float_ms_ssim_host_traffic.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_cuda_runtime_unwind.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_feature_collector.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_fex_ctx_vector.cpp"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_fex_pool_growth.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_gpu_speed_lanczos4_parity.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_integer_adm_simd.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_iqa_ssim_sub_window.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_locale_handling.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_model.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_model_collection_growth.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_motion_v2_simd.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_picture_convert_api.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_registration_partial_copy.cpp"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_speed_simd.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_ssim_x86_simd.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_ssimulacra2_simd.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_sycl_adm_parity.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_sycl_float_adm_math_probe.cpp"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_sycl_float_vif_math_probe.cpp"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_sycl_fp_arith_contract.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_sycl_init_unwind.cpp"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_sycl_integer_vif_math_probe.cpp"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_sycl_ordered_sum_probe.cpp"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_thread_pool_backpressure.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_vmafx_frame_input.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_vmafx_import_cuda.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_vmafx_import_cuda_fence.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_vmafx_import_fence.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_vmafx_import_hip.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_vmafx_lifetime.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_vmafx_log_routing.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/test_vmafx_report.c"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/tiny_ai_test_template.h"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11
+
+[[exception]]
+path = "core/test/vmafx_vulkan_test_util.h"
+reason = "Semgrep 1.182.1 reports a parse diagnostic here (measured 2026-11-01, .workingdir evidence float-eq-3249-parse-diagnostics-files-20261101.txt), so the float-identity rule cannot read the unparsed region. Repair in issue 3252. Category C: 10 days from entry."
+owner = "vmafx"
+trigger = "the file parses without a Semgrep diagnostic (issue 3252)"
+category = "C"
+entered = 2026-11-01
+expires = 2026-11-11

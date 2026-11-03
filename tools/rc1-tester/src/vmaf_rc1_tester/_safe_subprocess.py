@@ -246,6 +246,28 @@ def _resolve_allowed_executable(
     return str(resolved)
 
 
+def executable_argument(executable: Arg, root: Arg) -> str:
+    """Return `executable` as `run()` accepts it, resolving a relative path against `root`.
+
+    `run()` takes a bare name (looked up on PATH) or an absolute path and refuses
+    a relative path with a directory part. A caller that reads a path such as
+    `core/build/tools/vmaf` from an option or the environment passes it through
+    here: a bare name stays as it is, an absolute path stays as it is, and any
+    other non-absolute value is made absolute against `root`.
+    The final name is kept, not resolved: `vmafx` is a symlink to `vmaf`, and
+    the CLI picks its mode from the name it was started as.
+    """
+    text = _stringify(executable, label="executable")
+    path = Path(text).expanduser()
+    if path.is_absolute():
+        return str(path)
+    separators = {"/", os.sep, os.altsep or os.sep}
+    if text not in (".", "..") and not any(sep in text for sep in separators):
+        return text
+    # absolute() + normpath(), not resolve(): the final symlink keeps its name.
+    return os.path.normpath((Path(root) / path).absolute())
+
+
 def _validated_argv(
     argv: Sequence[Arg], allowed_executables: Collection[Arg], search_path: str
 ) -> tuple[str, ...]:
@@ -649,6 +671,9 @@ async def run_async(
     Captured stdout and stderr share ``max_output_bytes`` so a child cannot
     double the allocation by flooding both streams.
     """
+    # Read the caller's sequence once: validation and launch both use this copy,
+    # so a caller that changes its list meanwhile cannot swap the name launched.
+    argv = tuple(argv)
     environment = _validated_environment(env)
     command = _validated_argv(argv, allowed_executables, environment.get("PATH", os.defpath))
     settings = _RunSettings(text, errors, check, timeout_seconds, max_output_bytes)
@@ -663,7 +688,14 @@ async def run_async(
         settings=settings,
         encoding=encoding,
     )
-    process = await asyncio.create_subprocess_exec(*command, **configuration.process_kwargs)
+    # Run the validated file, but keep the caller's argv[0]: a multi-call
+    # program (the `vmafx` link to `vmaf`) selects its mode from that name.
+    process = await asyncio.create_subprocess_exec(
+        _stringify(argv[0], label="argv[0]"),
+        *command[1:],
+        executable=command[0],
+        **configuration.process_kwargs,
+    )
     captured = await _supervise(process, configuration, settings)
     return _finalize_result(command, process, configuration, captured, settings)
 

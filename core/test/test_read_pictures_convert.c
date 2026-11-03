@@ -258,7 +258,7 @@ static char *test_model_target_converts_source(void)
               !run(target_color_only, &pq_bt2020nc_color, &pq_bt2020nc_color, &converted));
     mu_assert("source should be converted to the model's target, but the "
               "score matches the untouched pictures",
-              unconverted != converted);
+              !vmaf_test_identical_f64(unconverted, converted));
 
     return NULL;
 }
@@ -283,13 +283,13 @@ static char *test_ref_and_dist_are_converted_independently(void)
      * neither, and which side is converted must matter.
      */
     mu_assert("reference-only conversion should differ from converting both",
-              ref_only != both_converted);
+              !vmaf_test_identical_f64(ref_only, both_converted));
     mu_assert("reference-only conversion should differ from converting "
               "neither",
-              ref_only != both_matching);
+              !vmaf_test_identical_f64(ref_only, both_matching));
     mu_assert("converting the reference or the distorted input alone should "
               "give different scores",
-              ref_only != dist_only);
+              !vmaf_test_identical_f64(ref_only, dist_only));
 
     return NULL;
 }
@@ -354,7 +354,7 @@ static char *test_target_pixel_format_is_applied(void)
                        &score, &subsampled));
     mu_assert("a 4:4:4 source should be converted to a pinned 4:2:0 target, "
               "but its chroma matches the untouched pictures",
-              unconverted != subsampled);
+              !vmaf_test_identical_f64(unconverted, subsampled));
 
     return NULL;
 }
@@ -659,7 +659,7 @@ static char *test_target_display_scales_source(void)
     mu_assert("scaled run failed", !run(target_1080, &pq_ictcp_color, &pq_ictcp_color, &scaled));
     mu_assert("a source below the display size should be upscaled, but the "
               "score matches the unscaled pictures",
-              unscaled != scaled);
+              !vmaf_test_identical_f64(unscaled, scaled));
 
     return NULL;
 }

@@ -1,48 +1,31 @@
 // SPDX-License-Identifier: EUPL-1.2
 // Copyright 2026 Lusoris
 //
-// pkg/libvmaf/libvmaf.go — Go wrapper around the libvmaf C ABI via cgo.
+// pkg/libvmaf/libvmaf.go — Scorer, the subprocess scoring path: it runs the
+// vmaf CLI binary and parses its JSON report.
 //
-// Linking is deliberately caller-selected.  This file does not provide a
+// Linking is deliberately caller-selected.  This package does not provide a
 // fallback `-lvmaf`: a missing in-tree build must fail closed instead of
 // silently resolving an unrelated distro libvmaf.  The Make targets and CI
 // set CGO_LDFLAGS to core/build-cpu/src; container builds set it to the exact
-// staged fork library under /usr/local/lib (ADR-1125).
-//
-// The cgo compiler flag `-I${SRCDIR}/../../core/include` resolves the public
-// libvmaf header from the fork tree (core/include/libvmaf/libvmaf.h).
-// In the distroless production image libvmaf headers are not required at
-// run-time — only libvmaf.so matters.
+// staged fork library under /usr/local/lib (ADR-1125).  The link line is
+// needed by pkg/vmafx (the in-process paths) and by dnn.go; the cgo compiler
+// flag `-I${SRCDIR}/../../core/include` of the package lives in dnn.go.
 //
 // The Scorer interface is intentionally thin: New → Score → Close.
 // Extensions (e.g. batch scoring, per-frame callbacks) belong in a
 // separate package built on top of this one.
+//
+// #2434: this file runs the vmaf CLI as a subprocess and imports no cgo; the
+// in-process paths (direct.go, stream.go) run on pkg/vmafx. Scorer stays a
+// subprocess because the CLI is the process boundary adopters rely on and
+// pkg/vmafx wraps the library in process only.
 //
 // ADR-0703: vmafx-server Go gRPC + HTTP service.
 
 //go:build cgo
 
 package libvmaf
-
-/*
-#cgo CFLAGS: -I${SRCDIR}/../../core/include
-
-#include <libvmaf/libvmaf.h>
-#include <stdlib.h>
-
-// cgoScore is a C helper that invokes the vmaf binary as a subprocess.
-// We use the binary path approach rather than direct libvmaf API calls here
-// because the full pipeline (picture allocation, feature extraction, pooling)
-// would require reimplementing vmaf.c in cgo — that is significant scope for
-// a first-generation wrapper.  The binary-delegation approach is identical to
-// what the Python layer does today and is safe: the binary runs in a separate
-// process with its own memory space.
-//
-// The direct cgo path (vmaf_init → vmaf_use_features_from_model_file →
-// vmaf_read_pictures → vmaf_score_pooled → vmaf_close) is left as a
-// forward-compatible extension point — see ScoreDirect below.
-*/
-import "C"
 
 import (
 	"bytes"
@@ -56,16 +39,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"unsafe"
 )
-
-// Ensure C import is used (avoids "imported and not used" errors when build
-// tags exclude cgo usage at link time).
-//
-// SAFETY: unsafe.Sizeof on an untyped-int constant is evaluated at compile
-// time and dereferences nothing; the expression exists only to keep the
-// unsafe import live and touches no memory at run time.
-var _ = unsafe.Sizeof(0)
 
 // Scorer is the public Go API for VMAF scoring.
 type Scorer struct {
@@ -190,22 +164,78 @@ func scoreArgv(ref, dis, modelPath, outPath, backend string) []string {
 // reap the children eventually.  2 s is generous: in practice the
 // kernel completes process teardown in single-digit milliseconds.
 func (s *Scorer) runScoreBinary(ctx context.Context, args []string) error {
+	cmd, stderr := s.newCLICommand(ctx, args)
+	if err := cmd.Run(); err != nil {
+		return cliFailure(ctx, err, stderr)
+	}
+	return nil
+}
+
+// newCLICommand builds the vmaf CLI command both subprocess entry points run
+// (a file pair here, two pipes in readers_unix.go): the operator-configured
+// binary, a bounded WaitDelay (see runScoreBinary) and a buffer for stderr.
+func (s *Scorer) newCLICommand(ctx context.Context, args []string) (*exec.Cmd, *bytes.Buffer) {
+	// #nosec G204 -- binaryPath is the operator-configured vmaf CLI; args hold fixed
+	// flags, the inputs, the resolved model path and the temporary output.
 	cmd := exec.CommandContext(ctx, s.binaryPath, args...) //nolint:gosec // paths are operator-supplied
 	cmd.WaitDelay = 2 * time.Second
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
+	return cmd, &stderr
+}
 
-	if err := cmd.Run(); err != nil {
-		// Surface the cancellation cause when ctx was the trigger so callers
-		// can distinguish "vmaf binary genuinely failed" from "we killed it
-		// because the request went away".
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return fmt.Errorf("libvmaf: vmaf subprocess cancelled: %w (run err: %v, stderr: %s)",
-				ctxErr, err, stderr.String())
-		}
-		return fmt.Errorf("libvmaf: vmaf binary failed: %w\nstderr: %s", err, stderr.String())
+// cliFailure describes a failed CLI run: the cancellation cause when ctx was
+// the trigger, so callers can tell "vmaf binary genuinely failed" from "we
+// killed it because the request went away", else the binary failure with its
+// stderr.
+func cliFailure(ctx context.Context, runErr error, stderr *bytes.Buffer) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("libvmaf: vmaf subprocess cancelled: %w (run err: %v, stderr: %s)",
+			ctxErr, runErr, stderr.String())
 	}
-	return nil
+	return fmt.Errorf("libvmaf: vmaf binary failed: %w\nstderr: %s", runErr, stderr.String())
+}
+
+// scoreRun is what every subprocess scoring call sets up before it starts the
+// CLI: the resolved model, the temporary report file and a context bounded by
+// the score budget.
+type scoreRun struct {
+	ctx       context.Context
+	modelPath string
+	out       string
+	cancel    context.CancelFunc
+	removeOut func()
+}
+
+// prepareRun validates ctx, resolves the model (default model for ""), creates
+// the report file and bounds the context. operation names the caller in the
+// cancellation message. The caller releases the run when it is done.
+func (s *Scorer) prepareRun(ctx context.Context, operation, modelName string) (*scoreRun, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("libvmaf: context cancelled before %s: %w", operation, err)
+	}
+	if modelName == "" {
+		modelName = model.DefaultVersion
+	}
+	modelPath, err := s.resolveModel(modelName)
+	if err != nil {
+		return nil, err
+	}
+	out, removeOut, err := scoreOutputFile()
+	if err != nil {
+		return nil, err
+	}
+	runCtx, cancel := context.WithTimeout(ctx, scoreBudget(ctx.Deadline()))
+	return &scoreRun{ctx: runCtx, modelPath: modelPath, out: out, cancel: cancel, removeOut: removeOut}, nil
+}
+
+// release cancels the run's context and removes its report file.
+func (r *scoreRun) release() {
+	r.cancel()
+	r.removeOut()
 }
 
 // Close releases any resources held by the Scorer.

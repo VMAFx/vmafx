@@ -5,62 +5,86 @@
 
 [[exception]]
 path = ".config/hiss/testdata/HISS-01/c/gap/direct-recursion.c"
+category = "D"
+entered = 2026-11-02
 reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
 expires = 2027-06-30
 
 [[exception]]
 path = ".config/hiss/testdata/HISS-01/c/positive/goto.c"
+category = "D"
+entered = 2026-11-02
 reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
 expires = 2027-06-30
 
 [[exception]]
 path = ".config/hiss/testdata/HISS-02/c/negative/bounded-while.c"
+category = "D"
+entered = 2026-11-02
 reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
 expires = 2027-06-30
 
 [[exception]]
 path = ".config/hiss/testdata/HISS-02/c/positive/spaced-while-one.c"
+category = "D"
+entered = 2026-11-02
 reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
 expires = 2027-06-30
 
 [[exception]]
 path = ".config/hiss/testdata/HISS-04/c/gap/cyclomatic-high.c"
+category = "D"
+entered = 2026-11-02
 reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
 expires = 2027-06-30
 
 [[exception]]
 path = ".config/hiss/testdata/HISS-04/c/negative/loc-at-cap-60.c"
+category = "D"
+entered = 2026-11-02
 reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
 expires = 2027-06-30
 
 [[exception]]
 path = ".config/hiss/testdata/HISS-04/c/positive/loc-func-over-cap.c"
+category = "D"
+entered = 2026-11-02
 reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
 expires = 2027-06-30
 
 [[exception]]
 path = ".config/hiss/testdata/HISS-08/c/gap/system-shell.c"
+category = "D"
+entered = 2026-11-02
 reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
 expires = 2027-06-30
 
 [[exception]]
 path = ".config/hiss/testdata/HISS-08/c/negative/bounded-snprintf.c"
+category = "D"
+entered = 2026-11-02
 reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
 expires = 2027-06-30
 
 [[exception]]
 path = ".config/hiss/testdata/HISS-08/c/positive/gets.c"
+category = "D"
+entered = 2026-11-02
 reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
 expires = 2027-06-30
 
 [[exception]]
 path = ".config/hiss/testdata/HISS-09/c/gap/unproven-pointer-arith.c"
+category = "D"
+entered = 2026-11-02
 reason = "HISS rule-engine fixture: the planted defect is the fixture (a gets() call, a 76-line function, a goto); a clean file would stop proving the rule. Replayed by the standards gate, never built."
 expires = 2027-06-30
 
 [[exception]]
 path = "cmd/vmafx-node/bpf/rclone_bypass.bpf.c"
-reason = "eBPF program: includes vmlinux.h, generated from the running kernel's BTF and absent on every runner, so clang-tidy stops at the include; compiled by clang -target bpf through bpf2go."
+category = "A"
+entered = 2026-11-02
+reason = "Category A, interval to the stated expiry. eBPF program: includes vmlinux.h, generated from the running kernel's BTF and absent on every runner, so clang-tidy stops at the include; compiled by clang -target bpf through bpf2go."
 expires = 2027-03-31
 
 [[exception]]
@@ -150,55 +174,84 @@ expires = 2027-03-31
 
 [[exception]]
 path = "core/test/test_sycl_cuda_serial_upload_lifetime.c"
-reason = "Built only when -Denable_cuda=true and -Denable_sycl=true together (the regression is the SYCL upload wait on CUDA's serial host-picture path); builds compile it with both backends (.github/workflows/libvmaf-build-matrix.yml:259, tests-and-quality-gates.yml:1400) but no tidy lane (Makefile TIDY_RATCHET_SETUP_cuda / _sycl) enables both; fix = a cuda+sycl tidy lane. Re-reviewed 2026-10-15. Category D (120 days)."
+category = "A"
+entered = 2026-11-02
+reason = "Category A, interval to the stated expiry. Built only when -Denable_cuda=true and -Denable_sycl=true together (the regression is the SYCL upload wait on CUDA's serial host-picture path); builds compile it with both backends (.github/workflows/libvmaf-build-matrix.yml:259, tests-and-quality-gates.yml:1400) but no tidy lane (Makefile TIDY_RATCHET_SETUP_cuda / _sycl) enables both; fix = a cuda+sycl tidy lane. Re-reviewed 2026-10-15."
 expires = 2027-02-12
 
 [[exception]]
 path = "core/tools/compat/win32/getopt.c"
-reason = "Windows-only translation unit (built only for host_machine.system() == 'windows'); no Linux or macOS compile database has an entry. Needs a Windows lane with clang-tidy."
+category = "A"
+entered = 2026-11-02
+reason = "Category A, interval to the stated expiry. Windows-only translation unit (built only for host_machine.system() == 'windows'); no Linux or macOS compile database has an entry. Needs a Windows lane with clang-tidy."
 expires = 2027-03-31
 
 [[exception]]
 path = "core/tools/test/test_vmaf_windows_utf8_argv.cpp"
-reason = "Windows-only test (built only for host_machine.system() == 'windows'); no Linux or macOS compile database has an entry. Needs a Windows lane with clang-tidy."
+category = "A"
+entered = 2026-11-02
+reason = "Category A, interval to the stated expiry. Windows-only test (built only for host_machine.system() == 'windows'); no Linux or macOS compile database has an entry. Needs a Windows lane with clang-tidy."
 expires = 2027-03-31
 
 [[exception]]
 path = "core/src/interop/pelorus_deband_params.c"
-reason = "Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+category = "A"
+entered = 2026-11-02
+reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
 expires = 2027-03-31
 
 [[exception]]
 path = "core/src/interop/pelorus_denoise_params.c"
-reason = "Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+category = "A"
+entered = 2026-11-02
+reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
 expires = 2027-03-31
 
 [[exception]]
 path = "core/src/interop/pelorus_interop.c"
-reason = "Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+category = "A"
+entered = 2026-11-02
+reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
 expires = 2027-03-31
 
 [[exception]]
 path = "core/src/interop/pelorus_qp_report_csv.c"
-reason = "Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+category = "A"
+entered = 2026-11-02
+reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
 expires = 2027-03-31
 
 [[exception]]
 path = "core/src/interop/pelorus_version.c"
-reason = "Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+category = "A"
+entered = 2026-11-02
+reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
 expires = 2027-03-31
 
 [[exception]]
 path = "core/test/test_pelorus_interop.c"
-reason = "Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+category = "A"
+entered = 2026-11-02
+reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
 expires = 2027-03-31
 
 [[exception]]
 path = "core/test/test_colorspace.c"
-reason = "Built only with -Denable_zimg=true (core/test/meson.build); zimg is not in dev/Containerfile (grep -i zimg dev/Containerfile is empty) nor installed by the hosted Tidy Ratchet job (.github/workflows/lint-and-format.yml \"Install deps\" step); fix = libzimg-dev in both, -Denable_zimg=true in TIDY_RATCHET_SETUP_cpu, re-measure. Re-reviewed 2026-10-15. Category D (120 days)."
+category = "A"
+entered = 2026-11-02
+reason = "Category A, interval to the stated expiry. Built only with -Denable_zimg=true (core/test/meson.build); zimg is not in dev/Containerfile (grep -i zimg dev/Containerfile is empty) nor installed by the hosted Tidy Ratchet job (.github/workflows/lint-and-format.yml \"Install deps\" step); fix = libzimg-dev in both, -Denable_zimg=true in TIDY_RATCHET_SETUP_cpu, re-measure. Re-reviewed 2026-10-15."
 expires = 2027-02-12
 
 [[exception]]
 path = "core/test/test_integer_adm_buffer_alloc.c"
-reason = "Category D. New unit test for the integer ADM slab offsets; the lanes' measured_sources change only when a tidy baseline is re-measured, and that re-measure adds this file."
+category = "A"
+entered = 2026-11-02
+reason = "Category A, interval to the stated expiry. New unit test for the integer ADM slab offsets; the lanes' measured_sources change only when a tidy baseline is re-measured, and that re-measure adds this file."
 expires = 2027-01-04
+
+[[exception]]
+path = "pkg/libvmaf/testdata/c_api_pooled_mean.c"
+category = "A"
+entered = 2026-11-02
+reason = "Category A, interval to the stated expiry. Reference harness the Go tests of pkg/libvmaf compile with cc against the Meson-built library, so it is in no Meson compile database and no lane reads it. Clean under the repository .clang-tidy when run by hand. Rectify by building it from a compile database a lane reads."
+expires = 2027-02-27

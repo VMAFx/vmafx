@@ -35,6 +35,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_cuda.h"
@@ -174,12 +175,12 @@ static char *test_speed_temporal_cpu_cuda_parity(void)
     if (isnan(cuda_score))
         return NULL;
 
-    if (cpu_score != cuda_score) {
+    if (!vmaf_test_identical_f64(cpu_score, cuda_score)) {
         (void)fprintf(stderr, "\nspeed_temporal parity FAIL: cpu=%.17g cuda=%.17g delta=%.2e\n",
                       cpu_score, cuda_score, fabs(cpu_score - cuda_score));
     }
     mu_assert("speed_temporal_cuda does not return the CPU extractor's score",
-              cpu_score == cuda_score);
+              vmaf_test_identical_f64(cpu_score, cuda_score));
     return NULL;
 }
 

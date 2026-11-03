@@ -13,6 +13,7 @@ import sys
 import tempfile
 import time
 import unittest
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 from unittest import mock
@@ -24,6 +25,7 @@ from scripts.lib.safe_subprocess import (
     CommandResult,
     CommandTimedOut,
     CommandValidationError,
+    executable_argument,
     run,
     run_async,
     signal_process_group,
@@ -86,6 +88,44 @@ class SafeSubprocessTests(unittest.TestCase):
         )
         self.assertEqual(result.stdout, "payload")
 
+    @unittest.skipIf(os.name == "nt", "symbolic links need privileges on Windows")
+    def test_symlink_keeps_the_invoked_name_as_argv0(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            link = Path(temporary) / "renamed-python"
+            link.symlink_to(PYTHON)
+            result = run(
+                [str(link), "-c", "import sys; print(sys.orig_argv[0])"],
+                allowed_executables=(str(link),),
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.stdout.strip(), str(link))
+
+    def test_argv_is_read_once(self) -> None:
+        class Flipping(Sequence[str]):
+            """argv whose first entry changes after it has been read once."""
+
+            def __init__(self, items: list[str]) -> None:
+                self.items, self.reads = items, 0
+
+            def __len__(self) -> int:
+                return len(self.items)
+
+            def __getitem__(self, index: int) -> str:  # type: ignore[override]
+                if index == 0:
+                    self.reads += 1
+                    if self.reads > 1:
+                        return "swapped-name"
+                return self.items[index]
+
+        result = run(
+            Flipping([PYTHON, "-c", "import sys; print(sys.orig_argv[0])"]),
+            allowed_executables=ALLOW_PYTHON,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.stdout.strip(), PYTHON)
+
     def test_unallowlisted_relative_and_nul_arguments_are_rejected(self) -> None:
         with self.assertRaises(CommandValidationError):
             run([PYTHON, "-V"], allowed_executables=("definitely-not-python",))
@@ -97,6 +137,37 @@ class SafeSubprocessTests(unittest.TestCase):
             run([PYTHON, "x\0y"], allowed_executables=ALLOW_PYTHON)
         with self.assertRaises(CommandValidationError):
             run([PYTHON, "x" * (MAX_ARG_BYTES + 1)], allowed_executables=ALLOW_PYTHON)
+
+    def test_executable_argument_resolves_relative_paths_only(self) -> None:
+        root = Path(PYTHON).parent
+        # Positive: a path with a directory part becomes absolute under `root`,
+        # and run() then accepts it where the relative form is refused.
+        relative = Path(PYTHON).relative_to(root.parent).as_posix()
+        self.assertIn("/", relative)
+        resolved = executable_argument(relative, root.parent)
+        self.assertEqual(resolved, str((root.parent / relative).resolve()))
+        with self.assertRaises(CommandValidationError):
+            run([relative, "-V"], allowed_executables=(relative,))
+        self.assertEqual(run([resolved, "-V"], allowed_executables=(resolved,)).returncode, 0)
+        # Boundary: a bare name stays for the PATH lookup; an absolute path stays.
+        self.assertEqual(executable_argument("vmaf", root), "vmaf")
+        self.assertEqual(executable_argument(PYTHON, "/elsewhere"), PYTHON)
+        self.assertEqual(executable_argument("./vmaf", root), str((root / "vmaf").resolve()))
+        self.assertEqual(
+            executable_argument("../vmaf", root), str((root / ".." / "vmaf").resolve())
+        )
+        # Negative: a NUL byte is refused, as run() refuses it.
+        with self.assertRaises(CommandValidationError):
+            executable_argument("bin/x\0y", root)
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symbolic links unavailable")
+    @unittest.skipIf(os.name == "nt", "symbolic links need privileges on Windows")
+    def test_executable_argument_preserves_symlink_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "vmaf").touch()
+            (Path(tmp) / "vmafx").symlink_to("vmaf")
+            # The CLI picks vmafx mode from argv0, so the alias must survive.
+            self.assertEqual(executable_argument("./vmafx", root=tmp), str(Path(tmp) / "vmafx"))
 
     def test_capture_limit_terminates_a_flooding_child(self) -> None:
         with self.assertRaises(CommandOutputLimitExceeded) as raised:

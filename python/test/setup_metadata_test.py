@@ -7,7 +7,6 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
-import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -23,6 +22,11 @@ from packaging.version import InvalidVersion, Version
 import vmaf
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+
 PYPROJECT = REPO_ROOT / "python" / "pyproject.toml"
 SETUP_PY = REPO_ROOT / "python" / "setup.py"
 PACKAGE_PYPROJECTS = (
@@ -81,8 +85,9 @@ def _locked_version(lock: Path, name: str) -> str:
 
 def _setup_py_version() -> str:
     """What `setup.py --version` reports, i.e. the version setuptools ships."""
-    result = subprocess.run(
+    result = run_command(
         [sys.executable, "setup.py", "--version"],
+        allowed_executables=[sys.executable],
         cwd=REPO_ROOT / "python",
         check=False,
         capture_output=True,
@@ -233,9 +238,15 @@ def _git_tree(root: Path, files: dict[str, str]) -> Path:
     # Without the caller's GIT_* variables: under a commit hook GIT_INDEX_FILE
     # (and GIT_DIR) would turn these commands into writes to the caller's index.
     environment = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    git = shutil.which("git")
+    assert git is not None, "git is not on PATH"
     for command in (["init", "-q"], ["add", "-A"]):
-        subprocess.run(
-            ["git", "-C", str(root), *command], check=True, timeout=GIT_TIMEOUT_S, env=environment
+        run_command(
+            [git, "-C", str(root), *command],
+            allowed_executables=[git],
+            check=True,
+            timeout_seconds=GIT_TIMEOUT_S,
+            env=environment,
         )
     return root
 
