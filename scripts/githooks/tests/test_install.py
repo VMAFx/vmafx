@@ -640,8 +640,9 @@ class LefthookBridgeTests(unittest.TestCase):
         stub.parent.mkdir(parents=True, exist_ok=True)
         stub.write_text(
             "#!/bin/sh\n"
-            'printf \'%s|%s|%s|%s\\n\' "$1" "${GIT_DIR-unset}" "${GIT_WORK_TREE-unset}" '
-            '"${GIT_INDEX_FILE-unset}" >> "$BRIDGE_LOG"\n',
+            'printf \'%s|%s|%s|%s|%s|%s\\n\' "$1" "${GIT_DIR-unset}" "${GIT_WORK_TREE-unset}" '
+            '"${GIT_INDEX_FILE-unset}" "${GIT_COMMON_DIR-unset}" '
+            '"${GIT_OBJECT_DIRECTORY-unset}" >> "$BRIDGE_LOG"\n',
             encoding="utf-8",
             newline="\n",
         )
@@ -651,6 +652,8 @@ class LefthookBridgeTests(unittest.TestCase):
             "GIT_DIR": str(self.repo / ".git"),
             "GIT_WORK_TREE": str(self.repo),
             "GIT_INDEX_FILE": index,
+            "GIT_COMMON_DIR": str(self.repo / ".git"),
+            "GIT_OBJECT_DIRECTORY": str(self.repo / ".git" / "objects"),
         }
         with mock.patch.dict(self.env, hook_env):
             result = self.bridge("pre-commit")
@@ -658,8 +661,8 @@ class LefthookBridgeTests(unittest.TestCase):
         self.assertEqual(
             self.calls(),
             [
-                "install-hooks|unset|unset|unset",
-                f"run|unset|unset|{index}",
+                "install-hooks|unset|unset|unset|unset|unset",
+                f"run|unset|unset|{index}|unset|unset",
             ],
         )
 

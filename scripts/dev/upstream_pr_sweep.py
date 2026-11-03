@@ -122,6 +122,10 @@ def discover_prs(repo: Path) -> list[PRTarget]:
 # is dropped: a git hook exports them, and a git started with them acts on the hook's
 # repository instead of the one in cwd (the core.bare leak of 2026-11-03).
 GIT_SETTING_PREFIXES = ("GIT_CONFIG_", "GIT_AUTHOR_", "GIT_COMMITTER_", "GIT_SSH")
+# GIT_CONFIG_PARAMETERS holds the caller's `git -c` overrides (core.bare, core.worktree,
+# include.path); a child git would apply them to every target worktree. The numbered
+# GIT_CONFIG_COUNT / _KEY_n / _VALUE_n settings stay: they are set on purpose.
+GIT_DROPPED_SETTINGS = frozenset({"GIT_CONFIG_PARAMETERS"})
 
 
 def git_environment() -> dict[str, str]:
@@ -129,7 +133,8 @@ def git_environment() -> dict[str, str]:
     return {
         key: value
         for key, value in os.environ.items()
-        if not key.startswith("GIT_") or key.startswith(GIT_SETTING_PREFIXES)
+        if not key.startswith("GIT_")
+        or (key.startswith(GIT_SETTING_PREFIXES) and key not in GIT_DROPPED_SETTINGS)
     }
 
 
@@ -183,7 +188,9 @@ def check_origin_url(repo: Path, fork: str) -> tuple[bool, str]:
 
 
 def resolve_old_sha(repo: Path, branch: str) -> str | None:
-    for ref in (f"origin/{branch}", f"refs/remotes/origin/{branch}", f"refs/heads/{branch}"):
+    # Only the remote-tracking tip: a local branch of the same name is no proof of what the
+    # fork holds, and the push lease must bind to the fork's tip.
+    for ref in (f"origin/{branch}", f"refs/remotes/origin/{branch}"):
         rc, out, _ = git_cmd(repo, ["rev-parse", ref])
         if rc == 0 and out.strip():
             return out.strip()
@@ -209,18 +216,23 @@ def prepare_worktree(repo: Path, wt: Path, branch: str, old_sha: str) -> tuple[b
     return True, ""
 
 
-def run_rebase(wt: Path, base_sha: str) -> tuple[bool, str]:
-    rc, _, _ = git_cmd(
+def run_rebase(wt: Path, base_sha: str) -> tuple[str | None, str]:
+    """Rebase onto base_sha; return (None, "") or (CONFLICT | REBASE-FAIL, detail)."""
+    rc, _, err = git_cmd(
         wt,
         ["-c", "commit.gpgsign=true", "rebase", "--gpg-sign", base_sha],
         timeout=180.0,
     )
     if rc == 0:
-        return True, ""
+        return None, ""
     _, diff_out, _ = git_cmd(wt, ["diff", "--name-only", "--diff-filter=U"])
     conflict_files = ",".join(line.strip() for line in diff_out.splitlines() if line.strip())
     git_cmd(wt, ["rebase", "--abort"])
-    return False, f"files={conflict_files}"
+    if conflict_files:
+        return "CONFLICT", f"files={conflict_files}"
+    # A signing failure, a refused hook or a bad base also stops a rebase; none is a conflict.
+    first_line = next((line.strip() for line in err.splitlines() if line.strip()), "")
+    return "REBASE-FAIL", first_line or f"git rebase exited {rc}"
 
 
 def count_unsigned(wt: Path, base_sha: str) -> int:
@@ -399,10 +411,10 @@ def _execute_rebase(
             SweepRow(target.number, target.branch, "REFUSED", old_sha, "-", 0, prep_detail),
             None,
         )
-    rebase_ok, rebase_detail = run_rebase(wt, base_sha)
-    if not rebase_ok:
+    rebase_status, rebase_detail = run_rebase(wt, base_sha)
+    if rebase_status is not None:
         return (
-            SweepRow(target.number, target.branch, "CONFLICT", old_sha, "-", 0, rebase_detail),
+            SweepRow(target.number, target.branch, rebase_status, old_sha, "-", 0, rebase_detail),
             None,
         )
     _, head_out, _ = git_cmd(wt, ["rev-parse", "HEAD"])

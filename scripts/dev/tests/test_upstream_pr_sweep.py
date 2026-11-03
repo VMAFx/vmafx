@@ -106,13 +106,32 @@ class HookEnvironmentIsolationTest(unittest.TestCase):
             self.assertTrue((target / "bare.git" / "HEAD").is_file())
             self.assertTrue((target / ".git" / "HEAD").is_file())
 
+    def test_caller_config_override_does_not_reach_tool_git(self) -> None:
+        # `git -c core.bare=true ...` exports GIT_CONFIG_PARAMETERS to its hooks.
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch).resolve()
+            target = root / "target"
+            target.mkdir()
+            caller = dict(fixture_environment(root), GIT_CONFIG_PARAMETERS="'core.bare'='true'")
+            with patch.dict(os.environ, caller, clear=True):
+                rc, _out, err = sweep_mod.git_cmd(target, ["init", "--quiet"])
+                self.assertEqual(rc, 0, err)
+                rc, out, err = sweep_mod.git_cmd(target, ["config", "--get", "core.bare"])
+            self.assertEqual(rc, 0, err)
+            self.assertEqual(out.strip(), "false")
+
     def test_git_environment_keeps_settings_and_drops_locations(self) -> None:
         caller = {
             "GIT_DIR": "/x/.git",
             "GIT_WORK_TREE": "/x",
             "GIT_INDEX_FILE": "/x/.git/index",
             "GIT_OBJECT_DIRECTORY": "/x/.git/objects",
-            "GIT_CONFIG_COUNT": "0",
+            "GIT_COMMON_DIR": "/x/.git",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES": "/y/objects",
+            "GIT_CONFIG_PARAMETERS": "'core.bare'='true'",
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "user.name",
+            "GIT_CONFIG_VALUE_0": "fixture",
             "GIT_AUTHOR_NAME": "a",
             "GIT_SSH_COMMAND": "ssh",
             "HOME": "/home/x",
@@ -121,7 +140,9 @@ class HookEnvironmentIsolationTest(unittest.TestCase):
             self.assertEqual(
                 sweep_mod.git_environment(),
                 {
-                    "GIT_CONFIG_COUNT": "0",
+                    "GIT_CONFIG_COUNT": "1",
+                    "GIT_CONFIG_KEY_0": "user.name",
+                    "GIT_CONFIG_VALUE_0": "fixture",
                     "GIT_AUTHOR_NAME": "a",
                     "GIT_SSH_COMMAND": "ssh",
                     "HOME": "/home/x",
@@ -373,11 +394,42 @@ class UpstreamPrSweepTest(unittest.TestCase):
         self.assertEqual(fork_head, conflict_old_sha)
 
         wt = self.worktree_root / "netflix-vmaf-contributions-2"
-        if wt.exists():
-            status_out = git_run(wt, "status", "--porcelain")
-            self.assertEqual(status_out, "")
-            wt_head = git_run(wt, "rev-parse", "HEAD")
-            self.assertEqual(wt_head, conflict_old_sha)
+        self.assertTrue(wt.exists())
+        self.assertEqual(git_run(wt, "status", "--porcelain"), "")
+        self.assertEqual(git_run(wt, "rev-parse", "HEAD"), conflict_old_sha)
+
+    def test_negative_rebase_failure_without_conflict(self) -> None:
+        status, detail = sweep_mod.run_rebase(self.repo, "0" * 40)
+        self.assertEqual(status, "REBASE-FAIL")
+        self.assertNotIn("files=", detail)
+        self.assertNotEqual(detail, "")
+        self.assertEqual(git_run(self.repo, "status", "--porcelain"), "")
+
+    def test_negative_local_only_branch_refused(self) -> None:
+        git_run(self.repo, "branch", "fix/local-only", "HEAD")
+        local_prs = self.root / "local_prs.txt"
+        local_prs.write_text("3 fix/local-only testfork\n", encoding="utf-8")
+        args = sweep_mod.build_parser().parse_args(
+            [
+                "--repo",
+                str(self.repo),
+                "--worktree-root",
+                str(self.worktree_root),
+                "--fork",
+                "testfork/vmaf",
+                "--prs",
+                str(local_prs),
+                "--apply",
+                "--push",
+            ]
+        )
+        rows = sweep_mod.sweep(args)
+        self.assertEqual([row.status for row in rows], ["REFUSED"])
+        self.assertIn("cannot resolve origin/fix/local-only", rows[0].detail)
+        rc, _out, _err = sweep_mod.git_cmd(
+            self.fork_bare, ["rev-parse", "--verify", "fix/local-only"]
+        )
+        self.assertNotEqual(rc, 0)
 
     def test_boundary_dry_run_leaves_refs_and_worktrees_unchanged(self) -> None:
         parser = sweep_mod.build_parser()
@@ -470,6 +522,10 @@ class UpstreamPrSweepTest(unittest.TestCase):
         fork_head = git_run(self.fork_bare, "rev-parse", "fix/pr-1")
         self.assertEqual(fork_head, remote_racing_sha)
 
+    @unittest.skipUnless(
+        shutil.which("meson") and shutil.which("ninja"),
+        "meson and ninja are needed to build the dummy project",
+    )
     def test_build_and_test_clean(self) -> None:
         wt = self.worktree_root / "build-test-wt"
         libvmaf = wt / "libvmaf"
@@ -490,7 +546,10 @@ class UpstreamPrSweepTest(unittest.TestCase):
 
     def test_discover_prs_mocked(self) -> None:
         sample_json = '[{"number": 42, "headRefName": "fix/answer", "headRepositoryOwner": {"login": "testowner"}}]'
-        with patch.object(sweep_mod, "run_command") as mock_run:
+        with (
+            patch.object(sweep_mod.shutil, "which", return_value="/usr/bin/gh"),
+            patch.object(sweep_mod, "run_command") as mock_run,
+        ):
             mock_run.return_value = TextCommandResult(
                 argv=("gh",), returncode=0, stdout=sample_json, stderr=""
             )

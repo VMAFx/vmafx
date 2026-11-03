@@ -172,9 +172,11 @@ not plan a fix ([pre-commit/pre-commit#3609](https://github.com/pre-commit/pre-c
 The `framework-hooks` entries of `lefthook.yml` (`pre-commit` and `pre-push`)
 therefore run `pre-commit install-hooks` with `GIT_INDEX_FILE`, `GIT_DIR`,
 `GIT_WORK_TREE` and `GIT_OBJECT_DIRECTORY` unset before `run` / `hook-impl`.
-Those two then run without `GIT_DIR` and `GIT_WORK_TREE` but keep
-`GIT_INDEX_FILE`, which a partial commit (`git commit <path>`) needs to list its
-staged files. Git exports `GIT_DIR` to every hook, and a hook entry that starts
+Those two then run without `GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`,
+`GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES`. They keep
+`GIT_INDEX_FILE`, which a partial commit (`git commit <path>`) needs in the
+`pre-commit` stage to list its staged files, and `GIT_CONFIG_PARAMETERS`, which
+carries the operator's own `git -c` settings. Git exports `GIT_DIR` to every hook, and a hook entry that starts
 `git init` or `git config` in a scratch directory with it set writes into this
 repository instead: a test fixture set `core.bare=true` in a main checkout that
 way. `LefthookBridgeTests.test_framework_runs_without_the_hook_repository_location`

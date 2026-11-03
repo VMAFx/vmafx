@@ -86,12 +86,16 @@ subsequent mutations:
    - Every `git`, `gh`, `meson` and `ninja` call runs with `git_environment()`,
      which drops each `GIT_*` variable that locates a repository (`GIT_DIR`,
      `GIT_WORK_TREE`, `GIT_INDEX_FILE`, ...) and keeps the settings
-     (`GIT_CONFIG_*`, `GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `GIT_SSH*`). Started from
+     (`GIT_CONFIG_*`, `GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `GIT_SSH*`), except
+     `GIT_CONFIG_PARAMETERS`: that one carries the caller's `git -c` overrides
+     (`core.bare`, `core.worktree`), so it is dropped as well. Started from
      a git hook, the tool therefore acts on the repository in its working
      directory, never on the hook's.
 4. **Push destination safety**:
    - Push targets are strictly restricted to `origin` and refspec
      `HEAD:refs/heads/<branch>`. Pushing to `upstream` is strictly forbidden.
+   - `<old_sha>` is the remote-tracking tip `origin/<branch>`; a branch that
+     exists only locally is refused, since it proves nothing about the fork.
    - Pushes use `--force-with-lease=refs/heads/<branch>:<old_sha>`. If the remote
      ref was modified since it was read, the push is rejected and marked `REFUSED`.
 
@@ -109,6 +113,8 @@ The tool emits one TSV (tab-separated) row per PR to standard output:
   - `OK`: Rebase (and optional build/push) succeeded.
   - `REFUSED`: Invariant pre-check failed or lease was rejected.
   - `CONFLICT`: Rebase hit conflicts; rebase was aborted.
+  - `REBASE-FAIL`: Rebase stopped without a conflict (signing failure, refused
+    hook, unusable base); rebase was aborted and the first error line is the detail.
   - `UNSIGNED`: Commits in `base..HEAD` lacked valid signatures (`%G? != G`).
   - `BUILD-FAIL`: Meson setup or Ninja compilation failed.
   - `TEST-FAIL`: Meson test suite exited with a non-zero status.
@@ -120,8 +126,8 @@ The tool emits one TSV (tab-separated) row per PR to standard output:
 ## Exit codes
 
 - `0`: Every processed PR is `OK` or `PLANNED`, or the PR target list is empty.
-- `1`: Any PR resulted in `REFUSED`, `CONFLICT`, `UNSIGNED`, `BUILD-FAIL`, or
-  `TEST-FAIL`, or a command-line argument error occurred.
+- `1`: Any PR resulted in `REFUSED`, `CONFLICT`, `REBASE-FAIL`, `UNSIGNED`,
+  `BUILD-FAIL`, or `TEST-FAIL`, or a command-line argument error occurred.
 
 ## Regressions and testing
 
