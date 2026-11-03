@@ -237,6 +237,25 @@ jobs:
       - name: Fetch the Netflix and checkerboard fixtures
         run: bash scripts/test/fetch-test-yuvs.sh
 
+      - name: Rust Netflix bit-exactness contract test (#2434)
+        # Verify bit-exact scoring parity between the Rust safe binding and the
+        # C API contract binary against the installed libvmafx (/usr/local) and
+        # canonical Netflix reference fixtures.
+        env:
+          LIBVMAF_PREFIX: /usr/local
+          LD_LIBRARY_PATH: /usr/local/lib
+          PKG_CONFIG_PATH: /usr/local/lib/pkgconfig
+          VMAFX_REPO: ${{ github.workspace }}
+          VMAFX_CONTRACT_CAPI: ${{ runner.temp }}/vmafx_score_contract
+          VMAFX_YUV_DIR: ${{ github.workspace }}/python/test/resource/yuv
+          VMAFX_REQUIRE_NETFLIX_PAIR: "1"
+        run: |
+          # shellcheck disable=SC2046  # pkg-config output must word-split into separate cc arguments
+          cc -std=c11 -Wall -Wextra -Werror -Icore/test -DVMAF_PUBLIC_NAMES \
+            core/test/vmafx_score_contract.c \
+            $(pkg-config --cflags --libs libvmafx) -lm -o "$VMAFX_CONTRACT_CAPI"
+          cargo test -p vmafx --test netflix_bitexact
+
       - name: Rust suite and Rust twin harness (ADR-1713)
         # Every registered Rust twin against its C extractor in the same
         # binary: equal doubles on every metric of every frame. The 4K and

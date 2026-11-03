@@ -304,7 +304,9 @@ scores the Netflix 576x324 reference pair with `vmaf_v1.0.16_3d0h` through the
 safe API, computes the pooled mean, and compares it bit for bit with the C API
 contract (`vmafx_score_contract`). It reads the YUV pair from `VMAFX_YUV_REF` /
 `VMAFX_YUV_DIST` (or `VMAFX_YUV_DIR`) and skips with a printed reason when absent,
-failing if `VMAFX_REQUIRE_NETFLIX_PAIR=1` is set:
+failing if `VMAFX_REQUIRE_NETFLIX_PAIR=1` is set. The CI workflow (`rust-ci.yml`)
+runs this test with `VMAFX_REQUIRE_NETFLIX_PAIR=1` after provisioning fixtures to
+guarantee execution in CI:
 
 ```bash
 LIBVMAF_PREFIX="/usr/local" LD_LIBRARY_PATH="/usr/local/lib" \
