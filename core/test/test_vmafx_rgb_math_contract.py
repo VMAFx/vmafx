@@ -72,7 +72,93 @@ def _extract_function_bodies(source: str) -> list[str]:
     return bodies
 
 
-def _check_guarded_block_return(after_cond: str, res_var: str) -> list[str]:
+def _strip_outer_parens(s: str) -> str:
+    res = s.strip()
+    max_passes = min(len(res), 50)
+    for _ in range(max_passes):
+        if not (res.startswith("(") and res.endswith(")")):
+            break
+        depth = 0
+        wraps_all = True
+        limit = min(len(res), 500)
+        for i in range(limit):
+            if res[i] == "(":
+                depth += 1
+            elif res[i] == ")":
+                depth -= 1
+                if depth == 0 and i < len(res) - 1:
+                    wraps_all = False
+                    break
+        if wraps_all and depth == 0:
+            res = res[1:-1].strip()
+        else:
+            break
+    return res
+
+
+def _has_top_level_and(cond: str) -> bool:
+    depth = 0
+    max_len = min(len(cond), 500)
+    for i in range(max_len):
+        ch = cond[i]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            if depth > 0:
+                depth -= 1
+        elif depth == 0 and cond[i : i + 2] == "&&":
+            return True
+    return False
+
+
+def _split_top_level_or(cond: str) -> list[str]:
+    parts: list[str] = []
+    depth = 0
+    start = 0
+    max_len = min(len(cond), 500)
+    for i in range(max_len):
+        ch = cond[i]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            if depth > 0:
+                depth -= 1
+        elif depth == 0 and cond[i : i + 2] == "||":
+            parts.append(cond[start:i])
+            start = i + 2
+    parts.append(cond[start:])
+    return parts
+
+
+def _check_cond_narrowing(cond: str, guard_re: re.Pattern[str]) -> list[str]:
+    cleaned = _strip_outer_parens(cond)
+    if _has_top_level_and(cleaned):
+        return ["failure branch condition narrowed by &&"]
+    for term in _split_top_level_or(cleaned):
+        if guard_re.search(term) and _has_top_level_and(_strip_outer_parens(term)):
+            return ["failure branch condition narrowed by &&"]
+    return []
+
+
+def _strip_nested_brace_blocks(block: str) -> str:
+    top_level: list[str] = []
+    depth = 0
+    max_len = min(len(block), 2000)
+    for i in range(max_len):
+        ch = block[i]
+        if ch == "{":
+            depth += 1
+            top_level.append(" ")
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+            top_level.append(" ")
+        elif depth == 0:
+            top_level.append(ch)
+    return "".join(top_level)
+
+
+def _find_outer_brace_span(after_cond: str) -> tuple[int, int]:
     brace_open = -1
     for i in range(min(len(after_cond), 200)):
         if after_cond[i].isspace():
@@ -81,44 +167,59 @@ def _check_guarded_block_return(after_cond: str, res_var: str) -> list[str]:
             brace_open = i
         break
     if brace_open < 0:
-        return [f"missing return in !{res_var} branch"]
+        return (-1, -1)
     depth = 1
-    brace_close = -1
     for i in range(brace_open + 1, min(len(after_cond), brace_open + 2000)):
         if after_cond[i] == "{":
             depth += 1
         elif after_cond[i] == "}":
             depth -= 1
             if depth == 0:
-                brace_close = i
-                break
-    if brace_close < 0:
+                return (brace_open, i)
+    return (-1, -1)
+
+
+def _check_guarded_block_return(after_cond: str, res_var: str) -> list[str]:
+    brace_open, brace_close = _find_outer_brace_span(after_cond)
+    if brace_open < 0 or brace_close < 0:
         return [f"missing return in !{res_var} branch"]
     block = after_cond[brace_open + 1 : brace_close]
-    if not re.search(r"\breturn\b", block):
+    top_level = _strip_nested_brace_blocks(block)
+    ret_match = re.search(r"\breturn\b", top_level)
+    if not ret_match:
+        return [f"missing return in !{res_var} branch"]
+    preceding = top_level[: ret_match.start()]
+    if re.search(r"\b(if|else|for|while|switch)\b", preceding):
         return [f"missing return in !{res_var} branch"]
     return []
+
+
+def _find_closing_paren(text: str, paren_open: int) -> int:
+    depth = 1
+    max_idx = min(len(text), paren_open + 500)
+    for i in range(paren_open + 1, max_idx):
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+    return -1
 
 
 def _check_branch_returns(body_after: str, res_var: str) -> list[str]:
     guard_re = re.compile(rf"!\s*\(?\s*{re.escape(res_var)}\b")
     for m in list(re.finditer(r"\bif\s*\(", body_after))[:20]:
         paren_open = m.end() - 1
-        depth = 1
-        paren_close = -1
-        for i in range(paren_open + 1, min(len(body_after), paren_open + 500)):
-            if body_after[i] == "(":
-                depth += 1
-            elif body_after[i] == ")":
-                depth -= 1
-                if depth == 0:
-                    paren_close = i
-                    break
+        paren_close = _find_closing_paren(body_after, paren_open)
         if paren_close < 0:
             continue
         cond = body_after[paren_open + 1 : paren_close]
         if not guard_re.search(cond):
             continue
+        cond_errors = _check_cond_narrowing(cond, guard_re)
+        if cond_errors:
+            return cond_errors
         return _check_guarded_block_return(body_after[paren_close + 1 :], res_var)
     return [f"missing branch on !{res_var}"]
 
@@ -417,6 +518,12 @@ class RgbMathContract(unittest.TestCase):
             "assert on the recoverable plan result": valid_sample.replace(
                 "    if (!planned) {", "    assert(planned);\n    if (!planned) {", 1
             ),
+            "failure branch condition narrowed by &&": valid_sample.replace(
+                "if (!planned) {", "if (!planned && !dst) {", 1
+            ),
+            "missing return in !planned branch": valid_sample.replace(
+                "        return -1;\n", "        if (!dst) return -1;\n", 1
+            ),
         }
         for what, mutated in planted.items():
             self.assertNotEqual(mutated, valid_sample, what)
@@ -482,6 +589,63 @@ class RgbMathContract(unittest.TestCase):
             "}\n"
         )
         self.assertEqual(rgb_plan_file_findings(return_branch), [])
+
+    def test_scan_refuses_narrowed_and_failure_branch(self) -> None:
+        narrowed_branch = (
+            "static int fill(const VmafxFrameImport *d, const ImportLayout *layout) {\n"
+            "    VmafxRgbPlan rgb = {0};\n"
+            "    const bool planned = vmafx_rgb_plan_init(&rgb, layout, d->bpc, d->rgb_matrix,\n"
+            "                                             d->rgb_range, d->rgb_out_range);\n"
+            "    if (!planned && !dst) {\n"
+            "        return -1;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        self.assertIn(
+            "failure branch condition narrowed by &&",
+            rgb_plan_file_findings(narrowed_branch),
+        )
+
+    def test_scan_refuses_nested_if_in_failure_branch(self) -> None:
+        nested_if_braceless = (
+            "static int fill(const VmafxFrameImport *d, const ImportLayout *layout) {\n"
+            "    VmafxRgbPlan rgb = {0};\n"
+            "    const bool planned = vmafx_rgb_plan_init(&rgb, layout, d->bpc, d->rgb_matrix,\n"
+            "                                             d->rgb_range, d->rgb_out_range);\n"
+            "    if (!planned) {\n"
+            "        if (!dst) return -1;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        self.assertIn(
+            "missing return in !planned branch",
+            rgb_plan_file_findings(nested_if_braceless),
+        )
+        nested_if_braced = nested_if_braceless.replace(
+            "        if (!dst) return -1;\n",
+            "        if (!dst) {\n            return -1;\n        }\n",
+            1,
+        )
+        self.assertIn(
+            "missing return in !planned branch",
+            rgb_plan_file_findings(nested_if_braced),
+        )
+
+    def test_scan_accepts_or_condition_failure_branch(self) -> None:
+        or_branch = (
+            "static int fill(const VmafxFrameImport *d, const ImportLayout *layout) {\n"
+            "    VmafxRgbPlan rgb = {0};\n"
+            "    const bool planned = vmafx_rgb_plan_init(&rgb, layout, d->bpc, d->rgb_matrix,\n"
+            "                                             d->rgb_range, d->rgb_out_range);\n"
+            "    if (!planned || !dst) {\n"
+            "        return -1;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        self.assertEqual(rgb_plan_file_findings(or_branch), [])
 
     def test_known_gap_macro_checked_result_reported_as_unhandled(self) -> None:
         """Known gap (HISS-20): textual scanner does not expand helper guard macros.
