@@ -52,19 +52,119 @@ def findings(text: str) -> list[str]:
     return [what for pattern, what in BANNED if re.search(pattern, code(text))]
 
 
+def _extract_function_bodies(source: str) -> list[str]:
+    bodies: list[str] = []
+    depth = 0
+    start = 0
+    max_len = min(len(source), 1_000_000)
+    for idx in range(max_len):
+        ch = source[idx]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            if depth == 1:
+                bodies.append(source[start : idx + 1])
+                start = idx + 1
+            if depth > 0:
+                depth -= 1
+    if not bodies and "vmafx_rgb_plan_init(" in source:
+        return [source]
+    return bodies
+
+
+def _check_guarded_block_return(after_cond: str, res_var: str) -> list[str]:
+    brace_open = -1
+    for i in range(min(len(after_cond), 200)):
+        if after_cond[i].isspace():
+            continue
+        if after_cond[i] == "{":
+            brace_open = i
+        break
+    if brace_open < 0:
+        return [f"missing return in !{res_var} branch"]
+    depth = 1
+    brace_close = -1
+    for i in range(brace_open + 1, min(len(after_cond), brace_open + 2000)):
+        if after_cond[i] == "{":
+            depth += 1
+        elif after_cond[i] == "}":
+            depth -= 1
+            if depth == 0:
+                brace_close = i
+                break
+    if brace_close < 0:
+        return [f"missing return in !{res_var} branch"]
+    block = after_cond[brace_open + 1 : brace_close]
+    if not re.search(r"\breturn\b", block):
+        return [f"missing return in !{res_var} branch"]
+    return []
+
+
+def _check_branch_returns(body_after: str, res_var: str) -> list[str]:
+    guard_re = re.compile(rf"!\s*\(?\s*{re.escape(res_var)}\b")
+    for m in list(re.finditer(r"\bif\s*\(", body_after))[:20]:
+        paren_open = m.end() - 1
+        depth = 1
+        paren_close = -1
+        for i in range(paren_open + 1, min(len(body_after), paren_open + 500)):
+            if body_after[i] == "(":
+                depth += 1
+            elif body_after[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    paren_close = i
+                    break
+        if paren_close < 0:
+            continue
+        cond = body_after[paren_open + 1 : paren_close]
+        if not guard_re.search(cond):
+            continue
+        return _check_guarded_block_return(body_after[paren_close + 1 :], res_var)
+    return [f"missing branch on !{res_var}"]
+
+
+def _check_call_findings(body: str, match: re.Match[str]) -> list[str]:
+    reasons: list[str] = []
+    plan_name = match.group(1)
+    call_pos = match.start()
+    stmt_start = max(body.rfind(";", 0, call_pos), body.rfind("{", 0, call_pos))
+    prefix = body[stmt_start + 1 : call_pos].strip()
+    stmt_end = body.find(";", match.end())
+    body_after = body[stmt_end + 1 :] if stmt_end >= 0 else body[match.end() :]
+    init_pattern = rf"\bVmafxRgbPlan\s+{re.escape(plan_name)}\s*=\s*\{{\s*0\s*\}}\s*;"
+    if not re.search(init_pattern, body):
+        reasons.append("rgb plan not zero-initialized")
+    if prefix.endswith("(void)") or "(void)" in prefix:
+        reasons.append("vmafx_rgb_plan_init return cast to void")
+        return reasons
+    res_var = prefix.split("=")[0].strip().split()[-1] if "=" in prefix else None
+    if not res_var:
+        reasons.append("missing branch on !planned")
+        return reasons
+    if f"(void){res_var}" in body_after or re.search(
+        rf"\(\s*void\s*\)\s*{re.escape(res_var)}\b", body_after
+    ):
+        reasons.append("vmafx_rgb_plan_init return cast to void")
+    if re.search(rf"\bassert\s*\([^;]*\b{re.escape(res_var)}\b", body):
+        reasons.append("assert on the recoverable plan result")
+    reasons.extend(_check_branch_returns(body_after, res_var))
+    return reasons
+
+
 def rgb_plan_file_findings(text: str) -> list[str]:
     c = code(text)
     if "vmafx_rgb_plan_init(" not in c:
         return []
+    call_pattern = re.compile(r"\bvmafx_rgb_plan_init\s*\(\s*&?([A-Za-z0-9_]+)")
+    bodies = _extract_function_bodies(c)
     reasons: list[str] = []
-    if "(void)planned" in c:
-        reasons.append("vmafx_rgb_plan_init return cast to void")
-    if not re.search(r"\bif\s*\(\s*!planned\b", c):
-        reasons.append("missing branch on !planned")
-    if "VmafxRgbPlan rgb = {0};" not in c:
-        reasons.append("rgb plan not zero-initialized")
-    if re.search(r"\bassert\s*\([^;]*\bplanned\b", c):
-        reasons.append("assert on the recoverable plan result")
+    for body in bodies[:100]:
+        for match in list(call_pattern.finditer(body))[:50]:
+            reasons.extend(_check_call_findings(body, match))
+    body_call_count = sum(len(list(call_pattern.finditer(b))) for b in bodies[:100])
+    total_call_count = len(list(call_pattern.finditer(c)))
+    if total_call_count > body_call_count:
+        reasons.append("vmafx_rgb_plan_init called outside function")
     return reasons
 
 
@@ -321,6 +421,89 @@ class RgbMathContract(unittest.TestCase):
         for what, mutated in planted.items():
             self.assertNotEqual(mutated, valid_sample, what)
             self.assertIn(what, rgb_plan_file_findings(mutated), what)
+
+    def test_scan_flags_noncompliant_caller_when_file_has_compliant_one(self) -> None:
+        sample = (
+            "static int safe_fill(const VmafxFrameImport *d, const ImportLayout *layout) {\n"
+            "    VmafxRgbPlan rgb = {0};\n"
+            "    const bool planned = vmafx_rgb_plan_init(&rgb, layout, d->bpc, d->rgb_matrix,\n"
+            "                                             d->rgb_range, d->rgb_out_range);\n"
+            "    if (!planned) {\n"
+            "        return -1;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "static int unsafe_fill(const VmafxFrameImport *d, const ImportLayout *layout) {\n"
+            "    VmafxRgbPlan rgb2 = {0};\n"
+            "    const bool planned2 = vmafx_rgb_plan_init(&rgb2, layout, d->bpc, d->rgb_matrix,\n"
+            "                                              d->rgb_range, d->rgb_out_range);\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        self.assertEqual(rgb_plan_file_findings(sample), ["missing branch on !planned2"])
+
+    def test_scan_refuses_empty_failure_branch(self) -> None:
+        empty_branch = (
+            "static int fill(const VmafxFrameImport *d, const ImportLayout *layout) {\n"
+            "    VmafxRgbPlan rgb = {0};\n"
+            "    const bool planned = vmafx_rgb_plan_init(&rgb, layout, d->bpc, d->rgb_matrix,\n"
+            "                                             d->rgb_range, d->rgb_out_range);\n"
+            "    if (!planned) {\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        self.assertIn("missing return in !planned branch", rgb_plan_file_findings(empty_branch))
+
+    def test_scan_refuses_log_only_failure_branch(self) -> None:
+        log_only_branch = (
+            "static int fill(const VmafxFrameImport *d, const ImportLayout *layout) {\n"
+            "    VmafxRgbPlan rgb = {0};\n"
+            "    const bool planned = vmafx_rgb_plan_init(&rgb, layout, d->bpc, d->rgb_matrix,\n"
+            "                                             d->rgb_range, d->rgb_out_range);\n"
+            "    if (!planned) {\n"
+            '        log_error("cannot init rgb plan");\n'
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        self.assertIn("missing return in !planned branch", rgb_plan_file_findings(log_only_branch))
+
+    def test_scan_accepts_return_in_failure_branch(self) -> None:
+        return_branch = (
+            "static int fill(const VmafxFrameImport *d, const ImportLayout *layout) {\n"
+            "    VmafxRgbPlan rgb = {0};\n"
+            "    const bool planned = vmafx_rgb_plan_init(&rgb, layout, d->bpc, d->rgb_matrix,\n"
+            "                                             d->rgb_range, d->rgb_out_range);\n"
+            "    if (!planned) {\n"
+            "        return -EINVAL;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        self.assertEqual(rgb_plan_file_findings(return_branch), [])
+
+    def test_known_gap_macro_checked_result_reported_as_unhandled(self) -> None:
+        """Known gap (HISS-20): textual scanner does not expand helper guard macros.
+
+        When a caller delegates result handling to a helper macro (or helper function)
+        instead of an explicit `if (!planned) { return ...; }` block, the textual
+        scanner flags the caller as missing an explicit branch.
+        """
+        macro_sample = (
+            "#define CHECK_PLAN(p) do { if (!(p)) return -1; } while (0)\n"
+            "static int fill(const VmafxFrameImport *d, const ImportLayout *layout) {\n"
+            "    VmafxRgbPlan rgb = {0};\n"
+            "    const bool planned = vmafx_rgb_plan_init(&rgb, layout, d->bpc, d->rgb_matrix,\n"
+            "                                             d->rgb_range, d->rgb_out_range);\n"
+            "    CHECK_PLAN(planned);\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        self.assertEqual(
+            rgb_plan_file_findings(macro_sample),
+            ["missing branch on !planned"],
+        )
 
     def test_frame_import_handles_rgb_plan_failure(self) -> None:
         text = FRAME_IMPORT.read_text(encoding="utf-8")
