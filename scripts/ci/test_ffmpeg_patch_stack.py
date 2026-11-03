@@ -3,6 +3,7 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -547,18 +548,43 @@ class RealReplay(unittest.TestCase):
     def test_interrupted_replace_recovers_from_journal(self) -> None:
         STACK.maintain(self.repo, self.output, True, False)
         config = self.repo / "build-config.env"
-        original_config = config.read_text()
-        new_config = original_config + "# journal recovery test\n"
+        original_config = config.read_bytes()
+        new_config = original_config + b"# journal recovery test\n"
         temp_config = self.repo / ".ffmpeg-refresh-build-config.env-candidate-recovery"
-        temp_config.write_text(new_config)
+        temp_config.write_bytes(new_config)
+        backup_config = self.repo / ".ffmpeg-refresh-build-config.env-original-recovery"
+        backup_config.write_bytes(original_config)
+
+        original_patch = self.patch.read_bytes()
+        new_patch = original_patch + b"\n# patch candidate\n"
+        temp_patch = self.repo / f".ffmpeg-refresh-{self.patch.name}-candidate-recovery"
+        temp_patch.write_bytes(new_patch)
+        backup_patch = self.repo / f".ffmpeg-refresh-{self.patch.name}-original-recovery"
+        backup_patch.write_bytes(original_patch)
+
+        # Simulate interrupted mid-rename: self.patch was already renamed to candidate,
+        # while config is untouched (still original_config).
+        self.patch.write_bytes(new_patch)
 
         git_dir = STACK.repo_git_dir(self.repo)
         journal = git_dir / STACK.JOURNAL_NAME
         journal_entries = [
-            {"temp": str(self.repo / "nonexistent-first"), "target": str(self.patch)},
-            {"temp": str(temp_config), "target": str(config)},
+            {
+                "target": str(self.patch),
+                "temp": str(temp_patch),
+                "backup": str(backup_patch),
+                "original_sha256": hashlib.sha256(original_patch).hexdigest(),
+                "candidate_sha256": hashlib.sha256(new_patch).hexdigest(),
+            },
+            {
+                "target": str(config),
+                "temp": str(temp_config),
+                "backup": str(backup_config),
+                "original_sha256": hashlib.sha256(original_config).hexdigest(),
+                "candidate_sha256": hashlib.sha256(new_config).hexdigest(),
+            },
         ]
-        journal.write_text(json.dumps(journal_entries))
+        STACK.write_journal_atomically(journal, journal_entries)
 
         # --check never mutates the tree; it names the journal and the recovery command.
         with self.assertRaisesRegex(ValueError, "interrupted refresh journal"):
@@ -567,7 +593,108 @@ class RealReplay(unittest.TestCase):
         STACK.recover_journal(self.repo, True)
         self.assertFalse(journal.exists())
         self.assertFalse(temp_config.exists())
-        self.assertEqual(config.read_text(), new_config)
+        self.assertFalse(backup_config.exists())
+        self.assertFalse(temp_patch.exists())
+        self.assertFalse(backup_patch.exists())
+        self.assertEqual(self.patch.read_bytes(), original_patch)
+        self.assertEqual(config.read_bytes(), original_config)
+
+    def test_target_hand_edited_after_stop_raises(self) -> None:
+        STACK.maintain(self.repo, self.output, True, False)
+        config = self.repo / "build-config.env"
+        original_config = config.read_bytes()
+        new_config = original_config + b"# candidate\n"
+        temp_config = self.repo / ".ffmpeg-refresh-build-config.env-candidate-recovery"
+        temp_config.write_bytes(new_config)
+        backup_config = self.repo / ".ffmpeg-refresh-build-config.env-original-recovery"
+        backup_config.write_bytes(original_config)
+
+        git_dir = STACK.repo_git_dir(self.repo)
+        journal = git_dir / STACK.JOURNAL_NAME
+        journal_entries = [
+            {
+                "target": str(config),
+                "temp": str(temp_config),
+                "backup": str(backup_config),
+                "original_sha256": hashlib.sha256(original_config).hexdigest(),
+                "candidate_sha256": hashlib.sha256(new_config).hexdigest(),
+            }
+        ]
+        STACK.write_journal_atomically(journal, journal_entries)
+
+        # Target hand-edited after stop
+        hand_edited = original_config + b"# manual edit\n"
+        config.write_bytes(hand_edited)
+
+        expected_msg = (
+            f"{config} changed since the interrupted refresh; "
+            f"resolve by hand, then delete {journal}"
+        )
+        with self.assertRaises(ValueError) as ctx:
+            STACK.recover_journal(self.repo, True)
+        self.assertEqual(str(ctx.exception), expected_msg)
+
+        # No file changed, journal kept
+        self.assertTrue(journal.exists())
+        self.assertEqual(config.read_bytes(), hand_edited)
+        self.assertTrue(temp_config.exists())
+        self.assertTrue(backup_config.exists())
+
+    def test_rollback_interrupted_recovers_all_originals(self) -> None:
+        file1 = self.patch
+        file2 = self.repo / "build-config.env"
+        file3 = self.repo / "ffmpeg-patches/series.txt"
+        before = {f: f.read_bytes() for f in (file1, file2, file3)}
+        before_contents = self.contents()
+
+        actual_replace = os.replace
+        calls = 0
+        fail_forward_call = 3
+        fail_rollback_call = 5
+
+        def fail_second_rollback(source: Path, target: Path) -> None:
+            if Path(target).name == STACK.JOURNAL_NAME:
+                return actual_replace(source, target)
+            nonlocal calls
+            calls += 1
+            if calls == fail_forward_call:
+                raise OSError("forward rename failed")
+            if calls == fail_rollback_call:
+                raise OSError("second rollback replace failed")
+            return actual_replace(source, target)
+
+        journal = STACK.repo_git_dir(self.repo) / STACK.JOURNAL_NAME
+        with (
+            patch.object(STACK.os, "replace", side_effect=fail_second_rollback),
+            self.assertRaisesRegex(RuntimeError, "original backups retained"),
+        ):
+            STACK.replace_files(
+                {file1: b"new1\n", file2: b"new2\n", file3: b"new3\n"},
+                self.repo,
+            )
+
+        # Rollback interrupted: journal kept, file1 still candidate, file2 rolled back
+        self.assertTrue(journal.exists())
+        self.assertEqual(file1.read_bytes(), b"new1\n")
+        self.assertEqual(file2.read_bytes(), before[file2])
+        self.assertEqual(file3.read_bytes(), before[file3])
+
+        # A later recovery restores all originals
+        STACK.recover_journal(self.repo, True)
+        self.assertFalse(journal.exists())
+        self.assertEqual(file1.read_bytes(), before[file1])
+        self.assertEqual(file2.read_bytes(), before[file2])
+        self.assertEqual(file3.read_bytes(), before[file3])
+        self.assertEqual(self.contents(), before_contents)
+
+    def test_recovery_empty_journal_removes_journal(self) -> None:
+        before = self.contents()
+        git_dir = STACK.repo_git_dir(self.repo)
+        journal = git_dir / STACK.JOURNAL_NAME
+        journal.write_text("[]", encoding="utf-8")
+        STACK.recover_journal(self.repo, True)
+        self.assertFalse(journal.exists())
+        self.assertEqual(self.contents(), before)
 
     def test_tree_hash_extra_hex_digit_reports_drift(self) -> None:
         STACK.maintain(self.repo, self.output, True, False)

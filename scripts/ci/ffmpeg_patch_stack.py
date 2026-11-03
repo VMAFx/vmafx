@@ -533,8 +533,72 @@ def write_journal_atomically(journal: Path, data: list[dict[str, str]]) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _journal_entry(
+    target: Path,
+    candidate: Path,
+    backup: Path,
+    original_bytes: bytes,
+    candidate_bytes: bytes,
+) -> dict[str, str]:
+    """Build a serialisable journal record for a single target replacement."""
+    return {
+        "target": str(target),
+        "temp": str(candidate),
+        "backup": str(backup),
+        "original_sha256": hashlib.sha256(original_bytes).hexdigest(),
+        "candidate_sha256": hashlib.sha256(candidate_bytes).hexdigest(),
+    }
+
+
+def _verify_entries(entries: list[dict[str, str]], journal: Path) -> list[tuple[Path, Path, bool]]:
+    """Verify target state and backups for all journal entries without disk mutations.
+
+    Returns a list of (target, backup, needs_restore) tuples.
+    """
+    verified: list[tuple[Path, Path, bool]] = []
+    for entry in entries:
+        target = Path(entry["target"])
+        backup = Path(entry["backup"])
+        if not target.is_file():
+            raise ValueError(
+                f"{target} changed since the interrupted refresh; "
+                f"resolve by hand, then delete {journal}"
+            )
+        target_hash = hashlib.sha256(target.read_bytes()).hexdigest()
+        orig_hash = entry["original_sha256"]
+        cand_hash = entry["candidate_sha256"]
+        if target_hash not in (orig_hash, cand_hash):
+            raise ValueError(
+                f"{target} changed since the interrupted refresh; "
+                f"resolve by hand, then delete {journal}"
+            )
+        needs_restore = target_hash == cand_hash
+        if needs_restore and not backup.is_file():
+            raise ValueError(
+                f"{target} changed since the interrupted refresh; "
+                f"resolve by hand, then delete {journal}"
+            )
+        verified.append((target, backup, needs_restore))
+    return verified
+
+
+def _restore_entries(
+    entries: list[dict[str, str]],
+    verified: list[tuple[Path, Path, bool]],
+    journal: Path,
+) -> None:
+    """Restore original files, remove residual journal temporaries, and unlink journal."""
+    for target, backup, needs_restore in verified:
+        if needs_restore:
+            backup.replace(target)
+    for entry in entries:
+        Path(entry["temp"]).unlink(missing_ok=True)
+        Path(entry["backup"]).unlink(missing_ok=True)
+    journal.unlink()
+
+
 def recover_journal(repo: Path, refresh: bool) -> None:
-    """Finish the renames of a refresh that stopped part-way, before anything else runs."""
+    """Roll back an interrupted refresh to restore originals before anything else runs."""
     try:
         git_dir = repo_git_dir(repo)
     except NotAGitCheckout:
@@ -552,12 +616,18 @@ def recover_journal(repo: Path, refresh: bool) -> None:
     entries = json.loads(journal.read_text(encoding="utf-8"))
     if not isinstance(entries, list):
         raise ValueError(f"refresh journal {journal} is not a list")
-    for entry in entries:
-        temporary, target = Path(entry["temp"]), Path(entry["target"])
-        # A missing candidate means its rename already happened before the stop.
-        if temporary.exists():
-            temporary.replace(target)
-    journal.unlink()
+    verified = _verify_entries(entries, journal)
+    _restore_entries(entries, verified, journal)
+
+
+def _stage_file(path: Path, content: bytes, role: str) -> Path:
+    """Create a temporary staged file next to path with identical permissions."""
+    handle, name = tempfile.mkstemp(prefix=f".ffmpeg-refresh-{path.name}-{role}-", dir=path.parent)
+    temporary = Path(name)
+    with os.fdopen(handle, "wb") as stream:
+        stream.write(content)
+    temporary.chmod(path.stat().st_mode)
+    return temporary
 
 
 def replace_files(updates: dict[Path, bytes], repo: Path) -> None:
@@ -570,34 +640,26 @@ def replace_files(updates: dict[Path, bytes], repo: Path) -> None:
     preserve_backups = False
     journal = repo_git_dir(repo) / JOURNAL_NAME
 
-    def stage(path: Path, content: bytes, role: str) -> Path:
-        handle, name = tempfile.mkstemp(
-            prefix=f".ffmpeg-refresh-{path.name}-{role}-", dir=path.parent
-        )
-        temporary = Path(name)
-        temporaries.append(temporary)
-        with os.fdopen(handle, "wb") as stream:
-            stream.write(content)
-        temporary.chmod(path.stat().st_mode)
-        return temporary
-
     try:
         for path, content in updates.items():
             if before[path] == content:
                 continue
             if path.is_symlink():
                 raise ValueError(f"refusing to replace a symlink: {path}")
-            staged[path] = stage(path, content, "candidate")
-            backups[path] = stage(path, before[path], "original")
+            staged[path] = _stage_file(path, content, "candidate")
+            temporaries.append(staged[path])
+            backups[path] = _stage_file(path, before[path], "original")
+            temporaries.append(backups[path])
         if staged:
-            journal_data = [{"temp": str(staged[p]), "target": str(p)} for p in staged]
+            journal_data = [
+                _journal_entry(p, staged[p], backups[p], before[p], updates[p]) for p in staged
+            ]
             write_journal_atomically(journal, journal_data)
         for path, temporary in staged.items():
             temporary.replace(path)
             written.append(path)
         journal.unlink(missing_ok=True)
     except BaseException as error:
-        journal.unlink(missing_ok=True)
         # Roll back even when Ctrl-C interrupts a multi-file replacement.
         # Keep originals if recovery itself is interrupted a second time.
         preserve_backups = True
@@ -611,6 +673,7 @@ def replace_files(updates: dict[Path, bytes], repo: Path) -> None:
             raise RuntimeError(
                 "refresh rollback failed; original backups retained: " + "; ".join(failures)
             ) from error
+        journal.unlink(missing_ok=True)
         preserve_backups = False
         raise
     finally:
