@@ -39,7 +39,14 @@ pre-commit/pre-push and required Pre-Commit CI. Poison only fresh temporary
 caller paths; never export real repository's Git paths into test.
 
 Level Zero fixture setup and its checker subprocess use same Git isolation.
-Preserve real linked-worktree hook regression: Git itself exports `GIT_DIR`,
-so clean parent shell insufficient. Old-command control may mutate
-only disposable caller; fixed helper must preserve every shared Git and
+Preserve real linked-worktree hook regression: Git exports `GIT_DIR`,
+so clean parent shell insufficient. Old-command control mutates
+disposable caller only; fixed helper preserves every shared Git and
 linked-worktree file, including both indexes and staged/unstaged work.
+
+Windows checkout (`* text=auto`) -> CRLF in working-tree text files.
+`ffmpeg_patch_stack.py` `read_repo_text_bytes` normalises CRLF to LF on
+compare and copy of repository text (mirror targets, `build-config.env`,
+`ffmpeg-patches/src/*`). Lone CR = drift. Journal hashes keep raw bytes:
+physical file state across atomic swap. Shell scripts, `build-config.env`:
+`eol=lf` in `.gitattributes`.
