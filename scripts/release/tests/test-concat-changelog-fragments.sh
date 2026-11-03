@@ -72,9 +72,10 @@ fi
 TMPDIR_D2="$(mktemp -d)"
 TMPDIR_HAPPY=""
 TMPDIR_UNKNOWN=""
+TMPDIR_LINT=""
 
 cleanup() {
-  rm -rf "${TMPDIR_D2:-}" "${TMPDIR_HAPPY:-}" "${TMPDIR_UNKNOWN:-}"
+  rm -rf "${TMPDIR_D2:-}" "${TMPDIR_HAPPY:-}" "${TMPDIR_UNKNOWN:-}" "${TMPDIR_LINT:-}"
 }
 trap cleanup EXIT
 
@@ -221,6 +222,70 @@ else
   check "an unknown changelog.d subdirectory fails the run" pass
   check "the failure lists the fragments that would be lost" pass
 fi
+
+# ---------------------------------------------------------------------------
+# --lint: verify bare paragraphs are rejected and list items accepted.
+# ---------------------------------------------------------------------------
+TMPDIR_LINT="$(mktemp -d)"
+
+mkdir -p "$TMPDIR_LINT/changelog.d/fixed"
+patched_lint="$TMPDIR_LINT/concat-patched.sh"
+sed "s|REPO_ROOT=.*|REPO_ROOT=\"$TMPDIR_LINT\"|" "$CONCAT_SCRIPT" >"$patched_lint"
+
+# (a) planted bare-paragraph fragment -> --lint exits non-zero and stderr names the file
+printf 'A bare paragraph without a list item marker.\n' >"$TMPDIR_LINT/changelog.d/fixed/bare.md"
+lint_bare_rc=0
+(
+  cd "$TMPDIR_LINT"
+  bash "$patched_lint" --lint >/dev/null 2>"$TMPDIR_LINT/err_bare.txt"
+) || lint_bare_rc=$?
+
+if [[ "$lint_bare_rc" -eq 0 ]]; then
+  check "--lint fails on a planted bare-paragraph fragment" fail
+elif ! grep -q "bare.md" "$TMPDIR_LINT/err_bare.txt"; then
+  check "the failure names the bare-paragraph fragment" fail
+elif ! grep -q 'does not start with a list item ("- ")' "$TMPDIR_LINT/err_bare.txt"; then
+  check "the failure explains that the fragment must start with a list item" fail
+else
+  check "--lint fails on a planted bare-paragraph fragment and names the file" pass
+fi
+rm -f "$TMPDIR_LINT/changelog.d/fixed/bare.md"
+
+# (b) fragment starting with an HTML comment block then - **x.** y -> --lint exits 0
+cat >"$TMPDIR_LINT/changelog.d/fixed/comment.md" <<'EOF'
+<!--
+Multi-line comment block
+explaining background.
+-->
+- **x.** y
+EOF
+lint_comment_rc=0
+(
+  cd "$TMPDIR_LINT"
+  bash "$patched_lint" --lint >/dev/null 2>"$TMPDIR_LINT/err_comment.txt"
+) || lint_comment_rc=$?
+
+if [[ "$lint_comment_rc" -eq 0 ]]; then
+  check "--lint accepts a fragment starting with an HTML comment block followed by a list item" pass
+else
+  check "--lint accepts a fragment starting with an HTML comment block followed by a list item" fail
+fi
+rm -f "$TMPDIR_LINT/changelog.d/fixed/comment.md"
+
+# (c) a - fragment -> exit 0
+printf -- '- a standard list item fragment\n' >"$TMPDIR_LINT/changelog.d/fixed/bullet.md"
+lint_bullet_rc=0
+(
+  cd "$TMPDIR_LINT"
+  bash "$patched_lint" --lint >/dev/null 2>"$TMPDIR_LINT/err_bullet.txt"
+) || lint_bullet_rc=$?
+
+if [[ "$lint_bullet_rc" -eq 0 ]]; then
+  check "--lint accepts a fragment starting with a list item" pass
+else
+  check "--lint accepts a fragment starting with a list item" fail
+fi
+rm -f "$TMPDIR_LINT/changelog.d/fixed/bullet.md"
 
 # ---------------------------------------------------------------------------
 # Summary

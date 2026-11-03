@@ -1,0 +1,1 @@
+- **`concat-changelog-fragments.sh --lint` refuses fragments that do not start with a list item.** Each fragment's first non-blank line outside HTML comments must start with `- `, preventing bare paragraphs from rendering into CHANGELOG.md.
