@@ -1,0 +1,1 @@
+- **FFmpeg guide:** state that the stock `libvmaf_cuda` filter copies only the first plane of a CUDA frame and refuses 10-bit, 12-bit and 4:2:2 CUDA frames until the patch series carries the FFmpeg fix, and qualify the `vmafx` fallback for supported CUDA layouts, models, and exact twins (issue 3274).
