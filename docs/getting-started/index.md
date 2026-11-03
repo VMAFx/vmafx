@@ -17,19 +17,19 @@ available today, and the GPU backends that route ships.
 | --- | --- | --- | --- |
 | Container | `docker run --rm ghcr.io/vmafx/vmafx:<tag> --version` | available | CUDA, HIP, SYCL |
 | Release download | download `vmaf`, `libvmaf.so.3`, `libvmafx.so.1` (glibc 2.41 or later) | available | none |
-| Homebrew | `brew install Vidiko/tap/vmafx` | after the 0.1.0 tag | none |
+| Homebrew | `brew install Vidiko/tap/vmafx` | after the 0.1.0 tag, once the tap pull request merges | none |
 | conda-forge | `conda install -c conda-forge vmafx` | after 0.1.0, pending acceptance | none |
 | winget | — | not offered | — |
 | APT / RPM | `apt install vmafx` / `dnf install vmafx` | planned 0.2.0 ([#3115](https://github.com/VMAFx/vmafx/issues/3115)) | see manifest |
-| Source build | `meson setup build core && ninja -C build` | available | CUDA, HIP, SYCL |
+| Source build | `meson setup build core && ninja -C build` | available | CPU (CUDA, HIP, SYCL opt-in) |
 
 - **Container:** Available via multi-arch CPU and dedicated GPU container images (`ghcr.io/vmafx/vmafx:<tag>`, `<tag>-cuda13`, `<tag>-rocm10`, `<tag>-oneapi2026`) built by [`.github/workflows/docker-publish-production.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/docker-publish-production.yml).
 - **Release download:** Available via artifact `native-linux-x86_64` in [`packaging/manifest.toml`](https://github.com/VMAFx/vmafx/blob/master/packaging/manifest.toml), built by [`.github/workflows/supply-chain.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/supply-chain.yml) (`Build Linux artifacts`). Backends: CPU only.
-- **Homebrew:** Formula in `Vidiko/homebrew-tap` published after the 0.1.0 tag (channel `homebrew`, tracking [#2319](https://github.com/VMAFx/vmafx/issues/2319), [ADR-3387](../adr/3387-homebrew-tap-publish.md)). Builds from source with CPU backend.
+- **Homebrew:** Formula in `Vidiko/homebrew-tap` published after the 0.1.0 tag and available once its pull request merges (channel `homebrew`, tracking [#2319](https://github.com/VMAFx/vmafx/issues/2319), [ADR-3387](../adr/3387-homebrew-tap-publish.md)). Builds from source with CPU backend.
 - **conda-forge:** Recipe submitted after the 0.1.0 tag (channel `conda-forge`, tracking [#2319](https://github.com/VMAFx/vmafx/issues/2319)). Builds from source with CPU backend.
 - **winget:** Not offered on Linux (Windows package manager).
 - **APT / RPM:** Native distribution packages planned for 0.2.0 (tracking [#3115](https://github.com/VMAFx/vmafx/issues/3115)).
-- **Source build:** Available via source archive (`artifacts.source`) or Git repository. Configurable with `-Denable_cuda=true`, `-Denable_hip=true`, and `-Denable_sycl=true`.
+- **Source build:** Available via source archive (`artifacts.source`) or Git repository. Default build is CPU-only; configurable with `-Denable_cuda=true`, `-Denable_hip=true -Denable_hipcc=true`, and `-Denable_sycl=true` (see [backends](../backends/index.md)).
 
 ### Linux arm64
 
@@ -37,7 +37,7 @@ available today, and the GPU backends that route ships.
 | --- | --- | --- | --- |
 | Container | `docker run --rm ghcr.io/vmafx/vmafx:<tag> --version` | available | none |
 | Release download | — | not offered | — |
-| Homebrew | `brew install Vidiko/tap/vmafx` | after the 0.1.0 tag | none |
+| Homebrew | `brew install Vidiko/tap/vmafx` | after the 0.1.0 tag, once the tap pull request merges | none |
 | conda-forge | `conda install -c conda-forge vmafx` | after 0.1.0, pending acceptance | none |
 | winget | — | not offered | — |
 | APT / RPM | `apt install vmafx` / `dnf install vmafx` | planned 0.2.0 ([#3115](https://github.com/VMAFx/vmafx/issues/3115)) | see manifest |
@@ -45,7 +45,7 @@ available today, and the GPU backends that route ships.
 
 - **Container:** Available via multi-arch CPU container image (`ghcr.io/vmafx/vmafx:<tag>`, platform `linux/arm64`) built by [`.github/workflows/docker-publish-production.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/docker-publish-production.yml). Backends: CPU only.
 - **Release download:** Not offered (no native Linux arm64 binary artifact in [`packaging/manifest.toml`](https://github.com/VMAFx/vmafx/blob/master/packaging/manifest.toml)).
-- **Homebrew:** Formula in `Vidiko/homebrew-tap` published after the 0.1.0 tag (channel `homebrew`, tracking [#2319](https://github.com/VMAFx/vmafx/issues/2319)). Builds from source with CPU backend.
+- **Homebrew:** Formula in `Vidiko/homebrew-tap` published after the 0.1.0 tag and available once its pull request merges (channel `homebrew`, tracking [#2319](https://github.com/VMAFx/vmafx/issues/2319), [ADR-3387](../adr/3387-homebrew-tap-publish.md)). Builds from source with CPU backend.
 - **conda-forge:** Recipe submitted after the 0.1.0 tag (channel `conda-forge`, tracking [#2319](https://github.com/VMAFx/vmafx/issues/2319)). Builds from source with CPU backend.
 - **winget:** Not offered on Linux.
 - **APT / RPM:** Native distribution packages planned for 0.2.0 (tracking [#3115](https://github.com/VMAFx/vmafx/issues/3115)).
@@ -55,17 +55,17 @@ available today, and the GPU backends that route ships.
 
 | Route | Command | Status | GPU backends |
 | --- | --- | --- | --- |
-| Container | — | not offered | — |
-| Release download | download `vmafx-tester-macos-arm64-v<version>.tar.xz` | available | Metal |
-| Homebrew | `brew install Vidiko/tap/vmafx` | after the 0.1.0 tag | none |
+| Container | `docker run --rm ghcr.io/vmafx/vmafx:<tag> --version` | available (Docker Desktop) | none |
+| Tester bundle | see [tester guide](../usage/tester-image.md#a-native-macos-bundle-apple-silicon) | tester prerelease (`tester-*`) | Metal |
+| Homebrew | `brew install Vidiko/tap/vmafx` | after the 0.1.0 tag, once the tap pull request merges | none |
 | conda-forge | `conda install -c conda-forge vmafx` | after 0.1.0, pending acceptance | none |
 | winget | — | not offered | — |
 | APT / RPM | — | not offered | — |
 | Source build | `meson setup build core && ninja -C build` | available | Metal |
 
-- **Container:** Not offered (native macOS containers are not supported).
-- **Release download:** Available via tester bundle artifact `tester-macos-arm64` in [`packaging/manifest.toml`](https://github.com/VMAFx/vmafx/blob/master/packaging/manifest.toml), built by [`.github/workflows/macos-tester-bundle.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/macos-tester-bundle.yml) (`Build and test the bundle (macOS arm64)`). Includes Metal GPU backend.
-- **Homebrew:** Formula in `Vidiko/homebrew-tap` published after the 0.1.0 tag (channel `homebrew`, tracking [#2319](https://github.com/VMAFx/vmafx/issues/2319), [ADR-3387](../adr/3387-homebrew-tap-publish.md)). Builds from source with CPU backend.
+- **Container:** Available via Docker Desktop running the Linux multi-arch container image (`ghcr.io/vmafx/vmafx:<tag>`, platform `linux/arm64`). macOS does not support GPU passthrough to Linux containers; runs with CPU backend only.
+- **Tester bundle:** Available via tester bundle artifact `tester-macos-arm64` in [`packaging/manifest.toml`](https://github.com/VMAFx/vmafx/blob/master/packaging/manifest.toml), built by [`.github/workflows/macos-tester-bundle.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/macos-tester-bundle.yml) (`Build and test the bundle (macOS arm64)`). These are separate tester prereleases (`tester-*` tags) created after manual dispatch with `publish: true`, not product releases. The bundle runs tests and produces a report rather than installing the CLI; a maintainer must provide `<TESTER-TAG>` and `<VERSION>` (see [tester guide](../usage/tester-image.md#a-native-macos-bundle-apple-silicon)). Includes Metal GPU backend.
+- **Homebrew:** Formula in `Vidiko/homebrew-tap` published after the 0.1.0 tag and available once its pull request merges (channel `homebrew`, tracking [#2319](https://github.com/VMAFx/vmafx/issues/2319), [ADR-3387](../adr/3387-homebrew-tap-publish.md)). Builds from source with CPU backend.
 - **conda-forge:** Recipe submitted after the 0.1.0 tag (channel `conda-forge`, tracking [#2319](https://github.com/VMAFx/vmafx/issues/2319)). Builds from source with CPU backend.
 - **winget / APT / RPM:** Not offered on macOS.
 - **Source build:** Available via source archive (`artifacts.source`) or Git repository. Metal GPU backend is automatically enabled on Apple silicon.
@@ -74,17 +74,17 @@ available today, and the GPU backends that route ships.
 
 | Route | Command | Status | GPU backends |
 | --- | --- | --- | --- |
-| Container | — | not offered | — |
+| Container | `docker run --rm ghcr.io/vmafx/vmafx:<tag> --version` | available (Docker Desktop) | none |
 | Release download | — | not offered | — |
-| Homebrew | `brew install Vidiko/tap/vmafx` | after the 0.1.0 tag | none |
+| Homebrew | `brew install Vidiko/tap/vmafx` | after the 0.1.0 tag, once the tap pull request merges | none |
 | conda-forge | `conda install -c conda-forge vmafx` | after 0.1.0, pending acceptance | none |
 | winget | — | not offered | — |
 | APT / RPM | — | not offered | — |
 | Source build | `meson setup build core && ninja -C build` | available | none |
 
-- **Container:** Not offered (native macOS containers are not supported).
+- **Container:** Available via Docker Desktop running the Linux multi-arch container image (`ghcr.io/vmafx/vmafx:<tag>`, platform `linux/amd64`). macOS does not support GPU passthrough to Linux containers; runs with CPU backend only.
 - **Release download:** Not offered (no Intel macOS binary artifact in [`packaging/manifest.toml`](https://github.com/VMAFx/vmafx/blob/master/packaging/manifest.toml)).
-- **Homebrew:** Formula in `Vidiko/homebrew-tap` published after the 0.1.0 tag (channel `homebrew`, tracking [#2319](https://github.com/VMAFx/vmafx/issues/2319), [ADR-3387](../adr/3387-homebrew-tap-publish.md)). Builds from source with CPU backend.
+- **Homebrew:** Formula in `Vidiko/homebrew-tap` published after the 0.1.0 tag and available once its pull request merges (channel `homebrew`, tracking [#2319](https://github.com/VMAFx/vmafx/issues/2319), [ADR-3387](../adr/3387-homebrew-tap-publish.md)). Builds from source with CPU backend.
 - **conda-forge:** Recipe submitted after the 0.1.0 tag (channel `conda-forge`, tracking [#2319](https://github.com/VMAFx/vmafx/issues/2319)). Builds from source with CPU backend.
 - **winget / APT / RPM:** Not offered on macOS.
 - **Source build:** Available via source archive (`artifacts.source`) or Git repository with CPU backend (Metal requires Apple silicon).
@@ -93,20 +93,37 @@ available today, and the GPU backends that route ships.
 
 | Route | Command | Status | GPU backends |
 | --- | --- | --- | --- |
-| Container | — | not offered | — |
-| Release download | download `vmafx-tester-windows-x64-v<version>.zip` (or the `-cuda` / `-sycl` bundle) | available | CUDA, SYCL |
+| Container | `docker run --rm ghcr.io/vmafx/vmafx:<tag> --version` | available (Docker Desktop) | CPU (CUDA via WSL2) |
+| Tester bundle | see [tester guide](../usage/tester-image.md#f-native-windows-zip-x64-or-arm64) | tester prerelease (`tester-windows-*`) | CUDA, SYCL |
 | Homebrew | — | not offered | — |
 | conda-forge | — | not offered | — |
 | winget | `winget install VMAFx.VMAFX` | after 0.1.0, pending acceptance | none |
 | APT / RPM | — | not offered | — |
-| Source build | `meson setup build core && ninja -C build` | available | CUDA, SYCL |
+| Source build | `set CFLAGS=/experimental:c11atomics && meson setup build core && ninja -C build` | available | CPU (CUDA, SYCL opt-in) |
 
-- **Container:** Not offered (no native Windows container images published).
-- **Release download:** Available via tester bundle artifacts `tester-windows-x64` (CPU), `tester-windows-x64-cuda` (CUDA), and `tester-windows-x64-sycl` (SYCL) in [`packaging/manifest.toml`](https://github.com/VMAFx/vmafx/blob/master/packaging/manifest.toml), built by [`.github/workflows/windows-tester-bundle.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/windows-tester-bundle.yml).
+- **Container:** Available via Docker Desktop running the Linux multi-arch container image (`ghcr.io/vmafx/vmafx:<tag>`, platform `linux/amd64`). Runs with CPU backend by default; GPU access on Windows is available only for NVIDIA GPUs via Docker Desktop's WSL2 backend with `--gpus all` (see [Docker](../usage/docker.md)).
+- **Tester bundle:** Available via tester bundle artifacts `tester-windows-x64` (CPU), `tester-windows-x64-cuda` (CUDA), and `tester-windows-x64-sycl` (SYCL) in [`packaging/manifest.toml`](https://github.com/VMAFx/vmafx/blob/master/packaging/manifest.toml), built by [`.github/workflows/windows-tester-bundle.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/windows-tester-bundle.yml). These are separate tester prereleases (`tester-windows-*` tags) created after manual dispatch with `publish: true`, not product releases. The bundles run tests and produce a report rather than installing the CLI; a maintainer must provide `<TESTER-TAG>` and `<VERSION>` (see [tester guide](../usage/tester-image.md#f-native-windows-zip-x64-or-arm64)). Includes CPU, CUDA, and SYCL variants.
 - **Homebrew / APT / RPM:** Not offered on Windows.
 - **conda-forge:** Not offered on Windows: the generated recipe ([`scripts/release/distribution.py`](https://github.com/VMAFx/vmafx/blob/master/scripts/release/distribution.py)) builds with a POSIX shell script.
 - **winget:** Manifests generated for package `VMAFx.VMAFX` carrying artifact `tester-windows-x64` (CPU backend), submitted after the 0.1.0 tag (channel `winget`, tracking [#2319](https://github.com/VMAFx/vmafx/issues/2319)).
-- **Source build:** Available via source archive (`artifacts.source`) or Git repository. Configurable for CPU, CUDA, and SYCL backends.
+- **Source build:** Available via source archive (`artifacts.source`) or Git repository. Default build is CPU-only; MSVC requires `set CFLAGS=/experimental:c11atomics` and `set CXXFLAGS=/experimental:c11atomics` for C11 atomics (see [Windows](install/windows.md)). Configurable for CUDA (`-Denable_cuda=true`) and SYCL (`-Denable_sycl=true`) backends.
+
+### Windows arm64
+
+| Route | Command | Status | GPU backends |
+| --- | --- | --- | --- |
+| Container | `docker run --rm ghcr.io/vmafx/vmafx:<tag> --version` | available (Docker Desktop) | none |
+| Tester bundle | see [tester guide](../usage/tester-image.md#f-native-windows-zip-x64-or-arm64) | tester prerelease (`tester-windows-*`) | none |
+| Homebrew | — | not offered | — |
+| conda-forge | — | not offered | — |
+| winget | — | not offered | — |
+| APT / RPM | — | not offered | — |
+| Source build | `set CFLAGS=/experimental:c11atomics && meson setup build core && ninja -C build` | available | none |
+
+- **Container:** Available via Docker Desktop running multi-arch Linux container image (`ghcr.io/vmafx/vmafx:<tag>`, platform `linux/arm64`). CPU only.
+- **Tester bundle:** Available via tester bundle artifact `tester-windows-arm64` in [`packaging/manifest.toml`](https://github.com/VMAFx/vmafx/blob/master/packaging/manifest.toml), built by [`.github/workflows/windows-tester-bundle.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/windows-tester-bundle.yml) (`Build and test the zip (Windows arm64)`). These are separate tester prereleases (`tester-windows-*` tags) created after manual dispatch with `publish: true`, not product releases. The bundle runs tests and produces a report rather than installing the CLI; a maintainer must provide `<TESTER-TAG>` and `<VERSION>` (see [tester guide](../usage/tester-image.md#f-native-windows-zip-x64-or-arm64)). CPU backend only.
+- **Homebrew / conda-forge / winget / APT / RPM:** Not offered on Windows arm64.
+- **Source build:** Available via source archive (`artifacts.source`) or Git repository. MSVC requires `set CFLAGS=/experimental:c11atomics` and `set CXXFLAGS=/experimental:c11atomics` for C11 atomics (see [Native MSVC on Windows ARM64](building-on-windows.md#native-msvc-on-windows-arm64)). CPU backend only (NEON SIMD).
 
 Each release is listed on the
 [releases page](https://github.com/VMAFx/vmafx/releases). Until `v1.0.0`, the
@@ -195,6 +212,10 @@ A source build gives you the GPU backends, the tests and the companion tools.
       -Denable_cuda=false -Denable_sycl=false -Denable_hip=false \
       -Denable_metal=disabled -Denable_dnn=disabled
     ```
+
+    On Windows with MSVC, set `CFLAGS` and `CXXFLAGS` before configuring so
+    MSVC compiles C11 atomics (`set CFLAGS=/experimental:c11atomics` and
+    `set CXXFLAGS=/experimental:c11atomics`, or follow [Windows](install/windows.md)).
 
 3. Compile and run the unit tests:
 

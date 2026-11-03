@@ -6,7 +6,8 @@ build includes the Metal GPU backend automatically
 
 ## Homebrew (after 0.1.0)
 
-A Homebrew formula in the Vidiko tap is published after the 0.1.0 tag
+After the 0.1.0 release, the Homebrew formula in the Vidiko tap is available
+once the generated pull request merges into the tap
 (tracking [#2319](https://github.com/VMAFx/vmafx/issues/2319),
 [ADR-3387](../../adr/3387-homebrew-tap-publish.md)):
 
@@ -15,8 +16,10 @@ brew install Vidiko/tap/vmafx
 ```
 
 This formula builds the CPU version of `vmaf` from the release source archive.
-For Metal GPU acceleration on Apple silicon, build from source as below or use
-the [native macOS tester bundle](../../usage/tester-image.md).
+For Metal GPU acceleration on Apple silicon, build from source as below. To test
+Metal performance without building, use the
+[native macOS tester bundle](../../usage/tester-image.md) (runs tests and
+produces a report; does not install the CLI).
 
 ## Setup script
 
@@ -64,4 +67,5 @@ Metal frameworks are present. The binary is `build/tools/vmaf`; select Metal at
 run time with `--backend metal`.
 
 To test VMAFx on a Mac without building it, use the
-[native macOS tester bundle](../../usage/tester-image.md).
+[native macOS tester bundle](../../usage/tester-image.md) (runs tests and
+produces a report; does not install the CLI).
