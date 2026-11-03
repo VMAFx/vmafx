@@ -8,7 +8,6 @@ from __future__ import annotations
 import io
 import os
 import shutil
-import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -18,6 +17,13 @@ from typing import Any
 from unittest.mock import patch
 
 from scripts.ci import check_rust_crate_package as check
+from scripts.lib.safe_subprocess import (
+    CommandFailed,
+    CommandResult,
+    CommandTimedOut,
+    CommandValidationError,
+    TextCommandResult,
+)
 
 
 class ZeroReader(io.RawIOBase):
@@ -76,14 +82,14 @@ class PackageChecks(unittest.TestCase):
         env_patcher.start()
         self.addCleanup(env_patcher.stop)
 
-    def runner(self, command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+    def runner(self, command: list[str], **kwargs: Any) -> TextCommandResult:
         cwd, env = kwargs["cwd"], kwargs["env"]
         self.calls.append((command, cwd, env))
         if Path(command[0]).name.split(".")[0] == "rustc" and command[1:3] == [
             "--print",
             "sysroot",
         ]:
-            return subprocess.CompletedProcess(command, 0, stdout=str(self.root / "rust"))
+            return TextCommandResult(tuple(command), 0, stdout=str(self.root / "rust"), stderr="")
         if command[1] == "package":
             self.package_fixtures(Path(env["CARGO_TARGET_DIR"]) / "package")
         elif command[1] == "doc":
@@ -97,8 +103,11 @@ class PackageChecks(unittest.TestCase):
                 and not (cwd / "include/libvmaf/libvmaf.h").exists()
             )
             if cwd.name == f"{self.fail_docs}-0.1.0" or missing:
-                raise subprocess.CalledProcessError(101, command, stderr="planted doc failure")
-        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+                result = TextCommandResult(
+                    tuple(command), 101, stdout="", stderr="planted doc failure"
+                )
+                raise CommandFailed(result)
+        return TextCommandResult(tuple(command), 0, stdout="", stderr="")
 
     def package_fixtures(self, package_dir: Path) -> None:
         for name in check.CRATES:
@@ -142,12 +151,57 @@ class PackageChecks(unittest.TestCase):
             check.check_packages(self.root, self.runner)
 
     def test_package_failure_is_named_and_refused(self) -> None:
-        def runner(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        def runner(command: list[str], **kwargs: Any) -> TextCommandResult:
             if command[1] == "package":
-                raise subprocess.CalledProcessError(101, command, stderr="planted package failure")
+                result = TextCommandResult(
+                    tuple(command), 101, stdout="", stderr="planted package failure"
+                )
+                raise CommandFailed(result)
             return self.runner(command, **kwargs)
 
         with self.assertRaisesRegex(check.PackageError, "cargo package failed.*planted"):
+            check.check_packages(self.root, runner)
+
+    def test_command_timed_out_is_named_and_refused(self) -> None:
+        def runner(command: list[str], **kwargs: Any) -> TextCommandResult:
+            if command[1] == "package":
+                raise CommandTimedOut(tuple(command), 600.0, stdout="", stderr="")
+            return self.runner(command, **kwargs)
+
+        with self.assertRaisesRegex(check.PackageError, "cargo package failed.*timed out"):
+            check.check_packages(self.root, runner)
+
+    def test_command_validation_error_is_named_and_refused(self) -> None:
+        def runner(command: list[str], **kwargs: Any) -> TextCommandResult:
+            if command[1] == "package":
+                raise CommandValidationError("invalid argument")
+            return self.runner(command, **kwargs)
+
+        with self.assertRaisesRegex(check.PackageError, "cargo package failed.*invalid argument"):
+            check.check_packages(self.root, runner)
+
+    def test_command_result_binary_output_is_decoded(self) -> None:
+        def runner(command: list[str], **kwargs: Any) -> CommandResult:
+            if Path(command[0]).name.split(".")[0] == "rustc":
+                return CommandResult(
+                    tuple(command), 0, stdout=str(self.root / "rust").encode(), stderr=b""
+                )
+            return self.runner(command, **kwargs)
+
+        check.check_packages(self.root, runner)
+
+    def test_command_failed_binary_streams_are_decoded(self) -> None:
+        def runner(command: list[str], **kwargs: Any) -> CommandResult:
+            if command[1] == "package":
+                result = CommandResult(
+                    tuple(command), 101, stdout=b"", stderr=b"planted binary failure"
+                )
+                raise CommandFailed(result)
+            return self.runner(command, **kwargs)
+
+        with self.assertRaisesRegex(
+            check.PackageError, "cargo package failed.*planted binary failure"
+        ):
             check.check_packages(self.root, runner)
 
     def test_missing_artifact_is_refused(self) -> None:

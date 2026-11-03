@@ -9,7 +9,6 @@ import argparse
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tarfile
 import tempfile
@@ -18,13 +17,24 @@ from pathlib import Path, PurePosixPath
 from typing import IO
 
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    CommandFailed,
+    CommandResult,
+    CommandTimedOut,
+    CommandValidationError,
+)
+from scripts.lib.safe_subprocess import run as safe_run  # noqa: E402
+
 CRATES = ("vmafx-sys", "vmafx")
 MAX_CRATE_BYTES = 10 * 1024 * 1024
 MAX_UNCOMPRESSED_CRATE_BYTES = 64 * 1024 * 1024
 MAX_CRATE_MEMBERS = 2048
 CHUNK_BYTES = 64 * 1024
 DOC_HEADERS = ("libvmaf.h", "feature.h", "model.h", "picture.h", "macros.h")
-Runner = Callable[..., subprocess.CompletedProcess[str]]
+Runner = Callable[..., CommandResult]
 
 
 class PackageError(Exception):
@@ -52,13 +62,30 @@ def run_command(
     """Run bounded commands and preserve their diagnostics under a named failure."""
     try:
         result = runner(
-            command, cwd=cwd, env=env, check=True, capture_output=True, text=True, timeout=600
+            command,
+            allowed_executables=(command[0],),
+            cwd=cwd,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout_seconds=600,
         )
-    except subprocess.CalledProcessError as error:
-        raise PackageError(f"{stage}: {error.stdout or ''}{error.stderr or ''}") from error
-    except (OSError, subprocess.TimeoutExpired) as error:
+    except CommandFailed as error:
+        stdout = (
+            error.result.stdout
+            if isinstance(error.result.stdout, str)
+            else error.result.stdout.decode(errors="replace")
+        )
+        stderr = (
+            error.result.stderr
+            if isinstance(error.result.stderr, str)
+            else error.result.stderr.decode(errors="replace")
+        )
+        raise PackageError(f"{stage}: {stdout or ''}{stderr or ''}") from error
+    except (OSError, CommandTimedOut, CommandValidationError) as error:
         raise PackageError(f"{stage}: {error}") from error
-    return result.stdout
+    return result.stdout if isinstance(result.stdout, str) else result.stdout.decode()
 
 
 def resolve_executable(name: str) -> Path:
@@ -198,7 +225,7 @@ def packaged_crate(package_dir: Path, name: str) -> Path:
     return archive
 
 
-def check_packages(root: Path = ROOT, runner: Runner = subprocess.run) -> None:
+def check_packages(root: Path = ROOT, runner: Runner = safe_run) -> None:
     """Package both unpublished crates together, then document their extracted contents."""
     with tempfile.TemporaryDirectory(prefix="vmafx-crate-package-") as directory:
         temporary = Path(directory)
