@@ -7,9 +7,11 @@ The unwind helpers of core/src/feature/metal/*.mm release a failed init in
 reverse order. The lifecycle and the context are released only inside an
 ``if (s->ctx != nullptr)`` block, so a failed vmaf_metal_context_new() never
 reaches the release calls, and the helper returns the error it was given.
-Every device resource (pipelines, kernel buffers, release/free helpers) is
-released before that guard, and every pipeline handed back to ARC is set to
-nullptr; only host-memory helpers may run after the context is gone.
+Device resource releases before the guard must precede context destruction,
+no device releases may follow the guard, and every bridged transfer in an
+unwind helper or per-file release/free helper must be nulled.
+The check verifies ordering and nulling only; it does not claim detection
+of an omitted release.
 The check is device-free and runs on every host.
 """
 
@@ -41,11 +43,26 @@ RELEASES = ("vmaf_metal_kernel_lifecycle_close(", "vmaf_metal_context_destroy(")
 RESOURCE = re.compile(
     r"__bridge_transfer|vmaf_metal_kernel_buffer_free\(|\b\w*(?:release|free)_(?!host_)\w+\(s\)"
 )
-BRIDGED = re.compile(r"__bridge_transfer [^)]*\)s->(\w+);\s*s->(\w+)\s*=\s*nullptr;")
+RELEASE_HELPER = re.compile(
+    r"^(?:static\s+)?(?:\w+\s*\*?\s*)\b(\w*(?:release|free)_(?!host_)\w+)\s*\([^)]*\)\n\{\n(.*?)^\}\n",
+    re.M | re.S,
+)
+BRIDGED = re.compile(
+    r"__bridge_transfer [^)]*\)\s*\(?([*a-zA-Z0-9_>\[\]-]+)\)?;\s*([*a-zA-Z0-9_>\[\]-]+)\s*=\s*nullptr;"
+)
+
+
+def transfer_problems(name: str, body: str) -> list[str]:
+    """Return a problem if any __bridge_transfer is not followed by nulling the field."""
+    transfers = body.count("__bridge_transfer")
+    nulled = [m for m in BRIDGED.finditer(body) if m.group(1) == m.group(2)]
+    if len(nulled) != transfers:
+        return [f"{name}: a transferred pipeline is not set to nullptr"]
+    return []
 
 
 def resource_problems(name: str, body: str) -> list[str]:
-    """Return resource releases that follow the guard or leave a dangling pipeline."""
+    """Return ordering violations around the s->ctx guard or dangling bridged transfers."""
     problems: list[str] = []
     guard = GUARD.search(body)
     before, after = (body[: guard.start()], body[guard.end() :]) if guard else (body, "")
@@ -53,10 +70,17 @@ def resource_problems(name: str, body: str) -> list[str]:
         problems.append(f"{name}: releases no resource before the s->ctx guard")
     if RESOURCE.search(after):
         problems.append(f"{name}: releases a resource after the context is destroyed")
-    transfers = body.count("__bridge_transfer")
-    nulled = [m for m in BRIDGED.finditer(body) if m.group(1) == m.group(2)]
-    if len(nulled) != transfers:
-        problems.append(f"{name}: a transferred pipeline is not set to nullptr")
+    problems += transfer_problems(name, body)
+    return problems
+
+
+def release_problems(text: str, label: str) -> list[str]:
+    """Return nulling problems for release/free helpers in the file text."""
+    problems: list[str] = []
+    for m in RELEASE_HELPER.finditer(text):
+        fn_name, body = m.group(1), m.group(2)
+        if "__bridge_transfer" in body:
+            problems += transfer_problems(f"{label}:{fn_name}", body)
     return problems
 
 
@@ -77,11 +101,12 @@ def helper_problems(name: str, body: str) -> list[str]:
 
 
 def file_problems(text: str, label: str) -> tuple[int, list[str]]:
-    """Return the helper count of the file text and every problem found."""
+    """Return the unwind helper count and order/nulling problems in the file text."""
     found = list(HELPER.finditer(text))
     problems: list[str] = []
     for m in found:
         problems += helper_problems(f"{label}:{m.group(1)}", m.group(2))
+    problems += release_problems(text, label)
     return len(found), problems
 
 
@@ -112,6 +137,22 @@ class MetalUnwindContract(unittest.TestCase):
         self.assertEqual(count, 1)
         self.assertEqual(len(problems), 5, problems)
 
+    def test_missing_pre_guard_release_is_refused(self) -> None:
+        """Negative: a helper with a guard but no resource release before it is reported."""
+        planted = (
+            "static int unwind_x(State *s, int err)\n{\n"
+            "    if (s->ctx != nullptr) {\n"
+            "        (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);\n"
+            "        vmaf_metal_context_destroy(s->ctx);\n"
+            "    }\n"
+            "    return err;\n}\n"
+        )
+        _, problems = file_problems(planted, "planted")
+        self.assertEqual(
+            problems,
+            ["planted:unwind_x: releases no resource before the s->ctx guard"],
+        )
+
     def test_late_or_dangling_resource_is_refused(self) -> None:
         """Negative: a device release after the guard and an un-nulled pipeline are reported."""
         planted = (
@@ -130,6 +171,34 @@ class MetalUnwindContract(unittest.TestCase):
             [
                 "planted:unwind_x: releases a resource after the context is destroyed",
                 "planted:unwind_x: a transferred pipeline is not set to nullptr",
+            ],
+        )
+
+    def test_every_release_helper_nulls_transfers(self) -> None:
+        """Positive: for each expected file, every release helper nulls transferred fields."""
+        for name in sorted(EXPECTED_HELPERS):
+            with self.subTest(name=name):
+                problems = release_problems((METAL_ROOT / name).read_text(), name)
+                self.assertEqual(problems, [])
+
+    def test_release_helper_transfer_without_nulling_is_refused(self) -> None:
+        """Negative: a release helper transferring without setting nullptr is reported."""
+        planted = (
+            "static void release_psos(State *s)\n{\n"
+            "    if (s->pso) { (void)(__bridge_transfer id)s->pso; }\n"
+            "}\n"
+            "void release_object(void **handle)\n{\n"
+            "    if (*handle != nullptr) {\n"
+            "        (void)(__bridge_transfer id)*handle;\n"
+            "    }\n"
+            "}\n"
+        )
+        _, problems = file_problems(planted, "planted")
+        self.assertEqual(
+            problems,
+            [
+                "planted:release_psos: a transferred pipeline is not set to nullptr",
+                "planted:release_object: a transferred pipeline is not set to nullptr",
             ],
         )
 
