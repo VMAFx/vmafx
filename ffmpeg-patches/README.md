@@ -93,7 +93,7 @@ per-patch apply. Its receipt is mirrored here:
 > The 39 patches of the shared fix series `v0.5.0` and the 6
 > patches here replay cumulatively on upstream commit
 > `946fcce07b6dcd0331c8cc609192aeff5e1924f8`; the resulting tree is
-> `977ee5e0d24de78c601170e6f1a85d424b59dd08`
+> `514e935b7a88cc22b3ac1a42e367e5f0fe3a1151`
 > (`python3 scripts/ci/ffmpeg_patch_stack.py --check`). The refresh evidence and
 > earlier replay history live in
 > [`docs/rebase-notes.md`](../docs/rebase-notes.md).

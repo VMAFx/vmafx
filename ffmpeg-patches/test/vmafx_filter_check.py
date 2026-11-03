@@ -376,12 +376,23 @@ def check_rates_and_offset(args: argparse.Namespace) -> list[Check]:
 
 def check_errors(args: argparse.Namespace, tmp: Path) -> list[Check]:
     """No pair scored (timeline off) is not an error; an unwritable report path
-    fails at init, before a frame is scored."""
+    fails at init, before a frame is scored; an existing unreadable report path
+    survives."""
     off = contract_run(args, RATE24, RATE24, "[0:v][1:v]vmafx=enable=0")
     bad = tmp / "missing-dir" / "report.json"
     rep = contract_run(args, RATE24, RATE24, f"[0:v][1:v]vmafx=log_path={escape(bad)}")
     rep_ok = rep.returncode != 0 and "cannot be written" in rep.stderr
     rep_ok = rep_ok and "VMAF score" not in rep.stderr
+
+    unreadable = tmp / "unreadable.json"
+    unreadable.write_text("PREEXISTING_UNREADABLE", encoding="utf-8")
+    unreadable.chmod(0o200)
+    rep_unreadable = contract_run(
+        args, RATE24, RATE24, f"[0:v][1:v]vmafx=enable=0:log_path={escape(unreadable)}"
+    )
+    survived = unreadable.exists()
+    unreadable.chmod(0o600)
+    content_ok = survived and unreadable.read_text(encoding="utf-8") == "PREEXISTING_UNREADABLE"
     return [
         (
             "a timeline-disabled filter is not an error",
@@ -392,6 +403,11 @@ def check_errors(args: argparse.Namespace, tmp: Path) -> list[Check]:
             "an unwritable log_path fails at init",
             rep_ok,
             f"exit {rep.returncode}: {rep.stderr[-200:]}",
+        ),
+        (
+            "an existing unreadable log_path survives uninit",
+            rep_unreadable.returncode == 0 and content_ok,
+            f"exit {rep_unreadable.returncode}; survived={survived}: {rep_unreadable.stderr[-200:]}",
         ),
     ]
 

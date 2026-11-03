@@ -32,9 +32,16 @@
 #include "config_components.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
+#if HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+#if HAVE_IO_H
+#include <io.h>
+#endif
 
 #include <vmafx/vmafx.h>
 
@@ -79,6 +86,16 @@
 #define VMAFX_SPEC_BYTES 4096
 #define VMAFX_NS ((AVRational){1, 1000000000})
 
+/* Colour metadata tags of one input frame. */
+typedef struct VMAFXColorTags {
+    int supported;
+    VmafxColor color;
+    enum AVColorRange range;
+    enum AVColorPrimaries primaries;
+    enum AVColorTransferCharacteristic trc;
+    enum AVColorSpace space;
+} VMAFXColorTags;
+
 /* One window of the stream: the clock's span and one window per model. */
 typedef struct VMAFXSpan {
     VmafxWindowSpan span;
@@ -105,6 +122,8 @@ typedef struct VMAFXContext {
     int output_created_by_probe;
     int logged_download;
     int color_set; /* input colorimetry handed to libvmafx (ADR-2093 / ADR-2094) */
+    VMAFXColorTags first_ref_color;
+    VMAFXColorTags first_dist_color;
     /* The pairing contract of the two inputs (do_vmafx()): main frames that had
      * no reference frame, and pairs whose timestamps differ by more than half
      * a frame, are counted and reported, never scored silently. */
@@ -253,9 +272,12 @@ static int vmafx_fail(AVFilterContext *ctx, VmafxStatus status, VmafxError *erro
 static int vmafx_fail_import(AVFilterContext *ctx, VmafxStatus status, VmafxError *error,
                              const char *input, uint64_t index, const char *what)
 {
-    char desc[128];
-    snprintf(desc, sizeof(desc), "%s of frame %" PRIu64 " (%s)", what, index, input);
-    return vmafx_fail(ctx, status, error, desc);
+    AVBPrint desc;
+    av_bprint_init(&desc, 0, AV_BPRINT_SIZE_UNLIMITED);
+    av_bprintf(&desc, "%s of frame %" PRIu64 " (%s)", what, index, input);
+    const int ret = vmafx_fail(ctx, status, error, av_bprint_is_complete(&desc) ? desc.str : what);
+    av_bprint_finalize(&desc, NULL);
+    return ret;
 }
 
 static void log_from_library(uint32_t level, const char *message, void *user)
@@ -1880,22 +1902,56 @@ static int vmafx_color_from_frame(const AVFrame *f, VmafxColor *out)
     return 1;
 }
 
+static VMAFXColorTags frame_color_tags(const AVFrame *f)
+{
+    VMAFXColorTags tags = {
+        .range = f->color_range,
+        .primaries = f->color_primaries,
+        .trc = f->color_trc,
+        .space = f->colorspace,
+    };
+    tags.supported = vmafx_color_from_frame(f, &tags.color);
+    return tags;
+}
+
+static int color_tags_equal(const VMAFXColorTags *a, const VMAFXColorTags *b)
+{
+    if (a->supported != b->supported)
+        return 0;
+    if (a->supported) {
+        return a->color.range == b->color.range && a->color.primaries == b->color.primaries &&
+               a->color.trc == b->color.trc && a->color.matrix == b->color.matrix;
+    }
+    return a->range == b->range && a->primaries == b->primaries && a->trc == b->trc &&
+           a->space == b->space;
+}
+
 /* Once, on the first frame pair, before anything is read: declare the colour of
- * the reference and distorted input to VMAFx for a model's conversion_target. */
+ * the reference and distorted input to VMAFx for a model's conversion_target.
+ * Subsequent pairs must match the first pair's colour tags; a mid-stream change
+ * is rejected before any frame import. */
 static int vmafx_declare_input_color(AVFilterContext *ctx, VMAFXContext *s, const AVFrame *ref,
                                      const AVFrame *dist)
 {
-    VmafxColor ref_color;
-    VmafxColor dist_color;
+    const VMAFXColorTags ref_tags = frame_color_tags(ref);
+    const VMAFXColorTags dist_tags = frame_color_tags(dist);
     VmafxError *error = NULL;
 
-    if (s->color_set)
+    if (s->color_set) {
+        if (!color_tags_equal(&ref_tags, &s->first_ref_color) ||
+            !color_tags_equal(&dist_tags, &s->first_dist_color)) {
+            av_log(ctx, AV_LOG_ERROR, "vmafx: input colour metadata changed between frames\n");
+            return AVERROR(EINVAL);
+        }
         return 0;
-    const VmafxColor *const r = vmafx_color_from_frame(ref, &ref_color) ? &ref_color : NULL;
-    const VmafxColor *const d = vmafx_color_from_frame(dist, &dist_color) ? &dist_color : NULL;
+    }
+    const VmafxColor *const r = ref_tags.supported ? &ref_tags.color : NULL;
+    const VmafxColor *const d = dist_tags.supported ? &dist_tags.color : NULL;
     const VmafxStatus st = vmafx_context_set_default_color(s->context, r, d, &error);
     if (st != VMAFX_OK)
         return vmafx_fail(ctx, st, error, "vmafx_context_set_default_color");
+    s->first_ref_color = ref_tags;
+    s->first_dist_color = dist_tags;
     s->color_set = 1;
     return 0;
 }
@@ -2338,16 +2394,26 @@ static int setup_scoring(AVFilterContext *ctx)
 }
 
 /* The report is written at the end of the run, when a failure can no longer
- * fail the command: a path that cannot be written fails at init instead. */
+ * fail the command: a path that cannot be written fails at init instead.
+ * Only mark output_created_by_probe when the probe actually creates the file,
+ * so pre-existing files (even if not readable, e.g. mode 0200) survive uninit. */
 static int report_path_check(AVFilterContext *ctx)
 {
     VMAFXContext *s = ctx->priv;
     if (!s->output || !*s->output)
         return 0;
-    FILE *probe = avpriv_fopen_utf8(s->output, "rb");
-    const int existed = (probe != NULL);
-    if (probe)
-        fclose(probe);
+    const int fd = avpriv_open(s->output, O_WRONLY | O_CREAT | O_EXCL, 0666);
+    if (fd >= 0) {
+        close(fd);
+        s->output_created_by_probe = 1;
+        return 0;
+    }
+    if (errno != EEXIST) {
+        const int err = AVERROR(errno);
+        av_log(ctx, AV_LOG_ERROR, "vmafx: log_path %s cannot be written: %s\n", s->output,
+               av_err2str(err));
+        return err;
+    }
     FILE *f = avpriv_fopen_utf8(s->output, "ab"); /* keeps what is there; the report replaces it */
     if (!f) {
         const int err = AVERROR(errno);
@@ -2356,8 +2422,6 @@ static int report_path_check(AVFilterContext *ctx)
         return err;
     }
     fclose(f);
-    if (!existed)
-        s->output_created_by_probe = 1;
     return 0;
 }
 

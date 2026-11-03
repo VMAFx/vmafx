@@ -77,6 +77,7 @@ QSV_ROOTS = ("docs", "scripts", "testdata", "ffmpeg-patches")
 QSV_SUFFIXES = (".md", ".sh", ".py")
 QSV_WINDOW = 12
 DRM_ROOTS = ("docker", "dev", "scripts")
+DRM_FILES = ("Containerfile.vmafx",)
 CONFIGURE = re.compile(r"\./configure\b")
 LINE_COMMENT = re.compile(r"(^|[ \t])#.*$", re.MULTILINE)  # keeps line numbers
 QSV_DECODE = re.compile(r"-hwaccel(?:_output_format)?\s+qsv\b")
@@ -223,19 +224,23 @@ def _is_build_file(path: Path) -> bool:
 def libdrm_off(root: Path) -> list[str]:
     """'file:line: ...' for each libvmafx + VA-API configure that leaves libdrm to autodetection."""
     found = []
+    candidates = [root / name for name in DRM_FILES if (root / name).is_file()]
     for tree in DRM_ROOTS:
         for path in sorted((root / tree).rglob("*")):
             rel = path.relative_to(root)
             if not path.is_file() or not _is_build_file(path) or _is_fixture(rel):
                 continue
-            text = path.read_text(encoding="utf-8", errors="replace")
-            for number, block in _configure_blocks(text):
-                vaapi = "--enable-vaapi" in block or "libva-dev" in LINE_COMMENT.sub("", text)
-                if "--enable-libvmafx" in block and vaapi and "--enable-libdrm" not in block:
-                    found.append(
-                        f"{rel}:{number}: configures libvmafx with VA-API but no --enable-libdrm; "
-                        "the vmafx DRM import compiles out"
-                    )
+            candidates.append(path)
+    for path in candidates:
+        rel = path.relative_to(root)
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for number, block in _configure_blocks(text):
+            vaapi = "--enable-vaapi" in block or "libva-dev" in LINE_COMMENT.sub("", text)
+            if "--enable-libvmafx" in block and vaapi and "--enable-libdrm" not in block:
+                found.append(
+                    f"{rel}:{number}: configures libvmafx with VA-API but no --enable-libdrm; "
+                    "the vmafx DRM import compiles out"
+                )
     return found
 
 

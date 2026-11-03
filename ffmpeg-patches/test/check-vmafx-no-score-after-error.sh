@@ -105,6 +105,21 @@ expect "vmafx existing log: non-zero exit (${rc})" test "${rc}" -ne 0
 expect "vmafx existing log: file content unchanged" \
   test "$(cat "${existing_log}")" = "EXISTING_PRESERVED_PAYLOAD"
 
+unreadable_log="${WORK}/vmafx-unreadable.json"
+echo "EXISTING_UNREADABLE_PAYLOAD" >"${unreadable_log}"
+chmod 0200 "${unreadable_log}"
+rc=0
+LD_PRELOAD="${WORK}/libfault.so" VMAF_TEST_READ_FAIL_AT=5 VMAF_TEST_READ_FAIL_COUNT=1 \
+  "${FFMPEG}" -hide_banner -nostdin -y -loglevel info \
+  -i "${WORK}/dis.mp4" -i "${WORK}/ref.mp4" \
+  -filter_complex "[0:v][1:v]vmafx=log_fmt=json:log_path=${unreadable_log}" \
+  -f null - >"${WORK}/vmafx-unreadable.log" 2>&1 || rc=$?
+chmod 0600 "${unreadable_log}"
+expect "vmafx existing unreadable log: non-zero exit (${rc})" test "${rc}" -ne 0
+expect "vmafx existing unreadable log: file survived" test -e "${unreadable_log}"
+expect "vmafx existing unreadable log: file content unchanged" \
+  test "$(cat "${unreadable_log}")" = "EXISTING_UNREADABLE_PAYLOAD"
+
 if ! run_cuda cuda-probe; then
   echo "SKIP: vmafx (backend=cuda) cases: the filter does not run here (no CUDA device?)"
   sed -n '/vmafx\|cuda\|CUDA/p' "${WORK}/cuda-probe.log" | tail -n 4

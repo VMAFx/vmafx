@@ -181,6 +181,13 @@ class PatchContractRunner(unittest.TestCase):
         self.assertEqual(len(found), 1, found)
         self.assertIn("docker/Dockerfile.x:3:", found[0])
 
+    def test_root_containerfile_without_libdrm_fails(self) -> None:
+        """Negative: a build file with --enable-libvmafx + --enable-vaapi and no --enable-libdrm yields exactly one finding."""
+        script = "RUN ./configure \\\n  --enable-libvmafx --enable-vaapi\n"
+        found = self._drm({"Containerfile.vmafx": script})
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("Containerfile.vmafx:1:", found[0])
+
     def test_vaapi_configure_with_libdrm_passes(self) -> None:
         """Positive: --enable-libdrm on a continuation line counts."""
         script = "./configure --enable-libvmafx \\\n  --enable-vaapi --enable-libdrm\n"

@@ -141,7 +141,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         intel-basekit \
         meson ninja-build cmake pkg-config nasm git \
         build-essential zlib1g-dev \
-        libdav1d-dev libva-dev libvpl-dev libzimg-dev \
+        libdav1d-dev libdrm-dev libva-dev libvpl-dev libzimg-dev \
         python3 python3-pip python3-venv \
     && if ! dpkg -l intel-basekit 2>/dev/null | grep -q "^ii"; then \
         echo "FATAL: intel-basekit was not installed"; exit 1; fi
@@ -251,7 +251,7 @@ RUN while IFS= read -r l; do \
 RUN PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig \
     ./configure \
         --enable-gpl --enable-version3 \
-        --enable-libvmafx --enable-libdav1d --enable-vaapi --enable-libvpl \
+        --enable-libvmafx --enable-libdav1d --enable-libdrm --enable-vaapi --enable-libvpl \
         --disable-doc --disable-debug \
  && make -j"$(nproc)" \
  && make install && ldconfig \

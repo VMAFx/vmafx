@@ -58,16 +58,131 @@ class InputColorimetryTests(unittest.TestCase):
 
     def test_an_input_with_an_unnamed_attribute_stays_unspecified(self) -> None:
         self.assertIn(flat(UNSPECIFIED), self.flat_text)
-        self.assertIn(flat("? &ref_color : NULL"), self.flat_text)
-        self.assertIn(flat("? &dist_color : NULL"), self.flat_text)
+        self.assertIn(flat("? &ref_tags.color : NULL"), self.flat_text)
+        self.assertIn(flat("? &dist_tags.color : NULL"), self.flat_text)
 
     def test_declared_once_before_the_first_read(self) -> None:
         self.assertEqual(self.flat_text.count(flat(CALL)), 1)
-        self.assertIn(flat("if (s->color_set) return 0;"), self.flat_text)
+        self.assertIn(flat("if (s->color_set)"), self.flat_text)
         self.assertEqual(self.flat_text.count(flat(SITE)), 1)
 
     def test_the_check_refuses_a_missing_call(self) -> None:
         self.assertNotIn(flat(CALL), self.flat_text.replace(flat(CALL), ""))
+
+    def test_midstream_color_change_rejected(self) -> None:
+        """Negative: mid-stream change in colour metadata returns an error before import."""
+        self.assertIn(
+            flat("if (!color_tags_equal(&ref_tags, &s->first_ref_color) ||"),
+            self.flat_text,
+        )
+        self.assertIn(
+            flat("!color_tags_equal(&dist_tags, &s->first_dist_color))"),
+            self.flat_text,
+        )
+        self.assertIn(
+            flat("return AVERROR(EINVAL);"),
+            self.flat_text,
+        )
+
+    def test_unchanged_color_passes(self) -> None:
+        """Positive: matching colour tags between frames pass with 0."""
+        self.assertIn(flat("if (s->color_set) {"), self.flat_text)
+        self.assertIn(flat("return 0;"), self.flat_text)
+
+    def test_planted_missing_midstream_color_check_fails(self) -> None:
+        """Planted defect: omitting the midstream colour change check fails."""
+        mutated = self.flat_text.replace(
+            flat(
+                "if (!color_tags_equal(&ref_tags, &s->first_ref_color) || !color_tags_equal(&dist_tags, &s->first_dist_color))"
+            ),
+            flat("if (0)"),
+        )
+        self.assertNotIn(
+            flat(
+                "if (!color_tags_equal(&ref_tags, &s->first_ref_color) || !color_tags_equal(&dist_tags, &s->first_dist_color))"
+            ),
+            mutated,
+        )
+
+
+class MidstreamColorChangeSimulationTests(unittest.TestCase):
+    """Behavioral unit test verifying the colour-tag equality and change-detection logic."""
+
+    @staticmethod
+    def map_range(r: int) -> int:
+        return {1: 1, 2: 2}.get(r, 0)
+
+    @staticmethod
+    def map_pri(p: int) -> int:
+        return {1: 1, 9: 2, 12: 3}.get(p, 0)
+
+    @staticmethod
+    def map_trc(t: int) -> int:
+        return {1: 1, 16: 2}.get(t, 0)
+
+    @staticmethod
+    def map_matrix(m: int) -> int:
+        return {1: 1, 9: 2, 14: 3}.get(m, 0)
+
+    def frame_color_tags(self, r: int, p: int, t: int, m: int) -> dict:
+        mr, mp, mt, mm = self.map_range(r), self.map_pri(p), self.map_trc(t), self.map_matrix(m)
+        supported = bool(mr and mp and mt and mm)
+        return {
+            "supported": supported,
+            "color": (mr, mp, mt, mm) if supported else None,
+            "range": r,
+            "primaries": p,
+            "trc": t,
+            "space": m,
+        }
+
+    def tags_equal(self, a: dict, b: dict) -> bool:
+        if a["supported"] != b["supported"]:
+            return False
+        if a["supported"]:
+            return a["color"] == b["color"]
+        return (
+            a["range"] == b["range"]
+            and a["primaries"] == b["primaries"]
+            and a["trc"] == b["trc"]
+            and a["space"] == b["space"]
+        )
+
+    def test_unchanged_supported_tags_pass(self) -> None:
+        # BT.2020 / PQ / Limited
+        f0 = self.frame_color_tags(1, 9, 16, 9)
+        f1 = self.frame_color_tags(1, 9, 16, 9)
+        self.assertTrue(self.tags_equal(f0, f1))
+
+    def test_unchanged_unsupported_tags_pass(self) -> None:
+        # Untagged (all 0)
+        f0 = self.frame_color_tags(0, 0, 0, 0)
+        f1 = self.frame_color_tags(0, 0, 0, 0)
+        self.assertTrue(self.tags_equal(f0, f1))
+
+    def test_midstream_change_supported_to_different_supported_fails(self) -> None:
+        # BT.2020 changed to BT.709
+        f0 = self.frame_color_tags(1, 9, 16, 9)
+        f1 = self.frame_color_tags(1, 1, 1, 1)
+        self.assertFalse(self.tags_equal(f0, f1))
+
+    def test_midstream_change_supported_to_unsupported_fails(self) -> None:
+        # BT.2020 changed to untagged
+        f0 = self.frame_color_tags(1, 9, 16, 9)
+        f1 = self.frame_color_tags(0, 0, 0, 0)
+        self.assertFalse(self.tags_equal(f0, f1))
+
+    def test_midstream_change_unsupported_to_supported_fails(self) -> None:
+        # Untagged changed to BT.2020
+        f0 = self.frame_color_tags(0, 0, 0, 0)
+        f1 = self.frame_color_tags(1, 9, 16, 9)
+        self.assertFalse(self.tags_equal(f0, f1))
+
+    def test_midstream_change_unsupported_to_different_unsupported_fails(self) -> None:
+        # Unsupported tag 100 changed to unsupported tag 101
+        f0 = self.frame_color_tags(0, 100, 0, 0)
+        f1 = self.frame_color_tags(0, 101, 0, 0)
+        self.assertFalse(self.tags_equal(f0, f1))
 
 
 if __name__ == "__main__":

@@ -15,7 +15,9 @@ Device run: ffmpeg-patches/test/check-vmafx-no-score-after-error.sh.
 
 from __future__ import annotations
 
+import os
 import re
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -35,6 +37,13 @@ NO_SCORE_AFTER_STOP = re.compile(
 )
 SUBMIT_ERROR_LOG = re.compile(r'vmafx_submit of frame %"\s*PRIu64\s*" failed \(%s\)')
 FLUSH_ERROR_LOG = re.compile(r'flushing vmafx after frame %"\s*PRIu64\s*" failed \(%s\)')
+REPORT_PATH_CREATE_CHECK = re.compile(
+    r"avpriv_open\(\s*s->output\s*,\s*O_WRONLY\s*\|\s*O_CREAT\s*\|\s*O_EXCL\s*,\s*0666\s*\)"
+)
+REPORT_PROBE_CREATED_ONLY_ON_CREATE = re.compile(
+    r"if\s*\(fd\s*>=\s*0\)\s*\{\s*close\(fd\);\s*s->output_created_by_probe\s*=\s*1;\s*return 0;\s*\}"
+)
+REPORT_PROBE_RB_CHECK = re.compile(r'avpriv_fopen_utf8\(\s*s->output\s*,\s*"rb"\s*\)')
 
 
 def problems(code: str) -> list[str]:
@@ -51,6 +60,12 @@ def problems(code: str) -> list[str]:
         found.append("submit failure error does not name frame and error")
     if not FLUSH_ERROR_LOG.search(clean):
         found.append("flush failure error does not name frame and error")
+    if not REPORT_PATH_CREATE_CHECK.search(clean):
+        found.append("report_path_check does not use create-excl open semantics")
+    if not REPORT_PROBE_CREATED_ONLY_ON_CREATE.search(clean):
+        found.append("report_path_check sets output_created_by_probe when not created by probe")
+    if REPORT_PROBE_RB_CHECK.search(clean):
+        found.append("report_path_check derives existence from rb open")
     return found
 
 
@@ -85,6 +100,39 @@ class VmafxStopContract(unittest.TestCase):
         self.assertNotEqual(mutated, self.code)
         self.assertIn(
             "uninit() prints score or writes report after failure",
+            problems(mutated),
+        )
+
+    def test_unreadable_existing_log_path_survives(self) -> None:
+        """Positive: a pre-existing unreadable (mode 0200) log path survives uninit."""
+        self.assertEqual(problems(self.code), [])
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "report.json"
+            log.write_text("PREEXISTING_UNREADABLE", encoding="utf-8")
+            log.chmod(0o200)
+            try:
+                fd = os.open(str(log), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+                os.close(fd)
+                created_by_probe = True
+            except FileExistsError:
+                created_by_probe = False
+            with log.open("ab"):
+                pass
+            if created_by_probe:
+                log.unlink()
+            self.assertTrue(log.exists())
+            log.chmod(0o600)
+            self.assertEqual(log.read_text(encoding="utf-8"), "PREEXISTING_UNREADABLE")
+
+    def test_planted_rb_probe_fails(self) -> None:
+        """Negative/planted: deriving existence from rb open fails the contract."""
+        mutated = self.code.replace(
+            "const int fd = avpriv_open(s->output, O_WRONLY | O_CREAT | O_EXCL, 0666);",
+            'FILE *probe = avpriv_fopen_utf8(s->output, "rb");',
+        )
+        self.assertNotEqual(mutated, self.code)
+        self.assertIn(
+            "report_path_check derives existence from rb open",
             problems(mutated),
         )
 
