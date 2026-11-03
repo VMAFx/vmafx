@@ -52,6 +52,18 @@ def findings(text: str) -> list[str]:
     return [what for pattern, what in BANNED if re.search(pattern, code(text))]
 
 
+def _is_transparent_scope(source: str, brace: int) -> bool:
+    """Match only a scope opener; code() replaces linkage string literals with \"\"."""
+    prefix = source[max(0, brace - 200) : brace]
+    return (
+        re.search(
+            r'\b(?:namespace(?:\s+[A-Za-z_]\w*)?|extern\s*"(?:C(?:\+\+)?)?")\s*$',
+            prefix,
+        )
+        is not None
+    )
+
+
 def _extract_function_bodies(source: str) -> list[str]:
     bodies: list[str] = []
     depth = 0
@@ -60,7 +72,10 @@ def _extract_function_bodies(source: str) -> list[str]:
     for idx in range(max_len):
         ch = source[idx]
         if ch == "{":
-            depth += 1
+            if depth == 0 and _is_transparent_scope(source, idx):
+                start = idx + 1
+            else:
+                depth += 1
         elif ch == "}":
             if depth == 1:
                 bodies.append(source[start : idx + 1])
@@ -548,6 +563,57 @@ class RgbMathContract(unittest.TestCase):
             "}\n"
         )
         self.assertEqual(rgb_plan_file_findings(sample), ["missing branch on !planned2"])
+
+    def test_scan_flags_unsafe_caller_in_transparent_scopes(self) -> None:
+        unsafe = (
+            "int unsafe(const VmafxFrameImport *d, const ImportLayout *layout) {\n"
+            "    VmafxRgbPlan rgb = {0};\n"
+            "    const bool planned = vmafx_rgb_plan_init(&rgb, layout, d->bpc,\n"
+            "        d->rgb_matrix, d->rgb_range, d->rgb_out_range);\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        safe = unsafe.replace("unsafe(", "safe(").replace(
+            "    return 0;", "    if (!planned) { return -1; }\n    return 0;"
+        )
+        wrappers = (
+            ("namespace {", "}"),
+            ("namespace n {", "}"),
+            ('extern "C" {', "}"),
+            ('extern "C++" {', "}"),
+            ("namespace a { namespace b {", "} }"),
+        )
+        for opening, closing in wrappers:
+            with self.subTest(scope=opening):
+                sample = f"{opening}\n{unsafe}{safe}{closing}\n"
+                self.assertEqual(rgb_plan_file_findings(sample), ["missing branch on !planned"])
+
+    def test_scan_flags_unsafe_caller_with_single_linkage_declarations(self) -> None:
+        unsafe = (
+            'extern "C" int unsafe(const VmafxFrameImport *d, const ImportLayout *layout) {\n'
+            "    VmafxRgbPlan rgb = {0};\n"
+            "    const bool planned = vmafx_rgb_plan_init(&rgb, layout, d->bpc,\n"
+            "        d->rgb_matrix, d->rgb_range, d->rgb_out_range);\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        safe = unsafe.replace("unsafe(", "safe(").replace(
+            "    return 0;", "    if (!planned) { return -1; }\n    return 0;"
+        )
+        self.assertEqual(rgb_plan_file_findings(unsafe + safe), ["missing branch on !planned"])
+
+    def test_scan_accepts_safe_callers_in_namespace(self) -> None:
+        safe = (
+            "int safe(const VmafxFrameImport *d, const ImportLayout *layout) {\n"
+            "    VmafxRgbPlan rgb = {0};\n"
+            "    const bool planned = vmafx_rgb_plan_init(&rgb, layout, d->bpc,\n"
+            "        d->rgb_matrix, d->rgb_range, d->rgb_out_range);\n"
+            "    if (!planned) { return -1; }\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        sample = "namespace {\n" + safe + safe.replace("safe(", "also_safe(") + "}\n"
+        self.assertEqual(rgb_plan_file_findings(sample), [])
 
     def test_scan_refuses_empty_failure_branch(self) -> None:
         empty_branch = (
