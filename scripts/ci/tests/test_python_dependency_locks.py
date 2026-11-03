@@ -1887,6 +1887,41 @@ version = "7"
 """
 
 
+class UvVersionEchoTests(unittest.TestCase):
+    """A guide that restates the uv version goes stale on the next uv update."""
+
+    def setUp(self) -> None:
+        self.checker = load_checker()
+
+    def test_planted_restated_version_is_refused(self) -> None:
+        text = "1. x\n   - Pinned generator `uv_version` is exact (`0.13.1`).\n"
+        problems = self.checker.scan_uv_version_echo(Path("requirements/AGENTS.md"), text)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("requirements/AGENTS.md:2:", problems[0])
+
+    def test_pointer_without_number_passes(self) -> None:
+        text = "version of `uv` (`uv_version` in `requirements/locks/manifest.json`).\n"
+        self.assertEqual(self.checker.scan_uv_version_echo(Path("docs/development/x.md"), text), [])
+
+    def test_history_and_non_guides_keep_their_numbers(self) -> None:
+        text = "binary (`uv_version: 0.12.18`).\n"
+        for name in ("docs/adr/1305-x.md", "CHANGELOG.md", "changelog.d/security/x.md", "a.py"):
+            with self.subTest(name=name):
+                self.assertEqual(self.checker.scan_uv_version_echo(Path(name), text), [])
+        self.assertEqual(len(self.checker.scan_uv_version_echo(Path("docs/adr.md"), text)), 1)
+
+    def test_repository_guides_do_not_restate_the_version(self) -> None:
+        problems = [
+            problem
+            for relative in self.checker.tracked_paths(ROOT)
+            if relative.suffix == ".md" and (ROOT / relative).is_file()
+            for problem in self.checker.scan_uv_version_echo(
+                relative, (ROOT / relative).read_text(encoding="utf-8", errors="replace")
+            )
+        ]
+        self.assertEqual(problems, [])
+
+
 class FingerprintTests(unittest.TestCase):
     """ADR-1344: a release version bump must not make a lock stale."""
 

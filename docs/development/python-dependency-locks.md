@@ -19,6 +19,11 @@ lock file with its source files and compilation arguments using a reviewed,
 pinned
 version of `uv` (`uv_version` in `requirements/locks/manifest.json`).
 
+Guides point at that field and never restate the number:
+`check_python_dependency_locks.py check` refuses a Markdown line that names
+`uv_version` next to a version, outside `CHANGELOG.md`, `changelog.d/` and the
+decision records under `docs/adr/`.
+
 The manifest validates every path it names:
 
 - Outputs, inputs and alias consumer bindings are local repo-relative paths
