@@ -14,9 +14,9 @@ How should the modernized VMAFx C API (`libvmafx.so.1`) be exposed, consumed, an
 ## Sources
 
 - Single-source API definition: [`core/api/vmafx.toml`](https://github.com/VMAFx/vmafx/blob/master/core/api/vmafx.toml)
-- Codegen script: `scripts/codegen/vmafx_api/` ([ADR-1852](../adr/1852-vmafx-api-redesign.md))
-- C ABI headers: `core/include/vmafx/*.h`
-- Python ctypes binding: `bindings/python/vmafx/_api.py` and `bindings/python/pyproject.toml`
+- Codegen script: [`scripts/codegen/vmafx_api/`](https://github.com/VMAFx/vmafx/tree/master/scripts/codegen/vmafx_api) ([ADR-1852](../adr/1852-vmafx-api-redesign.md))
+- C ABI headers: [`core/include/vmafx/`](https://github.com/VMAFx/vmafx/tree/master/core/include/vmafx)
+- Python ctypes binding: [`bindings/python/vmafx/_api.py`](https://github.com/VMAFx/vmafx/blob/master/bindings/python/vmafx/_api.py) and [`bindings/python/pyproject.toml`](https://github.com/VMAFx/vmafx/blob/master/bindings/python/pyproject.toml)
 - Prior research: [Research-2158](2158-vmafx-api-redesign.md) (section 1.1 / 1.2 on Python CLI reliance vs direct bindings)
 
 ## Findings
