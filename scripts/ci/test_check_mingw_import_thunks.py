@@ -489,6 +489,32 @@ def test_negative_planted_runtime_archive_function_overlap_fails() -> None:
         assert "-Wl,--exclude-libs" in err.getvalue()
 
 
+def test_negative_runtime_archive_weak_defined_symbol_fails() -> None:
+    """Negative: runtime nm reports _Unwind_Resume as weak defined W and DLL exports it -> 1."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        funcs = ("_Unwind_Resume", "vmaf_picture_alloc")
+        build = _make_build_dir(tmp_path, {"libvmafx.dll.a": (funcs, ())})
+        rt_archive = tmp_path / "libgcc_eh.a"
+        rt_archive.write_bytes(b"!<arch>\n")
+        thunk_nm_out = _generate_nm_output(funcs, funcs)
+        rt_nm_out = "0000000000000410 W _Unwind_Resume\n"
+        out = io.StringIO()
+        err = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = gate.check_build_dir(
+                build,
+                nm_tool="nm",
+                runner=lambda _tool, _path: (0, thunk_nm_out, ""),
+                runtime_archives=(rt_archive,),
+                runtime_runner=lambda _tool, _path: (0, rt_nm_out, ""),
+            )
+        assert rc == 1
+        assert "_Unwind_Resume" in err.getvalue()
+        assert "FAIL" in err.getvalue()
+        assert "libgcc_eh.a" in err.getvalue()
+
+
 def test_negative_runtime_archive_data_overlap_fails() -> None:
     """Negative: overlap through a DATA export fails closed with exit 1."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -595,6 +621,7 @@ archive.o:
 0000000000000030 R global_rodata_var
 0000000000000040 S global_small_data
 0000000000000050 C common_symbol
+0000000000000060 G global_small_init_data
 0000000000000000 w weak_func
 0000000000000000 W weak_func_upper
 0000000000000000 v weak_var
@@ -615,6 +642,9 @@ archive.o:
             "global_rodata_var",
             "global_small_data",
             "common_symbol",
+            "global_small_init_data",
+            "weak_func_upper",
+            "weak_var_upper",
         }
     )
     assert gate.parse_nm_defined_globals(nm_input) == expected
