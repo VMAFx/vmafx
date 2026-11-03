@@ -19,6 +19,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -1680,10 +1681,11 @@ def _scan_guides(root: Path, all_tracked: list[Path]) -> list[str]:
         if relative.suffix.lower() != ".md" or is_uv_version_history_path(relative):
             continue
         guide = root / relative
-        if not guide.is_file():
-            continue
         try:
-            size = guide.stat().st_size
+            st = guide.stat()
+            if not stat.S_ISREG(st.st_mode):
+                continue
+            size = st.st_size
             total_bytes += size
             if size > MAX_GUIDE_SIZE_BYTES:
                 problems.append(
@@ -1697,8 +1699,10 @@ def _scan_guides(root: Path, all_tracked: list[Path]) -> list[str]:
                 break
             with guide.open("r", encoding="utf-8", errors="replace") as stream:
                 problems.extend(scan_uv_version_echo(relative, stream))
+        except FileNotFoundError:
+            continue
         except OSError as error:
-            problems.append(f"{relative}: {error}")
+            problems.append(f"{relative}: cannot read guide: {error}")
     return problems
 
 

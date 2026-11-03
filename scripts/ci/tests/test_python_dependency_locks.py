@@ -9,6 +9,7 @@ import ast
 import importlib.util
 import json
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -2101,6 +2102,44 @@ class UvVersionEchoTests(unittest.TestCase):
         for path in non_history_guides:
             with self.subTest(path=path):
                 self.assertIsNone(pattern.search(path), f"Expected {path} not to be excluded")
+
+    def test_inaccessible_tracked_guide_is_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            guide = temp_root / "docs" / "inaccessible.md"
+            guide.parent.mkdir(parents=True)
+            guide.write_text("content\n", encoding="utf-8")
+
+            orig_stat = Path.stat
+
+            def fake_stat(path_obj: Path, *args: Any, **kwargs: Any) -> Any:
+                if path_obj == guide:
+                    raise PermissionError(13, "Permission denied")
+                return orig_stat(path_obj, *args, **kwargs)
+
+            def fake_is_file(path_obj: Path, *args: Any, **kwargs: Any) -> bool:
+                try:
+                    st = path_obj.stat(*args, **kwargs)
+                except OSError:
+                    return False
+                return stat.S_ISREG(st.st_mode)
+
+            with (
+                mock.patch.object(Path, "stat", fake_stat),
+                mock.patch.object(Path, "is_file", fake_is_file),
+            ):
+                problems = self.checker._scan_guides(temp_root, [Path("docs/inaccessible.md")])
+            self.assertEqual(len(problems), 1, problems)
+            self.assertIn("docs/inaccessible.md: cannot read guide: ", problems[0])
+            self.assertIn("Permission denied", problems[0])
+
+            missing_problems = self.checker._scan_guides(temp_root, [Path("docs/missing.md")])
+            self.assertEqual(missing_problems, [])
+
+            dir_guide = temp_root / "docs" / "directory.md"
+            dir_guide.mkdir(parents=True)
+            dir_problems = self.checker._scan_guides(temp_root, [Path("docs/directory.md")])
+            self.assertEqual(dir_problems, [])
 
     def test_repository_guides_do_not_restate_the_version(self) -> None:
         problems = [
