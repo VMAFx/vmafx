@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -14,6 +16,8 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
@@ -328,6 +332,22 @@ class InstallStepContract(unittest.TestCase):
 
     RETRY_FLAGS = ("--tries=5", "--retry-connrefused", "--waitretry=5", "--timeout=30")
 
+    def installer_commands(self, workflow: str) -> list[list[str]]:
+        commands = []
+        for job in yaml.safe_load(workflow).get("jobs", {}).values():
+            for step in job.get("steps", []):
+                for raw_line in step.get("run", "").splitlines():
+                    if "scripts/ci/install-llvm.sh" not in raw_line:
+                        continue
+                    # The build matrix selects clang inside a shell case arm.
+                    command_line = re.sub(r"^\s*\*clang-\d+\)\s*", "", raw_line)
+                    tokens = shlex.split(command_line, comments=True)
+                    if tokens[:1] == ["sudo"]:
+                        tokens = tokens[1:]
+                    if tokens[:2] == ["bash", "scripts/ci/install-llvm.sh"]:
+                        commands.append(tokens)
+        return commands
+
     def test_llvm_workflows_use_shared_installer(self) -> None:
         expected = {
             "sanitizers.yml": 3,
@@ -339,46 +359,94 @@ class InstallStepContract(unittest.TestCase):
         }
         for path in sorted(WORKFLOWS.glob("*.yml")):
             with self.subTest(workflow=path.name):
-                text = executable_body(path.read_text(encoding="utf-8"))
-                self.assertNotIn("apt.llvm.org/llvm.sh", text)
-                self.assertEqual(
-                    text.count("sudo bash scripts/ci/install-llvm.sh 22"),
-                    expected.get(path.name, 0),
-                )
+                workflow = path.read_text(encoding="utf-8")
+                self.assertNotIn("apt.llvm.org/llvm.sh", executable_body(workflow))
+                commands = self.installer_commands(workflow)
+                self.assertEqual(len(commands), expected.get(path.name, 0))
+                self.assertTrue(all(command[2] == "22" for command in commands))
+
+    def test_installer_check_rejects_echo_and_non_run_text(self) -> None:
+        for command in (
+            "echo 'sudo bash scripts/ci/install-llvm.sh 22'",
+            "# sudo bash scripts/ci/install-llvm.sh 22",
+        ):
+            workflow = yaml.safe_dump({"jobs": {"job": {"steps": [{"run": command}]}}})
+            self.assertEqual(self.installer_commands(workflow), [])
+        workflow = "jobs: {job: {steps: [{name: 'sudo bash scripts/ci/install-llvm.sh 22'}]}}"
+        self.assertEqual(self.installer_commands(workflow), [])
+        for command in (
+            "sudo bash scripts/ci/install-llvm.sh 22",
+            "bash scripts/ci/install-llvm.sh 22",
+        ):
+            workflow = yaml.safe_dump({"jobs": {"job": {"steps": [{"run": command}]}}})
+            self.assertEqual(len(self.installer_commands(workflow)), 1)
+
+    def write_installer_stubs(self, stubs: Path, bash: str, checksum: str) -> Path:
+        calls = stubs / "calls"
+        bodies = {
+            "apt-get": "if [[ $1 == install && ! -e $STUBS/archive-attempt ]]; then\n"
+            '  : > "$STUBS/archive-attempt"\n  exit "$FAKE_ARCHIVE_INSTALL"\nfi\n',
+            "apt-cache": '[[ $2 != "$FAKE_MISSING" ]] || exit 100\nexit "$FAKE_APT_CACHE"\n',
+            "wget": '[[ -z $FAKE_SIGNAL ]] || kill -s "$FAKE_SIGNAL" "$PPID"\n'
+            'printf "%s" "$FAKE_PAYLOAD" > "$2"\nexit "$FAKE_WGET"\n',
+            "bash": "exit 0\n",
+            "rm": "exit 0\n",
+            "sha256sum": f'exec {shlex.quote(checksum)} "$@"\n',
+        }
+        for tool, body in bodies.items():
+            stub = stubs / tool
+            stub.write_text(
+                f'#!{bash}\necho "{tool} $*" >> "$CALLS"\n{body}',
+                encoding="utf-8",
+            )
+            stub.chmod(0o755)
+        (stubs / "mktemp").write_text(f'#!{bash}\necho "$STUBS/installer"\n', encoding="utf-8")
+        (stubs / "mktemp").chmod(0o755)
+        return calls
 
     def run_installer(
-        self, script: str, major: str = "22", apt_cache: int = 0, wget: int = 0
+        self,
+        script: str,
+        major: str = "22",
+        apt_cache: int = 0,
+        wget: int = 0,
+        missing: str = "",
+        archive_install: int = 0,
+        source: str | None = None,
+        corrupt: bool = False,
+        signal: str = "",
     ) -> tuple[int, str, list[str]]:
-        """Run the installer with stub tools; return status, stdout and the recorded calls."""
+        """Execute only controlled stub tools and the real checksum utility."""
         bash = shutil.which("bash")
-        if bash is None:
-            self.skipTest("bash not on PATH; the LLVM install runs on Ubuntu")
+        checksum = shutil.which("sha256sum")
+        if bash is None or checksum is None:
+            self.skipTest("bash and sha256sum required for the Ubuntu installer")
+        payload = "stub installer\n"
+        # Substitute only the reviewed digest, never the verification command.
+        script = re.sub(
+            r"(?m)^LLVM_INSTALLER_SHA256=[0-9a-f]{64}$",
+            "LLVM_INSTALLER_SHA256=" + hashlib.sha256(payload.encode()).hexdigest(),
+            script,
+        )
         with tempfile.TemporaryDirectory() as directory:
             stubs = Path(directory)
-            calls = stubs / "calls"
-            for tool, status in (
-                ("apt-get", "0"),
-                ("apt-cache", "$FAKE_APT_CACHE"),
-                ("wget", "$FAKE_WGET"),
-                ("bash", "0"),
-                ("rm", "0"),
-            ):
-                stub = stubs / tool
-                stub.write_text(
-                    f'#!{bash}\necho "{tool} $*" >> "$CALLS"\nexit {status}\n',
-                    encoding="utf-8",
-                )
-                stub.chmod(0o755)
-            (stubs / "mktemp").write_text(f'#!{bash}\necho "$STUBS/installer"\n', encoding="utf-8")
-            (stubs / "mktemp").chmod(0o755)
-            result = subprocess.run(  # noqa: S603 - tracked script with stubbed tools
-                [bash, "-c", script, "install-llvm.sh", major],
+            calls = self.write_installer_stubs(stubs, bash, checksum)
+            argv = [bash, "-c", script, "install-llvm.sh", major]
+            if source is not None:
+                argv.append(source)
+            # Tracked installer, isolated PATH, controlled stubs; no network or package changes.
+            result = subprocess.run(  # noqa: S603  # nosec B603
+                argv,
                 env={
                     "PATH": directory,
                     "CALLS": str(calls),
                     "STUBS": directory,
                     "FAKE_APT_CACHE": str(apt_cache),
                     "FAKE_WGET": str(wget),
+                    "FAKE_MISSING": missing,
+                    "FAKE_ARCHIVE_INSTALL": str(archive_install),
+                    "FAKE_PAYLOAD": "corrupt\n" if corrupt else payload,
+                    "FAKE_SIGNAL": signal,
                 },
                 capture_output=True,
                 text=True,
@@ -387,7 +455,7 @@ class InstallStepContract(unittest.TestCase):
             )
             recorded = calls.read_text(encoding="utf-8").splitlines() if calls.exists() else []
             recorded = [line.replace(directory, "<stubs>") for line in recorded]
-        return result.returncode, result.stdout, recorded
+        return result.returncode, result.stdout + result.stderr, recorded
 
     def installer(self) -> str:
         return (ROOT / "scripts/ci/install-llvm.sh").read_text(encoding="utf-8")
@@ -396,7 +464,9 @@ class InstallStepContract(unittest.TestCase):
         status, stdout, calls = self.run_installer(self.installer())
         self.assertEqual(status, 0)
         self.assertIn("LLVM 22 from the distribution archive", stdout)
-        self.assertIn("apt-get install -y -q clang-22 lldb-22 lld-22 clangd-22", calls)
+        self.assertIn(
+            "apt-get install -y -q clang-22 lldb-22 lld-22 clangd-22 clang-tidy-22", calls
+        )
         self.assertFalse([call for call in calls if call.startswith("wget")])
 
     def test_fallback_fetches_with_bounded_retries_and_names_source(self) -> None:
@@ -408,9 +478,13 @@ class InstallStepContract(unittest.TestCase):
         self.assertIn("LLVM 22 from apt.llvm.org", stdout)
         fetch = [call for call in calls if call.startswith("wget")]
         self.assertEqual(len(fetch), 1)
+        self.assertEqual(fetch[0].split()[-1], "https://apt.llvm.org/llvm.sh")
         for flag in self.RETRY_FLAGS:
             self.assertIn(flag, fetch[0].split())
         self.assertIn("bash <stubs>/installer 22", calls)
+        self.assertLess(
+            calls.index("sha256sum --check --status"), calls.index("bash <stubs>/installer 22")
+        )
 
     def test_failed_fetch_fails_the_step(self) -> None:
         for wget in (4, 8):
@@ -433,12 +507,14 @@ class InstallStepContract(unittest.TestCase):
 
     def assert_inherited_cache_disabled(self, workflow: str) -> int:
         inherited = 0
-        for step in re.split(r"(?m)^      - ", executable_body(workflow)):
-            if not re.search(r"(?m)^\s*uses: msys2/setup-msys2@", step):
-                continue
-            if re.search(r"(?m)^\s*path-type: inherit\s*$", step):
-                inherited += 1
-                self.assertRegex(step, r"(?m)^\s*cache: false\s*$")
+        for job in yaml.safe_load(workflow).get("jobs", {}).values():
+            for step in job.get("steps", []):
+                if not step.get("uses", "").startswith("msys2/setup-msys2@"):
+                    continue
+                inputs = step.get("with", {})
+                if inputs.get("path-type") == "inherit":
+                    inherited += 1
+                    self.assertIs(inputs.get("cache"), False)
         return inherited
 
     def test_inherited_msys2_steps_disable_package_cache(self) -> None:
@@ -448,16 +524,84 @@ class InstallStepContract(unittest.TestCase):
                 inherited += self.assert_inherited_cache_disabled(path.read_text(encoding="utf-8"))
         self.assertGreater(inherited, 0)
 
-    def test_msys2_cache_check_rejects_default_and_enabled_cache(self) -> None:
-        step = "      - uses: msys2/setup-msys2@pin\n        with:\n          path-type: inherit\n"
-        for cache in ("", "          cache: true\n"):
+    def test_msys2_cache_check_rejects_default_enabled_and_misplaced_cache(self) -> None:
+        prefix = (
+            "jobs:\n  j:\n    steps:\n      - uses: msys2/setup-msys2@pin\n"
+            "        with:\n          path-type: inherit\n"
+        )
+        for cache in ("", "true", '"false"', "0"):
+            workflow = prefix
+            if cache:
+                workflow += f"          cache: {cache}\n"
+            workflow += "        env:\n          cache: false\n"
             with self.subTest(cache=cache), self.assertRaises(AssertionError):
-                self.assert_inherited_cache_disabled(step + cache)
-        self.assertEqual(self.assert_inherited_cache_disabled(step + "          cache: false\n"), 1)
+                self.assert_inherited_cache_disabled(workflow)
+        self.assertEqual(
+            self.assert_inherited_cache_disabled(prefix + "          cache: false\n"), 1
+        )
 
     def test_msys2_cache_check_allows_minimal_path(self) -> None:
-        step = "      - uses: msys2/setup-msys2@pin\n        with:\n          path-type: minimal\n"
-        self.assertEqual(self.assert_inherited_cache_disabled(step), 0)
+        workflow = (
+            "jobs: {j: {steps: [{uses: 'msys2/setup-msys2@pin', with: {path-type: minimal}}]}}"
+        )
+        self.assertEqual(self.assert_inherited_cache_disabled(workflow), 0)
+
+    def test_archive_checks_every_requested_package(self) -> None:
+        for package in ("clang", "lldb", "lld", "clangd", "clang-tidy"):
+            with self.subTest(package=package):
+                status, _, calls = self.run_installer(self.installer(), missing=f"{package}-22")
+                self.assertEqual(status, 0)
+                self.assertIn(f"apt-cache show {package}-22", calls)
+                self.assertIn("bash <stubs>/installer 22", calls)
+
+    def test_archive_install_failure_falls_back(self) -> None:
+        status, _, calls = self.run_installer(self.installer(), archive_install=100)
+        self.assertEqual(status, 0)
+        self.assertIn("bash <stubs>/installer 22", calls)
+
+    def test_installer_pins_the_upstream_digest(self) -> None:
+        self.assertRegex(self.installer(), r"(?m)^LLVM_INSTALLER_SHA256=[0-9a-f]{64}$")
+
+    def test_checksum_mismatch_names_installer_and_never_executes_it(self) -> None:
+        status, output, calls = self.run_installer(self.installer(), apt_cache=100, corrupt=True)
+        self.assertNotEqual(status, 0)
+        self.assertIn("install-llvm: llvm.sh SHA-256 mismatch", output)
+        self.assertNotIn("bash <stubs>/installer 22", calls)
+        self.assertIn("rm -f <stubs>/installer", calls)
+
+    def test_cleanup_after_fetch_failure_and_signals(self) -> None:
+        for signal, expected in (("INT", 130), ("TERM", 143)):
+            with self.subTest(signal=signal):
+                status, _, calls = self.run_installer(
+                    self.installer(), apt_cache=100, signal=signal
+                )
+                self.assertEqual(status, expected)
+                self.assertIn("rm -f <stubs>/installer", calls)
+                self.assertNotIn("bash <stubs>/installer 22", calls)
+        status, _, calls = self.run_installer(self.installer(), apt_cache=100, wget=8)
+        self.assertEqual(status, 8)
+        self.assertIn("rm -f <stubs>/installer", calls)
+
+    def test_explicit_llvm_org_source_bypasses_archive(self) -> None:
+        status, _, calls = self.run_installer(self.installer(), source="--source=apt.llvm.org")
+        self.assertEqual(status, 0)
+        self.assertFalse([call for call in calls if call.startswith("apt-cache")])
+        self.assertIn("bash <stubs>/installer 22", calls)
+        status, _, calls = self.run_installer(self.installer(), source="--source=unknown")
+        self.assertEqual((status, calls), (2, []))
+
+    def test_ratchet_jobs_explicitly_select_baseline_source(self) -> None:
+        for filename, job_id in (
+            ("lint-and-format.yml", "clang-tidy-ratchet"),
+            ("nightly.yml", "clang-tidy-full"),
+        ):
+            job = yaml.safe_load((WORKFLOWS / filename).read_text())["jobs"][job_id]
+            workflow = yaml.safe_dump({"jobs": {job_id: job}})
+            (command,) = self.installer_commands(workflow)
+            self.assertEqual(command[2:], ["22", "--source=apt.llvm.org"])
+
+    def test_installer_has_required_dual_copyright(self) -> None:
+        self.assertIn("# Copyright 2026 Lusoris and Claude (Anthropic)", self.installer())
 
 
 if __name__ == "__main__":
