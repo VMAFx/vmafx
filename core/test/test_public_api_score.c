@@ -38,6 +38,7 @@
  * range.  Score accuracy is governed by the Netflix-golden gate.
  */
 
+#include <errno.h>
 #include <math.h>
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -261,6 +262,45 @@ static char *test_vmaf_write_output(void)
 }
 
 /* -------------------------------------------------------------------------
+ * Test: vmaf_write_output() / vmaf_write_output_with_format() to /dev/full
+ * ---------------------------------------------------------------------- */
+static char *test_vmaf_write_output_to_full_device(void)
+{
+#if !defined(__linux__)
+    (void)fprintf(stderr, "SKIP: /dev/full test requires Linux\n");
+    return NULL;
+#else
+    int err;
+    VmafContext *vmaf = NULL;
+    VmafModel *model = NULL;
+
+    err = make_vmaf_ctx_with_scores(&vmaf, &model);
+    mu_assert("setup for vmaf_write_output /dev/full failed", !err);
+
+    static const enum VmafOutputFormat formats[] = {
+        VMAF_OUTPUT_FORMAT_XML,
+        VMAF_OUTPUT_FORMAT_JSON,
+        VMAF_OUTPUT_FORMAT_CSV,
+        VMAF_OUTPUT_FORMAT_SUB,
+    };
+    const size_t n_formats = sizeof(formats) / sizeof(formats[0]);
+    for (size_t i = 0; i < n_formats; i++) {
+        err = vmaf_write_output(vmaf, "/dev/full", formats[i]);
+        mu_assert("vmaf_write_output(/dev/full) must return negative", err < 0);
+        mu_assert("vmaf_write_output(/dev/full) must return -EIO", err == -EIO);
+    }
+
+    err = vmaf_write_output_with_format(vmaf, "/dev/full", VMAF_OUTPUT_FORMAT_JSON, "%.17g");
+    mu_assert("vmaf_write_output_with_format(/dev/full) must return negative", err < 0);
+    mu_assert("vmaf_write_output_with_format(/dev/full) must return -EIO", err == -EIO);
+
+    (void)vmaf_close(vmaf);
+    vmaf_model_destroy(model);
+    return NULL;
+#endif
+}
+
+/* -------------------------------------------------------------------------
  * Runner
  * ---------------------------------------------------------------------- */
 char *run_tests(void)
@@ -268,6 +308,7 @@ char *run_tests(void)
     mu_run_test(test_vmaf_score_at_index);
     mu_run_test(test_vmaf_model_collection_load);
     mu_run_test(test_vmaf_write_output);
+    mu_run_test(test_vmaf_write_output_to_full_device);
     return NULL;
 }
 
