@@ -26,7 +26,7 @@ def find_repo_root() -> Path:
 
 
 def score_fixture_frames(
-    lib: object,
+    lib: vmafx.Library,
     ref_path: Path,
     dis_path: Path,
     n_frames: int = FIXTURE_FRAMES,

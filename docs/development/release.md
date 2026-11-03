@@ -365,7 +365,8 @@ Before publication, repository setup must provide two protected environments:
 
 - `release-publish` for GHCR writes, release-blob signing, build-provenance
   attestations, and GitHub Release attachment;
-- `pypi-publish` for the `vmaf-mcp` Trusted Publisher identity.
+- `pypi-publish` for the PyPI Trusted Publisher identities of `vmaf-mcp`
+  and `vmafx` (the wheels job `vmafx-publish-pypi`).
 
 Each must accept selected tag refs matching `v*` and require the release
 reviewer.

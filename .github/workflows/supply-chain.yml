@@ -1052,7 +1052,8 @@ jobs:
     if: needs.validate-release.outputs.is_prerelease == 'false'
     runs-on: ubuntu-26.04
     timeout-minutes: 10
-    environment: release-publish
+    # pypi-publish is the environment bound to the PyPI Trusted Publisher.
+    environment: pypi-publish
     permissions:
       id-token: write             # OIDC token for Trusted Publishing
       contents: read
