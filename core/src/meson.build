@@ -3202,7 +3202,7 @@ vmafx_build_conf.set_quoted('VMAFX_BUILD_COMPILER',
 vmafx_build_conf.set_quoted('VMAFX_BUILD_FLAGS',
     'buildtype=' + get_option('buildtype') + ' optimization=' + get_option('optimization')
     + ' debug=' + get_option('debug').to_string() + ' b_ndebug=' + get_option('b_ndebug')
-    + ' b_lto=' + get_option('b_lto').to_string()
+    + ' b_lto=' + vmafx_effective_lto.to_string()
     + ' c_args=' + ' '.join(get_option('c_args')) + ' cpp_args=' + ' '.join(get_option('cpp_args')))
 vmafx_build_conf.set_quoted('VMAFX_BUILD_FP_POLICY', ' '.join(vmaf_strict_fp_args))
 vmafx_build_conf.set_quoted('VMAFX_BUILD_BACKENDS', ','.join(vmafx_build_backends))
