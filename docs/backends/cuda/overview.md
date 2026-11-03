@@ -181,7 +181,8 @@ back and exits with code `100` (see
 
 In a container, automatic selection falls back to CPU without `--gpus all`:
 the NVIDIA Container Toolkit then injects no GPU and no `libcuda.so.1`. With
-`--gpus all`, the published `v1.0.0-rc.1-cuda13` image on an RTX 4090 scores
+`--gpus all`, the `v1.0.0-rc.1-cuda13` image (published and deleted after 0.1.0,
+[ADR-3398](../../adr/3398-delete-withdrawn-rc-releases.md)) on an RTX 4090 scored
 the Netflix `src01` pair with `vmaf_v0.6.1` at 76.6678303 on CUDA against
 76.6678309 on the CPU.
 

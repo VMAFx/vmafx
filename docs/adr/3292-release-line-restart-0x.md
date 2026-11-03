@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-3292: Restart the release line at 0.1.0; 1.0.0 becomes the first stable release
 
-- **Status**: Accepted
+- **Status**: Accepted (partially superseded by [ADR-3398](3398-delete-withdrawn-rc-releases.md) for Decision 3: withdrawn candidate and tester releases are deleted after 0.1.0 rather than kept)
 - **Date**: 2026-10-12
 - **Deciders**: lusoris
 - **Tags**: release, governance, roadmap, go, supply-chain

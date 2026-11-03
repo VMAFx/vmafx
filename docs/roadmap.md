@@ -13,7 +13,8 @@ map of where that plan lives and how the releases are sequenced.
 
 The release line restarts at `0.1.0`
 ([ADR-3292](adr/3292-release-line-restart-0x.md), 2026-10-12). The candidates
-`v1.0.0-rc.1` to `v1.0.0-rc.3` are withdrawn; `1.0.0` is the first stable
+`v1.0.0-rc.1` to `v1.0.0-rc.3` were withdrawn and deleted after `0.1.0`
+([ADR-3398](adr/3398-delete-withdrawn-rc-releases.md)); `1.0.0` is the first stable
 release. The work the candidate stages RC4 to RC9 planned keeps its stage name
 and its tracking issue, and moves into the release that now ships it.
 
@@ -55,8 +56,10 @@ Three milestones are deliberately **rolling** rather than tied to a release:
 ## How the stages are ordered
 
 The fork published three release candidates: `v1.0.0-rc.1` (2026-09-27),
-`v1.0.0-rc.2` (2026-09-28) and `v1.0.0-rc.3` (2026-10-07). They are withdrawn;
-older tags are inherited upstream history.
+`v1.0.0-rc.2` (2026-09-28) and `v1.0.0-rc.3` (2026-10-07). They were withdrawn
+([ADR-3292](adr/3292-release-line-restart-0x.md)) and deleted after `0.1.0`
+([ADR-3398](adr/3398-delete-withdrawn-rc-releases.md)); older tags are inherited
+upstream history.
 [ADR-1341](adr/1341-rc-correctness-benchmark-retrain-sequence.md) gave each
 stage one responsibility, and ADR-1421, ADR-1490, ADR-1868,
 [ADR-1880](adr/1880-format-envelope-device-targets.md),
@@ -68,8 +71,8 @@ changed is which release ships each stage.
 
 ### What this means for you
 
-- **Use the newest release.** The withdrawn candidates are not a supported
-  line; from `0.1.0` on, each release keeps the Netflix golden scores.
+- **Use the newest release.** The withdrawn and deleted candidates are not a
+  supported line; from `0.1.0` on, each release keeps the Netflix golden scores.
 - **No performance claims before the RC8 package of 0.2.0.** Speed numbers are
   measured and tuned after the capability tables.
 - **Model retraining comes in 0.9.0**, after the RC8 evidence.
@@ -80,9 +83,9 @@ changed is which release ships each stage.
 
 | Stage | Release | Theme | Tracking issue |
 | --- | --- | --- | --- |
-| **RC1** | withdrawn `v1.0.0-rc.1` | correctness and tester readiness | — |
-| **RC2** | withdrawn `v1.0.0-rc.2` | stabilisation and repair | — |
-| **RC3** | withdrawn `v1.0.0-rc.3`; carry-over in 0.2.0 | twin exactness, overflow audit at 8K and 16K | [#1721](https://github.com/VMAFx/vmafx/issues/1721) |
+| **RC1** | withdrawn `v1.0.0-rc.1` (deleted after 0.1.0, [ADR-3398](adr/3398-delete-withdrawn-rc-releases.md)) | correctness and tester readiness | — |
+| **RC2** | withdrawn `v1.0.0-rc.2` (deleted after 0.1.0, [ADR-3398](adr/3398-delete-withdrawn-rc-releases.md)) | stabilisation and repair | — |
+| **RC3** | withdrawn `v1.0.0-rc.3` (deleted after 0.1.0, [ADR-3398](adr/3398-delete-withdrawn-rc-releases.md)); carry-over in 0.2.0 | twin exactness, overflow audit at 8K and 16K | [#1721](https://github.com/VMAFx/vmafx/issues/1721) |
 | **RC4** | 0.1.0 | first full Rust metric, zero-copy device-frame import, new VMAFx API and its bindings, FFmpeg filters and series redesign, GStreamer element, provenance, input formats, scoring API contract, engineering principles, OBS-ready API | [#1723](https://github.com/VMAFx/vmafx/issues/1723) |
 | **RC5** | 0.2.0 (metrics: 0.7.0; deployment: 0.10.0) | deduplication, tool consolidation, device-targeted scoring; the new metrics and the cloud-native deployment moved out | [#1724](https://github.com/VMAFx/vmafx/issues/1724) |
 | **RC6** | 0.2.0 | GPU capability source of truth, GPU format envelope, legacy GPU build variants | [#1725](https://github.com/VMAFx/vmafx/issues/1725) |
