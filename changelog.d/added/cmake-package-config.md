@@ -1,1 +1,0 @@
-- Install CMake package configuration files (`<libdir>/cmake/vmafx/vmafxConfig.cmake` and `vmafxConfigVersion.cmake`) providing the `vmafx::vmafx` imported target and version checking (#2437).
