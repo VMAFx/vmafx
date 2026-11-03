@@ -326,23 +326,24 @@ static void plan_planes(const VmafxFrameImport *d, const ImportLayout *layout, b
 }
 
 /* Plane `i` of the frame: the producer's plane (`dst` NULL), or its
- * conversion into `dst`. */
-static void fill_plane(const VmafxFrameImport *d, const ImportLayout *layout, uint32_t i,
-                       const unsigned pw[3], const unsigned ph[3], uint8_t *dst, void *data[3],
-                       ptrdiff_t stride[3])
+ * conversion into `dst`: 0, or -1 when the RGB conversion plan is rejected. */
+static int fill_plane(const VmafxFrameImport *d, const ImportLayout *layout, uint32_t i,
+                      const unsigned pw[3], const unsigned ph[3], uint8_t *dst, void *data[3],
+                      ptrdiff_t stride[3])
 {
     if (layout->packed == VMAFX_IMPORT_PACKED_RGB) {
-        VmafxRgbPlan rgb;
+        VmafxRgbPlan rgb = {0};
         /* The statement was checked: the matrix has a conversion. */
         const bool planned = vmafx_rgb_plan_init(&rgb, layout, d->bpc, d->rgb_matrix, d->rgb_range,
                                                  d->rgb_out_range);
-        assert(planned && dst != NULL);
-        (void)planned;
+        if (!planned || !dst) {
+            return -1;
+        }
         data[i] = dst;
         stride[i] = (ptrdiff_t)owned_stride(pw[i], d->bpc);
         vmafx_rgb_read_plane(dst, (size_t)stride[i], plane_address(&d->plane[0]),
                              (size_t)d->plane[0].pitch, pw[i], ph[i], i, &rgb);
-        return;
+        return 0;
     }
     VmafxImportRead rd;
     vmafx_import_plane_read(layout, d->bpc, i, &rd);
@@ -350,17 +351,19 @@ static void fill_plane(const VmafxFrameImport *d, const ImportLayout *layout, ui
     if (!dst) {
         data[i] = plane_address(p);
         stride[i] = (ptrdiff_t)p->pitch;
-        return;
+        return 0;
     }
     data[i] = dst;
     stride[i] = (ptrdiff_t)owned_stride(pw[i], d->bpc);
     vmafx_import_read_plane(dst, (size_t)stride[i], d->bpc > 8u ? 2u : 1u, plane_address(p),
                             (size_t)p->pitch, pw[i], ph[i], &rd);
+    return 0;
 }
 
 /* Fill data / stride for every plane of the frame, converting into one
  * aligned allocation `*owned` of `*bytes` bytes (NULL / 0 when every plane
- * is bound as it is): 0, or -1 without memory. */
+ * is bound as it is): 0, -1 without memory, or -2 when a plane conversion
+ * plan is rejected. */
 static int convert_planes(const VmafxFrameImport *d, const ImportLayout *layout, bool copy_all,
                           void *data[3], ptrdiff_t stride[3], void **owned, size_t *bytes)
 {
@@ -377,8 +380,11 @@ static int convert_planes(const VmafxFrameImport *d, const ImportLayout *layout,
     for (uint32_t i = 0; i < n_out; i++) {
         /* A converted plane has an offset only when there is an allocation. */
         assert(offsets[i] == SIZE_MAX || buffer != NULL);
-        fill_plane(d, layout, i, pw, ph, offsets[i] == SIZE_MAX ? NULL : buffer + offsets[i], data,
-                   stride);
+        uint8_t *const dst = offsets[i] == SIZE_MAX ? NULL : buffer + offsets[i];
+        if (fill_plane(d, layout, i, pw, ph, dst, data, stride) != 0) {
+            aligned_free(buffer);
+            return -2;
+        }
     }
     *owned = buffer;
     return 0;
@@ -395,10 +401,15 @@ static VmafxStatus bind_frame(const VmafxReport *report, VmafxDevice *device,
     void *owned = NULL;
     size_t bytes = 0;
     VmafxFrame *const frame = calloc(1, sizeof(*frame));
-    if (!frame || convert_planes(d, layout, copy_all, data, stride, &owned, &bytes) != 0) {
+    const int rc = frame ? convert_planes(d, layout, copy_all, data, stride, &owned, &bytes) : -1;
+    if (rc != 0) {
         free(frame);
-        return VMAFX_FAIL(report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_FRAME, "frame",
-                          "cannot allocate a %ux%u frame", (unsigned)d->w, (unsigned)d->h);
+        return rc == -1 ?
+                   VMAFX_FAIL(report, VMAFX_E_NOMEM, 0, VMAFX_SUBJECT_FRAME, "frame",
+                              "cannot allocate a %ux%u frame", (unsigned)d->w, (unsigned)d->h) :
+                   VMAFX_FAIL(report, VMAFX_E_INVALID, 0, VMAFX_SUBJECT_PARAMETER,
+                              "desc.rgb_matrix", "pixel format %s: no RGB conversion plan",
+                              layout->name);
     }
     VmafxFrameDesc planar = VMAFX_FRAME_DESC_INIT;
     planar.pix_fmt = layout->planar_fmt;
