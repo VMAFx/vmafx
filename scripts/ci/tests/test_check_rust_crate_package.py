@@ -12,6 +12,7 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from scripts.ci import check_rust_crate_package as check
@@ -40,7 +41,7 @@ class PackageChecks(unittest.TestCase):
         self.fail_docs: str | None = None
         self.omit_header = False
 
-    def runner(self, command: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
+    def runner(self, command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         cwd, env = kwargs["cwd"], kwargs["env"]
         self.calls.append((command, cwd, env))
         if command[:3] == ["rustc", "--print", "sysroot"]:
@@ -95,7 +96,7 @@ class PackageChecks(unittest.TestCase):
             check.check_packages(self.root, self.runner)
 
     def test_package_failure_is_named_and_refused(self) -> None:
-        def runner(command, **kwargs):
+        def runner(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
             if command[1] == "package":
                 raise subprocess.CalledProcessError(101, command, stderr="planted package failure")
             return self.runner(command, **kwargs)
@@ -108,7 +109,7 @@ class PackageChecks(unittest.TestCase):
             check.packaged_crate(self.root, "vmafx-sys")
 
     def test_temporary_directory_inside_checkout_is_refused(self) -> None:
-        with patch.object(check.tempfile, "TemporaryDirectory") as temporary:
+        with patch("tempfile.TemporaryDirectory") as temporary:
             temporary.return_value.__enter__.return_value = str(self.root / "inside")
             with self.assertRaisesRegex(check.PackageError, "outside the checkout"):
                 check.check_packages(self.root, self.runner)
