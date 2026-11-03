@@ -7,6 +7,9 @@ The unwind helpers of core/src/feature/metal/*.mm release a failed init in
 reverse order. The lifecycle and the context are released only inside an
 ``if (s->ctx != nullptr)`` block, so a failed vmaf_metal_context_new() never
 reaches the release calls, and the helper returns the error it was given.
+Every device resource (pipelines, kernel buffers, release/free helpers) is
+released before that guard, and every pipeline handed back to ARC is set to
+nullptr; only host-memory helpers may run after the context is gone.
 The check is device-free and runs on every host.
 """
 
@@ -31,6 +34,30 @@ EXPECTED_HELPERS = {
 HELPER = re.compile(r"^static int (unwind_\w+)\(\w+ \*s, int err\)\n\{\n(.*?)^\}\n", re.M | re.S)
 GUARD = re.compile(r"^    if \(s->ctx != nullptr\) \{\n(.*?)^    \}\n", re.M | re.S)
 RELEASES = ("vmaf_metal_kernel_lifecycle_close(", "vmaf_metal_context_destroy(")
+# A device resource release: a pipeline handed back to ARC, a kernel buffer
+# freed, or a per-file release/free helper. Each one belongs to the context, so
+# it must run before the guarded context release. Host-memory helpers
+# (free_host_*) need no context and may run after it.
+RESOURCE = re.compile(
+    r"__bridge_transfer|vmaf_metal_kernel_buffer_free\(|\b\w*(?:release|free)_(?!host_)\w+\(s\)"
+)
+BRIDGED = re.compile(r"__bridge_transfer [^)]*\)s->(\w+);\s*s->(\w+)\s*=\s*nullptr;")
+
+
+def resource_problems(name: str, body: str) -> list[str]:
+    """Return resource releases that follow the guard or leave a dangling pipeline."""
+    problems: list[str] = []
+    guard = GUARD.search(body)
+    before, after = (body[: guard.start()], body[guard.end() :]) if guard else (body, "")
+    if not RESOURCE.search(before):
+        problems.append(f"{name}: releases no resource before the s->ctx guard")
+    if RESOURCE.search(after):
+        problems.append(f"{name}: releases a resource after the context is destroyed")
+    transfers = body.count("__bridge_transfer")
+    nulled = [m for m in BRIDGED.finditer(body) if m.group(1) == m.group(2)]
+    if len(nulled) != transfers:
+        problems.append(f"{name}: a transferred pipeline is not set to nullptr")
+    return problems
 
 
 def helper_problems(name: str, body: str) -> list[str]:
@@ -43,6 +70,7 @@ def helper_problems(name: str, body: str) -> list[str]:
             problems.append(f"{name}: {call.rstrip('(')} outside the s->ctx guard")
         if call in body and call not in guarded:
             problems.append(f"{name}: {call.rstrip('(')} not released under the guard")
+    problems += resource_problems(name, body)
     if not body.rstrip().endswith("return err;"):
         problems.append(f"{name}: does not end with return err")
     return problems
@@ -75,6 +103,7 @@ class MetalUnwindContract(unittest.TestCase):
         """Negative: a release outside the guard and a lost init error are reported."""
         planted = (
             "static int unwind_x(State *s, int err)\n{\n"
+            "    release_buffers(s);\n"
             "    (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);\n"
             "    vmaf_metal_context_destroy(s->ctx);\n"
             "    return 0;\n}\n"
@@ -82,6 +111,40 @@ class MetalUnwindContract(unittest.TestCase):
         count, problems = file_problems(planted, "planted")
         self.assertEqual(count, 1)
         self.assertEqual(len(problems), 5, problems)
+
+    def test_late_or_dangling_resource_is_refused(self) -> None:
+        """Negative: a device release after the guard and an un-nulled pipeline are reported."""
+        planted = (
+            "static int unwind_x(State *s, int err)\n{\n"
+            "    if (s->pso) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso; }\n"
+            "    if (s->ctx != nullptr) {\n"
+            "        (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);\n"
+            "        vmaf_metal_context_destroy(s->ctx);\n"
+            "    }\n"
+            "    release_buffers(s);\n"
+            "    return err;\n}\n"
+        )
+        _, problems = file_problems(planted, "planted")
+        self.assertEqual(
+            problems,
+            [
+                "planted:unwind_x: releases a resource after the context is destroyed",
+                "planted:unwind_x: a transferred pipeline is not set to nullptr",
+            ],
+        )
+
+    def test_host_free_after_guard_is_allowed(self) -> None:
+        """Boundary: freeing host memory after the context release is not a finding."""
+        planted = (
+            "static int unwind_x(State *s, int err)\n{\n"
+            "    release_buffers(s);\n"
+            "    if (s->ctx != nullptr) {\n"
+            "        vmaf_metal_context_destroy(s->ctx);\n"
+            "    }\n"
+            "    free_host_buffers(s);\n"
+            "    return err;\n}\n"
+        )
+        self.assertEqual(file_problems(planted, "planted"), (1, []))
 
 
 if __name__ == "__main__":
