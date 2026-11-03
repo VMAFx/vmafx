@@ -41,7 +41,8 @@ caller paths; never export real repository's Git paths into test.
 Level Zero fixture setup and its checker subprocess use same Git isolation.
 Preserve real linked-worktree hook regression: Git exports `GIT_DIR`,
 so clean parent shell insufficient. Old-command control mutates
-disposable caller only; fixed helper preserves every shared Git and
+disposable caller's shared Git config (`caller/.git/config`, shared with
+caller's linked worktrees); fixed helper preserves every shared Git and
 linked-worktree file, including both indexes and staged/unstaged work.
 
 Windows checkout (`* text=auto`) -> CRLF in working-tree text files.
