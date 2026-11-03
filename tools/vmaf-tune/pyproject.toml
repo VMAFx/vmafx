@@ -21,7 +21,7 @@ dev = [
   "ruff>=0.17.3",
   "optuna>=5.0.0",
   "matplotlib>=3.10.9",
-  "onnxruntime>=1.23",
+  "onnxruntime>=1.31.1",
   "pdqhash>=0.2.8",
 ]
 # Perceptual video fingerprinting for near-duplicate result reuse (ADR-3372).
