@@ -47,6 +47,34 @@ def findings(text: str) -> list[str]:
     return [what for pattern, what in BANNED if re.search(pattern, code(text))]
 
 
+def rgb_plan_file_findings(text: str) -> list[str]:
+    c = code(text)
+    if "vmafx_rgb_plan_init(" not in c:
+        return []
+    reasons: list[str] = []
+    if "(void)planned" in c:
+        reasons.append("vmafx_rgb_plan_init return cast to void")
+    if not re.search(r"\bif\s*\(\s*!planned\b", c):
+        reasons.append("missing branch on !planned")
+    if "VmafxRgbPlan rgb = {0};" not in c:
+        reasons.append("rgb plan not zero-initialized")
+    if re.search(r"\bassert\s*\([^;]*\bplanned\b", c):
+        reasons.append("assert on the recoverable plan result")
+    return reasons
+
+
+def unhandled_rgb_plan_callers(root: Path = ROOT) -> list[str]:
+    src = root / "core/src"
+    unhandled = []
+    for path in sorted(src.rglob("*")):
+        if path.suffix not in (".c", ".cpp"):
+            continue
+        text = path.read_text(encoding="utf-8")
+        if rgb_plan_file_findings(text):
+            unhandled.append(str(path.relative_to(root)))
+    return unhandled
+
+
 class RgbMathContract(unittest.TestCase):
     def test_header_is_the_integer_expression_only(self) -> None:
         self.assertEqual(findings(HEADER.read_text(encoding="utf-8")), [])
@@ -101,6 +129,41 @@ class RgbMathContract(unittest.TestCase):
         self.assertIn("VmafxRgbPlan rgb)", text)  # the plan by value
         self.assertIn("vmafx_rgb_value(&rgb, plane, r, g, b)", text)
         self.assertNotIn("coef", code(text))  # no second copy of the expression
+
+    def test_rgb_plan_callers_handle_failure(self) -> None:
+        unhandled = unhandled_rgb_plan_callers()
+        self.assertEqual(unhandled, [])
+
+    def test_scan_refuses_planted_unhandled_rgb_plan(self) -> None:
+        valid_sample = (
+            "static int fill(const VmafxFrameImport *d, const ImportLayout *layout) {\n"
+            "    VmafxRgbPlan rgb = {0};\n"
+            "    const bool planned = vmafx_rgb_plan_init(&rgb, layout, d->bpc, d->rgb_matrix,\n"
+            "                                             d->rgb_range, d->rgb_out_range);\n"
+            "    if (!planned) {\n"
+            "        return -1;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        self.assertEqual(rgb_plan_file_findings(valid_sample), [])
+        planted = {
+            "vmafx_rgb_plan_init return cast to void": valid_sample.replace(
+                "if (!planned) {\n        return -1;\n    }", "(void)planned;", 1
+            ),
+            "missing branch on !planned": valid_sample.replace(
+                "if (!planned) {\n        return -1;\n    }", "", 1
+            ),
+            "rgb plan not zero-initialized": valid_sample.replace(
+                "VmafxRgbPlan rgb = {0};", "VmafxRgbPlan rgb;", 1
+            ),
+            "assert on the recoverable plan result": valid_sample.replace(
+                "    if (!planned) {", "    assert(planned);\n    if (!planned) {", 1
+            ),
+        }
+        for what, mutated in planted.items():
+            self.assertNotEqual(mutated, valid_sample, what)
+            self.assertIn(what, rgb_plan_file_findings(mutated), what)
 
 
 if __name__ == "__main__":
