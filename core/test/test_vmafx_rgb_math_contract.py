@@ -195,19 +195,59 @@ def _find_outer_brace_span(after_cond: str) -> tuple[int, int]:
     return (-1, -1)
 
 
+def _is_explicit_success_return(expr: str) -> bool:
+    cleaned = _strip_outer_parens(expr.strip())
+    if re.fullmatch(r"[+]?(?:0[xX]0+|0)[uUlL]*", cleaned):
+        return True
+    return cleaned in {
+        "CUDA_SUCCESS",
+        "hipSuccess",
+        "EXIT_SUCCESS",
+        "VMAFX_OK",
+        "VMAFX_SUCCESS",
+    }
+
+
 def _check_guarded_block_return(after_cond: str, res_var: str) -> list[str]:
     brace_open, brace_close = _find_outer_brace_span(after_cond)
     if brace_open < 0 or brace_close < 0:
         return [f"missing return in !{res_var} branch"]
     block = after_cond[brace_open + 1 : brace_close]
     top_level = _strip_nested_brace_blocks(block)
-    ret_match = re.search(r"\breturn\b", top_level)
+    ret_match = re.search(r"\breturn\b([^;]*)", top_level)
     if not ret_match:
         return [f"missing return in !{res_var} branch"]
     preceding = top_level[: ret_match.start()]
     if re.search(r"\b(if|else|for|while|switch)\b", preceding):
         return [f"missing return in !{res_var} branch"]
+    ret_expr = ret_match.group(1).strip()
+    if _is_explicit_success_return(ret_expr):
+        return [f"explicit success return in !{res_var} branch"]
     return []
+
+
+def _count_negations(term: str, res_var: str) -> int:
+    s = term.strip()
+    neg = 0
+    for _ in range(len(s) + 1):
+        s = _strip_outer_parens(s)
+        if not s.startswith("!"):
+            break
+        neg += 1
+        s = s[1:].strip()
+    if s == res_var:
+        return neg
+    return -1
+
+
+def _has_effective_negation(cond: str, res_var: str) -> bool:
+    cleaned = _strip_outer_parens(cond)
+    terms = re.split(r"\|\||&&", cleaned)
+    for term in terms:
+        c = _count_negations(term, res_var)
+        if c > 0 and c % 2 == 1:
+            return True
+    return False
 
 
 def _find_closing_paren(text: str, paren_open: int) -> int:
@@ -224,14 +264,14 @@ def _find_closing_paren(text: str, paren_open: int) -> int:
 
 
 def _check_branch_returns(body_after: str, res_var: str) -> list[str]:
-    guard_re = re.compile(rf"!\s*\(?\s*{re.escape(res_var)}\b")
+    guard_re = re.compile(rf"(?<![!A-Za-z0-9_])!\s*\(?\s*{re.escape(res_var)}\b")
     for m in list(re.finditer(r"\bif\s*\(", body_after))[:20]:
         paren_open = m.end() - 1
         paren_close = _find_closing_paren(body_after, paren_open)
         if paren_close < 0:
             continue
         cond = body_after[paren_open + 1 : paren_close]
-        if not guard_re.search(cond):
+        if not guard_re.search(cond) or not _has_effective_negation(cond, res_var):
             continue
         cond_errors = _check_cond_narrowing(cond, guard_re)
         if cond_errors:
@@ -540,6 +580,9 @@ class RgbMathContract(unittest.TestCase):
             "missing return in !planned branch": valid_sample.replace(
                 "        return -1;\n", "        if (!dst) return -1;\n", 1
             ),
+            "explicit success return in !planned branch": valid_sample.replace(
+                "        return -1;\n", "        return 0;\n", 1
+            ),
         }
         for what, mutated in planted.items():
             self.assertNotEqual(mutated, valid_sample, what)
@@ -716,6 +759,65 @@ class RgbMathContract(unittest.TestCase):
             "}\n"
         )
         self.assertEqual(rgb_plan_file_findings(or_branch), [])
+
+    def test_scan_refuses_explicit_success_return_in_failure_branch(self) -> None:
+        base = (
+            "static int fill(const VmafxFrameImport *d, const ImportLayout *layout) {\n"
+            "    VmafxRgbPlan rgb = {0};\n"
+            "    const bool planned = vmafx_rgb_plan_init(&rgb, layout, d->bpc, d->rgb_matrix,\n"
+            "                                             d->rgb_range, d->rgb_out_range);\n"
+            "    if (!planned) {\n"
+            "        __RET__\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        bad_returns = (
+            "return 0;",
+            "return (0);",
+            "return 0U;",
+            "return CUDA_SUCCESS;",
+            "return hipSuccess;",
+        )
+        for bad_ret in bad_returns:
+            sample = base.replace("__RET__", bad_ret)
+            self.assertIn(
+                "explicit success return in !planned branch",
+                rgb_plan_file_findings(sample),
+                f"must reject {bad_ret}",
+            )
+        good_returns = (
+            "return -1;",
+            "return -EINVAL;",
+            "return CUDA_ERROR_INVALID_VALUE;",
+            "return hipErrorInvalidValue;",
+        )
+        for good_ret in good_returns:
+            sample = base.replace("__RET__", good_ret)
+            self.assertEqual(rgb_plan_file_findings(sample), [], f"must accept {good_ret}")
+
+    def test_scan_refuses_double_negated_condition_failure_branch(self) -> None:
+        base = (
+            "static int fill(const VmafxFrameImport *d, const ImportLayout *layout) {\n"
+            "    VmafxRgbPlan rgb = {0};\n"
+            "    const bool planned = vmafx_rgb_plan_init(&rgb, layout, d->bpc, d->rgb_matrix,\n"
+            "                                             d->rgb_range, d->rgb_out_range);\n"
+            "    if (__COND__) {\n"
+            "        return -1;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+        )
+        for bad_cond in ("!!planned", "!(!planned)"):
+            sample = base.replace("__COND__", bad_cond)
+            self.assertIn(
+                "missing branch on !planned",
+                rgb_plan_file_findings(sample),
+                f"must reject {bad_cond}",
+            )
+        for good_cond in ("!planned", "!(planned)", "(!planned)", "!planned || !dst"):
+            sample = base.replace("__COND__", good_cond)
+            self.assertEqual(rgb_plan_file_findings(sample), [], f"must accept {good_cond}")
 
     def test_known_gap_macro_checked_result_reported_as_unhandled(self) -> None:
         """Known gap (HISS-20): textual scanner does not expand helper guard macros.
