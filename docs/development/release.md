@@ -470,16 +470,17 @@ readelf -d vmaf | grep RUNPATH   # Library runpath: [$ORIGIN]
 #### Runtime requirements
 
 Starting with 0.1.0, both Linux x86-64 and arm64 bundles require **glibc
-2.28 or newer**. They compile in the `release-build` stage of
-`dev/Containerfile`, using architecture-specific, digest-pinned
-`manylinux_2_28` images based on AlmaLinux 8 with GCC 14. The pins and
-`NATIVE_GLIBC_FLOOR` live in `build-config.env`; container images retain their
-separate Debian 13 release track.
+2.28 or newer** and **libstdc++ GLIBCXX 3.4.25 or newer**. They compile in the
+`release-build` stage of `dev/Containerfile`, using architecture-specific,
+digest-pinned `manylinux_2_28` images based on AlmaLinux 8 with GCC 14. The pins,
+`NATIVE_GLIBC_FLOOR` and `NATIVE_GLIBCXX_FLOOR` live in `build-config.env`;
+container images retain their separate Debian 13 release track.
 
 After staging, `scripts/release/check_glibc_floor.py` runs `objdump -T` on the
 CLI and every staged shared library, including libzimg when present. It
-compares GLIBC versions numerically and fails for a requirement above 2.28,
-an unrecognised GLIBC ABI requirement, an unreadable ELF or a failed objdump.
+compares GLIBC versions numerically against 2.28 and GLIBCXX symbol versions
+against 3.4.25, and fails for a requirement above either floor, an unrecognised
+ABI requirement, an unreadable ELF or a failed objdump.
 The compiler's own runtime libraries must also resolve during the existing
 clean-environment bundle verification.
 
@@ -490,9 +491,10 @@ clean-environment bundle verification.
 
 Both builds also run the verifier inside their glibc 2.28 builder, and both
 consumer jobs start the CLI in the pinned `RELEASE_RUNTIME_CC` image. Ubuntu
-22.04 / 24.04 and Debian 12 meet the glibc floor. Check a host with
-`ldd --version`. The withdrawn release candidates used a newer builder;
-these requirements apply to 0.1.0 and later.
+22.04 / 24.04 and Debian 12 meet the glibc and libstdc++ floors. Check a host with
+`ldd --version` and `strings /usr/lib*/libstdc++.so.6 | grep GLIBCXX`. The
+withdrawn release candidates used a newer builder; these requirements apply to
+0.1.0 and later.
 
 The arm64 archive has its own Sigstore `.bundle` and is a subject of the
 native build-provenance attestation. The native `vmafx.spdx.json` and

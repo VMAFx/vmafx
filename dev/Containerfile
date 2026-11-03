@@ -335,7 +335,16 @@ COPY requirements/locks/build.txt /build/requirements/build.txt
 ARG NATIVE_NASM_VERSION=3.02
 ARG NATIVE_NASM_SHA256=87336eba53b4acfe917424ab5d500d2b0054d9f5148d35c2273ccf2cfb712f0d
 # hadolint ignore=DL3041
-RUN dnf -y install vim-common zimg-devel git pkgconf-pkg-config \
+RUN for attempt in 1 2 3; do \
+        dnf -y install --setopt=retries=10 --setopt=skip_if_unavailable=False \
+            vim-common zimg-devel git pkgconf-pkg-config \
+        && break || { \
+            if [ "$attempt" -eq 3 ]; then exit 1; fi; \
+            echo "dnf install attempt $attempt failed; cleaning metadata and retrying..." >&2; \
+            dnf clean metadata; \
+            sleep 2; \
+        }; \
+    done \
     && dnf clean all \
     && python3 -m pip install --no-cache-dir --require-hashes \
         -r /build/requirements/build.txt \
