@@ -10,7 +10,7 @@ import os
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
@@ -743,8 +743,8 @@ def test_cmake_consumer_mingw_import_library(tmp_path: Path) -> None:
         stderr=subprocess.DEVNULL,
     )
     props = (build_dir / "target_props.txt").read_text(encoding="utf-8").splitlines()
-    assert props[0] == str(bin_dir / "vmafx.dll")
-    assert props[1] == str(lib / "libvmafx.dll.a")
+    assert Path(props[0]) == bin_dir / "vmafx.dll"
+    assert Path(props[1]) == lib / "libvmafx.dll.a"
 
 
 def test_cmake_consumer_stale_dll_cache_overridden(tmp_path: Path) -> None:
@@ -795,7 +795,14 @@ def test_cmake_consumer_stale_dll_cache_overridden(tmp_path: Path) -> None:
         stderr=subprocess.DEVNULL,
     )
     loc = (build_dir / "target_loc.txt").read_text(encoding="utf-8").strip()
-    assert loc == str(bin_dir / "vmafx.dll")
+    assert Path(loc) == bin_dir / "vmafx.dll"
+
+
+def test_cmake_target_props_windows_slash_parity() -> None:
+    cmake_prop = "C:/install/bin/vmafx.dll"
+    expected = PureWindowsPath(r"C:\install\bin\vmafx.dll")
+    assert PureWindowsPath(cmake_prop) == expected
+    assert cmake_prop != str(expected)
 
 
 def test_meson_build_cmake_package_guards() -> None:
