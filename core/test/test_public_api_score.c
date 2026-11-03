@@ -40,6 +40,7 @@
 
 #include <errno.h>
 #include <math.h>
+#include <stdbool.h>
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -57,6 +58,7 @@
 #include <unistd.h>
 #endif
 
+#include "full_device.h"
 #include "test.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
@@ -131,7 +133,8 @@ static char *test_vmaf_score_at_index(void)
     err = vmaf_score_at_index(vmaf, NULL, &score, 0);
     mu_assert("vmaf_score_at_index(NULL model) should fail", err);
 
-    (void)vmaf_close(vmaf);
+    err = vmaf_close(vmaf);
+    mu_assert("vmaf_close failed", !err);
     vmaf_model_destroy(model);
     return NULL;
 }
@@ -256,7 +259,8 @@ static char *test_vmaf_write_output(void)
     err = vmaf_write_output(vmaf, NULL, VMAF_OUTPUT_FORMAT_JSON);
     mu_assert("vmaf_write_output(NULL path) should fail", err);
 
-    (void)vmaf_close(vmaf);
+    err = vmaf_close(vmaf);
+    mu_assert("vmaf_close failed", !err);
     vmaf_model_destroy(model);
     return NULL;
 }
@@ -266,10 +270,14 @@ static char *test_vmaf_write_output(void)
  * ---------------------------------------------------------------------- */
 static char *test_vmaf_write_output_to_full_device(void)
 {
-#if !defined(__linux__)
-    (void)fprintf(stderr, "SKIP: /dev/full test requires Linux\n");
-    return NULL;
-#else
+    if (!vmaf_test_full_device_rejects_writes()) {
+        (void)fprintf(
+            stderr,
+            "SKIP: test_vmaf_write_output_to_full_device: /dev/full is not a character device\n");
+        mu_skipped = 1;
+        return NULL;
+    }
+
     int err;
     VmafContext *vmaf = NULL;
     VmafModel *model = NULL;
@@ -294,10 +302,10 @@ static char *test_vmaf_write_output_to_full_device(void)
     mu_assert("vmaf_write_output_with_format(/dev/full) must return negative", err < 0);
     mu_assert("vmaf_write_output_with_format(/dev/full) must return -EIO", err == -EIO);
 
-    (void)vmaf_close(vmaf);
+    err = vmaf_close(vmaf);
+    mu_assert("vmaf_close failed", !err);
     vmaf_model_destroy(model);
     return NULL;
-#endif
 }
 
 /* -------------------------------------------------------------------------

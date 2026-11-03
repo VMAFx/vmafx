@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "full_device.h"
 #include "mu_table.h"
 #include "owner_only_file.h"
 #include "test.h"
@@ -380,10 +381,13 @@ static char *test_open_refusals(void)
 
 static char *test_write_to_full_device(void)
 {
-#if !defined(__linux__)
-    (void)fprintf(stderr, "SKIP: /dev/full test requires Linux\n");
-    return NULL;
-#else
+    if (!vmaf_test_full_device_rejects_writes()) {
+        (void)fprintf(stderr,
+                      "SKIP: test_write_to_full_device: /dev/full is not a character device\n");
+        mu_skipped = 1;
+        return NULL;
+    }
+
     VmafxModel *model = NULL;
     VmafxContext *context = create_scored_context(&model);
     mu_assert("context creation and scoring", context != NULL);
@@ -411,7 +415,6 @@ static char *test_write_to_full_device(void)
     vmafx_model_unref(model);
     mu_assert("context destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
     return NULL;
-#endif
 }
 
 char *run_tests(void)
