@@ -61,6 +61,7 @@ BASELINE_DIR_PREFIX = "vmafx-mypy-baseline-"
 ISOLATION_ARGS = ("--no-site-packages", "--disable-error-code=import-not-found")
 CONFIG_FILES = ("pyproject.toml", "mypy.ini", ".mypy.ini", "setup.cfg")
 BASE_REF_ENV = "VMAFX_MYPY_BASE_REF"
+CHECKED_ROOTS = ("ai/", "scripts/", "bindings/python/vmafx/")
 
 
 def git(*args: str) -> str:
@@ -248,11 +249,11 @@ def selected_paths(base: str, head: str, root: Path | None = None) -> list[str]:
     if root is None:
         root = Path(git("rev-parse", "--show-toplevel").strip()).resolve()
     if mypy_config_changed(root, base, head):
-        tracked = git("-C", str(root), "ls-files", "-z", "--", "ai/", "scripts/")
+        tracked = git("-C", str(root), "ls-files", "-z", "--", *CHECKED_ROOTS)
         return sorted(
             path
             for path in tracked.split("\0")
-            if path.startswith(("ai/", "scripts/")) and path.endswith(".py")
+            if path.startswith(CHECKED_ROOTS) and path.endswith(".py")
         )
     changed = git(
         "-C",
@@ -264,13 +265,12 @@ def selected_paths(base: str, head: str, root: Path | None = None) -> list[str]:
         base,
         head,
         "--",
-        "ai/",
-        "scripts/",
+        *CHECKED_ROOTS,
     )
     return sorted(
         path
         for path in changed.split("\0")
-        if path.startswith(("ai/", "scripts/")) and path.endswith(".py")
+        if path.startswith(CHECKED_ROOTS) and path.endswith(".py")
     )
 
 

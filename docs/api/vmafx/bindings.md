@@ -193,7 +193,9 @@ The test scores a Netflix reference pair and compares the pooled value
 bit-exact against the C contract. It reads the YUV files from `VMAFX_YUV_DIR`
 and skips when they are absent, so a checkout without the fixtures still runs
 the rest of the suite. With `VMAFX_REQUIRE_NETFLIX_PAIR=1`, as the CI coverage
-job sets it, a missing file fails the test instead.
+job sets it, a missing file fails the test instead. Static type checking with
+`mypy` (repo configuration) covers `bindings/python/vmafx` via
+`scripts/git-hooks/pre-push-mypy.py` and CI.
 
 ## Rust
 
@@ -295,6 +297,18 @@ DOCS_RS=1 cargo test -p vmafx-sys --test header_check --test library_search
 DOCS_RS=1 cargo test -p vmafx --test status
 LIBVMAF_PREFIX="/usr/local" LD_LIBRARY_PATH="/usr/local/lib" \
   cargo test -p vmafx --test api_gen
+```
+
+The bit-exactness test in `bindings/rust/vmafx/tests/netflix_bitexact.rs`
+scores the Netflix 576x324 reference pair with `vmaf_v1.0.16_3d0h` through the
+safe API, computes the pooled mean, and compares it bit for bit with the C API
+contract (`vmafx_score_contract`). It reads the YUV pair from `VMAFX_YUV_REF` /
+`VMAFX_YUV_DIST` (or `VMAFX_YUV_DIR`) and skips with a printed reason when absent,
+failing if `VMAFX_REQUIRE_NETFLIX_PAIR=1` is set:
+
+```bash
+LIBVMAF_PREFIX="/usr/local" LD_LIBRARY_PATH="/usr/local/lib" \
+  cargo test -p vmafx --test netflix_bitexact
 ```
 
 ## Go

@@ -259,6 +259,27 @@ class MypyScope(unittest.TestCase):
         self.assertEqual(self.run_hook("ai/owned.py").returncode, 0)
         self.assertEqual(json.loads(self.receipt.read_text()), ["ai/owned.py", "scripts/owned.py"])
 
+    def test_bindings_python_file_is_type_checked(self) -> None:
+        self.write("bindings/python/vmafx/clean.py", "val: int = 1\n")
+        self.commit("add clean bindings file")
+        self.assert_checked(["bindings/python/vmafx/clean.py"], 0)
+
+    def test_bindings_python_file_with_type_error_is_reported(self) -> None:
+        self.write("bindings/python/vmafx/error.py", 'val: int = "bad"  # BAD\n')
+        self.commit("add bindings file with error")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("bindings/python/vmafx/error.py", result.stderr)
+        self.assertEqual(json.loads(self.receipt.read_text()), ["bindings/python/vmafx/error.py"])
+
+    def test_bindings_non_py_file_is_ignored(self) -> None:
+        self.write("bindings/python/vmafx/py.typed", "")
+        self.write("bindings/python/vmafx/note.txt", "doc")
+        self.commit("add non-python bindings files")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.receipt.exists())
+
     def test_rebase_rechecks_unchanged_owned_file_through_real_pre_commit(self) -> None:
         self.write("scripts/owned.py", "from api import value\nowned: int = value()  # BAD\n")
         # Use the shipped hook configuration so missing always_run or restored
