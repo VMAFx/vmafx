@@ -600,8 +600,20 @@ class InstallStepContract(unittest.TestCase):
             (command,) = self.installer_commands(workflow)
             self.assertEqual(command[2:], ["22", "--source=apt.llvm.org"])
 
+    def assert_installer_copyright(self, script: str) -> None:
+        self.assertRegex(script, r"(?m)^# Copyright 2026 Lusoris$")
+
     def test_installer_has_required_copyright(self) -> None:
-        self.assertIn("# Copyright 2026 Lusoris", self.installer())
+        self.assert_installer_copyright(self.installer())
+
+    def test_installer_copyright_rejects_unwanted_suffix(self) -> None:
+        with self.assertRaises(AssertionError):
+            self.assert_installer_copyright(
+                self.installer().replace(
+                    "# Copyright 2026 Lusoris",
+                    "# Copyright 2026 Lusoris and Claude (Anthropic)",
+                )
+            )
 
 
 if __name__ == "__main__":
