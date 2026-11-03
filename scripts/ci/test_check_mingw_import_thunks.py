@@ -10,6 +10,7 @@ import io
 import struct
 import sys
 import tempfile
+import unittest
 from collections.abc import Sequence
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -570,6 +571,44 @@ def test_boundary_runtime_archive_no_defined_globals_passes() -> None:
         assert "runtime_overlap=0" in out.getvalue()
 
 
+def _check_absolute_runtime_symbol(nm_type: str) -> tuple[int, str, str]:
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        build = _make_build_dir(tmp_path, {"libvmaf.dll.a": (TWO_FUNCS, ("runtime_constant",))})
+        rt_archive = tmp_path / "libgcc_eh.a"
+        rt_archive.write_bytes(b"!<arch>\n")
+        rt_nm_out = f"00000000 {nm_type} runtime_constant\n"
+        out = io.StringIO()
+        err = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = gate.check_build_dir(
+                build,
+                nm_tool="nm",
+                runner=lambda _tool, _path: (0, WITH_THUNKS, ""),
+                runtime_archives=(rt_archive,),
+                runtime_runner=lambda _tool, _path: (0, rt_nm_out, ""),
+            )
+        return rc, out.getvalue(), err.getvalue()
+
+
+def test_negative_planted_runtime_archive_absolute_overlap_fails() -> None:
+    """Negative (planted): a DLL exporting a runtime global absolute symbol fails."""
+    rc, _, err = _check_absolute_runtime_symbol("A")
+    assert rc == 1, "global absolute runtime export was not rejected"
+    assert "FAIL" in err
+    assert "exports 1 symbol(s)" in err
+    assert "runtime_constant" in err
+    assert "libgcc_eh.a" in err
+
+
+def test_boundary_runtime_archive_local_absolute_symbol_ignored() -> None:
+    """Boundary: a local absolute symbol does not cause a DLL export overlap."""
+    rc, out, err = _check_absolute_runtime_symbol("a")
+    assert rc == 0, err
+    assert err == ""
+    assert "runtime_overlap=0" in out
+
+
 def test_boundary_runtime_archive_missing_path_fails() -> None:
     """Boundary: missing runtime archive path fails closed with exit 1."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -701,3 +740,15 @@ else:
         assert rc == 1
         assert "_Unwind_Resume" in err.getvalue()
         assert "libgcc_eh.a" in err.getvalue()
+
+
+def load_tests(
+    _loader: unittest.TestLoader, tests: unittest.TestSuite, _pattern: str | None
+) -> unittest.TestSuite:
+    """Expose the standalone test functions to the stdlib unittest runner."""
+    tests.addTests(
+        unittest.FunctionTestCase(test)
+        for name, test in sorted(globals().items())
+        if name.startswith("test_") and callable(test)
+    )
+    return tests
