@@ -16,13 +16,13 @@ re-exports the public API.
 The package uses only the Python standard library (`ctypes`). It has zero
 runtime dependencies (`dependencies = []` in [`bindings/python/pyproject.toml`](https://github.com/VMAFx/vmafx/blob/master/bindings/python/pyproject.toml)),
 ships a `py.typed` marker file ([`bindings/python/vmafx/py.typed`](https://github.com/VMAFx/vmafx/blob/master/bindings/python/vmafx/py.typed))
-for PEP 561 type checkers, and supports zero-copy frame ingestion from any
-object implementing the Python buffer protocol.
+for PEP 561 type checkers, and supports zero-copy frame ingestion from contiguous
+buffer-protocol objects whose planes match a supported `FrameDesc` geometry.
 
 On import, `_check_layout()` in `bindings/python/vmafx/_api.py` validates the
-size and field offsets of all 32 C structs in `LAYOUT` against
-`core/api/vmafx.toml`, raising `ImportError` on any discrepancy before the
-native library is loaded.
+size and field offsets of the generated `LAYOUT` mapping, raising `ImportError`
+on any discrepancy before the native library is loaded. The mapping is generated
+from `core/api/vmafx.toml`.
 
 !!! note "Looking for model training or legacy CLI scripts?"
     This page documents the modern `vmafx` package for scoring video via
@@ -59,16 +59,29 @@ sudo ninja -C build install
 pip install ./bindings/python
 ```
 
-Alternatively, you can build a wheel locally without build isolation:
+Alternatively, you can build a wheel locally using standard build isolation,
+or install `hatchling>=1.32.0` first if building without build isolation:
 
 ```bash
+# Build with build isolation (pip installs hatchling into an isolated build environment)
+python3 -m pip wheel --no-deps -w dist bindings/python
+pip install dist/vmafx-*.whl
+
+# Or install hatchling first when building without build isolation
+pip install "hatchling>=1.32.0"
 python3 -m pip wheel --no-deps --no-build-isolation -w dist bindings/python
 pip install dist/vmafx-*.whl
 ```
 
 ## How the package finds `libvmafx`
 
-The binding does not probe system paths or search implicit directories.
+The binding does not perform its own library search or probe directories;
+`load()` passes the chosen path directly to `ctypes.CDLL()`. When given an
+explicit filesystem path, that exact file is loaded. When given a bare soname
+(such as `libvmafx.so.1`), resolution is delegated to the operating system
+dynamic loader using its standard search paths (`LD_LIBRARY_PATH`, system library
+cache, or platform equivalent).
+
 In [`bindings/python/vmafx/_api.py`](https://github.com/VMAFx/vmafx/blob/master/bindings/python/vmafx/_api.py),
 the loader function `load()` defines how the shared library is resolved:
 
@@ -118,11 +131,12 @@ OSError: set VMAFX_LIBRARY or pass the path of the VMAFx shared library
 
 ## Minimal scoring example
 
-Every handle class in `vmafx` (`Library`, `Context`, `Model`, `ModelSet`,
+Every resource-owning class in `vmafx` (`Context`, `Model`, `ModelSet`,
 `Device`, `Frame`, `FramePool`, `FrameConverter`, `Options`, `ReportFile`,
 `Window`, `WindowClock`, `DnnSession`, `McpServer`) implements the
 context-manager protocol (`with` statement) for deterministic resource
-cleanup.
+cleanup. (`Library` wraps the loaded shared library and is not a context
+manager).
 
 ### Basic score import and pooling
 
@@ -226,8 +240,9 @@ Failed library calls raise exceptions defined in
 [`bindings/python/vmafx/_api.py`](https://github.com/VMAFx/vmafx/blob/master/bindings/python/vmafx/_api.py):
 
 - **`vmafx.VmafxError`**: Base exception raised whenever a C function returns
-  a non-zero status code. It extracts detailed diagnostic fields from the C
-  error handle (`core/include/vmafx/error.h`) and frees the handle:
+  a non-zero status code (except `WindowClock.frame()` and `WindowClock.finish()`,
+  which return `None` on `Status.PENDING`). It extracts detailed diagnostic fields
+  from the C error handle (`core/include/vmafx/error.h`) and frees the handle:
   - `error.function`: the C or binding function name that failed
     (for example `"vmafx_model_load"`).
   - `error.status`: integer status code corresponding to the `vmafx.Status`
@@ -245,7 +260,9 @@ Failed library calls raise exceptions defined in
 - **`vmafx.VmafxPending`**: A subclass of `VmafxError` raised when a scoring
   call returns `Status.PENDING` (status code `1`). This indicates that the
   requested score is not yet computed (for example, in asynchronous window
-  scoring before enough frames are submitted).
+  scoring before enough frames are submitted). Note that tumbling window clock
+  methods (`WindowClock.frame()` and `WindowClock.finish()`) return `None` rather
+  than raising `VmafxPending` when a window span is pending.
 
 ```python
 from vmafx import Pool, VmafxError, VmafxPending
@@ -269,10 +286,11 @@ except VmafxError as err:
   the caller to retry closing once in-flight tasks finish. A second `close()` on
   a successfully closed context is safely ignored as a no-op.
 - **Python callback exceptions**: Any Python exception raised within a
-  registered callback (such as `log_callback` in `ContextConfig` or
-  `on_complete` in `WindowRequest`) is trapped at the C FFI boundary, stored on
-  the owning context, and re-raised on the calling Python thread. Python
-  exceptions never unwind through foreign C stack frames.
+  registered callback (such as `log_callback` in `Context` or
+  `Library.context()`, or `on_complete` in `Context.window_submit()`) is
+  trapped at the C FFI boundary, stored on the owning context, and re-raised on
+  the calling Python thread. Python exceptions never unwind through foreign C
+  stack frames.
 
 ## Wheels
 
@@ -285,6 +303,8 @@ source as described in [Installation from source](#installation-from-source).
 
 ## See also
 
+- [Research-2318](../research/2318-vmafx-python-package.md): Background research,
+  source links, and design notes for the Python package and documentation.
 - [Language bindings reference](../api/vmafx/bindings.md): Detailed C FFI
   coverage, wrapped vs. unwrapped functions, and asynchronous window scores.
 - [VMAFx C API overview](../api/vmafx/index.md): The modernized VMAFx API design
