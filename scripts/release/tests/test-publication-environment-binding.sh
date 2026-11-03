@@ -429,6 +429,17 @@ def validate(texts: dict[str, str]) -> None:
     require_environment(
         workflow_paths[0], "crates-publish", supply_blocks["crates-publish"], "release-publish"
     )
+    if "crates-verify" not in supply_blocks:
+        raise AssertionError("supply-chain.yml lost the Rust crate verifier")
+    verify_block = supply_blocks["crates-verify"]
+    if "environment:" in verify_block:
+        raise AssertionError("crates-verify must not be bound to a deployment environment")
+    if "id-token: write" in verify_block:
+        raise AssertionError("crates-verify must not carry id-token write permission")
+    if "crates-verify" not in supply_blocks["crates-publish"].split("steps:\n")[0]:
+        raise AssertionError("crates-publish must depend on crates-verify in needs")
+    if "--no-verify" not in supply_blocks["crates-publish"]:
+        raise AssertionError("crates-publish must use --no-verify")
     missing_jobs = set(PROVENANCE_JOBS) - set(supply_blocks)
     if missing_jobs:
         raise AssertionError(f"supply-chain.yml lost provenance jobs {sorted(missing_jobs)}")
@@ -523,6 +534,20 @@ missing_crates[supply_path] = missing_crates[supply_path].replace(
     "  crates-publish:\n" + crate_block, "", 1
 )
 expect_rejected("a missing Rust crate publisher", missing_crates)
+
+unverified_publish = deepcopy(texts)
+unverified_publish[supply_path] = unverified_publish[supply_path].replace(
+    "--no-verify", "--reverify", 1
+)
+expect_rejected("Rust crate publisher without --no-verify", unverified_publish)
+
+verify_with_creds = deepcopy(texts)
+verify_with_creds[supply_path] = verify_with_creds[supply_path].replace(
+    "  crates-verify:\n",
+    "  crates-verify:\n    permissions:\n      id-token: write\n",
+    1
+)
+expect_rejected("Rust crate verifier with id-token permission", verify_with_creds)
 
 production_path = workflow_paths[1]
 bad_identity = deepcopy(texts)

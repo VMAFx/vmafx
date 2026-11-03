@@ -11,11 +11,27 @@ import subprocess
 import tarfile
 import tempfile
 import unittest
+from collections.abc import Buffer
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 from scripts.ci import check_rust_crate_package as check
+
+
+class ZeroReader(io.RawIOBase):
+    def __init__(self, size: int) -> None:
+        self.remaining = size
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer: Buffer) -> int:
+        view = memoryview(buffer).cast("B")
+        count = min(len(view), self.remaining)
+        self.remaining -= count
+        view[:count] = b"\0" * count
+        return count
 
 
 def write_archive(path: Path, members: dict[str, bytes]) -> None:
@@ -164,6 +180,32 @@ class PackageChecks(unittest.TestCase):
             contents.addfile(member)
         with self.assertRaisesRegex(check.PackageError, "unsafe crate member"):
             check.unpack_crate(archive, self.root / "extracted")
+
+    def test_uncompressed_crate_size_exceeded_is_refused(self) -> None:
+        archive = self.root / "vmafx-sys-0.1.0.crate"
+        with tarfile.open(archive, "w:gz") as contents:
+            limit = getattr(check, "MAX_UNCOMPRESSED_CRATE_BYTES", 64 * 1024 * 1024)
+            member = tarfile.TarInfo("vmafx-sys-0.1.0/Cargo.toml")
+            member.size = limit + 1
+            contents.addfile(member, io.BufferedReader(ZeroReader(member.size)))
+        with self.assertRaisesRegex(check.PackageError, "oversized uncompressed crate"):
+            check.unpack_crate(archive, self.root / "extracted")
+
+    def test_too_many_crate_members_is_refused(self) -> None:
+        archive = self.root / "vmafx-sys-0.1.0.crate"
+        max_members = getattr(check, "MAX_CRATE_MEMBERS", 2048)
+        with tarfile.open(archive, "w:gz") as contents:
+            for index in range(max_members + 1):
+                member = tarfile.TarInfo(f"vmafx-sys-0.1.0/file_{index}.txt")
+                member.size = 0
+                contents.addfile(member)
+        with self.assertRaisesRegex(check.PackageError, "too many crate members"):
+            check.unpack_crate(archive, self.root / "extracted")
+
+    def test_member_expanding_beyond_declared_size_is_refused(self) -> None:
+        target = self.root / "extracted/file.txt"
+        with self.assertRaisesRegex(check.PackageError, "member expanded beyond declared size"):
+            check.extract_member(io.BytesIO(b"1234567890"), target, 5, "file.txt")
 
 
 if __name__ == "__main__":

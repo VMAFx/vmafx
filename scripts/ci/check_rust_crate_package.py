@@ -15,10 +15,14 @@ import tarfile
 import tempfile
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
+from typing import IO
 
 ROOT = Path(__file__).resolve().parents[2]
 CRATES = ("vmafx-sys", "vmafx")
 MAX_CRATE_BYTES = 10 * 1024 * 1024
+MAX_UNCOMPRESSED_CRATE_BYTES = 64 * 1024 * 1024
+MAX_CRATE_MEMBERS = 2048
+CHUNK_BYTES = 64 * 1024
 DOC_HEADERS = ("libvmaf.h", "feature.h", "model.h", "picture.h", "macros.h")
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -102,24 +106,49 @@ def safe_member(member: tarfile.TarInfo, crate_name: str) -> bool:
     )
 
 
+def extract_member(source: IO[bytes], target: Path, max_size: int, member_name: str) -> None:
+    """Copy member bytes with bounded chunks, enforcing the declared size."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    max_chunks = max_size // CHUNK_BYTES + 2
+    with target.open("wb") as output:
+        for _ in range(max_chunks):
+            chunk = source.read(CHUNK_BYTES)
+            if not chunk:
+                return
+            copied += len(chunk)
+            if copied > max_size:
+                raise PackageError(f"member expanded beyond declared size: {member_name}")
+            output.write(chunk)
+    raise PackageError(f"member expanded beyond declared size: {member_name}")
+
+
 def unpack_crate(archive: Path, destination: Path) -> Path:
-    """Extract only regular files/directories under the expected crate root (Python 3.10)."""
+    """Extract bounded regular files/directories under the expected crate root."""
     crate = destination / archive.stem
+    member_count = 0
+    total_uncompressed = 0
     with tarfile.open(archive, "r:gz") as contents:
         for member in contents:
-            path = PurePosixPath(member.name)
+            member_count += 1
+            if member_count > MAX_CRATE_MEMBERS:
+                raise PackageError(f"too many crate members: {archive.name}")
             if not safe_member(member, archive.stem):
                 raise PackageError(f"unsafe crate member: {member.name}")
-            target = destination.joinpath(*path.parts)
+            if member.size < 0:
+                raise PackageError(f"invalid member size: {member.name}")
+            total_uncompressed += member.size
+            if total_uncompressed > MAX_UNCOMPRESSED_CRATE_BYTES:
+                raise PackageError(f"oversized uncompressed crate: {archive.name}")
+            target = destination.joinpath(*PurePosixPath(member.name).parts)
             if member.isdir():
                 target.mkdir(parents=True, exist_ok=True)
                 continue
-            target.parent.mkdir(parents=True, exist_ok=True)
             source = contents.extractfile(member)
             if source is None:
                 raise PackageError(f"unreadable crate member: {member.name}")
-            with source, target.open("wb") as output:
-                shutil.copyfileobj(source, output)
+            with source:
+                extract_member(source, target, member.size, member.name)
     if not (crate / "Cargo.toml").is_file():
         raise PackageError(f"missing packaged Cargo.toml: {archive.name}")
     return crate

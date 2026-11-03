@@ -804,9 +804,40 @@ jobs:
             provenance/vmaf-mcp-provenance.intoto.jsonl
           if-no-files-found: error
 
+  crates-verify:
+    name: Verify Rust crates
+    needs: [validate-release]
+    # Final releases only: match the crates-publish guard.
+    if: ${{ github.repository == 'VMAFx/vmafx' && github.server_url == 'https://github.com' && !contains(needs.validate-release.outputs.version, '-') }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      # Verify the packaged headers without an installed native library or GPU SDK.
+      DOCS_RS: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ needs.validate-release.outputs.tag }}
+          persist-credentials: false
+      - name: Set up the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
+        with:
+          toolchain: 1.99.1
+      - name: Install libclang for packaged-header verification
+        timeout-minutes: 5
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y --no-install-recommends libclang-dev
+      - name: Dry-run crate packaging and build verification
+        timeout-minutes: 10
+        run: |
+          cargo publish --dry-run --locked -p vmafx-sys -p vmafx -j4
+
   crates-publish:
     name: Publish Rust crates
-    needs: [validate-release, verify-native-artifacts, sign, provenance]
+    needs: [validate-release, verify-native-artifacts, sign, provenance, crates-verify]
     # Final releases only (the PyPI rule): an rc tag must not publish the 0.1.0 crates early.
     # The tag comes from validate-release, so the workflow_dispatch recovery path works too.
     if: ${{ github.repository == 'VMAFx/vmafx' && github.server_url == 'https://github.com' && !contains(needs.validate-release.outputs.version, '-') }}
@@ -828,11 +859,6 @@ jobs:
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
         with:
           toolchain: 1.99.1
-      - name: Install libclang for packaged-header verification
-        timeout-minutes: 5
-        run: |
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y --no-install-recommends libclang-dev
       - name: Check immutable crate versions
         id: crates-state
         timeout-minutes: 3
@@ -895,7 +921,7 @@ jobs:
           import os
           import subprocess
 
-          command = ["cargo", "publish", "--locked", "--registry", "crates-io", "-j4"]
+          command = ["cargo", "publish", "--locked", "--no-verify", "--registry", "crates-io", "-j4"]
           for crate, selected in (("vmafx-sys", "PUBLISH_SYS"), ("vmafx", "PUBLISH_WRAPPER")):
               if os.environ[selected] == "true":
                   command.extend(["-p", crate])
