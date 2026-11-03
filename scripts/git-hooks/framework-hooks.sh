@@ -72,7 +72,7 @@ esac
 unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
 
 # Installing hook environments also drops GIT_INDEX_FILE (pre-commit/pre-commit#3609).
-env -u GIT_INDEX_FILE "$fw" install-hooks || exit 1
+env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE -u GIT_OBJECT_DIRECTORY "$fw" install-hooks || exit 1
 
 stage=${stage:-${1:-}}
 case "$stage" in

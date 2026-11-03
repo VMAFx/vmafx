@@ -665,6 +665,11 @@ class LefthookBridgeTests(unittest.TestCase):
                 f"run|unset|unset|{index}|unset|unset",
             ],
         )
+        script_text = (ROOT / "scripts/git-hooks/framework-hooks.sh").read_text(encoding="utf-8")
+        self.assertIn(
+            'env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE -u GIT_OBJECT_DIRECTORY "$fw" install-hooks || exit 1',
+            script_text,
+        )
 
     def test_pre_push_forwards_remote_arguments_and_push_refs(self) -> None:
         self.stub(".venv/bin/pre-commit")
