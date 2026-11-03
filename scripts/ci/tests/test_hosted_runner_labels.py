@@ -21,6 +21,10 @@ SUPPLY_CHAIN = """\
 name: Supply chain
 on: push
 jobs:
+  verify-native-artifacts-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - run: echo ok
   verify-native-artifacts:
     runs-on: ubuntu-24.04
     steps:
@@ -113,7 +117,7 @@ class HostedRunnerLabelTest(unittest.TestCase):
     def test_explicit_labels_comments_and_lookalikes_pass(self) -> None:
         self.write(GOOD)
         res = self.assert_accepted()
-        self.assertIn("4 naming a hosted Ubuntu image", res.stdout)
+        self.assertIn("5 naming a hosted Ubuntu image", res.stdout)
 
     def test_declared_fallback_passes(self) -> None:
         self.write(OLDER)

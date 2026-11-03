@@ -53,9 +53,13 @@ ALLOWED = frozenset({"ubuntu-26.04", "ubuntu-26.04-arm"})
 FLOATING_PREFIXES = ("ubuntu-latest", "ubuntu-slim")
 # (workflow file, job id) -> (image the job is about, why).
 COMPATIBILITY_TARGETS: dict[tuple[str, str], tuple[str, str]] = {
+    ("supply-chain.yml", "verify-native-artifacts-arm64"): (
+        "ubuntu-24.04-arm",
+        "issue 2437: downloaded arm64 bundle on Ubuntu 24.04 LTS",
+    ),
     ("supply-chain.yml", "verify-native-artifacts"): (
         "ubuntu-24.04",
-        "ADR-1354: oldest hosted image that loads the native Linux bundle",
+        "issue 2437: downloaded x86-64 bundle on Ubuntu 24.04 LTS",
     ),
 }
 FALLBACK_MAX_DAYS = 90

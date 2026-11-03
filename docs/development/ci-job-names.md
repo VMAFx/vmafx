@@ -177,7 +177,10 @@ column mirrors that array.
 | `rust-ci.yml` | `vmafx-sys (fmt + clippy + test)` | `vmafx-sys CI` | 12 | Yes |
 | `rust-ci.yml` | `cargo-deny (licenses, bans, advisories, sources)` | `cargo-deny` | 10 | Yes |
 | `supply-chain.yml` | `Validate ordinary tag and coordinated versions` | `Validate release versions` | 25 | No |
-| `supply-chain.yml` | `Build Linux release artifacts (libvmaf.so chain, vmaf CLI, models)` | `Build Linux artifacts` | 21 | No |
+| `supply-chain.yml` | `Build Linux release artifacts, x86-64` | `Build Linux artifacts (x86_64)` | 30 | No |
+| `supply-chain.yml` | `Build Linux release artifacts, arm64` | `Build Linux artifacts (arm64)` | 29 | No |
+| `supply-chain.yml` | `Collect both Linux architectures for signing` | `Collect Linux artifacts` | 23 | No |
+| `supply-chain.yml` | `Verify downloaded Linux arm64 release runtime` | `Verify Linux arm64 runtime` | 26 | No |
 | `supply-chain.yml` | `Verify downloaded Linux release runtime` | `Verify Linux runtime` | 20 | No |
 | `supply-chain.yml` | `Generate libvmaf + vmaf-mcp SBOMs (SPDX + CycloneDX)` | `Generate SBOMs` | 14 | No |
 | `supply-chain.yml` | `Sigstore keyless sign (release artifacts + SBOMs)` | `Sigstore sign artifacts` | 23 | No |
