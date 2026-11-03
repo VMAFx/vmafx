@@ -222,6 +222,11 @@
       "output": "tools/ensemble-training-kit/requirements-dev-lock.txt",
       "inputs": ["tools/ensemble-training-kit/pyproject.toml", "requirements/locks/package-build.in", "requirements/locks/ensemble-kit-dev.in"],
       "compile_args": ["tools/ensemble-training-kit/pyproject.toml", "requirements/locks/package-build.in", "requirements/locks/ensemble-kit-dev.in", "--universal", "--python-version", "3.12", "--generate-hashes"]
+    },
+    {
+      "output": "requirements/locks/twine.txt",
+      "inputs": ["requirements/locks/twine.in"],
+      "compile_args": ["requirements/locks/twine.in", "--universal", "--python-version", "3.14", "--generate-hashes"]
     }
   ]
 }

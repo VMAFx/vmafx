@@ -55,7 +55,11 @@ GATES = {
         "Windows Tester Zip",
         ("tier", "impact", "verify"),
     ),
-    "release-dry-run.yml": ("gate", "Release Dry Run", ("tier", "plan", "images", "gpu", "mcp")),
+    "release-dry-run.yml": (
+        "gate",
+        "Release Dry Run",
+        ("tier", "plan", "images", "gpu", "mcp", "wheels"),
+    ),
 }
 PULL_REQUEST_ONLY = {"Release Dry Run"}
 OWN_INPUT_LANES = {
@@ -237,8 +241,8 @@ WORKFLOW_MUTATIONS = {
     ),
     "dry-run gate skips on failure": (
         "release-dry-run.yml",
-        "needs: [tier, plan, images, gpu, mcp]\n    if: always() && needs.tier.outputs.full == 'true'",
-        "needs: [tier, plan, images, gpu, mcp]\n    if: success()",
+        "needs: [tier, plan, images, gpu, mcp, wheels]\n    if: always() && needs.tier.outputs.full == 'true'",
+        "needs: [tier, plan, images, gpu, mcp, wheels]\n    if: success()",
     ),
 }
 
@@ -391,7 +395,8 @@ class Routing(unittest.TestCase):
         self.assertFalse(plan["windows_tester_zip"])
         # The dry run starts and its gate reports; no group needs a build.
         self.assertEqual(
-            _dry_run_groups(paths), {"images": "false", "gpu": "false", "mcp": "false"}
+            _dry_run_groups(paths),
+            {"images": "false", "gpu": "false", "mcp": "false", "wheels": "false"},
         )
 
     def test_tester_dockerfile_change_runs_the_tester_image_only(self) -> None:
@@ -480,6 +485,7 @@ class DryRunGateScript(unittest.TestCase):
             "IMAGES": ("false", "skipped"),
             "GPU": ("false", "skipped"),
             "MCP": ("false", "skipped"),
+            "WHEELS": ("false", "skipped"),
         }
         for plan in ("success", "failure", "skipped", "cancelled"):
             for group in idle:

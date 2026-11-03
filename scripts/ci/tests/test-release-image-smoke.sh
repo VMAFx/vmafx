@@ -104,22 +104,23 @@ plan() {
   if [[ "$got" == "$want" ]]; then ok "$description"; else bad "$description (got '$got', wanted '$want')"; fi
 }
 
-none="images=false gpu=false mcp=false"
+none="images=false gpu=false mcp=false wheels=false"
 plan "$none" "a docs-only change selects nothing" docs/development/ci.md README.md
 plan "$none" "a core change selects nothing" core/src/feature/x.c
-plan "images=true gpu=false mcp=false" "the production Dockerfile selects the images" docker/Dockerfile.production
-plan "images=true gpu=false mcp=false" "the go-server Dockerfile selects the images" Dockerfile.go-server
-plan "images=true gpu=false mcp=false" "a ffmpeg patch selects the images" ffmpeg-patches/0001-x.patch
-plan "images=false gpu=true mcp=false" "the GPU Dockerfile selects the GPU images" docker/Dockerfile.production-gpu
-plan "images=true gpu=true mcp=false" "build-config.env selects images and GPU images" build-config.env
-plan "images=true gpu=true mcp=false" "the licence inputs select images and GPU images" tools/rc1-tester/image/licensing.json
-plan "images=false gpu=false mcp=true" "the vmaf-mcp package selects the mcp dry run" mcp-server/vmaf-mcp/pyproject.toml
-plan "images=false gpu=false mcp=true" "the supply-chain workflow selects the mcp dry run" .github/workflows/supply-chain.yml
-plan "images=false gpu=false mcp=true" "the SBOM verifier selects the mcp dry run" scripts/release/verify-mcp-sbom.sh
-plan "images=true gpu=true mcp=true" "the dry run's own workflow selects everything" .github/workflows/release-dry-run.yml
-plan "images=true gpu=false mcp=true" "mixed paths combine" docker/Dockerfile.node mcp-server/vmaf-mcp/src/a.py docs/x.md
+plan "images=true gpu=false mcp=false wheels=false" "the production Dockerfile selects the images" docker/Dockerfile.production
+plan "images=true gpu=false mcp=false wheels=false" "the go-server Dockerfile selects the images" Dockerfile.go-server
+plan "images=true gpu=false mcp=false wheels=false" "a ffmpeg patch selects the images" ffmpeg-patches/0001-x.patch
+plan "images=false gpu=true mcp=false wheels=false" "the GPU Dockerfile selects the GPU images" docker/Dockerfile.production-gpu
+plan "images=true gpu=true mcp=false wheels=false" "build-config.env selects images and GPU images" build-config.env
+plan "images=true gpu=true mcp=false wheels=false" "the licence inputs select images and GPU images" tools/rc1-tester/image/licensing.json
+plan "images=false gpu=false mcp=true wheels=false" "the vmaf-mcp package selects the mcp dry run" mcp-server/vmaf-mcp/pyproject.toml
+plan "images=false gpu=false mcp=false wheels=true" "the bindings/python package selects the wheels dry run" bindings/python/pyproject.toml
+plan "images=false gpu=false mcp=true wheels=true" "the supply-chain workflow selects the mcp and wheels dry run" .github/workflows/supply-chain.yml
+plan "images=false gpu=false mcp=true wheels=false" "the SBOM verifier selects the mcp dry run" scripts/release/verify-mcp-sbom.sh
+plan "images=true gpu=true mcp=true wheels=true" "the dry run's own workflow selects everything" .github/workflows/release-dry-run.yml
+plan "images=true gpu=false mcp=true wheels=false" "mixed paths combine" docker/Dockerfile.node mcp-server/vmaf-mcp/src/a.py docs/x.md
 all="$("$PLAN" --all | tr '\n' ' ' | sed 's/ $//')"
-if [[ "$all" == "images=true gpu=true mcp=true" ]]; then ok "--all selects everything"; else bad "--all gave '$all'"; fi
+if [[ "$all" == "images=true gpu=true mcp=true wheels=true" ]]; then ok "--all selects everything"; else bad "--all gave '$all'"; fi
 empty="$("$PLAN" </dev/null | tr '\n' ' ' | sed 's/ $//')"
 if [[ "$empty" == "$none" ]]; then ok "an empty path list selects nothing"; else bad "empty list gave '$empty'"; fi
 rc=0

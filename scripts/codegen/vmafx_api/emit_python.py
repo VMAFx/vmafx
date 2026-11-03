@@ -538,7 +538,7 @@ def _module_header(api: Api) -> str:
         "# `python3 scripts/codegen/vmafx-api.py --write`.\n"
         '"""ctypes binding of the VMAFx C API (generated)."""\n\n'
         "from __future__ import annotations\n\n"
-        "import contextlib\nimport ctypes\nimport enum\nimport os\n"
+        "import contextlib\nimport ctypes\nimport enum\nimport os\nimport sys\nfrom pathlib import Path\n"
         "from collections.abc import Callable, Mapping, Sequence\n"
         "from dataclasses import dataclass\n\n"
         f"ABI_VERSION = ({major}, {minor}, {patch})\n"
@@ -625,6 +625,25 @@ def pyproject_text(api: Api) -> str:
         'path = "vmafx/_api.py"\n\n'
         "[tool.hatch.build.targets.wheel]\n"
         'packages = ["vmafx"]\n\n'
+        "[tool.hatch.build.targets.wheel.hooks.custom]\n"
+        'path = "hatch_build.py"\n\n'
+        "[tool.cibuildwheel]\n"
+        'build = "cp312-* cp313-* cp314-*"\n'
+        'skip = "*-musllinux_* pp*"\n'
+        "build-verbosity = 1\n"
+        'test-command = "python {project}/scripts/ci/score-wheel-fixture.py"\n\n'
+        "[tool.cibuildwheel.linux]\n"
+        'archs = ["x86_64", "aarch64"]\n'
+        'before-all = "python scripts/ci/build-wheel-libvmafx.py"\n'
+        'repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel}"\n\n'
+        "[tool.cibuildwheel.macos]\n"
+        'archs = ["arm64"]\n'
+        'before-all = "python3 scripts/ci/build-wheel-libvmafx.py"\n'
+        'repair-wheel-command = "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} {wheel}"\n\n'
+        "[tool.cibuildwheel.windows]\n"
+        'archs = ["AMD64"]\n'
+        'before-all = "python scripts/ci/build-wheel-libvmafx.py"\n'
+        'repair-wheel-command = "delvewheel repair -w {dest_dir} -v {wheel}"\n\n'
         "[tool.setuptools.packages.find]\n"
         'include = ["vmafx*"]\n\n'
         "[tool.setuptools.package-data]\n"

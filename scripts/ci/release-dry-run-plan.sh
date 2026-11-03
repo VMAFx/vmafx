@@ -6,6 +6,7 @@
 #   images  the CPU / server / operator / node release images build recipe
 #   gpu     the CUDA, ROCm and oneAPI release images build recipe
 #   mcp     the vmaf-mcp distribution, its SBOM and the supply-chain workflow
+#   wheels  the vmafx Python wheels distribution and fixture scoring
 # Usage: release-dry-run-plan.sh < changed-paths
 #        release-dry-run-plan.sh --all     (a scheduled or dispatched run)
 #
@@ -28,10 +29,12 @@ fi
 images=false
 gpu=false
 mcp=false
+wheels=false
 if [[ "${1:-}" == "--all" ]]; then
   images=true
   gpu=true
   mcp=true
+  wheels=true
 else
   while IFS= read -r path || [[ -n "$path" ]]; do
     case "$path" in
@@ -64,7 +67,15 @@ else
         mcp=true
         ;;
     esac
+    case "$path" in
+      bindings/python/* | scripts/ci/build-wheel-libvmafx.py | \
+        scripts/ci/score-wheel-fixture.py | requirements/locks/twine.txt | \
+        .github/workflows/supply-chain.yml | .github/workflows/release-dry-run.yml | \
+        scripts/ci/release-dry-run-plan.sh)
+        wheels=true
+        ;;
+    esac
   done
 fi
 
-printf 'images=%s\ngpu=%s\nmcp=%s\n' "$images" "$gpu" "$mcp"
+printf 'images=%s\ngpu=%s\nmcp=%s\nwheels=%s\n' "$images" "$gpu" "$mcp" "$wheels"
