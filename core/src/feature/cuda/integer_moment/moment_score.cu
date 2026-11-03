@@ -98,8 +98,8 @@ __device__ __forceinline__ void add_block_sums(MomentSums m, unsigned long long 
     }
 }
 
-/* The term of moment.c::compute_2nd_moment() for the raw sample `v` of a 10-,
- * 12- or 16-bit plane, in units of 1 / scaler^2: picture_copy() divides the
+/* The term of moment.c::compute_2nd_moment() for the raw sample `v` of a
+ * 9..16-bit plane, in units of 1 / scaler^2: picture_copy() divides the
  * sample by the scaler (a power of two, exact) and the square is one fp32
  * product, rounded to nearest even. Scaling by a power of two does not change
  * which bits are rounded away, so the float square of the raw sample has the

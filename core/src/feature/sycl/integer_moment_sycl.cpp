@@ -55,6 +55,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "float_moment_scaler.h"
 #include "log.h"
 #include "picture.h"
 #include "sycl/common.h"
@@ -116,7 +117,7 @@ namespace
 {
 
 /* Per-pixel moment kernel. Reads the shared ref/dis frame
- * buffers (uint8 packed at ≤8bpc, uint16 packed at ≥10bpc,
+ * buffers (uint8 packed at ≤8bpc, uint16 packed at >8bpc,
  * tightly packed at `width * bytes_per_pixel`). Atomic-adds
  * each pixel's four contributions to the device accumulators. */
 static void launch_moment(sycl::queue &q, void *shared_ref, void *shared_dis, int64_t *d_sums,
@@ -550,7 +551,7 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
 
     /* ADR-1212: normalise by the bit-depth scaler exactly as the CPU reference
      * does. `float_moment` runs `picture_copy()` first, which divides every
-     * sample by 4 (10 bpc), 16 (12 bpc) or 256 (16 bpc) before `moment.c`
+     * sample by 2^(bpc - 8) at every depth above 8 before `moment.c`
      * accumulates it — see core/src/feature/picture_copy.cpp. This kernel
      * accumulates the RAW codeword, so without this step a 10-bit input
      * reported ref1st/dis1st 4x and ref2nd/dis2nd 16x too large. The device
@@ -560,14 +561,12 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
      * kernel adds, ADR-1449), and the CPU's running double sum is exact while
      * it is at most 2^53 of those units. A term is below 2^32 units, so that
      * covers every frame of up to 2^21 pixels and every 8-, 10- and 12-bit
-     * frame. On a larger 16-bit frame whose sum of squares passes 2^53 units
+     * frame. At every depth vmaf_moment_sum_may_round() bounds the sum by
+     * pixels * 2^(2 * bpc). When the sum of squares passes 2^53 units
      * the CPU rounds each further add, and launch_moment_sum() has replaced
      * the two second-moment sums with the CPU's rounded ones (ADR-1497), each
      * a double the conversion below holds exactly. */
-    const double moment_scaler = (s->bpc == 10u) ? 4.0 :
-                                 (s->bpc == 12u) ? 16.0 :
-                                 (s->bpc == 16u) ? 256.0 :
-                                                   1.0;
+    const double moment_scaler = vmaf_float_moment_scaler(s->bpc);
     const double moment_scaler_sq = moment_scaler * moment_scaler;
     const double n_pixels = (double)s->width * (double)s->height;
     const double ref1 = ((double)s->h_sums[0] / moment_scaler) / n_pixels;
