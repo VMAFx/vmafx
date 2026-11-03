@@ -49,6 +49,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "config.h"
 #include "gpu_dispatch_env.h"
 #include "mu_table.h"
 #include "test.h"
@@ -59,6 +60,19 @@
 #include "vmafx_live_pacing.h"
 #include "vmafx_test_util.h"
 #include "vmafx_window_test_util.h"
+#include "vmafx_egl_test_util.h"
+
+#if HAVE_CUDA
+#include "vmafx_cuda_test_util.h"
+#endif
+
+#if HAVE_SYCL
+/* VMAFx SYCL backend enabled */
+#endif
+
+#if defined(HAVE_HIPCC) && defined(VMAFX_ENGINE_EXPORTS_HIP) && VMAFX_ENGINE_EXPORTS_HIP
+#include "vmafx_hip_test_util.h"
+#endif
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -98,6 +112,8 @@ typedef struct LiveWindow {
 
 typedef struct Slot {
     uint8_t *data[2]; /* reference, distorted */
+    uint8_t *semi[2]; /* NV12 staging for GL upload */
+    VeglFrame gl[2];
     VmafxFence released[2];
     bool busy;
 } Slot;
@@ -106,6 +122,9 @@ typedef struct Live {
     VtClip clip;
     uint32_t n_threads;
     bool paced;
+    bool use_gl;
+    VmafxDevice *device;
+    Vegl egl;
     VmafxContext *context;
     VmafxModel *model;
     const char *features[MAX_FEATURES];
@@ -166,8 +185,13 @@ static bool open_context(Live *live)
 {
     VmafxContextConfig config = VMAFX_CONTEXT_CONFIG_INIT;
     config.n_threads = live->n_threads;
-    if (vmafx_context_create(&config, &live->context, NULL) != VMAFX_OK ||
-        vmafx_model_load(NULL, MODEL, &live->model, NULL) != VMAFX_OK ||
+    if (vmafx_context_create(&config, &live->context, NULL) != VMAFX_OK) {
+        return false;
+    }
+    if (live->device && vmafx_context_use_device(live->context, live->device, NULL) != VMAFX_OK) {
+        return false;
+    }
+    if (vmafx_model_load(NULL, MODEL, &live->model, NULL) != VMAFX_OK ||
         vmafx_context_use_model(live->context, live->model, NULL) != VMAFX_OK) {
         return false;
     }
@@ -192,6 +216,12 @@ static bool open_ring(Live *live)
             if (!live->ring[s].data[k]) {
                 return false;
             }
+            if (live->use_gl) {
+                live->ring[s].semi[k] = malloc(bytes);
+                if (!live->ring[s].semi[k]) {
+                    return false;
+                }
+            }
         }
     }
     return true;
@@ -200,8 +230,13 @@ static bool open_ring(Live *live)
 static void close_live(Live *live)
 {
     for (unsigned s = 0; s < live->n_ring; s++) {
-        free(live->ring[s].data[0]);
-        free(live->ring[s].data[1]);
+        for (unsigned k = 0; k < 2u; k++) {
+            free(live->ring[s].data[k]);
+            if (live->use_gl) {
+                free(live->ring[s].semi[k]);
+                vegl_free_frame(&live->egl, &live->ring[s].gl[k]);
+            }
+        }
     }
     for (unsigned w = 0; w < live->n_windows; w++) {
         vmafx_window_release(live->windows[w].window);
@@ -214,12 +249,15 @@ static void close_live(Live *live)
 /* ---- The render thread ------------------------------------------------------------------ */
 
 /* Wait for the texture's release (the library stopped reading it). */
-static bool reuse_slot(Slot *slot)
+static bool reuse_slot(Live *live, Slot *slot)
 {
     bool ok = true;
     for (unsigned k = 0; k < 2u && slot->busy; k++) {
         ok = ok && vmafx_fence_wait(&slot->released[k], FENCE_WAIT_NS, NULL) == VMAFX_OK;
         (void)vmafx_fence_destroy(&slot->released[k], NULL);
+        if (live->use_gl) {
+            vegl_free_frame(&live->egl, &slot->gl[k]);
+        }
     }
     slot->busy = false;
     return ok;
@@ -231,17 +269,42 @@ static VmafxFrame *import_texture(Live *live, Slot *slot, unsigned k, unsigned i
 {
     const size_t bytes = vt_frame_bytes(&live->clip.desc);
     const uint8_t *const src = (k == 0u ? live->clip.ref : live->clip.dist) + bytes * i;
-    memcpy(slot->data[k], src, bytes);
-    VmafxFrameImport imp = vt_import_planar(&live->clip.desc, slot->data[k]);
     VmafxFrame *frame = NULL;
-    if (vmafx_fence_create(NULL, VMAFX_FENCE_HOST, &imp.acquire, NULL) != VMAFX_OK) {
-        return NULL;
-    }
-    (void)vmafx_fence_signal(&imp.acquire, NULL); /* the render finished */
-    const VmafxStatus status = vmafx_context_import_frame(
-        live->context, NULL, &imp, k == 0u ? "reference" : "main", &frame, NULL);
-    (void)vmafx_fence_destroy(&imp.acquire, NULL);
+    VmafxStatus status = VMAFX_OK;
     slot->released[k] = (VmafxFence)VMAFX_FENCE_INIT;
+
+    if (live->use_gl) {
+        vt_to_semiplanar(&live->clip.desc, src, 0u, slot->semi[k]);
+        if (!vegl_upload(&live->egl, &slot->gl[k], live->clip.desc.w, live->clip.desc.h, 1u,
+                         slot->semi[k])) {
+            return NULL;
+        }
+        VmafxFrameImport imp = VMAFX_FRAME_IMPORT_INIT;
+        imp.memory = VMAFX_MEMORY_GL_TEXTURE;
+        imp.pix_fmt = VMAFX_PIXEL_FORMAT_NV12;
+        imp.bpc = 8u;
+        imp.w = live->clip.desc.w;
+        imp.h = live->clip.desc.h;
+        imp.n_planes = 2u;
+        imp.flags = VMAFX_IMPORT_ALLOW_COPY;
+        imp.plane[0].handle = slot->gl[k].tex[0];
+        imp.plane[1].handle = slot->gl[k].tex[1];
+        imp.acquire.kind = VMAFX_FENCE_GL_SYNC;
+        imp.acquire.handle = (uintptr_t)slot->gl[k].sync;
+        status = vmafx_context_import_frame(live->context, live->device, &imp,
+                                            k == 0u ? "reference" : "main", &frame, NULL);
+    } else {
+        memcpy(slot->data[k], src, bytes);
+        VmafxFrameImport imp = vt_import_planar(&live->clip.desc, slot->data[k]);
+        if (vmafx_fence_create(NULL, VMAFX_FENCE_HOST, &imp.acquire, NULL) != VMAFX_OK) {
+            return NULL;
+        }
+        (void)vmafx_fence_signal(&imp.acquire, NULL); /* the render finished */
+        status = vmafx_context_import_frame(live->context, NULL, &imp,
+                                            k == 0u ? "reference" : "main", &frame, NULL);
+        (void)vmafx_fence_destroy(&imp.acquire, NULL);
+    }
+
     if (status != VMAFX_OK ||
         vmafx_frame_release_fence(frame, VMAFX_FENCE_HOST, &slot->released[k], NULL) != VMAFX_OK) {
         vmafx_frame_unref(frame);
@@ -320,7 +383,7 @@ static bool produce_frame(Live *live, unsigned i)
     if (live->paced) {
         (void)vl_pace(&monotonic_clock, live->start_ns, i);
     }
-    if (!reuse_slot(slot)) {
+    if (!reuse_slot(live, slot)) {
         return false; /* the library held more textures than the ring */
     }
     VmafxFrame *ref = import_texture(live, slot, 0, i);
@@ -365,7 +428,7 @@ static bool ring_released(Live *live)
 {
     bool ok = true;
     for (unsigned s = 0; s < live->n_ring; s++) {
-        ok = reuse_slot(&live->ring[s]) && ok;
+        ok = reuse_slot(live, &live->ring[s]) && ok;
     }
     return ok;
 }
@@ -407,8 +470,14 @@ static void *poller(void *arg)
 static VmafxContext *offline_session(const Live *live)
 {
     VmafxContext *context = NULL;
-    if (vmafx_context_create(NULL, &context, NULL) != VMAFX_OK ||
-        vmafx_context_use_model(context, live->model, NULL) != VMAFX_OK) {
+    if (vmafx_context_create(NULL, &context, NULL) != VMAFX_OK) {
+        return NULL;
+    }
+    if (live->device && vmafx_context_use_device(context, live->device, NULL) != VMAFX_OK) {
+        (void)vmafx_context_destroy(context, NULL);
+        return NULL;
+    }
+    if (vmafx_context_use_model(context, live->model, NULL) != VMAFX_OK) {
         (void)vmafx_context_destroy(context, NULL);
         return NULL;
     }
@@ -514,20 +583,25 @@ static char *check_against_offline(Live *live)
     VmafxContext *offline = offline_session(live);
     mu_assert("offline", offline);
     mu_message_t msg = check_windows(live, offline);
-    const bool dumped = live->n_threads != 0u || !live->paced || dump_windows(live);
+    const bool dumped = live->n_threads != 0u || !live->paced || live->use_gl || dump_windows(live);
     mu_assert("destroy offline", vmafx_context_destroy(offline, NULL) == VMAFX_OK);
     mu_assert_msg(msg);
     mu_assert("windows written", dumped);
     return NULL;
 }
 
-static char *run_live(uint32_t n_threads, bool paced)
+static char *run_live_impl(uint32_t n_threads, bool paced, VmafxDevice *device, const Vegl *egl)
 {
     static Live live_state;
     Live *const live = &live_state;
     memset(live, 0, sizeof(*live));
     live->n_threads = n_threads;
     live->paced = paced;
+    live->device = device;
+    if (egl) {
+        live->use_gl = true;
+        live->egl = *egl;
+    }
     if (!vt_clip_open(&live->clip, &vt_inputs[0])) {
         vt_clip_close(&live->clip);
         mu_skipped = 1;
@@ -546,6 +620,11 @@ static char *run_live(uint32_t n_threads, bool paced)
     return NULL;
 }
 
+static char *run_live(uint32_t n_threads, bool paced)
+{
+    return run_live_impl(n_threads, paced, NULL, NULL);
+}
+
 static char *test_live_without_workers(void)
 {
     return run_live(0, true);
@@ -560,6 +639,346 @@ static char *test_unpaced_producer_is_held_back(void)
 {
     return run_live(2, false);
 }
+
+#if HAVE_CUDA
+typedef struct LiveCudaState {
+    VcGpu gpu;
+    Vegl egl;
+    bool ready;
+} LiveCudaState;
+
+static bool open_cuda_live(LiveCudaState *state)
+{
+    memset(state, 0, sizeof(*state));
+    if (!vc_open(&state->gpu)) {
+        return false;
+    }
+    VeglQueryDevices query = NULL;
+    void *devices[8];
+    int n = 0;
+    if (!vegl_load_egl(&state->egl) ||
+        !vegl_resolve(&state->egl, "eglQueryDevicesEXT", (void *)&query, sizeof(query)) ||
+        !query(8, devices, &n)) {
+        vc_close(&state->gpu);
+        return false;
+    }
+    for (int i = 0; i < n; i++) {
+        if (vegl_context_on(&state->egl, devices[i]) && vegl_load_gl(&state->egl) &&
+            vc_push(&state->gpu)) {
+            unsigned count = 0;
+            CUdevice dev = 0;
+            const bool same = state->gpu.f->cuGLGetDevices(&count, &dev, 1u,
+                                                           CU_GL_DEVICE_LIST_ALL) == CUDA_SUCCESS &&
+                              count >= 1u && dev == state->gpu.dev;
+            vc_pop(&state->gpu);
+            if (same) {
+                state->ready = true;
+                return true;
+            }
+        }
+        vegl_drop(&state->egl);
+    }
+    vc_close(&state->gpu);
+    return false;
+}
+
+static void close_cuda_live(LiveCudaState *state)
+{
+    if (state->ready) {
+        vegl_drop(&state->egl);
+        vc_close(&state->gpu);
+        state->ready = false;
+    }
+}
+
+static char *test_live_cuda_textures_without_workers(void)
+{
+    LiveCudaState cuda;
+    if (!open_cuda_live(&cuda)) {
+        mu_skipped = 1;
+        return NULL;
+    }
+    char *const msg = run_live_impl(0, true, cuda.gpu.device, &cuda.egl);
+    close_cuda_live(&cuda);
+    return msg;
+}
+
+static char *test_live_cuda_textures_with_workers(void)
+{
+    LiveCudaState cuda;
+    if (!open_cuda_live(&cuda)) {
+        mu_skipped = 1;
+        return NULL;
+    }
+    char *const msg = run_live_impl(2, true, cuda.gpu.device, &cuda.egl);
+    close_cuda_live(&cuda);
+    return msg;
+}
+
+static char *test_planted_cuda_texture_without_context_refused(void)
+{
+    LiveCudaState cuda;
+    if (!open_cuda_live(&cuda)) {
+        mu_skipped = 1;
+        return NULL;
+    }
+    VeglFrame f;
+    memset(&f, 0, sizeof(f));
+    const VmafxFrameDesc d = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8u, 640u, 360u);
+    uint8_t *const semi = calloc(1, vt_frame_bytes(&d));
+    mu_assert("alloc", semi != NULL);
+    const bool rendered = vegl_upload(&cuda.egl, &f, d.w, d.h, 1u, semi);
+    free(semi);
+    mu_assert("rendered", rendered);
+
+    (void)cuda.egl.make_current(cuda.egl.dpy, NULL, NULL, NULL);
+
+    VmafxFrameImport imp = VMAFX_FRAME_IMPORT_INIT;
+    imp.memory = VMAFX_MEMORY_GL_TEXTURE;
+    imp.pix_fmt = VMAFX_PIXEL_FORMAT_NV12;
+    imp.bpc = 8u;
+    imp.w = d.w;
+    imp.h = d.h;
+    imp.n_planes = 2u;
+    imp.flags = VMAFX_IMPORT_ALLOW_COPY;
+    imp.plane[0].handle = f.tex[0];
+    imp.plane[1].handle = f.tex[1];
+    imp.acquire.kind = VMAFX_FENCE_GL_SYNC;
+    imp.acquire.handle = (uintptr_t)f.sync;
+
+    VmafxFrame *frame = NULL;
+    VmafxError *error = NULL;
+    const VmafxStatus status = vmafx_frame_import(cuda.gpu.device, &imp, &frame, &error);
+
+    (void)cuda.egl.make_current(cuda.egl.dpy, NULL, NULL, cuda.egl.ctx);
+    vegl_free_frame(&cuda.egl, &f);
+    vmafx_error_free(error);
+    close_cuda_live(&cuda);
+
+    mu_assert("import refused when GL context is not current", status != VMAFX_OK && frame == NULL);
+    return NULL;
+}
+#endif
+
+#if HAVE_SYCL
+typedef struct LiveSyclState {
+    VmafxDevice *device;
+    Vegl egl;
+    bool ready;
+} LiveSyclState;
+
+static bool open_sycl_live(LiveSyclState *state)
+{
+    memset(state, 0, sizeof(*state));
+    VmafxDeviceDesc desc = VMAFX_DEVICE_DESC_INIT;
+    desc.backend = VMAFX_BACKEND_SYCL;
+    desc.index = 0;
+    if (vmafx_device_create(&desc, &state->device, NULL) != VMAFX_OK) {
+        return false;
+    }
+    VmafxDeviceInfo info = VMAFX_DEVICE_INFO_INIT;
+    if (vmafx_device_describe(state->device, &info, NULL) != VMAFX_OK ||
+        info.pci[0] == UINT32_MAX) {
+        vmafx_device_unref(state->device);
+        state->device = NULL;
+        return false;
+    }
+    char *const pci = malloc(32);
+    if (!pci) {
+        vmafx_device_unref(state->device);
+        state->device = NULL;
+        return false;
+    }
+    (void)snprintf(pci, 32, "%04x:%02x:%02x.%x", info.pci[0], info.pci[1], info.pci[2],
+                   info.pci[3]);
+    const bool ok = vegl_open(&state->egl, pci);
+    free(pci);
+    if (!ok) {
+        vmafx_device_unref(state->device);
+        state->device = NULL;
+        return false;
+    }
+    state->ready = true;
+    return true;
+}
+
+static void close_sycl_live(LiveSyclState *state)
+{
+    if (state->ready) {
+        vegl_drop(&state->egl);
+        vmafx_device_unref(state->device);
+        state->device = NULL;
+        state->ready = false;
+    }
+}
+
+static char *test_live_sycl_textures_without_workers(void)
+{
+    LiveSyclState sycl;
+    if (!open_sycl_live(&sycl)) {
+        mu_skipped = 1;
+        return NULL;
+    }
+    char *const msg = run_live_impl(0, true, sycl.device, &sycl.egl);
+    close_sycl_live(&sycl);
+    return msg;
+}
+
+static char *test_live_sycl_textures_with_workers(void)
+{
+    LiveSyclState sycl;
+    if (!open_sycl_live(&sycl)) {
+        mu_skipped = 1;
+        return NULL;
+    }
+    char *const msg = run_live_impl(2, true, sycl.device, &sycl.egl);
+    close_sycl_live(&sycl);
+    return msg;
+}
+
+static char *test_planted_sycl_texture_without_context_refused(void)
+{
+    LiveSyclState sycl;
+    if (!open_sycl_live(&sycl)) {
+        mu_skipped = 1;
+        return NULL;
+    }
+    VeglFrame f;
+    memset(&f, 0, sizeof(f));
+    const VmafxFrameDesc d = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8u, 640u, 360u);
+    uint8_t *const semi = calloc(1, vt_frame_bytes(&d));
+    mu_assert("alloc", semi != NULL);
+    const bool rendered = vegl_upload(&sycl.egl, &f, d.w, d.h, 1u, semi);
+    free(semi);
+    mu_assert("rendered", rendered);
+
+    (void)sycl.egl.make_current(sycl.egl.dpy, NULL, NULL, NULL);
+
+    VmafxFrameImport imp = VMAFX_FRAME_IMPORT_INIT;
+    imp.memory = VMAFX_MEMORY_GL_TEXTURE;
+    imp.pix_fmt = VMAFX_PIXEL_FORMAT_NV12;
+    imp.bpc = 8u;
+    imp.w = d.w;
+    imp.h = d.h;
+    imp.n_planes = 2u;
+    imp.flags = VMAFX_IMPORT_ALLOW_COPY;
+    imp.plane[0].handle = f.tex[0];
+    imp.plane[1].handle = f.tex[1];
+    imp.acquire.kind = VMAFX_FENCE_GL_SYNC;
+    imp.acquire.handle = (uintptr_t)f.sync;
+
+    VmafxFrame *frame = NULL;
+    VmafxError *error = NULL;
+    const VmafxStatus status = vmafx_frame_import(sycl.device, &imp, &frame, &error);
+
+    (void)sycl.egl.make_current(sycl.egl.dpy, NULL, NULL, sycl.egl.ctx);
+    vegl_free_frame(&sycl.egl, &f);
+    vmafx_error_free(error);
+    close_sycl_live(&sycl);
+
+    mu_assert("import refused when GL context is not current", status != VMAFX_OK && frame == NULL);
+    return NULL;
+}
+#endif
+
+#if defined(HAVE_HIPCC) && defined(VMAFX_ENGINE_EXPORTS_HIP) && VMAFX_ENGINE_EXPORTS_HIP
+typedef struct LiveHipState {
+    VhGpu gpu;
+    Vegl egl;
+    bool ready;
+} LiveHipState;
+
+static bool open_hip_live(LiveHipState *state)
+{
+    memset(state, 0, sizeof(*state));
+    if (!vh_open(&state->gpu)) {
+        return false;
+    }
+    if (state->gpu.pci_bus_id[0] == '\0' || !vegl_open(&state->egl, state->gpu.pci_bus_id)) {
+        vh_close(&state->gpu);
+        return false;
+    }
+    state->ready = true;
+    return true;
+}
+
+static void close_hip_live(LiveHipState *state)
+{
+    if (state->ready) {
+        vegl_drop(&state->egl);
+        vh_close(&state->gpu);
+        state->ready = false;
+    }
+}
+
+static char *test_live_hip_textures_without_workers(void)
+{
+    LiveHipState hip;
+    if (!open_hip_live(&hip)) {
+        mu_skipped = 1;
+        return NULL;
+    }
+    char *const msg = run_live_impl(0, true, hip.gpu.device, &hip.egl);
+    close_hip_live(&hip);
+    return msg;
+}
+
+static char *test_live_hip_textures_with_workers(void)
+{
+    LiveHipState hip;
+    if (!open_hip_live(&hip)) {
+        mu_skipped = 1;
+        return NULL;
+    }
+    char *const msg = run_live_impl(2, true, hip.gpu.device, &hip.egl);
+    close_hip_live(&hip);
+    return msg;
+}
+
+static char *test_planted_hip_texture_without_context_refused(void)
+{
+    LiveHipState hip;
+    if (!open_hip_live(&hip)) {
+        mu_skipped = 1;
+        return NULL;
+    }
+    VeglFrame f;
+    memset(&f, 0, sizeof(f));
+    const VmafxFrameDesc d = vt_desc(VMAFX_PIXEL_FORMAT_YUV420P, 8u, 640u, 360u);
+    uint8_t *const semi = calloc(1, vt_frame_bytes(&d));
+    mu_assert("alloc", semi != NULL);
+    const bool rendered = vegl_upload(&hip.egl, &f, d.w, d.h, 1u, semi);
+    free(semi);
+    mu_assert("rendered", rendered);
+
+    (void)hip.egl.make_current(hip.egl.dpy, NULL, NULL, NULL);
+
+    VmafxFrameImport imp = VMAFX_FRAME_IMPORT_INIT;
+    imp.memory = VMAFX_MEMORY_GL_TEXTURE;
+    imp.pix_fmt = VMAFX_PIXEL_FORMAT_NV12;
+    imp.bpc = 8u;
+    imp.w = d.w;
+    imp.h = d.h;
+    imp.n_planes = 2u;
+    imp.flags = VMAFX_IMPORT_ALLOW_COPY;
+    imp.plane[0].handle = f.tex[0];
+    imp.plane[1].handle = f.tex[1];
+    imp.acquire.kind = VMAFX_FENCE_GL_SYNC;
+    imp.acquire.handle = (uintptr_t)f.sync;
+
+    VmafxFrame *frame = NULL;
+    VmafxError *error = NULL;
+    const VmafxStatus status = vmafx_frame_import(hip.gpu.device, &imp, &frame, &error);
+
+    (void)hip.egl.make_current(hip.egl.dpy, NULL, NULL, hip.egl.ctx);
+    vegl_free_frame(&hip.egl, &f);
+    vmafx_error_free(error);
+    close_hip_live(&hip);
+
+    mu_assert("import refused when GL context is not current", status != VMAFX_OK && frame == NULL);
+    return NULL;
+}
+#endif
 
 /* ---- Release against delivery -------------------------------------------------------------- */
 
@@ -1063,7 +1482,38 @@ char *run_tests(void)
         MU_TEST(test_wait_forever_and_long_timeouts),
         MU_TEST(test_fence_wait_forever_and_long_timeouts),
     };
-    return mu_run_table(tests, MU_TABLE_LEN(tests));
+    char *msg = mu_run_table(tests, MU_TABLE_LEN(tests));
+#if HAVE_CUDA
+    if (!msg) {
+        static const MuTest cuda_tests[] = {
+            MU_TEST(test_planted_cuda_texture_without_context_refused),
+            MU_TEST(test_live_cuda_textures_without_workers),
+            MU_TEST(test_live_cuda_textures_with_workers),
+        };
+        msg = mu_run_table(cuda_tests, MU_TABLE_LEN(cuda_tests));
+    }
+#endif
+#if HAVE_SYCL
+    if (!msg) {
+        static const MuTest sycl_tests[] = {
+            MU_TEST(test_planted_sycl_texture_without_context_refused),
+            MU_TEST(test_live_sycl_textures_without_workers),
+            MU_TEST(test_live_sycl_textures_with_workers),
+        };
+        msg = mu_run_table(sycl_tests, MU_TABLE_LEN(sycl_tests));
+    }
+#endif
+#if defined(HAVE_HIPCC) && defined(VMAFX_ENGINE_EXPORTS_HIP) && VMAFX_ENGINE_EXPORTS_HIP
+    if (!msg) {
+        static const MuTest hip_tests[] = {
+            MU_TEST(test_planted_hip_texture_without_context_refused),
+            MU_TEST(test_live_hip_textures_without_workers),
+            MU_TEST(test_live_hip_textures_with_workers),
+        };
+        msg = mu_run_table(hip_tests, MU_TABLE_LEN(hip_tests));
+    }
+#endif
+    return msg;
 }
 
 /* NOLINTEND(modernize-use-nullptr) */
