@@ -57,7 +57,8 @@ def _is_transparent_scope(source: str, brace: int) -> bool:
     prefix = source[max(0, brace - 200) : brace]
     return (
         re.search(
-            r'\b(?:namespace(?:\s+[A-Za-z_]\w*)?|extern\s*"(?:C(?:\+\+)?)?")\s*$',
+            r"\b(?:(?:inline\s+)?namespace(?:\s+(?:inline\s+)?[A-Za-z_]\w*"
+            r'(?:\s*::\s*(?:inline\s+)?[A-Za-z_]\w*)*)?|extern\s*"(?:C(?:\+\+)?)?")\s*$',
             prefix,
         )
         is not None
@@ -579,6 +580,7 @@ class RgbMathContract(unittest.TestCase):
         wrappers = (
             ("namespace {", "}"),
             ("namespace n {", "}"),
+            ("namespace a::b {", "}"),
             ('extern "C" {', "}"),
             ('extern "C++" {', "}"),
             ("namespace a { namespace b {", "} }"),
@@ -612,8 +614,10 @@ class RgbMathContract(unittest.TestCase):
             "    return 0;\n"
             "}\n"
         )
-        sample = "namespace {\n" + safe + safe.replace("safe(", "also_safe(") + "}\n"
-        self.assertEqual(rgb_plan_file_findings(sample), [])
+        for opening in ("namespace {\n", "namespace a::b {\n"):
+            with self.subTest(scope=opening.strip()):
+                sample = opening + safe + safe.replace("safe(", "also_safe(") + "}\n"
+                self.assertEqual(rgb_plan_file_findings(sample), [])
 
     def test_scan_refuses_empty_failure_branch(self) -> None:
         empty_branch = (
