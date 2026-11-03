@@ -506,3 +506,10 @@ python3 -m venv /var/tmp/cf && /var/tmp/cf/bin/pip install clang-format==23.1.2
 VMAFX_CLANG_FORMAT=/var/tmp/cf/bin/clang-format \
     python3 -m pytest scripts/codegen/tests/test_vmafx_api_layout.py
 ```
+
+The check `scripts/ci/check_api_doc_coverage.py` keeps every public
+`vmafx_*` symbol (functions, types, enum constants and macros) declared in
+`core/include/vmafx/*.h` named somewhere under `docs/api/`. It runs in the
+docs workflow and as a pre-commit hook. Run it with
+`python3 scripts/ci/check_api_doc_coverage.py`; `--allow <file>` takes a
+list of names with a reason column for symbols that stay undocumented.

@@ -1,0 +1,1 @@
+- **API documentation coverage check.** `scripts/ci/check_api_doc_coverage.py` mechanically enforces that every public `vmafx_*` symbol declared in `core/include/vmafx/*.h` is reachable in `docs/api/` (#2436).

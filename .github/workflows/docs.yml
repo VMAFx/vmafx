@@ -114,6 +114,9 @@ jobs:
       - name: Check documentation charts against a fresh render
         if: steps.impact.outputs.docs == 'true'
         run: python3 scripts/docs/generate-charts.py --check --require-render
+      - name: Check API doc coverage
+        if: steps.impact.outputs.docs == 'true'
+        run: python3 scripts/ci/check_api_doc_coverage.py
       - name: Build site
         if: steps.impact.outputs.docs == 'true'
         run: mkdocs build --strict
