@@ -241,6 +241,11 @@ jobs:
         # Verify bit-exact scoring parity between the Rust safe binding and the
         # C API contract binary against the installed libvmafx (/usr/local) and
         # canonical Netflix reference fixtures.
+        # HISS-21 skip: macOS and Windows have no Rust build job in this workflow
+        # and no provisioned native library/contract binary. Alternate evidence:
+        # this required Linux job compares C and Rust f64 bits and frame counts;
+        # netflix_bitexact also tests malformed input, frame reads and plane bounds.
+        # Native parity on macOS/Windows remains unverified until jobs provision it.
         env:
           LIBVMAF_PREFIX: /usr/local
           LD_LIBRARY_PATH: /usr/local/lib
@@ -254,7 +259,7 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -Icore/test -DVMAF_PUBLIC_NAMES \
             core/test/vmafx_score_contract.c \
             $(pkg-config --cflags --libs libvmafx) -lm -o "$VMAFX_CONTRACT_CAPI"
-          cargo test -p vmafx --test netflix_bitexact
+          cargo test -p vmafx --test netflix_bitexact -- --nocapture
 
       - name: Rust suite and Rust twin harness (ADR-1713)
         # Every registered Rust twin against its C extractor in the same

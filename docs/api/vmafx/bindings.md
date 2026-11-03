@@ -303,15 +303,27 @@ The bit-exactness test in `bindings/rust/vmafx/tests/netflix_bitexact.rs`
 scores the Netflix 576x324 reference pair with `vmaf_v1.0.16_3d0h` through the
 safe API, computes the pooled mean, and compares it bit for bit with the C API
 contract (`vmafx_score_contract`). It reads the YUV pair from `VMAFX_YUV_REF` /
-`VMAFX_YUV_DIST` (or `VMAFX_YUV_DIR`) and skips with a printed reason when absent,
-failing if `VMAFX_REQUIRE_NETFLIX_PAIR=1` is set. The CI workflow (`rust-ci.yml`)
-runs this test with `VMAFX_REQUIRE_NETFLIX_PAIR=1` after provisioning fixtures to
-guarantee execution in CI:
+`VMAFX_YUV_DIST` (or `VMAFX_YUV_DIR`). It also requires the model and the
+`vmafx_score_contract` binary. Binary discovery checks, in order,
+`VMAFX_CONTRACT_CAPI`, `test/` next to the `lib/` directory containing
+`VMAFX_LIBRARY`, `LIBVMAF_PREFIX/test/`, `.b/test/`, and `build/test/`, using the
+first existing file (with `.exe` on Windows). When an input or binary is missing,
+the test passes with a `SKIP:` reason, visible only with `-- --nocapture`.
+`VMAFX_REQUIRE_NETFLIX_PAIR=1` makes missing inputs an error; unset, empty, or `0`
+permits the local skip. CI requires the pair and provisions fixtures and the
+contract binary before running the test:
 
 ```bash
 LIBVMAF_PREFIX="/usr/local" LD_LIBRARY_PATH="/usr/local/lib" \
-  cargo test -p vmafx --test netflix_bitexact
+  VMAFX_REQUIRE_NETFLIX_PAIR=1 cargo test -p vmafx --test netflix_bitexact -- --nocapture
 ```
+
+HISS-21 platform skip: `rust-ci.yml` has no macOS or Windows Rust build job, so
+neither platform provisions the native library and contract binary. Alternate
+evidence is the required Linux C/Rust comparison of score bits and frame counts,
+plus helper tests for malformed floats, truncated frames, short reads, binary
+discovery, and plane bounds. This does not establish native parity on macOS or
+Windows; that remains unverified until those jobs are available.
 
 ## Go
 
