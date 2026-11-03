@@ -498,7 +498,9 @@ consumer jobs start the CLI in the pinned `RELEASE_RUNTIME_CC` image. Ubuntu
 with `ldd --version` and this command:
 
 ```bash
-strings /usr/lib*/libstdc++.so.6 | grep -E 'GLIBCXX|CXXABI'
+libstdcxx="$(ldconfig -p | awk '$1 == "libstdc++.so.6" {print $NF; exit}')"
+test -n "$libstdcxx"
+strings "$libstdcxx" | grep -E 'GLIBCXX|CXXABI'
 ```
 
 The withdrawn release candidates used a newer builder; these requirements
