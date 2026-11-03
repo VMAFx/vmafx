@@ -30,6 +30,8 @@
 /* The `_large` variant re-runs the noise cases at 960x540. The cases past
  * 2^53 have their own sizes and run in the default binary only. */
 #define FLOAT_MOMENT_TWIN_LARGE_VARIANT 1
+#else
+#define FLOAT_MOMENT_TWIN_LARGE_VARIANT 0
 #endif
 
 #include "libvmaf/libvmaf_sycl.h"
@@ -125,12 +127,14 @@ static char *test_float_moment_16bit_bright_exact(void)
     return float_moment_twin_bright_1080p_exact(&twin);
 }
 
-#ifndef FLOAT_MOMENT_TWIN_LARGE_VARIANT
 static char *test_float_moment_16bit_past_2_53_exact(void)
 {
+    /* The `_large` binary passes this case; the default binary runs it. */
+    if (FLOAT_MOMENT_TWIN_LARGE_VARIANT) {
+        return NULL;
+    }
     return float_moment_twin_past_2_53_exact(&twin);
 }
-#endif
 
 char *run_tests(void)
 {
@@ -146,9 +150,7 @@ char *run_tests(void)
         MU_TEST(test_float_moment_15bit_exact),
         MU_TEST(test_float_moment_16bit_exact),
         MU_TEST(test_float_moment_16bit_bright_exact),
-#ifndef FLOAT_MOMENT_TWIN_LARGE_VARIANT
         MU_TEST(test_float_moment_16bit_past_2_53_exact),
-#endif
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
