@@ -820,8 +820,18 @@ jobs:
       - name: Build vmaf.exe (shared)
         run: ninja -C core/build-shared tools/vmaf.exe
 
-      - name: Check MinGW DLL import library thunks
-        run: python3 scripts/ci/check_mingw_import_thunks.py --dll-dir core/build-shared/src core/build-shared
+      - name: Check MinGW DLL import library thunks and runtime exports
+        # Runs after a failed vmaf.exe link too: the DLLs are already built and
+        # a toolchain-runtime export (multiple definition of _Unwind_Resume) is
+        # named here instead of only in the linker error.
+        if: ${{ !cancelled() }}
+        run: >-
+          python3 scripts/ci/check_mingw_import_thunks.py
+          --dll-dir core/build-shared/src
+          --runtime-archive "$(gcc -print-file-name=libgcc_eh.a)"
+          --runtime-archive "$(gcc -print-file-name=libgcc.a)"
+          --runtime-archive "$(gcc -print-file-name=libwinpthread.a)"
+          core/build-shared
 
       - name: Run shared vmaf.exe
         run: PATH="$PWD/core/build-shared/src:$PATH" core/build-shared/tools/vmaf.exe --help
