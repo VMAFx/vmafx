@@ -1,5 +1,6 @@
-<!-- markdownlint-disable MD013 -->
 # Research-3266: Upstream PR sweep tool and hook repository-location isolation
+
+<!-- markdownlint-disable MD013 -->
 
 - **Status**: Active
 - **Workstream**: PR #3266 (fork-local developer tooling and hook isolation)

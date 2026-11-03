@@ -43,6 +43,7 @@ DISCOVER_LIMIT = 1000
 MAX_DISCOVER_LIMIT = 5000
 MAX_WORKTREES = 1024
 MAX_PR_COMMITS = 5000
+MAX_ORIGIN_URLS = 16
 DEFAULT_UPSTREAM_REPO = "Netflix/vmaf"
 MESON_TEST_RUNNER = Path(__file__).resolve().parents[2] / "scripts" / "ci" / "run_meson_test.py"
 
@@ -451,17 +452,26 @@ def parse_remote_repo(url: str) -> str | None:
     return _segments_to_owner_repo(segments, exact=False)
 
 
+def _fetch_origin_urls(repo: Path) -> tuple[bool, list[str], str]:
+    rc, fetch_out, err = git_cmd(repo, ["remote", "get-url", "origin"])
+    if rc != 0:
+        return False, [], f"cannot determine origin URL: {err.strip()}"
+    rc_push, push_out, err_push = git_cmd(repo, ["remote", "get-url", "--push", "--all", "origin"])
+    if rc_push != 0:
+        return False, [], f"cannot determine origin push URL: {err_push.strip()}"
+    urls = [u.strip() for u in [fetch_out, *push_out.splitlines()] if u.strip()]
+    return True, urls, ""
+
+
 def check_origin_url(repo: Path, fork: str) -> tuple[bool, str]:
     expected = fork.strip().lower()
     if expected.count("/") != 1 or not all(expected.split("/", maxsplit=1)):
         return False, f"invalid fork specification '{fork}'"
-    rc, fetch_out, err = git_cmd(repo, ["remote", "get-url", "origin"])
-    if rc != 0:
-        return False, f"cannot determine origin URL: {err.strip()}"
-    rc_push, push_out, err_push = git_cmd(repo, ["remote", "get-url", "--push", "--all", "origin"])
-    if rc_push != 0:
-        return False, f"cannot determine origin push URL: {err_push.strip()}"
-    urls = [u.strip() for u in [fetch_out, *push_out.splitlines()][:16] if u.strip()]
+    ok, urls, err = _fetch_origin_urls(repo)
+    if not ok:
+        return False, err
+    if len(urls) > MAX_ORIGIN_URLS:
+        return False, f"origin has more than {MAX_ORIGIN_URLS} URLs; refusing"
     if not urls:
         return False, "cannot determine origin URL: empty remote URL"
     for raw_url in urls:

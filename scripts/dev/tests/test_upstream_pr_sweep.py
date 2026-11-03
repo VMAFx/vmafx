@@ -1248,6 +1248,98 @@ class UpstreamPrSweepTest(unittest.TestCase):
             hook_script,
         )
 
+    def test_T28_negative_planted_seventeen_push_urls_refused(self) -> None:
+        git_run(
+            self.repo,
+            "remote",
+            "set-url",
+            "--push",
+            "origin",
+            "https://github.com/testfork/vmaf.git",
+        )
+        for _ in range(15):
+            git_run(
+                self.repo,
+                "remote",
+                "set-url",
+                "--add",
+                "--push",
+                "origin",
+                "https://github.com/testfork/vmaf.git",
+            )
+        git_run(
+            self.repo,
+            "remote",
+            "set-url",
+            "--add",
+            "--push",
+            "origin",
+            "https://github.com/otherowner/otherrepo.git",
+        )
+        ok, detail = sweep_mod.check_origin_url(self.repo, "testfork/vmaf")
+        self.assertFalse(ok)
+        self.assertIn(f"origin has more than {sweep_mod.MAX_ORIGIN_URLS} URLs; refusing", detail)
+
+    def test_T29_boundary_sixteen_matching_origin_urls_accepted(self) -> None:
+        git_run(
+            self.repo,
+            "remote",
+            "set-url",
+            "origin",
+            "https://github.com/testfork/vmaf.git",
+        )
+        git_run(
+            self.repo,
+            "remote",
+            "set-url",
+            "--push",
+            "origin",
+            "https://github.com/testfork/vmaf.git",
+        )
+        for _ in range(14):
+            git_run(
+                self.repo,
+                "remote",
+                "set-url",
+                "--add",
+                "--push",
+                "origin",
+                "https://github.com/testfork/vmaf.git",
+            )
+        ok, detail = sweep_mod.check_origin_url(self.repo, "testfork/vmaf")
+        self.assertTrue(ok, f"expected exactly 16 matching URLs to be accepted: {detail}")
+        self.assertEqual(detail, "https://github.com/testfork/vmaf.git")
+
+    def test_T30_boundary_seventeen_matching_origin_urls_refused(self) -> None:
+        git_run(
+            self.repo,
+            "remote",
+            "set-url",
+            "origin",
+            "https://github.com/testfork/vmaf.git",
+        )
+        git_run(
+            self.repo,
+            "remote",
+            "set-url",
+            "--push",
+            "origin",
+            "https://github.com/testfork/vmaf.git",
+        )
+        for _ in range(15):
+            git_run(
+                self.repo,
+                "remote",
+                "set-url",
+                "--add",
+                "--push",
+                "origin",
+                "https://github.com/testfork/vmaf.git",
+            )
+        ok, detail = sweep_mod.check_origin_url(self.repo, "testfork/vmaf")
+        self.assertFalse(ok)
+        self.assertIn(f"origin has more than {sweep_mod.MAX_ORIGIN_URLS} URLs; refusing", detail)
+
 
 if __name__ == "__main__":
     unittest.main()
