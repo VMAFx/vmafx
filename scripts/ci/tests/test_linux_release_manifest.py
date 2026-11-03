@@ -63,6 +63,24 @@ def test_manifest_glibcxx_floor_rejects_planted_new_symbols(version: str) -> Non
     assert check_glibc_floor.check_symbols(symbols, (2, 28), (3, 4, 25)) is not None
 
 
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
+    "version",
+    ["1.3", "1.3.8", "1.3.11"],
+)
+def test_manifest_cxxabi_floor_accepts_compatible_symbols(version: str) -> None:
+    symbols = f"0000 DF *UND* 0000 (GLIBC_2.17) memcpy\n0000 DF *UND* 0000 (CXXABI_{version}) __cxa_atexit\n"
+    assert check_glibc_floor.check_symbols(symbols, (2, 28), (3, 4, 25), (1, 3, 11)) is None
+
+
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
+    "version",
+    ["1.3.12", "1.3.15", "1.4", "PRIVATE", "DEBUG"],
+)
+def test_manifest_cxxabi_floor_rejects_planted_new_symbols(version: str) -> None:
+    symbols = f"0000 DF *UND* 0000 (GLIBC_2.17) memcpy\n0000 DF *UND* 0000 (CXXABI_{version}) __cxa_atexit\n"
+    assert check_glibc_floor.check_symbols(symbols, (2, 28), (3, 4, 25), (1, 3, 11)) is not None
+
+
 def test_manifest_glibc_floor_rejects_empty_symbol_table() -> None:
     assert check_glibc_floor.check_symbols("", (2, 28)) is not None
 
@@ -78,9 +96,21 @@ def test_manifest_glibc_floor_objdump_failure_is_fatal(tmp_path: Path) -> None:
 def test_manifest_glibc_floor_accepts_staged_cli() -> None:
     with patch("scripts.release.check_glibc_floor.subprocess.run") as run:
         run.return_value = subprocess.CompletedProcess(
-            [], 0, "(GLIBC_2.28) memcpy\n(GLIBCXX_3.4.25) _ZdaPv", ""
+            [], 0, "(GLIBC_2.28) memcpy\n(GLIBCXX_3.4.25) _ZdaPv\n(CXXABI_1.3.11) __cxa_atexit", ""
         )
-        assert check_glibc_floor.main(["2.28", "--cxx-floor", "3.4.25", "artifacts/vmaf"]) == 0
+        assert (
+            check_glibc_floor.main(
+                [
+                    "2.28",
+                    "--cxx-floor",
+                    "3.4.25",
+                    "--cxxabi-floor",
+                    "1.3.11",
+                    "artifacts/vmaf",
+                ]
+            )
+            == 0
+        )
         assert run.call_args.kwargs["timeout"] == OBJDUMP_TIMEOUT_S
 
 
@@ -90,6 +120,26 @@ def test_manifest_glibc_floor_rejects_newer_glibcxx_in_staged_cli() -> None:
             [], 0, "(GLIBC_2.28) memcpy\n(GLIBCXX_3.4.30) _ZdaPv", ""
         )
         assert check_glibc_floor.main(["2.28", "--cxx-floor", "3.4.25", "artifacts/vmaf"]) == 1
+
+
+def test_manifest_glibc_floor_rejects_newer_cxxabi_in_staged_cli() -> None:
+    with patch("scripts.release.check_glibc_floor.subprocess.run") as run:
+        run.return_value = subprocess.CompletedProcess(
+            [], 0, "(GLIBC_2.28) memcpy\n(CXXABI_1.3.12) __cxa_atexit", ""
+        )
+        assert (
+            check_glibc_floor.main(
+                [
+                    "2.28",
+                    "--cxx-floor",
+                    "3.4.25",
+                    "--cxxabi-floor",
+                    "1.3.11",
+                    "artifacts/vmaf",
+                ]
+            )
+            == 1
+        )
 
 
 def test_manifest_glibc_floor_rejects_invalid_floor() -> None:
@@ -173,6 +223,7 @@ def test_manifest_native_linux_workflow_builds_and_checks_both_architectures() -
     run_text = floor_steps[0]["run"]
     assert "NATIVE_GLIBC_FLOOR" in run_text
     assert "NATIVE_GLIBCXX_FLOOR" in run_text
+    assert "NATIVE_CXXABI_FLOOR" in run_text
 
 
 def test_manifest_rejects_workflow_with_commented_or_echoed_floor_check() -> None:
@@ -241,6 +292,7 @@ def test_manifest_native_builder_pins_match_their_mirrors() -> None:
         assert settings[name] == defaults[name]
     assert settings["NATIVE_GLIBC_FLOOR"] == "2.28"
     assert settings["NATIVE_GLIBCXX_FLOOR"] == "3.4.25"
+    assert settings["NATIVE_CXXABI_FLOOR"] == "1.3.11"
     for name, arch in (
         ("NATIVE_RELEASE_BUILDER_BASE", "x86_64"),
         ("NATIVE_RELEASE_BUILDER_ARM64", "aarch64"),

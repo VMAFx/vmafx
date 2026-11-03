@@ -196,7 +196,9 @@ jobs:
         run: |
           floor="$(sed -n 's/^NATIVE_GLIBC_FLOOR="\(.*\)"$/\1/p' build-config.env)"
           cxx_floor="$(sed -n 's/^NATIVE_GLIBCXX_FLOOR="\(.*\)"$/\1/p' build-config.env)"
-          python3 scripts/release/check_glibc_floor.py "$floor" --cxx-floor "$cxx_floor" \
+          cxxabi_floor="$(sed -n 's/^NATIVE_CXXABI_FLOOR="\(.*\)"$/\1/p' build-config.env)"
+          python3 scripts/release/check_glibc_floor.py "$floor" \
+            --cxx-floor "$cxx_floor" --cxxabi-floor "$cxxabi_floor" \
             artifacts/vmaf artifacts/lib*.so*
       - if: ${{ env.GITEA_ACTIONS != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
