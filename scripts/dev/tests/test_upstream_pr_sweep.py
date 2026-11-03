@@ -547,7 +547,7 @@ class UpstreamPrSweepTest(unittest.TestCase):
     def test_discover_prs_mocked(self) -> None:
         sample_json = '[{"number": 42, "headRefName": "fix/answer", "headRepositoryOwner": {"login": "testowner"}}]'
         with (
-            patch.object(sweep_mod.shutil, "which", return_value="/usr/bin/gh"),
+            patch.object(shutil, "which", return_value="/usr/bin/gh"),
             patch.object(sweep_mod, "run_command") as mock_run,
         ):
             mock_run.return_value = TextCommandResult(
