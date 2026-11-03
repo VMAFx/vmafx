@@ -22,6 +22,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
@@ -387,7 +388,23 @@ def compare_sites(
     return errors
 
 
-def check(root: Path, registry_path: Path) -> int:
+def atomic_write_json(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(value, indent=2, sort_keys=True, ensure_ascii=True) + "\n"
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        newline="\n",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        delete=False,
+    ) as handle:
+        handle.write(payload)
+        temporary = Path(handle.name)
+    temporary.replace(path)
+
+
+def check(root: Path, registry_path: Path, *, write: bool = False) -> int:
     tracked_list = tracked_paths(root)
     tracked = set(tracked_list)
     corpus = adr_corpus(root)
@@ -412,6 +429,11 @@ def check(root: Path, registry_path: Path) -> int:
             "\n".join(errors) + "\nretired and fixture records are hand-governed: correct them"
         )
 
+    if write:
+        atomic_write_json(registry_path, registry)
+        print(f"check-source-adr-citations: wrote {registry_path}")
+        return 0
+
     occurrences = sum(sum(entry["sites"].values()) for entry in live.values())
     occurrences += sum(sum(entry["sites"].values()) for entry in retired.values())
     print(
@@ -426,6 +448,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
+    parser.add_argument(
+        "--write", action="store_true", help="rewrite registry with canonical formatting"
+    )
     return parser.parse_args(argv)
 
 
@@ -434,7 +459,7 @@ def main(argv: list[str] | None = None) -> int:
     root = args.root.resolve()
     registry_path = args.registry if args.registry.is_absolute() else root / args.registry
     try:
-        return check(root, registry_path)
+        return check(root, registry_path, write=bool(args.write))
     except GateError as exc:
         print(f"check-source-adr-citations: ERROR: {exc}", file=sys.stderr)
         return 1

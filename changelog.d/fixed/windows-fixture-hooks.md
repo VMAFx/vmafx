@@ -1,0 +1,1 @@
+- **Windows fixture hooks.** Skip POSIX-specific fixture hooks on Windows with stated reasons, normalise public entrypoint model path matching, enforce LF line endings on ADR citations registry writes, and record dev container third-party compilation warnings as outside the compiler warning gate.

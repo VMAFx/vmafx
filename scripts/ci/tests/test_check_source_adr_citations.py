@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -214,11 +215,6 @@ class SourceAdrCitationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("schema_version", result.stdout)
 
-    def test_there_is_no_write_mode_for_live_bindings(self) -> None:
-        self.registry()
-        result = self.run_checker("--write")
-        self.assertEqual(result.returncode, 2, result.stdout)
-
     def test_a_missing_number_names_what_to_do(self) -> None:
         self.write("core/example.c", "/* ADR-0099. */\n")
         self.registry()
@@ -284,6 +280,49 @@ class SourceAdrCitationTests(unittest.TestCase):
             )
             self.assertEqual(self.run_git("config", "--get", "fixture.poison-probe"), "owned")
             self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_write_registry_has_no_crlf(self) -> None:
+        self.write_adr("0042-original-decision.md")
+        self.write("core/example.c", "/* Kept for ADR-0042. */\n")
+        self.registry()
+        registry_file = self.repo / "source-adr-citations.json"
+
+        spec = importlib.util.spec_from_file_location("check_source_adr_citations", CHECKER)
+        assert spec is not None and spec.loader is not None
+        checker_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(checker_mod)
+
+        real_named_temp = tempfile.NamedTemporaryFile
+
+        def windows_named_temp(*args: Any, **kwargs: Any) -> Any:
+            if kwargs.get("mode", "w").startswith("w") and "b" not in kwargs.get("mode", "w"):
+                if "newline" not in kwargs or kwargs["newline"] is None:
+                    kwargs["newline"] = "\r\n"
+            return real_named_temp(*args, **kwargs)
+
+        with (
+            patch.dict(os.environ, fixture_git_env(), clear=True),
+            patch("tempfile.NamedTemporaryFile", side_effect=windows_named_temp),
+        ):
+            rc = checker_mod.main(
+                [
+                    "--root",
+                    str(self.repo),
+                    "--registry",
+                    str(registry_file),
+                    "--write",
+                ]
+            )
+        self.assertEqual(rc, 0)
+        data = registry_file.read_bytes()
+        self.assertNotIn(b"\r\n", data, "written registry must not contain CRLF")
+        self.assertIn(b"\n", data, "written registry must contain LF")
+
+        # Verify subprocess invocation with --write
+        result = self.run_checker("--write")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        data_sub = registry_file.read_bytes()
+        self.assertNotIn(b"\r\n", data_sub)
 
     def test_repository_registry_is_current(self) -> None:
         result = subprocess.run(  # noqa: S603 -- gate under test; fixed executable and argv

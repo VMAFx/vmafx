@@ -858,7 +858,7 @@ CMake 5, Go 2, one direct compile).
 
 | Build | Warnings | Why |
 | --- | --- | --- |
-| Dev Container Build | 204 on master `70d6dd0a5` | third-party sources built in the image (vpl-gpu-rt `-Wstringop-overflow`, FFmpeg) and gcc's LTO "serial compilation" note; the image is a container build, not a lane the gate reads (`T-CI-WARNINGS-NON-MSVC-LEGS-2026-10-07`) |
+| Dev Container Build (`dev-container-build-work` in `dev-container-build.yml`) | 204 on master `70d6dd0a5` | Third-party upstream sources compiled during container assembly (`vpl-gpu-rt` printing `-Wstringop-overflow`, and `FFmpeg`), plus GCC's LTO "serial compilation" note. These warnings originate in upstream code built with upstream build flags, not project-authored VMAFx sources. VMAFx sources themselves are compiled and strictly gated with `-Dwerror=true` across CI compiler matrix legs (`Build libvmaf` in `libvmaf-build-matrix.yml`, `Linux Intel LLVM` / MSVC in `build.yml`, `FFmpeg vmafx Filter` in `ffmpeg-patch-stack.yml`), and the image build executes runtime smoke probes (`vmaf --version`, 48-frame CPU probe) before acceptance (`T-CI-WARNINGS-NON-MSVC-LEGS-2026-10-07`). |
 | Release and tester images, release binaries | none measured | kept off warnings-as-errors by ADR-2170 (above) |
 
 ### What has been proven
