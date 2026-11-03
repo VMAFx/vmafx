@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 WORD_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
+ALLOW_COLUMNS = 2  # symbol, reason
 
 
 def strip_c_comments(text: str) -> str:
@@ -24,8 +25,9 @@ def is_vmafx_name(name: str) -> bool:
 
 
 def collect_include_guards(clean_text: str) -> set[str]:
-    """Find macros defined as header include guards."""
-    return set(re.findall(r"#\s*ifndef\s+([A-Za-z0-9_]+)\s+#\s*define\s+\1\b", clean_text))
+    """Find macro defined as the header's enclosing include guard."""
+    m = re.match(r"\s*#\s*ifndef\s+([A-Za-z0-9_]+)\s+#\s*define\s+\1\b", clean_text)
+    return {m.group(1)} if m else set()
 
 
 def collect_macros(clean_text: str, guards: set[str]) -> set[str]:
@@ -45,7 +47,13 @@ def collect_types(clean_text: str) -> set[str]:
         if is_vmafx_name(m.group(1)):
             types.add(m.group(1))
     for m in re.finditer(
-        r"typedef\s+(?:enum\s+|struct\s+|union\s+)?(?:[A-Za-z0-9_]+\s+|\*\s*)+([A-Za-z0-9_]+)\s*;",
+        r"typedef\s+(?:enum|struct|union)(?:\s+[A-Za-z0-9_]+)?\s*\{(?:\{[^{}]*\}|[^{}])*\}\s*(?:\*\s*)*([A-Za-z0-9_]+)\s*(?:\[[^\]]*\])*\s*;",
+        clean_text,
+    ):
+        if is_vmafx_name(m.group(1)):
+            types.add(m.group(1))
+    for m in re.finditer(
+        r"typedef\s+(?:enum\s+|struct\s+|union\s+)?(?:[A-Za-z0-9_]+\s+|\*\s*)+([A-Za-z0-9_]+)\s*(?:\[[^\]]*\])*\s*;",
         clean_text,
     ):
         if is_vmafx_name(m.group(1)):
@@ -74,7 +82,12 @@ def collect_enum_values(clean_text: str) -> set[str]:
 def collect_functions(clean_text: str) -> set[str]:
     """Collect function names declared in header prototypes."""
     funcs: set[str] = set()
-    non_preproc = re.sub(r"^[ \t]*#.*$", "", clean_text, flags=re.MULTILINE)
+    non_preproc = re.sub(
+        r"^[ \t]*#(?:[^\n\\]|\\(?:[ \t]*\r?\n|.))*$",
+        "",
+        clean_text,
+        flags=re.MULTILINE,
+    )
     non_preproc = re.sub(r"typedef\b[^;]+;", "", non_preproc)
     for m in re.finditer(r"\b(vmafx_[A-Za-z0-9_]+)\s*\(", non_preproc):
         funcs.add(m.group(1))
@@ -101,7 +114,7 @@ def collect_all_symbols(headers_dir: Path) -> set[str]:
     for header in sorted(headers_dir.glob("*.h")):
         syms = collect_header_symbols(header)
         if header.name == "libvmaf_bridge.h" and not any(
-            s.startswith(("vmafx_", "VMAFX_")) for s in syms
+            s.startswith(("vmafx_", "VMAFX_", "Vmafx")) for s in syms
         ):
             continue
         all_symbols.update(syms)
@@ -115,6 +128,9 @@ def load_doc_words(docs_dir: Path) -> set[str]:
         return words
     for md_file in sorted(docs_dir.rglob("*.md")):
         text = md_file.read_text(encoding="utf-8")
+        text = re.sub(r"<!--[\s\S]*?-->", " ", text)
+        text = re.sub(r"^[ \t]*\[[^\]]+\]:\s*\S+.*$", "", text, flags=re.MULTILINE)
+        text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", text)
         words.update(WORD_RE.findall(text))
     return words
 
@@ -124,13 +140,16 @@ def load_allowlist(allow_path: Path | None) -> set[str]:
     if allow_path is None or not allow_path.is_file():
         return set()
     allowed: set[str] = set()
-    for line in allow_path.read_text(encoding="utf-8").splitlines():
+    for line_num, line in enumerate(allow_path.read_text(encoding="utf-8").splitlines(), start=1):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        parts = stripped.split()
-        if parts:
-            allowed.add(parts[0])
+        parts = stripped.split(None, 1)
+        if len(parts) < ALLOW_COLUMNS or not parts[1].strip():
+            raise ValueError(
+                f"{allow_path}:{line_num}: allowlist entry '{parts[0]}' missing required reason column"
+            )
+        allowed.add(parts[0])
     return allowed
 
 
@@ -186,7 +205,11 @@ def main(argv: list[str] | None = None) -> int:
 
     symbols = collect_all_symbols(args.headers_dir)
     doc_words = load_doc_words(args.docs_dir)
-    allowed = load_allowlist(args.allow)
+    try:
+        allowed = load_allowlist(args.allow)
+    except ValueError as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 1
     missing = find_missing_symbols(symbols, doc_words, allowed)
 
     if missing:
