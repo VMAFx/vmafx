@@ -17,6 +17,7 @@ qualifier; nothing else defines the expression.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -28,6 +29,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 HEADER = ROOT / "core/src/vmafx/rgb_math.h"
 KERNELS = ROOT / "core/src/vmafx/import_convert_kernels.h"
+FRAME_IMPORT = ROOT / "core/src/vmafx/frame_import.c"
+TIMEOUT = 120
 BANNED = (
     (r"\b(float|double|long\s+double)\b", "floating-point type"),
     (r"(?<![/*])/(?![/*])", "division"),
@@ -45,6 +48,78 @@ def code(text: str) -> str:
 
 def findings(text: str) -> list[str]:
     return [what for pattern, what in BANNED if re.search(pattern, code(text))]
+
+
+def frame_import_findings(text: str) -> list[str]:
+    stripped = code(text)
+    bind_at = stripped.find("static VmafxStatus bind_frame")
+    bind_end = stripped.find("static VmafxStatus import_on_cpu", bind_at)
+    bind_body = stripped[bind_at:bind_end] if bind_at >= 0 and bind_end > bind_at else ""
+    checks = (
+        ("VmafxRgbPlan rgb = {0};" in stripped, "rgb plan not zero-initialized"),
+        ("(void)planned" not in stripped, "vmafx_rgb_plan_init return cast to void"),
+        ("if (!planned || !dst)" in stripped, "fill_plane does not return on failed plan"),
+        (
+            "aligned_free(buffer);" in stripped,
+            "convert_planes leaks aligned buffer on fill_plane failure",
+        ),
+        ("VMAFX_E_INVALID" in bind_body, "bind_frame does not map plan failure to VMAFX_E_INVALID"),
+    )
+    return [msg for ok, msg in checks if not ok]
+
+
+def find_gnu_gcc() -> str | None:
+    for name in ("gcc", "cc"):
+        exe = shutil.which(name)
+        if exe is None:
+            continue
+        probe = subprocess.run(  # noqa: S603 -- resolved compiler, fixed argv
+            [exe, "-dM", "-E", "-x", "c", "-"],
+            input="",
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=TIMEOUT,
+        )
+        if "#define __GNUC__" in probe.stdout and "#define __clang__" not in probe.stdout:
+            return exe
+    return None
+
+
+def compile_frame_import(gcc: str, source_text: str) -> subprocess.CompletedProcess[str]:
+    with tempfile.TemporaryDirectory() as tmp:
+        t = Path(tmp)
+        (t / "config.h").write_text("", encoding="utf-8")
+        (t / "libvmaf").mkdir()
+        (t / "libvmaf" / "version.h").write_text("", encoding="utf-8")
+        src = t / "frame_import.c"
+        src.write_text(source_text, encoding="utf-8")
+        return subprocess.run(  # noqa: S603 -- resolved compiler, fixed argv
+            [
+                gcc,
+                "-std=c23",
+                "-O2",
+                "-DNDEBUG",
+                "-fno-lto",
+                "-Wall",
+                "-Wextra",
+                "-Werror=maybe-uninitialized",
+                "-DVMAF_BUILDING_LIBVMAF",
+                f"-I{t}",
+                f"-I{ROOT}/core/include",
+                f"-I{ROOT}/core/src",
+                f"-I{ROOT}/core/src/vmafx",
+                "-c",
+                str(src),
+                "-o",
+                str(t / "frame_import.o"),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=TIMEOUT,
+            env={**os.environ, "LC_ALL": "C"},
+        )
 
 
 class RgbMathContract(unittest.TestCase):
@@ -91,6 +166,7 @@ class RgbMathContract(unittest.TestCase):
                     capture_output=True,
                     text=True,
                     check=False,
+                    timeout=TIMEOUT,
                 )
                 self.assertEqual(done.returncode, 0, done.stderr)
 
@@ -101,6 +177,46 @@ class RgbMathContract(unittest.TestCase):
         self.assertIn("VmafxRgbPlan rgb)", text)  # the plan by value
         self.assertIn("vmafx_rgb_value(&rgb, plane, r, g, b)", text)
         self.assertNotIn("coef", code(text))  # no second copy of the expression
+
+    def test_frame_import_handles_rgb_plan_failure(self) -> None:
+        text = FRAME_IMPORT.read_text(encoding="utf-8")
+        self.assertEqual(frame_import_findings(text), [])
+        mutations = (
+            ("VmafxRgbPlan rgb = {0};", "VmafxRgbPlan rgb;", "rgb plan not zero-initialized"),
+            (
+                "if (!planned || !dst) {\n            return -1;\n        }",
+                "(void)planned;",
+                "vmafx_rgb_plan_init return cast to void",
+            ),
+            (
+                "aligned_free(buffer);",
+                "",
+                "convert_planes leaks aligned buffer on fill_plane failure",
+            ),
+        )
+        for old, new, expected in mutations:
+            mutated = text.replace(old, new, 1)
+            self.assertNotEqual(mutated, text, expected)
+            self.assertIn(expected, frame_import_findings(mutated))
+
+    def test_frame_import_compiles_under_ndebug_no_lto_maybe_uninitialized(self) -> None:
+        gcc = find_gnu_gcc()
+        if gcc is None:
+            self.skipTest("GNU gcc not on PATH; source contract checked above")
+        text = FRAME_IMPORT.read_text(encoding="utf-8")
+        done = compile_frame_import(gcc, text)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        planted = text.replace("VmafxRgbPlan rgb = {0};", "VmafxRgbPlan rgb;", 1).replace(
+            "if (!planned || !dst) {\n            return -1;\n        }",
+            "(void)planned;",
+            1,
+        )
+        self.assertNotEqual(planted, text)
+        bad = compile_frame_import(gcc, planted)
+        self.assertNotEqual(
+            bad.returncode, 0, "unfixed fill_plane must fail -Werror=maybe-uninitialized"
+        )
+        self.assertIn("maybe-uninitialized", bad.stderr)
 
 
 if __name__ == "__main__":
