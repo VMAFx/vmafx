@@ -25,6 +25,11 @@ CPU extractor, replay against reference, recorded value) uses
 - test that shows two forms differ (fixture tells fork's form from
   wrong one) negates helper. comparison with constant (sentinel,
   literal) stays `==`; CodeQL `cpp/equality-on-floats` does not report it.
+- Semgrep `vmaf-test-float-identity-via-float-bits` (`.semgrep.yml`) refuses
+  `==` / `!=` between two computed floats in `core/test/` at commit and in
+  CI, GPU twin tests included (CodeQL build never compiles those). Literal,
+  macro, `kName` constant and `x != x` pass. Planted recall:
+  `scripts/ci/tests/test_semgrep_float_identity.py`.
 - Do not add private `memcpy` bit helper to test. 40 files still carry
   one from before ADR-1502; convert file's copy when you edit file.
 

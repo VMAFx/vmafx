@@ -34,11 +34,23 @@ import argparse
 import json
 import os
 import statistics
-import subprocess
+import shutil
 import sys
 import tempfile
 import time
+from pathlib import Path
 from typing import NamedTuple
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    CommandOutputLimitExceeded,
+    CommandTimedOut,
+    executable_argument,
+)
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 
 class Fixture(NamedTuple):
@@ -169,12 +181,16 @@ def load1() -> float:
 
 def cuda_free_mib() -> int:
     try:
-        proc = subprocess.run(
-            ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+        nvidia_smi = shutil.which("nvidia-smi")
+        if nvidia_smi is None:
+            return 0
+        proc = run_command(
+            [nvidia_smi, "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+            allowed_executables=[nvidia_smi],
             capture_output=True,
             text=True,
             check=False,
-            timeout=10,
+            timeout_seconds=10,
         )
         if proc.returncode == 0 and proc.stdout.strip():
             return int(proc.stdout.strip().splitlines()[0])
@@ -262,9 +278,27 @@ def check_engagement(doc: dict, requested_backend: str) -> tuple[bool, str | Non
     return True, None
 
 
+def resolve_executable(name: str) -> str:
+    """Return `name` as run_command accepts it: bare names stay, paths become absolute.
+
+    The default `--vmaf-bin` is `core/build/tools/vmaf`, relative to the repository root;
+    run_command refuses relative paths with a directory part.
+    """
+    return executable_argument(name, _REPO_ROOT)
+
+
 def execute_run(cmd: list[str], out_path: str) -> tuple[int, float, str, dict | None]:
+    cmd = [resolve_executable(cmd[0]), *cmd[1:]]
     start = time.monotonic()
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    proc = run_command(
+        cmd,
+        capture_output=True,
+        text=True,
+        check=False,
+        allowed_executables=[cmd[0]],
+        timeout_seconds=3600,
+        max_output_bytes=64 * 1_048_576,
+    )
     elapsed = time.monotonic() - start
     if proc.returncode != 0 or not os.path.exists(out_path):
         msg = (proc.stderr or proc.stdout or "").strip().splitlines()
@@ -284,7 +318,18 @@ def run_cell_iterations(
     times = []
     first_doc = None
     for i in range(runs + 1):
-        rc, elapsed, err, doc = execute_run(cmd, out_path)
+        try:
+            rc, elapsed, err, doc = execute_run(cmd, out_path)
+        except (CommandTimedOut, CommandOutputLimitExceeded) as exc:
+            return (
+                [],
+                None,
+                {
+                    "status": "unavailable",
+                    "returncode": None,
+                    "error": f"{type(exc).__name__}: {exc}",
+                },
+            )
         if rc != 0 or doc is None:
             return [], None, {"status": "unavailable", "returncode": rc, "error": err}
         if i == 0:
@@ -488,11 +533,8 @@ def main() -> int:
     backends = args.backends or ["cpu", "cuda", "sycl", "hip"]
     models = args.models or NEWEST_MODELS
 
-    root = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False
-    ).stdout.strip()
-    if root:
-        os.chdir(root)
+    # Fixture paths are relative to the repository root, the parent of testdata/.
+    os.chdir(_REPO_ROOT)
 
     fixtures = resolve_fixtures(args)
     if not fixtures:

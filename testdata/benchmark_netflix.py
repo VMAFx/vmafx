@@ -25,10 +25,16 @@ python/test/quality_runner_test.py):
 
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 # Paths are overridable via env vars so a worktree / CI runner can point at a
 # freshly-built libvmaf instead of the system install. Defaults match the
@@ -179,7 +185,15 @@ def run_vmaf(test, backend, log_path):
         env.update(backend["env_extra"])
 
     t0 = time.time()
-    result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=300)
+    result = run_command(
+        cmd,
+        allowed_executables=[cmd[0]],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout_seconds=300,
+        max_output_bytes=64 * 1_048_576,
+    )
     elapsed = time.time() - t0
 
     if result.returncode != 0:

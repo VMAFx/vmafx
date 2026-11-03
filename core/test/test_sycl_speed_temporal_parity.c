@@ -52,6 +52,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/feature_extractor.h"
 #include "libvmaf/libvmaf.h"
@@ -209,12 +210,12 @@ static char *test_speed_temporal_cpu_sycl_parity(void)
         return msg;
     if (!device_present)
         return NULL;
-    if (cpu_score != sycl_score) {
+    if (!vmaf_test_identical_f64(cpu_score, sycl_score)) {
         (void)fprintf(stderr, "\nspeed_temporal parity FAIL: cpu=%.17g sycl=%.17g delta=%.2e\n",
                       cpu_score, sycl_score, fabs(cpu_score - sycl_score));
     }
     mu_assert("speed_temporal_sycl does not return the CPU extractor's score",
-              cpu_score == sycl_score);
+              vmaf_test_identical_f64(cpu_score, sycl_score));
     return NULL;
 }
 

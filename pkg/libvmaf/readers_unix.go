@@ -23,11 +23,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"sync/atomic"
-	"time"
-
-	"github.com/VMAFx/vmafx/pkg/model"
 )
 
 // streamInput copies one caller stream into the write end of a pipe and
@@ -82,31 +78,16 @@ func (s *streamInput) failure() error {
 func (s *Scorer) ScoreReaders(ctx context.Context, ref, dis io.ReadCloser, modelName, backend string) (float64, map[string]float64, error) {
 	defer closeQuietly(ref)
 	defer closeQuietly(dis)
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := ctx.Err(); err != nil {
-		return 0, nil, fmt.Errorf("libvmaf: context cancelled before Score: %w", err)
-	}
-	if modelName == "" {
-		modelName = model.DefaultVersion
-	}
-	modelPath, err := s.resolveModel(modelName)
+	run, err := s.prepareRun(ctx, "Score", modelName)
 	if err != nil {
 		return 0, nil, err
 	}
-	out, removeOut, err := scoreOutputFile()
-	if err != nil {
+	defer run.release()
+	argv := scoreArgv("/dev/fd/3", "/dev/fd/4", run.modelPath, run.out, backend)
+	if err := s.runWithStreams(run.ctx, argv, ref, dis); err != nil {
 		return 0, nil, err
 	}
-	defer removeOut()
-	runCtx, cancel := context.WithTimeout(ctx, scoreBudget(ctx.Deadline()))
-	defer cancel()
-	argv := scoreArgv("/dev/fd/3", "/dev/fd/4", modelPath, out, backend)
-	if err := s.runWithStreams(runCtx, argv, ref, dis); err != nil {
-		return 0, nil, err
-	}
-	return parseOutput(out)
+	return parseOutput(run.out)
 }
 
 // runWithStreams runs the CLI with the two streams on descriptors 3 and 4.
@@ -120,13 +101,8 @@ func (s *Scorer) runWithStreams(ctx context.Context, argv []string, ref, dis io.
 		closeQuietly(refR, refIn.w)
 		return err
 	}
-	// #nosec G204 -- binaryPath is the operator-configured vmaf CLI; argv holds fixed
-	// flags, the /dev/fd inputs, the resolved model path and the temp output.
-	cmd := exec.CommandContext(ctx, s.binaryPath, argv...)
-	cmd.WaitDelay = 2 * time.Second
+	cmd, stderr := s.newCLICommand(ctx, argv)
 	cmd.ExtraFiles = []*os.File{refR, disR}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
 	startErr := cmd.Start()
 	// The child holds its own copies of the read ends; the parent's must go so
 	// a CLI that exits early turns the copies' writes into EPIPE.
@@ -138,7 +114,7 @@ func (s *Scorer) runWithStreams(ctx context.Context, argv []string, ref, dis io.
 	go refIn.pump()
 	go disIn.pump()
 	waitErr := cmd.Wait()
-	return finishStreams(ctx, waitErr, &stderr, refIn, disIn)
+	return finishStreams(ctx, waitErr, stderr, refIn, disIn)
 }
 
 // finishStreams closes both streams, waits for their copies and decides the
@@ -160,15 +136,6 @@ func finishStreams(ctx context.Context, waitErr error, stderr *bytes.Buffer, inp
 		errs = append(errs, cliFailure(ctx, waitErr, stderr))
 	}
 	return errors.Join(errs...)
-}
-
-// cliFailure describes a failed CLI run, naming a context cancellation.
-func cliFailure(ctx context.Context, waitErr error, stderr *bytes.Buffer) error {
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return fmt.Errorf("libvmaf: vmaf subprocess cancelled: %w (run err: %v, stderr: %s)",
-			ctxErr, waitErr, stderr.String())
-	}
-	return fmt.Errorf("libvmaf: vmaf binary failed: %w\nstderr: %s", waitErr, stderr.String())
 }
 
 // newStreamInput wraps src and returns it with the pipe's read end.

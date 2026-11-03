@@ -1,0 +1,1 @@
+- A package-less `.venv` that another tool leaves in the worktree root no longer shadows `python3` under `make`; `check-no-tracked-venv` now refuses it and a package-less root `uv.lock`.

@@ -161,9 +161,11 @@ static char *test_row_order(void)
 {
     const uint64_t seg[4] = {(uint64_t)1 << 53, 1u, 1u, 1u};
     mu_assert("rows are added in order",
-              vmaf_float_psnr_row_noise(seg, 4u, 1u) == (double)((uint64_t)1 << 53));
+              vmaf_test_identical_f64(vmaf_float_psnr_row_noise(seg, 4u, 1u),
+                                      (double)((uint64_t)1 << 53)));
     mu_assert("segments of a row are added exactly",
-              vmaf_float_psnr_row_noise(seg, 1u, 4u) == (double)(((uint64_t)1 << 53) + 3u));
+              vmaf_test_identical_f64(vmaf_float_psnr_row_noise(seg, 1u, 4u),
+                                      (double)(((uint64_t)1 << 53) + 3u)));
     return NULL;
 }
 

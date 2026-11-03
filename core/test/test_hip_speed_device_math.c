@@ -48,6 +48,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/feature_collector.h"
 #include "feature/feature_extractor.h"
@@ -522,7 +523,7 @@ static int sp_expect(const SpCpu *cpu, const SpCase *c, const char *output, unsi
     (void)snprintf(alias, sizeof(alias), "%s_", output);
     double reference = NAN;
     const int err = sp_cpu_score(cpu, name, alias, frame, &reference);
-    if (!err && reference == replay)
+    if (!err && vmaf_test_identical_f64(reference, replay))
         return 0;
     (void)fprintf(stderr, "\n%s frame %u %s: device replay %.17g, CPU %.17g (err %d)\n", c->name,
                   frame, output, replay, reference, err);

@@ -6,9 +6,9 @@ import json
 import os
 import pty
 import re
-import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -17,24 +17,38 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from scripts.lib import vmaftest  # noqa: E402 - needs the repository root on sys.path
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 
 def _run_pty(cmd):
+    """Run cmd on a pseudo-terminal; return its exit status and what it printed."""
     master, slave = pty.openpty()
-    proc = subprocess.Popen(cmd, stdout=slave, stderr=slave, close_fds=True)
-    os.close(slave)
-    out = b""
-    chunk_size = 1024
-    try:
-        chunk = os.read(master, chunk_size)
-        while chunk:
-            out += chunk
-            chunk = os.read(master, chunk_size)
-    except OSError:
-        pass
+    chunks = []
+
+    def drain():
+        # A thread reads while the child runs, so a full terminal buffer never stalls it;
+        # the read ends with OSError (EIO) once the child and our slave end are closed.
+        try:
+            chunk = os.read(master, 1024)
+            while chunk:
+                chunks.append(chunk)
+                chunk = os.read(master, 1024)
+        except OSError:
+            pass
+
+    reader = threading.Thread(target=drain, daemon=True)
+    reader.start()
+    with os.fdopen(slave, "wb", buffering=0) as terminal:
+        result = run_command(
+            cmd,
+            allowed_executables=[cmd[0]],
+            stdout=terminal,
+            stderr=terminal,
+            timeout_seconds=600,
+        )
+    reader.join(timeout=30)
     os.close(master)
-    proc.wait()
-    return proc.returncode, out.decode(errors="replace")
+    return result.returncode, b"".join(chunks).decode(errors="replace")
 
 
 class VmafxCliTest(unittest.TestCase):
@@ -60,14 +74,26 @@ class VmafxCliTest(unittest.TestCase):
         assert os.path.exists(cls.dis_yuv), f"dis_yuv not found: {cls.dis_yuv}"
 
     def test_vmafx_version(self):
-        res = subprocess.run([self.vmafx_bin, "-v"], capture_output=True, text=True, check=True)
+        res = run_command(
+            [self.vmafx_bin, "-v"],
+            allowed_executables=[self.vmafx_bin],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         # vmaf -v writes to stderr
         combined = (res.stdout + res.stderr).strip()
         self.assertTrue(combined.startswith("VMAFX "))
         self.assertIn("(auto-backend, precision=max)", combined)
 
     def test_vmaf_version_unaffected(self):
-        res = subprocess.run([self.vmaf_bin, "-v"], capture_output=True, text=True, check=True)
+        res = run_command(
+            [self.vmaf_bin, "-v"],
+            allowed_executables=[self.vmaf_bin],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         combined = (res.stdout + res.stderr).strip()
         self.assertTrue(combined.startswith("v"))
         self.assertNotIn("VMAFX", combined)
@@ -216,7 +242,13 @@ class VmafxCliTest(unittest.TestCase):
                 "-o",
                 out_vmafx,
             ]
-            subprocess.run(cmd_vmafx, check=True, capture_output=True)
+            run_command(
+                cmd_vmafx,
+                check=True,
+                capture_output=True,
+                allowed_executables=[cmd_vmafx[0]],
+                timeout_seconds=600,
+            )
             with open(out_vmafx, encoding="utf-8") as f:
                 content_vmafx = f.read()
             vmafx_data = json.loads(content_vmafx)
@@ -250,7 +282,13 @@ class VmafxCliTest(unittest.TestCase):
             "-o",
             out_compat,
         ]
-        subprocess.run(cmd_compat, check=True, capture_output=True)
+        run_command(
+            cmd_compat,
+            check=True,
+            capture_output=True,
+            allowed_executables=[cmd_compat[0]],
+            timeout_seconds=600,
+        )
         with open(out_compat, encoding="utf-8") as f:
             content_compat = f.read()
         compat_data = json.loads(content_compat)
@@ -264,7 +302,9 @@ class VmafxCliTest(unittest.TestCase):
 
     def _run_cli_json(self, args, out_json):
         cmd = [self.vmaf_bin] + args + ["--json", "-o", out_json]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = run_command(
+            cmd, capture_output=True, text=True, allowed_executables=[cmd[0]], timeout_seconds=600
+        )
         self.assertEqual(res.returncode, 0, res.stderr)
         with open(out_json, encoding="utf-8") as f:
             return json.load(f)
@@ -360,7 +400,13 @@ class VmafxCliTest(unittest.TestCase):
                 "-o",
                 out_json,
             ]
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = run_command(
+                cmd,
+                capture_output=True,
+                text=True,
+                allowed_executables=[cmd[0]],
+                timeout_seconds=600,
+            )
             self.assertEqual(res.returncode, 0, res.stderr)
             with open(out_json, encoding="utf-8") as f:
                 data = json.load(f)
@@ -391,7 +437,13 @@ class VmafxCliTest(unittest.TestCase):
                 "--feature",
                 "psnr",
             ]
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = run_command(
+                cmd,
+                capture_output=True,
+                text=True,
+                allowed_executables=[cmd[0]],
+                timeout_seconds=600,
+            )
             self.assertEqual(res.returncode, 2)
             self.assertIn("file too small", res.stderr)
 

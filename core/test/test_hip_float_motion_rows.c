@@ -32,6 +32,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/hip/float_motion/float_motion_rows.h"
 #include "feature/motion.h"
@@ -246,7 +247,7 @@ static char *test_block_reduction_is_detected(void)
     fm_pair_free(&p);
     mu_assert("compute_motion() failed", err == 0);
     mu_assert("a per-block sum gives the CPU's score: the fixture cannot tell the orders apart",
-              blocks != cpu);
+              !vmaf_test_identical_f64(blocks, cpu));
     return NULL;
 }
 

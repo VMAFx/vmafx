@@ -54,6 +54,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "hip_parity_skip.h"
 
@@ -205,12 +206,12 @@ static char *test_speed_temporal_cpu_hip_parity(void)
         return NULL;
     }
 
-    if (cpu_score != hip_score) {
+    if (!vmaf_test_identical_f64(cpu_score, hip_score)) {
         (void)fprintf(stderr, "\nspeed_temporal parity FAIL: cpu=%.17g hip=%.17g delta=%.2e\n",
                       cpu_score, hip_score, fabs(cpu_score - hip_score));
     }
     mu_assert("speed_temporal_hip does not return the CPU extractor's score",
-              cpu_score == hip_score);
+              vmaf_test_identical_f64(cpu_score, hip_score));
     return NULL;
 }
 

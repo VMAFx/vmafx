@@ -21,13 +21,20 @@ from __future__ import absolute_import
 
 import os
 import re
-import subprocess
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 from test.testutil import set_default_576_324_videos_for_testing
 
 from vmaf import ExternalProgram
 from vmaf.config import VmafConfig
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 #: Must equal ``VMAF_DEFAULT_MODEL_VERSION`` in ``core/include/libvmaf/model.h``.
 #: ``scripts/ci/check-default-model-single-source.sh`` does not police this file
@@ -68,7 +75,9 @@ def _score(extra_args):
             "-o",
             out,
         ] + list(extra_args)
-        subprocess.run(cmd, check=True, capture_output=True)
+        run_command(
+            cmd, check=True, capture_output=True, allowed_executables=[cmd[0]], timeout_seconds=600
+        )
         with open(out, encoding="utf-8") as fh:
             return set(_METRIC_RE.findall(fh.read()))
 
@@ -158,7 +167,14 @@ class DefaultBuiltInModelTest(unittest.TestCase):
                 out,
                 "--quiet",
             ]
-            proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            proc = run_command(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                allowed_executables=[cmd[0]],
+                timeout_seconds=600,
+            )
             self.assertNotEqual(
                 proc.returncode,
                 0,
@@ -205,7 +221,14 @@ class DefaultBuiltInModelTest(unittest.TestCase):
                 "--model",
                 "version=vmaf_v0.6.1",
             ]
-            subprocess.run(cmd, capture_output=True, text=True, check=True)
+            run_command(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                allowed_executables=[cmd[0]],
+                timeout_seconds=600,
+            )
             with open(out, encoding="utf-8") as fh:
                 keys = set(_METRIC_RE.findall(fh.read()))
             self.assertTrue(
@@ -229,7 +252,7 @@ class NegRoutingTest(unittest.TestCase):
         ref_path, dis_path, _a, _b = set_default_576_324_videos_for_testing()
         with tempfile.TemporaryDirectory() as tmp:
             out = os.path.join(tmp, "out.xml")
-            proc = subprocess.run(
+            proc = run_command(
                 [
                     ExternalProgram.vmafexec,
                     "-r",
@@ -249,9 +272,11 @@ class NegRoutingTest(unittest.TestCase):
                     "-o",
                     out,
                 ],
+                allowed_executables=[ExternalProgram.vmafexec],
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout_seconds=600,
             )
             return proc.returncode == 0, proc.stderr
 

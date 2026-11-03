@@ -1,6 +1,6 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
 # vmafx-uv-version: 0.13.6
-# vmafx-input-sha256: 12b4bdb651c54a7a071ca2787081d5632361a5ed0dcac5cb0b9861d5edda0beb
+# vmafx-input-sha256: 6ec0ab39d4663d48bfc4fad233a1440b084ce4d322babeeeaf5d088d70cb49b2
 # vmafx-inputs: requirements/locks/tooling-tests.in, docs/requirements.txt
 ast-serialize==0.13.1 \
     --hash=sha256:02686b281ec9b8e9614f6f0db27e12e4cac515f336c5d05b678bc9eb73ff2af5 \
@@ -313,6 +313,9 @@ filelock==4.2.4 \
     # via
     #   python-discovery
     #   virtualenv
+flawfinder==2.0.20 \
+    --hash=sha256:4388670f27574cc42fed6bdb3c2dee42d1c383404240f3f56c8c079cc3fee321
+    # via -r requirements/locks/tooling-tests.in
 ghp-import==2.1.0 \
     --hash=sha256:8337dd7b50877f163d4c0289bc1f1c7f127550241988d568c1db512c4324a619 \
     --hash=sha256:9c535c4c61193c2df8871222567d7fd7e5014d835f97dc7b7439069e2413d343

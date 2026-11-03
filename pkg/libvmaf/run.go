@@ -62,40 +62,27 @@ const maxModelBytes = 256 << 20
 // Run scores one pair with the request's options and returns the parsed
 // report. The supplied ctx governs the vmaf subprocess as in Score.
 func (s *Scorer) Run(ctx context.Context, req Request) (*Result, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("libvmaf: context cancelled before Run: %w", err)
-	}
 	name := req.Model
 	if name == "" {
 		name = model.DefaultVersion
 	}
-	modelPath, err := s.resolveModel(name)
+	run, err := s.prepareRun(ctx, "Run", name)
 	if err != nil {
 		return nil, err
 	}
-	digest, err := fileSHA256(modelPath)
+	defer run.release()
+	digest, err := fileSHA256(run.modelPath)
 	if err != nil {
 		return nil, err
 	}
-	out, removeOut, err := scoreOutputFile()
+	if err := s.runScoreBinary(run.ctx, runArgv(req, run.modelPath, run.out)); err != nil {
+		return nil, err
+	}
+	result, err := parseReport(run.out)
 	if err != nil {
 		return nil, err
 	}
-	defer removeOut()
-
-	runCtx, cancel := context.WithTimeout(ctx, scoreBudget(ctx.Deadline()))
-	defer cancel()
-	if err := s.runScoreBinary(runCtx, runArgv(req, modelPath, out)); err != nil {
-		return nil, err
-	}
-	result, err := parseReport(out)
-	if err != nil {
-		return nil, err
-	}
-	result.ModelName, result.ModelPath, result.ModelSHA256 = name, modelPath, digest
+	result.ModelName, result.ModelPath, result.ModelSHA256 = name, run.modelPath, digest
 	return result, nil
 }
 

@@ -14,9 +14,14 @@ package vmafx
 // `go vet` and static analysis run against in-tree headers without a pre-built
 // shared library and `go test` / `go build` fail closed unless a library path is
 // explicitly configured.
+#include <locale.h>
 #include <stdlib.h>
 #include <vmafx/vmafx.h>
 #include <vmafx/libvmaf_bridge.h>
+
+static void vmafx_go_pin_c_locale(void) {
+	(void)setlocale(LC_NUMERIC, "C");
+}
 */
 import "C"
 
@@ -25,6 +30,12 @@ import (
 	"fmt"
 	"unsafe"
 )
+
+// init pins LC_NUMERIC to "C" so feature option formatting and JSON parsing
+// use "." regardless of the host process locale (ADR-0137).
+func init() {
+	C.vmafx_go_pin_c_locale()
+}
 
 // ABI version of the VMAFx definition this binding was generated from.
 const ABIVersionMajor uint32 = 0
@@ -1623,6 +1634,13 @@ func (c *Context) SetOption(key string, value string) error {
 	return checkStatus(status, cErr, "vmafx_context_set_option")
 }
 
+// UseModel: Register the extractors of every feature `model` reads and mount the model. The context takes a reference to the model until it is destroyed (ADR-1755); the caller may release its own at once.
+func (c *Context) UseModel(model *Model) error {
+	var cErr *C.VmafxError
+	status := Status(C.vmafx_context_use_model(c.rawHandle(), model.rawHandle(), &cErr))
+	return checkStatus(status, cErr, "vmafx_context_use_model")
+}
+
 // ImportScore: Record `value` as the score of `feature` at frame `index`, computed outside the library.
 func (c *Context) ImportScore(feature string, index uint64, value float64) error {
 	cFeature := C.CString(feature)
@@ -1632,11 +1650,51 @@ func (c *Context) ImportScore(feature string, index uint64, value float64) error
 	return checkStatus(status, cErr, "vmafx_context_import_score")
 }
 
+// Submit: Score frame `index` from `reference` and `distorted`. Consumes one reference of each frame on every path, failures included (the same frame as both inputs needs two); a frame submitted to several contexts needs one reference per submit and is never copied. Indices increase strictly; the distorted input may differ in size from the reference but keeps its pixel format and bit depth, and each input keeps its own first frame's geometry. Inputs of different sizes are scored only when a model's `conversion_target` names a display resolution, which scales both to a common size before scoring.
+func (c *Context) Submit(reference *Frame, distorted *Frame, index uint64) error {
+	var cErr *C.VmafxError
+	status := Status(C.vmafx_submit(c.rawHandle(), reference.takeHandle(), distorted.takeHandle(), C.uint64_t(index), &cErr))
+	return checkStatus(status, cErr, "vmafx_submit")
+}
+
 // Flush: Finish every submitted frame; scores of the last frames (motion) become final. A context is flushed once; a second flush or a submit after it is VMAFX_E_INVALID.
 func (c *Context) Flush() error {
 	var cErr *C.VmafxError
 	status := Status(C.vmafx_flush(c.rawHandle(), &cErr))
 	return checkStatus(status, cErr, "vmafx_flush")
+}
+
+// Admit: Whether every extractor registered on the context can read `frame` where it lives, without a host copy (ADR-1688 generalised). VMAFX_E_NOTSUP names each refusing extractor and why; vmafx_submit() makes the same check before it counts a frame.
+func (c *Context) Admit(frame *Frame) error {
+	var cErr *C.VmafxError
+	status := Status(C.vmafx_context_admit(c.rawHandle(), frame.rawHandle(), &cErr))
+	return checkStatus(status, cErr, "vmafx_context_admit")
+}
+
+// ScoreFrame: Score of `model` at frame `index`, predicted on first read; VMAFX_PENDING while a feature it reads is not final.
+func (c *Context) ScoreFrame(model *Model, index uint64) (Score, error) {
+	var out C.VmafxScore
+	// SAFETY: unsafe.Sizeof is evaluated at compile time and dereferences nothing.
+	out.struct_size = C.uint32_t(unsafe.Sizeof(out))
+	var cErr *C.VmafxError
+	status := Status(C.vmafx_score_frame(c.rawHandle(), model.rawHandle(), C.uint64_t(index), &out, &cErr))
+	if err := checkStatus(status, cErr, "vmafx_score_frame"); err != nil {
+		return Score{}, err
+	}
+	return scoreFromC(out), nil
+}
+
+// ScorePooled: Score of `model` pooled with `pool` (a VmafxPool) over frames `first` to `last` (inclusive, subsampled frames skipped); VMAFX_PENDING where vmaf_score_pooled() returns -EAGAIN.
+func (c *Context) ScorePooled(model *Model, pool uint32, first uint64, last uint64) (PooledScore, error) {
+	var out C.VmafxPooledScore
+	// SAFETY: unsafe.Sizeof is evaluated at compile time and dereferences nothing.
+	out.struct_size = C.uint32_t(unsafe.Sizeof(out))
+	var cErr *C.VmafxError
+	status := Status(C.vmafx_score_pooled(c.rawHandle(), model.rawHandle(), C.uint32_t(pool), C.uint64_t(first), C.uint64_t(last), &out, &cErr))
+	if err := checkStatus(status, cErr, "vmafx_score_pooled"); err != nil {
+		return PooledScore{}, err
+	}
+	return pooledScoreFromC(out), nil
 }
 
 // FeatureScorePooled: Scores of `feature` pooled as vmafx_score_pooled() does.
@@ -1728,6 +1786,17 @@ func (c *Context) SetEncodeRecord(record string) error {
 	return checkStatus(status, cErr, "vmafx_context_set_encode_record")
 }
 
+// ProvenanceJson: The provenance record as JSON in RFC 8785 form (keys in byte order, no whitespace; integers as numbers, 64-bit integers as strings, enums by their lower-case value names, as the proto Provenance message maps to JSON), with models, features and annotations. `*json` lives until the next call of this function on the context or its destruction. Added in ABI 0.1.5.
+func (c *Context) ProvenanceJson(flags uint32) (string, error) {
+	var json *C.char
+	var cErr *C.VmafxError
+	status := Status(C.vmafx_context_provenance_json(c.rawHandle(), C.uint32_t(flags), &json, &cErr))
+	if err := checkStatus(status, cErr, "vmafx_context_provenance_json"); err != nil {
+		return "", err
+	}
+	return C.GoString(json), nil
+}
+
 // ReportWrite: Write the context's scores to `path` in `format` (VmafxReportFormat), numbers with `score_format` (a printf format of one double; NULL: `%.6f`). JSON and XML carry the provenance record; CSV and SUB keep their columns. `flags` (VmafxReportFlags) may also ask for a `<path>.provenance.json` sidecar. Added in ABI 0.1.5.
 func (c *Context) ReportWrite(path string, format uint32, flags uint32, score_format string) error {
 	cPath := C.CString(path)
@@ -1764,6 +1833,216 @@ func (c *Context) SetTinyResize(mode uint32) error {
 	var cErr *C.VmafxError
 	status := Status(C.vmafx_context_set_tiny_resize(c.rawHandle(), C.uint32_t(mode), &cErr))
 	return checkStatus(status, cErr, "vmafx_context_set_tiny_resize")
+}
+
+// Model wraps a refcounted VmafxModel handle; release it with Close.
+type Model struct {
+	handle *C.VmafxModel
+}
+
+func modelConfigToC(config *ModelConfig) (C.VmafxModelConfig, *C.char) {
+	var raw C.VmafxModelConfig
+	// SAFETY: unsafe.Sizeof is evaluated at compile time and dereferences nothing.
+	raw.struct_size = C.uint32_t(unsafe.Sizeof(raw))
+	if config == nil {
+		return raw, nil
+	}
+	var cName *C.char
+	if config.Name != "" {
+		cName = C.CString(config.Name)
+		raw.name = cName
+	}
+	raw.flags = C.uint64_t(config.Flags)
+	raw.log_level = C.uint32_t(config.LogLevel)
+	return raw, cName
+}
+
+func (m *Model) rawHandle() *C.VmafxModel {
+	if m == nil {
+		return nil
+	}
+	return m.handle
+}
+
+// Close drops the Model reference; safe to call multiple times or on nil.
+func (m *Model) Close() {
+	if m == nil || m.handle == nil {
+		return
+	}
+	C.vmafx_model_unref(m.handle)
+	m.handle = nil
+}
+
+// LoadModel: Load the built-in model `version` (see vmafx_model_builtin_next()). `config` may be NULL. VMAFX_E_NOTFOUND names an unknown version.
+func LoadModel(config *ModelConfig, version string) (*Model, error) {
+	var raw C.VmafxModelConfig
+	var cfgPtr *C.VmafxModelConfig
+	if config != nil {
+		var cName *C.char
+		raw, cName = modelConfigToC(config)
+		if cName != nil {
+			defer freeCString(cName)
+		}
+		cfgPtr = &raw
+	}
+	cVersion := C.CString(version)
+	defer freeCString(cVersion)
+	var handle *C.VmafxModel
+	var cErr *C.VmafxError
+	status := Status(C.vmafx_model_load(cfgPtr, cVersion, &handle, &cErr))
+	if err := checkStatus(status, cErr, "vmafx_model_load"); err != nil {
+		return nil, err
+	}
+	return &Model{handle: handle}, nil
+}
+
+// LoadModelFile: Load a JSON model file (UTF-8 path). VMAFX_E_IO names a file that cannot be read, VMAFX_E_INVALID one that is not a single model, VMAFX_E_NOTSUP a `.pkl` file.
+func LoadModelFile(config *ModelConfig, path string) (*Model, error) {
+	var raw C.VmafxModelConfig
+	var cfgPtr *C.VmafxModelConfig
+	if config != nil {
+		var cName *C.char
+		raw, cName = modelConfigToC(config)
+		if cName != nil {
+			defer freeCString(cName)
+		}
+		cfgPtr = &raw
+	}
+	cPath := C.CString(path)
+	defer freeCString(cPath)
+	var handle *C.VmafxModel
+	var cErr *C.VmafxError
+	status := Status(C.vmafx_model_load_file(cfgPtr, cPath, &handle, &cErr))
+	if err := checkStatus(status, cErr, "vmafx_model_load_file"); err != nil {
+		return nil, err
+	}
+	return &Model{handle: handle}, nil
+}
+
+// LoadModelSpec: Load the model a specification string names, as the `model` option of the FFmpeg filter and the GStreamer element spells it: `key=value` items separated by `:`, keys `version` (a built-in model) or `path` (a model file), `name` (the name of its scores), `disable_clip` and `enable_transform` (`true` when given without a value), and `<extractor>.<option>=<value>` overrides, applied in order. A backslash escapes the next `:`, `=`, `.` or backslash; any other backslash is kept (Windows paths). An empty `spec` is the library's default model (vmafx_model_default_version()). `config.name` and `config.flags` are the defaults the string overrides. VMAFX_E_INVALID names the item that is not understood (both `version` and `path`, a key without a value, an override without an option), VMAFX_E_RANGE a string over 4096 bytes or more than 64 items; a load failure is vmafx_model_load()'s or vmafx_model_load_file()'s. Added in ABI 0.1.11.
+func LoadModelSpec(config *ModelConfig, spec string) (*Model, error) {
+	var raw C.VmafxModelConfig
+	var cfgPtr *C.VmafxModelConfig
+	if config != nil {
+		var cName *C.char
+		raw, cName = modelConfigToC(config)
+		if cName != nil {
+			defer freeCString(cName)
+		}
+		cfgPtr = &raw
+	}
+	cSpec := C.CString(spec)
+	defer freeCString(cSpec)
+	var handle *C.VmafxModel
+	var cErr *C.VmafxError
+	status := Status(C.vmafx_model_load_spec(cfgPtr, cSpec, &handle, &cErr))
+	if err := checkStatus(status, cErr, "vmafx_model_load_spec"); err != nil {
+		return nil, err
+	}
+	return &Model{handle: handle}, nil
+}
+
+// Name: Name the model's scores are recorded under; NULL for NULL.
+func (m *Model) Name() string {
+	return C.GoString(C.vmafx_model_name(m.rawHandle()))
+}
+
+// FeatureCount: Number of features the model reads; 0 for NULL.
+func (m *Model) FeatureCount() uint32 {
+	return uint32(C.vmafx_model_feature_count(m.rawHandle()))
+}
+
+// FeatureName: Name of feature `index`, or NULL past the last one.
+func (m *Model) FeatureName(index uint32) string {
+	return C.GoString(C.vmafx_model_feature_name(m.rawHandle(), C.uint32_t(index)))
+}
+
+// Hash: SHA-256 of the model bytes as loaded, 64 lowercase hex digits (equal to `sha256sum` of the file); lives as long as the model. NULL for NULL.
+func (m *Model) Hash() string {
+	return C.GoString(C.vmafx_model_hash(m.rawHandle()))
+}
+
+// Frame wraps a refcounted VmafxFrame handle; release it with Close.
+type Frame struct {
+	handle *C.VmafxFrame
+}
+
+// NewHostFrame allocates a zeroed host frame of geometry desc on the CPU device.
+func NewHostFrame(desc FrameDesc) (*Frame, error) {
+	raw := desc.toC()
+	var handle *C.VmafxFrame
+	var cErr *C.VmafxError
+	status := Status(C.vmafx_frame_create_host(nil, &raw, &handle, &cErr))
+	if err := checkStatus(status, cErr, "vmafx_frame_create_host"); err != nil {
+		return nil, err
+	}
+	return &Frame{handle: handle}, nil
+}
+
+func (f *Frame) rawHandle() *C.VmafxFrame {
+	if f == nil {
+		return nil
+	}
+	return f.handle
+}
+
+// takeHandle hands the C reference to a call that consumes it (vmafx_submit).
+func (f *Frame) takeHandle() *C.VmafxFrame {
+	if f == nil {
+		return nil
+	}
+	h := f.handle
+	f.handle = nil
+	return h
+}
+
+// Close drops the Frame reference; safe to call multiple times, on nil, or after Submit.
+func (f *Frame) Close() {
+	if f == nil || f.handle == nil {
+		return
+	}
+	C.vmafx_frame_unref(f.handle)
+	f.handle = nil
+}
+
+func (f *Frame) cPlanes() (C.VmafxFramePlanes, error) {
+	var out C.VmafxFramePlanes
+	// SAFETY: unsafe.Sizeof is evaluated at compile time and dereferences nothing.
+	out.struct_size = C.uint32_t(unsafe.Sizeof(out))
+	var cErr *C.VmafxError
+	status := Status(C.vmafx_frame_planes(f.rawHandle(), &out, &cErr))
+	if err := checkStatus(status, cErr, "vmafx_frame_planes"); err != nil {
+		return C.VmafxFramePlanes{}, err
+	}
+	return out, nil
+}
+
+// Planes describes the sample planes of the frame.
+func (f *Frame) Planes() (FramePlanes, error) {
+	out, err := f.cPlanes()
+	if err != nil {
+		return FramePlanes{}, err
+	}
+	return framePlanesFromC(out), nil
+}
+
+// PlaneBytes returns the mutable byte slice covering plane (h[plane]*stride[plane] bytes).
+// The slice aliases C memory owned by Frame and is valid only until Frame is submitted or closed.
+func (f *Frame) PlaneBytes(plane uint32) ([]byte, error) {
+	out, err := f.cPlanes()
+	if err != nil {
+		return nil, err
+	}
+	if plane >= uint32(out.n_planes) || out.data[plane] == nil {
+		return nil, &Error{
+			Function: "vmafx_frame_planes",
+			Status:   StatusEInvalid,
+			Message:  fmt.Sprintf("plane %d out of range (n_planes=%d)", plane, uint32(out.n_planes)),
+			Subject:  "plane",
+		}
+	}
+	// SAFETY: out.data[plane] points to host plane storage of stride[plane]*h[plane] bytes owned by f.
+	return unsafe.Slice((*byte)(out.data[plane]), int(out.stride[plane])*int(out.h[plane])), nil
 }
 
 // VersionString: Build version (git describe); valid for the process lifetime.

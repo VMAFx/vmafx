@@ -1,47 +1,29 @@
 // SPDX-License-Identifier: EUPL-1.2
 // Copyright 2026 Lusoris
 //
-// pkg/libvmaf/direct.go — direct libvmaf cgo scoring path (ADR-0931 Phase 1).
+// pkg/libvmaf/direct.go — direct in-process scoring path (ADR-0931 Phase 1).
 //
 // This file implements `ScoreDirect`, the in-process replacement for the
 // `Scorer.Score` subprocess-delegation path defined in libvmaf.go.  See
 // docs/adr/0931-mcp-cgo-direct-replace-subprocess.md for the design
-// contract — in particular the C-function order, picture-ownership
-// transfer rules, and error mapping.
+// contract — in particular the call order, frame-ownership transfer rules,
+// and error mapping.
 //
-// Phase 1 scope (CPU-only, yuv420p/yuv422p/yuv444p, 8/10/12-bit):
-//   - vmaf_init           → context
-//   - vmaf_model_load_from_path → model
-//   - vmaf_use_features_from_model
-//   - per-frame: vmaf_picture_alloc x2, read planes, vmaf_read_pictures
-//   - flush: vmaf_read_pictures(NULL, NULL, 0)
-//   - vmaf_score_pooled (MEAN)
-//   - cleanup: retryable vmaf_close, then vmaf_model_destroy after success
+// #2434: the native calls run on the generated pkg/vmafx binding through the
+// session in engine.go; this file holds no cgo.  The call order is unchanged:
+//   - vmafx_context_create       → context
+//   - vmafx_model_load_file      → model
+//   - vmafx_context_use_model    → registers the model's extractors
+//   - per-frame: vmafx_frame_create_host x2, read planes, vmafx_submit
+//   - flush: vmafx_flush
+//   - vmafx_score_pooled (MEAN)
+//   - cleanup: retryable context close, then the model reference is dropped
 //
-// Locale: setlocale(LC_NUMERIC, "C") is invoked once via init() — ADR-0137.
+// Locale: LC_NUMERIC=C is pinned once per process by pkg/vmafx — ADR-0137.
 
 //go:build cgo
 
 package libvmaf
-
-/*
-#include <libvmaf/libvmaf.h>
-#include <libvmaf/model.h>
-#include <libvmaf/picture.h>
-#include <locale.h>
-#include <stdlib.h>
-#include <string.h>
-
-// score_direct_set_locale_c is invoked from Go init() once per process to
-// guarantee LC_NUMERIC=C before any libvmaf function reads or writes a
-// floating-point string (ADR-0137).  Calling setlocale() multiple times is
-// safe — it returns the previous locale string and idempotently applies the
-// new one.
-static void score_direct_set_locale_c(void) {
-    setlocale(LC_NUMERIC, "C");
-}
-*/
-import "C"
 
 import (
 	"context"
@@ -49,10 +31,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
-	"unsafe"
+
+	"github.com/VMAFx/vmafx/pkg/vmafx"
 )
 
 // PixelFormat names mirror the libvmaf enum VmafPixelFormat without exposing
@@ -157,24 +141,26 @@ func ParsePoolMethod(s string) (PoolMethod, error) {
 	}
 }
 
-func (p PoolMethod) toC() (C.enum_VmafPoolingMethod, error) {
+// toPool returns the pkg/vmafx pooling constant of the method; the integer
+// values of PoolMethod mirror enum VmafPoolingMethod and VmafxPool.
+func (p PoolMethod) toPool() (uint32, error) {
 	switch p {
 	case PoolMethodMin:
-		return C.VMAF_POOL_METHOD_MIN, nil
+		return vmafx.PoolMin, nil
 	case PoolMethodMax:
-		return C.VMAF_POOL_METHOD_MAX, nil
+		return vmafx.PoolMax, nil
 	case PoolMethodMean, PoolMethodUnknown:
-		return C.VMAF_POOL_METHOD_MEAN, nil
+		return vmafx.PoolMean, nil
 	case PoolMethodHarmonicMean:
-		return C.VMAF_POOL_METHOD_HARMONIC_MEAN, nil
+		return vmafx.PoolHarmonicMean, nil
 	case PoolMethodMedian:
-		return C.VMAF_POOL_METHOD_MEDIAN, nil
+		return vmafx.PoolMedian, nil
 	case PoolMethodPerc5:
-		return C.VMAF_POOL_METHOD_PERC5, nil
+		return vmafx.PoolPerc5, nil
 	case PoolMethodPerc10:
-		return C.VMAF_POOL_METHOD_PERC10, nil
+		return vmafx.PoolPerc10, nil
 	case PoolMethodPerc20:
-		return C.VMAF_POOL_METHOD_PERC20, nil
+		return vmafx.PoolPerc20, nil
 	default:
 		return 0, fmt.Errorf("libvmaf: unsupported pooling method %d", int(p))
 	}
@@ -222,89 +208,12 @@ type ScoreDirectResult struct {
 	Provenance json.RawMessage
 }
 
-// init runs once per process to pin LC_NUMERIC=C before any libvmaf scoring
-// call (ADR-0137).  Idempotent.
-func init() {
-	C.score_direct_set_locale_c()
-}
-
 // directOnce protects the one-time logging of "direct path selected" so the
 // operator sees the choice without a per-call spam.
 var directOnce sync.Once
 
-// cgoScoringOwner keeps the model alive until vmaf_close has successfully
-// released every context-side reference to it.  A failed context close leaves
-// both callbacks installed so a stateful owner can retry without using freed
-// dependencies.  Function-scoped callers surface the error and deliberately
-// leak the retained C objects rather than manufacture a use-after-free.
-type cgoScoringOwner struct {
-	closeContext func() error
-	destroyModel func()
-}
-
-func mapCloseRC(rc int) error {
-	if rc == 0 {
-		return nil
-	}
-	if rc < 0 {
-		return mapErrno("vmaf_close", rc)
-	}
-	return fmt.Errorf("libvmaf: vmaf_close returned unexpected positive status %d", rc)
-}
-
-func newCGOScoringOwner(vmafCtx *C.VmafContext) cgoScoringOwner {
-	return cgoScoringOwner{
-		closeContext: func() error {
-			return mapCloseRC(int(C.vmaf_close(vmafCtx)))
-		},
-	}
-}
-
-func (o *cgoScoringOwner) ownModel(model *C.VmafModel) {
-	o.destroyModel = func() { C.vmaf_model_destroy(model) }
-}
-
-// Close releases the context first, then the model.  On context failure no
-// ownership state is cleared and the model is not destroyed, making a later
-// call a retry of the same teardown.
-func (o *cgoScoringOwner) Close() error {
-	if o.closeContext != nil {
-		if err := o.closeContext(); err != nil {
-			return err
-		}
-		o.closeContext = nil
-	}
-	if o.destroyModel != nil {
-		o.destroyModel()
-		o.destroyModel = nil
-	}
-	return nil
-}
-
-// closeWithImmediateRetry is for function-scoped owners that cannot return a
-// retry handle to their caller.  It makes one bounded retry, preserves the
-// first error if both attempts fail, and never destroys the model before a
-// successful context close.
-func (o *cgoScoringOwner) closeWithImmediateRetry() error {
-	firstErr := o.Close()
-	if firstErr == nil {
-		return nil
-	}
-	if retryErr := o.Close(); retryErr == nil {
-		return nil
-	}
-	return firstErr
-}
-
-func closeAfterError(operation string, primary error, owner *cgoScoringOwner) error {
-	if closeErr := owner.closeWithImmediateRetry(); closeErr != nil {
-		return errors.Join(primary, fmt.Errorf("%s cleanup: %w", operation, closeErr))
-	}
-	return primary
-}
-
 // LogDirectPathSelected emits a one-shot INFO-level marker that the direct
-// cgo scoring path is being used.  The MCP tool handlers call this on the
+// in-process scoring path is being used.  The MCP tool handlers call this on the
 // first dispatched request when VMAFX_MCP_DIRECT=1 is set.
 //
 // The marker is deliberately written to stderr (not slog) so it appears in
@@ -318,34 +227,44 @@ func LogDirectPathSelected() {
 }
 
 // ScoreDirect computes a VMAF score for the (ref, dis) pair using the
-// in-process libvmaf cgo path.  Returns ErrInvalidArgument / ErrOutOfMemory
+// in-process libvmaf path (pkg/vmafx).  Returns ErrInvalidArgument / ErrOutOfMemory
 // / ErrModelNotFound / ErrPictureRead via fmt.Errorf chains; the subprocess
 // fallback path remains the caller's responsibility.
 //
-// Goroutine safety: each call constructs a fresh VmafContext + VmafModel and
-// closes the context before destroying its model.  A close failure gets one
-// immediate retry; persistent failure is returned and the C owners are left
+// Goroutine safety: each call constructs a fresh VmafxContext + VmafxModel and
+// closes the context before dropping its model.  A close failure gets one
+// immediate retry; persistent failure is returned and the owners are left
 // allocated rather than freeing a dependency still referenced by the context.
 // Concurrent ScoreDirect calls are safe — libvmaf is thread-safe at the
 // per-context level since 2.0.0.
 //
 // The supplied ctx governs cancellation of the per-frame read+queue loop.
 // libvmaf itself has no cancellation API, so cancellation is checked at frame
-// boundaries: when ctx.Done() fires we unref any half-allocated pictures,
+// boundaries: when ctx.Done() fires we release any half-filled frames,
 // abandon the loop, and let the deferred ordered owner close the context then
-// destroy the model.  Cancelled calls return ctx.Err() wrapped
+// drop the model.  Cancelled calls return ctx.Err() wrapped
 // in fmt.Errorf so callers can use errors.Is(err, context.Canceled).
 func openDirectPair(ref, dis string) (*os.File, *os.File, error) {
+	// #nosec G304 -- the caller's input path; the MCP handlers validate it against the allow-list first.
 	refF, err := os.Open(ref) //nolint:gosec // path is operator-supplied
 	if err != nil {
 		return nil, nil, fmt.Errorf("ScoreDirect: open ref %q: %w", ref, ErrPictureRead)
 	}
+	// #nosec G304 -- the caller's input path; the MCP handlers validate it against the allow-list first.
 	disF, err := os.Open(dis) //nolint:gosec // path is operator-supplied
 	if err != nil {
-		refF.Close()
+		closeInput(refF)
 		return nil, nil, fmt.Errorf("ScoreDirect: open dis %q: %w", dis, ErrPictureRead)
 	}
 	return refF, disF, nil
+}
+
+// closeInput closes a read-only input file; a failure cannot change the score,
+// so it is logged, not returned.
+func closeInput(f *os.File) {
+	if err := f.Close(); err != nil {
+		slog.Debug("libvmaf: close input", "error", err)
+	}
 }
 
 func withDefaultDirectTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -358,8 +277,8 @@ func withDefaultDirectTimeout(ctx context.Context) (context.Context, context.Can
 	return ctx, func() {}
 }
 
-// ScoreDirect evaluates VMAF directly over two raw YUV files using libvmaf's
-// C API via CGO.
+// ScoreDirect evaluates VMAF directly over two raw YUV files through the
+// generated pkg/vmafx binding.
 func ScoreDirect(ctx context.Context, req ScoreDirectRequest) (
 	result *ScoreDirectResult, retErr error,
 ) {
@@ -372,32 +291,33 @@ func ScoreDirect(ctx context.Context, req ScoreDirectRequest) (
 		return nil, err
 	}
 
-	var vmafCtx *C.VmafContext
-	rc := C.vmaf_init(&vmafCtx, newScoringConfiguration())
-	if err := mapErrno("vmaf_init", int(rc)); err != nil {
+	session, err := openScoringSession("ScoreDirect", req.ModelPath, "vmaf_direct")
+	if err != nil {
 		return nil, err
 	}
-	owner := newCGOScoringOwner(vmafCtx)
 	defer func() {
-		if closeErr := owner.closeWithImmediateRetry(); closeErr != nil {
+		if closeErr := session.owner.closeWithImmediateRetry(); closeErr != nil {
 			result = nil
 			retErr = errors.Join(retErr, fmt.Errorf("ScoreDirect cleanup: %w", closeErr))
 		}
 	}()
+	return scoreDirectFrames(runCtx, session, req)
+}
 
-	model, err := loadAndRegisterDirectModel(vmafCtx, req.ModelPath, &owner)
-	if err != nil {
-		return nil, err
-	}
-
+// scoreDirectFrames feeds the two files through an open session and reads the
+// pooled score and the provenance record back.
+func scoreDirectFrames(
+	ctx context.Context, session *scoringSession, req ScoreDirectRequest,
+) (*ScoreDirectResult, error) {
 	refF, disF, err := openDirectPair(req.Ref, req.Dis)
 	if err != nil {
 		return nil, err
 	}
-	defer refF.Close()
-	defer disF.Close()
+	defer closeInput(refF)
+	defer closeInput(disF)
 
-	frameIdx, err := feedDirectFrames(runCtx, vmafCtx, refF, disF, newDirectGeometry(req))
+	geom := newFrameGeometry(req.Width, req.Height, req.PixFmt, req.BitDepth)
+	frameIdx, err := feedDirectFrames(ctx, session, refF, disF, geom)
 	if err != nil {
 		return nil, err
 	}
@@ -405,126 +325,37 @@ func ScoreDirect(ctx context.Context, req ScoreDirectRequest) (
 		return nil, fmt.Errorf("ScoreDirect: zero frames read from %s / %s: %w",
 			req.Ref, req.Dis, ErrPictureRead)
 	}
-	if err := flushDirectFrames(vmafCtx); err != nil {
+	if err := session.flush(); err != nil {
 		return nil, err
 	}
-	score, err := poolDirectScore(vmafCtx, model, req.PoolMethod, frameIdx)
+	score, err := session.pooled(req.PoolMethod, frameIdx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ScoreDirect: %w", err)
 	}
-	provenance, err := contextProvenance(vmafCtx)
+	provenance, err := session.provenance()
 	if err != nil {
 		return nil, fmt.Errorf("ScoreDirect: %w", err)
 	}
 	return &ScoreDirectResult{
-		VMAF: score, FrameCount: frameIdx, Backend: "cpu", Provenance: provenance,
+		VMAF: score, FrameCount: frameIdx, Backend: "cpu", Provenance: json.RawMessage(provenance),
 	}, nil
 }
 
-func loadAndRegisterDirectModel(
-	vmafCtx *C.VmafContext, modelPath string, owner *cgoScoringOwner,
-) (*C.VmafModel, error) {
-	model, err := loadModelFromPath(modelPath, "vmaf_direct")
-	if err != nil {
-		return nil, err
-	}
-	owner.ownModel(model)
-	rc := C.vmaf_use_features_from_model(vmafCtx, model)
-	if err := mapErrno("vmaf_use_features_from_model", int(rc)); err != nil {
-		return nil, err
-	}
-	return model, nil
-}
-
 // validateScoreDirectRequest fails fast with typed errors rather than relying
-// on libvmaf's -EINVAL, so callers get an actionable message before any C
-// resource is allocated.  Extracted from ScoreDirect unchanged.
+// on libvmaf's -EINVAL, so callers get an actionable message before any
+// native resource is allocated.  The geometry and model checks are shared with
+// NewStreamScorer (validate.go).
 func validateScoreDirectRequest(req ScoreDirectRequest) error {
 	if req.Ref == "" || req.Dis == "" {
 		return fmt.Errorf("ScoreDirect: ref and dis are required: %w", ErrInvalidArgument)
 	}
-	if req.ModelPath == "" {
-		return fmt.Errorf("ScoreDirect: model_path is required: %w", ErrInvalidArgument)
+	if err := requireModelPath("ScoreDirect", req.ModelPath); err != nil {
+		return err
 	}
-	if req.Width <= 0 || req.Height <= 0 {
-		return fmt.Errorf("ScoreDirect: width/height must be positive: %w", ErrInvalidArgument)
+	if err := requireGeometry("ScoreDirect", req.Width, req.Height, req.PixFmt, req.BitDepth); err != nil {
+		return err
 	}
-	if req.PixFmt == 0 {
-		return fmt.Errorf("ScoreDirect: pix_fmt is required: %w", ErrInvalidArgument)
-	}
-	if req.BitDepth != 8 && req.BitDepth != 10 && req.BitDepth != 12 {
-		return fmt.Errorf("ScoreDirect: bit_depth must be 8/10/12, got %d: %w",
-			req.BitDepth, ErrInvalidArgument)
-	}
-	if _, err := os.Stat(req.ModelPath); os.IsNotExist(err) {
-		return fmt.Errorf("ScoreDirect: model %q: %w", req.ModelPath, ErrModelNotFound)
-	}
-	return nil
-}
-
-// loadModelFromPath loads the JSON model at modelPath through libvmaf under
-// the given informational model name.  The caller owns the returned model and
-// must vmaf_model_destroy it.
-//
-// The configured name is informational only — libvmaf copies it
-// (vmaf_model_generate_name mallocs its own buffer) — and modelPath is read
-// synchronously by vmaf_read_json_model_from_path, so both C strings are
-// released before this function returns.
-func loadModelFromPath(modelPath, modelName string) (*C.VmafModel, error) {
-	cModelPath := C.CString(modelPath)
-	// SAFETY: cModelPath is the C.CString malloc'd on the line above; it is
-	// never re-assigned and has no other owner, so the deferred free releases
-	// a live block exactly once, after the only call that reads it.
-	defer C.free(unsafe.Pointer(cModelPath))
-	cModelName := C.CString(modelName)
-	// SAFETY: cModelName is the C.CString malloc'd on the line above; libvmaf
-	// copies the name into the model, so freeing it here cannot dangle.
-	defer C.free(unsafe.Pointer(cModelName))
-	mcfg := C.VmafModelConfig{
-		name:  cModelName,
-		flags: C.VMAF_MODEL_FLAGS_DEFAULT,
-	}
-	var model *C.VmafModel
-	rc := C.vmaf_model_load_from_path(&model, &mcfg, cModelPath)
-	if err := mapErrno("vmaf_model_load_from_path", int(rc)); err != nil {
-		return nil, err
-	}
-	return model, nil
-}
-
-// newScoringConfiguration returns the VmafConfiguration both in-process
-// scoring entry points use: warning-level logging, libvmaf's own thread
-// auto-selection, no subsampling and no CPU/GPU feature masking.
-func newScoringConfiguration() C.VmafConfiguration {
-	return C.VmafConfiguration{
-		log_level:   C.VMAF_LOG_LEVEL_WARNING,
-		n_threads:   0,
-		n_subsample: 1,
-		cpumask:     0,
-		gpumask:     0,
-	}
-}
-
-// directGeometry bundles the per-frame C geometry so the read+queue loop can
-// be expressed without re-deriving it on every iteration.
-type directGeometry struct {
-	pixFmt    C.enum_VmafPixelFormat
-	bpc       C.uint
-	width     C.uint
-	height    C.uint
-	frameSize int
-}
-
-// newDirectGeometry converts the Go-side request geometry into the C types
-// vmaf_picture_alloc expects, plus the on-disk frame size.
-func newDirectGeometry(req ScoreDirectRequest) directGeometry {
-	return directGeometry{
-		pixFmt:    C.enum_VmafPixelFormat(req.PixFmt),
-		bpc:       C.uint(req.BitDepth),
-		width:     C.uint(req.Width),
-		height:    C.uint(req.Height),
-		frameSize: frameBytes(req.Width, req.Height, req.PixFmt, req.BitDepth),
-	}
+	return requireModelExists("ScoreDirect", req.ModelPath)
 }
 
 // maxDirectFrames bounds the per-frame read+queue loop (HISS-02).  libvmaf
@@ -543,18 +374,18 @@ const maxDirectFrames = 1 << 20
 // Cancellation is checked at frame boundaries — libvmaf has no cancellation
 // API, so this is the only place the loop can bail out.  Returning here lets
 // the caller's deferred ordered owner release whatever state libvmaf
-// accumulated; the un-flushed frames simply never reach vmaf_score_pooled.
+// accumulated; the un-flushed frames simply never reach the pooled score.
 func feedDirectFrames(
 	ctx context.Context,
-	vmafCtx *C.VmafContext,
+	session *scoringSession,
 	refF, disF *os.File,
-	geom directGeometry,
+	geom frameGeometry,
 ) (int, error) {
 	for frameIdx := 0; frameIdx <= maxDirectFrames; frameIdx++ {
 		if err := ctx.Err(); err != nil {
 			return 0, fmt.Errorf("ScoreDirect: cancelled at frame %d: %w", frameIdx, err)
 		}
-		atEOF, err := readAndQueueDirectFrame(vmafCtx, refF, disF, geom, frameIdx)
+		atEOF, err := readAndQueueDirectFrame(session, refF, disF, geom, frameIdx)
 		if err != nil {
 			return 0, err
 		}
@@ -567,42 +398,32 @@ func feedDirectFrames(
 		maxDirectFrames, ErrPictureRead)
 }
 
-// readAndQueueDirectFrame allocates one ref/dis picture pair, fills it from
-// the two readers and transfers ownership to libvmaf.  It reports true when
+// readAndQueueDirectFrame allocates one ref/dis frame pair, fills it from
+// the two readers and transfers ownership to the engine.  It reports true when
 // both streams hit a clean end-of-file on a frame boundary.
 //
-// vmaf_picture_alloc allocates the data planes via posix_memalign; ownership
-// transfers to libvmaf on the vmaf_read_pictures call below.  On any error
-// before that call we MUST vmaf_picture_unref both pics to avoid a leak.
+// vmafx_submit consumes both frames on every path, so the deferred Close calls
+// release a frame only when it never reached the engine (an end-of-file, a
+// read error, or a failed fill); after the submit they are no-ops.
 func readAndQueueDirectFrame(
-	vmafCtx *C.VmafContext,
+	session *scoringSession,
 	refF, disF *os.File,
-	geom directGeometry,
+	geom frameGeometry,
 	frameIdx int,
 ) (bool, error) {
-	var refPic, disPic C.VmafPicture
-	if rc := C.vmaf_picture_alloc(&refPic, geom.pixFmt, geom.bpc, geom.width, geom.height); rc != 0 {
-		return false, mapErrno("vmaf_picture_alloc(ref)", int(rc))
+	refFrame, disFrame, err := newFramePair(geom.desc)
+	if err != nil {
+		return false, err
 	}
-	if rc := C.vmaf_picture_alloc(&disPic, geom.pixFmt, geom.bpc, geom.width, geom.height); rc != 0 {
-		C.vmaf_picture_unref(&refPic)
-		return false, mapErrno("vmaf_picture_alloc(dis)", int(rc))
-	}
-	nRef, refErr := readFrameInto(refF, &refPic, geom.frameSize)
-	nDis, disErr := readFrameInto(disF, &disPic, geom.frameSize)
+	defer refFrame.Close()
+	defer disFrame.Close()
+	nRef, refErr := fillFrame(refFrame, refF)
+	nDis, disErr := fillFrame(disFrame, disF)
 	atEOF, err := classifyDirectFrameRead(nRef, nDis, refErr, disErr, geom.frameSize, frameIdx)
 	if atEOF || err != nil {
-		C.vmaf_picture_unref(&refPic)
-		C.vmaf_picture_unref(&disPic)
 		return atEOF, err
 	}
-	// Transfer ownership.  libvmaf calls vmaf_picture_unref internally
-	// after the read; we MUST NOT call it again from Go.
-	rc := C.vmaf_read_pictures(vmafCtx, &refPic, &disPic, C.uint(frameIdx))
-	if readErr := mapErrno("vmaf_read_pictures", int(rc)); readErr != nil {
-		return false, readErr
-	}
-	return false, nil
+	return false, session.submitPair(refFrame, disFrame, frameIdx)
 }
 
 // classifyDirectFrameRead turns the two per-plane read outcomes into the
@@ -631,36 +452,10 @@ func classifyDirectFrameRead(
 	return false, nil
 }
 
-// flushDirectFrames signals end-of-stream with vmaf_read_pictures(NULL, NULL, 0)
-// so the feature extractors finalise their internal buffers.
-func flushDirectFrames(vmafCtx *C.VmafContext) error {
-	rc := C.vmaf_read_pictures(vmafCtx, nil, nil, 0)
-	return mapErrno("vmaf_read_pictures(flush)", int(rc))
-}
-
-// poolDirectScore pools VMAF over [0, frameIdx-1] with the requested method.
-func poolDirectScore(
-	vmafCtx *C.VmafContext,
-	model *C.VmafModel,
-	method PoolMethod,
-	frameIdx int,
-) (float64, error) {
-	cPoolMethod, err := method.toC()
-	if err != nil {
-		return 0, fmt.Errorf("ScoreDirect: %w: %v", ErrInvalidArgument, err)
-	}
-	var score C.double
-	rc := C.vmaf_score_pooled(vmafCtx, model, cPoolMethod, &score, 0, C.uint(frameIdx-1))
-	if err := mapErrno("vmaf_score_pooled", int(rc)); err != nil {
-		return 0, err
-	}
-	return float64(score), nil
-}
-
-// ValidateModel opens path via vmaf_model_load_from_path and immediately
-// destroys the resulting model.  Useful as a syntactic check that the file
-// loads through libvmaf — catches schema drift the pure-JSON parser silently
-// ignores (missing required fields, unknown model_type, etc.).
+// ValidateModel loads path through libvmaf and immediately releases the
+// resulting model.  Useful as a syntactic check that the file loads — catches
+// schema drift the pure-JSON parser silently ignores (missing required
+// fields, unknown model_type, etc.).
 //
 // Returns nil on success; on failure returns the typed error (ErrModelNotFound,
 // ErrInvalidArgument, ...).  Used by the MCP describe_model handler when
@@ -672,26 +467,11 @@ func ValidateModel(path string) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return fmt.Errorf("ValidateModel: %q: %w", path, ErrModelNotFound)
 	}
-	var model *C.VmafModel
-	cPath := C.CString(path)
-	// SAFETY: cPath is the C.CString malloc'd on the line above; it is never
-	// re-assigned and has no other owner, so the deferred free releases a
-	// live block exactly once.
-	defer C.free(unsafe.Pointer(cPath))
-	cName := C.CString("validate")
-	// SAFETY: cName is the C.CString malloc'd on the line above.  libvmaf
-	// copies the configured name (vmaf_model_generate_name mallocs its own
-	// buffer), so freeing it here cannot dangle inside the model.
-	defer C.free(unsafe.Pointer(cName))
-	mcfg := C.VmafModelConfig{
-		name:  cName,
-		flags: C.VMAF_MODEL_FLAGS_DEFAULT,
-	}
-	rc := C.vmaf_model_load_from_path(&model, &mcfg, cPath)
-	if err := mapErrno("vmaf_model_load_from_path", int(rc)); err != nil {
+	model, err := loadScoringModel(path, "validate")
+	if err != nil {
 		return err
 	}
-	C.vmaf_model_destroy(model)
+	model.Close()
 	return nil
 }
 
@@ -714,57 +494,4 @@ func frameBytes(w, h int, pf PixelFormat, bitDepth int) int {
 		bytesPerSample = 2
 	}
 	return (luma + chroma) * bytesPerSample
-}
-
-// readFrameInto reads one frame's worth of raw planar YUV from r into the
-// pre-allocated planes of pic.  Returns the number of bytes read across all
-// planes and the first I/O error encountered (io.EOF for clean end-of-file).
-//
-// The function reads each plane in turn into pic.data[i], respecting the
-// libvmaf stride (which equals the row width for tightly-packed pictures
-// allocated via vmaf_picture_alloc).  bytesPerSample == 2 for >8-bit.
-func readFrameInto(r io.Reader, pic *C.VmafPicture, frameSize int) (int, error) {
-	total := 0
-	bytesPerSample := 1
-	if pic.bpc > 8 {
-		bytesPerSample = 2
-	}
-	for plane := 0; plane < 3; plane++ {
-		w := int(pic.w[plane])
-		h := int(pic.h[plane])
-		stride := int(pic.stride[plane])
-		dataPtr := pic.data[plane]
-		if dataPtr == nil || w == 0 || h == 0 {
-			continue
-		}
-		rowBytes := w * bytesPerSample
-		// vmaf_picture_alloc allocates stride >= rowBytes; for each row we
-		// read rowBytes from disk and copy into the stride-aligned slot.
-		// Read row-by-row so packed-on-disk YUV maps correctly into the
-		// strided in-memory layout libvmaf prefers.
-		// Use a Go-side scratch buffer to avoid touching the C heap with
-		// io.ReadFull; copy via runtime memmove via unsafe.Slice.
-		scratch := make([]byte, rowBytes)
-		// SAFETY: dataPtr is the plane base returned by vmaf_picture_alloc,
-		// which guarantees stride[plane]*h[plane] readable-and-writable bytes
-		// for that plane; the nil/zero-extent case was rejected above, and
-		// the slice never outlives pic, whose planes libvmaf keeps alive
-		// until the ownership transfer in vmaf_read_pictures.
-		dst := unsafe.Slice((*byte)(dataPtr), stride*h)
-		for row := 0; row < h; row++ {
-			n, err := io.ReadFull(r, scratch)
-			total += n
-			if err != nil {
-				return total, err
-			}
-			copy(dst[row*stride:row*stride+rowBytes], scratch)
-		}
-	}
-	if total != frameSize {
-		// Defensive: should be caught by the io.ReadFull loop above, but
-		// surface the mismatch explicitly so callers can diagnose stride
-		// vs. file-layout mismatches.
-		return total, fmt.Errorf("frame-size mismatch: read %d want %d", total, frameSize)
-	}
-	return total, nil
 }

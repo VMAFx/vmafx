@@ -17,7 +17,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import IO, TypedDict
 
@@ -126,6 +126,18 @@ def series(repo: Path) -> list[str]:
     return entries
 
 
+def isolated_git_environment() -> dict[str, str]:
+    """Caller environment without GIT_* (hooks export them; -C cannot override)."""
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment.update(
+        LC_ALL="C",
+        GIT_TERMINAL_PROMPT="0",
+        GIT_CONFIG_NOSYSTEM="1",
+        GIT_CONFIG_GLOBAL=os.devnull,
+    )
+    return environment
+
+
 class Replay:
     """Own only a disposable checkout; never clean an existing workspace."""
 
@@ -134,15 +146,7 @@ class Replay:
         self.output = output
         # Hooks export repository/index/object-store variables. Even `git -C`
         # cannot override them: none may escape into the disposable checkout.
-        self.environment = {
-            key: value for key, value in os.environ.items() if not key.startswith("GIT_")
-        }
-        self.environment.update(
-            LC_ALL="C",
-            GIT_TERMINAL_PROMPT="0",
-            GIT_CONFIG_NOSYSTEM="1",
-            GIT_CONFIG_GLOBAL=os.devnull,
-        )
+        self.environment = isolated_git_environment()
         # A hook in the caller's Git configuration must not execute here.
         git = shutil.which("git")
         if git is None:
@@ -416,25 +420,225 @@ def mirrors(repo: Path, remote: str, tag: str) -> dict[Path, bytes]:
     return changed
 
 
-def replace_files(updates: dict[Path, bytes]) -> None:
-    """Prepare every file first; restore original bytes if a write fails."""
+JOURNAL_NAME = "ffmpeg-refresh-journal.json"
+
+README_CLAIM_PATTERN = re.compile(
+    r"(?m)^> `[^`]+` checkout \(cumulative `git am --3way`\), NOT a per-patch\r?\n"
+    r"> `git apply --check`\. The latter rejects `0002\+` because they\r?\n"
+    r"> reference cumulative-state hunks that don't exist in pristine `[^`]+`\.\r?\n"
+    r"> The (?:(?:\d+) patches of the shared fix series `[^`]+` and the (?:\d+)(?:[ ]+|\r?\n> )patches|\d+ patches) here replay cumulatively on upstream commit\r?\n"
+    r"> `[0-9a-f]{40,}`(?![0-9a-f]); the resulting tree is\r?\n"
+    r"> `[0-9a-f]{40,}`(?![0-9a-f])(?:\r?\n|\Z)"
+)
+
+
+def readme_claim(repo: Path, receipt: Receipt) -> dict[Path, bytes]:
+    """Mirror the replayed patch counts, checkout tag, and tree hash into ffmpeg-patches/README.md."""
+    path = repo / "ffmpeg-patches" / "README.md"
+    if not path.is_file():
+        raise ValueError("expected one replay claim in ffmpeg-patches/README.md, file missing")
+    with path.open("r", encoding="utf-8", newline="") as stream:
+        original = stream.read()
+    ending = "\r\n" if "\r\n" in original else "\n"
+    tag = receipt["tag"]
+    gate = (
+        f"> `{tag}` checkout (cumulative `git am --3way`), NOT a per-patch\n"
+        f"> `git apply --check`. The latter rejects `0002+` because they\n"
+        f"> reference cumulative-state hunks that don't exist in pristine `{tag}`.\n"
+    )
+    shared_series = receipt.get("shared_series", "none")
+    if shared_series and shared_series != "none":
+        claim_body = (
+            f"{gate}"
+            f"> The {receipt['shared_patch_count']} patches of the shared fix series `{shared_series}` and the {receipt['patch_count']}\n"
+            f"> patches here replay cumulatively on upstream commit\n"
+            f"> `{receipt['upstream_commit']}`; the resulting tree is\n"
+            f"> `{receipt['patched_tree']}`\n"
+        )
+    else:
+        claim_body = (
+            f"{gate}"
+            f"> The {receipt['patch_count']} patches here replay cumulatively on upstream commit\n"
+            f"> `{receipt['upstream_commit']}`; the resulting tree is\n"
+            f"> `{receipt['patched_tree']}`\n"
+        )
+    claim = claim_body.replace("\n", "\r\n") if ending == "\r\n" else claim_body
+    updated, count = README_CLAIM_PATTERN.subn(claim, original)
+    if count != 1:
+        raise ValueError(f"expected one replay claim in ffmpeg-patches/README.md, found {count}")
+    return {path: updated.encode("utf-8")}
+
+
+class NotAGitCheckout(RuntimeError):
+    """The directory is not a Git checkout."""
+
+
+def repo_git_dir(repo: Path) -> Path:
+    """Return the Git directory of the checkout (a linked worktree has its own)."""
+    git = shutil.which("git")
+    if git is None:
+        raise RuntimeError("git is required to locate the refresh lock and journal")
+    result = run_command(
+        [git, "-C", str(repo), "rev-parse", "--absolute-git-dir"],
+        allowed_executables=(git,),
+        env=isolated_git_environment(),
+        capture_output=True,
+        text=True,
+        timeout_seconds=30,
+    )
+    if result.returncode != 0:
+        raise NotAGitCheckout(f"{repo} is not a Git checkout: {result.stderr.strip()}")
+    return Path(result.stdout.strip())
+
+
+@contextmanager
+def maintain_lock(repo: Path, enabled: bool) -> Iterator[None]:
+    """Hold an exclusive repository-wide lock for refresh runs."""
+    if not enabled:
+        recover_journal(repo, False)
+        yield
+        return
+    lockpath = repo_git_dir(repo) / "ffmpeg-patch-stack.lock"
+    try:
+        fd = os.open(str(lockpath), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        pid = ""
+        with suppress(OSError):
+            pid = lockpath.read_text(encoding="utf-8").strip()
+        raise RuntimeError(
+            f"refresh lock {lockpath} is held by process {pid or 'unknown'}; "
+            "if that process is no longer running, delete the lock file and retry the refresh"
+        ) from None
+    with os.fdopen(fd, "w") as stream:
+        stream.write(f"{os.getpid()}\n")
+    try:
+        recover_journal(repo, True)
+        yield
+    finally:
+        with suppress(OSError):
+            lockpath.unlink(missing_ok=True)
+
+
+def write_journal_atomically(journal: Path, data: list[dict[str, str]]) -> None:
+    """Write journal entries atomically using a temporary file and sync."""
+    handle, name = tempfile.mkstemp(prefix=f".{JOURNAL_NAME}-", dir=journal.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            json.dump(data, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(journal)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _journal_entry(
+    target: Path,
+    candidate: Path,
+    backup: Path,
+    original_bytes: bytes,
+    candidate_bytes: bytes,
+) -> dict[str, str]:
+    """Build a serialisable journal record for a single target replacement."""
+    return {
+        "target": str(target),
+        "temp": str(candidate),
+        "backup": str(backup),
+        "original_sha256": hashlib.sha256(original_bytes).hexdigest(),
+        "candidate_sha256": hashlib.sha256(candidate_bytes).hexdigest(),
+    }
+
+
+def _verify_entries(entries: list[dict[str, str]], journal: Path) -> list[tuple[Path, Path, bool]]:
+    """Verify target state and backups for all journal entries without disk mutations.
+
+    Returns a list of (target, backup, needs_restore) tuples.
+    """
+    verified: list[tuple[Path, Path, bool]] = []
+    for entry in entries:
+        target = Path(entry["target"])
+        backup = Path(entry["backup"])
+        if not target.is_file():
+            raise ValueError(
+                f"{target} changed since the interrupted refresh; "
+                f"resolve by hand, then delete {journal}"
+            )
+        target_hash = hashlib.sha256(target.read_bytes()).hexdigest()
+        orig_hash = entry["original_sha256"]
+        cand_hash = entry["candidate_sha256"]
+        if target_hash not in (orig_hash, cand_hash):
+            raise ValueError(
+                f"{target} changed since the interrupted refresh; "
+                f"resolve by hand, then delete {journal}"
+            )
+        needs_restore = target_hash == cand_hash
+        if needs_restore and not backup.is_file():
+            raise ValueError(
+                f"{target} changed since the interrupted refresh; "
+                f"resolve by hand, then delete {journal}"
+            )
+        verified.append((target, backup, needs_restore))
+    return verified
+
+
+def _restore_entries(
+    entries: list[dict[str, str]],
+    verified: list[tuple[Path, Path, bool]],
+    journal: Path,
+) -> None:
+    """Restore original files, remove residual journal temporaries, and unlink journal."""
+    for target, backup, needs_restore in verified:
+        if needs_restore:
+            backup.replace(target)
+    for entry in entries:
+        Path(entry["temp"]).unlink(missing_ok=True)
+        Path(entry["backup"]).unlink(missing_ok=True)
+    journal.unlink()
+
+
+def recover_journal(repo: Path, refresh: bool) -> None:
+    """Roll back an interrupted refresh to restore originals before anything else runs."""
+    try:
+        git_dir = repo_git_dir(repo)
+    except NotAGitCheckout:
+        if not refresh:
+            return
+        raise
+    journal = git_dir / JOURNAL_NAME
+    if not journal.exists():
+        return
+    if not refresh:
+        raise ValueError(
+            f"interrupted refresh journal {journal} found; "
+            "run python3 scripts/ci/ffmpeg_patch_stack.py --refresh to finish it"
+        )
+    entries = json.loads(journal.read_text(encoding="utf-8"))
+    if not isinstance(entries, list):
+        raise ValueError(f"refresh journal {journal} is not a list")
+    verified = _verify_entries(entries, journal)
+    _restore_entries(entries, verified, journal)
+
+
+def _stage_file(path: Path, content: bytes, role: str) -> Path:
+    """Create a temporary staged file next to path with identical permissions."""
+    handle, name = tempfile.mkstemp(prefix=f".ffmpeg-refresh-{path.name}-{role}-", dir=path.parent)
+    temporary = Path(name)
+    with os.fdopen(handle, "wb") as stream:
+        stream.write(content)
+    temporary.chmod(path.stat().st_mode)
+    return temporary
+
+
+def replace_files(updates: dict[Path, bytes], repo: Path) -> None:
+    """Prepare every file first; record journal, perform renames, delete journal."""
     before = {path: path.read_bytes() for path in updates}
     staged = {}
     backups = {}
     temporaries = []
     written = []
     preserve_backups = False
-
-    def stage(path: Path, content: bytes, role: str) -> Path:
-        handle, name = tempfile.mkstemp(
-            prefix=f".ffmpeg-refresh-{path.name}-{role}-", dir=path.parent
-        )
-        temporary = Path(name)
-        temporaries.append(temporary)
-        with os.fdopen(handle, "wb") as stream:
-            stream.write(content)
-        temporary.chmod(path.stat().st_mode)
-        return temporary
+    journal = repo_git_dir(repo) / JOURNAL_NAME
 
     try:
         for path, content in updates.items():
@@ -442,11 +646,19 @@ def replace_files(updates: dict[Path, bytes]) -> None:
                 continue
             if path.is_symlink():
                 raise ValueError(f"refusing to replace a symlink: {path}")
-            staged[path] = stage(path, content, "candidate")
-            backups[path] = stage(path, before[path], "original")
+            staged[path] = _stage_file(path, content, "candidate")
+            temporaries.append(staged[path])
+            backups[path] = _stage_file(path, before[path], "original")
+            temporaries.append(backups[path])
+        if staged:
+            journal_data = [
+                _journal_entry(p, staged[p], backups[p], before[p], updates[p]) for p in staged
+            ]
+            write_journal_atomically(journal, journal_data)
         for path, temporary in staged.items():
             temporary.replace(path)
             written.append(path)
+        journal.unlink(missing_ok=True)
     except BaseException as error:
         # Roll back even when Ctrl-C interrupts a multi-file replacement.
         # Keep originals if recovery itself is interrupted a second time.
@@ -461,6 +673,7 @@ def replace_files(updates: dict[Path, bytes]) -> None:
             raise RuntimeError(
                 "refresh rollback failed; original backups retained: " + "; ".join(failures)
             ) from error
+        journal.unlink(missing_ok=True)
         preserve_backups = False
         raise
     finally:
@@ -579,11 +792,20 @@ def settle_updates(repo: Path, updates: dict[Path, bytes], refresh: bool, receip
     ]
     receipt.update({"changed": changed, "status": "refreshed" if refresh else "checked"})
     if refresh:
-        replace_files(updates)
+        replace_files(updates, repo=repo)
     elif changed:
         raise ValueError(
             "patch/configuration drift; run python3 scripts/ci/ffmpeg_patch_stack.py --refresh"
         )
+
+
+def configured_series(repo: Path, receipt: Receipt) -> tuple[str, str, str, list[str]]:
+    """Read the pinned remote, tag, commit and patch series into the receipt."""
+    remote, current_tag, pinned = configuration(repo)
+    names = series(repo)
+    receipt.update({"remote": remote, "configured_tag": current_tag, "patch_count": len(names)})
+    receipt["pinned_commit"] = pinned
+    return remote, current_tag, pinned, names
 
 
 def maintain(
@@ -598,45 +820,44 @@ def maintain(
     output.mkdir(parents=True, exist_ok=True)
     (output / "replay.log").write_text("")
     try:
-        remote, current_tag, pinned = configuration(repo)
-        names = series(repo)
-        receipt.update({"remote": remote, "configured_tag": current_tag, "patch_count": len(names)})
-        receipt["pinned_commit"] = pinned
-        with tempfile.TemporaryDirectory(prefix="vmafx-ffmpeg-") as temporary:
-            replay = Replay(Path(temporary), output)
-            replay.git("init", "--quiet")
-            target_tag = select_target_tag(replay, remote, current_tag, latest)
-            cache = SourceCache(replay, cache_dir or cache_root(), remote)
-            receipt["cache"] = str(cache.repo)
-            base, receipt["source"] = cache.fetch(current_tag, pinned)
-            shared, shared_count = apply_stack(repo, replay, base, names, receipt)
-            target = base
-            if target_tag != current_tag:
-                target, receipt["target_source"] = cache.fetch(target_tag, None)
-                replay.git("rebase", "--onto", target, base)
-            receipt.update(
-                {
-                    "tag": target_tag,
-                    "upstream_commit": target,
-                    "patched_tree": replay.git("rev-parse", "HEAD^{tree}").strip(),
-                }
-            )
-            if keep_tree is not None:
-                keep_patched_tree(replay.checkout, keep_tree)
-                receipt["kept_tree"] = str(keep_tree)
-            commits = replay.git("rev-list", "--reverse", f"{target}..HEAD").splitlines()
-            if len(commits) != shared_count + len(names):
-                raise ValueError(
-                    "refresh changed the number of patches; review upstreamed/empty patches"
+        with maintain_lock(repo, refresh):
+            remote, current_tag, pinned, names = configured_series(repo, receipt)
+            with tempfile.TemporaryDirectory(prefix="vmafx-ffmpeg-") as temporary:
+                replay = Replay(Path(temporary), output)
+                replay.git("init", "--quiet")
+                target_tag = select_target_tag(replay, remote, current_tag, latest)
+                cache = SourceCache(replay, cache_dir or cache_root(), remote)
+                receipt["cache"] = str(cache.repo)
+                base, receipt["source"] = cache.fetch(current_tag, pinned)
+                shared, shared_count = apply_stack(repo, replay, base, names, receipt)
+                target = base
+                if target_tag != current_tag:
+                    target, receipt["target_source"] = cache.fetch(target_tag, None)
+                    replay.git("rebase", "--onto", target, base)
+                receipt.update(
+                    {
+                        "tag": target_tag,
+                        "upstream_commit": target,
+                        "patched_tree": replay.git("rev-parse", "HEAD^{tree}").strip(),
+                    }
                 )
-            # The shared series' commits come first and are not ours to render.
-            updates = format_patch_updates(repo, output, replay, names, commits[shared_count:])
-            if shared is not None and target_tag != current_tag:
-                raise ValueError(unpinned_release(shared, target_tag, current_tag, output))
-            updates.update(mirrors(repo, remote, target_tag))
-            config = repo / "build-config.env"
-            updates[config] = pinned_config(config.read_text(), target_tag, target).encode()
-            settle_updates(repo, updates, refresh, receipt)
+                if keep_tree is not None:
+                    keep_patched_tree(replay.checkout, keep_tree)
+                    receipt["kept_tree"] = str(keep_tree)
+                commits = replay.git("rev-list", "--reverse", f"{target}..HEAD").splitlines()
+                if len(commits) != shared_count + len(names):
+                    raise ValueError(
+                        "refresh changed the number of patches; review upstreamed/empty patches"
+                    )
+                # The shared series' commits come first and are not ours to render.
+                updates = format_patch_updates(repo, output, replay, names, commits[shared_count:])
+                if shared is not None and target_tag != current_tag:
+                    raise ValueError(unpinned_release(shared, target_tag, current_tag, output))
+                updates.update(mirrors(repo, remote, target_tag))
+                config = repo / "build-config.env"
+                updates[config] = pinned_config(config.read_text(), target_tag, target).encode()
+                updates.update(readme_claim(repo, receipt))
+                settle_updates(repo, updates, refresh, receipt)
     except (KeyError, ValueError, RuntimeError, OSError, CommandTimedOut) as error:
         receipt.update({"status": "failed", "error": str(error)})
         raise

@@ -67,8 +67,9 @@ never reorders them:
 2. **CI / build**: one workflow-status badge per main workflow, with
    `branch=<default>&event=push`. The badge label is the workflow name, so a
    red badge points at the workflow of the same name.
-3. **Security / scorecard**: the security workflow, the OpenSSF Scorecard and
-   the OpenSSF Best Practices level, where the project has them.
+3. **Security / scorecard**: the security workflow, the OpenSSF Scorecard, the
+   OpenSSF Best Practices level and the review bots that check every pull
+   request (Codacy, CodeRabbit), where the project has them.
 4. **Standards**: the engineering standards the project declares (for VMAFx:
    HISS-21, NASA/JPL Power of 10, Conventional Commits).
 5. **Licence**: one badge naming every licence that applies.
@@ -104,6 +105,8 @@ that answers well inside that limit:
 | Release | A static shields.io badge in query form, `https://img.shields.io/static/v1?label=release&message=v<version>&...`, on a line that ends with `<!-- x-release-please-version -->`. `README.md` is a generic extra file in `release-please-config.json`, so each release PR rewrites the version, and `scripts/release/verify-release-version.sh` checks the marker against the tag. |
 | OpenSSF Best Practices | `https://www.bestpractices.dev/projects/<id>/badge`, served by the project itself. |
 | OpenSSF Scorecard | A static link badge to the Scorecard viewer. The score badge (`api.scorecard.dev/.../badge`) redirects to a computed shields.io badge and is too slow for the proxy. |
+| Codacy | The grade badge Codacy serves itself, `https://app.codacy.com/project/badge/Grade/<project token>`, linked to the repository dashboard; the token is `badges.grade` of `GET https://app.codacy.com/api/v3/organizations/gh/<owner>/repositories/<repo>`. |
+| CodeRabbit | A static link badge. shields.io's computed `coderabbit/prs` badge counts only part of the reviews (it showed 13 for VMAFx on 2026-11-01) and is not served from a cache. |
 
 Measure a new badge source before adding it: `curl -o /dev/null -w '%{time_total}'`
 on an uncached URL must stay well under four seconds.

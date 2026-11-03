@@ -20,7 +20,26 @@ NINJA_EXEC := $(abspath $(NINJA))
 # PATH. Without this, `make lint-py` / `make format-check` silently found no
 # ruff / black and reported success, so the local gate could pass while
 # CI's identical checks failed.
-export PATH := $(VIRTUAL_ENV_ABS):$(PATH)
+#
+# The venv this Makefile builds always carries `pip` (`python3 -m venv`), and it
+# goes first on PATH even before it exists, so tools a recipe installs into it
+# (`lint-tools`) resolve later in the same run. A package-less `.venv` another
+# tool drops in the worktree root (a bundled `uv` does) has no `pip`; putting
+# it first made `python3` resolve to an interpreter without `jsonschema`, so
+# `make docs-fragments-check` failed for a reason unrelated to the change. Such
+# a stray stays off PATH, and `scripts/ci/check-no-tracked-venv.sh` refuses it
+# by name.
+#
+# The test runs in the shell of each recipe line, not when make reads this
+# file: `lint-tools` repairs a stray (`$(VENV_PIP)` runs `python3 -m venv` over
+# it), and the recipes after it in the same run must then find the venv tools.
+# `$(wildcard)` is not used here because make caches directory contents. The
+# shell returns only a flag and make appends the path, so no checkout path ever
+# becomes shell text. A dangling `.venv` symlink counts as present: on PATH it
+# makes `execvp` fail with ELOOP before the gate can name it.
+PATH_BASE := $(PATH)
+venv_on_path = $(if $(shell { [ -e $(VENV_PIP) ] || { [ ! -e $(VENV) ] && [ ! -L $(VENV) ]; }; } && echo y),$(VIRTUAL_ENV_ABS):)
+export PATH = $(venv_on_path)$(PATH_BASE)
 
 # require-tool,<binary>,<install hint>
 # A gate that cannot run is a gate that cannot fail. Every lint / format tool is
@@ -589,6 +608,7 @@ lint-sh: ffmpeg-input-contract
 	@scripts/ci/test-prune-corrupt-fixtures.sh
 	@bash scripts/dev/test-cleanup-agent-state.sh
 	@scripts/ci/check-no-tracked-venv.sh
+	@bash scripts/ci/tests/test-check-no-tracked-venv.sh
 	@scripts/ci/check-aggregator-names.sh
 	@scripts/ci/check-state-md-rows.sh
 	@scripts/ci/check-base-image-single-source.sh

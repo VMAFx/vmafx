@@ -46,6 +46,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_cuda.h"
@@ -284,11 +285,12 @@ static char *assert_parity(const char *cpu_fex, const char *gpu_fex, int mode, c
     mu_assert("CPU SpEED score is non-finite", isfinite(cpu));
     mu_assert("GPU SpEED score is non-finite", isfinite(gpu));
 
-    if (cpu != gpu) {
+    if (!vmaf_test_identical_f64(cpu, gpu)) {
         (void)fprintf(stderr, "\nSpEED %s singular parity FAIL: cpu=%.17g gpu=%.17g delta=%.2e\n",
                       label, cpu, gpu, fabs(cpu - gpu));
     }
-    mu_assert("SpEED singular-covariance score is not the CPU reference's", cpu == gpu);
+    mu_assert("SpEED singular-covariance score is not the CPU reference's",
+              vmaf_test_identical_f64(cpu, gpu));
     return NULL;
 }
 

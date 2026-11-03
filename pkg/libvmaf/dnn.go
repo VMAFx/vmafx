@@ -32,6 +32,8 @@
 package libvmaf
 
 /*
+#cgo CFLAGS: -I${SRCDIR}/../../core/include
+
 #include <libvmaf/dnn.h>
 #include <errno.h>
 #include <stdlib.h>

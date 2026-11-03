@@ -88,7 +88,10 @@ by group:
 
 `device_runtime` (and the `runtime` field of feature extractors on the device)
 records the driver and runtime version as reported by each backend:
-`x86_64`-style host architecture on CPU, `cuda driver X.Y runtime X.Y` on CUDA,
+`x86_64`-style host architecture on CPU, `cuda driver X.Y` on CUDA (both when a
+`VmafxDevice` is attached and on the CLI `--backend cuda` /
+`vmaf_cuda_import_state()` path, where `device_index` and `device_name` also
+report the imported `CUdevice` ordinal and GPU name),
 `<platform-name> <driver-version>` on SYCL, `hip driver X.Y runtime X.Y` on HIP,
 and Darwin kernel version or `metal` on Metal. If a backend cannot query its
 runtime or driver version, it falls back safely to `unknown`.
