@@ -38,6 +38,7 @@ import datetime as dt
 import re
 import sys
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -246,9 +247,11 @@ ADR_CITATION = re.compile(r"\bADR-\d{4}\b")
 
 
 def uncited_targets(
-    targets: dict[tuple[str, str], tuple[str, str]] = COMPATIBILITY_TARGETS,
+    targets: Mapping[tuple[str, str], tuple[str, str]] | None = None,
 ) -> list[str]:
     """Findings for every compatibility target whose reason cites no ADR."""
+    if targets is None:
+        targets = COMPATIBILITY_TARGETS
     return [
         f"COMPATIBILITY_TARGETS: job '{job}' in {workflow} keeps '{label}' without an ADR "
         f"in its reason ({why})"
