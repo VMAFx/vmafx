@@ -99,7 +99,7 @@ available today, and the GPU backends that route ships.
 | conda-forge | — | not offered | — |
 | winget | `winget install VMAFx.VMAFX` | after 0.1.0, pending acceptance | none |
 | APT / RPM | — | not offered | — |
-| Source build | `set CFLAGS=/experimental:c11atomics && meson setup build core && ninja -C build` | available | CPU (CUDA, SYCL opt-in) |
+| Source build | `set CFLAGS=/experimental:c11atomics && set CXXFLAGS=/experimental:c11atomics && meson setup build core && ninja -C build` | available | CPU (CUDA, SYCL opt-in) |
 
 - **Container:** Available via Docker Desktop running the Linux multi-arch container image (`ghcr.io/vmafx/vmafx:<tag>`, platform `linux/amd64`). Runs with CPU backend by default; GPU access on Windows is available only for NVIDIA GPUs via Docker Desktop's WSL2 backend with `--gpus all` (see [Docker](../usage/docker.md)).
 - **Tester bundle:** Available via tester bundle artifacts `tester-windows-x64` (CPU), `tester-windows-x64-cuda` (CUDA), and `tester-windows-x64-sycl` (SYCL) in [`packaging/manifest.toml`](https://github.com/VMAFx/vmafx/blob/master/packaging/manifest.toml), built by [`.github/workflows/windows-tester-bundle.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/windows-tester-bundle.yml). These are separate tester prereleases (`tester-windows-*` tags) created after manual dispatch with `publish: true`, not product releases. The bundles run tests and produce a report rather than installing the CLI; a maintainer must provide `<TESTER-TAG>` and `<VERSION>` (see [tester guide](../usage/tester-image.md#f-native-windows-zip-x64-or-arm64)). Includes CPU, CUDA, and SYCL variants.
@@ -118,7 +118,7 @@ available today, and the GPU backends that route ships.
 | conda-forge | — | not offered | — |
 | winget | — | not offered | — |
 | APT / RPM | — | not offered | — |
-| Source build | `set CFLAGS=/experimental:c11atomics && meson setup build core && ninja -C build` | available | none |
+| Source build | `set CFLAGS=/experimental:c11atomics && set CXXFLAGS=/experimental:c11atomics && meson setup build core && ninja -C build` | available | none |
 
 - **Container:** Available via Docker Desktop running multi-arch Linux container image (`ghcr.io/vmafx/vmafx:<tag>`, platform `linux/arm64`). CPU only.
 - **Tester bundle:** Available via tester bundle artifact `tester-windows-arm64` in [`packaging/manifest.toml`](https://github.com/VMAFx/vmafx/blob/master/packaging/manifest.toml), built by [`.github/workflows/windows-tester-bundle.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/windows-tester-bundle.yml) (`Build and test the zip (Windows arm64)`). These are separate tester prereleases (`tester-windows-*` tags) created after manual dispatch with `publish: true`, not product releases. The bundle runs tests and produces a report rather than installing the CLI; a maintainer must provide `<TESTER-TAG>` and `<VERSION>` (see [tester guide](../usage/tester-image.md#f-native-windows-zip-x64-or-arm64)). CPU backend only.
