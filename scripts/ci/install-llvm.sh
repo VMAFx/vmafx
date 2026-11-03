@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 # Install clang, lldb, lld, clangd and clang-tidy. Prefer the distribution
 # archive; ratchet consumers select --source=apt.llvm.org for their baseline.

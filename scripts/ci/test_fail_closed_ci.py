@@ -600,8 +600,8 @@ class InstallStepContract(unittest.TestCase):
             (command,) = self.installer_commands(workflow)
             self.assertEqual(command[2:], ["22", "--source=apt.llvm.org"])
 
-    def test_installer_has_required_dual_copyright(self) -> None:
-        self.assertIn("# Copyright 2026 Lusoris and Claude (Anthropic)", self.installer())
+    def test_installer_has_required_copyright(self) -> None:
+        self.assertIn("# Copyright 2026 Lusoris", self.installer())
 
 
 if __name__ == "__main__":
