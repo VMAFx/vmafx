@@ -527,9 +527,11 @@ def operator_emails(repo: Path) -> set[str]:
     return emails
 
 
-def check_commit_authors(repo: Path, base_sha: str, old_sha: str) -> tuple[bool, str]:
-    allowed = operator_emails(repo)
-    if not allowed:
+def check_commit_authors(
+    repo: Path, base_sha: str, old_sha: str, *, allow_foreign_authors: bool = False
+) -> tuple[bool, str]:
+    allowed = set() if allow_foreign_authors else operator_emails(repo)
+    if not allowed and not allow_foreign_authors:
         return False, "no operator email configured to verify commit authorship"
     rc, out, err = git_cmd(repo, ["log", "--format=%ae%x00%ce", f"{base_sha}..{old_sha}"])
     if rc != 0:
@@ -537,6 +539,8 @@ def check_commit_authors(repo: Path, base_sha: str, old_sha: str) -> tuple[bool,
     lines = [line.strip() for line in out.splitlines() if line.strip()]
     if len(lines) > MAX_PR_COMMITS:
         return False, f"range has more than {MAX_PR_COMMITS} commits; refusing"
+    if allow_foreign_authors:
+        return True, ""
     for line in lines[:MAX_PR_COMMITS]:
         for email in line.split("\x00")[:2]:
             normalized = email.strip().lower()
@@ -848,13 +852,14 @@ def _execute_rebase(
     *,
     allow_foreign_authors: bool = False,
 ) -> tuple[SweepRow | None, str | None]:
-    if not allow_foreign_authors:
-        authors_ok, authors_detail = check_commit_authors(repo, base_sha, old_sha)
-        if not authors_ok:
-            return (
-                SweepRow(target.number, target.branch, "REFUSED", old_sha, "-", 0, authors_detail),
-                None,
-            )
+    authors_ok, authors_detail = check_commit_authors(
+        repo, base_sha, old_sha, allow_foreign_authors=allow_foreign_authors
+    )
+    if not authors_ok:
+        return (
+            SweepRow(target.number, target.branch, "REFUSED", old_sha, "-", 0, authors_detail),
+            None,
+        )
     prep_ok, prep_detail = prepare_worktree(repo, wt, target.branch, old_sha)
     if not prep_ok:
         return (

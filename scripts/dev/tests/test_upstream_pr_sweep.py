@@ -1356,12 +1356,14 @@ class UpstreamPrSweepTest(unittest.TestCase):
                 self.assertFalse(acquired2)
                 self.assertIn("worktree lock busy", detail2)
 
-        self.assertTrue(lock_path.is_file())
+        if sweep_mod.fcntl is not None:
+            self.assertTrue(lock_path.is_file())
 
         with sweep_mod.worktree_lock(wt) as (acquired3, detail3):
             self.assertTrue(acquired3, detail3)
             self.assertTrue(lock_path.is_file())
-        self.assertTrue(lock_path.is_file())
+        if sweep_mod.fcntl is not None:
+            self.assertTrue(lock_path.is_file())
 
         fallback_wt = sweep_mod.pr_worktree_path(self.worktree_root, 100)
         fallback_lock = fallback_wt.parent / f"{fallback_wt.name}.lock"
@@ -1438,6 +1440,38 @@ class UpstreamPrSweepTest(unittest.TestCase):
         self.assertEqual(fail_row.status, "REFUSED")
         self.assertEqual(fail_row.detail, "range has more than 3 commits; refusing")
         self.assertEqual(fail_row.number, 42)
+
+    def test_T35_foreign_author_override_enforces_original_range_cap_before_rebase(self) -> None:
+        target = sweep_mod.PRTarget(number=42, branch="fix/pr-42", head_owner="testfork")
+        wt = sweep_mod.pr_worktree_path(self.worktree_root, target.number)
+        identities = "foreign@example.com\x00foreign@example.com\n" * 4
+        with (
+            patch.object(sweep_mod, "MAX_PR_COMMITS", 3),
+            patch.object(sweep_mod, "git_cmd", return_value=(0, identities, "")) as log,
+            patch.object(sweep_mod, "prepare_worktree", return_value=(True, "")) as prepare,
+            patch.object(sweep_mod, "run_rebase", return_value=(None, "")) as rebase,
+            patch.object(sweep_mod, "_verify_rebased_head", return_value=(None, "newsha")),
+        ):
+            fail_row, new_sha = sweep_mod._execute_rebase(
+                self.repo,
+                wt,
+                target,
+                self.pr_old_sha,
+                self.upstream_master_sha,
+                allow_foreign_authors=True,
+            )
+        prepare.assert_not_called()
+        rebase.assert_not_called()
+        log.assert_called_once_with(
+            self.repo,
+            ["log", "--format=%ae%x00%ce", f"{self.upstream_master_sha}..{self.pr_old_sha}"],
+        )
+        self.assertIsNone(new_sha)
+        assert fail_row is not None
+        self.assertEqual(fail_row.status, "REFUSED")
+        self.assertEqual(fail_row.detail, "range has more than 3 commits; refusing")
+        self.assertEqual(fail_row.old_sha, self.pr_old_sha)
+        self.assertEqual(fail_row.new_sha, "-")
 
 
 if __name__ == "__main__":
