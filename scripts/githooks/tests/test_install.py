@@ -14,6 +14,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
@@ -631,6 +632,36 @@ class LefthookBridgeTests(unittest.TestCase):
                 self.assertTrue(program.endswith(layout), program)
                 self.assertEqual(arguments, "run")
                 self.assertTrue(reuse.endswith(f"{Path(layout).parent.as_posix()}/reuse"), reuse)
+
+    def test_framework_runs_without_the_hook_repository_location(self) -> None:
+        # Git exports GIT_DIR to hooks; a fixture git started under it writes into the
+        # caller's repository (core.bare=true in the main checkout, 2026-11-03).
+        stub = self.repo / ".venv/bin/pre-commit"
+        stub.parent.mkdir(parents=True, exist_ok=True)
+        stub.write_text(
+            "#!/bin/sh\n"
+            'printf \'%s|%s|%s|%s\\n\' "$1" "${GIT_DIR-unset}" "${GIT_WORK_TREE-unset}" '
+            '"${GIT_INDEX_FILE-unset}" >> "$BRIDGE_LOG"\n',
+            encoding="utf-8",
+            newline="\n",
+        )
+        stub.chmod(0o755)
+        index = str(self.repo / ".git" / "next-index-1.lock")
+        hook_env = {
+            "GIT_DIR": str(self.repo / ".git"),
+            "GIT_WORK_TREE": str(self.repo),
+            "GIT_INDEX_FILE": index,
+        }
+        with mock.patch.dict(self.env, hook_env):
+            result = self.bridge("pre-commit")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.calls(),
+            [
+                "install-hooks|unset|unset|unset",
+                f"run|unset|unset|{index}",
+            ],
+        )
 
     def test_pre_push_forwards_remote_arguments_and_push_refs(self) -> None:
         self.stub(".venv/bin/pre-commit")

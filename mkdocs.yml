@@ -525,6 +525,7 @@ nav:
       - Known upstream bugs: development/known-upstream-bugs.md
       - Upstream parity guard: development/upstream-parity.md
       - Upstream parity allowlist: development/upstream-parity-allowlist.md
+      - Upstream PR sweep: development/upstream-pr-sweep.md
       - Licence provenance check: development/licence-provenance-check.md
       - OSSF Scorecard: development/ossf-scorecard.md
       - Best Practices assessment: development/best-practices-assessment.md

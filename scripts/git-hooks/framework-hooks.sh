@@ -62,6 +62,15 @@ esac
 
 env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE -u GIT_OBJECT_DIRECTORY "$fw" install-hooks || exit 1
 
+# Git exports GIT_DIR (and in some versions GIT_WORK_TREE) to every hook. A hook
+# entry that runs `git init` or `git config` in a scratch directory with them set
+# writes into this repository instead: a test fixture set core.bare=true in the
+# main checkout on 2026-11-03. Neither stage needs them, since pre-commit finds the
+# repository from the working directory, which Git sets to the top level. Keep
+# GIT_INDEX_FILE: a partial commit (`git commit <path>`) names its temporary index
+# there, and pre-commit lists the staged files from it.
+unset GIT_DIR GIT_WORK_TREE
+
 stage=${stage:-${1:-}}
 case "$stage" in
   pre-commit)
