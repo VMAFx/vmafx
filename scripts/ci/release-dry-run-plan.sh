@@ -68,8 +68,9 @@ else
         ;;
     esac
     case "$path" in
-      bindings/python/* | scripts/ci/build-wheel-libvmafx.py | \
-        scripts/ci/score-wheel-fixture.py | requirements/locks/twine.txt | \
+      bindings/python/* | core/* | scripts/ci/build-wheel-libvmafx.py | \
+        scripts/ci/score-wheel-fixture.py | requirements/locks/build.txt | \
+        requirements/locks/package-build.txt | requirements/locks/twine.txt | \
         .github/workflows/supply-chain.yml | .github/workflows/release-dry-run.yml | \
         scripts/ci/release-dry-run-plan.sh)
         wheels=true

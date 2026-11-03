@@ -1,7 +1,15 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Build libvmafx shared library for bundling into Python binary wheels."""
+"""Build libvmafx shared library for bundling into Python binary wheels.
+
+Subprocess trust boundary:
+Subprocesses are strictly constrained to fixed argument lists (shell=False)
+invoking either sys.executable or fully resolved, validated meson and ninja
+binaries located within the host environment or virtualenv. Build dependency
+installation is pinned against the repository's hash-locked build requirements
+(requirements/locks/build.txt) with --require-hashes and explicit timeouts.
+"""
 
 from __future__ import annotations
 
@@ -33,19 +41,39 @@ def clean_build_artifacts(root: Path) -> int:
 
 
 def ensure_build_tools() -> tuple[str, str]:
-    """Locate or install meson and ninja."""
+    """Locate, install, and validate meson and ninja executables."""
     meson_bin = shutil.which("meson")
     ninja_bin = shutil.which("ninja")
     if not meson_bin or not ninja_bin:
-        lock = Path(__file__).resolve().parents[2] / "requirements" / "locks" / "build.txt"
+        root = repo_root()
+        lock = root / "requirements" / "locks" / "build.txt"
+        if not lock.is_file():
+            raise FileNotFoundError(f"Expected repository build lock file not found: {lock}")
         subprocess.run(  # noqa: S603 -- running interpreter, argv list, no shell
             [sys.executable, "-m", "pip", "install", "--require-hashes", "-r", str(lock)],
             check=True,
             timeout=MESON_TIMEOUT_S,
         )
-        meson_bin = shutil.which("meson") or "meson"
-        ninja_bin = shutil.which("ninja") or "ninja"
-    return meson_bin, ninja_bin
+        meson_bin = shutil.which("meson")
+        ninja_bin = shutil.which("ninja")
+        if not meson_bin or not ninja_bin:
+            raise RuntimeError("Failed to resolve meson or ninja executable after installation")
+
+    meson_path = Path(meson_bin).resolve()
+    ninja_path = Path(ninja_bin).resolve()
+    if not meson_path.is_file() or not ninja_path.is_file():
+        raise RuntimeError(
+            f"Resolved tool paths are not files: meson={meson_path}, ninja={ninja_path}"
+        )
+
+    # Validate meson executable and version before execution
+    subprocess.run(  # noqa: S603 -- resolved meson path, argv list, no shell
+        [str(meson_path), "--version"],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    return str(meson_path), str(ninja_path)
 
 
 def setup_meson(root: Path, meson_bin: str) -> None:
@@ -69,6 +97,13 @@ def setup_meson(root: Path, meson_bin: str) -> None:
     ]
     if sys.platform == "darwin":
         cmd.append("-Denable_metal=disabled")
+    if not shutil.which("nasm"):
+        print(
+            "build-wheel-libvmafx: nasm not on PATH; configuring with -Denable_asm=false "
+            "(this wheel carries no NASM assembly kernels)",
+            file=sys.stderr,
+        )
+        cmd.append("-Denable_asm=false")
     if build_dir.exists():
         cmd.append("--reconfigure")
     subprocess.run(cmd, check=True, timeout=MESON_TIMEOUT_S)  # noqa: S603 -- meson argv, no shell

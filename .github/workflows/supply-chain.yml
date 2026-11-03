@@ -1069,8 +1069,71 @@ jobs:
         shell: bash
         run: |
           echo '::warning::artifact download skipped on Gitea: v4+ is GitHub-only, v3 lacks merge-multiple, pattern'
+      - name: Refuse immutable PyPI filename/hash divergence
+        id: pypi-state
+        env:
+          VMAFX_PEP440_VERSION: ${{ needs.validate-release.outputs.pep440_version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/vmafx-"$VMAFX_PEP440_VERSION"-*.whl)
+          sdists=(dist/vmafx-"$VMAFX_PEP440_VERSION".tar.gz)
+          if [[ ${#wheels[@]} -lt 1 || ${#sdists[@]} -ne 1 || ! -f "${sdists[0]}" ]]; then
+            echo "ERROR: expected version-matched wheels and sdist" >&2
+            exit 1
+          fi
+          local_files=("${wheels[@]}" "${sdists[@]}")
+          response="$RUNNER_TEMP/pypi-vmafx-release.json"
+          http_code="$(curl --retry 3 --max-time 60 --silent --show-error \
+            --output "$response" --write-out '%{http_code}' \
+            "https://pypi.org/pypi/vmafx/$VMAFX_PEP440_VERSION/json")"
+          publish=false
+          case "$http_code" in
+            200)
+              while IFS= read -r filename; do
+                if [[ ! -f "dist/$filename" ]]; then
+                  echo "ERROR: PyPI has unexpected file for $VMAFX_PEP440_VERSION: $filename" >&2
+                  exit 1
+                fi
+              done < <(jq -r '.urls[].filename' "$response")
+              for f in "${local_files[@]}"; do
+                filename="$(basename "$f")"
+                local_digest="$(sha256sum -- "$f" | cut -d' ' -f1)"
+                remote_count="$(jq --arg filename "$filename" \
+                  '[.urls[] | select(.filename == $filename)] | length' \
+                  "$response")"
+                case "$remote_count" in
+                  0)
+                    publish=true
+                    ;;
+                  1)
+                    remote_digest="$(jq -r --arg filename "$filename" \
+                      '.urls[] | select(.filename == $filename) | .digests.sha256' \
+                      "$response")"
+                    if [[ "$remote_digest" != "$local_digest" ]]; then
+                      echo "ERROR: PyPI already has $filename with a different SHA-256" >&2
+                      exit 1
+                    fi
+                    ;;
+                  *)
+                    echo "ERROR: PyPI returned duplicate records for $filename" >&2
+                    exit 1
+                    ;;
+                esac
+              done
+              ;;
+            404)
+              publish=true
+              ;;
+            *)
+              echo "ERROR: PyPI release query returned HTTP $http_code" >&2
+              exit 1
+              ;;
+          esac
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
+        if: steps.pypi-state.outputs.publish == 'true'
         with:
           attestations: true
           skip-existing: true

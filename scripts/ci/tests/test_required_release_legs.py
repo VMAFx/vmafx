@@ -399,6 +399,19 @@ class Routing(unittest.TestCase):
             {"images": "false", "gpu": "false", "mcp": "false", "wheels": "false"},
         )
 
+    def test_wheel_inputs_select_wheels_dry_run(self) -> None:
+        """Changes to native core sources or wheel build locks select wheels (PR #3287)."""
+        for path in (
+            "core/src/libvmaf.c",
+            "requirements/locks/build.txt",
+            "requirements/locks/package-build.txt",
+            "requirements/locks/twine.txt",
+            "bindings/python/vmafx/_api.py",
+        ):
+            with self.subTest(path=path):
+                groups = _dry_run_groups([path])
+                self.assertEqual(groups["wheels"], "true")
+
     def test_tester_dockerfile_change_runs_the_tester_image_only(self) -> None:
         plan = _plan_for(["docker/Dockerfile.tester"])
         self.assertFalse(plan["__full__"])

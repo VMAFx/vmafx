@@ -324,7 +324,7 @@ jobs:
           persist-credentials: false
       - name: Install build and check deps
         run: |
-          python -m pip install --disable-pip-version-check --require-hashes \
+          python -m pip install --disable-pip-version-check --require-hashes --no-build-isolation \
             -r requirements/locks/package-build.txt \
             -r requirements/locks/twine.txt
       - name: Build libvmafx shared library

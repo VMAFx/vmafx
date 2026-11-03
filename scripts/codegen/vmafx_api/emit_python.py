@@ -538,9 +538,9 @@ def _module_header(api: Api) -> str:
         "# `python3 scripts/codegen/vmafx-api.py --write`.\n"
         '"""ctypes binding of the VMAFx C API (generated)."""\n\n'
         "from __future__ import annotations\n\n"
-        "import contextlib\nimport ctypes\nimport enum\nimport os\nimport sys\nfrom pathlib import Path\n"
+        "import contextlib\nimport ctypes\nimport enum\nimport os\nimport sys\n"
         "from collections.abc import Callable, Mapping, Sequence\n"
-        "from dataclasses import dataclass\n\n"
+        "from dataclasses import dataclass\nfrom pathlib import Path\n\n"
         f"ABI_VERSION = ({major}, {minor}, {patch})\n"
         f'__version__ = "{major}.{minor}.{patch}"\n'
     )
@@ -643,7 +643,7 @@ def pyproject_text(api: Api) -> str:
         "[tool.cibuildwheel.windows]\n"
         'archs = ["AMD64"]\n'
         'before-all = "python scripts/ci/build-wheel-libvmafx.py"\n'
-        'repair-wheel-command = "delvewheel repair -w {dest_dir} -v {wheel}"\n\n'
+        'repair-wheel-command = "delvewheel repair --analyze-existing -w {dest_dir} -v {wheel}"\n\n'
         "[tool.setuptools.packages.find]\n"
         'include = ["vmafx*"]\n\n'
         "[tool.setuptools.package-data]\n"
