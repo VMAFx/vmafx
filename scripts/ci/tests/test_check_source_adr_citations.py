@@ -287,6 +287,17 @@ class SourceAdrCitationTests(unittest.TestCase):
         self.registry()
         registry_file = self.repo / "source-adr-citations.json"
 
+        # Pre-seed registry with CRLF and non-canonical content
+        crlf_content = (
+            b'{\r\n  "schema_version": 2,\r\n  "retired": {},\r\n  "fixtures": {}\r\n}\r\n'
+        )
+        registry_file.write_bytes(crlf_content)
+        self.assertIn(b"\r\n", registry_file.read_bytes(), "precondition: file must contain CRLF")
+
+        expected_canonical = (
+            b"{\n" b'  "fixtures": {},\n' b'  "retired": {},\n' b'  "schema_version": 2\n' b"}\n"
+        )
+
         spec = importlib.util.spec_from_file_location("check_source_adr_citations", CHECKER)
         assert spec is not None and spec.loader is not None
         checker_mod = importlib.util.module_from_spec(spec)
@@ -315,14 +326,75 @@ class SourceAdrCitationTests(unittest.TestCase):
             )
         self.assertEqual(rc, 0)
         data = registry_file.read_bytes()
+        self.assertEqual(data, expected_canonical, "written registry must match canonical bytes")
         self.assertNotIn(b"\r\n", data, "written registry must not contain CRLF")
         self.assertIn(b"\n", data, "written registry must contain LF")
 
-        # Verify subprocess invocation with --write
+        # Verify subprocess invocation with --write rewrites CRLF
+        registry_file.write_bytes(crlf_content)
+        self.assertIn(b"\r\n", registry_file.read_bytes())
         result = self.run_checker("--write")
         self.assertEqual(result.returncode, 0, result.stdout)
         data_sub = registry_file.read_bytes()
+        self.assertEqual(data_sub, expected_canonical)
         self.assertNotIn(b"\r\n", data_sub)
+
+    def test_failed_write_cleans_up_temporary_file(self) -> None:
+        self.write_adr("0042-original-decision.md")
+        self.write("core/example.c", "/* Kept for ADR-0042. */\n")
+        self.registry()
+        registry_file = self.repo / "source-adr-citations.json"
+
+        spec = importlib.util.spec_from_file_location("check_source_adr_citations", CHECKER)
+        assert spec is not None and spec.loader is not None
+        checker_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(checker_mod)
+
+        def failing_replace(*args: Any, **kwargs: Any) -> Any:
+            raise OSError("simulated disk error during atomic replace")
+
+        with patch.object(Path, "replace", side_effect=failing_replace):
+            with self.assertRaises(OSError):
+                checker_mod.atomic_write_json(registry_file, {"schema_version": 2})
+
+        temp_files = list(self.repo.glob(f".{registry_file.name}.*"))
+        self.assertEqual(temp_files, [], "failed write must not leave temporary files")
+
+    def test_write_refuses_concurrent_modification(self) -> None:
+        self.write_adr("0042-original-decision.md")
+        self.write("core/example.c", "/* Kept for ADR-0042. */\n")
+        self.registry()
+        registry_file = self.repo / "source-adr-citations.json"
+
+        spec = importlib.util.spec_from_file_location("check_source_adr_citations", CHECKER)
+        assert spec is not None and spec.loader is not None
+        checker_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(checker_mod)
+
+        original_atomic_write = checker_mod.atomic_write_json
+
+        def concurrent_atomic_write(path: Path, value: dict[str, Any], **kwargs: Any) -> None:
+            concurrent_data = (
+                b"{\n"
+                b'  "fixtures": {},\n'
+                b'  "retired": {},\n'
+                b'  "schema_version": 2,\n'
+                b'  "concurrent_edit": true\n'
+                b"}\n"
+            )
+            path.write_bytes(concurrent_data)
+            original_atomic_write(path, value, **kwargs)
+
+        with (
+            patch.dict(os.environ, fixture_git_env(), clear=True),
+            patch.object(checker_mod, "atomic_write_json", side_effect=concurrent_atomic_write),
+        ):
+            with self.assertRaises(checker_mod.GateError) as ctx:
+                checker_mod.check(self.repo, registry_file, write=True)
+
+        self.assertIn("concurrently", str(ctx.exception))
+        content = registry_file.read_text(encoding="utf-8")
+        self.assertIn("concurrent_edit", content)
 
     def test_repository_registry_is_current(self) -> None:
         result = subprocess.run(  # noqa: S603 -- gate under test; fixed executable and argv
