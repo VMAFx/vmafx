@@ -50,6 +50,7 @@ from scripts.lib.safe_subprocess import run as run_command
 ROOT = Path(__file__).resolve().parents[3]
 RULE = "vmaf-test-float-identity-via-float-bits"
 IN_SCOPE = "core/test/planted_float_identity.c"
+IN_SCOPE_CPP = "core/test/planted_float_identity.cpp"
 OUT_OF_SCOPE = "core/src/planted_float_identity.c"
 PLANTED = """\
 #include <stdbool.h>
@@ -63,6 +64,9 @@ bool planted(double x, float p, float q, int i, int k, double u, double v,
              long long ll, short s, unsigned char c)
 {
     double y = computed();
+    double d = computed();
+    double a = computed();
+    double b = computed();
     bool hits = x != y;          /* reported: computed double != */
     hits = hits || x == y;       /* reported: computed double == */
     hits = hits || p == q;       /* reported: computed float == */
@@ -76,16 +80,19 @@ bool planted(double x, float p, float q, int i, int k, double u, double v,
     hits = hits || computed() != computed(); /* reported: two call results != */
     hits = hits || 0x10 + y == x; /* reported: hex literal prefix, computed */
     hits = hits || (double)x == y; /* reported: (double)x == y */
+    hits = hits || d == (int)y;  /* reported: double compared to integer cast */
     bool quiet = x == 0.0;       /* literal */
     quiet = quiet || 1.5 != y;   /* literal on the left */
     quiet = quiet || x == LIMIT; /* macro */
     quiet = quiet || y == kLimit; /* k-constant */
     quiet = quiet || x != x;     /* NaN idiom */
+    quiet = quiet || (x) != (x); /* NaN idiom grouping parens */
     quiet = quiet || i == k;     /* integers */
     quiet = quiet || x == -1.5e3; /* signed literal with exponent */
     quiet = quiet || p == .5f;   /* float literal */
     quiet = quiet || y != -kLimit; /* signed k-constant */
     quiet = quiet || i == (int)y; /* integer cast of a double */
+    quiet = quiet || (int)a == (int)b; /* integer cast on both sides */
     quiet = quiet || x == 0x1p0; /* hexadecimal floating literal */
     quiet = quiet || p != -0x1.8p-3f; /* signed hexadecimal float literal */
     quiet = quiet || (i + (int)x) == k; /* integer arithmetic */
@@ -100,8 +107,21 @@ bool planted(double x, float p, float q, int i, int k, double u, double v,
     quiet = quiet || i == (unsigned long long)y; /* unsigned long long cast */
     return hits || quiet;
 }
+
+bool deref_planted(double *p)
+{
+    return *p != *p; /* reported: dereference NaN self-check */
+}
 """
 PLANTED_HITS = tuple(n for n, line in enumerate(PLANTED.splitlines(), 1) if "/* reported" in line)
+PLANTED_CPP = """\
+bool planted_cpp(float f)
+{
+    bool quiet = f == 0b1010;
+    quiet = quiet || f == 1'000;
+    return quiet;
+}
+"""
 PLANTED_CONST_NAMES = """\
 double kScale = computed();
 float GAIN;
@@ -127,15 +147,24 @@ double ordinary, kComputed = computed();
 const double a, kB = 1.0;
 double scaled(UINT32 n);
 double X = computed();
+double kA = 1.0, *const kP = 0;
+double kB = (const double)1.0;
+auto kC = 1.0;
+double &kRef = x;
+const double kD = 1.0, kE = 2.0;
 """
-FLOAT_TYPE = re.compile(r"\b(?:double|float)\b")
+FLOAT_TYPE = re.compile(r"\b(?:double|float|Scores|MotionScores|auto)\b")
 CONSTANT_NAME = re.compile(r"k[A-Z]\w*|[A-Z][A-Z0-9_]*")
-DECLARED_NAME = re.compile(r"[\s*]*(\w+)\b(?!\s*\()")
+DECLARED_NAME = re.compile(r"[\s*&]*(\w+)\b(?!\s*\()")
 C_LEXEME = re.compile(
     r'"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'|//[^\n]*|/\*.*?(?:\*/|\Z)',
     re.DOTALL,
 )
 CONST_QUALIFIER = re.compile(r"\b(?:const|constexpr)\b")
+PTR_CONST = re.compile(r"\*\s*const\b")
+FLOAT_INIT = re.compile(
+    r"\b[0-9]*\.[0-9]+|\b[0-9]+\.[0-9]*|\b[0-9]+[fF]\b|\b[0-9]+[eE][+-]?[0-9]+|\b(?:computed|sqrt|sin|cos|fabs)\b"
+)
 EXCEPTED = "core/test/test_pelorus_interop.c"  # pelorus mirror, declared exception
 PARSE_RULE = "vmaf-test-float-identity-parse"  # files with a known parse diagnostic
 UNPARSABLE = "core/test/planted_unparsable.c"
@@ -230,14 +259,39 @@ def constant_name_findings(text: str, name: str) -> list[str]:
     code = C_LEXEME.sub(_blank_lexeme, text)
     lines = text.splitlines()
     found: list[str] = []
+    seen: set[int] = set()
     for kind in FLOAT_TYPE.finditer(code):
         start = declaration_start(code, kind.start())
-        in_params = start > 0 and code[start - 1] in "(,"
-        spans = declarators(code, kind.end(), in_params)
-        if CONST_QUALIFIER.search(code[start : spans[-1][1]]):
+        if start in seen:
             continue
+        seen.add(start)
+        in_params = start > 0 and code[start - 1] in "(,"
+        after_kind = kind.end()
+        m_qual = re.match(r"\s*(?:const|constexpr)\b", code[after_kind:])
+        first_decl_start = after_kind + m_qual.end() if m_qual else after_kind
+        if CONST_QUALIFIER.search(code[start:first_decl_start]):
+            continue
+        spans = declarators(code, first_decl_start, in_params)
+        is_auto = kind.group(0) == "auto"
         for begin, end in spans:
-            decl = DECLARED_NAME.match(code, begin, end)
+            decl_text = code[begin:end]
+            eq_pos = -1
+            depth = 0
+            for i, c in enumerate(decl_text):
+                if c in "([":
+                    depth += 1
+                elif c in ")]" and depth > 0:
+                    depth -= 1
+                elif depth == 0 and c == "=":
+                    eq_pos = i
+                    break
+            decl_head = decl_text[:eq_pos] if eq_pos != -1 else decl_text
+            init_text = decl_text[eq_pos + 1 :] if eq_pos != -1 else ""
+            if is_auto and not FLOAT_INIT.search(init_text):
+                continue
+            if PTR_CONST.search(decl_head):
+                continue
+            decl = DECLARED_NAME.match(decl_head)
             if decl and CONSTANT_NAME.fullmatch(decl.group(1)):
                 n = code.count("\n", 0, kind.start()) + 1
                 found.append(f"{name}:{n}: {lines[n - 1].strip()}")
@@ -312,15 +366,23 @@ class SemgrepFloatIdentity(unittest.TestCase):
             target = project / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(PLANTED, encoding="utf-8")
+        target_cpp = project / IN_SCOPE_CPP
+        target_cpp.parent.mkdir(parents=True, exist_ok=True)
+        target_cpp.write_text(PLANTED_CPP, encoding="utf-8")
         return project
 
     def test_reports_computed_comparisons_only(self) -> None:
-        lines = self.scan(self.planted_project(), [IN_SCOPE, OUT_OF_SCOPE])
+        lines = self.scan(self.planted_project(), [IN_SCOPE, OUT_OF_SCOPE, IN_SCOPE_CPP])
         self.assertEqual(
             lines.get(IN_SCOPE),
             list(PLANTED_HITS),
             "the rule must report the ten computed comparisons and none of the "
             "literal, macro, k-constant, NaN-idiom, integer or call comparisons",
+        )
+        self.assertNotIn(
+            IN_SCOPE_CPP,
+            lines,
+            "C++ binary literal and digit separator must not be reported",
         )
 
     def test_scope_is_core_test(self) -> None:
@@ -414,7 +476,9 @@ class SemgrepFloatIdentity(unittest.TestCase):
 
     def test_constant_name_declarations_are_const(self) -> None:
         got = constant_name_findings(PLANTED_CONST_NAMES, "planted.c")
-        want = [f"planted.c:{n}:" for n in (1, 2, 3, 4, 7, 8, 9, 11, 14, 18, 20, 21, 24)]
+        want = [
+            f"planted.c:{n}:" for n in (1, 2, 3, 4, 7, 8, 9, 11, 14, 18, 20, 21, 24, 25, 26, 27, 28)
+        ]
         self.assertEqual([g.split(" ", 1)[0] for g in got], want)
         found: list[str] = []
         for target in core_test_sources(ROOT):
