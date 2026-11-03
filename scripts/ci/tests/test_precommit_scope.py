@@ -206,6 +206,109 @@ class ScopeDecision(unittest.TestCase):
             0,
         )
 
+    def test_make_target_recipe_scripts_are_inputs(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="vmafx-scope-") as temp:
+            root = Path(temp)
+            (root / "tools").mkdir(parents=True)
+            (root / "tools" / "check.sh").write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+            (root / "Makefile").write_text(
+                "that-target:\n\tbash tools/check.sh\n", encoding="utf-8"
+            )
+            planted = (
+                "repos:\n- repo: local\n  hooks:\n" "  - id: check\n    entry: make that-target\n"
+            )
+            found = precommit_scope.hook_inputs(planted, root)
+            self.assertIn("tools/check.sh", found)
+            args, reason = precommit_scope.scope("pull_request", BASE, ["tools/check.sh"], found)
+            self.assertEqual(args, ["--all-files"])
+            self.assertIn("tools/check.sh", reason)
+
+    def test_make_target_prerequisite_is_an_input(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="vmafx-scope-") as temp:
+            root = Path(temp)
+            (root / "tools").mkdir(parents=True)
+            (root / "tools" / "helper.sh").write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+            (root / "Makefile").write_text(
+                "target-a: target-b\n\n" "target-b:\n\tbash tools/helper.sh\n",
+                encoding="utf-8",
+            )
+            planted = (
+                "repos:\n- repo: local\n  hooks:\n" "  - id: check\n    entry: make target-a\n"
+            )
+            found = precommit_scope.hook_inputs(planted, root)
+            self.assertIn("tools/helper.sh", found)
+            args, _ = precommit_scope.scope("pull_request", BASE, ["tools/helper.sh"], found)
+            self.assertEqual(args, ["--all-files"])
+
+    def test_make_unnamed_file_stays_diff_only(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="vmafx-scope-") as temp:
+            root = Path(temp)
+            (root / "tools").mkdir(parents=True)
+            (root / "tools" / "check.sh").write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+            (root / "docs").mkdir(parents=True)
+            (root / "docs" / "readme.md").write_text("hello\n", encoding="utf-8")
+            (root / "Makefile").write_text(
+                "that-target:\n\tbash tools/check.sh\n", encoding="utf-8"
+            )
+            planted = (
+                "repos:\n- repo: local\n  hooks:\n" "  - id: check\n    entry: make that-target\n"
+            )
+            found = precommit_scope.hook_inputs(planted, root)
+            self.assertNotIn("docs/readme.md", found)
+            args, _ = precommit_scope.scope("pull_request", BASE, ["docs/readme.md"], found)
+            self.assertEqual(args, ["--from-ref", BASE, "--to-ref", "HEAD"])
+
+    def test_make_missing_target_fails_closed_to_whole_tree(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="vmafx-scope-") as temp:
+            root = Path(temp)
+            (root / "Makefile").write_text("existing-target:\n\techo ok\n", encoding="utf-8")
+            planted = (
+                "repos:\n- repo: local\n  hooks:\n"
+                "  - id: check\n    entry: make missing-target\n"
+            )
+            found = precommit_scope.hook_inputs(planted, root)
+            self.assertIn(".", found)
+            args, _ = precommit_scope.scope("pull_request", BASE, ["docs/readme.md"], found)
+            self.assertEqual(args, ["--all-files"])
+
+    def test_make_without_target_fails_closed_to_whole_tree(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="vmafx-scope-") as temp:
+            root = Path(temp)
+            (root / "Makefile").write_text("all:\n\techo ok\n", encoding="utf-8")
+            planted = "repos:\n- repo: local\n  hooks:\n  - id: check\n    entry: make\n"
+            found = precommit_scope.hook_inputs(planted, root)
+            self.assertIn(".", found)
+            args, _ = precommit_scope.scope("pull_request", BASE, ["docs/readme.md"], found)
+            self.assertEqual(args, ["--all-files"])
+
+    def test_make_missing_makefile_fails_closed_to_whole_tree(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="vmafx-scope-") as temp:
+            root = Path(temp)
+            planted = (
+                "repos:\n- repo: local\n  hooks:\n  - id: check\n    entry: make that-target\n"
+            )
+            found = precommit_scope.hook_inputs(planted, root)
+            self.assertIn(".", found)
+
+    def test_planted_make_recipe_without_inputs_is_diff_only(self) -> None:
+        # Before following Makefile targets, check-input-contract.sh was not in inputs
+        # and got diff-only scope.
+        unfixed_inputs = frozenset(
+            {precommit_scope.CONFIG, *precommit_scope.AUTHORITY_PREFIXES, "Makefile"}
+        )
+        self.assertEqual(
+            precommit_scope.scope(
+                "pull_request",
+                BASE,
+                ["ffmpeg-patches/test/check-input-contract.sh"],
+                unfixed_inputs,
+            )[0],
+            ["--from-ref", BASE, "--to-ref", "HEAD"],
+        )
+
+    def test_real_repo_ffmpeg_input_contract_inputs(self) -> None:
+        self.assertIn("ffmpeg-patches/test/check-input-contract.sh", INPUTS)
+
 
 class WorkflowRouting(unittest.TestCase):
     text = WORKFLOW.read_text(encoding="utf-8")

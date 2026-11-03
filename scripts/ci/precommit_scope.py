@@ -58,6 +58,7 @@ MODULE = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+")
 UNPARSABLE = "\0unparsable"  # an entry shlex cannot split: every path is an input
 MAX_TOKENS = 100_000  # bound on entry tokens, nested shell commands included
 MAX_IMPORT_FILES = 5_000  # bound on the import walk
+MAX_MAKE_TARGETS = 1_000  # bound on make target prerequisite walk
 
 
 def entry_tokens(command: str) -> list[str]:
@@ -88,6 +89,136 @@ def token_paths(token: str, root: Path) -> set[str]:
         stem = value.replace(".", "/")
         return {f"{stem}.py", f"{stem}/"}
     return {value} if (root / value).is_file() else set()
+
+
+def make_target_words(words: Sequence[str]) -> list[str]:
+    """Non-option target words after 'make'."""
+    targets: list[str] = []
+    skip_next = False
+    for word in words[1:]:
+        if skip_next:
+            skip_next = False
+            continue
+        if word in (
+            "-C",
+            "--directory",
+            "-f",
+            "--file",
+            "-I",
+            "--include-dir",
+            "-o",
+            "-W",
+            "--eval",
+        ):
+            skip_next = True
+            continue
+        if word.startswith("-") or "=" in word:
+            continue
+        targets.append(word)
+    return targets
+
+
+def makefile_logical_lines(text: str) -> list[str]:
+    """Join Makefile lines ending with a backslash into logical lines."""
+    lines: list[str] = []
+    current = ""
+    for raw in text.splitlines():
+        line = f"{current} {raw.strip()}" if current else raw
+        if line.endswith("\\"):
+            current = line[:-1]
+        else:
+            lines.append(line)
+            current = ""
+    if current:
+        lines.append(current)
+    return lines
+
+
+def parse_target_line(content: str) -> tuple[list[str], list[str], str] | None:
+    """Parse a Makefile rule line into (targets, prerequisites, inline_recipe)."""
+    colon = content.find(":")
+    eq = content.find("=")
+    if colon == -1 or (eq != -1 and eq < colon) or content[colon : colon + 2] == ":=":
+        return None
+    target_part, _, rest = content.partition(":")
+    targets = [t for t in target_part.split() if t]
+    if not targets:
+        return None
+    rest = rest[1:] if rest.startswith(":") else rest
+    prereq_part, _, inline = rest.partition(";")
+    return targets, [p for p in prereq_part.split() if p], inline.strip().lstrip("@+-")
+
+
+def parse_makefile(text: str) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """Extract prerequisites and recipe lines for each target in a Makefile."""
+    prereqs: dict[str, list[str]] = {}
+    recipes: dict[str, list[str]] = {}
+    current_targets: list[str] = []
+    in_define = False
+    for line in makefile_logical_lines(text):
+        stripped = line.strip()
+        if in_define:
+            in_define = stripped != "endef"
+            continue
+        if stripped.startswith("define "):
+            in_define = True
+            current_targets = []
+            continue
+        if line.startswith("\t"):
+            cmd = line.lstrip("\t").strip().lstrip("@+-")
+            for t in current_targets if cmd else ():
+                recipes.setdefault(t, []).append(cmd)
+            continue
+        if not stripped or stripped.startswith("#"):
+            continue
+        rule = parse_target_line(line.split("#", 1)[0].strip())
+        current_targets = rule[0] if rule else []
+        if rule:
+            targets, prereq_list, inline_cmd = rule
+            for t in targets:
+                prereqs.setdefault(t, []).extend(prereq_list)
+                recipes.setdefault(t, [])
+                if inline_cmd:
+                    recipes[t].append(inline_cmd)
+    return prereqs, recipes
+
+
+def make_target_inputs(target_words: Sequence[str], root: Path) -> set[str]:
+    """Follow Makefile targets, their prerequisites and recipes to repo path inputs."""
+    if not target_words:
+        # Conservative fallback when make is invoked without a target: whole tree.
+        return {"."}
+    makefile = root / "Makefile"
+    if not makefile.is_file():
+        return {"."}
+    try:
+        text = makefile.read_text(encoding="utf-8")
+    except OSError:
+        return {"."}
+    prereqs, recipes = parse_makefile(text)
+    queue: list[str] = list(dict.fromkeys(target_words))
+    seen: set[str] = set()
+    inputs: set[str] = set()
+    for _ in range(MAX_MAKE_TARGETS):
+        if not queue:
+            break
+        target = queue.pop(0)
+        if target in seen:
+            continue
+        seen.add(target)
+        if target not in recipes and target not in prereqs:
+            return {"."}
+        for cmd in recipes.get(target, []):
+            words = entry_tokens(cmd)
+            if UNPARSABLE in words:
+                return {"."}
+            for word in words:
+                inputs.update(token_paths(word, root))
+        for prereq in prereqs.get(target, []):
+            inputs.update(token_paths(prereq, root))
+            if prereq in recipes or prereq in prereqs:
+                queue.append(prereq)
+    return {"."} if queue else inputs
 
 
 def search_bases(source: Path, root: Path) -> tuple[Path, ...]:
@@ -181,8 +312,9 @@ def hook_inputs(config_text: str, root: Path = ROOT) -> frozenset[str]:
     the commands inside ``bash -c`` are split again. A word counts when it names a
     repository path, whether or not the file still exists (a pull request may delete
     it), a dotted module under a top-level directory (``python -m scripts.lib.x``), or
-    an existing top-level file (``Makefile`` for ``make``). Python files are followed
-    through their imports. Entries are prefixes: ``scripts/ci/tests`` covers its files.
+    an existing top-level file (``Makefile`` for ``make``; make targets follow their
+    recipes and prerequisites). Python files are followed through their imports.
+    Entries are prefixes: ``scripts/ci/tests`` covers its files.
     """
     inputs = {CONFIG, *AUTHORITY_PREFIXES}
     for repo in (yaml.safe_load(config_text) or {}).get("repos", []):
@@ -193,6 +325,7 @@ def hook_inputs(config_text: str, root: Path = ROOT) -> frozenset[str]:
             words = entry_tokens(str(hook.get("entry", ""))) + entry_tokens(command)[1:]
             if words[:1] == ["make"]:
                 inputs.add("Makefile")
+                inputs.update(make_target_inputs(make_target_words(words), root))
             if UNPARSABLE in words:
                 inputs.add(".")
             for word in words:
