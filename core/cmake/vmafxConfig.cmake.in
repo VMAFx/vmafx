@@ -1,0 +1,31 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+@PACKAGE_INIT@
+
+set_and_check(VMAFX_INCLUDE_DIR "${PACKAGE_PREFIX_DIR}/@includedir@")
+
+find_library(VMAFX_LIBRARY
+    NAMES vmafx
+    PATHS "${PACKAGE_PREFIX_DIR}/@libdir@"
+    NO_DEFAULT_PATH
+)
+if(NOT VMAFX_LIBRARY)
+    find_library(VMAFX_LIBRARY NAMES vmafx)
+endif()
+
+include(FindPackageHandleStandardArgs)
+find_package_handle_standard_args(vmafx
+    REQUIRED_VARS VMAFX_LIBRARY VMAFX_INCLUDE_DIR
+)
+
+if(vmafx_FOUND AND NOT TARGET vmafx::vmafx)
+    add_library(vmafx::vmafx UNKNOWN IMPORTED)
+    set_target_properties(vmafx::vmafx PROPERTIES
+        IMPORTED_LOCATION "${VMAFX_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${VMAFX_INCLUDE_DIR}"
+    )
+endif()
+
+set(VMAFX_LIBRARIES vmafx::vmafx)
+set(VMAFX_INCLUDE_DIRS "${VMAFX_INCLUDE_DIR}")

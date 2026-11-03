@@ -3499,6 +3499,22 @@ pkg_mod.generate(libraries: vmaf_pc_libraries,
     kwargs: vmaf_pc_dir_kwargs,
 )
 
+cmake_mod = import('cmake')
+cmake_conf = configuration_data()
+cmake_conf.set('includedir', get_option('includedir'))
+cmake_conf.set('libdir', get_option('libdir'))
+
+cmake_mod.configure_package_config_file(
+    name: 'vmafx',
+    input: files('../cmake/vmafxConfig.cmake.in'),
+    configuration: cmake_conf,
+)
+cmake_mod.write_basic_package_version_file(
+    name: 'vmafx',
+    version: vmafx_soname_version,
+    compatibility: 'SameMajorVersion',
+)
+
 libvmafx_dep = declare_dependency(
     link_with: vmaf_default_library == 'static' ? libvmafx_static_lib : libvmafx_shared_lib,
     include_directories: [libvmaf_inc],

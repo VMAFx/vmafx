@@ -288,6 +288,48 @@ def test_external_runtime_dirs_refuses_vmafx_library_and_ambiguous_source(
         checker.external_runtime_dirs(other, tmp_path / "libvmafx.so.1")
 
 
+def test_cmake_package_files_positive(tmp_path: Path) -> None:
+    cmake_dir = tmp_path / "lib" / "cmake" / "vmafx"
+    cmake_dir.mkdir(parents=True)
+    (cmake_dir / "vmafxConfig.cmake").touch()
+    (cmake_dir / "vmafxConfigVersion.cmake").touch()
+    checker.check_cmake_files(tmp_path / "lib", tmp_path)
+
+
+def test_cmake_package_files_config_missing_fails(tmp_path: Path) -> None:
+    cmake_dir = tmp_path / "lib" / "cmake" / "vmafx"
+    cmake_dir.mkdir(parents=True)
+    (cmake_dir / "vmafxConfigVersion.cmake").touch()
+    with pytest.raises(
+        checker.LayoutError, match=r"missing CMake package file.*vmafxConfig\.cmake"
+    ):
+        checker.check_cmake_files(tmp_path / "lib", tmp_path)
+
+
+def test_cmake_package_files_version_missing_fails(tmp_path: Path) -> None:
+    cmake_dir = tmp_path / "lib" / "cmake" / "vmafx"
+    cmake_dir.mkdir(parents=True)
+    (cmake_dir / "vmafxConfig.cmake").touch()
+    with pytest.raises(
+        checker.LayoutError, match=r"missing CMake package file.*vmafxConfigVersion\.cmake"
+    ):
+        checker.check_cmake_files(tmp_path / "lib", tmp_path)
+
+
+def test_cmake_package_file_escapes_destdir_fails(tmp_path: Path) -> None:
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "vmafxConfig.cmake").touch()
+    cmake_dir = stage / "lib" / "cmake" / "vmafx"
+    cmake_dir.mkdir(parents=True)
+    (cmake_dir / "vmafxConfig.cmake").symlink_to(outside / "vmafxConfig.cmake")
+    (cmake_dir / "vmafxConfigVersion.cmake").touch()
+    with pytest.raises(checker.LayoutError, match="escapes DESTDIR"):
+        checker.check_cmake_files(stage / "lib", stage)
+
+
 def test_real_install() -> None:
     build = os.environ.get("VMAF_BUILD_DIR")
     if not build:

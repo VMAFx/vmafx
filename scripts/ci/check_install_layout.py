@@ -156,6 +156,14 @@ def install_paths(build: Path, stage: Path) -> tuple[Path, Path]:
     )
 
 
+def check_cmake_files(libdir: Path, stage: Path) -> None:
+    cmake_dir = libdir / "cmake" / "vmafx"
+    for name in ("vmafxConfig.cmake", "vmafxConfigVersion.cmake"):
+        path = cmake_dir / name
+        require(path.is_file(), f"missing CMake package file: {path}")
+        require(path.resolve().is_relative_to(stage), f"CMake package file escapes DESTDIR: {path}")
+
+
 def check_tree(libdir: Path, includedir: Path, stage: Path) -> dict[str, Path]:
     libraries: dict[str, Path] = {}
     for package, soname in expected_sonames().items():
@@ -181,6 +189,7 @@ def check_tree(libdir: Path, includedir: Path, stage: Path) -> dict[str, Path]:
         requires_vmafx(compat_pc.read_text(encoding="utf-8")),
         "libvmaf.pc lacks Requires or Requires.private: libvmafx",
     )
+    check_cmake_files(libdir, stage)
     return libraries
 
 

@@ -178,6 +178,17 @@ LD_LIBRARY_PATH=build/src ./score
 On the repository's pair the first line is the score the command line prints
 for the same files, followed by the record.
 
+### CMake
+
+CMake consumers locate and link the installed library using `find_package`:
+
+```cmake
+find_package(vmafx 1 REQUIRED)
+
+add_executable(score score.c)
+target_link_libraries(score PRIVATE vmafx::vmafx)
+```
+
 ## Step by step
 
 ### Host frames
