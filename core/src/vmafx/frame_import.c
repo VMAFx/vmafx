@@ -336,7 +336,6 @@ static int fill_plane(const VmafxFrameImport *d, const ImportLayout *layout, uin
         /* The statement was checked: the matrix has a conversion. */
         const bool planned = vmafx_rgb_plan_init(&rgb, layout, d->bpc, d->rgb_matrix, d->rgb_range,
                                                  d->rgb_out_range);
-        assert(planned && dst != NULL);
         if (!planned || !dst) {
             return -1;
         }
