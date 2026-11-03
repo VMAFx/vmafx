@@ -5,7 +5,10 @@
 
 from __future__ import annotations
 
+import collections.abc
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -179,11 +182,12 @@ def test_environment_excludes_host_sdk(monkeypatch: pytest.MonkeyPatch, tmp_path
     assert "CPATH" not in env
 
 
-def test_cli_unversioned_mutation_fails_and_is_reverted(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+def _configure_cli_test_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    consumers_callback: collections.abc.Callable[..., None] | None = None,
 ) -> None:
-    """Exercise the same CLI path with captured-tool fixtures, then restore it."""
-    (tmp_path / "meson-private").mkdir()
+    (tmp_path / "meson-private").mkdir(parents=True, exist_ok=True)
     (tmp_path / "meson-private/coredata.dat").touch()
     monkeypatch.setattr(
         checker, "install_paths", lambda build, stage: (stage / "lib", stage / "include")
@@ -191,8 +195,11 @@ def test_cli_unversioned_mutation_fails_and_is_reverted(
     monkeypatch.setattr(checker, "check_tree", lambda *args: {"libvmafx": tmp_path / "engine.so"})
     monkeypatch.setattr(checker, "listed_symbols", lambda path: EXPECTED)
     monkeypatch.setattr(checker, "external_runtime_dirs", lambda build, installed: [])
-    consumers: list[bool] = []
-    monkeypatch.setattr(checker, "check_consumers", lambda *args: consumers.append(True))
+    monkeypatch.setattr(
+        checker,
+        "check_consumers",
+        consumers_callback if consumers_callback is not None else (lambda *args: None),
+    )
 
     def fake_run(argv: list[str], env: dict[str, str] | None = None) -> str:
         if argv[0] == "meson":
@@ -201,6 +208,16 @@ def test_cli_unversioned_mutation_fails_and_is_reverted(
         return VERSIONS if "-V" in argv else SYMBOLS
 
     monkeypatch.setattr(checker, "run", fake_run)
+
+
+def test_cli_unversioned_mutation_fails_and_is_reverted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Exercise the same CLI path with captured-tool fixtures, then restore it."""
+    consumers: list[bool] = []
+    _configure_cli_test_env(
+        monkeypatch, tmp_path, consumers_callback=lambda *args: consumers.append(True)
+    )
     assert checker.main(["--build", str(tmp_path)]) == 0
     assert checker.main(["--build", str(tmp_path), "--plant-unversioned"]) == 1
     assert "no version node" in capsys.readouterr().err
@@ -330,10 +347,18 @@ def test_cmake_package_file_escapes_destdir_fails(tmp_path: Path) -> None:
         checker.check_cmake_files(stage / "lib", stage)
 
 
-def _cmake_installed_map(build: Path, include_cmake: bool = True) -> None:
+def _cmake_installed_map(
+    build: Path,
+    include_cmake: bool = True,
+    only_version: bool = False,
+) -> None:
     (build / "meson-info").mkdir(parents=True, exist_ok=True)
     mapping = {str(build / "src/libvmafx.so.1"): "/usr/lib/libvmafx.so.1"}
-    if include_cmake:
+    if only_version:
+        mapping[str(build / "vmafxConfigVersion.cmake")] = (
+            "/usr/lib/cmake/vmafx/vmafxConfigVersion.cmake"
+        )
+    elif include_cmake:
         mapping[str(build / "vmafxConfig.cmake")] = "/usr/lib/cmake/vmafx/vmafxConfig.cmake"
         mapping[str(build / "vmafxConfigVersion.cmake")] = (
             "/usr/lib/cmake/vmafx/vmafxConfigVersion.cmake"
@@ -347,6 +372,20 @@ def test_cmake_files_planned(tmp_path: Path) -> None:
     assert checker.cmake_files_planned(tmp_path) is False
     _cmake_installed_map(tmp_path, include_cmake=True)
     assert checker.cmake_files_planned(tmp_path) is True
+
+
+def test_cmake_files_planned_version_only_triggers_layout_check(tmp_path: Path) -> None:
+    build = tmp_path / "build"
+    _cmake_installed_map(build, only_version=True)
+    assert checker.cmake_files_planned(build) is True
+    stage = tmp_path / "stage"
+    cmake_dir = stage / "lib" / "cmake" / "vmafx"
+    cmake_dir.mkdir(parents=True)
+    (cmake_dir / "vmafxConfigVersion.cmake").touch()
+    with pytest.raises(
+        checker.LayoutError, match=r"missing CMake package file.*vmafxConfig\.cmake"
+    ):
+        checker.check_cmake_layout(build, stage / "lib", stage, require_cmake=False)
 
 
 def test_cmake_layout_planned_and_present_passes(tmp_path: Path) -> None:
@@ -391,25 +430,286 @@ def test_cmake_layout_require_cmake_absent_fails(tmp_path: Path) -> None:
 
 
 def test_cli_require_cmake_flag(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    (tmp_path / "meson-private").mkdir()
-    (tmp_path / "meson-private/coredata.dat").touch()
     _cmake_installed_map(tmp_path, include_cmake=False)
-    monkeypatch.setattr(
-        checker, "install_paths", lambda build, stage: (stage / "lib", stage / "include")
-    )
-    monkeypatch.setattr(checker, "check_tree", lambda *args: {"libvmafx": tmp_path / "engine.so"})
-    monkeypatch.setattr(checker, "listed_symbols", lambda path: EXPECTED)
-    monkeypatch.setattr(checker, "external_runtime_dirs", lambda build, installed: [])
-    monkeypatch.setattr(checker, "check_consumers", lambda *args: None)
-
-    def fake_run(argv: list[str], env: dict[str, str] | None = None) -> str:
-        if argv[0] == "meson":
-            return ""
-        return VERSIONS if "-V" in argv else SYMBOLS
-
-    monkeypatch.setattr(checker, "run", fake_run)
+    _configure_cli_test_env(monkeypatch, tmp_path)
     assert checker.main(["--build", str(tmp_path)]) == 0
     assert checker.main(["--build", str(tmp_path), "--require-cmake"]) == 1
+
+
+def _render_cmake_config(
+    template_path: Path,
+    output_path: Path,
+    includedir: str,
+    libdir: str,
+    bindir: str = "bin",
+    relative_depth: str = "../../..",
+) -> None:
+    template = template_path.read_text(encoding="utf-8")
+    pkg_init = (
+        f'get_filename_component(PACKAGE_PREFIX_DIR "${{CMAKE_CURRENT_LIST_DIR}}/{relative_depth}" ABSOLUTE)\n'
+        "macro(set_and_check _var _file)\n"
+        '  set(${_var} "${_file}")\n'
+        '  if(NOT EXISTS "${_file}")\n'
+        '    message(FATAL_ERROR "File or directory ${_file} referenced by variable ${_var} does not exist !")\n'
+        "  endif()\n"
+        "endmacro()\n"
+    )
+    rendered = template.replace("@PACKAGE_INIT@", pkg_init)
+    rendered = rendered.replace("@includedir@", includedir)
+    rendered = rendered.replace("@libdir@", libdir)
+    rendered = rendered.replace("@bindir@", bindir)
+    output_path.write_text(rendered, encoding="utf-8")
+
+
+def _tool(name: str) -> str:
+    """Absolute path of a build tool, or skip the test when it is absent."""
+    path = shutil.which(name)
+    if path is None:
+        raise pytest.skip.Exception(f"{name} not available")
+    return path
+
+
+def _write_dummy_vmafx_shared(lib_dir: Path) -> Path:
+    lib_dir.mkdir(parents=True, exist_ok=True)
+    c_source = lib_dir / "dummy_vmafx.c"
+    c_source.write_text('const char *vmafx_version_string(void) { return "1.0.0"; }\n')
+    so_path = lib_dir / "libvmafx.so"
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+        [_tool("cc"), "-shared", "-fPIC", str(c_source), "-o", str(so_path)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return so_path
+
+
+def _write_cmake_version_file(dest: Path, version: str = "1.0.0") -> None:
+    dest.write_text(
+        f'set(PACKAGE_VERSION "{version}")\n'
+        "set(PACKAGE_VERSION_COMPATIBLE TRUE)\n"
+        "set(PACKAGE_VERSION_EXACT TRUE)\n",
+        encoding="utf-8",
+    )
+
+
+def test_cmake_consumer_find_package_e2e(tmp_path: Path) -> None:
+    if not shutil.which("cmake") or not shutil.which("cc"):
+        pytest.skip("cmake or cc not available")
+    prefix = tmp_path / "install"
+    inc = prefix / "include" / "vmafx"
+    inc.mkdir(parents=True)
+    (inc / "vmafx.h").write_text("const char *vmafx_version_string(void);\n")
+    lib = prefix / "lib"
+    _write_dummy_vmafx_shared(lib)
+    cmake_dir = lib / "cmake" / "vmafx"
+    cmake_dir.mkdir(parents=True)
+    template = Path(__file__).resolve().parents[3] / "core" / "cmake" / "vmafxConfig.cmake.in"
+    _render_cmake_config(template, cmake_dir / "vmafxConfig.cmake", "include", "lib")
+    _write_cmake_version_file(cmake_dir / "vmafxConfigVersion.cmake")
+
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    (consumer / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.20)\n"
+        "project(consumer_test C)\n"
+        "find_package(vmafx 1 REQUIRED)\n"
+        "add_executable(app main.c)\n"
+        "target_link_libraries(app PRIVATE vmafx::vmafx)\n"
+    )
+    (consumer / "main.c").write_text(
+        "#include <vmafx/vmafx.h>\n#include <stdio.h>\nint main(void) { puts(vmafx_version_string()); return 0; }\n"
+    )
+    build_dir = consumer / "build"
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+        [
+            _tool("cmake"),
+            "-S",
+            str(consumer),
+            "-B",
+            str(build_dir),
+            f"-DCMAKE_PREFIX_PATH={prefix}",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+        [_tool("cmake"), "--build", str(build_dir)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    out = subprocess.check_output(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+        [str(build_dir / "app")],
+        env={**os.environ, "LD_LIBRARY_PATH": str(lib)},
+        text=True,
+    )
+    assert out.strip() == "1.0.0"
+
+
+def test_cmake_consumer_stale_cache_overridden(tmp_path: Path) -> None:
+    if not shutil.which("cmake") or not shutil.which("cc"):
+        pytest.skip("cmake or cc not available")
+    prefix = tmp_path / "install"
+    inc = prefix / "include" / "vmafx"
+    inc.mkdir(parents=True)
+    (inc / "vmafx.h").write_text("const char *vmafx_version_string(void);\n")
+    lib = prefix / "lib"
+    _write_dummy_vmafx_shared(lib)
+    cmake_dir = lib / "cmake" / "vmafx"
+    cmake_dir.mkdir(parents=True)
+    template = Path(__file__).resolve().parents[3] / "core" / "cmake" / "vmafxConfig.cmake.in"
+    _render_cmake_config(template, cmake_dir / "vmafxConfig.cmake", "include", "lib")
+    _write_cmake_version_file(cmake_dir / "vmafxConfigVersion.cmake")
+
+    stale_lib = tmp_path / "stale_prefix" / "lib" / "libvmafx.so"
+    stale_lib.parent.mkdir(parents=True)
+    stale_lib.touch()
+
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    (consumer / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.20)\n"
+        "project(consumer_test C)\n"
+        "find_package(vmafx 1 REQUIRED)\n"
+        "add_executable(app main.c)\n"
+        "target_link_libraries(app PRIVATE vmafx::vmafx)\n"
+    )
+    (consumer / "main.c").write_text(
+        "#include <vmafx/vmafx.h>\n#include <stdio.h>\nint main(void) { puts(vmafx_version_string()); return 0; }\n"
+    )
+    build_dir = consumer / "build"
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+        [
+            _tool("cmake"),
+            "-S",
+            str(consumer),
+            "-B",
+            str(build_dir),
+            f"-DCMAKE_PREFIX_PATH={prefix}",
+            f"-DVMAFX_LIBRARY:FILEPATH={stale_lib}",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+        [_tool("cmake"), "--build", str(build_dir)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    out = subprocess.check_output(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+        [str(build_dir / "app")],
+        env={**os.environ, "LD_LIBRARY_PATH": str(lib)},
+        text=True,
+    )
+    assert out.strip() == "1.0.0"
+
+
+def test_cmake_consumer_rejects_static_archive(tmp_path: Path) -> None:
+    if not shutil.which("cmake"):
+        pytest.skip("cmake not available")
+    prefix = tmp_path / "install"
+    inc = prefix / "include" / "vmafx"
+    inc.mkdir(parents=True)
+    (inc / "vmafx.h").write_text("const char *vmafx_version_string(void);\n")
+    lib = prefix / "lib"
+    lib.mkdir(parents=True)
+    (lib / "libvmafx.a").touch()
+    cmake_dir = lib / "cmake" / "vmafx"
+    cmake_dir.mkdir(parents=True)
+    template = Path(__file__).resolve().parents[3] / "core" / "cmake" / "vmafxConfig.cmake.in"
+    _render_cmake_config(template, cmake_dir / "vmafxConfig.cmake", "include", "lib")
+    _write_cmake_version_file(cmake_dir / "vmafxConfigVersion.cmake")
+
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    (consumer / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.20)\n"
+        "project(consumer_test C)\n"
+        "find_package(vmafx 1 REQUIRED)\n"
+    )
+    build_dir = consumer / "build"
+    res = subprocess.run(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+        [
+            _tool("cmake"),
+            "-S",
+            str(consumer),
+            "-B",
+            str(build_dir),
+            f"-DCMAKE_PREFIX_PATH={prefix}",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert res.returncode != 0
+    assert "Could NOT find vmafx (missing: VMAFX_LIBRARY)" in res.stderr
+
+
+def test_cmake_consumer_absolute_dirs(tmp_path: Path) -> None:
+    if not shutil.which("cmake") or not shutil.which("cc"):
+        pytest.skip("cmake or cc not available")
+    abs_inc = tmp_path / "abs_include" / "vmafx"
+    abs_inc.mkdir(parents=True)
+    (abs_inc / "vmafx.h").write_text("const char *vmafx_version_string(void);\n")
+    abs_lib = tmp_path / "abs_lib"
+    _write_dummy_vmafx_shared(abs_lib)
+    cmake_dir = tmp_path / "install" / "lib" / "cmake" / "vmafx"
+    cmake_dir.mkdir(parents=True)
+    template = Path(__file__).resolve().parents[3] / "core" / "cmake" / "vmafxConfig.cmake.in"
+    _render_cmake_config(
+        template,
+        cmake_dir / "vmafxConfig.cmake",
+        str(abs_inc.parent),
+        str(abs_lib),
+    )
+    _write_cmake_version_file(cmake_dir / "vmafxConfigVersion.cmake")
+
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    (consumer / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.20)\n"
+        "project(consumer_test C)\n"
+        "find_package(vmafx 1 REQUIRED)\n"
+        "add_executable(app main.c)\n"
+        "target_link_libraries(app PRIVATE vmafx::vmafx)\n"
+    )
+    (consumer / "main.c").write_text(
+        "#include <vmafx/vmafx.h>\n#include <stdio.h>\nint main(void) { puts(vmafx_version_string()); return 0; }\n"
+    )
+    build_dir = consumer / "build"
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+        [
+            _tool("cmake"),
+            "-S",
+            str(consumer),
+            "-B",
+            str(build_dir),
+            f"-DCMAKE_PREFIX_PATH={tmp_path / 'install'}",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+        [_tool("cmake"), "--build", str(build_dir)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    out = subprocess.check_output(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+        [str(build_dir / "app")],
+        env={**os.environ, "LD_LIBRARY_PATH": str(abs_lib)},
+        text=True,
+    )
+    assert out.strip() == "1.0.0"
+
+
+def test_meson_build_cmake_package_guards() -> None:
+    meson_build = Path(__file__).resolve().parents[3] / "core" / "src" / "meson.build"
+    content = meson_build.read_text(encoding="utf-8")
+    assert "error('cmake_package requires a shared library" in content
+    assert "install_dir: cmake_install_dir" in content
+    assert "cmake_mod.configure_package_config_file(" in content
+    assert "cmake_mod.write_basic_package_version_file(" in content
+    options = Path(__file__).resolve().parents[3] / "core" / "meson_options.txt"
+    options_content = options.read_text(encoding="utf-8")
+    assert "option('cmake_package'" in options_content
+    assert "type: 'feature'" in options_content
 
 
 def test_real_install() -> None:

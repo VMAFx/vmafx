@@ -3500,24 +3500,35 @@ pkg_mod.generate(libraries: vmaf_pc_libraries,
 )
 
 cmake = find_program('cmake', required: get_option('cmake_package'))
-if cmake.found()
+if get_option('cmake_package').enabled() and vmaf_default_library == 'static'
+    error('cmake_package requires a shared library (default_library is shared or both); for static linking use pkg-config')
+endif
+if cmake.found() and vmaf_default_library != 'static'
     cmake_mod = import('cmake')
     cmake_conf = configuration_data()
     cmake_conf.set('includedir', get_option('includedir'))
     cmake_conf.set('libdir', get_option('libdir'))
+    cmake_conf.set('bindir', get_option('bindir'))
 
+    cmake_install_dir = get_option('libdir') / 'cmake' / 'vmafx'
     cmake_mod.configure_package_config_file(
         name: 'vmafx',
         input: files('../cmake/vmafxConfig.cmake.in'),
         configuration: cmake_conf,
+        install_dir: cmake_install_dir,
     )
     cmake_mod.write_basic_package_version_file(
         name: 'vmafx',
         version: vmafx_soname_version,
         compatibility: 'SameMajorVersion',
+        install_dir: cmake_install_dir,
     )
 elif get_option('cmake_package').auto()
-    warning('cmake binary not found and cmake_package is auto: vmafxConfig.cmake will not be installed')
+    if vmaf_default_library == 'static'
+        message('default_library is static: skipping CMake package generation (use pkg-config for static linking)')
+    else
+        warning('cmake binary not found and cmake_package is auto: vmafxConfig.cmake will not be installed')
+    endif
 endif
 
 libvmafx_dep = declare_dependency(

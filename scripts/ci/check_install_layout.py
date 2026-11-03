@@ -164,14 +164,17 @@ def check_cmake_files(libdir: Path, stage: Path) -> None:
         require(path.resolve().is_relative_to(stage), f"CMake package file escapes DESTDIR: {path}")
 
 
+CMAKE_PACKAGE_FILENAMES: tuple[str, ...] = ("vmafxConfig.cmake", "vmafxConfigVersion.cmake")
+
+
 def cmake_files_planned(build: Path) -> bool:
-    """Return whether the Meson install plan lists vmafxConfig.cmake."""
+    """Return whether the Meson install plan lists any CMake package file."""
     installed = build / "meson-info" / "intro-installed.json"
     if not installed.is_file():
         return False
     mapping: dict[str, str] = json.loads(installed.read_text(encoding="utf-8"))
     return any(
-        "vmafxConfig.cmake" in (Path(src).name, Path(dest).name)
+        Path(src).name in CMAKE_PACKAGE_FILENAMES or Path(dest).name in CMAKE_PACKAGE_FILENAMES
         for src, dest in mapping.items()
         if isinstance(src, str) and isinstance(dest, str)
     )

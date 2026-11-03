@@ -177,11 +177,14 @@ Controls whether Meson generates and installs CMake package configuration files
 `<libdir>/cmake/vmafx/`.
 
 Default `auto`: probes for the `cmake` binary via `find_program('cmake')`. If
-found, generates and installs both files; if not found, emits a Meson configure
-warning and skips installation without failing the build. Setting
-`-Dcmake_package=enabled` requires `cmake` in PATH and fails configure if
-missing. Setting `-Dcmake_package=disabled` skips CMake package generation
-completely without probing or warnings.
+found and a shared library is built (`default_library` is `shared` or `both`),
+generates and installs both files; if `cmake` is not found, emits a Meson
+configure warning and skips installation without failing the build; if building
+static-only (`default_library=static`), skips installation with a message (use
+`pkg-config --static` instead). Setting `-Dcmake_package=enabled` requires `cmake`
+in PATH and a shared library build, failing configure if `cmake` is missing or
+if `default_library=static`. Setting `-Dcmake_package=disabled` skips CMake
+package generation completely without probing or warnings.
 
 ### `enable_float`
 
