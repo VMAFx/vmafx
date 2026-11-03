@@ -22,6 +22,8 @@
  * vmaf_test_expect_identical_f64() prints one line on a mismatch with both
  * values at %.17g and their bits, for an assertion that has no report of its
  * own. The _f32 forms do the same for float.
+ * vmaf_test_within_f64() is the tolerance form: bit identity at zero
+ * tolerance, |a - b| <= tol above it.
  *
  * C and C++, header-only; core/test/test_float_bits.c tests it.
  */
@@ -59,6 +61,14 @@ static inline bool vmaf_test_identical_f64(double a, double b)
 static inline bool vmaf_test_identical_f32(float a, float b)
 {
     return !isnan(a) && vmaf_test_bits_f32(a) == vmaf_test_bits_f32(b);
+}
+
+/* `a` and `b` agree within `tol`: bit identity when `tol` is zero (so +0 and
+ * -0 still differ), else identity or |a - b| <= tol. A NaN agrees with
+ * nothing. */
+static inline bool vmaf_test_within_f64(double a, double b, double tol)
+{
+    return vmaf_test_identical_f64(a, b) || (tol > 0.0 && fabs(a - b) <= tol);
 }
 
 /* vmaf_test_identical_f64(), and on a mismatch one line on stderr:

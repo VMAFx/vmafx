@@ -57,6 +57,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 #include "mu_table.h"
 
 #include "libvmaf/libvmaf.h"
@@ -73,11 +74,11 @@
 
 /* Bit-exact equality for doubles produced by the SAME arithmetic on both sides
  * of the comparison (no rounding slack — that is the whole point of the
- * golden-isolation proof). The compared values are integer-valued and exactly
- * representable, so a direct `==` is the precise predicate. */
+ * golden-isolation proof). float_bits.h compares the bits, so a +0 / -0
+ * mismatch fails too (ADR-1502). */
 static int bit_exact(double a, double b)
 {
-    return a == b;
+    return vmaf_test_identical_f64(a, b);
 }
 
 /* Inject three per-frame feature scores. */

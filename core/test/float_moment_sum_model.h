@@ -24,6 +24,8 @@
 #ifndef LIBVMAF_TEST_FLOAT_MOMENT_SUM_MODEL_H_
 #define LIBVMAF_TEST_FLOAT_MOMENT_SUM_MODEL_H_
 #include "float_bits.h"
+#include "feature/float_moment_scaler.h"
+#include "mu_table.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -32,6 +34,43 @@
 
 #define RANDOM_PAIRS 400000u
 #define WRONG_PLAN_KINDS 4u
+
+static char *check_scaler(double (*scaler)(unsigned))
+{
+    static const double expected[] = {1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0};
+    static char *const messages[] = {
+        "8-bit scaler must equal 1",    "9-bit scaler must equal 2",
+        "10-bit scaler must equal 4",   "11-bit scaler must equal 8",
+        "12-bit scaler must equal 16",  "13-bit scaler must equal 32",
+        "14-bit scaler must equal 64",  "15-bit scaler must equal 128",
+        "16-bit scaler must equal 256",
+    };
+    for (unsigned bpc = 8u; bpc <= 16u; bpc++) {
+        mu_assert(messages[bpc - 8u], vmaf_test_identical_f64(scaler(bpc), expected[bpc - 8u]));
+    }
+    return NULL;
+}
+
+static char *test_scaler(void)
+{
+    return check_scaler(vmaf_float_moment_scaler);
+}
+
+/* Planted pre-fix formula: the same checker must reject missing depths. */
+static double legacy_scaler(unsigned bpc)
+{
+    if (bpc == 10u)
+        return 4.0;
+    if (bpc == 12u)
+        return 16.0;
+    return (bpc == 16u) ? 256.0 : 1.0;
+}
+
+static char *test_legacy_scaler_is_rejected(void)
+{
+    mu_assert("the scaler check accepted the legacy formula", check_scaler(legacy_scaler) != NULL);
+    return NULL;
+}
 
 /* The rows of one 16-bit luma plane and what the kernels keep per row. */
 typedef struct MomentModel {
@@ -197,7 +236,8 @@ static int cpu_moment(VmafPicture *pic, double *moment)
 
 static double moment_of(uint64_t sum, const VmafPicture *pic)
 {
-    return ((double)sum / 65536.0) / ((double)pic->w[0] * (double)pic->h[0]);
+    const double scaler = vmaf_float_moment_scaler(pic->bpc);
+    return ((double)sum / (scaler * scaler)) / ((double)pic->w[0] * (double)pic->h[0]);
 }
 
 /* Mismatches of the model against the CPU on one case: the real plan and
@@ -255,6 +295,20 @@ static char *test_model_equals_cpu_past_2_53(void)
     return NULL;
 }
 
+static char *test_model_equals_cpu_odd_depths(void)
+{
+    static const FloatMomentTwinCase cases[] = {
+        {"9-bit noise", 258u, 146u, 9u, 0u, 511u, 0u, 0u, 0u, false},
+        {"11-bit noise", 258u, 146u, 11u, 0u, 2047u, 0u, 0u, 0u, false},
+        {"13-bit noise", 258u, 146u, 13u, 0u, 8191u, 0u, 0u, 0u, false},
+        {"14-bit noise", 258u, 146u, 14u, 0u, 16383u, 0u, 0u, 0u, false},
+        {"15-bit noise", 258u, 146u, 15u, 0u, 32767u, 0u, 0u, 0u, false},
+    };
+    mu_assert("the model is not the CPU's sum at odd depths",
+              model_cases_mismatches(cases, sizeof(cases) / sizeof(cases[0])) == 0u);
+    return NULL;
+}
+
 static char *test_model_equals_cpu_large(void)
 {
     static const FloatMomentTwinCase cases[] = {
@@ -309,24 +363,53 @@ static char *test_add_term_is_the_double_add(void)
 }
 
 /* Only a frame whose sum of squares can pass 2^53 units needs the walk. */
+static char *check_may_round(int (*may_round)(unsigned, unsigned, unsigned))
+{
+    /* At 32768 columns these heights put pixels * 2^(2 * bpc) at 2^53. */
+    static const unsigned heights[] = {16384u, 4096u, 1024u, 256u, 64u};
+    for (unsigned bpc = 12u; bpc <= 16u; bpc++) {
+        const unsigned h = heights[bpc - 12u];
+        mu_assert("the boundary cannot pass 2^53", !may_round(32768u, h, bpc));
+        mu_assert("above the boundary can pass 2^53", may_round(32768u, h + 1u, bpc));
+        mu_assert("below the boundary cannot pass 2^53", !may_round(32768u, h - 1u, bpc));
+    }
+    for (unsigned bpc = 8u; bpc <= 11u; bpc++) {
+        mu_assert("8..11-bit frames never round", !may_round(32768u, 32768u, bpc));
+    }
+    return NULL;
+}
+
 static char *test_may_round(void)
 {
-    mu_assert("2^21 16-bit pixels cannot pass 2^53", !vmaf_moment_sum_may_round(2048u, 1024u, 16u));
-    mu_assert("more than 2^21 16-bit pixels can", vmaf_moment_sum_may_round(2048u, 1025u, 16u));
-    mu_assert("2^29 12-bit pixels cannot", !vmaf_moment_sum_may_round(32768u, 16384u, 12u));
-    mu_assert("more than 2^29 12-bit pixels can", vmaf_moment_sum_may_round(32768u, 16385u, 12u));
-    mu_assert("10-bit frames never do", !vmaf_moment_sum_may_round(32768u, 32768u, 10u));
-    mu_assert("8-bit frames never do", !vmaf_moment_sum_may_round(32768u, 32768u, 8u));
+    return check_may_round(vmaf_moment_sum_may_round);
+}
+
+/* Planted depth whitelist: misses large 13..15-bit frames. */
+static int legacy_may_round(unsigned w, unsigned h, unsigned bpc)
+{
+    return bpc == 10u || bpc == 12u || bpc == 16u ? vmaf_moment_sum_may_round(w, h, bpc) : 0;
+}
+
+static char *test_depth_whitelist_is_rejected(void)
+{
+    mu_assert("the gate check accepted a depth whitelist",
+              check_may_round(legacy_may_round) != NULL);
     return NULL;
 }
 
 char *run_tests(void)
 {
-    mu_run_test(test_add_term_is_the_double_add);
-    mu_run_test(test_may_round);
-    mu_run_test(test_model_equals_cpu_past_2_53);
-    mu_run_test(test_model_equals_cpu_large);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_scaler),
+        MU_TEST(test_legacy_scaler_is_rejected),
+        MU_TEST(test_add_term_is_the_double_add),
+        MU_TEST(test_may_round),
+        MU_TEST(test_depth_whitelist_is_rejected),
+        MU_TEST(test_model_equals_cpu_odd_depths),
+        MU_TEST(test_model_equals_cpu_past_2_53),
+        MU_TEST(test_model_equals_cpu_large),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

@@ -19,6 +19,18 @@ lock file with its source files and compilation arguments using a reviewed,
 pinned
 version of `uv` (`uv_version` in `requirements/locks/manifest.json`).
 
+Guides point at that field and never restate the number:
+`check_python_dependency_locks.py check` refuses any Markdown line that echoes
+a uv version (with optional leading `v`, e.g. `vX.Y.Z` or `X.Y.Z`) within 40 characters
+of `uv_version`, `vmafx-uv-version` (in either order), or `uv` directly followed by a
+version pin in prose or code (`uv X.Y.Z`, `uv vX.Y.Z`, `uv==X.Y.Z`, `uv@X.Y.Z`,
+`pinned uv X.Y.Z`, or a quoted `uv` before a quoted version), outside
+`CHANGELOG.md`, `changelog.d/`, `docs/changelog-archive/`, the dated records
+in `docs/research/`, `docs/state.md`, `docs/rebase-notes.md` and `docs/rebase-notes.d/`,
+and the decision records under `docs/adr/`.
+Soft-wrapped two-line echoes (where the tool name and version number are split
+across a line break) are a known gap and are not caught by the single-line scanner.
+
 The manifest validates every path it names:
 
 - Outputs, inputs and alias consumer bindings are local repo-relative paths
@@ -144,9 +156,17 @@ To support pure sdists (e.g. `mkdocs-minify-plugin` dependencies) securely:
 
 ## Enforcement and CI gates
 
-- **Pre-commit**: `check-python-dependency-locks` runs on commits touching
-  Python
-  manifests, lock files, workflows, Dockerfiles, setup scripts, or Makefile.
+- **Pre-commit**: `check-python-dependency-locks` runs on commits touching Python
+  manifests, lock files, workflows, Dockerfiles, setup scripts, Makefile, or
+  Markdown files (excluding the dated records listed under the scanner below).
+- **Guide uv version echo scanner**: `check_python_dependency_locks.py check`
+  scans Markdown guides outside the dated records (`CHANGELOG.md`, `changelog.d/`,
+  `docs/changelog-archive/`, `docs/research/`, `docs/state.md`, `docs/rebase-notes.md`,
+  `docs/rebase-notes.d/`, `docs/adr/`) and refuses lines echoing the uv version: `uv_version` or
+  `vmafx-uv-version` within 40 characters of a version (with optional leading `v`, e.g. `vX.Y.Z` or
+  `X.Y.Z`) in either order, and `uv` directly followed by a version pin in prose or code
+  (`uv X.Y.Z`, `uv vX.Y.Z`, `uv==X.Y.Z`, `uv@X.Y.Z`, `pinned uv X.Y.Z`, or a quoted `uv` before a quoted version).
+  Soft-wrapped two-line echoes across a newline are a known gap.
 - **Install-surface scanner**: executable pip calls and literal
   `session.install(...)` calls in `noxfile.py` must reference a manifest-owned
   lock exactly. Dynamic Nox arguments and unmanifested requirement paths fail

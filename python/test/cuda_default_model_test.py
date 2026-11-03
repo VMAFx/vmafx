@@ -3,7 +3,7 @@
 
 import json
 import os
-import subprocess
+import shutil
 import sys
 import tempfile
 import unittest
@@ -16,14 +16,25 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from scripts.lib import vmaftest  # noqa: E402 - needs the repository root on sys.path
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+
+
+def _run(cmd, timeout_seconds=600):
+    """Run cmd with its own executable as the only one allowed, capturing text output."""
+    return run_command(
+        cmd,
+        allowed_executables=[cmd[0]],
+        capture_output=True,
+        text=True,
+        timeout_seconds=timeout_seconds,
+    )
 
 
 def _nvidia_gpu_answers():
-    try:
-        res = subprocess.run(["nvidia-smi"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except FileNotFoundError:
+    nvidia_smi = shutil.which("nvidia-smi")
+    if nvidia_smi is None:
         return False
-    return res.returncode == 0
+    return _run([nvidia_smi], timeout_seconds=60).returncode == 0
 
 
 def _probe_cuda(vmaf_bin, ref_yuv):
@@ -41,12 +52,11 @@ def _probe_cuda(vmaf_bin, ref_yuv):
             *("--backend", "cuda", "--no_prediction", "--feature", "psnr", "--frame_cnt", "1"),
             *("--json", "-o", os.path.join(tmp, "probe.json")),
         ]
-        res = subprocess.run(probe, capture_output=True, text=True, timeout=120)
+        res = _run(probe, timeout_seconds=120)
     return res.returncode == 0
 
 
 class CudaDefaultModelTest(unittest.TestCase):
-
     @classmethod
     def setUpClass(cls):
         # The vmaf under test (scripts/lib/vmaftest.py). Its build
@@ -114,7 +124,7 @@ class CudaDefaultModelTest(unittest.TestCase):
                 "--output",
                 out_json,
             ]
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            res = _run(cmd)
             self.assertEqual(res.returncode, 0, f"CUDA vmaf run failed: {res.stderr}\n{res.stdout}")
 
             with open(out_json, "r", encoding="utf-8") as jf:
@@ -138,15 +148,11 @@ class CudaDefaultModelTest(unittest.TestCase):
 
         try:
             cmd_cuda = self._build_parity_command(["--backend", "cuda"], cuda_json)
-            res_cuda = subprocess.run(
-                cmd_cuda, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-            )
+            res_cuda = _run(cmd_cuda)
             self.assertEqual(res_cuda.returncode, 0, f"CUDA run failed: {res_cuda.stderr}")
 
             cmd_cpu = self._build_parity_command(["--no_cuda"], cpu_json)
-            res_cpu = subprocess.run(
-                cmd_cpu, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-            )
+            res_cpu = _run(cmd_cpu)
             self.assertEqual(res_cpu.returncode, 0, f"CPU run failed: {res_cpu.stderr}")
 
             with open(cuda_json, "r", encoding="utf-8") as f:
@@ -210,7 +216,7 @@ class CudaDefaultModelTest(unittest.TestCase):
             "adm=adm_csf_moed=2",
             "--no_prediction",
         ]
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        res = _run(cmd)
         self.assertNotEqual(
             res.returncode, 0, "Typo option should cause vmaf to exit with non-zero"
         )

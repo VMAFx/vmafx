@@ -50,7 +50,6 @@ import argparse
 import json
 import os
 import statistics
-import subprocess
 import sys
 import tempfile
 import time
@@ -62,6 +61,7 @@ sys.path.insert(0, str(REPO))
 from scripts.ci import upstream_parity_allowlist  # noqa: E402
 from scripts.dev import upstream_parity as parity  # noqa: E402
 from scripts.dev import upstream_parity_matrix as parity_matrix  # noqa: E402
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 # Same fixtures as testdata/bench_backends.py. The 4K pair is gitignored and
 # fetched separately, so it is included only when present -- but it is the one
@@ -200,7 +200,15 @@ def run_cell(vmaf_bin, fixture, runs, threads, root, verbose):
         # allocation), exactly as in bench_backends.py.
         for i in range(runs + 1):
             start = time.monotonic()
-            proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            proc = run_command(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                allowed_executables=[cmd[0]],
+                timeout_seconds=3600,
+                max_output_bytes=64 * 1_048_576,
+            )
             elapsed = time.monotonic() - start
             if proc.returncode != 0 or not os.path.exists(out_path):
                 msg = (proc.stderr or proc.stdout or "").strip().splitlines()
