@@ -1042,6 +1042,16 @@ libvmaf built with `-Denable_cuda=true` and FFmpeg configured with
 with no pooled score, as for `libvmaf`
 ([When a frame cannot be scored](#when-a-frame-cannot-be-scored)).
 
+!!! warning "Known issue: `libvmaf_cuda` copies only the luma plane"
+    The FFmpeg filter source `libavfilter/vf_libvmaf.c` copies only the first
+    plane of each CUDA frame into libvmaf, so features that read U and V see
+    no chroma data, and it refuses 10-bit, 12-bit and 4:2:2 CUDA frames
+    ([issue 3274](https://github.com/VMAFx/vmafx/issues/3274)). The defect is in
+    FFmpeg, not in libvmaf; the fix is under FFmpeg review and joins the
+    VMAFx patch series in a later series release. Until a series release
+    carries it, score CUDA frames with the [`vmafx` filter](#the-vmafx-filter):
+    it imports every plane on the device and matches the CPU scores.
+
 ### `libvmaf_metal`
 
 `libvmaf_metal` (patch `0013`) consumes `AV_PIX_FMT_VIDEOTOOLBOX` frames. See
