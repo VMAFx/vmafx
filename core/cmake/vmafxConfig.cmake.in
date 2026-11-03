@@ -10,9 +10,6 @@ find_library(VMAFX_LIBRARY
     PATHS "${PACKAGE_PREFIX_DIR}/@libdir@"
     NO_DEFAULT_PATH
 )
-if(NOT VMAFX_LIBRARY)
-    find_library(VMAFX_LIBRARY NAMES vmafx)
-endif()
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(vmafx

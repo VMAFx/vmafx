@@ -330,6 +330,88 @@ def test_cmake_package_file_escapes_destdir_fails(tmp_path: Path) -> None:
         checker.check_cmake_files(stage / "lib", stage)
 
 
+def _cmake_installed_map(build: Path, include_cmake: bool = True) -> None:
+    (build / "meson-info").mkdir(parents=True, exist_ok=True)
+    mapping = {str(build / "src/libvmafx.so.1"): "/usr/lib/libvmafx.so.1"}
+    if include_cmake:
+        mapping[str(build / "vmafxConfig.cmake")] = "/usr/lib/cmake/vmafx/vmafxConfig.cmake"
+        mapping[str(build / "vmafxConfigVersion.cmake")] = (
+            "/usr/lib/cmake/vmafx/vmafxConfigVersion.cmake"
+        )
+    (build / "meson-info/intro-installed.json").write_text(checker.json.dumps(mapping))
+
+
+def test_cmake_files_planned(tmp_path: Path) -> None:
+    assert checker.cmake_files_planned(tmp_path) is False
+    _cmake_installed_map(tmp_path, include_cmake=False)
+    assert checker.cmake_files_planned(tmp_path) is False
+    _cmake_installed_map(tmp_path, include_cmake=True)
+    assert checker.cmake_files_planned(tmp_path) is True
+
+
+def test_cmake_layout_planned_and_present_passes(tmp_path: Path) -> None:
+    build = tmp_path / "build"
+    _cmake_installed_map(build, include_cmake=True)
+    stage = tmp_path / "stage"
+    cmake_dir = stage / "lib" / "cmake" / "vmafx"
+    cmake_dir.mkdir(parents=True)
+    (cmake_dir / "vmafxConfig.cmake").touch()
+    (cmake_dir / "vmafxConfigVersion.cmake").touch()
+    checker.check_cmake_layout(build, stage / "lib", stage, require_cmake=False)
+
+
+def test_cmake_layout_planned_config_missing_fails(tmp_path: Path) -> None:
+    build = tmp_path / "build"
+    _cmake_installed_map(build, include_cmake=True)
+    stage = tmp_path / "stage"
+    cmake_dir = stage / "lib" / "cmake" / "vmafx"
+    cmake_dir.mkdir(parents=True)
+    (cmake_dir / "vmafxConfigVersion.cmake").touch()
+    with pytest.raises(
+        checker.LayoutError, match=r"missing CMake package file.*vmafxConfig\.cmake"
+    ):
+        checker.check_cmake_layout(build, stage / "lib", stage, require_cmake=False)
+
+
+def test_cmake_layout_not_planned_absent_passes(tmp_path: Path) -> None:
+    build = tmp_path / "build"
+    _cmake_installed_map(build, include_cmake=False)
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    checker.check_cmake_layout(build, stage / "lib", stage, require_cmake=False)
+
+
+def test_cmake_layout_require_cmake_absent_fails(tmp_path: Path) -> None:
+    build = tmp_path / "build"
+    _cmake_installed_map(build, include_cmake=False)
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    with pytest.raises(checker.LayoutError, match="missing CMake package file"):
+        checker.check_cmake_layout(build, stage / "lib", stage, require_cmake=True)
+
+
+def test_cli_require_cmake_flag(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    (tmp_path / "meson-private").mkdir()
+    (tmp_path / "meson-private/coredata.dat").touch()
+    _cmake_installed_map(tmp_path, include_cmake=False)
+    monkeypatch.setattr(
+        checker, "install_paths", lambda build, stage: (stage / "lib", stage / "include")
+    )
+    monkeypatch.setattr(checker, "check_tree", lambda *args: {"libvmafx": tmp_path / "engine.so"})
+    monkeypatch.setattr(checker, "listed_symbols", lambda path: EXPECTED)
+    monkeypatch.setattr(checker, "external_runtime_dirs", lambda build, installed: [])
+    monkeypatch.setattr(checker, "check_consumers", lambda *args: None)
+
+    def fake_run(argv: list[str], env: dict[str, str] | None = None) -> str:
+        if argv[0] == "meson":
+            return ""
+        return VERSIONS if "-V" in argv else SYMBOLS
+
+    monkeypatch.setattr(checker, "run", fake_run)
+    assert checker.main(["--build", str(tmp_path)]) == 0
+    assert checker.main(["--build", str(tmp_path), "--require-cmake"]) == 1
+
+
 def test_real_install() -> None:
     build = os.environ.get("VMAF_BUILD_DIR")
     if not build:

@@ -189,6 +189,12 @@ add_executable(score score.c)
 target_link_libraries(score PRIVATE vmafx::vmafx)
 ```
 
+The CMake package configuration targets the shared library `libvmafx`. For
+static linking (`default_library=static`), consumers should use
+`pkg-config --static --libs libvmafx`, which resolves compiler- and
+platform-specific private dependencies (`-lstdc++`, `-lm`, `-pthread`, and
+backend runtimes) through `libvmafx.pc`.
+
 ## Step by step
 
 ### Host frames

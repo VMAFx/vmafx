@@ -99,6 +99,7 @@ under [Option details](#option-details).
 | `enable_float` | bool | `true` | Compile the `float_*` extractors; see [`enable_float`](#enable_float). |
 | `fuzz` | bool | `false` | Build the libFuzzer harnesses under `core/test/fuzz/`; see [`fuzz`](#fuzz). |
 | `enable_rust_features` | bool | `false` | Build the Rust extractors (Rust twins, TAD); see [`enable_rust_features`](#enable_rust_features). |
+| `cmake_package` | feature | `auto` | Generate and install CMake package files (`vmafxConfig.cmake`, `vmafxConfigVersion.cmake`); see [`cmake_package`](#cmake_package). |
 
 ### SIMD
 
@@ -168,6 +169,19 @@ under [Option details](#option-details).
 ## Option details
 
 Options whose behaviour needs more than one sentence.
+
+### `cmake_package`
+
+Controls whether Meson generates and installs CMake package configuration files
+(`vmafxConfig.cmake` and `vmafxConfigVersion.cmake`) under
+`<libdir>/cmake/vmafx/`.
+
+Default `auto`: probes for the `cmake` binary via `find_program('cmake')`. If
+found, generates and installs both files; if not found, emits a Meson configure
+warning and skips installation without failing the build. Setting
+`-Dcmake_package=enabled` requires `cmake` in PATH and fails configure if
+missing. Setting `-Dcmake_package=disabled` skips CMake package generation
+completely without probing or warnings.
 
 ### `enable_float`
 
