@@ -626,7 +626,7 @@ def _escapes_search_root(
         resolved = (base_dir / clean_val).resolve()
         search_root_resolved = search_root.resolve()
         return not str(resolved).startswith(str(search_root_resolved))
-    except ValueError, OSError:
+    except (ValueError, OSError):
         return True
 
 
@@ -651,7 +651,7 @@ def _exists_beside(base: Path, clean_val: str) -> bool:
     """True when ``base / clean_val`` exists (an unusable path counts as absent)."""
     try:
         return (base / clean_val).exists()
-    except ValueError, OSError:
+    except (ValueError, OSError):
         return False
 
 
@@ -1221,7 +1221,7 @@ def _is_repo_local_target(target: str, root: Path | None = None) -> bool:
     search_root = _resolve_search_root(root)
     try:
         return (search_root / clean).exists()
-    except ValueError, OSError:
+    except (ValueError, OSError):
         return False
 
 
@@ -1622,13 +1622,30 @@ def tracked_paths(root: Path) -> list[Path]:
 # Text that restates the uv version goes stale on the next uv update (the requirements
 # guide still said 0.13.1 after the manifest moved to 0.13.6). Decision records and the
 # changelog describe their own moment and keep their numbers.
-UV_VERSION_ECHO = re.compile(r"\buv_version\b.*?\b\d+\.\d+\.\d+\b")
-UV_VERSION_HISTORY = ("CHANGELOG.md", "changelog.d/", "docs/adr/")
+UV_VERSION_ECHO = re.compile(
+    r"\b(?:uv_version|vmafx-uv-version|uv)\b.{0,40}?\b\d+\.\d+\.\d+\b"
+    r"|"
+    r"\b\d+\.\d+\.\d+\b.{0,40}?\b(?:uv_version|vmafx-uv-version)\b"
+)
+UV_VERSION_HISTORY_PREFIXES = (
+    "changelog.d/",
+    "docs/adr/",
+    "docs/changelog-archive/",
+    "docs/research/",
+)
+# docs/state.md rows are dated records of what happened then.
+UV_VERSION_HISTORY_EXACT = ("CHANGELOG.md", "docs/state.md")
+
+
+def is_uv_version_history_path(relative: Path) -> bool:
+    """True when the path is a dated record (changelog, decision, research, state row)."""
+    posix = relative.as_posix()
+    return posix in UV_VERSION_HISTORY_EXACT or posix.startswith(UV_VERSION_HISTORY_PREFIXES)
 
 
 def scan_uv_version_echo(relative: Path, text: str) -> list[str]:
     """Report each line of a guide that restates the reviewed uv version."""
-    if relative.suffix.lower() != ".md" or relative.as_posix().startswith(UV_VERSION_HISTORY):
+    if relative.suffix.lower() != ".md" or is_uv_version_history_path(relative):
         return []
     return [
         f"{relative}:{number}: names a uv version; point at uv_version in {MANIFEST_PATH}"
@@ -1637,8 +1654,8 @@ def scan_uv_version_echo(relative: Path, text: str) -> list[str]:
     ]
 
 
-def tracked_consumer_paths(root: Path) -> list[Path]:
-    raw_paths = tracked_paths(root)
+def tracked_consumer_paths(root: Path, all_paths: list[Path] | None = None) -> list[Path]:
+    raw_paths = tracked_paths(root) if all_paths is None else all_paths
     paths = []
     for relative in raw_paths:
         parts = relative.parts
@@ -1794,14 +1811,16 @@ def check(root: Path) -> int:
             if str(lock_file) not in outputs_paths:
                 problems.append(f"unregistered lock file {lock_file} not present in manifest")
 
-        for relative in tracked_paths(root):
-            if relative.suffix.lower() == ".md":
+        all_tracked = tracked_paths(root)
+
+        for relative in all_tracked:
+            if relative.suffix.lower() == ".md" and not is_uv_version_history_path(relative):
                 guide = root / relative
                 if guide.is_file():
                     text = guide.read_text(encoding="utf-8", errors="replace")
                     problems.extend(scan_uv_version_echo(relative, text))
 
-        for relative in tracked_consumer_paths(root):
+        for relative in tracked_consumer_paths(root, all_paths=all_tracked):
             try:
                 text = (root / relative).read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as error:

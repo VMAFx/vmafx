@@ -1890,8 +1890,9 @@ version = "7"
 class UvVersionEchoTests(unittest.TestCase):
     """A guide that restates the uv version goes stale on the next uv update."""
 
-    def setUp(self) -> None:
-        self.checker = load_checker()
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.checker = load_checker()
 
     def test_planted_restated_version_is_refused(self) -> None:
         text = "1. x\n   - Pinned generator `uv_version` is exact (`0.13.1`).\n"
@@ -1899,22 +1900,82 @@ class UvVersionEchoTests(unittest.TestCase):
         self.assertEqual(len(problems), 1, problems)
         self.assertIn("requirements/AGENTS.md:2:", problems[0])
 
+    def test_new_forms_and_reversed_orders_are_refused(self) -> None:
+        forms = [
+            "uv 0.13.5",
+            "uv==0.13.6",
+            "`uv` (`0.13.5`)",
+            "pinned uv 0.13.5",
+            "version of `uv` (`0.13.5`)",
+            "uv_version: 0.13.5",
+            "0.13.5 (uv_version)",
+            "vmafx-uv-version: 0.13.5",
+            "0.13.5 (vmafx-uv-version)",
+        ]
+        for line in forms:
+            with self.subTest(line=line):
+                problems = self.checker.scan_uv_version_echo(Path("docs/guide.md"), line)
+                self.assertEqual(
+                    len(problems), 1, f"Expected 1 problem for {line!r}, got {problems}"
+                )
+
+    def test_negatives_do_not_match(self) -> None:
+        negatives = [
+            "uvicorn 0.29.0",
+            "uvloop 0.19.0",
+            "uv " + ("x" * 39) + " 0.13.5",
+            "Python 3.11.0 with uv",
+        ]
+        for line in negatives:
+            with self.subTest(line=line):
+                problems = self.checker.scan_uv_version_echo(Path("docs/guide.md"), line)
+                self.assertEqual(problems, [], f"Expected no problems for {line!r}, got {problems}")
+
     def test_pointer_without_number_passes(self) -> None:
         text = "version of `uv` (`uv_version` in `requirements/locks/manifest.json`).\n"
         self.assertEqual(self.checker.scan_uv_version_echo(Path("docs/development/x.md"), text), [])
 
     def test_history_and_non_guides_keep_their_numbers(self) -> None:
         text = "binary (`uv_version: 0.12.18`).\n"
-        for name in ("docs/adr/1305-x.md", "CHANGELOG.md", "changelog.d/security/x.md", "a.py"):
+        for name in (
+            "docs/adr/1305-x.md",
+            "CHANGELOG.md",
+            "changelog.d/security/x.md",
+            "docs/changelog-archive/1.0.0-rc.1.md",
+            "docs/research/1305-x.md",
+            "docs/state.md",
+            "a.py",
+        ):
             with self.subTest(name=name):
                 self.assertEqual(self.checker.scan_uv_version_echo(Path(name), text), [])
         self.assertEqual(len(self.checker.scan_uv_version_echo(Path("docs/adr.md"), text)), 1)
+        self.assertEqual(
+            len(self.checker.scan_uv_version_echo(Path("CHANGELOG.md-foo.md"), text)), 1
+        )
+
+    def test_planted_guide_in_temp_root_fails_check(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            manifest_dir = temp_root / "requirements" / "locks"
+            manifest_dir.mkdir(parents=True)
+            manifest_file = manifest_dir / "manifest.json"
+            manifest_file.write_text(
+                json.dumps({"uv_version": "0.13.6", "locks": []}),
+                encoding="utf-8",
+            )
+            self.assertEqual(self.checker.check(temp_root), 0)
+            guide = temp_root / "docs" / "guide.md"
+            guide.parent.mkdir(parents=True)
+            guide.write_text("pinned uv 0.13.6\n", encoding="utf-8")
+            self.assertEqual(self.checker.check(temp_root), 1)
 
     def test_repository_guides_do_not_restate_the_version(self) -> None:
         problems = [
             problem
             for relative in self.checker.tracked_paths(ROOT)
-            if relative.suffix == ".md" and (ROOT / relative).is_file()
+            if relative.suffix.lower() == ".md"
+            and not self.checker.is_uv_version_history_path(relative)
+            and (ROOT / relative).is_file()
             for problem in self.checker.scan_uv_version_echo(
                 relative, (ROOT / relative).read_text(encoding="utf-8", errors="replace")
             )
