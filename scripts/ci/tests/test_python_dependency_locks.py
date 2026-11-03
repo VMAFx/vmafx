@@ -1890,6 +1890,8 @@ version = "7"
 class UvVersionEchoTests(unittest.TestCase):
     """A guide that restates the uv version goes stale on the next uv update."""
 
+    checker: Any
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.checker = load_checker()
