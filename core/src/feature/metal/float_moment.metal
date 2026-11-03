@@ -12,7 +12,7 @@
  *  scaler and the second moments by scaler².
  *
  *  moment.c forms each square in float. At 8 bits that is the integer square.
- *  The 10/12/16-bit kernel adds vmaf_mtl_moment_float_square()
+ *  The 9..16-bit kernel adds vmaf_mtl_moment_float_square()
  *  (metal_float_moment_math.h): one fp32 product of the sample with itself,
  *  an integer below 2^32, which at 16 bits is the integer square rounded to
  *  24 bits as the CPU's float is (ADR-1498; the design of ADR-1453, ADR-1449,

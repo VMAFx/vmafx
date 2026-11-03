@@ -54,7 +54,23 @@ CUDA_HOST = "cuda/integer_moment_cuda.c"
 HIP_KERNEL = "hip/float_moment/moment_score.hip"
 HIP_HOST = "hip/float_moment_hip.c"
 SYCL = "sycl/integer_moment_sycl.cpp"
-FILES = (SUM, GPU, CUDA_KERNEL, CUDA_HOST, HIP_KERNEL, HIP_HOST, SYCL)
+METAL_HOST = "metal/float_moment_metal.mm"
+FILES = (SUM, GPU, CUDA_KERNEL, CUDA_HOST, HIP_KERNEL, HIP_HOST, SYCL, METAL_HOST)
+
+SCALER_CALLS = (
+    (CUDA_HOST, "static double moment_cuda_scaler(", "return vmaf_float_moment_scaler(bpc);"),
+    (HIP_HOST, "static double moment_hip_scaler(", "return vmaf_float_moment_scaler(bpc);"),
+    (
+        SYCL,
+        "static int collect_fex_sycl(",
+        "const double moment_scaler = vmaf_float_moment_scaler(s->bpc);",
+    ),
+    (
+        METAL_HOST,
+        "static int collect_fex_metal(",
+        "const double scaler = vmaf_float_moment_scaler(s->bpc);",
+    ),
+)
 
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
 KERNELS = ("moment_row_totals", "moment_row_plans", "moment_row_units", "moment_ordered_totals")
@@ -195,6 +211,14 @@ def _metal_failures(sources: dict[str, str]) -> list[str]:
     return metal_contract._contract_failures(metal)
 
 
+def _scaler_failures(sources: dict[str, str]) -> list[str]:
+    failures = []
+    for name, signature, call in SCALER_CALLS:
+        if call not in _body(_flat(sources[name]), signature):
+            failures.append(f"{name}: host does not use the shared scaler")
+    return failures
+
+
 def _contract_failures(sources: dict[str, str]) -> list[str]:
     return (
         _header_failures(sources[SUM])
@@ -205,6 +229,7 @@ def _contract_failures(sources: dict[str, str]) -> list[str]:
         + _hip_host_failures(sources[HIP_HOST])
         + _sycl_failures(sources[SYCL])
         + _metal_failures(sources)
+        + _scaler_failures(sources)
     )
 
 
@@ -217,6 +242,14 @@ class FloatMomentSumContract(unittest.TestCase):
 
     def test_sources_satisfy_the_contract(self) -> None:
         self.assertEqual(_contract_failures(_sources()), [])
+
+    def test_private_scaler_is_detected(self) -> None:
+        for name, _, call in SCALER_CALLS:
+            with self.subTest(backend=name):
+                failures = self._edited(
+                    name, call, call.replace("vmaf_float_moment_scaler", "old_scaler")
+                )
+                self.assertTrue(any("shared scaler" in item for item in failures), failures)
 
     def test_tie_away_from_even_is_detected(self) -> None:
         failures = self._edited(
