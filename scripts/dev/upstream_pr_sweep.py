@@ -355,7 +355,6 @@ def worktree_lock(wt: Path) -> Iterator[tuple[bool, str]]:
         yield True, ""
     finally:
         if locked:
-            lock_path.unlink(missing_ok=True)
             fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)
 
@@ -535,9 +534,10 @@ def check_commit_authors(repo: Path, base_sha: str, old_sha: str) -> tuple[bool,
     rc, out, err = git_cmd(repo, ["log", "--format=%ae%x00%ce", f"{base_sha}..{old_sha}"])
     if rc != 0:
         return False, f"cannot inspect commit authors: {err.strip()}"
-    for line in out.splitlines()[:MAX_PR_COMMITS]:
-        if not line.strip():
-            continue
+    lines = [line.strip() for line in out.splitlines() if line.strip()]
+    if len(lines) > MAX_PR_COMMITS:
+        return False, f"range has more than {MAX_PR_COMMITS} commits; refusing"
+    for line in lines[:MAX_PR_COMMITS]:
         for email in line.split("\x00")[:2]:
             normalized = email.strip().lower()
             if normalized and normalized not in allowed:
@@ -606,12 +606,19 @@ def run_rebase(wt: Path, base_sha: str) -> tuple[str | None, str]:
     return "REBASE-FAIL", first_line or f"git rebase exited {rc}"
 
 
-def count_unsigned(wt: Path, base_sha: str) -> int:
-    rc, out, _ = git_cmd(wt, ["log", "--format=%G?", f"{base_sha}..HEAD"])
+def count_unsigned(wt: Path, base_sha: str) -> tuple[int, str]:
+    rc, out, err = git_cmd(wt, ["log", "--format=%G?", f"{base_sha}..HEAD"])
     if rc != 0:
-        return -1
-    lines = [line.strip() for line in out.splitlines()[:MAX_PR_COMMITS] if line.strip()]
-    return sum(1 for line in lines if line != "G")
+        detail = (
+            f"git log signature verification failed: {err.strip()}"
+            if err.strip()
+            else "git log signature verification failed"
+        )
+        return -1, detail
+    lines = [line.strip() for line in out.splitlines() if line.strip()]
+    if len(lines) > MAX_PR_COMMITS:
+        return -1, f"range has more than {MAX_PR_COMMITS} commits; refusing"
+    return sum(1 for line in lines[:MAX_PR_COMMITS] if line != "G"), ""
 
 
 def _run_meson_setup(vmaf_dir: Path, log_path: Path, is_cuda: bool) -> tuple[bool, str]:
@@ -801,17 +808,18 @@ def _verify_rebased_head(
     if head_rc != 0 or not new_sha:
         detail = f"rev-parse HEAD failed: {head_err.strip()}" if head_rc != 0 else "empty HEAD SHA"
         return SweepRow(target.number, target.branch, "REBASE-FAIL", old_sha, "-", 0, detail), None
-    unsigned = count_unsigned(wt, base_sha)
+    unsigned, unsigned_detail = count_unsigned(wt, base_sha)
     if unsigned < 0:
+        status = "REFUSED" if "refusing" in unsigned_detail else "REBASE-FAIL"
         return (
             SweepRow(
                 target.number,
                 target.branch,
-                "REBASE-FAIL",
+                status,
                 old_sha,
                 new_sha,
                 0,
-                "git log signature verification failed",
+                unsigned_detail,
             ),
             None,
         )

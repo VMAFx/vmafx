@@ -1120,7 +1120,11 @@ class UpstreamPrSweepTest(unittest.TestCase):
         self.assertIn("abort failed", detail)
 
         with patch.object(sweep_mod, "git_cmd", return_value=(128, "", "fatal: bad revision")):
-            self.assertEqual(sweep_mod.count_unsigned(self.repo, self.upstream_master_sha), -1)
+            unsigned, unsigned_detail = sweep_mod.count_unsigned(
+                self.repo, self.upstream_master_sha
+            )
+            self.assertEqual(unsigned, -1)
+            self.assertIn("fatal: bad revision", unsigned_detail)
 
         target = sweep_mod.PRTarget(number=1, branch="fix/pr-1", head_owner="testfork")
         with (
@@ -1339,6 +1343,101 @@ class UpstreamPrSweepTest(unittest.TestCase):
         ok, detail = sweep_mod.check_origin_url(self.repo, "testfork/vmaf")
         self.assertFalse(ok)
         self.assertIn(f"origin has more than {sweep_mod.MAX_ORIGIN_URLS} URLs; refusing", detail)
+
+    def test_T31_worktree_lock_flock_persists_on_disk_and_concurrent_refused(self) -> None:
+        wt = sweep_mod.pr_worktree_path(self.worktree_root, 99)
+        lock_path = wt.parent / f"{wt.name}.lock"
+        self.assertFalse(lock_path.exists())
+
+        with sweep_mod.worktree_lock(wt) as (acquired1, detail1):
+            self.assertTrue(acquired1, detail1)
+            self.assertTrue(lock_path.is_file())
+            with sweep_mod.worktree_lock(wt) as (acquired2, detail2):
+                self.assertFalse(acquired2)
+                self.assertIn("worktree lock busy", detail2)
+
+        self.assertTrue(lock_path.is_file())
+
+        with sweep_mod.worktree_lock(wt) as (acquired3, detail3):
+            self.assertTrue(acquired3, detail3)
+            self.assertTrue(lock_path.is_file())
+        self.assertTrue(lock_path.is_file())
+
+        fallback_wt = sweep_mod.pr_worktree_path(self.worktree_root, 100)
+        fallback_lock = fallback_wt.parent / f"{fallback_wt.name}.lock"
+        with patch.object(sweep_mod, "fcntl", None):
+            with sweep_mod.worktree_lock(fallback_wt) as (acq_fb, _):
+                self.assertTrue(acq_fb)
+                self.assertTrue(fallback_lock.is_file())
+            self.assertFalse(fallback_lock.exists())
+
+    def test_T32_check_commit_authors_boundary_accepted_and_excess_refused(self) -> None:
+        branch = "fix/boundary-authors"
+        git_run(self.setup_clone, "checkout", "-b", branch, self.upstream_master_sha)
+        sha_list: list[str] = []
+        for i in range(4):
+            (self.setup_clone / f"file_{i}.txt").write_text(f"content {i}\n", encoding="utf-8")
+            git_run(self.setup_clone, "add", f"file_{i}.txt")
+            git_run(self.setup_clone, "commit", "-m", f"commit {i}")
+            sha_list.append(git_run(self.setup_clone, "rev-parse", "HEAD"))
+        git_run(self.setup_clone, "push", str(self.fork_bare), f"{branch}:{branch}")
+        git_run(self.repo, "fetch", "origin", branch)
+
+        sha_3 = sha_list[2]
+        sha_4 = sha_list[3]
+
+        with patch.object(sweep_mod, "MAX_PR_COMMITS", 3):
+            ok3, detail3 = sweep_mod.check_commit_authors(
+                self.repo, self.upstream_master_sha, sha_3
+            )
+            self.assertTrue(ok3, detail3)
+            self.assertEqual(detail3, "")
+
+            ok4, detail4 = sweep_mod.check_commit_authors(
+                self.repo, self.upstream_master_sha, sha_4
+            )
+            self.assertFalse(ok4)
+            self.assertEqual(detail4, "range has more than 3 commits; refusing")
+
+    def test_T33_count_unsigned_boundary_accepted_and_excess_refused(self) -> None:
+        branch = "fix/boundary-unsigned"
+        git_run(self.setup_clone, "checkout", "-b", branch, self.upstream_master_sha)
+        for i in range(4):
+            (self.setup_clone / f"signed_{i}.txt").write_text(f"data {i}\n", encoding="utf-8")
+            git_run(self.setup_clone, "add", f"signed_{i}.txt")
+            git_run(self.setup_clone, "commit", "-m", f"signed commit {i}")
+        sha_4 = git_run(self.setup_clone, "rev-parse", "HEAD")
+        sha_3 = git_run(self.setup_clone, "rev-parse", "HEAD~1")
+
+        with patch.object(sweep_mod, "MAX_PR_COMMITS", 3):
+            git_run(self.setup_clone, "checkout", "--detach", sha_3)
+            count3, detail3 = sweep_mod.count_unsigned(self.setup_clone, self.upstream_master_sha)
+            self.assertGreaterEqual(count3, 0)
+            self.assertEqual(detail3, "")
+
+            git_run(self.setup_clone, "checkout", "--detach", sha_4)
+            count4, detail4 = sweep_mod.count_unsigned(self.setup_clone, self.upstream_master_sha)
+            self.assertEqual(count4, -1)
+            self.assertEqual(detail4, "range has more than 3 commits; refusing")
+
+    def test_T34_oversized_commit_range_refuses_in_verify_rebased_head(self) -> None:
+        target = sweep_mod.PRTarget(number=42, branch="fix/pr-42", head_owner="testfork")
+        with (
+            patch.object(sweep_mod, "git_cmd", return_value=(0, "newsha\n", "")),
+            patch.object(
+                sweep_mod,
+                "count_unsigned",
+                return_value=(-1, "range has more than 3 commits; refusing"),
+            ),
+        ):
+            fail_row, new_sha = sweep_mod._verify_rebased_head(
+                self.repo, target, self.pr_old_sha, self.upstream_master_sha
+            )
+        self.assertIsNone(new_sha)
+        assert fail_row is not None
+        self.assertEqual(fail_row.status, "REFUSED")
+        self.assertEqual(fail_row.detail, "range has more than 3 commits; refusing")
+        self.assertEqual(fail_row.number, 42)
 
 
 if __name__ == "__main__":

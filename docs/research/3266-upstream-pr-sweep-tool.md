@@ -29,10 +29,12 @@
 3. **Commit authorship and build environment isolation**:
    - Checking that every commit in `base..old_sha` has an author and committer email in the operator's identity set before `git rebase --gpg-sign` prevents signing untrusted third-party commits unless `--allow-foreign-authors` is explicitly set.
    - Passing `build_environment()` (which applies `sanitize_process_environment` and an allow-list of compiler/build variables) to `meson setup`, `ninja`, and `meson test` prevents PR build files from reading `GITHUB_TOKEN`, `GH_TOKEN`, `SSH_AUTH_SOCK`, or cloud credentials.
+   - Author verification and unsigned commit counting fail closed by refusing any PR range exceeding `MAX_PR_COMMITS` commits instead of silently truncating the inspection.
 4. **Worktree registration, detached checkout, and locking**:
    - Verifying existing worktrees against `git worktree list --porcelain` prevents modifying unrelated checkouts at candidate paths.
    - Preparing worktrees with `git checkout --detach <old_sha>` avoids `git checkout -B <branch>` failures when `<branch>` is checked out in another worktree.
    - Acquiring a non-blocking `fcntl.flock` lock (`<worktree>.lock`, with `O_CREAT | O_EXCL` fallback when `fcntl` is unavailable) serializes concurrent sweeps targeting the same PR.
+   - On platforms with `fcntl` support, the lock file persists on disk after lock release to prevent inode-recreation race conditions between concurrent processes, while the non-flock fallback unlinks the lock file on release.
 
 ## Alternatives explored
 
