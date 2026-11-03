@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import yaml
+import yaml  # type: ignore[import-untyped]  # no PyYAML stubs in the hook environment
 
 from scripts.ci import check_hosted_runner_labels
 from scripts.release import check_glibc_floor, distribution
@@ -23,13 +23,19 @@ ARGPARSE_USAGE_EXIT = 2
 LIBRARY_COUNT = 2
 
 
-@pytest.mark.parametrize("version", ["2.2.5", "2.17", "2.28"])
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
+    "version",
+    ["2.2.5", "2.17", "2.28"],
+)
 def test_manifest_glibc_floor_accepts_compatible_symbols(version: str) -> None:
     symbols = f"0000 DF *UND* 0000 (GLIBC_{version}) memcpy\n"
     assert check_glibc_floor.check_symbols(symbols, (2, 28)) is None
 
 
-@pytest.mark.parametrize("version", ["2.29", "2.41", "2.100", "PRIVATE", "ABI_DT_RELR"])
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
+    "version",
+    ["2.29", "2.41", "2.100", "PRIVATE", "ABI_DT_RELR"],
+)
 def test_manifest_glibc_floor_rejects_planted_new_symbols(version: str) -> None:
     symbols = f"0000 DF *UND* 0000 (GLIBC_{version}) memcpy\n"
     assert check_glibc_floor.check_symbols(symbols, (2, 28)) is not None
@@ -42,13 +48,13 @@ def test_manifest_glibc_floor_rejects_empty_symbol_table() -> None:
 def test_manifest_glibc_floor_objdump_failure_is_fatal(tmp_path: Path) -> None:
     binary = tmp_path / "vmaf"
     binary.write_bytes(b"ELF fixture")
-    with patch.object(check_glibc_floor.subprocess, "run") as run:
+    with patch("scripts.release.check_glibc_floor.subprocess.run") as run:
         run.side_effect = subprocess.CalledProcessError(1, ["objdump"], stderr="bad ELF")
         assert check_glibc_floor.main(["2.28", str(binary)]) == 1
 
 
 def test_manifest_glibc_floor_accepts_staged_cli() -> None:
-    with patch.object(check_glibc_floor.subprocess, "run") as run:
+    with patch("scripts.release.check_glibc_floor.subprocess.run") as run:
         run.return_value = subprocess.CompletedProcess([], 0, "(GLIBC_2.28) memcpy", "")
         assert check_glibc_floor.main(["2.28", "artifacts/vmaf"]) == 0
         assert run.call_args.kwargs["timeout"] == OBJDUMP_TIMEOUT_S
@@ -64,7 +70,7 @@ def test_manifest_glibc_floor_inspects_each_library(tmp_path: Path) -> None:
     binaries = [tmp_path / "vmaf", tmp_path / "libvmafx.so.1"]
     for binary in binaries:
         binary.write_bytes(b"ELF fixture")
-    with patch.object(check_glibc_floor.subprocess, "run") as run:
+    with patch("scripts.release.check_glibc_floor.subprocess.run") as run:
         run.side_effect = [
             subprocess.CompletedProcess([], 0, "(GLIBC_2.17) memcpy", ""),
             subprocess.CompletedProcess([], 0, "(GLIBC_2.41) sqrtf", ""),
