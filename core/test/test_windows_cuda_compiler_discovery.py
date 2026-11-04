@@ -58,7 +58,11 @@ def discovery_block() -> str:
     marker = "# nvcc runs on the build machine and needs a host compiler for"
     start = source.index("        if nvcc_build_msvc != ''", source.index(marker))
     end = source.index("        nvcc_ver_out = run_command(nvcc_exe, '--version', check: true)", start)
-    return textwrap.dedent(source[start:end])
+    block = textwrap.dedent(source[start:end])
+    assert "build_machine.system()" in block, (
+        "discovery block no longer consults the build machine; "
+        "update the fixture_build_system injection")
+    return block.replace("build_machine.system()", "fixture_build_system")
 
 
 DISCOVERED_COMPILER = "C:/Visual Studio/VC/Tools/MSVC/14.99/bin/HostX64/x64/cl.exe"
@@ -120,20 +124,19 @@ def _write_powershell_stub(binary_dir: Path) -> None:
     powershell.chmod(0o700)
 
 
-def _write_cross_file(root: Path, build_machine: str = "") -> Path:
+def _write_cross_file(root: Path) -> Path:
     """Write the cross file that makes Meson evaluate the Windows branch.
 
-    ``build_machine`` optionally pins the build machine (for example to Linux)
-    to exercise the cross-compile path of the discovery block, where nvcc runs
-    on a non-Windows machine while the produced fatbins target Windows.
+    Only the host machine is pinned: meson derives the build machine from
+    the runner and a cross file cannot override it, so the discovery
+    block's build-machine guard is exercised through the injected
+    ``fixture_build_system`` variable instead.
     """
     cross = root / "windows.ini"
     content = (
         "[host_machine]\nsystem = 'windows'\ncpu_family = 'x86_64'\n"
         "cpu = 'x86_64'\nendian = 'little'\n"
     )
-    if build_machine:
-        content += f"[build_machine]\nsystem = '{build_machine}'\n"
     cross.write_text(content, encoding="utf-8")
     return cross
 
@@ -143,12 +146,16 @@ def _write_project(
     expected_compiler: str,
     build_msvc: str = "",
     checks: str = "",
+    fixture_build_system: str = "windows",
 ) -> None:
     """Write the tiny Meson project that runs the shipped discovery block.
 
     ``nvcc_build_msvc`` is what core/src/meson.build derives from the build's
     C++ compiler when that compiler is MSVC; a project without languages cannot
     hold a compiler object, so the fixture sets the variable directly.
+    ``fixture_build_system`` stands in for ``build_machine.system()`` so the
+    block's elif guard runs identically on every host (meson derives the build
+    machine from the runner and a cross file cannot override it).
     ``checks`` defaults to the Windows-branch assertions and can be replaced by
     cross-scenario assertions (the cross path sets empty ccbin flags and host
     includes).
@@ -166,6 +173,7 @@ def _write_project(
     (root / "meson.build").write_text(
         "project('windows-cuda-discovery')\n"
         + f"nvcc_build_msvc = '{build_msvc}'\n"
+        + f"fixture_build_system = '{fixture_build_system}'\n"
         + "cl_path = ''\n"
         + discovery_block()
         + checks,
@@ -208,9 +216,11 @@ def _build_fixture(
     # executable found by Meson, including the PATH fallback.
     if build_machine:
         # Cross scenario: the else branch must run with empty ccbin flags and
-        # host includes; the assertions live in the fixture project.
-        _write_project(root, "''", build_msvc, checks=cross_checks)
-        return binary_dir, _write_cross_file(root, build_machine=build_machine)
+        # host includes; the assertions live in the fixture project. The
+        # injected build system is 'linux', mirroring the real cross host.
+        _write_project(root, "''", build_msvc, checks=cross_checks,
+                       fixture_build_system=build_machine)
+        return binary_dir, _write_cross_file(root)
     if build_msvc:
         expected_compiler = f"'{build_msvc}'"
     elif vswhere == "found":

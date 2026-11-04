@@ -1627,13 +1627,6 @@ if is_cuda_enabled
                         error('MSVC cl.exe not found. nvcc on Windows requires Visual Studio Build Tools.')
                     endif
         endif
-        if cl_path == ''
-            cl_exe = find_program('cl', required: false)
-            if cl_exe.found()
-                cl_path = cl_exe.full_path()
-                message('Found MSVC cl.exe at: ' + cl_path)
-            endif
-        endif
         endif
         if cl_path != ''
             nvcc_ccbin_flags = ['--allow-unsupported-compiler', '-ccbin', cl_path]
@@ -1666,15 +1659,18 @@ if is_cuda_enabled
             else
                 warning('Could not find MSVC/Windows SDK include paths. nvcc compilation may fail.')
             endif
-        elif host_machine.system() == 'windows' and build_machine.system() == 'windows'
-            error('MSVC cl.exe not found. nvcc on Windows requires Visual Studio Build Tools.')
         else
             # Cross builds and non-Windows native builds: device-only fatbins
-            # need no host compiler pass on the build machine.
+            # use the build machine's default host compiler only for
+            # preprocessing; the kernels use no platform-dependent types or
+            # macros.
             nvcc_ccbin_flags = []
             nvcc_host_includes = []
         endif
 
+        # Detect CUDA version from nvcc directly instead of add_languages('cuda'),
+        # which requires MSVC on Windows and fails with MinGW.
+        # nvcc --version outputs: "...Cuda compilation tools, release 12.6, V12.6.85..."
         nvcc_ver_out = run_command(nvcc_exe, '--version', check: true)
         cuda_version = nvcc_ver_out.stdout().strip().split('release ')[1].split(',')[0]
         message('Found CUDA version = @0@'.format(cuda_version))
