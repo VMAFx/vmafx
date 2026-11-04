@@ -934,6 +934,13 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: rust-crate-packaged-headers
+        name: Packaged vmafx-sys headers match core/include (#2320)
+        entry: python3 -B scripts/ci/check_rust_crate_package.py --check-headers
+        language: system
+        pass_filenames: false
+        files: '^(core/include/libvmaf/|bindings/rust/vmafx-sys/include/|scripts/ci/check_rust_crate_package\.py$)'
+
       - id: test-check-source-adr-citations
         name: Source ADR citation gate keeps live, retired and fixture boundaries
         entry: python3 -B scripts/ci/tests/test_check_source_adr_citations.py

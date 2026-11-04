@@ -63,6 +63,17 @@ if host_machine.system() == 'windows' and (cc.get_id() == 'gcc' or cxx.get_id() 
     warning('MinGW GCC (c=' + cc.get_id() + ', cpp=' + cxx.get_id() + ') with default_library=' + get_option('default_library') + ' and b_lto=true: substituting -fno-lto because an LTO-linked DLL import library lacks function thunks and executables abort before main (32-bit pseudo relocation out of range; static builds keep LTO; VMAFx/vmafx#3257, ADR-3397).')
 endif
 
+# The DLLs carry no dllexport, so GNU ld auto-exports every global it links. Its
+# built-in filter skips libgcc, libstdc++ and the MinGW runtime archives but not
+# libgcc_eh.a, which a -static link pulls into the DLL: libvmafx then exported the 18
+# unwinder symbols (_Unwind_Resume, ...), and an executable that links both the import
+# library and a static libgcc_eh failed with "multiple definition of _Unwind_Resume"
+# once ADR-3397 turned LTO off. The unwinder stays inside the DLL, off the export table.
+# check_mingw_import_thunks.py --runtime-archive refuses a DLL exporting such a symbol.
+if host_machine.system() == 'windows' and get_option('default_library') != 'static' and cc.get_linker_id() == 'ld.bfd'
+    add_project_link_arguments('-Wl,--exclude-libs,libgcc_eh.a', language: ['c', 'cpp'])
+endif
+
 libvmaf_inc = include_directories(['include'])
 
 # Meson's built-in standard option reaches compiler feature probes as well as

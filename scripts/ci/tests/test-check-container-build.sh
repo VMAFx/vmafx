@@ -118,8 +118,8 @@ marker_inheritance_faults() {
 
 # Exactly two stages write the marker, once each: build-deps (libvmaf-build
 # and the compile stages inherit it through gpu-sdks) and release-build, the
-# Debian 13 release-track root the native release compiles in (ADR-1354).
-# release-build must root at RELEASE_BUILDER_BASE and write the same bytes as
+# manylinux glibc 2.28 root the native release compiles in (ADR-1354).
+# release-build must root at NATIVE_RELEASE_BUILDER_BASE and write the same bytes as
 # build-deps.
 if [ -f "$CONTAINERFILE" ]; then
   writes="$(grep -c '> /etc/vmafx-dev-container' "$CONTAINERFILE" || [ "$?" -eq 1 ])"
@@ -128,7 +128,7 @@ if [ -f "$CONTAINERFILE" ]; then
   # suite silently through set -e and pipefail.
   deps_line="$(grep -n '^FROM .* AS build-deps$' "$CONTAINERFILE" | head -1 | cut -d: -f1 || [ "$?" -eq 1 ])"
   sdks_line="$(grep -n '^FROM build-deps AS gpu-sdks$' "$CONTAINERFILE" | head -1 | cut -d: -f1 || [ "$?" -eq 1 ])"
-  release_line="$(grep -n '^FROM [$]{RELEASE_BUILDER_BASE} AS release-build$' "$CONTAINERFILE" |
+  release_line="$(grep -n '^FROM [$]{NATIVE_RELEASE_BUILDER_BASE} AS release-build$' "$CONTAINERFILE" |
     head -1 | cut -d: -f1 || [ "$?" -eq 1 ])"
   # marker_in_stage <FROM line> — the marker write inside that stage, if any.
   marker_in_stage() {
@@ -172,7 +172,7 @@ if [ -f "$CONTAINERFILE" ]; then
   }
   chain_case "libvmaf-build directly on gpu-sdks" "" <<'GRAPH'
 FROM ${DEV_BASE} AS build-deps
-FROM ${RELEASE_BUILDER_BASE} AS release-build
+FROM ${NATIVE_RELEASE_BUILDER_BASE} AS release-build
 FROM build-deps AS gpu-sdks
 FROM gpu-sdks AS libvmaf-build
 FROM ${DEV_GO_BASE} AS go-toolchain
@@ -220,10 +220,10 @@ GRAPH
   fi
   if [ -n "$release_marker" ] && cmp -s "$CONTAINER_MARKER" "$RELEASE_EXTRACTED"; then
     PASS=$((PASS + 1))
-    echo "ok   release-build roots at RELEASE_BUILDER_BASE and writes the same marker"
+    echo "ok   release-build roots at NATIVE_RELEASE_BUILDER_BASE and writes the same marker"
   else
     FAIL=$((FAIL + 1))
-    echo "FAIL release-build must root at \${RELEASE_BUILDER_BASE} and write the build-deps marker"
+    echo "FAIL release-build must root at \${NATIVE_RELEASE_BUILDER_BASE} and write the build-deps marker"
     diff -u "$CONTAINER_MARKER" "$RELEASE_EXTRACTED" | sed 's/^/       | /' || [ "$?" -eq 1 ]
   fi
 
