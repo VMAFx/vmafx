@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1434), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1435), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5747,3 +5747,7 @@ Every ADR, one heading each (1434), so the site search finds an ADR by its title
 ## ADR-3397: MinGW GCC DLL builds turn LTO off
 
 [3397-mingw-gcc-dll-lto-off](3397-mingw-gcc-dll-lto-off.md)
+
+## ADR-3399: Rust crates published from the release pipeline
+
+[3399-rust-crates-published-from-release-pipeline](3399-rust-crates-published-from-release-pipeline.md)

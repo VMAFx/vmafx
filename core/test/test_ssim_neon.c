@@ -110,8 +110,8 @@ static void ref_variance(float *ref_sigma_sqd, float *cmp_sigma_sqd, float *sigm
 /* Transcribed from ssim_accumulate_default_scalar() in iqa/ssim_tools.c. */
 static void ref_accumulate(const float *ref_mu, const float *cmp_mu, const float *ref_sigma_sqd,
                            const float *cmp_sigma_sqd, const float *sigma_both, int w, int h,
-                           float C1, float C2, float C3, double *ssim_sum, double *l_sum,
-                           double *c_sum, double *s_sum)
+                           const float C1, const float C2, const float C3, double *ssim_sum,
+                           double *l_sum, double *c_sum, double *s_sum)
 {
     for (int y = 0; y < h; ++y) {
         int offset = y * w;
