@@ -56,7 +56,7 @@ MESON_COMMAND = _meson_command()
 def discovery_block() -> str:
     source = SOURCE.read_text(encoding="utf-8")
     marker = "# nvcc runs on the build machine and needs a host compiler for"
-    start = source.index("        cl_path = ''", source.index(marker))
+    start = source.index("        if nvcc_build_msvc != ''", source.index(marker))
     end = source.index("        nvcc_ver_out = run_command(nvcc_exe, '--version', check: true)", start)
     return textwrap.dedent(source[start:end])
 
@@ -166,6 +166,7 @@ def _write_project(
     (root / "meson.build").write_text(
         "project('windows-cuda-discovery')\n"
         + f"nvcc_build_msvc = '{build_msvc}'\n"
+        + "cl_path = ''\n"
         + discovery_block()
         + checks,
         encoding="utf-8",

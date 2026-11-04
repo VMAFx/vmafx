@@ -1572,6 +1572,7 @@ if is_cuda_enabled
         cuda_dir + 'picture_cuda.c',
     ]
     gencode = []
+    cl_path = ''
     if get_option('enable_nvcc')
         nvcc_exe = find_program('nvcc')
 
@@ -1604,11 +1605,10 @@ if is_cuda_enabled
                 nvcc_build_msvc = find_program(cxx.cmd_array()[0]).full_path()
             endif
         endif
-        cl_path = ''
         if nvcc_build_msvc != ''
             cl_path = nvcc_build_msvc
             message('nvcc host compiler: the build MSVC at ' + cl_path)
-        else
+        elif build_machine.system() == 'windows'
                 cl_find_result = run_command('powershell', '-NoProfile', '-Command',
                     '$vs = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products * -property installationPath; ' +
                     '(Get-ChildItem -Path "$vs/VC/Tools/MSVC" -Directory -ErrorAction SilentlyContinue | ' +
