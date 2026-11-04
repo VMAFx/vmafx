@@ -105,7 +105,11 @@ static char *test_float_motion_scaler(void)
     mu_assert("bpc 12 scaler must be 16.0", vmaf_float_motion_scaler(12u) == 16.0f);
     mu_assert("bpc 16 scaler must be 256.0", vmaf_float_motion_scaler(16u) == 256.0f);
     mu_assert("default scaler must be 1.0", vmaf_float_motion_scaler(0u) == 1.0f);
-    mu_assert("unknown bpc scaler must be 1.0", vmaf_float_motion_scaler(14u) == 1.0f);
+    mu_assert("bpc 9 scaler must be 2.0", vmaf_float_motion_scaler(9u) == 2.0f);
+    mu_assert("bpc 11 scaler must be 8.0", vmaf_float_motion_scaler(11u) == 8.0f);
+    mu_assert("bpc 14 scaler must be 64.0", vmaf_float_motion_scaler(14u) == 64.0f);
+    mu_assert("bpc 15 scaler must be 128.0", vmaf_float_motion_scaler(15u) == 128.0f);
+    mu_assert("bpc 17 scaler must be 1.0", vmaf_float_motion_scaler(17u) == 1.0f);
     return NULL;
 }
 

@@ -35,22 +35,15 @@
  * Bit-depth scaler for float_motion reference conversion:
  *   val = (raw / scaler) - 128.0f
  *
- * Maps bits per component (bpc) to scaler factor:
- *   8  -> 1.0f
- *   10 -> 4.0f
- *   12 -> 16.0f
- *   16 -> 256.0f
- * Default: 1.0f.
+ * The divisor of picture_copy(): 2^(bpc - 8) for every depth in (8, 16], so the
+ * odd depths (9, 11, 13 to 15) match the CPU extractor too; 1.0f otherwise.
+ * Powers of two, so the reciprocal the kernels multiply by is exact.
  */
 VMAF_FLOAT_MOTION_FUNC float vmaf_float_motion_scaler(unsigned bpc)
 {
     float scaler = 1.0f;
-    if (bpc == 10) {
-        scaler = 4.0f;
-    } else if (bpc == 12) {
-        scaler = 16.0f;
-    } else if (bpc == 16) {
-        scaler = 256.0f;
+    if (bpc > 8U && bpc <= 16U) {
+        scaler = (float)(1U << (bpc - 8U));
     }
     return scaler;
 }

@@ -35,6 +35,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "mu_table.h"
 
 #include "hip_parity_skip.h"
 
@@ -445,13 +446,13 @@ static const char *const fm_exact_keys[FM_EXACT_KEYS] = {
 
 /* Texture and noise that move from frame to frame on all three planes, so the
  * absolute differences have full mantissas and the running sums round. */
-static int fm_exact_fill(VmafPicture *pic, unsigned frame)
+static int fm_exact_fill(VmafPicture *pic, unsigned frame, unsigned bpc)
 {
-    const int err =
-        vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
+    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, bpc, FIXTURE_W, FIXTURE_H);
     if (err)
         return err;
     uint32_t state = 0x9E3779B9u ^ (frame * 2654435761u);
+    const unsigned shift = bpc - 8u;
     for (unsigned p = 0; p < 3u; p++) {
         uint8_t *plane = (uint8_t *)pic->data[p];
         for (unsigned row = 0; row < pic->h[p]; row++) {
@@ -459,7 +460,13 @@ static int fm_exact_fill(VmafPicture *pic, unsigned frame)
                 state = (state * 1664525u) + 1013904223u;
                 const unsigned value =
                     (((col * 5u) + (row * 3u) + (frame * 17u)) & 127u) + 48u + ((state >> 8) & 63u);
-                plane[(row * pic->stride[p]) + col] = (uint8_t)value;
+                if (bpc <= 8u) {
+                    plane[(row * pic->stride[p]) + col] = (uint8_t)value;
+                } else {
+                    const unsigned low = (state >> 14) & ((1u << shift) - 1u);
+                    uint16_t *line16 = (uint16_t *)((uint8_t *)pic->data[p] + row * pic->stride[p]);
+                    line16[col] = (uint16_t)((value << shift) | low);
+                }
             }
         }
     }
@@ -468,7 +475,8 @@ static int fm_exact_fill(VmafPicture *pic, unsigned frame)
 
 /* An initialised context of extractor `name`, with motion_add_scale1 and
  * motion_add_uv when `options` is set. */
-static int fm_exact_context(VmafFeatureExtractorContext **ctx, const char *name, bool options)
+static int fm_exact_context(VmafFeatureExtractorContext **ctx, const char *name, bool options,
+                            unsigned bpc)
 {
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(name);
     if (fex == NULL)
@@ -485,17 +493,17 @@ static int fm_exact_context(VmafFeatureExtractorContext **ctx, const char *name,
         (void)vmaf_dictionary_free(&opts);
         return err;
     }
-    return vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W,
+    return vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, bpc, FIXTURE_W,
                                                FIXTURE_H);
 }
 
 /* One frame through the extractor: extract() on the CPU, submit() and
  * collect() on the twin. */
 static int fm_exact_frame(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc,
-                          unsigned frame)
+                          unsigned frame, unsigned bpc)
 {
     VmafPicture pic;
-    int err = fm_exact_fill(&pic, frame);
+    int err = fm_exact_fill(&pic, frame, bpc);
     if (err)
         return err;
     if (ctx->fex->extract != NULL) {
@@ -520,15 +528,15 @@ static int fm_exact_collect(const VmafFeatureExtractorContext *ctx, VmafFeatureC
 }
 
 /* Every frame's motion, motion2 and motion3 from extractor `name`. */
-static int fm_exact_scores(const char *name, bool options, FmExactScores *out)
+static int fm_exact_scores(const char *name, bool options, unsigned bpc, FmExactScores *out)
 {
     VmafFeatureExtractorContext *ctx = NULL;
     VmafFeatureCollector *fc = NULL;
-    int err = fm_exact_context(&ctx, name, options);
+    int err = fm_exact_context(&ctx, name, options, bpc);
     if (!err)
         err = vmaf_feature_collector_init(&fc);
     for (unsigned i = 0; i < FM_EXACT_FRAMES && !err; i++)
-        err = fm_exact_frame(ctx, fc, i);
+        err = fm_exact_frame(ctx, fc, i, bpc);
     if (!err) {
         const int flushed = vmaf_feature_extractor_context_flush(ctx, fc);
         err = (flushed < 0) ? flushed : 0;
@@ -567,15 +575,15 @@ static unsigned fm_exact_mismatches(const FmExactScores *cpu, const FmExactScore
 
 /* 0 when the twin's scores are the CPU's, the number of differing scores
  * otherwise; `*status` is the first error, -ENOSYS for a scaffold build. */
-static unsigned fm_exact_compare(bool options, int *status)
+static unsigned fm_exact_compare(bool options, unsigned bpc, int *status)
 {
     FmExactScores cpu;
     FmExactScores gpu;
     memset(&cpu, 0, sizeof(cpu));
     memset(&gpu, 0, sizeof(gpu));
-    *status = fm_exact_scores("float_motion_hip", options, &gpu);
+    *status = fm_exact_scores("float_motion_hip", options, bpc, &gpu);
     if (*status == 0)
-        *status = fm_exact_scores("float_motion", options, &cpu);
+        *status = fm_exact_scores("float_motion", options, bpc, &cpu);
     if (*status != 0)
         return 0u;
     if (!(cpu.v[1][0] > 0.0))
@@ -590,18 +598,86 @@ static char *test_float_motion_matches_cpu_bit_for_bit(void)
         return NULL;
     }
     int status = 0;
-    const unsigned plain = fm_exact_compare(false, &status);
+    const unsigned plain = fm_exact_compare(false, FIXTURE_BPC, &status);
     if (status == -ENOSYS) {
         (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS] ");
         return NULL;
     }
     mu_assert("float_motion: the CPU or the HIP run failed", status == 0);
     mu_assert("float_motion_hip is not the CPU extractor's value bit for bit", plain == 0u);
-    const unsigned with_options = fm_exact_compare(true, &status);
+    const unsigned with_options = fm_exact_compare(true, FIXTURE_BPC, &status);
     mu_assert("float_motion with scale1 and uv: the CPU or the HIP run failed", status == 0);
     mu_assert("float_motion_hip with motion_add_scale1 and motion_add_uv is not the CPU's value",
               with_options == 0u);
     return NULL;
+}
+
+static char *test_float_motion_hip_noise_depth(unsigned bpc)
+{
+    if (!hip_device_available()) {
+        (void)fprintf(stderr, "[skip: no HIP device] ");
+        return NULL;
+    }
+    int status = 0;
+    const unsigned plain = fm_exact_compare(false, bpc, &status);
+    if (status == -ENOSYS) {
+        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS] ");
+        return NULL;
+    }
+    mu_assert("float_motion: the CPU or the HIP run failed", status == 0);
+    mu_assert("float_motion_hip is not the CPU extractor's value bit for bit", plain == 0u);
+    return NULL;
+}
+
+static char *test_float_motion_hip_noise_9bit(void)
+{
+    return test_float_motion_hip_noise_depth(9u);
+}
+
+static char *test_float_motion_hip_noise_10bit(void)
+{
+    return test_float_motion_hip_noise_depth(10u);
+}
+
+static char *test_float_motion_hip_noise_11bit(void)
+{
+    return test_float_motion_hip_noise_depth(11u);
+}
+
+static char *test_float_motion_hip_noise_12bit(void)
+{
+    return test_float_motion_hip_noise_depth(12u);
+}
+
+static char *test_float_motion_hip_noise_13bit(void)
+{
+    return test_float_motion_hip_noise_depth(13u);
+}
+
+static char *test_float_motion_hip_noise_14bit(void)
+{
+    return test_float_motion_hip_noise_depth(14u);
+}
+
+static char *test_float_motion_hip_noise_15bit(void)
+{
+    return test_float_motion_hip_noise_depth(15u);
+}
+
+static char *test_float_motion_hip_noise_16bit(void)
+{
+    return test_float_motion_hip_noise_depth(16u);
+}
+
+static char *run_bit_depth_cases(void)
+{
+    static const MuTest tests[] = {
+        MU_TEST(test_float_motion_hip_noise_9bit),  MU_TEST(test_float_motion_hip_noise_10bit),
+        MU_TEST(test_float_motion_hip_noise_11bit), MU_TEST(test_float_motion_hip_noise_12bit),
+        MU_TEST(test_float_motion_hip_noise_13bit), MU_TEST(test_float_motion_hip_noise_14bit),
+        MU_TEST(test_float_motion_hip_noise_15bit), MU_TEST(test_float_motion_hip_noise_16bit),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 char *run_tests(void)
@@ -609,6 +685,7 @@ char *run_tests(void)
     mu_run_test(test_float_motion_hip_registered);
     mu_run_test(test_float_motion_cpu_hip_parity);
     mu_run_test(test_float_motion_matches_cpu_bit_for_bit);
+    mu_assert_msg(run_bit_depth_cases());
     mu_run_test(test_float_motion_hip_flush_is_idempotent);
     mu_run_test(test_float_motion_hip_force_zero_keeps_close);
     return NULL;

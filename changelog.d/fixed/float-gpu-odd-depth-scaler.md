@@ -1,1 +1,1 @@
-- **Float GPU twins scale odd bit depths (9, 11, 13, 14, 15) identically to the CPU reference.** Per-depth scaler chains and tables now use the canonical helper instead of falling back to unscaled.
+- **The CUDA, SYCL and HIP `float_adm`, `float_vif`, `float_ssim` and `float_motion` twins accept 9, 11, 13, 14 and 15-bit pictures.** Scaler chains and tables scale odd depths identically to the CPU reference and join `kMeasured`; the Metal twins keep refusing those depths until measured.

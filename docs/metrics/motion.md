@@ -487,7 +487,9 @@ frames before the current one (`prev_ref`, `prev_prev_ref`):
 
 All three extractors:
 
-- Accept YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc.
+- Accept YUV 4:2:0 / 4:2:2 / 4:4:4, 8 to 16 bpc for the CPU, CUDA, SYCL and
+  HIP extractors. The Metal twin refuses 9, 11, 13, 14 and 15 bits with
+  `-EINVAL`.
 - Operate on the Y (luma) plane only by default. Chroma is only included when
   `motion_add_uv=true` is set on `float_motion`, and only for formats other
   than YUV 4:0:0.

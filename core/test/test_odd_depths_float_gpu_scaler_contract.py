@@ -47,8 +47,11 @@ def _find_float_gpu_files() -> list[Path]:
             name = p.name
             parent_name = p.parent.name
             if (
-                name.startswith("float_") or "float" in name or parent_name.startswith("float_")
-            ) and not name.startswith("integer_"):
+                name.startswith("float_")
+                or "float" in name
+                or parent_name.startswith("float_")
+                or name in ("integer_ssim_cuda.c", "integer_ssim_sycl.cpp", "ssim_score.cu")
+            ):
                 if p.suffix in (".c", ".cpp", ".cu", ".hip", ".h", ".cuh", ".mm", ".metal"):
                     files.append(p)
     return sorted(files)
@@ -94,8 +97,10 @@ class FloatGpuScalerContract(unittest.TestCase):
     def test_host_extractors_call_shared_scaler(self) -> None:
         expected_calls = (
             ("cuda/float_adm_cuda.c", "vmaf_float_moment_scaler(s->bpc)"),
+            ("cuda/integer_ssim_cuda.c", "vmaf_float_moment_scaler(bpc)"),
             ("sycl/float_vif_sycl.cpp", "vmaf_float_moment_scaler(bpc)"),
             ("sycl/float_adm_sycl.cpp", "vmaf_float_moment_scaler(bits_per_component)"),
+            ("sycl/integer_ssim_sycl.cpp", "vmaf_float_moment_scaler(bpc)"),
             ("hip/float_ssim_hip.c", "vmaf_float_moment_scaler(bpc)"),
             ("hip/float_adm_hip.c", "vmaf_float_moment_scaler(s->bpc)"),
             ("metal/float_adm_metal.mm", "vmaf_float_moment_scaler(bpc)"),
@@ -110,6 +115,28 @@ class FloatGpuScalerContract(unittest.TestCase):
                     content,
                     f"{rel} must invoke {pattern}",
                 )
+
+    def test_kmeasured_contains_expected_twins(self) -> None:
+        fe_cpp = FEATURE / "feature_extractor.cpp"
+        self.assertTrue(fe_cpp.exists())
+        content = fe_cpp.read_text(encoding="utf-8")
+        expected_twins = (
+            "float_adm_cuda",
+            "float_adm_sycl",
+            "float_adm_hip",
+            "float_vif_cuda",
+            "float_vif_sycl",
+            "float_vif_hip",
+            "float_ssim_cuda",
+            "float_ssim_sycl",
+            "float_ssim_hip",
+            "float_motion_cuda",
+            "float_motion_sycl",
+            "float_motion_hip",
+        )
+        for twin in expected_twins:
+            with self.subTest(twin=twin):
+                self.assertIn(f'"{twin}"', content, f"kMeasured must contain {twin}")
 
 
 if __name__ == "__main__":
