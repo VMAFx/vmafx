@@ -72,9 +72,10 @@ fi
 TMPDIR_D2="$(mktemp -d)"
 TMPDIR_HAPPY=""
 TMPDIR_UNKNOWN=""
+TMPDIR_LINT=""
 
 cleanup() {
-  rm -rf "${TMPDIR_D2:-}" "${TMPDIR_HAPPY:-}" "${TMPDIR_UNKNOWN:-}"
+  rm -rf "${TMPDIR_D2:-}" "${TMPDIR_HAPPY:-}" "${TMPDIR_UNKNOWN:-}" "${TMPDIR_LINT:-}"
 }
 trap cleanup EXIT
 
@@ -221,6 +222,119 @@ else
   check "an unknown changelog.d subdirectory fails the run" pass
   check "the failure lists the fragments that would be lost" pass
 fi
+
+# ---------------------------------------------------------------------------
+# --lint: verify bare paragraphs are rejected and list items accepted.
+# ---------------------------------------------------------------------------
+TMPDIR_LINT="$(mktemp -d)"
+
+mkdir -p "$TMPDIR_LINT/changelog.d/fixed"
+patched_lint="$TMPDIR_LINT/concat-patched.sh"
+sed "s|REPO_ROOT=.*|REPO_ROOT=\"$TMPDIR_LINT\"|" "$CONCAT_SCRIPT" >"$patched_lint"
+
+# (a) planted bare-paragraph fragment -> --lint exits non-zero and stderr names the file
+printf 'A bare paragraph without a list item marker.\n' >"$TMPDIR_LINT/changelog.d/fixed/bare.md"
+lint_bare_rc=0
+(
+  cd "$TMPDIR_LINT"
+  bash "$patched_lint" --lint >/dev/null 2>"$TMPDIR_LINT/err_bare.txt"
+) || lint_bare_rc=$?
+
+if [[ "$lint_bare_rc" -eq 0 ]]; then
+  check "--lint fails on a planted bare-paragraph fragment" fail
+elif ! grep -q "bare.md" "$TMPDIR_LINT/err_bare.txt"; then
+  check "the failure names the bare-paragraph fragment" fail
+elif ! grep -q 'does not start with a list item ("- ")' "$TMPDIR_LINT/err_bare.txt"; then
+  check "the failure explains that the fragment must start with a list item" fail
+else
+  check "--lint fails on a planted bare-paragraph fragment and names the file" pass
+fi
+rm -f "$TMPDIR_LINT/changelog.d/fixed/bare.md"
+
+# (b) fragment starting with an HTML comment block then - **x.** y -> --lint exits 0
+cat >"$TMPDIR_LINT/changelog.d/fixed/comment.md" <<'EOF'
+<!--
+Multi-line comment block
+explaining background.
+-->
+- **x.** y
+EOF
+lint_comment_rc=0
+(
+  cd "$TMPDIR_LINT"
+  bash "$patched_lint" --lint >/dev/null 2>"$TMPDIR_LINT/err_comment.txt"
+) || lint_comment_rc=$?
+
+if [[ "$lint_comment_rc" -eq 0 ]]; then
+  check "--lint accepts a fragment starting with an HTML comment block followed by a list item" pass
+else
+  check "--lint accepts a fragment starting with an HTML comment block followed by a list item" fail
+fi
+rm -f "$TMPDIR_LINT/changelog.d/fixed/comment.md"
+
+# (c) a - fragment -> exit 0
+printf -- '- a standard list item fragment\n' >"$TMPDIR_LINT/changelog.d/fixed/bullet.md"
+lint_bullet_rc=0
+(
+  cd "$TMPDIR_LINT"
+  bash "$patched_lint" --lint >/dev/null 2>"$TMPDIR_LINT/err_bullet.txt"
+) || lint_bullet_rc=$?
+
+if [[ "$lint_bullet_rc" -eq 0 ]]; then
+  check "--lint accepts a fragment starting with a list item" pass
+else
+  check "--lint accepts a fragment starting with a list item" fail
+fi
+rm -f "$TMPDIR_LINT/changelog.d/fixed/bullet.md"
+
+# (d) planted indented code block (4 spaces before - ) -> --lint exits non-zero
+printf '    - indented code block, not a list item\n' >"$TMPDIR_LINT/changelog.d/fixed/indented.md"
+lint_indented_rc=0
+(
+  cd "$TMPDIR_LINT"
+  bash "$patched_lint" --lint >/dev/null 2>"$TMPDIR_LINT/err_indented.txt"
+) || lint_indented_rc=$?
+
+if [[ "$lint_indented_rc" -eq 0 ]]; then
+  check "--lint fails on a planted indented code block fragment" fail
+elif ! grep -q "indented.md" "$TMPDIR_LINT/err_indented.txt"; then
+  check "the failure names the indented fragment" fail
+else
+  check "--lint fails on a planted indented code block fragment" pass
+fi
+rm -f "$TMPDIR_LINT/changelog.d/fixed/indented.md"
+
+# (e) planted bullet on HTML comment line -> --lint exits non-zero
+printf '<!-- comment --> - bullet on comment line\n' >"$TMPDIR_LINT/changelog.d/fixed/same_line.md"
+lint_sameline_rc=0
+(
+  cd "$TMPDIR_LINT"
+  bash "$patched_lint" --lint >/dev/null 2>"$TMPDIR_LINT/err_sameline.txt"
+) || lint_sameline_rc=$?
+
+if [[ "$lint_sameline_rc" -eq 0 ]]; then
+  check "--lint fails on a planted bullet on an HTML comment line" fail
+elif ! grep -q "same_line.md" "$TMPDIR_LINT/err_sameline.txt"; then
+  check "the failure names the same-line bullet fragment" fail
+else
+  check "--lint fails on a planted bullet on an HTML comment line" pass
+fi
+rm -f "$TMPDIR_LINT/changelog.d/fixed/same_line.md"
+
+# (f) a list item with at most 3 leading spaces -> exit 0
+printf '   - three leading spaces is a valid CommonMark list item\n' >"$TMPDIR_LINT/changelog.d/fixed/three_spaces.md"
+lint_threespaces_rc=0
+(
+  cd "$TMPDIR_LINT"
+  bash "$patched_lint" --lint >/dev/null 2>"$TMPDIR_LINT/err_threespaces.txt"
+) || lint_threespaces_rc=$?
+
+if [[ "$lint_threespaces_rc" -eq 0 ]]; then
+  check "--lint accepts a fragment with up to three leading spaces before - " pass
+else
+  check "--lint accepts a fragment with up to three leading spaces before - " fail
+fi
+rm -f "$TMPDIR_LINT/changelog.d/fixed/three_spaces.md"
 
 # ---------------------------------------------------------------------------
 # Summary

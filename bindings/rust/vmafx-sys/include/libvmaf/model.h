@@ -1,0 +1,514 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
+/**
+ *
+ *  Copyright 2016-2026 Netflix, Inc.
+ *
+ *     Licensed under the BSD+Patent License (the "License");
+ *     you may not use this file except in compliance with the License.
+ *     You may obtain a copy of the License at
+ *
+ *         https://opensource.org/licenses/BSDplusPatent
+ *
+ *     Unless required by applicable law or agreed to in writing, software
+ *     distributed under the License is distributed on an "AS IS" BASIS,
+ *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *     See the License for the specific language governing permissions and
+ *     limitations under the License.
+ *
+ */
+
+#ifndef LIBVMAF_MODEL_H
+#define LIBVMAF_MODEL_H
+
+#include <stdint.h>
+
+#include <libvmaf/feature.h>
+#include <libvmaf/macros.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * Version string of the model libvmaf scores with when the caller names no
+ * model. Defined exactly once, here; every other component derives it from
+ * this macro or from vmaf_default_model_version() rather than repeating it.
+ */
+#define VMAF_DEFAULT_MODEL_VERSION "vmaf_v1.0.16_3d0h"
+
+/**
+ * Version string of the model restored by --netflix-compat mode when the caller
+ * names no model. Defined here alongside VMAF_DEFAULT_MODEL_VERSION.
+ */
+#define VMAF_NETFLIX_COMPAT_MODEL_VERSION                                                          \
+    "vmaf_v0.6.1" /* vmaf-model-pin: Netflix upstream compat restores v0.6.1 default model */
+
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
+typedef struct VmafModel VmafModel;
+/* NOLINTEND(modernize-use-using) */
+
+/**
+ * Discriminates which runtime owns a loaded model.
+ *
+ *   - SVM        — upstream libsvm-backed model (default, json/pkl).
+ *   - DNN_FR     — feature-vector → MOS (tiny FR regressor, .onnx + sidecar).
+ *   - DNN_NR     — distorted frame → MOS, no reference needed (.onnx + sidecar).
+ *   - DNN_FILTER — degraded → clean residual filter (.onnx + sidecar). Consumed
+ *                  by the ffmpeg `vmaf_pre` filter; NOT loaded by libvmaf's
+ *                  scoring path. Tracked in the tiny registry for trust-root
+ *                  hygiene (sha256-pinned, signed) but never reaches
+ *                  `vmaf_score_*`.
+ *
+ * Auto-detected by vmaf_model_load_from_path() from the file extension:
+ * `.json`/`.pkl` → SVM, `.onnx` → DNN_FR (unless the matching sidecar JSON
+ * sets `"kind": "nr"` or `"kind": "filter"`, in which case DNN_NR /
+ * DNN_FILTER).
+ */
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): C header included by C and C++ translation units; C has no `using`; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
+typedef enum VmafModelKind {
+    VMAF_MODEL_KIND_SVM = 0,
+    VMAF_MODEL_KIND_DNN_FR = 1,
+    VMAF_MODEL_KIND_DNN_NR = 2,
+    VMAF_MODEL_KIND_DNN_FILTER = 3,
+} VmafModelKind;
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
+
+/**
+ * @brief Bitwise flags that modify how the model emits its final score.
+ *
+ * Combine with bitwise-OR and assign to @ref VmafModelConfig::flags.
+ *
+ *   - `VMAF_MODEL_FLAGS_DEFAULT`        — no flags set; per-model defaults apply.
+ *   - `VMAF_MODEL_FLAG_DISABLE_CLIP`    — do not clip predictions to [0, 100].
+ *                                         Useful when probing for raw regression
+ *                                         output (e.g. negative values that
+ *                                         indicate strong over-prediction).
+ *   - `VMAF_MODEL_FLAG_ENABLE_TRANSFORM`  — force-enable the model's score
+ *                                          transform (typically the PHONE /
+ *                                          4K-display transform), regardless of
+ *                                          the model file's default.
+ *   - `VMAF_MODEL_FLAG_DISABLE_TRANSFORM` — force-disable the score transform.
+ *
+ * `ENABLE_TRANSFORM` and `DISABLE_TRANSFORM` are mutually exclusive; setting
+ * both yields undefined behaviour. `DISABLE_CLIP` may be combined with either
+ * transform flag.
+ */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
+enum VmafModelFlags {
+    VMAF_MODEL_FLAGS_DEFAULT = 0,
+    VMAF_MODEL_FLAG_DISABLE_CLIP = (1 << 0),
+    VMAF_MODEL_FLAG_ENABLE_TRANSFORM = (1 << 1),
+    VMAF_MODEL_FLAG_DISABLE_TRANSFORM = (1 << 2),
+};
+/* NOLINTEND(performance-enum-size) */
+
+/**
+ * @brief Configuration passed to `vmaf_model_load` / `vmaf_model_load_from_path`.
+ *
+ * Safe to zero-initialise — both fields are optional.
+ */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
+typedef struct VmafModelConfig {
+    /**
+     * Optional display name for the loaded model. When NULL the loader uses
+     * `"vmaf"` for built-in models and the model file's `model_name` field
+     * for path-loaded models. When non-NULL the string is copied; the caller
+     * retains ownership and may free it after the load call returns.
+     */
+    const char *name;
+    /**
+     * Bitwise-OR of `VmafModelFlags` values; controls score clipping and
+     * transform application. Pass `VMAF_MODEL_FLAGS_DEFAULT` (0) to honour
+     * the model file's defaults.
+     */
+    uint64_t flags;
+} VmafModelConfig;
+/* NOLINTEND(modernize-use-using) */
+
+/**
+ * @brief Load a built-in VMAF model by version string.
+ *
+ * Looks @p version up in the compile-time built-in model table (the same
+ * table iterated by @ref vmaf_model_version_next) and constructs a model
+ * instance from the embedded JSON payload. No filesystem access.
+ *
+ * Pair every successful load with a matching @ref vmaf_model_destroy when the
+ * model is no longer needed.
+ *
+ * @param model   Out: receives the allocated model handle. Caller owns and
+ *                must release via @ref vmaf_model_destroy.
+ * @param cfg     Required configuration. May supply a custom display name and
+ *                @ref VmafModelFlags overrides. Must not be NULL.
+ * @param version Built-in model version string (e.g. `"vmaf_v0.6.1"`).
+ *                Must match an entry in the built-in model table.
+ *
+ * @return 0 on success, or a negative errno code on error:
+ *         `-EINVAL` when @p version does not match any built-in model
+ *         (the loader also logs a warning), `-ENOMEM` on allocation failure.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ *
+ * @since libvmaf 3.0.0 (upstream).
+ */
+VMAF_DEPRECATED("use vmafx_model_load")
+VMAF_EXPORT int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const char *version);
+
+/**
+ * @brief Load a VMAF model from a filesystem path.
+ *
+ * Reads a `.json` model file from disk. Pickle (`.pkl`) is no longer
+ * supported — the loader detects the extension and emits an explicit error
+ * message pointing the caller at the JSON form.
+ *
+ * Pair every successful load with a matching @ref vmaf_model_destroy when the
+ * model is no longer needed. For ONNX tiny-AI models, use
+ * @ref vmaf_use_tiny_model on a live @ref VmafContext instead — this function
+ * is SVM-only.
+ *
+ * @param model Out: receives the allocated model handle. Caller owns and
+ *              must release via @ref vmaf_model_destroy.
+ * @param cfg   Required configuration. May supply a custom display name and
+ *              @ref VmafModelFlags overrides. Must not be NULL.
+ * @param path  Filesystem path to a `.json` VMAF model file.
+ *
+ * @return 0 on success, or a negative errno code on error: `-ENOENT` if the
+ *         path does not exist, `-EINVAL` on a malformed JSON payload or a
+ *         `.pkl` extension, `-ENOMEM` on allocation failure.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ *
+ * @since libvmaf 3.0.0 (upstream).
+ */
+VMAF_DEPRECATED("use vmafx_model_load_file")
+VMAF_EXPORT int vmaf_model_load_from_path(VmafModel **model, VmafModelConfig *cfg,
+                                          const char *path);
+
+/**
+ * @brief Override per-feature options on an already-loaded model.
+ *
+ * Walks the model's registered features, finds entries whose name matches
+ * @p feature_name, and merges the provided dictionary onto each entry's
+ * existing options. Useful when the caller wants to tweak (for example) the
+ * VIF enhancement gain limit without editing the model JSON on disk.
+ *
+ * Ownership of @p opts_dict transfers to this call on every path EXCEPT the
+ * argument-validation guards: if the function returns `-EINVAL` because
+ * @p model, @p feature_name or @p opts_dict was NULL, nothing was consumed and
+ * the caller still owns the dictionary.  On any other return — success, or
+ * `-ENOMEM` from the merge step — the function has released the dictionary
+ * internally and the caller MUST NOT call
+ * @ref vmaf_feature_dictionary_free on it.
+ *
+ * This is NOT quite the same rule as @ref vmaf_use_feature, and the difference
+ * is deliberate.  That function resolves @p feature_name against the global
+ * extractor registry, so it can reject an unknown name with `-EINVAL` before
+ * touching the dictionary and hand it back.  This one matches @p feature_name
+ * against the features of a *particular model*: a name that matches nothing is
+ * not an error but a successful no-op returning `0`, and the dictionary is
+ * still consumed.  See <libvmaf/feature.h> for the contract covering all three
+ * entry points (Netflix/vmaf#1242 reported the headers contradicting each
+ * other; the `-ENOMEM` leak it described is fixed).
+ *
+ * @param model        Loaded model from @ref vmaf_model_load or
+ *                     @ref vmaf_model_load_from_path. Must not be NULL.
+ * @param feature_name NUL-terminated feature name to target (e.g.
+ *                     `"float_vif"`). Must not be NULL.
+ * @param opts_dict    Options dictionary populated via
+ *                     @ref vmaf_feature_dictionary_set. Must not be NULL.
+ *                     Ownership transfers to this call.
+ *
+ * @return 0 on success, or a negative errno code on error: `-EINVAL` on NULL
+ *         arguments, `-ENOMEM` on dictionary-merge allocation failure.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ *
+ * @since libvmaf 3.0.0 (upstream).
+ */
+VMAF_DEPRECATED("use vmafx_model_override_feature")
+VMAF_EXPORT int vmaf_model_feature_overload(VmafModel *model, const char *feature_name,
+                                            VmafFeatureDictionary *opts_dict);
+
+/**
+ * @brief Release a model and all owned resources.
+ *
+ * Frees the SVM (or DNN sidecar) state, the per-feature option dictionaries,
+ * the score-transform tables, and the model handle itself. Safe to call with
+ * a NULL @p model.
+ *
+ * Once destroyed, every pointer the caller may have cached from the model is
+ * invalidated. Do not invoke after the model has been handed to a
+ * @ref VmafModelCollection — that collection takes ownership and will
+ * destroy contained models when @ref vmaf_model_collection_destroy runs.
+ * If the model was registered with a VmafContext through
+ * @ref vmaf_use_features_from_model, that context borrows it through teardown.
+ * Destroy the model only after `vmaf_close()` returns exactly 0; every nonzero
+ * close result retains the dependency for retry.
+ *
+ * @param model Model handle from @ref vmaf_model_load or
+ *              @ref vmaf_model_load_from_path. NULL is a no-op.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ *
+ * @since libvmaf 3.0.0 (upstream).
+ */
+VMAF_DEPRECATED("use vmafx_model_unref")
+VMAF_EXPORT void vmaf_model_destroy(VmafModel *model);
+
+/**
+ * @brief Return the number of features required by a loaded model.
+ *
+ * Safe to call with NULL (returns 0).
+ *
+ * @param model Model handle.
+ *
+ * @return Number of features required by @p model, or 0 if @p model is NULL.
+ *
+ * @note Thread safety: Safe to call from any thread with a valid @ref VmafModel.
+ */
+VMAF_DEPRECATED("use vmafx_model_feature_count")
+VMAF_EXPORT unsigned vmaf_model_feature_count(const VmafModel *model);
+
+/**
+ * @brief Return the name of the feature at index @p index in @p model.
+ *
+ * The returned pointer is borrowed from @p model and remains valid for the
+ * lifetime of the model. Safe to call with NULL @p model or an out-of-bounds
+ * index (returns NULL).
+ *
+ * @param model Model handle.
+ * @param index 0-based feature index, in the range `[0, vmaf_model_feature_count(model))`.
+ *
+ * @return NUL-terminated feature name string, or NULL if @p model is NULL or
+ *         @p index >= @ref vmaf_model_feature_count.
+ *
+ * @note Thread safety: Safe to call from any thread with a valid @ref VmafModel.
+ */
+VMAF_DEPRECATED("use vmafx_model_feature_name")
+VMAF_EXPORT const char *vmaf_model_feature_name(const VmafModel *model, unsigned index);
+
+/**
+ * @typedef VmafModelCollection
+ * @brief Opaque bag of related VMAF sub-models, typically a bootstrap ensemble.
+ *
+ * A collection groups N sibling models that share a single feature pipeline
+ * and emit an aggregate score (mean prediction plus a confidence interval).
+ * Constructed by @ref vmaf_model_collection_load /
+ * @ref vmaf_model_collection_load_from_path and consumed by
+ * @ref vmaf_score_at_index_model_collection and
+ * @ref vmaf_score_pooled_model_collection.
+ *
+ * Owns every contained @ref VmafModel — calling
+ * @ref vmaf_model_collection_destroy frees them all.
+ */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
+typedef struct VmafModelCollection VmafModelCollection;
+/* NOLINTEND(modernize-use-using) */
+
+/**
+ * @brief Discriminates the aggregation method that produced a collection score.
+ *
+ *   - `UNKNOWN`   — sentinel; should not appear in a valid score struct.
+ *   - `BOOTSTRAP` — `score` is the mean of N bootstrap sub-model predictions
+ *                   and the `bootstrap` sub-struct carries the standard
+ *                   deviation and the 95% confidence interval.
+ */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
+enum VmafModelCollectionScoreType {
+    VMAF_MODEL_COLLECTION_SCORE_UNKNOWN = 0,
+    VMAF_MODEL_COLLECTION_SCORE_BOOTSTRAP,
+};
+/* NOLINTEND(performance-enum-size) */
+
+/**
+ * @brief Aggregate prediction from a model collection.
+ *
+ * Populated by `vmaf_score_at_index_model_collection` /
+ * `vmaf_score_pooled_model_collection`. Read fields based on @p type
+ * (see `VmafModelCollectionScoreType`).
+ */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
+typedef struct VmafModelCollectionScore {
+    enum VmafModelCollectionScoreType type; /**< Discriminator for the score family. */
+    struct {
+        double bagging_score; /**< Mean of the per-sub-model scores. */
+        double stddev;        /**< Standard deviation across sub-models. */
+        struct {
+            struct {
+                double lo; /**< Lower bound of the 95% confidence interval. */
+                double hi; /**< Upper bound of the 95% confidence interval. */
+            } p95;         /**< 95% confidence interval [lo, hi]. */
+        } ci;              /**< Confidence-interval block. */
+    } bootstrap;           /**< Bootstrap variant: bagging score + dispersion + 95% CI. */
+} VmafModelCollectionScore;
+/* NOLINTEND(modernize-use-using) */
+
+/**
+ * @brief Load a built-in VMAF model collection by version string.
+ *
+ * Companion to @ref vmaf_model_load that returns both a "lead" model
+ * (the first sub-model in the collection, used by `vmaf_use_features_from_model`)
+ * and the wrapping @ref VmafModelCollection handle. The lead model is owned
+ * by the collection; do not free it independently.
+ *
+ * @param model            Out: receives the lead sub-model handle. Owned by
+ *                         @p model_collection; do not pass to
+ *                         @ref vmaf_model_destroy.
+ * @param model_collection Out: receives the allocated collection handle.
+ *                         Caller owns and must release via
+ *                         @ref vmaf_model_collection_destroy.
+ * @param cfg              Required configuration. Must not be NULL.
+ * @param version          Built-in model collection version string (e.g.
+ *                         `"vmaf_v0.6.1.bootstrap"`).
+ *
+ * @return 0 on success, or a negative errno code on error: `-EINVAL` when
+ *         @p version does not match any built-in collection, `-ENOMEM` on
+ *         allocation failure.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ *
+ * @since libvmaf 3.0.0 (upstream).
+ */
+VMAF_DEPRECATED("use vmafx_model_set_load")
+VMAF_EXPORT int vmaf_model_collection_load(VmafModel **model,
+                                           VmafModelCollection **model_collection,
+                                           VmafModelConfig *cfg, const char *version);
+
+/**
+ * @brief Load a VMAF model collection from a filesystem path.
+ *
+ * Path-loading counterpart to @ref vmaf_model_collection_load. Reads a `.json`
+ * bootstrap-model file from disk; the `.pkl` extension surfaces an explicit
+ * unsupported-format error message.
+ *
+ * @param model            Out: receives the lead sub-model handle. Owned by
+ *                         @p model_collection; do not pass to
+ *                         @ref vmaf_model_destroy.
+ * @param model_collection Out: receives the allocated collection handle.
+ *                         Caller owns and must release via
+ *                         @ref vmaf_model_collection_destroy.
+ * @param cfg              Required configuration. Must not be NULL.
+ * @param path             Filesystem path to a `.json` bootstrap-model file.
+ *
+ * @return 0 on success, or a negative errno code on error: `-ENOENT` if the
+ *         path does not exist, `-EINVAL` on a malformed payload or a `.pkl`
+ *         extension, `-ENOMEM` on allocation failure.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ *
+ * @since libvmaf 3.0.0 (upstream).
+ */
+VMAF_DEPRECATED("use vmafx_model_set_load_file")
+VMAF_EXPORT int vmaf_model_collection_load_from_path(VmafModel **model,
+                                                     VmafModelCollection **model_collection,
+                                                     VmafModelConfig *cfg, const char *path);
+
+/**
+ * @brief Override per-feature options on every model in a collection.
+ *
+ * Applies @ref vmaf_model_feature_overload semantics to each sub-model in
+ * the collection plus the lead model @p model, so a single override
+ * propagates to the ensemble.
+ *
+ * Ownership of @p opts_dict transfers to this call on every path EXCEPT the
+ * argument-validation guards: if the function returns `-EINVAL` because
+ * @p model, @p model_collection, @p feature_name or @p opts_dict was NULL,
+ * nothing was consumed and the caller still owns the dictionary.  Otherwise
+ * the function deep-copies the dictionary onto each sub-model and releases the
+ * original (and every temporary copy, including a partially-built one on an
+ * allocation failure) before returning, and the caller MUST NOT call
+ * @ref vmaf_feature_dictionary_free on @p opts_dict afterwards.  Same rule as
+ * @ref vmaf_model_feature_overload; see <libvmaf/feature.h>.
+ *
+ * @param model            Lead model returned by
+ *                         @ref vmaf_model_collection_load /
+ *                         @ref vmaf_model_collection_load_from_path. Must not
+ *                         be NULL.
+ * @param model_collection Collection handle (in/out: pointer is read, contents
+ *                         may be mutated as features merge). Must not be NULL.
+ * @param feature_name     NUL-terminated feature name to target. Must not be
+ *                         NULL.
+ * @param opts_dict        Options dictionary. Ownership transfers to this
+ *                         call. Must not be NULL.
+ *
+ * @return 0 on success, or a negative errno code on error: `-EINVAL` on NULL
+ *         arguments, `-ENOMEM` on dictionary-copy failure.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ *
+ * @since libvmaf 3.0.0 (upstream).
+ */
+VMAF_DEPRECATED("use vmafx_model_set_override_feature")
+VMAF_EXPORT int vmaf_model_collection_feature_overload(VmafModel *model,
+                                                       VmafModelCollection **model_collection,
+                                                       const char *feature_name,
+                                                       VmafFeatureDictionary *opts_dict);
+
+/**
+ * @brief Release a model collection and every sub-model it owns.
+ *
+ * Iterates the contained sub-models calling @ref vmaf_model_destroy on each,
+ * then frees the collection's internal arrays and the handle itself. Safe
+ * to call with NULL.
+ *
+ * After this call the lead-model pointer returned by the matching load call
+ * is invalidated — do not pass it to @ref vmaf_model_destroy.
+ * If the collection was registered with a VmafContext through
+ * @ref vmaf_use_features_from_model_collection, that context borrows it through
+ * teardown. Destroy the collection only after `vmaf_close()` returns exactly
+ * 0; every nonzero close result retains the dependency for retry.
+ *
+ * @param model_collection Collection handle from
+ *                         @ref vmaf_model_collection_load /
+ *                         @ref vmaf_model_collection_load_from_path. NULL
+ *                         is a no-op.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ *
+ * @since libvmaf 3.0.0 (upstream).
+ */
+VMAF_DEPRECATED("use vmafx_model_set_unref")
+VMAF_EXPORT void vmaf_model_collection_destroy(VmafModelCollection *model_collection);
+
+/**
+ * Iterate through all built-in VMAF model versions.
+ *
+ * Pass NULL for @p prev on the first call; on subsequent calls pass the
+ * previously-returned opaque handle. When iteration reaches the end the
+ * function returns NULL and leaves @p *version unmodified.
+ *
+ * @param prev    opaque handle from the previous call, or NULL to begin.
+ * @param version OUT: set to the version string of the returned model on
+ *                a non-NULL return. Not modified on end-of-iteration.
+ *                May itself be NULL if the caller only needs the handle.
+ * @return opaque handle to the next model, or NULL after the last model.
+ *
+ * @note Thread safety: Safe to call from any thread; the built-in model table is
+ *               read-only after library init.
+ */
+VMAF_DEPRECATED("use vmafx_model_builtin_next")
+VMAF_EXPORT const void *vmaf_model_version_next(const void *prev, const char **version);
+
+/**
+ * Version string of the model libvmaf scores with when no model is named.
+ *
+ * Returns the same value as the VMAF_DEFAULT_MODEL_VERSION macro. Prefer this
+ * function over the macro from anything that is not compiled against this
+ * header — language bindings, in particular — so the default is read from the
+ * library actually being used rather than copied into another source tree and
+ * left to drift. `scripts/ci/check-default-model-single-source.sh` enforces
+ * that no component hardcodes its own copy.
+ *
+ * @return a NUL-terminated string owned by libvmaf; never NULL, never freed by
+ *         the caller, valid for the lifetime of the process.
+ *
+ * @note Thread safety: Safe to call from any thread; returns a pointer to static
+ *                read-only storage.
+ */
+VMAF_DEPRECATED("use vmafx_model_default_version")
+VMAF_EXPORT const char *vmaf_default_model_version(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* LIBVMAF_MODEL_H */
