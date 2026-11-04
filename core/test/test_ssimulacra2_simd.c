@@ -156,18 +156,18 @@ static void ref_linear_rgb_to_xyb(const float *lin, float *xyb, unsigned w, unsi
             m = 0.0f;
         if (s < 0.0f)
             s = 0.0f;
-        float L = vmaf_ss2_cbrtf(l) - cbrt_bias;
-        float M = vmaf_ss2_cbrtf(m) - cbrt_bias;
-        float S = vmaf_ss2_cbrtf(s) - cbrt_bias;
-        float X = 0.5f * (L - M);
-        float Y = 0.5f * (L + M);
-        float B = S;
-        B = (B - Y) + 0.55f;
-        X = X * 14.0f + 0.42f;
-        Y = Y + 0.01f;
-        xp[i] = X;
-        yp[i] = Y;
-        bxp[i] = B;
+        const float L = vmaf_ss2_cbrtf(l) - cbrt_bias;
+        const float M = vmaf_ss2_cbrtf(m) - cbrt_bias;
+        const float S = vmaf_ss2_cbrtf(s) - cbrt_bias;
+        float x_val = 0.5f * (L - M);
+        float y_val = 0.5f * (L + M);
+        float b_val = S;
+        b_val = (b_val - y_val) + 0.55f;
+        x_val = x_val * 14.0f + 0.42f;
+        y_val = y_val + 0.01f;
+        xp[i] = x_val;
+        yp[i] = y_val;
+        bxp[i] = b_val;
     }
 }
 
@@ -851,26 +851,26 @@ static void ref_picture_to_linear_rgb(int yuv_matrix, unsigned bpc, unsigned w, 
              * plain `a + b*c` to FMA even under `-fp-model=precise`,
              * diverging from the SIMD implementation. Preserves the
              * left-to-right associativity of the G computation. */
-            float R = fmaf(cr_r, Vn, Yn);
-            float G = fmaf(cb_g, Un, Yn);
-            G = fmaf(cr_g, Vn, G);
-            float B = fmaf(cb_b, Un, Yn);
-            if (R < 0.0f)
-                R = 0.0f;
-            if (R > 1.0f)
-                R = 1.0f;
-            if (G < 0.0f)
-                G = 0.0f;
-            if (G > 1.0f)
-                G = 1.0f;
-            if (B < 0.0f)
-                B = 0.0f;
-            if (B > 1.0f)
-                B = 1.0f;
+            float r = fmaf(cr_r, Vn, Yn);
+            float g = fmaf(cb_g, Un, Yn);
+            g = fmaf(cr_g, Vn, g);
+            float b = fmaf(cb_b, Un, Yn);
+            if (r < 0.0f)
+                r = 0.0f;
+            if (r > 1.0f)
+                r = 1.0f;
+            if (g < 0.0f)
+                g = 0.0f;
+            if (g > 1.0f)
+                g = 1.0f;
+            if (b < 0.0f)
+                b = 0.0f;
+            if (b > 1.0f)
+                b = 1.0f;
             const size_t idx = (size_t)y * w + x;
-            rp[idx] = ref_srgb_to_linear(R);
-            gp[idx] = ref_srgb_to_linear(G);
-            bp[idx] = ref_srgb_to_linear(B);
+            rp[idx] = ref_srgb_to_linear(r);
+            gp[idx] = ref_srgb_to_linear(g);
+            bp[idx] = ref_srgb_to_linear(b);
         }
     }
 }
@@ -1063,18 +1063,18 @@ static void ref_host_linear_rgb_to_xyb(const float *lin, float *xyb, unsigned w,
             mv = 0.0f;
         if (sv < 0.0f)
             sv = 0.0f;
-        float L = vmaf_ss2_cbrtf(l) - cbrt_bias;
-        float M = vmaf_ss2_cbrtf(mv) - cbrt_bias;
-        float S = vmaf_ss2_cbrtf(sv) - cbrt_bias;
-        float X = 0.5f * (L - M);
-        float Y = 0.5f * (L + M);
-        float B = S;
-        B = (B - Y) + 0.55f;
-        X = X * 14.0f + 0.42f;
-        Y = Y + 0.01f;
-        xp[i] = X;
-        yp[i] = Y;
-        bxp[i] = B;
+        const float L = vmaf_ss2_cbrtf(l) - cbrt_bias;
+        const float M = vmaf_ss2_cbrtf(mv) - cbrt_bias;
+        const float S = vmaf_ss2_cbrtf(sv) - cbrt_bias;
+        float x_val = 0.5f * (L - M);
+        float y_val = 0.5f * (L + M);
+        float b_val = S;
+        b_val = (b_val - y_val) + 0.55f;
+        x_val = x_val * 14.0f + 0.42f;
+        y_val = y_val + 0.01f;
+        xp[i] = x_val;
+        yp[i] = y_val;
+        bxp[i] = b_val;
     }
 }
 

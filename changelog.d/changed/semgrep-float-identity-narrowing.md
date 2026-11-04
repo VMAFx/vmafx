@@ -1,0 +1,1 @@
+- **Float-identity semgrep rule narrowed.** The `vmaf-test-float-identity-via-float-bits` Semgrep rule restricts the NaN idiom to call-free operands, exempts hexadecimal and suffixed integer literals, permits all standard integer casts, and guards macro and constant exemptions via a test-time declaration scanner.
