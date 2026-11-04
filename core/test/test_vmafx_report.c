@@ -384,6 +384,7 @@ static char *test_open_refusals(void)
 #ifdef VMAF_TEST_FULL_DEVICE_ONLY
 static char *test_write_to_full_device(void)
 {
+    /* Runtime probe (stat in full_device.h): the result differs per host. */
     if (!vmaf_test_full_device_rejects_writes()) {
         (void)fprintf(stderr,
                       "SKIP: test_write_to_full_device: /dev/full is not a character device\n");
