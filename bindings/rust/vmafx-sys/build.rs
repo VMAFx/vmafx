@@ -5,7 +5,7 @@
 //
 // Environment variables:
 //   LIBVMAF_PREFIX    First installation prefix, then /usr/local and /usr.
-//   DOCS_RS           Use in-tree headers and omit native linking when set.
+//   DOCS_RS           Use packaged headers and omit native linking when set.
 //   VMAFX_VENDOR_DIR  Override source checkout core/ path for vendored builds.
 //
 // A header that lacks a libvmaf name the crates use (an older install under

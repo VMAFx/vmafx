@@ -191,7 +191,10 @@ def _validate_builder_command(code: str) -> list[str]:
             errors.append("the docker build must take --target and the secret from the case arm")
         if "--secret" in build:
             errors.append("the docker build must not pass a secret for every target")
-    if "--build-arg" in code:
+    # Architecture-specific manylinux images are selected from build-config.env
+    # by the stage builder. No other build argument may enter a release image.
+    native_arg = '--build-arg "NATIVE_RELEASE_BUILDER_BASE=$native_base"'
+    if "--build-arg" in code.replace(native_arg, "", 1):
         errors.append("the stage build script must not pass Docker build arguments")
     if re.search(r"--cache-(?:from|to)\b", code):
         errors.append("the stage build script must stay cache-free (ADR-1346)")

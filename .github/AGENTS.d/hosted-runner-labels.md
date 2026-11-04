@@ -35,8 +35,9 @@ script comment lines not read.
 | Job tests older image itself | `COMPATIBILITY_TARGETS` in script, with its ADR | when ADR changes |
 | Job fails on 26.04, needs time | `.config/lint-exceptions.d/hosted-runner-label.toml` | <= 90 days |
 
-- Only compatibility target today: `verify-native-artifacts`
-  (`supply-chain.yml`) on `ubuntu-24.04`, ADR-1354. Never move it to 26.04:
+- Compatibility targets today: `verify-native-artifacts` on `ubuntu-24.04`
+  and `verify-native-artifacts-arm64` on `ubuntu-24.04-arm`
+  (`supply-chain.yml`), ADR-1354. Never move either to 26.04:
   check fails, test loses its subject.
 - Fallback entry keys: `path`, `job`, `label`, `reason`, `expires`. One entry
   per job of workflow file; same file + job twice = duplicate (`PART_KEYS`
