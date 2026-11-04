@@ -1456,13 +1456,15 @@ if is_asm_enabled
     endif
 endif
 
+dl_dependency = dependency('dl', required : false)
+
 cuda_dependency = []
 common_cuda_objects = []
 cuda_inc = []
 
 if is_nvtx_enabled
     cuda_dependency += declare_dependency(
-        dependencies: cc.find_library('dl', required: false),
+        dependencies: dl_dependency,
         include_directories: include_directories('/usr/local/cuda/include'))
 endif
 
@@ -3242,6 +3244,7 @@ libvmafx = library(
     dependencies : [
       thread_lib,
       math_lib,
+      dl_dependency,
       stdatomic_dependency,
       pthread_dependency,
       cuda_dependency,

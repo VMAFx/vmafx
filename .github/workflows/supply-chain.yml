@@ -144,34 +144,22 @@ jobs:
           fi
 
   build-artifacts:
-    name: Build Linux artifacts
+    name: Build Linux artifacts (${{ matrix.arch }})
     needs: validate-release
     # Fork-PR guard: tag releases on the canonical repository only
     if: github.repository == 'VMAFx/vmafx' && startsWith(github.ref, 'refs/tags/v')
-    # ADR-1346 (supersedes ADR-1178), amended by ADR-1354: native release
-    # artifacts are built on a GitHub-hosted runner inside the `release-build`
-    # stage of the tagged commit's own dev/Containerfile, which keeps the
-    # container-only publishing policy (ADR-1102) without a workstation
-    # runner. `release-build` is the digest-pinned Debian 13 release-track base
-    # (RELEASE_BUILDER_BASE) plus Debian archive packages (GCC 14, Meson,
-    # Ninja, NASM, xxd) and fetches nothing from third parties, so the bundle
-    # links against glibc 2.41 like the rest of the release track. The stage
-    # is built here by the same script the PR gate (ADR-0819) uses to rehearse
-    # this job, with no external layer cache and no registry, so nothing
-    # another workflow wrote can reach a release. Locally an uncached stage
-    # build and the release compile (unit tests left out, ADR-1354) each took
-    # under a minute on four CPUs; 60 leaves wide room for a slow runner or
-    # archive mirror.
-    # No job-level concurrency group: the old cross-tag `release-artifacts-build`
-    # group only served the single self-hosted runner, and GitHub cancels an
-    # older pending job when a newer one joins its group. The workflow-level
-    # per-tag group still serialises runs of one tag.
-    runs-on: ubuntu-26.04
+    # Both native architectures use the pinned manylinux / glibc 2.28 stage.
+    # ARM runs natively; no cross compiler or emulation enters the release.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-26.04 }
+          - { arch: arm64, runner: ubuntu-26.04-arm }
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
       contents: read
-    outputs:
-      hashes: ${{ steps.hash.outputs.hashes }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -204,6 +192,59 @@ jobs:
             --workdir /src \
             "vmafx-release-build:${GITHUB_SHA}" \
             bash scripts/release/build-native-release-artifacts.sh "$VMAFX_VERSION"
+      - name: Enforce the native glibc and libstdc++ floors on the CLI and every staged library
+        run: |
+          floor="$(sed -n 's/^NATIVE_GLIBC_FLOOR="\(.*\)"$/\1/p' build-config.env)"
+          cxx_floor="$(sed -n 's/^NATIVE_GLIBCXX_FLOOR="\(.*\)"$/\1/p' build-config.env)"
+          cxxabi_floor="$(sed -n 's/^NATIVE_CXXABI_FLOOR="\(.*\)"$/\1/p' build-config.env)"
+          python3 scripts/release/check_glibc_floor.py "$floor" \
+            --cxx-floor "$cxx_floor" --cxxabi-floor "$cxxabi_floor" \
+            artifacts/vmaf artifacts/lib*.so*
+      - if: ${{ env.GITEA_ACTIONS != 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: native-artifacts-${{ matrix.arch }}
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload artifact (Gitea)
+        if: ${{ env.GITEA_ACTIONS == 'true' }}
+        uses: actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2
+        with:
+          name: native-artifacts-${{ matrix.arch }}
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: error
+
+  collect-artifacts:
+    name: Collect Linux artifacts
+    needs: [validate-release, build-artifacts]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
+    steps:
+      - if: ${{ env.GITEA_ACTIONS != 'true' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with: { name: native-artifacts-x86_64, path: artifacts/ }
+      - name: Download x86-64 artifact (Gitea)
+        if: ${{ env.GITEA_ACTIONS == 'true' }}
+        uses: actions/download-artifact@a9bc5e6ef2cb54c177f32aa5726adaa15e7e2d59  # v3.1.0
+        with: { name: native-artifacts-x86_64, path: artifacts/ }
+      - if: ${{ env.GITEA_ACTIONS != 'true' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with: { name: native-artifacts-arm64, path: arm64/ }
+      - name: Download arm64 artifact (Gitea)
+        if: ${{ env.GITEA_ACTIONS == 'true' }}
+        uses: actions/download-artifact@a9bc5e6ef2cb54c177f32aa5726adaa15e7e2d59  # v3.1.0
+        with: { name: native-artifacts-arm64, path: arm64/ }
+      - name: Package arm64 without colliding with the existing x86-64 assets
+        run: |
+          chmod +x arm64/vmaf
+          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
+            -C arm64 -cf - . | gzip -9n > artifacts/vmafx-linux-arm64.tar.gz
       - name: Compute SHA256 hashes (provenance subjects)
         id: hash
         run: |
@@ -227,13 +268,8 @@ jobs:
 
   verify-native-artifacts:
     name: Verify Linux runtime
-    needs: [validate-release, build-artifacts]
-    # ADR-1354: the bundle is compiled on the Debian 13 release track (glibc
-    # 2.41); its newest symbol versions are GLIBC_2.38 and GLIBCXX_3.4.30. The
-    # consumer check runs on the oldest hosted image that loads it,
-    # ubuntu-24.04 (glibc 2.39); ubuntu-22.04 (glibc 2.35) cannot. Pinned
-    # rather than ubuntu-latest so the check cannot drift to a newer glibc.
-    # docs/development/release.md states the requirement.
+    needs: [validate-release, collect-artifacts]
+    # Consumer-side check on an older LTS, after the glibc 2.28 symbol check.
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -274,8 +310,75 @@ jobs:
           chmod +x artifacts/vmaf
           scripts/release/verify-native-release-artifacts.sh \
             artifacts "$VMAFX_VERSION"
-      # ADR-1354: the bundle is built for the release track, so it must also
-      # start on the release runtime image (RELEASE_RUNTIME_CC, distroless
+      # The older-floor bundle must also start on the release runtime image
+      # (RELEASE_RUNTIME_CC, distroless
+      # cc-debian13, glibc 2.41), the base of the published CLI image. That
+      # image has no shell or ldd: run the downloaded CLI as its entrypoint,
+      # as the image's nonroot user. No LD_LIBRARY_PATH: the CLI must find
+      # libvmaf.so.3 next to itself through its RUNPATH `$ORIGIN`, so this
+      # step also proves the RUNPATH on the release runtime.
+      - name: Prove the downloaded CLI starts on the release runtime image (ADR-1354)
+        run: |
+          set -a; . ./build-config.env; set +a
+          docker run --rm \
+            --network none \
+            --volume "$PWD/artifacts:/bundle:ro" \
+            --entrypoint /bundle/vmaf \
+            "$RELEASE_RUNTIME_CC" \
+            --version
+
+  verify-native-artifacts-arm64:
+    name: Verify Linux arm64 runtime
+    needs: [validate-release, collect-artifacts]
+    # Consumer-side check on an older LTS, after the glibc 2.28 symbol check.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ needs.validate-release.outputs.tag }}
+          persist-credentials: false
+      - if: ${{ env.GITEA_ACTIONS != 'true' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with: { name: release-artifacts, path: artifacts/ }
+      - name: Download artifact (Gitea)
+        if: ${{ env.GITEA_ACTIONS == 'true' }}
+        uses: actions/download-artifact@a9bc5e6ef2cb54c177f32aa5726adaa15e7e2d59  # v3.1.0
+        with: { name: release-artifacts, path: artifacts/ }
+      - name: Extract the published arm64 bundle
+        run: |
+          mkdir arm64
+          tar -xzf artifacts/vmafx-linux-arm64.tar.gz -C arm64
+          rm -r artifacts
+          mv arm64 artifacts
+      - name: Verify container build provenance (ADR-1102, ADR-1346)
+        run: |
+          bash scripts/ci/check-container-build.sh --verify artifacts
+      # The stamp's git_commit comes from GITHUB_SHA, which build-artifacts
+      # already requires to be HEAD. Bind it to the tag checked out here too, so
+      # the verified bundle names the commit this release was cut from.
+      - name: Bind the provenance stamp to the tagged commit (ADR-1346)
+        run: |
+          stamped="$(sed -n 's/^git_commit=//p' artifacts/container-build-provenance.txt)"
+          tagged="$(git rev-parse HEAD)"
+          if [ "$stamped" != "$tagged" ]; then
+            echo "::error::provenance stamp names commit '${stamped}', but the tag is ${tagged}" >&2
+            exit 1
+          fi
+      - name: Prove the downloaded CLI resolves its staged SONAME library
+        env:
+          VMAFX_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          # Raw GitHub artifact/release downloads do not encode POSIX mode
+          # bits. Restore the documented consumer-side executable bit before
+          # exercising the exact downloaded bytes.
+          chmod +x artifacts/vmaf
+          scripts/release/verify-native-release-artifacts.sh \
+            artifacts "$VMAFX_VERSION"
+      # The older-floor bundle must also start on the release runtime image
+      # (RELEASE_RUNTIME_CC, distroless
       # cc-debian13, glibc 2.41), the base of the published CLI image. That
       # image has no shell or ldd: run the downloaded CLI as its entrypoint,
       # as the image's nonroot user. No LD_LIBRARY_PATH: the CLI must find
@@ -293,7 +396,7 @@ jobs:
 
   sbom:
     name: Generate SBOMs
-    needs: [validate-release, build-artifacts, verify-native-artifacts, mcp-build]
+    needs: [validate-release, collect-artifacts, verify-native-artifacts, verify-native-artifacts-arm64, mcp-build]
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
@@ -320,6 +423,10 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.14.9"
+      - name: Include arm64 ELF files as well as the published archive in the native SBOM
+        run: |
+          mkdir artifacts/arm64
+          tar -xzf artifacts/vmafx-linux-arm64.tar.gz -C artifacts/arm64
       - name: Prepare native and Python SBOM roots
         env:
           VMAFX_PEP440_VERSION: ${{ needs.validate-release.outputs.pep440_version }}
@@ -413,7 +520,7 @@ jobs:
             .metadata.component.name == "vmafx"
             and .metadata.component.version == $version
           ' sbom/vmafx.cdx.json >/dev/null
-          for f in artifacts/*; do
+          for f in artifacts/* artifacts/arm64/*; do
             [[ -f "$f" ]] || continue
             name="$(basename "$f")"
             sha="$(sha256sum -- "$f" | cut -d" " -f1)"
@@ -450,7 +557,7 @@ jobs:
 
   sign:
     name: Sigstore sign artifacts
-    needs: [build-artifacts, sbom]
+    needs: [collect-artifacts, sbom]
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment: release-publish
@@ -515,7 +622,7 @@ jobs:
   # this OIDC + attestation writer sits behind release-publish like `sign`.
   provenance:
     name: Attest libvmaf provenance
-    needs: [validate-release, build-artifacts, verify-native-artifacts, sbom]
+    needs: [validate-release, collect-artifacts, verify-native-artifacts, verify-native-artifacts-arm64, sbom]
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment: release-publish
@@ -531,13 +638,13 @@ jobs:
         if: ${{ env.GITEA_ACTIONS == 'true' }}
         uses: actions/download-artifact@a9bc5e6ef2cb54c177f32aa5726adaa15e7e2d59  # v3.1.0
         with: { name: release-artifacts, path: artifacts/ }
-      # The subjects are the digests build-artifacts computed next to the
+      # The subjects are the digests collect-artifacts computed for the
       # build, as the generator's base64-subjects were. The bytes the
       # attachment job publishes must be exactly that set.
       - name: Bind the build job's digests to the downloaded bytes
         id: subjects
         env:
-          SUBJECT_HASHES: ${{ needs.build-artifacts.outputs.hashes }}
+          SUBJECT_HASHES: ${{ needs.collect-artifacts.outputs.hashes }}
         run: |
           set -euo pipefail
           subjects="$RUNNER_TEMP/subjects.sha256"
@@ -1099,7 +1206,7 @@ jobs:
     name: Attach release assets
     needs:
       - validate-release
-      - build-artifacts
+      - collect-artifacts
       - verify-native-artifacts
       - sbom
       - sign
@@ -1127,6 +1234,7 @@ jobs:
             dist/release-artifacts/libvmaf.so
             dist/release-artifacts/libvmafx.so
             dist/release-artifacts/vmaf
+            dist/release-artifacts/vmafx-linux-arm64.tar.gz
             dist/release-artifacts/models.tar.gz
             dist/release-artifacts/container-build-provenance.txt
             dist/release-artifacts/THIRD_PARTY_NOTICES.txt

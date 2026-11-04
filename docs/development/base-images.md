@@ -22,6 +22,11 @@ git diff                      # review, then commit both
 the config and then re-runs the check, so a clean run means the tree agrees
 with the config.
 
+Native download builders use `NATIVE_RELEASE_BUILDER_BASE` (x86-64) and
+`NATIVE_RELEASE_BUILDER_ARM64` (arm64), architecture-specific manylinux
+images with glibc 2.28 and GCC 14. The stage builder selects the matching
+pin; the container runtime images keep the separate Debian release base.
+
 ## How it works
 
 No Dockerfile names a base image directly. Each one takes it as a build

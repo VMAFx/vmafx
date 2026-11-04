@@ -27,7 +27,7 @@ workflow_paths = (
 # ADR-1356: GitHub-native build provenance. Job -> (the job whose `hashes`
 # output names the subjects, the workflow artifact carrying the bundle).
 PROVENANCE_JOBS = {
-    "provenance": ("build-artifacts", "vmafx-build-provenance"),
+    "provenance": ("collect-artifacts", "vmafx-build-provenance"),
     "mcp-provenance": ("mcp-build", "vmaf-mcp-provenance"),
 }
 ATTEST_USES = re.compile(
@@ -757,7 +757,7 @@ expect_rejected(
 expect_rejected(
     "provenance subjects detached from the build job's digests",
     mutate_native_provenance(
-        "${{ needs.build-artifacts.outputs.hashes }}",
+        "${{ needs.collect-artifacts.outputs.hashes }}",
         "${{ needs.verify-native-artifacts.outputs.hashes }}",
     ),
 )
