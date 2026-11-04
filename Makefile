@@ -615,6 +615,7 @@ lint-sh: ffmpeg-input-contract
 	@python3 scripts/ci/check-cuda-pin-lockstep.py
 	@python3 scripts/githooks/tests/test_install.py
 	@python3 scripts/githooks/tests/test_install_hooks_env.py
+	@bash scripts/ci/test-check-toolchain-claims.sh
 
 # Markdown lint (ADR-0866). Default scope is the touched-file delta vs
 # origin/master so the ~6.2k pre-existing-warning tail (ADR-0864) doesn't

@@ -43,6 +43,15 @@ parser enforces:
    | CHANGELOG fragment| `^CHANGELOG\.md` or `^changelog\.d/<sec>/.*\.md` |
    | Rebase note       | `^docs/rebase-notes\.md$`                        |
 
+3. **Toolchain claims backed by probe output.** When the description claims a
+   toolchain is missing or code was not compiled (e.g. `SYCL was not compiled:
+   this host has no icpx` or `no nvcc`), `scripts/ci/check-toolchain-claims.sh`
+   verifies:
+   - A `toolchain-probe v1` output block from `scripts/dev/toolchain-probe.sh`
+     is pasted into the PR body.
+   - The probe block does not report that the claimed-missing toolchain was
+     actually `found` on the host.
+
 ## Parser shape gotchas
 
 These patterns have each failed real PRs under the strict parser:
@@ -269,6 +278,41 @@ GitHub Actions log surfaces them as inline annotations.
 [rule-yml]: ../../.github/workflows/rule-enforcement.yml
 [deliv]: ../../scripts/ci/deliverables-check.sh
 [input]: ../../scripts/ci/pr-body-input.sh
+
+## Toolchain claims and probe verification
+
+When contributors build on machines where toolchains live off `$PATH` (e.g.
+Intel oneAPI under `/opt/intel/oneapi`, CUDA under `/opt/cuda/bin`, ROCm under
+`/opt/rocm/bin`), asserting that a toolchain is absent or that code was not
+compiled must be backed by evidence from the repository's probe script:
+
+```bash
+scripts/dev/toolchain-probe.sh
+```
+
+The script searches standard vendor directories (sourcing `setvars.sh` for
+oneAPI in a subshell) and emits reproducible verification lines:
+
+```text
+toolchain-probe v1 host=<host> os=<os> date=<date>
+toolchain-probe: icpx found /opt/intel/oneapi/compiler/2026.0/bin/icpx ...
+toolchain-probe: nvcc found /opt/cuda/bin/nvcc ...
+```
+
+The gate in `scripts/ci/check-toolchain-claims.sh` (invoked automatically by
+`scripts/ci/deliverables-check.sh` and `scripts/ci/validate-pr-body.sh`):
+
+- Refuses any missing-toolchain claim if the PR body lacks a `toolchain-probe
+  v1` block.
+- Refuses claims asserting a toolchain is absent when the pasted probe block
+  reports it `found`.
+- Accepts claims when the probe confirms the toolchain is `absent`.
+- Exempts lines inside fenced code blocks containing probe output.
+- Treats a bare "not compiled" line that names no host (for example "the
+  golden build has no CUDA backend: the changed files are not compiled") as a
+  build-configuration statement: it still needs a probe block, but a probe
+  that found the toolchain does not contradict it.
+- Runs first in `deliverables-check.sh`, before any section that can exit early.
 
 ## History
 
