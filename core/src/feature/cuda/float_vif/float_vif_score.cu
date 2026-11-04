@@ -44,22 +44,15 @@
 namespace
 {
 
-/* picture_copy() with offset -128: an 8-bit sample as is, a 10-, 12- or
- * 16-bit sample divided by 4, 16 or 256 (exact in fp32). */
+/* picture_copy() with offset -128: an 8-bit sample as is, a >8-bit
+ * sample divided by 2^(bpc - 8) (exact in fp32). */
 __device__ __forceinline__ float fvif_read_raw(const uint8_t *plane, ptrdiff_t stride_bytes, int y,
                                                int x, unsigned bpc)
 {
     if (bpc <= 8u)
         return FVIF_FSUB((float)plane[y * stride_bytes + x], 128.0f);
     const uint16_t v = reinterpret_cast<const uint16_t *>(plane + y * stride_bytes)[x];
-    float scaler = 1.0f;
-    if (bpc == 10u) {
-        scaler = 4.0f;
-    } else if (bpc == 12u) {
-        scaler = 16.0f;
-    } else if (bpc == 16u) {
-        scaler = 256.0f;
-    }
+    const float scaler = bpc > 8u ? (float)(1u << (bpc - 8u)) : 1.0f;
     return FVIF_FSUB(FVIF_FDIV((float)v, scaler), 128.0f);
 }
 

@@ -1,0 +1,1 @@
+- **Float GPU twins scale odd bit depths (9, 11, 13, 14, 15) identically to the CPU reference.** Per-depth scaler chains and tables now use the canonical helper instead of falling back to unscaled.
