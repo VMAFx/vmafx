@@ -107,6 +107,13 @@ static int make_vmaf_ctx_with_scores(VmafContext **vmaf_out, VmafModel **model_o
     return 0;
 }
 
+static char *close_ctx_and_model(VmafContext *vmaf, VmafModel *model)
+{
+    const int err = vmaf_close(vmaf);
+    vmaf_model_destroy(model);
+    return err ? "vmaf_close failed" : NULL;
+}
+
 #ifndef VMAF_TEST_FULL_DEVICE_ONLY
 /* -------------------------------------------------------------------------
  * Test: vmaf_score_at_index() — public entry point
@@ -134,10 +141,7 @@ static char *test_vmaf_score_at_index(void)
     err = vmaf_score_at_index(vmaf, NULL, &score, 0);
     mu_assert("vmaf_score_at_index(NULL model) should fail", err);
 
-    err = vmaf_close(vmaf);
-    mu_assert("vmaf_close failed", !err);
-    vmaf_model_destroy(model);
-    return NULL;
+    return close_ctx_and_model(vmaf, model);
 }
 
 /* -------------------------------------------------------------------------
@@ -260,10 +264,7 @@ static char *test_vmaf_write_output(void)
     err = vmaf_write_output(vmaf, NULL, VMAF_OUTPUT_FORMAT_JSON);
     mu_assert("vmaf_write_output(NULL path) should fail", err);
 
-    err = vmaf_close(vmaf);
-    mu_assert("vmaf_close failed", !err);
-    vmaf_model_destroy(model);
-    return NULL;
+    return close_ctx_and_model(vmaf, model);
 }
 #endif /* !VMAF_TEST_FULL_DEVICE_ONLY */
 
@@ -305,10 +306,7 @@ static char *test_vmaf_write_output_to_full_device(void)
     mu_assert("vmaf_write_output_with_format(/dev/full) must return negative", err < 0);
     mu_assert("vmaf_write_output_with_format(/dev/full) must return -EIO", err == -EIO);
 
-    err = vmaf_close(vmaf);
-    mu_assert("vmaf_close failed", !err);
-    vmaf_model_destroy(model);
-    return NULL;
+    return close_ctx_and_model(vmaf, model);
 }
 #endif /* VMAF_TEST_FULL_DEVICE_ONLY */
 
