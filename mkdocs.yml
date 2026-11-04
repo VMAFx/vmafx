@@ -235,6 +235,7 @@ nav:
       - Input pixel formats: usage/pixel-formats.md
       - Encoder registry: usage/encoder-registry.md
       - Python library: usage/python.md
+      - Python package (vmafx): usage/python-package.md
       - Go module and versions: usage/go.md
       - MATLAB: usage/matlab.md
       - vmafx CLI: usage/vmafx-cli.md
