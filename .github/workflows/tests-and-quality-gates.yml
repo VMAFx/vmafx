@@ -340,9 +340,7 @@ jobs:
         run: |
           bash scripts/ci/apt-install-cached.sh configure
           # ADR-0692 (design notes)
-          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          chmod +x /tmp/llvm.sh
-          sudo /tmp/llvm.sh 22
+          sudo bash scripts/ci/install-llvm.sh 22
           bash scripts/ci/apt-install-cached.sh install .github/apt/sanitizers.txt
           # ADR-0692 (design notes)
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
