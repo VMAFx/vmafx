@@ -208,7 +208,7 @@ class LaneConfiguration(unittest.TestCase):
         for workflow, job_id in HOSTED_CPU_JOBS:
             with self.subTest(job=job_id):
                 job = job_text(workflow, job_id)
-                self.assertIn(f"sudo /tmp/llvm.sh {match.group(1)}", job)
+                self.assertIn(f"sudo bash scripts/ci/install-llvm.sh {match.group(1)}", job)
                 self.assertIn(f"CLANG_TIDY_BIN=/usr/bin/clang-tidy-{match.group(1)}", job)
 
     def test_make_targets_run_the_entry_point(self) -> None:
