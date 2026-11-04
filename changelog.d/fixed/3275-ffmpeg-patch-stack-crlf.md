@@ -1,0 +1,1 @@
+- **Normalise Windows CRLF line endings in the FFmpeg patch stack checker (#3275).** Working-tree text files checked out with CRLF on Windows are normalised to LF before comparing rendered patches, Docker ARG mirrors, configuration pins, and README claims, preventing spurious drift failures during `--check` and line-ending leakage into the replay tree during `--refresh`.

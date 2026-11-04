@@ -22,6 +22,8 @@ deprecated in favour of their VMAFx successors: the warnings are opt-in in
 | [Embedded MCP server](mcp.md) | `libvmaf_mcp.h` |
 | [Rust installation and versions](rust.md) | Native library discovery, docs.rs mode and crate version policy |
 | [Rust close and retry](rust-context-close.md) | Retry-safe ownership in the Rust wrappers |
+| [Python package](../usage/python-package.md) | Python ctypes binding (`vmafx`) for `libvmafx.so.1` |
+| [Language bindings](vmafx/bindings.md) | VMAFx C API bindings for Python, Rust, and Go |
 | [Perceptual weighting](perceptual-weight.md) | `perceptual_weight.h` |
 
 ## Minimal program
