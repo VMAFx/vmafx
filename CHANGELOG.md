@@ -13,6 +13,9 @@
   ([Homebrew tap](docs/development/distribution.md#homebrew-tap)).
 
 
+- **Packaged Rust crate checks.** Bundle the documentation headers in `vmafx-sys` and check both Rust crate archives for size, uncompressed extraction limits, standalone docs.rs builds without GPU tools, and header drift, in Rust CI and as a pre-commit hook (#2320). Publish missing crate versions in dependency order from protected release tags via uncredentialed dry-run verification and `--no-verify` publication, with bootstrap-token-to-OIDC authentication (ADR-3399).
+
+
 - **`adm_cuda` evaluates two viewing distances in one instance (ADR-2795).**
   With `adm_norm_view_dist_extra`, or when two models such as
   `vmaf_v1.0.16_3d0h` and `_5d0h` run on `--backend cuda`, the CUDA twin runs
@@ -2459,6 +2462,9 @@
 
 ### Fixed
 
+- **Stop the requirements guide from restating the uv version.** `requirements/AGENTS.md` still named uv 0.13.1 after `requirements/locks/manifest.json` moved to 0.13.6; it now points at `uv_version` in the manifest, and `scripts/ci/check_python_dependency_locks.py check` refuses any Markdown guide line that names `uv` or `uv_version` next to a version number (changelog, archive, research, state rows and decision records excepted).
+
+
 - **Turn LTO off for MinGW GCC DLL builds so the binaries start** ([VMAFx/vmafx#3257](https://github.com/VMAFx/vmafx/issues/3257), [ADR-3397](docs/adr/3397-mingw-gcc-dll-lto-off.md)). Under `b_lto=true`, MinGW GCC and GNU `ld --out-implib` wrote `libvmaf.dll.a` and `libvmafx.dll.a` with `__imp_<fn>` pointers and no `T <fn>` function thunks, so `vmaf.exe` auto-imported every call as data and aborted before `main` with `32 bit pseudo relocation ... out of range` under 64-bit ASLR. `core/meson.build` now appends `-fno-lto` with a configure warning when `default_library` is not `static` on MinGW GCC (static builds keep LTO), and `scripts/ci/check_mingw_import_thunks.py` checks `src/*.dll.a` in the `Windows UCRT64` CI job.
 
 
@@ -2470,6 +2476,9 @@
 
 
 - **Keep the FFmpeg patch README counts and tree in step with the replay checker (#3260).** The cumulative patch counts, upstream commit, and resulting tree in `ffmpeg-patches/README.md` are now mirrored and verified by `scripts/ci/ffmpeg_patch_stack.py`, failing `--check` on drift and updated by `--refresh`.
+
+
+- **FFmpeg guide:** state that the stock `libvmaf_cuda` filter copies only the first plane of a CUDA frame and refuses 10-bit, 12-bit and 4:2:2 CUDA frames until the patch series carries the FFmpeg fix, and qualify the `vmafx` fallback for supported CUDA layouts, models, and exact twins (issue 3274).
 
 
 - ADR tooling: `scripts/adr/next-free.sh --claim` no longer hands two parallel
@@ -2552,6 +2561,9 @@
 - CAMBI heatmaps: extractors that share one `heatmaps_path` in a run no longer truncate each other's `.gray` files; only the first open of the folder truncates, later opens append (port of Netflix/vmaf PR 1707, author RaphaelFakhri; Netflix/vmaf issue 1676).
 
 
+- **`concat-changelog-fragments.sh --lint` refuses fragments that do not start with a list item.** Each fragment's first non-blank line outside HTML comments must start with a `-` followed by a space (with at most three leading spaces on a separate line after any leading HTML comments), preventing bare paragraphs and indented code blocks from rendering into CHANGELOG.md.
+
+
 - CI: the `Docker Image Build work` job may run for 90 minutes instead of 45. The uncached
   image build took 30 to 42 minutes on the nine full `master` builds of 2026-10-10 and
   2026-10-11, and the build of `0d2ca56d0` was ended by the limit while it was still
@@ -2583,6 +2595,9 @@
 
 
 - CI: HDR model score pins (`python/test/hdr_models_pin_test.py` and `python/test/vmaf_v1_quality_runner_test.py`) run in every Netflix CPU golden gate and coverage gate CI job with zimg enabled (`-Denable_zimg=true`, `libzimg-dev`). Builds without zimg fail naming the dependency instead of skipping silently, and `scripts/ci/check_required_tests_ran.py` verifies no required HDR test is skipped or absent.
+
+
+- CI: install LLVM 22 through `scripts/ci/install-llvm.sh`, which checks the complete toolchain package set in the Ubuntu archive and falls back to the SHA-256-pinned apt.llvm.org installer with bounded retries if packages are missing or installation fails. Jobs avoid the apt.llvm.org dependency only when the archive provides LLVM 22 and installation succeeds. Ratchet jobs and container tidy lanes explicitly select apt.llvm.org to preserve the baseline toolchain. Disable MSYS2 package caching in steps that inherit the Windows environment so package-cache cleanup cannot exhaust xargs argument space after MSVC setup.
 
 
 - **System-wide Python installs no longer fail on a distribution-installed package.** Since the
@@ -2804,6 +2819,9 @@
   they are compared with the CPU there.
 
 
+- **The CUDA, SYCL and HIP `float_moment` twins score 9, 11, 13, 14 and 15-bit pictures.** The twins score bit-identically to the CPU instead of refusing them; the Metal twin keeps refusing those depths until it is measured.
+
+
 - Tests and testdata tools: the fork-licensed Python files under `python/` and
   `testdata/` now run every process through `scripts/lib/safe_subprocess.run`,
   so the master run of the `check-fork-python-subprocess` hook passes again
@@ -2818,6 +2836,9 @@
   `testdata/bench_backends.py` resolves its default `core/build/tools/vmaf`
   against the repository root, and `testdata/bench_perf.py` records an FFmpeg
   output flood as a failed backend row instead of aborting the run.
+
+
+- **Check `vmafx_rgb_plan_init()` and zero-initialise `VmafxRgbPlan` in `frame_import.c`.** Without LTO on MinGW GCC DLL builds (#3262), GCC could not see across translation units that `vmafx_rgb_check_statement()` had already validated the RGB matrix and ranges, and because mingw-w64's `_assert()` is not `noreturn` (and `assert()` is elided under `NDEBUG`), `fill_plane()` failed `-Werror=maybe-uninitialized` on `VmafxRgbPlan rgb`. `fill_plane()` now zero-initialises `rgb` and returns an error when `vmafx_rgb_plan_init()` fails, `convert_planes()` frees its aligned buffer and propagates the failure, and `bind_frame()` maps it to `VMAFX_E_INVALID`.
 
 
 - **`motion` was NaN in every row of every extracted feature table.** libvmaf emits no
@@ -3186,7 +3207,7 @@
 - Python binding tests: `test_dnn_surface` expects `E_NOTSUP` from `set_tiny_resize` on a build without tiny-AI instead of failing every such build; with tiny-AI the call must still succeed.
 
 
-Intel Quick Sync Video (QSV) tuning now probes ICQ once per device, encoder and FFmpeg runtime, retaining `-global_quality` when it works and falling back to `-q:v` with the same quality value when it fails. Python compare/corpus JSON and Go encode/corpus results name the selected mode and fallback reason in provenance. `VMAFTUNE_QSV_RATE_CONTROL=auto|icq|cqp` controls the selection; QSV adapter version 4 separates older cached encodes.
+- **Intel Quick Sync Video (QSV) tuning probes ICQ and falls back to `-q:v`.** The probe runs once per device, encoder and FFmpeg runtime, retaining `-global_quality` when it works and falling back to `-q:v` with the same quality value when it fails. Python compare/corpus JSON and Go encode/corpus results name the selected mode and fallback reason in provenance. `VMAFTUNE_QSV_RATE_CONTROL=auto|icq|cqp` controls the selection; QSV adapter version 4 separates older cached encodes.
 
 
 - **QSV and VAAPI pixel formats follow the output depth.** The Go and Python QSV encode chains upload `p010le` frames when the output is 10-bit (`-pix_fmt p010le` / `yuv420p10le` or `-profile:v main10`) and `nv12` otherwise; before, a 10-bit HDR encode uploaded 8-bit `nv12` frames. The VAAPI examples download `nv12` or `p010le` instead of the unsupported `yuv420p`. The QSV adapter cache version moves to 3 (#2477 P4-7, P4-12).

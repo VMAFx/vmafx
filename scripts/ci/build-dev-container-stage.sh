@@ -23,10 +23,9 @@
 # The target is an explicit argument from a fixed allowlist so no caller can
 # build a stage by accident:
 #
-#   release-build  digest-pinned Debian 13 base (RELEASE_BUILDER_BASE) plus
-#                  Debian archive packages (gcc, meson, ninja, nasm, ...). No
-#                  third-party download, so no GitHub token: nothing in the
-#                  stage could use one.
+#   release-build  architecture-specific manylinux digest pin (glibc 2.28,
+#                  GCC 14), hash-locked build tools and AlmaLinux packages.
+#                  Public downloads only; the stage mounts no secret.
 #   libvmaf-build  adds the GPU SDKs and third-party fetches; the Intel NEO
 #                  release lookup takes the optional BuildKit secret
 #                  `github_token` from GITHUB_TOKEN (never a build argument).
@@ -44,7 +43,8 @@
 # build reuse the layers the first one just produced. Base images and SDK
 # versions come from the Containerfile's own ARG defaults, which
 # scripts/ci/check-base-image-single-source.sh keeps equal to build-config.env;
-# no `--build-arg` is passed, so the checked-out tree alone decides the inputs.
+# only the native architecture pin is passed as a build argument, read from
+# build-config.env. The checked-out tree alone decides the inputs.
 #
 # Usage:
 #   bash scripts/ci/build-dev-container-stage.sh <target> <image-tag>
@@ -64,10 +64,28 @@ fi
 
 target="$1"
 image_tag="$2"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+image_args=()
 
 case "$target" in
   release-build)
     secret_args=()
+    # Only architecture selects this input; callers cannot override the pin.
+    native_key=NATIVE_RELEASE_BUILDER_BASE
+    case "$(uname -m)" in
+      x86_64) ;;
+      aarch64 | arm64) native_key=NATIVE_RELEASE_BUILDER_ARM64 ;;
+      *)
+        echo "unsupported native release architecture" >&2
+        exit 2
+        ;;
+    esac
+    native_base="$(sed -n "s/^${native_key}=\"\([^\"]*\)\"$/\1/p" "$repo_root/build-config.env")"
+    if [[ ! "$native_base" =~ ^quay\.io/pypa/manylinux_2_28_(x86_64|aarch64)@sha256:[a-f0-9]{64}$ ]]; then
+      echo "invalid native release builder digest pin" >&2
+      exit 2
+    fi
+    image_args=(--build-arg "NATIVE_RELEASE_BUILDER_BASE=$native_base")
     ;;
   libvmaf-build)
     secret_args=(--secret "id=github_token,env=GITHUB_TOKEN")
@@ -79,11 +97,10 @@ case "$target" in
     ;;
 esac
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-
 docker build \
   --file "${repo_root}/dev/Containerfile" \
   --target "$target" \
   --tag "$image_tag" \
+  "${image_args[@]}" \
   "${secret_args[@]}" \
   "$repo_root"

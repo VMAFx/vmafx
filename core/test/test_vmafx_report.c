@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "full_device.h"
 #include "mu_table.h"
 #include "owner_only_file.h"
 #include "test.h"
@@ -60,8 +61,8 @@ static bool submit_frames(VmafxContext *context, unsigned n)
     return ok;
 }
 
-/* Score the default model over N_FRAMES and write `path` in `format`. */
-static bool write_scored(const char *path, uint32_t format, uint32_t flags, const char *sf)
+/* Score the default model over N_FRAMES. */
+static VmafxContext *create_scored_context(VmafxModel **out_model)
 {
     VmafxContext *context = NULL;
     VmafxModel *model = NULL;
@@ -74,12 +75,31 @@ static bool write_scored(const char *path, uint32_t format, uint32_t flags, cons
         VmafxScore score = VMAFX_SCORE_INIT;
         ok = vmafx_score_frame(context, model, i, &score, NULL) == VMAFX_OK;
     }
-    ok = ok && vmafx_report_write(context, path, format, flags, sf, NULL) == VMAFX_OK;
-    vmafx_model_unref(model);
-    if (context) {
-        ok = vmafx_context_destroy(context, NULL) == VMAFX_OK && ok;
+    if (!ok) {
+        if (model) {
+            vmafx_model_unref(model);
+        }
+        if (context) {
+            (void)vmafx_context_destroy(context, NULL);
+        }
+        return NULL;
     }
-    return ok;
+    *out_model = model;
+    return context;
+}
+
+#ifndef VMAF_TEST_FULL_DEVICE_ONLY
+/* Score the default model over N_FRAMES and write `path` in `format`. */
+static bool write_scored(const char *path, uint32_t format, uint32_t flags, const char *sf)
+{
+    VmafxModel *model = NULL;
+    VmafxContext *context = create_scored_context(&model);
+    if (!context) {
+        return false;
+    }
+    const bool ok = vmafx_report_write(context, path, format, flags, sf, NULL) == VMAFX_OK;
+    vmafx_model_unref(model);
+    return vmafx_context_destroy(context, NULL) == VMAFX_OK && ok;
 }
 
 static char *read_text(const char *path)
@@ -359,10 +379,55 @@ static char *test_open_refusals(void)
     vmafx_report_close(NULL);
     return NULL;
 }
+#endif /* !VMAF_TEST_FULL_DEVICE_ONLY */
+
+#ifdef VMAF_TEST_FULL_DEVICE_ONLY
+static char *test_write_to_full_device(void)
+{
+    /* Runtime probe (stat in full_device.h): the result differs per host. */
+    if (!vmaf_test_full_device_rejects_writes()) {
+        (void)fprintf(stderr,
+                      "SKIP: test_write_to_full_device: /dev/full is not a character device\n");
+        mu_skipped = 1;
+        return NULL;
+    }
+
+    VmafxModel *model = NULL;
+    VmafxContext *context = create_scored_context(&model);
+    mu_assert("context creation and scoring", context != NULL);
+
+    static const struct {
+        uint32_t format;
+        const char *score_format;
+    } cases[] = {
+        {VMAFX_REPORT_FORMAT_XML, NULL},      {VMAFX_REPORT_FORMAT_JSON, NULL},
+        {VMAFX_REPORT_FORMAT_CSV, NULL},      {VMAFX_REPORT_FORMAT_SUB, NULL},
+        {VMAFX_REPORT_FORMAT_JSON, LOSSLESS},
+    };
+    const size_t n_cases = sizeof(cases) / sizeof(cases[0]);
+    for (size_t i = 0; i < n_cases; i++) {
+        VmafxError *error = NULL;
+        const VmafxStatus status = vmafx_report_write(context, "/dev/full", cases[i].format, 0u,
+                                                      cases[i].score_format, &error);
+        mu_assert("status != VMAFX_OK on /dev/full", status != VMAFX_OK);
+        mu_assert("status is VMAFX_E_IO on /dev/full", status == VMAFX_E_IO);
+        mu_assert("error allocated on /dev/full", error != NULL);
+        mu_assert("vmafx_error_status is VMAFX_E_IO", vmafx_error_status(error) == VMAFX_E_IO);
+        vmafx_error_free(error);
+    }
+
+    vmafx_model_unref(model);
+    mu_assert("context destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
+    return NULL;
+}
+#endif /* VMAF_TEST_FULL_DEVICE_ONLY */
 
 char *run_tests(void)
 {
     static const MuTest tests[] = {
+#ifdef VMAF_TEST_FULL_DEVICE_ONLY
+        MU_TEST(test_write_to_full_device),
+#else
         MU_TEST(test_json_report_carries_the_record),
         MU_TEST(test_rerun_matches),
         MU_TEST(test_planted_model_digest),
@@ -372,6 +437,7 @@ char *run_tests(void)
         MU_TEST(test_xml_csv_and_sidecar),
         MU_TEST(test_write_refusals),
         MU_TEST(test_open_refusals),
+#endif
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
