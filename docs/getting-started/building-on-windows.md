@@ -66,6 +66,16 @@ pseudo-relocation out-of-range error under 64-bit ASLR
 `scripts/ci/check_mingw_import_thunks.py` verifies that every DLL function
 export has a `T` thunk in its `.dll.a` import library in CI.
 
+The VMAFx DLLs mark no symbol `dllexport`, so GNU `ld` exports every global
+symbol it links. Its built-in filter skips `libgcc`, `libstdc++` and the MinGW
+runtime archives, but not `libgcc_eh.a`. A `-static` link (the UCRT64 job's
+`LDFLAGS`) pulls that unwinder into `libvmafx`. Without a guard, the DLL would
+export `_Unwind_Resume` and 17 more unwinder symbols, and linking `vmaf.exe`
+would fail with `multiple definition of '_Unwind_Resume'`. Shared and `both`
+builds linked with GNU `ld` therefore pass `-Wl,--exclude-libs,libgcc_eh.a`.
+In CI, `check_mingw_import_thunks.py --runtime-archive` fails when a DLL
+exports any symbol that `libgcc_eh.a`, `libgcc.a` or `libwinpthread.a` defines.
+
 ## Native MSVC and CUDA
 
 The native MSVC CUDA build compiles, links and installs in CI; the hosted
