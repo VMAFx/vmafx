@@ -88,6 +88,7 @@ static VmafxContext *create_scored_context(VmafxModel **out_model)
     return context;
 }
 
+#ifndef VMAF_TEST_FULL_DEVICE_ONLY
 /* Score the default model over N_FRAMES and write `path` in `format`. */
 static bool write_scored(const char *path, uint32_t format, uint32_t flags, const char *sf)
 {
@@ -378,7 +379,9 @@ static char *test_open_refusals(void)
     vmafx_report_close(NULL);
     return NULL;
 }
+#endif /* !VMAF_TEST_FULL_DEVICE_ONLY */
 
+#ifdef VMAF_TEST_FULL_DEVICE_ONLY
 static char *test_write_to_full_device(void)
 {
     if (!vmaf_test_full_device_rejects_writes()) {
@@ -416,10 +419,14 @@ static char *test_write_to_full_device(void)
     mu_assert("context destroy", vmafx_context_destroy(context, NULL) == VMAFX_OK);
     return NULL;
 }
+#endif /* VMAF_TEST_FULL_DEVICE_ONLY */
 
 char *run_tests(void)
 {
     static const MuTest tests[] = {
+#ifdef VMAF_TEST_FULL_DEVICE_ONLY
+        MU_TEST(test_write_to_full_device),
+#else
         MU_TEST(test_json_report_carries_the_record),
         MU_TEST(test_rerun_matches),
         MU_TEST(test_planted_model_digest),
@@ -429,7 +436,7 @@ char *run_tests(void)
         MU_TEST(test_xml_csv_and_sidecar),
         MU_TEST(test_write_refusals),
         MU_TEST(test_open_refusals),
-        MU_TEST(test_write_to_full_device),
+#endif
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

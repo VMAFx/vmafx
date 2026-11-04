@@ -107,6 +107,7 @@ static int make_vmaf_ctx_with_scores(VmafContext **vmaf_out, VmafModel **model_o
     return 0;
 }
 
+#ifndef VMAF_TEST_FULL_DEVICE_ONLY
 /* -------------------------------------------------------------------------
  * Test: vmaf_score_at_index() — public entry point
  * ---------------------------------------------------------------------- */
@@ -264,7 +265,9 @@ static char *test_vmaf_write_output(void)
     vmaf_model_destroy(model);
     return NULL;
 }
+#endif /* !VMAF_TEST_FULL_DEVICE_ONLY */
 
+#ifdef VMAF_TEST_FULL_DEVICE_ONLY
 /* -------------------------------------------------------------------------
  * Test: vmaf_write_output() / vmaf_write_output_with_format() to /dev/full
  * ---------------------------------------------------------------------- */
@@ -307,16 +310,20 @@ static char *test_vmaf_write_output_to_full_device(void)
     vmaf_model_destroy(model);
     return NULL;
 }
+#endif /* VMAF_TEST_FULL_DEVICE_ONLY */
 
 /* -------------------------------------------------------------------------
  * Runner
  * ---------------------------------------------------------------------- */
 char *run_tests(void)
 {
+#ifdef VMAF_TEST_FULL_DEVICE_ONLY
+    mu_run_test(test_vmaf_write_output_to_full_device);
+#else
     mu_run_test(test_vmaf_score_at_index);
     mu_run_test(test_vmaf_model_collection_load);
     mu_run_test(test_vmaf_write_output);
-    mu_run_test(test_vmaf_write_output_to_full_device);
+#endif
     return NULL;
 }
 
