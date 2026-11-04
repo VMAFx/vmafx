@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Check that every MinGW DLL function export has a ``T <fn>`` thunk in ``*.dll.a`` (ADR-3397).
+"""Check MinGW import library thunks (ADR-3397) and static runtime export leakage.
 
 When a MinGW GCC DLL is linked with LTO, GNU ``ld --out-implib`` emits ``I __imp_<fn>``
 pointer entries and ``I __nm_<fn>`` data aliases, omitting the ``T <fn>`` function
@@ -14,6 +14,13 @@ For every ``*.dll.a`` under ``<build>/src``, this script pairs the archive with 
 extracts the DLL's function exports (PE export directory entries whose RVA lies in a
 ``CODE`` section, excluding data exports and untyped assembly labels), and checks that
 every function export has a ``T <name>`` thunk in ``nm`` output on the ``.dll.a``.
+
+Additionally, when linking with ``-static``, MinGW GNU ld auto-export re-exports globals
+pulled from toolchain static runtime archives (e.g. ``libgcc_eh.a``) such as
+``_Unwind_Resume``.  Executables that link the runtime statically and link against the
+import library will fail with duplicate symbol definitions.  When ``--runtime-archive``
+is specified, this script checks that paired DLLs export no symbols defined by those
+runtime archives.
 """
 
 from __future__ import annotations
@@ -51,6 +58,8 @@ MIN_DOS_HEADER_BYTES = 0x40
 MIN_PE_HEADER_BYTES = 24
 COFF_STRTAB_HEADER_BYTES = 4
 MIN_NM_TOKENS = 2
+NM_DEFINED_SYMBOL_TOKENS = 3
+DEFINED_GLOBAL_TYPES = frozenset({"A", "T", "D", "B", "R", "S", "C", "G", "W", "V"})
 PE32_MAGIC = 0x10B
 PE32_PLUS_MAGIC = 0x20B
 IMAGE_SCN_CNT_CODE = 0x00000020
@@ -73,12 +82,15 @@ class _PeSection:
     characteristics: int
 
     def contains_rva(self, rva: int) -> bool:
+        """Return True when RVA falls within this section's virtual address span."""
         return self.vaddr <= rva < self.vaddr + self.vspan
 
     def is_executable(self) -> bool:
+        """Return True when section characteristics denote executable code."""
         return bool(self.characteristics & (IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE))
 
     def rva_to_offset(self, rva: int) -> int:
+        """Translate a relative virtual address to a file offset within this section."""
         delta = rva - self.vaddr
         if delta < 0 or delta >= self.raw_size:
             raise ValueError(f"RVA 0x{rva:x} outside raw data of section {self.name!r}")
@@ -86,6 +98,7 @@ class _PeSection:
 
 
 def _rva_to_file_offset(sections: Sequence[_PeSection], rva: int) -> int:
+    """Translate a relative virtual address to a file offset using the matching section."""
     for section in sections:
         if section.contains_rva(rva):
             return section.rva_to_offset(rva)
@@ -93,6 +106,7 @@ def _rva_to_file_offset(sections: Sequence[_PeSection], rva: int) -> int:
 
 
 def _find_section_for_rva(sections: Sequence[_PeSection], rva: int) -> _PeSection | None:
+    """Return the PE section containing the given relative virtual address, or None."""
     for section in sections:
         if section.contains_rva(rva):
             return section
@@ -100,6 +114,7 @@ def _find_section_for_rva(sections: Sequence[_PeSection], rva: int) -> _PeSectio
 
 
 def _read_cstring(data: bytes, offset: int) -> str:
+    """Extract a null-terminated ASCII string from the byte buffer starting at offset."""
     if offset < 0 or offset >= len(data):
         raise ValueError(f"C-string offset {offset} out of bounds")
     limit = min(len(data), offset + MAX_SYMBOL_NAME_BYTES)
@@ -110,6 +125,7 @@ def _read_cstring(data: bytes, offset: int) -> str:
 
 
 def _parse_pe_sections(data: bytes, sec_off: int, num_sections: int) -> list[_PeSection]:
+    """Parse section table entries from PE headers into section records."""
     if num_sections <= 0 or num_sections > MAX_PE_SECTIONS:
         raise ValueError(f"invalid PE section count: {num_sections}")
     sections: list[_PeSection] = []
@@ -124,6 +140,7 @@ def _parse_pe_sections(data: bytes, sec_off: int, num_sections: int) -> list[_Pe
 
 
 def _parse_pe_headers(data: bytes) -> tuple[list[_PeSection], int, int, int, int]:
+    """Extract sections, export directory location, and COFF symbol table offsets from PE binary."""
     if len(data) < MIN_DOS_HEADER_BYTES or data[:2] != b"MZ":
         raise ValueError("not a valid MZ/PE image")
     pe_off = struct.unpack_from("<I", data, 0x3C)[0]
@@ -145,6 +162,7 @@ def _parse_pe_headers(data: bytes) -> tuple[list[_PeSection], int, int, int, int
 def _decode_coff_symbol_name(
     name_bytes: bytes, data: bytes, strtab_off: int, strtab_end: int
 ) -> str:
+    """Decode a symbol name from inline bytes or the COFF string table."""
     if name_bytes[:4] == b"\x00\x00\x00\x00":
         str_off = strtab_off + struct.unpack_from("<I", name_bytes, 4)[0]
         if str_off >= strtab_end:
@@ -154,6 +172,7 @@ def _decode_coff_symbol_name(
 
 
 def _read_coff_symbol_types(data: bytes, sym_off: int, num_syms: int) -> dict[str, int]:
+    """Read external symbol names and their COFF type values from the symbol table."""
     if sym_off == 0 or num_syms == 0:
         return {}
     if num_syms < 0 or num_syms > MAX_COFF_SYMBOLS:
@@ -180,13 +199,14 @@ def _read_coff_symbol_types(data: bytes, sym_off: int, num_syms: int) -> dict[st
     return types
 
 
-def _collect_code_exports(
+def _iter_pe_exports(
     data: bytes,
     sections: Sequence[_PeSection],
     export_rva: int,
     export_size: int,
     coff_types: dict[str, int],
-) -> frozenset[str]:
+) -> list[tuple[str, bool]]:
+    """Iterate PE export table entries and classify each symbol as code or data."""
     exp_off = _rva_to_file_offset(sections, export_rva)
     _, _, _, _, _, _, num_funcs, num_names, addr_rva, name_rva, ord_rva = struct.unpack_from(
         "<IIHHIIIIIII", data, exp_off
@@ -196,7 +216,7 @@ def _collect_code_exports(
     addr_off = _rva_to_file_offset(sections, addr_rva)
     name_off = _rva_to_file_offset(sections, name_rva)
     ord_off = _rva_to_file_offset(sections, ord_rva)
-    funcs: set[str] = set()
+    exports: list[tuple[str, bool]] = []
     for idx in range(num_names):
         sym_name_rva = struct.unpack_from("<I", data, name_off + idx * 4)[0]
         sym = _read_cstring(data, _rva_to_file_offset(sections, sym_name_rva))
@@ -205,28 +225,39 @@ def _collect_code_exports(
             raise ValueError(f"ordinal index {ord_idx} out of range ({num_funcs})")
         fn_rva = struct.unpack_from("<I", data, addr_off + ord_idx * 4)[0]
         if export_rva <= fn_rva < export_rva + export_size:
+            exports.append((sym, False))
             continue
         sec = _find_section_for_rva(sections, fn_rva)
-        if (
+        is_code = (
             sec is not None
             and sec.is_executable()
             and coff_types.get(sym, IMAGE_SYM_TYPE_FUNCTION) == IMAGE_SYM_TYPE_FUNCTION
-        ):
-            funcs.add(sym)
-    return frozenset(funcs)
+        )
+        exports.append((sym, is_code))
+    return exports
 
 
-def read_dll_function_exports(dll_path: Path) -> frozenset[str]:
-    """Return function export names whose RVA lies in a ``CODE`` section of ``dll_path``."""
+def _read_dll_exports(dll_path: Path) -> list[tuple[str, bool]]:
+    """Read and parse PE export table entries from a DLL file."""
     try:
         data = dll_path.read_bytes()
         sections, export_rva, export_size, sym_off, num_syms = _parse_pe_headers(data)
         if export_rva == 0 or export_size == 0:
-            return frozenset()
+            return []
         coff_types = _read_coff_symbol_types(data, sym_off, num_syms)
-        return _collect_code_exports(data, sections, export_rva, export_size, coff_types)
+        return _iter_pe_exports(data, sections, export_rva, export_size, coff_types)
     except struct.error as exc:
         raise ValueError(f"truncated PE structure in {dll_path}") from exc
+
+
+def read_dll_function_exports(dll_path: Path) -> frozenset[str]:
+    """Return function export names whose RVA lies in a ``CODE`` section of ``dll_path``."""
+    return frozenset(sym for sym, is_code in _read_dll_exports(dll_path) if is_code)
+
+
+def read_dll_all_exports(dll_path: Path) -> frozenset[str]:
+    """Return all export names (both function and data) of ``dll_path``."""
+    return frozenset(sym for sym, _ in _read_dll_exports(dll_path))
 
 
 def find_paired_dll(archive: Path, dll_dir: Path) -> Path | None:
@@ -242,6 +273,7 @@ def find_paired_dll(archive: Path, dll_dir: Path) -> Path | None:
 
 
 def _resolve_single_executable(candidate: str) -> str:
+    """Resolve an executable command name or relative path to an absolute path."""
     executable = executable_argument(candidate, Path.cwd())
     found = shutil.which(executable)
     if found is None and Path(executable).is_file():
@@ -282,12 +314,12 @@ def resolve_nm_command(explicit: ToolSpec | None) -> tuple[str, ...]:
     return (resolved_exe, *tokens[1:])
 
 
-def default_run_nm(nm_tool: ToolSpec, archive: Path) -> tuple[int, str, str]:
-    """Run ``nm`` on ``archive`` with a timeout and bounded output."""
+def _run_nm(nm_tool: ToolSpec, archive: Path, flags: Sequence[str] = ()) -> tuple[int, str, str]:
+    """Invoke nm on an archive with specified command flags under timeout and size limits."""
     try:
         cmd_prefix = resolve_nm_command(nm_tool)
         proc = run_command(
-            [*cmd_prefix, str(archive)],
+            [*cmd_prefix, *flags, str(archive)],
             allowed_executables=(cmd_prefix[0],),
             capture_output=True,
             text=True,
@@ -306,6 +338,16 @@ def default_run_nm(nm_tool: ToolSpec, archive: Path) -> tuple[int, str, str]:
     return proc.returncode, proc.stdout, proc.stderr
 
 
+def default_run_nm(nm_tool: ToolSpec, archive: Path) -> tuple[int, str, str]:
+    """Run ``nm`` on ``archive`` with a timeout and bounded output."""
+    return _run_nm(nm_tool, archive)
+
+
+def default_run_nm_defined_globals(nm_tool: ToolSpec, archive: Path) -> tuple[int, str, str]:
+    """Run ``nm --defined-only -g`` on ``archive`` with a timeout and bounded output."""
+    return _run_nm(nm_tool, archive, ("--defined-only", "-g"))
+
+
 def parse_nm_thunks(nm_output: str) -> frozenset[str]:
     """Return the set of ``T <name>`` function thunk symbols from ``nm`` text output."""
     thunks: set[str] = set()
@@ -316,13 +358,101 @@ def parse_nm_thunks(nm_output: str) -> frozenset[str]:
     return frozenset(thunks)
 
 
+def parse_nm_defined_globals(nm_output: str) -> frozenset[str]:
+    """Return defined global symbol names from ``nm`` text output."""
+    symbols: set[str] = set()
+    for line in nm_output.splitlines():
+        parts = line.split()
+        if len(parts) == NM_DEFINED_SYMBOL_TOKENS and parts[1] in DEFINED_GLOBAL_TYPES:
+            symbols.add(parts[2])
+    return frozenset(symbols)
+
+
+def _check_runtime_overlap(
+    dll_path: Path,
+    runtime_data: Sequence[tuple[Path, frozenset[str]]],
+    all_dll_reader: DllExportsReader,
+) -> bool:
+    """Detect exported DLL symbols that overlap with defined symbols in toolchain runtime archives."""
+    try:
+        all_exports = all_dll_reader(dll_path)
+    except (OSError, ValueError) as exc:
+        print(
+            f"check_mingw_import_thunks: FAIL {dll_path}: cannot read DLL exports: {exc}",
+            file=sys.stderr,
+        )
+        return False
+
+    all_passed = True
+    for rt_archive, rt_symbols in runtime_data:
+        overlap = all_exports & rt_symbols
+        if overlap:
+            sorted_overlap = sorted(overlap)
+            preview = ", ".join(sorted_overlap[:MAX_MISSING_PREVIEW])
+            extra = (
+                f" (+{len(sorted_overlap) - MAX_MISSING_PREVIEW} more)"
+                if len(sorted_overlap) > MAX_MISSING_PREVIEW
+                else ""
+            )
+            print(
+                f"check_mingw_import_thunks: FAIL {dll_path}: "
+                f"exports {len(overlap)} symbol(s) defined by toolchain runtime archive {rt_archive.name}: "
+                f"[{preview}{extra}] "
+                "(consumers that link the runtime statically get duplicate definitions, "
+                "e.g. multiple definition of _Unwind_Resume; "
+                "exclude the archive from auto-export with -Wl,--exclude-libs)",
+                file=sys.stderr,
+            )
+            all_passed = False
+        else:
+            print(
+                f"check_mingw_import_thunks: OK {dll_path} ({rt_archive.name}): "
+                "runtime_overlap=0"
+            )
+    return all_passed
+
+
+def _load_runtime_archives(
+    runtime_archives: Sequence[Path],
+    tool: ToolSpec,
+    runner: Runner,
+) -> tuple[list[tuple[Path, frozenset[str]]], bool]:
+    """Collect defined global symbol sets from each toolchain runtime archive."""
+    results: list[tuple[Path, frozenset[str]]] = []
+    ok = True
+    for rt_path in runtime_archives:
+        if not rt_path.is_file():
+            print(
+                f"check_mingw_import_thunks: FAIL {rt_path}: "
+                "runtime archive not found or unreadable",
+                file=sys.stderr,
+            )
+            ok = False
+            continue
+        rc, stdout, stderr = runner(tool, rt_path)
+        if rc != 0:
+            detail = stderr.strip() or stdout.strip() or f"exit {rc}"
+            print(
+                f"check_mingw_import_thunks: FAIL {rt_path}: "
+                f"nm ({tool}) failed on runtime archive (exit {rc}): {detail}",
+                file=sys.stderr,
+            )
+            ok = False
+            continue
+        results.append((rt_path, parse_nm_defined_globals(stdout)))
+    return results, ok
+
+
 def _check_single_archive(
     archive: Path,
     target_dll_dir: Path,
     tool: ToolSpec,
     runner: Runner,
     dll_reader: DllExportsReader,
+    runtime_data: Sequence[tuple[Path, frozenset[str]]] = (),
+    all_dll_reader: DllExportsReader = read_dll_all_exports,
 ) -> bool:
+    """Verify import thunk coverage and runtime archive isolation for a single library."""
     dll_path = find_paired_dll(archive, target_dll_dir)
     if dll_path is None:
         stem = archive.name[: -len(".dll.a")]
@@ -358,7 +488,11 @@ def _check_single_archive(
             file=sys.stderr,
         )
         return False
-    return _report_thunk_coverage(archive, dll_path, func_exports, thunk_symbols)
+    thunk_ok = _report_thunk_coverage(archive, dll_path, func_exports, thunk_symbols)
+    runtime_ok = True
+    if runtime_data:
+        runtime_ok = _check_runtime_overlap(dll_path, runtime_data, all_dll_reader)
+    return thunk_ok and runtime_ok
 
 
 def _report_thunk_coverage(
@@ -394,6 +528,9 @@ def check_build_dir(
     runner: Runner = default_run_nm,
     dll_dir: Path | None = None,
     dll_reader: DllExportsReader = read_dll_function_exports,
+    runtime_archives: Sequence[Path | str] = (),
+    runtime_runner: Runner = default_run_nm_defined_globals,
+    all_dll_reader: DllExportsReader = read_dll_all_exports,
 ) -> int:
     """Inspect ``<build_dir>/src/*.dll.a`` against paired DLLs; return 0 on pass, 1 on failure."""
     src_dir = build_dir / "src"
@@ -407,14 +544,31 @@ def check_build_dir(
 
     target_dll_dir = dll_dir if dll_dir is not None else src_dir
     tool: ToolSpec = nm_tool or os.environ.get("NM") or "nm"
+
+    runtime_data: list[tuple[Path, frozenset[str]]] = []
+    if runtime_archives:
+        norm_paths = [Path(p) for p in runtime_archives]
+        runtime_data, ok = _load_runtime_archives(norm_paths, tool, runtime_runner)
+        if not ok:
+            return 1
+
     failed = False
     for archive in archives:
-        if not _check_single_archive(archive, target_dll_dir, tool, runner, dll_reader):
+        if not _check_single_archive(
+            archive,
+            target_dll_dir,
+            tool,
+            runner,
+            dll_reader,
+            runtime_data=runtime_data,
+            all_dll_reader=all_dll_reader,
+        ):
             failed = True
     return 1 if failed else 0
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Entry point for checking MinGW import library thunks and runtime archive isolation."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "build_dir",
@@ -432,8 +586,23 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="nm binary or command prefix to use (default: $NM or nm)",
     )
+    parser.add_argument(
+        "--runtime-archive",
+        action="append",
+        type=Path,
+        default=[],
+        help=(
+            "Path to toolchain static runtime archive (e.g. libgcc_eh.a) "
+            "to check for exported symbols (repeatable)"
+        ),
+    )
     args = parser.parse_args(argv)
-    return check_build_dir(args.build_dir, nm_tool=args.nm, dll_dir=args.dll_dir)
+    return check_build_dir(
+        args.build_dir,
+        nm_tool=args.nm,
+        dll_dir=args.dll_dir,
+        runtime_archives=args.runtime_archive,
+    )
 
 
 if __name__ == "__main__":
