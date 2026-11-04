@@ -11,7 +11,7 @@
 # fails fast on any build error, and smoke-tests the resulting image by invoking
 # `vmaf --version` and the CPU-backend probe against the bundled test YUVs.
 # It then rehearses the native release build (ADR-1346, ADR-1354): it builds
-# the Debian 13 `release-build` stage and runs the release compile in it
+# the manylinux `release-build` stage and runs the release compile in it
 # exactly as supply-chain.yml's `build-artifacts` does.
 #
 # Own-input lane (ADR-3338): on the full tier (master push, `ci: full`) the
@@ -246,7 +246,7 @@ jobs:
       # build-native-release-artifacts.sh in it; these two steps do the same
       # with the same script, flags and user, so a pull request that would
       # break the release compile fails here instead of at publication.
-      # `release-build` is its own Debian 13 root, not a parent of the image
+      # `release-build` is its own manylinux root, not a parent of the image
       # built above, so it builds here from an empty cache exactly as in the
       # release job (under a minute). No GITHUB_TOKEN: release-build mounts
       # no secret.
