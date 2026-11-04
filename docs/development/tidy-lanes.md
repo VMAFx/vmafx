@@ -72,7 +72,14 @@ in the checkout is written, and nothing is mounted into the container.
 A baseline records the clang-tidy it was measured with (`clang_tidy_version`,
 22.1.8 today), and the counts of two versions are not comparable. apt.llvm.org
 serves only the newest build of the 22 series, the same one the hosted job
-gets.
+gets. The hosted ratchet jobs use the shared helper
+`scripts/ci/install-llvm.sh 22 --source=apt.llvm.org` to keep that source.
+Other CI jobs use its default `--source=archive-first`: all requested packages
+(clang, lldb, lld, clangd and clang-tidy) must be available, and a failed
+archive install falls back to apt.llvm.org. Ratchet runs still need
+apt.llvm.org, so an apt.llvm.org outage fails them by name. A changed installer fails by
+name on a SHA-256 mismatch; review the upstream script before updating the
+helper's digest.
 
 When that build moves on, a check and a scoped write stop with exit `5` and
 name both versions; nothing is measured.
@@ -123,8 +130,9 @@ and clang-tidy 22 from the hosted job's source.
    ignored ones) into it as a tar stream, so uncommitted edits are measured
    and a host build directory is not;
 3. installs clang-tidy 22 from apt.llvm.org's `llvm-toolchain-<codename>-22`,
-   the package the hosted job installs with `llvm.sh 22`, unless the image
-   already has it. The archive key is checked against a pinned SHA-256;
+   the package the hosted job installs, unless the image already has it. The
+   archive key is checked against a pinned SHA-256 (the dev image has no
+   `lsb_release`, which the helper's `llvm.sh` path needs);
 4. runs `make tidy-ratchet-build LANE=<lane>`: `meson setup` with the lane's
    configuration, then a full build, which leaves `compile_commands.json` and
    the generated headers;
