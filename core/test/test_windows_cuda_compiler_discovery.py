@@ -57,11 +57,14 @@ def discovery_block() -> str:
     source = SOURCE.read_text(encoding="utf-8")
     marker = "# nvcc runs on the build machine and needs a host compiler for"
     start = source.index("        if nvcc_build_msvc != ''", source.index(marker))
-    end = source.index("        nvcc_ver_out = run_command(nvcc_exe, '--version', check: true)", start)
+    end = source.index(
+        "        nvcc_ver_out = run_command(nvcc_exe, '--version', check: true)", start
+    )
     block = textwrap.dedent(source[start:end])
     assert "build_machine.system()" in block, (
         "discovery block no longer consults the build machine; "
-        "update the fixture_build_system injection")
+        "update the fixture_build_system injection"
+    )
     return block.replace("build_machine.system()", "fixture_build_system")
 
 
@@ -207,7 +210,7 @@ def _build_fixture(
     # cl.exe, it only records its path, so the stand-in content is
     # irrelevant. On a Linux CI host no VS exists and the stand-in must NOT
     # be present, so find_program('cl') fails and the cross/else path runs.
-    if sys.platform == 'win32':
+    if sys.platform == "win32":
         (binary_dir / "cl.exe").write_bytes(b"")
     responses = _fixture_responses(compiler, vswhere, build_msvc)
     (root / "responses.json").write_text(json.dumps(responses), encoding="utf-8")
@@ -218,8 +221,9 @@ def _build_fixture(
         # Cross scenario: the else branch must run with empty ccbin flags and
         # host includes; the assertions live in the fixture project. The
         # injected build system is 'linux', mirroring the real cross host.
-        _write_project(root, "''", build_msvc, checks=cross_checks,
-                       fixture_build_system=build_machine)
+        _write_project(
+            root, "''", build_msvc, checks=cross_checks, fixture_build_system=build_machine
+        )
         return binary_dir, _write_cross_file(root)
     if build_msvc:
         expected_compiler = f"'{build_msvc}'"
@@ -310,31 +314,34 @@ class WindowsCudaCompilerDiscovery(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     @unittest.skipIf(
-        sys.platform == 'win32',
-        'meson >=1.12 auto-activates the Visual Studio environment for '
-        'Windows-target cross files, which injects the real cl.exe and '
-        'PowerShell into PATH and defeats the stub isolation; these cases '
-        'run on the Linux CI lane where no VS is installed')
+        sys.platform == "win32",
+        "meson >=1.12 auto-activates the Visual Studio environment for "
+        "Windows-target cross files, which injects the real cl.exe and "
+        "PowerShell into PATH and defeats the stub isolation; these cases "
+        "run on the Linux CI lane where no VS is installed",
+    )
     def test_empty_vswhere_uses_path_compiler(self) -> None:
         result = self.configure(vswhere="empty", path_compiler=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     @unittest.skipIf(
-        sys.platform == 'win32',
-        'meson >=1.12 auto-activates the Visual Studio environment for '
-        'Windows-target cross files, which injects the real cl.exe and '
-        'PowerShell into PATH and defeats the stub isolation; these cases '
-        'run on the Linux CI lane where no VS is installed')
+        sys.platform == "win32",
+        "meson >=1.12 auto-activates the Visual Studio environment for "
+        "Windows-target cross files, which injects the real cl.exe and "
+        "PowerShell into PATH and defeats the stub isolation; these cases "
+        "run on the Linux CI lane where no VS is installed",
+    )
     def test_failed_vswhere_uses_path_compiler(self) -> None:
         result = self.configure(vswhere="error", path_compiler=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     @unittest.skipIf(
-        sys.platform == 'win32',
-        'meson >=1.12 auto-activates the Visual Studio environment for '
-        'Windows-target cross files, which injects the real cl.exe and '
-        'PowerShell into PATH and defeats the stub isolation; these cases '
-        'run on the Linux CI lane where no VS is installed')
+        sys.platform == "win32",
+        "meson >=1.12 auto-activates the Visual Studio environment for "
+        "Windows-target cross files, which injects the real cl.exe and "
+        "PowerShell into PATH and defeats the stub isolation; these cases "
+        "run on the Linux CI lane where no VS is installed",
+    )
     def test_cross_linux_build_machine_skips_windows_discovery(self) -> None:
         """Cross builds run nvcc on a non-Windows build machine: no cl search
         and no MSVC include discovery run, and the branch yields empty ccbin
@@ -351,11 +358,12 @@ class WindowsCudaCompilerDiscovery(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     @unittest.skipIf(
-        sys.platform == 'win32',
-        'meson >=1.12 auto-activates the Visual Studio environment for '
-        'Windows-target cross files, which injects the real cl.exe and '
-        'PowerShell into PATH and defeats the stub isolation; these cases '
-        'run on the Linux CI lane where no VS is installed')
+        sys.platform == "win32",
+        "meson >=1.12 auto-activates the Visual Studio environment for "
+        "Windows-target cross files, which injects the real cl.exe and "
+        "PowerShell into PATH and defeats the stub isolation; these cases "
+        "run on the Linux CI lane where no VS is installed",
+    )
     def test_no_compiler_reports_actionable_error(self) -> None:
         result = self.configure(vswhere="empty", path_compiler=False)
         self.assertNotEqual(result.returncode, 0)
