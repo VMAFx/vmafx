@@ -4,9 +4,9 @@
 [package]
 name = "vmafx"
 # Crate version - independently versioned on purpose (ADR-1127, reaffirmed by
-# ADR-1151). The Rust crates are not published from the release pipeline and
-# carry no x-release-please-version marker; the fork's product releases
-# (0.1.0 first, ADR-3292) do not reset them.
+# ADR-1151). ADR-3399 publishes them from validated release tags; they carry no
+# x-release-please-version marker. The fork's product releases (0.1.0 first,
+# ADR-3292) do not reset crate versions.
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true

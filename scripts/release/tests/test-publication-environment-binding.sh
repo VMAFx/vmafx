@@ -12,7 +12,10 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
 python3 - "$REPO_ROOT" <<'PY'
 from copy import deepcopy
 import re
+import subprocess
 import sys
+import tempfile
+import textwrap
 from pathlib import Path
 
 root = Path(sys.argv[1])
@@ -24,7 +27,7 @@ workflow_paths = (
 # ADR-1356: GitHub-native build provenance. Job -> (the job whose `hashes`
 # output names the subjects, the workflow artifact carrying the bundle).
 PROVENANCE_JOBS = {
-    "provenance": ("build-artifacts", "vmafx-build-provenance"),
+    "provenance": ("collect-artifacts", "vmafx-build-provenance"),
     "mcp-provenance": ("mcp-build", "vmaf-mcp-provenance"),
 }
 ATTEST_USES = re.compile(
@@ -421,6 +424,22 @@ def validate(texts: dict[str, str]) -> None:
             require_environment(relative_path, job, block, expected)
 
     supply_blocks = parsed[workflow_paths[0]]
+    if "crates-publish" not in supply_blocks:
+        raise AssertionError("supply-chain.yml lost the Rust crate publisher")
+    require_environment(
+        workflow_paths[0], "crates-publish", supply_blocks["crates-publish"], "release-publish"
+    )
+    if "crates-verify" not in supply_blocks:
+        raise AssertionError("supply-chain.yml lost the Rust crate verifier")
+    verify_block = supply_blocks["crates-verify"]
+    if "environment:" in verify_block:
+        raise AssertionError("crates-verify must not be bound to a deployment environment")
+    if "id-token: write" in verify_block:
+        raise AssertionError("crates-verify must not carry id-token write permission")
+    if "crates-verify" not in supply_blocks["crates-publish"].split("steps:\n")[0]:
+        raise AssertionError("crates-publish must depend on crates-verify in needs")
+    if "--no-verify" not in supply_blocks["crates-publish"]:
+        raise AssertionError("crates-publish must use --no-verify")
     missing_jobs = set(PROVENANCE_JOBS) - set(supply_blocks)
     if missing_jobs:
         raise AssertionError(f"supply-chain.yml lost provenance jobs {sorted(missing_jobs)}")
@@ -438,11 +457,97 @@ def expect_rejected(name: str, texts: dict[str, str]) -> None:
     raise AssertionError(f"broken fixture unexpectedly passed: {name}")
 
 
+def check_crate_version_queries(block: str) -> None:
+    """Run the workflow's version checks with stub HTTP results, never credentials."""
+    step = block.split("      - name: Check immutable crate versions\n", 1)[1]
+    step = step.split("\n      - ", 1)[0]
+    script = textwrap.dedent(step.split("        run: |\n", 1)[1])
+    cases = (
+        ("both absent", "404", "404", 0, True, True),
+        ("already published", "200", "200", 0, False, False),
+        ("partial recovery", "200", "404", 0, False, True),
+        ("only sys missing", "404", "200", 0, True, False),
+        ("server failure", "503", "404", 1, False, False),
+        ("wrapper query failure", "200", "429", 1, False, False),
+        ("transport failure", "timeout", "404", 28, False, False),
+    )
+    with tempfile.TemporaryDirectory(prefix="rust-publication-test-") as directory:
+        temporary = Path(directory)
+        for crate in ("vmafx-sys", "vmafx"):
+            manifest = temporary / "bindings/rust" / crate / "Cargo.toml"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text('[package]\nversion = "0.1.0"\n', encoding="utf-8")
+        for name, sys_status, wrapper_status, expected_rc, sys_missing, wrapper_missing in cases:
+            output = temporary / "outputs"
+            output.write_text("", encoding="utf-8")
+            # A shell function shadows curl; the test cannot contact crates.io.
+            stub = f'''\
+                curl() {{
+                  case "${{@: -1}}" in
+                    https://crates.io/api/v1/crates/vmafx-sys/0.1.0) status={sys_status} ;;
+                    https://crates.io/api/v1/crates/vmafx/0.1.0) status={wrapper_status} ;;
+                    *) return 99 ;;
+                  esac
+                  if [[ "$status" == timeout ]]; then return 28; fi
+                  printf '%s' "$status"
+                }}
+                RUNNER_TEMP={directory!r}
+                GITHUB_OUTPUT={str(output)!r}
+                '''
+            result = subprocess.run(
+                ["bash", "-c", textwrap.dedent(stub) + script],
+                cwd=temporary, capture_output=True, text=True, timeout=10, check=False,
+            )
+            if result.returncode != expected_rc:
+                raise AssertionError(f"{name}: exit {result.returncode}: {result.stderr}")
+            outputs = dict(line.split("=", 1) for line in output.read_text().splitlines())
+            if expected_rc == 0:
+                expected = {
+                    "vmafx-sys": str(sys_missing).lower(),
+                    "vmafx": str(wrapper_missing).lower(),
+                    "publish": str(sys_missing or wrapper_missing).lower(),
+                }
+                if outputs != expected:
+                    raise AssertionError(f"{name}: expected {expected}, got {outputs}")
+            elif "publish" in outputs:
+                raise AssertionError(f"{name}: failed query enabled publication")
+            print(f"PASS: Rust crate version query: {name}")
+
+
 texts = {
     relative_path: (root / relative_path).read_text(encoding="utf-8")
     for relative_path in workflow_paths
 }
 validate(texts)
+
+supply_path = workflow_paths[0]
+crate_block = jobs(texts[supply_path])["crates-publish"]
+check_crate_version_queries(crate_block)
+unprotected_crates = deepcopy(texts)
+unprotected_crates[supply_path] = unprotected_crates[supply_path].replace(
+    crate_block, crate_block.replace("    environment: release-publish\n", "", 1), 1
+)
+expect_rejected("Rust crate publisher without release-publish", unprotected_crates)
+
+missing_crates = deepcopy(texts)
+missing_crates[supply_path] = missing_crates[supply_path].replace(
+    "  crates-publish:\n" + crate_block, "", 1
+)
+expect_rejected("a missing Rust crate publisher", missing_crates)
+
+unverified_publish = deepcopy(texts)
+unverified_publish[supply_path] = unverified_publish[supply_path].replace(
+    "--no-verify", "--reverify", 1
+)
+expect_rejected("Rust crate publisher without --no-verify", unverified_publish)
+
+verify_with_creds = deepcopy(texts)
+verify_with_creds[supply_path] = verify_with_creds[supply_path].replace(
+    "  crates-verify:\n",
+    "  crates-verify:\n    permissions:\n      id-token: write\n",
+    1
+)
+expect_rejected("Rust crate verifier with id-token permission", verify_with_creds)
 
 production_path = workflow_paths[1]
 bad_identity = deepcopy(texts)
@@ -652,7 +757,7 @@ expect_rejected(
 expect_rejected(
     "provenance subjects detached from the build job's digests",
     mutate_native_provenance(
-        "${{ needs.build-artifacts.outputs.hashes }}",
+        "${{ needs.collect-artifacts.outputs.hashes }}",
         "${{ needs.verify-native-artifacts.outputs.hashes }}",
     ),
 )
