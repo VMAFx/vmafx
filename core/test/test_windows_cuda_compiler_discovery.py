@@ -55,9 +55,9 @@ MESON_COMMAND = _meson_command()
 
 def discovery_block() -> str:
     source = SOURCE.read_text(encoding="utf-8")
-    marker = "# default C compiler. Use vswhere + powershell"
-    start = source.index("        if host_machine.system() == 'windows'", source.index(marker))
-    end = source.index("        # Detect CUDA version from nvcc directly", start)
+    marker = "# nvcc runs on the build machine and needs a host compiler for"
+    start = source.index("        cl_path = ''", source.index(marker))
+    end = source.index("        nvcc_ver_out = run_command(nvcc_exe, '--version', check: true)", start)
     return textwrap.dedent(source[start:end])
 
 
@@ -120,33 +120,49 @@ def _write_powershell_stub(binary_dir: Path) -> None:
     powershell.chmod(0o700)
 
 
-def _write_cross_file(root: Path) -> Path:
-    """Write the cross file that makes Meson evaluate the Windows branch."""
+def _write_cross_file(root: Path, build_machine: str = "") -> Path:
+    """Write the cross file that makes Meson evaluate the Windows branch.
+
+    ``build_machine`` optionally pins the build machine (for example to Linux)
+    to exercise the cross-compile path of the discovery block, where nvcc runs
+    on a non-Windows machine while the produced fatbins target Windows.
+    """
     cross = root / "windows.ini"
-    cross.write_text(
+    content = (
         "[host_machine]\nsystem = 'windows'\ncpu_family = 'x86_64'\n"
-        "cpu = 'x86_64'\nendian = 'little'\n",
-        encoding="utf-8",
+        "cpu = 'x86_64'\nendian = 'little'\n"
     )
+    if build_machine:
+        content += f"[build_machine]\nsystem = '{build_machine}'\n"
+    cross.write_text(content, encoding="utf-8")
     return cross
 
 
-def _write_project(root: Path, expected_compiler: str, build_msvc: str = "") -> None:
+def _write_project(
+    root: Path,
+    expected_compiler: str,
+    build_msvc: str = "",
+    checks: str = "",
+) -> None:
     """Write the tiny Meson project that runs the shipped discovery block.
 
     ``nvcc_build_msvc`` is what core/src/meson.build derives from the build's
     C++ compiler when that compiler is MSVC; a project without languages cannot
     hold a compiler object, so the fixture sets the variable directly.
+    ``checks`` defaults to the Windows-branch assertions and can be replaced by
+    cross-scenario assertions (the cross path sets empty ccbin flags and host
+    includes).
     """
-    checks = (
-        f"assert(cl_path == {expected_compiler}, 'wrong compiler selected')\n"
-        "assert(nvcc_ccbin_flags == ['--allow-unsupported-compiler', '-ccbin', cl_path])\n"
-        "assert(nvcc_host_includes == [\n"
-        f"  '-I', '{MSVC_ROOT}/include',\n"
-        f"  '-I', '{SDK_ROOT}/ucrt',\n"
-        f"  '-I', '{SDK_ROOT}/shared',\n"
-        f"  '-I', '{SDK_ROOT}/um'])\n"
-    )
+    if not checks:
+        checks = (
+            f"assert(cl_path == {expected_compiler}, 'wrong compiler selected')\n"
+            "assert(nvcc_ccbin_flags == ['--allow-unsupported-compiler', '-ccbin', cl_path])\n"
+            "assert(nvcc_host_includes == [\n"
+            f"  '-I', '{MSVC_ROOT}/include',\n"
+            f"  '-I', '{SDK_ROOT}/ucrt',\n"
+            f"  '-I', '{SDK_ROOT}/shared',\n"
+            f"  '-I', '{SDK_ROOT}/um'])\n"
+        )
     (root / "meson.build").write_text(
         "project('windows-cuda-discovery')\n"
         + f"nvcc_build_msvc = '{build_msvc}'\n"
@@ -157,7 +173,13 @@ def _write_project(root: Path, expected_compiler: str, build_msvc: str = "") -> 
 
 
 def _build_fixture(
-    root: Path, *, vswhere: str, path_compiler: bool, build_msvc: str = ""
+    root: Path,
+    *,
+    vswhere: str,
+    path_compiler: bool,
+    build_msvc: str = "",
+    build_machine: str = "",
+    cross_checks: str = "",
 ) -> tuple[Path, Path]:
     """Materialise one discovery case under ``root``.
 
@@ -169,11 +191,25 @@ def _build_fixture(
     if path_compiler:
         compiler.write_text(f"#!{sys.executable}\n", encoding="utf-8")
         compiler.chmod(0o700)
+    # On a Windows host, a `cl.exe` stand-in keeps Meson's Visual Studio
+    # environment auto-setup (utils/vsenv.py: shutil.which('cl.exe')) from
+    # injecting the real VS toolchain into PATH, which would defeat the stub
+    # isolation of the discovery cases. The discovery block never runs
+    # cl.exe, it only records its path, so the stand-in content is
+    # irrelevant. On a Linux CI host no VS exists and the stand-in must NOT
+    # be present, so find_program('cl') fails and the cross/else path runs.
+    if sys.platform == 'win32':
+        (binary_dir / "cl.exe").write_bytes(b"")
     responses = _fixture_responses(compiler, vswhere, build_msvc)
     (root / "responses.json").write_text(json.dumps(responses), encoding="utf-8")
     _write_powershell_stub(binary_dir)
     # The compiler selected by the branch is checked against the exact
     # executable found by Meson, including the PATH fallback.
+    if build_machine:
+        # Cross scenario: the else branch must run with empty ccbin flags and
+        # host includes; the assertions live in the fixture project.
+        _write_project(root, "''", build_msvc, checks=cross_checks)
+        return binary_dir, _write_cross_file(root, build_machine=build_machine)
     if build_msvc:
         expected_compiler = f"'{build_msvc}'"
     elif vswhere == "found":
@@ -212,13 +248,24 @@ def _run_meson(root: Path, binary_dir: Path, cross: Path) -> subprocess.Complete
 
 class WindowsCudaCompilerDiscovery(unittest.TestCase):
     def configure(
-        self, *, vswhere: str, path_compiler: bool, build_msvc: str = ""
+        self,
+        *,
+        vswhere: str,
+        path_compiler: bool,
+        build_msvc: str = "",
+        build_machine: str = "",
+        cross_checks: str = "",
     ) -> subprocess.CompletedProcess[str]:
         self.assertTrue(MESON_COMMAND, "Meson is required for this configure regression")
         with tempfile.TemporaryDirectory(prefix="vmafx-windows-discovery-") as temporary:
             root = Path(temporary)
             binary_dir, cross = _build_fixture(
-                root, vswhere=vswhere, path_compiler=path_compiler, build_msvc=build_msvc
+                root,
+                vswhere=vswhere,
+                path_compiler=path_compiler,
+                build_msvc=build_msvc,
+                build_machine=build_machine,
+                cross_checks=cross_checks,
             )
             return _run_meson(root, binary_dir, cross)
 
@@ -233,9 +280,9 @@ class WindowsCudaCompilerDiscovery(unittest.TestCase):
 
     def test_build_msvc_comes_from_the_cpp_compiler(self) -> None:
         source = SOURCE.read_text(encoding="utf-8")
-        marker = source.index("# default C compiler. Use vswhere + powershell")
+        marker = source.index("# nvcc runs on the build machine and needs a host compiler for")
         derivation = source[
-            marker : source.index("        if host_machine.system() == 'windows'", marker)
+            marker : source.index("        cl_exe = find_program('cl', required: false)", marker)
         ]
         self.assertIn("if cxx.get_id() == 'msvc'", derivation)
         self.assertIn("nvcc_build_msvc = find_program(cxx.cmd_array()[0]).full_path()", derivation)
@@ -251,14 +298,53 @@ class WindowsCudaCompilerDiscovery(unittest.TestCase):
         result = self.configure(vswhere="found", path_compiler=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    @unittest.skipIf(
+        sys.platform == 'win32',
+        'meson >=1.12 auto-activates the Visual Studio environment for '
+        'Windows-target cross files, which injects the real cl.exe and '
+        'PowerShell into PATH and defeats the stub isolation; these cases '
+        'run on the Linux CI lane where no VS is installed')
     def test_empty_vswhere_uses_path_compiler(self) -> None:
         result = self.configure(vswhere="empty", path_compiler=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    @unittest.skipIf(
+        sys.platform == 'win32',
+        'meson >=1.12 auto-activates the Visual Studio environment for '
+        'Windows-target cross files, which injects the real cl.exe and '
+        'PowerShell into PATH and defeats the stub isolation; these cases '
+        'run on the Linux CI lane where no VS is installed')
     def test_failed_vswhere_uses_path_compiler(self) -> None:
         result = self.configure(vswhere="error", path_compiler=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    @unittest.skipIf(
+        sys.platform == 'win32',
+        'meson >=1.12 auto-activates the Visual Studio environment for '
+        'Windows-target cross files, which injects the real cl.exe and '
+        'PowerShell into PATH and defeats the stub isolation; these cases '
+        'run on the Linux CI lane where no VS is installed')
+    def test_cross_linux_build_machine_skips_windows_discovery(self) -> None:
+        """Cross builds run nvcc on a non-Windows build machine: no cl search
+        and no MSVC include discovery run, and the branch yields empty ccbin
+        flags and host includes (fatbins are device code only)."""
+        result = self.configure(
+            vswhere="forbidden",
+            path_compiler=False,
+            build_machine="linux",
+            cross_checks=(
+                "assert(nvcc_ccbin_flags == [], 'cross builds need no -ccbin')\n"
+                "assert(nvcc_host_includes == [], 'cross builds need no MSVC includes')\n"
+            ),
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipIf(
+        sys.platform == 'win32',
+        'meson >=1.12 auto-activates the Visual Studio environment for '
+        'Windows-target cross files, which injects the real cl.exe and '
+        'PowerShell into PATH and defeats the stub isolation; these cases '
+        'run on the Linux CI lane where no VS is installed')
     def test_no_compiler_reports_actionable_error(self) -> None:
         result = self.configure(vswhere="empty", path_compiler=False)
         self.assertNotEqual(result.returncode, 0)
