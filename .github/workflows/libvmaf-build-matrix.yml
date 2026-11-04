@@ -328,9 +328,7 @@ jobs:
           # ADR-0692 (design notes)
           case "$CC" in
           *gcc-14)   sudo -E apt-get -yq install gcc-14 g++-14 ;;
-          *clang-22) wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-                     chmod +x /tmp/llvm.sh
-                     sudo /tmp/llvm.sh 22
+          *clang-22) sudo bash scripts/ci/install-llvm.sh 22
                      sudo -E apt-get -yq install libclang-rt-22-dev libomp-22-dev ;;
           *gcc)      sudo -E apt-get -yq install gcc g++ ;;
           *clang)    sudo -E apt-get -yq install clang ;;
@@ -777,6 +775,8 @@ jobs:
             vim make diffutils
           update: true
           path-type: inherit
+          # Inherited environments can exhaust xargs argument space during paccache cleanup.
+          cache: false
 
       - name: Set ccache dir
         run: echo "CCACHE_DIR=$PWD/.ccache" >> $GITHUB_ENV
@@ -820,8 +820,18 @@ jobs:
       - name: Build vmaf.exe (shared)
         run: ninja -C core/build-shared tools/vmaf.exe
 
-      - name: Check MinGW DLL import library thunks
-        run: python3 scripts/ci/check_mingw_import_thunks.py --dll-dir core/build-shared/src core/build-shared
+      - name: Check MinGW DLL import library thunks and runtime exports
+        # Runs after a failed vmaf.exe link too: the DLLs are already built and
+        # a toolchain-runtime export (multiple definition of _Unwind_Resume) is
+        # named here instead of only in the linker error.
+        if: ${{ !cancelled() }}
+        run: >-
+          python3 scripts/ci/check_mingw_import_thunks.py
+          --dll-dir core/build-shared/src
+          --runtime-archive "$(gcc -print-file-name=libgcc_eh.a)"
+          --runtime-archive "$(gcc -print-file-name=libgcc.a)"
+          --runtime-archive "$(gcc -print-file-name=libwinpthread.a)"
+          core/build-shared
 
       - name: Run shared vmaf.exe
         run: PATH="$PWD/core/build-shared/src:$PATH" core/build-shared/tools/vmaf.exe --help
