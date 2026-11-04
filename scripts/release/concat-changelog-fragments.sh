@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 # Concatenate per-PR changelog fragments under changelog.d/<section>/*.md
 # into the rendered "Unreleased" body that lives in CHANGELOG.md.
@@ -24,8 +25,11 @@
 #              block; exit non-zero on drift. Used by the docs-fragments
 #              CI lane.
 #   --write    Rewrite CHANGELOG.md in place with the rendered body.
-#   --lint     Check the fragment files only. A pull request runs this; the
-#              rendered CHANGELOG.md is written at landing (ADR-2197).
+#   --lint     Check the fragment files only: every fragment must sit in a
+#              known section, must not be empty, and its first non-blank line
+#              outside HTML comments must start with a list item ("- "). A pull
+#              request runs this; the rendered CHANGELOG.md is written at
+#              landing (ADR-2197).
 #
 # Splice contract (ADR-0913):
 #   The Unreleased block lives between the "## [Unreleased] ..." header
@@ -89,6 +93,64 @@ emit_fragment() {
       next
     }
     { print }
+  ' "$frag"
+}
+
+fragment_starts_with_list_item() {
+  local frag="$1"
+  awk '
+    BEGIN { in_comment = 0; found = 0 }
+    {
+      line = $0
+      if (line !~ /[^[:space:]]/) {
+        next
+      }
+      if (!in_comment && (line ~ /^    / || line ~ /^\t/)) {
+        found = 1
+        exit 1
+      }
+      out = ""
+      lead_comment = in_comment
+      while (length(line) > 0) {
+        if (in_comment) {
+          idx = index(line, "-->")
+          if (idx > 0) {
+            line = substr(line, idx + 3)
+            in_comment = 0
+          } else {
+            line = ""
+          }
+        } else {
+          idx = index(line, "<!--")
+          if (idx > 0) {
+            prefix = substr(line, 1, idx - 1)
+            if (!lead_comment && (out prefix) ~ /^ ? ? ?$/) {
+              lead_comment = 1
+            }
+            out = out prefix
+            line = substr(line, idx + 4)
+            in_comment = 1
+          } else {
+            out = out line
+            line = ""
+          }
+        }
+      }
+      if (out ~ /[^[:space:]]/) {
+        found = 1
+        if (lead_comment) {
+          exit 1
+        }
+        if (out ~ /^ ? ? ?- /) {
+          exit 0
+        } else {
+          exit 1
+        }
+      }
+    }
+    END {
+      if (!found) exit 1
+    }
   ' "$frag"
 }
 
@@ -176,13 +238,17 @@ case "${1:-}" in
   --write) mode="write" ;;
   --lint)
     # Inputs only (a pull request runs this): the fragments sit in a section the
-    # renderer knows and none is empty. The rendered CHANGELOG.md is not read,
-    # because a pull request does not carry it (ADR-2197).
+    # renderer knows, none is empty, and each starts with a list item ("- ").
+    # The rendered CHANGELOG.md is not read, because a pull request does not
+    # carry it (ADR-2197).
     warn_unknown_subdirs || exit 1
     rc=0
     while IFS= read -r frag; do
       if [[ ! -s "$frag" ]] || ! grep -q '[^[:space:]]' "$frag"; then
         printf 'ERROR: %s is empty.\n' "${frag#"$REPO_ROOT"/}" >&2
+        rc=1
+      elif ! fragment_starts_with_list_item "$frag"; then
+        printf 'ERROR: %s does not start with a list item ("- "); the rendered changelog shows it as a bare paragraph.\n' "${frag#"$REPO_ROOT"/}" >&2
         rc=1
       fi
     done < <(find "$FRAG_ROOT" -mindepth 2 -maxdepth 2 -type f -name '*.md' ! -name '.*' \
