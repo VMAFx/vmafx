@@ -429,13 +429,14 @@ static CUresult gather_plane(const VmafxCudaDevice *dev, const CudaSource *src,
 static CUresult rgb_plane(const VmafxCudaDevice *dev, const CudaSource *src, const CudaPlan *plan,
                           CUdeviceptr base, uint32_t i)
 {
-    VmafxRgbPlan rgb;
+    VmafxRgbPlan rgb = {0};
     const VmafxFrameImport *const d = src->d;
     /* The statement was checked: the matrix has a conversion. */
     const bool planned = vmafx_rgb_plan_init(&rgb, src->layout, d->bpc, d->rgb_matrix, d->rgb_range,
                                              d->rgb_out_range);
-    assert(planned);
-    (void)planned;
+    if (!planned) {
+        return CUDA_ERROR_INVALID_VALUE;
+    }
     CUdeviceptr in = (CUdeviceptr)d->plane[0].handle + (CUdeviceptr)d->plane[0].offset;
     size_t in_pitch = (size_t)d->plane[0].pitch;
     CUdeviceptr out = base + plan->offset[i];
