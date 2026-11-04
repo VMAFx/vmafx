@@ -115,6 +115,9 @@ plan "images=true gpu=true mcp=false wheels=false" "build-config.env selects ima
 plan "images=true gpu=true mcp=false wheels=false" "the licence inputs select images and GPU images" tools/rc1-tester/image/licensing.json
 plan "images=false gpu=false mcp=true wheels=false" "the vmaf-mcp package selects the mcp dry run" mcp-server/vmaf-mcp/pyproject.toml
 plan "images=false gpu=false mcp=false wheels=true" "the bindings/python package selects the wheels dry run" bindings/python/pyproject.toml
+plan "images=false gpu=false mcp=false wheels=true" "a core build file selects the wheels dry run" core/src/meson.build
+plan "images=false gpu=false mcp=false wheels=true" "a public header selects the wheels dry run" core/include/libvmaf/libvmaf.h
+plan "images=false gpu=false mcp=false wheels=false" "a core test file selects nothing" core/test/test_x.c
 plan "images=false gpu=false mcp=true wheels=true" "the supply-chain workflow selects the mcp and wheels dry run" .github/workflows/supply-chain.yml
 plan "images=false gpu=false mcp=true wheels=false" "the SBOM verifier selects the mcp dry run" scripts/release/verify-mcp-sbom.sh
 plan "images=true gpu=true mcp=true wheels=true" "the dry run's own workflow selects everything" .github/workflows/release-dry-run.yml

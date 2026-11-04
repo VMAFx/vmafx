@@ -7,6 +7,8 @@
 #   gpu     the CUDA, ROCm and oneAPI release images build recipe
 #   mcp     the vmaf-mcp distribution, its SBOM and the supply-chain workflow
 #   wheels  the vmafx Python wheels distribution and fixture scoring
+#           (core build files and public headers only: core sources already
+#           compile in the build matrix, so a source edit runs no wheel build)
 # Usage: release-dry-run-plan.sh < changed-paths
 #        release-dry-run-plan.sh --all     (a scheduled or dispatched run)
 #
@@ -68,7 +70,8 @@ else
         ;;
     esac
     case "$path" in
-      bindings/python/* | core/* | scripts/ci/build-wheel-libvmafx.py | \
+      bindings/python/* | core/*meson.build | core/meson_options.txt | core/include/* | \
+        scripts/ci/build-wheel-libvmafx.py | \
         scripts/ci/score-wheel-fixture.py | testdata/ref_576x324_48f.yuv | \
         testdata/dis_576x324_48f.yuv | requirements/locks/build.txt | \
         requirements/locks/package-build.txt | requirements/locks/twine.txt | \
