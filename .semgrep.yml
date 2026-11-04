@@ -167,16 +167,8 @@ rules:
                     - pattern-either:
                         - pattern: (double $V)
                         - pattern: (float $V)
-                        - patterns:
-                            - pattern: (double * $V)
-                            - metavariable-pattern:
-                                metavariable: $A
-                                pattern-regex: '\*'
-                        - patterns:
-                            - pattern: (float * $V)
-                            - metavariable-pattern:
-                                metavariable: $A
-                                pattern-regex: '\*'
+                        - pattern: '*(double * $V)'
+                        - pattern: '*(float * $V)'
                     # A call argument is not an operand: `bits_of(a)`
                     # returns an integer.
                     - pattern-not-inside: $F(...)
@@ -186,16 +178,8 @@ rules:
                     - pattern-either:
                         - pattern: (double $W)
                         - pattern: (float $W)
-                        - patterns:
-                            - pattern: (double * $W)
-                            - metavariable-pattern:
-                                metavariable: $B
-                                pattern-regex: '\*'
-                        - patterns:
-                            - pattern: (float * $W)
-                            - metavariable-pattern:
-                                metavariable: $B
-                                pattern-regex: '\*'
+                        - pattern: '*(double * $W)'
+                        - pattern: '*(float * $W)'
                     # A call argument is not an operand: `bits_of(a)`
                     # returns an integer.
                     - pattern-not-inside: $F(...)

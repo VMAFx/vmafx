@@ -61,7 +61,8 @@ static double computed(void);
 static unsigned bits(double value);
 
 bool planted(double x, float p, float q, int i, int k, double u, double v,
-             long long ll, short s, unsigned char c)
+             long long ll, short s, unsigned char c,
+             void *dp, void *dq, void *fp, void *fq)
 {
     double y = computed();
     double d = computed();
@@ -81,6 +82,8 @@ bool planted(double x, float p, float q, int i, int k, double u, double v,
     hits = hits || 0x10 + y == x; /* reported: hex literal prefix, computed */
     hits = hits || (double)x == y; /* reported: (double)x == y */
     hits = hits || d == (int)y;  /* reported: double compared to integer cast */
+    hits = hits || *(float *)fp == *(float *)fq; /* reported: deref cast */
+    hits = hits || *(double *)dp == *(double *)dq; /* reported: deref double cast */
     bool quiet = x == 0.0;       /* literal */
     quiet = quiet || 1.5 != y;   /* literal on the left */
     quiet = quiet || x == LIMIT; /* macro */
@@ -105,6 +108,8 @@ bool planted(double x, float p, float q, int i, int k, double u, double v,
     quiet = quiet || s == (short)x; /* short cast */
     quiet = quiet || c == (unsigned char)x; /* unsigned char cast */
     quiet = quiet || i == (unsigned long long)y; /* unsigned long long cast */
+    quiet = quiet || (double *)dp == (double *)dq; /* pointer compare */
+    quiet = quiet || (float *)fp == (float *)fq; /* pointer compare */
     return hits || quiet;
 }
 
@@ -152,10 +157,15 @@ double kB = (const double)1.0;
 auto kC = 1.0;
 double &kRef = x;
 const double kD = 1.0, kE = 2.0;
+double kExpected(1.0);
+const double kConstDirect(1.0);
+double kFn(void);
 """
 FLOAT_TYPE = re.compile(r"\b(?:double|float|Scores|MotionScores|auto)\b")
 CONSTANT_NAME = re.compile(r"k[A-Z]\w*|[A-Z][A-Z0-9_]*")
-DECLARED_NAME = re.compile(r"[\s*&]*(\w+)\b(?!\s*\()")
+DECLARED_NAME = re.compile(
+    r"[\s*&]*(\w+)\b(?!\s*\(\s*(?:\)|void\s*\)|(?:(?:const|volatile|struct|enum)\s+)?(?:void|int|double|float|char|short|long|unsigned|signed|bool|size_t|ssize_t|ptrdiff_t|[uU]?int\w*_t|[iI]nt\w*_t|[uU]?int\d*|[iI]nt\d*)\b|\w+\s+[*&]*\w+))"
+)
 C_LEXEME = re.compile(
     r'"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'|//[^\n]*|/\*.*?(?:\*/|\Z)',
     re.DOTALL,
@@ -477,7 +487,8 @@ class SemgrepFloatIdentity(unittest.TestCase):
     def test_constant_name_declarations_are_const(self) -> None:
         got = constant_name_findings(PLANTED_CONST_NAMES, "planted.c")
         want = [
-            f"planted.c:{n}:" for n in (1, 2, 3, 4, 7, 8, 9, 11, 14, 18, 20, 21, 24, 25, 26, 27, 28)
+            f"planted.c:{n}:"
+            for n in (1, 2, 3, 4, 7, 8, 9, 11, 14, 18, 20, 21, 24, 25, 26, 27, 28, 30)
         ]
         self.assertEqual([g.split(" ", 1)[0] for g in got], want)
         found: list[str] = []
