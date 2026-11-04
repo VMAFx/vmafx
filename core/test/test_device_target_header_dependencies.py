@@ -262,9 +262,9 @@ class DeviceTargetHeaderDependencyContractTest(unittest.TestCase):
         self.assertIn("depend_files: hip_kernel_shared_headers", content)
         self.assertIn("cuda_kernel_shared_headers += [config_h_target]", content)
 
-        # 4. Verify Windows depfile conditional
+        # 4. Verify the depfile conditional (cl frontends emit no depfile)
         self.assertIn(
-            "host_machine.system() == 'windows' ? '' : '@0@.fatbin.d'.format(name)", content
+            "cl_path == '' ? '@0@.fatbin.d'.format(name) : ''", content
         )
 
         # 5. Verify all declared shared headers physically exist on disk
