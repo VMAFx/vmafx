@@ -8,8 +8,8 @@
 #   Stage 1 (build-deps)  — base tools: meson, ninja, nasm, gcc-13, clang-19,
 #                           python3.14, pkg-config, git, curl, ca-certificates,
 #                           the Vulkan loader and lavapipe (ADR-3137)
-#   release-build         — separate root on the Debian 13 release track
-#                           (RELEASE_BUILDER_BASE): the native release
+#   release-build         — separate manylinux root, glibc 2.28:
+#                           the native release
 #                           bundle's compiler, nothing else (ADR-1354)
 #   Stage 2 (gpu-sdks)    — GPU SDK layer on top of Stage 1:
 #                           exact CUDA toolkit release from build-config.env,
@@ -67,7 +67,7 @@
 # They must precede the FIRST FROM: an ARG declared after one is scoped to the
 # stage it follows, so `FROM ${ROCM_BUILDER}` above would expand to nothing.
 ARG DEV_BASE="ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944"
-ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad"
+ARG NATIVE_RELEASE_BUILDER_BASE="quay.io/pypa/manylinux_2_28_x86_64@sha256:7e41b1c7fd64dfc69703a1124b43c404382973ee06ec5d764b85c34d2221fded"
 ARG DEV_GO_BASE="golang:1.27-trixie@sha256:604106102d33b1084e37ca08adf98ac0813624ae8595bd0d7f3965ecebded09c"
 ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.1.0-full@sha256:4f5ed1bf6532a4b9920400401b0ad0f706af356dae61e40afefbfd6c8073f0ce"
 
@@ -301,30 +301,20 @@ RUN groupadd --gid 2000 vmaf \
     && chown -R vmaf:vmaf /home/vmaf/.cache
 
 # ---------------------------------------------------------------------------
-# release-build — native release bundle compiler (Debian 13 release track)
+# release-build — downloadable bundles with a glibc 2.28 floor (issue 2437)
 # ---------------------------------------------------------------------------
-# ADR-1354 (amends ADR-1346). supply-chain.yml `build-artifacts` builds this
-# stage from the release tag with scripts/ci/build-dev-container-stage.sh and
-# runs scripts/release/build-native-release-artifacts.sh in it. It roots at
-# RELEASE_BUILDER_BASE, not DEV_BASE, because build-config.env's TWO TRACKS
-# rule puts published artifacts on the release track: a bundle compiled here
-# links against Debian 13's glibc 2.41, so it loads on Debian 13, on the
-# RELEASE_RUNTIME_CC distroless image and on Ubuntu 24.04. Compiled in the
-# Ubuntu 26.04 build-deps stage it bound sqrtf@GLIBC_2.43 and loaded on none
-# of them.
-#
-# No stage builds FROM this one and it copies from none: its inputs are the
-# digest-pinned base and the Debian archive packages below, and it downloads
-# nothing else, so it needs no GitHub token. `xxd` is load-bearing:
-# core/src/meson.build embeds the built-in models only when xxd is found.
-FROM ${RELEASE_BUILDER_BASE} AS release-build
+# Separate root: no libraries copied from the newer development/release images.
+# The stage builder selects the matching pinned manylinux image for the host
+# architecture. GCC 14 and patchelf come from that digest; the Python build
+# tools use the existing hash lock. xxd embeds the built-in models.
+FROM ${NATIVE_RELEASE_BUILDER_BASE} AS release-build
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 LABEL org.opencontainers.image.title="vmafx-release-build"
-LABEL org.opencontainers.image.description="Debian 13 release-track compiler for the VMAFx native Linux bundle"
+LABEL org.opencontainers.image.description="manylinux glibc 2.28 compiler for the VMAFx native Linux bundles"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-# No org.opencontainers.image.licenses: this stage holds Debian's compiler
+# No org.opencontainers.image.licenses: this stage holds build tools
 # packages only; the source it compiles is mounted at run time (ADR-1699).
 
 # The same container marker build-deps writes (ADR-1102). The gate accepts one
@@ -338,32 +328,41 @@ RUN printf '%s\n' \
     > /etc/vmafx-dev-container \
     && chmod 0644 /etc/vmafx-dev-container
 
-ARG DEBIAN_FRONTEND=noninteractive
+ENV PATH="/opt/python/cp314-cp314/bin:${PATH}"
+ENV CC=gcc CXX=g++
 
-# patchelf rewrites the staged release CLI's RUNPATH from Meson's build-tree
-# `$ORIGIN/../src` to `$ORIGIN` (scripts/release/build-native-release-artifacts.sh,
-# which runs in this stage). Unlike the rest of this layer it is pinned: it
-# edits a published binary, and the release compile runs with
-# `--network none`, so nothing can install it later. The version is Debian
-# 13's trixie/main build; moving RELEASE_BUILDER_BASE to another Debian
-# release fails the install here until this pin follows it. build-deps no
-# longer installs it (ADR-1354).
-ARG PATCHELF_VERSION=0.18.0-1.4
+COPY requirements/locks/build.txt /build/requirements/build.txt
+ARG NATIVE_NASM_VERSION=3.02
+ARG NATIVE_NASM_SHA256=87336eba53b4acfe917424ab5d500d2b0054d9f5148d35c2273ccf2cfb712f0d
+# hadolint ignore=DL3041
+RUN for attempt in 1 2 3; do \
+        dnf -y install --setopt=retries=10 --setopt=skip_if_unavailable=False \
+            vim-common zimg-devel git pkgconf-pkg-config \
+        && break || { \
+            if [ "$attempt" -eq 3 ]; then exit 1; fi; \
+            echo "dnf install attempt $attempt failed; cleaning metadata and retrying..." >&2; \
+            dnf clean metadata; \
+            sleep 2; \
+        }; \
+    done \
+    && dnf clean all \
+    && python3 -m pip install --no-cache-dir --require-hashes \
+        -r /build/requirements/build.txt \
+    && command -v xxd && command -v patchelf
 
-# hadolint ignore=DL3008
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        gcc \
-        g++ \
-        meson \
-        ninja-build \
-        nasm \
-        pkg-config \
-        git \
-        xxd \
-        libzimg-dev \
-        "patchelf=${PATCHELF_VERSION}" \
-    && rm -rf /var/lib/apt/lists/*
+# AlmaLinux 8's assembler predates the AVX-512 sources. Build the maintained
+# assembler from the upstream release tarball, verified before extraction.
+RUN curl --fail --location --show-error \
+        --output /tmp/nasm.tar.xz \
+        "https://www.nasm.us/pub/nasm/releasebuilds/${NATIVE_NASM_VERSION}/nasm-${NATIVE_NASM_VERSION}.tar.xz" \
+    && echo "${NATIVE_NASM_SHA256}  /tmp/nasm.tar.xz" | sha256sum --check --strict \
+    && mkdir /tmp/nasm-src \
+    && tar -xJf /tmp/nasm.tar.xz -C /tmp/nasm-src --strip-components=1 \
+    && cd /tmp/nasm-src \
+    && ./configure --prefix=/usr/local \
+    && make -j2 \
+    && make install \
+    && rm -rf /tmp/nasm-src /tmp/nasm.tar.xz
 
 # ---------------------------------------------------------------------------
 # Stage 2 — gpu-sdks
