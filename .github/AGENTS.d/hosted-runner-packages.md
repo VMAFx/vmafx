@@ -5,18 +5,17 @@ invariant: clang-tidy beyond 18 requires llvm.sh archive setup; cc.find_library 
 ---
 # Hosted runner package installation traps (LLVM and Level Zero)
 
-## `clang-tidy-<N>` always needs the apt.llvm.org repo
+## `clang-tidy-<N>`: install the LLVM major through `scripts/ci/install-llvm.sh`
 
 Ubuntu 24.04 (`ubuntu-24.04`; `ubuntu-latest` until rollout from 2026-10-19)
 ships **clang-tidy-18** at most. `ubuntu-26.04` image 20260927.149.1 ships
 clang-tidy 20, 21, 22 (actions/runner-images `Ubuntu2604-Readme.md`, read
 2026-10-11); image set moves, so rule stays. Every job installing newer
-`clang-tidy-<N>` must add LLVM archive first:
+`clang-tidy-<N>` runs helper first: distro archive when carrying major,
+else apt.llvm.org installer with retries:
 
 ```yaml
-wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-chmod +x /tmp/llvm.sh
-sudo /tmp/llvm.sh 22
+sudo bash scripts/ci/install-llvm.sh 22
 sudo apt-get install -y clang-tidy-22
 ```
 
@@ -73,5 +72,5 @@ repository to satisfy `-lze_loader`; Intel's oneAPI APT repository contains no
 `.github/workflows/libvmaf-build-matrix.yml` solves same requirement
 differently — it builds `oneapi-src/level-zero` from source at pinned tag,
 because it links shipping artifact, wants known loader version.
-static-analysis lane needing only probe to resolve should prefer
+static-analysis lane needing only probe to resolve prefers
 distro package.

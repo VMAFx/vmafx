@@ -60,10 +60,22 @@ abi = "libvmaf.so.3"
 backends = ["cpu"]
 licence = "EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
 licence_record = "release-native"
-files = ["vmaf", "libvmaf.so", "libvmaf.so.3", "libvmaf.so.3.0.0"]
+files = ["vmaf", "libvmaf.so", "libvmaf.so.3", "libvmaf.so.3.0.0", "libvmafx.so", "libvmafx.so.1", "libvmafx.so.1.0.0"]
 signing = "sigstore"
 sbom = "vmafx.spdx.json"
-producer = { workflow = "supply-chain.yml", job = "Build Linux artifacts" }
+producer = { workflow = "supply-chain.yml", job = "Build Linux artifacts (x86_64)" }
+
+[artifacts.native-linux-arm64]
+kind = "native"
+platform = "linux-arm64"
+abi = "libvmaf.so.3"
+backends = ["cpu"]
+licence = "EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
+licence_record = "release-native"
+files = ["vmafx-linux-arm64.tar.gz"]
+signing = "sigstore"
+sbom = "vmafx.spdx.json"
+producer = { workflow = "supply-chain.yml", job = "Build Linux artifacts (arm64)" }
 
 [artifacts.models]
 kind = "native"
@@ -75,7 +87,7 @@ licence_record = "release-models"
 files = ["models.tar.gz"]
 signing = "sigstore"
 sbom = "vmafx.spdx.json"
-producer = { workflow = "supply-chain.yml", job = "Build Linux artifacts" }
+producer = { workflow = "supply-chain.yml", job = "Build Linux artifacts (x86_64)" }
 
 [artifacts.vmaf-mcp-wheel]
 kind = "python-wheel"
@@ -190,7 +202,7 @@ kind = "crate"
 platform = "any"
 abi = "libvmaf.so.3"
 backends = []
-licence = "EUPL-1.2"
+licence = "BSD-2-Clause-Patent AND EUPL-1.2"
 package = "bindings/rust/vmafx-sys/Cargo.toml"
 files = ["vmafx-sys-{version}.crate"]
 signing = "none"
@@ -213,6 +225,7 @@ tracking = "#2320"
 state = "published"
 artifacts = [
   "native-linux-x86_64",
+  "native-linux-arm64",
   "models",
   "vmaf-mcp-wheel",
   "vmaf-mcp-sdist",
@@ -264,6 +277,7 @@ state = "planned"
 tracking = "#2146"
 artifacts = [
   "native-linux-x86_64",
+  "native-linux-arm64",
   "models",
   "tester-windows-x64",
   "tester-windows-arm64",

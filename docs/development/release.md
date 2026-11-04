@@ -366,7 +366,14 @@ Before publication, repository setup must provide two protected environments:
 - `release-publish` for GHCR writes, release-blob signing, build-provenance
   attestations, and GitHub Release attachment;
 - `pypi-publish` for the PyPI Trusted Publisher identities of `vmaf-mcp`
-  and `vmafx` (the wheels job `vmafx-publish-pypi`).
+  and `vmafx` (the wheels job `vmafx-publish-pypi`). The wheels are built
+  by the reusable `.github/workflows/vmafx-wheels.yml`, which
+  `supply-chain.yml` calls as `vmafx-wheels-build`; the upload stays in
+  `supply-chain.yml`, so both Trusted Publishers name that workflow. Before
+  uploading, `scripts/release/pypi-publish-state.sh` compares the built files
+  with what PyPI already holds for the version and stops on any file or
+  SHA-256 that differs (tests:
+  `scripts/release/tests/test-pypi-publish-state.sh`).
 
 Each must accept selected tag refs matching `v*` and require the release
 reviewer.
@@ -430,6 +437,11 @@ Without `VMAF_BUILD_DIR`, that integration test skips with an explicit reason.
 
 #### Download
 
+On arm64, download `vmafx-linux-arm64.tar.gz` and extract it into an empty
+directory with `tar -xzf vmafx-linux-arm64.tar.gz`; it preserves the CLI's
+executable bit. The individual files below are the x86-64 assets. Download
+`libzimg.so.*` too when present, since the engine resolves it beside itself.
+
 Meson builds a three-name dynamic-library chain for each of the two
 libraries: `libvmaf.so`, its ABI SONAME such as `libvmaf.so.3`, and its ABI
 real name such as `libvmaf.so.3.0.0`; and the same for `libvmafx`
@@ -465,28 +477,51 @@ readelf -d vmaf | grep RUNPATH   # Library runpath: [$ORIGIN]
 
 #### Runtime requirements
 
-The bundle needs x86-64 Linux with glibc 2.38 or newer and the libstdc++ of
-GCC 12 or newer. It is compiled on the fork's Debian 13
-release track (the `release-build` stage of the dev container, glibc 2.41;
-[ADR-1354](../adr/1354-native-bundle-release-track.md)), the same base the
-published container images are built on. Its newest symbol versions are
-`GLIBC_2.38` (the C23 `strtol` / `sscanf` entry points) and
-`GLIBCXX_3.4.30`. Every release checks that it runs on:
+Starting with 0.1.0, both Linux x86-64 and arm64 bundles require **glibc
+2.28 or newer**, **libstdc++ GLIBCXX 3.4.25 or newer**, and **CXXABI 1.3.11 or
+newer**. They compile in the `release-build` stage of
+`dev/Containerfile`, using architecture-specific,
+digest-pinned `manylinux_2_28` images based on AlmaLinux 8 with GCC 14. The pins,
+`NATIVE_GLIBC_FLOOR`, `NATIVE_GLIBCXX_FLOOR` and `NATIVE_CXXABI_FLOOR` live in
+`build-config.env`;
+container images retain their separate Debian 13 release track.
 
-| System | glibc | Checked by |
+After staging, `scripts/release/check_glibc_floor.py` runs `objdump -T` on the
+CLI and every staged shared library, including libzimg when present. It
+compares GLIBC versions numerically against 2.28, GLIBCXX symbol versions
+against 3.4.25, and CXXABI versions against 1.3.11, and fails for a requirement
+above any floor, an unrecognised ABI requirement, an unreadable ELF or a failed
+objdump.
+The compiler's own runtime libraries must also resolve during the existing
+clean-environment bundle verification.
+
+| Architecture | Release assets | Consumer check |
 | --- | --- | --- |
-| Ubuntu 24.04 (GitHub-hosted `ubuntu-24.04`) | 2.39 | `verify-native-artifacts` runs the full clean-environment verifier on the runner |
-| Distroless `cc-debian13` (`RELEASE_RUNTIME_CC`, the base of the CLI image) | 2.41 | `verify-native-artifacts` starts the downloaded CLI in that image with no `LD_LIBRARY_PATH` |
-| Debian 13 (the `release-build` stage) | 2.41 | the release build runs the verifier inside the stage it compiled in |
+| x86-64 | individual `vmaf`, both library chains, optional `libzimg.so.*`, models and notices | `verify-native-artifacts` on `ubuntu-24.04` |
+| arm64 | `vmafx-linux-arm64.tar.gz`, containing the same layout | `verify-native-artifacts-arm64` on `ubuntu-24.04-arm`, after extracting the published archive |
 
-Newer distributions, such as Ubuntu 26.04 (glibc 2.43), load it as well.
-It does not load on Ubuntu 22.04 (glibc 2.35) or Debian 12 (glibc 2.36);
-both fail with `version 'GLIBC_2.38' not found`. On those systems use the
-production containers or build from source. Check a host with
-`ldd --version`.
+Both builds also run the verifier inside their glibc 2.28 builder, and both
+consumer jobs start the CLI in the pinned `RELEASE_RUNTIME_CC` image. Ubuntu
+22.04 / 24.04 and Debian 12 meet the glibc and libstdc++ floors. Check a host
+with `ldd --version` and this command:
 
-The bundle is CPU-only and built without the ONNX Runtime tiny-AI backend,
-so it needs no GPU runtime or `libonnxruntime`.
+```bash
+libstdcxx="$(ldconfig -p | awk '$1 == "libstdc++.so.6" {print $NF; exit}')"
+test -n "$libstdcxx"
+strings "$libstdcxx" | grep -E 'GLIBCXX|CXXABI'
+```
+
+The withdrawn release candidates used a newer builder; these requirements
+apply to 0.1.0 and later.
+
+The arm64 archive has its own Sigstore `.bundle` and is a subject of the
+native build-provenance attestation. The native `vmafx.spdx.json` and
+`vmafx.cdx.json` SBOMs include the archive and its extracted ELF files, with
+hash checks for both architectures before signing. Models, licence notices
+and container provenance are included inside the archive.
+
+The bundles are CPU-only and built without the ONNX Runtime tiny-AI backend,
+so they need no GPU runtime or `libonnxruntime`.
 
 #### How the layout is built
 
@@ -506,76 +541,28 @@ platform-specific release bundles are introduced.
 
 ### Canonical build environment (ADR-1346)
 
-[ADR-1102](../adr/1102-phase4b9-container-only-publishing.md) requires native
-release artifacts to be built inside `dev/Containerfile`.
-[ADR-1346](../adr/1346-hosted-slim-container-release-build.md) (superseding
-ADR-1178's self-hosted runner) meets that on a GitHub-hosted runner, and
-[ADR-1354](../adr/1354-native-bundle-release-track.md) puts the compile on the
-Debian 13 release track that `build-config.env` assigns to published
-artifacts. In short:
+Native builds retain the container-only publication and tag binding of
+[ADR-1102](../adr/1102-phase4b9-container-only-publishing.md) and
+[ADR-1346](../adr/1346-hosted-slim-container-release-build.md). Issue 2437
+replaces ADR-1354's Debian 13 native builder with the older manylinux floor.
 
 | Concern | What happens |
 | --- | --- |
-| Where | `build-artifacts` in `.github/workflows/supply-chain.yml`, on `ubuntu-26.04`. |
-| How long | An uncached stage build took under a minute and the release compile under a minute on four workstation CPUs. The job has a 60-minute limit. No workstation or self-hosted runner has to be online. |
-| Compile | `scripts/release/build-native-release-artifacts.sh` inside the image. |
-| Rehearsal | The Dev Container PR gate builds the same stage with the same script on every container-affecting PR. |
-| Verification | `verify-native-artifacts` on `ubuntu-24.04`. |
-| Recovery | A timed-out or failed build is re-run with the recovery dispatch below, which rebuilds the stage from the same tag. |
+| Where | `build-artifacts` in `.github/workflows/supply-chain.yml`: `ubuntu-26.04` for x86-64, `ubuntu-26.04-arm` for native arm64. |
+| Builder | `scripts/ci/build-dev-container-stage.sh release-build` selects the architecture's digest pin from `build-config.env`; callers cannot supply an arbitrary base. |
+| Compile | `scripts/release/build-native-release-artifacts.sh` runs inside that image with `--pull never --network none`, as the runner user, with the checkout bound to `GITHUB_SHA`. |
+| Dependencies | GCC 14 and patchelf are pinned by the base image; Meson and Ninja use `requirements/locks/build.txt` with hash verification; NASM is built from a SHA256-pinned upstream source release. AlmaLinux/EPEL packages resolve at image-build time. |
+| Staging | Both library SONAME chains are regular files; the CLI and engine get RUNPATH `$ORIGIN`; notices and a container provenance stamp accompany them. |
+| Compatibility | `check_glibc_floor.py` rejects newer symbols before uploading either architecture. The build also verifies the staged bundle inside the builder. |
+| Packaging | `collect-artifacts` retains x86-64 files and archives arm64, then hashes exactly the flat set of release assets used by signing and provenance. |
+| Rehearsal | The Dev Container PR job builds the same native stage and runs the same compilation script. |
+| Recovery | Recovery dispatch rebuilds both architectures from the selected immutable tag. |
 
-#### Where
-
-`build-artifacts` builds the `release-build` stage of the release tag's own
-`dev/Containerfile` with
-`scripts/ci/build-dev-container-stage.sh release-build`. That stage is the
-digest-pinned Debian 13 base `RELEASE_BUILDER_BASE` plus Debian archive
-packages (GCC 14, Meson, Ninja, NASM, `xxd`, `patchelf`).
-
-- It downloads nothing from third parties and needs no GitHub token.
-- The build uses no external layer cache and no registry.
-- Archive packages resolve when the stage is built, so a later rebuild of
-  the same tag may use newer packages from a Debian point release.
-- The exception is patchelf, which edits the published CLI:
-  `dev/Containerfile` pins it to Debian 13's package version
-  (`PATCHELF_VERSION`).
-
-#### Compile
-
-The script runs with `docker run --pull never --network none` as the
-runner's user. It:
-
-1. refuses to build unless the checkout is `GITHUB_SHA`;
-2. configures Meson with `--buildtype=release -Denable_avx512=true
-   -Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled
-   -Denable_tests=false`;
-3. stages the bundle, setting the staged CLI's RUNPATH to `$ORIGIN`;
-4. stamps `container-build-provenance.txt` with
-   `scripts/ci/check-container-build.sh --stamp`;
-5. runs `scripts/release/verify-native-release-artifacts.sh`.
-
-The unit tests are left out because Debian 13's GCC 14.2 crashed at random
-while link-time optimising them; the release does not ship them, and other
-CI jobs build and run them.
-
-#### Rehearsal
-
-The Dev Container PR gate runs the same invocation against a local tag
-named after `.release-please-manifest.json`'s version, so a change that
-would break the release compile fails there.
-
-#### Verification
-
-`verify-native-artifacts` runs on `ubuntu-24.04`, the oldest GitHub-hosted
-image that can load the bundle. It names that label rather than
-`ubuntu-latest` so the check cannot drift to a newer glibc. It:
-
-- checks the stamp with `--verify`;
-- exercises the downloaded CLI in a clean environment;
-- starts the CLI in the release runtime image (`RELEASE_RUNTIME_CC`,
-  distroless `cc-debian13`) with no `LD_LIBRARY_PATH`, so the RUNPATH
-  `$ORIGIN` is proven there too.
-
-The stamp is signed with Cosign and attached as a release asset.
+The unit tests are not compiled in the release build (`-Denable_tests=false`);
+other CI jobs build and run them. The complete downloaded bundles are checked
+before SBOM generation and publication, including a clean-environment CLI
+run and a start in the pinned release runtime. The stamp and arm64 archive
+are signed with Cosign and attached to the release.
 
 ### Release recovery dispatches
 

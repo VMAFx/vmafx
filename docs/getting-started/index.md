@@ -11,7 +11,7 @@ binary, or from a source build. Pick one below, then
 | Route | What you get | Runs on | Start here |
 | --- | --- | --- | --- |
 | Container image | the `vmaf` CLI and `libvmaf`, CPU or one GPU backend per image | any Docker host; GPU images on x86-64 | [Container image](#container-image) |
-| Release download | the `vmaf` CLI, `libvmaf.so.3` and `libvmafx.so.1`, CPU only | Linux x86-64 with glibc 2.41 or later | [Release download](#release-download) |
+| Release download | the `vmaf` CLI, `libvmaf.so.3` and `libvmafx.so.1`, CPU only | Linux x86-64 or arm64 with glibc 2.28 or later | [Release download](#release-download) |
 | Source build | every backend your hardware and SDKs support, the tests, the tools | Linux, macOS, Windows | [Build from source](#build-from-source-any-platform) |
 
 Each release is listed on the
@@ -50,18 +50,36 @@ GPU image access to its device.
 
 ## Release download
 
-Each release attaches a CPU build of the CLI for Linux x86-64:
+Starting with 0.1.0, release downloads support Linux x86-64 and arm64 with
+**glibc 2.28 or later**. The builder uses pinned manylinux images based on
+AlmaLinux 8, and the workflow rejects newer GLIBC symbol requirements in the
+CLI and every staged library. This covers Ubuntu 22.04 / 24.04 and Debian 12
+without needing the glibc 2.41 used by the withdrawn release candidates.
+
+On **arm64**, download `vmafx-linux-arm64.tar.gz` and extract it into an empty
+directory. It contains the same files listed below, including any required
+`libzimg.so.*`, model files, notices and container provenance:
+
+```bash
+tar -xzf vmafx-linux-arm64.tar.gz
+./vmaf --version
+```
+
+On **x86-64**, download the individual files:
 
 | Asset | Contents |
 | --- | --- |
 | `vmaf` | the command-line tool |
 | `libvmaf.so`, `libvmaf.so.3`, `libvmaf.so.3.0.0` | the libvmaf API library the tool loads |
 | `libvmafx.so`, `libvmafx.so.1`, `libvmafx.so.1.0.0` | the VMAFx engine library; the tool and `libvmaf.so.3` both load it |
+| `libzimg.so.*` (when present) | the picture-conversion library; keep it beside the CLI |
+| `vmafx-linux-arm64.tar.gz` | the complete arm64 bundle, with executable permissions preserved |
 | `models.tar.gz` | the VMAF model files |
 | `*.bundle` | a Sigstore signature for each file |
 
 1. Download `vmaf`, the three `libvmaf.so*` files and the three `libvmafx.so*`
-   files into one directory. The tool finds both libraries next to itself, so
+   files, plus `libzimg.so.*` when present, into one directory. The tool finds
+   its libraries next to itself, so
    no `LD_LIBRARY_PATH` is needed.
 2. Restore the executable bit, which a download does not keep:
 
@@ -73,8 +91,8 @@ Each release attaches a CPU build of the CLI for Linux x86-64:
 3. Optional: verify the signatures with the
    [consumer verification recipes](../development/release.md#consumer-verification-recipes).
 
-The binary is built with AVX-512 enabled and without the ONNX runtime, so the
-`--tiny-*` options are not available in it
+The x86-64 build enables AVX-512. Both architectures omit the ONNX runtime,
+so the `--tiny-*` options are not available
 ([`build-native-release-artifacts.sh`](https://github.com/VMAFx/vmafx/blob/master/scripts/release/build-native-release-artifacts.sh)).
 
 ## Build from source (any platform)

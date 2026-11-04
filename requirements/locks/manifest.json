@@ -8,6 +8,11 @@
           "alias": "$REPO_ROOT/requirements/locks/build.txt",
           "consumer": "scripts/setup/ubuntu.sh",
           "context": "scripts/setup"
+        },
+        {
+          "alias": "/build/requirements/build.txt",
+          "consumer": "dev/Containerfile",
+          "context": "container-build"
         }
       ],
       "inputs": ["requirements/locks/build.in"],

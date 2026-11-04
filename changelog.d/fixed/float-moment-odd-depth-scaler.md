@@ -1,1 +1,1 @@
-The CUDA, SYCL and HIP `float_moment` twins now score 9, 11, 13, 14 and 15-bit pictures, bit-identical to the CPU, instead of refusing them; the Metal twin keeps refusing those depths until it is measured.
+- **The CUDA, SYCL and HIP `float_moment` twins score 9, 11, 13, 14 and 15-bit pictures.** The twins score bit-identically to the CPU instead of refusing them; the Metal twin keeps refusing those depths until it is measured.
