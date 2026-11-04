@@ -80,7 +80,9 @@ fn missing_install_error_contains_all_required_tokens() {
 }
 
 #[test]
-fn header_without_library_is_not_an_install() {
+fn system_resolution_failure_without_vendored_has_named_error() {
+    // System discovery uses the prefix fallback, not the pkg-config Rust crate.
+    // Even with headers present, failed library resolution must not build vendored.
     let result = find_paths(
         Path::new("/repo/bindings/rust/vmafx-sys"),
         &search_prefixes(None),
@@ -88,9 +90,12 @@ fn header_without_library_is_not_an_install() {
         false,
         |_| true,
         |_| None,
-        || Err("unreachable in test".into()),
+        || panic!("vendored must not run when its feature is off"),
     );
-    assert!(result.is_err());
+    assert_eq!(
+        result,
+        Err("vmafx-sys: libvmaf and libvmafx not found (looked in: /usr/local, /usr); set LIBVMAF_PREFIX, install libvmaf development files, or enable the vendored feature".into())
+    );
 }
 
 #[test]
@@ -111,9 +116,9 @@ fn incomplete_prefix_falls_back_to_complete_system_install() -> Result<(), Strin
 }
 
 #[test]
-fn docs_rs_uses_tree_header_and_never_probes_libraries() -> Result<(), String> {
+fn docs_rs_uses_packaged_header_and_never_probes_libraries() -> Result<(), String> {
     let manifest = Path::new("/repo/bindings/rust/vmafx-sys");
-    let include = manifest.join("../../../core/include");
+    let include = manifest.join("include");
     let mut probes = 0;
     let paths = find_paths(
         manifest,
@@ -135,7 +140,7 @@ fn docs_rs_uses_tree_header_and_never_probes_libraries() -> Result<(), String> {
 }
 
 #[test]
-fn docs_rs_refuses_missing_tree_header_without_system_fallback() {
+fn docs_rs_refuses_missing_packaged_header_without_system_fallback() {
     let manifest = Path::new("/repo/bindings/rust/vmafx-sys");
     let result = find_paths(
         manifest,
@@ -149,10 +154,8 @@ fn docs_rs_refuses_missing_tree_header_without_system_fallback() {
     assert_eq!(
         result,
         Err(format!(
-            "vmafx-sys: DOCS_RS header not found: {}; use a source checkout with core/include/libvmaf/",
-            manifest
-                .join("../../../core/include/libvmaf/libvmaf.h")
-                .display()
+            "vmafx-sys: DOCS_RS header not found: {}; reinstall the crate with its packaged include/libvmaf/ headers",
+            manifest.join("include/libvmaf/libvmaf.h").display()
         ))
     );
 }
@@ -160,7 +163,7 @@ fn docs_rs_refuses_missing_tree_header_without_system_fallback() {
 #[test]
 fn docs_rs_bypasses_vendored_build() -> Result<(), String> {
     let manifest = Path::new("/repo/bindings/rust/vmafx-sys");
-    let include = manifest.join("../../../core/include");
+    let include = manifest.join("include");
     let paths = find_paths(
         manifest,
         &search_prefixes(None),
