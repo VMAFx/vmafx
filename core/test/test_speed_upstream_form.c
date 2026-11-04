@@ -321,8 +321,8 @@ static float uf_upstream_givens_unit(float u)
 }
 
 /* Netflix/vmaf libvmaf/src/feature/speed.c:796-806 (9e48141b). */
-static void uf_upstream_update_entropy(SpeedDimensions dim, float *entropy, const float *S, float L,
-                                       float sigma_nn)
+static void uf_upstream_update_entropy(SpeedDimensions dim, float *entropy, const float *S,
+                                       const float L, float sigma_nn)
 {
     for (size_t i = 0; i < dim.num_blocks_vertical; i++) {
         for (size_t j = 0; j < dim.num_blocks_horizontal; j++) {
@@ -649,7 +649,7 @@ static float uf_upstream_pair_score(UfTail *t, uint32_t pair, const SpeedGpuScor
         memset(entropies[side], 0, sizeof(entropies[side]));
         for (uint32_t k = 0u; k < UF_ELEMENTS; k++) {
             const float eigenvalue = t->eig[ch * UF_ELEMENTS + k];
-            float L = eigenvalue < 0 ? 0 : eigenvalue;
+            const float L = eigenvalue < 0 ? 0 : eigenvalue;
             uf_upstream_update_entropy(dim, entropies[side], t->var + ch * UF_BLOCKS, L,
                                        s->sigma_nn);
         }
