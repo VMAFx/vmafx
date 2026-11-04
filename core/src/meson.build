@@ -1574,6 +1574,7 @@ if is_cuda_enabled
         cuda_dir + 'picture_cuda.c',
     ]
     gencode = []
+    cl_path = ''
     if get_option('enable_nvcc')
         nvcc_exe = find_program('nvcc')
 
@@ -1590,17 +1591,26 @@ if is_cuda_enabled
         # ciede_score.cu stopped compiling (T-WINDOWS-NVCC-CCBIN-OLDEST-TOOLSET-2026-10-06).
         # Without an MSVC build compiler the search takes the newest toolset of
         # the latest install. test_windows_cuda_compiler_discovery.py runs this block.
+        # nvcc runs on the build machine and needs a host compiler for
+        # preprocessing. Prefer the build machine's own MSVC ("the build's own
+        # cl.exe", ADR-0150); when the build machine has no cl.exe at all, the
+        # kernels are still buildable because they compile --fatbin
+        # -DDEVICE_CODE (device code only, no host pass) and load through
+        # cuModuleLoadData at run time, so the -ccbin frontend never
+        # participates. That is what makes cross builds (for example a Linux
+        # host compiling the Windows library) work without any MSVC on the
+        # build machine. A hard error is only justified when the build machine
+        # is Windows itself and no cl.exe can be found anywhere on it.
         nvcc_build_msvc = ''
         if is_variable('cxx')
             if cxx.get_id() == 'msvc'
                 nvcc_build_msvc = find_program(cxx.cmd_array()[0]).full_path()
             endif
         endif
-        if host_machine.system() == 'windows'
-            if nvcc_build_msvc != ''
-                cl_path = nvcc_build_msvc
-                message('nvcc host compiler: the build MSVC at ' + cl_path)
-            else
+        if nvcc_build_msvc != ''
+            cl_path = nvcc_build_msvc
+            message('nvcc host compiler: the build MSVC at ' + cl_path)
+        elif build_machine.system() == 'windows'
                 cl_find_result = run_command('powershell', '-NoProfile', '-Command',
                     '$vs = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products * -property installationPath; ' +
                     '(Get-ChildItem -Path "$vs/VC/Tools/MSVC" -Directory -ErrorAction SilentlyContinue | ' +
@@ -1618,8 +1628,9 @@ if is_cuda_enabled
                     else
                         error('MSVC cl.exe not found. nvcc on Windows requires Visual Studio Build Tools.')
                     endif
-                endif
-            endif
+        endif
+        endif
+        if cl_path != ''
             nvcc_ccbin_flags = ['--allow-unsupported-compiler', '-ccbin', cl_path]
 
             # Find MSVC and Windows SDK include dirs so cl.exe can find system
@@ -1651,6 +1662,10 @@ if is_cuda_enabled
                 warning('Could not find MSVC/Windows SDK include paths. nvcc compilation may fail.')
             endif
         else
+            # Cross builds and non-Windows native builds: device-only fatbins
+            # use the build machine's default host compiler only for
+            # preprocessing; the kernels use no platform-dependent types or
+            # macros.
             nvcc_ccbin_flags = []
             nvcc_host_includes = []
         endif
@@ -1943,13 +1958,16 @@ if is_cuda_enabled
         'x86/cpu.h',
     )
     cuda_kernel_shared_headers += [config_h_target]
-    nvcc_dep_flags = host_machine.system() == 'windows' ? [] : [
-        '-MD', '-MF', '@DEPFILE@', '-MT', '@OUTPUT@']
+    # The depfile support of the nvcc driver is decided by the nvcc that runs
+    # on the build machine: the Windows cl.exe frontend one is unverified, the
+    # non-cl frontends (Linux/macOS nvcc) emit fatbin depfiles.
+    nvcc_dep_flags = cl_path == '' ? [
+        '-MD', '-MF', '@DEPFILE@', '-MT', '@OUTPUT@'] : []
     ptx_files = {}
     cuda_fatbins = []
     foreach name, _cu : cuda_cu_sources
         per_kernel_flags = cuda_cu_extra_flags.get(name, [])
-        cu_depfile = host_machine.system() == 'windows' ? '' : '@0@.fatbin.d'.format(name)
+        cu_depfile = cl_path == '' ? '@0@.fatbin.d'.format(name) : ''
         t = custom_target('cu_ptx_target_' + name,
             build_by_default: true,
             output : ['@0@.fatbin'.format(name)],
