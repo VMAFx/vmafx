@@ -126,9 +126,7 @@ jobs:
           # without std::expected, so core/src/dict.cpp fails to build
           # (ADR-0692 moved the tree to C23 + C++26). Take the toolchain
           # forward rather than degrading the standard.
-          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          chmod +x /tmp/llvm.sh
-          sudo /tmp/llvm.sh 22
+          sudo bash scripts/ci/install-llvm.sh 22
           grep -v '^#' .github/apt/sanitizers-llvm.txt | xargs sudo apt-get install -y
           if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
             sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
@@ -307,9 +305,7 @@ jobs:
           # without std::expected, so core/src/dict.cpp fails to build
           # (ADR-0692 moved the tree to C23 + C++26). Take the toolchain
           # forward rather than degrading the standard.
-          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          chmod +x /tmp/llvm.sh
-          sudo /tmp/llvm.sh 22
+          sudo bash scripts/ci/install-llvm.sh 22
           grep -v '^#' .github/apt/sanitizers-llvm.txt | xargs sudo apt-get install -y
           if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
             sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
@@ -474,9 +470,7 @@ jobs:
           # __cpp_concepts=201907L and libstdc++ gates <expected> on >= 202002L
           # (raised in clang 19), so core/src/dict.cpp cannot compile with the
           # distro clang at any -std= level.
-          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          chmod +x /tmp/llvm.sh
-          sudo /tmp/llvm.sh 22
+          sudo bash scripts/ci/install-llvm.sh 22
           sudo pip3 install --break-system-packages --ignore-installed --require-hashes \
             -r requirements/locks/build.txt
 

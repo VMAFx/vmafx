@@ -7,6 +7,12 @@ writes each channel's recipe or metadata from that file, and CI fails when the
 manifest disagrees with the tree. The decision record is
 [ADR-3317](../adr/3317-distribution-manifest.md).
 
+The GitHub release and planned integrator pack carry both
+`native-linux-x86_64` (individual ELF files) and `native-linux-arm64`
+(`vmafx-linux-arm64.tar.gz`). Both are CPU builds with a glibc 2.28 floor,
+Sigstore signatures and native SBOM coverage. See the
+[download guide](../getting-started/index.md#release-download).
+
 ## Quick start
 
 Check the manifest against the tree (runs in a second, no network):

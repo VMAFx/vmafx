@@ -38,7 +38,9 @@
  * range.  Score accuracy is governed by the Netflix-golden gate.
  */
 
+#include <errno.h>
 #include <math.h>
+#include <stdbool.h>
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -56,6 +58,7 @@
 #include <unistd.h>
 #endif
 
+#include "full_device.h"
 #include "test.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/model.h"
@@ -104,6 +107,14 @@ static int make_vmaf_ctx_with_scores(VmafContext **vmaf_out, VmafModel **model_o
     return 0;
 }
 
+static char *close_ctx_and_model(VmafContext *vmaf, VmafModel *model)
+{
+    const int err = vmaf_close(vmaf);
+    vmaf_model_destroy(model);
+    return err ? "vmaf_close failed" : NULL;
+}
+
+#ifndef VMAF_TEST_FULL_DEVICE_ONLY
 /* -------------------------------------------------------------------------
  * Test: vmaf_score_at_index() — public entry point
  * ---------------------------------------------------------------------- */
@@ -130,9 +141,7 @@ static char *test_vmaf_score_at_index(void)
     err = vmaf_score_at_index(vmaf, NULL, &score, 0);
     mu_assert("vmaf_score_at_index(NULL model) should fail", err);
 
-    (void)vmaf_close(vmaf);
-    vmaf_model_destroy(model);
-    return NULL;
+    return close_ctx_and_model(vmaf, model);
 }
 
 /* -------------------------------------------------------------------------
@@ -255,19 +264,64 @@ static char *test_vmaf_write_output(void)
     err = vmaf_write_output(vmaf, NULL, VMAF_OUTPUT_FORMAT_JSON);
     mu_assert("vmaf_write_output(NULL path) should fail", err);
 
-    (void)vmaf_close(vmaf);
-    vmaf_model_destroy(model);
-    return NULL;
+    return close_ctx_and_model(vmaf, model);
 }
+#endif /* !VMAF_TEST_FULL_DEVICE_ONLY */
+
+#ifdef VMAF_TEST_FULL_DEVICE_ONLY
+/* -------------------------------------------------------------------------
+ * Test: vmaf_write_output() / vmaf_write_output_with_format() to /dev/full
+ * ---------------------------------------------------------------------- */
+static char *test_vmaf_write_output_to_full_device(void)
+{
+    if (!vmaf_test_full_device_rejects_writes()) {
+        (void)fprintf(
+            stderr,
+            "SKIP: test_vmaf_write_output_to_full_device: /dev/full is not a character device\n");
+        mu_skipped = 1;
+        return NULL;
+    }
+
+    int err;
+    VmafContext *vmaf = NULL;
+    VmafModel *model = NULL;
+
+    err = make_vmaf_ctx_with_scores(&vmaf, &model);
+    mu_assert("setup for vmaf_write_output /dev/full failed", !err);
+
+    static const enum VmafOutputFormat formats[] = {
+        VMAF_OUTPUT_FORMAT_XML,
+        VMAF_OUTPUT_FORMAT_JSON,
+        VMAF_OUTPUT_FORMAT_CSV,
+        VMAF_OUTPUT_FORMAT_SUB,
+    };
+    const size_t n_formats = sizeof(formats) / sizeof(formats[0]);
+    for (size_t i = 0; i < n_formats; i++) {
+        err = vmaf_write_output(vmaf, "/dev/full", formats[i]);
+        mu_assert("vmaf_write_output(/dev/full) must return negative", err < 0);
+        mu_assert("vmaf_write_output(/dev/full) must return -EIO", err == -EIO);
+    }
+
+    err = vmaf_write_output_with_format(vmaf, "/dev/full", VMAF_OUTPUT_FORMAT_JSON, "%.17g");
+    mu_assert("vmaf_write_output_with_format(/dev/full) must return negative", err < 0);
+    mu_assert("vmaf_write_output_with_format(/dev/full) must return -EIO", err == -EIO);
+
+    return close_ctx_and_model(vmaf, model);
+}
+#endif /* VMAF_TEST_FULL_DEVICE_ONLY */
 
 /* -------------------------------------------------------------------------
  * Runner
  * ---------------------------------------------------------------------- */
 char *run_tests(void)
 {
+#ifdef VMAF_TEST_FULL_DEVICE_ONLY
+    mu_run_test(test_vmaf_write_output_to_full_device);
+#else
     mu_run_test(test_vmaf_score_at_index);
     mu_run_test(test_vmaf_model_collection_load);
     mu_run_test(test_vmaf_write_output);
+#endif
     return NULL;
 }
 

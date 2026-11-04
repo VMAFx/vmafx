@@ -58,8 +58,8 @@ jobs:
     # structural reason to leave the binding ungated.
     name: vmafx-sys CI work
     runs-on: ubuntu-26.04
-    # Measured max 15.1m (2026-10-23); step caps sum 26 (5+16+5), limit 30 covers sum plus 1.25x rest.
-    timeout-minutes: 30
+    # Measured max 15.1m (2026-10-23); step caps sum 31 (5+16+5+5), limit 36 covers sum plus 1.25x rest.
+    timeout-minutes: 36
     env:
       # ADR-2828: a rustc warning fails every cargo step of the job (build, test,
       # example, the offline build and Meson's cargo call), not only clippy.
@@ -184,6 +184,15 @@ jobs:
         env:
           LIBVMAF_PREFIX: /usr/local
         run: cargo build -p vmafx-sys
+
+      - name: Check packaged Rust crates
+        run: python3 scripts/ci/check_rust_crate_package.py
+
+      - name: Rehearse Rust crate publication
+        timeout-minutes: 5
+        env:
+          DOCS_RS: '1'
+        run: cargo publish --dry-run --locked -p vmafx-sys -p vmafx -j4
 
       - name: Cargo test (unit + integration, every workspace crate)
         # --workspace: vmafx (the safe binding) and vmafx-tad carry tests too;
