@@ -1,0 +1,927 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
+/**
+ *
+ *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *
+ *     Licensed under the BSD+Patent License (the "License");
+ *     you may not use this file except in compliance with the License.
+ *     You may obtain a copy of the License at
+ *
+ *         https://opensource.org/licenses/BSDplusPatent
+ *
+ *     Unless required by applicable law or agreed to in writing, software
+ *     distributed under the License is distributed on an "AS IS" BASIS,
+ *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *     See the License for the specific language governing permissions and
+ *     limitations under the License.
+ *
+ */
+
+#ifndef LIBVMAF_LIBVMAF_H
+#define LIBVMAF_LIBVMAF_H
+
+#include <stdint.h>
+#include <stdio.h>
+
+#include <libvmaf/feature.h>
+#include <libvmaf/macros.h>
+#include <libvmaf/model.h>
+#include <libvmaf/picture.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * @enum  VmafLogLevel
+ * @brief Verbosity tier used by libvmaf's stderr logger.
+ *
+ * Set on @ref VmafConfiguration::log_level at @ref vmaf_init. Messages with a
+ * severity numerically <= the configured level are emitted; everything else is
+ * suppressed.
+ *
+ *   - `VMAF_LOG_LEVEL_NONE`    — silence the logger entirely.
+ *   - `VMAF_LOG_LEVEL_ERROR`   — only unrecoverable errors.
+ *   - `VMAF_LOG_LEVEL_WARNING` — errors + recoverable warnings (default for
+ *                                most CLI invocations).
+ *   - `VMAF_LOG_LEVEL_INFO`    — adds per-frame / per-feature info breadcrumbs.
+ *   - `VMAF_LOG_LEVEL_DEBUG`   — adds diagnostics intended for libvmaf
+ *                                developers — very chatty, not stable across
+ *                                versions.
+ *
+ * Stable enumerator values — append-only across libvmaf releases.
+ */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
+enum VmafLogLevel {
+    VMAF_LOG_LEVEL_NONE = 0,
+    VMAF_LOG_LEVEL_ERROR,
+    VMAF_LOG_LEVEL_WARNING,
+    VMAF_LOG_LEVEL_INFO,
+    VMAF_LOG_LEVEL_DEBUG,
+};
+/* NOLINTEND(performance-enum-size) */
+
+/**
+ * @enum VmafBackend
+ * @brief Compute backend active in a `VmafContext`.
+ *
+ * Returned by `vmaf_context_get_backend()` to allow callers to introspect
+ * which compute backend was imported into a context at run time.  New values
+ * may be appended in future releases; callers must treat unknown values as
+ * `VMAF_BACKEND_UNKNOWN`.
+ */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
+enum VmafBackend {
+    VMAF_BACKEND_UNKNOWN = 0, /**< No GPU state imported; CPU-only context. */
+    VMAF_BACKEND_CUDA = 1,    /**< CUDA backend (vmaf_cuda_import_state()). */
+    VMAF_BACKEND_SYCL = 2,    /**< SYCL backend (vmaf_sycl_import_state()). */
+    VMAF_BACKEND_METAL = 3,   /**< Metal backend (vmaf_metal_import_state()). */
+    VMAF_BACKEND_HIP = 4,     /**< HIP/ROCm backend (vmaf_hip_import_state()). */
+    VMAF_BACKEND_VULKAN = 5,  /**< Vulkan backend (reserved; ADR-0726 removed Vulkan). */
+};
+/* NOLINTEND(performance-enum-size) */
+
+/**
+ * @enum  VmafOutputFormat
+ * @brief Output serialisation format for @ref vmaf_write_output and
+ *        @ref vmaf_write_output_with_format.
+ *
+ *   - `VMAF_OUTPUT_FORMAT_NONE` — sentinel; the writer rejects this value and
+ *                                 emits no file.
+ *   - `VMAF_OUTPUT_FORMAT_XML`  — hierarchical XML matching the upstream
+ *                                 reference format.
+ *   - `VMAF_OUTPUT_FORMAT_JSON` — single JSON document with `frames` +
+ *                                 `pooled_metrics` sections.
+ *   - `VMAF_OUTPUT_FORMAT_CSV`  — one row per frame, one column per registered
+ *                                 feature; pooled scores appended as trailing
+ *                                 rows.
+ *   - `VMAF_OUTPUT_FORMAT_SUB`  — SubRip-style (.srt) burn-in subtitles, one
+ *                                 cue per frame, suitable for `ffmpeg -vf
+ *                                 subtitles=…` overlay debugging.
+ *
+ * Stable enumerator values — append-only across libvmaf releases.
+ */
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
+enum VmafOutputFormat {
+    VMAF_OUTPUT_FORMAT_NONE = 0,
+    VMAF_OUTPUT_FORMAT_XML,
+    VMAF_OUTPUT_FORMAT_JSON,
+    VMAF_OUTPUT_FORMAT_CSV,
+    VMAF_OUTPUT_FORMAT_SUB,
+};
+/* NOLINTEND(performance-enum-size) */
+
+/**
+ * @enum  VmafPoolingMethod
+ * @brief Temporal pooling strategy applied over a frame interval.
+ *
+ * Passed to @ref vmaf_score_pooled, @ref vmaf_score_pooled_model_collection,
+ * and @ref vmaf_feature_score_pooled to select how per-frame scores are
+ * reduced to a single summary value.
+ *
+ *   - `VMAF_POOL_METHOD_UNKNOWN`        — sentinel; rejected by pooling functions.
+ *   - `VMAF_POOL_METHOD_MIN`            — minimum per-frame score over the interval.
+ *   - `VMAF_POOL_METHOD_MAX`            — maximum per-frame score over the interval.
+ *   - `VMAF_POOL_METHOD_MEAN`           — arithmetic mean.
+ *   - `VMAF_POOL_METHOD_HARMONIC_MEAN`  — harmonic mean (penalises outlier lows more
+ *                                        than the arithmetic mean; typical for VMAF
+ *                                        "phone" / 4K display reporting).
+ *   - `VMAF_POOL_METHOD_MEDIAN`         — 50th percentile of the per-frame scores.
+ *   - `VMAF_POOL_METHOD_PERC5`          — 5th percentile ("worst 5%" summary).
+ *   - `VMAF_POOL_METHOD_PERC10`         — 10th percentile.
+ *   - `VMAF_POOL_METHOD_PERC20`         — 20th percentile.
+ *
+ * The four order-statistic methods (`MEDIAN`, `PERC5`, `PERC10`, `PERC20`)
+ * sort the per-frame scores and interpolate linearly between the two
+ * neighbouring ranks, which is exactly `numpy.percentile(..., method=
+ * "linear")` — the rule the Python harness (`ListStats.perc10` and friends)
+ * already uses, so both surfaces report the same number for the same frames.
+ * Like `MIN` and `MAX` they are pure order statistics: perceptual spatial
+ * weighting (ADR-1118) cannot reorder the per-frame scores and therefore does
+ * not affect them. Unlike the four accumulator methods they need the whole
+ * per-frame score vector in memory, so a percentile pool allocates a buffer
+ * proportional to the number of pooled frames; the accumulator methods still
+ * run in O(1) space.
+ *
+ * Stable enumerator values — append-only across libvmaf releases for ABI
+ * compatibility. `VMAF_POOL_METHOD_NB` is a count sentinel and NOT a stable
+ * value; see its inline doc.
+ */
+/**
+ * Feature macro: defined when the order-statistic pooling methods
+ * (`VMAF_POOL_METHOD_MEDIAN` / `_PERC5` / `_PERC10` / `_PERC20`) are present.
+ * Lets an integration that must build against both a pre-ADR-1188 libvmaf and
+ * this one select them with `#ifdef` instead of a version comparison — the
+ * in-tree `ffmpeg-patches/0018` mapper does exactly that.
+ */
+#define VMAF_HAVE_PERCENTILE_POOLING 1
+
+/* NOLINTBEGIN(performance-enum-size): C header included by C and C++ translation units; C has no fixed enum underlying type across the required toolchains (ADR-1470). ADR-1138. */
+enum VmafPoolingMethod {
+    VMAF_POOL_METHOD_UNKNOWN = 0,
+    VMAF_POOL_METHOD_MIN,
+    VMAF_POOL_METHOD_MAX,
+    VMAF_POOL_METHOD_MEAN,
+    VMAF_POOL_METHOD_HARMONIC_MEAN,
+    VMAF_POOL_METHOD_MEDIAN,
+    VMAF_POOL_METHOD_PERC5,
+    VMAF_POOL_METHOD_PERC10,
+    VMAF_POOL_METHOD_PERC20,
+/**
+     * Count sentinel — retained for backwards compatibility only.
+     *
+     * NOT a stable API value: its numeric value increases whenever a new
+     * pooling method is appended, so do not switch on it, persist it, or
+     * pass it across an ABI boundary. New code should switch on the named
+     * values and treat unknown discriminants as `VMAF_POOL_METHOD_UNKNOWN`.
+     *
+     * @deprecated Use the named VMAF_POOL_METHOD_* enumerators. This
+     *             sentinel will be removed in a future major release.
+     */
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(VMAF_BUILDING_LIBVMAF)
+    VMAF_POOL_METHOD_NB __attribute__((deprecated("use named VMAF_POOL_METHOD_* values; "
+                                                  "NB is not a stable count sentinel")))
+#else
+    VMAF_POOL_METHOD_NB
+#endif
+};
+/* NOLINTEND(performance-enum-size) */
+
+/**
+ * @struct VmafConfiguration
+ * @brief  Configuration needed to initialize a `VmafContext`
+ *
+ * @param log_level   How verbose the logger is.
+ *
+ * @param n_threads   How many threads can be used to run
+ *                    feature extractors concurrently.
+ *
+ * @param n_subsample Compute scores only every N frames.
+ *                    Note that setting an even value for N can lead to
+ *                    inaccurate results. For more detail, see
+ *                    https://github.com/Netflix/vmaf/issues/1214
+ *
+ * @param cpumask     Restrict permitted CPU instruction sets. The bit
+ *                    layout is architecture-specific — only the bits
+ *                    listed for the host architecture take effect; bits
+ *                    set for a different architecture are silently
+ *                    ignored.
+ *
+ *                    On x86 / x86_64:
+ *                      if cpumask & 1:  disable SSE2
+ *                      if cpumask & 2:  disable SSE3 / SSSE3
+ *                      if cpumask & 4:  disable SSE4.1
+ *                      if cpumask & 8:  disable AVX2
+ *                      if cpumask & 16: disable AVX512
+ *                      if cpumask & 32: disable AVX512ICL
+ *
+ *                    On arm64 / aarch64:
+ *                      if cpumask & 1:  disable NEON (forces scalar)
+ *                      if cpumask & 2:  disable SVE2
+ *
+ * @param gpumask     Restrict permitted GPU operations. Any non-zero
+ *                    value disables the GPU feature-extractor selection
+ *                    for both the CUDA and SYCL backends (the runtime
+ *                    falls back to the CPU implementation). The HIP
+ *                    backend is host-pic and is not gated by gpumask —
+ *                    its activation is controlled solely by whether a
+ *                    HIP state pointer was imported via
+ *                    `vmaf_hip_import_state()`. ADR-0530.
+ */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
+typedef struct VmafConfiguration {
+    enum VmafLogLevel log_level; /**< Logger verbosity. */
+    unsigned n_threads;          /**< Worker thread count; 0 = library default. */
+    unsigned n_subsample;        /**< Compute scores only every N frames; 0/1 = every frame. */
+    uint64_t cpumask;            /**< CPU-ISA disable bitmask; see struct doc above. */
+    uint64_t gpumask;            /**< GPU-feature disable bitmask; see struct doc above. */
+} VmafConfiguration;
+/* NOLINTEND(modernize-use-using) */
+
+/**
+ * @typedef VmafContext
+ * @brief   Opaque per-measurement-session handle owning the feature pipeline.
+ *
+ * Allocated by @ref vmaf_init, released by @ref vmaf_close. A single context
+ * pins one set of registered feature extractors, one optional GPU backend
+ * state (CUDA / SYCL / HIP / Metal, imported via the corresponding
+ * `vmaf_*_import_state` entry point), zero or more attached models / model
+ * collections / tiny-AI ONNX sessions, and the per-frame score table.
+ *
+ * Not thread-safe — each context is owned by exactly one driver thread at a
+ * time. Callers that want concurrent measurements run multiple contexts in
+ * parallel; libvmaf's own per-extractor thread pool (configured via
+ * @ref VmafConfiguration::n_threads) handles intra-frame parallelism.
+ */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
+typedef struct VmafContext VmafContext;
+/* NOLINTEND(modernize-use-using) */
+
+/**
+ * Allocate and open a VMAF instance.
+ *
+ * @param vmaf The VMAF instance to open.
+ *             To be used in further libvmaf api calls.
+ *             $vmaf will be set to the allocated context.
+ *             Context should be cleaned up with `vmaf_close()` when finished.
+ *             `*vmaf` is output-only: its incoming value is never read, so
+ *             an uninitialised `VmafContext *` is fine. It is set to NULL on
+ *             entry and to the new context on success, so it is NULL after
+ *             any failure. Passing a handle that still holds an open context
+ *             overwrites it without closing it: close it first.
+ *
+ * @param cfg  Configuration parameters.
+ *
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error: -EINVAL when
+ *         `vmaf` is NULL, or the code of the allocation or subsystem set-up
+ *         that failed.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_context_create")
+VMAF_EXPORT int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg);
+
+/**
+ * Register feature extractors required by a specific `VmafModel`.
+ * This may be called multiple times using different models.
+ * In this case, the registered feature extractors will form a set, and any
+ * features required by multiple models will only be extracted once.
+ *
+ * @param vmaf  The VMAF context allocated with `vmaf_init()`.
+ *
+ * @param model Opaque model context. The context takes its own reference to
+ *              the model, so the caller keeps its reference and may call
+ *              `vmaf_model_destroy()` right after a successful registration,
+ *              before or after `vmaf_close()`; the model is freed when the
+ *              last reference is dropped. A registration that fails takes no
+ *              reference. Before ADR-1755 the model was only borrowed
+ *              and had to stay alive until `vmaf_close(vmaf)` returned 0.
+ *
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error; -EINVAL
+ *         when the model's motion feature reads frame n-2 (the `_hfr`
+ *         models) and a picture pool of fewer than 4 pictures was
+ *         preallocated (see `VmafPictureConfiguration`).
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_context_use_model")
+VMAF_EXPORT int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model);
+
+/**
+ * Register feature extractors required by a specific `VmafModelCollection`
+ * Like `vmaf_use_features_from_model()`, this function may be called
+ * multiple times using different model collections.
+ *
+ * @param vmaf             The VMAF context allocated with `vmaf_init()`.
+ *
+ * @param model_collection Opaque model collection context. The context takes
+ *                          its own reference to every model of the collection,
+ *                          as `vmaf_use_features_from_model()` does, so the
+ *                          collection may be destroyed right after a
+ *                          successful registration.
+ *
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_context_use_model_set")
+VMAF_EXPORT int vmaf_use_features_from_model_collection(VmafContext *vmaf,
+                                                        VmafModelCollection *model_collection);
+
+/**
+ * Register specific feature extractor.
+ * Useful when a specific/additional feature is required, usually one which
+ * is not already provided by a model via `vmaf_use_features_from_model()`.
+ * This may be called multiple times. `VmafContext` takes ownership of the
+ * `VmafFeatureDictionary` (`opts_dict`) on every path EXCEPT the
+ * argument-validation guards: if this returns `-EINVAL` because `vmaf` or
+ * `feature_name` was NULL, or because `feature_name` names no registered
+ * feature, nothing was consumed and the caller must release the dictionary
+ * with `vmaf_feature_dictionary_free()`. On any other return — success or
+ * failure — the dictionary has already been released internally and the
+ * caller MUST NOT free it. See <libvmaf/feature.h> for the shared contract
+ * (Netflix/vmaf#1242).
+ *
+ * @param vmaf         The VMAF context allocated with `vmaf_init()`.
+ *
+ * @param feature_name Name of feature.
+ *
+ * @param opts_dict    Feature extractor options set via
+ *                     `vmaf_feature_dictionary_set()`. If no special options
+ *                     are required this parameter can be set to NULL.
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error; -EINVAL
+ *         (dictionary consumed) when the options make the extractor read
+ *         frame n-2 (`motion_five_frame_window=true`) and a picture pool of
+ *         fewer than 4 pictures was preallocated (see
+ *         `VmafPictureConfiguration`).
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_context_use_feature")
+VMAF_EXPORT int vmaf_use_feature(VmafContext *vmaf, const char *feature_name,
+                                 VmafFeatureDictionary *opts_dict);
+
+/**
+ * Import an external feature score.
+ * Useful when pre-computed feature scores are available.
+ * Also useful in the case where there is no libvmaf feature extractor
+ * implementation for a required feature.
+ *
+ * @param vmaf         The VMAF context allocated with `vmaf_init()`.
+ *
+ * @param feature_name Name of feature.
+ *
+ * @param value        Score.
+ *
+ * @param index        Picture index.
+ *
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_context_import_score")
+VMAF_EXPORT int vmaf_import_feature_score(VmafContext *vmaf, const char *feature_name, double value,
+                                          unsigned index);
+
+/**
+ * Read a pair of pictures and queue them for eventual feature extraction.
+ * This should be called after feature extractors are registered via
+ * `vmaf_use_features_from_model()` and/or `vmaf_use_feature()`.
+ * `VmafContext` will take ownership of both `VmafPicture`s (`ref` and `dist`)
+ * and `vmaf_picture_unref()`. It owns them whatever the call returns: on an
+ * error too, a rejected index or an out-of-memory included, the pictures are
+ * released before the call returns and the caller must not unref them. A call
+ * without a context or with only one of the two pictures returns `-EINVAL`
+ * and takes nothing.
+ *
+ * Every sample of a picture of bit depth `bpc` must be at most 2^bpc - 1 (a
+ * 10-bit picture in `uint16_t` storage holds values up to 1023). A picture with
+ * a sample above that is invalid input: nothing on the default path checks
+ * it, and the CPU extractors and their GPU twins may then give different
+ * scores. `vmaf_set_sample_range_check_enabled()` turns on a check that
+ * refuses such a picture with `-EINVAL`.
+ *
+ * When you're done reading pictures call this function again with both `ref`
+ * and `dist` set to NULL to flush all feature extractors.
+ *
+ * @param vmaf  The VMAF context allocated with `vmaf_init()`.
+ *
+ * @param ref   Reference picture.
+ *
+ * @param dist  Distorted picture.
+ *
+ * @param index Picture index. Submit the pictures of a stream with indices
+ *              0, 1, 2, ... in that order. An index that does not exceed the
+ *              previous one is rejected with `-EINVAL`: the motion extractors
+ *              compare a picture with the one before it, and a repeated or
+ *              earlier index would corrupt that state. An index that skips
+ *              values is accepted, but the motion extractors then have no
+ *              predecessor for the pictures that follow the gap: their
+ *              `motion2` and `motion3` scores stay unwritten, so reading them
+ *              returns `-EAGAIN` even after the flush, and the picture before
+ *              the gap gets the `motion2` the last picture of a stream gets.
+ *              Features that look at one picture only (`psnr`, `vif`, `adm`)
+ *              are not affected.
+ *
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_submit")
+VMAF_EXPORT int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
+                                   unsigned index);
+
+/**
+ * Turn the sample range check of `vmaf_read_pictures()` on or off. Off by
+ * default, and then `vmaf_read_pictures()` reads no sample for it.
+ *
+ * On, `vmaf_read_pictures()` scans both pictures of every call before it
+ * extracts anything and refuses a call in which a sample of a 9- to 15-bit
+ * picture is above 2^bpc - 1: it returns `-EINVAL` (the pictures are released
+ * as for any other error) and logs the picture (reference or distorted), the
+ * plane, row and column of the first such sample, its value and the limit.
+ * 8- and 16-bit pictures cannot hold such a sample. A picture in device memory
+ * cannot be scanned on the host: the call returns `-ENOTSUP`.
+ *
+ * The `vmaf` command line sets it with `--check-sample-range`. See
+ * docs/api/sample-range.md.
+ *
+ * @param vmaf    The VMAF context allocated with `vmaf_init()`.
+ * @param enabled Non-zero turns the check on, zero turns it off.
+ *
+ * @return 0 on success, or `-EINVAL` without a context.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_context_set_option")
+VMAF_EXPORT int vmaf_set_sample_range_check_enabled(VmafContext *vmaf, int enabled);
+
+/**
+ * Declare the colorimetry (range, primaries, transfer characteristic and matrix)
+ * of the reference and the distorted pictures that `vmaf_read_pictures()` will
+ * receive.
+ *
+ * A model can declare a `conversion_target` in its model file: the colorspace
+ * (and optionally the pixel format and bit depth) its features are defined in.
+ * For such a model `vmaf_read_pictures()` converts both pictures to that target
+ * before extraction, and needs to know what the pictures are. All four
+ * attributes of each input must be specified, otherwise the call returns
+ * `-EINVAL` and logs the missing ones: a guessed colorimetry would give a
+ * plausible but wrong score. A model without a `conversion_target` never
+ * converts and ignores this. The conversion needs libvmaf built with zimg
+ * (`-Denable_zimg=true`); without it `-ENOTSUP`.
+ *
+ * Netflix/vmaf carries this colour in `VmafPicture::color`. The fork keeps
+ * `VmafPicture` unchanged (ABI), so the colour is declared once per input on
+ * the context instead. The `vmaf` command line sets it with
+ * `--color_range_ref/_dist`, `--color_primaries_ref/_dist`,
+ * `--color_trc_ref/_dist` and `--color_matrix_ref/_dist`. See
+ * docs/api/pictures.md.
+ *
+ * The conversion context is built from the first picture, so this must be
+ * called before the first `vmaf_read_pictures()` that converts.
+ *
+ * @param vmaf The VMAF context allocated with `vmaf_init()`.
+ * @param ref  Colorimetry of the reference input, or NULL for unspecified.
+ * @param dist Colorimetry of the distorted input, or NULL for unspecified.
+ *
+ * @return 0 on success, `-EINVAL` without a context, or `-EBUSY` once a
+ *         picture has been converted.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_context_set_default_color")
+VMAF_EXPORT int vmaf_set_input_colorimetry(VmafContext *vmaf, const VmafColor *ref,
+                                           const VmafColor *dist);
+
+/**
+ * Predict VMAF score at specific index.
+ *
+ * @param vmaf   The VMAF context allocated with `vmaf_init()`.
+ *
+ * @param model  Opaque model context.
+ *
+ * @param score  Predicted score (out).
+ *
+ * @param index  Picture index.
+ *
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error. `-EAGAIN`
+ *         means a feature this score depends on has not been written yet:
+ *         `motion2` and `motion3` of a picture need the next picture, and a
+ *         GPU backend finishes a frame after the call that submitted it has
+ *         returned, so asking before the
+ *         flush (`vmaf_read_pictures(vmaf, NULL, NULL, 0)`) can return it for
+ *         any index. It is never a partial or placeholder value: a call
+ *         returns either the score or an error. `-EINVAL` is returned for
+ *         invalid arguments.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_score_frame")
+VMAF_EXPORT int vmaf_score_at_index(VmafContext *vmaf, VmafModel *model, double *score,
+                                    unsigned index);
+
+/**
+ * Predict VMAF score at specific index, using a model collection.
+ *
+ * @param vmaf              The VMAF context allocated with `vmaf_init()`.
+ *
+ * @param model_collection  Opaque model collection context.
+ *
+ * @param index             Picture index.
+ *
+ * @param score             Predicted score.
+ *
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_score_frame_model_set")
+VMAF_EXPORT int vmaf_score_at_index_model_collection(VmafContext *vmaf,
+                                                     VmafModelCollection *model_collection,
+                                                     VmafModelCollectionScore *score,
+                                                     unsigned index);
+
+/**
+ * Fetch feature score at specific index.
+ *
+ * @param vmaf          The VMAF context allocated with `vmaf_init()`.
+ *
+ * @param feature_name  Name of the feature to fetch.
+ *
+ * @param index         Picture index.
+ *
+ * @param score         Score.
+ *
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error. `-EAGAIN`
+ *         means the feature has not been written at this index yet (see
+ *         `vmaf_score_at_index()`); `-EINVAL` is returned for invalid
+ *         arguments and for a feature name no registered extractor writes.
+ *         For a picture already read, both codes come after libvmaf has
+ *         waited for the worker threads, so neither stands for a score a
+ *         worker is still computing.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_feature_score")
+VMAF_EXPORT int vmaf_feature_score_at_index(VmafContext *vmaf, const char *feature_name,
+                                            double *score, unsigned index);
+
+/**
+ * Pooled VMAF score for a specific interval.
+ *
+ * @param vmaf         The VMAF context allocated with `vmaf_init()`.
+ *
+ * @param model        Opaque model context.
+ *
+ * @param pool_method  Temporal pooling method to use.
+ *
+ * @param score        Pooled score.
+ *
+ * @param index_low    Low picture index of pooling interval.
+ *
+ * @param index_high   High picture index of pooling interval.
+ *
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error. `-EAGAIN`
+ *         means a picture of the interval has no score yet (see
+ *         `vmaf_score_at_index()`); flush first.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_score_pooled")
+VMAF_EXPORT int vmaf_score_pooled(VmafContext *vmaf, VmafModel *model,
+                                  enum VmafPoolingMethod pool_method, double *score,
+                                  unsigned index_low, unsigned index_high);
+
+/**
+ * Pooled VMAF score for a specific interval, using a model collection.
+ *
+ * @param vmaf              The VMAF context allocated with `vmaf_init()`.
+ *
+ * @param model_collection  Opaque model collection context.
+ *
+ * @param pool_method       Temporal pooling method to use.
+ *
+ * @param score             Pooled score.
+ *
+ * @param index_low         Low picture index of pooling interval.
+ *
+ * @param index_high        High picture index of pooling interval.
+ *
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error. `-EAGAIN`
+ *         means a picture of the interval has no score yet (see
+ *         `vmaf_score_at_index()`); flush first.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_score_pooled_model_set")
+VMAF_EXPORT int vmaf_score_pooled_model_collection(VmafContext *vmaf,
+                                                   VmafModelCollection *model_collection,
+                                                   enum VmafPoolingMethod pool_method,
+                                                   VmafModelCollectionScore *score,
+                                                   unsigned index_low, unsigned index_high);
+
+/**
+ * Pooled feature score for a specific interval.
+ *
+ * @param vmaf          The VMAF context allocated with `vmaf_init()`.
+ *
+ * @param feature_name  Name of the feature to fetch.
+ *
+ * @param pool_method   Temporal pooling method to use.
+ *
+ * @param score         Pooled score.
+ *
+ * @param index_low     Low picture index of pooling interval.
+ *
+ * @param index_high    High picture index of pooling interval.
+ *
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_feature_score_pooled")
+VMAF_EXPORT int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature_name,
+                                          enum VmafPoolingMethod pool_method, double *score,
+                                          unsigned index_low, unsigned index_high);
+
+/**
+ * @struct VmafPictureConfiguration
+ * @brief  Picture-pool configuration for `vmaf_preallocate_pictures`.
+ *
+ * Pre-allocates a fixed-size pool of `VmafPicture` buffers so that the
+ * per-frame hot path avoids `malloc` / `free`. Required when
+ * `VmafConfiguration::n_threads` > 1: every concurrent decode thread holds
+ * one picture from the pool, so @p pic_cnt should be at least `n_threads * 2`
+ * (one for ref, one for dis) to avoid stalls.
+ *
+ * Five-frame motion window: while a registered feature extractor reads the
+ * reference picture of frame n-2 (`motion` or `motion_v2` with
+ * `motion_five_frame_window=true`, which the `vmaf_v1.0.16_hfr_*` models
+ * set), the context keeps the reference pictures of the two frames before
+ * the current one, and @p pic_cnt must be at least 4 (those two and the
+ * current pair). A smaller pool is refused with -EINVAL by whichever call
+ * comes second: `vmaf_preallocate_pictures`, or the registration
+ * (`vmaf_use_feature`, `vmaf_use_features_from_model`), which logs one error
+ * line naming @p pic_cnt and the minimum. Without such an extractor this
+ * rule does not apply and the pool works as it did before.
+ *
+ * Safe to zero-initialise. @p pic_cnt == 0 disables preallocation; the caller
+ * is then responsible for its own `vmaf_picture_alloc` / unref cycle.
+ *
+ * Per-picture geometry (`pic_params`) is shared by every pool slot:
+ * luma width, luma height, bits per component, and planar pixel format.
+ * All slots are allocated to the same dimensions; mixing resolutions in one
+ * session requires a fresh `vmaf_init`.
+ */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units; C has no `using`. ADR-1138. */
+typedef struct VmafPictureConfiguration {
+    struct {
+        unsigned w;                   /**< Luma width in samples. */
+        unsigned h;                   /**< Luma height in samples. */
+        unsigned bpc;                 /**< Bits per component. */
+        enum VmafPixelFormat pix_fmt; /**< Pixel format. */
+    } pic_params;                     /**< Per-picture shape (width/height/bpc/pixel-format). */
+    unsigned pic_cnt;                 /**< Pool size — count of pre-allocated pictures. */
+} VmafPictureConfiguration;
+/* NOLINTEND(modernize-use-using) */
+
+/**
+ * Preallocate pictures for use with multi-threaded feature extraction.
+ * Pictures are allocated once and automatically returned to the pool when
+ * fully unref'd, avoiding repeated allocation/deallocation overhead.
+ *
+ * @param vmaf VMAF context allocated with `vmaf_init()`.
+ *
+ * @param cfg  Picture configuration including dimensions and pool size.
+ *
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error; -EINVAL
+ *         when @p cfg.pic_cnt is below 4 while a registered extractor reads
+ *         frame n-2 (see `VmafPictureConfiguration`).
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_context_preallocate")
+VMAF_EXPORT int vmaf_preallocate_pictures(VmafContext *vmaf, VmafPictureConfiguration cfg);
+
+/**
+ * Fetch a preallocated picture from the picture pool.
+ * The picture must be returned to the pool via vmaf_picture_unref() when done.
+ * Pictures automatically return to the pool when their reference count reaches zero.
+ *
+ * @param vmaf VMAF context initialized with `vmaf_preallocate_pictures()`.
+ *
+ * @param pic  Output picture from the pool.
+ *
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_context_acquire_frame")
+VMAF_EXPORT int vmaf_fetch_preallocated_picture(VmafContext *vmaf, VmafPicture *pic);
+
+/**
+ * Close a VMAF instance and free all associated memory.
+ *
+ * @param vmaf The VMAF instance to close.
+ *             The pointer becomes invalid only when this function returns 0.
+ *             Any nonzero return retains all ownership that could not be
+ *             released; the context is then teardown-only and the caller must
+ *             retry `vmaf_close()` rather than call another libvmaf operation.
+ *             Imported backend states must remain alive until close succeeds;
+ *             registered models need not (the context owns a reference to each).
+ *             Set the pointer to NULL only on success:
+ *
+ *             @code
+ *               int err = vmaf_close(ctx);
+ *               if (err != 0)
+ *                   err = vmaf_close(ctx); // retry retained teardown ownership
+ *               if (err == 0)
+ *                   ctx = NULL;
+ *             @endcode
+ *
+ *             Calling `vmaf_close(NULL)` returns `-EINVAL` harmlessly;
+ *             however passing a pointer after a successful close is undefined
+ *             behaviour and is **not** detected.
+ *
+ *
+ * @return Exactly 0 after freeing the context, or < 0 (negative errno) with a
+ *         retryable teardown-only context retained. Treat every nonzero result
+ *         as retained ownership.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_context_destroy")
+VMAF_EXPORT int vmaf_close(VmafContext *vmaf);
+
+/**
+ * Write VMAF stats to an output file.
+ *
+ * @param vmaf         The VMAF context allocated with `vmaf_init()`.
+ *
+ * @param output_path  Output file path.
+ *
+ * @param fmt          Output file format.
+ *                     See `enum VmafOutputFormat` for options.
+ *
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_report_write")
+VMAF_EXPORT int vmaf_write_output(VmafContext *vmaf, const char *output_path,
+                                  enum VmafOutputFormat fmt);
+
+/**
+ * @brief Write VMAF stats to an output file with a caller-controlled score format.
+ *
+ * Identical to `vmaf_write_output()`, but lets the caller specify the printf
+ * format string used for every score value emitted to the file (XML / JSON /
+ * CSV / SUB). Pass NULL to use the default format (`"%.6f"` — 6 decimal
+ * places, matching the Netflix upstream default). The format string must
+ * accept exactly one `double` argument (e.g. `"%.6f"`, `"%.10f"`, `"%.17g"`)
+ * and is not validated; an invalid format will produce undefined output. The
+ * string is read each time a score is written; callers must keep it valid for
+ * the duration of the call.
+ *
+ * To opt into IEEE-754 round-trip lossless output pass `"%.17g"` (this is
+ * what the CLI's `--precision=max` flag does internally).
+ *
+ * @param vmaf          The VMAF context allocated with `vmaf_init()`.
+ * @param output_path   Output file path.
+ * @param fmt           Output file format (see `enum VmafOutputFormat`).
+ * @param score_format  printf format string for score values, or NULL to use
+ *                      the default `"%.6f"`.
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_report_write")
+VMAF_EXPORT int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
+                                              enum VmafOutputFormat fmt, const char *score_format);
+
+/**
+ * @brief Introspect the compute backend active in a `VmafContext`.
+ *
+ * Returns the backend that was imported into @vmaf via one of the
+ * `vmaf_<backend>_import_state()` family of functions.  Returns
+ * `VMAF_BACKEND_UNKNOWN` (0) for CPU-only contexts where no GPU state has
+ * been imported.
+ *
+ * @param vmaf  The VMAF context allocated with `vmaf_init()`.
+ * @param out   Receives the active backend.  Must not be NULL.
+ *
+ * @return 0 on success, or -EINVAL when @vmaf or @out is NULL.
+ */
+VMAF_DEPRECATED("use vmafx_context_backend")
+VMAF_EXPORT int vmaf_context_get_backend(VmafContext *vmaf, enum VmafBackend *out);
+
+/**
+ * @brief Find the device twin of a CPU feature extractor.
+ *
+ * Looks for the extractor that computes the same features as the CPU
+ * extractor @p feature_name on the device backend imported into @p vmaf. The
+ * lookup is the one `vmaf_use_features_from_model()` applies to model
+ * features: each feature the CPU extractor provides is looked up, in order,
+ * among the extractors of the imported backend. The twin is usable only when
+ * it honours every option in @p opts_dict and, when @p pic_cfg is given, can
+ * run pictures of that geometry. Model dispatch applies the same two checks
+ * before it falls back to the CPU extractor.
+ *
+ * Nothing is registered. To run the twin, pass @p *twin_name and the same
+ * options to `vmaf_use_feature()`. `vmaf_use_feature()` itself still selects
+ * extractors by exact name.
+ *
+ * @param vmaf               Context with a device backend imported through
+ *                           a `vmaf_<backend>_import_state()` call.
+ * @param feature_name       Registry name of a CPU extractor, as passed to
+ *                           `vmaf_use_feature()` (for example `"ciede"`).
+ * @param opts_dict          Options the caller will pass to
+ *                           `vmaf_use_feature()`, or NULL. Read, not consumed.
+ * @param pic_cfg            Picture geometry of the run, or NULL to skip the
+ *                           geometry check. `pic_cnt` is ignored.
+ * @param twin_name          Receives the twin's registry name, or NULL when
+ *                           the backend has none. Static storage; do not free.
+ * @param unsupported_option Receives the option key the twin cannot honour, or
+ *                           NULL. The key points into @p opts_dict and is
+ *                           valid until that dictionary is freed or passed to
+ *                           `vmaf_use_feature()`. May be NULL.
+ *
+ * @return 0 when the twin can compute this request;
+ *         -ENOENT when the imported backend has no twin for @p feature_name;
+ *         -ENOTSUP when the twin cannot honour an option (@p unsupported_option
+ *         names it) or the picture geometry (@p unsupported_option is NULL);
+ *         -ENODEV when @p vmaf has no device backend selected for feature
+ *         extraction (none imported, or a non-zero `gpumask` disables it);
+ *         -EINVAL when @p vmaf, @p feature_name or @p twin_name is NULL, or
+ *         @p feature_name is not a registered CPU extractor; another negative
+ *         errno when an option value cannot be parsed.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_feature_resolve")
+VMAF_EXPORT int vmaf_feature_backend_twin(VmafContext *vmaf, const char *feature_name,
+                                          const VmafFeatureDictionary *opts_dict,
+                                          const VmafPictureConfiguration *pic_cfg,
+                                          const char **twin_name, const char **unsupported_option);
+
+/**
+ * @brief Report a registered feature extractor and the backend it runs on.
+ *
+ * Enumerates the extractors registered in @p vmaf by
+ * `vmaf_use_features_from_model()`, `vmaf_use_feature()` and their variants,
+ * after duplicate registrations were merged. Iterate @p index from 0 until the
+ * call returns -ENOENT. Call it after the final
+ * `vmaf_read_pictures(vmaf, NULL, NULL, 0)` flush to see the extractors that
+ * actually ran: a model feature whose device twin cannot handle the first
+ * picture's geometry is replaced by its CPU extractor at that picture.
+ *
+ * @param vmaf    The VMAF context allocated with `vmaf_init()`.
+ * @param index   0-based registration index.
+ * @param name    Receives the extractor's registry name (for example
+ *                `"ciede_sycl"`). Static storage; do not free.
+ * @param backend Receives the backend the extractor runs on;
+ *                `VMAF_BACKEND_UNKNOWN` means the CPU.
+ *
+ * @return 0 on success, -ENOENT when @p index is past the last registered
+ *         extractor, or -EINVAL when @p vmaf, @p name or @p backend is NULL.
+ *
+ * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
+ */
+VMAF_DEPRECATED("use vmafx_context_extractor_info")
+VMAF_EXPORT int vmaf_registered_feature_extractor(VmafContext *vmaf, unsigned index,
+                                                  const char **name, enum VmafBackend *backend);
+
+/**
+ * @brief Return the libvmaf version string (e.g. "3.2.1").
+ *
+ * @return NUL-terminated string owned by the library. Valid for the
+ *         lifetime of the process; do not free.
+ *
+ * @note Thread safety: Safe to call from any thread.
+ */
+VMAF_DEPRECATED("use vmafx_version_string")
+VMAF_EXPORT const char *vmaf_version(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* LIBVMAF_LIBVMAF_H */

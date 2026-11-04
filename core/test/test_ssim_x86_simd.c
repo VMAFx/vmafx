@@ -63,9 +63,9 @@ typedef struct SsimKernels {
     void (*variance)(float *ref_sigma_sqd, float *cmp_sigma_sqd, float *sigma_both,
                      const float *ref_mu, const float *cmp_mu, int n);
     void (*accumulate)(const float *ref_mu, const float *cmp_mu, const float *ref_sigma_sqd,
-                       const float *cmp_sigma_sqd, const float *sigma_both, int n, float C1,
-                       float C2, float C3, double *ssim_sum, double *l_sum, double *c_sum,
-                       double *s_sum);
+                       const float *cmp_sigma_sqd, const float *sigma_both, int n, const float C1,
+                       const float C2, const float C3, double *ssim_sum, double *l_sum,
+                       double *c_sum, double *s_sum);
 } SsimKernels;
 
 static const SsimKernels k_kernels[] = {
@@ -123,7 +123,8 @@ typedef struct SsimSums {
 } SsimSums;
 
 /* Transcribed from ssim_accumulate_default_scalar() in iqa/ssim_tools.c. */
-static SsimSums ref_accumulate(const SsimPlanes *p, int n, float C1, float C2, float C3)
+static SsimSums ref_accumulate(const SsimPlanes *p, int n, const float C1, const float C2,
+                               const float C3)
 {
     SsimSums sums = {0.0, 0.0, 0.0, 0.0};
     for (int i = 0; i < n; ++i) {

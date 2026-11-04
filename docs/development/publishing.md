@@ -113,15 +113,15 @@ is four workflows:
 |---|---|---|---|
 | `.github/workflows/dev-container-publish.yml` | push to `master` (`dev/Containerfile`, `dev/scripts/**`) | `ghcr.io/vmafx/vmafx-dev-mcp:sha-<commit>`, `:master` | Yes — builds `libvmaf-build` stage into a private package; the job refuses to push unless GHCR reports the package private ([ADR-1564](../adr/1564-dev-image-private-guard.md)); releases do not pull it |
 | `.github/workflows/release-please.yml` | push to `master` | the release PR and, on merge, the tag + GitHub release | n/a — no build |
-| `.github/workflows/supply-chain.yml` | `release: published` | `libvmaf.so` chain, the `vmaf` CLI, `models.tar.gz`, SBOMs, cosign signatures, GitHub build-provenance attestations, the `vmaf-mcp` wheel | **Yes** — `build-artifacts` builds the Debian 13 `release-build` stage of the release tag's `dev/Containerfile` on a GitHub-hosted runner and compiles inside it ([ADR-1346](../adr/1346-hosted-slim-container-release-build.md), [ADR-1354](../adr/1354-native-bundle-release-track.md)) |
+| `.github/workflows/supply-chain.yml` | `release: published` | `libvmaf.so` chain, the `vmaf` CLI, `models.tar.gz`, `vmafx-linux-arm64.tar.gz`, SBOMs, cosign signatures, GitHub build-provenance attestations, the `vmaf-mcp` wheel | **Yes** — `build-artifacts` builds the manylinux `release-build` stage of the release tag's `dev/Containerfile` on a GitHub-hosted runner and compiles inside it ([ADR-1346](../adr/1346-hosted-slim-container-release-build.md), [ADR-1354](../adr/1354-native-bundle-release-track.md)) |
 | `.github/workflows/docker-publish-production.yml` | `release: published` | `ghcr.io/vmafx/vmafx:*` (cpu / cuda13 / rocm10 / oneapi2026, also tagged oneapi2025 / server) | Yes, inherently — `docker buildx` against `docker/Dockerfile.production*` |
 
 Consequences:
 
 - Release native binaries (`libvmaf.so` SONAME chain, `vmaf` CLI, `models.tar.gz`)
   are compiled inside the `release-build` stage, built in the release job from
-  the tagged commit's own `dev/Containerfile` on the Debian 13 release-track
-  base. The only registry pulls are the digest-pinned base image and BuildKit
+  the tagged commit's own `dev/Containerfile` on a manylinux base with glibc
+  2.28 (x86-64 and arm64, issue 2437). The only registry pulls are the digest-pinned base image and BuildKit
   frontend it names; no external layer cache is involved
   ([ADR-1346](../adr/1346-hosted-slim-container-release-build.md), which
   supersedes ADR-1178, as amended by
@@ -188,7 +188,7 @@ no signal at all.
 
 `dev/Containerfile` writes a marker at `/etc/vmafx-dev-container` in its first
 (`build-deps`) stage, so every downstream stage inherits it, and writes the
-same bytes in `release-build`, the separate Debian 13 root the native release
+same bytes in `release-build`, the separate manylinux root the native release
 compiles in. The unit suite fails if the two writes differ. The marker is the
 gate's single source of truth:
 
@@ -247,7 +247,7 @@ the release pipeline, not malicious evasion.
 | Job / Script | What it asserts |
 |---|---|
 | `Dev Container Build` in `dev-container-build.yml` | the gate rejects the bare runner, accepts the built image, and a stamp made inside the image verifies outside it; the release rehearsal then runs the whole release build in `release-build` and verifies its stamp |
-| `Release Script Contract (ADR-1128)` in `rule-enforcement.yml` | the gate's hermetic unit suite (`scripts/ci/tests/test-check-container-build.sh`, no Docker needed), including that `build-deps` and `release-build` write identical markers and that `release-build` roots at `RELEASE_BUILDER_BASE` |
+| `Release Script Contract (ADR-1128)` in `rule-enforcement.yml` | the gate's hermetic unit suite (`scripts/ci/tests/test-check-container-build.sh`, no Docker needed), including that `build-deps` and `release-build` write identical markers and that `release-build` roots at `NATIVE_RELEASE_BUILDER_BASE` |
 | `build-artifacts` in `supply-chain.yml` | runs `--assert`, then stamps `artifacts/` with `--stamp`, both inside the `release-build` stage it builds from the release tag (ADR-1346, ADR-1354) |
 | `verify-native-artifacts` in `supply-chain.yml` | verifies downloaded `artifacts/` with `scripts/ci/check-container-build.sh --verify`, which rejects a missing, empty, malformed or symlinked stamp; then runs the bundle on `ubuntu-24.04` and on the release runtime image |
 | `scripts/release/verify-native-release-artifacts.sh` | verifies staged release bundle contains valid, non-empty, non-symlink `container-build-provenance.txt` |
@@ -261,19 +261,18 @@ such runner was registered, so a published release would have waited 24 hours
 and been cancelled.
 [ADR-1354](../adr/1354-native-bundle-release-track.md) then moved the compile
 from the Ubuntu 26.04 `build-deps` stage onto the Debian 13 release track.
-`build-artifacts` in `.github/workflows/supply-chain.yml` runs on
-`ubuntu-26.04`:
+`build-artifacts` in `.github/workflows/supply-chain.yml` now runs on
+`ubuntu-26.04` (x86-64) and `ubuntu-26.04-arm` (arm64), using the glibc 2.28
+builders introduced for issue 2437:
 
 1. It checks out the release tag.
 2. It builds the `release-build` stage of that tag's `dev/Containerfile` with
-   `scripts/ci/build-dev-container-stage.sh release-build`. `release-build` is
-   the digest-pinned Debian 13 base `RELEASE_BUILDER_BASE` from
-   `build-config.env` plus Debian archive packages (GCC 14, Meson, Ninja, NASM,
-   `xxd`, a pinned `patchelf`) and downloads nothing from third parties, so the
-   job needs no GitHub token. The build uses the default Docker builder with no
-   external layer cache and no registry, so no state from another workflow run
-   can enter a release. An uncached build of the stage took under a minute on
-   a workstation; the job allows 60.
+   `scripts/ci/build-dev-container-stage.sh release-build`. `release-build` uses
+   architecture-specific manylinux images from `build-config.env` (AlmaLinux
+   8, glibc 2.28, GCC 14). The same stage runs on x86-64 and native arm64.
+   Meson and Ninja install from the existing hash lock; archive packages
+   resolve while building the stage. No GitHub token, external layer cache
+   or published builder image enters the release.
 3. It runs `scripts/release/build-native-release-artifacts.sh` in that image
    with `docker run --pull never --network none`, as the runner's user, with
    the checkout mounted. The script asserts the container marker, refuses to
@@ -282,14 +281,17 @@ from the Ubuntu 26.04 `build-deps` stage onto the Debian 13 release track.
    below), stages the bundle with the CLI's RUNPATH set to `$ORIGIN`, writes
    `container-build-provenance.txt` and runs the clean-environment verifier.
    The compile took under a minute on four CPUs.
-4. It hashes and uploads `artifacts/` on the runner for SBOM, signing, build
-   provenance and attachment, exactly as before.
+4. It checks every staged ELF's GLIBC symbols against `NATIVE_GLIBC_FLOOR`.
+   `collect-artifacts` then keeps the x86-64 filenames and adds
+   `vmafx-linux-arm64.tar.gz` with the same staged layout. Signing and build
+   provenance cover the resulting flat asset set; the native SBOM includes
+   both the archive and its extracted files.
 
 The stamp records `image_title=vmaf-dev-mcp`. `build-deps` writes that marker
 and every later stage of `dev/Containerfile` inherits it; `release-build`
 writes the same bytes. The gate accepts no other identity.
 `verify-native-artifacts` then checks the stamp, runs the downloaded bundle on
-`ubuntu-24.04` (glibc 2.39, the oldest GitHub-hosted image that can load it)
+`ubuntu-24.04`; the matching arm64 consumer job runs on `ubuntu-24.04-arm`
 and starts the CLI on the release runtime image `RELEASE_RUNTIME_CC`
 (distroless `cc-debian13`), each time with no `LD_LIBRARY_PATH`, so the
 CLI must find `libvmaf.so.3` and `libvmafx.so.1` through its RUNPATH `$ORIGIN`. See
@@ -304,19 +306,17 @@ executables: two of three full builds on a workstation failed, once with
 `docker/` release images already configure `-Denable_tests=false` on the same
 base.
 
-**What is pinned and what is not.** The base image is pinned by digest through
-`build-config.env`, and `patchelf` is pinned to Debian 13's package version
-(`PATCHELF_VERSION`) because it rewrites the published CLI's RUNPATH. The
-other Debian archive packages in `release-build` resolve when the stage is
-built, so rebuilding an old tag later may install a newer compiler or Meson
-from a Debian point release than the original release used. The release
-compile itself runs with networking disabled.
+**What is pinned and what is not.** Native bundles use architecture-specific
+manylinux digest pins in `build-config.env`, including GCC 14 and patchelf,
+hash-locked Python build tools and a SHA256-verified NASM source release.
+AlmaLinux/EPEL packages are resolved when the stage is built. The compile
+itself runs with networking disabled.
 
-**Release track.** `build-config.env` says published artifacts are built on
-the `RELEASE_*` track (`RELEASE_BUILDER_BASE`, Debian 13, glibc 2.41) and ship
-on `RELEASE_RUNTIME_CC` (distroless `cc-debian13`). The native bundle follows
-that rule. Until ADR-1354 it was built on the `DEV_*` track and needed glibc
-2.43, which ADR-1346 recorded as an exception for 1.0.0-rc.1.
+**Release track.** Container images retain the Debian 13 `RELEASE_*` track.
+Downloadable native bundles use the older glibc 2.28 floor for LTS
+compatibility (issue 2437), replacing ADR-1354's Debian 13 native builder.
+The [release guide](release.md#runtime-requirements) lists the download
+layouts and compatibility checks.
 
 **Rehearsal on every container-affecting pull request.** The Dev Container PR
 gate (`dev-container-build.yml`) builds `release-build` with the same script

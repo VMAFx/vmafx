@@ -38,6 +38,7 @@ import datetime as dt
 import re
 import sys
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -53,9 +54,13 @@ ALLOWED = frozenset({"ubuntu-26.04", "ubuntu-26.04-arm"})
 FLOATING_PREFIXES = ("ubuntu-latest", "ubuntu-slim")
 # (workflow file, job id) -> (image the job is about, why).
 COMPATIBILITY_TARGETS: dict[tuple[str, str], tuple[str, str]] = {
+    ("supply-chain.yml", "verify-native-artifacts-arm64"): (
+        "ubuntu-24.04-arm",
+        "ADR-1354, issue 2437: downloaded arm64 bundle on Ubuntu 24.04 LTS",
+    ),
     ("supply-chain.yml", "verify-native-artifacts"): (
         "ubuntu-24.04",
-        "ADR-1354: oldest hosted image that loads the native Linux bundle",
+        "ADR-1354, issue 2437: downloaded x86-64 bundle on Ubuntu 24.04 LTS",
     ),
 }
 FALLBACK_MAX_DAYS = 90
@@ -238,13 +243,30 @@ def check_labels(
     return findings
 
 
+ADR_CITATION = re.compile(r"\bADR-\d{4}\b")
+
+
+def uncited_targets(
+    targets: Mapping[tuple[str, str], tuple[str, str]] | None = None,
+) -> list[str]:
+    """Findings for every compatibility target whose reason cites no ADR."""
+    if targets is None:
+        targets = COMPATIBILITY_TARGETS
+    return [
+        f"COMPATIBILITY_TARGETS: job '{job}' in {workflow} keeps '{label}' without an ADR "
+        f"in its reason ({why})"
+        for (workflow, job), (label, why) in sorted(targets.items())
+        if not ADR_CITATION.search(why)
+    ]
+
+
 def main(argv: list[str]) -> int:
     """Check every workflow under the repository root (argv[1], default: this checkout)."""
     root = Path(argv[1]).resolve() if len(argv) > 1 else ROOT
     table, findings = read_workflows(root)
     fallbacks, malformed = load_fallbacks(root)
     live, stale = check_fallbacks(fallbacks, table, lint_exceptions.today())
-    findings += malformed + stale + check_labels(table, live)
+    findings += malformed + stale + check_labels(table, live) + uncited_targets()
     for finding in findings:
         print(f"error: {finding}", file=sys.stderr)
     named = sum(1 for labels in table.values() if labels)

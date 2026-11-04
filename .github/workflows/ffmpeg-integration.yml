@@ -386,6 +386,8 @@ jobs:
             mingw-w64-ucrt-x86_64-python
           update: true
           path-type: inherit
+          # Inherited MSVC environments can exhaust xargs argument space during paccache cleanup.
+          cache: false
 
       - name: Build FFmpeg with the patch series against vmaf.lib
         shell: msys2 {0}
