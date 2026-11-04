@@ -85,8 +85,8 @@ typedef struct window_moments {
 
 /* ssim_variance_scalar() and ssim_accumulate_default_scalar() for one pixel;
  * `ssim` is the term the reference adds to *ssim_sum. */
-static void reference_terms(window_moments m, float C1, float C2, double *l_out, double *c_out,
-                            double *s_out, double *ssim_out)
+static void reference_terms(window_moments m, const float C1, const float C2, double *l_out,
+                            double *c_out, double *s_out, double *ssim_out)
 {
     const float C3 = C2 / 2.0f;
     float ref_sigma_sqd = m.ref_sq;

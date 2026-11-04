@@ -133,11 +133,11 @@ fn find_docs_rs_paths(
     manifest: &Path,
     is_file: impl Fn(&Path) -> bool,
 ) -> Result<BuildPaths, String> {
-    let include_dir = manifest.join("../../../core/include");
+    let include_dir = manifest.join("include");
     let header = include_dir.join("libvmaf/libvmaf.h");
     if !is_file(&header) {
         return Err(format!(
-            "vmafx-sys: DOCS_RS header not found: {}; use a source checkout with core/include/libvmaf/",
+            "vmafx-sys: DOCS_RS header not found: {}; reinstall the crate with its packaged include/libvmaf/ headers",
             header.display()
         ));
     }
@@ -168,7 +168,7 @@ fn find_system_paths(
     Err(not_found_message(prefixes))
 }
 
-/// Select a complete installation, tree headers for docs.rs, or vendored build.
+/// Select a complete installation, packaged headers for docs.rs, or vendored build.
 /// Filesystem probes are injected so policy tests need no native installation.
 pub fn find_paths(
     manifest: &Path,

@@ -10,6 +10,7 @@ import io
 import struct
 import sys
 import tempfile
+import unittest
 from collections.abc import Sequence
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -436,3 +437,318 @@ def test_boundary_strip_surrounding_quotes() -> None:
     assert gate.strip_surrounding_quotes('"') == '"'
     assert gate.strip_surrounding_quotes("'") == "'"
     assert gate.strip_surrounding_quotes("") == ""
+
+
+def test_positive_runtime_archive_disjoint_passes() -> None:
+    """Positive: runtime archive defined symbols are disjoint from DLL exports and exits 0."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        build = _make_build_dir(tmp_path, ("libvmaf.dll.a",))
+        rt_archive = tmp_path / "libgcc_eh.a"
+        rt_archive.write_bytes(b"!<arch>\n")
+        rt_nm_out = "0000000000000000 T other_runtime_symbol\n"
+        out = io.StringIO()
+        err = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = gate.check_build_dir(
+                build,
+                nm_tool="nm",
+                runner=lambda _tool, _path: (0, WITH_THUNKS, ""),
+                runtime_archives=(rt_archive,),
+                runtime_runner=lambda _tool, _path: (0, rt_nm_out, ""),
+            )
+        assert rc == 0, err.getvalue()
+        assert err.getvalue() == ""
+        assert "runtime_overlap=0" in out.getvalue()
+        assert "libgcc_eh.a" in out.getvalue()
+
+
+def test_negative_planted_runtime_archive_function_overlap_fails() -> None:
+    """Negative (planted): DLL exports _Unwind_Resume defined in runtime archive -> 1."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        funcs = ("_Unwind_Resume", "vmaf_picture_alloc")
+        build = _make_build_dir(tmp_path, {"libvmafx.dll.a": (funcs, ())})
+        rt_archive = tmp_path / "libgcc_eh.a"
+        rt_archive.write_bytes(b"!<arch>\n")
+        thunk_nm_out = _generate_nm_output(funcs, funcs)
+        rt_nm_out = "0000000000000410 T _Unwind_Resume\n"
+        out = io.StringIO()
+        err = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = gate.check_build_dir(
+                build,
+                nm_tool="nm",
+                runner=lambda _tool, _path: (0, thunk_nm_out, ""),
+                runtime_archives=(rt_archive,),
+                runtime_runner=lambda _tool, _path: (0, rt_nm_out, ""),
+            )
+        assert rc == 1
+        assert "_Unwind_Resume" in err.getvalue()
+        assert "FAIL" in err.getvalue()
+        assert "libgcc_eh.a" in err.getvalue()
+        assert "-Wl,--exclude-libs" in err.getvalue()
+
+
+def test_negative_runtime_archive_weak_defined_symbol_fails() -> None:
+    """Negative: runtime nm reports _Unwind_Resume as weak defined W and DLL exports it -> 1."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        funcs = ("_Unwind_Resume", "vmaf_picture_alloc")
+        build = _make_build_dir(tmp_path, {"libvmafx.dll.a": (funcs, ())})
+        rt_archive = tmp_path / "libgcc_eh.a"
+        rt_archive.write_bytes(b"!<arch>\n")
+        thunk_nm_out = _generate_nm_output(funcs, funcs)
+        rt_nm_out = "0000000000000410 W _Unwind_Resume\n"
+        out = io.StringIO()
+        err = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = gate.check_build_dir(
+                build,
+                nm_tool="nm",
+                runner=lambda _tool, _path: (0, thunk_nm_out, ""),
+                runtime_archives=(rt_archive,),
+                runtime_runner=lambda _tool, _path: (0, rt_nm_out, ""),
+            )
+        assert rc == 1
+        assert "_Unwind_Resume" in err.getvalue()
+        assert "FAIL" in err.getvalue()
+        assert "libgcc_eh.a" in err.getvalue()
+
+
+def test_negative_runtime_archive_data_overlap_fails() -> None:
+    """Negative: overlap through a DATA export fails closed with exit 1."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        funcs = ("vmaf_picture_alloc",)
+        datas = ("_Unwind_Custom_Data",)
+        build = _make_build_dir(tmp_path, {"libvmaf.dll.a": (funcs, datas)})
+        rt_archive = tmp_path / "libgcc_eh.a"
+        rt_archive.write_bytes(b"!<arch>\n")
+        thunk_nm_out = _generate_nm_output(funcs, funcs)
+        rt_nm_out = "0000000000000010 D _Unwind_Custom_Data\n"
+        out = io.StringIO()
+        err = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = gate.check_build_dir(
+                build,
+                nm_tool="nm",
+                runner=lambda _tool, _path: (0, thunk_nm_out, ""),
+                runtime_archives=(rt_archive,),
+                runtime_runner=lambda _tool, _path: (0, rt_nm_out, ""),
+            )
+        assert rc == 1
+        assert "_Unwind_Custom_Data" in err.getvalue()
+        assert "FAIL" in err.getvalue()
+        assert "libgcc_eh.a" in err.getvalue()
+
+
+def test_boundary_runtime_archive_no_defined_globals_passes() -> None:
+    """Boundary: runtime nm output with only U / lower-case / I lines passes."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        build = _make_build_dir(tmp_path, ("libvmaf.dll.a",))
+        rt_archive = tmp_path / "libempty.a"
+        rt_archive.write_bytes(b"!<arch>\n")
+        rt_nm_out = (
+            "                 U external_sym\n"
+            "0000000000000000 t local_func\n"
+            "0000000000000000 d local_data\n"
+            "0000000000000000 I __imp_vmaf_picture_alloc\n"
+            "0000000000000000 w weak_sym\n"
+        )
+        out = io.StringIO()
+        err = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = gate.check_build_dir(
+                build,
+                nm_tool="nm",
+                runner=lambda _tool, _path: (0, WITH_THUNKS, ""),
+                runtime_archives=(rt_archive,),
+                runtime_runner=lambda _tool, _path: (0, rt_nm_out, ""),
+            )
+        assert rc == 0, err.getvalue()
+        assert "runtime_overlap=0" in out.getvalue()
+
+
+def _check_absolute_runtime_symbol(nm_type: str) -> tuple[int, str, str]:
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        build = _make_build_dir(tmp_path, {"libvmaf.dll.a": (TWO_FUNCS, ("runtime_constant",))})
+        rt_archive = tmp_path / "libgcc_eh.a"
+        rt_archive.write_bytes(b"!<arch>\n")
+        rt_nm_out = f"00000000 {nm_type} runtime_constant\n"
+        out = io.StringIO()
+        err = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = gate.check_build_dir(
+                build,
+                nm_tool="nm",
+                runner=lambda _tool, _path: (0, WITH_THUNKS, ""),
+                runtime_archives=(rt_archive,),
+                runtime_runner=lambda _tool, _path: (0, rt_nm_out, ""),
+            )
+        return rc, out.getvalue(), err.getvalue()
+
+
+def test_negative_planted_runtime_archive_absolute_overlap_fails() -> None:
+    """Negative (planted): a DLL exporting a runtime global absolute symbol fails."""
+    rc, _, err = _check_absolute_runtime_symbol("A")
+    assert rc == 1, "global absolute runtime export was not rejected"
+    assert "FAIL" in err
+    assert "exports 1 symbol(s)" in err
+    assert "runtime_constant" in err
+    assert "libgcc_eh.a" in err
+
+
+def test_boundary_runtime_archive_local_absolute_symbol_ignored() -> None:
+    """Boundary: a local absolute symbol does not cause a DLL export overlap."""
+    rc, out, err = _check_absolute_runtime_symbol("a")
+    assert rc == 0, err
+    assert err == ""
+    assert "runtime_overlap=0" in out
+
+
+def test_boundary_runtime_archive_missing_path_fails() -> None:
+    """Boundary: missing runtime archive path fails closed with exit 1."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        build = _make_build_dir(tmp_path, ("libvmaf.dll.a",))
+        missing_archive = tmp_path / "nonexistent_archive.a"
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = gate.check_build_dir(
+                build,
+                nm_tool="nm",
+                runner=lambda _tool, _path: (0, WITH_THUNKS, ""),
+                runtime_archives=(missing_archive,),
+            )
+        assert rc == 1
+        assert "nonexistent_archive.a" in err.getvalue()
+        assert "FAIL" in err.getvalue()
+
+
+def test_boundary_runtime_archive_nm_nonzero_fails() -> None:
+    """Boundary: nm returning non-zero on runtime archive fails closed with exit 1."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        build = _make_build_dir(tmp_path, ("libvmaf.dll.a",))
+        rt_archive = tmp_path / "libcorrupt.a"
+        rt_archive.write_bytes(b"!<arch>\n")
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = gate.check_build_dir(
+                build,
+                nm_tool="nm",
+                runner=lambda _tool, _path: (0, WITH_THUNKS, ""),
+                runtime_archives=(rt_archive,),
+                runtime_runner=lambda _tool, _path: (2, "", "archive format error"),
+            )
+        assert rc == 1
+        assert "libcorrupt.a" in err.getvalue()
+        assert "exit 2" in err.getvalue()
+        assert "archive format error" in err.getvalue()
+
+
+def test_parse_nm_defined_globals() -> None:
+    """Parse test for nm defined global symbols: allow-list kept, U/w/v/lower ignored."""
+    nm_input = """\
+archive.o:
+0000000000000140 T _GCC_specific_handler
+0000000000000010 D global_data_var
+0000000000000020 B global_bss_var
+0000000000000030 R global_rodata_var
+0000000000000040 S global_small_data
+0000000000000050 C common_symbol
+0000000000000060 G global_small_init_data
+0000000000000000 w weak_func
+0000000000000000 W weak_func_upper
+0000000000000000 v weak_var
+0000000000000000 V weak_var_upper
+                 U undefined_sym
+0000000000000000 U undefined_with_addr
+0000000000000000 I __imp_foo
+0000000000000000 t local_text
+0000000000000000 d local_data
+0000000000000000 b local_bss
+0000000000000000 r local_rodata
+"""
+    expected = frozenset(
+        {
+            "_GCC_specific_handler",
+            "global_data_var",
+            "global_bss_var",
+            "global_rodata_var",
+            "global_small_data",
+            "common_symbol",
+            "global_small_init_data",
+            "weak_func_upper",
+            "weak_var_upper",
+        }
+    )
+    assert gate.parse_nm_defined_globals(nm_input) == expected
+
+
+def test_read_dll_all_exports_includes_data_and_code() -> None:
+    """Verify read_dll_function_exports returns CODE only, read_dll_all_exports returns both."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        dll_path = tmp_path / "test.dll"
+        dll_bytes = _build_pe_dll_bytes(
+            func_symbols=("func_a", "func_b"),
+            data_symbols=("data_x", "data_y"),
+        )
+        dll_path.write_bytes(dll_bytes)
+        funcs = gate.read_dll_function_exports(dll_path)
+        all_syms = gate.read_dll_all_exports(dll_path)
+        assert funcs == frozenset({"func_a", "func_b"})
+        assert all_syms == frozenset({"func_a", "func_b", "data_x", "data_y"})
+
+
+def test_cli_runtime_archive_end_to_end() -> None:
+    """End-to-end CLI with --runtime-archive option."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        funcs = ("_Unwind_Resume",)
+        build = _make_build_dir(tmp_path, {"libvmaf.dll.a": (funcs, ())})
+        rt_archive = tmp_path / "libgcc_eh.a"
+        rt_archive.write_bytes(b"!<arch>\n")
+        fake_nm = tmp_path / "fake_nm.py"
+        fake_nm.write_text(
+            f"""\
+import sys
+if "--defined-only" in sys.argv:
+    sys.stdout.write("0000000000000000 T _Unwind_Resume\\n")
+else:
+    sys.stdout.write({_generate_nm_output(funcs, funcs)!r})
+""",
+            encoding="utf-8",
+        )
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = gate.main(
+                [
+                    "--nm",
+                    f'"{sys.executable}" "{fake_nm}"',
+                    "--dll-dir",
+                    str(build / "src"),
+                    "--runtime-archive",
+                    str(rt_archive),
+                    str(build),
+                ]
+            )
+        assert rc == 1
+        assert "_Unwind_Resume" in err.getvalue()
+        assert "libgcc_eh.a" in err.getvalue()
+
+
+def load_tests(
+    _loader: unittest.TestLoader, tests: unittest.TestSuite, _pattern: str | None
+) -> unittest.TestSuite:
+    """Expose the standalone test functions to the stdlib unittest runner."""
+    tests.addTests(
+        unittest.FunctionTestCase(test)
+        for name, test in sorted(globals().items())
+        if name.startswith("test_") and callable(test)
+    )
+    return tests
