@@ -111,9 +111,7 @@ jobs:
           # __cpp_concepts=201907L and libstdc++ gates <expected> on >= 202002L
           # (raised in clang 19), so core/src/dict.cpp cannot compile with the
           # distro clang at any -std= level.
-          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          chmod +x /tmp/llvm.sh
-          sudo /tmp/llvm.sh 22
+          sudo bash scripts/ci/install-llvm.sh 22
           sudo apt-get update
           mkdir -p "${RUNNER_TEMP}/apt-archives"
           if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
