@@ -727,12 +727,17 @@ def build_and_test(
     return "OK", "build=ok test=ok"
 
 
-def push_branch(wt: Path, branch: str, old_sha: str, fork: str = "") -> tuple[bool, str]:
+def push_branch(
+    wt: Path, branch: str, old_sha: str, new_sha: str, fork: str = ""
+) -> tuple[bool, str]:
+    """Push the verified ``new_sha``, never the symbolic HEAD, under a lease on ``old_sha``."""
     if fork:
         url_ok, url_detail = check_origin_url(wt, fork)
         if not url_ok:
             return False, f"push refused: {url_detail}"
-    refspec = f"HEAD:refs/heads/{branch}"
+    if not new_sha:
+        return False, "push refused: no verified commit SHA"
+    refspec = f"{new_sha}:refs/heads/{branch}"
     lease = f"--force-with-lease=refs/heads/{branch}:{old_sha}"
     rc, out, err = git_cmd(wt, ["push", lease, "origin", refspec], timeout=60.0)
     if rc != 0:
@@ -892,7 +897,7 @@ def _execute_build_and_push(
         if status != "OK":
             return SweepRow(target.number, target.branch, status, old_sha, new_sha, 0, detail)
     if push:
-        push_ok, push_detail = push_branch(wt, target.branch, old_sha, fork=fork)
+        push_ok, push_detail = push_branch(wt, target.branch, old_sha, new_sha, fork=fork)
         if not push_ok:
             return SweepRow(
                 target.number, target.branch, "REFUSED", old_sha, new_sha, 0, push_detail

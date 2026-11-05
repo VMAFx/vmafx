@@ -532,6 +532,51 @@ class UpstreamPrSweepTest(unittest.TestCase):
         fork_head = git_run(self.fork_bare, "rev-parse", "fix/pr-1")
         self.assertEqual(fork_head, remote_racing_sha)
 
+    def test_boundary_push_sends_verified_sha_when_build_moves_head(self) -> None:
+        parser = sweep_mod.build_parser()
+        args = parser.parse_args(
+            [
+                "--repo",
+                str(self.repo),
+                "--worktree-root",
+                str(self.worktree_root),
+                "--fork",
+                "testfork/vmaf",
+                "--prs",
+                str(self.prs_file),
+                "--apply",
+                "--build",
+                "--push",
+            ]
+        )
+        moved_sha = ""
+
+        def build_that_moves_head(
+            wt: Path, _number: int, _branch: str, _cuda: str, _jobs: int
+        ) -> tuple[str, str]:
+            nonlocal moved_sha
+            (wt / "build_side_effect.txt").write_text("moved by build\n", encoding="utf-8")
+            git_run(wt, "add", "build_side_effect.txt")
+            git_run(wt, "-c", "commit.gpgsign=false", "commit", "-m", "unverified commit")
+            moved_sha = git_run(wt, "rev-parse", "HEAD")
+            return "OK", "build=ok test=ok"
+
+        with patch.object(sweep_mod, "build_and_test", side_effect=build_that_moves_head):
+            rows = sweep_mod.sweep(args)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].status, "OK")
+        fork_head = git_run(self.fork_bare, "rev-parse", "fix/pr-1")
+        self.assertNotEqual(moved_sha, "")
+        self.assertNotEqual(fork_head, moved_sha)
+        self.assertEqual(fork_head, rows[0].new_sha)
+
+    def test_negative_push_without_verified_sha_refused(self) -> None:
+        ok, detail = sweep_mod.push_branch(self.repo, "fix/pr-1", self.pr_old_sha, "")
+        self.assertFalse(ok)
+        self.assertIn("no verified commit SHA", detail)
+        fork_head = git_run(self.fork_bare, "rev-parse", "fix/pr-1")
+        self.assertEqual(fork_head, self.pr_old_sha)
+
     @unittest.skipUnless(
         shutil.which("meson") and shutil.which("ninja"),
         "meson and ninja are needed to build the dummy project",
@@ -836,7 +881,7 @@ class UpstreamPrSweepTest(unittest.TestCase):
         self.assertIn("does not name fork", detail)
 
         push_ok, push_detail = sweep_mod.push_branch(
-            self.repo, "fix/pr-1", self.pr_old_sha, fork="testfork/vmaf"
+            self.repo, "fix/pr-1", self.pr_old_sha, self.pr_old_sha, fork="testfork/vmaf"
         )
         self.assertFalse(push_ok)
         self.assertIn("does not name fork", push_detail)
