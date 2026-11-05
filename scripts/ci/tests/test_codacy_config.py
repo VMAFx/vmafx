@@ -8,6 +8,12 @@ the `markdownlint-cli2` hook excludes but Codacy does not (a changelog fragment,
 rendered index, a vendored tree) turns every pull request touching it into a Codacy
 failure. The check compares the two exclusion sets on every tracked Markdown file
 plus probe paths, so a new hook exclusion without a Codacy glob fails here.
+
+The compiled agent-context files (`praetorctl compile-context` renders them from
+`AGENTS.md`) repeat its instructions by construction. Codacy's Agentlinter reports
+each repeated line as a duplicate instruction on every pull request that adds an
+`AGENTS.md` line, so every compiled output must match a top-level `exclude_paths`
+glob. The check finds the outputs by their compile marker, not by a list.
 """
 
 from __future__ import annotations
@@ -89,6 +95,44 @@ def drift(codacy_text: str, precommit_text: str, paths: list[str]) -> list[str]:
     return out
 
 
+COMPILED_MARKER = b"Compiled automatically by praetorctl compile-context"
+
+
+def codacy_global_excludes(text: str) -> list[str]:
+    """The top-level exclude_paths of a Codacy configuration file."""
+    if not text.startswith("---\n"):
+        raise ValueError(".codacy.yml must start with a '---' line")
+    config = yaml.safe_load(text) or {}
+    return [str(glob) for glob in config.get("exclude_paths") or []]
+
+
+def compiled_context_files() -> list[str]:
+    """Tracked files whose first 512 bytes carry the compile-context marker."""
+    listed = run_command(
+        [GIT, "-C", str(ROOT), "ls-files", "-z"],
+        allowed_executables=(GIT,),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout_seconds=60,
+    ).stdout.split("\0")
+    out = []
+    for path in listed:
+        target = ROOT / path
+        if not path or target.is_symlink() or not target.is_file():
+            continue
+        with target.open("rb") as handle:
+            if COMPILED_MARKER in handle.read(512):
+                out.append(path)
+    return out
+
+
+def unexcluded_compiled(codacy_text: str, paths: list[str]) -> list[str]:
+    """Compiled context files no top-level exclude_paths glob matches."""
+    globs = [glob_regex(glob) for glob in codacy_global_excludes(codacy_text)]
+    return [path for path in sorted(set(paths)) if not any(g.match(path) for g in globs)]
+
+
 def without_glob(codacy_text: str, glob: str) -> str:
     """The Codacy configuration with one markdownlint glob removed from the parsed YAML."""
     config = yaml.safe_load(codacy_text)
@@ -148,6 +192,28 @@ class CodacyConfig(unittest.TestCase):
         """Negative: Codacy ignores a file that does not start with '---'."""
         with self.assertRaises(ValueError):
             codacy_markdownlint_excludes("engines: {}\n")
+
+    def test_compiled_context_files_are_excluded(self) -> None:
+        """Positive: every compile-context output matches a top-level exclude glob."""
+        compiled = compiled_context_files()
+        self.assertIn("CLAUDE.md", compiled)
+        self.assertEqual(unexcluded_compiled(CODACY.read_text(), compiled), [])
+
+    def test_config_without_compiled_exclude_fails(self) -> None:
+        """Negative: a planted config that drops CLAUDE.md from exclude_paths is reported."""
+        config = yaml.safe_load(CODACY.read_text())
+        config["exclude_paths"].remove("CLAUDE.md")
+        planted = "---\n" + str(yaml.safe_dump(config, sort_keys=False))
+        self.assertEqual(
+            unexcluded_compiled(planted, ["CLAUDE.md", ".windsurfrules"]), ["CLAUDE.md"]
+        )
+
+    def test_config_without_global_excludes_reports_all(self) -> None:
+        """Boundary: a config with no top-level exclude_paths reports every compiled file."""
+        self.assertEqual(
+            unexcluded_compiled("---\nengines: {}\n", [".gemini/GEMINI.md", "CLAUDE.md"]),
+            [".gemini/GEMINI.md", "CLAUDE.md"],
+        )
 
     def test_glob_boundaries(self) -> None:
         """Boundary: * stays in one directory, ** crosses them, **/ needs one directory."""

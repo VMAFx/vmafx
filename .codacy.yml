@@ -9,6 +9,13 @@
 # are spliced under a heading by the release renderers (ADR-0221), so MD041 (first
 # line a heading) and MD013 (80 columns) cannot hold for them.
 # scripts/ci/tests/test_codacy_config.py fails when the two lists drift apart.
+exclude_paths:
+  - "CLAUDE.md"
+  - ".cursor/rules/*.mdc"
+  - ".windsurfrules"
+  - ".github/copilot-instructions.md"
+  - ".codex/rules.md"
+  - ".gemini/GEMINI.md"
 engines:
   markdownlint:
     exclude_paths:
