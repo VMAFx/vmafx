@@ -207,21 +207,30 @@ static bool open_context(Live *live)
            vmafx_window_clock_create(&clock, &live->clock, NULL) == VMAFX_OK;
 }
 
+/* Allocate the host copies (and the GL staging copies) of one ring slot. */
+static bool open_slot(Live *live, Slot *slot, size_t bytes)
+{
+    for (unsigned k = 0; k < 2u; k++) {
+        slot->data[k] = malloc(bytes);
+        if (!slot->data[k]) {
+            return false;
+        }
+        if (live->use_gl) {
+            slot->semi[k] = malloc(bytes);
+            if (!slot->semi[k]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 static bool open_ring(Live *live)
 {
     const size_t bytes = vt_frame_bytes(&live->clip.desc);
     for (unsigned s = 0; s < live->n_ring; s++) {
-        for (unsigned k = 0; k < 2u; k++) {
-            live->ring[s].data[k] = malloc(bytes);
-            if (!live->ring[s].data[k]) {
-                return false;
-            }
-            if (live->use_gl) {
-                live->ring[s].semi[k] = malloc(bytes);
-                if (!live->ring[s].semi[k]) {
-                    return false;
-                }
-            }
+        if (!open_slot(live, &live->ring[s], bytes)) {
+            return false;
         }
     }
     return true;
