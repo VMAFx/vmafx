@@ -62,6 +62,7 @@ extern "C" {
 #include "../adm_float_reference.h"
 #include "../adm_options.h"
 #include "../adm_score.h"
+#include "../float_moment_scaler.h"
 #include "../nonfinite_score.h"
 }
 
@@ -492,9 +493,7 @@ int new_shared_buffer_pair(id<MTLDevice> device, size_t bytes, void **first, voi
 
 float scaler_for_bpc(unsigned bpc)
 {
-    if (bpc <= 8u) { return 1.0f; }
-    if (bpc == 10u) { return 4.0f; }
-    return (bpc == 12u) ? 16.0f : 256.0f;
+    return (float)vmaf_float_moment_scaler(bpc);
 }
 
 /* The constants the reference derives per frame, taken from its own

@@ -178,6 +178,23 @@ LD_LIBRARY_PATH=build/src ./score
 On the repository's pair the first line is the score the command line prints
 for the same files, followed by the record.
 
+### CMake
+
+CMake consumers locate and link the installed library using `find_package`:
+
+```cmake
+find_package(vmafx 1 REQUIRED)
+
+add_executable(score score.c)
+target_link_libraries(score PRIVATE vmafx::vmafx)
+```
+
+The CMake package configuration targets the shared library `libvmafx`. For
+static linking (`default_library=static`), consumers should use
+`pkg-config --static --libs libvmafx`, which resolves compiler- and
+platform-specific private dependencies (`-lstdc++`, `-lm`, `-pthread`, and
+backend runtimes) through `libvmafx.pc`.
+
 ## Step by step
 
 ### Host frames
