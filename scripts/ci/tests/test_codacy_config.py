@@ -10,10 +10,12 @@ failure. The check compares the two exclusion sets on every tracked Markdown fil
 plus probe paths, so a new hook exclusion without a Codacy glob fails here.
 
 The compiled agent-context files (`praetorctl compile-context` renders them from
-`AGENTS.md`) repeat its instructions by construction. Codacy's Agentlinter reports
-each repeated line as a duplicate instruction on every pull request that adds an
-`AGENTS.md` line, so every compiled output must match a top-level `exclude_paths`
-glob. The check finds the outputs by their compile marker, not by a list.
+`AGENTS.md`) cannot be fixed in place: the next compile overwrites any hand edit,
+so a Codacy finding on one of them is noise. Every compiled output must match a
+top-level `exclude_paths` glob. The check finds the outputs by their compile marker,
+not by a list. The exclude does not stop Codacy's Agentlinter from reading them: its
+wrapper scans the whole checkout and only filters results, so a duplicate between a
+compiled file and `AGENTS.md` is still reported on `AGENTS.md`.
 """
 
 from __future__ import annotations
