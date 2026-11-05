@@ -36,6 +36,7 @@
 #include <stdio.h>
 
 #include "test.h"
+#include "mu_table.h"
 
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_cuda.h"
@@ -300,18 +301,58 @@ static char *test_scale_minimums_exact(void)
     return NULL;
 }
 
-static char *test_10bit_exact(void)
+static char *check_depth(unsigned bpc)
 {
-    static const ParityCase c = {
-        .name = "10-bit",
+    const ParityCase c = {
+        .name = "bpc",
         .w = FIXTURE_W,
         .h = FIXTURE_H,
-        .bpc = 10u,
+        .bpc = bpc,
         .n_keys = 4u,
         .keys = {"VMAF_feature_vif_scale0_score", "VMAF_feature_vif_scale1_score",
                  "VMAF_feature_vif_scale2_score", "VMAF_feature_vif_scale3_score"},
     };
     return check_case(&c);
+}
+
+static char *test_9bit_exact(void)
+{
+    return check_depth(9u);
+}
+
+static char *test_10bit_exact(void)
+{
+    return check_depth(10u);
+}
+
+static char *test_11bit_exact(void)
+{
+    return check_depth(11u);
+}
+
+static char *test_12bit_exact(void)
+{
+    return check_depth(12u);
+}
+
+static char *test_13bit_exact(void)
+{
+    return check_depth(13u);
+}
+
+static char *test_14bit_exact(void)
+{
+    return check_depth(14u);
+}
+
+static char *test_15bit_exact(void)
+{
+    return check_depth(15u);
+}
+
+static char *test_16bit_exact(void)
+{
+    return check_depth(16u);
 }
 
 /* 50x38 halves to 25x19, 12x9 and 6x4: no scale is a multiple of the 16x16
@@ -334,6 +375,16 @@ static char *test_small_odd_frame_exact(void)
     return check_case(&c);
 }
 
+static char *run_bit_depth_tests(void)
+{
+    static const MuTest tests[] = {
+        MU_TEST(test_9bit_exact),  MU_TEST(test_10bit_exact), MU_TEST(test_11bit_exact),
+        MU_TEST(test_12bit_exact), MU_TEST(test_13bit_exact), MU_TEST(test_14bit_exact),
+        MU_TEST(test_15bit_exact), MU_TEST(test_16bit_exact),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_default_options_exact);
@@ -341,7 +392,7 @@ char *run_tests(void)
     mu_run_test(test_model_options_exact);
     mu_run_test(test_skip_scale0_exact);
     mu_run_test(test_scale_minimums_exact);
-    mu_run_test(test_10bit_exact);
+    mu_assert_msg(run_bit_depth_tests());
     mu_run_test(test_small_odd_frame_exact);
     return NULL;
 }

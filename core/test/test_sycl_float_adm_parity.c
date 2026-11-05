@@ -33,6 +33,7 @@
 #include "libvmaf/libvmaf_sycl.h"
 
 #include "float_adm_twin_parity.h"
+#include "mu_table.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
@@ -82,14 +83,39 @@ static char *test_float_adm_noise_exact(void)
     return adm_twin_noise_exact(&twin);
 }
 
+static char *test_float_adm_9bit_exact(void)
+{
+    return adm_twin_9bit_exact(&twin);
+}
+
 static char *test_float_adm_10bit_exact(void)
 {
     return adm_twin_10bit_exact(&twin);
 }
 
+static char *test_float_adm_11bit_exact(void)
+{
+    return adm_twin_11bit_exact(&twin);
+}
+
 static char *test_float_adm_12bit_exact(void)
 {
     return adm_twin_12bit_exact(&twin);
+}
+
+static char *test_float_adm_13bit_exact(void)
+{
+    return adm_twin_13bit_exact(&twin);
+}
+
+static char *test_float_adm_14bit_exact(void)
+{
+    return adm_twin_14bit_exact(&twin);
+}
+
+static char *test_float_adm_15bit_exact(void)
+{
+    return adm_twin_15bit_exact(&twin);
 }
 
 static char *test_float_adm_16bit_exact(void)
@@ -169,12 +195,14 @@ static char *test_float_adm_small_sums_are_not_floored(void)
 
 static char *run_exact_bit_depth_cases(void)
 {
-    mu_run_test(test_float_adm_default_exact);
-    mu_run_test(test_float_adm_noise_exact);
-    mu_run_test(test_float_adm_10bit_exact);
-    mu_run_test(test_float_adm_12bit_exact);
-    mu_run_test(test_float_adm_16bit_exact);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_float_adm_default_exact), MU_TEST(test_float_adm_noise_exact),
+        MU_TEST(test_float_adm_9bit_exact),    MU_TEST(test_float_adm_10bit_exact),
+        MU_TEST(test_float_adm_11bit_exact),   MU_TEST(test_float_adm_12bit_exact),
+        MU_TEST(test_float_adm_13bit_exact),   MU_TEST(test_float_adm_14bit_exact),
+        MU_TEST(test_float_adm_15bit_exact),   MU_TEST(test_float_adm_16bit_exact),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 static char *run_exact_geometry_cases(void)

@@ -358,6 +358,17 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: testlog-credential-scan
+        # ADR-3400: a direct Meson run writes credentials to the gitignored
+        # meson-logs; refuse the commit until they are deleted (paths and
+        # counts only, never a value).
+        name: Meson testlog files hold no credential-shaped values
+        entry: python3 -B scripts/ci/check_testlog_credentials.py
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: check-dispatch-registry
         name: Check backend feature extractor dispatch registry wiring
         entry: scripts/ci/check-dispatch-registry.sh
