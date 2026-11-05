@@ -42,6 +42,7 @@
 #include "feature/adm_score.h"
 #include "feature/float_adm_gpu_common.h"
 #include "feature/nonfinite_score.h"
+#include "../float_moment_scaler.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
@@ -331,14 +332,7 @@ static int fadm_launch_dwt_vert(FloatAdmStateHip *s, FadmScaleGeom *g, hipStream
 {
     const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
     ptrdiff_t raw_stride = (ptrdiff_t)(s->width * bpp);
-    float scaler = 1.0f;
-    if (s->bpc == 10u) {
-        scaler = 4.0f;
-    } else if (s->bpc == 12u) {
-        scaler = 16.0f;
-    } else if (s->bpc == 16u) {
-        scaler = 256.0f;
-    }
+    const float scaler = (float)vmaf_float_moment_scaler(s->bpc);
     float pixel_offset = -128.0f;
 
     const bool has_parent = (g->scale > 0);

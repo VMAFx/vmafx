@@ -90,6 +90,7 @@
 #include "../../hip/kernel_template.h"
 #include "../../hip/picture_hip.h"
 #include "../../hip/shared_frame.h"
+#include "../float_moment_scaler.h"
 #include "float_ssim/ssim_decimate.h"
 #include "float_ssim_hip.h"
 
@@ -406,15 +407,10 @@ static void ssim_hip_bufs_free(SsimStateHip *s)
     }
 }
 
-/* picture_copy()'s divisor (4 / 16 / 256 at 10 / 12 / 16 bits) as its exact
- * reciprocal. */
+/* picture_copy()'s divisor (2^(bpc - 8) at bpc > 8) as its exact reciprocal. */
 static float ssim_hip_sample_scale(unsigned bpc)
 {
-    if (bpc == 10u)
-        return 1.0f / 4.0f;
-    if (bpc == 12u)
-        return 1.0f / 16.0f;
-    return (bpc == 16u) ? 1.0f / 256.0f : 1.0f;
+    return 1.0f / (float)vmaf_float_moment_scaler(bpc);
 }
 
 /*

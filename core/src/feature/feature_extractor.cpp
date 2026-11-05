@@ -1016,7 +1016,8 @@ int consult_cuda_dispatch(const VmafFeatureExtractor *fex, unsigned w, unsigned 
  * its parity test compares it with the CPU there (#2476, ADR-3383): the float_psnr and
  * ciede twins of CUDA, SYCL and HIP at every odd depth (float_psnr_twin_odd_depths_exact(),
  * ciede_twin_odd_depths()), the float_moment twins of CUDA, SYCL and HIP
- * (float_moment_twin_noise_exact()), and the psnr_hvs twins
+ * (float_moment_twin_noise_exact()), the float_adm, float_vif, float_ssim and float_motion
+ * twins of CUDA, SYCL and HIP, and the psnr_hvs twins
  * up to 11 bits (hvs_twin_every_depth_identical(), 9 to 12 bits). A twin joins the table,
  * by its exact name, in the pull request that adds the depths to its parity test. */
 struct MeasuredTwin {
@@ -1036,6 +1037,18 @@ int refuse_unscaled_bpc(const VmafFeatureExtractor *fex, unsigned bpc)
         {.name = "float_moment_cuda", .max_bpc = 15U},
         {.name = "float_moment_sycl", .max_bpc = 15U},
         {.name = "float_moment_hip", .max_bpc = 15U},
+        {.name = "float_adm_cuda", .max_bpc = 15U},
+        {.name = "float_adm_sycl", .max_bpc = 15U},
+        {.name = "float_adm_hip", .max_bpc = 15U},
+        {.name = "float_vif_cuda", .max_bpc = 15U},
+        {.name = "float_vif_sycl", .max_bpc = 15U},
+        {.name = "float_vif_hip", .max_bpc = 15U},
+        {.name = "float_ssim_cuda", .max_bpc = 15U},
+        {.name = "float_ssim_sycl", .max_bpc = 15U},
+        {.name = "float_ssim_hip", .max_bpc = 15U},
+        {.name = "float_motion_cuda", .max_bpc = 15U},
+        {.name = "float_motion_sycl", .max_bpc = 15U},
+        {.name = "float_motion_hip", .max_bpc = 15U},
         {.name = "psnr_hvs_cuda", .max_bpc = 11U},
         {.name = "psnr_hvs_sycl", .max_bpc = 11U},
         {.name = "psnr_hvs_hip", .max_bpc = 11U},

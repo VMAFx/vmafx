@@ -367,17 +367,57 @@ static inline mu_message_t vif_twin_scale_minimums_identical(const VifTwin *twin
     return NULL;
 }
 
-static inline mu_message_t vif_twin_10bit_identical(const VifTwin *twin)
+static inline mu_message_t vif_twin_bit_depth_identical(const VifTwin *twin, unsigned bpc)
 {
-    static const VifTwinCase c = {
-        .name = "10-bit",
+    const VifTwinCase c = {
+        .name = "bpc",
         .w = FIXTURE_W,
         .h = FIXTURE_H,
-        .bpc = 10u,
+        .bpc = bpc,
         .n_keys = 4u,
         .keys = {VIF_TWIN_DEFAULT_KEYS},
     };
     return vif_twin_compare(twin, &c, NULL);
+}
+
+static inline mu_message_t vif_twin_9bit_identical(const VifTwin *twin)
+{
+    return vif_twin_bit_depth_identical(twin, 9u);
+}
+
+static inline mu_message_t vif_twin_10bit_identical(const VifTwin *twin)
+{
+    return vif_twin_bit_depth_identical(twin, 10u);
+}
+
+static inline mu_message_t vif_twin_11bit_identical(const VifTwin *twin)
+{
+    return vif_twin_bit_depth_identical(twin, 11u);
+}
+
+static inline mu_message_t vif_twin_12bit_identical(const VifTwin *twin)
+{
+    return vif_twin_bit_depth_identical(twin, 12u);
+}
+
+static inline mu_message_t vif_twin_13bit_identical(const VifTwin *twin)
+{
+    return vif_twin_bit_depth_identical(twin, 13u);
+}
+
+static inline mu_message_t vif_twin_14bit_identical(const VifTwin *twin)
+{
+    return vif_twin_bit_depth_identical(twin, 14u);
+}
+
+static inline mu_message_t vif_twin_15bit_identical(const VifTwin *twin)
+{
+    return vif_twin_bit_depth_identical(twin, 15u);
+}
+
+static inline mu_message_t vif_twin_16bit_identical(const VifTwin *twin)
+{
+    return vif_twin_bit_depth_identical(twin, 16u);
 }
 
 /* 50x38 halves to 25x19, 12x9 and 6x4: no scale is a multiple of a 16x16

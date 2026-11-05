@@ -51,6 +51,7 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "feature/adm_score.h"
+#include "float_moment_scaler.h"
 #include "feature/nonfinite_score.h"
 #include "log.h"
 #include "picture.h"
@@ -540,13 +541,7 @@ static unsigned fadm_upload_planes(sycl::queue &q, const FloatAdmStateSycl *s,
 
 static float fadm_pixel_scaler(unsigned bits_per_component)
 {
-    if (bits_per_component == 10u)
-        return 4.0f;
-    if (bits_per_component == 12u)
-        return 16.0f;
-    if (bits_per_component == 16u)
-        return 256.0f;
-    return 1.0f;
+    return (float)vmaf_float_moment_scaler(bits_per_component);
 }
 
 template <int SCALE>

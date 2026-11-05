@@ -53,6 +53,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "float_moment_scaler.h"
 #include "feature/nonfinite_score.h"
 #include "vif_tools.h"
 #include "log.h"
@@ -247,13 +248,7 @@ static inline int vif_mirror(int index, int extent)
 
 static inline float vif_raw_scale(unsigned bpc)
 {
-    if (bpc == 10u) {
-        return 4.0f;
-    }
-    if (bpc == 12u) {
-        return 16.0f;
-    }
-    return bpc == 16u ? 256.0f : 1.0f;
+    return (float)vmaf_float_moment_scaler(bpc);
 }
 
 static inline float read_vif_raw_plane(const void *plane, unsigned stride, unsigned bpc, int y,
