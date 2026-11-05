@@ -361,6 +361,7 @@ class Api:
     option_groups: tuple[OptionGroup, ...] = field(default=())
     pixel_formats: tuple[PixelFormat, ...] = field(default=())
     color_matrices: tuple[ColorMatrix, ...] = field(default=())
+    license: str = "EUPL-1.2"
 
     @property
     def abi_minor_node(self) -> tuple[int, int]:
