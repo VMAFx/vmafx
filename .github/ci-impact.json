@@ -302,6 +302,8 @@
       "patterns": [
         "docs/*",
         "docs/**",
+        "core/include/vmafx/*.h",
+        "scripts/ci/check_api_doc_coverage.py",
         "mkdocs.yml",
         "*.md",
         "**/*.md",
