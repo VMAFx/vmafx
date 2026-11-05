@@ -113,7 +113,8 @@ static char *test_float_motion_scaler(void)
         {15u, 128.0f, "bpc 15 scaler must be 128.0"}, {17u, 1.0f, "bpc 17 scaler must be 1.0"},
     };
     for (size_t i = 0; i < sizeof(table) / sizeof(table[0]); i++) {
-        mu_assert(table[i].msg, vmaf_float_motion_scaler(table[i].bpc) == table[i].expected);
+        mu_assert(table[i].msg, vmaf_test_identical_f32(vmaf_float_motion_scaler(table[i].bpc),
+                                                        table[i].expected));
     }
     return NULL;
 }
