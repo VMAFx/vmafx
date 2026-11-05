@@ -129,18 +129,22 @@ probe_oneapi_tool() {
     printf "toolchain-probe: %s found %s %s\n" "$tool" "$p" "$(get_cmd_version "$p" --version)"
     return 0
   fi
-  mapfile -t candidates < <(oneapi_setvars_candidates)
+  while IFS= read -r sv || [ -n "$sv" ]; do
+    candidates+=("$sv")
+  done < <(oneapi_setvars_candidates)
   local -i idx=0
-  for sv in "${candidates[@]}"; do
-    idx=$((idx + 1))
-    if [ "$idx" -gt 50 ]; then break; fi
-    searched_desc="${searched_desc},$(dirname "$sv")"
-    if p="$(oneapi_tool_from_setvars "$sv" "$tool")" && [ -x "$p" ]; then
-      printf "toolchain-probe: %s found %s %s\n" "$tool" "$p" \
-        "$(get_cmd_version oneapi_run_with_setvars "$sv" "$p" --version)"
-      return 0
-    fi
-  done
+  if [ "${#candidates[@]}" -gt 0 ]; then
+    for sv in "${candidates[@]}"; do
+      idx=$((idx + 1))
+      if [ "$idx" -gt 50 ]; then break; fi
+      searched_desc="${searched_desc},$(dirname "$sv")"
+      if p="$(oneapi_tool_from_setvars "$sv" "$tool")" && [ -x "$p" ]; then
+        printf "toolchain-probe: %s found %s %s\n" "$tool" "$p" \
+          "$(get_cmd_version oneapi_run_with_setvars "$sv" "$p" --version)"
+        return 0
+      fi
+    done
+  fi
   if [ -z "${ONEAPI_PREFIX:-}" ]; then
     local bin
     for bin in /opt/intel/oneapi/compiler/*/bin/"$tool" /opt/intel/oneapi-*/compiler/*/bin/"$tool"; do

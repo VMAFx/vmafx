@@ -279,6 +279,48 @@ else
   fail_count=$((fail_count + 1))
 fi
 
+# ---------- Case 13: Planted negative — claim with header-only probe -> fail (exit 1) ----------
+cat >"${work}/case13_header_only_probe.md" <<'EOF'
+## Summary
+
+SYCL was not compiled: this host has no `icpx`.
+
+```text
+toolchain-probe v1 host=test-box os=Linux date=2026-11-04T00:00:00Z
+```
+EOF
+expect_gate_exit "planted: claim with header-only probe -> exit 1" 1 "${work}/case13_header_only_probe.md"
+
+# ---------- Case 14: Fence matching — inner non-matching fence line treated as block content -> pass (exit 0) ----------
+cat >"${work}/case14_inner_fence.md" <<'EOF'
+## Summary
+
+Probe output containing inner fence markers:
+
+```text
+toolchain-probe v1 host=test-box os=Linux date=2026-11-04T00:00:00Z
+toolchain-probe: icpx found /opt/intel/oneapi/bin/icpx 2026.0
+~~~
+no icpx on this host
+```
+EOF
+expect_gate_exit "fence matching: inner fence treated as block content in probe block -> exit 0" 0 "${work}/case14_inner_fence.md"
+
+# ---------- Case 15: Fence matching — 4-backtick opener not closed by 3 backticks -> pass (exit 0) ----------
+cat >"${work}/case15_fence_length.md" <<'EOF'
+## Summary
+
+Probe block opened with 4 backticks containing 3-backtick line:
+
+````text
+toolchain-probe v1 host=test-box os=Linux date=2026-11-04T00:00:00Z
+toolchain-probe: icpx found /opt/intel/oneapi/bin/icpx 2026.0
+```
+no icpx on this host
+````
+EOF
+expect_gate_exit "fence matching: 4-backtick opener not closed by 3 backticks -> exit 0" 0 "${work}/case15_fence_length.md"
+
 # ---------- Case 12: deliverables-check.sh integration test ----------
 deliv_script="${repo_root}/scripts/ci/deliverables-check.sh"
 deliv_exit=0

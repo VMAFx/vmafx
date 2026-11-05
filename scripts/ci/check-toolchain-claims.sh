@@ -59,10 +59,20 @@ fi
 
 # Pass 1: Scan for probe header, probe findings, and probe code block boundaries
 has_probe_v1=0
-declare -A found_tools=()
-declare -A exempt_line_map=()
+has_probe_results=0
+found_tools=" "
+declare -a exempt_line_map=()
+
+tool_is_found() {
+  case " ${found_tools} " in
+    *" $1 "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 in_fence=0
+fence_char=""
+fence_len=0
 fence_has_probe=0
 declare -a current_fence_lines=()
 
@@ -79,30 +89,50 @@ while [ "${idx}" -lt "${total_lines}" ]; do
     has_probe_v1=1
   fi
 
-  # Record toolchains the probe found
-  if [[ "${cur_line}" =~ ^[[:space:]]*toolchain-probe:[[:space:]]*([a-zA-Z0-9_-]+)[[:space:]]+found([[:space:]]|$) ]]; then
+  # Record toolchains the probe reported (both found and absent count as results)
+  if [[ "${cur_line}" =~ ^[[:space:]]*toolchain-probe:[[:space:]]*([a-zA-Z0-9_-]+)[[:space:]]+(found|absent)([[:space:]]|$) ]]; then
+    has_probe_results=1
     tool_name="${BASH_REMATCH[1]}"
-    found_tools["${tool_name,,}"]=1
+    result_status="${BASH_REMATCH[2]}"
+    if [ "${result_status}" = "found" ]; then
+      tool_name_lower="$(printf '%s' "${tool_name}" | tr '[:upper:]' '[:lower:]')"
+      found_tools="${found_tools}${tool_name_lower} "
+    fi
   fi
 
   # Track markdown fenced blocks
-  if [[ "${cur_line}" =~ ^[[:space:]]*(\`\`\`|~~~) ]]; then
-    if [ "${in_fence}" -eq 0 ]; then
+  if [ "${in_fence}" -eq 0 ]; then
+    if [[ "${cur_line}" =~ ^[[:space:]]*(\`{3,}|~{3,}) ]]; then
       in_fence=1
+      fence_char="${BASH_REMATCH[1]:0:1}"
+      fence_len="${#BASH_REMATCH[1]}"
       fence_has_probe=0
       current_fence_lines=("${idx}")
+    fi
+  else
+    close_matched=0
+    if [ "${fence_char}" = '`' ]; then
+      if [[ "${cur_line}" =~ ^[[:space:]]*\`{${fence_len},}[[:space:]]*$ ]]; then
+        close_matched=1
+      fi
     else
+      if [[ "${cur_line}" =~ ^[[:space:]]*~{${fence_len},}[[:space:]]*$ ]]; then
+        close_matched=1
+      fi
+    fi
+
+    if [ "${close_matched}" -eq 1 ]; then
       in_fence=0
       current_fence_lines+=("${idx}")
       if [ "${fence_has_probe}" -eq 1 ]; then
         for f_line in "${current_fence_lines[@]}"; do
-          exempt_line_map["${f_line}"]=1
+          exempt_line_map[f_line]=1
         done
       fi
       current_fence_lines=()
-    fi
-  else
-    if [ "${in_fence}" -eq 1 ]; then
+      fence_char=""
+      fence_len=0
+    else
       current_fence_lines+=("${idx}")
       if [[ "${cur_line}" =~ toolchain-probe ]]; then
         fence_has_probe=1
@@ -112,14 +142,14 @@ while [ "${idx}" -lt "${total_lines}" ]; do
 
   # Any raw probe output line is also exempt from claim checking
   if [[ "${cur_line}" =~ ^[[:space:]]*toolchain-probe ]]; then
-    exempt_line_map["${idx}"]=1
+    exempt_line_map[idx]=1
   fi
 done
 
 # If a fence block stayed open and had probe output, exempt it
 if [ "${in_fence}" -eq 1 ] && [ "${fence_has_probe}" -eq 1 ]; then
   for f_line in "${current_fence_lines[@]}"; do
-    exempt_line_map["${f_line}"]=1
+    exempt_line_map[f_line]=1
   done
 fi
 
@@ -139,7 +169,7 @@ while [ "${idx}" -lt "${total_lines}" ]; do
   cur_line="${lines[$((idx - 1))]}"
 
   # Skip exempted lines (probe output blocks)
-  if [ "${exempt_line_map[${idx}]:-0}" -eq 1 ]; then
+  if [ "${exempt_line_map[idx]:-0}" -eq 1 ]; then
     continue
   fi
 
@@ -175,6 +205,16 @@ while [ "${idx}" -lt "${total_lines}" ]; do
     continue
   fi
 
+  # Condition 1b: Claim made with probe header but no probe results
+  if [ "${has_probe_results}" -eq 0 ]; then
+    echo "::error file=PR_BODY,line=${idx},title=Missing toolchain probe results::line ${idx} makes a missing-toolchain claim with 'toolchain-probe v1' header but no toolchain result lines:" >&2
+    echo "check-toolchain-claims: line ${idx}: missing-toolchain claim with 'toolchain-probe v1' header but no toolchain result lines:" >&2
+    echo "  ${cur_line}" >&2
+    echo "  Hint: paste complete output from scripts/dev/toolchain-probe.sh into the PR description." >&2
+    fail=1
+    continue
+  fi
+
   # Condition 2: Claim contradicts probe (probe says found, body claims absent/not compiled)
   line_contradicts=0
   contradicted_tool=""
@@ -183,28 +223,28 @@ while [ "${idx}" -lt "${total_lines}" ]; do
   fi
 
   # Check specific tool mentions
-  if [[ "${cur_line}" =~ icpx ]] && [ "${found_tools[icpx]:-0}" -eq 1 ]; then
+  if [[ "${cur_line}" =~ icpx ]] && tool_is_found "icpx"; then
     line_contradicts=1
     contradicted_tool="icpx"
-  elif [[ "${cur_line}" =~ icx ]] && [ "${found_tools[icx]:-0}" -eq 1 ]; then
+  elif [[ "${cur_line}" =~ icx ]] && tool_is_found "icx"; then
     line_contradicts=1
     contradicted_tool="icx"
-  elif [[ "${cur_line}" =~ (sycl|oneapi) ]] && { [ "${found_tools[icpx]:-0}" -eq 1 ] || [ "${found_tools[icx]:-0}" -eq 1 ]; }; then
+  elif [[ "${cur_line}" =~ (sycl|oneapi) ]] && { tool_is_found "icpx" || tool_is_found "icx"; }; then
     line_contradicts=1
     contradicted_tool="oneapi / icpx"
-  elif [[ "${cur_line}" =~ (nvcc|cuda) ]] && [ "${found_tools[nvcc]:-0}" -eq 1 ]; then
+  elif [[ "${cur_line}" =~ (nvcc|cuda) ]] && tool_is_found "nvcc"; then
     line_contradicts=1
     contradicted_tool="nvcc"
-  elif [[ "${cur_line}" =~ (hipcc|hip|rocm) ]] && [ "${found_tools[hipcc]:-0}" -eq 1 ]; then
+  elif [[ "${cur_line}" =~ (hipcc|hip|rocm) ]] && tool_is_found "hipcc"; then
     line_contradicts=1
     contradicted_tool="hipcc"
-  elif [[ "${cur_line}" =~ (glslc|vulkan) ]] && [ "${found_tools[glslc]:-0}" -eq 1 ]; then
+  elif [[ "${cur_line}" =~ (glslc|vulkan) ]] && tool_is_found "glslc"; then
     line_contradicts=1
     contradicted_tool="glslc"
-  elif [[ "${cur_line}" =~ glslangvalidator ]] && [ "${found_tools[glslangvalidator]:-0}" -eq 1 ]; then
+  elif [[ "${cur_line}" =~ glslangvalidator ]] && tool_is_found "glslangvalidator"; then
     line_contradicts=1
     contradicted_tool="glslangValidator"
-  elif [[ "${cur_line}" =~ metal ]] && [ "${found_tools[metal]:-0}" -eq 1 ]; then
+  elif [[ "${cur_line}" =~ metal ]] && tool_is_found "metal"; then
     line_contradicts=1
     contradicted_tool="metal"
   fi

@@ -116,7 +116,7 @@ Exit codes:
 
 ## Where the body comes from
 
-Four gates read a PR body, and all four classify `fd 0` the same way,
+Five gates read a PR body, and all five classify `fd 0` the same way,
 through the shared helper [`scripts/ci/pr-body-input.sh`][input]:
 
 | Gate                              | Rule enforced                    |
@@ -125,6 +125,7 @@ through the shared helper [`scripts/ci/pr-body-input.sh`][input]:
 | `validate-pr-body.sh`             | the same parser, run locally     |
 | `ffmpeg-patches-surface-check.sh` | ADR-0409 ffmpeg-patch surface    |
 | `state-md-touch-check.sh`         | ADR-0165 `docs/state.md` hygiene |
+| `check-toolchain-claims.sh`       | ADR-0108 toolchain claims probe  |
 
 The body is resolved in this order:
 
@@ -193,7 +194,7 @@ closing there would close the subshell's copy and leave the caller's open,
 inherited by every `git`, `python3` and `mktemp` the gate spawns afterwards.
 
 `scripts/ci/tests/test-pr-body-input-selection.sh` pins every row of that
-table for all four gates, plus the descriptor release, under `timeout`, so a
+table for all five gates, plus the descriptor release, under `timeout`, so a
 re-regression is reported as a hang instead of becoming one.
 
 ## What the hook does on push
