@@ -789,8 +789,8 @@ static bool open_sycl_live(LiveSyclState *state)
         state->device = NULL;
         return false;
     }
-    (void)snprintf(pci, 32, "%04x:%02x:%02x.%x", info.pci[0], info.pci[1], info.pci[2],
-                   info.pci[3]);
+    (void)snprintf(pci, 32, "%04x:%02x:%02x.%x", (unsigned)info.pci[0], (unsigned)info.pci[1],
+                   (unsigned)info.pci[2], (unsigned)info.pci[3]);
     const bool ok = vegl_open(&state->egl, pci);
     free(pci);
     if (!ok) {
