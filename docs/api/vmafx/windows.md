@@ -212,11 +212,12 @@ is filling, and reuses a frame once its release fence
 ## A live plugin
 
 `core/test/test_vmafx_window_live.c` imitates a live-production plugin on the
-CPU device: a render thread paces frames at 60 per second, renders each into
-a texture of a ring of `vmafx_context_max_in_flight() + 1`, signals its
-acquire fence, imports it with `vmafx_context_import_frame()` and submits it;
-a window clock cuts 0.2-second windows, and windows of 12 frames are also
-submitted ahead; a poller thread polls every window. It holds that
+CPU device and GPU backends (CUDA, SYCL, HIP): a render thread paces frames at
+60 per second, renders each into a texture (GL texture with GL sync fence on GPU)
+of a ring of `vmafx_context_max_in_flight() + 1`, signals its acquire fence,
+imports it with `vmafx_context_import_frame()` and submits it; a window clock cuts
+0.2-second windows, and windows of 12 frames are also submitted ahead; a poller
+thread polls every window. It holds that
 
 - every window equals an offline session on the same frames bit for bit, and
   `core/test/test_vmafx_window_cli.py` holds the windows against the `vmaf`

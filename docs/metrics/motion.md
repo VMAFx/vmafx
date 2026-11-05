@@ -487,7 +487,17 @@ frames before the current one (`prev_ref`, `prev_prev_ref`):
 
 All three extractors:
 
-- Accept YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc.
+- Accept YUV 4:2:0 / 4:2:2 / 4:4:4 (`core/src/feature/integer_motion.c`,
+  `core/src/feature/integer_motion_v2.c`, `core/src/feature/float_motion.c`).
+  On the CPU, all three extractors score every bit depth from 8 to 16 bpc
+  (`core/src/feature/feature_extractor.cpp`). For GPU backends, 8 to 16 bpc is
+  supported by the `float_motion` twins (`float_motion_cuda`,
+  `float_motion_sycl`, and `float_motion_hip`, listed in `kMeasured` of
+  `core/src/feature/feature_extractor.cpp`). The integer motion GPU twins
+  (`motion` and `motion_v2` on CUDA, SYCL, HIP, and Metal) and
+  `float_motion_metal` support 8, 10, 12, and 16 bpc only, refusing 9, 11, 13,
+  14, and 15 bits with `-EINVAL` (`refuse_unscaled_bpc()` in
+  `core/src/feature/feature_extractor.cpp`).
 - Operate on the Y (luma) plane only by default. Chroma is only included when
   `motion_add_uv=true` is set on `float_motion`, and only for formats other
   than YUV 4:0:0.

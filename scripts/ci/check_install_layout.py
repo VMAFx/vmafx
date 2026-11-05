@@ -156,6 +156,35 @@ def install_paths(build: Path, stage: Path) -> tuple[Path, Path]:
     )
 
 
+def check_cmake_files(libdir: Path, stage: Path) -> None:
+    cmake_dir = libdir / "cmake" / "vmafx"
+    for name in ("vmafxConfig.cmake", "vmafxConfigVersion.cmake"):
+        path = cmake_dir / name
+        require(path.is_file(), f"missing CMake package file: {path}")
+        require(path.resolve().is_relative_to(stage), f"CMake package file escapes DESTDIR: {path}")
+
+
+CMAKE_PACKAGE_FILENAMES: tuple[str, ...] = ("vmafxConfig.cmake", "vmafxConfigVersion.cmake")
+
+
+def cmake_files_planned(build: Path) -> bool:
+    """Return whether the Meson install plan lists any CMake package file."""
+    installed = build / "meson-info" / "intro-installed.json"
+    if not installed.is_file():
+        return False
+    mapping: dict[str, str] = json.loads(installed.read_text(encoding="utf-8"))
+    return any(
+        Path(src).name in CMAKE_PACKAGE_FILENAMES or Path(dest).name in CMAKE_PACKAGE_FILENAMES
+        for src, dest in mapping.items()
+        if isinstance(src, str) and isinstance(dest, str)
+    )
+
+
+def check_cmake_layout(build: Path, libdir: Path, stage: Path, require_cmake: bool = False) -> None:
+    if require_cmake or cmake_files_planned(build):
+        check_cmake_files(libdir, stage)
+
+
 def check_tree(libdir: Path, includedir: Path, stage: Path) -> dict[str, Path]:
     libraries: dict[str, Path] = {}
     for package, soname in expected_sonames().items():
@@ -233,6 +262,18 @@ def consumer_environment(
 
 def check_consumers(stage: Path, libdir: Path, work: Path, external: tuple[str, ...] = ()) -> None:
     env = consumer_environment(stage, libdir, external)
+    system_pcdirs = [
+        p
+        for p in (
+            "/usr/lib/pkgconfig",
+            "/usr/share/pkgconfig",
+            "/usr/lib64/pkgconfig",
+            "/usr/local/lib/pkgconfig",
+        )
+        if Path(p).is_dir()
+    ]
+    if system_pcdirs:
+        env["PKG_CONFIG_LIBDIR"] = os.pathsep.join([env["PKG_CONFIG_LIBDIR"], *system_pcdirs])
     links = [f"-Wl,-rpath-link,{directory}" for directory in external]
     compiler = shlex.split(os.environ.get("CC", "cc"))
     require(bool(compiler), "CC is empty")
@@ -255,7 +296,9 @@ def check_consumers(stage: Path, libdir: Path, work: Path, external: tuple[str, 
         print(f"PASS: {package} installed consumer: {version}")
 
 
-def check_install(build: Path, plant_unversioned: bool = False) -> None:
+def check_install(
+    build: Path, plant_unversioned: bool = False, require_cmake: bool = False
+) -> None:
     require(
         (build / "meson-private" / "coredata.dat").is_file(),
         f"not a configured Meson build: {build}",
@@ -268,6 +311,7 @@ def check_install(build: Path, plant_unversioned: bool = False) -> None:
         run(["meson", "install", "--no-rebuild", "--destdir", str(stage), "-C", str(build)])
         libdir, includedir = install_paths(build, stage)
         libraries = check_tree(libdir, includedir, stage)
+        check_cmake_layout(build, libdir, stage, require_cmake=require_cmake)
         engine = str(libraries["libvmafx"])
         definitions = parse_version_definitions(run(["readelf", "-V", engine]))
         exports = parse_dynamic_symbols(run(["readelf", "--dyn-syms", "--wide", engine]))
@@ -292,9 +336,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="negative control: inspect the version function as unversioned",
     )
+    parser.add_argument(
+        "--require-cmake",
+        action="store_true",
+        help="require CMake package files even if not planned by the build",
+    )
     args = parser.parse_args(argv)
     try:
-        check_install(args.build.resolve(), args.plant_unversioned)
+        check_install(
+            args.build.resolve(),
+            args.plant_unversioned,
+            require_cmake=args.require_cmake,
+        )
     except (LayoutError, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
         print(f"FAIL: {error}", file=sys.stderr)
         return 1

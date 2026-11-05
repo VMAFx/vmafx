@@ -428,11 +428,11 @@ class ReleaseDryRun(unittest.TestCase):
         arms = re.findall(r"case \"\$path\" in\n(.*?)\n\s+esac", code, re.S)
         tokens = set()
         for arm in arms:
-            tokens.update(re.findall(r"[A-Za-z0-9_.][A-Za-z0-9_./-]*\*?", arm.replace("\\", " ")))
+            tokens.update(re.findall(r"[A-Za-z0-9_.*][A-Za-z0-9_./*-]*", arm.replace("\\", " ")))
         tokens = {t for t in tokens if "/" in t or t.endswith("*") or "." in t}
         self.assertGreater(len(tokens), 25, len(tokens))
         for token in sorted(tokens):
-            if token.endswith("*"):
+            if "*" in token:
                 self.assertTrue(list(ROOT.glob(token)), f"{token} matches nothing")
             else:
                 self.assertTrue((ROOT / token).exists(), f"{token} does not exist")
