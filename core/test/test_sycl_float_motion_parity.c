@@ -35,6 +35,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "mu_table.h"
 
 #include "feature/feature_extractor.h"
 #include "libvmaf/libvmaf.h"
@@ -276,10 +277,22 @@ static char *test_float_motion_noise_8bit(void)
     return check_fixture(&fx, "noise 8-bit");
 }
 
+static char *test_float_motion_noise_9bit(void)
+{
+    const Fixture fx = {FIXTURE_NOISE, 9u};
+    return check_fixture(&fx, "noise 9-bit");
+}
+
 static char *test_float_motion_noise_10bit(void)
 {
     const Fixture fx = {FIXTURE_NOISE, 10u};
     return check_fixture(&fx, "noise 10-bit");
+}
+
+static char *test_float_motion_noise_11bit(void)
+{
+    const Fixture fx = {FIXTURE_NOISE, 11u};
+    return check_fixture(&fx, "noise 11-bit");
 }
 
 static char *test_float_motion_noise_12bit(void)
@@ -288,14 +301,41 @@ static char *test_float_motion_noise_12bit(void)
     return check_fixture(&fx, "noise 12-bit");
 }
 
+static char *test_float_motion_noise_13bit(void)
+{
+    const Fixture fx = {FIXTURE_NOISE, 13u};
+    return check_fixture(&fx, "noise 13-bit");
+}
+
+static char *test_float_motion_noise_14bit(void)
+{
+    const Fixture fx = {FIXTURE_NOISE, 14u};
+    return check_fixture(&fx, "noise 14-bit");
+}
+
+static char *test_float_motion_noise_15bit(void)
+{
+    const Fixture fx = {FIXTURE_NOISE, 15u};
+    return check_fixture(&fx, "noise 15-bit");
+}
+
+static char *test_float_motion_noise_16bit(void)
+{
+    const Fixture fx = {FIXTURE_NOISE, 16u};
+    return check_fixture(&fx, "noise 16-bit");
+}
+
 char *run_tests(void)
 {
-    mu_run_test(test_float_motion_sycl_registered);
-    mu_run_test(test_float_motion_ramp_8bit);
-    mu_run_test(test_float_motion_noise_8bit);
-    mu_run_test(test_float_motion_noise_10bit);
-    mu_run_test(test_float_motion_noise_12bit);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_float_motion_sycl_registered), MU_TEST(test_float_motion_ramp_8bit),
+        MU_TEST(test_float_motion_noise_8bit),      MU_TEST(test_float_motion_noise_9bit),
+        MU_TEST(test_float_motion_noise_10bit),     MU_TEST(test_float_motion_noise_11bit),
+        MU_TEST(test_float_motion_noise_12bit),     MU_TEST(test_float_motion_noise_13bit),
+        MU_TEST(test_float_motion_noise_14bit),     MU_TEST(test_float_motion_noise_15bit),
+        MU_TEST(test_float_motion_noise_16bit),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

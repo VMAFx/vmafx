@@ -18,7 +18,8 @@ a pointer to a `VmafxError *` as its final argument:
   `VMAFX_E_NOMEM`, or `VMAFX_E_ABI`).
 
 The full list of status codes, integer values, and semantics is defined in
-`core/include/vmafx/types.h` and documented in the status table in
+`core/include/vmafx/types.h` (`VmafxStatusCode`: status codes; stable on every
+platform) and documented in the status table in
 [`vmafx/types.h`](types.md#status-codes).
 
 ### The error handle

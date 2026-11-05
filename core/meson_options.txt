@@ -13,6 +13,11 @@ option('enable_tools',
     value: true,
     description: 'Build libvmaf tools')
 
+option('cmake_package',
+    type: 'feature',
+    value: 'auto',
+    description: 'Install CMake package configuration files for vmafx (vmafxConfig.cmake and vmafxConfigVersion.cmake)')
+
 option('enable_asm',
     type: 'boolean',
     value: true,
