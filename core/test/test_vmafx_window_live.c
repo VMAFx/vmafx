@@ -191,6 +191,7 @@ static bool fail_context(Live *live)
         live->failed = true;
     }
     live->context = NULL;
+    live->n_ring = 0u;
     return false;
 }
 
@@ -215,11 +216,12 @@ static bool open_context(Live *live)
     VmafxWindowClockConfig clock = VMAFX_WINDOW_CLOCK_CONFIG_INIT;
     clock.n_stats = WINDOW_S;
     live->max_in_flight = vmafx_context_max_in_flight(live->context);
-    live->n_ring = live->max_in_flight + 1u; /* and the texture being rendered */
-    if (live->n_features == 0 || live->n_ring > MAX_RING ||
+    const unsigned n_ring = live->max_in_flight + 1u; /* and the texture being rendered */
+    if (live->n_features == 0 || n_ring > MAX_RING ||
         vmafx_window_clock_create(&clock, &live->clock, NULL) != VMAFX_OK) {
         return fail_context(live);
     }
+    live->n_ring = n_ring;
     return true;
 }
 
