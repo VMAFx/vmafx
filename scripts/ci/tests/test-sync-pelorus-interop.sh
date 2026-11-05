@@ -13,6 +13,15 @@ done < <(compgen -A variable GIT_)
 unset fixture_git_variable
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
 
+# HISS-21: on Windows Git Bash, the local pre-commit hook runs without clang-format
+# and without a pelorus checkout; the Linux Pre-Commit job in lint-and-format.yml runs it.
+case "$(uname -s 2>/dev/null || echo unknown)" in
+  MINGW* | MSYS* | CYGWIN* | Windows* | *_NT*)
+    echo "test-sync-pelorus-interop: skipped on Windows (clang-format not found in the hook environment, no pelorus checkout); the Linux Pre-Commit job in lint-and-format.yml runs it" >&2
+    exit 0
+    ;;
+esac
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT

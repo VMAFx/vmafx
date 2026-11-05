@@ -53,6 +53,18 @@ def _captured(call: Callable[..., int], *args: Any) -> tuple[int, str]:
     return code, printed.getvalue()
 
 
+SKIP_WINDOWS_REASON = (
+    "HISS-21: the fixture executes POSIX shell stubs and parses POSIX diagnostic paths; "
+    "the Linux Pre-Commit job in lint-and-format.yml runs it"
+)
+
+
+def setUpModule() -> None:
+    if os.name != "posix":
+        raise unittest.SkipTest(SKIP_WINDOWS_REASON)
+
+
+@unittest.skipUnless(os.name == "posix", SKIP_WINDOWS_REASON)
 class ExactPelorusMirror(unittest.TestCase):
     def test_only_manifested_paths_are_lint_exempt(self) -> None:
         for path in (
@@ -79,6 +91,7 @@ class ExactPelorusMirror(unittest.TestCase):
                 self.assertFalse(ratchet.is_exact_pelorus_mirror(path))
 
 
+@unittest.skipUnless(os.name == "posix", SKIP_WINDOWS_REASON)
 class ParseDiagnostics(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -159,6 +172,7 @@ class ParseDiagnostics(unittest.TestCase):
         self.assertIn(("build/src/config.h", 3, 9, "cppcoreguidelines-macro-usage"), diags)
 
 
+@unittest.skipUnless(os.name == "posix", SKIP_WINDOWS_REASON)
 class UncitedNolints(unittest.TestCase):
     def test_counts_only_uncited(self) -> None:
         text = "\n".join(
@@ -244,6 +258,7 @@ class UncitedNolints(unittest.TestCase):
             )
 
 
+@unittest.skipUnless(os.name == "posix", SKIP_WINDOWS_REASON)
 class Compare(unittest.TestCase):
     def _m(
         self,
@@ -383,6 +398,7 @@ class Compare(unittest.TestCase):
         self.assertEqual(baseline.nolint_uncited, {"core/src/a.c": 1})
 
 
+@unittest.skipUnless(os.name == "posix", SKIP_WINDOWS_REASON)
 class CompileCommands(unittest.TestCase):
     def test_filters_to_in_repo_sources(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -450,6 +466,7 @@ class CompileCommands(unittest.TestCase):
             )
 
 
+@unittest.skipUnless(os.name == "posix", SKIP_WINDOWS_REASON)
 class BuildDirPrefix(unittest.TestCase):
     def test_in_tree_build_dirs_are_repo_relative(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -500,6 +517,7 @@ def _generating_clang_tidy(directory: Path) -> Path:
     return script
 
 
+@unittest.skipUnless(os.name == "posix", SKIP_WINDOWS_REASON)
 class BuildDirPlacement(unittest.TestCase):
     """Where the build directory lives must not change the measurement.
 
@@ -555,6 +573,7 @@ def _fake_clang_tidy(directory: Path) -> Path:
     return script
 
 
+@unittest.skipUnless(os.name == "posix", SKIP_WINDOWS_REASON)
 class RunClangTidy(unittest.TestCase):
     def test_extra_args_reach_the_compiler(self) -> None:
         # The GPU lanes pass --cuda-host-only / -x hip; clang-tidy only accepts
@@ -660,6 +679,7 @@ class RunClangTidy(unittest.TestCase):
             self.assertIn("tidy-ratchet[sycl]: 1 TUs, 0 warnings (baseline 0)", printed)
 
 
+@unittest.skipUnless(os.name == "posix", SKIP_WINDOWS_REASON)
 class ResolveClangTidy(unittest.TestCase):
     def test_bare_executable_is_preserved_or_resolved(self) -> None:
         self.assertEqual(ratchet.resolve_clang_tidy("nonexistent-tool-xyz"), "nonexistent-tool-xyz")
@@ -682,6 +702,7 @@ class ResolveClangTidy(unittest.TestCase):
             self.assertEqual(resolved, str(tool.resolve()))
 
 
+@unittest.skipUnless(os.name == "posix", SKIP_WINDOWS_REASON)
 class SyclLaneFlags(unittest.TestCase):
     def test_lane_wrapper_uses_curdir_absolute_path(self) -> None:
         text = (ROOT / "Makefile").read_text(encoding="utf-8")
@@ -692,6 +713,7 @@ class SyclLaneFlags(unittest.TestCase):
         self.fail("Makefile defines no TIDY_RATCHET_EXTRA_sycl lane")
 
 
+@unittest.skipUnless(os.name == "posix", SKIP_WINDOWS_REASON)
 class SyclWrapperDriverWarnings(unittest.TestCase):
     """The SYCL lane's wrapper must not let clang's driver print a warning the
     ratchet cannot place (T-SYCL-TIDY-OVERRIDING-OPTION-2026-10-02)."""
@@ -780,6 +802,7 @@ class SyclWrapperDriverWarnings(unittest.TestCase):
         self.assertEqual(diags, set())
 
 
+@unittest.skipUnless(os.name == "posix", SKIP_WINDOWS_REASON)
 class Arm64LaneFlags(unittest.TestCase):
     """The arm64 lane's cross flags are load-bearing (ADR-1283).
 
@@ -818,6 +841,7 @@ class Arm64LaneFlags(unittest.TestCase):
         self.assertTrue((ROOT / "scripts/ci/tidy-baseline-arm64.json").is_file())
 
 
+@unittest.skipUnless(os.name == "posix", SKIP_WINDOWS_REASON)
 class SyclMotionAddUvParityTidyContract(unittest.TestCase):
     """The SYCL tidy lane measures test_sycl_motion_add_uv_parity.c at zero baseline.
 
@@ -871,6 +895,7 @@ class SyclMotionAddUvParityTidyContract(unittest.TestCase):
         self.assertIn("core/test/test_sycl_motion3_parity.c", self.data["measured_sources"])
 
 
+@unittest.skipUnless(os.name == "posix", SKIP_WINDOWS_REASON)
 class SelfTestOutput(unittest.TestCase):
     """The self-test prints nothing of the ratchet's into the job log.
 
