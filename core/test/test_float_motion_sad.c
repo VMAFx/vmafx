@@ -104,7 +104,7 @@ static char *test_float_motion_scaler(void)
     static const struct {
         unsigned bpc;
         float expected;
-        const char *msg;
+        char *msg;
     } table[] = {
         {8u, 1.0f, "bpc 8 scaler must be 1.0"},       {10u, 4.0f, "bpc 10 scaler must be 4.0"},
         {12u, 16.0f, "bpc 12 scaler must be 16.0"},   {16u, 256.0f, "bpc 16 scaler must be 256.0"},
