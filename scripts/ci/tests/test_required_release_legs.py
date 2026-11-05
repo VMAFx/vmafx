@@ -400,9 +400,12 @@ class Routing(unittest.TestCase):
         )
 
     def test_wheel_inputs_select_wheels_dry_run(self) -> None:
-        """Changes to native core sources, fixtures, or wheel build locks select wheels (PR #3287)."""
+        """Changes to core build files, public headers, fixtures, or wheel build locks select wheels (PR #3287)."""
         for path in (
-            "core/src/libvmaf.c",
+            "core/meson.build",
+            "core/src/meson.build",
+            "core/meson_options.txt",
+            "core/include/libvmaf/libvmaf.h",
             "requirements/locks/build.txt",
             "requirements/locks/package-build.txt",
             "requirements/locks/twine.txt",
@@ -419,6 +422,7 @@ class Routing(unittest.TestCase):
             "testdata/ref_640x480_48f.yuv",
             "docs/index.md",
             "README.md",
+            "core/src/libvmaf.c",
         ):
             with self.subTest(negative_path=path):
                 groups = _dry_run_groups([path])
