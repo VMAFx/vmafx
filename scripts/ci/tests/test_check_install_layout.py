@@ -8,7 +8,7 @@ from __future__ import annotations
 import collections.abc
 import os
 import shutil
-import subprocess
+import subprocess  # argv-list calls only, no shell  # nosec B404
 import sys
 from pathlib import Path, PureWindowsPath
 
@@ -474,7 +474,7 @@ def _write_dummy_vmafx_shared(lib_dir: Path) -> Path:
     c_source = lib_dir / "dummy_vmafx.c"
     c_source.write_text('const char *vmafx_version_string(void) { return "1.0.0"; }\n')
     so_path = lib_dir / "libvmafx.so"
-    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [_tool("cc"), "-shared", "-fPIC", str(c_source), "-o", str(so_path)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -519,7 +519,7 @@ def test_cmake_consumer_find_package_e2e(tmp_path: Path) -> None:
         "#include <vmafx/vmafx.h>\n#include <stdio.h>\nint main(void) { puts(vmafx_version_string()); return 0; }\n"
     )
     build_dir = consumer / "build"
-    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [
             _tool("cmake"),
             "-S",
@@ -531,12 +531,12 @@ def test_cmake_consumer_find_package_e2e(tmp_path: Path) -> None:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [_tool("cmake"), "--build", str(build_dir)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    out = subprocess.check_output(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+    out = subprocess.check_output(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [str(build_dir / "app")],
         env={**os.environ, "LD_LIBRARY_PATH": str(lib)},
         text=True,
@@ -576,7 +576,7 @@ def test_cmake_consumer_stale_cache_overridden(tmp_path: Path) -> None:
         "#include <vmafx/vmafx.h>\n#include <stdio.h>\nint main(void) { puts(vmafx_version_string()); return 0; }\n"
     )
     build_dir = consumer / "build"
-    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [
             _tool("cmake"),
             "-S",
@@ -589,12 +589,12 @@ def test_cmake_consumer_stale_cache_overridden(tmp_path: Path) -> None:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [_tool("cmake"), "--build", str(build_dir)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    out = subprocess.check_output(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+    out = subprocess.check_output(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [str(build_dir / "app")],
         env={**os.environ, "LD_LIBRARY_PATH": str(lib)},
         text=True,
@@ -626,7 +626,7 @@ def test_cmake_consumer_rejects_static_archive(tmp_path: Path) -> None:
         "find_package(vmafx 1 REQUIRED)\n"
     )
     build_dir = consumer / "build"
-    res = subprocess.run(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+    res = subprocess.run(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [
             _tool("cmake"),
             "-S",
@@ -674,7 +674,7 @@ def test_cmake_consumer_absolute_dirs(tmp_path: Path) -> None:
         "#include <vmafx/vmafx.h>\n#include <stdio.h>\nint main(void) { puts(vmafx_version_string()); return 0; }\n"
     )
     build_dir = consumer / "build"
-    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [
             _tool("cmake"),
             "-S",
@@ -686,12 +686,12 @@ def test_cmake_consumer_absolute_dirs(tmp_path: Path) -> None:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [_tool("cmake"), "--build", str(build_dir)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    out = subprocess.check_output(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+    out = subprocess.check_output(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [str(build_dir / "app")],
         env={**os.environ, "LD_LIBRARY_PATH": str(abs_lib)},
         text=True,
@@ -730,7 +730,7 @@ def test_cmake_consumer_mingw_import_library(tmp_path: Path) -> None:
         'file(WRITE "${CMAKE_BINARY_DIR}/target_props.txt" "${loc}\\n${implib}\\n")\n'
     )
     build_dir = consumer / "build"
-    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [
             _tool("cmake"),
             "-S",
@@ -781,7 +781,7 @@ def test_cmake_consumer_stale_dll_cache_overridden(tmp_path: Path) -> None:
         'file(WRITE "${CMAKE_BINARY_DIR}/target_loc.txt" "${loc}\\n")\n'
     )
     build_dir = consumer / "build"
-    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell
+    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [
             _tool("cmake"),
             "-S",
