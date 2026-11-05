@@ -137,6 +137,7 @@ BUG_098_GATE_DEPENDENCIES = {
         "GPU image dry run (ROCm 10)",
         "GPU image dry run (oneAPI 2026)",
         "vmaf-mcp dist and SBOM dry run",
+        "vmafx wheels dry run",
     ],
 }
 

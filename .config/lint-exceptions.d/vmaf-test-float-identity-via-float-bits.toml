@@ -8,9 +8,9 @@
 
 [[exception]]
 path = "core/test/test_pelorus_interop.c"
-reason = "Byte-identical mirror of VMAFx/pelorus (ADR-1113, scripts/ci/pelorus-mirror-paths.txt), never edited here; line 1772 compares a returned variance with its input by value on purpose. Owner: pelorus, which adopts float_bits-style identity upstream (ORDER pelorus-interop-float-identity-20261101); vmafx re-vendors the file and drops this entry in that PR. Category B: 3 days from entry."
+reason = "Category A, interval to the stated expiry. Byte-identical mirror of the VMAFx/pelorus interop test (ADR-1113, scripts/ci/pelorus-mirror-paths.txt), vendored at tag v0.4.1 (33b4a625) and never edited here; line 1772 compares a returned variance with its input by value. Pelorus fixed the compare in its PR 350 (commit 796693b, 2026-10-17), but no Pelorus tag holds that commit yet, and the mirror only pins released commits. Renewed 2026-11-05 from category B (entered 2026-11-01). Ends when the first Pelorus tag holding 796693b is out: vmafx re-vendors with scripts/sync-pelorus-interop.sh and deletes this entry."
 owner = "pelorus"
-trigger = "pelorus lands ORDER pelorus-interop-float-identity-20261101"
-category = "B"
-entered = 2026-11-01
-expires = 2026-11-04
+trigger = "first pelorus tag holding 796693b"
+category = "A"
+entered = 2026-11-05
+expires = 2026-11-19
