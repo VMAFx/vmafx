@@ -12,15 +12,14 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from upstream_pr_sweep_fixture import (
+from scripts.ci.run_meson_test import CREDENTIAL_ENV_VARS
+from scripts.dev import upstream_pr_sweep as sweep_mod
+from scripts.dev.tests.upstream_pr_sweep_fixture import (
     REPO_ROOT,
     SweepFixtureCase,
     git_run,
     require_fixture_tools,
 )
-
-from scripts.ci.run_meson_test import CREDENTIAL_ENV_VARS
-from scripts.dev import upstream_pr_sweep as sweep_mod
 from scripts.lib.safe_subprocess import TextCommandResult
 
 
