@@ -91,6 +91,10 @@ def active_text(text: str) -> str:
     return "\n".join(line.split("#", maxsplit=1)[0].rstrip() for line in text.splitlines())
 
 
+# PyPI jobs run in pypi-publish, the environment bound to the Trusted Publisher.
+PYPI_JOBS = ("mcp-publish-pypi", "vmafx-publish-pypi")
+
+
 def require_environment(relative_path: str, job: str, block: str, expected: str) -> None:
     if not re.search(rf"(?m)^    environment:\s+{re.escape(expected)}$", block):
         raise AssertionError(
@@ -418,9 +422,7 @@ def validate(texts: dict[str, str]) -> None:
                 validate_provenance_job(relative_path, job, block)
             if not write_scopes:
                 continue
-            expected = (
-                "pypi-publish" if job == "mcp-publish-pypi" else "release-publish"
-            )
+            expected = "pypi-publish" if job in PYPI_JOBS else "release-publish"
             require_environment(relative_path, job, block, expected)
 
     supply_blocks = parsed[workflow_paths[0]]
@@ -561,6 +563,20 @@ bad_identity[production_path] = bad_identity[production_path].replace(
     1,
 )
 expect_rejected("one wrong certificate identity", bad_identity)
+
+# The vmafx wheel publisher must stay in the Trusted Publisher environment.
+wrong_pypi_environment = deepcopy(texts)
+vmafx_pypi_job = wrong_pypi_environment[workflow_paths[0]].split("\n  vmafx-publish-pypi:\n", 1)
+if len(vmafx_pypi_job) != 2:
+    raise AssertionError("supply-chain.yml lost the vmafx-publish-pypi job")
+wrong_pypi_environment[workflow_paths[0]] = (
+    vmafx_pypi_job[0]
+    + "\n  vmafx-publish-pypi:\n"
+    + vmafx_pypi_job[1].replace(
+        "    environment: pypi-publish\n", "    environment: release-publish\n", 1
+    )
+)
+expect_rejected("the vmafx PyPI job outside pypi-publish", wrong_pypi_environment)
 
 # A verifier pinned to the tag ref can never match a recovery run's signature,
 # which carries the default branch (ADR-1347; v1.0.0-rc.1's smoke test failed so).
