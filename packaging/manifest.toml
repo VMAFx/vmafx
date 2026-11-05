@@ -9,7 +9,8 @@
 #
 # Artifact keys:
 #   kind            native | tester-bundle | python-wheel | python-sdist | crate | source
-#   platform        <os>-<arch>, or "any" for a platform-independent file
+#   platform        <os>-<arch>, "any" for a platform-independent file, or "multi"
+#                   for one glob that matches a per-platform file set (wheels)
 #   abi             the binary interface a consumer links against, or "none"
 #   backends        scoring backends built in: cpu, cuda, sycl, hip, metal
 #   licence         SPDX AND expression of the licences the artifact carries
@@ -111,6 +112,30 @@ files = ["vmaf_mcp-{pep440}.tar.gz"]
 signing = "sigstore"
 sbom = "vmaf-mcp.spdx.json"
 producer = { workflow = "supply-chain.yml", job = "Build vmaf-mcp wheel + sdist" }
+
+[artifacts.vmafx-wheel]
+kind = "python-wheel"
+platform = "multi"
+abi = "none"
+backends = ["cpu"]
+licence = "EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
+licence_record = "release-native"
+files = ["vmafx-{pep440}-*.whl"]
+signing = "none"
+sbom = "none"
+producer = { workflow = "supply-chain.yml", job = "Build vmafx wheels" }
+
+[artifacts.vmafx-sdist]
+kind = "python-sdist"
+platform = "any"
+abi = "none"
+backends = []
+licence = "EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
+package = "bindings/python/pyproject.toml"
+files = ["vmafx-{pep440}.tar.gz"]
+signing = "none"
+sbom = "none"
+producer = { workflow = "supply-chain.yml", job = "Build vmafx wheels" }
 
 [artifacts.tester-windows-x64]
 kind = "tester-bundle"
@@ -214,7 +239,7 @@ metadata = ["sha256", "sigstore", "spdx"]
 
 [channels.pypi]
 state = "published"
-artifacts = ["vmaf-mcp-wheel", "vmaf-mcp-sdist"]
+artifacts = ["vmaf-mcp-wheel", "vmaf-mcp-sdist", "vmafx-wheel", "vmafx-sdist"]
 metadata = ["wheel-metadata", "sigstore"]
 
 [channels.homebrew]
