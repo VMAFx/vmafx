@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Type-check branch-owned ai/scripts Python files, and fail only on new findings.
+"""Type-check owned ai/, scripts/, bindings/python/vmafx/ Python; fail only on new findings.
 
 An old remote tip is not a PR base after a rebase: its diff includes unrelated
 changes already integrated on master. Preserve the touched-file scope in AGENTS.md.
@@ -328,7 +328,10 @@ def main() -> int:
         if executable is None:
             raise RuntimeError("mypy is required; install the local type-checking toolchain")
         if not selected:
-            print("mypy: no ai/scripts Python files differ from the selected merge base")
+            print(
+                "mypy: no ai/, scripts/ or bindings/python/vmafx/ Python files differ"
+                " from the selected merge base"
+            )
             return 0
         status, output = run_mypy(executable, selected, root)
         current = checked_fingerprints(status, output, "head")

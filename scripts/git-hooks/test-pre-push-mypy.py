@@ -407,7 +407,7 @@ class MypyScope(unittest.TestCase):
     def test_no_owned_files_is_truthful_noop(self) -> None:
         result = self.run_hook()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("no ai/scripts Python files", result.stdout)
+        self.assertIn("no ai/, scripts/ or bindings/python/vmafx/ Python files", result.stdout)
         self.assertFalse(self.receipt.exists())
 
     def test_explicit_ci_base_preserves_push_delta_inheritance(self) -> None:
@@ -582,7 +582,9 @@ class MypyScope(unittest.TestCase):
         self.commit("change black config only")
         result = self.run_hook()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("no ai/scripts Python files differ", result.stdout)
+        self.assertIn(
+            "no ai/, scripts/ or bindings/python/vmafx/ Python files differ", result.stdout
+        )
         self.assertFalse(self.receipt.exists())
 
     def test_mypy_config_fails_closed_on_invalid_toml(self) -> None:
