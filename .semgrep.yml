@@ -232,3 +232,81 @@ rules:
       for "the two differ"); it also tells +0 from -0 (ADR-1502).
     languages: [c, cpp]
     severity: ERROR
+
+  - id: vmaf-no-count-store-before-bound-check
+    # Struct count field stored before a bound check that can reject it: if the
+    # check fails, cleanup loops reading or freeing past the array bound see an
+    # out-of-range count field. Origin: CodeRabbit finding on open_context in
+    # core/test/test_vmafx_window_live.c (live->n_ring set before n_ring > MAX_RING).
+    #
+    # Filters:
+    # - pattern-either: 8 alternatives covering pointer ($S->$F) and direct struct
+    #   ($S.$F) stores followed by an `if ($C)` that exits via bare or compound
+    #   return or goto.
+    # - metavariable-pattern ($C): bound check comparing either the stored value $N or
+    #   the struct field ($S->$F / $S.$F) with upper bound > or >=.
+    # - metavariable-regex ($MAX): named limit identifier only (starts with letter or _);
+    #   numeric literal branches such as `n_planes > 1u` are branches, not bounds.
+    # - metavariable-regex ($F): count-like field names (n_..., nCamel, *count*, *cnt*,
+    #   *len*, *size*, *num*).
+    # - metavariable-regex ($N): excludes literal resets (`= 0u`, `= 0`) which can never
+    #   be out of range.
+    # This rule carries no `paths:` key; it scans the whole tree.
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $S->$F = $N;
+              ...
+              if ($C) return ...;
+          - pattern: |
+              $S->$F = $N;
+              ...
+              if ($C) { ... return ...; }
+          - pattern: |
+              $S->$F = $N;
+              ...
+              if ($C) goto $L;
+          - pattern: |
+              $S->$F = $N;
+              ...
+              if ($C) { ... goto $L; }
+          - pattern: |
+              $S.$F = $N;
+              ...
+              if ($C) return ...;
+          - pattern: |
+              $S.$F = $N;
+              ...
+              if ($C) { ... return ...; }
+          - pattern: |
+              $S.$F = $N;
+              ...
+              if ($C) goto $L;
+          - pattern: |
+              $S.$F = $N;
+              ...
+              if ($C) { ... goto $L; }
+      - metavariable-pattern:
+          metavariable: $C
+          patterns:
+            - pattern-either:
+                - pattern: <... $N > $MAX ...>
+                - pattern: <... $N >= $MAX ...>
+                - pattern: <... $S->$F > $MAX ...>
+                - pattern: <... $S->$F >= $MAX ...>
+                - pattern: <... $S.$F > $MAX ...>
+                - pattern: <... $S.$F >= $MAX ...>
+            - metavariable-regex:
+                metavariable: $MAX
+                regex: ^[A-Za-z_]
+      - metavariable-regex:
+          metavariable: $F
+          regex: ^(n_\w+|n[A-Z]\w*|\w*(count|cnt|len|size|num)\w*)$
+      - metavariable-regex:
+          metavariable: $N
+          regex: ^(?![0-9'"]).+
+    message: >
+      Count stored before the bound check that can reject it; check the bound
+      first, then store (or reset the count on the failure path).
+    languages: [c, cpp]
+    severity: ERROR
