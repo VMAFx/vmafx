@@ -42,6 +42,7 @@ version_header = "vmafx/version.h"
 # live in libvmaf.so.3, except a backend's declared engine exceptions, which
 # core/src/vmafx_legacy_<backend>.map exports in builds with that backend.
 hide_unlisted = true
+license = "EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
 
 # Header layout of design section 2.10. `group`: `umbrella` includes every
 # `core` header; `optional` headers are never included by it. Each header

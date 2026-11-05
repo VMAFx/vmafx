@@ -20,6 +20,7 @@ import os
 import shutil
 import tarfile
 import tempfile
+import tomllib
 import types
 import unittest
 from pathlib import Path
@@ -456,6 +457,46 @@ class NpmTests(GateTestCase):
             self.problems(files),
             ["pkg/package.json: license = 'MIT', but its files carry EUPL-1.2"],
         )
+
+
+class NativeWheelTests(unittest.TestCase):
+    """A wheel that cibuildwheel builds libvmafx into carries the native licences."""
+
+    def test_before_all_on_a_platform_bundles(self) -> None:
+        data = {
+            "tool": {
+                "cibuildwheel": {
+                    "linux": {"before-all": "python scripts/ci/build-wheel-libvmafx.py"}
+                }
+            }
+        }
+        self.assertTrue(gate.bundles_native_library(data))
+
+    def test_top_level_before_all_bundles(self) -> None:
+        data = {
+            "tool": {"cibuildwheel": {"before-all": "python3 scripts/ci/build-wheel-libvmafx.py"}}
+        }
+        self.assertTrue(gate.bundles_native_library(data))
+
+    def test_pure_python_package_does_not_bundle(self) -> None:
+        self.assertFalse(gate.bundles_native_library({"project": {"name": "pure"}}))
+        data = {"tool": {"cibuildwheel": {"linux": {"before-all": "yum install -y zlib"}}}}
+        self.assertFalse(gate.bundles_native_library(data))
+
+    def test_the_vmafx_binding_bundles(self) -> None:
+        data = tomllib.loads(
+            (REPO_ROOT / "bindings/python/pyproject.toml").read_text(encoding="utf-8")
+        )
+        self.assertTrue(gate.bundles_native_library(data))
+
+    def test_unknown_record_is_refused(self) -> None:
+        with self.assertRaises(gate.ModelError):
+            gate.record_licences(REPO_ROOT, "no-such-record")
+
+    def test_native_record_names_more_than_eupl(self) -> None:
+        found = gate.record_licences(REPO_ROOT, gate.NATIVE_RECORD)
+        self.assertIn("EUPL-1.2", found)
+        self.assertIn("BSD-2-Clause-Patent", found)
 
 
 if __name__ == "__main__":

@@ -365,7 +365,15 @@ Before publication, repository setup must provide two protected environments:
 
 - `release-publish` for GHCR writes, release-blob signing, build-provenance
   attestations, and GitHub Release attachment;
-- `pypi-publish` for the `vmaf-mcp` Trusted Publisher identity.
+- `pypi-publish` for the PyPI Trusted Publisher identities of `vmaf-mcp`
+  and `vmafx` (the wheels job `vmafx-publish-pypi`). The wheels are built
+  by the reusable `.github/workflows/vmafx-wheels.yml`, which
+  `supply-chain.yml` calls as `vmafx-wheels-build`; the upload stays in
+  `supply-chain.yml`, so both Trusted Publishers name that workflow. Before
+  uploading, `scripts/release/pypi-publish-state.sh` compares the built files
+  with what PyPI already holds for the version and stops on any file or
+  SHA-256 that differs (tests:
+  `scripts/release/tests/test-pypi-publish-state.sh`).
 
 Each must accept selected tag refs matching `v*` and require the release
 reviewer.

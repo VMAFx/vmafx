@@ -54,6 +54,11 @@ SOURCES = {
 }
 
 
+def read_repo_text_bytes(path: Path) -> bytes:
+    """Read a repository text file with CRLF normalised to LF."""
+    return path.read_bytes().replace(b"\r\n", b"\n")
+
+
 def stable_version(tag: str) -> tuple[int, int, int]:
     """Reject development/RC refs, even when their prefix looks released."""
     match = STABLE_TAG.fullmatch(tag)
@@ -388,7 +393,7 @@ def sync_sources(repo: Path, replay: Replay, name: str, owners: dict[str, str]) 
         if path in owners:
             raise ValueError(f"{path}: changed by {owners[path]} and {name}; one patch owns it")
         owners[path] = name
-        content = (repo / "ffmpeg-patches" / "src" / source).read_bytes()
+        content = read_repo_text_bytes(repo / "ffmpeg-patches" / "src" / source)
         target = replay.checkout / path
         if target.read_bytes() != content:
             target.write_bytes(content)
@@ -410,7 +415,7 @@ def mirrors(repo: Path, remote: str, tag: str) -> dict[Path, bytes]:
     changed = {}
     for name in MIRRORS:
         path = repo / name
-        original = path.read_text()
+        original = read_repo_text_bytes(path).decode("utf-8")
         updated = original
         for key, value in {"FFMPEG_TAG": tag, "FFMPEG_REMOTE": remote}.items():
             updated, count = re.subn(rf"(?m)^ARG {key}=\S+$", f"ARG {key}={value}", updated)
@@ -788,7 +793,9 @@ def keep_patched_tree(checkout: Path, destination: Path) -> None:
 def settle_updates(repo: Path, updates: dict[Path, bytes], refresh: bool, receipt: Receipt) -> None:
     """Write the rendered patch and configuration mirrors, or fail on drift in check mode."""
     changed = [
-        str(path.relative_to(repo)) for path, data in updates.items() if path.read_bytes() != data
+        str(path.relative_to(repo))
+        for path, data in updates.items()
+        if read_repo_text_bytes(path) != data.replace(b"\r\n", b"\n")
     ]
     receipt.update({"changed": changed, "status": "refreshed" if refresh else "checked"})
     if refresh:
@@ -855,7 +862,9 @@ def maintain(
                     raise ValueError(unpinned_release(shared, target_tag, current_tag, output))
                 updates.update(mirrors(repo, remote, target_tag))
                 config = repo / "build-config.env"
-                updates[config] = pinned_config(config.read_text(), target_tag, target).encode()
+                updates[config] = pinned_config(
+                    read_repo_text_bytes(config).decode("utf-8"), target_tag, target
+                ).encode("utf-8")
                 updates.update(readme_claim(repo, receipt))
                 settle_updates(repo, updates, refresh, receipt)
     except (KeyError, ValueError, RuntimeError, OSError, CommandTimedOut) as error:

@@ -411,6 +411,7 @@ def parse(document: Entry) -> Api:
         option_groups=option_groups(document.get("option_groups", [])),
         pixel_formats=_pixel_formats(document.get("pixel_formats", [])),
         color_matrices=_color_matrices(document.get("color_matrices", [])),
+        license=str(api.get("license", "EUPL-1.2")),
     )
     validate(result)
     return result

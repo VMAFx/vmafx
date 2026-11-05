@@ -1,6 +1,12 @@
 <!-- markdownlint-disable MD013 MD046 -->
 # VMAF Python Library
 
+!!! note "Looking for the `vmafx` Python package?"
+    This page documents the legacy Netflix training and evaluation harness
+    (`python/`). For the modern standard-library `ctypes` binding for the VMAFx
+    C API (`libvmafx.so.1`), see the [VMAFx Python package](python-package.md)
+    guide.
+
 Use the VMAF Python library to run VMAF from the command line on `.yuv` files,
 train and validate a new VMAF model on a video dataset, and experiment with
 other video quality metrics. It also holds the analysis tools (BD-rate, LIME)
