@@ -52,4 +52,4 @@
 
 - ADRs: [ADR-1333](../adr/1333-meson-test-secret-env-sanitization.md)
 - PRs: #3266
-- Files: `scripts/dev/upstream_pr_sweep.py`, `scripts/dev/tests/test_upstream_pr_sweep.py`, `docs/development/upstream-pr-sweep.md`, `scripts/git-hooks/framework-hooks.sh`, `scripts/githooks/tests/test_install.py`
+- Files: `scripts/dev/upstream_pr_sweep.py`, `scripts/dev/tests/test_upstream_pr_sweep.py`, `scripts/dev/tests/test_upstream_pr_sweep_hardening.py`, `scripts/dev/tests/upstream_pr_sweep_fixture.py`, `docs/development/upstream-pr-sweep.md`, `scripts/git-hooks/framework-hooks.sh`, `scripts/githooks/tests/test_install.py`

@@ -1,6 +1,8 @@
 ## Upstream PR sweep tool and hook GIT_DIR isolation (#3266) (2026-11-03)
 
-- `scripts/dev/upstream_pr_sweep.py` and `scripts/dev/tests/test_upstream_pr_sweep.py`
+- `scripts/dev/upstream_pr_sweep.py`, `scripts/dev/tests/test_upstream_pr_sweep.py`,
+  `scripts/dev/tests/test_upstream_pr_sweep_hardening.py`, and
+  `scripts/dev/tests/upstream_pr_sweep_fixture.py`
   are fork-only developer tooling; no upstream Netflix/vmaf file is touched.
 - `scripts/git-hooks/framework-hooks.sh` unsets repository-locating `GIT_*`
   variables (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`, `GIT_OBJECT_DIRECTORY`,

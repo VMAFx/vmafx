@@ -128,6 +128,9 @@ ISOLATION_EXCEPTIONS = {
     "scripts/dev/tests/test_merge_train_guard.py": (
         "git runs through merge_train_guard.environment(), which drops GIT_*"
     ),
+    "scripts/dev/tests/test_upstream_pr_sweep_hardening.py": (
+        "git runs through upstream_pr_sweep_fixture.git_run, which uses git_environment()"
+    ),
     "scripts/docs/tests/test_render_at_landing.py": (
         "every git call gets a fixed environment (ENV) that holds no caller variable"
     ),

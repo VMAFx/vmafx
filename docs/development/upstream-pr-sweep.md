@@ -157,5 +157,8 @@ The tool emits one TSV (tab-separated) row per PR to standard output (with
 
 All sweep operations are covered by unit tests in
 [`scripts/dev/tests/test_upstream_pr_sweep.py`](https://github.com/VMAFx/vmafx/blob/master/scripts/dev/tests/test_upstream_pr_sweep.py),
+[`scripts/dev/tests/test_upstream_pr_sweep_hardening.py`](https://github.com/VMAFx/vmafx/blob/master/scripts/dev/tests/test_upstream_pr_sweep_hardening.py),
+and support fixtures in
+[`scripts/dev/tests/upstream_pr_sweep_fixture.py`](https://github.com/VMAFx/vmafx/blob/master/scripts/dev/tests/upstream_pr_sweep_fixture.py),
 using isolated bare upstream and fork repositories with local SSH-based Git commit
 signing.
