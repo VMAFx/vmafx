@@ -218,8 +218,8 @@ calculate_ssim_hip_horiz_8bpc(const uint8_t *__restrict__ ref, ptrdiff_t ref_str
 
 /**
  * Pass 1 (16-bpc): horizontal 11-tap Gaussian.
- * Same as 8bpc but pixels are uint16_t (10/12/16bpc), normalised by
- * scaler (4 / 16 / 256) to the [0,255] float range the CUDA twin uses.
+ * Same as 8bpc but pixels are uint16_t (>8bpc), normalised by
+ * scaler (2^(bpc - 8)) to the [0,255] float range the CUDA twin uses.
  */
 __global__ void calculate_ssim_hip_horiz_16bpc(
     const uint8_t *__restrict__ ref, ptrdiff_t ref_stride, const uint8_t *__restrict__ cmp,
@@ -227,14 +227,7 @@ __global__ void calculate_ssim_hip_horiz_16bpc(
     float *__restrict__ h_ref_sq, float *__restrict__ h_cmp_sq, float *__restrict__ h_refcmp,
     unsigned w_horiz, unsigned h_horiz, unsigned bpc)
 {
-    float scaler = 1.0f;
-    if (bpc == 10u) {
-        scaler = 4.0f;
-    } else if (bpc == 12u) {
-        scaler = 16.0f;
-    } else if (bpc == 16u) {
-        scaler = 256.0f;
-    }
+    const float scaler = bpc > 8u ? (float)(1u << (bpc - 8u)) : 1.0f;
     const SsimHorizOut out = {h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp};
     ssim_horiz<uint16_t>(ref, ref_stride, cmp, cmp_stride, out, w_horiz, h_horiz, 1.0f / scaler);
 }
