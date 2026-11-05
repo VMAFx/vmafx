@@ -87,6 +87,18 @@ class CheckTests(unittest.TestCase):
         data["artifacts"]["models"]["tracking"] = "#1"
         self.assert_problem(data, "exactly one of producer and tracking")
 
+    def test_native_wheel_without_licence_record_fails(self) -> None:
+        data = manifest()
+        artifact = data["artifacts"]["vmafx-wheel"]
+        del artifact["licence_record"]
+        artifact["package"] = "bindings/python/pyproject.toml"
+        self.assert_problem(data, "vmafx-wheel: bundles libvmafx; needs a licence_record")
+
+    def test_wheel_licence_reverted_to_eupl_fails(self) -> None:
+        data = manifest()
+        data["artifacts"]["vmafx-wheel"]["licence"] = "EUPL-1.2"
+        self.assert_problem(data, "vmafx-wheel")
+
     def test_unknown_backend_fails(self) -> None:
         data = manifest()
         data["artifacts"]["source"]["backends"] = ["cpu", "vulkan"]
