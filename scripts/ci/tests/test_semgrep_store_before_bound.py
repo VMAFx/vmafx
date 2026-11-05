@@ -10,8 +10,8 @@ or free past the array bound.
 
 The test copies the real `.semgrep.yml` into a throwaway project and plants:
 
-- store followed by bound check returning/exiting (arrow and dot struct access),
-  which the rule must report;
+- store followed by bound check returning/exiting (arrow and dot struct access,
+  direct and reversed comparisons), which the rule must report;
 - clean patterns (check-then-store, literal reset, branch comparisons on literals,
   check without exit), which the rule must not report;
 - the open_context pre-fix regression shape, which the rule must report.
@@ -155,10 +155,48 @@ bool bad_restore_on_failure(Live *live, unsigned n_ring)
     return true;
 }
 
+bool bad_reversed_lt(Live *live, unsigned n_ring)
+{
+    live->n_ring = n_ring; /* reported: reversed lt */
+    if (MAX_RING < n_ring) {
+        return fail_context(live);
+    }
+    return true;
+}
+
+bool bad_reversed_le_field(Live *live, unsigned n_ring)
+{
+    live->n_ring = n_ring; /* reported: reversed le field */
+    if (MAX_RING <= live->n_ring) {
+        return fail_context(live);
+    }
+    return true;
+}
+
+bool bad_reversed_dot_goto(Live live, unsigned n_ring)
+{
+    live.n_ring = n_ring; /* reported: reversed dot goto */
+    if (MAX_RING < live.n_ring) {
+        goto fail;
+    }
+    return true;
+fail:
+    return fail_context(&live);
+}
+
 bool good_check_first(Live *live, unsigned n_ring)
 {
     if (n_ring > MAX_RING) {
         return fail_context(live);
+    }
+    live->n_ring = n_ring;
+    return true;
+}
+
+bool good_reversed_check_first(Live *live, unsigned n_ring)
+{
+    if (MAX_RING < n_ring) {
+        return false;
     }
     live->n_ring = n_ring;
     return true;
