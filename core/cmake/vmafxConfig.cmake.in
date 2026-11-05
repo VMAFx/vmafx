@@ -1,0 +1,121 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+@PACKAGE_INIT@
+
+set(_vmafx_includedir "@includedir@")
+if(NOT IS_ABSOLUTE "${_vmafx_includedir}")
+    set(_vmafx_includedir "${PACKAGE_PREFIX_DIR}/${_vmafx_includedir}")
+endif()
+set_and_check(VMAFX_INCLUDE_DIR "${_vmafx_includedir}")
+
+set(_vmafx_libdir "@libdir@")
+if(NOT IS_ABSOLUTE "${_vmafx_libdir}")
+    set(_vmafx_libdir "${PACKAGE_PREFIX_DIR}/${_vmafx_libdir}")
+endif()
+
+set(_vmafx_bindir "@bindir@")
+if(NOT IS_ABSOLUTE "${_vmafx_bindir}")
+    set(_vmafx_bindir "${PACKAGE_PREFIX_DIR}/${_vmafx_bindir}")
+endif()
+
+if(DEFINED VMAFX_LIBRARY)
+    get_filename_component(_vmafx_cached_dir "${VMAFX_LIBRARY}" DIRECTORY)
+    get_filename_component(_vmafx_cached_real "${_vmafx_cached_dir}" REALPATH)
+    get_filename_component(_vmafx_expected_real "${_vmafx_libdir}" REALPATH)
+    if(NOT _vmafx_cached_real STREQUAL _vmafx_expected_real)
+        unset(VMAFX_LIBRARY CACHE)
+        unset(VMAFX_LIBRARY)
+    endif()
+    unset(_vmafx_cached_dir)
+    unset(_vmafx_cached_real)
+    unset(_vmafx_expected_real)
+endif()
+
+set(_vmafx_saved_suffixes "${CMAKE_FIND_LIBRARY_SUFFIXES}")
+if(WIN32)
+    set(CMAKE_FIND_LIBRARY_SUFFIXES .lib .dll.a)
+elseif(APPLE)
+    set(CMAKE_FIND_LIBRARY_SUFFIXES .dylib .so)
+else()
+    set(CMAKE_FIND_LIBRARY_SUFFIXES .so)
+endif()
+
+find_library(VMAFX_LIBRARY
+    NAMES vmafx
+    PATHS "${_vmafx_libdir}"
+    NO_DEFAULT_PATH
+)
+set(CMAKE_FIND_LIBRARY_SUFFIXES "${_vmafx_saved_suffixes}")
+unset(_vmafx_saved_suffixes)
+
+if(VMAFX_LIBRARY)
+    if(VMAFX_LIBRARY MATCHES "\\.a$" AND NOT VMAFX_LIBRARY MATCHES "\\.dll\\.a$")
+        message(STATUS "vmafx: static archive ${VMAFX_LIBRARY} found, but CMake package targets shared library; use pkg-config --static for static linking")
+        unset(VMAFX_LIBRARY CACHE)
+        unset(VMAFX_LIBRARY)
+    else()
+        get_filename_component(_vmafx_found_dir "${VMAFX_LIBRARY}" DIRECTORY)
+        get_filename_component(_vmafx_found_real "${_vmafx_found_dir}" REALPATH)
+        get_filename_component(_vmafx_expected_real "${_vmafx_libdir}" REALPATH)
+        if(NOT _vmafx_found_real STREQUAL _vmafx_expected_real)
+            unset(VMAFX_LIBRARY CACHE)
+            unset(VMAFX_LIBRARY)
+        endif()
+        unset(_vmafx_found_dir)
+        unset(_vmafx_found_real)
+        unset(_vmafx_expected_real)
+    endif()
+endif()
+
+include(FindPackageHandleStandardArgs)
+find_package_handle_standard_args(vmafx
+    REQUIRED_VARS VMAFX_LIBRARY VMAFX_INCLUDE_DIR
+)
+
+if(vmafx_FOUND AND NOT TARGET vmafx::vmafx)
+    add_library(vmafx::vmafx SHARED IMPORTED)
+    if(WIN32)
+        if(DEFINED VMAFX_DLL)
+            get_filename_component(_vmafx_cached_bindir "${VMAFX_DLL}" DIRECTORY)
+            get_filename_component(_vmafx_cached_binreal "${_vmafx_cached_bindir}" REALPATH)
+            get_filename_component(_vmafx_expected_binreal "${_vmafx_bindir}" REALPATH)
+            if(NOT _vmafx_cached_binreal STREQUAL _vmafx_expected_binreal)
+                unset(VMAFX_DLL CACHE)
+                unset(VMAFX_DLL)
+            endif()
+            unset(_vmafx_cached_bindir)
+            unset(_vmafx_cached_binreal)
+            unset(_vmafx_expected_binreal)
+        endif()
+
+        find_file(VMAFX_DLL
+            NAMES vmafx.dll vmafx-1.dll libvmafx.dll libvmafx-1.dll
+            PATHS "${_vmafx_bindir}"
+            NO_DEFAULT_PATH
+        )
+        if(VMAFX_DLL)
+            set_target_properties(vmafx::vmafx PROPERTIES
+                IMPORTED_LOCATION "${VMAFX_DLL}"
+                IMPORTED_IMPLIB "${VMAFX_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${VMAFX_INCLUDE_DIR}"
+            )
+        else()
+            set_target_properties(vmafx::vmafx PROPERTIES
+                IMPORTED_LOCATION "${VMAFX_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${VMAFX_INCLUDE_DIR}"
+            )
+        endif()
+    else()
+        set_target_properties(vmafx::vmafx PROPERTIES
+            IMPORTED_LOCATION "${VMAFX_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${VMAFX_INCLUDE_DIR}"
+        )
+    endif()
+endif()
+
+set(VMAFX_LIBRARIES vmafx::vmafx)
+set(VMAFX_INCLUDE_DIRS "${VMAFX_INCLUDE_DIR}")
+unset(_vmafx_includedir)
+unset(_vmafx_libdir)
+unset(_vmafx_bindir)
