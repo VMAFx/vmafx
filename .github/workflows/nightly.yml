@@ -87,9 +87,7 @@ jobs:
           # Keep this toolchain identical to the required CPU tidy-ratchet
           # lane. Ubuntu runner images do not all publish gcc-15 directly.
           sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          chmod +x /tmp/llvm.sh
-          sudo /tmp/llvm.sh 22
+          sudo bash scripts/ci/install-llvm.sh 22 --source=apt.llvm.org
           sudo apt-get update
           mkdir -p "${RUNNER_TEMP}/apt-archives"
           if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then

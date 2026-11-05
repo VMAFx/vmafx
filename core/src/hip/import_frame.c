@@ -358,13 +358,14 @@ static hipError_t gather_plane(const VmafxHipDevice *dev, const HipSource *src, 
 static hipError_t rgb_plane(const VmafxHipDevice *dev, const HipSource *src, const HipPlan *plan,
                             uint8_t *base, uint32_t i)
 {
-    VmafxRgbPlan rgb;
+    VmafxRgbPlan rgb = {0};
     const VmafxFrameImport *const d = src->d;
     /* The statement was checked: the matrix has a conversion. */
     const bool planned = vmafx_rgb_plan_init(&rgb, src->layout, d->bpc, d->rgb_matrix, d->rgb_range,
                                              d->rgb_out_range);
-    assert(planned);
-    (void)planned;
+    if (!planned) {
+        return hipErrorInvalidValue;
+    }
     const void *in = src->base[0];
     size_t in_pitch = (size_t)d->plane[0].pitch;
     void *out = base + plan->offset[i];
