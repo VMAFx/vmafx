@@ -1,0 +1,1 @@
+- **Check `vmafx_rgb_plan_init()` in the CUDA, HIP and SYCL RGB imports.** Under `NDEBUG` the assertion vanished and a rejected plan sent an uninitialised `VmafxRgbPlan` to the device kernel. `rgb_plane()` now zero-initialises the plan and fails the import with a device error instead of launching.

@@ -41,6 +41,25 @@ class ReleaseSelection(unittest.TestCase):
                 STACK.stable_version(tag)
 
 
+class BashInputsLineEndings(unittest.TestCase):
+    def test_shared_series_inputs_check_out_with_lf(self) -> None:
+        repo = Path(__file__).resolve().parents[2]
+        paths = [STACK.SHARED_SERIES_SCRIPT.relative_to(repo).as_posix(), "build-config.env"]
+        git = shutil.which("git")
+        assert git is not None
+        result = run_command(
+            [git, "-C", str(repo), "check-attr", "eol", "--", *paths],
+            allowed_executables={git},
+            # The caller's GIT_DIR or GIT_WORK_TREE would point git at another repository.
+            env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout_seconds=30,
+        )
+        self.assertEqual(result.stdout.splitlines(), [f"{path}: eol: lf" for path in paths])
+
+
 class RealReplay(unittest.TestCase):
     def git(self, path: Path, *args: str) -> str:
         # Fixed Git executable and fixture-owned arguments; no shell.
@@ -980,6 +999,86 @@ class AtomicJournalWrite(unittest.TestCase):
         self.assertEqual(self.journal.read_text(encoding="utf-8"), "[]")
         leftovers = list(self.temp_dir.glob(f".{STACK.JOURNAL_NAME}-*"))
         self.assertEqual(leftovers, [])
+
+
+class WorkingTreeTextLineEndings(unittest.TestCase):
+    """Ensure Windows CRLF working tree checkouts do not cause spurious drift or leak CR."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.repo = Path(self.temporary.name)
+
+    def test_read_repo_text_bytes_normalises_crlf(self) -> None:
+        target = self.repo / "sample.txt"
+        target.write_bytes(b"first\r\nsecond\r\nthird\n")
+        self.assertEqual(STACK.read_repo_text_bytes(target), b"first\nsecond\nthird\n")
+
+    def test_read_repo_text_bytes_preserves_lone_cr(self) -> None:
+        target = self.repo / "lone_cr.txt"
+        target.write_bytes(b"first\rsecond\r\n")
+        self.assertEqual(STACK.read_repo_text_bytes(target), b"first\rsecond\n")
+
+    def test_settle_updates_crlf_target_passes_check_without_drift(self) -> None:
+        target = self.repo / "mirrored.txt"
+        data = b"ARG FFMPEG_TAG=n9.0.2\nARG FFMPEG_REMOTE=https://example.com/ffmpeg\n"
+        target.write_bytes(data.replace(b"\n", b"\r\n"))
+        receipt: dict[str, object] = {}
+        STACK.settle_updates(self.repo, {target: data}, refresh=False, receipt=receipt)
+        self.assertEqual(receipt["changed"], [])
+        self.assertEqual(receipt["status"], "checked")
+
+    def test_settle_updates_real_content_difference_with_crlf_raises_drift(self) -> None:
+        target = self.repo / "mirrored.txt"
+        data = b"ARG FFMPEG_TAG=n9.0.2\n"
+        target.write_bytes(b"ARG FFMPEG_TAG=n9.0.1\r\n")
+        receipt: dict[str, object] = {}
+        with self.assertRaisesRegex(ValueError, "drift"):
+            STACK.settle_updates(self.repo, {target: data}, refresh=False, receipt=receipt)
+        self.assertEqual(receipt["changed"], ["mirrored.txt"])
+
+    def test_settle_updates_lone_cr_is_not_normalised_and_raises_drift(self) -> None:
+        target = self.repo / "mirrored.txt"
+        data = b"line 1\nline 2\n"
+        target.write_bytes(b"line 1\rline 2\n")
+        receipt: dict[str, object] = {}
+        with self.assertRaisesRegex(ValueError, "drift"):
+            STACK.settle_updates(self.repo, {target: data}, refresh=False, receipt=receipt)
+        self.assertEqual(receipt["changed"], ["mirrored.txt"])
+
+    def test_sync_sources_crlf_fragment_writes_lf_target(self) -> None:
+        src_dir = self.repo / "ffmpeg-patches/src"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        ffmpeg_path = "libavfilter/vf_vmafx.c"
+        src_file = src_dir / "vf_vmafx.c"
+        src_file.write_bytes(b"/* header */\r\nstatic int fn(void) {\r\n    return 0;\r\n}\r\n")
+
+        checkout = self.repo / "checkout"
+        target = checkout / ffmpeg_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"/* initial */\n")
+
+        class FakeReplay:
+            def __init__(self, chk: Path) -> None:
+                self.checkout = chk
+                self.calls: list[tuple[str, ...]] = []
+
+            def git(self, *args: str) -> str:
+                self.calls.append(args)
+                if args and args[0] == "diff-tree":
+                    return f"{ffmpeg_path}\n"
+                return ""
+
+        fake_replay = FakeReplay(checkout)
+        owners: dict[str, str] = {}
+        STACK.sync_sources(self.repo, fake_replay, "0001-test.patch", owners)
+
+        self.assertEqual(owners[ffmpeg_path], "0001-test.patch")
+        expected_lf = b"/* header */\nstatic int fn(void) {\n    return 0;\n}\n"
+        self.assertEqual(target.read_bytes(), expected_lf)
+        self.assertNotIn(b"\r", target.read_bytes())
+        self.assertIn(("add", "--", ffmpeg_path), fake_replay.calls)
+        self.assertIn(("commit", "--quiet", "--amend", "--no-edit"), fake_replay.calls)
 
 
 if __name__ == "__main__":

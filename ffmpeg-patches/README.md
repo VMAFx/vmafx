@@ -262,6 +262,7 @@ reported as skipped. Both checks source `test/filter_check_lib.sh`.
 
 Run `python3 scripts/ci/ffmpeg_patch_stack.py --refresh` and review the diff,
 then run the same command with `--check`. The local hooks use this helper too.
+Line endings of a Windows checkout do not count as drift.
 See [FFmpeg patch automation](../docs/development/ffmpeg-patch-automation.md)
 for daily stable-release updates, diagnostics and conflict recovery.
 
