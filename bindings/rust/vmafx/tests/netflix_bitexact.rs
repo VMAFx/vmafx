@@ -175,6 +175,7 @@ fn parse_hex_float(s: &str) -> Result<f64, Box<dyn std::error::Error>> {
     // The platform C runtime supplies a non-null, thread-local errno pointer. Clear
     // and inspect it immediately around strtod; no other C call can overwrite it.
     // end is compared with the input's terminal NUL address, never dereferenced.
+    // nosemgrep: rust.lang.security.unsafe-usage.unsafe-usage -- FFI parity call, SAFETY above
     let (val, error, consumed_all) = unsafe {
         let errno = errno_location();
         *errno = 0;
@@ -334,6 +335,7 @@ fn copy_frame(pic: &mut AllocatedPicture, planes: &[Vec<u8>; 3]) -> std::io::Res
         // positive matching dimensions, stride >= row bytes and the last row's extent
         // within that capacity and isize::MAX. Each bounded row stays inside it. The
         // exact-size source Vec is a separate live allocation, so copies cannot overlap.
+        // nosemgrep: rust.lang.security.unsafe-usage.unsafe-usage -- FFI parity call, SAFETY above
         unsafe {
             for row in 0..height {
                 std::ptr::copy_nonoverlapping(
@@ -496,14 +498,26 @@ fn test_netflix_576x324_bitexact_with_c_reference() -> Result<(), Box<dyn std::e
     Ok(())
 }
 
+fn test_dir_builder() -> std::fs::DirBuilder {
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder
+}
+
 struct TestDir(PathBuf);
 
 impl TestDir {
     fn new() -> std::io::Result<Self> {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let path = env::temp_dir().join(format!("vmafx-bitexact-{}-{id}", std::process::id()));
-        std::fs::create_dir(&path)?;
+        let base = Path::new(env!("CARGO_TARGET_TMPDIR"));
+        let path = base.join(format!("vmafx-bitexact-{}-{id}", std::process::id()));
+        test_dir_builder().create(&path)?;
         Ok(Self(path))
     }
 }
@@ -514,6 +528,30 @@ impl Drop for TestDir {
             eprintln!("cannot remove test directory {}: {err}", self.0.display());
         }
     }
+}
+
+#[test]
+fn test_test_dir_is_private_and_fresh() -> Result<(), Box<dyn std::error::Error>> {
+    let base = Path::new(env!("CARGO_TARGET_TMPDIR"));
+    let path = {
+        let dir = TestDir::new()?;
+        assert!(dir.0.is_dir());
+        assert!(dir.0.starts_with(base));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let meta = std::fs::metadata(&dir.0)?;
+            assert_eq!(meta.mode() & 0o777, 0o700);
+        }
+        let err = test_dir_builder()
+            .create(&dir.0)
+            .err()
+            .ok_or("re-creating existing test directory should fail")?;
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        dir.0.clone()
+    };
+    assert!(!path.exists());
+    Ok(())
 }
 
 #[test]
