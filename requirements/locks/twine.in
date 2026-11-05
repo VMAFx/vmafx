@@ -1,0 +1,2 @@
+# Pinned input for twine wheel / sdist metadata check in CI
+twine==7.0.0
