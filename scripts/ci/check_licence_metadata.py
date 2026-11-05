@@ -439,6 +439,18 @@ def python_licence_text_problems(
     return problems
 
 
+# The licensing record of the libvmafx build a wheel bundles (ADR-1699).
+NATIVE_RECORD = "release-native"
+NATIVE_BUILD_SCRIPT = "build-wheel-libvmafx.py"
+
+
+def bundles_native_library(data: dict[str, Any]) -> bool:
+    """Whether cibuildwheel builds libvmafx into this package's wheels."""
+    cibw = data.get("tool", {}).get("cibuildwheel", {})
+    platforms = [cibw] + [v for v in cibw.values() if isinstance(v, dict)]
+    return any(NATIVE_BUILD_SCRIPT in str(p.get("before-all", "")) for p in platforms)
+
+
 def python_package_problems(root: Path, pyproject: Path) -> list[str]:
     """Why `pyproject`'s licence metadata does not describe the files it ships."""
     name = _relative(root, pyproject.parent)
@@ -451,6 +463,8 @@ def python_package_problems(root: Path, pyproject: Path) -> list[str]:
     }
     shipped = python_shipped_files(root, pyproject, data) - texts
     identifiers, unlicensed = shipped_licences(root, shipped)
+    if bundles_native_library(data):
+        identifiers |= record_licences(root, NATIVE_RECORD)
     problems = _unlicensed_problems(unlicensed)
     problems += declared_problems(name, "license", project.get("license"), identifiers)
     return problems + python_licence_text_problems(name, pyproject.parent, project, identifiers)
@@ -624,6 +638,26 @@ def npm_package_problems(root: Path, manifest: Path) -> list[str]:
     return _unlicensed_problems(unlicensed) + declared_problems(
         name, "license", data["license"], identifiers
     )
+
+
+# ------------------------------------------------------------------ licensing records
+
+
+def record_licences(root: Path, record: str) -> set[str]:
+    """The licences the build and repository components of a licensing record carry."""
+    manifest = root / LICENSING_MANIFEST
+    if not manifest.is_file():
+        raise ModelError(f"{LICENSING_MANIFEST.as_posix()} is missing")
+    records = licensing.load_manifest(manifest)
+    try:
+        components = records["artifacts"][record]["components"]
+    except KeyError as error:
+        raise ModelError(f"no licensing record {record!r}") from error
+    found: set[str] = set()
+    for component in components:
+        if component.get("kind") in ("build", "repo"):
+            found |= set(component.get("licences", []))
+    return found
 
 
 # ------------------------------------------------------------------ driver

@@ -64,6 +64,9 @@ def shape_problems(name: str, artifact: dict[str, Any]) -> list[str]:
         problems.append(f"{name}: unknown backends {unknown}")
     if ("licence_record" in artifact) == ("package" in artifact):
         problems.append(f"{name}: needs exactly one of licence_record and package")
+    if artifact.get("kind") == "python-wheel" and artifact.get("backends"):
+        if "licence_record" not in artifact:
+            problems.append(f"{name}: bundles libvmafx; needs a licence_record")
     if ("producer" in artifact) == ("tracking" in artifact):
         problems.append(f"{name}: needs exactly one of producer and tracking")
     return problems
@@ -71,16 +74,10 @@ def shape_problems(name: str, artifact: dict[str, Any]) -> list[str]:
 
 def record_licences(root: Path, record: str) -> set[str]:
     """The licences the build and repository components of a licensing record carry."""
-    records = licence_check.licensing.load_manifest(root / licence_check.LICENSING_MANIFEST)
     try:
-        components = records["artifacts"][record]["components"]
-    except KeyError as error:
-        raise DistributionError(f"no licensing record {record!r}") from error
-    found: set[str] = set()
-    for component in components:
-        if component.get("kind") in ("build", "repo"):
-            found |= set(component.get("licences", []))
-    return found
+        return licence_check.record_licences(root, record)
+    except licence_check.ModelError as error:
+        raise DistributionError(str(error)) from error
 
 
 def package_licences(root: Path, package: str) -> set[str]:

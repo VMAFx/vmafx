@@ -14,28 +14,52 @@ to load it.
 ## Python
 
 The Python binding (`bindings/python/`) uses only the standard library
-(`ctypes`) and ships as a pure `py3-none-any` wheel with a `py.typed` marker and
-zero runtime dependencies. Every class, enum, record dataclass and method in it
-is generated into `vmafx._api` by `scripts/codegen/vmafx_api/emit_python.py`
-and `scripts/codegen/vmafx_api/python_runtime.py`; `vmafx` re-exports the
-public API.
+(`ctypes`), marked with `py.typed` and zero runtime dependencies. Every class,
+enum, record dataclass and method in it is generated into `vmafx._api` by
+`scripts/codegen/vmafx_api/emit_python.py` and
+`scripts/codegen/vmafx_api/python_runtime.py`; `vmafx` re-exports the public
+API.
+
+### Installation
+
+Pre-built binary wheels bundling the compiled `libvmafx` shared library for
+Linux (x86_64 and aarch64 manylinux), macOS (arm64), and Windows (x64) are
+available from PyPI:
+
+```bash
+pip install vmafx
+```
+
+When installed from a binary wheel, `Library()` automatically discovers and
+loads the bundled shared library without requiring `VMAFX_LIBRARY` to be set or
+an external library installation.
+
+Because the wheel ships the compiled library, its licence metadata is the
+library's full expression (EUPL-1.2 plus the inherited BSD-2-Clause-Patent and
+the bundled third-party licences), with every text under `LICENSES/` in the
+wheel. `scripts/ci/check_licence_metadata.py` and
+`scripts/release/distribution.py check` refuse a wheel that declares less.
 
 ### Loading the library
 
-The binding loads only the library you name and never searches implicit paths.
-Pass the path of `libvmafx.so.1`, or set `VMAFX_LIBRARY` and call `Library()`
-(or `vmafx.load()`):
+When installed from a binary wheel, `Library()` automatically locates and loads
+its bundled `libvmafx` shared library. You can also explicitly specify a library
+path or point the `VMAFX_LIBRARY` environment variable at a custom build:
 
 ```python
 from vmafx import Library
 
-lib = Library("/usr/local/lib/libvmafx.so.1")
+# Automatic bundled library resolution (or fallback to VMAFX_LIBRARY)
+lib = Library()
 print(lib.version_string(), lib.abi_version())
+
+# Or explicit path override
+lib_custom = Library("/usr/local/lib/libvmafx.so.1")
 ```
 
-`Library()` without a path reads `VMAFX_LIBRARY`; when it is unset or empty,
-the call raises `OSError` naming the variable. Do not pass `libvmaf.so.3`: that
-is the compatibility library and does not export the `vmafx_*` functions.
+When no bundled library is present and `VMAFX_LIBRARY` is unset or empty,
+`Library()` raises `OSError` naming the variable. Do not pass `libvmaf.so.3`:
+that is the compatibility library and does not export the `vmafx_*` functions.
 
 When `vmafx` is imported, `_check_layout()` verifies the size and every field
 offset of all 32 C structs in `LAYOUT` against `core/api/vmafx.toml`, raising
