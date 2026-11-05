@@ -332,13 +332,17 @@ def _marked_block(begin: str, end: str, what: str) -> str:
 
 def _policy_block() -> str:
     block = _marked_block(POLICY_BEGIN, POLICY_END, "strict-FP compiler")
-    return block.replace(
+    block = block.replace(
         "_strict_fp_compiler_id = cc.get_id()",
         "_strict_fp_compiler_id = strict_fp_fixture_compiler_id",
-    ).replace(
-        "host_machine.system()",
-        "strict_fp_fixture_system",
     )
+    # The CUDA host FP spelling follows the BUILD machine: nvcc's host frontend
+    # is the build machine's own, which in a native build is also the host
+    # machine. Both spellings resolve to the one fixture variable, so the
+    # matrix below states the platform once.
+    for spelling in ("build_machine.system()", "host_machine.system()"):
+        block = block.replace(spelling, "strict_fp_fixture_system")
+    return block
 
 
 def _meson_list(values: list[str]) -> str:
