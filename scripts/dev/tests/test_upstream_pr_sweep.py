@@ -577,6 +577,15 @@ class UpstreamPrSweepTest(unittest.TestCase):
         fork_head = git_run(self.fork_bare, "rev-parse", "fix/pr-1")
         self.assertEqual(fork_head, self.pr_old_sha)
 
+    def test_boundary_push_refuses_symbolic_or_short_sha(self) -> None:
+        for bad in ("HEAD", "refs/heads/fix/pr-1", self.pr_old_sha[:12], self.pr_old_sha.upper()):
+            with self.subTest(new_sha=bad):
+                ok, detail = sweep_mod.push_branch(self.repo, "fix/pr-1", self.pr_old_sha, bad)
+                self.assertFalse(ok)
+                self.assertIn("no verified commit SHA", detail)
+        fork_head = git_run(self.fork_bare, "rev-parse", "fix/pr-1")
+        self.assertEqual(fork_head, self.pr_old_sha)
+
     @unittest.skipUnless(
         shutil.which("meson") and shutil.which("ninja"),
         "meson and ninja are needed to build the dummy project",

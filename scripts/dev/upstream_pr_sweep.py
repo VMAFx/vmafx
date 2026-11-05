@@ -727,6 +727,13 @@ def build_and_test(
     return "OK", "build=ok test=ok"
 
 
+def _is_object_id(value: str) -> bool:
+    """True for a full SHA-1 (40) or SHA-256 (64) hex object id; refs and HEAD are refused."""
+    if len(value) not in (40, 64):
+        return False
+    return all(ch in "0123456789abcdef" for ch in value)
+
+
 def push_branch(
     wt: Path, branch: str, old_sha: str, new_sha: str, fork: str = ""
 ) -> tuple[bool, str]:
@@ -735,7 +742,7 @@ def push_branch(
         url_ok, url_detail = check_origin_url(wt, fork)
         if not url_ok:
             return False, f"push refused: {url_detail}"
-    if not new_sha:
+    if not _is_object_id(new_sha):
         return False, "push refused: no verified commit SHA"
     refspec = f"{new_sha}:refs/heads/{branch}"
     lease = f"--force-with-lease=refs/heads/{branch}:{old_sha}"
