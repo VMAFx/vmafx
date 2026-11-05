@@ -296,6 +296,7 @@ trap 'git worktree remove --force "${render_fixture}" >/dev/null 2>&1 || true; r
 # The validator runs the deliverables check of the checkout it is called in:
 # give the fixture the scripts under test, not the ones HEAD committed.
 cp "${repo_root}/scripts/ci/validate-pr-body.sh" "${repo_root}/scripts/ci/deliverables-check.sh" \
+  "${repo_root}/scripts/ci/check-toolchain-claims.sh" \
   "${render_fixture}/scripts/ci/"
 make -s -C "${render_fixture}" docs-render >/dev/null
 git -C "${render_fixture}" add -A
