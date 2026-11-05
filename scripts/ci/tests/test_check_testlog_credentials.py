@@ -115,7 +115,10 @@ class CheckTestlogCredentialsTest(unittest.TestCase):
             target = _write(root, "elsewhere.txt", f"X={FAKE_GITHUB}\n")
             logs = root / "build" / "meson-logs"
             logs.mkdir(parents=True)
-            (logs / "testlog.txt").symlink_to(target)
+            try:
+                (logs / "testlog.txt").symlink_to(target)
+            except OSError as exc:
+                self.skipTest(f"symlink creation unavailable: {exc}")
             code, output = _run(root)
         self.assertEqual(code, 2)
         self.assertIn("not a regular file", output)

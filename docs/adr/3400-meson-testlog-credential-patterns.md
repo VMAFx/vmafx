@@ -59,8 +59,9 @@ the value.
   wrapper. The protection covers the listed names, the name pattern and the scanned value
   shapes only; a credential under an unmatched name in an unrecognised shape still reaches
   the logs. A test that needs a matching variable must set it itself (none does today).
-- A direct Meson run that writes a credential-shaped value fails the next commit in that
-  checkout, with the log path and the remedy.
+- A direct Meson run that writes a credential-shaped value fails the next framework-managed
+  commit or push in that checkout, with the log path and the remedy. The opt-in native
+  commit hook skips the scan; its pre-push hook still runs it.
 - A name with no credential word still passes the wrapper; the value-shaped scan is the
   second barrier for that case.
 
