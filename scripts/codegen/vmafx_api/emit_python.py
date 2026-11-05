@@ -612,7 +612,7 @@ def pyproject_text(api: Api) -> str:
         'dynamic = ["version"]\n'
         'description = "ctypes binding for the VMAFx C API (standard library only)."\n'
         'requires-python = ">=3.12"\n'
-        'license = "EUPL-1.2"\n'
+        f'license = "{api.license}"\n'
         'license-files = ["LICENSES/*"]\n'
         'authors = [{ name = "Lusoris", email = "lusoris@pm.me" }]\n'
         "dependencies = []\n\n"

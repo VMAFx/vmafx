@@ -34,6 +34,12 @@ When installed from a binary wheel, `Library()` automatically discovers and
 loads the bundled shared library without requiring `VMAFX_LIBRARY` to be set or
 an external library installation.
 
+Because the wheel ships the compiled library, its licence metadata is the
+library's full expression (EUPL-1.2 plus the inherited BSD-2-Clause-Patent and
+the bundled third-party licences), with every text under `LICENSES/` in the
+wheel. `scripts/ci/check_licence_metadata.py` and
+`scripts/release/distribution.py check` refuse a wheel that declares less.
+
 ### Loading the library
 
 When installed from a binary wheel, `Library()` automatically locates and loads
