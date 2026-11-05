@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -26,12 +27,26 @@ CREDENTIAL_ENV_VARS = (
     "ACTIONS_RUNTIME_TOKEN",
 )
 
+# ADR-1333 amendment (2026-11-05): a fixed list misses credentials exported under
+# other names (a messaging token, a gateway key, a personal ``*_PAT``), and Meson
+# then writes them to testlog.txt and testlog.json. Names matching this pattern are
+# removed as well. Only names are matched; values are never read.
+CREDENTIAL_NAME_PATTERN = re.compile(
+    r"TOKEN(?!IZER)|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|ACCESS_KEY|PRIVATE_KEY"
+    r"|(?:^|_)PAT$|(?:^|_)AUTH(?:_|$)",
+    re.IGNORECASE,
+)
+
+
+def is_credential_name(name: str) -> bool:
+    """Return whether ``name`` is a listed or pattern-matched credential key."""
+    return name in CREDENTIAL_ENV_VARS or CREDENTIAL_NAME_PATTERN.search(name) is not None
+
 
 def sanitize_process_environment(environment: MutableMapping[str, str]) -> None:
-    """Delete forbidden keys without inspecting or retaining their values."""
-    for name in CREDENTIAL_ENV_VARS:
-        if name in environment:
-            del environment[name]
+    """Delete credential keys without inspecting or retaining their values."""
+    for name in [key for key in environment if is_credential_name(key)]:
+        del environment[name]
 
 
 def _command(argv: Sequence[str]) -> list[str]:
