@@ -71,7 +71,7 @@ __device__ __forceinline__ float fvif_read_raw(const uint8_t *plane, ptrdiff_t s
         return FVIF_FSUB((float)plane[y * stride_bytes + x], 128.0f);
     }
     const uint16_t v = reinterpret_cast<const uint16_t *>(plane + y * stride_bytes)[x];
-    const float scaler = bpc > 8u ? (float)(1u << (bpc - 8u)) : 1.0f;
+    const float scaler = (float)(1u << (bpc - 8u));
     return FVIF_FSUB(FVIF_FDIV((float)v, scaler), 128.0f);
 }
 

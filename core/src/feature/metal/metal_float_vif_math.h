@@ -159,7 +159,7 @@ VMAF_MTL_FUNC float vmaf_mtl_fvif_raw_to_float(vmaf_mtl_u32 sample, vmaf_mtl_u32
     if (bpc <= 8u) {
         return (float)sample - 128.0f;
     }
-    const float scaler = bpc > 8u ? (float)(1u << (bpc - 8u)) : 1.0f;
+    const float scaler = (float)(1u << (bpc - 8u));
     return (float)sample / scaler - 128.0f;
 }
 
