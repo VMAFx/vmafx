@@ -818,15 +818,19 @@ class UpstreamPrSweepTest(unittest.TestCase):
         vmaf_dir = self.root / "dummy_vmaf"
         vmaf_dir.mkdir()
         log_path = self.root / "dummy.log"
+        credential_names = (
+            "GH_TOKEN",
+            "GITHUB_TOKEN",
+            "AWS_SECRET_ACCESS_KEY",
+            "MY_CUSTOM_SECRET",
+        )
+        # Placeholder values are derived from the name, so no credential-shaped literal exists.
         secret_env = {
             "PATH": os.environ.get("PATH", "/usr/bin"),
             "HOME": str(self.root),
-            "GH_TOKEN": "ghp_secret_token",
-            "GITHUB_TOKEN": "ghs_secret_token",
-            "AWS_SECRET_ACCESS_KEY": "aws_super_secret",
-            "MY_CUSTOM_SECRET": "custom_secret",
             "SSH_AUTH_SOCK": str(self.root / "ssh-agent.sock"),
             "GIT_ASKPASS": "/bin/echo",
+            **{name: f"placeholder-{name.lower()}" for name in credential_names},
         }
         with (
             patch.dict(os.environ, secret_env, clear=True),
@@ -843,14 +847,7 @@ class UpstreamPrSweepTest(unittest.TestCase):
             self.assertEqual(mock_run.call_count, 2)
             for call in mock_run.call_args_list:
                 passed_env = call.kwargs["env"]
-                for forbidden in (
-                    "GH_TOKEN",
-                    "GITHUB_TOKEN",
-                    "AWS_SECRET_ACCESS_KEY",
-                    "MY_CUSTOM_SECRET",
-                    "SSH_AUTH_SOCK",
-                    "GIT_ASKPASS",
-                ):
+                for forbidden in (*credential_names, "SSH_AUTH_SOCK", "GIT_ASKPASS"):
                     self.assertNotIn(forbidden, passed_env)
                 self.assertIn("PATH", passed_env)
 
