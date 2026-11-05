@@ -57,6 +57,8 @@ bool fail_context(Live *l);
 unsigned max_in_flight(void);
 int check(void);
 int f(void);
+void free_ring(Live *l);
+void log_error(const char *msg);
 
 bool bad_arrow_return_block(Live *live, unsigned n_ring)
 {
@@ -184,6 +186,30 @@ fail:
     return fail_context(&live);
 }
 
+bool bad_cleanup_before_reset(Live *live, unsigned n_ring)
+{
+    live->n_ring = n_ring; /* reported: cleanup before reset */
+    if (n_ring > MAX_RING) {
+        free_ring(live);
+        live->n_ring = 0;
+        return false;
+    }
+    return true;
+}
+
+bool bad_cleanup_before_reset_dot_goto(Live live, unsigned n_ring)
+{
+    live.n_ring = n_ring; /* reported: cleanup before reset dot goto */
+    if (n_ring > MAX_RING) {
+        free_ring(&live);
+        live.n_ring = 0;
+        goto fail;
+    }
+    return true;
+fail:
+    return fail_context(&live);
+}
+
 bool good_check_first(Live *live, unsigned n_ring)
 {
     if (n_ring > MAX_RING) {
@@ -274,6 +300,17 @@ bool good_reset_on_failure_dot_goto(Live live, unsigned n_ring)
     return true;
 fail:
     return fail_context(&live);
+}
+
+bool good_unrelated_before_reset(Live *live, unsigned n_ring)
+{
+    live->n_ring = n_ring;
+    if (n_ring > MAX_RING) {
+        log_error("ring too large");
+        live->n_ring = 0;
+        return fail_context(live);
+    }
+    return true;
 }
 """
 

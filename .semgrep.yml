@@ -244,7 +244,9 @@ rules:
     #   ($S.$F) stores followed by an `if ($C)` that exits via bare or compound
     #   return or goto.
     # - pattern-not: 4 alternatives excluding failure blocks that reset the count
-    #   field to literal zero before returning or jumping to cleanup.
+    #   field to literal zero before returning or jumping to cleanup, provided no
+    #   prior statement in the block accesses the struct $S (which could observe
+    #   the un-bounded count before the reset).
     # - metavariable-pattern ($C): bound check comparing either the stored value $N or
     #   the struct field ($S->$F / $S.$F) with upper bound > or >= (or reversed < or <=).
     # - metavariable-regex ($MAX): named limit identifier only (starts with letter or _);
@@ -294,6 +296,10 @@ rules:
                 $S->$F = $N;
                 ...
                 if ($C) { ... $S->$F = $Z; ... return ...; }
+            - pattern-not: |
+                $S->$F = $N;
+                ...
+                if ($C) { ... <... $S ...>; ... $S->$F = $Z; ... return ...; }
             - metavariable-regex:
                 metavariable: $Z
                 regex: ^0[uU]?$
@@ -303,6 +309,10 @@ rules:
                 $S->$F = $N;
                 ...
                 if ($C) { ... $S->$F = $Z; ... goto $L; }
+            - pattern-not: |
+                $S->$F = $N;
+                ...
+                if ($C) { ... <... $S ...>; ... $S->$F = $Z; ... goto $L; }
             - metavariable-regex:
                 metavariable: $Z
                 regex: ^0[uU]?$
@@ -312,6 +322,10 @@ rules:
                 $S.$F = $N;
                 ...
                 if ($C) { ... $S.$F = $Z; ... return ...; }
+            - pattern-not: |
+                $S.$F = $N;
+                ...
+                if ($C) { ... <... $S ...>; ... $S.$F = $Z; ... return ...; }
             - metavariable-regex:
                 metavariable: $Z
                 regex: ^0[uU]?$
@@ -321,6 +335,10 @@ rules:
                 $S.$F = $N;
                 ...
                 if ($C) { ... $S.$F = $Z; ... goto $L; }
+            - pattern-not: |
+                $S.$F = $N;
+                ...
+                if ($C) { ... <... $S ...>; ... $S.$F = $Z; ... goto $L; }
             - metavariable-regex:
                 metavariable: $Z
                 regex: ^0[uU]?$
