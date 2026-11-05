@@ -511,7 +511,8 @@ jobs:
                 "GPU image dry run (CUDA 13)",
                 "GPU image dry run (ROCm 10)",
                 "GPU image dry run (oneAPI 2026)",
-                "vmaf-mcp dist and SBOM dry run"
+                "vmaf-mcp dist and SBOM dry run",
+                "vmafx wheels dry run"
               ]
             };
 

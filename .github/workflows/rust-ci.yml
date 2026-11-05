@@ -58,8 +58,8 @@ jobs:
     # structural reason to leave the binding ungated.
     name: vmafx-sys CI work
     runs-on: ubuntu-26.04
-    # Measured max 15.1m (2026-10-23); step caps sum 26 (5+16+5), limit 30 covers sum plus 1.25x rest.
-    timeout-minutes: 30
+    # Measured max 15.1m (2026-10-23); step caps sum 31 (5+16+5+5), limit 36 covers sum plus 1.25x rest.
+    timeout-minutes: 36
     env:
       # ADR-2828: a rustc warning fails every cargo step of the job (build, test,
       # example, the offline build and Meson's cargo call), not only clippy.
@@ -185,6 +185,15 @@ jobs:
           LIBVMAF_PREFIX: /usr/local
         run: cargo build -p vmafx-sys
 
+      - name: Check packaged Rust crates
+        run: python3 scripts/ci/check_rust_crate_package.py
+
+      - name: Rehearse Rust crate publication
+        timeout-minutes: 5
+        env:
+          DOCS_RS: '1'
+        run: cargo publish --dry-run --locked -p vmafx-sys -p vmafx -j4
+
       - name: Cargo test (unit + integration, every workspace crate)
         # --workspace: vmafx (the safe binding) and vmafx-tad carry tests too;
         # `-p vmafx-sys` ran none of them (ADR-1528).
@@ -236,6 +245,30 @@ jobs:
 
       - name: Fetch the Netflix and checkerboard fixtures
         run: bash scripts/test/fetch-test-yuvs.sh
+
+      - name: Rust Netflix bit-exactness contract test (#2434)
+        # Verify bit-exact scoring parity between the Rust safe binding and the
+        # C API contract binary against the installed libvmafx (/usr/local) and
+        # canonical Netflix reference fixtures.
+        # HISS-21 skip: macOS and Windows have no Rust build job in this workflow
+        # and no provisioned native library/contract binary. Alternate evidence:
+        # this required Linux job compares C and Rust f64 bits and frame counts;
+        # netflix_bitexact also tests malformed input, frame reads and plane bounds.
+        # Native parity on macOS/Windows remains unverified until jobs provision it.
+        env:
+          LIBVMAF_PREFIX: /usr/local
+          LD_LIBRARY_PATH: /usr/local/lib
+          PKG_CONFIG_PATH: /usr/local/lib/pkgconfig
+          VMAFX_REPO: ${{ github.workspace }}
+          VMAFX_CONTRACT_CAPI: ${{ runner.temp }}/vmafx_score_contract
+          VMAFX_YUV_DIR: ${{ github.workspace }}/python/test/resource/yuv
+          VMAFX_REQUIRE_NETFLIX_PAIR: "1"
+        run: |
+          # shellcheck disable=SC2046  # pkg-config output must word-split into separate cc arguments
+          cc -std=c11 -Wall -Wextra -Werror -Icore/test -DVMAF_PUBLIC_NAMES \
+            core/test/vmafx_score_contract.c \
+            $(pkg-config --cflags --libs libvmafx) -lm -o "$VMAFX_CONTRACT_CAPI"
+          cargo test -p vmafx --test netflix_bitexact -- --nocapture
 
       - name: Rust suite and Rust twin harness (ADR-1713)
         # Every registered Rust twin against its C extractor in the same

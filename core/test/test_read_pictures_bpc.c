@@ -103,11 +103,12 @@ static int init_stand_in(const char *name, uint64_t flags, unsigned bpc)
 
 static char *test_device_twins_refuse_odd_depths(void)
 {
-    static const char *const kTwins[] = {"float_ssim_cuda", "float_ms_ssim_sycl", "float_adm_hip",
-                                         "float_vif_metal", "float_motion_cuda"};
+    static const char *const kTwins[] = {"float_ms_ssim_cuda", "float_ms_ssim_sycl",
+                                         "float_adm_metal", "float_vif_metal",
+                                         "float_motion_metal"};
     static const uint64_t kFlags[] = {VMAF_FEATURE_EXTRACTOR_CUDA, VMAF_FEATURE_EXTRACTOR_SYCL,
-                                      VMAF_FEATURE_EXTRACTOR_HIP, VMAF_FEATURE_EXTRACTOR_METAL,
-                                      VMAF_FEATURE_EXTRACTOR_CUDA};
+                                      VMAF_FEATURE_EXTRACTOR_METAL, VMAF_FEATURE_EXTRACTOR_METAL,
+                                      VMAF_FEATURE_EXTRACTOR_METAL};
     for (size_t f = 0; f < sizeof(kTwins) / sizeof(kTwins[0]); f++) {
         for (size_t i = 0; i < sizeof(kOddDepths) / sizeof(kOddDepths[0]); i++) {
             mu_assert("a device twin accepted a depth it was not measured at",
@@ -141,17 +142,27 @@ static char *test_unmeasured_twins_refuse_odd_depths(void)
     return NULL;
 }
 
-/* float_psnr, ciede and float_moment twins carry every odd depth in their parity tests
- * (ADR-2164); the psnr_hvs twins 9 and 11 bits only. A family prefix does not pass. */
+/* float_psnr, ciede, float_moment, float_adm, float_vif, float_ssim and float_motion
+ * twins carry every odd depth in their parity tests (ADR-2164, #2476); the psnr_hvs
+ * twins 9 and 11 bits only. A family prefix does not pass. */
 static char *test_measured_twins_keep_odd_depths(void)
 {
     static const char *const kTwins[] = {
-        "float_psnr_cuda",   "float_psnr_sycl",   "ciede_hip",       "ciede_cuda",
-        "float_moment_cuda", "float_moment_sycl", "float_moment_hip"};
-    static const uint64_t kFlags[] = {VMAF_FEATURE_EXTRACTOR_CUDA, VMAF_FEATURE_EXTRACTOR_SYCL,
-                                      VMAF_FEATURE_EXTRACTOR_HIP,  VMAF_FEATURE_EXTRACTOR_CUDA,
-                                      VMAF_FEATURE_EXTRACTOR_CUDA, VMAF_FEATURE_EXTRACTOR_SYCL,
-                                      VMAF_FEATURE_EXTRACTOR_HIP};
+        "float_psnr_cuda",   "float_psnr_sycl",   "ciede_hip",        "ciede_cuda",
+        "float_moment_cuda", "float_moment_sycl", "float_moment_hip", "float_adm_cuda",
+        "float_adm_sycl",    "float_adm_hip",     "float_vif_cuda",   "float_vif_sycl",
+        "float_vif_hip",     "float_ssim_cuda",   "float_ssim_sycl",  "float_ssim_hip",
+        "float_motion_cuda", "float_motion_sycl", "float_motion_hip",
+    };
+    static const uint64_t kFlags[] = {
+        VMAF_FEATURE_EXTRACTOR_CUDA, VMAF_FEATURE_EXTRACTOR_SYCL, VMAF_FEATURE_EXTRACTOR_HIP,
+        VMAF_FEATURE_EXTRACTOR_CUDA, VMAF_FEATURE_EXTRACTOR_CUDA, VMAF_FEATURE_EXTRACTOR_SYCL,
+        VMAF_FEATURE_EXTRACTOR_HIP,  VMAF_FEATURE_EXTRACTOR_CUDA, VMAF_FEATURE_EXTRACTOR_SYCL,
+        VMAF_FEATURE_EXTRACTOR_HIP,  VMAF_FEATURE_EXTRACTOR_CUDA, VMAF_FEATURE_EXTRACTOR_SYCL,
+        VMAF_FEATURE_EXTRACTOR_HIP,  VMAF_FEATURE_EXTRACTOR_CUDA, VMAF_FEATURE_EXTRACTOR_SYCL,
+        VMAF_FEATURE_EXTRACTOR_HIP,  VMAF_FEATURE_EXTRACTOR_CUDA, VMAF_FEATURE_EXTRACTOR_SYCL,
+        VMAF_FEATURE_EXTRACTOR_HIP,
+    };
     for (size_t f = 0; f < sizeof(kTwins) / sizeof(kTwins[0]); f++) {
         for (size_t i = 0; i < sizeof(kOddDepths) / sizeof(kOddDepths[0]); i++) {
             mu_assert("a measured device twin refused an odd depth",

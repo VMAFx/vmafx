@@ -1417,6 +1417,16 @@ test_public_api_score = executable('test_public_api_score',
     kwargs : test_link_kwargs,
 )
 
+# The /dev/full case is its own test so a host without a full device skips only that case.
+test_public_api_score_full_device = executable('test_public_api_score_full_device',
+    ['test.c', 'test_public_api_score.c', '../src/compat/path_utf8.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    c_args : vmaf_public_name_args + ['-DVMAF_TEST_FULL_DEVICE_ONLY'],
+    link_with : libvmaf_public_link,
+    dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+    kwargs : test_link_kwargs,
+)
+
 # Netflix/vmaf 700124a4c (ADR-2949): vmaf_picture_wrap through the public
 # libvmaf. test_picture_wrap_integration is upstream's test; test_picture_wrap_api
 # holds the fork's contract (scores equal to allocated pictures bit for bit,
@@ -2012,6 +2022,19 @@ foreach vmafx_public_test : ['test_vmafx_model', 'test_vmafx_frame', 'test_vmafx
     )
     test(vmafx_public_test, vmafx_public_exe, suite : ['fast'])
 endforeach
+
+# The /dev/full case is its own test so a host without a full device skips only that case.
+test_vmafx_report_full_device = executable('test_vmafx_report_full_device',
+    ['test.c', 'test_vmafx_report.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : libvmaf_public_link,
+    c_args : vmafx_test_dirs + vmaf_public_name_args + zimg_defines + [
+        '-DVMAF_TEST_FULL_DEVICE_ONLY',
+    ],
+    dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
+    kwargs : test_link_kwargs,
+)
+test('test_vmafx_report_full_device', test_vmafx_report_full_device, suite : ['fast'])
 
 # ADR-2094: what a submitted pair carries (VmafxFrameDesc.color, the
 # context's default colour, VMAFX_E_BUSY after the first converted pair) and
@@ -4196,6 +4219,23 @@ test_odd_depths_float_psnr_ciede = executable('test_odd_depths_float_psnr_ciede'
     kwargs : test_link_kwargs,
 )
 test('test_odd_depths_float_psnr_ciede', test_odd_depths_float_psnr_ciede, suite : ['fast'])
+
+# Issue #2476: float GPU twins bit-depth scaler test for 8..16 bits.
+test_odd_depths_float_gpu_scaler = executable('test_odd_depths_float_gpu_scaler',
+    ['test.c', 'test_odd_depths_float_gpu_scaler.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    link_with : vmaf_test_link,
+    dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
+)
+test('test_odd_depths_float_gpu_scaler', test_odd_depths_float_gpu_scaler, suite : ['fast'])
+test('test_odd_depths_float_gpu_scaler_contract',
+    import('python').find_installation(),
+    args : files('test_odd_depths_float_gpu_scaler_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
 
 # ADR-1499 — feature/float_psnr_rows.h, the float_psnr twins' form of the
 # CPU's sum of its rows past 2^53 units, fed with host-made segment sums and
@@ -9878,6 +9918,7 @@ test('test_libc_named_internal_functions',
 )
 test('test_output', test_output, suite : ['fast'])
 test('test_public_api_score', test_public_api_score, suite : ['fast'])
+test('test_public_api_score_full_device', test_public_api_score_full_device, suite : ['fast'])
 test('test_thread_pool', test_thread_pool, suite : ['fast'])
 if has_cond_timedwait
   test('test_thread_pool_backpressure', test_thread_pool_backpressure, suite : ['fast'])

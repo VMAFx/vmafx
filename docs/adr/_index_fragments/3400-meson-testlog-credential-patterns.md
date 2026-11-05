@@ -1,0 +1,1 @@
+| [ADR-3400](3400-meson-testlog-credential-patterns.md) | Extends ADR-1333: the Meson test wrapper also removes pattern-matched credential names, and a pre-commit scan refuses checkouts whose testlog files hold credential-shaped values. | Accepted | security, build, test, meson, ci |

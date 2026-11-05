@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
-  "tus": 546,
+  "tus": 547,
   "measured_sources": [
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_stat.c",
     "compat/python-vmaf/matlab/STMAD_2011_MatlabCode/ical_std.c",
@@ -413,6 +413,7 @@
     "core/test/test_ms_ssim_decimate.c",
     "core/test/test_ms_ssim_decimate_coverage.c",
     "core/test/test_niqe.c",
+    "core/test/test_odd_depths_float_gpu_scaler.c",
     "core/test/test_odd_depths_float_psnr_ciede.c",
     "core/test/test_opt.c",
     "core/test/test_ordered_sum.c",
@@ -1591,6 +1592,20 @@
         }
       },
       "previous_baseline_sha256": "6aeebcfd52cd38fe2df345ea3002258a361deec94dd0cbd2c12fb8be87a8edcc"
+    },
+    {
+      "sources": [
+        "core/test/test_odd_depths_float_gpu_scaler.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_odd_depths_float_gpu_scaler.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "49b0c1e9f3e667e1eab95759bd53a2b8967f9f2556bbe1a0b51f624a96482602"
     }
   ]
 }
