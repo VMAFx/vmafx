@@ -444,6 +444,21 @@ static const char *const fm_exact_keys[FM_EXACT_KEYS] = {
     "VMAF_feature_motion3_score",
 };
 
+/* Store one sample into pic at plane p, coordinate (row, col). */
+static void fm_exact_store(VmafPicture *pic, unsigned p, unsigned row, unsigned col, unsigned value,
+                           uint32_t state, unsigned bpc)
+{
+    if (bpc <= 8u) {
+        uint8_t *plane = (uint8_t *)pic->data[p];
+        plane[(row * pic->stride[p]) + col] = (uint8_t)value;
+    } else {
+        const unsigned shift = bpc - 8u;
+        const unsigned low = (state >> 14) & ((1u << shift) - 1u);
+        uint16_t *line16 = (uint16_t *)((uint8_t *)pic->data[p] + row * pic->stride[p]);
+        line16[col] = (uint16_t)((value << shift) | low);
+    }
+}
+
 /* Texture and noise that move from frame to frame on all three planes, so the
  * absolute differences have full mantissas and the running sums round. */
 static int fm_exact_fill(VmafPicture *pic, unsigned frame, unsigned bpc)
@@ -452,21 +467,13 @@ static int fm_exact_fill(VmafPicture *pic, unsigned frame, unsigned bpc)
     if (err)
         return err;
     uint32_t state = 0x9E3779B9u ^ (frame * 2654435761u);
-    const unsigned shift = bpc - 8u;
     for (unsigned p = 0; p < 3u; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
         for (unsigned row = 0; row < pic->h[p]; row++) {
             for (unsigned col = 0; col < pic->w[p]; col++) {
                 state = (state * 1664525u) + 1013904223u;
                 const unsigned value =
                     (((col * 5u) + (row * 3u) + (frame * 17u)) & 127u) + 48u + ((state >> 8) & 63u);
-                if (bpc <= 8u) {
-                    plane[(row * pic->stride[p]) + col] = (uint8_t)value;
-                } else {
-                    const unsigned low = (state >> 14) & ((1u << shift) - 1u);
-                    uint16_t *line16 = (uint16_t *)((uint8_t *)pic->data[p] + row * pic->stride[p]);
-                    line16[col] = (uint16_t)((value << shift) | low);
-                }
+                fm_exact_store(pic, p, row, col, value, state, bpc);
             }
         }
     }

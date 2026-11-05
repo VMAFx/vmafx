@@ -647,12 +647,12 @@ static char *run_bit_depth_cases(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_float_ssim_sycl_registered);
-    mu_run_test(test_float_ssim_order_frame_device);
-    mu_run_test(test_float_ssim_order_noise_device);
-    mu_run_test(test_float_ssim_order_frame_host);
-    mu_run_test(test_float_ssim_order_noise_host);
-    mu_run_test(test_float_ssim_cpu_sycl_parity);
+    static const MuTest tests[] = {
+        MU_TEST(test_float_ssim_sycl_registered),    MU_TEST(test_float_ssim_order_frame_device),
+        MU_TEST(test_float_ssim_order_noise_device), MU_TEST(test_float_ssim_order_frame_host),
+        MU_TEST(test_float_ssim_order_noise_host),   MU_TEST(test_float_ssim_cpu_sycl_parity),
+    };
+    mu_assert_msg(mu_run_table(tests, MU_TABLE_LEN(tests)));
     mu_assert_msg(run_bit_depth_cases());
     mu_run_test(test_float_ssim_sycl_gate);
     return NULL;
