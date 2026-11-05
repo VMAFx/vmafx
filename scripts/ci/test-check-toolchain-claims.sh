@@ -54,7 +54,7 @@ expect_gate_exit() {
 
   # Also test stdin pipe
   local out_stdin exit_code_stdin=0
-  out_stdin="$("${gate}" <"${body_file}" 2>&1)" || exit_code_stdin=$?
+  out_stdin="$(env -u PR_BODY "${gate}" <"${body_file}" 2>&1)" || exit_code_stdin=$?
   if [ "${exit_code_stdin}" -eq "${expected}" ]; then
     echo "PASS: ${name} via stdin (exit=${exit_code_stdin})"
     pass_count=$((pass_count + 1))
@@ -320,6 +320,60 @@ no icpx on this host
 ````
 EOF
 expect_gate_exit "fence matching: 4-backtick opener not closed by 3 backticks -> exit 0" 0 "${work}/case15_fence_length.md"
+
+# ---------- Case 16: Word boundary — shipping does not match hip with hipcc found -> exit 0 ----------
+cat >"${work}/case16_shipping_no_false_contradiction.md" <<'EOF'
+## Summary
+
+no nvcc found; see the shipping notes
+
+```text
+toolchain-probe v1 host=test-box os=Linux date=2026-11-04T00:00:00Z
+toolchain-probe: nvcc absent searched=PATH,/opt/cuda
+toolchain-probe: hipcc found /opt/rocm/bin/hipcc 7.2.0
+```
+EOF
+expect_gate_exit "word boundary: shipping does not match hip with hipcc found -> exit 0" 0 "${work}/case16_shipping_no_false_contradiction.md"
+
+# ---------- Case 17: Planted — claim naming nvcc and hipcc with probe for nvcc only -> nonzero exit naming hipcc ----------
+cat >"${work}/case17_partial_probe_missing_hipcc.md" <<'EOF'
+## Summary
+
+CUDA and HIP were not compiled locally: no nvcc or hipcc found.
+
+```text
+toolchain-probe v1 host=test-box os=Linux date=2026-11-04T00:00:00Z
+toolchain-probe: nvcc absent searched=PATH,/opt/cuda
+```
+EOF
+expect_gate_exit "planted: claim naming nvcc and hipcc with probe for nvcc only -> exit 1 naming hipcc" 1 "${work}/case17_partial_probe_missing_hipcc.md"
+
+partial_rc=0
+out_partial="$(env -u PR_BODY "${gate}" <"${work}/case17_partial_probe_missing_hipcc.md" 2>&1)" || partial_rc=$?
+if [[ "${partial_rc}" -eq 1 && "${out_partial}" =~ hipcc ]]; then
+  echo "PASS: partial probe failure message names missing toolchain hipcc"
+  pass_count=$((pass_count + 1))
+else
+  echo "FAIL: partial probe did not exit 1 naming missing toolchain hipcc (rc=${partial_rc})"
+  echo "----- captured output -----"
+  printf '%s\n' "${out_partial}"
+  echo "---------------------------"
+  fail_count=$((fail_count + 1))
+fi
+
+# ---------- Case 18: Positive — claim naming nvcc and hipcc with full probe -> exit 0 ----------
+cat >"${work}/case18_full_probe_nvcc_hipcc.md" <<'EOF'
+## Summary
+
+CUDA and HIP were not compiled locally: no nvcc or hipcc found.
+
+```text
+toolchain-probe v1 host=test-box os=Linux date=2026-11-04T00:00:00Z
+toolchain-probe: nvcc absent searched=PATH,/opt/cuda
+toolchain-probe: hipcc absent searched=PATH,/opt/rocm
+```
+EOF
+expect_gate_exit "positive: claim naming nvcc and hipcc with full probe -> exit 0" 0 "${work}/case18_full_probe_nvcc_hipcc.md"
 
 # ---------- Case 12: deliverables-check.sh integration test ----------
 deliv_script="${repo_root}/scripts/ci/deliverables-check.sh"

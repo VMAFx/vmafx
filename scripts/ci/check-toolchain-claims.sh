@@ -61,10 +61,18 @@ fi
 has_probe_v1=0
 has_probe_results=0
 found_tools=" "
+probed_tools=" "
 declare -a exempt_line_map=()
 
 tool_is_found() {
   case " ${found_tools} " in
+    *" $1 "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+tool_is_probed() {
+  case " ${probed_tools} " in
     *" $1 "*) return 0 ;;
     *) return 1 ;;
   esac
@@ -94,8 +102,9 @@ while [ "${idx}" -lt "${total_lines}" ]; do
     has_probe_results=1
     tool_name="${BASH_REMATCH[1]}"
     result_status="${BASH_REMATCH[2]}"
+    tool_name_lower="$(printf '%s' "${tool_name}" | tr '[:upper:]' '[:lower:]')"
+    probed_tools="${probed_tools}${tool_name_lower} "
     if [ "${result_status}" = "found" ]; then
-      tool_name_lower="$(printf '%s' "${tool_name}" | tr '[:upper:]' '[:lower:]')"
       found_tools="${found_tools}${tool_name_lower} "
     fi
   fi
@@ -160,6 +169,29 @@ p_without="(^|[^a-zA-Z0-9_])without[[:space:]]+\`?(icpx|icx|nvcc|hipcc)\`?([[:sp
 p_compiled_was="(^|[^a-zA-Z0-9_])(was|were)[[:space:]]+not[[:space:]]+compiled([^a-zA-Z0-9_]|$)"
 p_compiled_not="(^|[^a-zA-Z0-9_])not[[:space:]]+compiled([[:space:]]+(locally|here|on[[:space:]]+this[[:space:]]+host))?([^a-zA-Z0-9_]|$)"
 
+# Word-boundary anchored patterns for short keywords
+wb_hip="(^|[^a-zA-Z0-9_])hip([^a-zA-Z0-9_]|$)"
+wb_here="(^|[^a-zA-Z0-9_])here([^a-zA-Z0-9_]|$)"
+wb_cuda="(^|[^a-zA-Z0-9_])cuda([^a-zA-Z0-9_]|$)"
+wb_metal="(^|[^a-zA-Z0-9_])metal([^a-zA-Z0-9_]|$)"
+wb_vulkan="(^|[^a-zA-Z0-9_])vulkan([^a-zA-Z0-9_]|$)"
+wb_rocm="(^|[^a-zA-Z0-9_])rocm([^a-zA-Z0-9_]|$)"
+
+# Toolchains a claim can name: reported name; line pattern; probe names that
+# cover it. The patterns are word-bounded, so "shipping" does not name HIP.
+wb_l="(^|[^a-zA-Z0-9_])"
+wb_r="([^a-zA-Z0-9_]|$)"
+toolchain_specs=(
+  "icpx;${wb_l}icpx${wb_r};icpx oneapi sycl"
+  "icx;${wb_l}icx${wb_r};icx"
+  "icpx;${wb_l}(sycl|oneapi)${wb_r};icpx icx oneapi sycl"
+  "nvcc;${wb_l}(nvcc|cuda)${wb_r};nvcc cuda"
+  "hipcc;${wb_l}(hipcc|hip|rocm)${wb_r};hipcc hip rocm"
+  "glslc;${wb_l}(glslc|vulkan)${wb_r};glslc vulkan"
+  "glslangValidator;${wb_l}glslangvalidator${wb_r};glslangvalidator"
+  "metal;${wb_l}metal${wb_r};metal"
+)
+
 fail=0
 
 # Pass 2: Check non-exempt lines for claims
@@ -186,7 +218,8 @@ while [ "${idx}" -lt "${total_lines}" ]; do
     # A bare "not compiled" can describe a build configuration (the golden
     # build has no GPU backend); it contradicts the probe only when it is
     # about this host.
-    if [[ "${cur_line}" =~ (this[[:space:]]+host|locally|on[[:space:]]+the[[:space:]]+host|here) ]]; then
+    if [[ "${cur_line}" =~ (this[[:space:]]+host|locally|on[[:space:]]+the[[:space:]]+host) ]] ||
+      [[ "${cur_line}" =~ ${wb_here} ]]; then
       names_host=1
     fi
   fi
@@ -215,6 +248,32 @@ while [ "${idx}" -lt "${total_lines}" ]; do
     continue
   fi
 
+  # Condition 1c: every toolchain the claim names needs a probe result line.
+  missing_names=""
+  for spec in "${toolchain_specs[@]}"; do
+    IFS=';' read -r req_tool req_pat req_cover <<<"${spec}"
+    [[ "${cur_line}" =~ ${req_pat} ]] || continue
+    case ", ${missing_names}, " in *", ${req_tool}, "*) continue ;; esac
+    is_covered=0
+    for cover in ${req_cover}; do
+      if tool_is_probed "${cover}"; then
+        is_covered=1
+      fi
+    done
+    if [ "${is_covered}" -eq 0 ]; then
+      missing_names="${missing_names:+${missing_names}, }${req_tool}"
+    fi
+  done
+
+  if [ -n "${missing_names}" ]; then
+    echo "::error file=PR_BODY,line=${idx},title=Missing toolchain probe results::line ${idx} makes a missing-toolchain claim referencing toolchains (${missing_names}) without probe result lines:" >&2
+    echo "check-toolchain-claims: line ${idx}: missing probe results for claimed toolchains: ${missing_names}" >&2
+    echo "  ${cur_line}" >&2
+    echo "  Hint: paste complete output from scripts/dev/toolchain-probe.sh into the PR description covering every claimed toolchain." >&2
+    fail=1
+    continue
+  fi
+
   # Condition 2: Claim contradicts probe (probe says found, body claims absent/not compiled)
   line_contradicts=0
   contradicted_tool=""
@@ -223,28 +282,31 @@ while [ "${idx}" -lt "${total_lines}" ]; do
   fi
 
   # Check specific tool mentions
-  if [[ "${cur_line}" =~ icpx ]] && tool_is_found "icpx"; then
+  if [[ "${cur_line}" =~ (^|[^a-zA-Z0-9_])icpx([^a-zA-Z0-9_]|$) ]] && tool_is_found "icpx"; then
     line_contradicts=1
     contradicted_tool="icpx"
-  elif [[ "${cur_line}" =~ icx ]] && tool_is_found "icx"; then
+  elif [[ "${cur_line}" =~ (^|[^a-zA-Z0-9_])icx([^a-zA-Z0-9_]|$) ]] && tool_is_found "icx"; then
     line_contradicts=1
     contradicted_tool="icx"
-  elif [[ "${cur_line}" =~ (sycl|oneapi) ]] && { tool_is_found "icpx" || tool_is_found "icx"; }; then
+  elif [[ "${cur_line}" =~ (^|[^a-zA-Z0-9_])(sycl|oneapi)([^a-zA-Z0-9_]|$) ]] && { tool_is_found "icpx" || tool_is_found "icx"; }; then
     line_contradicts=1
     contradicted_tool="oneapi / icpx"
-  elif [[ "${cur_line}" =~ (nvcc|cuda) ]] && tool_is_found "nvcc"; then
+  elif { [[ "${cur_line}" =~ (^|[^a-zA-Z0-9_])nvcc([^a-zA-Z0-9_]|$) ]] || [[ "${cur_line}" =~ ${wb_cuda} ]]; } &&
+    tool_is_found "nvcc"; then
     line_contradicts=1
     contradicted_tool="nvcc"
-  elif [[ "${cur_line}" =~ (hipcc|hip|rocm) ]] && tool_is_found "hipcc"; then
+  elif { [[ "${cur_line}" =~ (^|[^a-zA-Z0-9_])hipcc([^a-zA-Z0-9_]|$) ]] || [[ "${cur_line}" =~ ${wb_hip} ]] || [[ "${cur_line}" =~ ${wb_rocm} ]]; } &&
+    tool_is_found "hipcc"; then
     line_contradicts=1
     contradicted_tool="hipcc"
-  elif [[ "${cur_line}" =~ (glslc|vulkan) ]] && tool_is_found "glslc"; then
+  elif { [[ "${cur_line}" =~ (^|[^a-zA-Z0-9_])glslc([^a-zA-Z0-9_]|$) ]] || [[ "${cur_line}" =~ ${wb_vulkan} ]]; } &&
+    tool_is_found "glslc"; then
     line_contradicts=1
     contradicted_tool="glslc"
-  elif [[ "${cur_line}" =~ glslangvalidator ]] && tool_is_found "glslangvalidator"; then
+  elif [[ "${cur_line}" =~ (^|[^a-zA-Z0-9_])glslangvalidator([^a-zA-Z0-9_]|$) ]] && tool_is_found "glslangvalidator"; then
     line_contradicts=1
     contradicted_tool="glslangValidator"
-  elif [[ "${cur_line}" =~ metal ]] && tool_is_found "metal"; then
+  elif [[ "${cur_line}" =~ ${wb_metal} ]] && tool_is_found "metal"; then
     line_contradicts=1
     contradicted_tool="metal"
   fi
