@@ -1,0 +1,1 @@
+- **Per-platform install tables.** Document installation routes, commands, status, and GPU backend support per platform in Getting Started ([#2319](https://github.com/VMAFx/vmafx/issues/2319)).
