@@ -789,8 +789,20 @@ class MesonSecretEnvSanitizationContractTest(unittest.TestCase):
             "AWS_SECRET_ACCESS_KEY",
             "DB_PASSWORD",
             "registry_credential",
+            "DOCKER_AUTH_CONFIG",
+            "npm_config__auth",
+            "AUTH",
         )
-        kept = ("PATH", "PATHEXT", "HOME", "PKG_CONFIG_PATH", "MESON_TESTTHREADS")
+        kept = (
+            "PATH",
+            "PATHEXT",
+            "HOME",
+            "PKG_CONFIG_PATH",
+            "MESON_TESTTHREADS",
+            "GIT_AUTHOR_NAME",
+            "OAUTHLIB_INSECURE_TRANSPORT",
+            "TOKENIZERS_PARALLELISM",
+        )
         environment = _NoValueReadsEnvironment(dict.fromkeys(unlisted + kept, "unreadable"))
         sanitize_process_environment(environment)
         self.assertEqual(set(environment), set(kept))

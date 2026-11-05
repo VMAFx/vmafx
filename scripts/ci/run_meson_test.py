@@ -32,7 +32,8 @@ CREDENTIAL_ENV_VARS = (
 # then writes them to testlog.txt and testlog.json. Names matching this pattern are
 # removed as well. Only names are matched; values are never read.
 CREDENTIAL_NAME_PATTERN = re.compile(
-    r"TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|ACCESS_KEY|PRIVATE_KEY|(?:^|_)PAT$",
+    r"TOKEN(?!IZER)|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|ACCESS_KEY|PRIVATE_KEY"
+    r"|(?:^|_)PAT$|(?:^|_)AUTH(?:_|$)",
     re.IGNORECASE,
 )
 

@@ -36,10 +36,24 @@ MAX_DIRECTORIES = 200_000
 MAX_LOG_BYTES = 512 * 1024 * 1024
 
 
+def _raise_walk_error(error: OSError) -> None:
+    """Make ``os.walk`` fail on an unreadable directory instead of skipping it."""
+    raise error
+
+
+def _checked_log(path: Path) -> Path:
+    """Return ``path`` when it is a regular file; a symlink or other type is an error."""
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError(f"{path} is not a regular file")
+    return path
+
+
 def _test_logs(root: Path) -> Iterator[Path]:
     """Yield every ``meson-logs/testlog*`` file below ``root``, bounded."""
+    if not root.is_dir():
+        raise RuntimeError(f"{root} is not a directory")
     visited = 0
-    for directory, subdirectories, files in os.walk(root):
+    for directory, subdirectories, files in os.walk(root, onerror=_raise_walk_error):
         visited += 1
         if visited > MAX_DIRECTORIES:
             raise RuntimeError(f"more than {MAX_DIRECTORIES} directories below {root}")
@@ -48,7 +62,7 @@ def _test_logs(root: Path) -> Iterator[Path]:
             continue
         for name in sorted(files):
             if LOG_NAME_PATTERN.match(name):
-                yield Path(directory) / name
+                yield _checked_log(Path(directory) / name)
 
 
 def count_credential_lines(path: Path) -> int:

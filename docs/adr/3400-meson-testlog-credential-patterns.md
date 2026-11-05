@@ -30,15 +30,19 @@ the value.
 ## Decision
 
 1. `scripts/ci/run_meson_test.py` removes every listed name and every name matching the
-   credential pattern `TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|ACCESS_KEY|PRIVATE_KEY`
-   or ending in `_PAT` (or equal to `PAT`), ignoring case. It matches names only and never
+   credential pattern `TOKEN(?!IZER)|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|ACCESS_KEY|PRIVATE_KEY`,
+   ending in `_PAT` (or equal to `PAT`), or holding an `AUTH` word between underscores or
+   at an end (`DOCKER_AUTH_CONFIG`, `npm_config__auth`; not `AUTHOR`), ignoring case. It matches names only and never
    reads a value. The twelve-name list, the `core/meson.build` default setup and the ADR-1333
    inventory test stay unchanged, because Meson's `unset()` takes explicit names.
 2. `scripts/ci/check_testlog_credentials.py` walks a checkout for `meson-logs/testlog*` files
    and fails when a line holds a credential-shaped value (GitHub `gh[pousr]_` and
    `github_pat_` tokens, `sk-` keys, AWS `AKIA` key ids). It prints paths and counts only.
-   The pre-commit hook `testlog-credential-scan` runs it on every commit and push, so a
-   checkout that ran Meson directly cannot commit until the logs are deleted.
+   The pre-commit framework hook `testlog-credential-scan` runs it on framework-managed
+   commits and pushes. The opt-in native commit hook (`VMAFX_NATIVE_HOOKS=1`) skips this
+   scan, but its pre-push hook still runs it. A checkout that ran Meson directly cannot pass
+   those framework-managed checks until the logs are deleted. A missing root, an unreadable
+   directory or a log that is not a regular file fails with exit 2.
 
 ## Alternatives considered
 
@@ -51,8 +55,10 @@ the value.
 
 ## Consequences
 
-- Credentials under any matching name are absent from both logs when tests start through the
-  wrapper. A test that needs a matching variable must set it itself (none does today).
+- Credentials under a matching name are absent from both logs when tests start through the
+  wrapper. The protection covers the listed names, the name pattern and the scanned value
+  shapes only; a credential under an unmatched name in an unrecognised shape still reaches
+  the logs. A test that needs a matching variable must set it itself (none does today).
 - A direct Meson run that writes a credential-shaped value fails the next commit in that
   checkout, with the log path and the remedy.
 - A name with no credential word still passes the wrapper; the value-shaped scan is the

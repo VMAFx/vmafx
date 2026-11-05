@@ -13,7 +13,9 @@ import io
 import sys
 import tempfile
 import unittest
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
@@ -90,6 +92,49 @@ class CheckTestlogCredentialsTest(unittest.TestCase):
                 check.MAX_LOG_BYTES = original
         self.assertEqual(code, 2)
         self.assertIn(log.name, output)
+
+    def test_missing_root_is_an_error_not_a_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            code, output = _run(Path(tmp) / "absent")
+        self.assertEqual(code, 2)
+        self.assertIn("not a directory", output)
+
+    def test_unreadable_directory_is_an_error_not_a_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root, "build/meson-logs/testlog.txt", f"X={FAKE_GITHUB}\n")
+            denied = OSError(13, "Permission denied", str(root / "build"))
+            with mock.patch("os.walk", side_effect=_walk_failing(denied)):
+                code, output = _run(root)
+        self.assertEqual(code, 2)
+        self.assertIn("Permission denied", output)
+
+    def test_symlinked_log_is_an_error_not_followed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = _write(root, "elsewhere.txt", f"X={FAKE_GITHUB}\n")
+            logs = root / "build" / "meson-logs"
+            logs.mkdir(parents=True)
+            (logs / "testlog.txt").symlink_to(target)
+            code, output = _run(root)
+        self.assertEqual(code, 2)
+        self.assertIn("not a regular file", output)
+        self.assertNotIn(FAKE_GITHUB, output)
+
+
+def _walk_failing(
+    error: OSError,
+) -> Callable[..., Iterator[tuple[str, list[str], list[str]]]]:
+    """Return an ``os.walk`` stand-in that reports ``error`` through ``onerror``."""
+
+    def walk(
+        _root: object, onerror: Callable[[OSError], None] | None = None
+    ) -> Iterator[tuple[str, list[str], list[str]]]:
+        if onerror is not None:
+            onerror(error)
+        return iter(())
+
+    return walk
 
 
 if __name__ == "__main__":
