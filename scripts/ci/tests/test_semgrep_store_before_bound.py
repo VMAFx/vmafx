@@ -19,8 +19,7 @@ The test copies the real `.semgrep.yml` into a throwaway project and plants:
 The rule was also checked against the real history of that file: it reports the
 pre-fix revision (commit ccf65faea, line 218) and nothing on the fix (6f1f47006).
 
-The tree test scans the real repository `core/`, `scripts/`, `tools/` and requires
-zero findings.
+The tree test scans the real repository root `.` and requires zero findings.
 """
 
 from __future__ import annotations
@@ -146,6 +145,16 @@ bool bad_regression_open_context(Live *live, unsigned n_ring)
     return true;
 }
 
+bool bad_restore_on_failure(Live *live, unsigned n_ring)
+{
+    live->n_ring = n_ring; /* reported: nonzero re-store in failure block */
+    if (n_ring > MAX_RING) {
+        live->n_ring = 1;
+        return fail_context(live);
+    }
+    return true;
+}
+
 bool good_check_first(Live *live, unsigned n_ring)
 {
     if (n_ring > MAX_RING) {
@@ -184,6 +193,50 @@ int good_no_exit(Live *live, unsigned n_ring)
     }
     return err;
 }
+
+bool good_reset_on_failure(Live *live, unsigned n_ring)
+{
+    live->n_ring = n_ring;
+    if (n_ring > MAX_RING) {
+        live->n_ring = 0;
+        return fail_context(live);
+    }
+    return true;
+}
+
+bool good_reset_on_failure_arrow_goto(Live *live, unsigned n_ring)
+{
+    live->n_ring = n_ring;
+    if (n_ring > MAX_RING) {
+        live->n_ring = 0u;
+        goto fail;
+    }
+    return true;
+fail:
+    return fail_context(live);
+}
+
+bool good_reset_on_failure_dot(Live live, unsigned n_ring)
+{
+    live.n_ring = n_ring;
+    if (n_ring > MAX_RING) {
+        live.n_ring = 0;
+        return fail_context(&live);
+    }
+    return true;
+}
+
+bool good_reset_on_failure_dot_goto(Live live, unsigned n_ring)
+{
+    live.n_ring = n_ring;
+    if (n_ring > MAX_RING) {
+        live.n_ring = 0u;
+        goto fail;
+    }
+    return true;
+fail:
+    return fail_context(&live);
+}
 """
 
 PLANTED_HITS = tuple(n for n, line in enumerate(PLANTED_C.splitlines(), 1) if "/* reported" in line)
@@ -209,7 +262,6 @@ class SemgrepStoreBeforeBound(unittest.TestCase):
             "--disable-version-check",
             "--jobs",
             "1",
-            "--no-git-ignore",
         ]
         if excludes:
             for exc in excludes:
@@ -272,7 +324,7 @@ class SemgrepStoreBeforeBound(unittest.TestCase):
     def test_real_tree_zero_findings(self) -> None:
         lines = self.scan(
             ROOT,
-            ["core", "scripts", "tools"],
+            ["."],
             excludes=["subprojects", "core/test/data"],
         )
         self.assertEqual(
