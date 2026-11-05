@@ -293,7 +293,9 @@
         "core/src/feature/feature_extractor.cpp",
         "core/src/feature/tad_rust.c",
         "core/src/feature/integer_psnr.c",
-        "core/src/feature/psnr_score.h"
+        "core/src/feature/psnr_score.h",
+        "core/src/compat/libvmaf/*",
+        "core/src/compat/libvmaf/**"
       ]
     },
     "docs": {
