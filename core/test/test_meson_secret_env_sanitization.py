@@ -779,6 +779,22 @@ class MesonSecretEnvSanitizationContractTest(unittest.TestCase):
         sanitize_process_environment(environment)
         self.assertEqual(set(environment), {"PATH"})
 
+    def test_runner_deletes_unlisted_credential_names_without_reading_values(self) -> None:
+        unlisted = (
+            "MY_ODD_PAT",
+            "PAT",
+            "CLAUDE_CODE_MESSAGING_TOKEN",
+            "LITELLM_API_KEY",
+            "OPENAI_APIKEY",
+            "AWS_SECRET_ACCESS_KEY",
+            "DB_PASSWORD",
+            "registry_credential",
+        )
+        kept = ("PATH", "PATHEXT", "HOME", "PKG_CONFIG_PATH", "MESON_TESTTHREADS")
+        environment = _NoValueReadsEnvironment(dict.fromkeys(unlisted + kept, "unreadable"))
+        sanitize_process_environment(environment)
+        self.assertEqual(set(environment), set(kept))
+
     def test_supported_entrypoints_use_repository_runner(self) -> None:
         self.assertEqual(_entrypoint_contract_errors(_read_entrypoint_sources()), [])
 
