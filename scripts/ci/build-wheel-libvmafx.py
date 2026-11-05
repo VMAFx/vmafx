@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import argparse
 import shutil
-import subprocess
+import subprocess  # argv-list calls only, no shell  # nosec B404
 import sys
 from pathlib import Path
 
@@ -49,7 +49,7 @@ def ensure_build_tools() -> tuple[str, str]:
         lock = root / "requirements" / "locks" / "build.txt"
         if not lock.is_file():
             raise FileNotFoundError(f"Expected repository build lock file not found: {lock}")
-        subprocess.run(  # noqa: S603 -- running interpreter, argv list, no shell
+        subprocess.run(  # noqa: S603 -- running interpreter, argv list, no shell  # nosec B603
             [sys.executable, "-m", "pip", "install", "--require-hashes", "-r", str(lock)],
             check=True,
             timeout=MESON_TIMEOUT_S,
@@ -67,7 +67,7 @@ def ensure_build_tools() -> tuple[str, str]:
         )
 
     # Validate meson executable and version before execution
-    subprocess.run(  # noqa: S603 -- resolved meson path, argv list, no shell
+    subprocess.run(  # noqa: S603 -- resolved meson path, argv list, no shell  # nosec B603
         [str(meson_path), "--version"],
         check=True,
         capture_output=True,
@@ -106,13 +106,17 @@ def setup_meson(root: Path, meson_bin: str) -> None:
         cmd.append("-Denable_asm=false")
     if build_dir.exists():
         cmd.append("--reconfigure")
-    subprocess.run(cmd, check=True, timeout=MESON_TIMEOUT_S)  # noqa: S603 -- meson argv, no shell
+    subprocess.run(  # noqa: S603 -- meson argv, no shell  # nosec B603
+        cmd,
+        check=True,
+        timeout=MESON_TIMEOUT_S,
+    )
 
 
 def compile_library(root: Path, meson_bin: str) -> None:
     """Compile the vmafx shared library target."""
     build_dir = root / "core" / "build-wheel"
-    subprocess.run(  # noqa: S603 -- resolved meson path, argv list, no shell
+    subprocess.run(  # noqa: S603 -- resolved meson path, argv list, no shell  # nosec B603
         [meson_bin, "compile", "-C", str(build_dir), "vmafx"],
         check=True,
         timeout=MESON_TIMEOUT_S,
