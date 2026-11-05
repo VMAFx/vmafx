@@ -85,13 +85,7 @@ __device__ inline float read_norm_16bpc(const VmafPicture &pic, unsigned x, unsi
 
 __device__ inline float scaler_for_bpc(unsigned bpc)
 {
-    if (bpc == 10)
-        return 4.0f;
-    if (bpc == 12)
-        return 16.0f;
-    if (bpc == 16)
-        return 256.0f;
-    return 1.0f;
+    return bpc > 8u ? (float)(1u << (bpc - 8u)) : 1.0f;
 }
 
 /* The five vertical-pass inputs, raw pointers extracted once per kernel so

@@ -30,6 +30,7 @@
 #include "libvmaf/libvmaf_sycl.h"
 
 #include "float_vif_twin_parity.h"
+#include "mu_table.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
@@ -94,9 +95,44 @@ static char *test_float_vif_scale_minimums_identical(void)
     return vif_twin_scale_minimums_identical(&twin);
 }
 
+static char *test_float_vif_9bit_identical(void)
+{
+    return vif_twin_9bit_identical(&twin);
+}
+
 static char *test_float_vif_10bit_identical(void)
 {
     return vif_twin_10bit_identical(&twin);
+}
+
+static char *test_float_vif_11bit_identical(void)
+{
+    return vif_twin_11bit_identical(&twin);
+}
+
+static char *test_float_vif_12bit_identical(void)
+{
+    return vif_twin_12bit_identical(&twin);
+}
+
+static char *test_float_vif_13bit_identical(void)
+{
+    return vif_twin_13bit_identical(&twin);
+}
+
+static char *test_float_vif_14bit_identical(void)
+{
+    return vif_twin_14bit_identical(&twin);
+}
+
+static char *test_float_vif_15bit_identical(void)
+{
+    return vif_twin_15bit_identical(&twin);
+}
+
+static char *test_float_vif_16bit_identical(void)
+{
+    return vif_twin_16bit_identical(&twin);
 }
 
 static char *test_float_vif_small_odd_frame_identical(void)
@@ -112,13 +148,24 @@ static char *run_option_tests(void)
     return NULL;
 }
 
+static char *run_bit_depth_tests(void)
+{
+    static const MuTest tests[] = {
+        MU_TEST(test_float_vif_9bit_identical),  MU_TEST(test_float_vif_10bit_identical),
+        MU_TEST(test_float_vif_11bit_identical), MU_TEST(test_float_vif_12bit_identical),
+        MU_TEST(test_float_vif_13bit_identical), MU_TEST(test_float_vif_14bit_identical),
+        MU_TEST(test_float_vif_15bit_identical), MU_TEST(test_float_vif_16bit_identical),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_float_vif_sycl_registered);
     mu_run_test(test_float_vif_default_identical);
     mu_run_test(test_float_vif_debug_identical);
     mu_assert_msg(run_option_tests());
-    mu_run_test(test_float_vif_10bit_identical);
+    mu_assert_msg(run_bit_depth_tests());
     mu_run_test(test_float_vif_small_odd_frame_identical);
     return NULL;
 }
