@@ -38,6 +38,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "mu_table.h"
 
 #include "feature/feature_extractor.h"
 #include "libvmaf/libvmaf.h"
@@ -387,14 +388,39 @@ static char *test_float_adm_noise_exact(void)
     return check_default("float_adm noise", FIXTURE_W, FIXTURE_H, 8u, CONTENT_NOISE);
 }
 
+static char *test_float_adm_9bit_exact(void)
+{
+    return check_default("float_adm", FIXTURE_W, FIXTURE_H, 9u, CONTENT_NOISE);
+}
+
 static char *test_float_adm_10bit_exact(void)
 {
     return check_default("float_adm", FIXTURE_W, FIXTURE_H, 10u, CONTENT_NOISE);
 }
 
+static char *test_float_adm_11bit_exact(void)
+{
+    return check_default("float_adm", FIXTURE_W, FIXTURE_H, 11u, CONTENT_NOISE);
+}
+
 static char *test_float_adm_12bit_exact(void)
 {
     return check_default("float_adm", FIXTURE_W, FIXTURE_H, 12u, CONTENT_TEXTURE);
+}
+
+static char *test_float_adm_13bit_exact(void)
+{
+    return check_default("float_adm", FIXTURE_W, FIXTURE_H, 13u, CONTENT_NOISE);
+}
+
+static char *test_float_adm_14bit_exact(void)
+{
+    return check_default("float_adm", FIXTURE_W, FIXTURE_H, 14u, CONTENT_NOISE);
+}
+
+static char *test_float_adm_15bit_exact(void)
+{
+    return check_default("float_adm", FIXTURE_W, FIXTURE_H, 15u, CONTENT_NOISE);
 }
 
 static char *test_float_adm_16bit_exact(void)
@@ -515,12 +541,14 @@ static char *test_float_adm_small_sums_are_not_floored(void)
 
 static char *run_exact_bit_depth_cases(void)
 {
-    mu_run_test(test_float_adm_default_exact);
-    mu_run_test(test_float_adm_noise_exact);
-    mu_run_test(test_float_adm_10bit_exact);
-    mu_run_test(test_float_adm_12bit_exact);
-    mu_run_test(test_float_adm_16bit_exact);
-    return NULL;
+    static const MuTest tests[] = {
+        MU_TEST(test_float_adm_default_exact), MU_TEST(test_float_adm_noise_exact),
+        MU_TEST(test_float_adm_9bit_exact),    MU_TEST(test_float_adm_10bit_exact),
+        MU_TEST(test_float_adm_11bit_exact),   MU_TEST(test_float_adm_12bit_exact),
+        MU_TEST(test_float_adm_13bit_exact),   MU_TEST(test_float_adm_14bit_exact),
+        MU_TEST(test_float_adm_15bit_exact),   MU_TEST(test_float_adm_16bit_exact),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 static char *run_exact_geometry_cases(void)

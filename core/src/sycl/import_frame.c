@@ -553,12 +553,13 @@ static int gather_plane(VmafxSyclFrame *sf, const VmafxImportLayout *layout,
 static int rgb_plane(VmafxSyclFrame *sf, const VmafxImportLayout *layout, const VmafxFrameImport *d,
                      const VmafxSyclSource src[3], const SyclPlan *plan, uint8_t *base, uint32_t i)
 {
-    VmafxRgbPlan rgb;
+    VmafxRgbPlan rgb = {0};
     /* The statement was checked: the matrix has a conversion. */
     const bool planned =
         vmafx_rgb_plan_init(&rgb, layout, d->bpc, d->rgb_matrix, d->rgb_range, d->rgb_out_range);
-    assert(planned);
-    (void)planned;
+    if (!planned) {
+        return -EINVAL;
+    }
     const VmafxSyclSource *const s = &src[0];
     const VmafxSyclPlaneOp op = {.src = source_address(s),
                                  .src_pitch = (size_t)s->pitch,

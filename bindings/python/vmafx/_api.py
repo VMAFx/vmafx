@@ -12,8 +12,10 @@ import contextlib
 import ctypes
 import enum
 import os
+import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 ABI_VERSION = (0, 1, 14)
 __version__ = "0.1.14"
@@ -2561,12 +2563,42 @@ def _check_layout() -> None:
                 raise ImportError(f"{struct.__name__}.{name}: offset {actual} != {offset}")
 
 
+def _bundled_library_path() -> str | None:
+    pkg_dir = Path(__file__).resolve().parent
+    candidates = (
+        pkg_dir / "libvmafx.so.1",
+        pkg_dir / "libvmafx.so",
+        pkg_dir / "libvmafx.1.dylib",
+        pkg_dir / "libvmafx.dylib",
+        pkg_dir / "vmafx-1.dll",
+        pkg_dir / "vmafx.dll",
+        pkg_dir / "libvmafx-1.dll",
+        pkg_dir / "libvmafx.dll",
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def _load_cdll(path: str) -> ctypes.CDLL:
+    if sys.platform == "win32" and hasattr(os, "add_dll_directory"):
+        p = Path(path).resolve().parent
+        with contextlib.suppress(OSError):
+            os.add_dll_directory(str(p))
+        libs_dir = p.parent / "vmafx.libs"
+        if libs_dir.is_dir():
+            with contextlib.suppress(OSError):
+                os.add_dll_directory(str(libs_dir))
+    return ctypes.CDLL(path)
+
+
 def load(path: str | None = None) -> ctypes.CDLL:
-    """Load the library from `path` or $VMAFX_LIBRARY. There is no search fallback."""
-    chosen = path or os.environ.get("VMAFX_LIBRARY")
+    """Load the library from `path`, $VMAFX_LIBRARY or bundled package library."""
+    chosen = path or os.environ.get("VMAFX_LIBRARY") or _bundled_library_path()
     if not chosen:
         raise OSError("set VMAFX_LIBRARY or pass the path of the VMAFx shared library")
-    lib = ctypes.CDLL(chosen)
+    lib = _load_cdll(chosen)
     for name, (restype, argtypes) in SIGNATURES.items():
         function = getattr(lib, name)
         function.restype = restype

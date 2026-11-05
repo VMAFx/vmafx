@@ -71,6 +71,7 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "feature/nonfinite_score.h"
+#include "float_moment_scaler.h"
 #include "log.h"
 #include "picture.h"
 #include "../iqa/decimate_dim.h"
@@ -622,22 +623,13 @@ static const VmafOption options_ssim_sycl[] = {
 namespace
 {
 
-/* picture_copy(): 10 / 12 / 16-bit samples are uint16 divided by 4 / 16 /
- * 256 (exact, so a reciprocal multiply matches); every other depth is read
+/* picture_copy(): 10..16-bit samples are uint16 divided by 2^(bpc - 8)
+ * (exact, so a reciprocal multiply matches); every other depth is read
  * as uint8 unscaled. */
 static void configure_sample_layout(SsimStateSycl *s, unsigned bpc)
 {
-    s->sample_bytes = 2U;
-    if (bpc == 10U) {
-        s->sample_scale = 1.0f / 4.0f;
-    } else if (bpc == 12U) {
-        s->sample_scale = 1.0f / 16.0f;
-    } else if (bpc == 16U) {
-        s->sample_scale = 1.0f / 256.0f;
-    } else {
-        s->sample_bytes = 1U;
-        s->sample_scale = 1.0f;
-    }
+    s->sample_bytes = bpc > 8U ? 2U : 1U;
+    s->sample_scale = 1.0f / (float)vmaf_float_moment_scaler(bpc);
 }
 
 static int configure_float_ssim(SsimStateSycl *s, unsigned bpc, unsigned width, unsigned height)
