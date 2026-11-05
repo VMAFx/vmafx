@@ -8,6 +8,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import runpy
 import sys
 import tempfile
@@ -27,6 +28,11 @@ class ExportResult:
     stderr: str
 
 
+@unittest.skipUnless(
+    os.name == "posix",
+    "HISS-21: the fixture executes an extensionless POSIX stub through asyncio; "
+    "the Linux Pre-Commit job in lint-and-format.yml runs it",
+)
 class CompileCommandsExportTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
