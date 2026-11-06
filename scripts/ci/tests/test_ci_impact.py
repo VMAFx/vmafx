@@ -269,6 +269,12 @@ class RoutingContract(unittest.TestCase):
         self.assertFalse(plan.selectors["go"])
         self.assertFalse(plan.selectors["docs"])
 
+    def test_libvmaf_compat_shim_change_selects_rust(self) -> None:
+        plan = _plan_for(["core/src/compat/libvmaf/libvmaf_gen.c"])
+        self.assertEqual(plan.mode, "impact")
+        self.assertTrue(plan.selectors["rust"])
+        self.assertTrue(plan.selectors["c_core"])
+
     def test_required_consumer_workflows_have_exact_impact_routes(self) -> None:
         cases = {
             "Dockerfile": {"docker_image"},

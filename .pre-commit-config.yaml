@@ -827,6 +827,20 @@ repos:
         files: '^(\.github/workflows/|scripts/ci/(pr_workflow_budget\.py|tests/test_pr_workflow_budget\.py)|\.pre-commit-config\.yaml$)'
         pass_filenames: false
 
+      - id: check-api-doc-coverage
+        name: Every public vmafx symbol is named in docs/api (#2436)
+        entry: python3 scripts/ci/check_api_doc_coverage.py
+        language: system
+        files: '^(core/include/vmafx/.*\.h|docs/api/.*\.md|scripts/ci/check_api_doc_coverage\.py)$'
+        pass_filenames: false
+
+      - id: test-check-api-doc-coverage
+        name: API doc coverage check keeps positive, negative and boundary cases
+        entry: python3 -B -m unittest scripts/ci/tests/test_check_api_doc_coverage.py
+        language: system
+        files: '^scripts/ci/(check_api_doc_coverage|tests/test_check_api_doc_coverage)\.py$'
+        pass_filenames: false
+
       - id: check-job-timeout-budget
         name: Every workflow job's time limit covers the sum of its step limits
         entry: python3 scripts/ci/check_job_timeout_budget.py
