@@ -66,8 +66,14 @@ static int probe_alloc(const VmafCudaState *state, size_t bytes)
     if (state->f->cuCtxPushCurrent(state->ctx) != CUDA_SUCCESS)
         return -1;
     CUdeviceptr chunk = 0;
-    int result = state->f->cuMemAlloc(&chunk, bytes) == CUDA_SUCCESS;
-    if (result && state->f->cuMemFree(chunk) != CUDA_SUCCESS)
+    const CUresult alloc_rc = state->f->cuMemAlloc(&chunk, bytes);
+    /* 1 = allocated and freed, 0 = refused for lack of memory, -1 = any other failure. */
+    int result = -1;
+    if (alloc_rc == CUDA_SUCCESS)
+        result = state->f->cuMemFree(chunk) == CUDA_SUCCESS ? 1 : -1;
+    else if (vmaf_cuda_result_to_errno((int)alloc_rc) == -ENOMEM)
+        result = 0;
+    else if (fprintf(stderr, "[probe cuMemAlloc rc %d] ", (int)alloc_rc) < 0)
         result = -1;
     return state->f->cuCtxPopCurrent(NULL) == CUDA_SUCCESS ? result : -1;
 }
@@ -98,13 +104,14 @@ static void hog_release(const VmafCudaState *state, Hog *hog)
     (void)state->f->cuCtxPopCurrent(NULL);
 }
 
-static char *skip_unexhausted_hog(VmafContext *vmaf, VmafCudaState *state, Hog *hog)
+static char *skip_unexhausted_hog(VmafContext *vmaf, VmafCudaState *state, Hog *hog,
+                                  int probe_hogged)
 {
     hog_release(state, hog);
     (void)fprintf(stderr,
-                  "[skip: device memory not exhausted by the hog (%zu MiB taken); "
-                  "WDDM may page allocations] ",
-                  hog->bytes >> 20);
+                  "[skip: device memory not exhausted by the hog (%zu MiB taken, "
+                  "luma probe under the hog %d); WDDM may page allocations] ",
+                  hog->bytes >> 20, probe_hogged);
 #ifndef _WIN32
     (void)alarm(0);
 #endif
@@ -142,18 +149,19 @@ static int open_context(VmafCudaState **state, VmafContext **vmaf)
     return err ? err : vmaf_preallocate_pictures(*vmaf, pool);
 }
 
-static char *check_oom_and_memory_return(VmafContext *vmaf, VmafCudaState *state, Hog *hog)
+static char *check_oom_and_memory_return(VmafCudaState *state, Hog *hog, int oom_err,
+                                         int probe_hogged)
 {
-    const int oom_err = submit_pooled(vmaf, 0);
     hog_release(state, hog);
     const int probe_back = probe_alloc(state, PROBE_BYTES);
-    (void)fprintf(stderr, "[hog %zu MiB, first rc %d, memory back %d] ", hog->bytes >> 20, oom_err,
-                  probe_back);
+    (void)fprintf(stderr, "[hog %zu MiB, luma probe under hog %d, first rc %d, memory back %d] ",
+                  hog->bytes >> 20, probe_hogged, oom_err, probe_back);
     mu_assert("a frame was scored with the device's memory taken", oom_err != 0);
     (void)fprintf(stderr, "[first frame with no memory left: %d] ", oom_err);
 
     /* The pair of the failed call is back in the pool, and the ring that could
      * not be built is built now. */
+    mu_assert("allocation probe failed", probe_back >= 0);
     mu_assert("device memory not yet returned after the hog was freed", probe_back == 1);
     return NULL;
 }
@@ -187,9 +195,12 @@ static char *test_out_of_memory_returns_an_error_and_keeps_the_pool(void)
     hog_take(state, &hog);
     const int probe_hogged = probe_alloc(state, PROBE_BYTES);
     mu_assert("allocation probe failed", probe_hogged >= 0);
-    if (probe_hogged == 1)
-        return skip_unexhausted_hog(vmaf, state, &hog);
-    char *msg = check_oom_and_memory_return(vmaf, state, &hog);
+    /* The real first submission decides: one luma-sized probe succeeding under the hog does
+     * not prove the 4-picture ring can be built. */
+    const int oom_err = submit_pooled(vmaf, 0);
+    if (oom_err == 0)
+        return skip_unexhausted_hog(vmaf, state, &hog, probe_hogged);
+    char *msg = check_oom_and_memory_return(state, &hog, oom_err, probe_hogged);
     if (msg)
         return msg;
     msg = check_retry_and_psnr(vmaf);
