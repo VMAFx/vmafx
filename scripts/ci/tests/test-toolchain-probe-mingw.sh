@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: EUPL-1.2
-# Copyright 2026 Lusoris
+# Copyright 2026 Lusoris and Claude (Anthropic)
 #
 # scripts/ci/tests/test-toolchain-probe-mingw.sh — planted-failure cases for
 # the MinGW cross entry of scripts/dev/toolchain-probe.sh (issue #3307).
