@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD060 -->
 # ADR-0726: Drop Vulkan backend
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-3401](3401-vulkan-integer-compute-path.md) (2026-11-07, draft): the fp64-free integer path re-lands the backend floor behind `-Denable_vulkan=true` and reclaims two of the three reserved ABI slots
 - **Date**: 2026-05-28
 - **Deciders**: Lusoris (user direction)
 - **Tags**: vulkan, gpu, backend, build, breaking, fork-local
