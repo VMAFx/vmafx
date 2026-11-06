@@ -104,6 +104,8 @@ To refresh patch context or rebase against updated sources:
 python3 scripts/ci/ffmpeg_patch_stack.py --refresh
 ```
 
+Line endings of a Windows checkout do not count as drift.
+
 ## License
 
 LGPL-2.1-or-later for the patch files in this directory (assigned in
