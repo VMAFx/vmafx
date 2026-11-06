@@ -1,0 +1,1 @@
+- The `vmaf` Python package's project URLs point at VMAFx (issue #2338): Homepage, Repository and Issues at github.com/VMAFx/vmafx and Documentation at vmafx.github.io/vmafx/, instead of a single Homepage at Netflix/vmaf.

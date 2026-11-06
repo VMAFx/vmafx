@@ -1,5 +1,11 @@
 [project.urls]
-Homepage = "https://github.com/Netflix/vmaf"
+# Issue 2338: the single URL pointed at Netflix/vmaf, so the package page and
+# every tool that reads the metadata sent VMAFx users to the wrong project.
+# These are the fork the package ships from.
+Homepage = "https://github.com/VMAFx/vmafx"
+Repository = "https://github.com/VMAFx/vmafx"
+Documentation = "https://vmafx.github.io/vmafx/"
+Issues = "https://github.com/VMAFx/vmafx/issues"
 
 # Moved here from setup.py's `entry_points={"console_scripts": [...]}`.
 # setuptools treats a `[project]` table as authoritative: anything setup.py
