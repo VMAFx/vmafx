@@ -1,0 +1,1 @@
+- The Python library page no longer restates per-distribution install commands (issue #2339): its Requirements section points at the install table of the getting-started guide's "Build from source" — the one place the supported platforms are tested — and keeps only the Python version statement and the NASM 2.13.02 floor the guides do not restate.

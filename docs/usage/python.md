@@ -21,47 +21,18 @@ Make sure you have `python3` (Python 3.12 or higher for the harness package; the
 repository's own tooling asks for 3.14). Check the version with
 `python3 --version`.
 
-### Linux
+### Build dependencies
 
-On Debian-based systems such as Debian 13 or Ubuntu 26.04 (the project's CI base
-images):
+The supported platforms and their install commands (Ubuntu, Fedora and the
+RHEL 9 family, Arch, Alpine, macOS, Windows) are listed in one place — the
+install table of [Build from source](../getting-started/index.md#build-from-source-any-platform)
+in the getting-started guide. Install the C toolchain, NASM, Doxygen and the
+zimg headers from there for your platform; the per-distribution commands this
+page used to restate — among them the route of an unsupported old CentOS —
+drifted away from what the project actually tests.
 
-```bash
-sudo apt install nasm doxygen python3-dev libzimg-dev
-```
-
-On Fedora 22 or higher, or CentOS 8 or higher:
-
-```bash
-sudo dnf install nasm doxygen python3-devel zimg-devel
-```
-
-On older CentOS and RHEL:
-
-```bash
-sudo yum install nasm doxygen python3-devel zimg-devel
-```
-
-Make sure `nasm` is 2.13.02 or higher (check by `nasm --version`).
-
-### macOS
-
-First, install [Homebrew](https://brew.sh/).
-
-If you don't already have a `python3` installation on your Mac, run the
-following to install Python 3 via Homebrew:
-
-```bash
-brew install python3
-```
-
-Install the remaining dependencies:
-
-```bash
-brew install nasm doxygen llvm libomp zimg
-```
-
-Note that `brew` requires no `sudo`.
+Make sure `nasm` is 2.13.02 or higher (check by `nasm --version`); that floor
+is not restated in the install guides, so it stays here.
 
 ## Set up the environment
 
