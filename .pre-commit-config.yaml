@@ -237,8 +237,9 @@ repos:
 
   - repo: local
     hooks:
-      # Fragments are excluded from markdownlint; the concatenator strips comments.
-      # A markdownlint directive in a fragment is therefore dead text.
+      # Fragments are excluded from markdownlint, and the concatenator copies a
+      # fragment's comment into the middle of CHANGELOG.md, where MD041 (first
+      # line is a heading) never applies. A directive in a fragment is dead text.
       - id: changelog-fragment-no-lint-directive
         name: Changelog fragments carry no markdownlint directive
         entry: '<!--\s*markdownlint-'
