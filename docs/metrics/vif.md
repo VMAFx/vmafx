@@ -269,6 +269,9 @@ enhancement-gain-enabled VIF. Fixed per
 
 ### Float twin notes
 
+- **Bit depths.** The CPU, CUDA, SYCL and HIP `float_vif` twins take every depth
+  from 8 to 16 bits; the Metal twin refuses 9, 11, 13, 14 and 15 bits with
+  `-EINVAL`.
 - **`float_vif` on SYCL.** SYCL kernels have no 64-bit floating-point type, so
   the two expressions the CPU evaluates in `double` are computed in pairs of
   floats and, for the rare sample next to a rounding boundary, in integers.

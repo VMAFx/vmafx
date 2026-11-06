@@ -4229,6 +4229,23 @@ test_odd_depths_float_psnr_ciede = executable('test_odd_depths_float_psnr_ciede'
 )
 test('test_odd_depths_float_psnr_ciede', test_odd_depths_float_psnr_ciede, suite : ['fast'])
 
+# Issue #2476: float GPU twins bit-depth scaler test for 8..16 bits.
+test_odd_depths_float_gpu_scaler = executable('test_odd_depths_float_gpu_scaler',
+    ['test.c', 'test_odd_depths_float_gpu_scaler.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    link_with : vmaf_test_link,
+    dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
+)
+test('test_odd_depths_float_gpu_scaler', test_odd_depths_float_gpu_scaler, suite : ['fast'])
+test('test_odd_depths_float_gpu_scaler_contract',
+    import('python').find_installation(),
+    args : files('test_odd_depths_float_gpu_scaler_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1499 — feature/float_psnr_rows.h, the float_psnr twins' form of the
 # CPU's sum of its rows past 2^53 units, fed with host-made segment sums and
 # compared bit for bit with the CPU float_psnr extractor on the cases of

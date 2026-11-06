@@ -32,6 +32,7 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "feature/adm_score.h"
+#include "feature/float_moment_scaler.h"
 #include "feature/nonfinite_score.h"
 #include "log.h"
 
@@ -516,15 +517,8 @@ static void fadm_init_pass(const FloatAdmStateCuda *s, FloatAdmScalePass *p, CUs
     p->stream = stream;
     p->raw_stride = (ptrdiff_t)(s->width * bpp);
 
-    p->scaler = 1.0f;
+    p->scaler = (float)vmaf_float_moment_scaler(s->bpc);
     p->pixel_offset = -128.0f;
-    if (s->bpc == 10u) {
-        p->scaler = 4.0f;
-    } else if (s->bpc == 12u) {
-        p->scaler = 16.0f;
-    } else if (s->bpc == 16u) {
-        p->scaler = 256.0f;
-    }
     p->bpc = s->bpc;
 
     p->ref_raw = (CUdeviceptr)s->src_ref->data;

@@ -1,0 +1,90 @@
+# Reusable vmafx wheel build (#2318), called by supply-chain.yml after
+# validate-release. Kept apart from supply-chain.yml so that file stays under
+# the 64 KiB workflow-size gate. Builds the sdist and the cibuildwheel matrix
+# from the release tag and uploads `vmafx-dist-*` artifacts; publishing stays
+# in supply-chain.yml (`vmafx-publish-pypi`), whose trusted-publisher identity
+# is the caller workflow. This file has no trigger of its own.
+
+name: vmafx wheels
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: release tag to check out (validate-release output)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build vmafx wheels
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-26.04
+            cibw_archs: "x86_64"
+            qemu: false
+            sdist: true
+          - os: ubuntu-26.04
+            cibw_archs: "aarch64"
+            qemu: true
+            sdist: false
+          - os: macos-latest
+            cibw_archs: "arm64"
+            qemu: false
+            sdist: false
+          - os: windows-2025
+            cibw_archs: "AMD64"
+            qemu: false
+            sdist: false
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          submodules: recursive
+          persist-credentials: false
+      - name: Set up QEMU
+        if: ${{ matrix.qemu }}
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.14.9"
+      - name: Build sdist
+        if: ${{ matrix.sdist }}
+        run: |
+          python -m pip install --disable-pip-version-check --require-hashes \
+            -r requirements/locks/package-build.txt
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          export SOURCE_DATE_EPOCH
+          export PYTHONHASHSEED=0
+          python -m build --no-isolation --sdist bindings/python --outdir dist
+      - name: Build wheels via cibuildwheel
+        uses: pypa/cibuildwheel@f9b966cfadf4109556cadc5bb39ddb72d0ce664e  # v4.3.5
+        env:
+          CIBW_ARCHS: ${{ matrix.cibw_archs }}
+        with:
+          package-dir: bindings/python
+          output-dir: dist
+      - name: Upload wheel artifacts
+        if: ${{ env.GITEA_ACTIONS != 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: vmafx-dist-${{ matrix.os }}-${{ matrix.cibw_archs }}
+          path: dist/*
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload wheel artifacts (Gitea)
+        if: ${{ env.GITEA_ACTIONS == 'true' }}
+        uses: actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2
+        with:
+          name: vmafx-dist-${{ matrix.os }}-${{ matrix.cibw_archs }}
+          path: dist/*
+          retention-days: 7
+          if-no-files-found: error

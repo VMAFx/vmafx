@@ -42,6 +42,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "mu_table.h"
 
 #include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
@@ -312,9 +313,75 @@ static char *test_float_ssim_cuda_gate(void)
     return NULL;
 }
 
+static char *test_float_ssim_depth(unsigned bpc)
+{
+    if (!device_present())
+        return NULL;
+    const ParityCase c = CASE(400u, 224u, bpc, "2", false);
+    return compare_case(&c);
+}
+
+static char *test_float_ssim_8bit_exact(void)
+{
+    return test_float_ssim_depth(8u);
+}
+
+static char *test_float_ssim_9bit_exact(void)
+{
+    return test_float_ssim_depth(9u);
+}
+
+static char *test_float_ssim_10bit_exact(void)
+{
+    return test_float_ssim_depth(10u);
+}
+
+static char *test_float_ssim_11bit_exact(void)
+{
+    return test_float_ssim_depth(11u);
+}
+
+static char *test_float_ssim_12bit_exact(void)
+{
+    return test_float_ssim_depth(12u);
+}
+
+static char *test_float_ssim_13bit_exact(void)
+{
+    return test_float_ssim_depth(13u);
+}
+
+static char *test_float_ssim_14bit_exact(void)
+{
+    return test_float_ssim_depth(14u);
+}
+
+static char *test_float_ssim_15bit_exact(void)
+{
+    return test_float_ssim_depth(15u);
+}
+
+static char *test_float_ssim_16bit_exact(void)
+{
+    return test_float_ssim_depth(16u);
+}
+
+static char *run_bit_depth_cases(void)
+{
+    static const MuTest tests[] = {
+        MU_TEST(test_float_ssim_8bit_exact),  MU_TEST(test_float_ssim_9bit_exact),
+        MU_TEST(test_float_ssim_10bit_exact), MU_TEST(test_float_ssim_11bit_exact),
+        MU_TEST(test_float_ssim_12bit_exact), MU_TEST(test_float_ssim_13bit_exact),
+        MU_TEST(test_float_ssim_14bit_exact), MU_TEST(test_float_ssim_15bit_exact),
+        MU_TEST(test_float_ssim_16bit_exact),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_float_ssim_cpu_cuda_parity);
+    mu_assert_msg(run_bit_depth_cases());
     mu_run_test(test_float_ssim_cuda_gate);
     return NULL;
 }

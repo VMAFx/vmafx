@@ -55,7 +55,11 @@ GATES = {
         "Windows Tester Zip",
         ("tier", "impact", "verify"),
     ),
-    "release-dry-run.yml": ("gate", "Release Dry Run", ("tier", "plan", "images", "gpu", "mcp")),
+    "release-dry-run.yml": (
+        "gate",
+        "Release Dry Run",
+        ("tier", "plan", "images", "gpu", "mcp", "wheels"),
+    ),
 }
 PULL_REQUEST_ONLY = {"Release Dry Run"}
 OWN_INPUT_LANES = {
@@ -237,8 +241,8 @@ WORKFLOW_MUTATIONS = {
     ),
     "dry-run gate skips on failure": (
         "release-dry-run.yml",
-        "needs: [tier, plan, images, gpu, mcp]\n    if: always() && needs.tier.outputs.full == 'true'",
-        "needs: [tier, plan, images, gpu, mcp]\n    if: success()",
+        "needs: [tier, plan, images, gpu, mcp, wheels]\n    if: always() && needs.tier.outputs.full == 'true'",
+        "needs: [tier, plan, images, gpu, mcp, wheels]\n    if: success()",
     ),
 }
 
@@ -391,8 +395,38 @@ class Routing(unittest.TestCase):
         self.assertFalse(plan["windows_tester_zip"])
         # The dry run starts and its gate reports; no group needs a build.
         self.assertEqual(
-            _dry_run_groups(paths), {"images": "false", "gpu": "false", "mcp": "false"}
+            _dry_run_groups(paths),
+            {"images": "false", "gpu": "false", "mcp": "false", "wheels": "false"},
         )
+
+    def test_wheel_inputs_select_wheels_dry_run(self) -> None:
+        """Changes to core build files, public headers, fixtures, or wheel build locks select wheels (PR #3287)."""
+        for path in (
+            "core/meson.build",
+            "core/src/meson.build",
+            "core/meson_options.txt",
+            "core/include/libvmaf/libvmaf.h",
+            "requirements/locks/build.txt",
+            "requirements/locks/package-build.txt",
+            "requirements/locks/twine.txt",
+            "bindings/python/vmafx/_api.py",
+            "testdata/ref_576x324_48f.yuv",
+            "testdata/dis_576x324_48f.yuv",
+        ):
+            with self.subTest(path=path):
+                groups = _dry_run_groups([path])
+                self.assertEqual(groups["wheels"], "true")
+
+        # Planted negative cases: unrelated fixtures or docs must not select wheels
+        for path in (
+            "testdata/ref_640x480_48f.yuv",
+            "docs/index.md",
+            "README.md",
+            "core/src/libvmaf.c",
+        ):
+            with self.subTest(negative_path=path):
+                groups = _dry_run_groups([path])
+                self.assertEqual(groups["wheels"], "false")
 
     def test_tester_dockerfile_change_runs_the_tester_image_only(self) -> None:
         plan = _plan_for(["docker/Dockerfile.tester"])
@@ -480,6 +514,7 @@ class DryRunGateScript(unittest.TestCase):
             "IMAGES": ("false", "skipped"),
             "GPU": ("false", "skipped"),
             "MCP": ("false", "skipped"),
+            "WHEELS": ("false", "skipped"),
         }
         for plan in ("success", "failure", "skipped", "cancelled"):
             for group in idle:
