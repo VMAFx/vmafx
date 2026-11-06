@@ -13,6 +13,7 @@ build-backend = "hatchling.build"
 name = "vmafx"
 dynamic = ["version"]
 description = "ctypes binding for the VMAFx C API (standard library only)."
+readme = "README.md"
 requires-python = ">=3.12"
 license = "EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
 license-files = ["LICENSES/*"]
