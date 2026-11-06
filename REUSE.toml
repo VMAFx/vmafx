@@ -41,36 +41,15 @@ SPDX-License-Identifier = "BSD-2-Clause-Patent"
 # (ADR-3143).
 [[annotations]]
 path = [
-    "ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch",
-    "ffmpeg-patches/0002-add-vmaf_pre-filter.patch",
-    "ffmpeg-patches/0003-libvmaf-wire-sycl-backend-selector.patch",
-    "ffmpeg-patches/0004-libvmaf-wire-vulkan-backend-selector.patch",
-    "ffmpeg-patches/0005-libvmaf-add-libvmaf-sycl-filter.patch",
-    "ffmpeg-patches/0007-libvmaf-tune-qpfile-unified.patch",
-    "ffmpeg-patches/0008-add-libvmaf_tune-filter.patch",
-    "ffmpeg-patches/0009-pass-autotune-cli-glue.patch",
-    "ffmpeg-patches/0010-libvmaf-wire-cuda-backend-selector.patch",
-    "ffmpeg-patches/0011-libvmaf-wire-hip-backend-selector.patch",
-    "ffmpeg-patches/0012-libvmaf-wire-metal-backend-selector.patch",
-    "ffmpeg-patches/0013-libvmaf-add-libvmaf-metal-filter.patch",
-    "ffmpeg-patches/0014-libvmaf-expose-cpumask-and-gpumask-on-all-vmaf-filte.patch",
-    "ffmpeg-patches/0015-vmaf-tune-profile-cli-glue.patch",
-    "ffmpeg-patches/0016-libvmaf-wire-score-fmt-on-all-vmaf-filters.patch",
-    "ffmpeg-patches/0017-libvmaf-read-pelorus-sidedata.patch",
-    "ffmpeg-patches/0018-libvmaf-map-percentile-pool-methods.patch",
+    "ffmpeg-patches/0001-codec-qpfile-unified.patch",
+    "ffmpeg-patches/0002-pass-autotune-cli-glue.patch",
+    "ffmpeg-patches/0003-add-vmafx-profile-cli-glue.patch",
+    "ffmpeg-patches/0004-add-vmafx-filter.patch",
+    "ffmpeg-patches/0005-add-vmafx-pre-filter.patch",
+    "ffmpeg-patches/0006-fftools-loopback-decoder-hwaccel.patch",
 ]
 precedence = "override"
 SPDX-FileCopyrightText = ["2000-2026 the FFmpeg developers", "2026 Lusoris"]
-SPDX-License-Identifier = "LGPL-2.1-or-later"
-
-[[annotations]]
-path = ["ffmpeg-patches/0006-libvmaf-add-libvmaf-vulkan-filter.patch"]
-precedence = "override"
-SPDX-FileCopyrightText = [
-    "2000-2026 the FFmpeg developers",
-    "2026 Lawrence Curtis",
-    "2026 Lusoris",
-]
 SPDX-License-Identifier = "LGPL-2.1-or-later"
 
 # The repository has no CLA or DCO.  These files were created or touched by
