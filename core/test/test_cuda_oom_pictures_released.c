@@ -142,6 +142,33 @@ static int open_context(VmafCudaState **state, VmafContext **vmaf)
     return err ? err : vmaf_preallocate_pictures(*vmaf, pool);
 }
 
+static char *check_oom_and_memory_return(VmafContext *vmaf, VmafCudaState *state, Hog *hog)
+{
+    const int oom_err = submit_pooled(vmaf, 0);
+    hog_release(state, hog);
+    const int probe_back = probe_alloc(state, PROBE_BYTES);
+    (void)fprintf(stderr, "[hog %zu MiB, first rc %d, memory back %d] ", hog->bytes >> 20, oom_err,
+                  probe_back);
+    mu_assert("a frame was scored with the device's memory taken", oom_err != 0);
+    (void)fprintf(stderr, "[first frame with no memory left: %d] ", oom_err);
+
+    /* The pair of the failed call is back in the pool, and the ring that could
+     * not be built is built now. */
+    mu_assert("device memory not yet returned after the hog was freed", probe_back == 1);
+    return NULL;
+}
+
+static char *check_retry_and_psnr(VmafContext *vmaf)
+{
+    const int retry_err = submit_pooled(vmaf, 0);
+    (void)fprintf(stderr, "[retry rc %d] ", retry_err);
+    mu_assert("the same index does not score once memory is back", retry_err == 0);
+    mu_assert("flush failed", vmaf_read_pictures(vmaf, NULL, NULL, 0) == 0);
+    double psnr = 0.0;
+    mu_assert("psnr missing", vmaf_feature_score_at_index(vmaf, "psnr_y", &psnr, 0) == 0);
+    return NULL;
+}
+
 static char *test_out_of_memory_returns_an_error_and_keeps_the_pool(void)
 {
     VmafCudaState *state = NULL;
@@ -161,23 +188,12 @@ static char *test_out_of_memory_returns_an_error_and_keeps_the_pool(void)
     const int probe_hogged = probe_alloc(state, PROBE_BYTES);
     if (probe_hogged == 1)
         return skip_unexhausted_hog(vmaf, state, &hog);
-    const int oom_err = submit_pooled(vmaf, 0);
-    hog_release(state, &hog);
-    const int probe_back = probe_alloc(state, PROBE_BYTES);
-    (void)fprintf(stderr, "[hog %zu MiB, first rc %d, memory back %d] ", hog.bytes >> 20, oom_err,
-                  probe_back);
-    mu_assert("a frame was scored with the device's memory taken", oom_err != 0);
-    (void)fprintf(stderr, "[first frame with no memory left: %d] ", oom_err);
-
-    /* The pair of the failed call is back in the pool, and the ring that could
-     * not be built is built now. */
-    mu_assert("device memory not yet returned after the hog was freed", probe_back == 1);
-    const int retry_err = submit_pooled(vmaf, 0);
-    (void)fprintf(stderr, "[retry rc %d] ", retry_err);
-    mu_assert("the same index does not score once memory is back", retry_err == 0);
-    mu_assert("flush failed", vmaf_read_pictures(vmaf, NULL, NULL, 0) == 0);
-    double psnr = 0.0;
-    mu_assert("psnr missing", vmaf_feature_score_at_index(vmaf, "psnr_y", &psnr, 0) == 0);
+    char *msg = check_oom_and_memory_return(vmaf, state, &hog);
+    if (msg)
+        return msg;
+    msg = check_retry_and_psnr(vmaf);
+    if (msg)
+        return msg;
 
 #ifndef _WIN32
     (void)alarm(0);
