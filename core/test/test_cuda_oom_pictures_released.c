@@ -63,18 +63,20 @@ typedef struct {
 
 static int probe_alloc(const VmafCudaState *state, size_t bytes)
 {
-    if (state->f->cuCtxPushCurrent(state->ctx) != CUDA_SUCCESS)
+    if (state->f->cuCtxPushCurrent(state->ctx) != CUDA_SUCCESS) {
         return -1;
+    }
     CUdeviceptr chunk = 0;
     const CUresult alloc_rc = state->f->cuMemAlloc(&chunk, bytes);
     /* 1 = allocated and freed, 0 = refused for lack of memory, -1 = any other failure. */
     int result = -1;
-    if (alloc_rc == CUDA_SUCCESS)
+    if (alloc_rc == CUDA_SUCCESS) {
         result = state->f->cuMemFree(chunk) == CUDA_SUCCESS ? 1 : -1;
-    else if (vmaf_cuda_result_to_errno((int)alloc_rc) == -ENOMEM)
+    } else if (vmaf_cuda_result_to_errno((int)alloc_rc) == -ENOMEM) {
         result = 0;
-    else if (fprintf(stderr, "[probe cuMemAlloc rc %d] ", (int)alloc_rc) < 0)
+    } else if (fprintf(stderr, "[probe cuMemAlloc rc %d] ", (int)alloc_rc) < 0) {
         result = -1;
+    }
     return state->f->cuCtxPopCurrent(NULL) == CUDA_SUCCESS ? result : -1;
 }
 
