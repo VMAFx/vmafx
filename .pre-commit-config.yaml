@@ -313,6 +313,13 @@ repos:
         files: '^scripts/dev/((install_)?merge_train_guard\.py|tests/test_(install_)?merge_train_guard\.py)$'
         pass_filenames: false
 
+      - id: upstream-pr-sweep-contract
+        name: Upstream PR sweep regression contract
+        entry: python3 -B -m unittest discover -s scripts/dev/tests -p 'test_upstream_pr_sweep*.py'
+        language: system
+        files: '^(scripts/dev/(upstream_pr_sweep\.py|tests/(test_upstream_pr_sweep.*|upstream_pr_sweep_fixture)\.py)|docs/development/upstream-pr-sweep\.md)$'
+        pass_filenames: false
+
       - id: rc3-home-gpu-retest-contract
         name: RC3 home GPU retest kit regressions (ADR-1386)
         entry: python3 -B -m unittest discover -s scripts/dev/tests -p test_rc3_home_gpu_retest.py

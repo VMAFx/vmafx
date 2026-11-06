@@ -132,6 +132,8 @@ EXPECTED_RUNNER_PATHS = {
     Path("scripts/test/sycl-dev-container.sh"): ("/work/scripts/ci/run_meson_test.py",),
     Path("scripts/sync-pelorus-interop.sh"): ("scripts/ci/run_meson_test.py",),
     Path("scripts/test/run-all-tests.sh"): ("scripts/ci/run_meson_test.py",),
+    # The upstream pull request sweep tests upstream trees with this checkout's runner.
+    Path("scripts/dev/upstream_pr_sweep.py"): ("run_meson_test.py",),
 }
 
 RUNNER_SCRIPT_BASENAME = "run_meson_test.py"
