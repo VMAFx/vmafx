@@ -385,7 +385,13 @@ mingw_assert_pairing() {
       "${driver}" "$(basename "${dll}")" "${rc}"
     return 1
   fi
-  if printf '%s\n' "${dump}" | grep -q "libwinpthread"; then
+  # Here-string, not printf|grep -q: under pipefail a dump larger than the
+  # pipe buffer whose libwinpthread line sits in the first bytes lets grep
+  # -q exit while the writer still holds megabytes, and the writer dies of
+  # SIGPIPE (pipeline status 141). The if would then take the else branch
+  # and report imports="none" — accepting exactly the B24 win32 pairing
+  # this check refuses. A here-string has no early-exiting reader.
+  if grep -q "libwinpthread" <<<"${dump}"; then
     imports="libwinpthread"
   else
     imports="none"
