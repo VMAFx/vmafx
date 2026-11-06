@@ -94,6 +94,8 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'run-e2e-k8s') &&
       (github.event.action != 'labeled' || github.event.label.name == 'run-e2e-k8s'))
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
     steps:
