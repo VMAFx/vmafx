@@ -17,9 +17,9 @@ the same scoring path, recommends a CRF for the next pass. Built with
  doc/filters.texi               |  151 ++
  libavfilter/Makefile           |    2 +
  libavfilter/allfilters.c       |    2 +
- libavfilter/vf_vmafx.c         | 2981 ++++++++++++++++++++++++++++++++
+ libavfilter/vf_vmafx.c         | 2982 ++++++++++++++++++++++++++++++++
  libavfilter/vf_vmafx_options.h |  152 ++
- 6 files changed, 3293 insertions(+)
+ 6 files changed, 3294 insertions(+)
  create mode 100644 libavfilter/vf_vmafx.c
  create mode 100644 libavfilter/vf_vmafx_options.h
 
@@ -250,10 +250,10 @@ index 5ecf9a8698318dd84d5d3723df2053a2c9f20304..b923bf9ec16ee0818b64509ca8af9f18
  extern const FFFilter ff_vf_w3fdif;
 diff --git a/libavfilter/vf_vmafx.c b/libavfilter/vf_vmafx.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..7ab47832db138b39a1ef256ca903def233be376f
+index 0000000000000000000000000000000000000000..2775546bc9e8310627867fe49f9e87998bb994c8
 --- /dev/null
 +++ b/libavfilter/vf_vmafx.c
-@@ -0,0 +1,2981 @@
+@@ -0,0 +1,2982 @@
 +/*
 + * Copyright 2026 Lusoris
 + *
@@ -1705,13 +1705,13 @@ index 0000000000000000000000000000000000000000..7ab47832db138b39a1ef256ca903def2
 +static int vk_describe(const VMAFXVulkan *v, const AVFrame *copy, VmafxFrameImport *imp)
 +{
 +    const AVVkFrame *f = (const AVVkFrame *)copy->data[0];
++    const int np = av_pix_fmt_count_planes(frame_sw_format(copy));
 +    uint32_t bpc = 0;
 +    imp->memory = VMAFX_MEMORY_VULKAN;
 +    imp->pix_fmt = layout_of(frame_sw_format(copy), &bpc);
 +    imp->bpc = bpc;
 +    imp->w = (uint32_t)copy->width;
 +    imp->h = (uint32_t)copy->height;
-+    imp->n_planes = (uint32_t)av_pix_fmt_count_planes(frame_sw_format(copy));
 +    imp->vulkan_handle_type = VMAFX_VULKAN_HANDLE_OPAQUE_FD;
 +    imp->vulkan_tiling = (uint32_t)f->tiling; /* the values equal VkImageTiling */
 +    memcpy(imp->vulkan_pci, v->pci, sizeof(imp->vulkan_pci));
@@ -1719,8 +1719,9 @@ index 0000000000000000000000000000000000000000..7ab47832db138b39a1ef256ca903def2
 +        imp->plane[i].fd = -1;
 +        vk_acquire_fence(imp, (int)i)->fd = -1;
 +    }
-+    if (imp->n_planes > FF_ARRAY_ELEMS(imp->plane))
++    if (np < 0 || (unsigned)np > FF_ARRAY_ELEMS(imp->plane))
 +        return AVERROR_EXTERNAL;
++    imp->n_planes = (uint32_t)np;
 +    int ok = 1;
 +    for (unsigned i = 0; i < imp->n_planes && i < FF_ARRAY_ELEMS(imp->plane) && ok; i++)
 +        ok = vk_describe_plane(v, f, (int)i, imp, vk_acquire_fence(imp, (int)i));

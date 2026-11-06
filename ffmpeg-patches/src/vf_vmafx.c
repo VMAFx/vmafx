@@ -1449,13 +1449,13 @@ static void vk_close_descriptors(VmafxFrameImport *imp)
 static int vk_describe(const VMAFXVulkan *v, const AVFrame *copy, VmafxFrameImport *imp)
 {
     const AVVkFrame *f = (const AVVkFrame *)copy->data[0];
+    const int np = av_pix_fmt_count_planes(frame_sw_format(copy));
     uint32_t bpc = 0;
     imp->memory = VMAFX_MEMORY_VULKAN;
     imp->pix_fmt = layout_of(frame_sw_format(copy), &bpc);
     imp->bpc = bpc;
     imp->w = (uint32_t)copy->width;
     imp->h = (uint32_t)copy->height;
-    imp->n_planes = (uint32_t)av_pix_fmt_count_planes(frame_sw_format(copy));
     imp->vulkan_handle_type = VMAFX_VULKAN_HANDLE_OPAQUE_FD;
     imp->vulkan_tiling = (uint32_t)f->tiling; /* the values equal VkImageTiling */
     memcpy(imp->vulkan_pci, v->pci, sizeof(imp->vulkan_pci));
@@ -1463,8 +1463,9 @@ static int vk_describe(const VMAFXVulkan *v, const AVFrame *copy, VmafxFrameImpo
         imp->plane[i].fd = -1;
         vk_acquire_fence(imp, (int)i)->fd = -1;
     }
-    if (imp->n_planes > FF_ARRAY_ELEMS(imp->plane))
+    if (np < 0 || (unsigned)np > FF_ARRAY_ELEMS(imp->plane))
         return AVERROR_EXTERNAL;
+    imp->n_planes = (uint32_t)np;
     int ok = 1;
     for (unsigned i = 0; i < imp->n_planes && i < FF_ARRAY_ELEMS(imp->plane) && ok; i++)
         ok = vk_describe_plane(v, f, (int)i, imp, vk_acquire_fence(imp, (int)i));
