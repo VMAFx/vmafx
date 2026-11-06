@@ -142,6 +142,54 @@ class AgentCopyrightRuleTest(unittest.TestCase):
             self.assertFalse(index.exists())
             self.assertFalse(git_dir.exists())
 
+    def caller_repository(self, caller: Path) -> dict[str, str]:
+        """Build a clean tracked-AGENTS.md repository; return the hook variables naming it."""
+        caller.mkdir()
+        for args in (("init",), ("add", "--", "AGENTS.md")):
+            if args[0] == "add":
+                (caller / "AGENTS.md").write_text("Copyright 2026 Lusoris\n", encoding="utf-8")
+            rule.run_command(
+                ["git", *args],
+                allowed_executables=("git",),
+                cwd=caller,
+                env=fixture_git_env(),
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout_seconds=30,
+            )
+        return {
+            "GIT_DIR": str(caller / ".git"),
+            "GIT_INDEX_FILE": str(caller / ".git" / "index"),
+        }
+
+    def test_caller_hook_variables_do_not_redirect_other_root(self) -> None:
+        # Fixture B (self.root) tracks a clean AGENTS.md and a retired form in a second rule
+        # file; caller A tracks only its own clean AGENTS.md and is named by the hook variables.
+        # Without env scrubbing git lists A's index, B's second file is never scanned, rc 0.
+        self.plant("AGENTS.md", "Copyright 2026 Lusoris\n")
+        self.plant("docs/development/rule.md", "Lusoris+Claude-only\n")
+        with tempfile.TemporaryDirectory() as directory:
+            inherited = self.caller_repository(Path(directory) / "caller")
+            with mock.patch.dict(os.environ, inherited):
+                status, _, err = self.run_on()
+        self.assertEqual(status, 1)
+        self.assertIn("docs/development/rule.md:1: Lusoris+Claude-only", err)
+
+    def test_caller_hook_variables_clean_other_root_passes(self) -> None:
+        self.plant("AGENTS.md", "Copyright 2026 Lusoris\n")
+        with tempfile.TemporaryDirectory() as directory:
+            inherited = self.caller_repository(Path(directory) / "caller")
+            with mock.patch.dict(os.environ, inherited):
+                status, out, err = self.run_on()
+        self.assertEqual(status, 0, err)
+        self.assertIn("1 tracked files checked", out)
+
+    def test_git_environment_keeps_variables_for_own_checkout_only(self) -> None:
+        with mock.patch.dict(os.environ, {"GIT_INDEX_FILE": "staged"}):
+            self.assertEqual(rule.git_environment(rule.ROOT)["GIT_INDEX_FILE"], "staged")
+            self.assertNotIn("GIT_INDEX_FILE", rule.git_environment(self.root))
+
     def test_invalid_utf8_exits_2(self) -> None:
         self.plant("AGENTS.md", "Copyright 2026 Lusoris\n")
         (self.root / "AGENTS.md").write_bytes(b"\xff")

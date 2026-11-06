@@ -12,6 +12,7 @@ Exit 0 on clean rules, 1 on retired wording, 2 on Git or file-read errors.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -32,12 +33,26 @@ PATHSPECS = [
 RETIRED_RULE = re.compile(r"Lusoris\s*[/+]\s*Claude|dual\s+Lusoris", re.IGNORECASE)
 
 
+def git_environment(root: Path) -> dict[str, str]:
+    """Return the environment git runs in for `root`.
+
+    In this checkout a commit hook's GIT_INDEX_FILE names the staged state, which is what to
+    check. For any other tree (a test fixture) the caller's GIT_* variables would point git at
+    the caller's repository, so they are dropped. Same semantics as
+    check_licence_metadata.git_environment; one shared helper is pending (issue #3324).
+    """
+    if root.resolve() == ROOT.resolve():
+        return dict(os.environ)
+    return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+
+
 def tracked_rules(root: Path) -> list[str]:
     """Return the bounded Git index listing for the explicit rule pathspecs."""
     result = run_command(
         ["git", "ls-files", "-z", "--", *PATHSPECS],
         allowed_executables=("git",),
         cwd=root,
+        env=git_environment(root),
         capture_output=True,
         text=True,
         encoding="utf-8",
