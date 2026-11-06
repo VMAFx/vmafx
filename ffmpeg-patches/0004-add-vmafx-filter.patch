@@ -17,9 +17,9 @@ the same scoring path, recommends a CRF for the next pass. Built with
  doc/filters.texi               |  151 ++
  libavfilter/Makefile           |    2 +
  libavfilter/allfilters.c       |    2 +
- libavfilter/vf_vmafx.c         | 2982 ++++++++++++++++++++++++++++++++
+ libavfilter/vf_vmafx.c         | 2983 ++++++++++++++++++++++++++++++++
  libavfilter/vf_vmafx_options.h |  152 ++
- 6 files changed, 3294 insertions(+)
+ 6 files changed, 3295 insertions(+)
  create mode 100644 libavfilter/vf_vmafx.c
  create mode 100644 libavfilter/vf_vmafx_options.h
 
@@ -250,10 +250,10 @@ index 5ecf9a8698318dd84d5d3723df2053a2c9f20304..b923bf9ec16ee0818b64509ca8af9f18
  extern const FFFilter ff_vf_w3fdif;
 diff --git a/libavfilter/vf_vmafx.c b/libavfilter/vf_vmafx.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..2775546bc9e8310627867fe49f9e87998bb994c8
+index 0000000000000000000000000000000000000000..261d1cef7e64fe85800dc447c87060e1ed5adc80
 --- /dev/null
 +++ b/libavfilter/vf_vmafx.c
-@@ -0,0 +1,2982 @@
+@@ -0,0 +1,2983 @@
 +/*
 + * Copyright 2026 Lusoris
 + *
@@ -285,6 +285,7 @@ index 0000000000000000000000000000000000000000..2775546bc9e8310627867fe49f9e8799
 + * ffmpeg-patches/src/vf_vmafx.c in the VMAFx tree.
 + */
 +
++#include "config.h"
 +#include "config_components.h"
 +
 +#include <errno.h>

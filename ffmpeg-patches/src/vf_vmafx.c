@@ -29,6 +29,7 @@
  * ffmpeg-patches/src/vf_vmafx.c in the VMAFx tree.
  */
 
+#include "config.h"
 #include "config_components.h"
 
 #include <errno.h>
