@@ -30,6 +30,8 @@ jobs:
     if: needs.tier.outputs.light == 'true'
     name: Plan Rust impact
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     outputs:
       selected: ${{ steps.impact.outputs.rust }}
     steps:
@@ -311,6 +313,8 @@ jobs:
     # required-aggregator
     name: vmafx-sys CI
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     steps:
       - name: Require selected vmafx-sys work
         env:
@@ -333,6 +337,8 @@ jobs:
     # required-aggregator
     name: cargo-deny
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     steps:
       - name: Require selected cargo-deny work
         env:
