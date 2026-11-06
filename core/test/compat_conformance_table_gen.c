@@ -321,8 +321,40 @@ static int VMAF_COMPAT_THUNK(41)(void)
 }
 
 #endif
-#if VMAFX_BUILD_MCP
+#if !VMAFX_ENGINE_EXPORTS_VULKAN
 static int VMAF_COMPAT_THUNK(42)(void)
+{
+    VMAF_COMPAT_CALLS[VMAF_COMPAT_VULKAN_AVAILABLE]++;
+    return vmaf_vulkan_available();
+}
+
+#endif
+#if !VMAFX_ENGINE_EXPORTS_VULKAN
+static int VMAF_COMPAT_THUNK(43)(VmafVulkanState **out, VmafVulkanConfiguration cfg)
+{
+    VMAF_COMPAT_CALLS[VMAF_COMPAT_VULKAN_STATE_INIT]++;
+    return vmaf_vulkan_state_init(out, cfg);
+}
+
+#endif
+#if !VMAFX_ENGINE_EXPORTS_VULKAN
+static int VMAF_COMPAT_THUNK(44)(VmafContext *ctx, VmafVulkanState *state)
+{
+    VMAF_COMPAT_CALLS[VMAF_COMPAT_VULKAN_IMPORT_STATE]++;
+    return vmaf_vulkan_import_state(ctx, state);
+}
+
+#endif
+#if !VMAFX_ENGINE_EXPORTS_VULKAN
+static void VMAF_COMPAT_THUNK(45)(VmafVulkanState **state)
+{
+    VMAF_COMPAT_CALLS[VMAF_COMPAT_VULKAN_STATE_FREE]++;
+    vmaf_vulkan_state_free(state);
+}
+
+#endif
+#if VMAFX_BUILD_MCP
+static int VMAF_COMPAT_THUNK(46)(void)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MCP_AVAILABLE]++;
     return vmaf_mcp_available();
@@ -330,7 +362,7 @@ static int VMAF_COMPAT_THUNK(42)(void)
 
 #endif
 #if VMAFX_BUILD_MCP
-static int VMAF_COMPAT_THUNK(43)(VmafMcpTransport transport)
+static int VMAF_COMPAT_THUNK(47)(VmafMcpTransport transport)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MCP_TRANSPORT_AVAILABLE]++;
     return vmaf_mcp_transport_available(transport);
@@ -338,7 +370,7 @@ static int VMAF_COMPAT_THUNK(43)(VmafMcpTransport transport)
 
 #endif
 #if VMAFX_BUILD_MCP
-static int VMAF_COMPAT_THUNK(44)(VmafMcpServer **out, VmafContext *ctx, const VmafMcpConfig *cfg)
+static int VMAF_COMPAT_THUNK(48)(VmafMcpServer **out, VmafContext *ctx, const VmafMcpConfig *cfg)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MCP_INIT]++;
     return vmaf_mcp_init(out, ctx, cfg);
@@ -346,7 +378,7 @@ static int VMAF_COMPAT_THUNK(44)(VmafMcpServer **out, VmafContext *ctx, const Vm
 
 #endif
 #if VMAFX_BUILD_MCP
-static int VMAF_COMPAT_THUNK(45)(VmafMcpServer *server, VmafMcpSseConfig *cfg)
+static int VMAF_COMPAT_THUNK(49)(VmafMcpServer *server, VmafMcpSseConfig *cfg)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MCP_START_SSE]++;
     return vmaf_mcp_start_sse(server, cfg);
@@ -354,7 +386,7 @@ static int VMAF_COMPAT_THUNK(45)(VmafMcpServer *server, VmafMcpSseConfig *cfg)
 
 #endif
 #if VMAFX_BUILD_MCP
-static int VMAF_COMPAT_THUNK(46)(VmafMcpServer *server, const VmafMcpUdsConfig *cfg)
+static int VMAF_COMPAT_THUNK(50)(VmafMcpServer *server, const VmafMcpUdsConfig *cfg)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MCP_START_UDS]++;
     return vmaf_mcp_start_uds(server, cfg);
@@ -362,7 +394,7 @@ static int VMAF_COMPAT_THUNK(46)(VmafMcpServer *server, const VmafMcpUdsConfig *
 
 #endif
 #if VMAFX_BUILD_MCP
-static int VMAF_COMPAT_THUNK(47)(VmafMcpServer *server, const VmafMcpStdioConfig *cfg)
+static int VMAF_COMPAT_THUNK(51)(VmafMcpServer *server, const VmafMcpStdioConfig *cfg)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MCP_START_STDIO]++;
     return vmaf_mcp_start_stdio(server, cfg);
@@ -370,7 +402,7 @@ static int VMAF_COMPAT_THUNK(47)(VmafMcpServer *server, const VmafMcpStdioConfig
 
 #endif
 #if VMAFX_BUILD_MCP
-static int VMAF_COMPAT_THUNK(48)(VmafMcpServer *server)
+static int VMAF_COMPAT_THUNK(52)(VmafMcpServer *server)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MCP_STOP]++;
     return vmaf_mcp_stop(server);
@@ -378,7 +410,7 @@ static int VMAF_COMPAT_THUNK(48)(VmafMcpServer *server)
 
 #endif
 #if VMAFX_BUILD_MCP
-static void VMAF_COMPAT_THUNK(49)(VmafMcpServer **server)
+static void VMAF_COMPAT_THUNK(53)(VmafMcpServer **server)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MCP_CLOSE]++;
     vmaf_mcp_close(server);
@@ -386,7 +418,7 @@ static void VMAF_COMPAT_THUNK(49)(VmafMcpServer **server)
 
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static int VMAF_COMPAT_THUNK(50)(void)
+static int VMAF_COMPAT_THUNK(54)(void)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_AVAILABLE]++;
     return vmaf_metal_available();
@@ -394,7 +426,7 @@ static int VMAF_COMPAT_THUNK(50)(void)
 
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static int VMAF_COMPAT_THUNK(51)(VmafMetalState **out, VmafMetalConfiguration cfg)
+static int VMAF_COMPAT_THUNK(55)(VmafMetalState **out, VmafMetalConfiguration cfg)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_STATE_INIT]++;
     return vmaf_metal_state_init(out, cfg);
@@ -402,7 +434,7 @@ static int VMAF_COMPAT_THUNK(51)(VmafMetalState **out, VmafMetalConfiguration cf
 
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static int VMAF_COMPAT_THUNK(52)(VmafContext *ctx, VmafMetalState *state)
+static int VMAF_COMPAT_THUNK(56)(VmafContext *ctx, VmafMetalState *state)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_IMPORT_STATE]++;
     return vmaf_metal_import_state(ctx, state);
@@ -410,7 +442,7 @@ static int VMAF_COMPAT_THUNK(52)(VmafContext *ctx, VmafMetalState *state)
 
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static void VMAF_COMPAT_THUNK(53)(VmafMetalState **state)
+static void VMAF_COMPAT_THUNK(57)(VmafMetalState **state)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_STATE_FREE]++;
     vmaf_metal_state_free(state);
@@ -418,7 +450,7 @@ static void VMAF_COMPAT_THUNK(53)(VmafMetalState **state)
 
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static int VMAF_COMPAT_THUNK(54)(void)
+static int VMAF_COMPAT_THUNK(58)(void)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_LIST_DEVICES]++;
     return vmaf_metal_list_devices();
@@ -426,7 +458,7 @@ static int VMAF_COMPAT_THUNK(54)(void)
 
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static int VMAF_COMPAT_THUNK(55)(VmafMetalState **out, VmafMetalExternalHandles handles)
+static int VMAF_COMPAT_THUNK(59)(VmafMetalState **out, VmafMetalExternalHandles handles)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_STATE_INIT_EXTERNAL]++;
     return vmaf_metal_state_init_external(out, handles);
@@ -434,7 +466,7 @@ static int VMAF_COMPAT_THUNK(55)(VmafMetalState **out, VmafMetalExternalHandles 
 
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static int VMAF_COMPAT_THUNK(56)(VmafMetalState *state, uintptr_t iosurface, unsigned plane,
+static int VMAF_COMPAT_THUNK(60)(VmafMetalState *state, uintptr_t iosurface, unsigned plane,
                                  unsigned w, unsigned h, unsigned bpc, int is_ref, unsigned index)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_PICTURE_IMPORT]++;
@@ -443,7 +475,7 @@ static int VMAF_COMPAT_THUNK(56)(VmafMetalState *state, uintptr_t iosurface, uns
 
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static int VMAF_COMPAT_THUNK(57)(VmafMetalState *state)
+static int VMAF_COMPAT_THUNK(61)(VmafMetalState *state)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_WAIT_COMPUTE]++;
     return vmaf_metal_wait_compute(state);
@@ -451,173 +483,173 @@ static int VMAF_COMPAT_THUNK(57)(VmafMetalState *state)
 
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static int VMAF_COMPAT_THUNK(58)(VmafContext *ctx, unsigned index)
+static int VMAF_COMPAT_THUNK(62)(VmafContext *ctx, unsigned index)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_READ_IMPORTED_PICTURES]++;
     return vmaf_metal_read_imported_pictures(ctx, index);
 }
 
 #endif
-static int VMAF_COMPAT_THUNK(59)(VmafModel **model, VmafModelConfig *cfg, const char *version)
+static int VMAF_COMPAT_THUNK(63)(VmafModel **model, VmafModelConfig *cfg, const char *version)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_LOAD]++;
     return vmaf_model_load(model, cfg, version);
 }
 
-static int VMAF_COMPAT_THUNK(60)(VmafModel **model, VmafModelConfig *cfg, const char *path)
+static int VMAF_COMPAT_THUNK(64)(VmafModel **model, VmafModelConfig *cfg, const char *path)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_LOAD_FROM_PATH]++;
     return vmaf_model_load_from_path(model, cfg, path);
 }
 
-static int VMAF_COMPAT_THUNK(61)(VmafModel *model, const char *feature_name,
+static int VMAF_COMPAT_THUNK(65)(VmafModel *model, const char *feature_name,
                                  VmafFeatureDictionary *opts_dict)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_FEATURE_OVERLOAD]++;
     return vmaf_model_feature_overload(model, feature_name, opts_dict);
 }
 
-static void VMAF_COMPAT_THUNK(62)(VmafModel *model)
+static void VMAF_COMPAT_THUNK(66)(VmafModel *model)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_DESTROY]++;
     vmaf_model_destroy(model);
 }
 
-static unsigned VMAF_COMPAT_THUNK(63)(const VmafModel *model)
+static unsigned VMAF_COMPAT_THUNK(67)(const VmafModel *model)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_FEATURE_COUNT]++;
     return vmaf_model_feature_count(model);
 }
 
-static const char *VMAF_COMPAT_THUNK(64)(const VmafModel *model, unsigned index)
+static const char *VMAF_COMPAT_THUNK(68)(const VmafModel *model, unsigned index)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_FEATURE_NAME]++;
     return vmaf_model_feature_name(model, index);
 }
 
-static int VMAF_COMPAT_THUNK(65)(VmafModel **model, VmafModelCollection **model_collection,
+static int VMAF_COMPAT_THUNK(69)(VmafModel **model, VmafModelCollection **model_collection,
                                  VmafModelConfig *cfg, const char *version)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_COLLECTION_LOAD]++;
     return vmaf_model_collection_load(model, model_collection, cfg, version);
 }
 
-static int VMAF_COMPAT_THUNK(66)(VmafModel **model, VmafModelCollection **model_collection,
+static int VMAF_COMPAT_THUNK(70)(VmafModel **model, VmafModelCollection **model_collection,
                                  VmafModelConfig *cfg, const char *path)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_COLLECTION_LOAD_FROM_PATH]++;
     return vmaf_model_collection_load_from_path(model, model_collection, cfg, path);
 }
 
-static int VMAF_COMPAT_THUNK(67)(VmafModel *model, VmafModelCollection **model_collection,
+static int VMAF_COMPAT_THUNK(71)(VmafModel *model, VmafModelCollection **model_collection,
                                  const char *feature_name, VmafFeatureDictionary *opts_dict)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_COLLECTION_FEATURE_OVERLOAD]++;
     return vmaf_model_collection_feature_overload(model, model_collection, feature_name, opts_dict);
 }
 
-static void VMAF_COMPAT_THUNK(68)(VmafModelCollection *model_collection)
+static void VMAF_COMPAT_THUNK(72)(VmafModelCollection *model_collection)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_COLLECTION_DESTROY]++;
     vmaf_model_collection_destroy(model_collection);
 }
 
-static const void *VMAF_COMPAT_THUNK(69)(const void *prev, const char **version)
+static const void *VMAF_COMPAT_THUNK(73)(const void *prev, const char **version)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_VERSION_NEXT]++;
     return vmaf_model_version_next(prev, version);
 }
 
-static const char *VMAF_COMPAT_THUNK(70)(void)
+static const char *VMAF_COMPAT_THUNK(74)(void)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_DEFAULT_MODEL_VERSION]++;
     return vmaf_default_model_version();
 }
 
-static int VMAF_COMPAT_THUNK(71)(VmafContext *vmaf, int enabled)
+static int VMAF_COMPAT_THUNK(75)(VmafContext *vmaf, int enabled)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_SET_PERCEPTUAL_WEIGHT_ENABLED]++;
     return vmaf_set_perceptual_weight_enabled(vmaf, enabled);
 }
 
-static int VMAF_COMPAT_THUNK(72)(VmafContext *vmaf, double strength)
+static int VMAF_COMPAT_THUNK(76)(VmafContext *vmaf, double strength)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_SET_PERCEPTUAL_WEIGHT_STRENGTH]++;
     return vmaf_set_perceptual_weight_strength(vmaf, strength);
 }
 
-static int VMAF_COMPAT_THUNK(73)(VmafContext *vmaf, const uint8_t *blob, size_t len,
+static int VMAF_COMPAT_THUNK(77)(VmafContext *vmaf, const uint8_t *blob, size_t len,
                                  unsigned pic_index)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_SET_PERCEPTUAL_SIDEDATA]++;
     return vmaf_set_perceptual_sidedata(vmaf, blob, len, pic_index);
 }
 
-static int VMAF_COMPAT_THUNK(74)(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned bpc,
+static int VMAF_COMPAT_THUNK(78)(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned bpc,
                                  unsigned w, unsigned h)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_ALLOC]++;
     return vmaf_picture_alloc(pic, pix_fmt, bpc, w, h);
 }
 
-static int VMAF_COMPAT_THUNK(75)(VmafPicture *pic)
+static int VMAF_COMPAT_THUNK(79)(VmafPicture *pic)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_UNREF]++;
     return vmaf_picture_unref(pic);
 }
 
-static int VMAF_COMPAT_THUNK(76)(VmafPicture *pic, VmafPictureWrapped pic_wrapped)
+static int VMAF_COMPAT_THUNK(80)(VmafPicture *pic, VmafPictureWrapped pic_wrapped)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_WRAP]++;
     return vmaf_picture_wrap(pic, pic_wrapped);
 }
 
-static int VMAF_COMPAT_THUNK(77)(VmafPictureConvertContext **ctx, const VmafPicture *src,
+static int VMAF_COMPAT_THUNK(81)(VmafPictureConvertContext **ctx, const VmafPicture *src,
                                  const VmafColor *src_color, const VmafPictureConvertTarget *target)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_CONVERT_CONTEXT_INIT_WITH_COLOR]++;
     return vmaf_picture_convert_context_init_with_color(ctx, src, src_color, target);
 }
 
-static int VMAF_COMPAT_THUNK(78)(VmafPictureConvertContext *ctx, VmafPicture *dst,
+static int VMAF_COMPAT_THUNK(82)(VmafPictureConvertContext *ctx, VmafPicture *dst,
                                  const VmafPicture *src)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_CONVERT]++;
     return vmaf_picture_convert(ctx, dst, src);
 }
 
-static int VMAF_COMPAT_THUNK(79)(VmafPictureConvertContext *ctx)
+static int VMAF_COMPAT_THUNK(83)(VmafPictureConvertContext *ctx)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_CONVERT_CONTEXT_CLOSE]++;
     return vmaf_picture_convert_context_close(ctx);
 }
 
-static int VMAF_COMPAT_THUNK(80)(VmafPicture2 *pic, enum VmafPixelFormat pix_fmt, unsigned bpc,
+static int VMAF_COMPAT_THUNK(84)(VmafPicture2 *pic, enum VmafPixelFormat pix_fmt, unsigned bpc,
                                  unsigned w, unsigned h)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE2_ALLOC]++;
     return vmaf_picture2_alloc(pic, pix_fmt, bpc, w, h);
 }
 
-static int VMAF_COMPAT_THUNK(81)(VmafPicture2 *pic)
+static int VMAF_COMPAT_THUNK(85)(VmafPicture2 *pic)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE2_UNREF]++;
     return vmaf_picture2_unref(pic);
 }
 
-static int VMAF_COMPAT_THUNK(82)(const VmafPicture *src, VmafPicture2 *dst)
+static int VMAF_COMPAT_THUNK(86)(const VmafPicture *src, VmafPicture2 *dst)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_V1_TO_V2]++;
     return vmaf_picture_v1_to_v2(src, dst);
 }
 
-static int VMAF_COMPAT_THUNK(83)(const VmafPicture2 *src, VmafPicture *dst)
+static int VMAF_COMPAT_THUNK(87)(const VmafPicture2 *src, VmafPicture *dst)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_V2_TO_V1]++;
     return vmaf_picture_v2_to_v1(src, dst);
 }
 
-static const char *VMAF_COMPAT_THUNK(84)(VmafBackendHandle backend)
+static const char *VMAF_COMPAT_THUNK(88)(VmafBackendHandle backend)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_BACKEND_HANDLE_NAME]++;
     return vmaf_backend_handle_name(backend);
@@ -677,83 +709,95 @@ const VmafCompatApi VMAF_COMPAT_TABLE = {
 #if !VMAFX_ENGINE_EXPORTS_HIP
     .hip_list_devices = VMAF_COMPAT_THUNK(41),
 #endif
-#if VMAFX_BUILD_MCP
-    .mcp_available = VMAF_COMPAT_THUNK(42),
+#if !VMAFX_ENGINE_EXPORTS_VULKAN
+    .vulkan_available = VMAF_COMPAT_THUNK(42),
+#endif
+#if !VMAFX_ENGINE_EXPORTS_VULKAN
+    .vulkan_state_init = VMAF_COMPAT_THUNK(43),
+#endif
+#if !VMAFX_ENGINE_EXPORTS_VULKAN
+    .vulkan_import_state = VMAF_COMPAT_THUNK(44),
+#endif
+#if !VMAFX_ENGINE_EXPORTS_VULKAN
+    .vulkan_state_free = VMAF_COMPAT_THUNK(45),
 #endif
 #if VMAFX_BUILD_MCP
-    .mcp_transport_available = VMAF_COMPAT_THUNK(43),
+    .mcp_available = VMAF_COMPAT_THUNK(46),
 #endif
 #if VMAFX_BUILD_MCP
-    .mcp_init = VMAF_COMPAT_THUNK(44),
+    .mcp_transport_available = VMAF_COMPAT_THUNK(47),
 #endif
 #if VMAFX_BUILD_MCP
-    .mcp_start_sse = VMAF_COMPAT_THUNK(45),
+    .mcp_init = VMAF_COMPAT_THUNK(48),
 #endif
 #if VMAFX_BUILD_MCP
-    .mcp_start_uds = VMAF_COMPAT_THUNK(46),
+    .mcp_start_sse = VMAF_COMPAT_THUNK(49),
 #endif
 #if VMAFX_BUILD_MCP
-    .mcp_start_stdio = VMAF_COMPAT_THUNK(47),
+    .mcp_start_uds = VMAF_COMPAT_THUNK(50),
 #endif
 #if VMAFX_BUILD_MCP
-    .mcp_stop = VMAF_COMPAT_THUNK(48),
+    .mcp_start_stdio = VMAF_COMPAT_THUNK(51),
 #endif
 #if VMAFX_BUILD_MCP
-    .mcp_close = VMAF_COMPAT_THUNK(49),
+    .mcp_stop = VMAF_COMPAT_THUNK(52),
+#endif
+#if VMAFX_BUILD_MCP
+    .mcp_close = VMAF_COMPAT_THUNK(53),
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_available = VMAF_COMPAT_THUNK(50),
+    .metal_available = VMAF_COMPAT_THUNK(54),
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_state_init = VMAF_COMPAT_THUNK(51),
+    .metal_state_init = VMAF_COMPAT_THUNK(55),
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_import_state = VMAF_COMPAT_THUNK(52),
+    .metal_import_state = VMAF_COMPAT_THUNK(56),
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_state_free = VMAF_COMPAT_THUNK(53),
+    .metal_state_free = VMAF_COMPAT_THUNK(57),
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_list_devices = VMAF_COMPAT_THUNK(54),
+    .metal_list_devices = VMAF_COMPAT_THUNK(58),
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_state_init_external = VMAF_COMPAT_THUNK(55),
+    .metal_state_init_external = VMAF_COMPAT_THUNK(59),
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_picture_import = VMAF_COMPAT_THUNK(56),
+    .metal_picture_import = VMAF_COMPAT_THUNK(60),
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_wait_compute = VMAF_COMPAT_THUNK(57),
+    .metal_wait_compute = VMAF_COMPAT_THUNK(61),
 #endif
 #if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_read_imported_pictures = VMAF_COMPAT_THUNK(58),
+    .metal_read_imported_pictures = VMAF_COMPAT_THUNK(62),
 #endif
-    .model_load = VMAF_COMPAT_THUNK(59),
-    .model_load_from_path = VMAF_COMPAT_THUNK(60),
-    .model_feature_overload = VMAF_COMPAT_THUNK(61),
-    .model_destroy = VMAF_COMPAT_THUNK(62),
-    .model_feature_count = VMAF_COMPAT_THUNK(63),
-    .model_feature_name = VMAF_COMPAT_THUNK(64),
-    .model_collection_load = VMAF_COMPAT_THUNK(65),
-    .model_collection_load_from_path = VMAF_COMPAT_THUNK(66),
-    .model_collection_feature_overload = VMAF_COMPAT_THUNK(67),
-    .model_collection_destroy = VMAF_COMPAT_THUNK(68),
-    .model_version_next = VMAF_COMPAT_THUNK(69),
-    .default_model_version = VMAF_COMPAT_THUNK(70),
-    .set_perceptual_weight_enabled = VMAF_COMPAT_THUNK(71),
-    .set_perceptual_weight_strength = VMAF_COMPAT_THUNK(72),
-    .set_perceptual_sidedata = VMAF_COMPAT_THUNK(73),
-    .picture_alloc = VMAF_COMPAT_THUNK(74),
-    .picture_unref = VMAF_COMPAT_THUNK(75),
-    .picture_wrap = VMAF_COMPAT_THUNK(76),
-    .picture_convert_context_init_with_color = VMAF_COMPAT_THUNK(77),
-    .picture_convert = VMAF_COMPAT_THUNK(78),
-    .picture_convert_context_close = VMAF_COMPAT_THUNK(79),
-    .picture2_alloc = VMAF_COMPAT_THUNK(80),
-    .picture2_unref = VMAF_COMPAT_THUNK(81),
-    .picture_v1_to_v2 = VMAF_COMPAT_THUNK(82),
-    .picture_v2_to_v1 = VMAF_COMPAT_THUNK(83),
-    .backend_handle_name = VMAF_COMPAT_THUNK(84),
+    .model_load = VMAF_COMPAT_THUNK(63),
+    .model_load_from_path = VMAF_COMPAT_THUNK(64),
+    .model_feature_overload = VMAF_COMPAT_THUNK(65),
+    .model_destroy = VMAF_COMPAT_THUNK(66),
+    .model_feature_count = VMAF_COMPAT_THUNK(67),
+    .model_feature_name = VMAF_COMPAT_THUNK(68),
+    .model_collection_load = VMAF_COMPAT_THUNK(69),
+    .model_collection_load_from_path = VMAF_COMPAT_THUNK(70),
+    .model_collection_feature_overload = VMAF_COMPAT_THUNK(71),
+    .model_collection_destroy = VMAF_COMPAT_THUNK(72),
+    .model_version_next = VMAF_COMPAT_THUNK(73),
+    .default_model_version = VMAF_COMPAT_THUNK(74),
+    .set_perceptual_weight_enabled = VMAF_COMPAT_THUNK(75),
+    .set_perceptual_weight_strength = VMAF_COMPAT_THUNK(76),
+    .set_perceptual_sidedata = VMAF_COMPAT_THUNK(77),
+    .picture_alloc = VMAF_COMPAT_THUNK(78),
+    .picture_unref = VMAF_COMPAT_THUNK(79),
+    .picture_wrap = VMAF_COMPAT_THUNK(80),
+    .picture_convert_context_init_with_color = VMAF_COMPAT_THUNK(81),
+    .picture_convert = VMAF_COMPAT_THUNK(82),
+    .picture_convert_context_close = VMAF_COMPAT_THUNK(83),
+    .picture2_alloc = VMAF_COMPAT_THUNK(84),
+    .picture2_unref = VMAF_COMPAT_THUNK(85),
+    .picture_v1_to_v2 = VMAF_COMPAT_THUNK(86),
+    .picture_v2_to_v1 = VMAF_COMPAT_THUNK(87),
+    .backend_handle_name = VMAF_COMPAT_THUNK(88),
 };
 
 /* NOLINTEND(modernize-use-nullptr) */

@@ -134,6 +134,7 @@ list from the same source.
 | `--no_sycl` | | bool | `false` | Disable the SYCL (oneAPI) backend. |
 | `--no_hip` | | bool | `false` | Disable the HIP (ROCm) backend. |
 | `--no_metal` | | bool | `false` | Disable the Metal (Apple silicon) backend. |
+| `--no_vulkan` | | bool | `false` | Disable the Vulkan backend. |
 | `--feature` | | string | | Additional feature extractor, name[=key=value:...] (for example psnr or cambi=full_ref=true); several may be given (the filter separates them with \|). Mutually exclusive with the CTC presets. |
 | `--aom_ctc` | | `v1.0` \| `v2.0` \| `v3.0` \| `v4.0` \| `v5.0` \| `v6.0` \| `v7.0` | | AOM common test conditions preset: a fixed model and feature set. |
 | `--nflx_ctc` | | `v1.0` | | Netflix common test conditions preset: a fixed model and feature set. |
@@ -158,6 +159,7 @@ list from the same source.
 | `--sycl_device` | | uint | | SYCL GPU by index (unset: selected automatically). |
 | `--hip_device` | | uint | | HIP GPU by index (opt-in: HIP is off unless this or --backend hip is given). |
 | `--metal_device` | | uint | | Metal GPU by index (opt-in: Metal is off unless this or --backend metal is given). |
+| `--vulkan_device` | | uint | | Vulkan GPU by index (opt-in: Vulkan is off unless this or --backend vulkan is given). |
 | `--subsample` | | uint >= 1 | `1` | Score every n-th frame (1: every frame). |
 | `--precision` | | `legacy` \| `max` \| `full` \| `1` \| `2` \| `3` \| `4` \| `5` \| `6` \| `7` \| `8` \| `9` \| `10` \| `11` \| `12` \| `13` \| `14` \| `15` \| `16` \| `17` | `legacy` | Score precision: N (1 to 17) writes %.&lt;N&gt;g; max or full write %.17g (round-trip lossless); legacy writes %.6f (Netflix-compatible). The scoring server returns lossless scores unless asked otherwise. |
 | `--output` | `-o` | string | | Report file. |

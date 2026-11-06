@@ -36,6 +36,7 @@ LIBVMAF_HEADERS = (
     "libvmaf/libvmaf_hip.h",
     "libvmaf/libvmaf_mcp.h",
     "libvmaf/libvmaf_metal.h",
+    "libvmaf/libvmaf_vulkan.h",
     "libvmaf/model.h",
     "libvmaf/perceptual_weight.h",
     "libvmaf/picture.h",
