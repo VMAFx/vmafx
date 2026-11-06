@@ -94,6 +94,12 @@ exceptions:
     entered: "2026-11-02"
     reason: "Category A, interval to the stated expiry. SLSA Build Level 2 measured against the Level 3 the native-gpu-systems profile and security:high facet declare: the publish job signs provenance over image digests that build jobs uploaded, not inside a reusable workflow that builds and attests. Level 3 needs that restructuring (T-SLSA-RELEASE-PROVENANCE-LEVEL-2-2026-10-07)."
     expires: "2027-01-04"
+  - rule: job-timeout
+    path: ".github/workflows/required-aggregator.yml"
+    category: "D"
+    entered: "2026-11-06"
+    reason: "Category D, 120-day interval. The aggregator job only polls the checks API until every sibling workflow is terminal; its script deadline is 240 minutes and timeout-minutes 250 lets the job finish after it. That is above the engine bound max(30, 4 x slowest) = 194 and the 120-minute static cap, but 30- and 90-minute deadlines failed every open pull request during runner-queue starvation on 2026-05-09 and 2026-08-30, and the aggregator is a required check, so a short bound blocks merges. The wait costs a runner slot, not compute. Rectify by moving the wait to an event-driven check (no polling job) or by a measured queue-depth bound."
+    expires: "2027-03-06"
   - rule: clang-tidy-coverage
     path: ".config/hiss/testdata/HISS-01/c/gap/direct-recursion.c"
     category: "D"

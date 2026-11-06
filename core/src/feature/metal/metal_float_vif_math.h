@@ -152,21 +152,14 @@ VMAF_MTL_FUNC float vmaf_mtl_fvif_tap(float acc, float coeff, float sample)
 }
 
 /* One raw sample as picture_copy(dst, stride, pic, -128, bpc, 0) reads it:
- * an 8-bit sample minus 128, a 10-, 12- or 16-bit sample divided by 4, 16 or
- * 256 (the divide is the correctly rounded fp32 one) minus 128. */
+ * an 8-bit sample minus 128, a >8-bit sample divided by 2^(bpc - 8)
+ * (the divide is the correctly rounded fp32 one) minus 128. */
 VMAF_MTL_FUNC float vmaf_mtl_fvif_raw_to_float(vmaf_mtl_u32 sample, vmaf_mtl_u32 bpc)
 {
     if (bpc <= 8u) {
         return (float)sample - 128.0f;
     }
-    float scaler = 1.0f;
-    if (bpc == 10u) {
-        scaler = 4.0f;
-    } else if (bpc == 12u) {
-        scaler = 16.0f;
-    } else if (bpc == 16u) {
-        scaler = 256.0f;
-    }
+    const float scaler = (float)(1u << (bpc - 8u));
     return (float)sample / scaler - 128.0f;
 }
 

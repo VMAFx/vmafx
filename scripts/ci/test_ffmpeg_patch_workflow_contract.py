@@ -382,7 +382,7 @@ class FFmpegWorkflowContract(unittest.TestCase):
                 ["aggregator does not require FFmpeg vmafx Filter"],
             ),
             "no libvmafx": (
-                self.workflow.replace("--enable-libvmafx --disable-filter", "--disable-filter"),
+                self.workflow.replace("--enable-libvmafx", ""),
                 aggregator,
                 ["filter build lacks --enable-libvmafx"],
             ),
@@ -537,6 +537,65 @@ class SharedFixSeriesContract(unittest.TestCase):
                     )
                     self.assertEqual(result.returncode, 2, result.stderr)
                     self.assertIn(needle, str(result.stderr))
+
+
+MSYS2_STEP = re.compile(r"(?m)^([ \t]*)- uses: msys2/setup-msys2@")
+
+
+def _msys2_inherit_cache_findings(name: str, workflow: str) -> list[str]:
+    """A setup-msys2 step with path-type: inherit that keeps the package cache on.
+
+    path-type: inherit hands the shell the whole runner environment; behind an MSVC
+    environment step that leaves less than LINE_MAX of MSYS2's ARG_MAX, and the
+    action's cache pruning (paccache, which runs xargs) aborts on the findutils
+    assertion bc_ctl.arg_max >= LINE_MAX. cache: false skips the pruning.
+    """
+    found = []
+    for match in MSYS2_STEP.finditer(workflow):
+        indent = match.group(1)
+        end = workflow.find(f"\n{indent}- ", match.end())
+        step = workflow[match.start() : end if end >= 0 else len(workflow)]
+        inherit = re.search(r"(?m)^\s+path-type:\s*inherit\s*$", step)
+        cache_off = re.search(r"(?m)^\s+cache:\s*false\s*$", step)
+        if inherit and not cache_off:
+            line = workflow.count("\n", 0, match.start()) + 1
+            found.append(f"{name}:{line}: setup-msys2 with path-type: inherit needs cache: false")
+    return found
+
+
+class Msys2InheritContract(unittest.TestCase):
+    def test_inherited_environment_steps_skip_the_cache_pruning(self) -> None:
+        findings = [
+            item
+            for path in sorted((ROOT / ".github/workflows").glob("*.yml"))
+            for item in _msys2_inherit_cache_findings(path.name, path.read_text(encoding="utf-8"))
+        ]
+        self.assertEqual(findings, [])
+
+    def test_check_refuses_a_planted_inherit_step_with_the_cache_on(self) -> None:
+        step = "      - uses: msys2/setup-msys2@abc  # v2\n        with:\n          path-type: inherit\n"
+        planted = "jobs:\n  a:\n    steps:\n" + step + "      - name: next\n        run: true\n"
+        self.assertEqual(
+            _msys2_inherit_cache_findings("w.yml", planted),
+            ["w.yml:4: setup-msys2 with path-type: inherit needs cache: false"],
+        )
+        fixed = planted.replace(
+            "path-type: inherit\n", "path-type: inherit\n          cache: false\n"
+        )
+        self.assertEqual(_msys2_inherit_cache_findings("w.yml", fixed), [])
+        minimal = planted.replace("path-type: inherit", "path-type: minimal")
+        self.assertEqual(_msys2_inherit_cache_findings("w.yml", minimal), [])
+
+    def test_a_blank_line_before_the_step_does_not_widen_it(self) -> None:
+        # A blank line in the captured indent made the step run to the end of the file,
+        # so a later step's cache: false hid the missing one.
+        step = "      - uses: msys2/setup-msys2@abc  # v2\n        with:\n          path-type: inherit\n"
+        later = "      - uses: other/action@abc  # v1\n        with:\n          cache: false\n"
+        planted = "jobs:\n  a:\n    steps:\n\n" + step + later
+        self.assertEqual(
+            _msys2_inherit_cache_findings("w.yml", planted),
+            ["w.yml:5: setup-msys2 with path-type: inherit needs cache: false"],
+        )
 
 
 if __name__ == "__main__":

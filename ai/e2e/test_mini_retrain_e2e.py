@@ -190,13 +190,14 @@ def test_a_killed_run_resumes_from_its_manifests(tmp_path: Path) -> None:
     assert _manifest(run_dir, "gate")["status"] == "complete"
 
 
-def _rewrite(path: Path, fn: Callable[[Any], None]) -> None:
+def _rewrite(path: Path, fn: Callable[[Any], Any]) -> None:
+    """Apply ``fn`` to the table; a returned frame replaces it (pandas 3.1 deprecates inplace)."""
     df = pd.read_parquet(path)
-    fn(df)
-    df.to_parquet(path, index=False)
+    out = fn(df)
+    (df if out is None else out).to_parquet(path, index=False)
 
 
-def _plant_after_extract(first_run: Path, run_dir: Path, mutate: Callable[[Any], None]) -> None:
+def _plant_after_extract(first_run: Path, run_dir: Path, mutate: Callable[[Any], Any]) -> None:
     """Run the pipeline with a defect planted into the extracted table.
 
     The first run's per-clip feature cache is reused, so extraction takes a
@@ -217,7 +218,7 @@ def _plant_after_extract(first_run: Path, run_dir: Path, mutate: Callable[[Any],
     [
         (
             "dropped column",
-            lambda d: d.drop(columns=["vif_scale2"], inplace=True),
+            lambda d: d.drop(columns=["vif_scale2"]),
             "missing column(s) ['vif_scale2']",
         ),
         ("nan feature", lambda d: d.__setitem__("adm2", float("nan")), "column 'adm2' holds"),
@@ -228,11 +229,11 @@ def _plant_after_extract(first_run: Path, run_dir: Path, mutate: Callable[[Any],
             "teacher_model ['vmaf_v0.6.1']",
         ),
         ("dead column", lambda d: d.__setitem__("ssimulacra2", float("nan")), "NaN in every row"),
-        ("truncated table", lambda d: d.drop(d.index[:10], inplace=True), "134 rows, want 144"),
+        ("truncated table", lambda d: d.drop(d.index[:10]), "134 rows, want 144"),
     ],
 )
 def test_planted_defect_fails_at_verify_features_with_a_named_error(
-    first_run: Path, tmp_path: Path, label: str, mutate: Callable[[Any], None], needle: str
+    first_run: Path, tmp_path: Path, label: str, mutate: Callable[[Any], Any], needle: str
 ) -> None:
     run_dir = tmp_path / "run"
     with pytest.raises(StageError) as err:

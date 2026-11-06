@@ -14,15 +14,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 WRONG_EXAMPLE_MARKER = "<!-- vmafx-ffmpeg-input-order: intentionally-wrong -->"
-PATCH_NAME = "0001-libvmaf-add-tiny-model-option.patch"
-FILTER_NAME = r"libvmaf(?:_[a-z0-9_]+)?"
+PATCH_NAME = "0004-add-vmafx-filter.patch"
+FILTER_NAME = r"(?:libvmaf(?:_[a-z0-9_]+)?|vmafx(?:_tune)?)"
 FILTER_RE = re.compile(rf"(?<![a-zA-Z0-9_]){FILTER_NAME}(?=[\s=,;'\"\[]|$)")
 PADDED_FILTER_RE = re.compile(rf"\[\s*([^\]]+?)\s*\]\s*\[\s*([^\]]+?)\s*\]\s*({FILTER_NAME})\b")
 FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})([^`]*)$")
 LOG_STATEMENT_RE = re.compile(
     r"av_log\(ctx,\s*AV_LOG_INFO,\s*"
-    r'"libvmaf: input\[0\]=distorted input\[1\]=reference "\s*'
-    r'"\(opposite of Python runner / vmaf CLI order\)\\n"\s*\);',
+    r'"%s: input 0 \(main\) is the distorted video, input 1 \(reference\) the reference; "\s*'
+    r'"swapping them scores the other direction\\n",\s*ctx->filter->name\);',
     re.DOTALL,
 )
 
@@ -38,6 +38,7 @@ REFERENCE_WORDS = {
 }
 DISTORTED_WORDS = {
     "d",
+    "dec",
     "degraded",
     "dis",
     "dist",
@@ -321,6 +322,12 @@ def extract_inputs(arguments: list[str]) -> tuple[list[str], str | None]:
             inputs.append(arguments[index + 1])
             index += 2
             continue
+        if arguments[index] == "-dec":
+            if index + 1 >= len(arguments):
+                return inputs, "-dec has no input operand"
+            inputs.append("dec")
+            index += 2
+            continue
         index += 1
     return inputs, None
 
@@ -338,6 +345,9 @@ def graph_definitions(graph: str) -> dict[str, str]:
 
 def _resolve_terminal(normalized: str, inputs: list[str]) -> tuple[str | None, str | None] | None:
     """Resolve a label that ends a definition chain; ``None`` when it continues one."""
+    dec_match = re.fullmatch(r"dec(?::\d+)*", normalized)
+    if dec_match:
+        return "distorted", None
     index_match = re.fullmatch(r"(\d+)(?::[vas](?:\d+)?)?", normalized)
     if not index_match:
         return None

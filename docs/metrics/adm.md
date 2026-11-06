@@ -22,8 +22,10 @@ areas) are handled specifically to avoid divide-by-zero.
 - Device twins: `--backend cuda|sycl|hip|metal --feature adm` runs the twin of
   that backend; see [Backends](#backends).
 
-**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc. Y plane
-only. The smallest accepted frame is 17x17 ([Small frames](#small-frames)).
+**Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 to 16 bpc. Y plane only. The
+CUDA, SYCL and HIP twins take every depth from 8 to 16 bits; the Metal twin
+refuses 9, 11, 13, 14 and 15 bits with `-EINVAL`. The smallest accepted frame
+is 17x17 ([Small frames](#small-frames)).
 
 ## Output metrics
 

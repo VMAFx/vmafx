@@ -17,7 +17,7 @@ files at the same subjective quality.
     - **Adapter:** a thin luma adapter preserves the C-side I/O contract; the
       weights swap rationale and the adapter design are recorded in
       [ADR-0255](../../adr/0255-fastdvdnet-pre-real-weights.md).
-    - **Filter:** the downstream FFmpeg `vmaf_pre_temporal` filter that
+    - **Filter:** the downstream FFmpeg `vmafx_pre_temporal` filter that
       consumes the denoised frame buffer is not shipped yet and is tracked
       separately.
 
@@ -29,7 +29,7 @@ between the input centre frame `t` (normalised to `[0, 1]`) and the
 denoised output. It exists so libvmaf's per-frame plumbing has a scalar
 to record; it is **not** a quality metric. Downstream pipelines that
 want the actual denoised pixel data should consume the FFmpeg
-`vmaf_pre_temporal` filter once it lands — that filter writes the
+`vmafx_pre_temporal` filter once it lands — that filter writes the
 denoised frame buffer to its output stream.
 
 | Value | Interpretation |
@@ -128,7 +128,7 @@ Trade-offs:
   the upstream graph for any RGB content; it is the input-domain
   mismatch that costs quality.
 - **Follow-up**: a luma-native retrain (or chroma-aware variant) is
-  tracked under T6-7c — depends on the FFmpeg `vmaf_pre_temporal`
+  tracked under T6-7c — depends on the FFmpeg `vmafx_pre_temporal`
   filter shipping first so the retrain target reflects the real
   consumer.
 

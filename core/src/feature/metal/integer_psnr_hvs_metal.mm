@@ -252,17 +252,35 @@ int alloc_term_buffers(PsnrHvsStateMetal *s)
 
 /* The tables and the pipelines; *stage is 1 when the device is missing, 2 when a table or a
  * pipeline failed (the caller unwinds from there). */
-int init_device_resources(PsnrHvsStateMetal *s, int *stage)
+int init_device_resources(PsnrHvsStateMetal *s)
 {
     const void *const dh = vmaf_metal_context_device_handle(s->ctx);
-    if (dh == nullptr) { *stage = 1; return -ENODEV; }
+    if (dh == nullptr) { return -ENODEV; }
     id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
     for (unsigned p = 0; p < s->n_planes; ++p) {
         const int err = upload_plane_tables(s, device, p);
-        if (err != 0) { *stage = 2; return err; }
+        if (err != 0) { return err; }
     }
-    const int err = build_pipelines(s, device);
-    *stage = (err != 0) ? 2 : 0;
+    return build_pipelines(s, device);
+}
+
+/* Release what init_fex_metal created, in reverse order, and return err. Every
+ * release is a no-op on a slot that was never filled, since priv starts
+ * zeroed, so each failure point unwinds through this one path. */
+static int unwind_init_fex_metal(PsnrHvsStateMetal *s, int err)
+{
+    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = nullptr; }
+    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = nullptr; }
+    free_csf_buffers(s);
+    for (unsigned p = 0; p < s->n_planes; ++p) {
+        (void)vmaf_metal_kernel_buffer_free(&s->rb[p], s->ctx);
+    }
+    if (s->ctx != nullptr) {
+        /* Best effort: the init error is what the caller reports. */
+        (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
+        vmaf_metal_context_destroy(s->ctx);
+        s->ctx = nullptr;
+    }
     return err;
 }
 
@@ -291,39 +309,19 @@ int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err != 0) { return err; }
 
     err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err != 0) { goto fail_ctx; }
+    if (err != 0) { return unwind_init_fex_metal(s, err); }
 
     err = alloc_term_buffers(s);
-    if (err != 0) { goto fail_lc; }
+    if (err != 0) { return unwind_init_fex_metal(s, err); }
 
-    {
-        int stage = 0;
-        err = init_device_resources(s, &stage);
-        if (stage == 1) { goto fail_rb; }
-        if (stage == 2) { goto fail_csf; }
-    }
+    err = init_device_resources(s);
+    if (err != 0) { return unwind_init_fex_metal(s, err); }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features,
                                                       fex->options, s);
-    if (s->feature_name_dict == nullptr) { err = -ENOMEM; goto fail_pso; }
+    if (s->feature_name_dict == nullptr) { err = -ENOMEM; return unwind_init_fex_metal(s, err); }
     return 0;
-
-fail_pso:
-    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = nullptr; }
-    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = nullptr; }
-fail_csf:
-    free_csf_buffers(s);
-fail_rb:
-    for (unsigned p = 0; p < s->n_planes; ++p) {
-        (void)vmaf_metal_kernel_buffer_free(&s->rb[p], s->ctx);
-    }
-fail_lc:
-    (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_ctx:
-    vmaf_metal_context_destroy(s->ctx);
-    s->ctx = nullptr;
-    return err;
 }
 
 int dispatch_plane(PsnrHvsStateMetal *s, id<MTLDevice> device, id<MTLCommandQueue> queue,

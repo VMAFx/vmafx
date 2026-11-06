@@ -35,7 +35,7 @@ class _ResBlock(nn.Module):  # type: ignore[misc]  # torch / Lightning are untyp
 
 
 class LearnedFilter(L.LightningModule):  # type: ignore[misc]  # torch / Lightning are untyped for the mypy gate (--no-site-packages)
-    """Frame → frame residual CNN (denoise/deblock/sharpen) for ffmpeg vmaf_pre filter."""
+    """Frame → frame residual CNN (denoise/deblock/sharpen) for ffmpeg vmafx_pre filter."""
 
     @property
     def _hp(self) -> _LearnedFilterHParams:

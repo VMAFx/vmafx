@@ -17,14 +17,14 @@ authors = [
 # NOT pull in the full ai/ optional-dependency tree (no optuna / ray /
 # matplotlib / lightning) — those are not on the Phase-A retrain path.
 dependencies = [
-  "torch>=2.14.1,<3.0",
+  "torch>=2.15.0,<3.0",
   # onnx 1.23 writes models at IR version 14 by default; onnxruntime 1.30,
   # the runtime this repo pins, loads at most IR 13. Raise this cap only
   # together with an onnxruntime that reads the newer IR.
   "onnx>=1.22.0,<1.23",
-  "onnxruntime>=1.31.0,<2.0",
+  "onnxruntime>=1.31.1,<2.0",
   "numpy>=2.5.3,<3.0",
-  "pandas>=3.0.6,<3.1",
+  "pandas>=3.1.0,<3.2",
   "scipy>=1.18.1",
   "scikit-learn>=1.9.1",
   "pyyaml>=6.0.3",
