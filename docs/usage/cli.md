@@ -1131,11 +1131,17 @@ shown are those of the Netflix pair):
 
 In report outputs (XML `<fyi>` and JSON root fields `"fps"` and `"wall_fps"`):
 
-- `fps`: pictures per CPU second (process CPU time summed across all
-  worker threads, inherited from upstream Netflix/vmaf). On multi-threaded
-  runs it reflects summed CPU time, not elapsed wall time.
+- `fps`: pictures divided by a window of the C library's `clock()`,
+  inherited from upstream Netflix/vmaf. On Linux and macOS `clock()` is
+  process CPU time summed over all worker threads, so a multi-threaded run
+  reads below its real throughput. On Windows the
+  [Microsoft C runtime's `clock()`](https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/clock)
+  measures elapsed wall time, so `fps` there is a wall-clock rate. Values
+  from different platforms are therefore not comparable; use `wall_fps`
+  instead ([ADR-3377](../adr/3377-wall-clock-fps-output.md)).
 - `wall_fps`: pictures per wall-clock second, measured with a monotonic
-  timer. Use this field for throughput and speed comparisons.
+  timer. It means the same on every platform. Use this field for throughput
+  and speed comparisons.
 
 With `--precision max` the pooled mean prints as `76.667831491355784`. Without
 `--model version=vmaf_v0.6.1`, the default model gives a pooled mean of
