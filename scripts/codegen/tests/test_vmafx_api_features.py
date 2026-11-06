@@ -16,6 +16,7 @@ import io
 import os
 import shutil
 import tempfile
+import tomllib
 import unittest
 import zipfile
 from pathlib import Path
@@ -23,7 +24,7 @@ from typing import Any
 
 import setuptools.build_meta as backend  # type: ignore[import-untyped]  # no stubs in the hook env
 from support import ROOT, document, entry, fixture
-from vmafx_api import emit_c, emit_python
+from vmafx_api import cli, emit_c, emit_python
 from vmafx_api.headers import plan
 from vmafx_api.loader import parse
 from vmafx_api.model import Api, DefinitionError
@@ -338,6 +339,13 @@ class PythonPackagingTest(unittest.TestCase):
     def test_planted_shared_object_in_wheel_is_refused(self) -> None:
         with self.assertRaisesRegex(ValueError, "vmafx/_planted.so"):
             _refuse_compiled_wheel_entries(["vmafx/__init__.py", "vmafx/_planted.so"])
+
+    def test_pyproject_declares_readme_and_cli_registers_it(self) -> None:
+        api = parse(document())
+        project = tomllib.loads(emit_python.pyproject_text(api))["project"]
+        self.assertEqual(project.get("readme"), "README.md")
+        generated_files = [path for path, _ in cli.FIXED_OUTPUTS]
+        self.assertIn("bindings/python/README.md", generated_files)
 
 
 if __name__ == "__main__":
