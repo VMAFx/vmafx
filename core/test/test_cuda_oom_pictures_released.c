@@ -66,10 +66,10 @@ static int probe_alloc(const VmafCudaState *state, size_t bytes)
     if (state->f->cuCtxPushCurrent(state->ctx) != CUDA_SUCCESS)
         return -1;
     CUdeviceptr chunk = 0;
-    const int allocated = state->f->cuMemAlloc(&chunk, bytes) == CUDA_SUCCESS;
-    if (allocated)
-        (void)state->f->cuMemFree(chunk);
-    return state->f->cuCtxPopCurrent(NULL) == CUDA_SUCCESS ? allocated : -1;
+    int result = state->f->cuMemAlloc(&chunk, bytes) == CUDA_SUCCESS;
+    if (result && state->f->cuMemFree(chunk) != CUDA_SUCCESS)
+        result = -1;
+    return state->f->cuCtxPopCurrent(NULL) == CUDA_SUCCESS ? result : -1;
 }
 
 static void hog_take(const VmafCudaState *state, Hog *hog)
@@ -186,6 +186,7 @@ static char *test_out_of_memory_returns_an_error_and_keeps_the_pool(void)
 
     hog_take(state, &hog);
     const int probe_hogged = probe_alloc(state, PROBE_BYTES);
+    mu_assert("allocation probe failed", probe_hogged >= 0);
     if (probe_hogged == 1)
         return skip_unexhausted_hog(vmaf, state, &hog);
     char *msg = check_oom_and_memory_return(vmaf, state, &hog);
