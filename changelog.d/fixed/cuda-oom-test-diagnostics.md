@@ -1,0 +1,1 @@
+- The CUDA out-of-memory test now skips with a reason when the hog does not exhaust memory and identifies failures caused by delayed driver memory return or an unusable picture pair or ring after allocation failure.
