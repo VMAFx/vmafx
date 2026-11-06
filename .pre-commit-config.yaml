@@ -237,6 +237,14 @@ repos:
 
   - repo: local
     hooks:
+      # Fragments are excluded from markdownlint; the concatenator strips comments.
+      # A markdownlint directive in a fragment is therefore dead text.
+      - id: changelog-fragment-no-lint-directive
+        name: Changelog fragments carry no markdownlint directive
+        entry: '<!--\s*markdownlint-'
+        language: pygrep
+        files: '^changelog\.d/.*\.md$'
+
       - id: rc1-tester-report-tests
         name: RC1 tester report unit regressions
         entry: python -m pytest -q tools/rc1-tester/tests
