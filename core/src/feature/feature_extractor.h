@@ -75,6 +75,10 @@ enum VmafFeatureExtractorFlags {
     VMAF_FEATURE_FRAME_SYNC = 1 << 2,
     VMAF_FEATURE_EXTRACTOR_PREV_REF = 1 << 3,
     VMAF_FEATURE_EXTRACTOR_SYCL = 1 << 4,
+    /* Vulkan compute twins (ADR-3401, integer path). Set on extractors
+     * under feature/vulkan/; the dynamic-loader runtime lives under
+     * src/vulkan/. The bit number reclaims the slot ADR-0726 reserved
+     * for the removed Vulkan backend. */
     VMAF_FEATURE_EXTRACTOR_VULKAN = 1 << 5,
     /* Reserved for the HIP runtime PR (T7-10b). The first-consumer PR
      * (T7-10 / ADR-0241) registers `vmaf_fex_psnr_hip` without setting
@@ -189,6 +193,9 @@ typedef struct VmafFeatureExtractor {
 #endif
 #ifdef HAVE_SYCL
     struct VmafSyclState *sycl_state; ///< VmafSyclState, set by framework
+#endif
+#ifdef HAVE_VULKAN
+    struct VmafVulkanState *vulkan_state; ///< VmafVulkanState, set by framework
 #endif
 #ifdef HAVE_HIP
     /** The frame planes the HIP twins of a context share (ADR-1408), set by

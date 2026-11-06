@@ -255,6 +255,11 @@ extern VmafFeatureExtractor vmaf_fex_integer_psnr_hvs_metal;
 extern VmafFeatureExtractor vmaf_fex_integer_cambi_metal;
 extern VmafFeatureExtractor vmaf_fex_ssimulacra2_metal;
 #endif
+#if HAVE_VULKAN
+/* Vulkan compute twin (ADR-3401, integer path): the fp64-free integer ADM
+ * shader under feature/vulkan/. Compiled only when enable_vulkan is on. */
+extern VmafFeatureExtractor vmaf_fex_integer_adm_vulkan;
+#endif
 /* SpEED-QA NR metric scaffold — ADR-0253. */
 extern VmafFeatureExtractor vmaf_fex_speed_qa;
 extern VmafFeatureExtractor vmaf_fex_lpips;
@@ -437,6 +442,15 @@ VmafFeatureExtractor *feature_extractor_list[] = {
     &vmaf_fex_integer_ciede_metal, &vmaf_fex_integer_psnr_hvs_metal, &vmaf_fex_integer_cambi_metal,
     &vmaf_fex_ssimulacra2_metal,
 #endif
+#if HAVE_VULKAN
+    /* Vulkan compute twin (ADR-3401): the fp64-free integer ADM shader —
+     * first consumer of the src/vulkan/ dynamic-loader runtime. The
+     * shader requires shaderInt64 only (no shaderFloat64), so it covers
+     * Intel iGPUs that the SYCL float_adm twin cannot run on when the
+     * driver reports shaderFloat64=0. Real dispatch under
+     * enable_vulkan=true; without it init() returns -ENOSYS. */
+    &vmaf_fex_integer_adm_vulkan,
+#endif
     &vmaf_fex_speed_qa, &vmaf_fex_lpips, &vmaf_fex_dists_sq, &vmaf_fex_fastdvdnet_pre,
     &vmaf_fex_mobilesal, &vmaf_fex_transnet_v2, &vmaf_fex_null, nullptr};
 
@@ -556,9 +570,10 @@ int vmaf_feature_extractor_list_audit(void)
 namespace
 {
 
-/* Device twins (CUDA, SYCL, HIP, Metal). */
+/* Device twins (CUDA, SYCL, HIP, Metal, Vulkan). */
 constexpr uint64_t gpu_twin_mask = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
-                                   VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL;
+                                   VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL |
+                                   VMAF_FEATURE_EXTRACTOR_VULKAN;
 
 bool provides_feature(const VmafFeatureExtractor *fex, const char *name)
 {
@@ -638,6 +653,7 @@ namespace
  * backends and, since ADR-1713, the Rust twins. */
 constexpr unsigned device_twin_flags = VMAF_FEATURE_EXTRACTOR_CUDA | VMAF_FEATURE_EXTRACTOR_SYCL |
                                        VMAF_FEATURE_EXTRACTOR_HIP | VMAF_FEATURE_EXTRACTOR_METAL |
+                                       VMAF_FEATURE_EXTRACTOR_VULKAN |
                                        VMAF_FEATURE_EXTRACTOR_RUST;
 
 /* Whether some CPU extractor's twin lookup returns `twin` for its backend. */
@@ -1569,6 +1585,9 @@ void refresh_fex_runtime_state(struct fex_list_entry *entry, const VmafFeatureEx
 #endif
 #ifdef HAVE_SYCL
     entry->fex.sycl_state = fex->sycl_state;
+#endif
+#ifdef HAVE_VULKAN
+    entry->fex.vulkan_state = fex->vulkan_state;
 #endif
 #ifdef HAVE_HIP
     entry->fex.hip_frame = fex->hip_frame;

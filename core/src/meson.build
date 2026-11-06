@@ -202,6 +202,11 @@ endif
 is_asm_enabled = get_option('enable_asm') == true
 is_cuda_enabled = get_option('enable_cuda') == true
 is_sycl_enabled = get_option('enable_sycl') == true
+# Vulkan compute backend — ADR-3401 (integer path). Default OFF; every public
+# entry point returns -ENOSYS until enabled. Needs only Vulkan headers (the
+# loader is loaded dynamically at run time, VK_NO_PROTOTYPES, no volk, no VMA)
+# and a GLSL-to-SPIR-V compiler for the embedded shaders.
+is_vulkan_enabled = get_option('enable_vulkan') == true
 # HIP (AMD ROCm) compute backend — scaffold ADR-0209 / T7-10. Default OFF;
 # every entry point returns -ENOSYS until the runtime PR lands.
 is_hip_enabled = get_option('enable_hip') == true
@@ -314,6 +319,7 @@ vmaf_engine_name_args = [
     '-DVMAFX_ENGINE_EXPORTS_SYCL=' + (is_sycl_enabled ? '1' : '0'),
     '-DVMAFX_ENGINE_EXPORTS_HIP=' + (is_hip_enabled ? '1' : '0'),
     '-DVMAFX_ENGINE_EXPORTS_METAL=' + (is_metal_enabled ? '1' : '0'),
+    '-DVMAFX_ENGINE_EXPORTS_VULKAN=' + (is_vulkan_enabled ? '1' : '0'),
     '-DVMAFX_BUILD_MCP=' + (is_mcp_enabled ? '1' : '0'),
 ]
 vmaf_engine_names_header = meson.current_source_dir() / 'vmafx' / 'engine_names_gen.h'
@@ -694,6 +700,30 @@ else
     # `#ifdef HAVE_METAL`) and downstream consumers fail at link time.
     # Mirrors the `core/src/dnn/dnn_api.c` `VMAF_HAVE_DNN` stub pattern.
     metal_sources += files('metal/stubs.c')
+endif
+
+# Vulkan compute backend (ADR-3401, integer path). Same pattern as the HIP /
+# Metal scaffolds above — empty arrays when the option resolves to disabled,
+# no-cost on default builds. The backend needs Vulkan headers only (the
+# loader is loaded dynamically at run time — VK_NO_PROTOTYPES, no volk, no
+# VMA) and a GLSL-to-SPIR-V compiler for the embedded shaders; the probes
+# and the shader embed chain live in `subdir('vulkan')`. The generated
+# `integer_adm_spv.h` lands in this directory's build folder, hence the
+# include dir here.
+vulkan_sources = []
+vulkan_target_deps = []
+vulkan_gen_include = include_directories('vulkan')
+if is_vulkan_enabled
+    cdata.set10('HAVE_VULKAN', true)
+    subdir('vulkan')
+else
+    # ADR-3401 / libvmaf_vulkan.h contract: every public Vulkan entry point
+    # returns -ENOSYS when libvmaf is built without Vulkan support. Without
+    # this stub TU the symbols are not emitted into libvmafx at all (the
+    # real bodies in vulkan/common.c + libvmaf.c sit behind
+    # `#ifdef HAVE_VULKAN`) and downstream consumers fail at link time.
+    # Mirrors the `core/src/hip/stubs.c` pattern.
+    vulkan_sources += files('vulkan/stubs.c')
 endif
 if dnn_have_ort
     cdata.set10('HAVE_DNN', true)
@@ -2625,6 +2655,15 @@ if float_enabled
     ]
 endif
 
+if is_vulkan_enabled
+    # ADR-3401: the Vulkan integer path's first consumer — the fp64-free
+    # integer ADM twin. The embedded SPIR-V header it includes is generated
+    # by vulkan/meson.build's shader custom_targets into the build folder.
+    libvmaf_feature_sources += [
+        feature_src_dir + 'vulkan/integer_adm_vulkan.c',
+    ]
+endif
+
 if is_cuda_enabled
     libvmaf_feature_sources += [
         feature_src_dir + 'cuda/integer_adm_cuda.c',
@@ -2855,11 +2894,11 @@ libvmaf_feature_static_lib = static_library(
     # of feature_brisque.c.o (libvmaf and the several test executables that
     # extract the feature lib's objects) resolves src_brisque_live_model[]
     # without each having to list the generated TU separately.
-    libvmaf_feature_sources + brisque_model_c_sources + hip_sources + hip_hsaco_sources + metal_sources,
-    include_directories : [libvmaf_include, vmaf_include, cuda_dir],
+    libvmaf_feature_sources + brisque_model_c_sources + hip_sources + hip_hsaco_sources + metal_sources + vulkan_sources,
+    include_directories : [libvmaf_include, vmaf_include, cuda_dir, vulkan_gen_include],
     c_args : vmaf_cflags_common,
     cpp_args : vmaf_cppflags_common,
-    dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency, hip_deps, metal_deps],
+    dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency, hip_deps, metal_deps, vulkan_target_deps],
     objects: [common_cuda_objects, common_sycl_objects, sycl_feature_objects,
               libvmaf_psnr_hvs_scalar_static_lib.extract_all_objects(recursive: false),
               libvmaf_ssimulacra2_static_lib.extract_all_objects(recursive: false),
@@ -3176,7 +3215,8 @@ if get_option('default_library') != 'static' \
     # (declared exceptions, `engine_with` in core/api/vmafx.toml) exports them
     # from libvmafx in its own version node until its WP3 lane lands.
     foreach legacy : [['cuda', is_cuda_enabled], ['sycl', is_sycl_enabled],
-                      ['hip', is_hip_enabled], ['metal', is_metal_enabled]]
+                      ['hip', is_hip_enabled], ['metal', is_metal_enabled],
+                      ['vulkan', is_vulkan_enabled]]
         if legacy[1]
             legacy_map = 'vmafx_legacy_' + legacy[0] + '.map'
             vmaf_link_args += '-Wl,--version-script=' + (meson.current_source_dir() / legacy_map)
@@ -3270,6 +3310,7 @@ libvmafx = library(
       dnn_deps,
       hip_deps,
       metal_deps,
+      vulkan_target_deps,
       rust_core_dep,
       zimg_dependency,
     ],
@@ -3333,6 +3374,9 @@ if not is_hip_enabled
 endif
 if not is_metal_enabled
     libvmaf_compat_sources += files('compat/libvmaf/backend_absent_metal.c')
+endif
+if not is_vulkan_enabled
+    libvmaf_compat_sources += files('compat/libvmaf/backend_absent_vulkan.c')
 endif
 libvmaf_compat_kwargs = {
     'include_directories' : [libvmaf_inc, include_directories('compat/libvmaf')],

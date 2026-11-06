@@ -98,6 +98,12 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "sycl/picture_sycl.h"
 #endif
 
+#ifdef HAVE_VULKAN
+#include "libvmaf/libvmaf_vulkan.h"
+
+#include "vulkan/common.h"
+#endif
+
 #ifdef HAVE_METAL
 #include "libvmaf/libvmaf_metal.h"
 #include "metal/import.h"
@@ -168,6 +174,15 @@ typedef struct VmafContext {
             unsigned pic_cnt;
         } pinned_pool;
     } sycl;
+#endif
+#ifdef HAVE_VULKAN
+    /* ADR-3401: caller-imported Vulkan state. Ownership stays with the
+     * caller — same lifetime model as the SYCL / HIP backends: clear
+     * (not free) on successful vmaf_close(), destroy only after close
+     * returns 0. A nonzero result retains it for retry. */
+    struct {
+        VmafVulkanState *state;
+    } vulkan;
 #endif
 #ifdef HAVE_METAL
     /* T8-IOS (ADR-0423): caller-imported MTLDevice + IOSurface ring.
@@ -1117,6 +1132,37 @@ static void set_fex_hip_device(VmafFeatureExtractorContext *fex_ctx, const VmafC
 }
 #endif
 
+#ifdef HAVE_VULKAN
+/* ADR-3401: stash the caller-imported Vulkan state on the VmafContext.
+ * Mirrors vmaf_hip_import_state field-for-field — ownership stays with
+ * the caller; the caller calls vmaf_vulkan_state_destroy() only after
+ * vmaf_close() returns 0. Implementation lives here (not in
+ * core/src/vulkan/common.c) because it needs VmafContext field access,
+ * the same convention as the CUDA / SYCL / HIP / Metal twins. */
+int vmaf_vulkan_import_state(VmafContext *vmaf, VmafVulkanState *vulkan_state)
+{
+    if (!vmaf)
+        return -EINVAL;
+    if (!vulkan_state)
+        return -EINVAL;
+
+    vmaf->vulkan.state = vulkan_state;
+    vmaf->active_backend = VMAF_BACKEND_VULKAN;
+    return 0;
+}
+
+/* Hand a freshly created extractor context the imported Vulkan device.
+ * A Vulkan twin without an imported state (extractor driven without a
+ * context, or a CPU-flagged caller) creates its own device in init(),
+ * so no fallback is injected here. */
+static void set_fex_vulkan_state(VmafFeatureExtractorContext *fex_ctx, VmafContext *vmaf)
+{
+    if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_VULKAN))
+        return;
+    fex_ctx->fex->vulkan_state = vmaf->vulkan.state;
+}
+#endif
+
 static void set_fex_framesync(VmafFeatureExtractorContext *fex_ctx, VmafContext *vmaf)
 {
     if (fex_ctx->fex->flags & VMAF_FEATURE_FRAME_SYNC)
@@ -1136,6 +1182,9 @@ static void fex_ctx_bind_backends(VmafFeatureExtractorContext *fex_ctx, VmafCont
 #ifdef HAVE_HIP
     set_fex_hip_frame(fex_ctx, vmaf);
     set_fex_hip_device(fex_ctx, vmaf);
+#endif
+#ifdef HAVE_VULKAN
+    set_fex_vulkan_state(fex_ctx, vmaf);
 #endif
     set_fex_framesync(fex_ctx, vmaf);
 }
@@ -2532,6 +2581,14 @@ static unsigned compute_fex_flags(const VmafContext *vmaf)
     if (vmaf->metal.state)
         fex_flags |= VMAF_FEATURE_EXTRACTOR_METAL;
 #endif
+#ifdef HAVE_VULKAN
+    /* ADR-3401: Vulkan-flagged extractors are selected when a Vulkan
+     * state pointer has been imported via vmaf_vulkan_import_state().
+     * The Vulkan backend is host-pic (no gpumask gate), like HIP /
+     * Metal. */
+    if (vmaf->vulkan.state)
+        fex_flags |= VMAF_FEATURE_EXTRACTOR_VULKAN;
+#endif
     return fex_flags;
 }
 
@@ -2745,6 +2802,8 @@ static enum VmafBackend fex_flags_backend(uint64_t flags)
         return VMAF_BACKEND_HIP;
     if (flags & VMAF_FEATURE_EXTRACTOR_METAL)
         return VMAF_BACKEND_METAL;
+    if (flags & VMAF_FEATURE_EXTRACTOR_VULKAN)
+        return VMAF_BACKEND_VULKAN;
     return VMAF_BACKEND_UNKNOWN;
 }
 
