@@ -116,6 +116,23 @@ static int build_pipelines(FloatPsnrStateMetal *s, id<MTLDevice> device)
     return 0;
 }
 
+/* Release what init_fex_metal created, in reverse order, and return err. Every
+ * release is a no-op on a slot that was never filled, since priv starts
+ * zeroed, so each failure point unwinds through this one path. */
+static int unwind_init_fex_metal(FloatPsnrStateMetal *s, int err)
+{
+    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = nullptr; }
+    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = nullptr; }
+    (void)vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
+    if (s->ctx != nullptr) {
+        /* Best effort: the init error is what the caller reports. */
+        (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
+        vmaf_metal_context_destroy(s->ctx);
+        s->ctx = nullptr;
+    }
+    return err;
+}
+
 static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                           unsigned bpc, unsigned w, unsigned h)
 {
@@ -138,7 +155,7 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
     if (err != 0) { return err; }
 
     err = vmaf_metal_kernel_lifecycle_init(&s->lc, s->ctx);
-    if (err != 0) { goto fail_ctx; }
+    if (err != 0) { return unwind_init_fex_metal(s, err); }
 
     {
         s->per_row        = (w + FPSNR_SEGMENT - 1u) / FPSNR_SEGMENT;
@@ -146,32 +163,20 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
         err = vmaf_metal_kernel_buffer_alloc(&s->rb, s->ctx,
                                              s->partials_count * sizeof(uint64_t));
     }
-    if (err != 0) { goto fail_lc; }
+    if (err != 0) { return unwind_init_fex_metal(s, err); }
 
     {
         const void *const dh = vmaf_metal_context_device_handle(s->ctx);
-        if (dh == nullptr) { err = -ENODEV; goto fail_rb; }
+        if (dh == nullptr) { err = -ENODEV; return unwind_init_fex_metal(s, err); }
         err = build_pipelines(s, (__bridge id<MTLDevice>)dh);
     }
-    if (err != 0) { goto fail_rb; }
+    if (err != 0) { return unwind_init_fex_metal(s, err); }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features,
                                                       fex->options, s);
-    if (s->feature_name_dict == nullptr) { err = -ENOMEM; goto fail_pso; }
+    if (s->feature_name_dict == nullptr) { err = -ENOMEM; return unwind_init_fex_metal(s, err); }
     return 0;
-
-fail_pso:
-    if (s->pso_8bpc)  { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_8bpc;  s->pso_8bpc  = nullptr; }
-    if (s->pso_16bpc) { (void)(__bridge_transfer id<MTLComputePipelineState>)s->pso_16bpc; s->pso_16bpc = nullptr; }
-fail_rb:
-    (void)vmaf_metal_kernel_buffer_free(&s->rb, s->ctx);
-fail_lc:
-    (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-fail_ctx:
-    vmaf_metal_context_destroy(s->ctx);
-    s->ctx = nullptr;
-    return err;
 }
 
 static int submit_fex_metal(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
