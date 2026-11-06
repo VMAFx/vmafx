@@ -10,8 +10,8 @@ invariant: Parent rules, license headers, include order, and no FMA contraction 
 - **Parent rules** apply (see [../AGENTS.md](../../AGENTS.md) +
   [../../AGENTS.md](../../../AGENTS.md) +
   [`../../cuda/AGENTS.md`](../../../cuda/AGENTS.md)).
-- **Wholly-new fork files use dual Netflix + Lusoris/Claude
-  copyright header** per [ADR-0025](../../../../../docs/adr/0025-copyright-handling-dual-notice.md).
+- **Wholly-new fork files carry `Copyright 2026 Lusoris`**
+  per [ADR-0861](../../../../../docs/adr/0861-vmafx-copyright-policy-drop-anthropic.md).
   Many TUs here predate dual-notice rule, carry only
   Netflix header (with NVIDIA contributor lines on `integer_adm/`
   CUDA kernels) — correct for upstream-mirrored files; do
