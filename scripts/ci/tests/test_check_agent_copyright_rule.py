@@ -30,6 +30,9 @@ class AgentCopyrightRuleTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
+        # The caller's environment, kept for the real-tree check: a partial commit's hook
+        # exports GIT_INDEX_FILE for the commit's own index, and the checker must read it.
+        self.caller_env = dict(os.environ)
         # A commit hook exports GIT_INDEX_FILE (and may export GIT_DIR); fixture git and the
         # checker's own `git ls-files` must never reach the caller's repository.
         hermetic = mock.patch.dict(os.environ, fixture_git_env(), clear=True)
@@ -61,9 +64,24 @@ class AgentCopyrightRuleTest(unittest.TestCase):
         return status, out.getvalue(), err.getvalue()
 
     def test_checked_in_tree_passes(self) -> None:
-        status, out, err = self.run_on(rule.ROOT)
+        with mock.patch.dict(os.environ, self.caller_env, clear=True):
+            status, out, err = self.run_on(rule.ROOT)
         self.assertEqual(status, 0, err)
         self.assertIn("tracked files checked", out)
+
+    def test_tracked_rules_passes_hook_index_to_real_tree_only(self) -> None:
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        caller = {**self.caller_env, "GIT_INDEX_FILE": "partial-commit-index"}
+        with (
+            mock.patch.dict(os.environ, caller, clear=True),
+            mock.patch.object(rule, "run_command", return_value=completed) as run,
+        ):
+            rule.tracked_rules(rule.ROOT)
+            real_env = run.call_args.kwargs["env"]
+            rule.tracked_rules(self.root)
+            fixture_env = run.call_args.kwargs["env"]
+        self.assertEqual(real_env["GIT_INDEX_FILE"], "partial-commit-index")
+        self.assertNotIn("GIT_INDEX_FILE", fixture_env)
 
     def test_planted_dual_rule_fails_with_path_and_line(self) -> None:
         self.plant("AGENTS.md", "# Rules\nship dual Lusoris/Claude (Anthropic) copyright header\n")
