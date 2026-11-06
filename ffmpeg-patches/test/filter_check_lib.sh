@@ -3,7 +3,7 @@
 # Copyright 2026 Lusoris
 #
 # filter_check_lib.sh — helpers shared by the FFmpeg filter checks in this
-# directory (check-sycl-import-retry.sh, check-libvmaf-no-score-after-error.sh).
+# directory (check-vmafx-import-failure.sh, check-vmafx-no-score-after-error.sh).
 # Sourced, not run. The caller sets `set -euo pipefail`, FFMPEG, CC, HERE and
 # WORK (a fresh temporary directory) before sourcing it.
 
@@ -49,18 +49,34 @@ has_filter() { # $1 = filter name: 0 when ${FFMPEG} lists it
   grep -q " $1 " <<<"${filters}"
 }
 
+has_encoder() { # $1 = binary, $2 = encoder name
+  local list
+  list="$("$1" -hide_banner -encoders 2>/dev/null)" || return 1
+  grep -q " $2 " <<<"${list}"
+}
+
 build_fault_injector() { # ${WORK}/libfault.so from fault_inject_libvmaf.c, or skip
   command -v "${CC}" >/dev/null 2>&1 || skip "no C compiler (${CC})"
-  "${CC}" -shared -fPIC -O2 -D_GNU_SOURCE ${VMAF_INCLUDE:+-I"${VMAF_INCLUDE}"} \
+  local inc=()
+  [ -n "${VMAF_INCLUDE:-}" ] && inc+=("-I${VMAF_INCLUDE}")
+  [ -d "${HERE}/../../core/include" ] && inc+=("-I${HERE}/../../core/include")
+  "${CC}" -shared -fPIC -O2 -D_GNU_SOURCE "${inc[@]}" \
     -o "${WORK}/libfault.so" "${HERE}/fault_inject_libvmaf.c" -ldl ||
     skip "cannot build the fault injector"
 }
 
 encode_clips() { # ${WORK}/ref.mp4 and a blurred ${WORK}/dis.mp4: 24 H.264 frames, 576x324
-  "${FFMPEG}" -hide_banner -loglevel error -y -f lavfi -i testsrc2=size=576x324:rate=24 \
+  local enc="${FFMPEG}"
+  if ! has_encoder "${enc}" libx264; then
+    if command -v ffmpeg >/dev/null 2>&1 && has_encoder ffmpeg libx264; then
+      enc="$(command -v ffmpeg)"
+      echo "encode_clips: fixture encoder: ${enc}"
+    fi
+  fi
+  "${enc}" -hide_banner -loglevel error -y -f lavfi -i testsrc2=size=576x324:rate=24 \
     -frames:v 24 -c:v libx264 -profile:v high -crf 10 -pix_fmt yuv420p "${WORK}/ref.mp4" ||
     skip "cannot encode the reference clip"
-  "${FFMPEG}" -hide_banner -loglevel error -y -i "${WORK}/ref.mp4" -vf boxblur=2:1 \
+  "${enc}" -hide_banner -loglevel error -y -i "${WORK}/ref.mp4" -vf boxblur=2:1 \
     -c:v libx264 -profile:v high -crf 30 -pix_fmt yuv420p "${WORK}/dis.mp4" ||
     skip "cannot encode the distorted clip"
 }

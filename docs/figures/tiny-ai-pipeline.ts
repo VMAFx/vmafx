@@ -2,7 +2,7 @@
 // training and ONNX export in ai/ (export_to_onnx), the committed models and their registry in
 // model/tiny/, the one ONNX Runtime entry point in core/src/dnn/ (vmaf_use_tiny_model), and the
 // two surfaces that call it: the vmaf CLI (--tiny-model) and the FFmpeg patches (tiny_model,
-// vf_vmaf_pre).
+// vf_vmafx_pre).
 import type { PraetorFigure } from '../../tools/figures/types.ts';
 
 export default {
@@ -15,8 +15,8 @@ export default {
     'core/src/dnn/dnn_attach_api.c:vmaf_use_tiny_model',
     'core/include/libvmaf/dnn.h:vmaf_use_tiny_model',
     'core/tools/cli_parse.cpp:ARG_TINY_MODEL',
-    'ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch:tiny_model_path',
-    'ffmpeg-patches/0002-add-vmaf_pre-filter.patch:vf_vmaf_pre',
+    'ffmpeg-patches/src/vf_vmafx.c:tiny_model',
+    'ffmpeg-patches/src/vf_vmafx_pre.c:vmafx_pre',
   ],
   describe: [
     'Training depends on PyTorch and Lightning; the runtime depends only on ONNX Runtime.',
@@ -37,7 +37,7 @@ export default {
           gap: 28,
           children: [
             { id: 'cli', label: 'vmaf CLI', sub: '--tiny-model' },
-            { id: 'ffmpeg', label: 'FFmpeg', sub: 'vf_libvmaf, vf_vmaf_pre' },
+            { id: 'ffmpeg', label: 'FFmpeg', sub: 'vf_vmafx, vf_vmafx_pre' },
           ],
         },
       ],

@@ -71,6 +71,8 @@ class BehindBase(unittest.TestCase):
                 "docs/state.md": "# state\n",
                 HEADER: "int vmaf_widget_open(void);\n",
                 PATCH: "+  ret = vmaf_widget_open();\n",
+                # The surface check refuses a series without a test script.
+                "ffmpeg-patches/test/check-widget.sh": "#!/bin/sh\nexit 0\n",
             },
         )
         self.fork = self.rev("HEAD")

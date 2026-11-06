@@ -152,7 +152,7 @@ frame): mean-absolute difference between the centre frame ``t``
 (normalised to `[0, 1]`) and the denoised output. Exists so libvmaf's
 per-frame plumbing has a scalar to record; **not** a quality metric.
 Downstream pipelines that want the actual denoised pixel data should
-consume the FFmpeg `vmaf_pre_temporal` filter once that follow-up
+consume the FFmpeg `vmafx_pre_temporal` filter once that follow-up
 lands; the current extractor records the diagnostic residual only.
 
 **Output range** — `[0.0, 1.0]` by construction (mean-absolute on
@@ -186,7 +186,7 @@ Limitations:
   the fixed $\sigma = 25/255$ noise map, and collapses the RGB output back to
   BT.601 luma while preserving the C extractor's `[1, 5, H, W] -> [1, 1, H, W]`
   ONNX contract.
-- Remaining follow-ups are the FFmpeg `vmaf_pre_temporal` consumer filter and a
+- Remaining follow-ups are the FFmpeg `vmafx_pre_temporal` consumer filter and a
   luma-native retrain; the model shipped here is not the old smoke-only
   placeholder.
 

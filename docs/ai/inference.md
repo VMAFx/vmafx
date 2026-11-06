@@ -359,23 +359,23 @@ Apply `ffmpeg-patches/*.patch` against the FFmpeg release named by
 Then:
 
 ```bash
-# C1 / C2 scoring through vf_libvmaf.
+# C1 / C2 scoring through vf_vmafx.
 ffmpeg -i dis.mp4 -i ref.mp4 \
-    -lavfi "[0:v][1:v]libvmaf=tiny_model=/models/vmaf_tiny_v2.onnx:tiny_device=cuda" \
+    -lavfi "[0:v][1:v]vmafx=tiny_model=/models/vmaf_tiny_v2.onnx:tiny_device=cuda" \
     -f null -
 
 # C3 learned pre-filter.
 ffmpeg -i in.mp4 \
-    -vf "vmaf_pre=model=/models/learned_filter_v1.onnx:device=cuda" \
+    -vf "vmafx_pre=model=/models/learned_filter_v1.onnx:device=cuda" \
     out.mp4
 ```
 
 | Filter | Options |
 | --- | --- |
-| `libvmaf` | `tiny_model`, `tiny_device` (default `auto`), `tiny_threads` (default 0), `tiny_fp16` (default 0) |
-| `vmaf_pre` | `model`, `device`, `threads`, `chroma` (0 or 1; default 0 = luma only) |
+| `vmafx` | `tiny_model`, `tiny_device` (default `auto`), `tiny_threads` (default 0), `tiny_fp16` (default 0) |
+| `vmafx_pre` | `model`, `device`, `threads`, `chroma` (0 or 1; default 0 = luma only) |
 
-The `vmaf_pre` `device=` option accepts the same twelve device strings as
+The `vmafx_pre` `device=` option accepts the same twelve device strings as
 `tiny_device=`, all mapping to the `VmafDnnDevice` enum (ADR-0482).
 
 ## Execution-provider matrix

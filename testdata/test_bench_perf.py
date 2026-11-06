@@ -69,7 +69,7 @@ def test_build_ffmpeg_command_uses_configured_binary_and_raw_inputs(tmp_path: Pa
     assert "-f" in cmd
     assert "rawvideo" in cmd
     assert str(tmp_path / "bbb" / "dis_3840x2160_200f.yuv") in cmd
-    assert "libvmaf=log_path=" in " ".join(cmd)
+    assert "vmafx=log_path=" in " ".join(cmd)
 
 
 def test_select_backends_rejects_unknown_backend() -> None:
@@ -126,3 +126,27 @@ def test_run_vmaf_launches_a_relative_ffmpeg_path(tmp_path: Path, monkeypatch) -
     argv = run.call_args.args[0]
     assert argv[0] == str(tmp_path.resolve() / "build/ffmpeg")
     assert run.call_args.kwargs["allowed_executables"] == [argv[0]]
+
+
+def _sycl_lavfi(index: str) -> str:
+    backends = bench_perf.backend_definitions(sycl_device="/dev/dri/renderD129", sycl_index=index)
+    return next(b for b in backends if b["name"] == "sycl")["lavfi"]
+
+
+def test_sycl_backend_names_the_requested_device_index() -> None:
+    assert "vmafx=backend=sycl:device=1:" in _sycl_lavfi("1")
+
+
+def test_sycl_backend_index_zero_and_auto_are_accepted() -> None:
+    assert "vmafx=backend=sycl:device=0:" in _sycl_lavfi("0")
+    assert "vmafx=backend=sycl:device=auto:" in _sycl_lavfi("auto")
+
+
+def test_sycl_backend_rejects_a_bad_device_index() -> None:
+    for bad in ("-1", "gpu0", "", "\u00b2"):
+        with pytest.raises(ValueError, match="SYCL device index"):
+            _sycl_lavfi(bad)
+
+
+def test_parse_args_sycl_index_flag() -> None:
+    assert bench_perf.parse_args(["--sycl-index", "2"]).sycl_index == "2"
