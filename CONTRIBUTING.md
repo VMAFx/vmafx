@@ -67,7 +67,8 @@ from machines the project does not own, and
   carries `Copyright <year> <your name>`, using the contributor's own name,
   never `Copyright <year> Lusoris`. The `Copyright <year> Lusoris` line is for
   files written by the project's maintainer
-  ([ADR-0861](docs/adr/0861-vmafx-copyright-policy-drop-anthropic.md)).
+  ([ADR-0861](docs/adr/0861-vmafx-copyright-policy-drop-anthropic.md),
+  [ADR-3401](docs/adr/3401-outside-contributor-copyright-holder.md)).
   A file touched from upstream keeps the Netflix header. A change to an
   existing file leaves its copyright line as it is.
 - **No `git push --force` to `master`**. No `--no-verify` skipping hooks.

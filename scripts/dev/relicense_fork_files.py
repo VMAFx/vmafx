@@ -219,7 +219,16 @@ SOURCE_REF = re.compile(r"[\w/.-]+\.(?:c|h|cpp|cu|cuh|comp|py|asm)\b")
 MIN_SIGNAL_NAME = 6
 # Include and import lines name dependencies, not origins.
 IMPORT_LINE = re.compile(r"^\s*(?:#\s*(?:include|import)\b|import\s|from\s\S+\s+import\s|use\s)")
-AI_VENDORS = re.compile(r"\b(?:claude|anthropic|openai|chatgpt|copilot|gemini|codex)\b", re.I)
+AI_VENDOR_NAMES = r"anthropic|openai|chatgpt|copilot"
+AI_VENDORS = re.compile(rf"\b(?:{AI_VENDOR_NAMES})\b", re.I)
+AI_NAMES = re.compile(rf"\b(?:{AI_VENDOR_NAMES}|claude|gemini|codex)\b", re.I)
+# Claude, Gemini and Codex can be human given names (ADR-3401).
+AI_PRODUCT_SUFFIX = re.compile(
+    r"\s*(?:$|[^\w\s]|(?:code|cli|ai|assist|sonnet|opus|haiku|fable|pro|flash|"
+    rf"{AI_VENDOR_NAMES})\b)",
+    re.I,
+)
+AI_VENDOR_PREFIX = re.compile(rf"\b(?:{AI_VENDOR_NAMES})\W*$", re.I)
 AI_COPYRIGHT_SCAN = 30
 
 
@@ -274,7 +283,14 @@ def ai_vendor_match(raw: str) -> str | None:
     )
     if not is_copyright:
         return None
-    matches = AI_VENDORS.findall(body) or AI_VENDORS.findall(raw)
+    notice = body if AI_NAMES.search(body) else raw
+    matches = [
+        match.group()
+        for match in AI_NAMES.finditer(notice)
+        if AI_VENDORS.fullmatch(match.group())
+        or AI_PRODUCT_SUFFIX.match(notice, match.end())
+        or AI_VENDOR_PREFIX.search(notice[: match.start()])
+    ]
     if not matches:
         return None
     return ", ".join(dict.fromkeys(m.capitalize() for m in matches))
