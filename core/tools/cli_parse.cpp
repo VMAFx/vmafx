@@ -1201,6 +1201,12 @@ void handle_backend_device_flag(const int o, const char *const optarg, const cha
     case ARG_METAL_DEVICE:
         settings->metal_device = static_cast<int>(parse_unsigned(optarg, ARG_METAL_DEVICE, app));
         break;
+    case ARG_NO_VULKAN:
+        settings->no_vulkan = true;
+        break;
+    case ARG_VULKAN_DEVICE:
+        settings->vulkan_device = static_cast<int>(parse_unsigned(optarg, ARG_VULKAN_DEVICE, app));
+        break;
     case ARG_BACKEND:
         settings->backend = optarg;
         break;
@@ -1224,6 +1230,7 @@ void apply_backend_settings(const char *const app, CLISettings *const settings)
             settings->no_sycl = true;
             settings->no_hip = true;
             settings->no_metal = true;
+            settings->no_vulkan = true;
         } else if (be == "cuda") {
             settings->no_sycl = true;
             settings->no_hip = true;
@@ -1250,10 +1257,17 @@ void apply_backend_settings(const char *const app, CLISettings *const settings)
             settings->no_hip = true;
             if (settings->metal_device < 0)
                 settings->metal_device = 0;
+        } else if (be == "vulkan") {
+            settings->no_cuda = true;
+            settings->no_sycl = true;
+            settings->no_hip = true;
+            settings->no_metal = true;
+            if (settings->vulkan_device < 0)
+                settings->vulkan_device = 0;
         } else {
             usage(app,
                   "Unknown --backend value '%s' "
-                  "(expected: auto|cpu|cuda|sycl|hip|metal)",
+                  "(expected: auto|cpu|cuda|sycl|hip|metal|vulkan)",
                   settings->backend);
         }
     } else {
@@ -1631,6 +1645,7 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
     settings->sycl_device = -1;  // auto-select by default
     settings->hip_device = -1;   // auto-select by default
     settings->metal_device = -1; // auto-select by default
+    settings->vulkan_device = -1; // auto-select by default
     settings->precision_n = -1;
     settings->precision_fmt = VMAF_DEFAULT_PRECISION_FMT;
     settings->tiny_device = "auto";
@@ -1661,6 +1676,7 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
         settings->no_sycl = true;
         settings->no_hip = true;
         settings->no_metal = true;
+        settings->no_vulkan = true;
         settings->precision_max = false;
         settings->precision_legacy = true;
         settings->precision_n = -1;

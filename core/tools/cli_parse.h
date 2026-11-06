@@ -131,6 +131,7 @@ typedef struct {
     int sycl_device;  // -1 = not requested (default), 0+ = device index
     int hip_device;   // -1 = not requested (default), 0+ = device index
     int metal_device; // -1 = not requested (default), 0+ = device index
+    int vulkan_device; // -1 = not requested (default), 0+ = device index
     int precision_n;  // -1 = unset (default %.6f), else user N
     int tiny_threads; /* 0 = ORT default */
     int tiny_crf;     /* ADR-0519, see tiny_codec */
@@ -145,6 +146,7 @@ typedef struct {
     bool no_sycl;
     bool no_hip;
     bool no_metal;
+    bool no_vulkan;
     bool precision_max;    // --precision=max|full given (selects %.17g)
     bool precision_legacy; // --precision=legacy given (alias for the default)
     bool tiny_fp16;
