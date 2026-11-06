@@ -21,6 +21,11 @@
 #   - Boundary: no cross driver in the prefix -> exit 0, absent line
 #   - Planted negative: driver prints no thread model -> exit 1
 #   - Planted negative: no objdump to read the import table -> exit 1
+#   - Large-output (PR #3317 review): a ~2 MiB import table with the
+#     libwinpthread import early or late; win32 must refuse (B24) and posix
+#     must pass. The old printf|grep -q form died of SIGPIPE (pipeline
+#     status 141) on an early match and misreported the imports as "none";
+#     the here-string read does not.
 
 set -euo pipefail
 
@@ -88,13 +93,33 @@ expect_no_grep() {
   fi
 }
 
+# Precondition for the large-output cases: the stub objdump really emits a
+# multi-MB import table (the premise the SIGPIPE regression rides on).
+expect_large_stub() {
+  local name="$1" dir="$2" bytes=""
+  bytes="$("${dir}/bin/x86_64-w64-mingw32-objdump" -p "${dir}/runtime/libstdc++-6.dll" 2>/dev/null | wc -c)"
+  bytes="${bytes//[[:space:]]/}"
+  if [ "${bytes}" -gt 1000000 ]; then
+    echo "PASS: ${name} (stub import table ${bytes} bytes)"
+    pass_count=$((pass_count + 1))
+  else
+    echo "FAIL: ${name} (stub import table only ${bytes} bytes, expected >1 MB)"
+    fail_count=$((fail_count + 1))
+  fi
+}
+
 # build_mingw_stub <dir> <model: win32|posix|none> <dumpversion>
 #                  <winpthread-import: yes|no> <resolve: yes|no>
+#                  [<large: none|early|late>]
 # Plants a fake toolchain prefix: a stub cross driver answering --version,
 # -dumpversion, -v and -print-file-name=<lib>, fake runtime DLLs, and a stub
 # target objdump printing the crafted import table of the planted flavour.
+# large=early|late swaps in a ~2 MiB import table whose libwinpthread line
+# sits in the first bytes (early) or after the filler (late) — the shape
+# that made the old printf|grep -q read die of SIGPIPE under pipefail.
 build_mingw_stub() {
   local dir="$1" model="$2" dumpversion="$3" winpthread="$4" resolve="$5"
+  local large="${6:-none}"
   local model_line=""
   if [ "${model}" != "none" ]; then
     model_line="Thread model: ${model}"
@@ -141,13 +166,28 @@ EOF
 # Stub objdump planted by test-toolchain-probe-mingw.sh (issue #3307): the
 # crafted import table of the planted flavour.
 STUB_WINPTHREAD="${winpthread}"
+STUB_LARGE="${large}"
 if [ "\$1" != "-p" ]; then
   echo "stub objdump: unsupported arguments: \$*" >&2
   exit 1
 fi
 case "\$2" in
   *libstdc++-6.dll)
-    if [ "\${STUB_WINPTHREAD}" = yes ]; then
+    if [ "\${STUB_LARGE}" != none ]; then
+      # ~2 MiB import table (29000 filler lines x 69 bytes): the
+      # libwinpthread import in the first bytes (early) or after the
+      # filler (late). With the old printf|grep -q form in the probe, an
+      # early match lets grep exit first and the capture pipeline dies of
+      # SIGPIPE under pipefail — status 141 read as "no match" (PR #3317).
+      printf 'peer\n\tDLL Name: libstdc++-6.dll\n'
+      if [ "\${STUB_LARGE}" = early ]; then
+        printf '\tDLL Name: libwinpthread-1.dll\n'
+      fi
+      awk 'BEGIN { for (i = 0; i < 29000; i++) print "import-filler-line 0123456789012345678901234567890123456789012345"; }'
+      if [ "\${STUB_LARGE}" = late ]; then
+        printf '\tDLL Name: libwinpthread-1.dll\n'
+      fi
+    elif [ "\${STUB_WINPTHREAD}" = yes ]; then
       printf 'peer\n\tDLL Name: libstdc++-6.dll\n\tDLL Name: libwinpthread-1.dll\n'
     else
       printf 'peer\n\tDLL Name: libstdc++-6.dll\n'
@@ -157,6 +197,7 @@ case "\$2" in
     printf 'peer\n\tDLL Name: libwinpthread-1.dll\n'
     ;;
 esac
+exit 0
 EOF
   chmod +x "${dir}/bin/x86_64-w64-mingw32-objdump"
 }
@@ -236,6 +277,38 @@ run_probe "${work}/case9"
 expect_rc "planted: no readable import table -> exit 1" 1
 expect_grep "case9 refusal says the pairing is unverified" "pairing-unverified"
 expect_no_grep "case9 no green pairing line" "pairing ok"
+
+# ---------- Case 10: Large-output — ~2 MiB table, libwinpthread early, win32 ----------
+build_mingw_stub "${work}/case10" win32 13.2.0 yes yes early
+expect_large_stub "case10 stub emits a multi-MB import table (early)" "${work}/case10"
+run_probe "${work}/case10"
+expect_rc "large early: win32 driver + libwinpthread-importing runtime -> exit 1" 1
+expect_grep "case10 refusal names the pairing mismatch" "pairing-mismatch thread-model win32"
+expect_grep "case10 refusal names the B24 regression" "B24"
+
+# ---------- Case 11: Large-output — ~2 MiB table, libwinpthread late, win32 ----------
+build_mingw_stub "${work}/case11" win32 13.2.0 yes yes late
+expect_large_stub "case11 stub emits a multi-MB import table (late)" "${work}/case11"
+run_probe "${work}/case11"
+expect_rc "large late: win32 driver + libwinpthread-importing runtime -> exit 1" 1
+expect_grep "case11 refusal names the pairing mismatch" "pairing-mismatch thread-model win32"
+expect_grep "case11 refusal names the B24 regression" "B24"
+
+# ---------- Case 12: Large-output — ~2 MiB table, libwinpthread early, posix ----------
+build_mingw_stub "${work}/case12" posix 13.2.0 yes yes early
+expect_large_stub "case12 stub emits a multi-MB import table (early)" "${work}/case12"
+run_probe "${work}/case12"
+expect_rc "large early: posix driver + posix runtime -> exit 0" 0
+expect_grep "case12 pairing asserted over a multi-MB table" "pairing ok thread-model posix"
+expect_no_grep "case12 no refusal lines" "pairing-mismatch"
+
+# ---------- Case 13: Large-output — ~2 MiB table, libwinpthread late, posix ----------
+build_mingw_stub "${work}/case13" posix 13.2.0 yes yes late
+expect_large_stub "case13 stub emits a multi-MB import table (late)" "${work}/case13"
+run_probe "${work}/case13"
+expect_rc "large late: posix driver + posix runtime -> exit 0" 0
+expect_grep "case13 pairing asserted over a multi-MB table" "pairing ok thread-model posix"
+expect_no_grep "case13 no refusal lines" "pairing-mismatch"
 
 echo ""
 echo "test-toolchain-probe-mingw: ${pass_count} passed, ${fail_count} failed"
