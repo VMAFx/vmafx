@@ -341,6 +341,7 @@ class PythonPackagingTest(unittest.TestCase):
             _refuse_compiled_wheel_entries(["vmafx/__init__.py", "vmafx/_planted.so"])
 
     def test_pyproject_declares_readme_and_cli_registers_it(self) -> None:
+        """The generated pyproject declares README.md and the CLI registers it as fixed output."""
         api = parse(document())
         project = tomllib.loads(emit_python.pyproject_text(api))["project"]
         self.assertEqual(project.get("readme"), "README.md")

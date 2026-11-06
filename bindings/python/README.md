@@ -10,7 +10,9 @@ Do not edit: change the definition and run
 
 Python binding for the VMAFx C API, the perceptual video quality library.
 It calls libvmafx through ctypes and needs nothing beyond the standard library.
-The wheels bundle libvmafx; the source distribution needs an installed libvmafx.
+Pre-built binary wheels bundle libvmafx; a pure py3-none-any wheel and the
+source distribution do not, and need libvmafx through the VMAFX_LIBRARY environment
+variable or an explicit Library(path).
 
 Install with `pip install vmafx`. The binding guide, with examples, is at
 <https://vmafx.dev/api/vmafx/bindings/>.
