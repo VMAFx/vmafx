@@ -278,6 +278,8 @@ request on its own diff and the whole tree everywhere else.
 | `pull_request` | `pre-commit run --from-ref <base sha> --to-ref HEAD` | each hook sees only the files the pull request changes, so a documentation-only change skips the C, Go and Rust hooks |
 | push to master, release tag, schedule, dispatch | `pre-commit run --all-files` | the whole tree is re-proved after every landing |
 | pull request with no usable base sha | `pre-commit run --all-files` | fail closed |
+| pull request that changes `.pre-commit-config.yaml` or a file a local hook's `entry` names | `pre-commit run --all-files` | a new or changed check can find defects in files the pull request never touched; on the diff alone `check-fork-python-subprocess` passed on #3237 and failed the master push |
+| pull request whose file list git cannot read | `pre-commit run --all-files` | fail closed |
 
 The job always runs and reports under the same name, so the required
 aggregator is unaffected; only the hook selection narrows. The heavy build
@@ -292,7 +294,9 @@ python3 -m pytest scripts/ci/tests/test_precommit_scope.py
 
 `test_precommit_scope.py` covers the decision, the workflow (the job calls
 the script and keeps no literal `--all-files`; a planted copy with the old
-step must fail) and the routing of a pull request against a master push.
+step must fail), the hook-input rule (the #3237 file list gets the whole tree,
+a scope without hook inputs is the planted regression) and the routing of a
+pull request against a master push.
 
 ### Renovate
 
