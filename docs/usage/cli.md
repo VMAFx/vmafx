@@ -1133,8 +1133,8 @@ In report outputs (XML `<fyi>` and JSON root fields `"fps"` and `"wall_fps"`):
 
 - `fps`: pictures divided by a window of the C library's `clock()`,
   inherited from upstream Netflix/vmaf. On Linux and macOS `clock()` is
-  process CPU time summed over all worker threads, so a multi-threaded run
-  reads below its real throughput. On Windows the
+  process CPU time summed over all worker threads. Depending on CPU use and
+  time spent waiting, `fps` can be above or below `wall_fps`. On Windows the
   [Microsoft C runtime's `clock()`](https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/clock)
   measures elapsed wall time, so `fps` there is a wall-clock rate. Values
   from different platforms are therefore not comparable; use `wall_fps`

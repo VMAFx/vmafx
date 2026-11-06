@@ -60,8 +60,9 @@ The table is generated, not hand-kept. `scripts/docs/generate-hardware-reports.p
 reads every report under [hardware reports](../hardware-reports/index.md), decides for
 each report which rows it counts for (the processor's dispatch flags for a CPU row, the
 GPU family the report measured for a GPU row), and prints the number of reports for a CPU
-row, the number of matching GPU devices across the reports for a GPU row, and the worst
-verdict. The verdict is the one of the checks the row is about, not the report's
+row, the number of matching GPU device entries across the reports for a GPU row, and the
+worst verdict. The GPU count is not a count of distinct physical devices.
+The verdict is the one of the checks the row is about, not the report's
 overall verdict: a CPU row reads the dispatch and reference equivalence checks, the unit
 tests, the golden check and whether the package's files match its build (the native
 macOS row adds the Metal equivalence and the Metal gate, since it closes the Metal rows),
