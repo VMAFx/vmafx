@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.dev import project_modernization_audit as audit  # noqa: E402
 from scripts.docs import agents_index  # noqa: E402
 from scripts.docs import agents_migration_check as migration  # noqa: E402
+from scripts.lib import git_env  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 DIRECTORY = "tools/gate"
@@ -416,7 +417,7 @@ class DiscoveryTests(Fixture):
         self.assertEqual(agents_index.directories_from(names), ["", "a"])
 
     def git(self, *arguments: str) -> None:
-        environment = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        environment = git_env.drop()
         run_command(
             ("git", "-C", str(self.root), *arguments),
             allowed_executables=("git",),
@@ -577,7 +578,7 @@ class MigrationTests(Fixture):
 
     def test_old_text_can_come_from_a_git_revision(self) -> None:
         home = {"HOME": str(self.root), "XDG_CONFIG_HOME": str(self.root / ".config")}
-        environment = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        environment = git_env.drop()
         environment.update(home)
         identity = ("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid")
         safety = ("-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null")

@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Fixture coverage for the silent-revert gate (ADR-1284).
 
+
+
 Every case builds a disposable repository, reproduces one merge shape, and
 asserts what ``scripts/ci/check-silent-revert.py`` reports for it.  The suite is
 positive / negative / boundary per HISS-15: a reproduced silent revert must be
@@ -27,6 +29,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib import git_env
+
 ROOT = Path(__file__).resolve().parents[3]
 GATE = ROOT / "scripts" / "ci" / "check-silent-revert.py"
 GIT = shutil.which("git") or "/usr/bin/git"
@@ -37,9 +43,9 @@ ADR_0759_LANDED = "31a51afb2"
 ADR_0759_REVERTED = "92ea978a4"
 
 
-def git_env() -> dict[str, str]:
+def fixture_git_env() -> dict[str, str]:
     """A git environment that cannot reach the developer's real configuration."""
-    clean = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    clean = git_env.drop()
     clean.update(
         GIT_CONFIG_NOSYSTEM="1",
         GIT_CONFIG_GLOBAL=os.devnull,
@@ -55,7 +61,7 @@ def git_env() -> dict[str, str]:
 def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603 -- fixed argv, no shell, disposable fixture repo
         [GIT, "-C", str(repo), *args],
-        env=git_env(),
+        env=fixture_git_env(),
         text=True,
         capture_output=True,
         check=check,
@@ -65,7 +71,7 @@ def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
 def run_gate(repo: Path, base: str, head: str, **env: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603 -- fixed argv, no shell, gate under test
         [sys.executable, str(GATE), "--repo", str(repo), "--base", base, "--head", head],
-        env={**git_env(), **env},
+        env={**fixture_git_env(), **env},
         text=True,
         capture_output=True,
         check=False,
@@ -498,7 +504,7 @@ class RealHistoryReplayTest(unittest.TestCase):
     def test_real_history_replay(self) -> None:
         probe = subprocess.run(  # noqa: S603 -- fixed argv, no shell
             [GIT, "-C", str(ROOT), "cat-file", "-e", f"{ADR_0759_REVERTED}^{{commit}}"],
-            env=git_env(),
+            env=fixture_git_env(),
             capture_output=True,
             text=True,
             check=False,

@@ -41,6 +41,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
+from scripts.lib import git_env  # noqa: E402
 from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
@@ -150,7 +151,7 @@ class NvCodecHeadersFetchScript(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, True)
         # The caller's GIT_* (a hook's GIT_DIR above all) must not reach the fixture's git.
-        self.env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        self.env = git_env.drop()
         self.env.update(
             GIT_CONFIG_GLOBAL=os.devnull,
             GIT_CONFIG_NOSYSTEM="1",

@@ -31,6 +31,7 @@ from identify import extensions  # pre-commit's file classifier
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import check_flawfinder_new as check
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 BASE = """\
@@ -73,7 +74,7 @@ class CheckFlawfinderNew(unittest.TestCase):
         # Drop the caller's repository variables (a hook runs with GIT_DIR and
         # GIT_INDEX_FILE set) so the fixture never touches the caller's repository.
         env = {
-            **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+            **git_env.drop(),
             "GIT_CONFIG_GLOBAL": os.devnull,
             "GIT_CONFIG_SYSTEM": os.devnull,
             "GIT_AUTHOR_NAME": "t",

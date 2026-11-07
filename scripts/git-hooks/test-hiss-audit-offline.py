@@ -21,9 +21,14 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib import git_env
 
 SCRIPT = Path(__file__).with_name("hiss-audit.sh").resolve()
 LAUNCHER = Path(__file__).resolve().parents[2] / ".config/lefthook/engine.sh"
@@ -58,7 +63,7 @@ def run_hook(usage: str, workflows: dict[str, str]) -> tuple[int, str, str]:
         repo = root / "repo"
         # A git hook exports GIT_DIR and GIT_INDEX_FILE; with them `git init` and the
         # script under test would act on the caller's repository, not on `repo`.
-        env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        env = git_env.drop()
         subprocess.run(  # noqa: S603 -- resolved git path, fixed arguments, no shell
             [str(GIT), "init", "-q", str(repo)], check=True, timeout=TIMEOUT_S, env=env
         )

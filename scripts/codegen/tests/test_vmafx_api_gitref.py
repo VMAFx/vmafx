@@ -15,12 +15,17 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from support import ROOT  # noqa: F401 -- puts scripts/codegen on sys.path
 from vmafx_api import gitref
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib import git_env
 
 GIT = shutil.which("git") or "git"
 TIMEOUT_S = 60
@@ -40,7 +45,7 @@ def git(repo: Path, *args: str) -> None:
         check=True,
         capture_output=True,
         timeout=TIMEOUT_S,
-        env={**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, **IDENTITY},
+        env={**git_env.drop(), **IDENTITY},
     )
 
 

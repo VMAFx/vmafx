@@ -33,6 +33,7 @@ except ImportError:  # pragma: no cover - Windows fallback
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.ci.run_meson_test import sanitize_process_environment
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 MIN_PR_PARTS = 2
@@ -275,9 +276,8 @@ def git_environment() -> dict[str, str]:
     """Return the process environment without any variable that locates a repository."""
     return {
         key: value
-        for key, value in os.environ.items()
-        if not key.startswith("GIT_")
-        or (key.startswith(GIT_SETTING_PREFIXES) and key not in GIT_DROPPED_SETTINGS)
+        for key, value in git_env.drop().items()
+        if key.startswith(GIT_SETTING_PREFIXES) and key not in GIT_DROPPED_SETTINGS
     }
 
 

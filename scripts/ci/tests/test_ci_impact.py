@@ -25,6 +25,7 @@ from typing import Protocol, cast
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import gate_leg_result as glr
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -461,7 +462,7 @@ class GitIntegration(unittest.TestCase):
     def _repo(self) -> tuple[str, GitCommand]:
         tmp = tempfile.mkdtemp()
         env = {
-            **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+            **git_env.drop(),
             "GIT_AUTHOR_NAME": "t",
             "GIT_AUTHOR_EMAIL": "t@t",
             "GIT_COMMITTER_NAME": "t",

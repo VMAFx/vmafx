@@ -20,6 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from scripts.lib import git_env  # noqa: E402
 from scripts.lib.safe_subprocess import CommandOutputLimitExceeded  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
@@ -43,7 +44,7 @@ def git_environment(root: Path) -> dict[str, str]:
     """
     if root.resolve() == ROOT.resolve():
         return dict(os.environ)
-    return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    return git_env.drop()
 
 
 def tracked_rules(root: Path) -> list[str]:

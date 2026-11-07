@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """scripts/ci/check-tidy-coverage.py fails on a unit no lane reads.
 
+
 Each case builds a throwaway git repository: baselines that measure some units,
 an exception list, and tracked units. The planted defect is a new ``.c`` file
 outside every lane and outside the exception list; the check must refuse it.
@@ -12,7 +13,6 @@ from __future__ import annotations
 
 import datetime
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -21,6 +21,9 @@ import tomllib
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from scripts.lib import git_env
+
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts/ci/check-tidy-coverage.py"
 TODAY = "2026-10-05"
@@ -28,7 +31,7 @@ LIST = ".config/lint-exceptions.d/clang-tidy-coverage.toml"
 # A commit hook runs with GIT_INDEX_FILE and GIT_DIR set: a throwaway repository must not inherit
 # them, or `git add -A` below rewrites the index of the repository being committed.
 GIT = shutil.which("git") or "git"
-CLEAN_ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+CLEAN_ENV = git_env.drop()
 
 
 def entry(

@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Fixture coverage for the DCO sign-off gate (ADR-2462).
 
+
+
 Every case builds a disposable repository, plants commits and asserts what
 ``scripts/ci/check-dco.py`` reports.  A check never seen failing is not a
 check: ``test_planted_unsigned_commit_fails`` is the planted defect, and the
@@ -22,6 +24,10 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib import git_env
 
 ROOT = Path(__file__).resolve().parents[3]
 GATE = ROOT / "scripts" / "ci" / "check-dco.py"
@@ -46,8 +52,8 @@ Co-authored-by: Lusoris <lusoris@proton.me>
 """
 
 
-def git_env(ident: tuple[str, str]) -> dict[str, str]:
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+def fixture_git_env(ident: tuple[str, str]) -> dict[str, str]:
+    env = git_env.drop()
     env.update(
         GIT_AUTHOR_NAME=ident[0],
         GIT_AUTHOR_EMAIL=ident[1],
@@ -86,7 +92,7 @@ class Repo:
         done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
             [GIT, *args],
             cwd=self.path,
-            env=git_env(ident),
+            env=fixture_git_env(ident),
             capture_output=True,
             text=True,
             check=True,
@@ -371,7 +377,7 @@ class DcoLandedGateTest(unittest.TestCase):
         n = len(list(self.repo.path.glob("f*.txt")))
         (self.repo.path / f"f{n}.txt").write_text(f"{n}\n")
         self.repo.git(["add", "-A"], BOT_IDENT)
-        env = git_env(BOT_IDENT)
+        env = fixture_git_env(BOT_IDENT)
         env.update(
             GIT_COMMITTER_NAME="GitHub",
             GIT_COMMITTER_EMAIL="noreply@github.com",

@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -76,11 +77,7 @@ def fake_checker_source() -> str:
 
 
 def clean_fixture_environment(mypy: str) -> dict[str, str]:
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith(("GIT_", "PRE_COMMIT_"))
-    }
+    environment = git_env.drop(prefixes=("GIT_", "PRE_COMMIT_"))
     environment.update(
         GIT_CONFIG_NOSYSTEM="1",
         GIT_CONFIG_GLOBAL=os.devnull,
@@ -152,9 +149,7 @@ class MypyScope(unittest.TestCase):
         self.directory = Path(temporary.name)
         self.root = self.directory / "repo"
         self.root.mkdir()
-        self.environment = {
-            k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "PRE_COMMIT_"))
-        }
+        self.environment = git_env.drop(prefixes=("GIT_", "PRE_COMMIT_"))
         self.environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
         self.git("init", "-q", "--initial-branch=master")
         self.git("config", "user.name", "Fixture")

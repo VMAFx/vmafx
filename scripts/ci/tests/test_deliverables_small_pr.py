@@ -16,9 +16,14 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib import git_env
 
 ROOT = Path(__file__).resolve().parents[3]
 GATE = ROOT / "scripts" / "ci" / "deliverables-check.sh"
@@ -64,7 +69,7 @@ class SmallPrGateTest(unittest.TestCase):
         self.base = self.git("rev-parse", "HEAD").strip()
 
     def git(self, *args: str) -> str:
-        env = {**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, **IDENT}
+        env = {**git_env.drop(), **IDENT}
         done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
             [GIT, *args], cwd=self.repo, env=env, capture_output=True, text=True, check=True
         )

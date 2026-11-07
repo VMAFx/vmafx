@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """The changed-files clang-tidy routing defers only to a lane that measures the file.
 
+
 Planted trees exercise both modes of scripts/ci/tidy_changed_route.py: a file
 no lane measures fails the Tidy Changed job and is named; a file a lane
 measures is skipped with its lane named; a header reached only through units
@@ -21,6 +22,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib import git_env
+
 SCRIPT = Path(__file__).resolve().parents[1] / "tidy_changed_route.py"
 GIT = shutil.which("git") or "git"
 
@@ -29,7 +34,7 @@ def clean_environment() -> dict[str, str]:
     """The environment without GIT_* variables. A git hook exports GIT_INDEX_FILE
     (absolute in a linked worktree) and GIT_DIR; inherited, they would make the
     fixture's `git add -A` rewrite the index of the repository running the hook."""
-    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    return git_env.drop()
 
 
 FILES = {

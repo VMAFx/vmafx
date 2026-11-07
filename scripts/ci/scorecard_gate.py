@@ -28,6 +28,7 @@ from typing import cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 VERSION = "v5.6.0"
@@ -219,7 +220,7 @@ def assess(report: dict[str, object], scope: str, repository: str, sha: str) -> 
 
 def git(root: Path, *args: str) -> bytes:
     # ADR-1239: neither -C nor temporary repositories isolate inherited GIT_*.
-    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env = git_env.drop()
     env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
     executable = shutil.which("git")
     if executable is None:

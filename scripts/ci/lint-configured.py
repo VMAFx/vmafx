@@ -13,7 +13,6 @@ import argparse
 import concurrent.futures
 import hashlib
 import json
-import os
 import re
 import shlex
 import shutil
@@ -24,6 +23,7 @@ from typing import Any, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".cu", ".hip", ".m", ".mm"}
@@ -39,7 +39,7 @@ def tracked_sources(root: Path) -> set[Path]:
         allowed_executables=(git,),
         check=True,
         capture_output=True,
-        env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+        env=git_env.drop(),
         timeout_seconds=60,
     )
     return {

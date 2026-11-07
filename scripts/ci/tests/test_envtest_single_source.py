@@ -17,6 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.lib import git_env
 from scripts.lib.renovate_regex import to_python
 from scripts.lib.safe_subprocess import TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
@@ -56,9 +57,8 @@ class EnvtestSingleSource(unittest.TestCase):
         fake.mkdir()
         self.env = {
             k: v
-            for k, v in os.environ.items()
-            if not k.startswith(("GIT_", "MAKE", "GNUMAKE"))
-            and k not in {"MFLAGS", "ENVTEST_K8S_VERSION", "GOBIN", "GOPATH"}
+            for k, v in git_env.drop(prefixes=("GIT_", "MAKE", "GNUMAKE")).items()
+            if k not in {"MFLAGS", "ENVTEST_K8S_VERSION", "GOBIN", "GOPATH"}
         }
         self.env.update(
             PATH=str(fake) + os.pathsep + os.defpath,
