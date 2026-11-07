@@ -9,7 +9,7 @@
       "release-type": "simple",
       "skip-changelog": true,
       "versioning": "default",
-      "_comment_prerelease": "ADR-3292 (supersedes the candidate parts of ADR-1201 and ADR-1348 for the 0.x line). The release line restarts at 0.1.0: plain 0.x minors and patches, no candidates, `versioning: default` with `bump-minor-pre-major` (a feature or a breaking change on 0.x gives the next minor, a fix the next patch). Candidates return only for the first stable 1.0.0, from 1.0.0-rc.4 on: that cut sets `versioning: prerelease`, `prerelease: true` and `prerelease-type: rc` again (ADR-1348). scripts/release/check-one-shot-fields.sh requires prerelease versioning, or a release-as, while the manifest carries a candidate suffix.",
+      "_comment_prerelease": "ADR-3292 (supersedes the candidate parts of ADR-1201 and ADR-1348 for the 0.x line; ADR-3398 keeps rc.4 start after deleting withdrawn candidates). The release line restarts at 0.1.0: plain 0.x minors and patches, no candidates, `versioning: default` with `bump-minor-pre-major` (a feature or a breaking change on 0.x gives the next minor, a fix the next patch). Candidates return only for the first stable 1.0.0, from 1.0.0-rc.4 on (ADR-3292, ADR-3398: proxy.golang.org caches rc.1-rc.3 immutably): that cut sets `versioning: prerelease`, `prerelease: true` and `prerelease-type: rc` again (ADR-1348). scripts/release/check-one-shot-fields.sh requires prerelease versioning, or a release-as, while the manifest carries a candidate suffix.",
       "prerelease": false,
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": false,

@@ -64,9 +64,11 @@ in [twins](twins.md#cambi_hip-speed_chroma_hip-and-speed_temporal_hip).
 
 ## 2026-09-27: measured parity with the rc.1 image
 
-With the published `v1.0.0-rc.1-rocm10` image on AMD gfx1036 (the Radeon iGPU
-of a Granite Ridge CPU), the Netflix golden src01 pair and `vmaf_v0.6.1`, HIP
-scored 76.667848 against the CPU's 76.667831, a pooled difference of 1.67e-5.
+With the `v1.0.0-rc.1-rocm10` image (published and deleted after 0.1.0,
+[ADR-3398](../../adr/3398-delete-withdrawn-rc-releases.md)) on AMD gfx1036
+(the Radeon iGPU of a Granite Ridge CPU), the Netflix golden src01 pair and
+`vmaf_v0.6.1`, HIP scored 76.667848 against the CPU's 76.667831, a pooled
+difference of 1.67e-5.
 Per frame, `motion2` and `motion3` differed by up to 1.26e-5 and VIF by up to
 5.4e-7, and ADM ran on the CPU. This was close agreement, not bit-exactness,
 and it was inside the 5e-5 `places=4` cross-backend gate from
