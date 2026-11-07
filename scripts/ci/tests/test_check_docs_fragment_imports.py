@@ -1,4 +1,4 @@
-# Copyright 2026 Lusoris
+# Copyright 2026 luoye-cpu
 # SPDX-License-Identifier: EUPL-1.2
 """Positive, negative and boundary tests for check-docs-fragment-imports.py (issue 3244)."""
 
@@ -208,6 +208,123 @@ class CheckDocsFragmentImportsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as name:
             plant(Path(name), {"Makefile": makefile(CHECKER_LINE)})
             self.assertEqual(module.main(["--root", name]), 2)
+
+    # --- the five bypass shapes from the review ---
+
+    def test_a_from_package_import_reaches_the_submodule(self) -> None:
+        """`from pkg import mod` must scan pkg/mod.py, not stop at the package."""
+        problems = self.findings(
+            {
+                "Makefile": makefile(CHECKER_LINE + "\n\t@python3 scripts/docs/user.py"),
+                "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+                "scripts/docs/pkg/__init__.py": "",
+                "scripts/docs/pkg/mod.py": "import flask\n",
+                "scripts/docs/user.py": "from pkg import mod\n",
+                "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+            }
+        )
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("imports 'flask'", problems[0])
+
+    def test_a_from_package_import_of_an_init_name_stays_clean(self) -> None:
+        """`from pkg import reexport` with no pkg/reexport.py file resolves
+        inside the package; it must not become a third-party finding."""
+        self.assertEqual(
+            self.findings(
+                {
+                    "Makefile": makefile(CHECKER_LINE + "\n\t@python3 scripts/docs/user.py"),
+                    "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+                    "scripts/docs/pkg/__init__.py": "reexport = 1\n",
+                    "scripts/docs/user.py": "from pkg import reexport\n",
+                    "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+                }
+            ),
+            [],
+        )
+
+    def test_a_truncated_closure_walk_is_a_finding(self) -> None:
+        """A closure cut short by the file bound must fail loudly, not pass
+        a partial result as clean."""
+        old = module.MAX_FILES
+        module.MAX_FILES = 4
+        self.addCleanup(setattr, module, "MAX_FILES", old)
+        chain = {
+            "Makefile": makefile(CHECKER_LINE + "\n\t@python3 scripts/docs/chain_5.py"),
+            "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+            "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+        }
+        for i in range(6):
+            chain[f"scripts/docs/chain_{i}.py"] = (
+                "import flask\n" if i == 0 else f"from scripts.docs.chain_{i - 1} import x\n"
+            )
+        problems = self.findings(chain)
+        self.assertTrue(any("stopped" in p for p in problems), problems)
+
+    def test_an_unparsable_script_is_a_finding(self) -> None:
+        """A script that cannot be parsed must fail the gate, not drop its
+        imports silently."""
+        problems = self.findings(
+            {
+                "Makefile": makefile(CHECKER_LINE + "\n\t@python3 scripts/docs/broken.py"),
+                "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+                "scripts/docs/broken.py": "def f(:\n",
+                "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+            }
+        )
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("unreadable or unparsable", problems[0])
+        self.assertIn("broken.py", problems[0])
+
+    def test_a_backslash_continued_recipe_line_is_joined(self) -> None:
+        """A recipe line continued over two physical lines must still name
+        its script."""
+        problems = self.findings(
+            {
+                "Makefile": makefile(
+                    CHECKER_LINE + "\n\t@python3 scripts/docs/split.py \\\n\t    --flag"
+                ),
+                "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+                "scripts/docs/split.py": "import flask\n",
+                "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+            }
+        )
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("imports 'flask'", problems[0])
+
+    def test_an_untokenizable_recipe_line_is_a_finding(self) -> None:
+        """A recipe line shlex cannot split must fail loudly, not crash or
+        skip."""
+        problems = self.findings(
+            {
+                "Makefile": makefile(CHECKER_LINE + "\n\t@python3 'scripts/docs/x.py"),
+                "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+                "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+            }
+        )
+        self.assertTrue(any("tokenize" in p for p in problems), problems)
+
+    def test_an_interpreter_option_does_not_hide_the_script(self) -> None:
+        """`python3 -B x.py` in a recipe, and `python3 -B x.py` inside a bash
+        helper, both still name the script."""
+        problems = self.findings(
+            {
+                "Makefile": makefile(
+                    CHECKER_LINE
+                    + "\n\t@python3 -W ignore -B scripts/docs/opts.py"
+                    + "\n\t@bash scripts/docs/opts-helper.sh"
+                ),
+                "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+                "scripts/docs/opts.py": "import flask\n",
+                "scripts/docs/opts-helper.sh": (
+                    "#!/usr/bin/env bash\n" 'python3 -B "$SCRIPT_DIR/opts2.py" "$@"\n'
+                ),
+                "scripts/docs/opts2.py": "import httpx\n",
+                "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+            }
+        )
+        joined = "\n".join(problems)
+        self.assertIn("imports 'flask'", joined, problems)
+        self.assertIn("imports 'httpx'", joined, problems)
 
 
 if __name__ == "__main__":

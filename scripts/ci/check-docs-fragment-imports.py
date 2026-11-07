@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
+# Copyright 2026 luoye-cpu
 # SPDX-License-Identifier: EUPL-1.2
 """Every third-party module a `make docs-fragments-check` script imports is declared.
 
@@ -24,6 +24,12 @@ The script list is not duplicated here: the target's recipe in the `Makefile`
 is parsed, and `bash` helper scripts in the recipe are scanned for the
 `python3` invocations they make. The gate also verifies it is still wired into
 the target it guards; a recipe that drops the check line is itself a finding.
+
+The gate fails closed on its own blind spots: an import closure cut short by
+the file bound, a file that cannot be read or parsed, and a recipe line
+`shlex` cannot tokenize are each findings, never a silent pass. Recipe lines
+joined with a trailing backslash are joined before tokenizing, and
+interpreter options (`python3 -B x.py`) do not hide the script.
 
 Usage: check-docs-fragment-imports.py [--root REPO_ROOT]
 Exit: 0 clean; 1 a finding; 2 the gate cannot run (missing inputs).
@@ -67,18 +73,44 @@ OPTIONAL_IMPORTS = {
 MAX_FILES = 500  # bound on the import-closure walk
 
 
-def _recipe_tokens(line: str) -> list[str]:
-    """The words of one recipe line, make's silencing prefixes stripped."""
-    tokens = shlex.split(line.strip())
+def _recipe_tokens(line: str, issues: list[str]) -> list[str]:
+    """The words of one recipe line, make's silencing prefixes stripped. A line
+    `shlex` cannot split becomes a finding instead of a crash or a skip."""
+    try:
+        tokens = shlex.split(line.strip())
+    except ValueError as error:
+        issues.append(f"recipe line cannot be tokenized ({error}): {line.strip()[:80]}")
+        return []
     while tokens and tokens[0][:1] in {"@", "-", "+"}:
         tokens[0] = tokens[0][1:]
     return [token for token in tokens if token]
 
 
+# Interpreter options that consume a separate value; the value never names the
+# script, so both tokens are skipped together.
+_VALUE_OPTS = {"-c", "-m", "-W", "-x", "--check-hash-based-pycs"}
+
+
+def _python_script(tokens: list[str]) -> str | None:
+    """The .py file a `python3 ...` invocation runs, interpreter options and
+    their values skipped (`python3 -W ignore -B x.py` names x.py)."""
+    rest = tokens[1:]
+    while rest:
+        if rest[0] in _VALUE_OPTS:
+            rest = rest[2:]
+        elif rest[0].startswith("-"):
+            rest = rest[1:]
+        else:
+            break
+    return rest[0] if rest and rest[0].endswith(".py") else None
+
+
 def _split_recipe_scripts(tokens: list[str], python: list[Path], shell: list[Path]) -> None:
     """Sort one recipe line's words into the python and bash scripts it runs."""
-    if len(tokens) > 1 and tokens[0] in {"python3", "python"} and tokens[1].endswith(".py"):
-        python.append(Path(tokens[1]))
+    if tokens and tokens[0] in {"python3", "python"}:
+        script = _python_script(tokens)
+        if script:
+            python.append(Path(script))
     elif len(tokens) > 1 and tokens[1].endswith(".sh") and tokens[0] in {"bash", "sh"}:
         shell.append(Path(tokens[1]))
 
@@ -92,7 +124,14 @@ def _scripts_from_helper(helper: Path, makefile_dir: Path) -> list[Path]:
         return [source.with_suffix(".py")]
     text = source.read_text(encoding="utf-8", errors="replace")
     scripts: list[Path] = []
-    for match in re.finditer(r"python3\s+(\"[^\"]+\"|\S+\.py)", text):
+    # Interpreter options may sit between `python3` and the script. Only the
+    # value-consuming options (-c/-m/-W/-x/--check-hash-based-pycs) take a
+    # following token as their value; a bare flag never swallows the script.
+    pattern = re.compile(
+        r"python3(?:\s+-{1,2}(?:c|m|W|x|check-hash-based-pycs)\s+\S+|\s+-{1,2}[A-Za-z][\w-]*)*"
+        r"\s+(\"[^\"]+\"|\S+\.py)"
+    )
+    for match in pattern.finditer(text):
         token = match.group(1).strip('"')
         if "$" in token:
             token = re.sub(r"\$\{?SCRIPT_DIR\}?", helper.parent.as_posix(), token)
@@ -103,12 +142,15 @@ def _scripts_from_helper(helper: Path, makefile_dir: Path) -> list[Path]:
     return scripts
 
 
-def recipe_scripts(makefile: Path) -> list[Path]:
-    """The Python scripts the `docs-fragments-check` recipe runs, in recipe order.
+def recipe_scripts(makefile: Path) -> tuple[list[Path], list[str]]:
+    """The Python scripts the `docs-fragments-check` recipe runs, in recipe
+    order, plus the recipe's tokenizing findings.
 
     `python3 x.py` lines are taken directly; `bash x.sh` lines are scanned for
-    the `python3` invocations the helper makes. The target's recipes only ever
-    run repository scripts, so every path is repo-relative.
+    the `python3` invocations the helper makes. Recipe lines joined with a
+    trailing backslash are joined before tokenizing, the way `make` hands one
+    logical line to the shell. The target's recipes only ever run repository
+    scripts, so every path is repo-relative.
     """
     lines = makefile.read_text(encoding="utf-8").splitlines()
     start = None
@@ -121,17 +163,29 @@ def recipe_scripts(makefile: Path) -> list[Path]:
 
     python: list[Path] = []
     shell: list[Path] = []
+    issues: list[str] = []
+    pending = ""
     for line in lines[start:]:
-        if not line.strip():
-            continue
         if not line.startswith("\t"):
-            break  # a non-recipe line ends the recipe
-        tokens = _recipe_tokens(line)
+            break  # a non-recipe line ends the recipe (flush first below)
+        if pending:
+            candidate = pending + " " + line.strip()
+        else:
+            candidate = line.rstrip("\n")
+        if candidate.rstrip().endswith("\\"):
+            pending = candidate.rstrip()[:-1].rstrip() + " "
+            continue
+        pending = ""
+        tokens = _recipe_tokens(candidate, issues)
+        if tokens:
+            _split_recipe_scripts(tokens, python, shell)
+    if pending:
+        tokens = _recipe_tokens(pending, issues)
         if tokens:
             _split_recipe_scripts(tokens, python, shell)
     for helper in shell:
         python.extend(_scripts_from_helper(helper, makefile.parent))
-    return python
+    return python, issues
 
 
 def _bases_for(source: Path, root: Path) -> tuple[Path, ...]:
@@ -227,25 +281,48 @@ def _import_targets(tree: ast.AST, source: Path, root: Path) -> tuple[list[str],
                 files.extend(_relative_files(node, source, root))
             elif node.module:
                 names.append(node.module)
+                # `from pkg import mod` also loads pkg/mod.py when it exists;
+                # a name the repository does not resolve (stdlib attribute,
+                # package-`__init__` re-export) contributes nothing.
+                for alias in node.names:
+                    if alias.name == "*":
+                        continue
+                    child = f"{node.module}.{alias.name}"
+                    if _module_files(child, source, root):
+                        names.append(child)
     names.extend(_dynamic_import_names(tree))
     return names, files
 
 
-def scan_imports(entry: Path, root: Path) -> tuple[set[str], list[Path]]:
+def scan_imports(entry: Path, root: Path) -> tuple[set[str], list[Path], list[str]]:
     """Third-party top-level modules `entry` — or any repository module its
-    imports reach — brings in, and the closure itself. Relative imports stay
-    inside the closure; stdlib names are skipped before any filesystem work."""
+    imports reach — brings in, the closure itself, and the walk's incomplete
+    cases (a closure cut short by the file bound, a file that cannot be read
+    or parsed): each incomplete case is a finding, never a silent pass.
+    Relative imports stay inside the closure; stdlib names are skipped before
+    any filesystem work."""
     third_party: set[str] = set()
     seen: set[Path] = set()
+    issues: list[str] = []
     queue = [entry.resolve()]
-    while queue and len(seen) < MAX_FILES:
+    while queue:
+        if len(seen) >= MAX_FILES:
+            issues.append(
+                f"import-closure walk stopped at the {MAX_FILES}-file bound; "
+                f"{len(queue)} module(s) were never scanned"
+            )
+            break
         source = queue.pop(0)
         if source in seen:
             continue
         seen.add(source)
         try:
             tree = ast.parse(source.read_text(encoding="utf-8"))
-        except (OSError, SyntaxError, UnicodeDecodeError):
+        except (OSError, SyntaxError, UnicodeDecodeError) as error:
+            issues.append(
+                f"{source.relative_to(root).as_posix() if source.is_relative_to(root) else source.as_posix()}: "
+                f"unreadable or unparsable ({type(error).__name__}); its imports are unchecked"
+            )
             continue
         names, files = _import_targets(tree, source, root)
         queue.extend(files)
@@ -258,7 +335,7 @@ def scan_imports(entry: Path, root: Path) -> tuple[set[str], list[Path]]:
                 queue.extend(resolved)
             else:
                 third_party.add(top)
-    return third_party, sorted(seen)
+    return third_party, sorted(seen), issues
 
 
 def declared_modules(lock_input: Path) -> set[str]:
@@ -283,7 +360,9 @@ def findings(root: Path) -> list[str]:
     if not lock_input.is_file():
         raise LookupError(f"{lock_input} does not exist")
 
-    scripts = recipe_scripts(makefile)
+    scripts, recipe_issues = recipe_scripts(makefile)
+    for issue in recipe_issues:
+        problems.append(f"{MAKEFILE}:{TARGET} recipe: {issue}")
     if not any(path.as_posix() == SELF for path in scripts):
         problems.append(
             f"the {TARGET} recipe no longer runs {SELF}: "
@@ -295,7 +374,9 @@ def findings(root: Path) -> list[str]:
         if not entry.is_file():
             problems.append(f"the {TARGET} recipe runs {script.as_posix()}, which does not exist")
             continue
-        third_party, _closure = scan_imports(entry, root)
+        third_party, _closure, scan_issues = scan_imports(entry, root)
+        for issue in scan_issues:
+            problems.append(f"{script.as_posix()}: {issue}")
         for module in sorted(third_party - declared - set(OPTIONAL_IMPORTS)):
             problems.append(
                 f"{script.as_posix()} imports '{module}': not declared in {LOCK_INPUT} "
