@@ -227,11 +227,22 @@ commit must have a `Copyright` line in its first 40 lines.
 ### What the hook checks
 
 Pure presence. Template correctness — which of ADR-0105's three
-templates (Netflix-only, Lusoris+Claude-only, dual notice) is the
+templates (Netflix-only, Lusoris-only (ADR-0861), dual notice) is the
 right fit for a given file — remains a reviewer judgement. The year
 range and the fork-authored-vs-upstream-modified split cannot be
 derived from a diff alone, so the hook checks the cheapest
 mechanically-decidable property.
+
+The `check-agent-copyright-rule` pre-commit hook separately checks that rule
+text follows [ADR-0861](../adr/0861-vmafx-copyright-policy-drop-anthropic.md).
+Run `python3 scripts/ci/check_agent_copyright_rule.py` to scan Git-tracked
+`AGENTS.md`, `AGENTS.d/*.md`, `CONTRIBUTING.md` and `docs/development/*.md`.
+It reports retired dual-party wording as `path:line: text` and exits 1;
+Git or read errors exit 2; clean rules exit 0 with a file count. Historical
+ADRs and legacy-acceptance wording remain valid. The paired
+`test-check-agent-copyright-rule` hook exercises positive, planted negative
+and boundary cases; run it with
+`python3 scripts/ci/tests/test_check_agent_copyright_rule.py`.
 
 ### Exclusions
 

@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD041 -->
 - **The golden job pins all eight HDR models on real PQ with motion.** The new
   prerelease `fixtures-pq-sollevante-v1` holds an 8-frame 1080p clip derived from
   *Sol Levante* (Netflix Open Content, CC BY 4.0).
