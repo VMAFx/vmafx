@@ -18,6 +18,7 @@ from typing import ClassVar
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.ci import ffmpeg_shared_series_fixture as shared_series
 from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -392,6 +393,57 @@ class FFmpegWorkflowContract(unittest.TestCase):
                 self.assertEqual(_filter_job_findings(workflow, required), expected)
 
 
+def _setup_cosign_test_fixture(p: Path, record: Path) -> dict[str, str]:
+    bin_dir = p / "bin"
+    bin_dir.mkdir()
+    tarball, sha = shared_series.tarball(
+        p / "release",
+        "n9.0.2",
+        "946fcce07b6dcd0331c8cc609192aeff5e1924f8",
+        {"0001-fix.patch": "diff\n"},
+    )
+    curl = bin_dir / "curl"
+    curl.write_text(
+        "#!/bin/sh\n"
+        'dest=""\nurl=""\n'
+        "while [ $# -gt 0 ]; do\n"
+        '  case "$1" in\n'
+        '    -o|--output) dest="$2"; shift 2 ;;\n'
+        '    http*|file*|ftp*) url="$1"; shift ;;\n'
+        "    *) shift ;;\n"
+        "  esac\ndone\n"
+        f'case "$url" in *tar.gz) cp "{tarball}" "$dest" ;; '
+        f'*SHA256SUMS) cp "{tarball.parent / "SHA256SUMS"}" "$dest" ;; '
+        '*sigstore.json) echo "{}" > "$dest" ;; esac\n'
+    )
+    curl.chmod(0o755)
+    cosign = bin_dir / "cosign"
+    cosign.write_text(
+        f'#!/bin/sh\n[ "$1" = "verify-blob" ] && printf "%s\\n" "${{TUF_ROOT:-UNSET}}" > "{record}"\nexit 0\n'
+    )
+    cosign.chmod(0o755)
+    config = p / "build-config.env"
+    config.write_text(
+        'FFMPEG_REMOTE="https://github.com/FFmpeg/FFmpeg.git"\n'
+        'FFMPEG_TAG="n9.0.2"\n'
+        'FFMPEG_COMMIT="946fcce07b6dcd0331c8cc609192aeff5e1924f8"\n'
+        'FFMPEG_FIX_SERIES_REPO="https://github.com/VMAFx/ffmpeg-patches"\n'
+        f'FFMPEG_FIX_SERIES_TAG="v0.0.0-fixture"\nFFMPEG_FIX_SERIES_SHA256="{sha}"\n'
+    )
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith("FFMPEG_FIX_SERIES_") and k != "TUF_ROOT"
+    }
+    env.update(
+        PATH=f"{bin_dir}:{env.get('PATH', '')}",
+        BUILD_CONFIG=str(config),
+        FFMPEG_FIX_SERIES_CACHE="none",
+        FFMPEG_FIX_SERIES_VERIFY="cosign",
+    )
+    return env
+
+
 class SharedFixSeriesContract(unittest.TestCase):
     """Every FFmpeg build applies the pinned shared fix series before ours (ADR-3143)."""
 
@@ -537,6 +589,42 @@ class SharedFixSeriesContract(unittest.TestCase):
                     )
                     self.assertEqual(result.returncode, 2, result.stderr)
                     self.assertIn(needle, str(result.stderr))
+
+    def test_the_script_isolates_cosign_tuf_root(self) -> None:
+        """The script isolates cosign's TUF cache so read-only home sandboxes succeed."""
+        text = (ROOT / "scripts/ci" / self.SCRIPT).read_text(encoding="utf-8")
+        needle = 'export TUF_ROOT="${TUF_ROOT:-$work/sigstore}"'
+        self.assertIn(needle, text)
+        self.assertLess(text.index(needle), text.index("cosign verify-blob"))
+
+    def test_cosign_invocation_inherits_or_defaults_tuf_root(self) -> None:
+        """Verify cosign executes with TUF_ROOT defaulted to work/sigstore or inherited."""
+        script = ROOT / "scripts/ci" / self.SCRIPT
+        with tempfile.TemporaryDirectory() as directory:
+            p = Path(directory)
+            record = p / "tuf_root.txt"
+            env = _setup_cosign_test_fixture(p, record)
+            res = run_command(
+                [BASH, str(script), "fetch", str(p / "out1")],
+                allowed_executables=(BASH,),
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout_seconds=60,
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertTrue(record.read_text().strip().endswith("/sigstore"))
+
+            res2 = run_command(
+                [BASH, str(script), "fetch", str(p / "out2")],
+                allowed_executables=(BASH,),
+                env=dict(env, TUF_ROOT=str(p / "custom_tuf")),
+                capture_output=True,
+                text=True,
+                timeout_seconds=60,
+            )
+            self.assertEqual(res2.returncode, 0, res2.stderr)
+            self.assertEqual(record.read_text().strip(), str(p / "custom_tuf"))
 
 
 MSYS2_STEP = re.compile(r"(?m)^([ \t]*)- uses: msys2/setup-msys2@")
