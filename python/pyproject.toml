@@ -4,7 +4,7 @@
 # These are the fork the package ships from.
 Homepage = "https://github.com/VMAFx/vmafx"
 Repository = "https://github.com/VMAFx/vmafx"
-Documentation = "https://vmafx.github.io/vmafx/"
+Documentation = "https://vmafx.dev/"
 Issues = "https://github.com/VMAFx/vmafx/issues"
 
 # Moved here from setup.py's `entry_points={"console_scripts": [...]}`.

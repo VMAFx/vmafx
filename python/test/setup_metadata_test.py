@@ -220,7 +220,7 @@ def test_build_backend_floor_covers_the_license_metadata_form():
 HARNESS_URLS = {
     "Homepage": "https://github.com/VMAFx/vmafx",
     "Repository": "https://github.com/VMAFx/vmafx",
-    "Documentation": "https://vmafx.github.io/vmafx/",
+    "Documentation": "https://vmafx.dev/",
     "Issues": "https://github.com/VMAFx/vmafx/issues",
 }
 
