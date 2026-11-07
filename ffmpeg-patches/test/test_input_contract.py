@@ -39,7 +39,7 @@ class InputContractCliTest(unittest.TestCase):
         self._write_docker_doc()
 
     def _write_patch_fixture(self) -> None:
-        (self.root / "ffmpeg-patches/0004-add-vmafx-filter.patch").write_text(
+        (self.root / "ffmpeg-patches/0003-add-vmafx-filter.patch").write_text(
             """diff --git a/libavfilter/vf_vmafx.c b/libavfilter/vf_vmafx.c
 --- a/libavfilter/vf_vmafx.c
 +++ b/libavfilter/vf_vmafx.c
@@ -213,7 +213,7 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,video \\
 
     def test_log_call_removal_fails(self) -> None:
         self.mutate(
-            "ffmpeg-patches/0004-add-vmafx-filter.patch",
+            "ffmpeg-patches/0003-add-vmafx-filter.patch",
             "av_log(ctx, AV_LOG_INFO,",
             "av_log(ctx, AV_LOG_WARNING,",
         )
@@ -221,7 +221,7 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,video \\
 
     def test_log_message_mutation_fails(self) -> None:
         self.mutate(
-            "ffmpeg-patches/0004-add-vmafx-filter.patch",
+            "ffmpeg-patches/0003-add-vmafx-filter.patch",
             "input 1 (reference) the reference",
             "input 1 (reference) the source",
         )
@@ -235,7 +235,7 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,video \\
             "+           ctx->filter->name);"
         )
         self.mutate(
-            "ffmpeg-patches/0004-add-vmafx-filter.patch",
+            "ffmpeg-patches/0003-add-vmafx-filter.patch",
             call,
             "+    /* disabled reminder\n" + call + "\n+     */",
         )

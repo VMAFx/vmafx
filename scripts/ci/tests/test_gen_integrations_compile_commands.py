@@ -121,7 +121,7 @@ class RefusesToMeasureNothing(unittest.TestCase):
             _populate(build, gst=GST_SOURCES, ffmpeg=["libavfilter/vf_vmafx.c"])
             status, err = _run(build)
         self.assertEqual(status, 1)
-        self.assertIn("fftools/ffmpeg_dec_hwaccel.c", err)
+        self.assertIn("libavfilter/vf_vmafx_pre.c", err)
 
     def test_missing_plugin_source_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

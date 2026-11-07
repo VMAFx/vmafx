@@ -138,8 +138,8 @@ WORKDIR /vmaf/FFmpeg-${FFMPEG_TAG}
 # tarball pinned in build-config.env; the release archive is not a checkout.
 RUN FFMPEG_FIX_SERIES_CACHE=none \
     bash /vmaf/scripts/ci/ffmpeg-shared-series.sh apply --method apply .
-# Apply the patch series in series.txt order. Patch 0003 depends on
-# fields added by 0001, so applying out of order breaks the build.
+# Apply the patch series in series.txt order; later patches build on
+# earlier ones, so applying out of order breaks the build.
 RUN set -e; \
     while IFS= read -r line; do \
         case "$line" in ''|\#*) continue ;; esac; \

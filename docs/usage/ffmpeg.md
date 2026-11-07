@@ -66,7 +66,7 @@ make install
 
 The fork's series builds the new `vmafx`, `vmafx_tune`, and `vmafx_pre` filters,
 the `-vmafx-profile` and `-pass-autotune` options, and `-qpfile` support.
-The series (`ffmpeg-patches/0001` through `0006`, listed in `ffmpeg-patches/series.txt`)
+The series (`ffmpeg-patches/0001` through `0004`, listed in `ffmpeg-patches/series.txt`)
 applies in order to a clean `n9.0.2` checkout after the shared FFmpeg fix series
 ([what it changes](../development/ffmpeg-patch-automation.md#shared-ffmpeg-fix-series)):
 
@@ -183,18 +183,18 @@ more complex filters, and the
 
 | Filter / Option | Patch | Configure flag | Computes on |
 | --- | --- | --- | --- |
-| `vmafx` | `0004` | `--enable-libvmafx` | CPU, CUDA, SYCL, HIP, Metal: device-resident frames imported without a copy |
-| `vmafx_tune` | `0004` | `--enable-libvmafx` | CPU / GPU; recommends a CRF for the next encode pass |
-| `vmafx_pre` | `0005` | `--enable-libvmafx` | Learned pre-filter (ONNX) through the VMAFx DNN session |
-| `-qpfile` | `0001` | `--enable-libvmafx` | Per-block QP offsets for libx264, libsvtav1, libaom-av1 |
-| `-pass-autotune` | `0002` | `--enable-libvmafx` | Advisory CLI glue for external 2-pass autotuning |
-| `-vmafx-profile` | `0003` | `--enable-libvmafx` | Advisory CLI glue for vmaf-tune profile hand-off |
-| Loopback hwaccel | `0006` | `--enable-libvmafx` | GPU loopback decoder hwaccel preceding `-dec` |
+| `vmafx` | `0003` | `--enable-libvmafx` | CPU, CUDA, SYCL, HIP, Metal: device-resident frames imported without a copy |
+| `vmafx_tune` | `0003` | `--enable-libvmafx` | CPU / GPU; recommends a CRF for the next encode pass |
+| `vmafx_pre` | `0004` | `--enable-libvmafx` | Learned pre-filter (ONNX) through the VMAFx DNN session |
+| `-qpfile` | shared fix series `0043` | `--enable-libx264`, `--enable-libsvtav1` or `--enable-libaom` | Per-block QP offsets for libx264, libsvtav1, libaom-av1 |
+| `-pass-autotune` | `0001` | `--enable-libvmafx` | Advisory CLI glue for external 2-pass autotuning |
+| `-vmafx-profile` | `0002` | `--enable-libvmafx` | Advisory CLI glue for vmaf-tune profile hand-off |
+| Loopback hwaccel | shared fix series `0044` | none (`fftools`) | GPU loopback decoder hwaccel preceding `-dec` |
 
 Unpatched stock FFmpeg retains its own `libvmaf` filter (`--enable-libvmaf`) linking against the `libvmaf.so` compatibility wrapper.
 
-Two `fftools` patches belong to the `vmafx` filters: `0003` adds
-`-vmafx-profile`, and `0006` lets `-hwaccel`, `-hwaccel_device` and
+Two `fftools` patches belong to the `vmafx` filters: `0002` adds
+`-vmafx-profile`, and shared fix series patch `0044` lets `-hwaccel`, `-hwaccel_device` and
 `-hwaccel_output_format` precede `-dec`, so loopback decoders decode on the
 GPU (see [Encode and score in one command](#encode-and-score-in-one-command)).
 
@@ -212,7 +212,7 @@ for the mapping from old options to new spellings.
 
 ### Install the vmafx filter
 
-The filter is patch `0004` of the series `ffmpeg-patches/0001` to `0006` in
+The filter is patch `0003` of the series `ffmpeg-patches/0001` to `0004` in
 `ffmpeg-patches/series.txt`; apply the whole series in order as in
 [Install](#install). It builds against the installed `libvmafx` and needs
 `pkg-config` to find `libvmafx >= 1.0.0`:
@@ -222,9 +222,8 @@ The filter is patch `0004` of the series `ffmpeg-patches/0001` to `0006` in
 make -j4
 ```
 
-The sources of the fork filters and options are `ffmpeg-patches/src/vf_vmafx.c`,
-`ffmpeg-patches/src/vf_vmafx_pre.c` and
-`ffmpeg-patches/src/ffmpeg_dec_hwaccel.c`; patches `0004` to `0006` carry
+The sources of the fork filters and options are `ffmpeg-patches/src/vf_vmafx.c`
+and `ffmpeg-patches/src/vf_vmafx_pre.c`; patches `0003` and `0004` carry
 them.
 
 ### Pads
@@ -543,20 +542,20 @@ ffmpeg -init_hw_device cuda=cu:0 -filter_hw_device cu \
   -map "[out]" -f null -
 ```
 
-Patch `0006` lets `-hwaccel`, `-hwaccel_device` and `-hwaccel_output_format`
+Shared fix series patch `0044` lets `-hwaccel`, `-hwaccel_device` and `-hwaccel_output_format`
 precede `-dec`; stock FFmpeg reads them for input streams only, so without them
 the loopback decoder returns system memory and the filter scores host frames.
 The measured output on this command is two window lines (means `86.989539` and
 `85.531429`), `vmafx vmaf mean: 86.260484`, `VMAF score: 86.260484` and
 `vmafx frames: 96 imported on the device, 0 host, 0 downloaded`: the decoded
-frames never touch the host. Patch `0006` is carried by the fork only
-(decision Q-048) and is refreshed with every FFmpeg release
+frames never touch the host. The shared fix series carries the change as
+patch `0044` for every consumer and refreshes it with every FFmpeg release
 ([ffmpeg-patch-automation.md](../development/ffmpeg-patch-automation.md)).
 `vmafx_filter_check.py e2e` runs it.
 
 ### The vmafx_tune filter
 
-`vmafx_tune` (patch `0004`) is the CRF-tuning filter of the VMAFx API: a
+`vmafx_tune` (patch `0003`) is the CRF-tuning filter of the VMAFx API: a
 two-input filter that logs a recommended CRF for the next encode pass. Its
 pads are `main` and `reference`.
 
@@ -589,7 +588,7 @@ The mapping from the observed mean to a CRF is the piecewise linear curve
 
 ### The vmafx_pre filter
 
-`vmafx_pre` (patch `0005`) applies an ONNX learned pre-filter to a video
+`vmafx_pre` (patch `0004`) applies an ONNX learned pre-filter to a video
 through the library's DNN session.
 
 | Option | Default | Effect |
@@ -605,7 +604,7 @@ frame and names the plane.
 
 ### The -vmafx-profile option
 
-Patch `0003` adds `-vmafx-profile <path>` to `fftools`. It logs the profile path
+Patch `0002` adds `-vmafx-profile <path>` to `fftools`. It logs the profile path
 and the `vmaf-tune` command that reads the report and encodes with it.
 
 ### Limits
@@ -1064,5 +1063,5 @@ third-party tools.
   Legacy Vulkan filters, options, and configure flags no longer exist. ADR-2166 superseded ADR-0860,
   completely removing the legacy no-op Vulkan shims and enabling a clean patch series renumbering from `0001`.
 - **`vmafx`, `vmafx_tune`, `vmafx_pre` and `-vmafx-profile` redesigned ([ADR-2125](../adr/2125-vmafx-ffmpeg-gstreamer-filters.md), [ADR-2166](../adr/2166-ffmpeg-series-drops-vulkan-shims.md)).**
-  Patches `0001` to `0006` define the unified VMAFx filter series, dropping all modifications to `vf_libvmaf.c`
+  Patches `0001` to `0004` define the unified VMAFx filter series, dropping all modifications to `vf_libvmaf.c`
   and retiring all fork-specific `libvmaf_*` filters in favor of `--enable-libvmafx`.

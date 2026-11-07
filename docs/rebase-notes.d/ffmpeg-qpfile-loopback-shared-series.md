@@ -1,0 +1,4 @@
+## FFmpeg qpfile and loopback patches move to the shared series (issue #2435)
+
+- `ffmpeg-patches/0001-codec-qpfile-unified.patch`, `0006-fftools-loopback-decoder-hwaccel.patch` and `ffmpeg-patches/src/ffmpeg_dec_hwaccel.c` are deleted; the shared fix series carries them as `0043` and `0044`. The remaining four patches are renamed `0001`-`0004` (`pass-autotune-cli-glue`, `add-vmafx-profile-cli-glue`, `add-vmafx-filter`, `add-vmafx-pre-filter`), and `series.txt`, `REUSE.toml` and the tidy lane lists follow.
+- On a conflict with a branch that still edits the old `0002`-`0005` names, move its change to the new name, never restore the old file. A branch that edits the dropped `0001` or `0006` belongs in `VMAFx/ffmpeg-patches` instead. Then run `python3 scripts/ci/ffmpeg_patch_stack.py --refresh`, then `--check`.

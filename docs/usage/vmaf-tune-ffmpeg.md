@@ -51,7 +51,7 @@ Confirm that the new options are recognised:
 ./ffmpeg -h | grep -i vmafx-profile
 ```
 
-## Hook 1: `-qpfile <path>` (patch 0001)
+## Hook 1: `-qpfile <path>` (shared series 0043)
 
 The `-qpfile` option on `libx264`, `libsvtav1` and `libaom-av1` reads the
 qpfile format that vmaf-tune's saliency module
@@ -190,7 +190,7 @@ macroblock rounds to the nearest. libaom copies the segment map and the
 !!! note "8-segment limit"
     The limit is a quantisation step: nearby QP offsets round together.
 
-## Hook 2: `-lavfi vmafx_tune` (patch 0004)
+## Hook 2: `-lavfi vmafx_tune` (patch 0003)
 
 The filter takes two video inputs, runs alongside a 1-pass encode and
 emits a recommended CRF for the next pass:
@@ -208,7 +208,7 @@ At the end of the run the filter logs:
 ```
 
 !!! note "FFmpeg version"
-    Patch 0004 uses the post-n7 libavfilter API (`ff_filter_link()` for
+    Patch 0003 uses the post-n7 libavfilter API (`ff_filter_link()` for
     per-link metadata such as `frame_rate`), so it needs FFmpeg `n7.0` or
     newer; it does not compile against `n6.x`. The series targets
     `n9.0.2`, so the prerequisites above satisfy this.
@@ -242,7 +242,7 @@ Python tool: `tools/vmaf-tune/src/vmaftune/recommend.py` sweeps real
 CRF-to-VMAF rows from a corpus instead of projecting from one
 observation.
 
-## Hook 3: `-pass-autotune` (patch 0002)
+## Hook 3: `-pass-autotune` (patch 0001)
 
 An advisory CLI flag for vmaf-tune-driven 2-pass encodes:
 
@@ -262,7 +262,7 @@ and in [`--two-pass`](vmaf-tune-multipass.md). The flag exists so shell
 scripts that call `ffmpeg` directly can signal the intent without
 inventing their own log conventions.
 
-## Hook 4: `-vmafx-profile <path>` (patch 0003)
+## Hook 4: `-vmafx-profile <path>` (patch 0002)
 
 `vmaf-tune compare --format html|both` and `vmaf-tune report` embed a
 versioned `encoder_profile` payload in the generated report. The Python

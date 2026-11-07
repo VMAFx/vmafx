@@ -488,7 +488,7 @@ def augment_extra_params_with_qpfile(base: Sequence[str], qpfile: Path) -> tuple
 
     libx264 has no ``qpfile`` parameter (that is a feature of the x264
     command line), so ``-x264-params qpfile=...`` is refused by libx264 and
-    ignored with a warning. The fork's FFmpeg patch stack (patch 0007)
+    ignored with a warning. Shared FFmpeg fix series patch 0043
     exposes a top-level ``-qpfile`` AVOption on ``libx264`` and applies the
     per-macroblock offsets through x264's ``quant_offsets``; stock FFmpeg
     refuses the option, so the encode fails instead of running without the
@@ -728,7 +728,7 @@ def _saliency_augment_x265(
 
 
 def augment_extra_params_with_svtav1_qpfile(base: Sequence[str], qpfile: Path) -> tuple[str, ...]:
-    """Append patch 0007's top-level SVT-AV1 ``-qpfile`` ROI option.
+    """Append shared fix series patch 0043's SVT-AV1 ``-qpfile`` ROI option.
 
     The bridge consumes x264-style 16x16 macroblocks and maps them to 64x64
     super-blocks with at most eight segments (ADR-3386). Stock FFmpeg
@@ -744,7 +744,7 @@ def _saliency_augment_svtav1(
     duration_frames: int,
     persist: bool,
 ) -> EncodeRequest:
-    """Write a 16x16 x264-style qpfile for patch 0007's SVT-AV1 ROI bridge."""
+    """Write a 16x16 x264-style qpfile for the SVT-AV1 ROI bridge (shared patch 0043)."""
     block_offsets = reduce_qp_map_to_blocks(qp_map, block=X264_MB_SIDE)
     if persist:
         qpfile = request.output.with_suffix(".svtav1-qpfile.txt")
