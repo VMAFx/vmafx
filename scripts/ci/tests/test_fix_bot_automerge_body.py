@@ -10,6 +10,7 @@ import json
 import os
 import subprocess
 import sys
+import types
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -25,7 +26,7 @@ BASE_ENV = {
 }
 
 
-def _load_module():
+def _load_module() -> types.ModuleType:
     spec = importlib.util.spec_from_file_location("fix_bot", SCRIPT)
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)
