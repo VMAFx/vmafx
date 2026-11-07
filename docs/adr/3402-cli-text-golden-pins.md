@@ -36,11 +36,14 @@ end-to-end transcript pin can guard those.
     (byte-identical help modulo argv[0]; its own `VMAFX ... precision=max`
     version line), the option-error transcripts (`--width`, `--precision`,
     `--model`), and the raw-yuv geometry refusals.
-  - `test_vmaf_roi_vpl_usage.sh` — the `vmaf_roi` and `vmaf_vpl` usage
-    blocks; the vpl half skips (exit 77) outside Linux SYCL builds and is
-    verified by the Ubuntu SYCL lanes.
+  - `test_vmaf_roi_usage.sh` and `test_vmaf_vpl_usage.sh` — the hand-written
+    `vmaf_roi` and `vmaf_vpl` usage blocks, as two separate tests so the roi
+    golden is a real PASS in every build; the vpl test skips (exit 77)
+    outside Linux SYCL builds and is verified by the Ubuntu SYCL lanes.
   - `test_vmaf_per_shot.sh` — the `vmaf-perShot` usage block, on both its
-    `--help` (stdout, exit 0) and no-args (stderr, exit 1) paths.
+    `--help` (stdout, exit 0) and no-args (stderr, exit 1) paths. This one
+    test sits in the `slow` suite, where the sidecar smoke it extends already
+    runs; the other pins are in `fast`.
 - An error transcript is pinned as its reason line plus the full usage dump
   (every `usage()` refusal ends with `print_usage`), so the help golden and
   the error cases share one source of truth.
@@ -77,7 +80,8 @@ end-to-end transcript pin can guard those.
 
 - Every wording, flag-name, spacing or exit-code change to the pinned text
   surfaces as a named test failure (`test_vmaf_cli_text_golden`,
-  `test_vmaf_roi_vpl_usage`, `test_vmaf_per_shot`) instead of reaching
+  `test_vmaf_roi_usage`, `test_vmaf_vpl_usage`, `test_vmaf_per_shot`)
+  instead of reaching
   users silently.
 - The goldens are regeneratable receipts: after an intended text change,
   re-run the tool with the normalised invocation and refresh

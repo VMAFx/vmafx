@@ -334,14 +334,26 @@ test('test_vmaf_cli_text_golden', test_vmaf_cli_text_golden,
      ],
      timeout : 120)
 
-# ADR-3402 — the hand-written usage text of the vmaf_roi / vmaf_vpl sidecars
-# is pinned the same way (issue #3214 rows C15-12/C15-13); the vpl half
-# skips (exit 77) outside Linux SYCL builds, where its golden is verified.
-test_vmaf_roi_vpl_usage = find_program('test_vmaf_roi_vpl_usage.sh')
+# ADR-3402 — the hand-written usage texts of the vmaf_roi / vmaf_vpl
+# sidecars are pinned the same way (issue #3214 rows C15-12/C15-13), as two
+# separate tests so the roi golden is a real PASS in every build; the vpl
+# test skips (exit 77) outside Linux SYCL builds, where its golden is
+# verified.
+test_vmaf_roi_usage = find_program('test_vmaf_roi_usage.sh')
+test('test_vmaf_roi_usage', test_vmaf_roi_usage,
+     suite : ['fast'],
+     depends : [vmaf_roi],
+     workdir : meson.project_build_root(),
+     env: [
+         'MESON_BUILD_ROOT=' + meson.project_build_root(),
+         'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+     ],
+     timeout : 120)
+test_vmaf_vpl_usage = find_program('test_vmaf_vpl_usage.sh')
 if vmaf_vpl_ok
-    test('test_vmaf_roi_vpl_usage', test_vmaf_roi_vpl_usage,
+    test('test_vmaf_vpl_usage', test_vmaf_vpl_usage,
          suite : ['fast'],
-         depends : [vmaf_roi, vmaf_vpl],
+         depends : [vmaf_vpl],
          workdir : meson.project_build_root(),
          env: [
              'MESON_BUILD_ROOT=' + meson.project_build_root(),
@@ -349,9 +361,8 @@ if vmaf_vpl_ok
          ],
          timeout : 120)
 else
-    test('test_vmaf_roi_vpl_usage', test_vmaf_roi_vpl_usage,
+    test('test_vmaf_vpl_usage', test_vmaf_vpl_usage,
          suite : ['fast'],
-         depends : [vmaf_roi],
          workdir : meson.project_build_root(),
          env: [
              'MESON_BUILD_ROOT=' + meson.project_build_root(),
