@@ -22,7 +22,10 @@
  *
  * Skip behaviour: if vmaf_vulkan_state_init() fails (no Vulkan loader /
  * no device / no shaderInt64) the test emits "[skip: no Vulkan device]"
- * and passes.
+ * and passes. Besides the synthetic fixtures the gate also runs both twins
+ * across the 48 natural-content frames of the shared testdata pairs
+ * (576x324 and 640x480), the geometries the SYCL and no-reference oracles
+ * already use.
  */
 
 #include <math.h>
@@ -333,6 +336,152 @@ static char *test_adm_vulkan_textured_debug_exact(void)
     return check_exact("adm vulkan textured debug", &fx, debug_opts, DEBUG_KEYS, NUM_DEBUG_KEYS);
 }
 
+/* The file fixtures: the natural-content yuv420p8 pairs the SYCL and
+ * no-reference oracles already share (testdata/ref_576x324_48f.yuv and
+ * ref_640x480_48f.yuv), 48 frames each. The synthetic fixtures above cover
+ * two single frames at 256x144; these two cases run both twins across real
+ * content at larger geometries, where the per-scale accumulators carry
+ * magnitudes the tiny frames never reach. The closed duplicate draft's
+ * committed evidence (#3333, now superseded by this PR) produced CPU
+ * references on exactly these fixtures and noted that both CPU anchors agree
+ * on them, so this gate is the geometry/content witness, not an
+ * own-tap-wrap discriminator. */
+
+#define FILE_FRAMES 48u
+
+typedef struct FileFixture {
+    unsigned w;
+    unsigned h;
+    char ref[512];
+    char dis[512];
+} FileFixture;
+
+/* Read one plane of an 8-bit yuv420p frame straight into a picture,
+ * honouring the picture stride. */
+static int read_plane(FILE *f, VmafPicture *pic, unsigned plane)
+{
+    uint8_t *base = (uint8_t *)pic->data[plane];
+    for (unsigned row = 0; row < pic->h[plane]; row++) {
+        if (fread(base + (size_t)row * pic->stride[plane], 1u, pic->w[plane], f) !=
+            pic->w[plane])
+            return -1;
+    }
+    return 0;
+}
+
+static char *read_file_frame(FILE *f, const FileFixture *fx, VmafPicture *pic)
+{
+    mu_assert("picture alloc failed",
+              !vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, 8u, fx->w, fx->h));
+    for (unsigned p = 0; p < 3u; p++)
+        mu_assert("fixture truncated", !read_plane(f, pic, p));
+    return NULL;
+}
+
+/* Score `FILE_FRAMES` frames of the file fixture on one anchor and read every
+ * key of every frame into `out` ([frame][key], indexed scores). One context
+ * and one feature open for the whole run, exactly how the CLI consumes the
+ * same files. */
+static char *run_adm_file(bool use_vulkan, const FileFixture *fx,
+                          VmafFeatureDictionary *opts, const char *const *keys,
+                          size_t count, double out[FILE_FRAMES][MAX_KEYS])
+{
+    for (unsigned i = 0; i < FILE_FRAMES; i++)
+        for (size_t k = 0; k < count; k++)
+            out[i][k] = NAN;
+    AdmRun run = {.use_vulkan = use_vulkan};
+    int skipped = 0;
+    char *msg = adm_run_open(&run, opts, &skipped);
+    if (msg || skipped)
+        return msg;
+    FILE *fref = fopen(fx->ref, "rb");
+    FILE *fdis = fopen(fx->dis, "rb");
+    mu_assert("fixture yuv missing", fref && fdis);
+    for (unsigned i = 0; i < FILE_FRAMES && !msg; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        msg = read_file_frame(fref, fx, &ref);
+        if (!msg)
+            msg = read_file_frame(fdis, fx, &dist);
+        if (!msg) {
+            const int err = vmaf_read_pictures(run.vmaf, &ref, &dist, i);
+            if (err) {
+                (void)fprintf(stderr, "\n%s: vmaf_read_pictures frame %u err=%d\n",
+                              use_vulkan ? "vulkan" : "cpu", i, err);
+                msg = "vmaf_read_pictures failed";
+            }
+        }
+    }
+    if (fref)
+        fclose(fref);
+    if (fdis)
+        fclose(fdis);
+    if (!msg) {
+        const int err = vmaf_read_pictures(run.vmaf, NULL, NULL, 0);
+        if (err) {
+            (void)fprintf(stderr, "\n%s: vmaf_read_pictures(EOS) err=%d\n",
+                          use_vulkan ? "vulkan" : "cpu", err);
+            msg = "vmaf_read_pictures(EOS) failed";
+        }
+    }
+    for (unsigned i = 0; i < FILE_FRAMES && !msg; i++) {
+        for (size_t k = 0; k < count; k++) {
+            if (vmaf_feature_score_at_index(run.vmaf, keys[k], &out[i][k], i)) {
+                (void)fprintf(stderr, "\nmissing feature-name key: %s frame %u (%s twin)\n",
+                              keys[k], i, use_vulkan ? "Vulkan" : "CPU");
+                msg = "ADM feature-name key not emitted";
+                break;
+            }
+        }
+    }
+    char *close_msg = adm_run_close(&run);
+    return msg ? msg : close_msg;
+}
+
+static char *check_file_exact(const char *what, const FileFixture *fx)
+{
+    double cpu[FILE_FRAMES][MAX_KEYS];
+    double vk[FILE_FRAMES][MAX_KEYS];
+    char *msg = run_adm_file(false, fx, debug_opts(), DEBUG_KEYS, NUM_DEBUG_KEYS, cpu);
+    if (!msg)
+        msg = run_adm_file(true, fx, debug_opts(), DEBUG_KEYS, NUM_DEBUG_KEYS, vk);
+    if (msg)
+        return msg;
+    if (isnan(vk[0][0]))
+        return NULL; /* skipped: no Vulkan device */
+    for (unsigned i = 0; i < FILE_FRAMES; i++) {
+        unsigned mismatches = 0u;
+        for (size_t k = 0; k < NUM_DEBUG_KEYS; k++) {
+            mu_assert("CPU adm output is non-finite", isfinite(cpu[i][k]));
+            if (cpu[i][k] == vk[i][k])
+                continue;
+            mismatches++;
+            (void)fprintf(stderr,
+                          "\n%s frame %u %s: cpu=%.17g vulkan=%.17g delta=%.3e\n", what, i,
+                          DEBUG_KEYS[k], cpu[i][k], vk[i][k], fabs(cpu[i][k] - vk[i][k]));
+        }
+        mu_assert("adm_vulkan differs from the CPU extractor on the file fixture",
+                  mismatches == 0u);
+    }
+    return NULL;
+}
+
+static char *test_adm_vulkan_fixture576_debug_exact(void)
+{
+    const FileFixture fx = {576u, 324u,
+                            VULKAN_ADM_TESTDATA_DIR "/ref_576x324_48f.yuv",
+                            VULKAN_ADM_TESTDATA_DIR "/dis_576x324_48f.yuv"};
+    return check_file_exact("adm vulkan fixture 576x324", &fx);
+}
+
+static char *test_adm_vulkan_fixture640_debug_exact(void)
+{
+    const FileFixture fx = {640u, 480u,
+                            VULKAN_ADM_TESTDATA_DIR "/ref_640x480_48f.yuv",
+                            VULKAN_ADM_TESTDATA_DIR "/dis_640x480_48f.yuv"};
+    return check_file_exact("adm vulkan fixture 640x480", &fx);
+}
+
 static char *test_adm_vulkan_sparse_debug_exact(void)
 {
     const Fixture fx = {FIXTURE_W, FIXTURE_H, 8u, true};
@@ -392,6 +541,8 @@ char *run_tests(void)
 {
     mu_run_test(test_adm_vulkan_textured_debug_exact);
     mu_run_test(test_adm_vulkan_sparse_debug_exact);
+    mu_run_test(test_adm_vulkan_fixture576_debug_exact);
+    mu_run_test(test_adm_vulkan_fixture640_debug_exact);
     mu_run_test(test_adm_vulkan_10bit_refused);
     mu_run_test(test_adm_vulkan_model_options_refused);
     return NULL;

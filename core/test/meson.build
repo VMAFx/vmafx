@@ -5644,6 +5644,8 @@ if is_vulkan_enabled
 test_vulkan_adm_parity = executable('test_vulkan_adm_parity',
     ['test.c', 'test_vulkan_adm_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common +
+             ['-DVULKAN_ADM_TESTDATA_DIR="' + join_paths(meson.project_source_root(), '../testdata') + '"'],
     link_with : vmaf_test_link,
     dependencies: [pthread_dependency, math_lib, vulkan_target_deps],
     kwargs : test_link_kwargs,
