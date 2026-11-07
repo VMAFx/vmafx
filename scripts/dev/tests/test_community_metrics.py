@@ -5,7 +5,11 @@
 
 Every case runs on recorded API response shapes and never touches the
 network: ``run_gh`` is replaced by a dispatcher that answers each query from
-the fixtures below.
+the fixtures below. The recorded shapes are the raw REST payloads (the
+pipeline maps them itself), and the dispatcher pins the endpoint of every
+query — the conversation comments must come from ``issues/{n}/comments`` (a
+pull request's ``pulls/{n}/comments`` only holds inline review comments, so
+a maintainer's plain reply would be invisible).
 """
 
 from __future__ import annotations
@@ -27,6 +31,8 @@ _spec.loader.exec_module(community_metrics)
 MAINTAINERS = ["Lusoris"]
 SINCE, UNTIL = "2026-10-01", "2026-10-31"
 _UNANSWERED_NUMBER, _POST_CLOSE_NUMBER = 2, 3
+# Pull request 5 is the conversation-comment case (see COMMENTS/REVIEWS).
+_CONVERSATION_NUMBER = 5
 
 
 def _author(login: str) -> dict:
@@ -44,8 +50,13 @@ def _gh_row(number: int, login: str, created: str, closed: str = "", labels=(), 
     }
 
 
+def _comment(login: str, created: str) -> dict:
+    return {"user": {"login": login}, "created_at": created}
+
+
 # The recorded window: an answered issue, an unanswered one, a pull request
-# answered only after it was closed, and a bot-opened issue.
+# answered only after it was closed by a review, a pull request answered by
+# a plain conversation comment before its close, and a bot-opened issue.
 ISSUES_CREATED = [
     _gh_row(1, "outsider", "2026-10-02T00:00:00Z", "2026-10-05T00:00:00Z"),
     _gh_row(2, "other", "2026-10-03T00:00:00Z"),
@@ -57,9 +68,11 @@ ISSUES_CLOSED = [
 ]
 PRS_CREATED = [
     _gh_row(3, "outsider", "2026-10-06T00:00:00Z", "2026-10-20T00:00:00Z", title="a pr"),
+    _gh_row(5, "other", "2026-10-07T00:00:00Z", "2026-10-09T00:00:00Z", title="another pr"),
 ]
 PRS_CLOSED = [
     _gh_row(3, "outsider", "2026-10-06T00:00:00Z", "2026-10-20T00:00:00Z", title="a pr"),
+    _gh_row(5, "other", "2026-10-07T00:00:00Z", "2026-10-09T00:00:00Z", title="another pr"),
 ]
 # Whole merged history (limit far above the count): the earliest merge of
 # "newcomer" falls inside the window although GitHub would style the merged
@@ -74,13 +87,26 @@ MERGED = [
     {"author": _author("dependabot[bot]"), "mergedAt": "2026-10-09T00:00:00Z"},
     {"author": _author("Lusoris"), "mergedAt": "2026-10-10T00:00:00Z"},
 ]
+# Open pull requests: the aging metric is window-independent, so one PR
+# created long before the window must surface in it and a recent one must
+# not.
+OPEN_PULL_REQUESTS = [
+    _gh_row(11, "oldcomer", "2026-09-01T00:00:00Z", title="an aging pr"),
+    _gh_row(12, "recent", "2026-10-20T00:00:00Z", title="a fresh pr"),
+]
+# Raw REST payloads, page-shaped: the pipeline maps them itself and skips
+# rows without a timestamp (a PENDING review carries none). PR 3's review
+# lands after its close (post-close); PR 5's plain conversation comment —
+# served by the issues endpoint — is its first response.
 COMMENTS = {
-    1: [{"author": "Lusoris", "createdAt": "2026-10-03T12:00:00Z"}],  # 1.5 d
+    1: [_comment("Lusoris", "2026-10-03T12:00:00Z")],  # 1.5 d
     2: [],  # no response
-    4: [{"author": "renovate[bot]", "createdAt": "2026-10-04T01:00:00Z"}],  # bot: not a response
+    4: [_comment("renovate[bot]", "2026-10-04T01:00:00Z")],  # bot: not a response
+    5: [_comment("Lusoris", "2026-10-08T00:00:00Z")],  # 1.0 d, conversation comment
 }
 REVIEWS = {
-    3: [{"author": "Lusoris", "createdAt": "2026-10-25T00:00:00Z"}],  # after close
+    3: [{"user": {"login": "Lusoris"}, "submitted_at": "2026-10-25T00:00:00Z"}],  # after close
+    5: [{"user": {"login": "Lusoris"}, "submitted_at": None}],  # PENDING: not a response
 }
 OPEN_LABELS = {"good first issue": 2, "help wanted": 1}
 
@@ -96,19 +122,33 @@ class GhFixture:
         text = " ".join(args)
         if "--state merged" in text:
             return MERGED
+        if "--state open" in text and args[0] == "pr":
+            return OPEN_PULL_REQUESTS
         if "created:2026-10-01..2026-10-31" in text:
             return ISSUES_CREATED if args[0] == "issue" else PRS_CREATED
         if "closed:2026-10-01..2026-10-31" in text:
             return ISSUES_CLOSED if args[0] == "issue" else PRS_CLOSED
-        if args[0] == "api" and "/comments" in args[1]:
-            return COMMENTS.get(int(args[1].split("/")[-2]), [])
-        if args[0] == "api" and "/reviews" in args[1]:
-            return REVIEWS.get(int(args[1].split("/")[-2]), [])
+        if args[0] == "api":
+            assert (
+                "--paginate" in args and "--slurp" in args
+            ), f"the conversation queries must paginate, got {args}"
+            return self._api_pages(args[-1])
         if "--label" in text:
             return [
                 {"number": n} for n in range(OPEN_LABELS.get(args[args.index("--label") + 1], 0))
             ]
         raise AssertionError(f"unexpected gh query: {text}")
+
+    def _api_pages(self, url: str) -> list[list]:
+        """The page shape ``--paginate --slurp`` yields, endpoint-pinned."""
+        if url.endswith("/comments"):
+            assert (
+                "/issues/" in url
+            ), f"conversation comments must come from the issues endpoint, got {url}"
+            return [COMMENTS.get(int(url.split("/")[-2]), [])]
+        if url.endswith("/reviews"):
+            return [REVIEWS.get(int(url.split("/")[-2]), [])]
+        raise AssertionError(f"unexpected api query: {url}")
 
 
 class PipelineTest(unittest.TestCase):
@@ -120,6 +160,7 @@ class PipelineTest(unittest.TestCase):
         try:
             window_items = self_patched.fetch_window_items("VMAFx/vmafx", SINCE, UNTIL)
             merged = self_patched.fetch_merged_pull_requests("VMAFx/vmafx")
+            open_pull_requests = self_patched.fetch_open_pull_requests("VMAFx/vmafx")
             responses = {}
             for item in window_items:
                 if not item["opened_in_window"]:
@@ -137,6 +178,7 @@ class PipelineTest(unittest.TestCase):
                 ),
                 window_items=window_items,
                 merged=merged,
+                open_pull_requests=open_pull_requests,
                 responses=responses,
                 maintainers=MAINTAINERS,
                 open_labels=OPEN_LABELS,
@@ -146,21 +188,39 @@ class PipelineTest(unittest.TestCase):
 
     def test_positive_expected_medians_and_counts(self) -> None:
         report = self.run_pipeline()
-        self.assertEqual(report["opened"], {"issues": 3, "pull_requests": 1})
-        self.assertEqual(report["closed"], {"issues": 2, "pull_requests": 1})
+        self.assertEqual(report["opened"], {"issues": 3, "pull_requests": 2})
+        self.assertEqual(report["closed"], {"issues": 2, "pull_requests": 2})
         first = report["first_response"]
-        self.assertEqual(first["population"], 4)
-        self.assertEqual(first["answered"], 2)
+        self.assertEqual(first["population"], len(ISSUES_CREATED) + len(PRS_CREATED))
+        self.assertEqual(first["answered"], 3)
         self.assertEqual(first["no_response_yet"], 2)
-        # answered: 1.5 d (issue 1) and 19 d (pr 3, post-close); the median of
-        # the two, and the linear-interpolated p90: 1.5*0.1 + 19*0.9
-        self.assertEqual(first["median_days"], 10.25)
-        self.assertEqual(first["p90_days"], 17.25)
+        # answered: 1.0 d (pr 5, conversation comment), 1.5 d (issue 1) and
+        # 19 d (pr 3, post-close review); the median of the three, and the
+        # linear-interpolated p90: 1.5 + 0.8 * (19 - 1.5)
+        self.assertEqual(first["median_days"], 1.5)
+        self.assertEqual(first["p90_days"], 15.5)
         self.assertEqual(first["post_close"], 1)
         self.assertEqual(report["open_by_label"], OPEN_LABELS)
         self.assertEqual([c["login"] for c in report["first_time_contributors"]], ["newcomer"])
         self.assertIn("renovate[bot]", report["bots_seen"])
         self.assertIn("dependabot[bot]", report["bots_seen"])
+
+    def test_pr_conversation_comment_is_the_first_response(self) -> None:
+        # The maintainer answered pull request 5 with a plain comment — the
+        # issues endpoint's payload — 1.0 day in, before its close.
+        report = self.run_pipeline()
+        row = next(
+            r for r in report["first_response"]["items"] if r["number"] == _CONVERSATION_NUMBER
+        )
+        self.assertEqual(row["response"]["responder_seconds"], 86400.0)
+        self.assertFalse(row["response"]["post_close"])
+
+    def test_aging_pull_requests_are_window_independent(self) -> None:
+        report = self.run_pipeline()
+        aging = {row["number"]: row["age_days"] for row in report["aging_pull_requests"]}
+        self.assertIn(11, aging)  # created 2026-09-01, outside the window
+        self.assertNotIn(12, aging)  # created 2026-10-20, 19 days old
+        self.assertGreater(aging[11], 30)
 
     def test_unanswered_is_a_stated_row_never_zero(self) -> None:
         report = self.run_pipeline()
@@ -189,6 +249,7 @@ class PipelineTest(unittest.TestCase):
             ),
             window_items=[],
             merged=MERGED,
+            open_pull_requests=[],
             responses={},
             maintainers=MAINTAINERS,
             open_labels={},
@@ -214,6 +275,7 @@ class PipelineTest(unittest.TestCase):
             ),
             window_items=[item],
             merged=[],
+            open_pull_requests=[],
             responses={9: answer},
             maintainers=MAINTAINERS,
             open_labels={},
@@ -242,6 +304,40 @@ class PipelineTest(unittest.TestCase):
         try:
             with self.assertRaises(RuntimeError):
                 community_metrics.fetch_merged_pull_requests("VMAFx/vmafx", limit=2)
+        finally:
+            community_metrics.run_gh = original
+
+    def test_search_listing_fails_at_the_result_cap(self) -> None:
+        # The search API stops at 1000 results whatever --limit asks for; a
+        # window that reaches the cap must fail loudly, not undercount.
+        cap = min(community_metrics.LIST_LIMIT, community_metrics.SEARCH_RESULT_CAP)
+        original = community_metrics.run_gh
+        community_metrics.run_gh = lambda args: [{"number": n} for n in range(cap)]
+        try:
+            with self.assertRaises(RuntimeError):
+                community_metrics.fetch_window_items("VMAFx/vmafx", SINCE, UNTIL)
+        finally:
+            community_metrics.run_gh = original
+
+    def test_open_pull_request_list_fails_at_its_limit(self) -> None:
+        original = community_metrics.run_gh
+        community_metrics.run_gh = lambda args: [
+            {"number": n} for n in range(community_metrics.LIST_LIMIT)
+        ]
+        try:
+            with self.assertRaises(RuntimeError):
+                community_metrics.fetch_open_pull_requests("VMAFx/vmafx")
+        finally:
+            community_metrics.run_gh = original
+
+    def test_label_counts_fail_at_the_fetch_limit(self) -> None:
+        original = community_metrics.run_gh
+        community_metrics.run_gh = lambda args: [
+            {"number": n} for n in range(community_metrics.LIST_LIMIT)
+        ]
+        try:
+            with self.assertRaises(RuntimeError):
+                community_metrics.fetch_open_label_counts("VMAFx/vmafx")
         finally:
             community_metrics.run_gh = original
 
