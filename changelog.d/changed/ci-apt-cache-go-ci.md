@@ -1,4 +1,3 @@
-<!-- markdownlint-disable MD041 -->
 - **The `go-ci` job in `go-ci.yml` now caches apt package archives and caps its install step.**
   Package lists are declared in `.github/apt/go-ci.txt`, and restored `.deb`
   archives are copied into `/var/cache/apt/archives` before install to prevent

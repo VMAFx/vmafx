@@ -6,7 +6,7 @@
 #
 # Policy:
 #   - ADR-0105: every fork-added C/C++/CUDA/HIP/Metal source or header ships one of
-#     three copyright templates (Netflix-only, Lusoris+Claude-only, Dual notice).
+#     three copyright templates (Netflix-only, Lusoris-only (ADR-0861), Dual notice).
 #   - ADR-1250: source files of the languages named in ADR-1250 (C, C++, CUDA, HIP,
 #     Metal, Objective-C++, Go, Python, Cython, Rust, shell) must carry a valid
 #     SPDX-License-Identifier line.
