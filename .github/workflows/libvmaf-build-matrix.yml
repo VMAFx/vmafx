@@ -314,7 +314,7 @@ jobs:
         if: steps.impact.outputs.c_core == 'true'
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: 3.14.9
+          python-version: 3.14.10
 
       - name: Install meson and ninja
         if: steps.impact.outputs.c_core == 'true'
@@ -724,7 +724,8 @@ jobs:
     if: needs.tier.outputs.full == 'true'
     name: ${{ matrix.name }}
     runs-on: windows-2025
-    timeout-minutes: 45
+    # Measured p95 44.6m, max 44.8m (n=22, 2026-11-06); 90 min covers 2 x p95 (89.2m) and step caps plus rest (15 + 1.25x 44.8m = 71m).
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -921,7 +922,7 @@ jobs:
         if: steps.leg.outputs.run == 'true'
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: '3.14.9'
+          python-version: '3.14.10'
 
       - name: Install meson and ninja
         if: steps.leg.outputs.run == 'true'
@@ -1102,7 +1103,7 @@ jobs:
       - name: Setup python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: '3.14.9'
+          python-version: '3.14.10'
 
       - name: Install meson and ninja
         run: python -m pip install --require-hashes -r requirements/locks/build.txt

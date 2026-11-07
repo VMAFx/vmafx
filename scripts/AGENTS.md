@@ -48,10 +48,10 @@ no upstream-Netflix equivalent.
   scripts affected: `scripts/ci/check-adr-numbering.sh`,
   `scripts/ci/check-dispatch-registry.sh`, `scripts/adr/next-free.sh`.
   See ADR-0899.
-- **All wholly-new fork shell scripts ship dual Lusoris/Claude
-  (Anthropic) copyright header**. Two upstream-mirror scripts
-  (`run_unittests.sh`, parts of `setup/`) preserve original
-  headers — do not retro-fit dual notice on those.
+- **Wholly-new fork shell scripts carry `Copyright 2026 Lusoris`
+  and an SPDX line** per [ADR-0861](../docs/adr/0861-vmafx-copyright-policy-drop-anthropic.md)
+  (supersedes ADR-0025 line format). Upstream-mirror scripts
+  (`run_unittests.sh`, parts of `setup/`) keep original headers — no retro-fit.
 - **Python helpers under `dev/` import from `ai/`** for shared
   schema helpers (`SweepRow`, knob analysis); keep import side
   free of side-effects (no eager model loads at module import).
@@ -452,7 +452,8 @@ expired or idle items fail. Add an entry, never an ignore. Tests:
 - [ADR-2485](../docs/adr/2485-vmafx-credits-page.md) —
   credits list, generated page and gate.
 - [ADR-0025](../docs/adr/0025-copyright-handling-dual-notice.md) —
-  dual-copyright policy.
+  copyright policy; [ADR-0861](../docs/adr/0861-vmafx-copyright-policy-drop-anthropic.md)
+  = current line format.
 - [ADR-0218](../docs/adr/0218-mobilesal-saliency-extractor.md) —
   MobileSal placeholder.
 - [ADR-0221](../docs/adr/0221-changelog-adr-fragment-pattern.md) —

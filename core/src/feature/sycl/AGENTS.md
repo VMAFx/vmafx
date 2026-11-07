@@ -31,10 +31,10 @@ strict FP line (`sycl_strict_fp_args`, ADR-1367) for every per-kernel TU.
 - **Parent rules** apply (see [../AGENTS.md](../AGENTS.md) +
   [../../AGENTS.md](../../AGENTS.md) +
   [`../../sycl/AGENTS.md`](../../sycl/AGENTS.md)).
-- **Wholly-new fork files use dual Netflix + Lusoris/Claude
-  copyright header** per [ADR-0025](../../../../docs/adr/0025-copyright-handling-dual-notice.md).
+- **Wholly-new fork files carry `Copyright 2026 Lusoris`**
+  per [ADR-0861](../../../../docs/adr/0861-vmafx-copyright-policy-drop-anthropic.md).
   Most TUs here fork-original SYCL ports of
-  Netflix CUDA kernels.
+  Netflix CUDA kernels. Upstream-mirrored files keep original headers — no retro-fit.
 
 ## Twin-update rules
 
