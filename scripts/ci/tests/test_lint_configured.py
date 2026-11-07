@@ -150,7 +150,7 @@ class PublicEntrypointModelTests(unittest.TestCase):
         self.assertIsNotNone(pattern)
         assert pattern is not None
         for path in (
-            str(PUBLIC_MODEL),
+            PUBLIC_MODEL.as_posix(),
             "scripts/ci/lint-configured.py",
             "scripts/ci/write_cppcheck_posix_model.py",
             "scripts/ci/tests/test_lint_configured.py",
@@ -165,6 +165,11 @@ class PublicEntrypointModelTests(unittest.TestCase):
         self.assertIn("-p test_lint_configured.py", hook)
 
 
+@unittest.skipUnless(
+    os.name == "posix",
+    "HISS-21: the fixture replaces PATH with POSIX shebang stubs and runs the Makefile's sh recipes; "
+    "the Linux Pre-Commit job in lint-and-format.yml runs it",
+)
 class ConfiguredLintTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory(prefix="configured lint ")

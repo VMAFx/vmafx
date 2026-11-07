@@ -143,7 +143,7 @@ $(NINJA): $(VENV_PIP)
 # Provision the lint / format toolchain into the project venv. Versions are
 # kept identical to .pre-commit-config.yaml so the local gate and the CI hooks
 # cannot disagree about what counts as a violation.
-RUFF_VERSION  := 0.17.2
+RUFF_VERSION  := 0.17.3
 BLACK_VERSION := 26.10.1
 
 .PHONY: mini-retrain mini-retrain-test
@@ -588,14 +588,16 @@ lint-py:
 ffmpeg-input-contract:
 	bash ffmpeg-patches/test/check-input-contract.sh
 	python3 -m unittest discover -s ffmpeg-patches/test -p 'test_input_contract.py' -v
+	python3 -m unittest discover -s ffmpeg-patches/test -p 'test_vmafx_filter_names.py' -v
 
-# Device-free contracts of the libvmaf_sycl zero-copy work: the patch-text
+# Device-free contracts of the vmafx SYCL zero-copy work: the patch-text
 # routing check and the comparator of scripts/test/zerocopy-e2e.sh. The e2e harness
 # itself needs an Intel GPU and runs only in the SYCL container
 # (docs/development/sycl-zerocopy-testing.md); these two run anywhere.
 sycl-zerocopy-contract:
 	$(call require-tool,pytest,install the hash-locked pytest of requirements/locks/pytest-timeout.txt into a venv)
 	bash ffmpeg-patches/test/check-sycl-feature-routing.sh
+	bash ffmpeg-patches/test/check-sycl-pixfmt.sh
 	pytest -p no:cacheprovider -q scripts/test/test_zerocopy_e2e_compare.py
 
 lint-sh: ffmpeg-input-contract

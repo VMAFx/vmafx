@@ -41,6 +41,8 @@ jobs:
     if: needs.tier.outputs.light == 'true'
     name: Plan Helm impact
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     outputs:
       selected: ${{ steps.impact.outputs.helm }}
     steps:
@@ -63,6 +65,8 @@ jobs:
     if: needs.impact.outputs.selected == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     name: helm lint + template work
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -297,6 +301,8 @@ jobs:
     # required-aggregator
     name: helm lint + template
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     steps:
       - name: Require selected Helm work
         env:

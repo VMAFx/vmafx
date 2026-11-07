@@ -172,9 +172,8 @@ jobs:
           python3 scripts/ci/ffmpeg_patch_stack.py --check --keep-tree "$tree"
           export PKG_CONFIG_PATH="$GITHUB_WORKSPACE/core/build/meson-uninstalled"
           cd "$tree"
-          # vmaf_pre is disabled by name: its configure check needs libvmaf.
-          ./configure --enable-version3 --enable-libvmafx --disable-filter=vmaf_pre \
-            --disable-doc --disable-indevs --disable-outdevs
+          ./configure --enable-version3 --enable-libvmafx \
+            --disable-doc --disable-indevs --enable-indev=lavfi --disable-outdevs
           grep -qE '^#define CONFIG_VMAFX_FILTER 1$' config_components.h
           make -j "$(getconf _NPROCESSORS_ONLN)" ffmpeg
       - name: Check the vmafx filter against the CLI
@@ -183,13 +182,23 @@ jobs:
         run: |
           set -euo pipefail
           # A skip (77) is a failure here: every fixture of the golden pair is fetched above.
-          for check in parity windows contract provenance; do
+          for check in filters parity windows contract provenance; do
             echo "::group::vmafx_filter_check.py $check"
             python3 ffmpeg-patches/test/vmafx_filter_check.py "$check" \
               --ffmpeg "$RUNNER_TEMP/ffmpeg/ffmpeg" --vmaf core/build/tools/vmaf \
               --libdir core/build/src --pairs golden
             echo "::endgroup::"
           done
+      - name: Check input colorimetry propagation
+        if: steps.impact.outputs.mode == 'full' || steps.impact.outputs.c_core == 'true' || steps.impact.outputs.actions == 'true'
+        shell: bash
+        env:
+          FFMPEG: ${{ runner.temp }}/ffmpeg/ffmpeg
+          VMAF_CLI: core/build/tools/vmaf
+        run: |
+          set -euo pipefail
+          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/core/build/src:${LD_LIBRARY_PATH:-}"
+          bash ffmpeg-patches/test/check-vmafx-input-colorimetry.sh
 
   refresh:
     if: github.event_name == 'schedule'

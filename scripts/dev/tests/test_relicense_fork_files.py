@@ -444,12 +444,58 @@ class FullHistory(unittest.TestCase):
 
 
 class AiToolCopyright(unittest.TestCase):
-    """ADR-0861: copyright lines name the project holder only."""
+    """ADR-0861 / ADR-3401: copyright lines name human holders, not AI tools."""
 
     def test_owner_only_notice_passes(self) -> None:
         """Positive: a file with only Copyright 2026 Lusoris passes."""
         src = f"# Copyright 2026 Lusoris\n# {TAG} EUPL-1.2\n"
         self.assertEqual(REL.check_ai_copyright(src), [])
+
+    def test_human_names_sharing_an_ai_product_name_pass(self) -> None:
+        for holder in ("Claude Martin", "Gemini Okafor", "Codex Mensah"):
+            with self.subTest(holder=holder):
+                src = f"// Copyright 2026 {holder}\n// {TAG} EUPL-1.2\n"
+                self.assertEqual(REL.check_ai_copyright(src), [])
+
+    def test_ai_product_and_vendor_holders_fail(self) -> None:
+        for holder in (
+            "Claude",
+            "Claude (Anthropic)",
+            "Claude Code",
+            "Lusoris and Claude",
+            "OpenAI",
+            "GitHub Copilot",
+            "Anthropic Martin",
+            "ChatGPT Okafor",
+            "OpenAI Codex Mensah",
+            "Gemini OpenAI",
+        ):
+            with self.subTest(holder=holder):
+                src = f"// Copyright 2026 {holder}\n// {TAG} EUPL-1.2\n"
+                self.assertTrue(REL.check_ai_copyright(src))
+
+    def test_ai_product_suffix_boundaries_fail(self) -> None:
+        for holder in ("Codex.", "Gemini CLI", "Claude,", "Claude (AI)"):
+            with self.subTest(holder=holder):
+                src = f"// Copyright 2026 {holder}\n// {TAG} EUPL-1.2\n"
+                self.assertTrue(REL.check_ai_copyright(src))
+
+    def test_ai_product_words_fail(self) -> None:
+        for product in (
+            "Code",
+            "CLI",
+            "AI",
+            "Assist",
+            "Sonnet",
+            "Opus",
+            "Haiku",
+            "Fable",
+            "Pro",
+            "Flash",
+        ):
+            with self.subTest(product=product):
+                src = f"// Copyright 2026 Claude {product}\n// {TAG} EUPL-1.2\n"
+                self.assertTrue(REL.check_ai_copyright(src))
 
     def test_planted_ai_copyright_fails(self) -> None:
         """Negative: a planted # Copyright 2026 Claude (Anthropic) line fails."""
@@ -467,7 +513,7 @@ class AiToolCopyright(unittest.TestCase):
 
     def test_dual_owner_and_ai_copyright_fails(self) -> None:
         """Negative: // Copyright 2026 Lusoris and Claude (Anthropic) fails."""
-        src = "// Copyright 2026 Lusoris and Claude (Anthropic)\n" f"// {TAG} BSD-2-Clause-Patent\n"
+        src = f"// Copyright 2026 Lusoris and Claude (Anthropic)\n// {TAG} BSD-2-Clause-Patent\n"
         violations = REL.check_ai_copyright(src, "test.go")
         self.assertTrue(violations)
         self.assertIn("test.go:1", violations[0])

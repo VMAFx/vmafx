@@ -9,10 +9,10 @@ area: release
 # Release dry run (ADR-1595)
 
 - `release-dry-run.yml` runs production, operator / server / node image
-  builds (linux/amd64, no push), GPU toolkit builds (no load) and
-  `vmaf-mcp` wheel, sdist and SBOMs on pull requests that touch their inputs and
-  weekly. `release-dry-run-plan.sh` decides groups; every path it names must
-  exist (`test_plan_script_names_only_files_that_exist`).
+  builds (linux/amd64, no push), GPU toolkit builds (no load),
+  `vmaf-mcp` wheel, sdist and SBOMs, and `vmafx` Python wheels on pull
+  requests that touch their inputs and weekly. `release-dry-run-plan.sh` decides
+  groups; every path it names must exist (`test_plan_script_names_only_files_that_exist`).
 - It holds no credential: no registry login, push, signature, attestation,
   environment or `id-token`. `test_is_a_dry_run` fails on any of them;
   step that needs one belongs to release workflow.

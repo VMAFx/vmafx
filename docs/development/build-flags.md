@@ -99,6 +99,7 @@ under [Option details](#option-details).
 | `enable_float` | bool | `true` | Compile the `float_*` extractors; see [`enable_float`](#enable_float). |
 | `fuzz` | bool | `false` | Build the libFuzzer harnesses under `core/test/fuzz/`; see [`fuzz`](#fuzz). |
 | `enable_rust_features` | bool | `false` | Build the Rust extractors (Rust twins, TAD); see [`enable_rust_features`](#enable_rust_features). |
+| `cmake_package` | feature | `auto` | Generate and install CMake package files (`vmafxConfig.cmake`, `vmafxConfigVersion.cmake`); see [`cmake_package`](#cmake_package). |
 
 ### SIMD
 
@@ -168,6 +169,22 @@ under [Option details](#option-details).
 ## Option details
 
 Options whose behaviour needs more than one sentence.
+
+### `cmake_package`
+
+Controls whether Meson generates and installs CMake package configuration files
+(`vmafxConfig.cmake` and `vmafxConfigVersion.cmake`) under
+`<libdir>/cmake/vmafx/`.
+
+Default `auto`: probes for the `cmake` binary via `find_program('cmake')`. If
+found and a shared library is built (`default_library` is `shared` or `both`),
+generates and installs both files; if `cmake` is not found, emits a Meson
+configure warning and skips installation without failing the build; if building
+static-only (`default_library=static`), skips installation with a message (use
+`pkg-config --static` instead). Setting `-Dcmake_package=enabled` requires `cmake`
+in PATH and a shared library build, failing configure if `cmake` is missing or
+if `default_library=static`. Setting `-Dcmake_package=disabled` skips CMake
+package generation completely without probing or warnings.
 
 ### `enable_float`
 
@@ -589,8 +606,8 @@ original 207-symbol audit and fix rationale.
 ## Static linking and `pkg-config`
 
 `core/meson.build` sets `default_library=both`, so a build produces
-`libvmaf.so` and `libvmaf.a`, and downstream projects (FFmpeg's
-`--enable-libvmaf`, the fork's own `ffmpeg-patches/` stack) discover it through
+`libvmaf.so` and `libvmaf.a`, and downstream projects (stock upstream `--enable-libvmaf`,
+or the fork's `ffmpeg-patches/` stack with `--enable-libvmafx`) discover it through
 `pkg-config`.
 
 libvmaf contains C++ translation units: the fork's own converted sources

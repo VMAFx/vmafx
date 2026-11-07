@@ -56,6 +56,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "mu_table.h"
 
 #include "feature/feature_extractor.h"
 #include "libvmaf/feature.h"
@@ -579,14 +580,80 @@ static char *test_float_ssim_order_noise_device(void)
     return NULL;
 }
 
+static char *test_float_ssim_depth(unsigned bpc)
+{
+    if (!device_present())
+        return NULL;
+    const ParityCase c = CASE(400u, 224u, bpc, "2", false);
+    return compare_case(&c);
+}
+
+static char *test_float_ssim_8bit_exact(void)
+{
+    return test_float_ssim_depth(8u);
+}
+
+static char *test_float_ssim_9bit_exact(void)
+{
+    return test_float_ssim_depth(9u);
+}
+
+static char *test_float_ssim_10bit_exact(void)
+{
+    return test_float_ssim_depth(10u);
+}
+
+static char *test_float_ssim_11bit_exact(void)
+{
+    return test_float_ssim_depth(11u);
+}
+
+static char *test_float_ssim_12bit_exact(void)
+{
+    return test_float_ssim_depth(12u);
+}
+
+static char *test_float_ssim_13bit_exact(void)
+{
+    return test_float_ssim_depth(13u);
+}
+
+static char *test_float_ssim_14bit_exact(void)
+{
+    return test_float_ssim_depth(14u);
+}
+
+static char *test_float_ssim_15bit_exact(void)
+{
+    return test_float_ssim_depth(15u);
+}
+
+static char *test_float_ssim_16bit_exact(void)
+{
+    return test_float_ssim_depth(16u);
+}
+
+static char *run_bit_depth_cases(void)
+{
+    static const MuTest tests[] = {
+        MU_TEST(test_float_ssim_8bit_exact),  MU_TEST(test_float_ssim_9bit_exact),
+        MU_TEST(test_float_ssim_10bit_exact), MU_TEST(test_float_ssim_11bit_exact),
+        MU_TEST(test_float_ssim_12bit_exact), MU_TEST(test_float_ssim_13bit_exact),
+        MU_TEST(test_float_ssim_14bit_exact), MU_TEST(test_float_ssim_15bit_exact),
+        MU_TEST(test_float_ssim_16bit_exact),
+    };
+    return mu_run_table(tests, MU_TABLE_LEN(tests));
+}
+
 char *run_tests(void)
 {
-    mu_run_test(test_float_ssim_sycl_registered);
-    mu_run_test(test_float_ssim_order_frame_device);
-    mu_run_test(test_float_ssim_order_noise_device);
-    mu_run_test(test_float_ssim_order_frame_host);
-    mu_run_test(test_float_ssim_order_noise_host);
-    mu_run_test(test_float_ssim_cpu_sycl_parity);
+    static const MuTest tests[] = {
+        MU_TEST(test_float_ssim_sycl_registered),    MU_TEST(test_float_ssim_order_frame_device),
+        MU_TEST(test_float_ssim_order_noise_device), MU_TEST(test_float_ssim_order_frame_host),
+        MU_TEST(test_float_ssim_order_noise_host),   MU_TEST(test_float_ssim_cpu_sycl_parity),
+    };
+    mu_assert_msg(mu_run_table(tests, MU_TABLE_LEN(tests)));
+    mu_assert_msg(run_bit_depth_cases());
     mu_run_test(test_float_ssim_sycl_gate);
     return NULL;
 }

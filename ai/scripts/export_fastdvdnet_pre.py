@@ -35,7 +35,7 @@ only the I/O packing is rewritten.  This trades some quality (the
 network was not trained on luma-tiled-into-RGB inputs) for a real,
 license-compatible weights drop that fits the existing C contract
 unchanged.  The follow-up T6-7c is to retrain a luma-native variant
-when the FFmpeg ``vmaf_pre_temporal`` filter (T6-7b proper) lands.
+when the FFmpeg ``vmafx_pre`` filter lands.
 
 Usage::
 

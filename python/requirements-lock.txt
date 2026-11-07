@@ -1,6 +1,6 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
 # vmafx-uv-version: 0.13.6
-# vmafx-input-sha256: 5b0689562c2d41ab2b8970c15016a1345dadb5933f882f5232c564cc1d9f9802
+# vmafx-input-sha256: c55cf8b2fec7a34109e197d8ef0c6b57e553d94512c60a08a3619b548b1b1217
 # vmafx-inputs: python/pyproject.toml, python/requirements.txt
 cloudpickle==3.1.2 \
     --hash=sha256:7fda9eb655c9c230dab534f1983763de5835249750e85fbcef43aaa30a9a2414 \
@@ -704,9 +704,9 @@ pyparsing==3.3.3 \
     --hash=sha256:928ae7e20211f3b6f3915a72f06a0cfd29ab9d24279dd6346b6b1a7146397d36 \
     --hash=sha256:ece8c00a69cf01b45d0b1dedabb469c90d8caf996d4fda40f147627a122849a4
     # via matplotlib
-python-dateutil==3.0.0 \
-    --hash=sha256:3c79630202e4152c6add678446984236efe4f57e84d8e892aab0637bab82e9fd \
-    --hash=sha256:7ebcb3c29a92f3ceafe79a7a48a5c45677e9e004bbeec5742ac0bbb00560b7a2
+python-dateutil==4.0.0 \
+    --hash=sha256:a5e246f79eb80475e691bf93862cead98decd8a498cf53ba0516fcdc0f50dc1c \
+    --hash=sha256:d7295ff14fdc0f92f662100bfb6c551d160ca090f2939f1ec5b9794265c03f06
     # via
     #   matplotlib
     #   pandas
@@ -943,10 +943,6 @@ setuptools==84.2.1 \
     --hash=sha256:3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc \
     --hash=sha256:ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2
     # via setupmeta
-six==1.17.0 \
-    --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274 \
-    --hash=sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81
-    # via python-dateutil
 sureal==0.9.0 \
     --hash=sha256:2aa2c68ae6f3eb1562c77599463bc0bd194e870eb66b69757bccd3618f6a824d \
     --hash=sha256:83d93531750501577e8f9937f9e1f06c340c48650a41b24c24d345826e40460b

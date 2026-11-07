@@ -13,8 +13,9 @@ build-backend = "hatchling.build"
 name = "vmafx"
 dynamic = ["version"]
 description = "ctypes binding for the VMAFx C API (standard library only)."
+readme = "README.md"
 requires-python = ">=3.12"
-license = "EUPL-1.2"
+license = "EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
 license-files = ["LICENSES/*"]
 authors = [{ name = "Lusoris", email = "lusoris@pm.me" }]
 dependencies = []
@@ -30,6 +31,30 @@ path = "vmafx/_api.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["vmafx"]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
+[tool.cibuildwheel]
+build = "cp312-* cp313-* cp314-*"
+skip = "*-musllinux_* pp*"
+build-verbosity = 1
+test-command = "python {project}/scripts/ci/score-wheel-fixture.py"
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64", "aarch64"]
+before-all = "python scripts/ci/build-wheel-libvmafx.py"
+repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel}"
+
+[tool.cibuildwheel.macos]
+archs = ["arm64"]
+before-all = "python3 scripts/ci/build-wheel-libvmafx.py"
+repair-wheel-command = "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} {wheel}"
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
+before-all = "python scripts/ci/build-wheel-libvmafx.py"
+repair-wheel-command = "delvewheel repair --analyze-existing -w {dest_dir} -v {wheel}"
 
 [tool.setuptools.packages.find]
 include = ["vmafx*"]

@@ -17,11 +17,13 @@ was reallocated, and a fixture number cited outside its recorded paths.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
@@ -170,10 +172,11 @@ def adr_corpus(root: Path) -> dict[str, str]:
     return {number: names[0] for number, names in sorted(by_number.items())}
 
 
-def load_registry(path: Path) -> dict[str, Any]:
+def load_registry(path: Path) -> tuple[dict[str, Any], bytes]:
     """Load the checked registry with a precise diagnostic."""
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        raw_bytes = path.read_bytes()
+        value = json.loads(raw_bytes.decode("utf-8"))
     except FileNotFoundError as exc:
         raise GateError(f"registry does not exist: {path}") from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -195,7 +198,7 @@ def load_registry(path: Path) -> dict[str, Any]:
     for section in ("retired", "fixtures"):
         if not isinstance(value[section], dict):
             raise GateError(f"registry {section!r} must be an object")
-    return value
+    return value, raw_bytes
 
 
 def validate_number(number: str, section: str) -> None:
@@ -387,11 +390,40 @@ def compare_sites(
     return errors
 
 
-def check(root: Path, registry_path: Path) -> int:
+def atomic_write_json(
+    path: Path, value: dict[str, Any], *, expected_bytes: bytes | None = None
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(value, indent=2, sort_keys=True, ensure_ascii=True) + "\n"
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(payload)
+        if expected_bytes is not None and (
+            not path.is_file() or path.read_bytes() != expected_bytes
+        ):
+            raise GateError(f"registry was modified concurrently: {path}")
+        temporary.replace(path)
+    except BaseException:
+        if temporary is not None:
+            with contextlib.suppress(OSError):
+                temporary.unlink(missing_ok=True)
+        raise
+
+
+def check(root: Path, registry_path: Path, *, write: bool = False) -> int:
     tracked_list = tracked_paths(root)
     tracked = set(tracked_list)
     corpus = adr_corpus(root)
-    registry = load_registry(registry_path)
+    registry, original_bytes = load_registry(registry_path)
     retired = validate_retired(root, registry["retired"], corpus, tracked)
     fixtures = validate_fixtures(registry["fixtures"], tracked)
 
@@ -412,6 +444,11 @@ def check(root: Path, registry_path: Path) -> int:
             "\n".join(errors) + "\nretired and fixture records are hand-governed: correct them"
         )
 
+    if write:
+        atomic_write_json(registry_path, registry, expected_bytes=original_bytes)
+        print(f"check-source-adr-citations: wrote {registry_path}")
+        return 0
+
     occurrences = sum(sum(entry["sites"].values()) for entry in live.values())
     occurrences += sum(sum(entry["sites"].values()) for entry in retired.values())
     print(
@@ -426,6 +463,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
+    parser.add_argument(
+        "--write", action="store_true", help="rewrite registry with canonical formatting"
+    )
     return parser.parse_args(argv)
 
 
@@ -434,7 +474,7 @@ def main(argv: list[str] | None = None) -> int:
     root = args.root.resolve()
     registry_path = args.registry if args.registry.is_absolute() else root / args.registry
     try:
-        return check(root, registry_path)
+        return check(root, registry_path, write=bool(args.write))
     except GateError as exc:
         print(f"check-source-adr-citations: ERROR: {exc}", file=sys.stderr)
         return 1

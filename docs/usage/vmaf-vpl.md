@@ -3,14 +3,14 @@
 `vmaf_vpl` is a developer-only binary that drives the libvmaf SYCL backend
 through Intel's Video Processing Library (VPL) for zero-copy
 VAAPI→SYCL frame transfer. It exists to exercise the
-`libvmaf_sycl_dmabuf_import` path end-to-end against a real Intel GPU
+`vmaf_sycl_dmabuf_import` path end-to-end against a real Intel GPU
 without going through FFmpeg.
 
 The tool is **built but not installed**. It only compiles when SYCL +
 Intel VPL + libva + libva-drm are all present at configure time. The
 canonical invocation is from the build tree
 (`./build/tools/vmaf_vpl`). For most users the
-[`libvmaf_sycl` FFmpeg filter](ffmpeg.md#libvmaf_sycl)
+[`vmafx` FFmpeg filter](ffmpeg.md) (with `backend=sycl`)
 is the right entry point; `vmaf_vpl` is for libvmaf SYCL contributors
 debugging the import path itself.
 
@@ -122,11 +122,11 @@ Decoded frames returned alongside warning statuses (such as
 
 ## Status
 
-The tool tracks ADR-0183 (FFmpeg `libvmaf_sycl` filter); both share the same
+The tool tracks ADR-0183 (FFmpeg SYCL dmabuf import); both share the same
 SYCL dmabuf-import primitive. `vmaf_vpl` is a contributor regression-test entry
 point, so the import path can be debugged without an FFmpeg build round-trip.
 There is no plan to install the binary; for a user-facing SYCL entry point, use
-the FFmpeg filter.
+the FFmpeg filter (`vmafx` with `backend=sycl`).
 
 !!! note "Cleanup is fail-closed"
     `vmaf_vpl` retries `vmaf_close()` once. If the second attempt fails, it
@@ -135,7 +135,7 @@ the FFmpeg filter.
 
 ## Related
 
-- [`ffmpeg.md`](ffmpeg.md) — FFmpeg `libvmaf_sycl` filter (the
+- [`ffmpeg.md`](ffmpeg.md) — FFmpeg `vmafx` filter (the
   user-facing equivalent).
 - [`docs/api/gpu.md`](../api/gpu.md) — `vmaf_sycl_dmabuf_import` C API.
 - [ADR-0183](../adr/0183-ffmpeg-libvmaf-sycl-filter.md) — SYCL filter
