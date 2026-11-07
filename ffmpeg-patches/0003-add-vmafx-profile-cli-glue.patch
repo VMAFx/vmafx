@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Lusoris <lusoris@pm.me>
+Date: Tue, 6 Oct 2026 20:40:26 +0200
+Subject: [PATCH] fftools: add -vmafx-profile CLI glue (vmaf-tune helper)
+
+The vmaf-tune encoder-profile hand-off under its VMAFx name (decision D6
+of the VMAFx API redesign): it logs the profile path and the vmaf-tune
+command that reads the report and encodes.
+---
+ fftools/ffmpeg_opt.c | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/fftools/ffmpeg_opt.c b/fftools/ffmpeg_opt.c
+index aadb9ff8f62a4753de15925e6722ee5d9a277aed..fb92acf2e5f28d6c66c158e77402a20aff27eb31 100644
+--- a/fftools/ffmpeg_opt.c
++++ b/fftools/ffmpeg_opt.c
+@@ -1046,6 +1046,22 @@ static int opt_pass_autotune(void *optctx, const char *opt, const char *arg)
+     return 0;
+ }
+ 
++static int opt_vmafx_profile(void *optctx, const char *opt, const char *arg)
++{
++    /* The -vmafx-profile CLI option: the vmaf-tune encoder-profile helper.
++     * The profile reader lives in vmaf-tune, so FFmpeg duplicates none of its
++     * codec-adapter defaults, schema migration or recommendation selection. */
++    (void)optctx;
++    (void)opt;
++    av_log(NULL, AV_LOG_INFO,
++           "[ffmpeg] -vmafx-profile %s: encode with "
++           "`vmaf-tune encode-profile --profile %s --src INPUT --output OUTPUT` "
++           "(add --codec / --target-vmaf to select one recommendation). "
++           "See docs/usage/vmaf-tune-ffmpeg.md.\n",
++           arg ? arg : "(null)", arg ? arg : "PROFILE");
++    return 0;
++}
++
+ static int opt_vstats(void *optctx, const char *opt, const char *arg)
+ {
+     char filename[40];
+@@ -1903,6 +1919,9 @@ const OptionDef options[] = {
+     { "pass-autotune",              OPT_TYPE_FUNC,   OPT_VIDEO | OPT_EXPERT,
+         { .func_arg = opt_pass_autotune },
+         "vmaf-tune 2-pass orchestration helper (ADR-0312, advisory only)" },
++    { "vmafx-profile",             OPT_TYPE_FUNC,   OPT_VIDEO | OPT_FUNC_ARG | OPT_EXPERT,
++        { .func_arg = opt_vmafx_profile },
++        "vmaf-tune encoder profile helper (advisory only)", "path" },
+     { "passlogfile",                OPT_TYPE_STRING, OPT_VIDEO | OPT_EXPERT | OPT_PERSTREAM | OPT_OUTPUT,
+         { .off = OFFSET(passlogfiles) },
+         "select two pass log file name prefix", "prefix" },

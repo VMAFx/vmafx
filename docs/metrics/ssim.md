@@ -119,6 +119,9 @@ reduction would be.
 holds for `--backend hip` and `--backend sycl`).
 
 - You can mix CPU and twin `ssim` results in one data set.
+- The CPU, CUDA, SYCL and HIP `float_ssim` twins take every bit depth from 8 to
+  16 bits like the CPU. The Metal twin refuses 9, 11, 13, 14 and 15 bits with
+  `-EINVAL`.
 - Stored outputs from before the exact-sum ADRs differ from new ones: up to
   1.1e-11 (3.6e-10 in dB) for CUDA, up to 1.1e-11 on frames above 4096 pixels
   for HIP, and 7e-9 to 3e-7 on video for SYCL.

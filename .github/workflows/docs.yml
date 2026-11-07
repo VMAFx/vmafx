@@ -114,6 +114,13 @@ jobs:
       - name: Check documentation charts against a fresh render
         if: steps.impact.outputs.docs == 'true'
         run: python3 scripts/docs/generate-charts.py --check --require-render
+      # Linux only (HISS-21). Docs Site Build runs only on ubuntu-26.04; skipped
+      # on macOS and Windows to conserve CI compute. Alternate evidence: pure Python
+      # standard-library implementation (pathlib, re, sys, argparse) tested across
+      # platforms via pre-commit and the tooling unit test suite (scripts/ci/tests/).
+      - name: Check API doc coverage
+        if: steps.impact.outputs.docs == 'true'
+        run: python3 scripts/ci/check_api_doc_coverage.py
       - name: Build site
         if: steps.impact.outputs.docs == 'true'
         run: mkdocs build --strict
@@ -172,6 +179,8 @@ jobs:
     if: needs.tier.outputs.light == 'true'
     name: Plan Doxygen impact
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     permissions:
       contents: read
     outputs:
@@ -313,6 +322,8 @@ jobs:
     # required-aggregator
     name: Doxygen Public API
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:

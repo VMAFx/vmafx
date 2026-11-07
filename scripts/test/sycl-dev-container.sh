@@ -124,12 +124,12 @@ build_ffmpeg() {
     fi
   done </work/ffmpeg-patches/series.txt
   PKG_CONFIG_PATH="$PC${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" ./configure \
-    --prefix="$C/ffmpeg-prefix" --enable-gpl --enable-version3 --enable-libvmaf \
-    --enable-libdav1d --enable-vaapi --enable-libvpl --enable-libvmaf-sycl \
-    --disable-filter=vmaf_pre --disable-doc --disable-debug
+    --prefix="$C/ffmpeg-prefix" --enable-gpl --enable-version3 --enable-libvmafx \
+    --enable-libdav1d --enable-vaapi --enable-libdrm --enable-libvpl \
+    --disable-doc --disable-debug
   make -j"$JOBS" install
   PATH="$C/ffmpeg-prefix/bin:$PATH" LD_LIBRARY_PATH="$C/prefix/lib/x86_64-linux-gnu:$C/prefix/lib:${LD_LIBRARY_PATH:-}" \
-    ffmpeg -hide_banner -filters | grep libvmaf
+    ffmpeg -hide_banner -filters | grep vmafx
 }
 
 case "$MODE" in

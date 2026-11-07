@@ -64,6 +64,7 @@ jobs:
       images: ${{ steps.plan.outputs.images }}
       gpu: ${{ steps.plan.outputs.gpu }}
       mcp: ${{ steps.plan.outputs.mcp }}
+      wheels: ${{ steps.plan.outputs.wheels }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -308,10 +309,46 @@ jobs:
           VMAFX_VERSION: ${{ steps.version.outputs.semver }}
         run: bash scripts/release/verify-mcp-sbom.sh "$VMAFX_VERSION" sbom mcp-dist
 
+  wheels:
+    name: vmafx wheels dry run
+    needs: plan
+    if: needs.plan.outputs.wheels == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install build and check deps
+        run: |
+          python -m pip install --disable-pip-version-check --require-hashes --no-build-isolation \
+            -r requirements/locks/package-build.txt \
+            -r requirements/locks/twine.txt
+      - name: Build libvmafx shared library
+        run: python3 scripts/ci/build-wheel-libvmafx.py
+      - name: Build wheel and sdist
+        working-directory: bindings/python
+        run: |
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          export SOURCE_DATE_EPOCH
+          export PYTHONHASHSEED=0
+          python -m build --no-isolation --wheel --sdist --outdir ../../dist
+      - name: Clean bundled library from source tree
+        run: python3 scripts/ci/build-wheel-libvmafx.py --clean
+      - name: Install wheel and score fixture
+        run: |
+          python -m pip install --no-deps dist/*.whl
+          python scripts/ci/score-wheel-fixture.py
+      - name: Check distributions with twine
+        run: twine check --strict dist/*
+
   # The required context (ADR-1687). Each group must be selected and pass, or be
   # unselected and skipped; a failed or skipped plan fails the gate.
   gate:
-    needs: [tier, plan, images, gpu, mcp]
+    needs: [tier, plan, images, gpu, mcp, wheels]
     if: always() && needs.tier.outputs.full == 'true'
     # required-aggregator
     name: Release Dry Run
@@ -329,13 +366,15 @@ jobs:
           GPU_RESULT: ${{ needs.gpu.result }}
           MCP_SELECTED: ${{ needs.plan.outputs.mcp }}
           MCP_RESULT: ${{ needs.mcp.result }}
+          WHEELS_SELECTED: ${{ needs.plan.outputs.wheels }}
+          WHEELS_RESULT: ${{ needs.wheels.result }}
         run: |
           if [ "$PLAN_RESULT" != success ]; then
             echo "::error::the dry-run plan did not succeed ($PLAN_RESULT)"
             exit 1
           fi
           fail=0
-          for group in IMAGES GPU MCP; do
+          for group in IMAGES GPU MCP WHEELS; do
             selected_var="${group}_SELECTED"
             result_var="${group}_RESULT"
             state="${!selected_var}:${!result_var}"

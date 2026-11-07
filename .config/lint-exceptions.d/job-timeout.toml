@@ -1,0 +1,15 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Declared job-timeout gaps (praetor job-timeout audit): a CI job whose timeout-minutes lies outside
+# the engine's bound window (at least 1.25 x the slowest measured run, at most max(30, 4 x slowest);
+# 120 on the static path). Format and rules: scripts/ci/lint_exceptions.py.
+# scripts/ci/praetor_tidy_coverage.py copies each entry into the `exceptions:` block of
+# .standards.yaml, where praetor reads it. Every other job carries max(5, 2 x p95).
+
+[[exception]]
+path = ".github/workflows/required-aggregator.yml"
+category = "D"
+entered = 2026-11-06
+reason = "Category D, 120-day interval. The aggregator job only polls the checks API until every sibling workflow is terminal; its script deadline is 240 minutes and timeout-minutes 250 lets the job finish after it. That is above the engine bound max(30, 4 x slowest) = 194 and the 120-minute static cap, but 30- and 90-minute deadlines failed every open pull request during runner-queue starvation on 2026-05-09 and 2026-08-30, and the aggregator is a required check, so a short bound blocks merges. The wait costs a runner slot, not compute. Rectify by moving the wait to an event-driven check (no polling job) or by a measured queue-depth bound."
+expires = 2027-03-06

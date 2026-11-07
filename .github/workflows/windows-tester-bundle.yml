@@ -242,7 +242,8 @@ jobs:
     name: Build and test the zip (Windows ${{ matrix.name }})
     needs: validate
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 150
+    # Bound max(5, 2 x p95) = 126 (p95 62.9 min, Windows x64-sycl leg), held at the 120-minute engine cap.
+    timeout-minutes: 120
     permissions:
       contents: read
     strategy:

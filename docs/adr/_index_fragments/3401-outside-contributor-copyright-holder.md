@@ -1,0 +1,1 @@
+| [ADR-3401](3401-outside-contributor-copyright-holder.md) | Scopes ADR-0861's single Lusoris notice to maintainer-written files; outside contributors name themselves as holders, and the provenance check accepts human names that share a word with an AI product. | Accepted | license, docs, governance |

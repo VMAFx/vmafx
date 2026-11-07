@@ -36,8 +36,8 @@ live round-trip behaviour.
 ## Ground rules
 
 - **Parent rules** apply (see [../../AGENTS.md](../../AGENTS.md)).
-- **Wholly-new fork file** — uses dual Lusoris/Claude (Anthropic)
-  copyright header per [ADR-0025](../../../docs/adr/0025-copyright-handling-dual-notice.md).
+- **Wholly-new fork files carry `Copyright 2026 Lusoris`**
+  per [ADR-0861](../../../docs/adr/0861-vmafx-copyright-policy-drop-anthropic.md).
 - **Audit-first contract** ([ADR-0209](../../../docs/adr/0209-mcp-embedded-scaffold.md)):
   every public entry point validates arguments **before**
   returning `-ENOSYS`. Validation must survive runtime PR
@@ -90,7 +90,8 @@ by code yet — runtime PR makes them load-bearing):
 ## Governing ADRs
 
 - [ADR-0025](../../../docs/adr/0025-copyright-handling-dual-notice.md) —
-  dual-copyright policy.
+  copyright policy; [ADR-0861](../../../docs/adr/0861-vmafx-copyright-policy-drop-anthropic.md)
+  = current line format.
 - [ADR-0209](../../../docs/adr/0209-mcp-embedded-scaffold.md) —
   audit-first MCP scaffold.
 

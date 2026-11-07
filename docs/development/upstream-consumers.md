@@ -56,7 +56,7 @@ line is `PASS` or `FAIL`.
 | `--work DIR` | Cache and scratch directory. Default `${TMPDIR:-/tmp}/upstream-consumers`. Source trees and builds are reused when the pin and the prefix are unchanged. |
 | `--ref FILE`, `--dist FILE`, `--size WxH` | Raw yuv420p 8-bit inputs. Default: the repository's `src01_hrc00_576x324.yuv` and `src01_hrc01_576x324.yuv`. |
 | `--planted-defect` | GStreamer script only, needs `--reference-prefix`: appends a digit to the first per-frame `self` score of the `--prefix` side of the first case and passes only when the comparison reports that difference (exit 0 with `PASS: the planted defect was detected`). It proves the comparison can fail. |
-| `--cuda` | FFmpeg script only: also run the upstream `libvmaf_cuda` filter. Prints `SKIP: <reason>` when the library has no CUDA, the host has no GPU runtime or `ffnvcodec` is missing; a skip is never reported as a pass. The GStreamer script prints a skip: the upstream element has no CUDA path. |
+| `--cuda` | FFmpeg script only: also run the CUDA filter path. Prints `SKIP: <reason>` when the library has no CUDA, the host has no GPU runtime or `ffnvcodec` is missing; a skip is never reported as a pass. The GStreamer script prints a skip: the upstream element has no CUDA path. |
 
 Environment: `UPSTREAM_CONSUMER_JOBS` (build parallelism, default 4) and
 `UPSTREAM_CONSUMER_EXTRA_PKG_CONFIG_PATH` (extra pkg-config directories
@@ -77,13 +77,14 @@ outside the path `glib-2.0.pc` names).
 `FFMPEG_REMOTE` from `build-config.env` (shallow, no patch applied) and
 configures a minimal build: `--disable-everything`, the `libvmaf`, `scale`,
 `format`, `split`, `trim` and `setpts` filters, the `rawvideo` demuxer and
-decoder, the `null` muxer, the `file` protocol and `--enable-libvmaf`; only
-`ffmpeg` is built. The distorted video is input 0 and the reference input 1,
-which is the order of the filter's pads (`main`, then `reference`, in
-`libavfilter/vf_libvmaf.c`). Each input is cut to `--frames` frames by `trim`
-before the filter: stopping the output with `-frames:v` ends the run at a
-scheduling-dependent point, and the last frame's motion score depends on whether
-a following frame reached the filter.
+decoder, the `null` muxer, the `file` protocol and
+stock upstream `--enable-libvmaf`; only `ffmpeg` is built.
+The distorted video is input 0 and the reference input 1, which is the order
+of the filter's pads (`main`, then `reference`, in `libavfilter/vf_libvmaf.c`).
+Each input is cut to `--frames` frames by `trim` before the filter: stopping the
+output with `-frames:v` ends the run at a scheduling-dependent point, and the
+last frame's motion score depends on whether a following frame reached the
+filter.
 
 With `--against-cli` the FFmpeg script also runs the filter graphs that
 [SVT Encore](https://github.com/svt/encore) builds for its VMAF profile

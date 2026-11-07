@@ -141,18 +141,11 @@ typedef struct VmafMtlFmBilinearAt {
     float dy;
 } VmafMtlFmBilinearAt;
 
-/* 1 / scaler of picture_copy(): 4, 16 and 256 for 10, 12 and 16 bits, 1
- * otherwise. Powers of two, so a product with it is picture_copy()'s
- * quotient exactly. */
+/* 1 / scaler of picture_copy(): 2^(bpc - 8) for bpc > 8, 1 otherwise.
+ * Powers of two, so a product with it is picture_copy()'s quotient exactly. */
 VMAF_MTL_FUNC float vmaf_mtl_fm_inv_scaler(vmaf_mtl_u32 bpc)
 {
-    if (bpc == 10u) {
-        return 0.25f;
-    }
-    if (bpc == 12u) {
-        return 0.0625f;
-    }
-    return (bpc == 16u) ? 0.00390625f : 1.0f;
+    return bpc > 8u ? 1.0f / (float)(1u << (bpc - 8u)) : 1.0f;
 }
 
 /* picture_copy() of one sample with the offset -128 float_motion.c gives it:

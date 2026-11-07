@@ -30,6 +30,8 @@ jobs:
   label:
     name: Label PR by commit type
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     steps:
       - name: Apply type label
         env:

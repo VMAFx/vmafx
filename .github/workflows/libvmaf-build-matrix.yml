@@ -724,7 +724,8 @@ jobs:
     if: needs.tier.outputs.full == 'true'
     name: ${{ matrix.name }}
     runs-on: windows-2025
-    timeout-minutes: 45
+    # Measured p95 44.6m, max 44.8m (n=22, 2026-11-06); 90 min covers 2 x p95 (89.2m) and step caps plus rest (15 + 1.25x 44.8m = 71m).
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:

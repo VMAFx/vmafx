@@ -236,15 +236,18 @@ RUN apt-get update \
         libfreetype-dev \
         libfontconfig-dev \
         libfribidi-dev \
+        libdrm-dev \
         libva-dev \
         libvdpau-dev \
         libzimg-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- libvmaf headers + library for --enable-libvmaf configure probe --------
+# ---- libvmafx headers + library for --enable-libvmafx configure probe ------
 COPY --from=vmaf-builder /dist/lib/ /usr/local/lib/
-# Copy public headers from source tree (pkg-config consumers need them).
+# Copy public headers from source tree (pkg-config consumers need them; the
+# --enable-libvmafx probe compiles vmafx/vmafx.h).
 COPY core/include/libvmaf/ /usr/local/include/libvmaf/
+COPY core/include/vmafx/ /usr/local/include/vmafx/
 # Meson generated this file from vmaf_soname_version, the authoritative
 # interface version consumed by FFmpeg's pkg-config range probe.
 RUN ldconfig
@@ -310,7 +313,8 @@ RUN multiarch="$(gcc -print-multiarch)" \
         --fatal-warnings \
         --prefix=/ffmpeg-install \
         --enable-gpl --enable-version3 \
-        --enable-libvmaf \
+        --enable-libvmafx \
+        --enable-libdrm \
         --enable-libx264 --enable-libx265 \
         --enable-libvpx --enable-libdav1d \
         --enable-libsvtav1 \
@@ -400,6 +404,7 @@ RUN apt-get update \
 # Copy libvmaf headers + library for cgo build
 COPY --from=vmaf-builder /dist/lib/ /usr/local/lib/
 COPY core/include/libvmaf/ /usr/local/include/libvmaf/
+COPY core/include/vmafx/ /usr/local/include/vmafx/
 ARG VMAFX_VERSION
 RUN ldconfig
 

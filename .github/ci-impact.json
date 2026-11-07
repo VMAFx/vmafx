@@ -293,13 +293,17 @@
         "core/src/feature/feature_extractor.cpp",
         "core/src/feature/tad_rust.c",
         "core/src/feature/integer_psnr.c",
-        "core/src/feature/psnr_score.h"
+        "core/src/feature/psnr_score.h",
+        "core/src/compat/libvmaf/*",
+        "core/src/compat/libvmaf/**"
       ]
     },
     "docs": {
       "patterns": [
         "docs/*",
         "docs/**",
+        "core/include/vmafx/*.h",
+        "scripts/ci/check_api_doc_coverage.py",
         "mkdocs.yml",
         "*.md",
         "**/*.md",

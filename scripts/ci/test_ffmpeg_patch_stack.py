@@ -1081,5 +1081,65 @@ class WorkingTreeTextLineEndings(unittest.TestCase):
         self.assertIn(("commit", "--quiet", "--amend", "--no-edit"), fake_replay.calls)
 
 
+CONFIG_H_INCLUDE = re.compile(r'^\s*#\s*include\s*["<]config\.h[">]')
+CONDITIONAL_CONFIG = re.compile(r"^\s*#\s*(?:if|elif|ifdef|ifndef)\b.*\b(?:HAVE_|CONFIG_)\w+")
+
+
+def unconfigured_conditionals(source: str | Path) -> list[str]:
+    """Return premature HAVE_/CONFIG_ conditionals appearing before #include "config.h"."""
+    text = source.read_text(encoding="utf-8") if isinstance(source, Path) else source
+    violations: list[str] = []
+    for line in text.splitlines():
+        if CONFIG_H_INCLUDE.match(line):
+            break
+        if CONDITIONAL_CONFIG.match(line):
+            violations.append(line.strip())
+    return violations
+
+
+class ConfigHeaderPrecedence(unittest.TestCase):
+    """Premature HAVE_/CONFIG_ conditionals before config.h leave macros undefined."""
+
+    PATCHES_SRC = Path(__file__).resolve().parents[2] / "ffmpeg-patches" / "src"
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.temp_dir = Path(self.temporary.name)
+
+    def test_planted_negative_missing_config_h_reported(self) -> None:
+        sample = self.temp_dir / "bad.c"
+        sample.write_text(
+            '#include "config_components.h"\n\n#if HAVE_UNISTD_H\n#include <unistd.h>\n#endif\n',
+            encoding="utf-8",
+        )
+        self.assertEqual(unconfigured_conditionals(sample), ["#if HAVE_UNISTD_H"])
+
+    def test_positive_config_h_preceding_conditionals(self) -> None:
+        sample = self.temp_dir / "good.c"
+        sample.write_text(
+            '#include "config.h"\n#include "config_components.h"\n\n'
+            "#if HAVE_UNISTD_H\n#include <unistd.h>\n#endif\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(unconfigured_conditionals(sample), [])
+
+    def test_positive_file_without_conditionals(self) -> None:
+        sample = self.temp_dir / "plain.c"
+        sample.write_text("#include <stdio.h>\nint main(void) { return 0; }\n", encoding="utf-8")
+        self.assertEqual(unconfigured_conditionals(sample), [])
+
+    def test_every_src_file_includes_config_h_before_conditionals(self) -> None:
+        src_files = sorted(self.PATCHES_SRC.glob("*.[ch]"))
+        self.assertTrue(src_files, "no source files found in ffmpeg-patches/src")
+        for src_path in src_files:
+            with self.subTest(file=src_path.name):
+                self.assertEqual(
+                    unconfigured_conditionals(src_path),
+                    [],
+                    f'{src_path.name} uses HAVE_/CONFIG_ conditional before #include "config.h"',
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

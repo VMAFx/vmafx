@@ -35,6 +35,8 @@ jobs:
     if: needs.tier.outputs.full == 'true'
     name: Plan FFmpeg impact
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     outputs:
       selected: ${{ steps.impact.outputs.c_core }}
       consumers: ${{ steps.impact.outputs.upstream_consumers }}
@@ -435,6 +437,8 @@ jobs:
     # required-aggregator
     name: FFmpeg Ubuntu gcc
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     permissions:
       contents: read
       actions: read
@@ -459,6 +463,8 @@ jobs:
     # required-aggregator
     name: FFmpeg macOS clang
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     permissions:
       contents: read
       actions: read
@@ -483,6 +489,8 @@ jobs:
     # required-aggregator
     name: FFmpeg SYCL
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     steps:
       - name: Require selected FFmpeg SYCL work
         env:
@@ -505,6 +513,8 @@ jobs:
     # required-aggregator
     name: FFmpeg Windows MSVC
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     steps:
       - name: Require selected FFmpeg Windows MSVC work
         env:
