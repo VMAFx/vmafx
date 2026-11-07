@@ -113,5 +113,9 @@ vmaf_use_features_from_model compat
 vmaf_use_features_from_model_collection compat
 vmaf_use_tiny_model compat
 vmaf_version compat
+vmaf_vulkan_available compat:!vulkan
+vmaf_vulkan_import_state compat:!vulkan
+vmaf_vulkan_state_free compat:!vulkan
+vmaf_vulkan_state_init compat:!vulkan
 vmaf_write_output compat
 vmaf_write_output_with_format compat

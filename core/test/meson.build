@@ -1020,7 +1020,8 @@ if host_machine.system() == 'linux' and get_option('default_library') != 'static
         and not get_option('b_coverage')
     exported_backends = []
     foreach backend : [['cuda', is_cuda_enabled], ['sycl', is_sycl_enabled],
-                       ['hip', is_hip_enabled], ['metal', is_metal_enabled]]
+                       ['hip', is_hip_enabled], ['metal', is_metal_enabled],
+                       ['vulkan', is_vulkan_enabled]]
         if backend[1]
             exported_backends += backend[0]
         endif
@@ -1063,6 +1064,7 @@ gpu_all_deps = [
   sycl_dependency,
   hip_deps,
   metal_deps,
+  vulkan_target_deps,
 ]
 
 # Private-source tests historically compiled predict.c independently. Link the
@@ -5631,6 +5633,27 @@ test_gpu_picture_pool_alloc_failure = executable('test_gpu_picture_pool_alloc_fa
 )
 test('test_gpu_picture_pool_alloc_failure', test_gpu_picture_pool_alloc_failure,
     suite : ['fast'])
+
+# ADR-3402 — integer ADM CPU vs. Vulkan parity (the fp64-free integer path's
+# acceptance gate, issue #3319). The Vulkan twin runs the embedded
+# integer_adm.comp SPIR-V (shaderInt64 only) and ports the CPU conclude math,
+# so the comparison is bit-exact. GPU-gated: skips cleanly when no Vulkan
+# loader / device is visible. Compiled only with enable_vulkan=true; the
+# executable is inert without the backend, so the build surface stays honest.
+if is_vulkan_enabled
+test_vulkan_adm_parity = executable('test_vulkan_adm_parity',
+    ['test.c', 'test_vulkan_adm_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common +
+             ['-DVULKAN_ADM_TESTDATA_DIR="' + join_paths(meson.project_source_root(), '../testdata') + '"'],
+    link_with : vmaf_test_link,
+    dependencies: [pthread_dependency, math_lib, vulkan_target_deps],
+    kwargs : test_link_kwargs,
+)
+test('test_vulkan_adm_parity', test_vulkan_adm_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
+endif
 
 if get_option('enable_cuda')
 # RC4 WP3 CUDA lane (ADR-2023): the VMAFx device-frame API on a CUDA device,

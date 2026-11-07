@@ -79,6 +79,9 @@
 #ifdef HAVE_METAL
 #include "libvmaf/libvmaf_metal.h"
 #endif
+#ifdef HAVE_VULKAN
+#include "libvmaf/libvmaf_vulkan.h"
+#endif
 
 #include "feature/feature_dimensions.h"
 #include "vmaf_close_retry.h"
@@ -742,6 +745,10 @@ struct GpuStates {
     VmafMetalState *metal_state;
     bool metal_active;
 #endif
+#ifdef HAVE_VULKAN
+    VmafVulkanState *vulkan_state;
+    bool vulkan_active;
+#endif
 };
 
 [[nodiscard]] bool explicit_backend_requested(const CLISettings *c)
@@ -754,7 +761,7 @@ struct GpuStates {
 namespace
 {
 
-#if defined(HAVE_SYCL) || defined(HAVE_CUDA) || defined(HAVE_HIP) || defined(HAVE_METAL)
+#if defined(HAVE_SYCL) || defined(HAVE_CUDA) || defined(HAVE_HIP) || defined(HAVE_METAL) || defined(HAVE_VULKAN)
 [[nodiscard]] bool backend_compiled_in(const char *backend)
 {
     return
@@ -770,6 +777,9 @@ namespace
 #ifdef HAVE_METAL
         strcmp(backend, "metal") == 0 ||
 #endif
+#ifdef HAVE_VULKAN
+        strcmp(backend, "vulkan") == 0 ||
+#endif
         false;
 }
 #endif
@@ -778,7 +788,7 @@ namespace
 {
     if (!explicit_backend_requested(c))
         return 0;
-#if defined(HAVE_SYCL) || defined(HAVE_CUDA) || defined(HAVE_HIP) || defined(HAVE_METAL)
+#if defined(HAVE_SYCL) || defined(HAVE_CUDA) || defined(HAVE_HIP) || defined(HAVE_METAL) || defined(HAVE_VULKAN)
     if (backend_compiled_in(c->backend))
         return 0;
 #endif
@@ -928,6 +938,38 @@ namespace
 } // namespace
 #endif
 
+#ifdef HAVE_VULKAN
+namespace
+{
+
+[[nodiscard]] int init_vulkan_backend(VmafContext *vmaf, const CLISettings *c, GpuStates *states)
+{
+    const VmafVulkanConfiguration cfg = {.device_index = c->vulkan_device, .flags = 0};
+    if (c->vulkan_device < 0 || c->no_vulkan)
+        return 0;
+    int err = vmaf_vulkan_state_init(&states->vulkan_state, cfg);
+    if (err) {
+        (void)fprintf(stderr, "problem during vmaf_vulkan_state_init (%d), using CPU\n", err);
+        if (!explicit_backend_requested(c) || strcmp(c->backend, "vulkan") != 0)
+            return 0;
+        (void)fprintf(stderr, "vmaf: --backend vulkan requested but init failed; refusing to "
+                              "silently fall back to CPU (ADR-0498)\n");
+        write_backend_error_json(c->output_path, c->output_fmt, "vulkan",
+                                 "vmaf_vulkan_state_init failed", err);
+        return VMAF_INIT_GPU_EXPLICIT_FAIL;
+    }
+    err = vmaf_vulkan_import_state(vmaf, states->vulkan_state);
+    if (err) {
+        (void)fprintf(stderr, "problem during vmaf_vulkan_import_state\n");
+        return -1;
+    }
+    states->vulkan_active = true;
+    return 0;
+}
+
+} // namespace
+#endif
+
 namespace
 {
 
@@ -955,6 +997,11 @@ namespace
     const int metal_err = init_metal_backend(vmaf, c, states);
     if (metal_err)
         return metal_err;
+#endif
+#ifdef HAVE_VULKAN
+    const int vulkan_err = init_vulkan_backend(vmaf, c, states);
+    if (vulkan_err)
+        return vulkan_err;
 #endif
     (void)vmaf;
     (void)states;
@@ -997,6 +1044,7 @@ namespace
         {.suffix = "_sycl", .backend = "sycl"},
         {.suffix = "_hip", .backend = "hip"},
         {.suffix = "_metal", .backend = "metal"},
+        {.suffix = "_vulkan", .backend = "vulkan"},
     };
     const size_t nlen = strlen(feature_name);
     for (const auto &item : table) {
@@ -1018,7 +1066,7 @@ namespace
 namespace
 {
 
-#if defined(HAVE_SYCL) || defined(HAVE_CUDA) || defined(HAVE_HIP) || defined(HAVE_METAL)
+#if defined(HAVE_SYCL) || defined(HAVE_CUDA) || defined(HAVE_HIP) || defined(HAVE_METAL) || defined(HAVE_VULKAN)
 [[nodiscard]] int backend_active(const char *backend, const GpuStates *states)
 {
     if (!strcmp(backend, "sycl")) {
@@ -1049,6 +1097,14 @@ namespace
         return
 #ifdef HAVE_METAL
             states->metal_active ? 1 : 0;
+#else
+            0;
+#endif
+    }
+    if (!strcmp(backend, "vulkan")) {
+        return
+#ifdef HAVE_VULKAN
+            states->vulkan_active ? 1 : 0;
 #else
             0;
 #endif
@@ -2047,6 +2103,10 @@ struct CliRunState {
     if (states->metal_state)
         vmaf_metal_state_free(&states->metal_state);
 #endif
+#ifdef HAVE_VULKAN
+    if (states->vulkan_state)
+        vmaf_vulkan_state_free(&states->vulkan_state);
+#endif
     (void)states;
     return 0;
 }
@@ -2331,7 +2391,7 @@ namespace
     }
     const char *requested_backend = nullptr;
     if (feature_backend_suffix(feature.name, &requested_backend)) {
-#if defined(HAVE_SYCL) || defined(HAVE_CUDA) || defined(HAVE_HIP) || defined(HAVE_METAL)
+#if defined(HAVE_SYCL) || defined(HAVE_CUDA) || defined(HAVE_HIP) || defined(HAVE_METAL) || defined(HAVE_VULKAN)
         if (!backend_active(requested_backend, &state->gpu))
             return reject_inactive_feature_backend(state, feature.name, requested_backend);
 #else

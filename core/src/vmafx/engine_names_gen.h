@@ -35,6 +35,9 @@
 #ifndef VMAFX_ENGINE_EXPORTS_METAL
 #error "VMAFX_ENGINE_EXPORTS_METAL is not set"
 #endif
+#ifndef VMAFX_ENGINE_EXPORTS_VULKAN
+#error "VMAFX_ENGINE_EXPORTS_VULKAN is not set"
+#endif
 #ifndef VMAFX_BUILD_MCP
 #error "VMAFX_BUILD_MCP is not set"
 #endif
@@ -94,6 +97,18 @@
 #if !VMAFX_ENGINE_EXPORTS_HIP
 #define vmaf_hip_list_devices vmaf_engine_hip_list_devices
 #endif /* !VMAFX_ENGINE_EXPORTS_HIP */
+#if !VMAFX_ENGINE_EXPORTS_VULKAN
+#define vmaf_vulkan_available vmaf_engine_vulkan_available
+#endif /* !VMAFX_ENGINE_EXPORTS_VULKAN */
+#if !VMAFX_ENGINE_EXPORTS_VULKAN
+#define vmaf_vulkan_state_init vmaf_engine_vulkan_state_init
+#endif /* !VMAFX_ENGINE_EXPORTS_VULKAN */
+#if !VMAFX_ENGINE_EXPORTS_VULKAN
+#define vmaf_vulkan_import_state vmaf_engine_vulkan_import_state
+#endif /* !VMAFX_ENGINE_EXPORTS_VULKAN */
+#if !VMAFX_ENGINE_EXPORTS_VULKAN
+#define vmaf_vulkan_state_free vmaf_engine_vulkan_state_free
+#endif /* !VMAFX_ENGINE_EXPORTS_VULKAN */
 #if VMAFX_BUILD_MCP
 #define vmaf_mcp_available vmaf_engine_mcp_available
 #endif /* VMAFX_BUILD_MCP */
