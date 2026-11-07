@@ -1,0 +1,50 @@
+name: Bot auto-merge sign-off
+
+# ADR-3389: when Renovate (or another bot) arms platform auto-merge, the
+# enablePullRequestAutoMerge mutation receives no commitBody — Renovate's
+# commitBody config only affects individual branch commits.  With the
+# repository's squash_merge_commit_message set to BLANK, the landed squash
+# would have an empty body and fail the landed-commit-messages gate.
+#
+# This workflow re-arms auto-merge with an explicit body containing the bot's
+# Signed-off-by trailer, so the squash commit lands with a sign-off and without
+# Co-authored-by trailers (which the BLANK setting eliminates).
+#
+# Uses pull_request_target so the script runs from the base branch (master),
+# not from the PR branch — the bot's PR code cannot tamper with the fix.
+
+on:
+  pull_request_target:
+    types: [auto_merge_enabled]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: bot-automerge-signoff-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  fix-body:
+    name: Bot auto-merge sign-off
+    if: github.event.pull_request.user.type == 'Bot'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          sparse-checkout: scripts/ci/fix-bot-automerge-body.py
+          persist-credentials: false
+
+      - name: Re-arm auto-merge with sign-off body
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NODE_ID: ${{ github.event.pull_request.node_id }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          PR_AUTHOR_ID: ${{ github.event.pull_request.user.id }}
+          AUTO_MERGE_BODY: ${{ github.event.pull_request.auto_merge.commit_message || '' }}
+        run: python3 scripts/ci/fix-bot-automerge-body.py
