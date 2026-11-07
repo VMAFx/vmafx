@@ -491,6 +491,7 @@ nav:
       - Container base images: development/base-images.md
       - SYCL zero-copy testing: development/sycl-zerocopy-testing.md
       - Preflight (local CI gate): development/preflight.md
+      - Community metrics: development/community-metrics.md
       - Default model: development/default-model.md
       - Release: development/release.md
       - Inherited Netflix tags: development/inherited-tags.md
