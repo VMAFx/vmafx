@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Checks of the ``-qpfile`` option of the patched encoders (patch 0007).
+"""Checks of the ``-qpfile`` option of the patched encoders (shared fix series patch 0043).
 
 Exits 0 on success, 1 on a failure and 77 when the FFmpeg lacks libx264 or a
 fixture is missing. Needs an FFmpeg built with the series and ``--enable-libx264``

@@ -150,7 +150,7 @@ class FfmpegPatchesSurfaceCheckTests(unittest.TestCase):
         """Planted vmaf_pre in a patch causes series surface check failure."""
         with tempfile.TemporaryDirectory() as td:
             tmp = self._prepare_temp_worktree(Path(td))
-            target_patch = tmp / "ffmpeg-patches" / "0005-add-vmafx-pre-filter.patch"
+            target_patch = tmp / "ffmpeg-patches" / "0004-add-vmafx-pre-filter.patch"
             with target_patch.open("a", encoding="utf-8") as fp:
                 fp.write("\n+/* planted defect: vmaf_pre filter */\n")
 
