@@ -491,6 +491,16 @@ jobs:
         # `python3 scripts/ci/check-dco.py --base origin/master --head HEAD`.
         run: python3 scripts/ci/check-dco.py
 
+      - name: Refuse bot PR with default squash body and non-bot commits
+        env:
+          BASE_SHA: ${{ steps.refs.outputs.base }}
+          HEAD_SHA: ${{ steps.refs.outputs.head }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          AUTO_MERGE_ARMED: ${{ github.event.pull_request.auto_merge != null }}
+          AUTO_MERGE_BODY: ${{ github.event.pull_request.auto_merge.commit_message || '' }}
+        run: python3 scripts/ci/check-bot-squash-body.py
+
   ffmpeg-patches-surface-check:
     needs: tier
     if: needs.tier.outputs.light == 'true'
