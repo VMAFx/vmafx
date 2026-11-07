@@ -62,9 +62,15 @@ from machines the project does not own, and
 - **Cross-backend numerical correctness** — any SIMD / GPU change must pass
   `/cross-backend-diff` with `--tolerance-ulp=2`. If you need a larger
   tolerance, open a CODEOWNERS-approved exception.
-- **License headers** — every new C/C++/CUDA file starts with a header. Use
-  `Copyright 2026 Lusoris` for wholly-new files
-  and the Netflix header for files touched in upstream.
+- **License headers** — every new source file starts with a copyright line and
+  an `SPDX-License-Identifier` line. A file written by an outside contributor
+  carries `Copyright <year> <your name>`, using the contributor's own name,
+  never `Copyright <year> Lusoris`. The `Copyright <year> Lusoris` line is for
+  files written by the project's maintainer
+  ([ADR-0861](docs/adr/0861-vmafx-copyright-policy-drop-anthropic.md),
+  [ADR-3401](docs/adr/3401-outside-contributor-copyright-holder.md)).
+  A file touched from upstream keeps the Netflix header. A change to an
+  existing file leaves its copyright line as it is.
 - **No `git push --force` to `master`**. No `--no-verify` skipping hooks.
   `master` is merge-via-squash-or-ff-only via branch protection.
 

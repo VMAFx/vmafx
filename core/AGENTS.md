@@ -43,13 +43,14 @@ core/
   [../docs/principles.md](../docs/principles.md)). `.clang-tidy` enforces.
 - **License headers**: Netflix-header-preserving for upstream-touched files;
   `Copyright 2026 Lusoris` for wholly-new files.
-  See [ADR-0025](../docs/adr/0025-copyright-handling-dual-notice.md).
+  See [ADR-0861](../docs/adr/0861-vmafx-copyright-policy-drop-anthropic.md)
+  (supersedes ADR-0025 line format).
 - **Style**: K&R, 4-space, 100-char columns, `.clang-format` authoritative.
 - **Banned functions** (see `docs/principles.md §1.2 rule 30`): `gets`,
   `strcpy`, `strcat`, `sprintf`, `strtok`, `atoi`, `atof`, `rand`, `system`.
 - **Every non-void return value is checked or explicitly `(void)`-discarded.**
 - **Every new file starts with license header** (Netflix preserved on
-  upstream-touched; Lusoris/Claude on wholly-new — see ADR-0025).
+  upstream-touched; Lusoris on wholly-new — see ADR-0861).
 - **Fixed-width integer printf formatting uses `<inttypes.h>` PRI macros**
   (`PRId64`, `PRIu64`, `PRIx64`, `PRIu32`, …) — never `(unsigned long)` +
   `%lu` or `(long long)` + `%lld` for `uint64_t` / `int64_t`.

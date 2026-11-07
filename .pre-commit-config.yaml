@@ -237,6 +237,15 @@ repos:
 
   - repo: local
     hooks:
+      # Fragments are excluded from markdownlint, and the concatenator copies a
+      # fragment's comment into the middle of CHANGELOG.md, where MD041 (first
+      # line is a heading) never applies. A directive in a fragment is dead text.
+      - id: changelog-fragment-no-lint-directive
+        name: Changelog fragments carry no markdownlint directive
+        entry: '<!--\s*markdownlint-'
+        language: pygrep
+        files: '^changelog\.d/.*\.md$'
+
       - id: rc1-tester-report-tests
         name: RC1 tester report unit regressions
         entry: python -m pytest -q tools/rc1-tester/tests
@@ -853,6 +862,20 @@ repos:
         entry: python3 scripts/ci/tests/test_check_job_timeout_budget.py
         language: system
         files: '^(\.github/workflows/|scripts/ci/(check_job_timeout_budget\.py|tests/test_check_job_timeout_budget\.py)|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+
+      - id: check-agent-copyright-rule
+        name: Agent rules use the current ADR-0861 copyright line
+        entry: python3 scripts/ci/check_agent_copyright_rule.py
+        language: system
+        files: '(^|/)(AGENTS\.md$|AGENTS\.d/)|^CONTRIBUTING\.md$|^docs/development/|^scripts/ci/(check_agent_copyright_rule|tests/test_check_agent_copyright_rule)\.py$|^\.pre-commit-config\.yaml$'
+        pass_filenames: false
+
+      - id: test-check-agent-copyright-rule
+        name: Agent copyright rule keeps positive, negative and boundary cases
+        entry: python3 scripts/ci/tests/test_check_agent_copyright_rule.py
+        language: system
+        files: '(^|/)(AGENTS\.md$|AGENTS\.d/)|^CONTRIBUTING\.md$|^docs/development/|^scripts/ci/(check_agent_copyright_rule|tests/test_check_agent_copyright_rule)\.py$|^\.pre-commit-config\.yaml$'
         pass_filenames: false
 
       - id: check-release-provenance-assets

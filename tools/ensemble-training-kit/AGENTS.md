@@ -39,8 +39,8 @@ orchestration surface only.
 ## Ground rules
 
 - **Parent rules** apply: see [../../AGENTS.md](../../AGENTS.md).
-- **All kit shell scripts ship dual Lusoris/Claude (Anthropic) copyright
-  header** per [ADR-0025](../../../docs/adr/0025-copyright-handling-dual-notice.md).
+- **Wholly-new fork kit shell scripts carry `Copyright 2026 Lusoris`**
+  per [ADR-0861](../../docs/adr/0861-vmafx-copyright-policy-drop-anthropic.md).
 - **`set -euo pipefail` at top of every script.** Pipes carry errors;
   unset variables fatal. Kit aims for one-fault visibility — operators
   see one problem at a time, not cascade.
@@ -124,8 +124,9 @@ artefacts) — operators rebuild for own host.
 
 ## Governing ADRs
 
-- [ADR-0025](../../../docs/adr/0025-copyright-handling-dual-notice.md) —
-  dual-copyright policy.
+- [ADR-0025](../../docs/adr/0025-copyright-handling-dual-notice.md) —
+  copyright policy; [ADR-0861](../../docs/adr/0861-vmafx-copyright-policy-drop-anthropic.md)
+  = current line format.
 - [ADR-0303](../../../docs/adr/0303-fr-regressor-v2-ensemble-prod-flip.md) —
   production-flip criteria for FR-regressor v2 (verdict consumed by
   `04-validate.sh`).
