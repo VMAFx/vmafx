@@ -36,7 +36,8 @@ After any rename of C source root (currently `core/`, formerly
 grep -n 'COPY.*libvmaf\|cd libvmaf\|/build/vmaf/libvmaf' dev/Containerfile
 ```
 
-`libvmaf-build` stage name and `libvmaf.so`/`--enable-libvmaf`
+`libvmaf-build` stage name, `libvmaf.so`, and `--enable-libvmafx`
+(or stock upstream FFmpeg `--enable-libvmaf`)
 occurrences reference **library product name**, must stay unchanged.
 Only `COPY`, `cd`, and destination-path occurrences referencing
 *source directory* need to track rename.

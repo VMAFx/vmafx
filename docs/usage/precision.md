@@ -22,9 +22,9 @@ Without `--precision` the format is `%.6f`. Any other value is rejected with
 !!! note "Other entry points"
     - The `vmafx` alias defaults to `--precision=max`; `--netflix-compat`
       forces the `%.6f` default back. See [vmafx-cli.md](vmafx-cli.md).
-    - In FFmpeg, the `score_fmt` filter option does the same job for the log
-      file: `score_fmt=%.17g` is the lossless form
-      ([ffmpeg.md](ffmpeg.md#score-precision)).
+    - In FFmpeg, the `score_fmt` option of the `vmafx` filter does the same
+      job for the report file: `score_fmt=%.17g` is the lossless form
+      ([ffmpeg.md](ffmpeg.md#vmafx-filter-option-table)).
 
 ## When to pick each
 

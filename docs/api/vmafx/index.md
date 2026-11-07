@@ -115,7 +115,8 @@ int score(const unsigned char *const *ref, const unsigned char *const *dist, uns
 }
 ```
 
-Build against an installed tree with `pkg-config --cflags --libs libvmafx`;
+Build against an installed tree with `pkg-config --cflags --libs libvmafx`
+or CMake via `find_package(vmafx 1 REQUIRED)` and `vmafx::vmafx`;
 the API lives in `libvmafx.so.1`, and `libvmaf.so.3` is the thin
 compatibility library on top of it (ADR-1852). For a complete program that
 reads two YUV files, scores them and prints the provenance record, see

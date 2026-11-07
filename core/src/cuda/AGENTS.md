@@ -363,20 +363,14 @@ cuda/
 - [ADR-1320](../../../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md) —
   CUDA fatbin and HIP HSACO kernel header dependency tracking via explicit depend_files and compiler depfiles.
 
-- **FFmpeg `libvmaf` filter — `cuda` selector consumer** (fork-local,
-  ADR-0350): in-tree
-  [`ffmpeg-patches/0010-libvmaf-wire-cuda-backend-selector.patch`](../../../ffmpeg-patches/0010-libvmaf-wire-cuda-backend-selector.patch)
-  consumes public CUDA C-API surface
-  (`vmaf_cuda_state_init` / `_state_free` / `_import_state` /
-  `_preallocate_pictures` / `_fetch_preallocated_picture` from
-  [`include/libvmaf/libvmaf_cuda.h`](../../include/libvmaf/libvmaf_cuda.h)). **On
-  rename / signature change of any of those entry points**: FFmpeg
-  patch must update in same PR per CLAUDE.md §12 r14. Verify by
-  cumulative `git am --3way` replay of every entry in
-  `ffmpeg-patches/series.txt` against pristine FFmpeg `n9.0.2`.
-  CUDA filter selector mirrors picture-pool ownership contract above: state is
-  freed only after `vmaf_close()` returns exactly 0. Every nonzero result retains
-  context and state for retry; reversing order violates ownership.
+- **FFmpeg `vmafx` filter — CUDA frame consumer** (fork-local, ADR-2125, ADR-2023):
+  [`ffmpeg-patches/0004-add-vmafx-filter.patch`](../../../ffmpeg-patches/0004-add-vmafx-filter.patch)
+  (source `ffmpeg-patches/src/vf_vmafx.c`, `cuda_open` / `cuda_import`) opens the device with
+  `vmafx_device_create()` and hands CUDA frames over with `vmafx_context_import_frame()`; it
+  calls no `include/libvmaf/libvmaf_cuda.h` function. Patch `0010` (libvmaf `cuda` selector)
+  is retired. **On rename / signature change of those VMAFx entry points**: patch 0004 updates
+  in same PR. Verify by cumulative `git am --3way` replay of `ffmpeg-patches/series.txt`
+  against pristine FFmpeg at the tag in `build-config.env`.
 
 ## Build
 

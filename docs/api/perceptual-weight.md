@@ -173,15 +173,15 @@ dereference; NaN/Inf inputs are clamped.
 
 ## FFmpeg integration
 
-The `vf_libvmaf` filter exposes a boolean `perceptual_weight` AVOption
+The `vf_vmafx` filter exposes a boolean `perceptual_weight` AVOption
 (**default 0 = OFF**). When set, the filter reads any Pelorus blob off the
 distorted frame (`av_frame_get_side_data(..., AV_FRAME_DATA_SEI_UNREGISTERED)`)
-and drives this API per frame. The wiring ships as
-[`ffmpeg-patches/0017-libvmaf-read-pelorus-sidedata.patch`](../../ffmpeg-patches/0017-libvmaf-read-pelorus-sidedata.patch).
+and drives this API per frame. The wiring ships in
+[`ffmpeg-patches/src/vf_vmafx.c`](../../ffmpeg-patches/src/vf_vmafx.c).
 
 ```text
 ffmpeg -i dist.mp4 -i ref.mp4 \
-  -lavfi "[0:v][1:v]libvmaf=perceptual_weight=1" -f null -
+  -lavfi "[0:v][1:v]vmafx=perceptual_weight=1" -f null -
 ```
 
 With `perceptual_weight=0` (the default) the filter behaves exactly like

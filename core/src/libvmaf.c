@@ -3592,6 +3592,23 @@ static int translate_picture_device(VmafContext *vmaf, VmafPicture *pic, VmafPic
     return err;
 }
 
+/* A frame of the VMAFx API in HIP (ADR-2092) or SYCL (ADR-2091) device
+ * memory reaches the twins of its backend in the host slot, where they look
+ * for their pictures; a CUDA twin cannot read it, and it is never copied. */
+static int translate_picture_foreign_device(VmafPicture *pic, VmafPicture *pic_host,
+                                            unsigned hw_flags, const char *backend)
+{
+    *pic_host = *pic;
+    if (hw_flags & HW_FLAG_DEVICE) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "a CUDA extractor would read a frame in %s device memory; device frames are "
+                 "read by twins of their backend only\n",
+                 backend);
+        return -ENOTSUP;
+    }
+    return 0;
+}
+
 static int translate_picture(VmafContext *vmaf, VmafPicture *pic, VmafPicture *pic_host,
                              VmafPicture *pic_device, unsigned hw_flags)
 {
@@ -3607,17 +3624,9 @@ static int translate_picture(VmafContext *vmaf, VmafPicture *pic, VmafPicture *p
         *pic_device = *pic;
         return translate_picture_device(vmaf, pic, pic_host, hw_flags);
     case VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE:
-        /* A frame of the VMAFx API in HIP device memory (ADR-2092) reaches
-         * the HIP twins in the host slot, where they look for their
-         * pictures; a CUDA twin cannot read it, and it is never copied. */
-        *pic_host = *pic;
-        if (hw_flags & HW_FLAG_DEVICE) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR, "a CUDA extractor would read a frame in HIP device "
-                                           "memory; device frames are read by twins of their "
-                                           "backend only\n");
-            return -ENOTSUP;
-        }
-        return 0;
+        return translate_picture_foreign_device(pic, pic_host, hw_flags, "HIP");
+    case VMAF_PICTURE_BUFFER_TYPE_SYCL_DEVICE:
+        return translate_picture_foreign_device(pic, pic_host, hw_flags, "SYCL");
     default:
         return -EINVAL;
     }

@@ -19,6 +19,7 @@
  */
 
 #include <math.h>
+#include <stddef.h>
 
 #include "float_bits.h"
 #include "test.h"
@@ -100,12 +101,21 @@ static char *test_empty_plane_is_nan(void)
 
 static char *test_float_motion_scaler(void)
 {
-    mu_assert("bpc 8 scaler must be 1.0", vmaf_float_motion_scaler(8u) == 1.0f);
-    mu_assert("bpc 10 scaler must be 4.0", vmaf_float_motion_scaler(10u) == 4.0f);
-    mu_assert("bpc 12 scaler must be 16.0", vmaf_float_motion_scaler(12u) == 16.0f);
-    mu_assert("bpc 16 scaler must be 256.0", vmaf_float_motion_scaler(16u) == 256.0f);
-    mu_assert("default scaler must be 1.0", vmaf_float_motion_scaler(0u) == 1.0f);
-    mu_assert("unknown bpc scaler must be 1.0", vmaf_float_motion_scaler(14u) == 1.0f);
+    static const struct {
+        unsigned bpc;
+        float expected;
+        char *msg;
+    } table[] = {
+        {8u, 1.0f, "bpc 8 scaler must be 1.0"},       {10u, 4.0f, "bpc 10 scaler must be 4.0"},
+        {12u, 16.0f, "bpc 12 scaler must be 16.0"},   {16u, 256.0f, "bpc 16 scaler must be 256.0"},
+        {0u, 1.0f, "default scaler must be 1.0"},     {9u, 2.0f, "bpc 9 scaler must be 2.0"},
+        {11u, 8.0f, "bpc 11 scaler must be 8.0"},     {14u, 64.0f, "bpc 14 scaler must be 64.0"},
+        {15u, 128.0f, "bpc 15 scaler must be 128.0"}, {17u, 1.0f, "bpc 17 scaler must be 1.0"},
+    };
+    for (size_t i = 0; i < sizeof(table) / sizeof(table[0]); i++) {
+        mu_assert(table[i].msg, vmaf_test_identical_f32(vmaf_float_motion_scaler(table[i].bpc),
+                                                        table[i].expected));
+    }
     return NULL;
 }
 

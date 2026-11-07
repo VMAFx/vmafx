@@ -522,6 +522,16 @@ class DcoWiringTest(unittest.TestCase):
         cfg = json.loads(self.read("renovate.json"))
         self.assertEqual(cfg.get("commitBody"), "Signed-off-by: {{{gitAuthor}}}")
 
+    def test_bot_automerge_signoff_workflow_wiring(self) -> None:
+        wf_path = ROOT / ".github" / "workflows" / "bot-automerge-signoff.yml"
+        self.assertTrue(wf_path.exists(), "bot-automerge-signoff.yml missing")
+        text = self.read(".github/workflows/bot-automerge-signoff.yml")
+        self.assertIn("pull_request_target", text)
+        self.assertIn("auto_merge_enabled", text)
+        self.assertIn("python3 scripts/ci/fix-bot-automerge-body.py", text)
+        for var in ("PR_NODE_ID", "PR_AUTHOR_TYPE", "AUTO_MERGE_BODY"):
+            self.assertIn(var, text)
+
 
 if __name__ == "__main__":
     unittest.main()

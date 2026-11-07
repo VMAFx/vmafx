@@ -64,6 +64,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/float_moment_scaler.h"
 #include "feature/nonfinite_score.h"
 #include "feature/iqa/decimate_dim.h"
 #include "cuda/integer_ssim_cuda.h"
@@ -293,17 +294,11 @@ static int integer_ssim_init_unwind(VmafFeatureExtractor *fex, SsimStateCuda *s,
     return rc;
 }
 
-/* picture_copy(): 10 / 12 / 16-bit samples are uint16 divided by 4 / 16 /
- * 256 (exact, so a reciprocal multiply matches); 8-bit samples are unscaled. */
+/* picture_copy(): 10..16-bit samples are uint16 divided by 2^(bpc - 8)
+ * (exact, so a reciprocal multiply matches); 8-bit samples are unscaled. */
 static float float_ssim_sample_scale(unsigned bpc)
 {
-    if (bpc == 10u)
-        return 1.0f / 4.0f;
-    if (bpc == 12u)
-        return 1.0f / 16.0f;
-    if (bpc == 16u)
-        return 1.0f / 256.0f;
-    return 1.0f;
+    return 1.0f / (float)vmaf_float_moment_scaler(bpc);
 }
 
 /* float_ssim_configure - the resolved scale, the decimated plane and the SSIM

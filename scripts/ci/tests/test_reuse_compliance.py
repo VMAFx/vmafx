@@ -120,13 +120,13 @@ class ReuseComplianceTests(unittest.TestCase):
                 {"christosb", "Lusoris"},
             ),
             # FFmpeg derivatives follow the exact source units they patch.
-            "ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch": (
+            "ffmpeg-patches/0001-codec-qpfile-unified.patch": (
                 {"LGPL-2.1-or-later"},
                 {"the FFmpeg developers", "Lusoris"},
             ),
-            "ffmpeg-patches/0006-libvmaf-add-libvmaf-vulkan-filter.patch": (
+            "ffmpeg-patches/0006-fftools-loopback-decoder-hwaccel.patch": (
                 {"LGPL-2.1-or-later"},
-                {"the FFmpeg developers", "Lawrence Curtis", "Lusoris"},
+                {"the FFmpeg developers", "Lusoris"},
             ),
             # A vendored Helm dependency keeps its upstream chart's licence (ADR-1699).
             "deploy/helm/vmafx/charts/prometheus-pushgateway-3.9.0.tgz": (

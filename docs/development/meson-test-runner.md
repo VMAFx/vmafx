@@ -54,15 +54,47 @@ and
 [oneAPI install](oneapi-install.md), which should be run through the wrapper).
 This repository cannot control an arbitrary command typed outside its wrappers.
 
-The control is an explicit-name denylist, not automatic secret discovery. When a
-runner or
-tool introduces another credential-bearing environment name, update all three
-surfaces in
-one change:
+The wrapper removes the twelve listed names plus every name that matches a
+credential pattern ([ADR-3400](../adr/3400-meson-testlog-credential-patterns.md)):
+any name containing `TOKEN` (but not `TOKENIZER`, as in
+`TOKENIZERS_PARALLELISM`), `SECRET`, `PASSWORD`, `PASSWD`, `CREDENTIAL`,
+`API_KEY`, `APIKEY`, `ACCESS_KEY` or `PRIVATE_KEY`, any name that is `PAT`
+or ends in `_PAT`, and any name with an `AUTH` word such as
+`DOCKER_AUTH_CONFIG` (never `AUTHOR`), in any letter case. Only names are matched; values are never
+read. A credential exported under another name, such as `MY_ODD_PAT` or
+`LITELLM_API_KEY`, therefore no longer reaches either log through the wrapper.
+The default setup in `core/meson.build` still unsets only the twelve listed
+names, because Meson can unset only names it is given. When a runner or tool
+introduces another credential-bearing name that the pattern misses, update all
+three surfaces in one change:
 
 1. `scripts/ci/run_meson_test.py`;
 2. the default setup in `core/meson.build`; and
 3. `core/test/test_meson_secret_env_sanitization.py`.
+
+## Finding logs written by a direct run
+
+A direct run still leaves the values in the gitignored build directory. The
+pre-commit hook `testlog-credential-scan` walks the checkout for
+`meson-logs/testlog*.txt` and `testlog*.json` and fails when a line holds a
+credential-shaped value (GitHub `ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_` tokens,
+`github_pat_` tokens, `sk-` keys, AWS `AKIA` key ids). It prints the log path
+and a line count, never a value. Run it by hand on any checkout:
+
+```bash
+python3 scripts/ci/check_testlog_credentials.py            # current folder
+python3 scripts/ci/check_testlog_credentials.py ../other   # another root
+```
+
+On a finding, delete the named `meson-logs` directory and rerun the tests
+through the wrapper. Exit codes: 0 clean, 1 a finding, 2 a read error, a
+missing root, a log that is not a regular file, or a bound exceeded.
+
+The scan recognises the value shapes listed above only. A credential in
+another shape, such as the base64 registry login in `DOCKER_AUTH_CONFIG`,
+is invisible to it; for those the wrapper's name pattern is the only barrier.
+The opt-in native pre-commit hook (`VMAFX_NATIVE_HOOKS=1`) does not run the
+scan at commit time; the framework pre-push hook still runs it.
 
 ## Maintaining the regression test
 
