@@ -134,9 +134,9 @@ def run_check(repo: Path, base: str, head: str, **env_overrides: str) -> int:
     return result.returncode
 
 
-def test_refuse_bot_null_body_human_commit(tmp: Path) -> None:
+def test_refuse_bot_null_body_human_commit(tmp_path: Path) -> None:
     """PLANTED CASE: the exact recurrence path that landed bot Co-authored-by on master."""
-    repo = make_repo(tmp)
+    repo = make_repo(tmp_path)
     base = git(repo, "rev-parse", "HEAD")
     add_human_commit(repo)
     head = git(repo, "rev-parse", "HEAD")
@@ -145,9 +145,9 @@ def test_refuse_bot_null_body_human_commit(tmp: Path) -> None:
     print("  PASS: refuses bot PR + null body + human commit")
 
 
-def test_pass_explicit_body(tmp: Path) -> None:
+def test_pass_explicit_body(tmp_path: Path) -> None:
     """Explicit commit body → safe, even with a human commit."""
-    repo = make_repo(tmp)
+    repo = make_repo(tmp_path)
     base = git(repo, "rev-parse", "HEAD")
     add_human_commit(repo)
     head = git(repo, "rev-parse", "HEAD")
@@ -158,9 +158,9 @@ def test_pass_explicit_body(tmp: Path) -> None:
     print("  PASS: allows explicit commit body")
 
 
-def test_pass_no_auto_merge(tmp: Path) -> None:
+def test_pass_no_auto_merge(tmp_path: Path) -> None:
     """Auto-merge not armed → safe."""
-    repo = make_repo(tmp)
+    repo = make_repo(tmp_path)
     base = git(repo, "rev-parse", "HEAD")
     add_human_commit(repo)
     head = git(repo, "rev-parse", "HEAD")
@@ -169,9 +169,9 @@ def test_pass_no_auto_merge(tmp: Path) -> None:
     print("  PASS: allows when auto-merge not armed")
 
 
-def test_pass_human_pr(tmp: Path) -> None:
+def test_pass_human_pr(tmp_path: Path) -> None:
     """Human-opened PR → not a bot PR, safe."""
-    repo = make_repo(tmp)
+    repo = make_repo(tmp_path)
     base = git(repo, "rev-parse", "HEAD")
     add_human_commit(repo)
     head = git(repo, "rev-parse", "HEAD")
@@ -180,9 +180,9 @@ def test_pass_human_pr(tmp: Path) -> None:
     print("  PASS: allows human-opened PR")
 
 
-def test_pass_only_bot_commits(tmp: Path) -> None:
+def test_pass_only_bot_commits(tmp_path: Path) -> None:
     """Bot PR with only bot commits → safe (default body lists only the bot)."""
-    repo = make_repo(tmp)
+    repo = make_repo(tmp_path)
     base = git(repo, "rev-parse", "HEAD")
     add_bot_commit(repo)
     head = git(repo, "rev-parse", "HEAD")
