@@ -4,10 +4,10 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 from pathlib import Path
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 
@@ -19,7 +19,7 @@ def git_init(root: Path) -> None:
         (git, "init", "-q", str(root)),
         allowed_executables=(git,),
         # Without the hook's GIT_DIR: the fixture, not the caller's repository.
-        env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+        env=git_env.drop(),
         capture_output=True,
         check=True,
         timeout_seconds=60,

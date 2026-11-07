@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
 import shutil
 import sys
 import tempfile
@@ -26,6 +25,7 @@ import yaml  # type: ignore[import-untyped]
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -248,7 +248,7 @@ class RustCIWorkflowContractTest(unittest.TestCase):
         """Validate merge-base aware impact planning for stacked/non-master PRs."""
         with tempfile.TemporaryDirectory() as repo_dir, tempfile.TemporaryDirectory() as out_dir:
             env = {
-                **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+                **git_env.drop(),
                 "GIT_AUTHOR_NAME": "t",
                 "GIT_AUTHOR_EMAIL": "t@t",
                 "GIT_COMMITTER_NAME": "t",

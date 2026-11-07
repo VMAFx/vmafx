@@ -34,7 +34,6 @@ Wired into ``make docs-fragments-check`` / ``make docs-fragments-write``
 from __future__ import annotations
 
 import argparse
-import os
 import posixpath
 import re
 import sys
@@ -46,6 +45,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from scripts.lib import git_env  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 PAGES_DIR = "AGENTS.d"
@@ -437,7 +437,7 @@ def directories_from(files: Iterable[str]) -> list[str]:
 def discover(root: Path) -> list[str]:
     """List every directory with an ``AGENTS.d/`` that Git does not ignore."""
 
-    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment = git_env.drop()
     result = run_command(
         ("git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard"),
         allowed_executables=("git",),

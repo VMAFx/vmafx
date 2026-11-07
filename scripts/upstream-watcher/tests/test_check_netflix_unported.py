@@ -8,9 +8,14 @@ import importlib.util
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib import git_env
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "check_netflix_unported.py"
 SPEC = importlib.util.spec_from_file_location("check_netflix_unported", SCRIPT_PATH)
@@ -28,7 +33,7 @@ EXPECTED_JSON_ITEMS = 2
 
 def clean_git_environment() -> dict[str, str]:
     """Return the caller's environment without keys that start with "GIT_"."""
-    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment = git_env.drop()
     environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
     return environment
 
@@ -38,7 +43,8 @@ SAVED_GIT_ENVIRONMENT: dict[str, str] = {}
 
 def setup_module() -> None:
     """Keep a hook's GIT_* away from the script's own git calls."""
-    for key in [key for key in os.environ if key.startswith("GIT_")]:
+    clean = git_env.drop()
+    for key in [key for key in os.environ if key not in clean]:
         SAVED_GIT_ENVIRONMENT[key] = os.environ.pop(key)
 
 

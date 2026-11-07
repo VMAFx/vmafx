@@ -23,6 +23,7 @@ from typing import IO, TypedDict
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import CommandTimedOut
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -133,7 +134,7 @@ def series(repo: Path) -> list[str]:
 
 def isolated_git_environment() -> dict[str, str]:
     """Caller environment without GIT_* (hooks export them; -C cannot override)."""
-    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment = git_env.drop()
     environment.update(
         LC_ALL="C",
         GIT_TERMINAL_PROMPT="0",

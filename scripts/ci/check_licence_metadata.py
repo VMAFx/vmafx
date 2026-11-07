@@ -50,6 +50,7 @@ from unittest import mock
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from scripts.lib import git_env  # noqa: E402
 from scripts.lib.safe_subprocess import (  # noqa: E402
     CommandTimedOut,
     CommandValidationError,
@@ -143,7 +144,7 @@ def git_environment(root: Path) -> dict[str, str]:
     caller's repository, so they are dropped."""
     if root.resolve() == REPO_ROOT.resolve():
         return dict(os.environ)
-    return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    return git_env.drop()
 
 
 def tracked_files(root: Path, paths: list[Path]) -> set[Path]:

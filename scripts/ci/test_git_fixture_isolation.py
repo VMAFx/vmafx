@@ -43,6 +43,7 @@ except ImportError:
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import CommandResult
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -107,13 +108,36 @@ CODE_GIT_WRITE = re.compile(
     r"""|["']config["']\s*,\s*(?:["']--(?:local|global|worktree|system|add|replace-all)["']\s*,\s*)*"""
     r"""["'][\w.-]+\.[\w.-]+["']\s*,\s*\S"""
 )
-# What counts as dropping the caller's variables: the two shell helpers (or their loop), and a
-# filter on the GIT_ prefix in Python, Node and Go.
+# What counts as dropping the caller's variables: the two shell helpers (or their loop), the
+# Python twin (scripts/lib/git_env.py), and a filter on the GIT_ prefix in Node and Go. An
+# inline Python filter is NOT a marker any more: scripts/lib/git_env.py is the one
+# implementation (issue #3324) and test_no_python_file_filters_the_git_prefix_inline refuses
+# the copies.
 ISOLATION_MARKER = re.compile(
     r"""(?:clean|drop)-git-env\.sh|compgen -A variable GIT_"""
-    r"""|startswith\(\s*\(?\s*["']GIT_|startsWith\(\s*["']GIT_|HasPrefix\([^)\n]*"GIT_"""
+    r"""|startsWith\(\s*["']GIT_|HasPrefix\([^)\n]*"GIT_"""
     r"""|clean_git_environment\(|\bgit_environment\("""
+    r"""|git_env\.(?:drop|hermetic)\(|from scripts\.lib import git_env"""
+    r"""|from scripts\.lib\.git_env import"""
 )
+# One implementation of the GIT_* scrub: a Python file outside these two may not spell the
+# prefix filter inline. git_env.py is the implementation; this checker plants the literal
+# forms as negative controls and cannot scan itself for them.
+INLINE_GIT_FILTER = re.compile(r"""startswith\(\s*\(?\s*(?:["']\w+["']\s*,\s*)*["']GIT_""")
+INLINE_FILTER_ALLOWED = frozenset(
+    {
+        "scripts/lib/git_env.py",
+        "scripts/ci/test_git_fixture_isolation.py",
+    }
+)
+# One file, one reason, one expiry: a tracked Python file that keeps an inline GIT_* filter.
+INLINE_FILTER_EXCEPTION_EXPIRY = "2026-12-31"
+INLINE_FILTER_EXCEPTIONS = {
+    "tools/rc1-tester/image/licensing.py": (
+        "copied alone into the tester image as /tool/licensing.py; scripts.lib is not in "
+        "the container (published-rc-licence-companions.yml)"
+    ),
+}
 # One file, one reason, one expiry: a file whose git runs isolated in a way the marker cannot
 # see, with the place that does it. The sentinel run covers every test script among them.
 ISOLATION_EXCEPTION_EXPIRY = "2026-12-31"
@@ -251,7 +275,7 @@ def commit_starts_background_work(repository: Path) -> bool:
 
 def sentinel_environment(sentinel: Path) -> dict[str, str]:
     """The environment a git hook gives its children: GIT_DIR and GIT_INDEX_FILE."""
-    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment = git_env.drop()
     environment.update(GIT_DIR=str(sentinel / ".git"), GIT_INDEX_FILE=str(sentinel / ".git/index"))
     environment["GIT_CONFIG_NOSYSTEM"] = "1"
     # Auto-maintenance would race the snapshot with a transient objects/maintenance.lock.
@@ -319,7 +343,7 @@ def snapshot(directory: Path) -> dict[str, bytes]:
 
 def clean_git_environment() -> dict[str, str]:
     """Return a deterministic environment with all caller Git state removed."""
-    clean = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    clean = git_env.drop()
     clean.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull, LC_ALL="C")
     return clean
 
@@ -616,6 +640,61 @@ class GitFixtureIsolation(unittest.TestCase):
             script.write_text(body)
             self.assertEqual(sentinel_damage(str(script), root), [])
 
+    def test_no_python_file_filters_the_git_prefix_inline(self) -> None:
+        # One implementation of the GIT_* scrub (issue #3324): scripts/lib/git_env.py.
+        # An inline copy fixed in one file does not reach the others, and a drop-only
+        # fixture still reads the user's global git configuration.
+        today = datetime.date.today().isoformat()
+        offenders = []
+        for name in tracked_files():
+            if not name.endswith(".py") or name in INLINE_FILTER_ALLOWED:
+                continue
+            path = ROOT / name
+            if not path.is_file():
+                continue
+            if INLINE_GIT_FILTER.search(path.read_text(encoding="utf-8", errors="replace")):
+                if name in INLINE_FILTER_EXCEPTIONS and today <= INLINE_FILTER_EXCEPTION_EXPIRY:
+                    continue
+                offenders.append(name)
+        self.assertEqual(
+            offenders,
+            [],
+            "inline GIT_* filter; build the environment with scripts/lib/git_env.py "
+            "(drop()/hermetic()):\n" + "\n".join(offenders),
+        )
+
+    def test_inline_filter_exceptions_are_live_and_needed(self) -> None:
+        self.assertGreaterEqual(
+            INLINE_FILTER_EXCEPTION_EXPIRY, datetime.date.today().isoformat(), "exceptions expired"
+        )
+        for name, reason in INLINE_FILTER_EXCEPTIONS.items():
+            with self.subTest(name=name):
+                self.assertTrue(reason)
+                text = (ROOT / name).read_text(encoding="utf-8", errors="replace")
+                self.assertTrue(INLINE_GIT_FILTER.search(text), "no longer needed: remove it")
+
+    def test_the_inline_filter_rule_refuses_the_planted_copies(self) -> None:
+        planted = {
+            "t.py": (
+                'env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}\n',
+                "        self.env = {key: value for key, value in os.environ.items()\n"
+                '                   if not key.startswith("GIT_")}\n',
+                'clean = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "GH_"))}\n',
+                '    for key in [key for key in os.environ if key.startswith("GIT_")]:\n',
+            ),
+        }
+        for name, texts in planted.items():
+            for text in texts:
+                with self.subTest(name=name, text=text[:60]):
+                    self.assertTrue(INLINE_GIT_FILTER.search(text))
+        for allowed in (
+            "from scripts.lib.git_env import hermetic\nenv = hermetic()\n",
+            "environment = git_env.drop()\n",
+            "from scripts.lib import git_env\nclean = git_env.drop() | extra\n",
+        ):
+            with self.subTest(allowed=allowed[:60]):
+                self.assertIsNone(INLINE_GIT_FILTER.search(allowed))
+
     def test_no_script_creates_or_configures_a_repository_unisolated(self) -> None:
         today = datetime.date.today().isoformat()
         offenders = []
@@ -672,11 +751,13 @@ class GitFixtureIsolation(unittest.TestCase):
             "t.sh": '. "$ROOT/scripts/lib/clean-git-env.sh"\ngit init -q\ngit config core.bare true\n',
             "u.sh": '. "$ROOT/scripts/lib/drop-git-env.sh"\ngit clone -q "$url" "$dir"\n',
             "t.py": (
-                'env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}\n'
+                "from scripts.lib import git_env\n"
+                "env = git_env.drop()\n"
                 'subprocess.run(["git", "init"], env=env)\n'
             ),
             "u.py": (
-                'env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "GH_"))}\n'
+                "from scripts.lib import git_env\n"
+                'env = git_env.drop(prefixes=("GIT_", "GH_"))\n'
                 'self.git("config", "core.bare", "true")\n'
             ),
         }

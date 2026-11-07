@@ -25,6 +25,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from scripts.lib import git_env  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 PYPROJECT = REPO_ROOT / "python" / "pyproject.toml"
@@ -237,7 +238,7 @@ def _git_tree(root: Path, files: dict[str, str]) -> Path:
         (root / name).write_text(text, encoding="utf-8")
     # Without the caller's GIT_* variables: under a commit hook GIT_INDEX_FILE
     # (and GIT_DIR) would turn these commands into writes to the caller's index.
-    environment = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    environment = git_env.drop()
     git = shutil.which("git")
     assert git is not None, "git is not on PATH"
     for command in (["init", "-q"], ["add", "-A"]):

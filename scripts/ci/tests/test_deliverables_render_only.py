@@ -17,9 +17,14 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib import git_env
 
 ROOT = Path(__file__).resolve().parents[3]
 GATE = ROOT / "scripts" / "ci" / "deliverables-check.sh"
@@ -70,7 +75,7 @@ class RenderOnlyGateTest(unittest.TestCase):
         self.git("checkout", "-q", "-b", "render")
 
     def git(self, *args: str) -> str:
-        env = {**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, **IDENT}
+        env = {**git_env.drop(), **IDENT}
         done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
             [GIT, *args], cwd=self.repo, env=env, capture_output=True, text=True, check=True
         )
@@ -89,7 +94,7 @@ class RenderOnlyGateTest(unittest.TestCase):
 
     def gate(self, body: str = BODY) -> subprocess.CompletedProcess[str]:
         env = {k: v for k, v in os.environ.items() if k not in ("PR_BODY", "BASE_SHA", "HEAD_SHA")}
-        env = {k: v for k, v in env.items() if not k.startswith("GIT_")}
+        env = git_env.drop(env)
         env.update(PR_BODY=body, BASE_SHA=self.base, HEAD_SHA=self.git("rev-parse", "HEAD").strip())
         return subprocess.run(  # noqa: S603 -- fixed argv, no shell, gate under test
             [BASH, str(GATE)], cwd=self.repo, env=env, capture_output=True, text=True, check=False

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -23,9 +22,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
-
 from scripts.ci import run_affected_suites as runner  # noqa: E402
 from scripts.ci import suite_registry as registry_lib  # noqa: E402
+from scripts.lib import git_env  # noqa: E402
 
 SCRIPT = ROOT / "scripts" / "ci" / "run_affected_suites.py"
 GIT = shutil.which("git")
@@ -184,7 +183,7 @@ class RunTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="affected-run-")
         self.addCleanup(self._tmp.cleanup)
         self.repo = Path(self._tmp.name)
-        self.env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        self.env = git_env.drop()
         self.git("init", "-q")
 
     def git(self, *args: str) -> None:

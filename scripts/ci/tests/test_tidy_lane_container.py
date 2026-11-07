@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """The clang-tidy lanes are measured in the dev container (ADR-1471).
 
+
 Three things can drift apart without anyone seeing it, and each one turns a
 baseline into numbers no other machine reproduces:
 
@@ -28,6 +29,10 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib import git_env
 
 ROOT = Path(__file__).resolve().parents[3]
 MAKEFILE = ROOT / "Makefile"
@@ -261,7 +266,7 @@ class HostSide(unittest.TestCase):
         self.out = self.tmp / "reports"
 
     def _git(self, *args: str) -> None:
-        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env = git_env.drop()
         git = shutil.which("git")
         self.assertIsNotNone(git, "git is needed to build the fixture checkout")
         assert git is not None
@@ -270,7 +275,7 @@ class HostSide(unittest.TestCase):
         )
 
     def _run(self, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
-        environ = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        environ = git_env.drop()
         environ.update(
             PATH=f"{self.docker_dir / 'bin'}{os.pathsep}{environ['PATH']}",
             FAKE_DOCKER_DIR=str(self.docker_dir),

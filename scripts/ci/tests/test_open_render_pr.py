@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Tests for the scheduled render pull request opener (ADR-3373).
 
+
 Verifies author and cross-repository filtering for open PRs, auto-merge arming
 on parent==base early exit, detection of untracked files in rendered paths,
 and required environment validation.
@@ -11,12 +12,16 @@ and required environment validation.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib import git_env
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "ci" / "open-render-pr.sh"
@@ -130,7 +135,7 @@ RENDERED_FILES = (
 
 def fixture_env() -> dict[str, str]:
     """Environment for fixture git calls, without the caller's GIT_* variables."""
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env = git_env.drop()
     env.update(
         GIT_CONFIG_GLOBAL="/dev/null",
         GIT_CONFIG_SYSTEM="/dev/null",
@@ -217,7 +222,7 @@ class OpenRenderPrTest(unittest.TestCase):
         extra_env: dict[str, str] | None = None,
         remove_env: tuple[str, ...] = (),
     ) -> subprocess.CompletedProcess[str]:
-        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env = git_env.drop()
         env.update(
             PATH=f"{self.bin_dir}:{env.get('PATH', '')}",
             STUB_STATE_DIR=str(self.state_dir),

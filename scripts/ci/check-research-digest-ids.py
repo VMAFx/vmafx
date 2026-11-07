@@ -26,6 +26,7 @@ from typing import Any, Iterable, NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import (
     BinaryCommandResult,
     CommandOutputLimitExceeded,
@@ -178,7 +179,7 @@ def load_baseline(path: Path) -> dict[str, Any]:
 
 
 def _git_environment() -> dict[str, str]:
-    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env = git_env.drop()
     env.update({"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "LC_ALL": "C"})
     return env
 

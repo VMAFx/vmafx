@@ -28,7 +28,6 @@ import argparse
 import collections
 import csv
 import io
-import os
 import shutil
 import sys
 import tempfile
@@ -36,6 +35,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 # Every suffix pre-commit's `identify` maps to the hook's types_or (c, c++,
@@ -99,7 +99,7 @@ def findings(flawfinder: str, source: Path) -> list[tuple[int, str, str]]:
 def git_output(git: str, args: list[str], cwd: Path) -> tuple[int, str]:
     # Read-only git in `cwd`; the hook's GIT_DIR / GIT_INDEX_FILE are dropped so
     # `cwd` alone names the repository.
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env = git_env.drop()
     proc = run_command(
         [git, *args],
         allowed_executables=(git,),
