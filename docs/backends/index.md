@@ -30,7 +30,10 @@ the cross-backend parity gate; "bit-identical" is defined under
     HIP and Metal are opt-in at run time: without `--backend hip` /
     `--hip_device` (or the Metal equivalents) the backend is never used, even
     in a binary built with it. The Vulkan backend was removed in
-    [ADR-0726](../adr/0726-drop-vulkan-backend.md).
+    [ADR-0726](../adr/0726-drop-vulkan-backend.md) and returns as an
+    opt-in, integer-first path in
+    [ADR-3402](../adr/3402-vulkan-integer-compute-opt-in.md),
+    registered by feature name and parity-gated.
 
 <!-- >>> CHART twin-exactness: generated, do not edit -->
 <!-- markdownlint-capture -->
@@ -222,8 +225,11 @@ run against CPU-golden equality assertions.
   Metal-twin gap.
 - [Kernel scaffolding templates](kernel-scaffolding.md) and the
   [context-API contract](context-api-contract.md): for backend contributors.
-- [Vulkan](vulkan/overview.md): removed in ADR-0726; historical reference
-  only.
+- [Vulkan](vulkan/overview.md): opt-in, integer-first revival behind
+  `-Denable_vulkan=enabled` (ADR-3402, default disabled; `integer_adm`
+  first, parity-gated; no CI rows). The ADR-0726 removal stands for the
+  fp pipeline, CI lanes and public API; the ADR-0726-era history stays
+  on the page.
 
 Not every feature has every twin. The coverage matrix is in
 [feature metrics](../metrics/features.md) and in each per-backend page.
