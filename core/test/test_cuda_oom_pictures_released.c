@@ -18,6 +18,10 @@
  * memory back and submits the same index again: the pair has to be fetchable
  * and the retry has to score. An alarm turns a hang into a failed run.
  *
+ * Luma-sized allocation probes separate an ineffective hog (WDDM paging)
+ * from delayed driver memory return and a broken pair/ring after OOM
+ * (issue #3277).
+ *
  * The test skips (exit 77) when no CUDA device is visible.
  */
 
@@ -44,6 +48,7 @@
 
 #define FRAME_W 1920u
 #define FRAME_H 1080u
+#define PROBE_BYTES ((size_t)FRAME_W * FRAME_H)
 #define WATCHDOG_SECONDS 60u
 #define MAX_CHUNKS 4096u
 /* Chunk sizes, largest first; the driver keeps less than the smallest free. */
@@ -53,17 +58,40 @@ static const size_t CHUNK_BYTES[] = {(size_t)1 << 30, (size_t)64 << 20, (size_t)
 typedef struct {
     CUdeviceptr chunks[MAX_CHUNKS];
     unsigned count;
+    size_t bytes;
 } Hog;
+
+static int probe_alloc(const VmafCudaState *state, size_t bytes)
+{
+    if (state->f->cuCtxPushCurrent(state->ctx) != CUDA_SUCCESS) {
+        return -1;
+    }
+    CUdeviceptr chunk = 0;
+    const CUresult alloc_rc = state->f->cuMemAlloc(&chunk, bytes);
+    /* 1 = allocated and freed, 0 = refused for lack of memory, -1 = any other failure. */
+    int result = -1;
+    if (alloc_rc == CUDA_SUCCESS) {
+        result = state->f->cuMemFree(chunk) == CUDA_SUCCESS ? 1 : -1;
+    } else if (vmaf_cuda_result_to_errno((int)alloc_rc) == -ENOMEM) {
+        result = 0;
+    } else if (fprintf(stderr, "[probe cuMemAlloc rc %d] ", (int)alloc_rc) < 0) {
+        result = -1;
+    }
+    return state->f->cuCtxPopCurrent(NULL) == CUDA_SUCCESS ? result : -1;
+}
 
 static void hog_take(const VmafCudaState *state, Hog *hog)
 {
     hog->count = 0;
+    hog->bytes = 0;
     if (state->f->cuCtxPushCurrent(state->ctx) != CUDA_SUCCESS)
         return;
     for (size_t size = 0; size < sizeof(CHUNK_BYTES) / sizeof(CHUNK_BYTES[0]); size++) {
         while (hog->count < MAX_CHUNKS &&
-               state->f->cuMemAlloc(&hog->chunks[hog->count], CHUNK_BYTES[size]) == CUDA_SUCCESS)
+               state->f->cuMemAlloc(&hog->chunks[hog->count], CHUNK_BYTES[size]) == CUDA_SUCCESS) {
+            hog->bytes += CHUNK_BYTES[size];
             hog->count++;
+        }
     }
     (void)state->f->cuCtxPopCurrent(NULL);
 }
@@ -76,6 +104,23 @@ static void hog_release(const VmafCudaState *state, Hog *hog)
         (void)state->f->cuMemFree(hog->chunks[i]);
     hog->count = 0;
     (void)state->f->cuCtxPopCurrent(NULL);
+}
+
+static char *skip_unexhausted_hog(VmafContext *vmaf, VmafCudaState *state, Hog *hog,
+                                  int probe_hogged)
+{
+    hog_release(state, hog);
+    (void)fprintf(stderr,
+                  "[skip: device memory not exhausted by the hog (%zu MiB taken, "
+                  "luma probe under the hog %d); WDDM may page allocations] ",
+                  hog->bytes >> 20, probe_hogged);
+#ifndef _WIN32
+    (void)alarm(0);
+#endif
+    mu_assert("close failed", vmaf_close(vmaf) == 0);
+    mu_assert("state free failed", vmaf_cuda_state_free(state) == 0);
+    mu_skipped = 1;
+    return NULL;
 }
 
 static int submit_pooled(VmafContext *vmaf, unsigned index)
@@ -106,6 +151,34 @@ static int open_context(VmafCudaState **state, VmafContext **vmaf)
     return err ? err : vmaf_preallocate_pictures(*vmaf, pool);
 }
 
+static char *check_oom_and_memory_return(VmafCudaState *state, Hog *hog, int oom_err,
+                                         int probe_hogged)
+{
+    hog_release(state, hog);
+    const int probe_back = probe_alloc(state, PROBE_BYTES);
+    (void)fprintf(stderr, "[hog %zu MiB, luma probe under hog %d, first rc %d, memory back %d] ",
+                  hog->bytes >> 20, probe_hogged, oom_err, probe_back);
+    mu_assert("a frame was scored with the device's memory taken", oom_err != 0);
+    (void)fprintf(stderr, "[first frame with no memory left: %d] ", oom_err);
+
+    /* The pair of the failed call is back in the pool, and the ring that could
+     * not be built is built now. */
+    mu_assert("allocation probe failed", probe_back >= 0);
+    mu_assert("device memory not yet returned after the hog was freed", probe_back == 1);
+    return NULL;
+}
+
+static char *check_retry_and_psnr(VmafContext *vmaf)
+{
+    const int retry_err = submit_pooled(vmaf, 0);
+    (void)fprintf(stderr, "[retry rc %d] ", retry_err);
+    mu_assert("the same index does not score once memory is back", retry_err == 0);
+    mu_assert("flush failed", vmaf_read_pictures(vmaf, NULL, NULL, 0) == 0);
+    double psnr = 0.0;
+    mu_assert("psnr missing", vmaf_feature_score_at_index(vmaf, "psnr_y", &psnr, 0) == 0);
+    return NULL;
+}
+
 static char *test_out_of_memory_returns_an_error_and_keeps_the_pool(void)
 {
     VmafCudaState *state = NULL;
@@ -122,17 +195,19 @@ static char *test_out_of_memory_returns_an_error_and_keeps_the_pool(void)
 #endif
 
     hog_take(state, &hog);
+    const int probe_hogged = probe_alloc(state, PROBE_BYTES);
+    mu_assert("allocation probe failed", probe_hogged >= 0);
+    /* The real first submission decides: one luma-sized probe succeeding under the hog does
+     * not prove the 4-picture ring can be built. */
     const int oom_err = submit_pooled(vmaf, 0);
-    hog_release(state, &hog);
-    mu_assert("a frame was scored with the device's memory taken", oom_err != 0);
-    (void)fprintf(stderr, "[first frame with no memory left: %d] ", oom_err);
-
-    /* The pair of the failed call is back in the pool, and the ring that could
-     * not be built is built now. */
-    mu_assert("the same index does not score once memory is back", submit_pooled(vmaf, 0) == 0);
-    mu_assert("flush failed", vmaf_read_pictures(vmaf, NULL, NULL, 0) == 0);
-    double psnr = 0.0;
-    mu_assert("psnr missing", vmaf_feature_score_at_index(vmaf, "psnr_y", &psnr, 0) == 0);
+    if (oom_err == 0)
+        return skip_unexhausted_hog(vmaf, state, &hog, probe_hogged);
+    char *msg = check_oom_and_memory_return(state, &hog, oom_err, probe_hogged);
+    if (msg)
+        return msg;
+    msg = check_retry_and_psnr(vmaf);
+    if (msg)
+        return msg;
 
 #ifndef _WIN32
     (void)alarm(0);
