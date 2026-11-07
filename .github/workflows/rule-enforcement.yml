@@ -11,7 +11,7 @@ on:
     # CI when a draft PR is promoted to ready-for-review. Keep `edited`
     # so PR-body fixes rerun the deliverables/documentation gates without
     # rerunning the full build/test matrix.
-    types: [opened, edited, synchronize, reopened, ready_for_review]
+    types: [opened, edited, synchronize, reopened, ready_for_review, auto_merge_enabled, auto_merge_disabled]
 
 permissions:
   contents: read
