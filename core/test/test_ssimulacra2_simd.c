@@ -719,9 +719,6 @@ static char *test_blur(void)
     return NULL;
 }
 
-/* The Windows build skips the picture_to_linear_rgb parity test, so the reference and the
- * dispatcher it needs are not built there either. */
-#if !(defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__))
 /* Scalar reference: sRGB EOTF — verbatim copy of extractor's inline helper. */
 static inline float ref_srgb_to_linear(float v)
 {
@@ -976,36 +973,13 @@ static char *run_ptlr_case(int yuv_matrix, unsigned bpc, unsigned uw_div, unsign
     mu_assert("picture_to_linear_rgb SIMD not bit-identical to scalar", match);
     return NULL;
 }
-#endif /* !_WIN32 / MINGW */
 
 /* Test all 6 common (yuv_matrix × subsampling) combinations on small frames.
  * Drives all 5 format variants (420/422/444 × 8/10-bit) through one
  * parameterised entry point. */
 static char *test_ptlr_one(int yuv_matrix, unsigned bpc, unsigned uw_div, unsigned uh_div)
 {
-    /*
-     * TODO(ssimulacra2-ptlr-mingw): scalar fmaf() on MinGW-w64's libm
-     * (compiled without -mfma) is not guaranteed to be correctly
-     * single-rounded, so scalar-vs-AVX2 / scalar-vs-AVX-512
-     * bit-exactness fails on Windows MinGW64 CI even after the
-     * ADR-0891 FMA unification. Skip the case there (exit 77, meson
-     * SKIP; tracked in VMAFx/vmafx issue 2886).
-     * Linux/macOS libm fmaf() is correctly rounded and the test runs
-     * fine on those hosts. Mirrors the existing skip in
-     * core/test/test_ms_ssim_decimate.c (see TODO(ms-ssim-mingw)).
-     */
-#if defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__)
-    (void)yuv_matrix;
-    (void)bpc;
-    (void)uw_div;
-    (void)uh_div;
-    (void)fprintf(stderr, "skipping: Windows libm fmaf not bit-exact with hw FMA "
-                          "(see TODO(ssimulacra2-ptlr-mingw))\n");
-    mu_skipped = 1;
-    return NULL;
-#else
     return run_ptlr_case(yuv_matrix, bpc, uw_div, uh_div);
-#endif /* _WIN32 / MINGW */
 }
 
 static char *test_ptlr_420_8(void)

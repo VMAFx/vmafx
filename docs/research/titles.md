@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # Research digest titles
 
-Every research digest, one heading each (809), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
+Every research digest, one heading each (811), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
 
 ## Research-0001: Cache shape for `bisect-model-quality` nightly
 
@@ -2692,6 +2692,10 @@ Every research digest, one heading each (809), so the site search finds a digest
 
 [2170-windows-strict-fp-spelling-2026-10-07](2170-windows-strict-fp-spelling-2026-10-07.md)
 
+## Research-2318: Python package bindings design and usage documentation
+
+[2318-vmafx-python-package](2318-vmafx-python-package.md)
+
 ## Research-2351: components of the cloud-native platform, their versions, licences and limits
 
 [2351-cloud-native-platform-components](2351-cloud-native-platform-components.md)
@@ -2707,6 +2711,10 @@ Every research digest, one heading each (809), so the site search finds a digest
 ## Research-2480: Stale-lock recovery for the ADR number allocator
 
 [2480-adr-allocator-stale-lock](2480-adr-allocator-stale-lock.md)
+
+## Research-3266: Upstream PR sweep tool and hook repository-location isolation
+
+[3266-upstream-pr-sweep-tool](3266-upstream-pr-sweep-tool.md)
 
 ## Research-3357: GCC (C) + icpx (C++ / SYCL) container toolchain
 

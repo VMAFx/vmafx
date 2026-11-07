@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1435), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1438), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5320,6 +5320,10 @@ Every ADR, one heading each (1435), so the site search finds an ADR by its title
 
 [2165-vmafx-filter-pairing-contract](2165-vmafx-filter-pairing-contract.md)
 
+## ADR-2166: Redesign FFmpeg patch series from 0001, drop Vulkan shims, and retire legacy libvmaf filter modifications
+
+[2166-ffmpeg-series-drops-vulkan-shims](2166-ffmpeg-series-drops-vulkan-shims.md)
+
 ## ADR-2167: `-qpfile` on libx264 applies its offsets through `quant_offsets`
 
 [2167-ffmpeg-x264-qpfile-quant-offsets](2167-ffmpeg-x264-qpfile-quant-offsets.md)
@@ -5751,3 +5755,11 @@ Every ADR, one heading each (1435), so the site search finds an ADR by its title
 ## ADR-3399: Rust crates published from the release pipeline
 
 [3399-rust-crates-published-from-release-pipeline](3399-rust-crates-published-from-release-pipeline.md)
+
+## ADR-3400: Pattern-based credential scrub and testlog scan for Meson test runs
+
+[3400-meson-testlog-credential-patterns](3400-meson-testlog-credential-patterns.md)
+
+## ADR-3401: Outside contributors hold copyright in the files they write
+
+[3401-outside-contributor-copyright-holder](3401-outside-contributor-copyright-holder.md)
