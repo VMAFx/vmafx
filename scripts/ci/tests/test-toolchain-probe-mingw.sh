@@ -38,7 +38,7 @@ if [ ! -x "${probe}" ]; then
 fi
 
 work="$(mktemp -d)"
-trap 'rm -rf "${work}"' EXIT
+trap 'rm -rf "${work}"' EXIT INT TERM
 
 pass_count=0
 fail_count=0
@@ -250,7 +250,7 @@ expect_rc "planted: 13-win32 dumpversion with unresolvable DLLs -> exit 1" 1
 expect_grep "case6 shows the flavored version string" "dumpversion 13-win32"
 expect_grep "case6 refuses the unresolved libstdc++-6.dll" "runtime-unresolved libstdc++-6.dll"
 expect_grep "case6 refuses the unresolved libgcc_s_seh-1.dll" "runtime-unresolved libgcc_s_seh-1.dll"
-expect_no_grep "case6 no green pairing line" "pairing ok"
+expect_no_grep "case6 no pairing lines" "pairing"
 
 # ---------- Case 7: Boundary — no cross driver in the prefix -> absent, exit 0 ----------
 mkdir -p "${work}/case7/bin"
