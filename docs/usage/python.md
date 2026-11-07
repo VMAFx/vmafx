@@ -31,6 +31,15 @@ zimg headers from there for your platform; the per-distribution commands this
 page used to restate — among them the route of an unsupported old CentOS —
 drifted away from what the project actually tests.
 
+One dependency the table does not name: the harness builds a Cython
+extension, so the Python development headers are required too —
+`python3-dev` on Debian and Ubuntu, `python3-devel` on Fedora and RHEL.
+
+Two caveats the table cannot carry: the setup steps below assume a POSIX
+shell (`source .venv/bin/activate` is a POSIX path), and Alpine builds
+CPU-only — the `make` step turns on CUDA (`-Denable_cuda=true`), which needs
+a CUDA toolchain Alpine does not provide.
+
 Make sure `nasm` is 2.13.02 or higher (check by `nasm --version`); that floor
 is not restated in the install guides, so it stays here.
 
