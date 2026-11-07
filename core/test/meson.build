@@ -14,6 +14,51 @@ test_link_kwargs = is_sycl_enabled ? {'link_language' : 'cpp'} : {}
 
 test_inc = include_directories('.')
 
+# ADR-3402 — opt-in Vulkan integer path. Both tests compile in EVERY
+# build: with `enable_vulkan` disabled (the default, and therefore every
+# CI lane) the twin/probe are not in libvmaf and the tests skip at
+# runtime with a stated reason — the parity test's comparator self-test
+# still runs, because the gate must be provably non-vacuous offline.
+# No CI row is added anywhere: hardware evidence stays manual, committed
+# as refs/ + out/ (the SYCL parity-lane posture).
+is_vulkan_tests_enabled = get_option('enable_vulkan').enabled()
+
+# CPU-vs-Vulkan bit-exact parity of integer_adm on the two ADR-3402 gate
+# fixtures (48 frames x 11 fields, exact %a hex-float strings), against
+# the committed CPU references under data/vulkan-adm/refs/.
+test_vulkan_integer_adm_parity = executable('test_vulkan_integer_adm_parity',
+    ['test.c', 'test_vulkan_integer_adm_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : vmaf_test_link,
+    dependencies: [pthread_dependency, math_lib, vulkan_deps],
+    c_args: [
+        '-DVULKAN_ADM_TESTDATA_DIR="' + join_paths(meson.project_source_root(), '../testdata') + '"',
+        '-DVULKAN_ADM_REF_DIR="' + (meson.current_source_dir() / 'data/vulkan-adm/refs') + '"',
+    ],
+    kwargs : test_link_kwargs,
+)
+test('test_vulkan_integer_adm_parity', test_vulkan_integer_adm_parity,
+    suite : ['fast', 'gpu'],
+    timeout : 600,
+    is_parallel : false)
+
+# Device self-check probe (ADR-3402): umul32 full product, u64
+# carry-chain reduce, fp32 NoContraction audit, dispatch sentinel;
+# vendorID/deviceID identity selection with refusal on mismatch.
+test_vulkan_probe = executable('test_vulkan_probe',
+    ['test.c', 'test_vulkan_probe.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : vmaf_test_link,
+    dependencies: [pthread_dependency, math_lib, vulkan_deps],
+    c_args: is_vulkan_tests_enabled ? ['-DHAVE_VULKAN=1'] : [],
+    kwargs : test_link_kwargs,
+)
+test('test_vulkan_probe', test_vulkan_probe,
+    suite : ['fast', 'gpu'],
+    timeout : 120,
+    is_parallel : false)
+
+
 # Shared-device scheduling is part of Meson's public test metadata.  This check
 # reads the configured test registry and fails if any `gpu` suite member can run
 # concurrently with another test.
@@ -1061,6 +1106,7 @@ endif
 gpu_all_deps = [
   cuda_dependency,
   sycl_dependency,
+  vulkan_deps,
   hip_deps,
   metal_deps,
 ]

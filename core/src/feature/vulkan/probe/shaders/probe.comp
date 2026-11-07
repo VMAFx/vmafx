@@ -1,0 +1,77 @@
+/* Copyright 2026 Lusoris and Claude (Anthropic)
+ * SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *
+ * probe.comp — device self-check probe, one shader, four ops selected
+ * by push constant (ADR-3402; port of the PoC Phase 0 shader
+ * `poc/vk-integer-adm` phase0/shaders/probe.comp, byte-compatible
+ * operand/verdict contract).
+ *
+ * op 0: u32 x u32 -> u64 full product via umulExtended (foundation of
+ *       the 53-bit / 128-bit integer emulation the bit-exact features
+ *       need).
+ * op 1: u64 add-reduce chain with explicit carries (libvmaf-fast's
+ *       reduction primitive; the old backend had an int64 subgroup bug
+ *       here).
+ * op 2: fp32 contraction probe: a*b+c with values whose contracted
+ *       (FMA) and uncontracted (separate mul+add) results differ;
+ *       `precise` marks the expression NoContraction in SPIR-V so the
+ *       driver must not fuse it.
+ * Every op also writes an invocation-index sentinel so a kernel that
+ * never ran cannot be mistaken for a passing one (the removed backend's
+ * CI gate shipped a false "ULP=0 baseline" three times; ADR-0176
+ * errata).
+ */
+
+#version 450
+
+layout(local_size_x = 64) in;
+
+layout(std430, binding = 0) readonly buffer In0  { uint in0[]; };
+layout(std430, binding = 1) readonly buffer In1  { uint in1[]; };
+layout(std430, binding = 2) writeonly buffer Out0 { uint out0[]; };
+layout(std430, binding = 3) writeonly buffer Out1 { uint out1[]; };
+
+layout(push_constant) uniform PC {
+    uint op;      // which probe
+    uint count;   // element count
+    uint salt;    // sentinel mix
+    uint fc;      // float bits of the third FMA operand
+} pc;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.count) return;
+
+    if (pc.op == 0u) {
+        uint msb, lsb;
+        umulExtended(in0[i], in1[i], msb, lsb);
+        out0[i] = lsb ^ pc.salt;
+        out1[i] = msb ^ pc.salt;
+    } else if (pc.op == 1u) {
+        // 64 values per invocation, packed (lo, hi) pairs, wraparound adds
+        // with explicit carry. Golden values are host-computed.
+        uint base = i * 64u;
+        uint lo = in0[base], hi = in1[base];
+        for (uint k = 1u; k < 64u; k++) {
+            uint nlo = in0[base + k], nhi = in1[base + k];
+            uint t = lo + nlo;
+            uint carry = (t < lo) ? 1u : 0u;
+            hi = hi + nhi + carry;
+            lo = t;
+        }
+        out0[i] = lo ^ pc.salt;
+        out1[i] = hi ^ pc.salt;
+    } else if (pc.op == 2u) {
+        float a = uintBitsToFloat(in0[i]);
+        float b = uintBitsToFloat(in1[i]);
+        float c = uintBitsToFloat(pc.fc);
+        float contracted = a * b + c;        // driver may fuse into FMA
+        precise float separated = a * b + c; // NoContraction: must be mul+add
+        out0[i] = floatBitsToUint(contracted) ^ pc.salt;
+        out1[i] = floatBitsToUint(separated) ^ pc.salt;
+    } else {
+        // dispatch sentinel: every invocation must produce a distinct value
+        out0[i] = (i * 2654435761u) ^ pc.salt;
+        out1[i] = 0xDEADBEEFu ^ (i + pc.salt);
+    }
+}
