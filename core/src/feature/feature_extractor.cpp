@@ -116,6 +116,14 @@ extern VmafFeatureExtractor vmaf_fex_cambi_cuda;
 extern VmafFeatureExtractor vmaf_fex_speed_chroma_cuda;
 extern VmafFeatureExtractor vmaf_fex_speed_temporal_cuda;
 #endif
+#if HAVE_VULKAN
+/* ADR-3402: opt-in Vulkan integer path. No public header, no
+ * VMAF_FEATURE_EXTRACTOR_VULKAN flag: the reserved enum slots stay
+ * untouched pending the ABI-bump ADR (ADR-0726). Reachable only
+ * through the registry by name.
+ */
+extern VmafFeatureExtractor vmaf_fex_integer_adm_vulkan;
+#endif
 #if HAVE_SYCL
 extern VmafFeatureExtractor vmaf_fex_integer_vif_sycl;
 extern VmafFeatureExtractor vmaf_fex_integer_adm_sycl;
@@ -328,6 +336,13 @@ VmafFeatureExtractor *feature_extractor_list[] = {
      * (GPU means/cov/indterm/backward-sub/score; CPU eigendecomp + QR).
      * places=4 vs CPU reference (ADR-0214). */
     &vmaf_fex_speed_chroma_cuda, &vmaf_fex_speed_temporal_cuda,
+#endif
+#if HAVE_VULKAN
+    /* ADR-3402: the opt-in, integer-first Vulkan path. One feature twin:
+     * integer ADM (adm2), the only feature whose bit-exact parity gate
+     * has passed (ADR-3402, evidence #3302 comment 6689093406). Selection
+     * is by registry name only — no dispatch flag, no public ABI. */
+    &vmaf_fex_integer_adm_vulkan,
 #endif
 #if HAVE_HIP
     /* T7-10 first consumer (ADR-0241): integer PSNR on HIP. With
