@@ -41,6 +41,42 @@ fi
 # 1. --help returns 0.
 "${BIN}" --help >/dev/null
 
+# 1a. Pin per_shot_print_usage() against the golden transcript
+# (issue #3214 row C15-11; ADR-3402): --help serves it on stdout with exit 0,
+# no-args serves the same text on stderr with exit 1. Before this pin the
+# hand-written usage block could change with no test noticing — only its exit
+# code was checked.
+SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
+PS_GOLDEN="${SCRIPT_DIR}/golden/vmaf_per_shot_help.txt"
+"${BIN}" --help >"${WORK}/ps_help.out" 2>"${WORK}/ps_help.err"
+if [ -s "${WORK}/ps_help.err" ]; then
+  echo "test_vmaf_per_shot: --help wrote to stderr" >&2
+  exit 1
+fi
+sed -e 's/\r$//' "${PS_GOLDEN}" >"${WORK}/ps_golden.norm"
+sed -e 's/\r$//' "${WORK}/ps_help.out" >"${WORK}/ps_help.norm"
+if ! diff -u "${WORK}/ps_golden.norm" "${WORK}/ps_help.norm" >"${WORK}/ps_help.diff"; then
+  head -20 "${WORK}/ps_help.diff" >&2
+  echo "test_vmaf_per_shot: usage text drifted from the golden transcript" >&2
+  exit 1
+fi
+rc=0
+"${BIN}" >"${WORK}/ps_noargs.out" 2>"${WORK}/ps_noargs.err" || rc=$?
+if [ "$rc" -ne 1 ]; then
+  echo "test_vmaf_per_shot: no-args exited $rc, expected 1" >&2
+  exit 1
+fi
+if [ -s "${WORK}/ps_noargs.out" ]; then
+  echo "test_vmaf_per_shot: no-args wrote to stdout" >&2
+  exit 1
+fi
+sed -e 's/\r$//' "${WORK}/ps_noargs.err" >"${WORK}/ps_noargs.norm"
+if ! diff -u "${WORK}/ps_golden.norm" "${WORK}/ps_noargs.norm" >"${WORK}/ps_noargs.diff"; then
+  head -20 "${WORK}/ps_noargs.diff" >&2
+  echo "test_vmaf_per_shot: no-args usage text drifted from the golden transcript" >&2
+  exit 1
+fi
+
 # 2. Basic invocation produces a CSV plan with at least one shot row.
 PLAN_CSV="${WORK}/plan.csv"
 "${BIN}" \

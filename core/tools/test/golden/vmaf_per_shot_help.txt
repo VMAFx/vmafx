@@ -1,0 +1,18 @@
+Usage: vmaf-perShot --reference REF.yuv --width W --height H --pixel_format 420|422|444 --bitdepth 8 --output PLAN [options]
+
+Required:
+  -r, --reference PATH       reference YUV file
+  -w, --width    N           frame width in pixels
+  -h, --height   N           frame height in pixels
+  -p, --pixel_format 420|422|444  planar YUV subsampling
+  -b, --bitdepth 8|10|12|16  planar YUV bit depth
+  -o, --output   PATH        per-shot plan output
+
+Optional:
+  -t, --target-vmaf X        target VMAF score [default 90]
+  -m, --crf-min N            minimum CRF clamp [default 18]
+  -M, --crf-max N            maximum CRF clamp [default 35]
+  -d, --diff-threshold X     shot-detector frame-diff cutoff
+  -f, --format csv|json      output format [default csv]
+  -F, --frames   N           maximum frames to scan (0 = all) [default 0]
+  -H, --help                 print this message
