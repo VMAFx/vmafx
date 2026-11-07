@@ -202,7 +202,7 @@ endif
 is_asm_enabled = get_option('enable_asm') == true
 is_cuda_enabled = get_option('enable_cuda') == true
 is_sycl_enabled = get_option('enable_sycl') == true
-# Vulkan compute backend — ADR-3401 (integer path). Default OFF; every public
+# Vulkan compute backend — ADR-3402 (integer path). Default OFF; every public
 # entry point returns -ENOSYS until enabled. Needs only Vulkan headers (the
 # loader is loaded dynamically at run time, VK_NO_PROTOTYPES, no volk, no VMA)
 # and a GLSL-to-SPIR-V compiler for the embedded shaders.
@@ -702,7 +702,7 @@ else
     metal_sources += files('metal/stubs.c')
 endif
 
-# Vulkan compute backend (ADR-3401, integer path). Same pattern as the HIP /
+# Vulkan compute backend (ADR-3402, integer path). Same pattern as the HIP /
 # Metal scaffolds above — empty arrays when the option resolves to disabled,
 # no-cost on default builds. The backend needs Vulkan headers only (the
 # loader is loaded dynamically at run time — VK_NO_PROTOTYPES, no volk, no
@@ -717,7 +717,7 @@ if is_vulkan_enabled
     cdata.set10('HAVE_VULKAN', true)
     subdir('vulkan')
 else
-    # ADR-3401 / libvmaf_vulkan.h contract: every public Vulkan entry point
+    # ADR-3402 / libvmaf_vulkan.h contract: every public Vulkan entry point
     # returns -ENOSYS when libvmaf is built without Vulkan support. Without
     # this stub TU the symbols are not emitted into libvmafx at all (the
     # real bodies in vulkan/common.c + libvmaf.c sit behind
@@ -2656,7 +2656,7 @@ if float_enabled
 endif
 
 if is_vulkan_enabled
-    # ADR-3401: the Vulkan integer path's first consumer — the fp64-free
+    # ADR-3402: the Vulkan integer path's first consumer — the fp64-free
     # integer ADM twin. The embedded SPIR-V header it includes is generated
     # by vulkan/meson.build's shader custom_targets into the build folder.
     libvmaf_feature_sources += [

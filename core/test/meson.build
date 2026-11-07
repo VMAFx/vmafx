@@ -5634,7 +5634,7 @@ test_gpu_picture_pool_alloc_failure = executable('test_gpu_picture_pool_alloc_fa
 test('test_gpu_picture_pool_alloc_failure', test_gpu_picture_pool_alloc_failure,
     suite : ['fast'])
 
-# ADR-3401 — integer ADM CPU vs. Vulkan parity (the fp64-free integer path's
+# ADR-3402 — integer ADM CPU vs. Vulkan parity (the fp64-free integer path's
 # acceptance gate, issue #3319). The Vulkan twin runs the embedded
 # integer_adm.comp SPIR-V (shaderInt64 only) and ports the CPU conclude math,
 # so the comparison is bit-exact. GPU-gated: skips cleanly when no Vulkan

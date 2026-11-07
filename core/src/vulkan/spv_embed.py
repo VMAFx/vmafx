@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 luoye-cpu
 # SPDX-License-Identifier: EUPL-1.2
-"""Embed a compiled SPIR-V module as a C source (ADR-3401).
+"""Embed a compiled SPIR-V module as a C source (ADR-3402).
 
 The Vulkan integer path compiles its GLSL compute shaders at build time
 (glslangValidator / glslc / glslang) and embeds the resulting SPIR-V into

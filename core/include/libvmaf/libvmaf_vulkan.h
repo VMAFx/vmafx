@@ -5,9 +5,9 @@
 
 /**
  * @file libvmaf_vulkan.h
- * @brief Vulkan backend public API — ADR-3401 (integer path).
+ * @brief Vulkan backend public API — ADR-3402 (integer path).
  *
- * The Vulkan backend is the fp64-free integer compute path of ADR-3401: it
+ * The Vulkan backend is the fp64-free integer compute path of ADR-3402: it
  * runs the integer ADM shader (the fp64-free adm_angle_flag_i64()
  * reformulation of ADR-1194's predicate) on any Vulkan 1.0+ device that
  * reports shaderInt64 — including Intel iGPUs whose drivers report
@@ -84,7 +84,7 @@ typedef struct VmafVulkanConfiguration {
  * Allocate a VmafVulkanState. Loads the Vulkan loader, enumerates the
  * physical devices and brings up the selected one; -1 selects the first
  * compute-capable discrete device, falling back to an integrated one.
- * The device must report shaderInt64 (the ADR-3401 shaders are fp64-free
+ * The device must report shaderInt64 (the ADR-3402 shaders are fp64-free
  * but 64-bit integer arithmetic is load-bearing).
  *
  * @param out  receives the new state handle on success. Pair with
@@ -108,7 +108,7 @@ VMAF_EXPORT int vmaf_vulkan_state_init(VmafVulkanState **out, VmafVulkanConfigur
  * model as the SYCL / HIP backends.
  *
  * After import, Vulkan-flagged feature extractors (the integer ADM twin
- * `adm_vulkan` of ADR-3401) are selected for their features.
+ * `adm_vulkan` of ADR-3402) are selected for their features.
  *
  * @param ctx    live VmafContext (from `vmaf_init()`).
  * @param state  state handle previously allocated via

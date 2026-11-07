@@ -1,4 +1,4 @@
-# ADR-3401: Vulkan integer compute path (draft)
+# ADR-3402: Vulkan integer compute path (draft)
 
 - **Status**: Draft (in-tree proposal for 1.1.0, issue [#3319](https://github.com/VMAFx/vmafx/issues/3319))
 - **Date**: 2026-11-07

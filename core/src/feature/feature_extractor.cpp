@@ -256,7 +256,7 @@ extern VmafFeatureExtractor vmaf_fex_integer_cambi_metal;
 extern VmafFeatureExtractor vmaf_fex_ssimulacra2_metal;
 #endif
 #if HAVE_VULKAN
-/* Vulkan compute twin (ADR-3401, integer path): the fp64-free integer ADM
+/* Vulkan compute twin (ADR-3402, integer path): the fp64-free integer ADM
  * shader under feature/vulkan/. Compiled only when enable_vulkan is on. */
 extern VmafFeatureExtractor vmaf_fex_integer_adm_vulkan;
 #endif
@@ -443,7 +443,7 @@ VmafFeatureExtractor *feature_extractor_list[] = {
     &vmaf_fex_ssimulacra2_metal,
 #endif
 #if HAVE_VULKAN
-    /* Vulkan compute twin (ADR-3401): the fp64-free integer ADM shader —
+    /* Vulkan compute twin (ADR-3402): the fp64-free integer ADM shader —
      * first consumer of the src/vulkan/ dynamic-loader runtime. The
      * shader requires shaderInt64 only (no shaderFloat64), so it covers
      * Intel iGPUs that the SYCL float_adm twin cannot run on when the

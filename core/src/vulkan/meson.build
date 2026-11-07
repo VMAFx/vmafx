@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 
 # Included from core/src/meson.build via `subdir('vulkan')`. Paths below are
-# relative to core/src/vulkan/. ADR-3401: the integer path's bring-up —
+# relative to core/src/vulkan/. ADR-3402: the integer path's bring-up —
 # header-only probe, dynamic-loader compile flags and the shader embed chain.
 
 fs = import('fs')
@@ -39,7 +39,7 @@ vmaf_cflags_common += '-DVK_NO_PROTOTYPES'
 
 vulkan_sources += files('common.c')
 
-# ADR-3401: compile the GLSL compute shaders to SPIR-V at build time and embed
+# ADR-3402: compile the GLSL compute shaders to SPIR-V at build time and embed
 # them as C sources (spv_embed.py) — the same shape the HIP backend uses for
 # its xxd-generated HSACO embeds, with the compiled TU carrying the embed
 # dependency itself. No runtime file lookup.
@@ -53,7 +53,7 @@ endif
 
 # SPIR-V emitted for the Vulkan 1.1 environment (SPIR-V 1.3): the shader needs
 # Int64 and nothing newer, so Vulkan 1.1 devices consume the module as-is and
-# the fp64-free ADR-3401 path keeps its broad device coverage. glslangValidator
+# the fp64-free ADR-3402 path keeps its broad device coverage. glslangValidator
 # and glslang infer the compute stage from the .comp extension.
 vulkan_spv_embedder = import('python').find_installation()
 foreach shader : ['../feature/vulkan/shaders/integer_adm.comp']

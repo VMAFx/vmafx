@@ -176,7 +176,7 @@ typedef struct VmafContext {
     } sycl;
 #endif
 #ifdef HAVE_VULKAN
-    /* ADR-3401: caller-imported Vulkan state. Ownership stays with the
+    /* ADR-3402: caller-imported Vulkan state. Ownership stays with the
      * caller — same lifetime model as the SYCL / HIP backends: clear
      * (not free) on successful vmaf_close(), destroy only after close
      * returns 0. A nonzero result retains it for retry. */
@@ -1133,7 +1133,7 @@ static void set_fex_hip_device(VmafFeatureExtractorContext *fex_ctx, const VmafC
 #endif
 
 #ifdef HAVE_VULKAN
-/* ADR-3401: stash the caller-imported Vulkan state on the VmafContext.
+/* ADR-3402: stash the caller-imported Vulkan state on the VmafContext.
  * Mirrors vmaf_hip_import_state field-for-field — ownership stays with
  * the caller; the caller calls vmaf_vulkan_state_destroy() only after
  * vmaf_close() returns 0. Implementation lives here (not in
@@ -2582,7 +2582,7 @@ static unsigned compute_fex_flags(const VmafContext *vmaf)
         fex_flags |= VMAF_FEATURE_EXTRACTOR_METAL;
 #endif
 #ifdef HAVE_VULKAN
-    /* ADR-3401: Vulkan-flagged extractors are selected when a Vulkan
+    /* ADR-3402: Vulkan-flagged extractors are selected when a Vulkan
      * state pointer has been imported via vmaf_vulkan_import_state().
      * The Vulkan backend is host-pic (no gpumask gate), like HIP /
      * Metal. */

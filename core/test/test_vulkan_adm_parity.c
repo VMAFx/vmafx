@@ -5,7 +5,7 @@
  */
 
 /*
- * adm CPU vs. Vulkan parity (ADR-3401, the integer path's acceptance gate).
+ * adm CPU vs. Vulkan parity (ADR-3402, the integer path's acceptance gate).
  *
  * The Vulkan twin `adm_vulkan` runs the PoC-validated integer_adm.comp
  * shader — the fp64-free adm_angle_flag_i64() reformulation of the CPU's

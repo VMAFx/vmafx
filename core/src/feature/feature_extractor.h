@@ -75,7 +75,7 @@ enum VmafFeatureExtractorFlags {
     VMAF_FEATURE_FRAME_SYNC = 1 << 2,
     VMAF_FEATURE_EXTRACTOR_PREV_REF = 1 << 3,
     VMAF_FEATURE_EXTRACTOR_SYCL = 1 << 4,
-    /* Vulkan compute twins (ADR-3401, integer path). Set on extractors
+    /* Vulkan compute twins (ADR-3402, integer path). Set on extractors
      * under feature/vulkan/; the dynamic-loader runtime lives under
      * src/vulkan/. The bit number reclaims the slot ADR-0726 reserved
      * for the removed Vulkan backend. */

@@ -25,7 +25,7 @@
  *     fp64-free by construction — see adm_angle_flag_i64()).
  *
  * A later PR can grow this toward the removed backend's import story;
- * ADR-3401 scopes the integer path explicitly to this surface.
+ * ADR-3402 scopes the integer path explicitly to this surface.
  */
 
 /* The concrete definition behind the opaque public `VmafVulkanState`
