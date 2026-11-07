@@ -55,7 +55,7 @@ FEATURES_PARQUET = REPO_ROOT / "ai" / "testdata" / "bisect" / "features.parquet"
 SCATTERND_ERROR = (
     "[ONNXRuntimeError] : 1 : FAIL : Non-zero status code returned while running "
     "ScatterND node. Name:'fork_segmentsum_scatter' Status Message: element_type 6 "
-    "not implemented for ScatterND operator."
+    "(int32) not implemented for ScatterND operator."
 )
 
 

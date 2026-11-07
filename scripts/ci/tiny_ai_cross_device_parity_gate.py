@@ -74,7 +74,10 @@ CUDA_TF32_PROVIDER_OPTIONS: dict[str, int] = {"use_tf32": 0}
 # failure as the model's expected provider gap, and fails on every other
 # transnet_v2 failure (issue #2947, comment 6696661349).
 TRANSNET_V2_MODEL_ID = "transnet_v2"
-TRANSNET_V2_SCATTERND_GAP = "element_type 6 not implemented for ScatterND operator"
+# The measured ORT 1.31.1 CUDA message, byte for byte as the node raises it
+# (testdata sweep, both GPUs): dropping the "(int32) " segment made the named
+# gap unmatchable against the error it names.
+TRANSNET_V2_SCATTERND_GAP = "element_type 6 (int32) not implemented for ScatterND operator"
 
 
 @dataclass
@@ -307,6 +310,7 @@ def run_parity_gate(
     fp32_model: Path,
     fp16_model: Path,
     features_path: Path,
+    *,
     transnet_model: Path = Path("model/tiny/transnet_v2.onnx"),
     ref_provider: str = DEFAULT_REF_PROVIDER,
     target_provider: str = DEFAULT_TARGET_PROVIDER,
