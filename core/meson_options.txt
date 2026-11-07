@@ -88,9 +88,17 @@ option('enable_dnn',
     value: 'auto',
     description: 'Build DNN runtime (ONNX Runtime) for tiny-model inference')
 
-# enable_vulkan option removed per ADR-0726 — Vulkan backend dropped.
-# core/src/vulkan/ + core/src/feature/vulkan/ + libvmaf_vulkan.h are gone;
-# subprojects/packagefiles/volk/ + vk-mem-alloc/ remain for follow-up cleanup.
+# ADR-3402: the Vulkan backend returns as an opt-in, integer-first,
+# capability-gated compute path (partial supersession of ADR-0726).
+# The floating-point shader pipeline, the CI lanes and the public
+# libvmaf_vulkan.h API ADR-0726 removed stay removed: this option builds
+# only the integer features (integer ADM first) plus the device probe,
+# each answering -ENOTSUP on device classes the ADR-3402 parity gate has
+# not passed. Default disabled: nothing in CI configures or builds it.
+option('enable_vulkan',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Build the opt-in Vulkan integer compute path (ADR-3402). Requires the Vulkan headers, glslc/glslang, and the volk + Vulkan-Memory-Allocator wraps. Integer features only; each feature answers -ENOTSUP on device classes the ADR-3402 parity gate has not passed. Default disabled: nothing in CI.')
 
 option('enable_mcp',
     type: 'boolean',

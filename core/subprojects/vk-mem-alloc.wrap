@@ -1,0 +1,10 @@
+[wrap-file]
+directory = VulkanMemoryAllocator-3.3.0
+source_url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/archive/refs/tags/v3.3.0.tar.gz
+source_filename = VulkanMemoryAllocator-3.3.0.tar.gz
+source_hash = c4f6bbe6b5a45c2eb610ca9d231158e313086d5b1a40c9922cb42b597419b14e
+
+patch_directory = vk-mem-alloc
+
+[provide]
+vk-mem-alloc = vk_mem_alloc_dep

@@ -41,9 +41,12 @@ enum VmafPictureBufferType {
     VMAF_PICTURE_BUFFER_TYPE_CUDA_DEVICE,
     VMAF_PICTURE_BUFFER_TYPE_SYCL_DEVICE,
     VMAF_PICTURE_BUFFER_TYPE_SYCL_HOST_PINNED,
-    /* ADR-0726: Vulkan backend removed. Enum value deleted — no source file
-     * referenced VMAF_PICTURE_BUFFER_TYPE_VULKAN_DEVICE after ADR-0726.
-     * Any future Vulkan revival must use a new ADR and a new value. */
+    /* ADR-0726 deleted this value when the fp Vulkan backend was removed;
+     * ADR-3402 (the revival it demanded) re-adds it for the opt-in integer
+     * compute path. Only core/src/vulkan/ and the feature/vulkan twins use
+     * it, and only in -Denable_vulkan=enabled builds (default off: nothing
+     * in CI references it). */
+    VMAF_PICTURE_BUFFER_TYPE_VULKAN_DEVICE,
     /* A frame of the VMAFx API in HIP device memory (RC4 WP3, ADR-2092):
      * an imported device pointer, dma-buf or GL texture, read by the HIP
      * twins on the device and never copied to the host; see the `hip` member
