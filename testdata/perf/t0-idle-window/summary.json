@@ -1,0 +1,952 @@
+{
+  "pre_run_util": [
+    23,
+    23,
+    24,
+    23
+  ],
+  "cells": {
+    "cpu-n10": {
+      "util_gate": [
+        24,
+        56,
+        22,
+        22
+      ],
+      "runs": [
+        {
+          "run": 0,
+          "wall_ms": 418.1,
+          "fps": 46.08,
+          "wall_fps": 46.16,
+          "backend_used": "cpu",
+          "feature_backends": [
+            [
+              "cambi",
+              "cpu"
+            ],
+            [
+              "speed_chroma",
+              "cpu"
+            ],
+            [
+              "adm",
+              "cpu"
+            ],
+            [
+              "motion",
+              "cpu"
+            ]
+          ],
+          "n_frames": 10
+        },
+        {
+          "run": 1,
+          "wall_ms": 266.0,
+          "fps": 43.67,
+          "wall_fps": 43.63,
+          "backend_used": "cpu",
+          "feature_backends": [
+            [
+              "cambi",
+              "cpu"
+            ],
+            [
+              "speed_chroma",
+              "cpu"
+            ],
+            [
+              "adm",
+              "cpu"
+            ],
+            [
+              "motion",
+              "cpu"
+            ]
+          ],
+          "n_frames": 10
+        },
+        {
+          "run": 2,
+          "wall_ms": 245.6,
+          "fps": 47.62,
+          "wall_fps": 47.8,
+          "backend_used": "cpu",
+          "feature_backends": [
+            [
+              "cambi",
+              "cpu"
+            ],
+            [
+              "speed_chroma",
+              "cpu"
+            ],
+            [
+              "adm",
+              "cpu"
+            ],
+            [
+              "motion",
+              "cpu"
+            ]
+          ],
+          "n_frames": 10
+        },
+        {
+          "run": 3,
+          "wall_ms": 252.5,
+          "fps": 48.08,
+          "wall_fps": 48.03,
+          "backend_used": "cpu",
+          "feature_backends": [
+            [
+              "cambi",
+              "cpu"
+            ],
+            [
+              "speed_chroma",
+              "cpu"
+            ],
+            [
+              "adm",
+              "cpu"
+            ],
+            [
+              "motion",
+              "cpu"
+            ]
+          ],
+          "n_frames": 10
+        }
+      ]
+    },
+    "cpu-n30": {
+      "util_gate": [
+        23,
+        23,
+        22,
+        23
+      ],
+      "runs": [
+        {
+          "run": 0,
+          "wall_ms": 761.4,
+          "fps": 46.66,
+          "wall_fps": 46.64,
+          "backend_used": "cpu",
+          "feature_backends": [
+            [
+              "cambi",
+              "cpu"
+            ],
+            [
+              "speed_chroma",
+              "cpu"
+            ],
+            [
+              "adm",
+              "cpu"
+            ],
+            [
+              "motion",
+              "cpu"
+            ]
+          ],
+          "n_frames": 30
+        },
+        {
+          "run": 1,
+          "wall_ms": 675.0,
+          "fps": 47.02,
+          "wall_fps": 47.01,
+          "backend_used": "cpu",
+          "feature_backends": [
+            [
+              "cambi",
+              "cpu"
+            ],
+            [
+              "speed_chroma",
+              "cpu"
+            ],
+            [
+              "adm",
+              "cpu"
+            ],
+            [
+              "motion",
+              "cpu"
+            ]
+          ],
+          "n_frames": 30
+        },
+        {
+          "run": 2,
+          "wall_ms": 688.8,
+          "fps": 46.15,
+          "wall_fps": 46.18,
+          "backend_used": "cpu",
+          "feature_backends": [
+            [
+              "cambi",
+              "cpu"
+            ],
+            [
+              "speed_chroma",
+              "cpu"
+            ],
+            [
+              "adm",
+              "cpu"
+            ],
+            [
+              "motion",
+              "cpu"
+            ]
+          ],
+          "n_frames": 30
+        },
+        {
+          "run": 3,
+          "wall_ms": 671.9,
+          "fps": 47.24,
+          "wall_fps": 47.31,
+          "backend_used": "cpu",
+          "feature_backends": [
+            [
+              "cambi",
+              "cpu"
+            ],
+            [
+              "speed_chroma",
+              "cpu"
+            ],
+            [
+              "adm",
+              "cpu"
+            ],
+            [
+              "motion",
+              "cpu"
+            ]
+          ],
+          "n_frames": 30
+        }
+      ]
+    },
+    "cpu-n60": {
+      "util_gate": [
+        22,
+        58,
+        23,
+        23
+      ],
+      "runs": [
+        {
+          "run": 0,
+          "wall_ms": 1454.4,
+          "fps": 45.05,
+          "wall_fps": 45.06,
+          "backend_used": "cpu",
+          "feature_backends": [
+            [
+              "cambi",
+              "cpu"
+            ],
+            [
+              "speed_chroma",
+              "cpu"
+            ],
+            [
+              "adm",
+              "cpu"
+            ],
+            [
+              "motion",
+              "cpu"
+            ]
+          ],
+          "n_frames": 60
+        },
+        {
+          "run": 1,
+          "wall_ms": 1307.1,
+          "fps": 47.36,
+          "wall_fps": 47.35,
+          "backend_used": "cpu",
+          "feature_backends": [
+            [
+              "cambi",
+              "cpu"
+            ],
+            [
+              "speed_chroma",
+              "cpu"
+            ],
+            [
+              "adm",
+              "cpu"
+            ],
+            [
+              "motion",
+              "cpu"
+            ]
+          ],
+          "n_frames": 60
+        },
+        {
+          "run": 2,
+          "wall_ms": 1318.9,
+          "fps": 46.88,
+          "wall_fps": 46.9,
+          "backend_used": "cpu",
+          "feature_backends": [
+            [
+              "cambi",
+              "cpu"
+            ],
+            [
+              "speed_chroma",
+              "cpu"
+            ],
+            [
+              "adm",
+              "cpu"
+            ],
+            [
+              "motion",
+              "cpu"
+            ]
+          ],
+          "n_frames": 60
+        },
+        {
+          "run": 3,
+          "wall_ms": 1366.6,
+          "fps": 45.21,
+          "wall_fps": 45.23,
+          "backend_used": "cpu",
+          "feature_backends": [
+            [
+              "cambi",
+              "cpu"
+            ],
+            [
+              "speed_chroma",
+              "cpu"
+            ],
+            [
+              "adm",
+              "cpu"
+            ],
+            [
+              "motion",
+              "cpu"
+            ]
+          ],
+          "n_frames": 60
+        }
+      ]
+    },
+    "cpu-n120": {
+      "util_gate": [
+        23,
+        24,
+        58,
+        23
+      ],
+      "runs": [
+        {
+          "run": 0,
+          "wall_ms": 2883.5,
+          "fps": 43.54,
+          "wall_fps": 43.53,
+          "backend_used": "cpu",
+          "feature_backends": [
+            [
+              "cambi",
+              "cpu"
+            ],
+            [
+              "speed_chroma",
+              "cpu"
+            ],
+            [
+              "adm",
+              "cpu"
+            ],
+            [
+              "motion",
+              "cpu"
+            ]
+          ],
+          "n_frames": 120
+        },
+        {
+          "run": 1,
+          "wall_ms": 2770.5,
+          "fps": 44.07,
+          "wall_fps": 44.07,
+          "backend_used": "cpu",
+          "feature_backends": [
+            [
+              "cambi",
+              "cpu"
+            ],
+            [
+              "speed_chroma",
+              "cpu"
+            ],
+            [
+              "adm",
+              "cpu"
+            ],
+            [
+              "motion",
+              "cpu"
+            ]
+          ],
+          "n_frames": 120
+        },
+        {
+          "run": 2,
+          "wall_ms": 2588.6,
+          "fps": 47.11,
+          "wall_fps": 47.11,
+          "backend_used": "cpu",
+          "feature_backends": [
+            [
+              "cambi",
+              "cpu"
+            ],
+            [
+              "speed_chroma",
+              "cpu"
+            ],
+            [
+              "adm",
+              "cpu"
+            ],
+            [
+              "motion",
+              "cpu"
+            ]
+          ],
+          "n_frames": 120
+        },
+        {
+          "run": 3,
+          "wall_ms": 2654.3,
+          "fps": 45.98,
+          "wall_fps": 45.96,
+          "backend_used": "cpu",
+          "feature_backends": [
+            [
+              "cambi",
+              "cpu"
+            ],
+            [
+              "speed_chroma",
+              "cpu"
+            ],
+            [
+              "adm",
+              "cpu"
+            ],
+            [
+              "motion",
+              "cpu"
+            ]
+          ],
+          "n_frames": 120
+        }
+      ]
+    },
+    "cuda-n10": {
+      "util_gate": [
+        24,
+        24,
+        22,
+        44
+      ],
+      "runs": [
+        {
+          "run": 0,
+          "wall_ms": 528.4,
+          "fps": 140.85,
+          "wall_fps": 142.52,
+          "backend_used": "cuda",
+          "feature_backends": [
+            [
+              "cambi_cuda",
+              "cuda"
+            ],
+            [
+              "speed_chroma_cuda",
+              "cuda"
+            ],
+            [
+              "adm_cuda",
+              "cuda"
+            ],
+            [
+              "motion_cuda",
+              "cuda"
+            ]
+          ],
+          "n_frames": 10
+        },
+        {
+          "run": 1,
+          "wall_ms": 391.9,
+          "fps": 140.85,
+          "wall_fps": 140.01,
+          "backend_used": "cuda",
+          "feature_backends": [
+            [
+              "cambi_cuda",
+              "cuda"
+            ],
+            [
+              "speed_chroma_cuda",
+              "cuda"
+            ],
+            [
+              "adm_cuda",
+              "cuda"
+            ],
+            [
+              "motion_cuda",
+              "cuda"
+            ]
+          ],
+          "n_frames": 10
+        },
+        {
+          "run": 2,
+          "wall_ms": 416.7,
+          "fps": 153.85,
+          "wall_fps": 153.63,
+          "backend_used": "cuda",
+          "feature_backends": [
+            [
+              "cambi_cuda",
+              "cuda"
+            ],
+            [
+              "speed_chroma_cuda",
+              "cuda"
+            ],
+            [
+              "adm_cuda",
+              "cuda"
+            ],
+            [
+              "motion_cuda",
+              "cuda"
+            ]
+          ],
+          "n_frames": 10
+        },
+        {
+          "run": 3,
+          "wall_ms": 378.6,
+          "fps": 149.25,
+          "wall_fps": 149.16,
+          "backend_used": "cuda",
+          "feature_backends": [
+            [
+              "cambi_cuda",
+              "cuda"
+            ],
+            [
+              "speed_chroma_cuda",
+              "cuda"
+            ],
+            [
+              "adm_cuda",
+              "cuda"
+            ],
+            [
+              "motion_cuda",
+              "cuda"
+            ]
+          ],
+          "n_frames": 10
+        }
+      ]
+    },
+    "cuda-n30": {
+      "util_gate": [
+        24,
+        22,
+        23,
+        58
+      ],
+      "runs": [
+        {
+          "run": 0,
+          "wall_ms": 683.8,
+          "fps": 126.58,
+          "wall_fps": 126.5,
+          "backend_used": "cuda",
+          "feature_backends": [
+            [
+              "cambi_cuda",
+              "cuda"
+            ],
+            [
+              "speed_chroma_cuda",
+              "cuda"
+            ],
+            [
+              "adm_cuda",
+              "cuda"
+            ],
+            [
+              "motion_cuda",
+              "cuda"
+            ]
+          ],
+          "n_frames": 30
+        },
+        {
+          "run": 1,
+          "wall_ms": 629.1,
+          "fps": 126.05,
+          "wall_fps": 126.02,
+          "backend_used": "cuda",
+          "feature_backends": [
+            [
+              "cambi_cuda",
+              "cuda"
+            ],
+            [
+              "speed_chroma_cuda",
+              "cuda"
+            ],
+            [
+              "adm_cuda",
+              "cuda"
+            ],
+            [
+              "motion_cuda",
+              "cuda"
+            ]
+          ],
+          "n_frames": 30
+        },
+        {
+          "run": 2,
+          "wall_ms": 632.0,
+          "fps": 100.33,
+          "wall_fps": 100.21,
+          "backend_used": "cuda",
+          "feature_backends": [
+            [
+              "cambi_cuda",
+              "cuda"
+            ],
+            [
+              "speed_chroma_cuda",
+              "cuda"
+            ],
+            [
+              "adm_cuda",
+              "cuda"
+            ],
+            [
+              "motion_cuda",
+              "cuda"
+            ]
+          ],
+          "n_frames": 30
+        },
+        {
+          "run": 3,
+          "wall_ms": 560.0,
+          "fps": 131.0,
+          "wall_fps": 131.13,
+          "backend_used": "cuda",
+          "feature_backends": [
+            [
+              "cambi_cuda",
+              "cuda"
+            ],
+            [
+              "speed_chroma_cuda",
+              "cuda"
+            ],
+            [
+              "adm_cuda",
+              "cuda"
+            ],
+            [
+              "motion_cuda",
+              "cuda"
+            ]
+          ],
+          "n_frames": 30
+        }
+      ]
+    },
+    "cuda-n60": {
+      "util_gate": [
+        23,
+        26,
+        55,
+        26
+      ],
+      "runs": [
+        {
+          "run": 0,
+          "wall_ms": 828.5,
+          "fps": 135.44,
+          "wall_fps": 135.32,
+          "backend_used": "cuda",
+          "feature_backends": [
+            [
+              "cambi_cuda",
+              "cuda"
+            ],
+            [
+              "speed_chroma_cuda",
+              "cuda"
+            ],
+            [
+              "adm_cuda",
+              "cuda"
+            ],
+            [
+              "motion_cuda",
+              "cuda"
+            ]
+          ],
+          "n_frames": 60
+        },
+        {
+          "run": 1,
+          "wall_ms": 1014.9,
+          "fps": 92.74,
+          "wall_fps": 92.84,
+          "backend_used": "cuda",
+          "feature_backends": [
+            [
+              "cambi_cuda",
+              "cuda"
+            ],
+            [
+              "speed_chroma_cuda",
+              "cuda"
+            ],
+            [
+              "adm_cuda",
+              "cuda"
+            ],
+            [
+              "motion_cuda",
+              "cuda"
+            ]
+          ],
+          "n_frames": 60
+        },
+        {
+          "run": 2,
+          "wall_ms": 857.7,
+          "fps": 124.74,
+          "wall_fps": 124.86,
+          "backend_used": "cuda",
+          "feature_backends": [
+            [
+              "cambi_cuda",
+              "cuda"
+            ],
+            [
+              "speed_chroma_cuda",
+              "cuda"
+            ],
+            [
+              "adm_cuda",
+              "cuda"
+            ],
+            [
+              "motion_cuda",
+              "cuda"
+            ]
+          ],
+          "n_frames": 60
+        },
+        {
+          "run": 3,
+          "wall_ms": 829.2,
+          "fps": 126.85,
+          "wall_fps": 126.72,
+          "backend_used": "cuda",
+          "feature_backends": [
+            [
+              "cambi_cuda",
+              "cuda"
+            ],
+            [
+              "speed_chroma_cuda",
+              "cuda"
+            ],
+            [
+              "adm_cuda",
+              "cuda"
+            ],
+            [
+              "motion_cuda",
+              "cuda"
+            ]
+          ],
+          "n_frames": 60
+        }
+      ]
+    },
+    "cuda-n120": {
+      "util_gate": [
+        24,
+        24,
+        25,
+        23
+      ],
+      "runs": [
+        {
+          "run": 0,
+          "wall_ms": 1435.9,
+          "fps": 109.09,
+          "wall_fps": 109.13,
+          "backend_used": "cuda",
+          "feature_backends": [
+            [
+              "cambi_cuda",
+              "cuda"
+            ],
+            [
+              "speed_chroma_cuda",
+              "cuda"
+            ],
+            [
+              "adm_cuda",
+              "cuda"
+            ],
+            [
+              "motion_cuda",
+              "cuda"
+            ]
+          ],
+          "n_frames": 120
+        },
+        {
+          "run": 1,
+          "wall_ms": 1224.7,
+          "fps": 133.63,
+          "wall_fps": 133.57,
+          "backend_used": "cuda",
+          "feature_backends": [
+            [
+              "cambi_cuda",
+              "cuda"
+            ],
+            [
+              "speed_chroma_cuda",
+              "cuda"
+            ],
+            [
+              "adm_cuda",
+              "cuda"
+            ],
+            [
+              "motion_cuda",
+              "cuda"
+            ]
+          ],
+          "n_frames": 120
+        },
+        {
+          "run": 2,
+          "wall_ms": 1487.0,
+          "fps": 103.72,
+          "wall_fps": 103.67,
+          "backend_used": "cuda",
+          "feature_backends": [
+            [
+              "cambi_cuda",
+              "cuda"
+            ],
+            [
+              "speed_chroma_cuda",
+              "cuda"
+            ],
+            [
+              "adm_cuda",
+              "cuda"
+            ],
+            [
+              "motion_cuda",
+              "cuda"
+            ]
+          ],
+          "n_frames": 120
+        },
+        {
+          "run": 3,
+          "wall_ms": 1143.0,
+          "fps": 137.46,
+          "wall_fps": 137.59,
+          "backend_used": "cuda",
+          "feature_backends": [
+            [
+              "cambi_cuda",
+              "cuda"
+            ],
+            [
+              "speed_chroma_cuda",
+              "cuda"
+            ],
+            [
+              "adm_cuda",
+              "cuda"
+            ],
+            [
+              "motion_cuda",
+              "cuda"
+            ]
+          ],
+          "n_frames": 120
+        }
+      ]
+    }
+  },
+  "notes": {
+    "machine": "Windows 10.0.26300, RTX 5080 (device 1 via CUDA_VISIBLE_DEVICES)",
+    "exe": "rc.3 vmafx.exe (static default model)",
+    "input": "1920x1080 yuv420p 8-bit raw (t1_frames)",
+    "method": "4 runs/cell: run0 cold discarded, min over runs 1-3; full-process wall via time.perf_counter"
+  },
+  "fit_cpu": {
+    "primary_Nge30": {
+      "T0_ms": 31.1,
+      "t_frame_ms": 21.305,
+      "R2": 1.0
+    },
+    "all_points": {
+      "T0_ms": 32.0,
+      "t_frame_ms": 21.296,
+      "R2": 1.0
+    }
+  },
+  "fit_cuda": {
+    "primary_Nge30": {
+      "T0_ms": 403.1,
+      "t_frame_ms": 6.3,
+      "R2": 0.9788
+    },
+    "all_points": {
+      "T0_ms": 349.8,
+      "t_frame_ms": 6.87,
+      "R2": 0.9787
+    }
+  }
+}
