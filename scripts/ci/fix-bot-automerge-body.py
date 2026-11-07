@@ -95,7 +95,7 @@ def _call_mutation(node_id: str, headline: str, signoff: str) -> tuple[int, str 
             .get("autoMergeRequest", {})
             .get("commitBody")
         )
-    except json.JSONDecodeError, AttributeError:
+    except (json.JSONDecodeError, AttributeError):  # fmt: skip
         new_body = None
 
     return 0, new_body
