@@ -42,14 +42,6 @@ import sys
 GIT = shutil.which("git") or "/usr/bin/git"
 GIT_TIMEOUT_S = 60
 
-BOT_LOGINS = (
-    "renovate[bot]",
-    "dependabot[bot]",
-    "github-actions[bot]",
-    "vmafx-release-bot[bot]",
-    "plurano-merge-train[bot]",
-)
-
 
 class GitError(Exception):
     """Raised when git cannot answer; the gate must not read that as a pass."""
@@ -76,9 +68,14 @@ def bot_noreply_suffix(login: str) -> str:
 
 
 def has_non_bot_commit(base: str, head: str, bot_login: str) -> bool:
-    """True if any non-merge commit in base..head was authored by someone other than bot_login."""
+    """True if any commit in base..head was authored by someone other than bot_login.
+
+    Includes merge commits: an update-by-merge creates a merge commit whose
+    author is the person or bot that triggered it, and GitHub's squash body
+    lists Co-authored-by for every distinct author including merge authors.
+    """
     suffix = bot_noreply_suffix(bot_login)
-    out = run_git(["log", "--no-merges", "--format=%ae", f"{base}..{head}"])
+    out = run_git(["log", "--format=%ae", f"{base}..{head}"])
     for raw_email in out.splitlines():
         addr = raw_email.strip().lower()
         if addr and not addr.endswith(suffix):
