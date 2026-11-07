@@ -198,6 +198,7 @@ verify_signature() { # verify_signature TARBALL WORK
   [ -f "$work/SHA256SUMS" ] || download "${release_url}/SHA256SUMS" "$work/SHA256SUMS"
   download "${release_url}/SHA256SUMS.sigstore.json" "$work/SHA256SUMS.sigstore.json"
   identity="${FFMPEG_FIX_SERIES_REPO}/.github/workflows/release-build.yml@refs/tags/${FFMPEG_FIX_SERIES_TAG}"
+  export TUF_ROOT="${TUF_ROOT:-$work/sigstore}"
   cosign verify-blob --bundle "$work/SHA256SUMS.sigstore.json" \
     --certificate-identity "$identity" \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
