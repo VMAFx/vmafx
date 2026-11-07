@@ -270,8 +270,9 @@ def evaluate_provider_gap(model_path: Path, target_provider: str) -> CaseResult:
             return case("ERROR", False, f"Probe cannot feed input type {in_meta.type}")
         sess.run(None, {in_meta.name: np.zeros(shape, dtype=dtype)})
     except Exception as exc:
-        named_gap = target_provider == DEFAULT_TARGET_PROVIDER and TRANSNET_V2_SCATTERND_GAP in str(
-            exc
+        exc_text = str(exc)
+        named_gap = (
+            target_provider == DEFAULT_TARGET_PROVIDER and TRANSNET_V2_SCATTERND_GAP in exc_text
         )
         if named_gap:
             return case(
