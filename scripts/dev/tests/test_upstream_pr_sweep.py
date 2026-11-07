@@ -88,6 +88,11 @@ class HookEnvironmentIsolationTest(unittest.TestCase):
             "GIT_AUTHOR_NAME": "a",
             "GIT_SSH_COMMAND": "ssh",
             "HOME": "/home/x",
+            # A non-Git variable the tools need: the migration to
+            # scripts.lib.git_env briefly dropped every non-GIT_* key here,
+            # which starved git_cmd and build_environment of PATH (spotted in
+            # review on PR #3339).
+            "PATH": "/usr/bin:/bin",
         }
         with patch.dict(os.environ, caller, clear=True):
             self.assertEqual(
@@ -99,6 +104,7 @@ class HookEnvironmentIsolationTest(unittest.TestCase):
                     "GIT_AUTHOR_NAME": "a",
                     "GIT_SSH_COMMAND": "ssh",
                     "HOME": "/home/x",
+                    "PATH": "/usr/bin:/bin",
                 },
             )
 

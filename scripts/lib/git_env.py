@@ -45,6 +45,30 @@ def drop(
     return {key: value for key, value in source.items() if not key.startswith(tuple(prefixes))}
 
 
+def drop_except(
+    env: Mapping[str, str] | None = None,
+    prefixes: Sequence[str] = ("GIT_",),
+    keep: Sequence[str] = (),
+) -> dict[str, str]:
+    """``drop()`` that re-admits the whitelisted sub-namespaces in ``keep``.
+
+    For scripts that must keep a whitelist of settings while still scrubbing
+    everything else in the namespace: a key survives when it carries none of
+    ``prefixes`` or when it starts with one of ``keep``. The upstream-pr sweep,
+    for one, keeps the fixture's ``GIT_CONFIG_*`` / ``GIT_AUTHOR_*`` settings
+    but must not inherit a hook's ``GIT_DIR``. Keys are never read twice from
+    ``env`` and the input mapping is never mutated, like ``drop()``.
+    """
+    source = os.environ if env is None else env
+    prefixes_t = tuple(prefixes)
+    keep_t = tuple(keep)
+    return {
+        key: value
+        for key, value in source.items()
+        if not key.startswith(prefixes_t) or key.startswith(keep_t)
+    }
+
+
 def hermetic(env: Mapping[str, str] | None = None) -> dict[str, str]:
     """``drop()`` plus the ``clean-git-env.sh`` fixture environment.
 

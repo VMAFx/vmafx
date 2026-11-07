@@ -273,11 +273,19 @@ GIT_DROPPED_SETTINGS = frozenset({"GIT_CONFIG_PARAMETERS"})
 
 
 def git_environment() -> dict[str, str]:
-    """Return the process environment without any variable that locates a repository."""
+    """Return the process environment without any variable that locates a repository.
+
+    The whitelist (``GIT_SETTING_PREFIXES`` minus ``GIT_DROPPED_SETTINGS``)
+    must be evaluated against the CALLER's environment: the earlier
+    ``git_env.drop()`` sourcing dropped every ``GIT_*`` key before the
+    whitelist could re-admit the settings, which starved the fixture identity
+    and signing configuration out of every git subprocess (spotted in review
+    on PR #3339).
+    """
     return {
         key: value
-        for key, value in git_env.drop().items()
-        if key.startswith(GIT_SETTING_PREFIXES) and key not in GIT_DROPPED_SETTINGS
+        for key, value in git_env.drop_except(prefixes=("GIT_",), keep=GIT_SETTING_PREFIXES).items()
+        if key not in GIT_DROPPED_SETTINGS
     }
 
 

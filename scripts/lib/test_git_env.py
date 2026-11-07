@@ -13,7 +13,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts.lib.git_env import FIXTURE_EMAIL, FIXTURE_NAME, drop, hermetic
+from scripts.lib.git_env import (
+    FIXTURE_EMAIL,
+    FIXTURE_NAME,
+    drop,
+    drop_except,
+    hermetic,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 SHELL_CLEAN = ROOT / "scripts/lib/clean-git-env.sh"
@@ -49,6 +55,51 @@ class DropTest(unittest.TestCase):
         source = {"GIT_DIR": "/x", "HOME": "/h"}
         drop(source)
         self.assertEqual(source, {"GIT_DIR": "/x", "HOME": "/h"})
+
+
+class DropExceptTest(unittest.TestCase):
+    """The whitelist twin: scrub the namespace, re-admit the settings."""
+
+    def test_drop_except_re_admits_only_the_keep_prefixes(self) -> None:
+        source = {
+            "GIT_DIR": "/caller/.git",
+            "GIT_INDEX_FILE": "/caller/.git/index",
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "user.name",
+            "GIT_AUTHOR_NAME": "a",
+            "PATH": "/bin",
+        }
+        self.assertEqual(
+            drop_except(source, prefixes=("GIT_",), keep=("GIT_CONFIG_", "GIT_AUTHOR_")),
+            {
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "user.name",
+                "GIT_AUTHOR_NAME": "a",
+                "PATH": "/bin",
+            },
+        )
+
+    def test_drop_except_with_empty_keep_equals_drop(self) -> None:
+        source = {"GIT_DIR": "/x", "GIT_CONFIG_COUNT": "1", "HOME": "/h"}
+        self.assertEqual(drop_except(source), drop(source))
+        self.assertEqual(drop_except(source, prefixes=("GIT_",), keep=()), drop(source))
+
+    def test_drop_except_reads_each_key_once_and_never_mutates_its_input(self) -> None:
+        source = {"GIT_DIR": "/x", "GIT_CONFIG_KEY_0": "k", "HOME": "/h"}
+        snapshot = dict(source)
+        drop_except(source, keep=("GIT_CONFIG_",))
+        self.assertEqual(source, snapshot)
+
+    def test_drop_except_defaults_to_the_process_environment(self) -> None:
+        os.environ["GIT_DIR_TEST_PROBE"] = "/probe"
+        os.environ["GIT_CONFIG_TEST_PROBE"] = "k"
+        try:
+            built = drop_except(keep=("GIT_CONFIG_",))
+            self.assertNotIn("GIT_DIR_TEST_PROBE", built)
+            self.assertEqual(built.get("GIT_CONFIG_TEST_PROBE"), "k")
+        finally:
+            del os.environ["GIT_DIR_TEST_PROBE"]
+            del os.environ["GIT_CONFIG_TEST_PROBE"]
 
 
 class HermeticTest(unittest.TestCase):
