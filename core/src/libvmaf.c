@@ -3722,6 +3722,9 @@ static int read_pictures_cuda_cleanup(VmafContext *vmaf, VmafPicture *ref_host,
 #endif
 
 #ifdef HAVE_SYCL
+/* Pass the frame index and subsample to the combined SYCL graph, initialize the shared
+ * frame buffers on first use, and start the asynchronous upload of the reference and
+ * distorted pictures. Returns 0 without a SYCL state, else 0 or the init/upload error. */
 static int read_pictures_sycl_prep(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
                                    unsigned index)
 {
@@ -4418,6 +4421,9 @@ int vmaf_engine_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *
 }
 
 #ifdef HAVE_SYCL
+/* For each SYCL extractor that the subsample schedule scores on this frame: initialize
+ * it on first use, collect its pending result from the frame it last submitted, and
+ * submit this frame without a host copy. Returns 0 or the first error. */
 static int read_pictures_sycl_extractors(VmafContext *vmaf, unsigned index)
 {
     vmaf_sycl_graph_set_frame(vmaf->sycl.state, index, vmaf->cfg.n_subsample);

@@ -1524,6 +1524,10 @@ int adm_init_names(VmafFeatureExtractor *fex, AdmStateSycl *s)
     return vmaf_adm_extend_name_dict(fex, &s->feature_name_dict);
 }
 
+/* Initialize the SYCL ADM feature extractor: validates frame geometry and CSF tables,
+ * initializes shared frame buffers and device allocations, and registers the extractor
+ * with the combined command graph using its feature-extractor flags. Returns 0 on success
+ * or a negative error code on failure. */
 int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                   unsigned h)
 {

@@ -397,21 +397,31 @@ static unsigned check_schedule_case(const SubsampleCase *c)
                                  "SYCL subsample=1");
 }
 
+/* Verify parity of SYCL motion and VIF extractors against the CPU reference under
+ * subsample 3 across 9 frames. Returns NULL on success or an assertion failure string. */
 static char *test_subsample_three_motion_and_vif(void)
 {
     return check_cpu_parity(SUBSAMPLE_MAX_FRAMES, SUBSAMPLE_FACTOR);
 }
 
+/* Verify the subsample 1 boundary condition against the CPU reference across 7 frames,
+ * where every frame is scored without subsample skipping. Returns NULL on success or
+ * an assertion failure string. */
 static char *test_subsample_one_boundary(void)
 {
     return check_cpu_parity(7u, 1u);
 }
 
+/* Verify the boundary condition where subsample 12 exceeds the total frame count of 7
+ * against the CPU reference. Returns NULL on success or an assertion failure string. */
 static char *test_subsample_exceeds_frame_count_boundary(void)
 {
     return check_cpu_parity(7u, 12u);
 }
 
+/* Verify the schedule matrix of temporal and non-temporal SYCL extractor pairs at
+ * subsample 3 against identical SYCL extractors evaluated at subsample 1. Returns NULL
+ * on success or an assertion failure string. */
 static char *test_subsample_schedule_matrix(void)
 {
     if (mu_skipped || sycl_device_missing()) {
@@ -425,6 +435,8 @@ static char *test_subsample_schedule_matrix(void)
     return NULL;
 }
 
+/* Execute all SYCL subsampling unit test cases in sequence. Returns NULL on success
+ * or the first failing assertion message string. */
 char *run_tests(void)
 {
     mu_run_test(test_subsample_three_motion_and_vif);

@@ -1723,6 +1723,9 @@ int check_window_fits_lut(const CambiStateSycl *s)
     return vmaf_cambi_check_window_fits_lut(s->adjusted_window, src_window);
 }
 
+/* Configure CAMBI parameters, upload contrast tables, initialize shared frame buffers
+ * and device state, and register the extractor with the combined command graph using
+ * the given flags. Returns 0 on success or a negative error code on failure. */
 int init_cambi_device(CambiStateSycl *s, unsigned bpc, unsigned width, unsigned height,
                       uint64_t flags)
 {
@@ -1750,6 +1753,10 @@ int init_cambi_device(CambiStateSycl *s, unsigned bpc, unsigned width, unsigned 
     return error;
 }
 
+/* Initialize the SYCL CAMBI feature extractor: creates the feature-name dictionary, then
+ * runs init_cambi_device() with the extractor's flags. Returns 0, -EINVAL without a SYCL
+ * state, -ENOMEM without a dictionary, -EIO on a SYCL exception, or the error of
+ * init_cambi_device(); on failure it releases the CAMBI resources. */
 int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                   unsigned width, unsigned height)
 {

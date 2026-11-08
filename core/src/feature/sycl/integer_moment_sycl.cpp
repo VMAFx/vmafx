@@ -468,6 +468,10 @@ static bool moment_sum_alloc(MomentStateSycl *s, VmafSyclState *state)
     return s->d_row_totals && s->d_row_plans && s->d_row_units;
 }
 
+/* Initialize the SYCL moment feature extractor, allocating device and host sum buffers,
+ * creating the feature-name dictionary, and registering the extractor with the combined
+ * graph together with its feature-extractor flags. Returns 0 on success or a negative
+ * error code on failure. */
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {

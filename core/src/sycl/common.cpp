@@ -1578,6 +1578,10 @@ static void sycl_enqueue_all_phases(sycl::queue &q, VmafSyclState *state, bool a
     }
 }
 
+/* Count one extractor's submission for the current frame; once every extractor active
+ * on the frame has submitted, enqueue the pre-graph, compute (graph replay or direct
+ * kernels) and post-graph phases on the combined queue. Returns 0, also while
+ * submissions are missing, -EINVAL without a state or queue, or -EIO if enqueuing throws. */
 extern "C" int vmaf_sycl_graph_submit(VmafSyclState *state)
 {
     if (!state || !state->combined_queue)

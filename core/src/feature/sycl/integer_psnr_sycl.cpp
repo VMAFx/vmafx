@@ -438,6 +438,10 @@ namespace
 
 static int close_fex_sycl(VmafFeatureExtractor *fex);
 
+/* Initialize the SYCL PSNR feature extractor, configuring score metrics, allocating
+ * device SSE and chroma buffers, creating the feature-name dictionary, and registering
+ * the extractor with the combined graph together with its feature-extractor flags.
+ * Returns 0 on success or a negative error code on failure. */
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
