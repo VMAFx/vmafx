@@ -10,7 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -274,12 +274,12 @@ class TrainContract(unittest.TestCase):
             @staticmethod
             def subject(title: str, number: int) -> str:
                 """Delegate subject formatting to real composer."""
-                return real_composer.subject(title, number)
+                return cast(str, real_composer.subject(title, number))
 
             @staticmethod
             def body(body_text: str, identity: str) -> str:
                 """Delegate body formatting to real composer."""
-                return real_composer.body(body_text, identity)
+                return cast(str, real_composer.body(body_text, identity))
 
         self.train.validate(1421, self.detached())
         self.train.metadata["isDraft"] = False
@@ -316,12 +316,12 @@ class TrainContract(unittest.TestCase):
             @staticmethod
             def subject(title: str, number: int) -> str:
                 """Delegate subject formatting to real composer."""
-                return real_composer.subject(title, number)
+                return cast(str, real_composer.subject(title, number))
 
             @staticmethod
             def body(body_text: str, identity: str) -> str:
                 """Delegate body formatting to real composer."""
-                return real_composer.body(body_text, identity)
+                return cast(str, real_composer.body(body_text, identity))
 
         self.train.validate(1421, self.detached())
         self.train.metadata["isDraft"] = False

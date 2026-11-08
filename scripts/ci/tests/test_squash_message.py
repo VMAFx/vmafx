@@ -392,7 +392,8 @@ class TestCheckWithStubEngine(unittest.TestCase):
         with patch.dict(os.environ, {"PATH": str(self.dir_path)}):
             prefix, err = squash_message.engine_wrapper_argv(REPO_ROOT)
         self.assertEqual(err, "")
-        self.assertIsNotNone(prefix)
+        if prefix is None:
+            self.fail("default prefix refused a symlinked sh")
         self.assertEqual(prefix[0], str(link))
 
     def test_default_prefix_refuses_missing_sh(self) -> None:
@@ -541,7 +542,8 @@ class TestWorkflowWiring(unittest.TestCase):
         dco_section = content.split("dco-sign-off:")[1].split("ffmpeg-patches-surface-check:")[0]
 
         timeout_match = re.search(r"timeout-minutes:\s*(\d+)", dco_section)
-        self.assertIsNotNone(timeout_match)
+        if timeout_match is None:
+            self.fail("dco-sign-off job has no timeout-minutes")
         self.assertGreaterEqual(int(timeout_match.group(1)), 7)
 
         self.assertIn("Check the squash commit message", dco_section)
