@@ -112,7 +112,12 @@ Both `merge` and `arm` compose the squash commit message using
 as the trimmed pull request title and parenthesised PR number, while the commit
 body retains any breaking-change and migration footers (`BREAKING CHANGE:`,
 `BREAKING-CHANGE:`, or `Migration:`) followed by the `Signed-off-by` trailer of
-`LANDING_IDENTITY`. The [DCO Sign-off job](../../.github/workflows/rule-enforcement.yml)
+`LANDING_IDENTITY`. A footer is kept only when its line starts in column zero
+with one of those prefixes and a non-blank value (`FOOTER_RE`); continuation
+lines below it are dropped, so write each migration step as its own footer
+line. More than 20 footer lines (`MAX_FOOTER_LINES`) or a body above 65,537
+lines make the composer raise an error instead of truncating the message. The
+[DCO Sign-off job](../../.github/workflows/rule-enforcement.yml)
 in CI runs the same check on every pull request except release pull requests.
 
 Prefer `merge` in the automatic loop: future local holds cannot stop auto-merge
