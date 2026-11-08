@@ -16,6 +16,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import merge_train_guard as guard
 
+SQUASH_COMPOSER = guard.load_squash_composer()
+
 
 class FixtureTrain(guard.Train):
     """Only the local fixture remote substitutes for GitHub."""
@@ -258,9 +260,31 @@ class TrainContract(unittest.TestCase):
                 self.assertFalse(any(call[:2] == ("pr", "merge") for call in self.train.calls))
 
     def test_clean_merge_is_bound_to_validated_head_and_keeps_branch(self) -> None:
+        """Prove clean merge carries formatted subject and body bound to validated head."""
+        real_composer = guard.load_squash_composer()
+
+        class StubSuccessComposer:
+            """Stub squash composer returning successful check and delegating formatting."""
+
+            @staticmethod
+            def check_message(*args: Any, **kwargs: Any) -> tuple[int, str]:
+                """Stub check returning success."""
+                return 0, ""
+
+            @staticmethod
+            def subject(title: str, number: int) -> str:
+                """Delegate subject formatting to real composer."""
+                return real_composer.subject(title, number)
+
+            @staticmethod
+            def body(body_text: str, identity: str) -> str:
+                """Delegate body formatting to real composer."""
+                return real_composer.body(body_text, identity)
+
         self.train.validate(1421, self.detached())
         self.train.metadata["isDraft"] = False
-        self.train.merge(1421, auto=False)
+        with patch.object(guard, "load_squash_composer", return_value=StubSuccessComposer()):
+            self.train.merge(1421, auto=False)
         self.assertEqual(
             self.train.calls[-1],
             (
@@ -277,7 +301,40 @@ class TrainContract(unittest.TestCase):
             ),
         )
 
+    def test_merge_refused_when_stub_check_fails(self) -> None:
+        """Prove merge is refused when squash message check fails using stub."""
+        real_composer = guard.load_squash_composer()
+
+        class StubRefuseComposer:
+            """Stub squash composer returning check failure."""
+
+            @staticmethod
+            def check_message(*args: Any, **kwargs: Any) -> tuple[int, str]:
+                """Stub check returning refusal."""
+                return 1, "HISS-14 violation: stub"
+
+            @staticmethod
+            def subject(title: str, number: int) -> str:
+                """Delegate subject formatting to real composer."""
+                return real_composer.subject(title, number)
+
+            @staticmethod
+            def body(body_text: str, identity: str) -> str:
+                """Delegate body formatting to real composer."""
+                return real_composer.body(body_text, identity)
+
+        self.train.validate(1421, self.detached())
+        self.train.metadata["isDraft"] = False
+        with patch.object(guard, "load_squash_composer", return_value=StubRefuseComposer()):
+            with self.assertRaises(guard.Refused) as ctx:
+                self.train.merge(1421, auto=False)
+        self.assertIn("squash message check failed", str(ctx.exception))
+        self.assertIn("HISS-14 violation: stub", str(ctx.exception))
+        self.assertFalse(any(call[:2] == ("pr", "merge") for call in self.train.calls))
+
+    @unittest.skipUnless(SQUASH_COMPOSER.engine_available(), "praetor engine unavailable")
     def test_merge_refused_when_squash_message_check_fails(self) -> None:
+        """Prove real engine refuses merge on breaking change without migration footer."""
         self.train.validate(1421, self.detached())
         self.train.metadata["isDraft"] = False
         self.train.metadata["title"] = "feat(core)!: breaking change without migration"
@@ -285,6 +342,7 @@ class TrainContract(unittest.TestCase):
         with self.assertRaises(guard.Refused) as ctx:
             self.train.merge(1421, auto=False)
         self.assertIn("squash message check failed", str(ctx.exception))
+        self.assertIn("HISS-14 violation", str(ctx.exception))
         self.assertFalse(any(call[:2] == ("pr", "merge") for call in self.train.calls))
 
     def test_head_change_or_new_hold_during_checks_prevents_merge(self) -> None:

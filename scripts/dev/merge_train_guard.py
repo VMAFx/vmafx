@@ -56,6 +56,7 @@ def digest(path: Path) -> str:
 
 
 def load_squash_composer() -> Any:
+    """Dynamically load and return the squash_message module."""
     path = Path(__file__).resolve().parent.parent / "ci" / "squash_message.py"
     spec = importlib.util.spec_from_file_location("squash_message", str(path))
     if spec is None or spec.loader is None:
@@ -322,6 +323,7 @@ class Train:
             raise Refused("required checks are not eligible for this action")
 
     def merge(self, number: int, auto: bool) -> None:
+        """Execute validated merge after verifying checks and squash commit message."""
         pr = self.guard(number)
         if pr["isDraft"]:
             raise Refused("draft PRs cannot be armed or merged")
@@ -400,7 +402,7 @@ class Train:
                     cwd=checkout,
                 )
             self.guard(number, updated)
-        except (Refused, OSError):
+        except Refused, OSError:
             print(f"Retained failed rebase checkout and ownership receipt: {run}", file=sys.stderr)
             raise
         if self.git(

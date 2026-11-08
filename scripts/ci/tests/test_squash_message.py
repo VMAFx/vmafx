@@ -26,13 +26,15 @@ Covers:
 
 from __future__ import annotations
 
-import json
+import os
+import re
 import shutil
-import subprocess
+import subprocess  # argv-list calls only, no shell  # nosec B404
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SQUASH_SCRIPT = REPO_ROOT / "scripts" / "ci" / "squash_message.py"
@@ -44,30 +46,12 @@ from scripts.ci import squash_message  # noqa: E402
 from scripts.dev import merge_train_guard as guard  # noqa: E402
 
 
-def engine_available() -> bool:
-    """Check if the pinned praetor engine is runnable."""
-    try:
-        res = subprocess.run(  # noqa: S603 - fixed argv, no shell
-            [SH, ".config/lefthook/engine.sh", "version"],
-            cwd=str(REPO_ROOT),
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-        return res.returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-
-
 def run_cli_check(
     title: str,
     number: int,
     body: str,
     identity: str = "lusoris <lusoris@proton.me>",
-    engine_argv: list[str] | None = None,
     timeout: float | None = None,
-    repo_root: Path | None = None,
 ) -> int:
     """Invoke squash_message.py check via subprocess."""
     cmd = [
@@ -83,13 +67,9 @@ def run_cli_check(
         "--identity",
         identity,
     ]
-    if engine_argv is not None:
-        cmd.extend(["--engine-argv", json.dumps(engine_argv)])
     if timeout is not None:
         cmd.extend(["--timeout", str(timeout)])
-    if repo_root is not None:
-        cmd.extend(["--repo-root", str(repo_root)])
-    res = subprocess.run(  # noqa: S603 - fixed argv, no shell
+    res = subprocess.run(  # noqa: S603 -- CLI check invocation, no shell  # nosec B603
         cmd,
         cwd=str(REPO_ROOT),
         capture_output=True,
@@ -103,6 +83,7 @@ class TestCompose(unittest.TestCase):
     """Test composition of squash commit messages."""
 
     def test_compose_no_footers_is_byte_identical(self) -> None:
+        """Prove compose produces byte-identical message without footers."""
         title = "feat(core): initial capability"
         number = 42
         body = "This is a standard pull request body without special footers."
@@ -112,6 +93,7 @@ class TestCompose(unittest.TestCase):
         self.assertEqual(res, expected)
 
     def test_compose_migration_and_breaking_change_copied_in_order(self) -> None:
+        """Prove compose copies Migration and BREAKING CHANGE footers in order."""
         title = "feat(api)!: redesign interface"
         number = 100
         body = (
@@ -134,6 +116,7 @@ class TestCompose(unittest.TestCase):
         self.assertEqual(res, expected)
 
     def test_compose_crlf_body_handles_carriage_returns(self) -> None:
+        """Prove compose handles CRLF line endings in PR body."""
         title = "fix(ci): windows compatibility"
         number = 101
         body = "Line 1\r\nMigration: docs/windows.md\r\nLine 3\r\n"
@@ -143,6 +126,7 @@ class TestCompose(unittest.TestCase):
         self.assertNotIn("\r", res)
 
     def test_compose_indented_or_quoted_migration_not_copied(self) -> None:
+        """Prove compose ignores indented or quoted Migration lines."""
         title = "chore: quote example"
         number = 102
         body = (
@@ -156,6 +140,7 @@ class TestCompose(unittest.TestCase):
         self.assertEqual(res, expected)
 
     def test_compose_empty_migration_not_copied(self) -> None:
+        """Prove compose ignores empty Migration lines."""
         title = "chore: empty migration line"
         number = 103
         body = "Migration:\nMigration: \nMigration: \t \n"
@@ -165,6 +150,7 @@ class TestCompose(unittest.TestCase):
         self.assertEqual(res, expected)
 
     def test_compose_twenty_one_footers_raises_value_error(self) -> None:
+        """Prove compose raises ValueError when footer limit is exceeded."""
         title = "feat: many footers"
         number = 104
         identity = "lusoris <lusoris@proton.me>"
@@ -179,6 +165,7 @@ class TestCompose(unittest.TestCase):
         self.assertIn("path_19", res)
 
     def test_extract_footers_max_body_lines_boundary(self) -> None:
+        """Prove extract_footers enforces MAX_BODY_LINES boundary."""
         body_exact = "\n" * (squash_message.MAX_BODY_LINES - 1)
         self.assertEqual(len(body_exact.split("\n")), squash_message.MAX_BODY_LINES)
         self.assertEqual(squash_message.extract_footers(body_exact), [])
@@ -194,6 +181,7 @@ class TestDeclaredTypesAndEngineSubject(unittest.TestCase):
     """Unit tests for declared_types and engine_subject mapping."""
 
     def test_engine_subject_mapping(self) -> None:
+        """Prove engine_subject correctly maps non-engine declared types to chore."""
         declared = ["feat", "fix", "port", "sycl", "cuda", "simd", "refactor"]
         self.assertEqual(
             squash_message.engine_subject("port(upstream)!: x (#1)", declared),
@@ -221,6 +209,7 @@ class TestDeclaredTypesAndEngineSubject(unittest.TestCase):
         )
 
     def test_declared_types_live_and_missing_hook(self) -> None:
+        """Prove declared_types handles live config and missing hook configurations."""
         declared = squash_message.declared_types(REPO_ROOT)
         for expected in ("port", "sycl", "cuda", "simd", "feat"):
             self.assertIn(expected, declared)
@@ -238,10 +227,11 @@ class TestDeclaredTypesAndEngineSubject(unittest.TestCase):
 
             stub = temp_root / "stub_engine.py"
             stub.write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
-            code = run_cli_check(
+            code, _ = squash_message.check_message(
                 title="feat: test",
                 number=999,
-                body="",
+                body_text="",
+                identity="lusoris <lusoris@proton.me>",
                 engine_argv=[sys.executable, str(stub)],
                 repo_root=temp_root,
             )
@@ -252,6 +242,7 @@ class TestCheckWithStubEngine(unittest.TestCase):
     """Test CLI check logic using a mock engine script."""
 
     def setUp(self) -> None:
+        """Set up temporary directory and stub scripts for check testing."""
         self.temp_dir = tempfile.TemporaryDirectory()
         self.dir_path = Path(self.temp_dir.name)
 
@@ -278,59 +269,146 @@ class TestCheckWithStubEngine(unittest.TestCase):
         self.exit_127_argv = [sys.executable, str(exit_127_stub)]
 
     def tearDown(self) -> None:
+        """Clean up temporary directory and fixtures."""
         self.temp_dir.cleanup()
 
     def test_stub_breaking_title_without_migration_refused(self) -> None:
-        code = run_cli_check(
+        """Prove breaking change without migration footer is refused by check."""
+        code, _ = squash_message.check_message(
             title="feat(core)!: breaking change",
             number=201,
-            body="No migration path provided",
+            body_text="No migration path provided",
+            identity="lusoris <lusoris@proton.me>",
             engine_argv=self.stub_argv,
         )
         self.assertEqual(code, 1)
 
     def test_stub_breaking_title_with_migration_passes(self) -> None:
-        code = run_cli_check(
+        """Prove breaking change with migration footer passes check."""
+        code, _ = squash_message.check_message(
             title="feat(core)!: breaking change",
             number=202,
-            body="Migration: docs/migration.md",
+            body_text="Migration: docs/migration.md",
+            identity="lusoris <lusoris@proton.me>",
             engine_argv=self.stub_argv,
         )
         self.assertEqual(code, 0)
 
     def test_stub_exit_127_or_missing_binary_returns_2(self) -> None:
-        code_127 = run_cli_check(
+        """Prove missing executable or exit code 127 returns exit code 2."""
+        code_127, _ = squash_message.check_message(
             title="feat(core): feature",
             number=203,
-            body="",
+            body_text="",
+            identity="lusoris <lusoris@proton.me>",
             engine_argv=self.exit_127_argv,
         )
         self.assertEqual(code_127, 2)
 
-        code_missing = run_cli_check(
+        code_missing, _ = squash_message.check_message(
             title="feat(core): feature",
             number=204,
-            body="",
+            body_text="",
+            identity="lusoris <lusoris@proton.me>",
             engine_argv=["/nonexistent/praetor/engine/binary"],
         )
         self.assertEqual(code_missing, 2)
 
     def test_stub_timeout_returns_2(self) -> None:
-        code_timeout = run_cli_check(
+        """Prove engine process timeout returns exit code 2."""
+        code_timeout, _ = squash_message.check_message(
             title="feat(core): feature",
             number=205,
-            body="",
+            body_text="",
+            identity="lusoris <lusoris@proton.me>",
             engine_argv=self.sleep_argv,
-            timeout=0.2,
+            timeout_seconds=0.2,
         )
         self.assertEqual(code_timeout, 2)
+
+    def test_cli_refuses_engine_argv_flag(self) -> None:
+        """Prove that CLI rejects unknown --engine-argv flag with exit code 2."""
+        res = subprocess.run(  # noqa: S603 -- CLI rejection check, no shell  # nosec B603
+            [sys.executable, str(SQUASH_SCRIPT), "check", "--engine-argv", '["/bin/true"]'],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(res.returncode, 2)
+
+    def test_check_message_refuses_relative_engine_argv(self) -> None:
+        """Prove check_message refuses non-absolute engine executable with exit code 2."""
+        sentinel = self.dir_path / "relative_ran.txt"
+        stub = self.dir_path / "relative_stub.py"
+        stub.write_text(f"from pathlib import Path\nPath({str(sentinel)!r}).write_text('ran')\n")
+        code, _ = squash_message.check_message(
+            title="feat(core): test",
+            number=206,
+            body_text="",
+            identity="lusoris <lusoris@proton.me>",
+            engine_argv=["python3", str(stub)],
+        )
+        self.assertEqual(code, 2)
+        self.assertFalse(sentinel.exists())
+
+    def test_check_message_refuses_empty_engine_argv(self) -> None:
+        """Prove check_message refuses empty engine_argv list with exit code 2."""
+        code, _ = squash_message.check_message(
+            title="feat(core): test",
+            number=207,
+            body_text="",
+            identity="lusoris <lusoris@proton.me>",
+            engine_argv=[],
+        )
+        self.assertEqual(code, 2)
+
+    def test_check_message_boundary_missing_wrapper_refuses(self) -> None:
+        """Prove check_message returns 2 naming wrapper when wrapper is missing."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            src_config = REPO_ROOT / ".pre-commit-config.yaml"
+            dest_config = temp_root / ".pre-commit-config.yaml"
+            shutil.copy2(src_config, dest_config)
+            expected_wrapper = temp_root / ".config" / "lefthook" / "engine.sh"
+            code, out = squash_message.check_message(
+                title="feat(core): valid message",
+                number=208,
+                body_text="",
+                identity="lusoris <lusoris@proton.me>",
+                repo_root=temp_root,
+            )
+            self.assertEqual(code, 2)
+            self.assertIn(str(expected_wrapper), out)
+
+    @unittest.skipIf(sys.platform == "win32", "symlink creation needs privileges on Windows")
+    def test_default_prefix_keeps_symlinked_sh_unresolved(self) -> None:
+        """Prove the default prefix keeps a symlinked sh as found, so busybox sees argv[0] sh."""
+        real_sh = shutil.which("sh")
+        if real_sh is None:
+            self.skipTest("sh not on PATH")
+        link = self.dir_path / "sh"
+        link.symlink_to(real_sh)
+        with patch.dict(os.environ, {"PATH": str(self.dir_path)}):
+            prefix, err = squash_message.engine_wrapper_argv(REPO_ROOT)
+        self.assertEqual(err, "")
+        self.assertIsNotNone(prefix)
+        self.assertEqual(prefix[0], str(link))
+
+    def test_default_prefix_refuses_missing_sh(self) -> None:
+        """Prove the default prefix refuses with a message when no sh is on PATH."""
+        with patch.dict(os.environ, {"PATH": str(self.dir_path)}):
+            prefix, err = squash_message.engine_wrapper_argv(REPO_ROOT)
+        self.assertIsNone(prefix)
+        self.assertIn("sh executable not found", err)
 
 
 class TestRealEngine(unittest.TestCase):
     """Test against the real pinned Praetor engine when available."""
 
-    @unittest.skipUnless(engine_available(), "praetor engine unavailable")
+    @unittest.skipUnless(squash_message.engine_available(), "praetor engine unavailable")
     def test_pr_3235_shape_refused_and_with_migration_passes(self) -> None:
+        """Prove PR 3235 breaking change shape is refused and migration passes."""
         code_bad, out_bad = squash_message.check_message(
             title="feat(ffmpeg)!: redesign the patch series",
             number=3235,
@@ -349,8 +427,9 @@ class TestRealEngine(unittest.TestCase):
         self.assertEqual(code_good, 0)
         self.assertIn("PASS", out_good)
 
-    @unittest.skipUnless(engine_available(), "praetor engine unavailable")
+    @unittest.skipUnless(squash_message.engine_available(), "praetor engine unavailable")
     def test_fork_commit_types_and_bogus(self) -> None:
+        """Prove fork commit types are mapped and bogus types rejected."""
         # port(upstream): x -> 0
         code_port, _ = squash_message.check_message(
             title="port(upstream): cherry pick change",
@@ -396,8 +475,9 @@ class TestRealEngine(unittest.TestCase):
         )
         self.assertEqual(code_bogus, 1)
 
-    @unittest.skipUnless(engine_available(), "praetor engine unavailable")
+    @unittest.skipUnless(squash_message.engine_available(), "praetor engine unavailable")
     def test_engine_types_drift(self) -> None:
+        """Detect upstream engine type changes to identify when to retire mapping."""
         for t in squash_message.ENGINE_TYPES:
             msg = f"{t}: standard description (#1)\n\nSigned-off-by: lusoris <lusoris@proton.me>\n"
             with tempfile.NamedTemporaryFile(
@@ -406,7 +486,7 @@ class TestRealEngine(unittest.TestCase):
                 tmp.write(msg)
                 tmp_path = Path(tmp.name)
             try:
-                res = subprocess.run(  # noqa: S603 - fixed argv, no shell
+                res = subprocess.run(  # noqa: S603 -- raw engine check, no shell  # nosec B603
                     [SH, ".config/lefthook/engine.sh", "forge", "check-message", str(tmp_path)],
                     cwd=str(REPO_ROOT),
                     capture_output=True,
@@ -434,7 +514,7 @@ class TestRealEngine(unittest.TestCase):
                 tmp.write(msg)
                 tmp_path = Path(tmp.name)
             try:
-                res = subprocess.run(  # noqa: S603 - fixed argv, no shell
+                res = subprocess.run(  # noqa: S603 -- raw engine check, no shell  # nosec B603
                     [SH, ".config/lefthook/engine.sh", "forge", "check-message", str(tmp_path)],
                     cwd=str(REPO_ROOT),
                     capture_output=True,
@@ -455,13 +535,18 @@ class TestWorkflowWiring(unittest.TestCase):
     """Verify rule-enforcement.yml wiring for the squash commit gate."""
 
     def test_dco_signoff_job_wiring_and_no_interpolation(self) -> None:
+        """Verify DCO sign-off job wiring, timeout, and injection safety."""
         content = WORKFLOW_FILE.read_text(encoding="utf-8")
         self.assertIn("dco-sign-off:", content)
         dco_section = content.split("dco-sign-off:")[1].split("ffmpeg-patches-surface-check:")[0]
 
+        timeout_match = re.search(r"timeout-minutes:\s*(\d+)", dco_section)
+        self.assertIsNotNone(timeout_match)
+        self.assertGreaterEqual(int(timeout_match.group(1)), 7)
+
         self.assertIn("Check the squash commit message", dco_section)
         self.assertIn(
-            '"$RUNNER_TEMP/squash/bin/python" -B scripts/ci/squash_message.py check',
+            '"$RUNNER_TEMP/squash/bin/python" -B scripts/ci/squash_message.py check --timeout 360',
             dco_section,
         )
         self.assertIn(
@@ -487,6 +572,7 @@ class TestMergeTrainGuardIntegration(unittest.TestCase):
     """Verify merge_train_guard merge behavior with squash_message."""
 
     def test_merge_train_guard_carries_subject_and_body(self) -> None:
+        """Verify merge_train_guard passes formatted subject and body."""
         composer = guard.load_squash_composer()
         subj = composer.subject("feat(core): test title", 500)
         body = composer.body("Migration: docs/migration.md", guard.LANDING_IDENTITY)

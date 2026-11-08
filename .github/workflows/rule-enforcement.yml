@@ -437,7 +437,7 @@ jobs:
     # required-aggregator
     name: DCO Sign-off
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     # ADR-2462: every non-merge commit of the pull request carries a
     # `Signed-off-by:` trailer whose address is the commit's author or
     # committer (what `git commit -s` writes). Exempt: commits of an
@@ -507,6 +507,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # Engine install is bounded at 300 s by PRAETOR_ENGINE_INSTALL_TIMEOUT in
+      # .config/lefthook/engine.sh:43, plus 60 s for the check.
       - name: Check the squash commit message
         if: steps.release_pr.outputs.exempt != 'true'
         env:
@@ -519,7 +521,7 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/squash"
           "$RUNNER_TEMP/squash/bin/pip" install --quiet --require-hashes \
             -r requirements/locks/build.txt
-          "$RUNNER_TEMP/squash/bin/python" -B scripts/ci/squash_message.py check
+          "$RUNNER_TEMP/squash/bin/python" -B scripts/ci/squash_message.py check --timeout 360
 
   ffmpeg-patches-surface-check:
     needs: tier

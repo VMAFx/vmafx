@@ -36,19 +36,22 @@ Functions:
 - check_message(title, number, body, identity, ...): Checks message with engine.
 - declared_types(repo_root): Extracts conventional commit types from config.
 - engine_subject(subject, declared): Maps non-engine declared types to 'chore'.
+- engine_available(root): Checks if the pinned Praetor engine wrapper is runnable.
+- engine_wrapper_argv(root): Returns the absolute [sh, wrapper] prefix, or an error.
 
 CLI:
-- check: Reads inputs from flags or environment variables, runs the engine check.
+- check: Reads inputs (--title, --number, --body/--body-file, --identity, --timeout) from flags
+  or environment variables, runs the engine check.
 - body: Prints the composed commit body for a lander.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
-import subprocess
+import shutil
+import subprocess  # argv-list calls only, no shell  # nosec B404
 import sys
 import tempfile
 from collections.abc import Sequence
@@ -64,7 +67,6 @@ MAX_FOOTER_LINES = 20
 # prevents silent truncation of footers.
 MAX_BODY_LINES = 65_537
 
-DEFAULT_ENGINE_ARGV = ["sh", ".config/lefthook/engine.sh", "forge", "check-message"]
 DEFAULT_TIMEOUT_SECONDS = 600.0
 DEFAULT_LANDING_IDENTITY = "lusoris <lusoris@proton.me>"
 FOOTER_RE = re.compile(r"^(?:BREAKING CHANGE|BREAKING-CHANGE|Migration): \S")
@@ -149,7 +151,7 @@ def engine_subject(subject: str, declared: Sequence[str]) -> str:
         return subject
     commit_type = m.group(1)
     if commit_type in declared and commit_type not in ENGINE_TYPES:
-        return f"chore{subject[m.end(1):]}"
+        return f"chore{subject[m.end(1) :]}"
     return subject
 
 
@@ -209,6 +211,62 @@ def compose(title: str, number: int, body_text: str, identity: str) -> str:
     return f"{subj}\n\n{b}"
 
 
+def engine_wrapper_argv(root: Path) -> tuple[list[str] | None, str]:
+    """Return the absolute [sh, wrapper] prefix for the pinned engine, or an error."""
+    resolved_sh = shutil.which("sh")
+    if not resolved_sh:
+        return None, "sh executable not found on PATH\n"
+    # absolute(), not resolve(): a multi-call shell (busybox) dispatches on argv[0].
+    abs_sh = Path(resolved_sh).absolute()
+    if not abs_sh.is_file():
+        return None, f"sh executable not found or not a regular file: {abs_sh}\n"
+    wrapper = root / ".config/lefthook/engine.sh"
+    if not wrapper.is_file():
+        return None, f"engine wrapper not found or not a regular file: {wrapper}\n"
+    return [str(abs_sh), str(wrapper)], ""
+
+
+def engine_available(root: Path | None = None) -> bool:
+    """Check if the pinned Praetor engine wrapper is runnable."""
+    resolved_root = root or REPO_ROOT
+    prefix, _ = engine_wrapper_argv(resolved_root)
+    if prefix is None:
+        return False
+    try:
+        res = subprocess.run(  # noqa: S603 -- engine version probe, no shell  # nosec B603
+            [*prefix, "version"],
+            cwd=str(resolved_root),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        return res.returncode == 0
+    except OSError, subprocess.TimeoutExpired:
+        return False
+
+
+def resolve_engine_cmd(root: Path, engine_argv: list[str] | None) -> tuple[list[str] | None, str]:
+    """Resolve and validate the engine command argv prefix."""
+    if engine_argv is None:
+        prefix, err = engine_wrapper_argv(root)
+        if prefix is None:
+            return None, err
+        return [*prefix, "forge", "check-message"], ""
+
+    if (
+        not isinstance(engine_argv, list)
+        or not engine_argv
+        or not all(isinstance(x, str) for x in engine_argv)
+        or not Path(engine_argv[0]).is_absolute()
+    ):
+        return (
+            None,
+            "engine_argv must be a non-empty list of strings starting with an absolute path\n",
+        )
+    return list(engine_argv), ""
+
+
 def check_message(
     title: str,
     number: int,
@@ -232,7 +290,10 @@ def check_message(
     except ValueError as exc:
         return 2, f"composition error: {exc}\n"
 
-    cmd_prefix = list(engine_argv) if engine_argv is not None else list(DEFAULT_ENGINE_ARGV)
+    cmd_prefix, err = resolve_engine_cmd(root, engine_argv)
+    if cmd_prefix is None:
+        return 2, err
+
     temp_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -246,7 +307,7 @@ def check_message(
             temp_path = Path(tmp.name)
 
         run_args = [*cmd_prefix, str(temp_path)]
-        res = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        res = subprocess.run(  # noqa: S603 -- engine wrapper invocation, no shell  # nosec B603
             run_args,
             cwd=str(root),
             capture_output=True,
@@ -257,10 +318,8 @@ def check_message(
         combined_output = res.stdout
         if res.stderr:
             combined_output += res.stderr
-        if res.returncode == 0:
-            return 0, combined_output
-        if res.returncode == 1:
-            return 1, combined_output
+        if res.returncode in (0, 1):
+            return res.returncode, combined_output
         return 2, f"engine returned unexpected exit code {res.returncode}:\n{combined_output}"
     except (subprocess.TimeoutExpired, OSError) as exc:
         return 2, f"engine execution failed: {exc}\n"
@@ -274,16 +333,6 @@ def resolve_body(args: argparse.Namespace) -> str:
     if args.body_file:
         return Path(args.body_file).read_text(encoding="utf-8")
     return str(args.body or "")
-
-
-def parse_engine_argv(raw: str | None) -> list[str] | None:
-    """Parse JSON list override for engine argv."""
-    if not raw:
-        return None
-    parsed = json.loads(raw)
-    if not isinstance(parsed, list) or not all(isinstance(x, str) for x in parsed):
-        raise ValueError("--engine-argv must be a JSON list of strings")
-    return parsed
 
 
 def run_check_cmd(args: argparse.Namespace) -> int:
@@ -305,27 +354,17 @@ def run_check_cmd(args: argparse.Namespace) -> int:
         return 2
 
     try:
-        engine_argv = parse_engine_argv(args.engine_argv)
-    except ValueError as exc:
-        print(f"squash_message: invalid --engine-argv: {exc}", file=sys.stderr)
-        return 2
-
-    try:
         body_text = resolve_body(args)
     except OSError as exc:
         print(f"squash_message: failed to read body-file: {exc}", file=sys.stderr)
         return 2
-
-    repo_root = Path(args.repo_root) if args.repo_root else None
 
     code, output = check_message(
         title=title,
         number=number,
         body_text=body_text,
         identity=identity,
-        engine_argv=engine_argv,
         timeout_seconds=args.timeout,
-        repo_root=repo_root,
     )
     if output:
         if code == 0:
@@ -374,13 +413,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--identity",
         default=env("LANDING_IDENTITY", DEFAULT_LANDING_IDENTITY),
     )
-    check_p.add_argument("--engine-argv", default=None)
     check_p.add_argument(
         "--timeout",
         type=float,
         default=DEFAULT_TIMEOUT_SECONDS,
     )
-    check_p.add_argument("--repo-root", default=None, help="Repository root path override")
 
     body_p = subparsers.add_parser("body", help="Print squash commit message body")
     body_p.add_argument("--title", default=env("PR_TITLE", ""))
