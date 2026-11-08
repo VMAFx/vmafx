@@ -1,8 +1,10 @@
 <!-- markdownlint-disable MD013 MD060 -->
-# VMAF Fork — Engineering Principles
+# VMAFx — Engineering Principles
 
 This page defines the non-negotiable standards for code merged to `master`.
-Read it before changing code, scripts or build definitions.
+Read it before changing code, scripts, schemas, configuration or build definitions.
+VMAFx extends Netflix's Video Multi-Method Assessment Fusion (VMAF) engine;
+these standards cover every implementation language in the fork.
 
 The C-oriented requirements in sections 1–7 use `.clang-tidy`, `.cppcheck-suppressions.txt`,
 `.semgrep.yml`, `.pre-commit-config.yaml` or
@@ -18,8 +20,8 @@ code, CUDA / HIP / SYCL / Metal kernels, SIMD paths, tests, tools and
 scripts alike. Language-specific adaptations are defined in section 9;
 origin does not exempt code from the applicable rules. The
 one invariant that outranks the standards is numerical correctness as pinned
-by the Netflix golden assertions (section 8 of
-[AGENTS.md](https://github.com/VMAFx/vmafx/blob/master/AGENTS.md), and
+by the Netflix golden assertions (the golden-data section of
+[the agent reference](development/agent-reference.md#netflix-golden-data-gate), and
 [section 3.1](#31-netflix-golden-data-gate) below). Whole-tree lint debt is
 measured and may only decrease (`make tidy-ratchet`, see
 [docs/development/ci.md](development/ci.md#whole-tree-lint-ratchet-adr-1142)).
@@ -392,17 +394,34 @@ We explicitly do **not** pursue:
 This section owns language roles, standards and gate coverage; the
 [language setup guide](development/languages.md) owns installation and
 workspace recipes. The inventory below follows tracked source at
-`cebdcbcd585892fceabc3235e3dd4fee8dbf43d8`, checked on 2026-10-28 with
-`git ls-files`. TypeScript and JavaScript are present; future languages do
-not acquire a policy or a claimed gate until their source arrives.
+`1a0f497e2925cca8a3566ba52905707cf7e995b0`, read on 2026-11-07 with
+`git ls-files`. It includes executable languages, build languages, schemas
+and documentation markup. File contents and their consumer determine the
+language: `scripts/ci/exact_twins.d/*.hip` are data, not HIP kernels.
+Future languages need an explicit policy and coverage record when introduced.
 [ADR-3385](adr/3385-principles-per-language-matrix.md) records this docs-only
 slice of [#2438](https://github.com/VMAFx/vmafx/issues/2438).
+
+**How to use this section.** Start with the language below, then read its
+C-core mapping in [section 9](#9-applicability-matrix). Rule numbers refer to
+section 1.1. C syntax restrictions apply only where that construct exists;
+the safety obligations survive in the language's error, ownership and
+concurrency model. JPL/CERT rules in sections 1.2–1.4 remain binding at
+native boundaries; they are not a claim of CERT certification for other
+languages. Installation belongs in the language setup guide.
+
+**Gate commands are a reference, not an execution receipt.** Run from the
+repository root unless stated otherwise, with the declared toolchain and
+build prerequisites. A configured backend build must include the changed
+source. Record tool/version, command, exit code and skipped coverage;
+compiling a kernel does not prove it ran on hardware. Where no command
+exists, the section says **no gate yet** rather than inventing one.
 
 **Common contract.** HISS-10 requires compiler, linter and formatter
 findings to fail in every language; a ratchet, advisory check or parser is
 not proof of that complete policy. HISS-15 requires positive, negative and
-boundary cases for public interfaces. Section 9 marks missing enforcement
-with **† (no gate yet)**, including rules with only partial checks. The
+boundary cases for public interfaces. Section 9.1 lists missing enforcement,
+including rules with only partial checks. The
 [HISS evidence catalog](../.config/hiss/coverage.yaml) limits what
 `praetorctl hiss coverage --verify` proves; replaying that catalog does not
 prove every rule in every language. Existing exceptions remain explicit in
@@ -411,6 +430,7 @@ prove every rule in every language. Existing exceptions remain explicit in
 
 ### 8.1 C
 
+- **C core:** All ten C-core rules apply directly, together with the JPL, CERT and informative MISRA subsets. Shared C/C++ headers retain section 1.6.
 - **Role and standard:** engine, extractors, public headers and tests in
   `core/`, plus inherited MEX C in `compat/python-vmaf/matlab/`. Sections
   1–7 retain the C rules. New fork C targets C23; the actual fallback list
@@ -429,10 +449,11 @@ prove every rule in every language. Existing exceptions remain explicit in
   operations map to HISS-01/02/03/04/07/08/09/10/15. The
   [catalog](../.config/hiss/coverage.yaml) explicitly leaves recursion and
   pointer proofs unproved; `.clang-tidy` disables `misc-no-recursion`.
-  **No gate yet** for full coverage of the marked matrix cells.
+  **No gate yet** for complete enforcement of the applicable matrix rules.
 
 ### 8.2 C++
 
+- **C core:** Rules 1, 2, 4–8 and 10 apply; rules 3 and 9 use RAII and non-owning views without weakening hot-path allocation or lifetime requirements.
 - **Role and standard:** `core/tools/`, host engine `.cpp` files in `core/src/`
   and C++ tests. Follow sections 1–7 with RAII and checked error results;
   keep exceptions out of hot paths. [core/meson.build](../core/meson.build)
@@ -451,6 +472,7 @@ prove every rule in every language. Existing exceptions remain explicit in
 
 ### 8.3 CUDA
 
+- **C core:** Rules 1, 4, 6–8 and 10 apply. Rules 2, 3, 5 and 9 adapt to launch bounds, device memory and host-side invariant checks; device assertions cannot replace input validation.
 - **Role and standard:** `core/src/cuda/` and `core/src/feature/cuda/`;
   `.cu` kernels use C++20 in [core/src/meson.build](../core/src/meson.build),
   while C host wrappers retain C rules.
@@ -468,6 +490,7 @@ prove every rule in every language. Existing exceptions remain explicit in
 
 ### 8.4 HIP
 
+- **C core:** The CUDA C-core mapping applies to HIP host and device code. A shared algorithm has the same bounds, ownership and numerical contract on both backends.
 - **Role and standard:** `core/src/hip/` and `core/src/feature/hip/`;
   host C and `.hip` device C++. [core/src/meson.build](../core/src/meson.build)
   leaves most device targets in hipcc's default mode and explicitly selects
@@ -485,6 +508,7 @@ prove every rule in every language. Existing exceptions remain explicit in
 
 ### 8.5 SYCL
 
+- **C core:** The CUDA C-core mapping applies to SYCL work-items and host wrappers. Queue/event lifetimes replace implicit sequential completion assumptions.
 - **Role and standard:** `core/src/sycl/` and `core/src/feature/sycl/`;
   device translation units use `-std=c++20` in
   [core/src/meson.build](../core/src/meson.build).
@@ -501,6 +525,7 @@ prove every rule in every language. Existing exceptions remain explicit in
 
 ### 8.6 Objective-C++ / Metal
 
+- **C core:** The C++ mapping applies to Objective-C++ hosts; the CUDA mapping applies to Metal shaders. ARC does not prove GPU completion or imported-buffer lifetime.
 - **Role and standard:** `.mm` host wrappers in `core/src/metal/` and
   `core/src/feature/metal/`, with `.metal` shaders alongside them.
   [core/src/metal/meson.build](../core/src/metal/meson.build) enables ARC,
@@ -523,6 +548,7 @@ prove every rule in every language. Existing exceptions remain explicit in
 
 ### 8.7 Go
 
+- **C core:** Rules 1, 4, 6 and 10 apply. Rules 2, 3, 5 and 7–9 adapt to bounded services, garbage collection, explicit errors, build tags and unsafe/cgo boundaries.
 - **Role and standard:** `cmd/`, `pkg/`, `internal/`, `api/` and Go tools;
   [go.mod](../go.mod) owns the toolchain version. Use idiomatic Go with
   explicit errors, bounded goroutine lifetimes and request cancellation.
@@ -541,6 +567,7 @@ prove every rule in every language. Existing exceptions remain explicit in
 
 ### 8.8 Rust
 
+- **C core:** Rules 1, 2, 4, 6 and 10 apply. Rules 3, 5 and 7–9 adapt to ownership, Result, macros and unsafe/FFI contracts; borrowing does not permit allocation in metric loops.
 - **Role and standard:** [Cargo.toml](../Cargo.toml) owns the FFI binding
   workspace under `bindings/rust/`; [core/src/rust/Cargo.toml](../core/src/rust/Cargo.toml)
   owns the linked extractor/predictor workspace, including
@@ -554,7 +581,7 @@ prove every rule in every language. Existing exceptions remain explicit in
   and `cargo test --manifest-path core/src/rust/Cargo.toml --workspace`.
   It sets `RUSTFLAGS: -D warnings`. [clippy.toml](../clippy.toml) supplies
   length and cognitive-complexity thresholds for the core workspace lints.
-- **Safety / HISS:** `Result` propagation, no production `unwrap`/`expect`,
+- **Safety / HISS:** `Result` propagation, no `unwrap`/`expect`,
   `SAFETY:` proofs and safety documentation at unsafe boundaries, no unwinding
   into C, no allocation in metric loops. These map to
   HISS-01/02/03/04/07/08/09/10/15. Core Clippy denies several of them, but
@@ -564,6 +591,7 @@ prove every rule in every language. Existing exceptions remain explicit in
 
 ### 8.9 Python
 
+- **C core:** Rules 1, 4, 6 and 10 apply. Rules 2, 3, 5, 7 and 9 adapt to bounded collections, resource contexts, exceptions and ctypes; rule 8 has no C preprocessor to govern.
 - **Role and standard:** training in `ai/`, legacy harness in `python/`
   and `compat/python-vmaf/`, `mcp-server/vmaf-mcp/`, `scripts/`, `tools/`
   and generated `bindings/python/`. Package `pyproject.toml` files own
@@ -586,6 +614,7 @@ prove every rule in every language. Existing exceptions remain explicit in
 
 ### 8.10 Shell
 
+- **C core:** Rules 1, 4 and 10 apply. Rules 2, 3 and 5–7 adapt to process budgets, bounded work and checked statuses; rules 8 and 9 have no C preprocessor or pointers to govern.
 - **Role and standard:** `.sh` automation in `scripts/`, `dev/` and hooks.
   Follow each shebang's dialect; Bash scripts use `set -euo pipefail`
   (section 1.5), while `/bin/sh` scripts must stay POSIX-compatible.
@@ -602,6 +631,7 @@ prove every rule in every language. Existing exceptions remain explicit in
 
 ### 8.11 MATLAB
 
+- **C core:** Rules 1, 4 and 10 apply. Rules 2, 3 and 5–7 adapt to array bounds, preallocation and checked file operations; rules 8 and 9 attach to MEX C rather than .m source.
 - **Role and standard:** inherited reference metrics in
   `compat/python-vmaf/matlab/` (`.m`, alongside C MEX code). Preserve
   upstream numerical behavior and licensing; this tree declares **no
@@ -615,26 +645,42 @@ prove every rule in every language. Existing exceptions remain explicit in
   HISS-01/02/03/04/07/08/10/15 adapt to array code; raw-pointer proof
   obligations belong to MEX C (HISS-09).
 
-### 8.12 GitHub Actions YAML
+### 8.12 YAML, Helm templates and GitHub Actions
 
-- **Role and standard:** workflows in `.github/workflows/` and composite
-  actions in `.github/actions/`; use the GitHub Actions schemas selected by
+- **C core:** Rules 2, 5, 7 and 10 adapt to bounded jobs, configuration validation and failing steps. C flow, heap, scope, macro and pointer rules have no direct YAML equivalent; embedded programs inherit their own rules.
+- **Role and standard:** configuration in `.standards.yaml`, `mkdocs.yml`,
+  `deploy/`, `config/`, `dev/docker-compose.yml`, workflows and composite
+  actions in `.github/actions/`. Use each consumer's pinned schema;
+  Helm templates are rendered before YAML validation, and multi-document
+  Kubernetes manifests must retain document boundaries. Workflow schemas are selected by
   [.pre-commit-config.yaml](../.pre-commit-config.yaml) and runner labels in
   [.github/actionlint.yaml](../.github/actionlint.yaml).
 - **Gates:** `make lint-actions` ([Makefile](../Makefile)) runs
   [run_actionlint.py](../scripts/ci/run_actionlint.py),
   [check_composite_actions.py](../scripts/ci/check_composite_actions.py) and
   the declared runner, workflow-budget and timeout checks.
-  Hooks also run `check-yaml` and `check-github-actions`. **No gate yet**
+  Hooks also run `check-yaml` and `check-github-actions`, with exclusions
+  recorded in their configuration. `helm lint deploy/helm/vmafx` and
+  `helm template vmafx deploy/helm/vmafx` cover the chart defaults in
+  [helm-chart.yml](../.github/workflows/helm-chart.yml); optional values
+  require their corresponding rendered cases. Neither actionlint nor Helm
+  validates arbitrary YAML for every consumer. **No gate yet**
   for YAML formatting or complete behavioral coverage of workflow paths.
 - **Safety / HISS:** pin actions, minimize permissions, pass untrusted
   expressions through environment values rather than script interpolation,
-  and bound jobs/steps. HISS-02/07/08/10/15 adapt to workflow orchestration;
-  embedded scripts additionally follow their own language column.
+  and bound jobs/steps. Reject duplicate keys and schema-invalid values;
+  configuration must not execute untrusted constructors. HISS-02/07/08/10/15
+  adapt to orchestration and consumer validation;
+  embedded scripts additionally follow their own language section.
 
-### 8.13 TOML API definition
+### 8.13 TOML configuration and API definitions
 
-- **Role and standard:** [core/api/vmafx.toml](../core/api/vmafx.toml) is the
+- **C core:** Rules 5 and 10 adapt to schema and consumer validation. Other C-core rules have no executable TOML construct; ABI error and pointer obligations apply to generated consumers.
+- **Role and standard:** Cargo manifests, `rust-toolchain.toml`,
+  `pyproject.toml`, `REUSE.toml`, tool configuration and API definitions.
+  Each consumer owns its schema; valid TOML syntax alone does not establish
+  valid Cargo, Python, licence or tooling configuration.
+  [core/api/vmafx.toml](../core/api/vmafx.toml) is the
   API definition, not executable code; its `schema = 2` contract is checked
   by [validate.py](../scripts/codegen/vmafx_api/validate.py).
 - **Gates:** `check-toml` in [.pre-commit-config.yaml](../.pre-commit-config.yaml)
@@ -642,7 +688,10 @@ prove every rule in every language. Existing exceptions remain explicit in
   generated outputs; `python3 scripts/codegen/vmafx-api.py --abi-check --against-ref origin/master`
   checks compatibility. [core/test/meson.build](../core/test/meson.build)
   registers generated-current, append-only and generator tests.
-  [The generation guide](development/api-generation.md) owns the schema and
+  [api/vmafx-platform.toml](../api/vmafx-platform.toml) owns the platform
+  definition checked by the same generator. Cargo and Python consumer
+  checks follow their language sections; no single schema gate covers all TOML.
+  [The generation guide](development/api-generation.md) owns the API schema and
   update procedure. **No gate yet** for TOML formatting.
 - **Safety / HISS:** keep types, sizes, ownership, error codes and versioning
   explicit; never hand-edit generated outputs. HISS-07/09/15 adapt to
@@ -651,6 +700,7 @@ prove every rule in every language. Existing exceptions remain explicit in
 
 ### 8.14 Meson
 
+- **C core:** Rules 1, 2, 5–8 and 10 adapt to an acyclic build graph, bounded configuration work, scoped variables, explicit dependencies and checked commands. Kernel allocation, function-size and pointer rules belong to compiled source.
 - **Role and standard:** `core/meson.build`, `core/meson_options.txt`,
   `core/**/meson.build` and `gstreamer/meson.build`; use the version pinned
   in [requirements/locks/build.in](../requirements/locks/build.in).
@@ -665,6 +715,7 @@ prove every rule in every language. Existing exceptions remain explicit in
 
 ### 8.15 Containerfiles
 
+- **C core:** Rules 2, 5, 7 and 10 adapt to bounded build steps, smoke validation and propagated failures. Other C-core constructs belong to embedded shell and compiled programs.
 - **Role and standard:** `dev/Containerfile`, `Containerfile.vmafx`, root
   `Dockerfile*`, `docker/`, `.devcontainer/Dockerfile.praetor` and
   `mcp-server/vmaf-mcp/Dockerfile`; use each recipe's declared Dockerfile
@@ -686,6 +737,7 @@ prove every rule in every language. Existing exceptions remain explicit in
 
 ### 8.16 TypeScript / JavaScript
 
+- **C core:** Rules 1, 4 and 10 apply. Rules 2, 3 and 5–7 adapt to bounded DOM/data work, managed memory, promises and module scope. Rules 8 and 9 have no C preprocessor or raw pointers to govern.
 - **Role and standard:** tracked figure specs in `docs/figures/*.ts`, the
   engine and player in `tools/figures/`, documentation scripts in
   `docs/javascripts/`, math checks in `scripts/docs/check_math_worker.js`
@@ -705,7 +757,193 @@ prove every rule in every language. Existing exceptions remain explicit in
   HISS-01/02/03/04/07/08/10/15 adapt to managed code; native ownership stays
   at the FFI boundary (HISS-09).
 
-### 8.17 Cross-language interface policy (ADR-0702, updated by ADR-1852)
+### 8.17 Assembly (NASM)
+
+- **C core:** rules 1, 2 and 4–10 adapt to structured branches, bounded
+  register/index use, short routines, ABI invariants, explicit clobbers and
+  inspectable assembler macros. Rule 3 still prohibits hot-path allocation.
+- **Additions:** [cpuid.asm](../core/src/x86/cpuid.asm) and the inherited
+  [x86inc.asm](../core/src/ext/x86/x86inc.asm) must preserve calling
+  conventions, stack alignment, callee-saved registers and feature guards.
+  Record bounds and alignment proofs for memory operands; retain licences.
+- **Gate command:** `ninja -C build` assembles the configured x86 path through
+  [core/src/meson.build](../core/src/meson.build). This is not assembly lint
+  or instruction-level conformance evidence. **No gate yet** for a complete
+  assembly safety/format policy; changed dispatch needs execution evidence.
+
+### 8.18 SQL
+
+- **C core:** rules 1, 2, 5, 7 and 10 adapt to bounded queries, constraints,
+  transactions and checked database errors. C heap, function length, scope,
+  preprocessor and pointer restrictions do not describe declarative SQL.
+- **Additions:** controller SQL in `cmd/vmafx-controller/queue/` and
+  `cmd/vmafx-controller/store/` must parameterize values, bound result sets
+  and lock waits, preserve migration order and test rollback behavior.
+  Do not interpolate user input into queries. Callers own cancellation and
+  transaction cleanup; a generated query is not proof of query cost.
+- **Gate command:** `python3 scripts/codegen/sqlc_generate.py --check`
+  checks generated PostgreSQL query bindings against the
+  [sqlc configuration](../cmd/vmafx-controller/store/sqlc.yaml).
+  Exit 77 means unavailable, not passing. It does not cover queue SQLite SQL,
+  live migrations or every isolation failure. **No gate yet** for all SQL
+  formatting, migration and resource-bound obligations.
+
+### 8.19 Protobuf
+
+- **C core:** rules 5 and 10 adapt to schema/compatibility validation;
+  runtime flow, heap, scope, errors, preprocessor and pointer rules apply to
+  generated consumers rather than message declarations.
+- **Additions:** `proto/` is generated from the TOML definitions. Never
+  renumber fields or reuse removed field numbers; preserve wire and JSON
+  compatibility, and bound payloads at service entry points. Edit the
+  definition and regenerate, not the `.proto` or `.pb.go` output.
+- **Gate command:**
+  `python3 scripts/codegen/proto_generate.py --check --breaking-against origin/master`
+  runs the pinned Buf lint, generation-drift and wire/JSON compatibility
+  checks through [the wrapper](../scripts/codegen/proto_generate.py) and
+  [buf.yaml](../buf.yaml). Exit 77 means unavailable. Generated-code checks
+  do not prove runtime payload limits; **no gate yet** for every obligation.
+
+### 8.20 PowerShell
+
+- **C core:** rules 1, 4 and 10 apply. Rules 2, 3 and 5–7 adapt to bounded
+  processes, scoped state and checked exceptions/exit codes. Rules 8 and 9
+  have no C preprocessor or raw pointers to govern.
+- **Additions:** `.ps1` setup and CI scripts use explicit parameters and
+  argument arrays, stop on cmdlet failures, check native `$LASTEXITCODE`,
+  verify downloaded artifact digests and bound retries. Avoid
+  `Invoke-Expression`; `$ErrorActionPreference = 'Stop'` alone does not
+  check native program failures. Windows workflow blocks follow this policy.
+- **Gate command:**
+  `python3 -m pytest scripts/ci/tests/test_setup_zimg_windows.py` checks the
+  zimg workflow-call contract only. Windows build workflows exercise selected
+  installers. **No gate yet** for general PowerShell lint, formatting or
+  full script behavior; text-contract tests are not Windows execution proof.
+
+### 8.21 Windows batch
+
+- **C core:** rules 1, 4 and 10 apply; rules 2, 3 and 5–7 adapt as for shell.
+  C macro and pointer restrictions have no direct counterpart. The ban on
+  `goto` still applies, even though the dialect provides it.
+- **Additions:** [run.cmd](../tools/rc1-tester/image/windows/run.cmd) scopes
+  variables with `setlocal`, quotes paths and propagates the child exit code.
+  Preserve arguments across spaces and metacharacters; bound child runtime
+  in the caller and do not treat launcher success as report success.
+- **Gate command:** **no gate yet** for a standalone `.cmd` lint/format or
+  behavior suite. The Windows tester bundle workflow is scoped packaging
+  evidence, not a general batch gate.
+
+### 8.22 Lua
+
+- **C core:** rules 1, 4 and 10 apply; rules 2, 3 and 5–7 adapt to bounded
+  editor work, managed memory, checked calls and local scope. Rules 8 and 9
+  have no C preprocessor or raw pointers to govern.
+- **Additions:** [.nvim.lua](../.nvim.lua) and
+  [lua/standards.lua](../lua/standards.lua) configure editor integration.
+  Keep module-loading and process-launch paths explicit, report failed
+  protected calls and avoid evaluating untrusted Lua source.
+- **Gate command:** **no gate yet** for Lua formatting, lint or editor-runtime
+  tests. An editor command that invokes a repository gate does not validate
+  the Lua integration itself.
+
+### 8.23 Make
+
+- **C core:** rules 1, 2, 5–8 and 10 adapt to an acyclic dependency graph,
+  bounded recipes, scoped settings, inspectable expansion and propagated
+  failures. Kernel allocation, function-size and pointer rules belong to
+  the programs each recipe builds or launches.
+- **Additions:** [Makefile](../Makefile) and included `.mk` files declare
+  prerequisites and generated outputs. Share tool/version settings, quote
+  paths and keep shell arguments intact. A leading `-`, `|| true` or a later
+  successful command must not hide a required failure. Recipe shell follows
+  section 8.10; expansion-time commands require the same scrutiny.
+- **Gate command:** `make lint-c` exercises its configured native recipe;
+  use the target owning the changed behavior for other recipes. **No gate
+  yet** for Make-specific lint/format or every target/variable combination.
+  A dry run can evaluate Make expansion-time commands and is not a sandbox.
+
+### 8.24 CMake package templates
+
+- **C core:** rules 1, 2, 5–8 and 10 adapt as for Meson. There is no scoring
+  loop or raw pointer in the package-definition language.
+- **Additions:** [vmafxConfig.cmake.in](../core/cmake/vmafxConfig.cmake.in)
+  is configured by Meson. Preserve relocatable install paths, imported
+  target properties, platform library naming and caller variable state.
+  Validate the intended shared-library lookup; do not silently select an
+  unrelated system installation.
+- **Gate command:** `ninja -C build` covers template generation when the
+  [Meson CMake-package branch](../core/src/meson.build) is enabled. **No gate
+  yet** for complete CMake format/lint and installed-consumer validation;
+  generating the template does not prove `find_package` behavior.
+
+### 8.25 CSS
+
+- **C core:** rules 5 and 10 adapt to rendered-state validation and diagnostic
+  hygiene; procedural control flow, heap, function, scope, return, macro and
+  pointer restrictions have no direct CSS equivalent.
+- **Additions:** `docs/stylesheets/`, `tools/figures/figures.css` and vendored
+  styles must preserve keyboard focus, contrast, reduced-motion behavior
+  and responsive layouts. Keep selectors scoped and retain vendor notices.
+- **Gate command:** `python3 scripts/docs/check_vendored_assets.py` checks
+  integrity of assets declared in its manifest, not authored CSS semantics.
+  **No gate yet** for general CSS lint/format or browser visual/accessibility
+  regression coverage.
+
+### 8.26 HTML
+
+- **C core:** rules 5 and 10 adapt to markup/consumer validation. Other C-core
+  constructs belong to embedded JavaScript or native consumers.
+- **Additions:** the tracked HTML fixture in
+  `pkg/encodeprofile/testdata/profile.html` and generated documentation need
+  escaped untrusted content, semantic structure and accessible controls.
+  Preserve fixture intent; generated HTML is changed through its source.
+- **Gate command:** `node tools/figures/build.mjs sources` checks the figure
+  markup contract only. **No gate yet** for tree-wide HTML validation or
+  browser behavior. Embedded scripts and styles also follow their sections.
+
+### 8.27 JSON
+
+- **C core:** rules 5 and 10 adapt to syntax/schema validation. Other C-core
+  constructs belong to consumers; a JSON string must remain data.
+- **Additions:** configuration, schemas, models and snapshots retain explicit
+  versions, numeric precision and deterministic generation. Reject duplicate
+  keys and unbounded nesting at input boundaries. Intentionally malformed
+  fuzz fixtures remain byte-exact; do not format model binaries as text.
+- **Gate command:** `python3 scripts/docs/check_vendored_assets.py` checks its
+  declared asset manifest and schema files. The `check-json` hook in
+  [.pre-commit-config.yaml](../.pre-commit-config.yaml) adds syntax coverage
+  with named exclusions. **No gate yet** for every JSON consumer schema,
+  formatting rule or behavioral contract; syntax acceptance is insufficient.
+
+### 8.28 INI / Meson cross files
+
+- **C core:** rules 5 and 10 adapt to consumer validation; C algorithm, heap,
+  scope, error-return, macro and pointer syntax is absent from INI data.
+- **Additions:** `build-aux/*.ini` declares cross compilers, executors and
+  host properties. Keep architecture/ABI, toolchain and strict-FP assumptions
+  consistent with the corresponding backend. Executable entries inherit the
+  called tool's bounds and failure policy.
+- **Gate command:**
+  `meson setup build-arm64 core --cross-file build-aux/aarch64-linux-gnu.ini`
+  validates that cross profile during configuration, as documented in
+  [Makefile](../Makefile). Compilation and target execution remain separate
+  evidence. **No gate yet** for all INI consumers, formatting or every cross profile.
+
+### 8.29 Markdown / reStructuredText
+
+- **C core:** rules 5 and 10 adapt to reference, rendering and diagnostic
+  validation. Other C-core rules apply to executable examples, not prose.
+- **Additions:** `docs/`, root Markdown and [python/README.rst](../python/README.rst)
+  document behavior with reproducible commands and tracked evidence links.
+  Keep examples consistent with their implementation language; rendered
+  tables, equations and diagrams must remain usable without script execution.
+- **Gate command:** `node tools/markdownlint/verify.mjs` checks the declared
+  Markdown corpus; `mkdocs build --strict` validates the configured site.
+  [The documentation workflow](../.github/workflows/praetor-docs.yml) owns
+  the former command. **No gate yet** for general reStructuredText rendering,
+  all example execution or every accessibility requirement.
+
+### 8.30 Cross-language interface policy (ADR-0702, updated by ADR-1852)
 
 The engine's language-neutral boundary is the
 [VMAFx C API](api/vmafx/index.md): `core/include/vmafx/`, `libvmafx.so.1`.
@@ -727,86 +965,129 @@ not embed training code or model weights; training stays in `ai/`.
 
 ## 9. Applicability matrix
 
-Read each cell as a policy obligation, not a passing-check claim. **† means
-no gate yet for the complete rule across that column's shipped scope**;
-partial enforcement is described in section 8 and below. An unmarked cell
-has a concrete rejection mechanism in the cited language gates, not proof
-that every existing file complies. `n/a` cells require no missing gate;
-the footnote explains why. All `adapted` and `n/a` cells have reason
-footnotes. C++ includes host C++; GPU columns include their host wrappers.
-`ObjC++/MSL` combines Objective-C++ and Metal shading language; `Py`, `sh`,
-`Actions`, `API TOML`, `Container` and `TS/JS` abbreviate the headings above.
+This table maps the ten C-core rules in section 1.1 to every language above.
+It records **policy applicability**, not enforcement or a passing result.
+**A** = applies directly; **D** = adapted to the language as explained in
+section 8; **—** = the C construct is absent from this surface. An absent
+construct does not exempt embedded programs, generated code or native FFI.
+The inherited JPL/CERT constraints still govern native operations.
 
-| Rule | C | C++ | CUDA | HIP | SYCL | ObjC++/MSL | Go | Rust | Py | sh | MATLAB | Actions | API TOML | Meson | Container | TS/JS |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Power-of-10 1: Simple control flow | applies † | applies † | applies † | applies † | applies † | applies † | applies † | adapted[^flow] † | adapted[^flow] † | adapted[^flow] † | adapted[^flow] † | n/a[^declarative] | n/a[^declarative] | n/a[^declarative] | n/a[^declarative] | adapted[^flow] † |
-| Power-of-10 2: Bounded loops | applies † | applies † | adapted[^device] † | adapted[^device] † | adapted[^device] † | adapted[^device] † | adapted[^bounds] † | adapted[^bounds] † | adapted[^bounds] † | adapted[^bounds] † | adapted[^bounds] † | adapted[^orchestration] † | n/a[^declarative] | adapted[^orchestration] † | adapted[^orchestration] † | adapted[^bounds] † |
-| Power-of-10 3: Hot-path allocation | applies † | adapted[^ownership] † | adapted[^device] † | adapted[^device] † | adapted[^device] † | adapted[^device] † | adapted[^allocation] † | adapted[^ownership] † | adapted[^allocation] † | adapted[^allocation] † | adapted[^allocation] † | n/a[^declarative] | n/a[^declarative] | n/a[^declarative] | n/a[^declarative] | adapted[^allocation] † |
-| Power-of-10 4: Function length | applies † | applies † | applies † | applies † | applies † | applies † | applies † | applies † | applies † | applies † | applies † | n/a[^declarative] | n/a[^declarative] | n/a[^declarative] | n/a[^declarative] | applies † |
-| Power-of-10 5: Assertion density | applies † | applies † | adapted[^device-assertions] † | adapted[^device-assertions] † | adapted[^device-assertions] † | adapted[^device-assertions] † | adapted[^invariants] † | adapted[^invariants] † | adapted[^invariants] † | adapted[^invariants] † | adapted[^invariants] † | adapted[^validation] † | adapted[^validation] † | adapted[^validation] † | adapted[^validation] † | adapted[^invariants] † |
-| Power-of-10 6: Minimal scope | applies † | applies † | applies † | applies † | applies † | applies † | adapted[^scope] † | adapted[^scope] † | adapted[^scope] † | adapted[^scope] † | adapted[^scope] † | n/a[^declarative] | n/a[^declarative] | n/a[^declarative] | n/a[^declarative] | adapted[^scope] † |
-| Power-of-10 7: Checked returns | applies † | applies † | applies † | applies † | applies † | applies † | adapted[^errors] † | adapted[^errors] † | adapted[^errors] † | adapted[^errors] † | adapted[^errors] † | adapted[^errors] † | n/a[^declarative] | adapted[^errors] † | adapted[^errors] † | adapted[^errors] † |
-| Power-of-10 8: Preprocessor restraint | applies † | applies † | applies † | applies † | applies † | applies † | adapted[^metaprogramming] † | adapted[^metaprogramming] † | n/a[^no-preprocessor] | n/a[^no-preprocessor] | n/a[^no-preprocessor] | n/a[^no-preprocessor] | n/a[^no-preprocessor] | n/a[^no-preprocessor] | n/a[^no-preprocessor] | n/a[^no-preprocessor] |
-| Power-of-10 9: Pointer restraint | applies † | adapted[^ownership] † | adapted[^device] † | adapted[^device] † | adapted[^device] † | adapted[^device] † | adapted[^pointers] † | adapted[^pointers] † | adapted[^pointers] † | n/a[^no-pointers] | n/a[^no-pointers] | n/a[^no-pointers] | n/a[^no-pointers] | n/a[^no-pointers] | n/a[^no-pointers] | n/a[^no-pointers] |
-| Power-of-10 10: Max strictness | applies † | applies † | applies † | applies † | applies † | applies † | applies † | applies | applies † | applies | applies † | adapted[^diagnostics] † | adapted[^diagnostics] † | adapted[^diagnostics] † | adapted[^diagnostics] † | applies † |
-| HISS-01: acyclic control flow | applies † | applies † | applies † | applies † | applies † | applies † | applies † | adapted[^flow] † | adapted[^flow] † | adapted[^flow] † | adapted[^flow] † | n/a[^declarative] | n/a[^declarative] | n/a[^declarative] | n/a[^declarative] | adapted[^flow] † |
-| HISS-02: loop / I/O bounds | applies † | applies † | adapted[^device] † | adapted[^device] † | adapted[^device] † | adapted[^device] † | adapted[^bounds] † | adapted[^bounds] † | adapted[^bounds] † | adapted[^bounds] † | adapted[^bounds] † | adapted[^orchestration] † | n/a[^declarative] | adapted[^orchestration] † | adapted[^orchestration] † | adapted[^bounds] † |
-| HISS-03: hot-path allocation | applies † | adapted[^ownership] † | adapted[^device] † | adapted[^device] † | adapted[^device] † | adapted[^device] † | adapted[^allocation] † | adapted[^ownership] † | adapted[^allocation] † | adapted[^allocation] † | adapted[^allocation] † | n/a[^declarative] | n/a[^declarative] | n/a[^declarative] | n/a[^declarative] | adapted[^allocation] † |
-| HISS-04: 60 LOC / McCabe ≤10 / ≤50 statements | applies † | applies † | applies † | applies † | applies † | applies † | applies † | applies † | applies † | applies † | applies † | n/a[^declarative] | n/a[^declarative] | n/a[^declarative] | n/a[^declarative] | applies † |
-| HISS-07: handled errors | applies † | applies † | applies † | applies † | applies † | applies † | adapted[^errors] † | adapted[^errors] † | adapted[^errors] † | adapted[^errors] † | adapted[^errors] † | adapted[^errors] † | adapted[^abi] † | adapted[^errors] † | adapted[^errors] † | adapted[^errors] † |
-| HISS-08: static execution | applies † | applies † | applies † | applies † | applies † | applies † | adapted[^banned] † | adapted[^banned] † | adapted[^banned] † | adapted[^banned] † | adapted[^banned] † | adapted[^banned] † | adapted[^data] | adapted[^banned] † | adapted[^banned] † | adapted[^banned] † |
-| HISS-09: reference proofs | applies † | adapted[^ownership] † | adapted[^device] † | adapted[^device] † | adapted[^device] † | adapted[^device] † | adapted[^pointers] † | adapted[^pointers] † | adapted[^pointers] † | n/a[^no-pointers] | n/a[^no-pointers] | n/a[^no-pointers] | adapted[^abi] † | n/a[^no-pointers] | n/a[^no-pointers] | n/a[^no-pointers] |
-| HISS-10: diagnostic hygiene | applies † | applies † | applies † | applies † | applies † | applies † | applies † | applies | applies † | applies | applies † | adapted[^diagnostics] † | adapted[^diagnostics] † | adapted[^diagnostics] † | adapted[^diagnostics] † | applies † |
-| HISS-15: positive / negative / boundary tests | applies † | applies † | applies † | applies † | applies † | applies † | applies † | applies † | applies † | applies † | applies † | adapted[^validation] † | adapted[^validation] † | adapted[^validation] † | adapted[^validation] † | applies † |
-| Banned functions (§1.2 rule 30) | applies † | applies † | applies † | applies † | applies † | applies † | adapted[^banned] † | adapted[^banned] † | adapted[^banned] † | adapted[^banned] † | adapted[^banned] † | adapted[^banned] † | n/a[^data] | adapted[^banned] † | adapted[^banned] † | adapted[^banned] † |
-| Warnings-as-errors (compiler / lint / format) | applies † | applies † | applies † | applies † | applies † | applies † | applies † | applies | applies † | applies | applies † | adapted[^diagnostics] † | adapted[^diagnostics] † | adapted[^diagnostics] † | adapted[^diagnostics] † | applies † |
+| Language / surface | 1 Flow | 2 Bounds | 3 Allocation | 4 Size | 5 Invariants | 6 Scope | 7 Returns | 8 Preprocessor | 9 Pointers | 10 Diagnostics |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| C | A | A | A | A | A | A | A | A | A | A |
+| C++ | A | A | D | A | A | A | A | A | D | A |
+| CUDA | A | D | D | A | D | A | A | A | D | A |
+| HIP | A | D | D | A | D | A | A | A | D | A |
+| SYCL | A | D | D | A | D | A | A | A | D | A |
+| Objective-C++ host | A | A | D | A | A | A | A | A | D | A |
+| Metal shaders | A | D | D | A | D | A | A | A | D | A |
+| Go | A | D | D | A | D | A | D | D | D | A |
+| Rust | A | A | D | A | D | A | D | D | D | A |
+| Python | A | D | D | A | D | A | D | — | D | A |
+| Shell | A | D | D | A | D | D | D | — | — | A |
+| MATLAB | A | D | D | A | D | D | D | — | — | A |
+| YAML / Helm / Actions | — | D | — | — | D | — | D | — | — | D |
+| TOML | — | — | — | — | D | — | — | — | — | D |
+| Meson | D | D | — | — | D | D | D | D | — | D |
+| Container recipes | — | D | — | — | D | — | D | — | — | D |
+| TypeScript | A | D | D | A | D | D | D | — | — | A |
+| JavaScript | A | D | D | A | D | D | D | — | — | A |
+| Assembly | D | D | A | D | D | D | D | D | D | D |
+| SQL | D | D | — | — | D | — | D | — | — | D |
+| Protobuf | — | — | — | — | D | — | — | — | — | D |
+| PowerShell | A | D | D | A | D | D | D | — | — | A |
+| Windows batch | A | D | D | A | D | D | D | — | — | A |
+| Lua | A | D | D | A | D | D | D | — | — | A |
+| Make | D | D | — | — | D | D | D | D | — | D |
+| CMake templates | D | D | — | — | D | D | D | D | — | D |
+| CSS | — | — | — | — | D | — | — | — | — | D |
+| HTML | — | — | — | — | D | — | — | — | — | D |
+| JSON | — | — | — | — | D | — | — | — | — | D |
+| INI | — | — | — | — | D | — | — | — | — | D |
+| Markdown | — | — | — | — | D | — | — | — | — | D |
+| reStructuredText | — | — | — | — | D | — | — | — | — | D |
 
-[^device]: Bound launch dimensions, pixel indices, address spaces and device buffer use; preallocate before frame processing and prove stream/event/fence ordering. Device completion needs an explicit bound; host I/O cancellation alone cannot establish it.
-[^ownership]: C++ RAII and Rust ownership replace manual allocation and dereference conventions. Keep scoring loops allocation-free, use bounded views, and prove FFI layouts and unsafe lifetimes.
-[^device-assertions]: Use device-appropriate invariant checks and positive/negative/boundary host-device contract tests. A portable shader need not contain two C runtime assertions per function; host assertions cannot observe every device thread.
-[^flow]: Use the language's structured control flow; absence of C `goto`/`longjmp` syntax does not establish an acyclic call graph. Recursion remains prohibited; closures, methods and callbacks also need review.
-[^bounds]: Collection/frame bounds and explicit I/O deadlines replace a purely static loop-count proof for services and managed code. Retries, workers and queues must be capped; cancellation must reach the actual operation.
-[^allocation]: Managed/script runtimes allocate implicitly. Bound working sets, reuse buffers and cap concurrency; the allocation-free rule still governs any native scoring loop they call. MATLAB numeric loops preallocate arrays.
-[^invariants]: Use checked invariants and tests at ownership/shape/error boundaries rather than inserting two C `assert()` calls into every managed function. Public input validation must work when debug assertions are disabled.
-[^scope]: Use the language's local/block scope and avoid mutable globals; Python, MATLAB and shell do not have C's declaration/block model.
-[^errors]: Check error results, exceptions, rejected promises or process statuses according to the language. Workflow/build steps must propagate failure; an ignored pure value is distinct from an ignored error. Shell `set -e` is insufficient in conditional contexts.
-[^no-preprocessor]: This surface has no C preprocessor. Generated source and embedded programs retain their own preprocessor rules; dynamic evaluation is covered by HISS-08 instead.
-[^metaprogramming]: These languages have no C preprocessor. Keep templates, macros, generation, workflow expressions and build substitutions explicit and inspectable; prohibit evaluation of untrusted source text. Generated bindings remain checked against their definition.
-[^pointers]: Go `unsafe`/cgo, Rust unsafe/FFI and Python ctypes need lifetime, bounds, aliasing and ownership proofs. Safe references do not acquire C's single-dereference syntax restriction.
-[^no-pointers]: This language surface exposes no raw pointer arithmetic. Shell, MATLAB and JS callers validate data and lifetimes through their native interface; MEX C and any future native extension inherit the C rules.
-[^declarative]: The configuration surface has no runtime scoring algorithm, function body, heap allocator or raw-pointer operation to which this particular rule can attach. Embedded scripts and generated source inherit their implementation-language obligations.
-[^orchestration]: Bound workflow jobs/steps and subprocess/configuration work instead of proving a numeric kernel's iteration count. Existing timeout checks do not cover every nested script or configuration command.
-[^validation]: Test accepted, rejected and boundary configurations and the behavior they generate; runtime assertion counts are not meaningful in a recipe or schema. Syntax validation alone is not behavioral testing.
-[^diagnostics]: Fail on validator, builder, linter and formatter findings rather than compiler warnings on a data file. Embedded compilers retain their language's warning policy.
-[^abi]: Validate the ABI's explicit status/error, pointer/handle, size and ownership declarations and test generated consumers. TOML itself neither handles a runtime error nor dereferences a pointer.
-[^data]: The API definition is parsed as declarative TOML, not evaluated as source; syntax/schema validation is the applicable static-execution check. C library function bans are enforced on generated/hand-written consumers, not on TOML strings.
-[^banned]: Use the equivalent safe operation: no dynamic `eval`/`exec`, unsafe shell interpolation or unchecked string-to-number conversion; use explicit argument vectors and checked results. Trusted build subprocesses are necessary but must not evaluate untrusted code.
+Adaptations preserve the following obligations:
 
-### 9.1 Missing-gate cells and partial coverage
+- **Flow and bounds (1–2):** no recursion or `goto` in executable source;
+  bounded work, retries, queue depth and I/O lifetime. Assembly uses
+  structured, inspectable branch graphs; build dependencies remain acyclic.
+  SQL avoids recursive query paths and bounds result sets and lock waits.
+  Recipes bound child processes; schemas declare limits enforced by consumers.
+- **Allocation and size (3–4):** no heap allocation in scoring loops,
+  including hidden C++ containers and Rust collections. Managed services
+  and scripts bound retained data, workers and subprocesses; they do not
+  acquire a blanket allocation ban during setup or training. Executable
+  functions retain the 60-line bound; configuration is split by responsibility
+  rather than pretending every table or build target is a C function.
+- **Invariants and scope (5–6):** native code keeps the assertion-density
+  requirement. Device code validates launch invariants on the host and uses
+  supported device checks. Managed languages use explicit contracts and
+  validation; input rejection must survive disabled debug assertions.
+  Data formats validate accepted, rejected and boundary configurations.
+  Keep bindings local to a block, module, script or build target as supported.
+- **Errors (7):** handle error-bearing results, exceptions, rejected promises,
+  asynchronous backend errors and process statuses. Ignoring a pure value
+  is different from discarding an error. Propagate failures through workflow,
+  recipe and container layers; `set -e` alone is insufficient.
+- **Metaprogramming and pointers (8–9):** keep macros, build tags, generation
+  and substitutions explicit and inspectable. Safe references do not inherit
+  C's single-dereference syntax restriction. Native/FFI/unsafe boundaries
+  still require bounds, lifetime, ownership and aliasing proofs. Bindings
+  and schemas describe the same ABI rather than creating a second one.
+- **Diagnostics (10):** compiler, linter, formatter, validator and builder
+  findings must fail the relevant gate. A debt ratchet, syntax parser or
+  advisory check is partial coverage, not proof of zero warnings.
 
-The following is the complete **† / no gate yet** list, grouped by identical
-column sets. “Runtime columns” means C, C++, CUDA, HIP, SYCL, ObjC++/MSL,
-Go, Rust, Py, sh, MATLAB and TS/JS. “Recipe columns” means Actions, Meson
-and Container. A missing complete gate does not erase the existing checks
-in section 8.
+The HISS contract follows the same mapping: HISS-01/02/03 correspond to
+flow, bounds/I/O and hot-path allocation; HISS-04 adds McCabe complexity
+≤ 10 and ≤ 50 statements to the 60-line limit. HISS-07 requires handled
+errors; HISS-08 prohibits dynamic evaluation and unsafe library calls;
+HISS-09 requires `SAFETY:` proofs at unsafe and pointer-arithmetic boundaries.
+A language without a C preprocessor is still subject to the HISS-08 ban
+on `eval`, `exec` and equivalent evaluation of untrusted source. HISS-10
+requires diagnostic hygiene and HISS-15 requires positive, negative and
+boundary tests for public interfaces, including generated configurations.
+HISS-11 pinning/provenance and HISS-14 append-only ABI obligations apply
+across languages; HISS-16–21 remain repository-wide obligations.
 
-| Rules | Columns marked no gate yet |
-|---|---|
-| Power-of-10 1, 3, 4, 6; HISS-01, HISS-03, HISS-04 | All runtime columns |
-| Power-of-10 2, 7; HISS-02, HISS-08; banned functions | All runtime and recipe columns |
-| Power-of-10 5; HISS-15 | All columns |
-| Power-of-10 8 | C, C++, CUDA, HIP, SYCL, ObjC++/MSL, Go, Rust |
-| Power-of-10 9 | C, C++, CUDA, HIP, SYCL, ObjC++/MSL, Go, Rust, Py |
-| HISS-07 | All columns |
-| HISS-09 | C, C++, CUDA, HIP, SYCL, ObjC++/MSL, Go, Rust, Py, API TOML |
-| Power-of-10 10; HISS-10; warnings-as-errors | All columns except Rust and sh |
+### 9.1 Missing gates and partial coverage
 
-In particular, do not promote these partial mechanisms to complete gates:
+Every language has incomplete enforcement of at least one applicable rule.
+The commands in section 8 establish only the scope named beside them.
+**No gate yet** means missing or incomplete rejection, not a policy waiver.
+
+| Language / surface | Available rejection mechanism | Missing or partial coverage |
+| --- | --- | --- |
+| C / C++ | Configured clang-tidy/cppcheck, clang-format, compiler profiles, sanitizers and Meson tests | Complete recursion, allocation, pointer proofs, assertion density and HISS-04 limits |
+| CUDA / HIP / SYCL | Backend compilation, scoped tidy lanes and registered tests | Complete device analysis, asynchronous lifetimes and hardware execution in every configuration |
+| Objective-C++ / Metal | ARC host build, host tidy baseline, shader compilation and registered tests | Objective-C++ formatting, shader static lint and fatal shader warnings |
+| Go | gofmt hook, vet, gosec and package tests | Non-mutating format rejection, method cycles, discarded calls and complete resource bounds |
+| Rust | Both workspaces' fmt, Clippy and tests; fatal warnings in CI | Complete recursion/allocation/unsafe-trait analysis and equivalent lints across both workspaces |
+| Python | Black, Ruff and selected package tests | Blocking whole-scope type checks and complete resource/FFI/error coverage |
+| Shell | ShellCheck, shfmt and named regression scripts | Every script's behavior, bound and failure path |
+| MATLAB | MEX C lint with stubs | All .m lint, format, runtime and warnings-as-errors gates |
+| YAML / Helm / Actions | Selected syntax/schema checks, actionlint, chart lint/render and workflow contracts | Every YAML consumer, formatting and all rendered configuration branches |
+| TOML | Syntax hook, API generator and language-specific consumers | General formatting and every consumer schema; syntax is not ABI validation |
+| Meson | Configuration, compilation and registered tests | Dedicated lint/format and every option/platform branch |
+| Container recipes | Image-reference checks and selected image builds | General recipe lint/format, fatal diagnostics and every runtime smoke case |
+| TypeScript / JavaScript | Figure, math and vendor-asset checks | Tree-wide lint, format, static types, fatal warnings and browser runtime tests |
+| Assembly | NASM through the configured native build | Dedicated lint/format, memory proofs and full ABI/instruction conformance |
+| SQL | sqlc generation drift for configured PostgreSQL queries | SQLite coverage, full migrations, isolation, resource limits and SQL formatting |
+| Protobuf | Buf lint, generation drift and wire/JSON compatibility | Runtime payload limits and complete consumer behavior |
+| PowerShell | Selected Windows builds and workflow-call contracts | General lint/format, native exit handling and every installer path |
+| Windows batch / Lua | No standalone language gate declared | General lint/format and behavior tests |
+| Make / CMake templates | Selected recipe execution and package-template generation | Dedicated lint/format and every recipe or installed-consumer branch |
+| CSS / HTML | Selected asset integrity and figure-markup checks | General lint/format, browser behavior and accessibility tests |
+| JSON / INI | Selected syntax, manifest and consumer checks | Every consumer schema, formatting and boundary behavior |
+| Markdown / reStructuredText | Markdown gate and configured MkDocs site | General reStructuredText rendering, executable examples and full accessibility |
+
+Do not promote these partial mechanisms to complete gates:
 
 - [The HISS catalog](../.config/hiss/coverage.yaml) declares selected C,
-  Go, Python and Rust matchers; it leaves method cycles, several discarded
-  errors, dynamic imports, unsafe traits and native pointer proofs as gaps.
-  It makes no complete per-language claim for GPU sources or recipes.
+  Go, Python and Rust matchers. It leaves method cycles, several discarded
+  errors, dynamic imports, unsafe traits and native pointer proofs as gaps;
+  it makes no complete per-language claim for GPU sources or recipes.
 - [.clang-tidy](../.clang-tidy) checks 60-line functions but sets
   `StatementThreshold: 120` and `BranchThreshold: 15`; that is not the
   HISS-04 cap of 50 statements and McCabe complexity 10. Rust's
@@ -816,22 +1097,20 @@ In particular, do not promote these partial mechanisms to complete gates:
   when at least 20 lines long; the two-assertion average is informational.
   It does not enforce whole-tree Power-of-10 rule 5.
 - [werror-args.sh](../scripts/ci/werror-args.sh) enables fatal compiler/linker
-  diagnostics only in selected CI profiles; release/container profiles do
-  not inherit it. It does not add fatal warnings to custom Metal shader
-  commands. Go formatting mutates staged files, and mypy's Make target is
-  advisory. Neither proves complete HISS-10 coverage.
-- General formatting/lint/testing gaps are listed in each language section:
-  Objective-C++ formatting, Metal shader lint, MATLAB tooling, YAML/TOML
-  formatting, Meson-specific tooling, Containerfile tooling and tree-wide
-  JS/TS tooling. Tests exist in several of these areas, but there is no
-  universal gate that mandates all three HISS-15 cases for every interface.
+  diagnostics only in selected profiles; custom Metal shader commands do
+  not inherit them. Go formatting mutates staged files and mypy's Make
+  target is advisory. Neither proves complete HISS-10 coverage.
+- No universal gate mandates all three HISS-15 cases for every interface.
+  A parser, successful build, skip or host-only test cannot supply missing
+  behavioral, negative-case or device evidence.
 
-Slice 2 of [#2438](https://github.com/VMAFx/vmafx/issues/2438) fills missing
-checks and demonstrates rejection with planted defects. This slice adds no
-gate, changes no scanner applicability and grants no exception. If a scanner
-imposes a rule on a cell marked `n/a`, report the mismatch to its owning
-project with the matrix cell and a reproducer; do not hide it by changing
-this table or weakening the gate.
+The enforcement slice of [#2438](https://github.com/VMAFx/vmafx/issues/2438)
+must fill missing checks and demonstrate rejection with planted defects.
+This document adds no scanner or exception. A new check needs a planted
+negative case that fails without the fix, plus accepted and boundary cases.
+If a scanner imposes a rule where its C construct is absent, report the
+mismatch with the matrix cell and a reproducer; do not silently weaken the
+gate or change applicability to hide a finding.
 
 ## 10. Revising this document
 
