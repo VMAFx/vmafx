@@ -251,6 +251,18 @@ def prepare_release(
     return gateway
 
 
+def release_name(value: dict[str, Any]) -> str:
+    """Name the release directory after both the gateway and the composer hash.
+
+    A change to either script then installs into a new immutable directory instead of
+    meeting an older file there that prepare_release refuses to overwrite.
+
+    Returns:
+        SHA-256 hex digest of the two script hashes.
+    """
+    return sha256(f"{value['gateway_sha256']}:{value['composer_sha256']}".encode())
+
+
 def install_locked(
     value: dict[str, Any],
     committed: bytes,
@@ -278,7 +290,7 @@ def install_locked(
         atomic_write(
             state / "PAUSED", b"Runtime migration: review before enabling mutations.\n", 0o644
         )
-    release = state / "releases" / value["gateway_sha256"]
+    release = state / "releases" / release_name(value)
     gateway = prepare_release(
         release,
         committed,

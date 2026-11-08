@@ -107,7 +107,7 @@ class MigrationContract(unittest.TestCase):
             )
         with self.assertRaises(guard.Refused):
             guard.execute([str(self.state / "watchdog.sh"), "--apply"], self.source)
-        gateway = self.state / "releases" / str(value["gateway_sha256"]) / "merge_train_guard.py"
+        gateway = self.state / "releases" / installer.release_name(value) / "merge_train_guard.py"
         gateway.chmod(0o644)
         gateway.write_text("print('tampered')\n")
         with self.assertRaisesRegex(guard.Refused, "hash changed"):
@@ -180,7 +180,7 @@ class MigrationContract(unittest.TestCase):
         """Prove install writes read-only composer matching recorded hash loadable by gateway."""
         value, committed = self.plan()
         installer.install(value, committed, installer.plan_hash(value))
-        release = self.state / "releases" / str(value["gateway_sha256"])
+        release = self.state / "releases" / installer.release_name(value)
         composer = release / "squash_message.py"
         self.assertTrue(composer.exists())
         self.assertEqual(installer.sha256(composer.read_bytes()), value["composer_sha256"])
@@ -199,7 +199,7 @@ class MigrationContract(unittest.TestCase):
         """Prove modified installed composer causes launcher execution to refuse with Refused."""
         value, committed = self.plan()
         installer.install(value, committed, installer.plan_hash(value))
-        composer = self.state / "releases" / str(value["gateway_sha256"]) / "squash_message.py"
+        composer = self.state / "releases" / installer.release_name(value) / "squash_message.py"
         composer.chmod(0o644)
         composer.write_text("print('tampered composer')\n")
         with self.assertRaisesRegex(guard.Refused, "refused: installed composer hash changed"):
@@ -208,13 +208,28 @@ class MigrationContract(unittest.TestCase):
     def test_existing_release_with_different_composer_refuses_and_preserves_old(self) -> None:
         """Prove existing differing composer in release dir raises ValueError and preserves file."""
         value, committed = self.plan()
-        release = self.state / "releases" / str(value["gateway_sha256"])
+        release = self.state / "releases" / installer.release_name(value)
         release.mkdir(parents=True)
         composer = release / "squash_message.py"
         composer.write_text("EXISTING_UNTOUCHED = True\n")
         with self.assertRaisesRegex(ValueError, "unexpected composer evidence"):
             installer.install(value, committed, installer.plan_hash(value))
         self.assertEqual(composer.read_text(), "EXISTING_UNTOUCHED = True\n")
+
+    def test_composer_only_change_installs_into_a_new_release(self) -> None:
+        """Prove a composer-only commit installs beside the old release and leaves it intact."""
+        value, committed = self.plan()
+        installer.install(value, committed, installer.plan_hash(value))
+        old = self.state / "releases" / installer.release_name(value)
+        (self.source / installer.COMPOSER_PATH).write_text("TEST_COMPOSER = 2\n")
+        installer.git(self.source, "commit", "-am", "composer only")
+        fresh, fresh_committed = self.plan()
+        self.assertEqual(fresh["gateway_sha256"], value["gateway_sha256"])
+        installer.install(fresh, fresh_committed, installer.plan_hash(fresh))
+        new = self.state / "releases" / installer.release_name(fresh)
+        self.assertNotEqual(new, old)
+        self.assertEqual((new / "squash_message.py").read_text(), "TEST_COMPOSER = 2\n")
+        self.assertEqual((old / "squash_message.py").read_text(), "TEST_COMPOSER = True\n")
 
 
 if __name__ == "__main__":

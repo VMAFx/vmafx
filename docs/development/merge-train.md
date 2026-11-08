@@ -158,8 +158,11 @@ After reviewing the JSON plan, repeat the same command with
 `--apply --expect-plan THE_PRINTED_SHA256`. Any changed runtime target or gateway
 source requires a new preview. The helper backs up originals/modes into a fresh
 `migration-*/` directory with `plan.json` and `receipt.json`, copies the committed
-gateway to `releases/GATEWAY_SHA256/`, and leaves `PAUSED` present. It preserves
-existing hold text and unions new protected owners into the existing policy.
+gateway and composer to `releases/RELEASE_NAME/`, and leaves `PAUSED` present.
+`RELEASE_NAME` is the SHA-256 of `GATEWAY_SHA256:COMPOSER_SHA256`, so a change
+to either script installs into a new directory and leaves the old one intact.
+It preserves existing hold text and unions new protected owners into the
+existing policy.
 Every generated entry point verifies the gateway's hash before execution. A
 failure preserves the backups and pause; do not start an incomplete migration.
 
