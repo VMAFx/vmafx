@@ -384,6 +384,21 @@ void init_state_geometry(FloatMsSsimStateMetal *s, enum VmafPixelFormat pix_fmt,
     s->c2 = k.c2;
 }
 
+/* Release what init_metal_device_context created, in reverse order, and return err. Every
+ * release is a no-op on a slot that was never filled, since priv starts
+ * zeroed, so each failure point unwinds through this one path. */
+static int unwind_init_metal_device_context(FloatMsSsimStateMetal *s, int err)
+{
+    release_metal_buffers(s);
+    if (s->ctx != nullptr) {
+        /* Best effort: the init error is what the caller reports. */
+        (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
+        vmaf_metal_context_destroy(s->ctx);
+        s->ctx = nullptr;
+    }
+    return err;
+}
+
 int init_metal_device_context(FloatMsSsimStateMetal *s)
 {
     int err = vmaf_metal_context_new(&s->ctx, 0);
@@ -405,17 +420,10 @@ int init_metal_device_context(FloatMsSsimStateMetal *s)
     id<MTLDevice> const device = (__bridge id<MTLDevice>)dh;
 
     err = alloc_metal_buffers(s, device);
-    if (err != 0) { goto fail_alloc; }
+    if (err != 0) { return unwind_init_metal_device_context(s, err); }
     err = build_pipelines(s, device);
-    if (err != 0) { goto fail_alloc; }
+    if (err != 0) { return unwind_init_metal_device_context(s, err); }
     return 0;
-
-fail_alloc:
-    release_metal_buffers(s);
-    (void)vmaf_metal_kernel_lifecycle_close(&s->lc, s->ctx);
-    vmaf_metal_context_destroy(s->ctx);
-    s->ctx = nullptr;
-    return err;
 }
 
 int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,

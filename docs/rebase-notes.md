@@ -8,6 +8,63 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## FFmpeg shared fix series v0.6.0 (2026-11-06)
+
+- `build-config.env`: `FFMPEG_FIX_SERIES_TAG` and `FFMPEG_FIX_SERIES_SHA256` move to `VMAFx/ffmpeg-patches` `v0.6.0` (commit `8f88544085`). The release's `base.env` still names FFmpeg `n9.0.2` / `946fcce0`, so `FFMPEG_TAG` and `FFMPEG_COMMIT` stay. On a conflict take the newer series pin of the two and run `python3 scripts/ci/ffmpeg_patch_stack.py --refresh`, then `--check`.
+- The series adds `0040`-`0042` (`vf_libvmaf.c`: more planar formats, all planes of CUDA frames, CUDA context pop on a failed plane copy) and replaces `0037` (`aom_film_grain`). The six VMAFx patches replay on it unchanged; only `ffmpeg-patches/README.md` records the new series and source revision.
+
+## FFmpeg patch series rebuilt from 0001 on the vmafx filters (2026-11-01)
+
+`feat/2435-patch-series`, [ADR-2166](../adr/2166-ffmpeg-series-drops-vulkan-shims.md).
+The series is six patches: `0001` qpfile, `0002` autotune CLI glue, `0003`
+profile CLI glue, `0004` the `vmafx` filter (`ffmpeg-patches/src/vf_vmafx.c`),
+`0005` the `vmafx_pre` filter and `0006` the fork-only loopback-decoder
+hwaccel. No patch adds a filter or option with `vmaf` in its name. **On
+refresh**: keep `0001` and `0006`, regenerate `0004` and `0005` from
+`ffmpeg-patches/src/`, and keep the per-patch numbers that
+`docs/development/rebase-sensitive-invariants.md` cites in step.
+`scripts/ci/ffmpeg-patches-surface-check.sh` refuses a `vmaf`-named filter or
+option; `core/test/test_ffmpeg_vmafx_*_contract.py` guard the filter's
+contracts without a device.
+
+## Upstream PR sweep tool and hook GIT_DIR isolation (#3266) (2026-11-03)
+
+- `scripts/dev/upstream_pr_sweep.py`, `scripts/dev/tests/test_upstream_pr_sweep.py`,
+  `scripts/dev/tests/test_upstream_pr_sweep_hardening.py`, and
+  `scripts/dev/tests/upstream_pr_sweep_fixture.py`
+  are fork-only developer tooling; no upstream Netflix/vmaf file is touched.
+- `scripts/git-hooks/framework-hooks.sh` unsets repository-locating `GIT_*`
+  variables (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`, `GIT_OBJECT_DIRECTORY`,
+  `GIT_ALTERNATE_OBJECT_DIRECTORIES`) while keeping `GIT_INDEX_FILE` for `run`
+  and preserving `env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE -u GIT_OBJECT_DIRECTORY`
+  around `install-hooks`. Fork-only; no rebase impact on upstream syncs.
+
+## Metal init unwinds without goto (2026-10-29)
+
+`refactor/metal-single-label-unwind`. The seven `core/src/feature/metal/*.mm`
+init functions return through a `static int unwind_<init>(State *s, int err)`
+helper on every failure; the helper runs the null-safe releases in reverse
+order. A rebase or upstream sync keeps zero `goto` in these files: the praetor
+engine's HISS-01 scan reports any cleanup `goto` because `.standards.yaml`
+declares no `c_goto_cleanup` exception. `ssimulacra2_metal.mm` keeps the
+`ss2m_yuv_coeffs`, `ss2m_combine_scale` and `ss2m_downsample_in_place` helpers
+that hold `ss2m_picture_to_linear_rgb` and `submit_fex_metal` under 60 lines.
+Each helper releases the kernel lifecycle and the Metal context only inside
+`if (s->ctx != nullptr)` and returns the init error it was given; keep that
+guard when resolving a conflict in a helper.
+`core/test/test_metal_unwind_contract.py` (meson suite `fast`) fails on an
+unguarded release or a lost init error. No score, C API or build change.
+
+## Meson testlog credential patterns (2026-11-05)
+
+- `scripts/ci/run_meson_test.py`: `CREDENTIAL_NAME_PATTERN` and
+  `is_credential_name()` widen the ADR-1333 scrub to credential-shaped
+  names (ADR-3400). Fork-only file; nothing upstream to merge.
+- `scripts/ci/check_testlog_credentials.py` (new) and the
+  `testlog-credential-scan` hook in `.pre-commit-config.yaml`.
+  **On sync**: none of these files exist upstream; keep the hook when
+  resolving `.pre-commit-config.yaml` conflicts.
+
 ## Saliency ROI channels follow measured encoder options (2026-10-28)
 
 - `pkg/saliency` and `tools/vmaf-tune/src/vmaftune/saliency.py` send libsvtav1 an x264-style 16x16 macroblock qpfile with suffix `.svtav1-qpfile.txt` through patch 0007's top-level `-qpfile` option. The bridge reduces it to 64x64 superblocks with at most eight segments (ADR-3386).

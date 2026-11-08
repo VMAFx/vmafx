@@ -1,0 +1,1 @@
+- Agent rule files now state the single `Copyright 2026 Lusoris` header (ADR-0861), and a pre-commit check refuses the retired dual form.

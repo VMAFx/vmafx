@@ -330,7 +330,7 @@ int vmaf_dnn_session_run_plane16(VmafDnnSession *sess,
 ```
 
 The bit-depth-extended sibling of `_luma8`. Used by the ffmpeg
-`vmaf_pre` filter for `yuv420p10le` / `yuv422p10le` / `yuv444p10le`
+`vmafx_pre` filter for `yuv420p10le` / `yuv422p10le` / `yuv444p10le`
 (and the 12-bit LE counterparts), and — at any supported bit depth —
 to run the same session on chroma planes at their sub-sampled
 dimensions. Added in

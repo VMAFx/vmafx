@@ -53,6 +53,8 @@ jobs:
     if: needs.tier.outputs.full == 'true'
     name: Plan build impact
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     outputs:
       selected: ${{ steps.impact.outputs.build_work }}
     steps:
@@ -173,13 +175,13 @@ jobs:
         if: "!matrix.windows"
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: '3.14.9'
+          python-version: '3.14.10'
 
       - name: Setup python (Windows)
         if: matrix.windows
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: '3.14.9'
+          python-version: '3.14.10'
 
       - name: Install build and test tools
         run: |
@@ -759,6 +761,8 @@ jobs:
     # required-aggregator
     name: Linux Intel LLVM
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     permissions:
       contents: read
       actions: read
@@ -783,6 +787,8 @@ jobs:
     # required-aggregator
     name: macOS Clang+Metal
     runs-on: ubuntu-26.04
+    # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
+    timeout-minutes: 5
     permissions:
       contents: read
       actions: read
@@ -807,6 +813,8 @@ jobs:
     # required-aggregator
     name: Windows MSVC+CUDA (full)
     runs-on: ubuntu-26.04
+    # Bound max(5, 2 x p95): p95 14.2 min over recent successful runs.
+    timeout-minutes: 29
     permissions:
       contents: read
       actions: read

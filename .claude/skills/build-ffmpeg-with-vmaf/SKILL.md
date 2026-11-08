@@ -24,8 +24,8 @@ bash ffmpeg-patches/test/build-and-run.sh
 - Applies shared FFmpeg fix series first (`scripts/ci/ffmpeg-shared-series.sh`,
   pinned in `build-config.env`, ADR-3143), then every patch in `series.txt`,
   in listed order.
-- Builds ffmpeg against installed libvmaf.
-- Checks `libvmaf` tiny-model option and `vmaf_pre` filter.
+- Builds ffmpeg against installed libvmafx.
+- Checks `vmafx` tiny-model option and `vmafx_pre` filter.
 - Set `VMAF_PREFIX` for nonstandard libvmaf installation.
 - Missing prerequisites -> exit 77 = unavailable result, not pass or fail.
 - Default source checkout = disposable.

@@ -77,8 +77,8 @@ jobs:
     needs: plan
     if: needs.plan.outputs.artifacts != '[]'
     runs-on: ubuntu-26.04
-    # 240 covers the step cap 48 plus 1.25x the rest of the job.
-    timeout-minutes: 240
+    # Bound max(5, 2 x p95): p95 42.5 min over recent successful runs.
+    timeout-minutes: 85
     strategy:
       fail-fast: false
       matrix:

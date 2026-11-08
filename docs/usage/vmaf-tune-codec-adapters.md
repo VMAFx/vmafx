@@ -195,7 +195,7 @@ raising when nothing matches.
   per-encoder HDR flags.
 - [`vmaf-tune-saliency-aware.md`](vmaf-tune-saliency-aware.md): which
   adapters take ROI maps.
-- [`vmaf-tune-ffmpeg.md`](vmaf-tune-ffmpeg.md): the `libvmaf_tune`
+- [`vmaf-tune-ffmpeg.md`](vmaf-tune-ffmpeg.md): the `vmafx_tune`
   filter.
 - [ADR-0237](../adr/0237-quality-aware-encode-automation.md): the
   reference adapter shape and the phase roadmap.

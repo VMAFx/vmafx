@@ -915,6 +915,15 @@ test('test_cuda_module_lifecycle_contract',
     timeout : 30,
 )
 
+# The Metal init unwind helpers release the lifecycle and the context only
+# when the context exists, and return the init error (#3185). Device-free.
+test('test_metal_unwind_contract',
+    import('python').find_installation(),
+    args : files('test_metal_unwind_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1226 / T-CUDA-ADM-CM-REGISTER-PRESSURE-2026-09-07: verify zero stack spill
 # and bounded register usage across all architectures in adm_cm.fatbin.
 test('test_cuda_adm_cm_register_pressure',
@@ -3611,41 +3620,30 @@ test('test_metal_iosurface_filter_contract',
     timeout : 30,
 )
 
-# ADR-1761: the FFmpeg libvmaf_sycl filter retries a failed VA import in a
-# bounded loop and then stops naming the frame, imports each input with its own
-# VA display, and copies every chroma row of an odd height. Device-free: reads
-# patch 0005; the device run is ffmpeg-patches/test/check-sycl-import-retry.sh.
-test('test_sycl_filter_import_contract',
+# ADR-1768: after a mid-run error the FFmpeg vmafx filter
+# logs the frame and the error once and prints no pooled score (ADR-1768).
+# Device-free: reads the filter source;
+# the device run is ffmpeg-patches/test/check-vmafx-no-score-after-error.sh.
+test('test_ffmpeg_vmafx_stop_contract',
     import('python').find_installation(),
-    args : files('test_sycl_filter_import_contract.py'),
+    args : files('test_ffmpeg_vmafx_stop_contract.py'),
     suite : ['fast'],
     timeout : 30,
 )
 
-# ADR-1768: after a mid-run error the FFmpeg libvmaf and libvmaf_cuda filters
-# log the frame and the error once and print no pooled score (patch 0021, a
-# deliberate divergence from upstream FFmpeg). Device-free: reads the series;
-# the device run is ffmpeg-patches/test/check-libvmaf-no-score-after-error.sh.
-test('test_ffmpeg_libvmaf_stop_contract',
+# Issue #2708: the vmafx filter offers every
+# SEI-unregistered side-data entry to vmafx_context_attach_sidedata(), newest
+# first, and stops at the first one accepted. Device-free: reads the filter source.
+test('test_ffmpeg_vmafx_pelorus_scan_contract',
     import('python').find_installation(),
-    args : files('test_ffmpeg_libvmaf_stop_contract.py'),
+    args : files('test_ffmpeg_vmafx_pelorus_scan_contract.py'),
     suite : ['fast'],
     timeout : 30,
 )
 
-# Issue #2708 / FFmpeg patch 0017: the libvmaf filter offers every
-# SEI-unregistered side-data entry to vmaf_set_perceptual_sidedata(), newest
-# first, and stops at the first one accepted. Device-free: reads the series.
-test('test_ffmpeg_libvmaf_pelorus_scan_contract',
-    import('python').find_installation(),
-    args : files('test_ffmpeg_libvmaf_pelorus_scan_contract.py'),
-    suite : ['fast'],
-    timeout : 30,
-)
-
-# ADR-2093 / FFmpeg patch 0022: the libvmaf filters declare the AVFrame colour to
-# libvmaf. Device-free: reads the series; the FFmpeg run is
-# ffmpeg-patches/test/check-libvmaf-input-colorimetry.sh.
+# ADR-2093 / FFmpeg patch 0004: the vmafx filter declares the AVFrame colour to
+# VMAFx. Device-free: reads the series; the FFmpeg run is
+# ffmpeg-patches/test/check-vmafx-input-colorimetry.sh.
 test('test_ffmpeg_libvmaf_input_colorimetry_contract',
     import('python').find_installation(),
     args : files('test_ffmpeg_libvmaf_input_colorimetry_contract.py'),
@@ -4219,6 +4217,23 @@ test_odd_depths_float_psnr_ciede = executable('test_odd_depths_float_psnr_ciede'
     kwargs : test_link_kwargs,
 )
 test('test_odd_depths_float_psnr_ciede', test_odd_depths_float_psnr_ciede, suite : ['fast'])
+
+# Issue #2476: float GPU twins bit-depth scaler test for 8..16 bits.
+test_odd_depths_float_gpu_scaler = executable('test_odd_depths_float_gpu_scaler',
+    ['test.c', 'test_odd_depths_float_gpu_scaler.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    link_with : vmaf_test_link,
+    dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+    kwargs : test_link_kwargs,
+)
+test('test_odd_depths_float_gpu_scaler', test_odd_depths_float_gpu_scaler, suite : ['fast'])
+test('test_odd_depths_float_gpu_scaler_contract',
+    import('python').find_installation(),
+    args : files('test_odd_depths_float_gpu_scaler_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
 
 # ADR-1499 — feature/float_psnr_rows.h, the float_psnr twins' form of the
 # CPU's sum of its rows past 2^53 units, fed with host-made segment sums and

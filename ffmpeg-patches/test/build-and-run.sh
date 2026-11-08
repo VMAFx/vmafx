@@ -9,16 +9,16 @@
 #   1. Fetches FFmpeg into a new, disposable $FFMPEG_SRC.
 #   2. Applies every patch listed in ffmpeg-patches/series.txt (comment-
 #      stripped) in order.
-#   3. Configures with the minimum libraries needed for libvmaf + vmaf_pre,
+#   3. Configures with the minimum libraries needed for libvmafx + vmafx_pre,
 #      builds ffmpeg, runs FFmpeg's generated FATE subset, and verifies:
-#        - `ffmpeg -h filter=libvmaf` lists `tiny_model`
-#        - `ffmpeg -h filter=vmaf_pre` exits 0
+#        - `ffmpeg -h filter=vmafx` lists `tiny_model`
+#        - `ffmpeg -h filter=vmafx_pre` exits 0
 #   4. With VMAF_SCORE_CHECK=1, scores the 48 frames of the testdata 576x324
-#      pair with the libvmaf filter and with $VMAF_PREFIX/bin/vmaf, and
+#      pair with the vmafx filter and with $VMAF_PREFIX/bin/vmaf, and
 #      requires the same text for every frame and pooled metric.
 #   5. Tears down the build tree unless $KEEP_BUILD is set.
 #
-# Requires libvmaf already installed (`pip`-level: "pkg-config --cflags libvmaf"
+# Requires libvmafx already installed (`pip`-level: "pkg-config --cflags libvmafx"
 # must resolve). Set VMAF_PREFIX to point at a non-standard install prefix.
 #
 # Settings (environment):
@@ -61,8 +61,8 @@ case "$FFMPEG_TOOLCHAIN" in
     # release build of VMAFx compiles with /MD (b_vscrt=from_buildtype), so
     # FFmpeg does too; the linker reports a mixed runtime as warning LNK4098,
     # which the warning gate below fails on. The MSVC lane links the static
-    # vmaf.lib, whose dependencies (zimg) sit in Requires.private of
-    # libvmaf.pc, so configure asks pkg-config for the static link line.
+    # vmafx.lib, whose dependencies (zimg) sit in Requires.private of
+    # libvmafx.pc, so configure asks pkg-config for the static link line.
     toolchain_args=(--toolchain=msvc --extra-cflags=-MD --extra-cxxflags=-MD
       --pkg-config-flags=--static)
     ;;
@@ -106,8 +106,8 @@ if ! command -v git >/dev/null; then
   echo "git not found on PATH" >&2
   exit 77
 fi
-if ! pkg-config --print-errors --exists libvmaf; then
-  echo "libvmaf not found via pkg-config — install libvmaf first or set VMAF_PREFIX" >&2
+if ! pkg-config --print-errors --exists libvmafx; then
+  echo "libvmafx not found via pkg-config — install libvmafx first or set VMAF_PREFIX" >&2
   exit 77
 fi
 
@@ -155,8 +155,7 @@ cd "$FFMPEG_SRC"
   --disable-debug \
   --disable-programs \
   --enable-ffmpeg \
-  --enable-libvmaf \
-  --enable-filter=vmaf_pre \
+  --enable-libvmafx \
   --enable-gpl \
   ${toolchain_args[@]+"${toolchain_args[@]}"}
 
@@ -233,18 +232,18 @@ fi
 rm "$build_log"
 
 echo "Verifying new options …"
-./ffmpeg -hide_banner -h filter=libvmaf 2>&1 | grep -q -- 'tiny_model' ||
+./ffmpeg -hide_banner -h filter=vmafx 2>&1 | grep -q -- 'tiny_model' ||
   {
-    echo "libvmaf filter does not advertise tiny_model"
+    echo "vmafx filter does not advertise tiny_model"
     exit 1
   }
-./ffmpeg -hide_banner -h filter=vmaf_pre >/dev/null 2>&1 ||
+./ffmpeg -hide_banner -h filter=vmafx_pre >/dev/null 2>&1 ||
   {
-    echo "vmaf_pre filter not registered"
+    echo "vmafx_pre filter not registered"
     exit 1
   }
 
-# score_check: the libvmaf filter of this build and the vmaf CLI of
+# score_check: the vmafx filter of this build and the vmaf CLI of
 # $VMAF_PREFIX score the same frames; every frame and pooled metric must be the
 # same text. The helpers are the upstream-consumer checks' (HISS-19).
 score_check() {
@@ -267,7 +266,7 @@ score_check() {
     timeout 300 "$FFMPEG_SRC/ffmpeg" -hide_banner -nostdin -loglevel info \
       -f rawvideo -pix_fmt yuv420p -video_size "$SIZE" -i "$DIST_YUV" \
       -f rawvideo -pix_fmt yuv420p -video_size "$SIZE" -i "$REF_YUV" \
-      -lavfi "$(uc_ffmpeg_graph ffmpeg.json)" -an -f null - >ffmpeg.log 2>&1
+      -lavfi "[0:v]trim=end_frame=$FRAMES,setpts=PTS-STARTPTS[d];[1:v]trim=end_frame=$FRAMES,setpts=PTS-STARTPTS[r];[d][r]vmafx=log_fmt=json:log_path=ffmpeg.json:threads=1:model=version=vmaf_v0.6.1" -an -f null - >ffmpeg.log 2>&1
   ) || uc_die "ffmpeg scoring failed (see $WORK/ffmpeg.log)"
   [[ -s "$WORK/ffmpeg.json" ]] || uc_die "ffmpeg wrote no $WORK/ffmpeg.json"
   uc_cli_scores "$PREFIX" "$WORK/cli.json"
@@ -275,7 +274,7 @@ score_check() {
 }
 
 if [[ "$VMAF_SCORE_CHECK" == 1 ]]; then
-  echo "Comparing libvmaf filter scores with the vmaf CLI …"
+  echo "Comparing vmafx filter scores with the vmaf CLI …"
   score_check
 fi
 

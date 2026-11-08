@@ -5,13 +5,13 @@
 
 Positive: the checked-in workflows hold; a job above its step sum passes.
 Negative: the planted job of 2026-10-22's shape with its limit below the step
-sum fails with exit 1; a job without a limit whose steps pass GitHub's 360
-minutes fails; an expression or a negative limit exits 2; an unreadable
-workflow exits 2.
+sum fails with exit 1; a job without its own limit fails; an expression or a
+negative limit exits 2; an unreadable workflow exits 2.
 Negative: an apt-get install step without its own cap fails with exit 1, the
 planted 2026-10-23 Coverage Gate shape; an expired exception no longer exempts.
-Boundary: an unexpired exception exempts its file only; a limit equal to the step sum passes; steps without a cap add
-nothing; a reusable-workflow call job (no steps) is skipped.
+Boundary: an unexpired exception exempts its file only; a limit equal to the
+step sum passes; steps without a cap add nothing; a reusable-workflow call job
+(no steps) is skipped.
 """
 
 from __future__ import annotations
@@ -69,6 +69,13 @@ class JobTimeoutBudgetTest(unittest.TestCase):
             ["w.yml: job mcp: timeout-minutes 35 is below its step caps' sum 40"],
         )
 
+    def test_missing_limit_finding_names_the_job(self) -> None:
+        doc = {"jobs": {"x": {"steps": [{"run": "true"}]}}}
+        self.assertEqual(
+            budget.job_findings("w.yml", doc),
+            ["w.yml: job x: declares no timeout-minutes (GitHub default 360 minutes)"],
+        )
+
     def test_limit_above_step_sum_passes(self) -> None:
         self.assertEqual(self.run_on(job("55", "20", "")), 0)
 
@@ -78,8 +85,8 @@ class JobTimeoutBudgetTest(unittest.TestCase):
     def test_uncapped_steps_add_nothing(self) -> None:
         self.assertEqual(self.run_on(job("5", "", "", "")), 0)
 
-    def test_missing_job_limit_is_github_default(self) -> None:
-        self.assertEqual(self.run_on(job("", "300", "60")), 0)
+    def test_missing_job_limit_is_refused(self) -> None:
+        self.assertEqual(self.run_on(job("", "20")), 1)
         self.assertEqual(self.run_on(job("", "300", "61")), 1)
 
     def test_expression_limit_fails_closed(self) -> None:
@@ -107,7 +114,14 @@ class JobTimeoutBudgetTest(unittest.TestCase):
         self.assertEqual(self.run_on(text), 0)
 
     def test_uncapped_apt_finding_names_the_step(self) -> None:
-        doc = {"jobs": {"cov": {"steps": [{"name": "deps", "run": "apt-get install -y x"}]}}}
+        doc = {
+            "jobs": {
+                "cov": {
+                    "timeout-minutes": 60,
+                    "steps": [{"name": "deps", "run": "apt-get install -y x"}],
+                }
+            }
+        }
         self.assertEqual(
             budget.job_findings("w.yml", doc),
             ["w.yml: job cov, deps: apt-get install step has no timeout-minutes"],
@@ -115,7 +129,14 @@ class JobTimeoutBudgetTest(unittest.TestCase):
 
     def test_apt_exception_holds_until_expiry_only(self) -> None:
         # A stand-in entry: the real list shrinks with each capped file.
-        doc = {"jobs": {"b": {"steps": [{"name": "deps", "run": "apt-get install -y x"}]}}}
+        doc = {
+            "jobs": {
+                "b": {
+                    "timeout-minutes": 60,
+                    "steps": [{"name": "deps", "run": "apt-get install -y x"}],
+                }
+            }
+        }
         expiry = datetime.date(2026, 10, 26)
         with mock.patch.dict(budget.UNCAPPED_APT_EXCEPTIONS, {"listed.yml": expiry}):
             self.assertEqual(budget.job_findings("listed.yml", doc, expiry), [])

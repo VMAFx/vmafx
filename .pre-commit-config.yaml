@@ -12,7 +12,7 @@ fail_fast: false
 # used whatever node the host had. check-workflow-versions.py keeps this equal
 # to NODE_VERSION.
 default_language_version:
-  node: "24.22.1"
+  node: "26.12.1"
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -237,6 +237,15 @@ repos:
 
   - repo: local
     hooks:
+      # Fragments are excluded from markdownlint, and the concatenator copies a
+      # fragment's comment into the middle of CHANGELOG.md, where MD041 (first
+      # line is a heading) never applies. A directive in a fragment is dead text.
+      - id: changelog-fragment-no-lint-directive
+        name: Changelog fragments carry no markdownlint directive
+        entry: '<!--\s*markdownlint-'
+        language: pygrep
+        files: '^changelog\.d/.*\.md$'
+
       - id: rc1-tester-report-tests
         name: RC1 tester report unit regressions
         entry: python -m pytest -q tools/rc1-tester/tests
@@ -311,6 +320,13 @@ repos:
         entry: python3 -m unittest discover -s scripts/dev/tests -p test_*merge_train_guard.py
         language: system
         files: '^scripts/dev/((install_)?merge_train_guard\.py|tests/test_(install_)?merge_train_guard\.py)$'
+        pass_filenames: false
+
+      - id: upstream-pr-sweep-contract
+        name: Upstream PR sweep regression contract
+        entry: python3 -B -m unittest discover -s scripts/dev/tests -p 'test_upstream_pr_sweep*.py'
+        language: system
+        files: '^(scripts/dev/(upstream_pr_sweep\.py|tests/(test_upstream_pr_sweep.*|upstream_pr_sweep_fixture)\.py)|docs/development/upstream-pr-sweep\.md)$'
         pass_filenames: false
 
       - id: rc3-home-gpu-retest-contract
@@ -820,6 +836,20 @@ repos:
         files: '^(\.github/workflows/|scripts/ci/(pr_workflow_budget\.py|tests/test_pr_workflow_budget\.py)|\.pre-commit-config\.yaml$)'
         pass_filenames: false
 
+      - id: check-api-doc-coverage
+        name: Every public vmafx symbol is named in docs/api (#2436)
+        entry: python3 scripts/ci/check_api_doc_coverage.py
+        language: system
+        files: '^(core/include/vmafx/.*\.h|docs/api/.*\.md|scripts/ci/check_api_doc_coverage\.py)$'
+        pass_filenames: false
+
+      - id: test-check-api-doc-coverage
+        name: API doc coverage check keeps positive, negative and boundary cases
+        entry: python3 -B -m unittest scripts/ci/tests/test_check_api_doc_coverage.py
+        language: system
+        files: '^scripts/ci/(check_api_doc_coverage|tests/test_check_api_doc_coverage)\.py$'
+        pass_filenames: false
+
       - id: check-job-timeout-budget
         name: Every workflow job's time limit covers the sum of its step limits
         entry: python3 scripts/ci/check_job_timeout_budget.py
@@ -832,6 +862,20 @@ repos:
         entry: python3 scripts/ci/tests/test_check_job_timeout_budget.py
         language: system
         files: '^(\.github/workflows/|scripts/ci/(check_job_timeout_budget\.py|tests/test_check_job_timeout_budget\.py)|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+
+      - id: check-agent-copyright-rule
+        name: Agent rules use the current ADR-0861 copyright line
+        entry: python3 scripts/ci/check_agent_copyright_rule.py
+        language: system
+        files: '(^|/)(AGENTS\.md$|AGENTS\.d/)|^CONTRIBUTING\.md$|^docs/development/|^scripts/ci/(check_agent_copyright_rule|tests/test_check_agent_copyright_rule)\.py$|^\.pre-commit-config\.yaml$'
+        pass_filenames: false
+
+      - id: test-check-agent-copyright-rule
+        name: Agent copyright rule keeps positive, negative and boundary cases
+        entry: python3 scripts/ci/tests/test_check_agent_copyright_rule.py
+        language: system
+        files: '(^|/)(AGENTS\.md$|AGENTS\.d/)|^CONTRIBUTING\.md$|^docs/development/|^scripts/ci/(check_agent_copyright_rule|tests/test_check_agent_copyright_rule)\.py$|^\.pre-commit-config\.yaml$'
         pass_filenames: false
 
       - id: check-release-provenance-assets
@@ -1243,6 +1287,14 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: ffmpeg-patch-contract-tests
+        name: core/test contract scripts that read the FFmpeg patch series, and no retired patch named in live files
+        entry: bash -c 'python3 -B scripts/ci/run_ffmpeg_patch_contract_tests.py && python3 -B scripts/ci/tests/test_run_ffmpeg_patch_contract_tests.py'
+        language: system
+        files: '^(ffmpeg-patches/|core/|dev/|docker/|docs/|testdata/|tools/|mcp-server/|python/|\.github/|scripts/|AGENTS\.md$|Makefile$|build-config\.env$|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: ffmpeg-input-contract
         name: FFmpeg VMAF input-order contract and red-cap tests
         entry: make ffmpeg-input-contract
@@ -1252,14 +1304,14 @@ repos:
         stages: [pre-commit, pre-push]
 
       - id: sycl-zerocopy-contract
-        name: libvmaf_sycl zero-copy routing and e2e comparator contracts
+        name: vmafx SYCL zero-copy routing and e2e comparator contracts
         # pytest comes from pre-commit's own environment (as rc1-tester-report-tests),
         # so the hook runs without a developer-installed pytest; CI runs the same
         # checks through `make sycl-zerocopy-contract` with the hash-locked pytest.
         entry: bash -c 'bash ffmpeg-patches/test/check-sycl-feature-routing.sh && python -m pytest -p no:cacheprovider -q scripts/test/test_zerocopy_e2e_compare.py'
         language: python
         additional_dependencies: [pytest==9.2.0]
-        files: '^(ffmpeg-patches/(0005-[^/]*\.patch|test/check-sycl-feature-routing\.sh)|scripts/test/(zerocopy[-_]e2e[^/]*|test_zerocopy_e2e_compare\.py)|scripts/ci/cross_backend_parity_gate\.py|Makefile$|\.github/workflows/ffmpeg-patch-stack\.yml$|\.pre-commit-config\.yaml$)'
+        files: '^(ffmpeg-patches/(0004-[^/]*\.patch|src/vf_vmafx\.c|test/check-sycl-feature-routing\.sh)|scripts/test/(zerocopy[-_]e2e[^/]*|test_zerocopy_e2e_compare\.py)|scripts/ci/cross_backend_parity_gate\.py|Makefile$|\.github/workflows/ffmpeg-patch-stack\.yml$|\.pre-commit-config\.yaml$)'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

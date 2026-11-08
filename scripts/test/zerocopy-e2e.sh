@@ -2,16 +2,16 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 #
-# zerocopy-e2e.sh - libvmaf_sycl zero-copy end-to-end harness.
+# zerocopy-e2e.sh - vmafx SYCL zero-copy end-to-end harness.
 #
 # Runs inside the SYCL toolchain image (scripts/test/sycl-dev-container.sh exec)
 # on an Intel GPU. For every clip and bit depth it QSV-encodes a ref/dis pair,
 # then runs every case through three legs and compares them with
 # scripts/test/zerocopy_e2e_compare.py:
 #
-#   cpu   software decode -> libvmaf              (reference)
-#   host  software decode -> libvmaf_sycl         (host upload, SYCL twins)
-#   zc    QSV decode      -> libvmaf_sycl         (zero-copy)
+#   cpu   software decode -> vmafx              (reference)
+#   host  software decode -> vmafx              (host upload, SYCL twins)
+#   zc    QSV decode      -> vmafx              (zero-copy)
 #
 # A case the CPU extractor cannot run (motion_uv: integer motion with
 # motion_add_uv) is declared reference=host by the comparator: no cpu leg is run
@@ -132,7 +132,7 @@ if [ ! -c "$RENDER_NODE" ]; then
   echo "render node is not a character device: $RENDER_NODE" >&2
   exit 2
 fi
-QSV_INIT=(-init_hw_device "vaapi=va0:$RENDER_NODE"
+QSV_INIT=(-init_hw_device "drm=dr0:$RENDER_NODE" -init_hw_device "vaapi=va0@dr0"
   -init_hw_device qsv=qr@va0 -init_hw_device qsv=qd@va0)
 OUT="$(realpath -m "$OUT")"
 mkdir -p "$OUT/media"
@@ -189,8 +189,9 @@ run_leg() {
   echo "$rc" >"$base.rc"
 }
 
-# filter_option KIND ARG: the libvmaf options selecting the case. A feature case
-# switches the default model off (empty model=) so only that feature is measured.
+# filter_option KIND ARG: the vmafx options selecting the case. A feature case
+# passes an empty model= beside feature=, which mounts no model, so the report
+# holds only that feature's metrics (docs/usage/ffmpeg.md, Models and features).
 filter_option() {
   if [ "$1" = model ]; then printf 'model=%s' "$2"; else printf "model=:feature='%s'" "$2"; fi
 }
@@ -203,7 +204,7 @@ run_zc() {
     -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qd -i "$dis" \
     -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qr -i "$ref" \
     ${benchflag:+"$benchflag"} \
-    -lavfi "[0:v][1:v]libvmaf_sycl=${opt}:score_fmt=${SCORE_FMT}:log_fmt=json:log_path=${base}.json" -f null -
+    -lavfi "[0:v]hwmap=derive_device=vaapi,format=vaapi,hwmap=derive_device=drm,format=drm_prime[d];[1:v]hwmap=derive_device=vaapi,format=vaapi,hwmap=derive_device=drm,format=drm_prime[r];[d][r]vmafx=backend=sycl:import=auto:${opt}:score_fmt=${SCORE_FMT}:log_fmt=json:log_path=${base}.json" -f null -
 }
 
 # run_case TAG DIS REF ID KIND ARG BENCHFLAG REFERENCE
@@ -214,10 +215,10 @@ run_case() {
   base="$OUT/${tag}__${id}"
   if [ "$reference" = cpu ]; then
     run_leg "$base.cpu" -i "$dis" -i "$ref" \
-      -lavfi "[0:v][1:v]libvmaf=${opt}:score_fmt=${SCORE_FMT}:log_fmt=json:log_path=${base}.cpu.json" -f null -
+      -lavfi "[0:v][1:v]vmafx=${opt}:score_fmt=${SCORE_FMT}:log_fmt=json:log_path=${base}.cpu.json" -f null -
   fi
   run_leg "$base.host" -i "$dis" -i "$ref" \
-    -lavfi "[0:v][1:v]libvmaf_sycl=${opt}:score_fmt=${SCORE_FMT}:log_fmt=json:log_path=${base}.host.json" -f null -
+    -lavfi "[0:v][1:v]vmafx=backend=sycl:device=0:${opt}:score_fmt=${SCORE_FMT}:log_fmt=json:log_path=${base}.host.json" -f null -
   run_zc "$base.zc" "$dis" "$ref" "$opt" "$benchflag"
   local k
   for ((k = 2; k <= REPEAT; k++)); do

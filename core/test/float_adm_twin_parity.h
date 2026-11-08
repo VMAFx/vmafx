@@ -361,14 +361,39 @@ static inline mu_message_t adm_twin_noise_exact(const AdmTwin *twin)
     return adm_twin_default(twin, "float_adm noise", FIXTURE_W, FIXTURE_H, 8u, ADM_TWIN_NOISE);
 }
 
+static inline mu_message_t adm_twin_9bit_exact(const AdmTwin *twin)
+{
+    return adm_twin_default(twin, "float_adm", FIXTURE_W, FIXTURE_H, 9u, ADM_TWIN_NOISE);
+}
+
 static inline mu_message_t adm_twin_10bit_exact(const AdmTwin *twin)
 {
     return adm_twin_default(twin, "float_adm", FIXTURE_W, FIXTURE_H, 10u, ADM_TWIN_NOISE);
 }
 
+static inline mu_message_t adm_twin_11bit_exact(const AdmTwin *twin)
+{
+    return adm_twin_default(twin, "float_adm", FIXTURE_W, FIXTURE_H, 11u, ADM_TWIN_NOISE);
+}
+
 static inline mu_message_t adm_twin_12bit_exact(const AdmTwin *twin)
 {
     return adm_twin_default(twin, "float_adm", FIXTURE_W, FIXTURE_H, 12u, ADM_TWIN_TEXTURE);
+}
+
+static inline mu_message_t adm_twin_13bit_exact(const AdmTwin *twin)
+{
+    return adm_twin_default(twin, "float_adm", FIXTURE_W, FIXTURE_H, 13u, ADM_TWIN_NOISE);
+}
+
+static inline mu_message_t adm_twin_14bit_exact(const AdmTwin *twin)
+{
+    return adm_twin_default(twin, "float_adm", FIXTURE_W, FIXTURE_H, 14u, ADM_TWIN_NOISE);
+}
+
+static inline mu_message_t adm_twin_15bit_exact(const AdmTwin *twin)
+{
+    return adm_twin_default(twin, "float_adm", FIXTURE_W, FIXTURE_H, 15u, ADM_TWIN_NOISE);
 }
 
 static inline mu_message_t adm_twin_16bit_exact(const AdmTwin *twin)

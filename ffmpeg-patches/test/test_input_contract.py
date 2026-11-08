@@ -39,14 +39,15 @@ class InputContractCliTest(unittest.TestCase):
         self._write_docker_doc()
 
     def _write_patch_fixture(self) -> None:
-        (self.root / "ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch").write_text(
-            """diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
---- a/libavfilter/vf_libvmaf.c
-+++ b/libavfilter/vf_libvmaf.c
-@@ -1,1 +1,4 @@
+        (self.root / "ffmpeg-patches/0004-add-vmafx-filter.patch").write_text(
+            """diff --git a/libavfilter/vf_vmafx.c b/libavfilter/vf_vmafx.c
+--- a/libavfilter/vf_vmafx.c
++++ b/libavfilter/vf_vmafx.c
+@@ -1,1 +1,5 @@
 +    av_log(ctx, AV_LOG_INFO,
-+           \"libvmaf: input[0]=distorted input[1]=reference \"
-+           \"(opposite of Python runner / vmaf CLI order)\\n\");
++           "%s: input 0 (main) is the distorted video, input 1 (reference) the reference; "
++           "swapping them scores the other direction\\n",
++           ctx->filter->name);
 """,
             encoding="utf-8",
         )
@@ -212,7 +213,7 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,video \\
 
     def test_log_call_removal_fails(self) -> None:
         self.mutate(
-            "ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch",
+            "ffmpeg-patches/0004-add-vmafx-filter.patch",
             "av_log(ctx, AV_LOG_INFO,",
             "av_log(ctx, AV_LOG_WARNING,",
         )
@@ -220,20 +221,21 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,video \\
 
     def test_log_message_mutation_fails(self) -> None:
         self.mutate(
-            "ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch",
-            "input[1]=reference",
-            "input[1]=source",
+            "ffmpeg-patches/0004-add-vmafx-filter.patch",
+            "input 1 (reference) the reference",
+            "input 1 (reference) the source",
         )
         self.assert_fails_with("executable AV_LOG_INFO")
 
     def test_commented_log_call_fails(self) -> None:
         call = (
             "+    av_log(ctx, AV_LOG_INFO,\n"
-            '+           "libvmaf: input[0]=distorted input[1]=reference "\n'
-            '+           "(opposite of Python runner / vmaf CLI order)\\n");'
+            '+           "%s: input 0 (main) is the distorted video, input 1 (reference) the reference; "\n'
+            '+           "swapping them scores the other direction\\n",\n'
+            "+           ctx->filter->name);"
         )
         self.mutate(
-            "ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch",
+            "ffmpeg-patches/0004-add-vmafx-filter.patch",
             call,
             "+    /* disabled reminder\n" + call + "\n+     */",
         )

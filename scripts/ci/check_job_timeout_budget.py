@@ -15,6 +15,9 @@ adds the ``timeout-minutes`` of its steps and fails when the job's own
 checked and fails closed. Size a job limit as the step caps plus 1.25 times
 the measured longest healthy run of the uncapped steps (ADR-3367).
 
+A job running steps without its own limit is a finding (2026-11-06, the
+job-timeout sweep: 28 jobs had none; bound max(5, 2 x p95) per job).
+
 A step that runs ``apt-get install`` without its own ``timeout-minutes`` is a
 finding too: on 2026-10-23 an uncapped install of ``libcudart12`` took 30
 minutes on a slow mirror and the Coverage Gate hit its job limit. A workflow
@@ -69,7 +72,7 @@ def apt_exempt(workflow: str, today: datetime.date) -> bool:
 
 
 def job_findings(workflow: str, doc: Any, today: datetime.date | None = None) -> list[str]:
-    """One line per job below its step sum and per uncapped apt install step."""
+    """One line per job without its own limit, below its step sum, and per uncapped apt step."""
     exempt = apt_exempt(workflow, today or datetime.date.today())
     findings: list[str] = []
     jobs = doc.get("jobs") if isinstance(doc, dict) else None
@@ -79,6 +82,11 @@ def job_findings(workflow: str, doc: Any, today: datetime.date | None = None) ->
         if not isinstance(job, dict) or not isinstance(job.get("steps"), list):
             continue  # a reusable-workflow call has no steps of its own
         where = f"{workflow}: job {job_id}"
+        if "timeout-minutes" not in job:
+            findings.append(
+                f"{where}: declares no timeout-minutes"
+                f" (GitHub default {GITHUB_DEFAULT_JOB_MINUTES} minutes)"
+            )
         limit = minutes(job.get("timeout-minutes", GITHUB_DEFAULT_JOB_MINUTES), where)
         step_sum = 0
         for index, step in enumerate(job["steps"]):
@@ -124,7 +132,8 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "check_job_timeout_budget: cap each apt step at 1.25 times its slowest measured"
             " run; raise the job limit to the step caps plus 1.25 times the measured"
-            " longest healthy run of the other steps",
+            " longest healthy run of the other steps; give every job timeout-minutes of"
+            " max(5, 2 x p95) of its recent successful runs",
             file=sys.stderr,
         )
         return 1
