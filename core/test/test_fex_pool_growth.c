@@ -61,14 +61,17 @@ extern int __real_pthread_cond_init(pthread_cond_t *, const pthread_condattr_t *
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ADR-0772; docs/research/fex-pool-growth-2026-09-08.md: GNU linker wrapping ABI.
 extern int __real_pthread_cond_destroy(pthread_cond_t *);
 
-/* The library is compiled `-fvisibility=hidden` (core/src/meson.build), which
+/* Every `__wrap_*` below carries `__attribute__((visibility("default")))` on purpose:
+ * the library is compiled `-fvisibility=hidden` (core/src/meson.build), which
  * applies to this test too. A `--wrap` interposer must stay visible: libvmaf's
  * shared object calls calloc/malloc/strdup/realloc, `--wrap` rewrites those
  * references to `__wrap_*`, and a hidden definition in the executable cannot
  * satisfy a reference from a DSO. icpx says so outright —
  * `hidden symbol '__wrap_calloc' ... is referenced by DSO / final link failed:
  * bad value` — which broke Ubuntu SYCL, Ubuntu SYCL+CUDA, FFmpeg SYCL and
- * Windows MSVC+CUDA. Keep this attribute on every wrapper below.
+ * Windows MSVC+CUDA. Keep this attribute on every wrapper below. The attribute is
+ * written out directly on each wrapper instead of via a macro because the Semgrep
+ * C/C++ parser fails on a macro before the return type (issue 3252).
  * ADR-0772; docs/research/fex-pool-growth-2026-09-08.md. */
 
 // cppcheck-suppress unusedFunction

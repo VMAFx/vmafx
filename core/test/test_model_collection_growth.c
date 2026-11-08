@@ -45,8 +45,11 @@ static unsigned watched_growths;
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ADR-0723; Research-2047: GNU linker wrapping ABI.
 extern void *__real_realloc(void *, size_t);
 
-/* The library is compiled `-fvisibility=hidden`, which applies to this test
- * too, and the linker must reach the wrapper (test_fex_pool_growth.c). */
+/* Every `__wrap_*` below carries `__attribute__((visibility("default")))` on purpose:
+ * the library is compiled `-fvisibility=hidden`, which applies to this test
+ * too, and the linker must reach the wrapper (test_fex_pool_growth.c). The attribute is
+ * written out directly on each wrapper instead of via a macro because the Semgrep C/C++
+ * parser fails on a macro before the return type (issue 3252). */
 
 /* Counts every growth of the watched model array and fails it on request.
  * Every other realloc() in the process runs unchanged. */

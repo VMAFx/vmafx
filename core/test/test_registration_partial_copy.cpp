@@ -105,8 +105,11 @@ mu_message_t test_model_partial_copy()
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ADR-0723; Research-2047: GNU link wrapping ABI.
 extern "C" int __real_vmaf_dictionary_copy(VmafDictionary **src, VmafDictionary **dst);
 
-/* Visible on purpose, as in test_fex_ctx_vector.cpp: the library builds with
- * -fvisibility=hidden, and the linker must reach this wrapper. */
+/* Every `__wrap_*` below carries `__attribute__((visibility("default")))` on purpose,
+ * as in test_fex_ctx_vector.cpp: the library builds with -fvisibility=hidden, and the
+ * linker must reach this wrapper. The attribute is written out directly on each wrapper
+ * instead of via a macro because the Semgrep C/C++ parser fails on a macro before the
+ * return type (issue 3252). */
 
 // Research-2048: `-Wl,--wrap=vmaf_dictionary_copy` routes every library call to
 // this wrapper, which fails only the requested copy; every other call runs the

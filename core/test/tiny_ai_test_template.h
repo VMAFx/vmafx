@@ -97,8 +97,11 @@ static int vmaf_tiny_ai_test_unsetenv(const char *name)
  *
  * For test_<fn_prefix>_init_rejects_missing_model:
  * With neither model_path option set nor env var in the environment,
- * init() must cleanly decline rather than crash. The test saves and
- * clears env_var, tests init(), calls close(), and restores env_var.
+ * init() must cleanly decline rather than crash. close() must be safe after
+ * a failed init. The test saves and clears env_var, tests init(), calls
+ * close(), and restores the environment and frees before asserting, so a
+ * failed assert neither leaks nor leaves env_var unset for the tests that
+ * run after this one.
  */
 #define VMAF_TINY_AI_DEFINE_REGISTRATION_TESTS(ext_name, feat_name, env_var, fn_prefix)            \
     static mu_message_t test_##fn_prefix##_is_registered(void)                                     \
