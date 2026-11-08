@@ -187,6 +187,7 @@ struct VmafSyclState {
     bool extractor_timing = false; // per-extractor q.wait() timing
     bool import_debug = false;     // VMAF_SYCL_IMPORT_DEBUG — resolved once at init
     bool combined_graphs_recorded = false;
+    uint64_t combined_graph_replays = 0; // replays since state init (#3356 test hook)
 };
 
 /* ------------------------------------------------------------------ */
@@ -1241,6 +1242,9 @@ extern "C" void *vmaf_sycl_get_last_upload_event(VmafSyclState *state)
 /* Combined command graph                                              */
 /* ------------------------------------------------------------------ */
 
+/* Register one extractor with the combined graph; see common.h. Temporal and
+ * previous-reference extractors are marked every_frame so subsample gating
+ * never skips them. */
 extern "C" int vmaf_sycl_graph_register_flags(VmafSyclState *state,
                                               VmafSyclGraphEnqueueFn enqueue_fn,
                                               VmafSyclGraphPreFn pre_fn,
@@ -1283,6 +1287,7 @@ extern "C" int vmaf_sycl_graph_register_flags(VmafSyclState *state,
     return 0;
 }
 
+/* Compatibility entry point: registers as non-temporal (flags 0). */
 extern "C" int vmaf_sycl_graph_register(VmafSyclState *state, VmafSyclGraphEnqueueFn enqueue_fn,
                                         VmafSyclGraphPreFn pre_fn, VmafSyclGraphPostFn post_fn,
                                         VmafSyclGraphConfigFn config_fn, void *priv,
@@ -1292,6 +1297,7 @@ extern "C" int vmaf_sycl_graph_register(VmafSyclState *state, VmafSyclGraphEnque
                                           0);
 }
 
+/* Record the frame about to be extracted and the subsample; see common.h. */
 extern "C" void vmaf_sycl_graph_set_frame(VmafSyclState *state, unsigned index,
                                           unsigned n_subsample)
 {
@@ -1452,6 +1458,9 @@ static bool sycl_any_extractor_wants_graph(VmafSyclState *state, uint64_t frame)
     return false;
 }
 
+/* True when extractor @ge does work on the current frame: always for a
+ * temporal or previous-reference extractor, otherwise only on frames the
+ * subsample scores (frame_index % n_subsample == 0). */
 static bool sycl_extractor_runs_this_frame(const VmafSyclState *state,
                                            const VmafSyclState::GraphExtractor &ge)
 {
@@ -1460,6 +1469,8 @@ static bool sycl_extractor_runs_this_frame(const VmafSyclState *state,
     return (state->frame_index % state->n_subsample) == 0;
 }
 
+/* Number of vmaf_sycl_graph_submit() calls that make up the current frame:
+ * one per extractor that runs on it. The last of them enqueues the work. */
 static int sycl_expected_graph_submits(const VmafSyclState *state)
 {
     int expected = 0;
@@ -1496,6 +1507,7 @@ static void sycl_run_compute_phase(sycl::queue &q, VmafSyclState *state, bool al
     // Replay the pre-recorded combined graph
     int const slot = state->cur_compute;
     q.ext_oneapi_graph(*state->combined_exec_graph[slot]);
+    state->combined_graph_replays++;
     // Barrier after replay to ensure graph completes before post_fn
     q.ext_oneapi_submit_barrier();
 }
@@ -1683,6 +1695,14 @@ extern "C" int vmaf_sycl_graphs_recorded(VmafSyclState *state)
     if (!state)
         return 0;
     return state->combined_graphs_recorded ? 1 : 0;
+}
+
+/* Count of combined-graph replays since state init; see common.h. */
+extern "C" uint64_t vmaf_sycl_graph_replays(VmafSyclState *state)
+{
+    if (!state)
+        return 0;
+    return state->combined_graph_replays;
 }
 
 extern "C" int vmaf_sycl_combined_queue_wait(VmafSyclState *state)

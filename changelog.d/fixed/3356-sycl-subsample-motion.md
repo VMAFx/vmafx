@@ -3,4 +3,5 @@
   on the current frame under `--subsample N` (`N > 1`), using direct per-extractor submission on
   frames where non-temporal extractors (`vif_sycl`, `adm_sycl`, `float_moment_sycl`, `cambi_sycl`)
   are skipped so temporal `motion_sycl` and `psnr_sycl` update every frame without overwriting
-  pending host results of skipped extractors.
+  pending host results of skipped extractors. A recorded combined graph replays only on frames
+  where every registered extractor runs.

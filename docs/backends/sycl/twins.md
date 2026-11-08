@@ -120,7 +120,15 @@ Two device-side controls reduce the remaining deviation:
   collect on every frame even when paired with non-temporal combined-graph
   twins (`vif_sycl`, `adm_sycl`, `float_moment_sycl`, `cambi_sycl`); skipped
   frames run only the active temporal subset so non-temporal pending host
-  buffers stay intact (`test_sycl_subsample_motion_vif`).
+  buffers stay intact. A recorded combined graph replays only on frames where
+  every registered extractor runs; other frames submit directly.
+  `test_sycl_subsample_motion_vif` checks every temporal score on every frame
+  and every non-temporal score only on scored frames, for `motion_sycl` with
+  `vif_sycl` against the CPU and for each temporal and non-temporal pair against
+  SYCL at `--subsample 1`. Its `_graph` variant forces graph dispatch
+  (`VMAF_SYCL_DISPATCH=MOTION:graph,PSNR:graph`) and asserts the graph was
+  recorded and then replayed on exactly the frames that run every extractor
+  (`vmaf_sycl_graph_replays()` in `core/src/sycl/common.h`).
 - `motion_five_frame_window=true` runs on the device on `motion_sycl` and
   `motion_v2_sycl`, with the CPU's bits
   ([ADR-1491](../../adr/1491-gpu-motion-five-frame-window.md)). `motion_sycl`

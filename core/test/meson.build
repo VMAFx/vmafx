@@ -7939,7 +7939,7 @@ test('test_sycl_motion_five_frame_window', test_sycl_motion_five_frame_window,
 
 test_sycl_subsample_motion_vif = executable('test_sycl_subsample_motion_vif',
     ['test.c', 'test_sycl_subsample_motion_vif.c'],
-    include_directories : [libvmaf_inc, test_inc],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : vmaf_test_link,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
     c_args: ['-DHAVE_SYCL=1'],
@@ -7947,6 +7947,14 @@ test_sycl_subsample_motion_vif = executable('test_sycl_subsample_motion_vif',
 )
 test('test_sycl_subsample_motion_vif', test_sycl_subsample_motion_vif,
     suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false,
+    timeout : 120)
+# Same binary under forced graph dispatch: every SYCL run must also record
+# the combined graph, so replay runs on frames where all extractors are
+# active (#3362 review).
+test('test_sycl_subsample_motion_vif_graph', test_sycl_subsample_motion_vif,
+    suite : ['fast', 'gpu', 'sycl'],
+    env : ['VMAF_SYCL_DISPATCH=MOTION:graph,PSNR:graph', 'VMAFX_TEST_EXPECT_SYCL_GRAPH=1'],
     is_parallel : false,
     timeout : 120)
 
