@@ -56,13 +56,26 @@ def digest(path: Path) -> str:
 
 
 def load_squash_composer() -> Any:
-    """Dynamically load and return the squash_message module."""
-    path = Path(__file__).resolve().parent.parent / "ci" / "squash_message.py"
+    """Load the squash_message module that ships with this gateway.
+
+    An installed gateway (``releases/<sha>/merge_train_guard.py``) loads the
+    composer installed beside it, whose hash the launcher checked; the
+    repository copy (``scripts/dev/``) loads ``scripts/ci/squash_message.py``.
+    A missing or failing module raises ``Refused``.
+    """
+    here = Path(__file__).resolve().parent
+    candidates = (here / "squash_message.py", here.parent / "ci" / "squash_message.py")
+    path = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if path is None:
+        raise Refused(f"cannot load squash_message module: {candidates[0]} or {candidates[1]}")
     spec = importlib.util.spec_from_file_location("squash_message", str(path))
     if spec is None or spec.loader is None:
-        raise Refused("cannot load squash_message module")
+        raise Refused(f"cannot load squash_message module: {path}")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:  # any import-time failure is a refusal, never a crash
+        raise Refused(f"cannot load squash_message module: {path}") from exc
     return module
 
 
@@ -338,6 +351,7 @@ class Train:
             number=number,
             body_text=body_text,
             identity=LANDING_IDENTITY,
+            repo_root=self.root,
         )
         if code != 0:
             raise Refused(f"squash message check failed: {output.strip()}")
@@ -403,7 +417,7 @@ class Train:
                     cwd=checkout,
                 )
             self.guard(number, updated)
-        except Refused, OSError:
+        except (Refused, OSError):
             print(f"Retained failed rebase checkout and ownership receipt: {run}", file=sys.stderr)
             raise
         if self.git(

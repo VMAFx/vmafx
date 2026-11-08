@@ -160,6 +160,12 @@ gateway to `releases/GATEWAY_SHA256/`, and leaves `PAUSED` present. It preserves
 existing hold text and unions new protected owners into the existing policy.
 Every generated entry point verifies the gateway's hash before execution. A
 failure preserves the backups and pause; do not start an incomplete migration.
+
+The release directory holds both the gateway (`merge_train_guard.py`) and the
+squash message composer (`squash_message.py`), installed read-only (`0o444`).
+Every generated entry point verifies both the gateway's hash and the composer's
+hash before execution; tampering with either file causes the launcher to refuse.
+
 The helper never kills or launches a process. It installs this mapping:
 
 | Legacy entry | Replacement |

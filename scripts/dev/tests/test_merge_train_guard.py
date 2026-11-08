@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import sys
@@ -75,6 +76,16 @@ class TrainContract(unittest.TestCase):
         self.train.git("config", "commit.gpgsign", "false")
         (self.root / "Makefile").write_text(".PHONY: lint test\nlint test:\n\t@echo executed-$@\n")
         (self.root / ".gitignore").write_text("GNUmakefile\ncache/\n")
+        real_root = Path(__file__).resolve().parents[3]
+        if (real_root / ".pre-commit-config.yaml").is_file():
+            (self.root / ".pre-commit-config.yaml").write_bytes(
+                (real_root / ".pre-commit-config.yaml").read_bytes()
+            )
+        if (real_root / ".config/lefthook/engine.sh").is_file():
+            (self.root / ".config/lefthook").mkdir(parents=True, exist_ok=True)
+            (self.root / ".config/lefthook/engine.sh").symlink_to(
+                real_root / ".config/lefthook/engine.sh"
+            )
         self.train.git("add", ".")
         self.train.git("commit", "-m", "fixture base")
         self.train.git("checkout", "-b", "topic")
@@ -433,6 +444,65 @@ class TrainContract(unittest.TestCase):
             for action in ("promote", "rebase", "arm", "merge", "validate"):
                 self.assertEqual(guard.main([action, "1421", "--state-dir", str(self.state)]), 1)
         self.assertFalse(self.train.calls)
+
+    def test_load_squash_composer_finds_sibling_in_installed_layout(self) -> None:
+        installed_dir = self.directory / "installed_release"
+        installed_dir.mkdir()
+        fake_guard = installed_dir / "merge_train_guard.py"
+        fake_guard.touch()
+        fake_composer = installed_dir / "squash_message.py"
+        fake_composer.write_text("MARKER = 'installed_sibling'\n")
+        with patch.object(guard, "__file__", str(fake_guard)):
+            mod = guard.load_squash_composer()
+            self.assertEqual(getattr(mod, "MARKER", None), "installed_sibling")
+
+    def test_load_squash_composer_neither_path_exists_raises_refused(self) -> None:
+        isolated_dir = self.directory / "isolated_dir"
+        isolated_dir.mkdir()
+        fake_guard = isolated_dir / "merge_train_guard.py"
+        fake_guard.touch()
+        with patch.object(guard, "__file__", str(fake_guard)):
+            with self.assertRaises(guard.Refused) as ctx:
+                guard.load_squash_composer()
+            self.assertNotIsInstance(ctx.exception, OSError)
+            self.assertIn("cannot load squash_message module", str(ctx.exception))
+
+    def test_merge_passes_repo_root_to_composer_check_message(self) -> None:
+        real_composer = guard.load_squash_composer()
+        recorded: dict[str, Any] = {}
+
+        class StubRecordingComposer:
+            @staticmethod
+            def check_message(*args: Any, **kwargs: Any) -> tuple[int, str]:
+                recorded.update(kwargs)
+                return 0, ""
+
+            @staticmethod
+            def subject(title: str, number: int) -> str:
+                return cast(str, real_composer.subject(title, number))
+
+            @staticmethod
+            def body(body_text: str, identity: str) -> str:
+                return cast(str, real_composer.body(body_text, identity))
+
+        self.train.validate(1421, self.detached())
+        self.train.metadata["isDraft"] = False
+        with patch.object(guard, "load_squash_composer", return_value=StubRecordingComposer()):
+            self.train.merge(1421, auto=False)
+        self.assertEqual(recorded.get("repo_root"), self.train.root)
+
+    def test_python310_grammar_floor(self) -> None:
+        repo_root = Path(__file__).resolve().parents[3]
+        files = (
+            repo_root / "scripts/dev/merge_train_guard.py",
+            repo_root / "scripts/dev/install_merge_train_guard.py",
+            repo_root / "scripts/ci/squash_message.py",
+        )
+        for path in files:
+            with self.subTest(file=path.name):
+                src = path.read_text(encoding="utf-8")
+                tree = ast.parse(src, filename=str(path), feature_version=(3, 10))
+                self.assertIsNotNone(tree)
 
 
 if __name__ == "__main__":
