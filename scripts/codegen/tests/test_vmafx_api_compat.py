@@ -169,11 +169,21 @@ class EmittedCompatTest(unittest.TestCase):
             )
         )
         for idx, item, cond in conditioned:
-            self.assertIn(f"#if {cond}\n", table)
-            self.assertIn(
-                f"#define THUNK_{idx} thunk_{idx}\n#else\n#define THUNK_{idx} NULL\n#endif\n",
+            # One block per thunk: the guard opens, the forwarder and its
+            # THUNK define follow with no other guard in between, and the
+            # NULL fallback closes the same guard.
+            block = re.search(
+                rf"#if {re.escape(cond)}\n((?:(?!#if |#endif\n).)*?)"
+                rf"#define THUNK_{idx} thunk_{idx}\n#else\n#define THUNK_{idx} NULL\n#endif\n",
                 table,
+                re.S,
             )
+            self.assertIsNotNone(
+                block, f"{item.name}: #if {cond} does not wrap THUNK_{idx} and its NULL fallback"
+            )
+            assert block is not None
+            self.assertIn(f"thunk_{idx}(", block.group(1))
+            self.assertIn(f"{item.name}(", block.group(1))
             self.assertIn(f"    .{item.stem} = THUNK_{idx},\n", table)
 
         unconditional = next(
