@@ -2545,6 +2545,9 @@
 
 ### Fixed
 
+- **CI:** the `FFmpeg vmafx Filter` job fails on any compiler warning and on a build log its warning scan cannot read, so the series' own C code meets the warning gate the other FFmpeg builds already enforce (issue 2477).
+
+
 - **Stop the requirements guide from restating the uv version.** `requirements/AGENTS.md` still named uv 0.13.1 after `requirements/locks/manifest.json` moved to 0.13.6; it now points at `uv_version` in the manifest, and `scripts/ci/check_python_dependency_locks.py check` refuses any Markdown guide line that names `uv` or `uv_version` next to a version number (changelog, archive, research, state rows and decision records excepted).
 
 
@@ -2562,6 +2565,9 @@
 
 
 - **FFmpeg guide:** state that the stock `libvmaf_cuda` filter copies only the first plane of a CUDA frame and refuses 10-bit, 12-bit and 4:2:2 CUDA frames until the patch series carries the FFmpeg fix, and qualify the `vmafx` fallback for supported CUDA layouts, models, and exact twins (issue 3274).
+
+
+- **FFmpeg guide:** state that VMAFx FFmpeg builds carry the `libvmaf_cuda` plane-copy and pixel-format fix since shared fix series v0.6.0, and limit the known-issue note to stock FFmpeg (issue 3274).
 
 
 - **Normalise Windows CRLF line endings in the FFmpeg patch stack checker (#3275).** Working-tree text files checked out with CRLF on Windows are normalised to LF before comparing rendered patches, Docker ARG mirrors, configuration pins, and README claims, preventing spurious drift failures during `--check` and line-ending leakage into the replay tree during `--refresh`.
