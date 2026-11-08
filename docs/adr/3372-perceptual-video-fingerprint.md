@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-3372: Perceptual video fingerprint for near-duplicate result reuse
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-24
 - **Deciders**: lusoris
 - **Tags**: `vmaf-tune`, `cache`, `ai`
@@ -114,3 +114,28 @@ refuse a pair that only shares an opening.
 - Operator order vmafx-near-dup-genre-20261024 (paraphrased): a perceptual
   fingerprint for near-duplicate result reuse with a stated threshold, a
   refusal path and planted negatives.
+
+## Status update 2026-11-08: Accepted
+
+The decision was applied while this record still said Proposed. Checked on
+`origin/master` `1907cd6e0`: #2968 (`de69502de`, 2026-10-25) added
+`tools/vmaf-tune/src/vmaftune/fingerprint.py` (PDQ frame hashes at 1 fps,
+Hamming distance at most 31, quality at least 50, the duration, aspect,
+30-frame and three-segment refusals), the second lookup on an exact miss in
+`tools/vmaf-tune/src/vmaftune/cache.py`, the `--near-dup-reuse` and
+`--near-dup-verify` options of `corpus` and `recommend` (both off by default)
+and the optional `vmaf-tune[fingerprint]` extra. Both planted pairs of
+decision 5 are tests in `tools/vmaf-tune/tests/test_fingerprint.py`.
+
+Decision 5 keeps the feature off by default until a measured library run
+reports the hit rate, false matches and segment ratios; that run is the
+follow-up named under Consequences, not a missing part of this decision.
+
+Verification command, with `tools/vmaf-tune/requirements-dev-lock.txt`
+installed as the CI job does:
+
+```bash
+cd tools/vmaf-tune && python -m pytest -q tests/test_fingerprint.py
+```
+
+Result on 2026-11-08: 11 passed.
