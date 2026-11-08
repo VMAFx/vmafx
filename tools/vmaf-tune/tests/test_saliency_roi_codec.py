@@ -15,17 +15,12 @@ Companion to:
 from __future__ import annotations
 
 import dataclasses
-import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 
-_HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(_HERE.parent / "src"))
-
-np = pytest.importorskip("numpy")
-
+# conftest.py puts ../src on sys.path; vmaftune imports numpy lazily.
 from vmaftune import cli
 from vmaftune.encode import EncodeRequest, EncodeResult
 from vmaftune.saliency import (
@@ -34,6 +29,8 @@ from vmaftune.saliency import (
     SaliencyUnsupportedEncoderError,
     saliency_aware_encode,
 )
+
+np = pytest.importorskip("numpy")
 
 # Exit status of a vmaf-tune subcommand that refuses its arguments.
 _EXIT_REFUSED = 2
