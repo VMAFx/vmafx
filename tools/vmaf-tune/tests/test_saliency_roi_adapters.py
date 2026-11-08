@@ -147,7 +147,7 @@ def test_augment_extra_params_with_libaom_qpfile_appends_top_level_qpfile(tmp_pa
     qpfile = tmp_path / "roi.qpfile.txt"
     qpfile.write_text("0 I 0\n", encoding="ascii")
     out = augment_extra_params_with_libaom_qpfile((), qpfile)
-    assert out == ("-qpfile", str(qpfile))
+    assert out == ("-usage", "realtime", "-qpfile", str(qpfile))
 
 
 def test_augment_extra_params_with_libaom_qpfile_preserves_base(tmp_path):
@@ -155,7 +155,7 @@ def test_augment_extra_params_with_libaom_qpfile_preserves_base(tmp_path):
     qpfile.write_text("0 I 0\n", encoding="ascii")
     base = ("-threads", "4")
     out = augment_extra_params_with_libaom_qpfile(base, qpfile)
-    assert out == ("-threads", "4", "-qpfile", str(qpfile))
+    assert out == ("-threads", "4", "-usage", "realtime", "-qpfile", str(qpfile))
 
 
 def test_libaom_adapter_has_supports_saliency_roi():
@@ -373,3 +373,20 @@ def test_augment_extra_params_with_svtav1_qpfile_preserves_base(tmp_path):
         "-qpfile",
         str(qpfile),
     )
+
+
+def test_augment_extra_params_with_libaom_qpfile_keeps_realtime_usage(tmp_path):
+    """Boundary: an explicit ``-usage realtime`` is kept once, not doubled."""
+    qpfile = tmp_path / "roi.qpfile.txt"
+    qpfile.write_text("0 I 0\n", encoding="ascii")
+    out = augment_extra_params_with_libaom_qpfile(("-usage", "realtime"), qpfile)
+    assert out == ("-usage", "realtime", "-qpfile", str(qpfile))
+
+
+@pytest.mark.parametrize("base", [("-usage", "good"), ("-usage",)])
+def test_augment_extra_params_with_libaom_qpfile_refuses_other_usage(tmp_path, base):
+    """Negative: a ``-usage`` other than realtime is refused, not overridden."""
+    qpfile = tmp_path / "roi.qpfile.txt"
+    qpfile.write_text("0 I 0\n", encoding="ascii")
+    with pytest.raises(ValueError, match="needs -usage realtime"):
+        augment_extra_params_with_libaom_qpfile(base, qpfile)

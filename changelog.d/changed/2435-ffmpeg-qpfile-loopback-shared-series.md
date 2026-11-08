@@ -5,5 +5,7 @@
   for every consumer.
   The remaining VMAFx patches are renumbered `0001` to `0004` without gaps (issue #2435).
   The `-qpfile` codec option and a loopback decoder's `-hwaccel`, `-hwaccel_device` and
-  `-hwaccel_output_format` options keep their names, so
-  `vmaf-tune` and existing command lines work unchanged.
+  `-hwaccel_output_format` options keep their names; libaom-av1 `-qpfile` now needs
+  `-usage realtime -cpu-used 7|8` and refuses other settings (before, libaom silently
+  ignored the map there), and `vmaf-tune` saliency-aware libaom adds `-usage realtime`
+  and refuses other presets.

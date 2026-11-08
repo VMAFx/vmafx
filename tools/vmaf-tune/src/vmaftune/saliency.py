@@ -66,6 +66,10 @@ QP_OFFSET_MAX = 12
 # x264 macroblock side in luma samples — fixed by the codec.
 X264_MB_SIDE = 16
 
+# libaom -cpu-used levels at which shared FFmpeg patch 0043 accepts -qpfile
+# (realtime usage only; libaom 3.15.3 ignores ROI maps below cpu-used 7).
+_LIBAOM_ROI_CPU_USED = (7, 8)
+
 # ImageNet mean/std the saliency_student_v1 input layer expects
 # (matches the C-side `vmaf_tensor_from_rgb_imagenet` helper).
 _IMAGENET_MEAN = (0.485, 0.456, 0.406)
@@ -499,13 +503,26 @@ def augment_extra_params_with_qpfile(base: Sequence[str], qpfile: Path) -> tuple
 
 
 def augment_extra_params_with_libaom_qpfile(base: Sequence[str], qpfile: Path) -> tuple[str, ...]:
-    """Return ``base + ('-qpfile', str(qpfile))`` for patched libaom-av1.
+    """Return ``base + ('-usage', 'realtime', '-qpfile', str(qpfile))`` for patched libaom-av1.
 
     The fork's FFmpeg patch stack exposes a shared top-level ``-qpfile``
     AVOption on ``libaom-av1``. Unlike x264's wrapper, libaom does not
-    receive the path through an opaque encoder-params key.
+    receive the path through an opaque encoder-params key. Shared patch
+    0043 requires ``-usage realtime`` together with ``-cpu-used 7`` or ``8``;
+    libaom ignores ROI maps otherwise.
     """
-    return tuple(base) + ("-qpfile", str(qpfile))
+    params: list[str] = list(base)
+    if "-usage" in params:
+        given = params[params.index("-usage") + 1 :][:1]
+        if given != ["realtime"]:
+            shown = given[0] if given else "without a value"
+            raise ValueError(
+                f"libaom-av1 -qpfile needs -usage realtime; extra params set -usage {shown}"
+            )
+    else:
+        params.extend(["-usage", "realtime"])
+    params.extend(["-qpfile", str(qpfile)])
+    return tuple(params)
 
 
 # ---------------------------------------------------------------------------
@@ -674,6 +691,30 @@ def _saliency_augment_x264(
     )
 
 
+def _check_libaom_roi_request(request: EncodeRequest) -> None:
+    """Refuse a libaom-av1 request whose ROI map libaom would ignore.
+
+    Shared patch 0043 accepts ``-qpfile`` on libaom-av1 only in one-pass
+    realtime usage at ``-cpu-used`` 7 or 8, because libaom ignores ROI map
+    content elsewhere. Raising here, before any qpfile is written, keeps
+    the refusal ahead of the encoder-open error and leaves no temp file.
+    """
+    from .codec_adapters.libaom import LibaomAdapter  # local import to avoid cycles
+
+    if "-pass" in request.extra_params or request.pass_number != 0:
+        raise ValueError(
+            "libaom-av1 with -qpfile does not support two-pass encoding (-pass refused; "
+            "ROI maps only without recode)"
+        )
+    cpu_used = LibaomAdapter().cpu_used(request.preset)
+    if cpu_used not in _LIBAOM_ROI_CPU_USED:
+        raise ValueError(
+            f"libaom-av1 saliency ROI requires preset with cpu-used 7 or 8 (supported: "
+            f"'veryfast', 'superfast'); preset {request.preset!r} maps to cpu-used {cpu_used}. "
+            f"libaom ignores ROI maps outside realtime cpu-used 7..8."
+        )
+
+
 def _saliency_augment_libaom(
     request: EncodeRequest,
     qp_map: np.ndarray,
@@ -686,7 +727,10 @@ def _saliency_augment_libaom(
     The FFmpeg patch stack teaches ``libaom-av1`` to consume the same
     x264-style qpfile saliency.py already emits, mapping each 16x16
     macroblock delta onto libaom's mode-info grid and segment-QP table.
+    Shared patch 0043 requires realtime usage and cpu-used 7 or 8; libaom
+    ignores ROI maps otherwise. Two-pass is also refused with -qpfile.
     """
+    _check_libaom_roi_request(request)
     block_offsets = reduce_qp_map_to_blocks(qp_map, block=X264_MB_SIDE)
     if persist:
         qpfile = request.output.with_suffix(".libaom-qpfile.txt")

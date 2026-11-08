@@ -14,7 +14,9 @@ Companion to:
 
 from __future__ import annotations
 
+import dataclasses
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -69,6 +71,7 @@ def _make_request(
     width: int = 128,
     height: int = 128,
     nframes: int = 4,
+    preset: str = "medium",
 ) -> tuple[EncodeRequest, Path]:
     """Return an EncodeRequest and the written source YUV."""
     src = _write_yuv420p(tmp_path / "src.yuv", width, height, nframes)
@@ -79,7 +82,7 @@ def _make_request(
         pix_fmt="yuv420p",
         framerate=24.0,
         encoder=encoder,
-        preset="medium",
+        preset=preset,
         crf=28,
         output=tmp_path / "out.mp4",
     )
@@ -202,8 +205,8 @@ def test_saliency_aware_encode_x265_does_not_emit_x264_params(tmp_path):
 
 
 def test_saliency_aware_encode_libaom_emits_qpfile(tmp_path):
-    """libaom dispatch: top-level ``-qpfile <path>`` appears in the argv."""
-    request, _ = _make_request(tmp_path, "libaom-av1")
+    """libaom dispatch: top-level ``-qpfile <path>`` and ``-usage realtime`` appear in argv."""
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="superfast")
     fake_model = tmp_path / "saliency_student_v1.onnx"
     fake_model.write_bytes(b"\x00")
     captured, runner = _capture_runner(tmp_path)
@@ -220,6 +223,8 @@ def test_saliency_aware_encode_libaom_emits_qpfile(tmp_path):
 
     assert result.exit_status == 0
     cmd = captured["cmd"]
+    assert "-usage" in cmd, "expected -usage flag in ffmpeg argv"
+    assert cmd[cmd.index("-usage") + 1] == "realtime"
     assert "-qpfile" in cmd, "expected -qpfile flag in ffmpeg argv"
     qpfile = Path(cmd[cmd.index("-qpfile") + 1])
     assert qpfile.exists()
@@ -228,7 +233,7 @@ def test_saliency_aware_encode_libaom_emits_qpfile(tmp_path):
 
 def test_saliency_aware_encode_libaom_qpfile_has_16x16_granularity(tmp_path):
     """The written libaom qpfile should use the shared 16x16 MB grid."""
-    request, _ = _make_request(tmp_path, "libaom-av1", width=64, height=64)
+    request, _ = _make_request(tmp_path, "libaom-av1", width=64, height=64, preset="superfast")
     fake_model = tmp_path / "saliency_student_v1.onnx"
     fake_model.write_bytes(b"\x00")
     captured, runner = _capture_runner(tmp_path)
@@ -252,7 +257,7 @@ def test_saliency_aware_encode_libaom_qpfile_has_16x16_granularity(tmp_path):
 
 def test_saliency_aware_encode_libaom_does_not_emit_encoder_private_roi_params(tmp_path):
     """libaom path must not use another encoder's private ROI channel."""
-    request, _ = _make_request(tmp_path, "libaom-av1")
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="superfast")
     fake_model = tmp_path / "saliency_student_v1.onnx"
     fake_model.write_bytes(b"\x00")
     captured, runner = _capture_runner(tmp_path)
@@ -272,7 +277,7 @@ def test_saliency_aware_encode_libaom_does_not_emit_encoder_private_roi_params(t
 
 def test_saliency_aware_encode_libaom_cleans_ephemeral_qpfile(tmp_path):
     """Non-persisted libaom qpfiles are removed after the encode returns."""
-    request, _ = _make_request(tmp_path, "libaom-av1")
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="superfast")
     fake_model = tmp_path / "saliency_student_v1.onnx"
     fake_model.write_bytes(b"\x00")
     captured, runner = _capture_runner(tmp_path)
@@ -288,6 +293,109 @@ def test_saliency_aware_encode_libaom_cleans_ephemeral_qpfile(tmp_path):
 
     qpfile = Path(captured["cmd"][captured["cmd"].index("-qpfile") + 1])
     assert not qpfile.exists()
+
+
+def test_saliency_aware_encode_libaom_preset_veryfast_accepted(tmp_path):
+    """Boundary positive: preset 'veryfast' (cpu-used 7) accepted with -usage realtime."""
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="veryfast")
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    captured, runner = _capture_runner(tmp_path)
+
+    result = saliency_aware_encode(
+        request,
+        duration_frames=1,
+        model_path=fake_model,
+        config=SaliencyConfig(frame_samples=1, persist_qpfile=True),
+        encode_runner=runner,
+        session_factory=_session_factory_for(128, 128),
+    )
+
+    assert result.exit_status == 0
+    cmd = captured["cmd"]
+    assert "-usage" in cmd and cmd[cmd.index("-usage") + 1] == "realtime"
+    assert "-qpfile" in cmd
+
+
+def test_saliency_aware_encode_libaom_preset_faster_raises(tmp_path, monkeypatch):
+    """Boundary negative: preset 'faster' (cpu-used 6) raises ValueError."""
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="faster")
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    _, runner = _capture_runner(tmp_path)
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    before_files = set(tmp_path.iterdir())
+    with pytest.raises(ValueError, match=r"preset 'faster' maps to cpu-used 6"):
+        saliency_aware_encode(
+            request,
+            duration_frames=1,
+            model_path=fake_model,
+            encode_runner=runner,
+            session_factory=_session_factory_for(128, 128),
+        )
+    assert set(tmp_path.iterdir()) == before_files
+
+
+def test_saliency_aware_encode_libaom_preset_medium_raises(tmp_path, monkeypatch):
+    """Negative: preset 'medium' (cpu-used 4) raises ValueError."""
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="medium")
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    _, runner = _capture_runner(tmp_path)
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    before_files = set(tmp_path.iterdir())
+    with pytest.raises(ValueError, match=r"preset 'medium' maps to cpu-used 4"):
+        saliency_aware_encode(
+            request,
+            duration_frames=1,
+            model_path=fake_model,
+            encode_runner=runner,
+            session_factory=_session_factory_for(128, 128),
+        )
+    assert set(tmp_path.iterdir()) == before_files
+
+
+def test_saliency_aware_encode_libaom_preset_ultrafast_raises(tmp_path, monkeypatch):
+    """Negative: preset 'ultrafast' (cpu-used 9) raises ValueError."""
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="ultrafast")
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    _, runner = _capture_runner(tmp_path)
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    before_files = set(tmp_path.iterdir())
+    with pytest.raises(ValueError, match=r"preset 'ultrafast' maps to cpu-used 9"):
+        saliency_aware_encode(
+            request,
+            duration_frames=1,
+            model_path=fake_model,
+            encode_runner=runner,
+            session_factory=_session_factory_for(128, 128),
+        )
+    assert set(tmp_path.iterdir()) == before_files
+
+
+def test_saliency_aware_encode_libaom_pass_flag_raises(tmp_path, monkeypatch):
+    """Negative: -pass in extra_params raises ValueError."""
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="superfast")
+    request = dataclasses.replace(request, extra_params=("-pass", "1"))
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    _, runner = _capture_runner(tmp_path)
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    before_files = set(tmp_path.iterdir())
+    with pytest.raises(ValueError, match="two-pass"):
+        saliency_aware_encode(
+            request,
+            duration_frames=1,
+            model_path=fake_model,
+            encode_runner=runner,
+            session_factory=_session_factory_for(128, 128),
+        )
+    assert set(tmp_path.iterdir()) == before_files
 
 
 # ---------------------------------------------------------------------------
