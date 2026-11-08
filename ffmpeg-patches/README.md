@@ -86,10 +86,10 @@ per-patch apply. Its receipt is mirrored here:
 > `n9.0.2` checkout (cumulative `git am --3way`), NOT a per-patch
 > `git apply --check`. The latter rejects `0002+` because they
 > reference cumulative-state hunks that don't exist in pristine `n9.0.2`.
-> The 42 patches of the shared fix series `v0.6.0` and the 4
+> The 44 patches of the shared fix series `v0.7.0` and the 4
 > patches here replay cumulatively on upstream commit
 > `946fcce07b6dcd0331c8cc609192aeff5e1924f8`; the resulting tree is
-> `b5bbd6c26912cd049c87ddc3b71f34897e82a8a7`
+> `af5797bedf02145a271e3060092131c42652451a`
 > (`python3 scripts/ci/ffmpeg_patch_stack.py --check`). The refresh evidence and
 > earlier replay history live in
 > [`docs/rebase-notes.md`](../docs/rebase-notes.md).

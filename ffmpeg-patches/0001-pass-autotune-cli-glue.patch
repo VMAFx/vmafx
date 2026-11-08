@@ -28,7 +28,7 @@ ADR: docs/adr/0312-ffmpeg-patches-vmaf-tune-integration.md
  1 file changed, 21 insertions(+)
 
 diff --git a/fftools/ffmpeg_opt.c b/fftools/ffmpeg_opt.c
-index 2c362c64af8fffb02438af0051609281bfaa45d5..aadb9ff8f62a4753de15925e6722ee5d9a277aed 100644
+index 2b894e00961bc84a1875743a04de95137da5f2e2..808de4ec08900d7af126e1e73497f8b2b1ba9a25 100644
 --- a/fftools/ffmpeg_opt.c
 +++ b/fftools/ffmpeg_opt.c
 @@ -1028,6 +1028,24 @@ static int opt_vstats_file(void *optctx, const char *opt, const char *arg)
