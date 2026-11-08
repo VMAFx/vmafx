@@ -66,30 +66,6 @@ struct ProbeBuffers {
     size_t n;
 };
 
-class GainTermsKernel : public VmafSyclKernelShape<16, 0>
-{
-  public:
-    GainTermsKernel(const uint32_t *sigmas, const GainLimit &limit, uint32_t *sv_sq,
-                    int64_t *gg_sigma)
-        : sigmas_(sigmas), limit_(limit), sv_sq_(sv_sq), gg_sigma_(gg_sigma)
-    {
-    }
-
-    void operator()(sycl::id<1> i) const
-    {
-        const uint32_t *s = sigmas_ + 3 * i[0];
-        const GainTerms terms = vmaf_sycl_ivif::gain_terms(s[0], s[1], s[2], limit_);
-        sv_sq_[i] = terms.sv_sq;
-        gg_sigma_[i] = terms.gg_sigma;
-    }
-
-  private:
-    const uint32_t *sigmas_;
-    GainLimit limit_;
-    uint32_t *sv_sq_;
-    int64_t *gg_sigma_;
-};
-
 /* The gain terms of every sample, one work-item each at sub-group size 16,
  * the size the extractor's kernels run at by default. */
 void run_kernel(sycl::queue &q, const ProbeBuffers &host, const GainLimit &limit)
@@ -102,7 +78,12 @@ void run_kernel(sycl::queue &q, const ProbeBuffers &host, const GainLimit &limit
     int64_t *gg_sigma = wide.get();
     q.memcpy(sigmas, host.sigmas, 3 * n * sizeof(uint32_t));
     q.wait_and_throw();
-    q.parallel_for(sycl::range<1>(n), GainTermsKernel(sigmas, limit, sv_sq, gg_sigma));
+    q.parallel_for(sycl::range<1>(n), [=](sycl::id<1> i) [[VMAF_SYCL_REQD_SG_ATTR(16)]] {
+        const uint32_t *s = sigmas + 3 * i[0];
+        const GainTerms terms = vmaf_sycl_ivif::gain_terms(s[0], s[1], s[2], limit);
+        sv_sq[i] = terms.sv_sq;
+        gg_sigma[i] = terms.gg_sigma;
+    });
     q.wait_and_throw();
     q.memcpy(host.sv_sq, sv_sq, n * sizeof(uint32_t));
     q.memcpy(host.gg_sigma, gg_sigma, n * sizeof(int64_t));
