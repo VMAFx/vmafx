@@ -76,8 +76,6 @@
  * is provided by `simd_bitexact_test.h` (ADR-0245).
  */
 
-#include <inttypes.h>
-
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
@@ -269,9 +267,10 @@ static char *check_pipeline_16(unsigned bpc,
 
     if (sad_scalar != sad_avx2) {
         (void)fprintf(stderr,
-                      "T7-32 motion_v2 AVX2 audit (%s, bpc=%u, seed=0x%08x): scalar=%" PRIu64
-                      " avx2=%" PRIu64 "\n",
-                      label, bpc, seed, sad_scalar, sad_avx2);
+                      "T7-32 motion_v2 AVX2 audit (%s, bpc=%u, seed=0x%08x): scalar=%llu"
+                      " avx2=%llu\n",
+                      label, bpc, seed, (unsigned long long)sad_scalar,
+                      (unsigned long long)sad_avx2);
         return "motion_v2 AVX2 16-bit pipeline diverges from scalar on adversarial negative-diff "
                "fixture (srlv_epi64 logical-shift bug);"
                " see docs/rebase-notes.md §0038 follow-up.";

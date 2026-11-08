@@ -65,7 +65,7 @@ def _pointer_field(item: Compat) -> str:
 def header_text(api: Api) -> str:
     items = tabled(api)
     index = "".join(f"    {_index_name(i)},\n" for i in items)
-    fields = "".join(_wrapped(_pointer_field(i) + "\n", condition(i)) for i in items)
+    fields = "".join(_pointer_field(i) + "\n" for i in items)
     engine = [c for c in api.compats if c.kind == "engine"]
     engine_rows = "".join(f'    {{"{c.name}", "{c.engine_with}"}},\n' for c in engine)
     includes = "".join(f'#include "{h}"\n' for h in LIBVMAF_HEADERS)
@@ -125,7 +125,7 @@ def _thunk(number: int, item: Compat) -> str:
     """A counting forwarder named by its index, so every signature stays short."""
     params = [ctext.pointer_join(c, n) for n, c in item.params] or ["void"]
     signature = ctext.packed(
-        ctext.pointer_join("static " + item.returns, f"VMAF_COMPAT_THUNK({number})"), params, ""
+        ctext.pointer_join("static " + item.returns, f"thunk_{number}"), params, ""
     )
     args = [n for n, _ in item.params]
     body = f"    VMAF_COMPAT_CALLS[{_index_name(item)}]++;\n"
@@ -133,24 +133,29 @@ def _thunk(number: int, item: Compat) -> str:
         body += ctext.packed(f"    {item.name}", args, ";") + "\n"
     else:
         body += ctext.packed(f"    return {item.name}", args, ";") + "\n"
-    return _wrapped(signature + "\n{\n" + body + "}\n\n", condition(item))
+    cond = condition(item)
+    if cond:
+        return (
+            f"#if {cond}\n"
+            f"{signature}\n{{\n{body}}}\n"
+            f"#define THUNK_{number} thunk_{number}\n"
+            f"#else\n"
+            f"#define THUNK_{number} NULL\n"
+            f"#endif\n\n"
+        )
+    return f"{signature}\n{{\n{body}}}\n" f"#define THUNK_{number} thunk_{number}\n\n"
 
 
 def table_text(api: Api) -> str:
     items = tabled(api)
     thunks = "".join(_thunk(n, i) for n, i in enumerate(items))
-    members = "".join(
-        _wrapped(f"    .{i.stem} = VMAF_COMPAT_THUNK({n}),\n", condition(i))
-        for n, i in enumerate(items)
-    )
+    members = "".join(f"    .{i.stem} = THUNK_{n},\n" for n, i in enumerate(items))
     side = (
         "#if VMAF_COMPAT_SIDE_NEW\n"
-        "#define VMAF_COMPAT_THUNK(n) new_##n\n"
         "#define VMAF_COMPAT_CALLS vmaf_compat_calls_new\n"
         "#define VMAF_COMPAT_TABLE vmaf_compat_new\n"
         "#define VMAF_COMPAT_ENTRIES_DEFINE\n"
         "#else\n"
-        "#define VMAF_COMPAT_THUNK(n) old_##n\n"
         "#define VMAF_COMPAT_CALLS vmaf_compat_calls_old\n"
         "#define VMAF_COMPAT_TABLE vmaf_compat_old\n"
         "#endif\n\n"

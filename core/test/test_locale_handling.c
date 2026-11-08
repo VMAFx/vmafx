@@ -505,25 +505,38 @@ static char *test_windows_locale_handling(void)
 }
 #endif
 
+static const MuTest common_tests[] = {
+    MU_TEST(test_locale_abstraction_basic),
+    MU_TEST(test_output_xml_with_comma_locale),
+    MU_TEST(test_output_json_with_comma_locale),
+    MU_TEST(test_output_csv_with_comma_locale),
+    MU_TEST(test_model_parse_with_comma_locale),
+    MU_TEST(test_option_double_with_comma_locale),
+    MU_TEST(test_dictionary_number_with_comma_locale),
+    MU_TEST(test_feature_name_with_comma_locale),
+    MU_TEST(test_model_features_with_comma_locale),
+};
+
+#ifdef HAVE_USELOCALE
+static const MuTest platform_tests[] = {
+    MU_TEST(test_uselocale_available),
+};
+#elif defined(_WIN32)
+static const MuTest platform_tests[] = {
+    MU_TEST(test_windows_locale_handling),
+};
+#endif
+
 char *run_tests(void)
 {
-    static const MuTest tests[] = {
-        MU_TEST(test_locale_abstraction_basic),
-        MU_TEST(test_output_xml_with_comma_locale),
-        MU_TEST(test_output_json_with_comma_locale),
-        MU_TEST(test_output_csv_with_comma_locale),
-        MU_TEST(test_model_parse_with_comma_locale),
-        MU_TEST(test_option_double_with_comma_locale),
-        MU_TEST(test_dictionary_number_with_comma_locale),
-        MU_TEST(test_feature_name_with_comma_locale),
-        MU_TEST(test_model_features_with_comma_locale),
-#ifdef HAVE_USELOCALE
-        MU_TEST(test_uselocale_available),
-#elif defined(_WIN32)
-        MU_TEST(test_windows_locale_handling),
+    char *msg = mu_run_table(common_tests, MU_TABLE_LEN(common_tests));
+    if (msg)
+        return msg;
+#if defined(HAVE_USELOCALE) || defined(_WIN32)
+    return mu_run_table(platform_tests, MU_TABLE_LEN(platform_tests));
+#else
+    return NULL;
 #endif
-    };
-    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

@@ -94,15 +94,26 @@ static char *test_picture_convert_without_zimg(void)
 }
 #endif
 
+static const MuTest base_tests[] = {
+    MU_TEST(test_picture_layout_is_unchanged),
+};
+
+#ifndef HAVE_ZIMG
+static const MuTest no_zimg_tests[] = {
+    MU_TEST(test_picture_convert_without_zimg),
+};
+#endif
+
 char *run_tests(void)
 {
-    static const MuTest tests[] = {
-        MU_TEST(test_picture_layout_is_unchanged),
+    char *msg = mu_run_table(base_tests, MU_TABLE_LEN(base_tests));
+    if (msg)
+        return msg;
 #ifndef HAVE_ZIMG
-        MU_TEST(test_picture_convert_without_zimg),
+    return mu_run_table(no_zimg_tests, MU_TABLE_LEN(no_zimg_tests));
+#else
+    return NULL;
 #endif
-    };
-    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

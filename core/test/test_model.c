@@ -2043,12 +2043,18 @@ static char *test_json_model_malformed_after_model_dict_rejects(void)
  * file-local copy of it.
  */
 /* Model lifecycle, flag handling and the feature surface. */
-static const MuTest model_api_tests[] = {
+static const MuTest model_api_leading_tests[] = {
     MU_TEST(test_json_model),
+};
+
 #if VMAF_BUILT_IN_MODELS
+static const MuTest model_api_builtin_tests[] = {
     MU_TEST(test_built_in_model),
     MU_TEST(test_built_in_model_still),
+};
 #endif
+
+static const MuTest model_api_trailing_tests[] = {
     MU_TEST(test_model_load_and_destroy),
     MU_TEST(test_model_load_rejects_null_version),
     MU_TEST(test_model_check_default_behavior_unset_flags),
@@ -2141,7 +2147,13 @@ static const MuTest json_reject_tests[] = {
 
 mu_message_t run_tests(void)
 {
-    mu_message_t msg = mu_run_table(model_api_tests, MU_TABLE_LEN(model_api_tests));
+    mu_message_t msg = mu_run_table(model_api_leading_tests, MU_TABLE_LEN(model_api_leading_tests));
+#if VMAF_BUILT_IN_MODELS
+    if (!msg)
+        msg = mu_run_table(model_api_builtin_tests, MU_TABLE_LEN(model_api_builtin_tests));
+#endif
+    if (!msg)
+        msg = mu_run_table(model_api_trailing_tests, MU_TABLE_LEN(model_api_trailing_tests));
     if (!msg)
         msg = mu_run_table(json_model_tests, MU_TABLE_LEN(json_model_tests));
     if (!msg)

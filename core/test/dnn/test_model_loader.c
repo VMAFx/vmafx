@@ -2148,17 +2148,22 @@ static char *test_codec_block_fill_bad_len(void)
  * across segments — and within each — matches the original sequential
  * mu_run_test() calls exactly. */
 static const MuTest CORE_TESTS[] = {
-    MU_TEST(test_sniff_by_extension),          MU_TEST(test_size_cap),
-    MU_TEST(test_validate_null_path),          MU_TEST(test_validate_utf8_model_path),
+    MU_TEST(test_sniff_by_extension),
+    MU_TEST(test_size_cap),
+    MU_TEST(test_validate_null_path),
+    MU_TEST(test_validate_utf8_model_path),
+};
+
 #ifndef _WIN32
+static const MuTest CORE_POSIX_TESTS[] = {
     MU_TEST(test_validate_zero_byte),          MU_TEST(test_validate_allowed_onnx),
     MU_TEST(test_validate_disallowed_onnx),    MU_TEST(test_validate_symlink_to_dir),
     MU_TEST(test_jail_unset_accepts_anywhere), MU_TEST(test_jail_accepts_model_inside),
     MU_TEST(test_jail_rejects_model_outside),  MU_TEST(test_jail_rejects_sibling_prefix),
     MU_TEST(test_jail_rejects_symlink_escape), MU_TEST(test_jail_rejects_nonexistent_jail),
     MU_TEST(test_jail_rejects_non_directory),  MU_TEST(test_jail_accepts_trailing_slash),
-#endif
 };
+#endif
 
 static const MuTest SIDECAR_TESTS[] = {
     MU_TEST(test_sidecar_parses),
@@ -2166,7 +2171,10 @@ static const MuTest SIDECAR_TESTS[] = {
     MU_TEST(test_sidecar_rejects_null_args),
     MU_TEST(test_sidecar_free_null_is_noop),
     MU_TEST(test_sidecar_missing_returns_enoent),
+};
+
 #ifndef _WIN32
+static const MuTest SIDECAR_POSIX_TESTS[] = {
     MU_TEST(test_sidecar_non_regular_returns_einval),
     MU_TEST(test_sidecar_parses_kind_nr),
     MU_TEST(test_sidecar_quant_mode_default_fp32),
@@ -2197,8 +2205,8 @@ static const MuTest SIDECAR_TESTS[] = {
     MU_TEST(test_sidecar_quant_mode_static),
     MU_TEST(test_sidecar_quant_mode_qat),
     MU_TEST(test_sidecar_kind_filter),
-#endif
 };
+#endif
 
 static const MuTest CODEC_BLOCK_TESTS[] = {
     MU_TEST(test_codec_block_fill_libx264_medium_28),
@@ -2224,9 +2232,19 @@ char *run_tests(void)
     char *msg = mu_run_table(CORE_TESTS, MU_TABLE_LEN(CORE_TESTS));
     if (msg)
         return msg;
+#ifndef _WIN32
+    msg = mu_run_table(CORE_POSIX_TESTS, MU_TABLE_LEN(CORE_POSIX_TESTS));
+    if (msg)
+        return msg;
+#endif
     msg = mu_run_table(SIDECAR_TESTS, MU_TABLE_LEN(SIDECAR_TESTS));
     if (msg)
         return msg;
+#ifndef _WIN32
+    msg = mu_run_table(SIDECAR_POSIX_TESTS, MU_TABLE_LEN(SIDECAR_POSIX_TESTS));
+    if (msg)
+        return msg;
+#endif
     return mu_run_table(CODEC_BLOCK_TESTS, MU_TABLE_LEN(CODEC_BLOCK_TESTS));
 }
 

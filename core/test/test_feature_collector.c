@@ -758,26 +758,41 @@ static char *run_model_option_capability_tests(void)
     return NULL;
 }
 
+static const MuTest leading_tests[] = {
+    MU_TEST(test_vmaf_close_retains_context_for_retry),
+    MU_TEST(test_vmaf_close_retains_worker_private_context),
+};
+
+#ifdef HAVE_CUDA
+static const MuTest cuda_tests[] = {
+    MU_TEST(test_vmaf_close_commit_retry_is_idempotent),
+    MU_TEST(test_cuda_state_import_rejects_duplicate_owners),
+};
+#endif
+
+static const MuTest trailing_tests[] = {
+    MU_TEST(test_feature_vector_init_append_and_destroy),
+    MU_TEST(test_feature_vector_append_rejects_huge_index),
+    MU_TEST(test_feature_collector_init_append_get_and_destroy),
+    MU_TEST(test_aggregate_vector_init_append_and_destroy),
+    MU_TEST(test_model_mount),
+    MU_TEST(test_model_unmount),
+    MU_TEST(test_model_mount_with_use_features),
+    MU_TEST(test_provided_feature_walk_stops_at_its_bound),
+    MU_TEST(test_provided_feature_walk_reads_a_terminated_list),
+};
+
 char *run_tests(void)
 {
-    static const MuTest tests[] = {
-        MU_TEST(test_vmaf_close_retains_context_for_retry),
-        MU_TEST(test_vmaf_close_retains_worker_private_context),
+    mu_message_t err = mu_run_table(leading_tests, MU_TABLE_LEN(leading_tests));
+    if (err)
+        return err;
 #ifdef HAVE_CUDA
-        MU_TEST(test_vmaf_close_commit_retry_is_idempotent),
-        MU_TEST(test_cuda_state_import_rejects_duplicate_owners),
+    err = mu_run_table(cuda_tests, MU_TABLE_LEN(cuda_tests));
+    if (err)
+        return err;
 #endif
-        MU_TEST(test_feature_vector_init_append_and_destroy),
-        MU_TEST(test_feature_vector_append_rejects_huge_index),
-        MU_TEST(test_feature_collector_init_append_get_and_destroy),
-        MU_TEST(test_aggregate_vector_init_append_and_destroy),
-        MU_TEST(test_model_mount),
-        MU_TEST(test_model_unmount),
-        MU_TEST(test_model_mount_with_use_features),
-        MU_TEST(test_provided_feature_walk_stops_at_its_bound),
-        MU_TEST(test_provided_feature_walk_reads_a_terminated_list),
-    };
-    mu_message_t err = mu_run_table(tests, MU_TABLE_LEN(tests));
+    err = mu_run_table(trailing_tests, MU_TABLE_LEN(trailing_tests));
     if (err)
         return err;
     return run_model_option_capability_tests();

@@ -70,11 +70,11 @@ extern int __real_pthread_cond_destroy(pthread_cond_t *);
  * bad value` — which broke Ubuntu SYCL, Ubuntu SYCL+CUDA, FFmpeg SYCL and
  * Windows MSVC+CUDA. Keep this attribute on every wrapper below.
  * ADR-0772; docs/research/fex-pool-growth-2026-09-08.md. */
-#define VMAF_WRAP_EXPORT __attribute__((visibility("default")))
 
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0772; docs/research/fex-pool-growth-2026-09-08.md: external GNU linker wrapping entry point.
-VMAF_WRAP_EXPORT int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
+__attribute__((visibility("default"))) int __wrap_pthread_cond_wait(pthread_cond_t *cond,
+                                                                    pthread_mutex_t *mutex)
 {
     if (cond == target_cond) {
         target_cond = NULL;
@@ -85,7 +85,7 @@ VMAF_WRAP_EXPORT int __wrap_pthread_cond_wait(pthread_cond_t *cond, pthread_mute
 
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0772; docs/research/fex-pool-growth-2026-09-08.md: external GNU linker wrapping entry point.
-VMAF_WRAP_EXPORT void *__wrap_realloc(void *old, size_t size)
+__attribute__((visibility("default"))) void *__wrap_realloc(void *old, size_t size)
 {
     if (old == target_table && fail_table_growth) {
         fail_table_growth = false;
@@ -116,7 +116,7 @@ static bool allocation_fails(void)
 
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0772; docs/research/fex-pool-growth-2026-09-08.md: external GNU linker wrapping entry point.
-VMAF_WRAP_EXPORT void *__wrap_malloc(size_t size)
+__attribute__((visibility("default"))) void *__wrap_malloc(size_t size)
 {
     if (allocation_fails())
         return NULL;
@@ -125,7 +125,7 @@ VMAF_WRAP_EXPORT void *__wrap_malloc(size_t size)
 
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0772; docs/research/fex-pool-growth-2026-09-08.md: external GNU linker wrapping entry point.
-VMAF_WRAP_EXPORT void *__wrap_calloc(size_t count, size_t size)
+__attribute__((visibility("default"))) void *__wrap_calloc(size_t count, size_t size)
 {
     if (allocation_fails())
         return NULL;
@@ -134,7 +134,7 @@ VMAF_WRAP_EXPORT void *__wrap_calloc(size_t count, size_t size)
 
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0772; docs/research/fex-pool-growth-2026-09-08.md: external GNU linker wrapping entry point.
-VMAF_WRAP_EXPORT char *__wrap_strdup(const char *value)
+__attribute__((visibility("default"))) char *__wrap_strdup(const char *value)
 {
     if (allocation_fails())
         return NULL;
@@ -143,7 +143,8 @@ VMAF_WRAP_EXPORT char *__wrap_strdup(const char *value)
 
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0772; docs/research/fex-pool-growth-2026-09-08.md: external GNU linker wrapping entry point.
-VMAF_WRAP_EXPORT int __wrap_pthread_cond_init(pthread_cond_t *cond, const pthread_condattr_t *attr)
+__attribute__((visibility("default"))) int __wrap_pthread_cond_init(pthread_cond_t *cond,
+                                                                    const pthread_condattr_t *attr)
 {
     if (fail_condition_init) {
         fail_condition_init = false;
@@ -157,7 +158,7 @@ VMAF_WRAP_EXPORT int __wrap_pthread_cond_init(pthread_cond_t *cond, const pthrea
 
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0772; docs/research/fex-pool-growth-2026-09-08.md: external GNU linker wrapping entry point.
-VMAF_WRAP_EXPORT int __wrap_pthread_cond_destroy(pthread_cond_t *cond)
+__attribute__((visibility("default"))) int __wrap_pthread_cond_destroy(pthread_cond_t *cond)
 {
     const int err = __real_pthread_cond_destroy(cond);
     if (!err)

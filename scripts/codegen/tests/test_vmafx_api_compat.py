@@ -148,7 +148,7 @@ class EmittedCompatTest(unittest.TestCase):
         self.assertEqual(len(tabled), 110 - 25)
         for item in tabled:
             self.assertIn(f'VMAF_COMPAT_ENTRY("{item.name}"', header)
-            self.assertIn(f"    .{item.stem} = VMAF_COMPAT_THUNK(", table)
+            self.assertIn(f"    .{item.stem} = THUNK_", table)
         self.assertIn('{"vmaf_cuda_state_init", "cuda"}', header)
 
 

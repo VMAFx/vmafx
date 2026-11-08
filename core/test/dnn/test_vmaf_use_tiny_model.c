@@ -1043,38 +1043,53 @@ static char *test_codec_layout_mismatch_refused(void)
 
 /* -------------------------------------------------------------------------- */
 
+static const MuTest leading_tests[] = {
+    MU_TEST(test_returns_enosys_when_disabled),
+    MU_TEST(test_rejects_null_ctx),
+    MU_TEST(test_rejects_null_path),
+    MU_TEST(test_rejects_nonexistent_path),
+    MU_TEST(test_codec_context_and_resize_reject_bad_args),
+};
+
+#ifndef _WIN32
+static const MuTest posix_tests[] = {
+    MU_TEST(test_rejects_oversized_sidecar_before_ort_open),
+    MU_TEST(test_valid_scanner_invalid_ort_model_closes_session),
+    MU_TEST(test_invalid_ort_model_frees_loaded_sidecar),
+    MU_TEST(test_use_tiny_model_int8_redirect_and_fallback),
+    MU_TEST(test_use_tiny_model_missing_external_data_returns_error_not_abort),
+    MU_TEST(test_use_tiny_model_int8_session_fail_falls_back_to_fp32),
+    MU_TEST(test_use_tiny_model_int8_invalid_falls_back_to_fp32),
+    MU_TEST(test_feature_vector_unknown_feature_refused),
+    MU_TEST(test_feature_vector_name_count_mismatch_refused),
+    MU_TEST(test_codec_layout_mismatch_refused),
+};
+#endif
+
+static const MuTest trailing_tests[] = {
+    MU_TEST(test_happy_path_smoke_model),
+    MU_TEST(test_attached_multi_output_model_records_named_scores),
+    MU_TEST(test_attach_accepts_symbolic_batch_rank4),
+    MU_TEST(test_rank5_model_closes_session_after_shape_reject),
+    MU_TEST(test_feature_vector_model_scores_computed_features),
+    MU_TEST(test_feature_vector_model_honours_subsample),
+    MU_TEST(test_feature_vector_missing_input_fails_flush),
+    MU_TEST(test_codec_aware_model_refuses_without_codec),
+    MU_TEST(test_codec_aware_model_scores_with_codec),
+    MU_TEST(test_fr_v3_preset_slot_is_the_trained_constant),
+};
+
 char *run_tests(void)
 {
-    static const MuTest tests[] = {
-        MU_TEST(test_returns_enosys_when_disabled),
-        MU_TEST(test_rejects_null_ctx),
-        MU_TEST(test_rejects_null_path),
-        MU_TEST(test_rejects_nonexistent_path),
-        MU_TEST(test_codec_context_and_resize_reject_bad_args),
+    char *msg = mu_run_table(leading_tests, MU_TABLE_LEN(leading_tests));
+    if (msg)
+        return msg;
 #ifndef _WIN32
-        MU_TEST(test_rejects_oversized_sidecar_before_ort_open),
-        MU_TEST(test_valid_scanner_invalid_ort_model_closes_session),
-        MU_TEST(test_invalid_ort_model_frees_loaded_sidecar),
-        MU_TEST(test_use_tiny_model_int8_redirect_and_fallback),
-        MU_TEST(test_use_tiny_model_missing_external_data_returns_error_not_abort),
-        MU_TEST(test_use_tiny_model_int8_session_fail_falls_back_to_fp32),
-        MU_TEST(test_use_tiny_model_int8_invalid_falls_back_to_fp32),
-        MU_TEST(test_feature_vector_unknown_feature_refused),
-        MU_TEST(test_feature_vector_name_count_mismatch_refused),
-        MU_TEST(test_codec_layout_mismatch_refused),
+    msg = mu_run_table(posix_tests, MU_TABLE_LEN(posix_tests));
+    if (msg)
+        return msg;
 #endif
-        MU_TEST(test_happy_path_smoke_model),
-        MU_TEST(test_attached_multi_output_model_records_named_scores),
-        MU_TEST(test_attach_accepts_symbolic_batch_rank4),
-        MU_TEST(test_rank5_model_closes_session_after_shape_reject),
-        MU_TEST(test_feature_vector_model_scores_computed_features),
-        MU_TEST(test_feature_vector_model_honours_subsample),
-        MU_TEST(test_feature_vector_missing_input_fails_flush),
-        MU_TEST(test_codec_aware_model_refuses_without_codec),
-        MU_TEST(test_codec_aware_model_scores_with_codec),
-        MU_TEST(test_fr_v3_preset_slot_is_the_trained_constant),
-    };
-    return mu_run_table(tests, MU_TABLE_LEN(tests));
+    return mu_run_table(trailing_tests, MU_TABLE_LEN(trailing_tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

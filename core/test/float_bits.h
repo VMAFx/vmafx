@@ -31,7 +31,6 @@
 #ifndef LIBVMAF_TEST_FLOAT_BITS_H_
 #define LIBVMAF_TEST_FLOAT_BITS_H_
 
-#include <inttypes.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -77,8 +76,9 @@ static inline bool vmaf_test_expect_identical_f64(const char *what, double a, do
 {
     if (vmaf_test_identical_f64(a, b))
         return true;
-    (void)fprintf(stderr, "\n%s: %.17g (0x%016" PRIx64 ") is not %.17g (0x%016" PRIx64 ")\n", what,
-                  a, vmaf_test_bits_f64(a), b, vmaf_test_bits_f64(b));
+    (void)fprintf(stderr, "\n%s: %.17g (0x%016llx) is not %.17g (0x%016llx)\n", what, a,
+                  (unsigned long long)vmaf_test_bits_f64(a), b,
+                  (unsigned long long)vmaf_test_bits_f64(b));
     return false;
 }
 
@@ -86,8 +86,8 @@ static inline bool vmaf_test_expect_identical_f32(const char *what, float a, flo
 {
     if (vmaf_test_identical_f32(a, b))
         return true;
-    (void)fprintf(stderr, "\n%s: %.17g (0x%08" PRIx32 ") is not %.17g (0x%08" PRIx32 ")\n", what,
-                  (double)a, vmaf_test_bits_f32(a), (double)b, vmaf_test_bits_f32(b));
+    (void)fprintf(stderr, "\n%s: %.17g (0x%08x) is not %.17g (0x%08x)\n", what, (double)a,
+                  (unsigned)vmaf_test_bits_f32(a), (double)b, (unsigned)vmaf_test_bits_f32(b));
     return false;
 }
 

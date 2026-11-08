@@ -47,13 +47,12 @@ extern void *__real_realloc(void *, size_t);
 
 /* The library is compiled `-fvisibility=hidden`, which applies to this test
  * too, and the linker must reach the wrapper (test_fex_pool_growth.c). */
-#define VMAF_WRAP_EXPORT __attribute__((visibility("default")))
 
 /* Counts every growth of the watched model array and fails it on request.
  * Every other realloc() in the process runs unchanged. */
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0723; Research-2047: GNU linker calls this entry point.
-VMAF_WRAP_EXPORT void *__wrap_realloc(void *old, size_t size)
+__attribute__((visibility("default"))) void *__wrap_realloc(void *old, size_t size)
 {
     if (old && old == watched_array) {
         watched_growths++;

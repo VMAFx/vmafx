@@ -568,34 +568,43 @@ static char *test_verify_windows_returns_enosys(void)
 }
 #endif
 
+static const MuTest common_tests[] = {
+    MU_TEST(test_verify_null_path),
+};
+
+#ifndef _WIN32
+static const MuTest platform_tests[] = {
+    MU_TEST(test_verify_missing_registry),
+    MU_TEST(test_verify_no_matching_entry),
+    MU_TEST(test_verify_missing_bundle),
+    MU_TEST(test_verify_entry_without_bundle),
+    MU_TEST(test_verify_default_registry_missing),
+    MU_TEST(test_verify_default_registry_no_slash_in_onnx),
+    MU_TEST(test_verify_registry_no_slash_in_path),
+    MU_TEST(test_verify_bundle_is_directory),
+    MU_TEST(test_verify_malformed_onnx_no_colon),
+    MU_TEST(test_verify_malformed_onnx_no_open_quote),
+    MU_TEST(test_verify_malformed_onnx_no_close_quote),
+    MU_TEST(test_verify_malformed_bundle_no_colon),
+    MU_TEST(test_verify_malformed_bundle_no_open_quote),
+    MU_TEST(test_verify_malformed_bundle_no_close_quote),
+    MU_TEST(test_verify_cosign_path_empty_string),
+    MU_TEST(test_verify_cosign_not_on_path),
+    MU_TEST(test_verify_cosign_success),
+    MU_TEST(test_verify_cosign_nonzero_exit),
+};
+#else
+static const MuTest platform_tests[] = {
+    MU_TEST(test_verify_windows_returns_enosys),
+};
+#endif
+
 char *run_tests(void)
 {
-    static const MuTest tests[] = {
-        MU_TEST(test_verify_null_path),
-#ifndef _WIN32
-        MU_TEST(test_verify_missing_registry),
-        MU_TEST(test_verify_no_matching_entry),
-        MU_TEST(test_verify_missing_bundle),
-        MU_TEST(test_verify_entry_without_bundle),
-        MU_TEST(test_verify_default_registry_missing),
-        MU_TEST(test_verify_default_registry_no_slash_in_onnx),
-        MU_TEST(test_verify_registry_no_slash_in_path),
-        MU_TEST(test_verify_bundle_is_directory),
-        MU_TEST(test_verify_malformed_onnx_no_colon),
-        MU_TEST(test_verify_malformed_onnx_no_open_quote),
-        MU_TEST(test_verify_malformed_onnx_no_close_quote),
-        MU_TEST(test_verify_malformed_bundle_no_colon),
-        MU_TEST(test_verify_malformed_bundle_no_open_quote),
-        MU_TEST(test_verify_malformed_bundle_no_close_quote),
-        MU_TEST(test_verify_cosign_path_empty_string),
-        MU_TEST(test_verify_cosign_not_on_path),
-        MU_TEST(test_verify_cosign_success),
-        MU_TEST(test_verify_cosign_nonzero_exit),
-#else
-        MU_TEST(test_verify_windows_returns_enosys),
-#endif
-    };
-    return mu_run_table(tests, MU_TABLE_LEN(tests));
+    char *msg = mu_run_table(common_tests, MU_TABLE_LEN(common_tests));
+    if (msg)
+        return msg;
+    return mu_run_table(platform_tests, MU_TABLE_LEN(platform_tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

@@ -94,86 +94,85 @@ static int vmaf_tiny_ai_test_unsetenv(const char *name)
  * `test_<fn_prefix>_options_table_well_formed`, and
  * `test_<fn_prefix>_init_rejects_missing_model`. Caller wires them
  * into its own `run_tests()` via `mu_run_test()`.
+ *
+ * For test_<fn_prefix>_init_rejects_missing_model:
+ * With neither model_path option set nor env var in the environment,
+ * init() must cleanly decline rather than crash. The test saves and
+ * clears env_var, tests init(), calls close(), and restores env_var.
  */
-#define VMAF_TINY_AI_DEFINE_REGISTRATION_TESTS(ext_name, feat_name, env_var, fn_prefix)              \
-    static mu_message_t test_##fn_prefix##_is_registered(void)                                       \
-    {                                                                                                \
-        VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(ext_name);                    \
-        mu_assert(ext_name " extractor must be registered by name", fex != NULL);                    \
-        mu_assert("registered extractor has wrong name", !strcmp(fex->name, ext_name));              \
-        mu_assert(ext_name ".init must be set", fex->init != NULL);                                  \
-        mu_assert(ext_name ".extract must be set", fex->extract != NULL);                            \
-        mu_assert(ext_name ".close must be set", fex->close != NULL);                                \
-        mu_assert(ext_name ".priv_size must be non-zero", fex->priv_size > 0u);                      \
-        return NULL;                                                                                 \
-    }                                                                                                \
-                                                                                                     \
-    static mu_message_t test_##fn_prefix##_provides_primary_feature(void)                            \
-    {                                                                                                \
-        VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_feature_name(feat_name, 0);        \
-        mu_assert("'" feat_name "' feature name must resolve to an extractor", fex != NULL);         \
-        mu_assert("'" feat_name "' must map to the " ext_name " extractor",                          \
-                  !strcmp(fex->name, ext_name));                                                     \
-        return NULL;                                                                                 \
-    }                                                                                                \
-                                                                                                     \
-    static mu_message_t test_##fn_prefix##_options_table_well_formed(void)                           \
-    {                                                                                                \
-        VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(ext_name);                    \
-        mu_assert(ext_name " extractor missing", fex != NULL);                                       \
-        mu_assert(ext_name " must expose at least one option", fex->options != NULL);                \
-                                                                                                     \
-        int saw_model_path = 0;                                                                      \
-        for (const VmafOption *opt = fex->options; opt && opt->name; ++opt) {                        \
-            mu_assert("every option must have non-NULL help text", opt->help != NULL);               \
-            if (!strcmp(opt->name, "model_path")) {                                                  \
-                saw_model_path = 1;                                                                  \
-                mu_assert("model_path must be a string option",                                      \
-                          opt->type == VMAF_OPT_TYPE_STRING);                                        \
-            }                                                                                        \
-        }                                                                                            \
-        mu_assert(ext_name " must expose a 'model_path' option", saw_model_path);                    \
-        return NULL;                                                                                 \
-    }                                                                                                \
-                                                                                                     \
-    static mu_message_t test_##fn_prefix##_init_rejects_missing_model(void)                          \
-    {                                                                                                \
-        /* With neither model_path option set nor env var in the                                   \
-         * environment, init() must cleanly decline rather than crash. */ \
-        VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(ext_name);                    \
-        mu_assert(ext_name " extractor missing", fex != NULL);                                       \
-                                                                                                     \
-        void *priv = calloc(1, fex->priv_size);                                                      \
-        mu_assert("priv alloc failed", priv != NULL);                                                \
-        fex->priv = priv;                                                                            \
-                                                                                                     \
-        /* Save + clear the env var for the duration of this test. */                                \
-        const char *saved = vmaf_getenv_portable(env_var);                                           \
-        char *saved_copy = saved ? VMAF_STRDUP(saved) : NULL;                                        \
-        (void)vmaf_tiny_ai_test_unsetenv(env_var);                                                   \
-                                                                                                     \
-        int rc = fex->init(fex, VMAF_PIX_FMT_YUV420P, 8u, 64u, 64u);                                 \
-                                                                                                     \
-        /* close() must be safe after a failed init. Restore the environment and */                  \
-        /* free before asserting, so a failure cannot leak or leave the variable */                  \
-        /* unset for the tests that run after this one. */                                           \
-        (void)fex->close(fex);                                                                       \
-        if (saved_copy) {                                                                            \
-            (void)vmaf_tiny_ai_test_setenv(env_var, saved_copy);                                     \
-            free(saved_copy);                                                                        \
-        }                                                                                            \
-        free(priv);                                                                                  \
-        fex->priv = NULL;                                                                            \
-                                                                                                     \
-        mu_assert("init must fail when no model path is provided", rc < 0);                          \
-        if (vmaf_dnn_available()) {                                                                  \
-            mu_assert("DNN-enabled build must report missing model path as -EINVAL",                 \
-                      rc == -EINVAL);                                                                \
-        } else {                                                                                     \
-            mu_assert("DNN-disabled build must report optional runtime as -ENOSYS",                  \
-                      rc == -ENOSYS);                                                                \
-        }                                                                                            \
-        return NULL;                                                                                 \
+#define VMAF_TINY_AI_DEFINE_REGISTRATION_TESTS(ext_name, feat_name, env_var, fn_prefix)            \
+    static mu_message_t test_##fn_prefix##_is_registered(void)                                     \
+    {                                                                                              \
+        VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(ext_name);                  \
+        mu_assert(ext_name " extractor must be registered by name", fex != NULL);                  \
+        mu_assert("registered extractor has wrong name", !strcmp(fex->name, ext_name));            \
+        mu_assert(ext_name ".init must be set", fex->init != NULL);                                \
+        mu_assert(ext_name ".extract must be set", fex->extract != NULL);                          \
+        mu_assert(ext_name ".close must be set", fex->close != NULL);                              \
+        mu_assert(ext_name ".priv_size must be non-zero", fex->priv_size > 0u);                    \
+        return NULL;                                                                               \
+    }                                                                                              \
+                                                                                                   \
+    static mu_message_t test_##fn_prefix##_provides_primary_feature(void)                          \
+    {                                                                                              \
+        VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_feature_name(feat_name, 0);      \
+        mu_assert("'" feat_name "' feature name must resolve to an extractor", fex != NULL);       \
+        mu_assert("'" feat_name "' must map to the " ext_name " extractor",                        \
+                  !strcmp(fex->name, ext_name));                                                   \
+        return NULL;                                                                               \
+    }                                                                                              \
+                                                                                                   \
+    static mu_message_t test_##fn_prefix##_options_table_well_formed(void)                         \
+    {                                                                                              \
+        VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(ext_name);                  \
+        mu_assert(ext_name " extractor missing", fex != NULL);                                     \
+        mu_assert(ext_name " must expose at least one option", fex->options != NULL);              \
+                                                                                                   \
+        int saw_model_path = 0;                                                                    \
+        for (const VmafOption *opt = fex->options; opt && opt->name; ++opt) {                      \
+            mu_assert("every option must have non-NULL help text", opt->help != NULL);             \
+            if (!strcmp(opt->name, "model_path")) {                                                \
+                saw_model_path = 1;                                                                \
+                mu_assert("model_path must be a string option",                                    \
+                          opt->type == VMAF_OPT_TYPE_STRING);                                      \
+            }                                                                                      \
+        }                                                                                          \
+        mu_assert(ext_name " must expose a 'model_path' option", saw_model_path);                  \
+        return NULL;                                                                               \
+    }                                                                                              \
+                                                                                                   \
+    static mu_message_t test_##fn_prefix##_init_rejects_missing_model(void)                        \
+    {                                                                                              \
+        VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name(ext_name);                  \
+        mu_assert(ext_name " extractor missing", fex != NULL);                                     \
+                                                                                                   \
+        void *priv = calloc(1, fex->priv_size);                                                    \
+        mu_assert("priv alloc failed", priv != NULL);                                              \
+        fex->priv = priv;                                                                          \
+                                                                                                   \
+        const char *saved = vmaf_getenv_portable(env_var);                                         \
+        char *saved_copy = saved ? VMAF_STRDUP(saved) : NULL;                                      \
+        (void)vmaf_tiny_ai_test_unsetenv(env_var);                                                 \
+                                                                                                   \
+        int rc = fex->init(fex, VMAF_PIX_FMT_YUV420P, 8u, 64u, 64u);                               \
+                                                                                                   \
+        (void)fex->close(fex);                                                                     \
+        if (saved_copy) {                                                                          \
+            (void)vmaf_tiny_ai_test_setenv(env_var, saved_copy);                                   \
+            free(saved_copy);                                                                      \
+        }                                                                                          \
+        free(priv);                                                                                \
+        fex->priv = NULL;                                                                          \
+                                                                                                   \
+        mu_assert("init must fail when no model path is provided", rc < 0);                        \
+        if (vmaf_dnn_available()) {                                                                \
+            mu_assert("DNN-enabled build must report missing model path as -EINVAL",               \
+                      rc == -EINVAL);                                                              \
+        } else {                                                                                   \
+            mu_assert("DNN-disabled build must report optional runtime as -ENOSYS",                \
+                      rc == -ENOSYS);                                                              \
+        }                                                                                          \
+        return NULL;                                                                               \
     }
 
 /**
