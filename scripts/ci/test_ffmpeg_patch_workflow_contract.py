@@ -89,6 +89,9 @@ def _filter_job_findings(workflow: str, aggregator: str) -> list[str]:
     if "'FFmpeg vmafx Filter'," not in aggregator:
         findings.append("aggregator does not require FFmpeg vmafx Filter")
     build = _run(_step(job, "Build FFmpeg with the vmafx filter"))
+    first_line = next((line for line in build.splitlines() if line.strip()), "")
+    if first_line != "set -euo pipefail":
+        findings.append("filter build does not start with set -euo pipefail")
     for needle in (
         "--enable-libvmafx",
         "CONFIG_VMAFX_FILTER 1",
@@ -395,7 +398,18 @@ class FFmpegWorkflowContract(unittest.TestCase):
     def test_vmafx_filter_job_check_refuses_planted_gaps(self) -> None:
         """Each planted gap in the filter job or the aggregator yields exactly its finding."""
         aggregator = AGGREGATOR.read_text(encoding="utf-8")
+        no_strict = self.workflow.replace(
+            '          set -euo pipefail\n          tree="$RUNNER_TEMP/ffmpeg"\n',
+            '          tree="$RUNNER_TEMP/ffmpeg"\n',
+            1,
+        )
+        self.assertNotEqual(no_strict, self.workflow, "no strict mode replace was a no-op")
         planted = {
+            "no strict mode": (
+                no_strict,
+                aggregator,
+                ["filter build does not start with set -euo pipefail"],
+            ),
             "dropped check": (
                 self.workflow.replace("parity windows contract provenance", "parity windows"),
                 aggregator,
@@ -444,7 +458,9 @@ class FFmpegWorkflowContract(unittest.TestCase):
         block = re.search(r'(?ms)^warnings="\$\(grep .*?^fi$', build)
         self.assertIsNotNone(block, "filter build has no warning gate block")
         assert block is not None
-        gate = "set -euo pipefail\n" + block.group(0) + "\n"
+        line = next((entry for entry in build.splitlines() if entry.strip()), "")
+        self.assertEqual(line, "set -euo pipefail", "filter build has no strict mode")
+        gate = line + "\n" + block.group(0) + "\n"
         cases = {
             "gcc warning": (
                 "libavfilter/vf_vmafx.c:211:13: warning: unused variable 'n' "
