@@ -1367,20 +1367,6 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
-      - id: ffmpeg-patches-surface-docs
-        name: Documentation names retired FFmpeg filters only in the migration guide
-        # The CI job ffmpeg-patches-surface-check (rule-enforcement.yml)
-        # runs this script on every pull request, but no local hook ran it
-        # on documentation changes, so a docs note naming a retired filter
-        # outside "Migrating from the libvmaf filters" first failed in CI
-        # (pull request 3359). The script reads a PR body only for its
-        # opt-out line; refs on pre-push stdin cannot match that line.
-        entry: bash scripts/ci/ffmpeg-patches-surface-check.sh
-        language: system
-        files: '^(docs/.*\.md|README\.md|ffmpeg-patches/.*|core/include/libvmaf/.*\.h|core/meson_options\.txt|scripts/ci/ffmpeg-patches-surface-check\.sh)$'
-        pass_filenames: false
-        stages: [pre-commit, pre-push]
-
       - id: mkdocs-strict
         name: Build changed documentation with MkDocs strict validation
         entry: scripts/git-hooks/pre-push-mkdocs-strict.sh
