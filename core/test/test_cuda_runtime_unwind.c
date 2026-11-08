@@ -111,14 +111,14 @@ static void *fake_handle(void)
     return &g_handle_storage[g_next_handle];
 }
 
-static CUresult fake_get_error_name(CUresult error, const char **pstr)
+static CUresult(CUDAAPI fake_get_error_name)(CUresult error, const char **pstr)
 {
     (void)error;
     *pstr = "FAKE_CUDA_ERROR";
     return CUDA_SUCCESS;
 }
 
-static CUresult fake_ctx_push(CUcontext ctx)
+static CUresult(CUDAAPI fake_ctx_push)(CUcontext ctx)
 {
     g_drv.pushes++;
     if (g_drv.fail_push_at != 0 && g_drv.pushes == g_drv.fail_push_at)
@@ -133,7 +133,7 @@ static CUresult fake_ctx_push(CUcontext ctx)
     return CUDA_SUCCESS;
 }
 
-static CUresult fake_ctx_pop(CUcontext *pctx)
+static CUresult(CUDAAPI fake_ctx_pop)(CUcontext *pctx)
 {
     g_drv.pops++;
     if (g_drv.fail_pop_at != 0 && g_drv.pops == g_drv.fail_pop_at)
@@ -146,7 +146,7 @@ static CUresult fake_ctx_pop(CUcontext *pctx)
     return CUDA_SUCCESS;
 }
 
-static CUresult fake_stream_create(CUstream *stream, unsigned flags, int priority)
+static CUresult(CUDAAPI fake_stream_create)(CUstream *stream, unsigned flags, int priority)
 {
     (void)flags;
     (void)priority;
@@ -159,7 +159,7 @@ static CUresult fake_stream_create(CUstream *stream, unsigned flags, int priorit
     return CUDA_SUCCESS;
 }
 
-static CUresult fake_stream_destroy(CUstream stream)
+static CUresult(CUDAAPI fake_stream_destroy)(CUstream stream)
 {
     (void)stream;
     g_drv.stream_destroy_calls++;
@@ -171,7 +171,7 @@ static CUresult fake_stream_destroy(CUstream stream)
     return CUDA_SUCCESS;
 }
 
-static CUresult fake_stream_sync(CUstream stream)
+static CUresult(CUDAAPI fake_stream_sync)(CUstream stream)
 {
     (void)stream;
     g_drv.stream_sync_calls++;
@@ -180,7 +180,7 @@ static CUresult fake_stream_sync(CUstream stream)
     return CUDA_SUCCESS;
 }
 
-static CUresult fake_stream_wait_event(CUstream stream, CUevent event, unsigned flags)
+static CUresult(CUDAAPI fake_stream_wait_event)(CUstream stream, CUevent event, unsigned flags)
 {
     (void)stream;
     (void)event;
@@ -188,7 +188,7 @@ static CUresult fake_stream_wait_event(CUstream stream, CUevent event, unsigned 
     return CUDA_SUCCESS;
 }
 
-static CUresult fake_event_create(CUevent *event, unsigned flags)
+static CUresult(CUDAAPI fake_event_create)(CUevent *event, unsigned flags)
 {
     (void)flags;
     g_drv.event_create_calls++;
@@ -199,7 +199,7 @@ static CUresult fake_event_create(CUevent *event, unsigned flags)
     return CUDA_SUCCESS;
 }
 
-static CUresult fake_event_destroy(CUevent event)
+static CUresult(CUDAAPI fake_event_destroy)(CUevent event)
 {
     (void)event;
     g_drv.event_destroy_calls++;
@@ -211,14 +211,14 @@ static CUresult fake_event_destroy(CUevent event)
     return CUDA_SUCCESS;
 }
 
-static CUresult fake_event_record(CUevent event, CUstream stream)
+static CUresult(CUDAAPI fake_event_record)(CUevent event, CUstream stream)
 {
     (void)event;
     (void)stream;
     return CUDA_SUCCESS;
 }
 
-static CUresult fake_module_unload(CUmodule module)
+static CUresult(CUDAAPI fake_module_unload)(CUmodule module)
 {
     (void)module;
     g_drv.modules_unloaded++;
@@ -228,8 +228,8 @@ static CUresult fake_module_unload(CUmodule module)
     return CUDA_SUCCESS;
 }
 
-static CUresult fake_mem_alloc_pitch(CUdeviceptr *dptr, size_t *pitch, size_t width, size_t height,
-                                     unsigned element_size)
+static CUresult(CUDAAPI fake_mem_alloc_pitch)(CUdeviceptr *dptr, size_t *pitch, size_t width,
+                                              size_t height, unsigned element_size)
 {
     (void)height;
     (void)element_size;
@@ -241,7 +241,7 @@ static CUresult fake_mem_alloc_pitch(CUdeviceptr *dptr, size_t *pitch, size_t wi
     return CUDA_SUCCESS;
 }
 
-static CUresult fake_mem_free(CUdeviceptr dptr)
+static CUresult(CUDAAPI fake_mem_free)(CUdeviceptr dptr)
 {
     (void)dptr;
     g_drv.frees++;
@@ -250,7 +250,7 @@ static CUresult fake_mem_free(CUdeviceptr dptr)
     return CUDA_SUCCESS;
 }
 
-static CUresult fake_mem_alloc(CUdeviceptr *dptr, size_t bytesize)
+static CUresult(CUDAAPI fake_mem_alloc)(CUdeviceptr *dptr, size_t bytesize)
 {
     (void)bytesize;
     if (g_drv.fail_alloc_at != 0 && g_drv.allocations + 1 == g_drv.fail_alloc_at)
@@ -260,7 +260,7 @@ static CUresult fake_mem_alloc(CUdeviceptr *dptr, size_t bytesize)
     return CUDA_SUCCESS;
 }
 
-static CUresult fake_mem_host_alloc(void **pp, size_t bytesize, unsigned int flags)
+static CUresult(CUDAAPI fake_mem_host_alloc)(void **pp, size_t bytesize, unsigned int flags)
 {
     (void)flags;
     *pp = calloc(1, bytesize > 0 ? bytesize : 1);
@@ -269,7 +269,7 @@ static CUresult fake_mem_host_alloc(void **pp, size_t bytesize, unsigned int fla
     return CUDA_SUCCESS;
 }
 
-static CUresult fake_mem_free_host(void *p)
+static CUresult(CUDAAPI fake_mem_free_host)(void *p)
 {
     g_drv.frees++;
     if (g_drv.fail_mem_free_host_at != 0 && g_drv.frees == g_drv.fail_mem_free_host_at)
@@ -278,7 +278,7 @@ static CUresult fake_mem_free_host(void *p)
     return CUDA_SUCCESS;
 }
 
-static CUresult fake_primary_ctx_release(CUdevice dev)
+static CUresult(CUDAAPI fake_primary_ctx_release)(CUdevice dev)
 {
     (void)dev;
     g_drv.primary_release_calls++;

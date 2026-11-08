@@ -84,6 +84,9 @@
 static VcGpu gpu;
 static bool have_gpu;
 
+/* Declared through the driver's CUhostFn, so the definition takes its calling
+ * convention (CUDAAPI) in a form every parser reads. */
+static CUhostFn hold_stream;
 static void hold_stream(void *arg)
 {
     (void)arg;
@@ -106,6 +109,7 @@ typedef struct GateTicket {
 
 /* Host function: hold the producer's stream until the ticket's frame is
  * opened, GATE_TIMEOUT_S at most. No CUDA call. */
+static CUhostFn hold_until_open;
 static void hold_until_open(void *arg)
 {
     const GateTicket *const t = arg;

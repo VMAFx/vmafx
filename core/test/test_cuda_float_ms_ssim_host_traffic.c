@@ -86,49 +86,49 @@ static void count_2d(const CUDA_MEMCPY2D *p)
     traffic.to_host_bytes += to_host ? bytes : 0u;
 }
 
-static CUresult wrap_2d(const CUDA_MEMCPY2D *p)
+static CUresult(CUDAAPI wrap_2d)(const CUDA_MEMCPY2D *p)
 {
     count_2d(p);
     return real.cuMemcpy2D(p);
 }
 
-static CUresult wrap_2d_async(const CUDA_MEMCPY2D *p, CUstream s)
+static CUresult(CUDAAPI wrap_2d_async)(const CUDA_MEMCPY2D *p, CUstream s)
 {
     count_2d(p);
     return real.cuMemcpy2DAsync(p, s);
 }
 
-static CUresult wrap_htod(CUdeviceptr d, const void *h, size_t n)
+static CUresult(CUDAAPI wrap_htod)(CUdeviceptr d, const void *h, size_t n)
 {
     traffic.to_device_bytes += counting ? n : 0u;
     return real.cuMemcpyHtoD(d, h, n);
 }
 
-static CUresult wrap_htod_async(CUdeviceptr d, const void *h, size_t n, CUstream s)
+static CUresult(CUDAAPI wrap_htod_async)(CUdeviceptr d, const void *h, size_t n, CUstream s)
 {
     traffic.to_device_bytes += counting ? n : 0u;
     return real.cuMemcpyHtoDAsync(d, h, n, s);
 }
 
-static CUresult wrap_dtoh(void *h, CUdeviceptr d, size_t n)
+static CUresult(CUDAAPI wrap_dtoh)(void *h, CUdeviceptr d, size_t n)
 {
     traffic.to_host_bytes += counting ? n : 0u;
     return real.cuMemcpyDtoH(h, d, n);
 }
 
-static CUresult wrap_dtoh_async(void *h, CUdeviceptr d, size_t n, CUstream s)
+static CUresult(CUDAAPI wrap_dtoh_async)(void *h, CUdeviceptr d, size_t n, CUstream s)
 {
     traffic.to_host_bytes += counting ? n : 0u;
     return real.cuMemcpyDtoHAsync(h, d, n, s);
 }
 
-static CUresult wrap_any(CUdeviceptr dst, CUdeviceptr src, size_t n)
+static CUresult(CUDAAPI wrap_any)(CUdeviceptr dst, CUdeviceptr src, size_t n)
 {
     traffic.unclassified += counting ? 1u : 0u;
     return real.cuMemcpy(dst, src, n);
 }
 
-static CUresult wrap_any_async(CUdeviceptr dst, CUdeviceptr src, size_t n, CUstream s)
+static CUresult(CUDAAPI wrap_any_async)(CUdeviceptr dst, CUdeviceptr src, size_t n, CUstream s)
 {
     traffic.unclassified += counting ? 1u : 0u;
     return real.cuMemcpyAsync(dst, src, n, s);

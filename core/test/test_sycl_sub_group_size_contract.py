@@ -60,11 +60,17 @@ MACROS = (
 SHAPE = re.compile(rf"\bVmafSyclKernelShape<\s*{NAME}\s*,\s*{NAME}\s*>")
 REQUESTS = (*MACROS, SHAPE)
 
+# A functor's kernel-shape base. Its first argument is read by _shape_size; a
+# use this does not match is reported, not skipped (_unread_shapes).
 CLASS_SHAPE = re.compile(
-    rf"\b(?:class|struct)\s+([A-Za-z_0-9]+)\s*:[^{{]*?"
-    rf"\bVmafSyclKernelShape<\s*({NAME})\s*,\s*([^>]+)>",
+    r"\b(?:class|struct)\s+([A-Za-z_0-9]+)\s*:[^{]*?"
+    r"\bVmafSyclKernelShape<\s*([^,<>]+?)\s*,\s*([^>]+)>",
     re.S,
 )
+SHAPE_USE = re.compile(r"\bVmafSyclKernelShape\s*<")
+# A size from a constexpr function on one name, as vif_hori_sg_size(SCALE).
+SIZE_CALL = re.compile(r"([A-Za-z_][A-Za-z_0-9]*)\s*\(\s*[A-Za-z_0-9]+\s*\)")
+CALL_OPERATOR = re.compile(r"\boperator\s*\(\s*\)")
 FUNCTOR_ATTR = re.compile(
     rf"(?:\bVMAF_SYCL_FUNCTOR_SG_SIZE\(\s*{NAME}\s*\)|"
     rf"\[\[\s*VMAF_SYCL_FUNCTOR_SG_ATTR\(\s*{NAME}\s*\)\s*\]\])"
@@ -142,38 +148,50 @@ def _class_body(code: str, start: int) -> str:
     return code[brace:idx]
 
 
-def _operator_attr(body: str) -> str | None:
-    """The size named by the VMAF_SYCL_FUNCTOR_SG_* on the call operator, if any."""
-    op_match = re.search(r"\boperator\s*\(\s*\)", body)
-    decl = body[: op_match.start()] if op_match else ""
-    prev = max(decl.rfind(";"), decl.rfind("}"), decl.rfind("{"))
-    attr = FUNCTOR_ATTR.search(decl[prev + 1 :])
-    return (attr.group(1) or attr.group(2)) if attr else None
+def _operator_attrs(body: str) -> list[str | None]:
+    """Per call operator of the class body, the size its VMAF_SYCL_FUNCTOR_SG_*
+    names, or None; a body without one reads as one operator without it."""
+    attrs: list[str | None] = []
+    for op_match in CALL_OPERATOR.finditer(body):
+        decl = body[: op_match.start()]
+        prev = max(decl.rfind(";"), decl.rfind("}"), decl.rfind("{"))
+        attr = FUNCTOR_ATTR.search(decl[prev + 1 :])
+        attrs.append((attr.group(1) or attr.group(2)) if attr else None)
+    return attrs or [None]
 
 
-def _functor_failures(name: str, code: str, everywhere: str) -> list[str]:
-    """Functors whose non-zero kernel-shape size their call operator does not state.
+def _shape_size(code: str, spelled: str, everywhere: str) -> tuple[str, int | None]:
+    """How the contract reads a kernel shape's first argument.
 
-    Without grf_size_properties.hpp the shape base is empty, so only the
-    operator's attribute keeps the size (sycl_compat.h). An unresolvable
-    shape size is already reported by `_request_failures`.
+    ("value", size) for a literal or a constant, size None for a template
+    parameter; ("call", None) for a constexpr function of the file on one
+    name, whose value only the header's static_assert can check; ("unread",
+    None) for anything else, which fails the contract.
     """
-    failures: list[str] = []
-    for m in CLASS_SHAPE.finditer(code):
-        cls_name, shape_sg = m.group(1), m.group(2)
+    if re.fullmatch(NAME, spelled):
         try:
-            size = _value(code, shape_sg, everywhere)
+            return "value", _value(code, spelled, everywhere)
         except ValueError:
-            continue
-        if size == 0:
-            continue
-        head = f"{name}: {cls_name} derives VmafSyclKernelShape<{shape_sg}, ...> but its operator()"
-        attr_sg = _operator_attr(_class_body(code, m.end()))
+            return "unread", None
+    call = SIZE_CALL.fullmatch(spelled)
+    if call and re.search(rf"\bconstexpr\s+int\s+{call.group(1)}\s*\(", code):
+        return "call", None
+    return "unread", None
+
+
+def _operator_failures(
+    head: str, attrs: list[str | None], size: int | None, compare: bool, code: str, everywhere: str
+) -> list[str]:
+    """Call operators that drop the shape's size, or state another one."""
+    failures: list[str] = []
+    for attr_sg in attrs:
         if attr_sg is None:
             failures.append(
                 f"{head} carries no VMAF_SYCL_FUNCTOR_SG_* "
                 "(sycl_compat.h: lost on non-properties toolchains)"
             )
+            continue
+        if not compare:
             continue
         try:
             stated = _value(code, attr_sg, everywhere)
@@ -181,6 +199,37 @@ def _functor_failures(name: str, code: str, everywhere: str) -> list[str]:
             continue  # reported by _request_failures as not a constant
         if stated != size:
             failures.append(f"{head} states sub-group size {attr_sg}")
+    return failures
+
+
+def _functor_failures(name: str, code: str, everywhere: str) -> list[str]:
+    """Functors whose non-zero kernel-shape size a call operator does not state.
+
+    Without grf_size_properties.hpp the shape base is empty, so only the
+    attribute on each call operator keeps the size (sycl_compat.h). A shape
+    the contract cannot read fails instead of passing unchecked.
+    """
+    failures: list[str] = []
+    for m in CLASS_SHAPE.finditer(code):
+        cls_name, shape_sg = m.group(1), m.group(2)
+        kind, size = _shape_size(code, shape_sg, everywhere)
+        shape = f"{name}: {cls_name} derives VmafSyclKernelShape<{shape_sg}, ...>"
+        if kind == "unread":
+            failures.append(
+                f"{shape}, a size that is no literal, constant or constexpr function of the file"
+            )
+            continue
+        if size == 0:
+            continue
+        attrs = _operator_attrs(_class_body(code, m.end()))
+        failures += _operator_failures(
+            f"{shape} but its operator()", attrs, size, kind == "value", code, everywhere
+        )
+    if len(SHAPE_USE.findall(code)) != len(CLASS_SHAPE.findall(code)):
+        failures.append(
+            f"{name}: a VmafSyclKernelShape use that is not the base of a class or "
+            "struct this contract reads"
+        )
     return failures
 
 
@@ -390,6 +439,57 @@ class SyclSubGroupSizeContract(unittest.TestCase):
         self._detected(
             _contract_failures(options, compat, sources),
             "Y derives VmafSyclKernelShape<16, ...> but its operator() states sub-group size 32",
+        )
+
+    def test_function_call_shape_without_attribute_is_detected(self) -> None:
+        # integer_vif_sycl.cpp's horizontal kernel takes its size from a constexpr function.
+        options, compat, sources = _live()
+        name = "core/src/feature/sycl/integer_vif_sycl.cpp"
+        hori = "VMAF_SYCL_FUNCTOR_SG_SIZE(VIF_SG_SIZE) void operator()"
+        self.assertIn(hori, sources[name])
+        sources[name] = sources[name].replace(hori, "void operator()", 1)
+        self._detected(
+            _contract_failures(options, compat, sources),
+            "IntegerVifHoriKernel derives VmafSyclKernelShape<vif_hori_sg_size(SCALE), ...> "
+            "but its operator() carries no VMAF_SYCL_FUNCTOR_SG_*",
+        )
+
+    def test_unannotated_overload_is_detected(self) -> None:
+        options, compat, sources = _live()
+        name = "core/test/test_sycl_ordered_sum_probe.cpp"
+        sources[name] += (
+            "\nstruct W : public VmafSyclKernelShape<16, 0> {"
+            " VMAF_SYCL_FUNCTOR_SG_SIZE(16) void operator()(sycl::id<1>) const {}"
+            " void operator()(sycl::item<1>) const {} };\n"
+        )
+        self._detected(
+            _contract_failures(options, compat, sources),
+            "W derives VmafSyclKernelShape<16, ...> but its operator() carries no "
+            "VMAF_SYCL_FUNCTOR_SG_*",
+        )
+
+    def test_unreadable_shape_size_is_detected(self) -> None:
+        options, compat, sources = _live()
+        name = "core/test/test_sycl_ordered_sum_probe.cpp"
+        sources[name] += (
+            "\nstruct V : public VmafSyclKernelShape<pick(A, B), 0> {"
+            " void operator()(sycl::id<1>) const {} };\n"
+        )
+        self._detected(
+            _contract_failures(options, compat, sources),
+            "V derives VmafSyclKernelShape<pick(A, ...>, a size that is no literal",
+        )
+
+    def test_shape_outside_a_class_base_is_detected(self) -> None:
+        options, compat, sources = _live()
+        name = "core/test/test_sycl_ordered_sum_probe.cpp"
+        sources[name] += (
+            "\nstruct U : public VmafSyclKernelShape<Pick<3>::value, 0> {"
+            " void operator()(sycl::id<1>) const {} };\n"
+        )
+        self._detected(
+            _contract_failures(options, compat, sources),
+            "test_sycl_ordered_sum_probe.cpp: a VmafSyclKernelShape use that is not the base",
         )
 
     def test_size_8_in_an_attr_macro_is_detected(self) -> None:
