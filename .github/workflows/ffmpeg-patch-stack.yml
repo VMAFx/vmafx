@@ -178,7 +178,11 @@ jobs:
             --disable-doc --disable-indevs --enable-indev=lavfi --disable-outdevs
           grep -qE '^#define CONFIG_VMAFX_FILTER 1$' config_components.h
           make -j "$(getconf _NPROCESSORS_ONLN)" ffmpeg 2>&1 | tee "$RUNNER_TEMP/ffmpeg-build.log"
-          if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' "$RUNNER_TEMP/ffmpeg-build.log"; then
+          # grep exit 1 means no warning; any other failure (exit 2, unreadable
+          # log) fails this assignment and so the step under set -e.
+          warnings="$(grep -Ei '(^|[[:space:]])warning([[:space:]#:])' "$RUNNER_TEMP/ffmpeg-build.log" || [[ $? -eq 1 ]])"
+          if [[ -n "$warnings" ]]; then
+            printf '%s\n' "$warnings" >&2
             echo "FATAL: FFmpeg emitted compiler warnings" >&2
             exit 1
           fi
