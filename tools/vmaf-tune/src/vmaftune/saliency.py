@@ -46,6 +46,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .codec_adapters.libaom import LibaomAdapter
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     import numpy as np
 
@@ -699,8 +701,6 @@ def _check_libaom_roi_request(request: EncodeRequest) -> None:
     content elsewhere. Raising here, before any qpfile is written, keeps
     the refusal ahead of the encoder-open error and leaves no temp file.
     """
-    from .codec_adapters.libaom import LibaomAdapter  # local import to avoid cycles
-
     if "-pass" in request.extra_params or request.pass_number != 0:
         raise ValueError(
             "libaom-av1 with -qpfile does not support two-pass encoding (-pass refused; "
