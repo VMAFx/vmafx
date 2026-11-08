@@ -50,6 +50,7 @@
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
+#include "vmafx/device.h"
 
 #include "gpu_dispatch_env.h"
 #include "sycl/common.h"
@@ -350,17 +351,22 @@ static unsigned compare_scored_frames(const SubsampleCase *c, unsigned frames, u
     return mismatches;
 }
 
-/* True, and the run marked skipped, when no SYCL device is visible. */
+/* True, and the run marked skipped, only when SYCL enumerates zero devices. A
+ * failed enumeration, or a failed init with a device present, fails the test. */
 static bool sycl_device_missing(void)
 {
-    VmafSyclState *state = NULL;
-    VmafSyclConfiguration sycl_cfg = {.device_index = -1};
-    if (vmaf_sycl_state_init(&state, sycl_cfg) != 0 || state == NULL) {
+    uint32_t count = 0u;
+    const VmafxStatus status = vmafx_device_count(VMAFX_BACKEND_SYCL, &count, NULL);
+    if (status != VMAFX_OK) {
+        (void)fprintf(stderr, "vmafx_device_count(VMAFX_BACKEND_SYCL) failed: %s (%d)\n",
+                      vmafx_status_name(status), (int)status);
+        return false;
+    }
+    if (count == 0u) {
         (void)fprintf(stderr, "[skip: no SYCL device] ");
         mu_skipped = 1;
         return true;
     }
-    vmaf_sycl_state_free(&state);
     return false;
 }
 
