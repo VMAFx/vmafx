@@ -25,5 +25,7 @@ restore fuzz-capable `patch -p1` fallback or quiet compiler output.
 `workflows/ffmpeg-patch-stack.yml` job `filter` = only gcc build of fork
 series' own C code (vmafx filters, CLI glue). Same gate: configure
 `--fatal-warnings`, tee make output to build log, fail on shared warning
-pattern (issue 2477). `scripts/ci/test_ffmpeg_patch_workflow_contract.py`
-checks all parts.
+pattern (issue 2477). Only grep exit 1 passes (`|| [[ $? -eq 1 ]]`, same form
+as `ffmpeg-patches/test/build-and-run.sh`); exit 2 or unreadable log fails
+step. `scripts/ci/test_ffmpeg_patch_workflow_contract.py` checks all parts and
+runs gate on sample build logs.

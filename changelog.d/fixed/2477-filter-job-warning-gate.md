@@ -1,1 +1,1 @@
-- **CI:** the `FFmpeg vmafx Filter` job fails on any compiler warning, so the series' own C code meets the warning gate the other FFmpeg builds already enforce (issue 2477).
+- **CI:** the `FFmpeg vmafx Filter` job fails on any compiler warning and on a build log its warning scan cannot read, so the series' own C code meets the warning gate the other FFmpeg builds already enforce (issue 2477).
