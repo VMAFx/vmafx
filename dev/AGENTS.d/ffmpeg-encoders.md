@@ -24,11 +24,12 @@ would fail to compile:
    distro package.
 
    **libaom intentionally NOT enabled.** Shared fix series
-   patch 0043 references libaom `aom_roi_map_t` fields
-   that don't exist in any released libaom version. SVT-AV1 covers
-   production AV1 lane. Re-enabling libaom requires first fixing
-   shared fix series 0043's ROI helper to either target real libaom version or
-   gate ROI bridge behind version probe.
+   patch 0043 needs libaom >= 3.13.0 for its `aom_roi_map_t` fields
+   (v3.12.1 and older lack them). The dev container base ships 3.13.1, but
+   libaom remains omitted until a separate build change adds libaom-dev and
+   `--enable-libaom` and proves it in a patch-stack build. The node builder base
+   (Debian 13) ships 3.12.1 (lacks the fields). SVT-AV1 covers the production
+   AV1 lane.
 2. **`libvvenc` (Fraunhofer VVC reference) must be built from
    source, installed under `/usr/local`.** Package not in Ubuntu
    apt. Pin to release tag (`v1.14.0` as of ADR-0568; bumped from

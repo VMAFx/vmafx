@@ -174,7 +174,9 @@ variable and the flag are equivalent.
   fine deltas snap to the nearest segment. `vmaf-tune` adds `-usage realtime`
   and accepts only presets `veryfast` and `superfast` (cpu-used 7 or 8)
   for saliency-aware libaom; other presets or two-pass are refused because
-  libaom ignores ROI maps outside realtime cpu-used 7..8.
+  libaom ignores ROI maps outside realtime cpu-used 7..8. The refusal comes
+  before any encode: `vmaf-tune recommend-saliency` prints one
+  `vmaf-tune recommend-saliency: ...` line on stderr and exits with code 2.
 - **SVT-AV1 and VVenC use 64x64 blocks.** Both document 64x64 as the ROI
   unit, so the mask is reduced with `reduce_qp_map_to_blocks(qp_map,
   block=64)` before writing.

@@ -842,3 +842,107 @@ def test_saliency_aware_encode_unsupported_encoder_env_override_allows_fallback(
         "-vvenc-params",
     ):
         assert flag not in captured.get("cmd", [])
+
+
+# ---------------------------------------------------------------------------
+# recommend-saliency CLI error handling for libaom ROI cpu-used constraint
+# ---------------------------------------------------------------------------
+
+
+def _recommend_saliency_libaom_argv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *extra: str
+) -> list[str]:
+    """Stub the saliency model and return libaom recommend-saliency argv.
+
+    Writes a 128x128 four-frame source under ``tmp_path``; ``extra`` goes
+    before ``--saliency-aware`` (for example ``--preset veryfast``).
+    """
+    src = _write_yuv420p(tmp_path / "src.yuv", 128, 128, 4)
+    monkeypatch.setattr(
+        "vmaftune.saliency.compute_saliency_map",
+        lambda *args, **kwargs: np.full((128, 128), 0.8, dtype=np.float32),
+    )
+    return [
+        "recommend-saliency",
+        "--src",
+        str(src),
+        "--width",
+        "128",
+        "--height",
+        "128",
+        "--duration-frames",
+        "4",
+        "--encoder",
+        "libaom-av1",
+        *extra,
+        "--saliency-aware",
+        "--output",
+        str(tmp_path / "out.mp4"),
+    ]
+
+
+def test_recommend_saliency_libaom_default_preset_refuses_cleanly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """Recommend-saliency with libaom default preset exits 2 without traceback.
+
+    Preset 'medium' maps to cpu-used 4, which libaom ROI refuses. The CLI must
+    catch ValueError and write a single clean error line to stderr (rc 2).
+    The encode runner must never be called.
+    """
+    from vmaftune import cli
+    from vmaftune.encode import EncodeResult
+
+    argv = _recommend_saliency_libaom_argv(tmp_path, monkeypatch)
+
+    def _fail_runner(*args: object, **kwargs: object) -> EncodeResult:
+        pytest.fail("encode runner should not have been called on refused preset")
+
+    monkeypatch.setattr("vmaftune.encode.run_encode", _fail_runner)
+    monkeypatch.setattr("subprocess.run", _fail_runner)
+
+    rc = cli.main(argv)
+
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert "vmaf-tune recommend-saliency:" in captured.err
+    assert "cpu-used 7 or 8" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_recommend_saliency_libaom_veryfast_preset_executes_encode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """Recommend-saliency with libaom and --preset veryfast runs the encode.
+
+    Preset 'veryfast' maps to cpu-used 7, satisfying libaom's realtime ROI
+    constraint. The stubbed encode runner executes and returns its exit code.
+    """
+    from vmaftune import cli
+    from vmaftune.encode import EncodeResult
+
+    argv = _recommend_saliency_libaom_argv(tmp_path, monkeypatch, "--preset", "veryfast")
+    stub_calls: list[EncodeRequest] = []
+
+    def _stub_runner(
+        req: EncodeRequest, *, ffmpeg_bin: str = "ffmpeg", **kwargs: object
+    ) -> EncodeResult:
+        stub_calls.append(req)
+        return EncodeResult(
+            request=req,
+            encode_size_bytes=4096,
+            encode_time_ms=123.0,
+            encoder_version="libaom-fake",
+            ffmpeg_version="n7.0-fake",
+            exit_status=0,
+            stderr_tail="",
+        )
+
+    monkeypatch.setattr("vmaftune.encode.run_encode", _stub_runner)
+
+    rc = cli.main(argv)
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert len(stub_calls) == 1
+    assert "vmaf-tune recommend-saliency:" not in captured.err

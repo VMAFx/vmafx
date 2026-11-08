@@ -8,4 +8,4 @@
   `-hwaccel_output_format` options keep their names; libaom-av1 `-qpfile` now needs
   `-usage realtime -cpu-used 7|8` and refuses other settings (before, libaom silently
   ignored the map there), and `vmaf-tune` saliency-aware libaom adds `-usage realtime`
-  and refuses other presets.
+  and refuses other presets (`recommend-saliency` exits with code 2 and a one-line error).

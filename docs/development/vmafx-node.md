@@ -111,9 +111,11 @@ verification gate and invariants.
 | AV1 | encode | libsvtav1 | Intel/Netflix SVT-AV1 (production AV1 lane) |
 | AV1 | decode | libdav1d | Fast AV1 decoder |
 
-**libaom is excluded**: shared fix series patch `0043` references `aom_roi_map_t`
-fields not present in any released libaom. SVT-AV1 covers the AV1 production
-lane. See `dev/Containerfile` §NOTE:libaom for the full rationale.
+**libaom is excluded**: shared fix series patch `0043` needs libaom >= 3.13.0
+(v3.12.1 and older lack required `aom_roi_map_t` fields). The node builder base
+(Debian 13) ships 3.12.1 (lacks the fields); enabling there needs libaom >= 3.13.0.
+SVT-AV1 covers the AV1 production lane. See `dev/Containerfile` §NOTE:libaom
+for the full rationale.
 
 ## Encoder startup probe
 
