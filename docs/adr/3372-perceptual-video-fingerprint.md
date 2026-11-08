@@ -117,7 +117,8 @@ refuse a pair that only shares an opening.
 
 ## Status update 2026-11-08: Accepted
 
-The decision was applied while this record still said Proposed. Checked on
+The decision was applied, except for the spot check of decision 3, step 4,
+while this record still said Proposed. Checked on
 `origin/master` `1907cd6e0`: #2968 (`de69502de`, 2026-10-25) added
 `tools/vmaf-tune/src/vmaftune/fingerprint.py` (PDQ frame hashes at 1 fps,
 Hamming distance at most 31, quality at least 50, the duration, aspect,
@@ -126,6 +127,14 @@ Hamming distance at most 31, quality at least 50, the duration, aspect,
 `--near-dup-verify` options of `corpus` and `recommend` (both off by default)
 and the optional `vmaf-tune[fingerprint]` extra. Both planted pairs of
 decision 5 are tests in `tools/vmaf-tune/tests/test_fingerprint.py`.
+
+The spot check is only partly applied. `_verify_near_dup_spot()` in
+`tools/vmaf-tune/src/vmaftune/corpus.py` scores the first second of the query
+source against the cached encode, then compares that score with the cached
+result's aggregate score over its whole clip. It does not compare it with a
+score for the same window of the cached source, and no test covers it. The
+option is off by default, so no default run is affected; #3343 tracks the fix
+and its tests.
 
 Decision 5 keeps the feature off by default until a measured library run
 reports the hit rate, false matches and segment ratios; that run is the
