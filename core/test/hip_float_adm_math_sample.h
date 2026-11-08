@@ -44,7 +44,12 @@ struct FadmProbeArgs {
 typedef struct FadmProbeArgs FadmProbeArgs;
 #endif
 
-FADM_HD void fadm_probe_sample(const FadmProbeArgs *a, const float *in, float *out)
+#ifndef FADM_HD
+#define FADM_HD static inline
+#endif
+#define FADM_HD_FN(name) FADM_HD void name
+
+FADM_HD_FN(fadm_probe_sample)(const FadmProbeArgs *a, const float *in, float *out)
 {
     const float *o = in;
     const float *t = in + FADM_BANDS;

@@ -178,7 +178,6 @@ class WalkKernel : public VmafSyclKernelShape<16, 0>
     {
     }
 
-    VMAF_SYCL_FUNCTOR_SG_SIZE(16)
     __attribute__((flatten)) void operator()(sycl::nd_item<1> it) const
     {
         if (it.get_local_id(0) != 0u) {

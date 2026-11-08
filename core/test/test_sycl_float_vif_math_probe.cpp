@@ -78,6 +78,28 @@ struct ProbeBuffers {
     size_t n;
 };
 
+class StatisticKernel : public VmafSyclKernelShape<16, 0>
+{
+  public:
+    StatisticKernel(const float *moments, const StatisticParams &params, float *num, float *den)
+        : moments_(moments), params_(params), num_(num), den_(den)
+    {
+    }
+
+    void operator()(sycl::id<1> i) const
+    {
+        const Term term = statistic_of(moments_ + kMomentFloats * i[0], params_);
+        num_[i] = term.num;
+        den_[i] = term.den;
+    }
+
+  private:
+    const float *moments_;
+    StatisticParams params_;
+    float *num_;
+    float *den_;
+};
+
 /* The statistic of every sample, in a kernel shaped like the extractor's
  * statistic kernel: one work-item per pixel, sub-group size 16. */
 void run_kernel(sycl::queue &q, const ProbeBuffers &host, const StatisticParams &params)
@@ -89,11 +111,7 @@ void run_kernel(sycl::queue &q, const ProbeBuffers &host, const StatisticParams 
     float *den = num + n;
     q.memcpy(moments, host.moments, kMomentFloats * n * sizeof(float));
     q.wait_and_throw();
-    q.parallel_for(sycl::range<1>(n), [=](sycl::id<1> i) VMAF_SYCL_REQD_SG_SIZE(16) {
-        const Term term = statistic_of(moments + kMomentFloats * i[0], params);
-        num[i] = term.num;
-        den[i] = term.den;
-    });
+    q.parallel_for(sycl::range<1>(n), StatisticKernel(moments, params, num, den));
     q.wait_and_throw();
     q.memcpy(host.num, num, n * sizeof(float));
     q.memcpy(host.den, den, n * sizeof(float));

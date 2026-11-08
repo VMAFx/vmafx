@@ -191,6 +191,22 @@ class TermsKernel
     TermArgs args_;
 };
 
+class RowsKernel : public VmafSyclKernelShape<16, 0>
+{
+  public:
+    explicit RowsKernel(const RowArgs &rows) : rows_(rows)
+    {
+    }
+
+    void operator()(sycl::id<1> id) const
+    {
+        vmaf_sycl_fadm::row_item(rows_, id[0]);
+    }
+
+  private:
+    RowArgs rows_;
+};
+
 /* The three kernels in the extractor's launch shapes: 16x16 tiles for the
  * decouple, the term kernel's shape, sub-group size 16 for the rows. Each
  * reads what the one before wrote, so the queue must be in order
@@ -213,9 +229,7 @@ void launch_scale(sycl::queue &q, const VmafTestFadmScale &s, const ScaleBuffers
     const TermArgs terms_of = term_args(s, b);
     q.parallel_for(sycl::range<2>(n.region_h, n.region_w), TermsKernel(terms_of));
     const RowArgs rows = row_args(s, b);
-    q.parallel_for(sycl::range<1>((size_t)kTermSlots * n.region_h),
-                   [=](sycl::id<1> id)
-                       VMAF_SYCL_REQD_SG_SIZE(16) { vmaf_sycl_fadm::row_item(rows, id[0]); });
+    q.parallel_for(sycl::range<1>((size_t)kTermSlots * n.region_h), RowsKernel(rows));
     q.wait_and_throw();
 }
 

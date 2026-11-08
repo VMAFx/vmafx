@@ -84,7 +84,7 @@
 static VcGpu gpu;
 static bool have_gpu;
 
-static void CUDAAPI hold_stream(void *arg)
+static void hold_stream(void *arg)
 {
     (void)arg;
     const struct timespec t = {.tv_sec = 0, .tv_nsec = (long)HOLD_MS * 1000000L};
@@ -106,7 +106,7 @@ typedef struct GateTicket {
 
 /* Host function: hold the producer's stream until the ticket's frame is
  * opened, GATE_TIMEOUT_S at most. No CUDA call. */
-static void CUDAAPI hold_until_open(void *arg)
+static void hold_until_open(void *arg)
 {
     const GateTicket *const t = arg;
     Gate *const g = t->gate;

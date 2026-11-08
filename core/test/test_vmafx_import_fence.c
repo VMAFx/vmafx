@@ -449,11 +449,11 @@ static bool run_wait(uint64_t option, WaitRun *run)
     VmafxFrame *frame = NULL;
     VmafxError *error = NULL;
     const uint64_t attempts = vmafx_test_import_attempts();
-    const uint64_t virtual = vmafx_test_clock_now_ns();
+    const uint64_t start_virtual = vmafx_test_clock_now_ns();
     const uint64_t real = real_ns();
     run->status = vmafx_context_import_frame(context, NULL, &imp, "main", &frame, &error);
     run->real = real_ns() - real;
-    run->virtual = vmafx_test_clock_now_ns() - virtual;
+    run->virtual = vmafx_test_clock_now_ns() - start_virtual;
     run->attempts = vmafx_test_import_attempts() - attempts;
     run->allowed = vmafx_test_last_retry_wait_ns();
     vmafx_error_free(error);
