@@ -504,6 +504,48 @@ def augment_extra_params_with_qpfile(base: Sequence[str], qpfile: Path) -> tuple
     return tuple(base) + ("-qpfile", str(qpfile))
 
 
+def _last_flag_value(argv: Sequence[str], flag: str) -> str | None:
+    """Return the value after the last ``flag`` in ``argv``, the one FFmpeg applies.
+
+    ``None`` when ``flag`` is absent; an empty string when ``flag`` is the
+    last element and carries no value.
+    """
+    for i in range(len(argv) - 1, -1, -1):
+        if argv[i] == flag:
+            return argv[i + 1] if i + 1 < len(argv) else ""
+    return None
+
+
+def _libaom_usage(params: Sequence[str]) -> str | None:
+    """Return the last ``-usage`` in ``params``; raise unless it is absent or ``realtime``."""
+    usage = _last_flag_value(params, "-usage")
+    if usage is not None and usage != "realtime":
+        shown = usage or "without a value"
+        raise ValueError(
+            f"libaom-av1 -qpfile needs -usage realtime; extra params set -usage {shown}"
+        )
+    return usage
+
+
+def _libaom_cpu_used(request: EncodeRequest) -> tuple[int, str]:
+    """Return the cpu-used libaom-av1 gets for ``request`` and where it comes from.
+
+    ``encode.build_ffmpeg_command`` puts ``extra_params`` after the preset's
+    ``-cpu-used``, so the last ``-cpu-used`` in ``extra_params`` wins over
+    the preset mapping. A value that is not an integer raises.
+    """
+    raw = _last_flag_value(request.extra_params, "-cpu-used")
+    if raw is None:
+        return LibaomAdapter().cpu_used(request.preset), "preset"
+    try:
+        return int(raw), "extra params"
+    except ValueError as exc:
+        shown = repr(raw) if raw else "without a value"
+        raise ValueError(
+            f"libaom-av1 extra params set -cpu-used {shown}; it needs an integer"
+        ) from exc
+
+
 def augment_extra_params_with_libaom_qpfile(base: Sequence[str], qpfile: Path) -> tuple[str, ...]:
     """Return ``base + ('-usage', 'realtime', '-qpfile', str(qpfile))`` for patched libaom-av1.
 
@@ -514,14 +556,7 @@ def augment_extra_params_with_libaom_qpfile(base: Sequence[str], qpfile: Path) -
     libaom ignores ROI maps otherwise.
     """
     params: list[str] = list(base)
-    if "-usage" in params:
-        given = params[params.index("-usage") + 1 :][:1]
-        if given != ["realtime"]:
-            shown = given[0] if given else "without a value"
-            raise ValueError(
-                f"libaom-av1 -qpfile needs -usage realtime; extra params set -usage {shown}"
-            )
-    else:
+    if _libaom_usage(params) is None:
         params.extend(["-usage", "realtime"])
     params.extend(["-qpfile", str(qpfile)])
     return tuple(params)
@@ -698,21 +733,30 @@ def _check_libaom_roi_request(request: EncodeRequest) -> None:
 
     Shared patch 0043 accepts ``-qpfile`` on libaom-av1 only in one-pass
     realtime usage at ``-cpu-used`` 7 or 8, because libaom ignores ROI map
-    content elsewhere. Raising here, before any qpfile is written, keeps
-    the refusal ahead of the encoder-open error and leaves no temp file.
+    content elsewhere. The last ``-usage`` and ``-cpu-used`` in
+    ``extra_params`` count, as FFmpeg applies them. Raising here, before
+    any qpfile is written, keeps the refusal ahead of the encoder-open
+    error and leaves no temp file.
     """
     if "-pass" in request.extra_params or request.pass_number != 0:
         raise ValueError(
             "libaom-av1 with -qpfile does not support two-pass encoding (-pass refused; "
             "ROI maps only without recode)"
         )
-    cpu_used = LibaomAdapter().cpu_used(request.preset)
-    if cpu_used not in _LIBAOM_ROI_CPU_USED:
+    _libaom_usage(request.extra_params)
+    cpu_used, source = _libaom_cpu_used(request)
+    if cpu_used in _LIBAOM_ROI_CPU_USED:
+        return
+    if source == "preset":
         raise ValueError(
             f"libaom-av1 saliency ROI requires preset with cpu-used 7 or 8 (supported: "
             f"'veryfast', 'superfast'); preset {request.preset!r} maps to cpu-used {cpu_used}. "
             f"libaom ignores ROI maps outside realtime cpu-used 7..8."
         )
+    raise ValueError(
+        f"libaom-av1 saliency ROI requires cpu-used 7 or 8; extra params set -cpu-used "
+        f"{cpu_used}. libaom ignores ROI maps outside realtime cpu-used 7..8."
+    )
 
 
 def _saliency_augment_libaom(

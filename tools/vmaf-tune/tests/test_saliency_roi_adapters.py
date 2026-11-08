@@ -390,3 +390,21 @@ def test_augment_extra_params_with_libaom_qpfile_refuses_other_usage(tmp_path, b
     qpfile.write_text("0 I 0\n", encoding="ascii")
     with pytest.raises(ValueError, match="needs -usage realtime"):
         augment_extra_params_with_libaom_qpfile(base, qpfile)
+
+
+def test_augment_extra_params_with_libaom_qpfile_repeated_realtime_usage_accepted(tmp_path):
+    """Positive: repeated -usage realtime is accepted."""
+    qpfile = tmp_path / "roi.qpfile.txt"
+    qpfile.write_text("0 I 0\n", encoding="ascii")
+    base = ("-usage", "realtime", "-usage", "realtime")
+    out = augment_extra_params_with_libaom_qpfile(base, qpfile)
+    assert out == ("-usage", "realtime", "-usage", "realtime", "-qpfile", str(qpfile))
+
+
+def test_augment_extra_params_with_libaom_qpfile_repeated_usage_last_good_refused(tmp_path):
+    """Negative: last occurrence of -usage determines validity (realtime then good raises)."""
+    qpfile = tmp_path / "roi.qpfile.txt"
+    qpfile.write_text("0 I 0\n", encoding="ascii")
+    base = ("-usage", "realtime", "-usage", "good")
+    with pytest.raises(ValueError, match="needs -usage realtime"):
+        augment_extra_params_with_libaom_qpfile(base, qpfile)

@@ -398,6 +398,212 @@ def test_saliency_aware_encode_libaom_pass_flag_raises(tmp_path, monkeypatch):
     assert set(tmp_path.iterdir()) == before_files
 
 
+def test_saliency_aware_encode_libaom_repeated_realtime_usage_accepted(tmp_path):
+    """Positive: repeated -usage realtime in extra_params is accepted."""
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="veryfast")
+    request = dataclasses.replace(
+        request, extra_params=("-usage", "realtime", "-usage", "realtime")
+    )
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    captured, runner = _capture_runner(tmp_path)
+
+    result = saliency_aware_encode(
+        request,
+        duration_frames=1,
+        model_path=fake_model,
+        config=SaliencyConfig(frame_samples=1, persist_qpfile=True),
+        encode_runner=runner,
+        session_factory=_session_factory_for(128, 128),
+    )
+
+    assert result.exit_status == 0
+    cmd = captured["cmd"]
+    assert "-qpfile" in cmd
+    assert "-usage" in cmd
+
+
+def test_saliency_aware_encode_libaom_extra_cpu_used_over_preset_faster_accepted(
+    tmp_path,
+):
+    """Positive: extra -cpu-used 8 overrides preset 'faster' and is passed to encoder."""
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="faster")
+    request = dataclasses.replace(request, extra_params=("-cpu-used", "8"))
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    captured, runner = _capture_runner(tmp_path)
+
+    result = saliency_aware_encode(
+        request,
+        duration_frames=1,
+        model_path=fake_model,
+        config=SaliencyConfig(frame_samples=1, persist_qpfile=True),
+        encode_runner=runner,
+        session_factory=_session_factory_for(128, 128),
+    )
+
+    assert result.exit_status == 0
+    cmd = captured["cmd"]
+    assert "-cpu-used" in cmd
+    indices = [i for i, arg in enumerate(cmd) if arg == "-cpu-used"]
+    assert indices
+    assert cmd[indices[-1] + 1] == "8"
+
+
+def test_saliency_aware_encode_libaom_preset_veryfast_with_extra_cpu_used_7_accepted(
+    tmp_path,
+):
+    """Positive: preset 'veryfast' with extra -cpu-used 7 is accepted."""
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="veryfast")
+    request = dataclasses.replace(request, extra_params=("-cpu-used", "7"))
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    captured, runner = _capture_runner(tmp_path)
+
+    result = saliency_aware_encode(
+        request,
+        duration_frames=1,
+        model_path=fake_model,
+        config=SaliencyConfig(frame_samples=1, persist_qpfile=True),
+        encode_runner=runner,
+        session_factory=_session_factory_for(128, 128),
+    )
+
+    assert result.exit_status == 0
+    assert "-cpu-used" in captured["cmd"]
+
+
+def test_saliency_aware_encode_libaom_repeated_usage_last_good_raises(tmp_path, monkeypatch):
+    """Negative: -usage realtime followed by -usage good raises needs -usage realtime."""
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="veryfast")
+    request = dataclasses.replace(request, extra_params=("-usage", "realtime", "-usage", "good"))
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    _, runner = _capture_runner(tmp_path)
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    before_files = set(tmp_path.iterdir())
+    with pytest.raises(ValueError, match="needs -usage realtime"):
+        saliency_aware_encode(
+            request,
+            duration_frames=1,
+            model_path=fake_model,
+            encode_runner=runner,
+            session_factory=_session_factory_for(128, 128),
+        )
+    assert set(tmp_path.iterdir()) == before_files
+
+
+def test_saliency_aware_encode_libaom_preset_veryfast_extra_cpu_used_4_raises(
+    tmp_path, monkeypatch
+):
+    """Negative: preset veryfast + extra -cpu-used 4 raises and leaves no qpfile."""
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="veryfast")
+    request = dataclasses.replace(request, extra_params=("-cpu-used", "4"))
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    _, runner = _capture_runner(tmp_path)
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    before_files = set(tmp_path.iterdir())
+    with pytest.raises(ValueError, match=r"extra params set -cpu-used 4"):
+        saliency_aware_encode(
+            request,
+            duration_frames=1,
+            model_path=fake_model,
+            encode_runner=runner,
+            session_factory=_session_factory_for(128, 128),
+        )
+    assert set(tmp_path.iterdir()) == before_files
+
+
+def test_saliency_aware_encode_libaom_extra_cpu_used_non_int_raises(tmp_path, monkeypatch):
+    """Negative: extra -cpu-used fast raises naming the value."""
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="veryfast")
+    request = dataclasses.replace(request, extra_params=("-cpu-used", "fast"))
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    _, runner = _capture_runner(tmp_path)
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    before_files = set(tmp_path.iterdir())
+    with pytest.raises(ValueError, match="fast"):
+        saliency_aware_encode(
+            request,
+            duration_frames=1,
+            model_path=fake_model,
+            encode_runner=runner,
+            session_factory=_session_factory_for(128, 128),
+        )
+    assert set(tmp_path.iterdir()) == before_files
+
+
+def test_saliency_aware_encode_libaom_trailing_usage_without_value_raises(tmp_path, monkeypatch):
+    """Boundary: trailing -usage without a value raises."""
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="veryfast")
+    request = dataclasses.replace(request, extra_params=("-usage",))
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    _, runner = _capture_runner(tmp_path)
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    before_files = set(tmp_path.iterdir())
+    with pytest.raises(ValueError, match="without a value"):
+        saliency_aware_encode(
+            request,
+            duration_frames=1,
+            model_path=fake_model,
+            encode_runner=runner,
+            session_factory=_session_factory_for(128, 128),
+        )
+    assert set(tmp_path.iterdir()) == before_files
+
+
+def test_saliency_aware_encode_libaom_trailing_cpu_used_without_value_raises(tmp_path, monkeypatch):
+    """Boundary: trailing -cpu-used without a value raises before any qpfile exists."""
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="veryfast")
+    request = dataclasses.replace(request, extra_params=("-cpu-used",))
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    _, runner = _capture_runner(tmp_path)
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    before_files = set(tmp_path.iterdir())
+    with pytest.raises(ValueError, match="-cpu-used without a value; it needs an integer"):
+        saliency_aware_encode(
+            request,
+            duration_frames=1,
+            model_path=fake_model,
+            encode_runner=runner,
+            session_factory=_session_factory_for(128, 128),
+        )
+    assert set(tmp_path.iterdir()) == before_files
+
+
+@pytest.mark.parametrize("bad_cpu", ["9", "6"])
+def test_saliency_aware_encode_libaom_extra_cpu_used_out_of_range_raises(
+    tmp_path, monkeypatch, bad_cpu
+):
+    """Boundary: extra -cpu-used 9 and 6 raise ValueError naming extra params."""
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="veryfast")
+    request = dataclasses.replace(request, extra_params=("-cpu-used", bad_cpu))
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    _, runner = _capture_runner(tmp_path)
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    before_files = set(tmp_path.iterdir())
+    with pytest.raises(ValueError, match=rf"extra params set -cpu-used {bad_cpu}"):
+        saliency_aware_encode(
+            request,
+            duration_frames=1,
+            model_path=fake_model,
+            encode_runner=runner,
+            session_factory=_session_factory_for(128, 128),
+        )
+    assert set(tmp_path.iterdir()) == before_files
+
+
 # ---------------------------------------------------------------------------
 # SVT-AV1 — x264-style qpfile via patched -qpfile bridge
 # ---------------------------------------------------------------------------

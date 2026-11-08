@@ -186,7 +186,7 @@ more complex filters, and the
 | `vmafx` | `0003` | `--enable-libvmafx` | CPU, CUDA, SYCL, HIP, Metal: device-resident frames imported without a copy |
 | `vmafx_tune` | `0003` | `--enable-libvmafx` | CPU / GPU; recommends a CRF for the next encode pass |
 | `vmafx_pre` | `0004` | `--enable-libvmafx` | Learned pre-filter (ONNX) through the VMAFx DNN session |
-| `-qpfile` | shared fix series `0043` | `--enable-libx264`, `--enable-libsvtav1` or `--enable-libaom` (libaom v3.13.0 or later: older releases lack the ROI fields patch 0043 sets and fail to compile even without `-qpfile`; libaom-av1 takes `-qpfile` only with `-usage realtime -cpu-used 7` or `8`) | Per-block QP offsets for libx264, libsvtav1, libaom-av1 |
+| `-qpfile` | shared fix series `0043` | `--enable-libx264`, `--enable-libsvtav1` or `--enable-libaom` (libaom v3.13.0 or later: older releases lack the ROI fields patch 0043 sets and fail to compile even without `-qpfile`; libaom-av1 takes `-qpfile` only in one-pass encoding with `-usage realtime -cpu-used 7` or `8`) | Per-block QP offsets for libx264, libsvtav1, libaom-av1 |
 | `-pass-autotune` | `0001` | `--enable-libvmafx` | Advisory CLI glue for external 2-pass autotuning |
 | `-vmafx-profile` | `0002` | `--enable-libvmafx` | Advisory CLI glue for vmaf-tune profile hand-off |
 | Loopback hwaccel | shared fix series `0044` | none (`fftools`) | GPU loopback decoder hwaccel preceding `-dec` |
