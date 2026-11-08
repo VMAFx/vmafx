@@ -47,10 +47,33 @@
 #   PR_BODY="$(gh pr view 999 --json body -q .body)" \
 #       scripts/ci/ffmpeg-patches-surface-check.sh
 #
+#   scripts/ci/ffmpeg-patches-surface-check.sh --surface-only
+#       Runs only the tree checks of section 0 (patch series, fork build
+#       configs, documentation examples, patch tests) and stops. They
+#       read the checkout, so this mode needs no PR body, no BASE_SHA /
+#       HEAD_SHA and no origin/master; the pre-commit hook
+#       ffmpeg-patches-surface-docs runs it. The pull request gate below
+#       (opt-out line, consumed-surface diff) runs in CI only.
+#
 # Exits 0 on PASS or no-public-surface-touched, 1 on a missing
-# patch update, 2 on an environment / setup error.
+# patch update or a failed tree check, 2 on an environment / setup
+# error or an unknown argument.
 
 set -euo pipefail
+
+surface_only=0
+if [ "$#" -gt 1 ]; then
+  echo "ffmpeg-patches-surface-check: expected at most one argument, got $#; the only option is --surface-only." >&2
+  exit 2
+fi
+case "${1:-}" in
+  "") ;;
+  --surface-only) surface_only=1 ;;
+  *)
+    echo "ffmpeg-patches-surface-check: unknown argument '$1'; the only option is --surface-only." >&2
+    exit 2
+    ;;
+esac
 
 # A pipeline that ends in grep exits 1 when no line matched: that is data, not an
 # error. Any other status (grep 2, git 128, a signal) is a failure and ends the
@@ -307,6 +330,11 @@ check_surface_series || exit 1
 check_surface_fork_build_configs || exit 1
 check_surface_docs_examples || exit 1
 check_surface_patch_tests || exit 1
+
+if [ "$surface_only" -eq 1 ]; then
+  echo "ffmpeg-patches-surface-check: --surface-only: tree checks passed; the pull request surface gate (PR body opt-out, diff from the merge base) runs in CI."
+  exit 0
+fi
 
 # ---------- 1. Locate PR body ----------
 
