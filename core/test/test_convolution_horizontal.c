@@ -113,6 +113,7 @@ static int check_plane(const ConvolutionFixture *f, const float *filter, int tap
     return 1;
 }
 
+/* Run and verify horizontal convolution for a single geometry and filter configuration. */
 static int check_case(int width, int height, int taps, int step, int mode)
 {
     ConvolutionFixture f = {0};

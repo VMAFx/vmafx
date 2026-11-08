@@ -439,6 +439,7 @@ static const MuTest aarch64_tests[] = {
 };
 #endif
 
+/* Run speed SIMD tests and return the first failure message, or NULL on success. */
 char *run_tests(void)
 {
     char *msg = mu_run_table(portable_tests, MU_TABLE_LEN(portable_tests));

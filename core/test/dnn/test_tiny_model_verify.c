@@ -599,6 +599,7 @@ static const MuTest platform_tests[] = {
 };
 #endif
 
+/* Run tiny model verification tests and return the first failure message, or NULL on success. */
 char *run_tests(void)
 {
     char *msg = mu_run_table(common_tests, MU_TABLE_LEN(common_tests));

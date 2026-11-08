@@ -2227,6 +2227,7 @@ static const MuTest CODEC_BLOCK_TESTS[] = {
     MU_TEST(test_codec_block_fill_bad_len),
 };
 
+/* Run model loader tests and return the first failure message, or NULL on success. */
 char *run_tests(void)
 {
     char *msg = mu_run_table(CORE_TESTS, MU_TABLE_LEN(CORE_TESTS));

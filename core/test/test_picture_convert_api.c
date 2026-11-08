@@ -104,6 +104,7 @@ static const MuTest no_zimg_tests[] = {
 };
 #endif
 
+/* Run picture conversion API tests and return the first failure message, or NULL on success. */
 char *run_tests(void)
 {
     char *msg = mu_run_table(base_tests, MU_TABLE_LEN(base_tests));

@@ -362,6 +362,7 @@ static const MuTest trailing_tests[] = {
     MU_TEST(test_check_sample_range_refuses_other_values),
 };
 
+/* Run frame input tests and return the first failure message, or NULL on success. */
 char *run_tests(void)
 {
     char *msg = mu_run_table(leading_tests, MU_TABLE_LEN(leading_tests));

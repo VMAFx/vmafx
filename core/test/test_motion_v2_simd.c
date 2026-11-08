@@ -227,6 +227,7 @@ static uint64_t motion_score_pipeline_16_scalar_ref(const uint8_t *prev_u8, ptrd
     return sad;
 }
 
+/* Verify that the AVX2 16-bit motion score pipeline matches the scalar reference. */
 static char *check_pipeline_16(unsigned bpc,
                                void (*fill)(uint16_t *, uint16_t *, unsigned, unsigned, ptrdiff_t,
                                             ptrdiff_t, uint32_t),

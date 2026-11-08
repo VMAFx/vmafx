@@ -782,6 +782,7 @@ static const MuTest trailing_tests[] = {
     MU_TEST(test_provided_feature_walk_reads_a_terminated_list),
 };
 
+/* Run feature collector tests and return the first failure message, or NULL on success. */
 char *run_tests(void)
 {
     mu_message_t err = mu_run_table(leading_tests, MU_TABLE_LEN(leading_tests));

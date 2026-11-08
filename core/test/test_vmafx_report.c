@@ -305,6 +305,7 @@ static bool text_passes(const char *path, bool (*check)(const char *text))
 #define WITH_REPORT_EOL(before, after) before "\n" after
 #endif
 
+/* Return whether the XML report contains the expected provenance and model elements. */
 static bool xml_has_record(const char *xml)
 {
     return strstr(xml, "<provenance abi_major=") != NULL &&

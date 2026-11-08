@@ -152,6 +152,37 @@ class EmittedCompatTest(unittest.TestCase):
             self.assertIn(f"    .{item.stem} = THUNK_", table)
         self.assertIn('{"vmaf_cuda_state_init", "cuda"}', header)
 
+    def test_conditioned_conformance_table_thunks_emit_null_fallback(self) -> None:
+        """Conditioned compat table thunks emit fallback to NULL when disabled."""
+        table = emit_conformance.table_text(self.api)
+        tabled = emit_conformance.tabled(self.api)
+        conditioned = [
+            (idx, item, emit_conformance.condition(item))
+            for idx, item in enumerate(tabled)
+            if emit_conformance.condition(item)
+        ]
+        self.assertGreater(len(conditioned), 0)
+        self.assertTrue(
+            any(
+                item.name == "vmaf_mcp_available" and cond == "VMAFX_BUILD_MCP"
+                for _, item, cond in conditioned
+            )
+        )
+        for idx, item, cond in conditioned:
+            self.assertIn(f"#if {cond}\n", table)
+            self.assertIn(
+                f"#define THUNK_{idx} thunk_{idx}\n#else\n#define THUNK_{idx} NULL\n#endif\n",
+                table,
+            )
+            self.assertIn(f"    .{item.stem} = THUNK_{idx},\n", table)
+
+        unconditional = next(
+            (idx, item) for idx, item in enumerate(tabled) if not emit_conformance.condition(item)
+        )
+        u_idx, _ = unconditional
+        self.assertIn(f"#define THUNK_{u_idx} thunk_{u_idx}\n", table)
+        self.assertNotIn(f"#define THUNK_{u_idx} NULL", table)
+
 
 # Error plumbing every compat source uses through compat_errno.h.
 ERROR_HELPERS = {"vmafx_error_free", "vmafx_error_errno"}

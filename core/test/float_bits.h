@@ -82,6 +82,7 @@ static inline bool vmaf_test_expect_identical_f64(const char *what, double a, do
     return false;
 }
 
+/* Return whether two 32-bit floats are bit-identical, logging any mismatch to stderr. */
 static inline bool vmaf_test_expect_identical_f32(const char *what, float a, float b)
 {
     if (vmaf_test_identical_f32(a, b))

@@ -2152,6 +2152,7 @@ static const MuTest json_reject_tests[] = {
     MU_TEST(test_splice_model_json_bounds),
 };
 
+/* Run model tests and return the first failure message, or NULL on success. */
 mu_message_t run_tests(void)
 {
     mu_message_t msg = mu_run_table(model_api_leading_tests, MU_TABLE_LEN(model_api_leading_tests));

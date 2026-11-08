@@ -1079,6 +1079,7 @@ static const MuTest trailing_tests[] = {
     MU_TEST(test_fr_v3_preset_slot_is_the_trained_constant),
 };
 
+/* Run tiny model usage tests and return the first failure message, or NULL on success. */
 char *run_tests(void)
 {
     char *msg = mu_run_table(leading_tests, MU_TABLE_LEN(leading_tests));
