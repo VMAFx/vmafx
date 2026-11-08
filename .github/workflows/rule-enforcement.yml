@@ -514,7 +514,12 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
           LANDING_IDENTITY: "lusoris <lusoris@proton.me>"
-        run: python3 scripts/ci/squash_message.py check
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/squash"
+          "$RUNNER_TEMP/squash/bin/pip" install --quiet --require-hashes \
+            -r requirements/locks/build.txt
+          "$RUNNER_TEMP/squash/bin/python" -B scripts/ci/squash_message.py check
 
   ffmpeg-patches-surface-check:
     needs: tier

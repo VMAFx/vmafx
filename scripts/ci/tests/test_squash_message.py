@@ -67,6 +67,7 @@ def run_cli_check(
     identity: str = "lusoris <lusoris@proton.me>",
     engine_argv: list[str] | None = None,
     timeout: float | None = None,
+    repo_root: Path | None = None,
 ) -> int:
     """Invoke squash_message.py check via subprocess."""
     cmd = [
@@ -86,6 +87,8 @@ def run_cli_check(
         cmd.extend(["--engine-argv", json.dumps(engine_argv)])
     if timeout is not None:
         cmd.extend(["--timeout", str(timeout)])
+    if repo_root is not None:
+        cmd.extend(["--repo-root", str(repo_root)])
     res = subprocess.run(  # noqa: S603 - fixed argv, no shell
         cmd,
         cwd=str(REPO_ROOT),
@@ -174,6 +177,75 @@ class TestCompose(unittest.TestCase):
         lines_20 = [f"Migration: path_{i}" for i in range(20)]
         res = squash_message.compose(title, number, "\n".join(lines_20), identity)
         self.assertIn("path_19", res)
+
+    def test_extract_footers_max_body_lines_boundary(self) -> None:
+        body_exact = "\n" * (squash_message.MAX_BODY_LINES - 1)
+        self.assertEqual(len(body_exact.split("\n")), squash_message.MAX_BODY_LINES)
+        self.assertEqual(squash_message.extract_footers(body_exact), [])
+
+        body_over = "\n" * squash_message.MAX_BODY_LINES
+        self.assertEqual(len(body_over.split("\n")), squash_message.MAX_BODY_LINES + 1)
+        with self.assertRaises(ValueError) as ctx:
+            squash_message.extract_footers(body_over)
+        self.assertIn(str(squash_message.MAX_BODY_LINES), str(ctx.exception))
+
+
+class TestDeclaredTypesAndEngineSubject(unittest.TestCase):
+    """Unit tests for declared_types and engine_subject mapping."""
+
+    def test_engine_subject_mapping(self) -> None:
+        declared = ["feat", "fix", "port", "sycl", "cuda", "simd", "refactor"]
+        self.assertEqual(
+            squash_message.engine_subject("port(upstream)!: x (#1)", declared),
+            "chore(upstream)!: x (#1)",
+        )
+        self.assertEqual(
+            squash_message.engine_subject("sycl: x", declared),
+            "chore: x",
+        )
+        self.assertEqual(
+            squash_message.engine_subject("feat(cli): x", declared),
+            "feat(cli): x",
+        )
+        self.assertEqual(
+            squash_message.engine_subject("refactor: x", declared),
+            "refactor: x",
+        )
+        self.assertEqual(
+            squash_message.engine_subject("bogus: x", declared),
+            "bogus: x",
+        )
+        self.assertEqual(
+            squash_message.engine_subject("non-conventional title", declared),
+            "non-conventional title",
+        )
+
+    def test_declared_types_live_and_missing_hook(self) -> None:
+        declared = squash_message.declared_types(REPO_ROOT)
+        for expected in ("port", "sycl", "cuda", "simd", "feat"):
+            self.assertIn(expected, declared)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            with self.assertRaises(ValueError):
+                squash_message.declared_types(temp_root)
+
+            # Temp repo without conventional-pre-commit hook
+            config = temp_root / ".pre-commit-config.yaml"
+            config.write_text("repos:\n  - repo: local\n    hooks: []\n", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                squash_message.declared_types(temp_root)
+
+            stub = temp_root / "stub_engine.py"
+            stub.write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
+            code = run_cli_check(
+                title="feat: test",
+                number=999,
+                body="",
+                engine_argv=[sys.executable, str(stub)],
+                repo_root=temp_root,
+            )
+            self.assertEqual(code, 2)
 
 
 class TestCheckWithStubEngine(unittest.TestCase):
@@ -277,6 +349,107 @@ class TestRealEngine(unittest.TestCase):
         self.assertEqual(code_good, 0)
         self.assertIn("PASS", out_good)
 
+    @unittest.skipUnless(engine_available(), "praetor engine unavailable")
+    def test_fork_commit_types_and_bogus(self) -> None:
+        # port(upstream): x -> 0
+        code_port, _ = squash_message.check_message(
+            title="port(upstream): cherry pick change",
+            number=3301,
+            body_text="",
+            identity="lusoris <lusoris@proton.me>",
+        )
+        self.assertEqual(code_port, 0)
+
+        # port(upstream)!: x without Migration: -> 1
+        code_break_no_mig, _ = squash_message.check_message(
+            title="port(upstream)!: breaking port",
+            number=3302,
+            body_text="",
+            identity="lusoris <lusoris@proton.me>",
+        )
+        self.assertEqual(code_break_no_mig, 1)
+
+        # port(upstream)!: x with Migration: docs/x.md -> 0
+        code_break_mig, _ = squash_message.check_message(
+            title="port(upstream)!: breaking port",
+            number=3303,
+            body_text="Migration: docs/x.md\n",
+            identity="lusoris <lusoris@proton.me>",
+        )
+        self.assertEqual(code_break_mig, 0)
+
+        # sycl: x -> 0
+        code_sycl, _ = squash_message.check_message(
+            title="sycl: fix queue synchronization",
+            number=3304,
+            body_text="",
+            identity="lusoris <lusoris@proton.me>",
+        )
+        self.assertEqual(code_sycl, 0)
+
+        # bogus: x -> 1
+        code_bogus, _ = squash_message.check_message(
+            title="bogus: unallowlisted type",
+            number=3305,
+            body_text="",
+            identity="lusoris <lusoris@proton.me>",
+        )
+        self.assertEqual(code_bogus, 1)
+
+    @unittest.skipUnless(engine_available(), "praetor engine unavailable")
+    def test_engine_types_drift(self) -> None:
+        for t in squash_message.ENGINE_TYPES:
+            msg = f"{t}: standard description (#1)\n\nSigned-off-by: lusoris <lusoris@proton.me>\n"
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", delete=False, prefix="drift-raw-", suffix=".txt"
+            ) as tmp:
+                tmp.write(msg)
+                tmp_path = Path(tmp.name)
+            try:
+                res = subprocess.run(  # noqa: S603 - fixed argv, no shell
+                    [SH, ".config/lefthook/engine.sh", "forge", "check-message", str(tmp_path)],
+                    cwd=str(REPO_ROOT),
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
+                self.assertEqual(
+                    res.returncode,
+                    0,
+                    f"raw engine rejected standard engine type '{t}': {res.stdout} {res.stderr}",
+                )
+            finally:
+                tmp_path.unlink(missing_ok=True)
+
+        declared = squash_message.declared_types(REPO_ROOT)
+        non_engine_declared = [t for t in declared if t not in squash_message.ENGINE_TYPES]
+        self.assertTrue(len(non_engine_declared) > 0)
+
+        for t in non_engine_declared:
+            msg = f"{t}: fork description (#1)\n\nSigned-off-by: lusoris <lusoris@proton.me>\n"
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", delete=False, prefix="drift-raw-", suffix=".txt"
+            ) as tmp:
+                tmp.write(msg)
+                tmp_path = Path(tmp.name)
+            try:
+                res = subprocess.run(  # noqa: S603 - fixed argv, no shell
+                    [SH, ".config/lefthook/engine.sh", "forge", "check-message", str(tmp_path)],
+                    cwd=str(REPO_ROOT),
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
+                self.assertNotEqual(
+                    res.returncode,
+                    0,
+                    f"engine now accepts '{t}': drop the substitution (cordanaLLM/praetor 1861)",
+                )
+            finally:
+                tmp_path.unlink(missing_ok=True)
+
 
 class TestWorkflowWiring(unittest.TestCase):
     """Verify rule-enforcement.yml wiring for the squash commit gate."""
@@ -287,7 +460,15 @@ class TestWorkflowWiring(unittest.TestCase):
         dco_section = content.split("dco-sign-off:")[1].split("ffmpeg-patches-surface-check:")[0]
 
         self.assertIn("Check the squash commit message", dco_section)
-        self.assertIn("python3 scripts/ci/squash_message.py check", dco_section)
+        self.assertIn(
+            '"$RUNNER_TEMP/squash/bin/python" -B scripts/ci/squash_message.py check',
+            dco_section,
+        )
+        self.assertIn(
+            '"$RUNNER_TEMP/squash/bin/pip" install --quiet --require-hashes',
+            dco_section,
+        )
+        self.assertIn("requirements/locks/build.txt", dco_section)
         self.assertIn("PR_TITLE: ${{ github.event.pull_request.title }}", dco_section)
         self.assertIn("PR_NUMBER: ${{ github.event.pull_request.number }}", dco_section)
         self.assertIn("PR_BODY: ${{ github.event.pull_request.body }}", dco_section)

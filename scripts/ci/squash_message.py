@@ -18,11 +18,24 @@ which provides the authoritative evaluation for conventional commit format,
 breaking change markers ('!' or 'BREAKING CHANGE:'), mandatory 'Migration:'
 footers, and sign-off trailers.
 
+Fork commit types and engine compatibility:
+The engine's `forge check-message` enforces a fixed type list (build, chore,
+ci, docs, feat, fix, perf, refactor, revert, style, test). This repository
+declares additional conventional types (port, sycl, cuda, simd) in
+.pre-commit-config.yaml. To allow these types while maintaining strict
+validation of breaking changes and 'Migration:' footers, check_message()
+maps declared non-engine types to 'chore' for the engine check. The original
+type is preserved in the squash commit subject. Removal trigger: remove this
+substitution once cordanaLLM/praetor issue 1861 lands and the engine natively
+accepts repository-declared types.
+
 Functions:
 - compose(title, number, body, identity): Returns the full squash message.
 - subject(title, number): Returns line 1 ('<title> (#<number>)').
 - body(body_text, identity): Returns the body content after the blank line.
 - check_message(title, number, body, identity, ...): Checks message with engine.
+- declared_types(repo_root): Extracts conventional commit types from config.
+- engine_subject(subject, declared): Maps non-engine declared types to 'chore'.
 
 CLI:
 - check: Reads inputs from flags or environment variables, runs the engine check.
@@ -38,24 +51,135 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
+
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MAX_FOOTER_LINES = 20
-MAX_BODY_LINES = 50_000
+
+# GitHub caps PR bodies at 65,536 characters; 65,537 lines is the maximum
+# possible line count even for single-character lines. Raising on excess
+# prevents silent truncation of footers.
+MAX_BODY_LINES = 65_537
+
 DEFAULT_ENGINE_ARGV = ["sh", ".config/lefthook/engine.sh", "forge", "check-message"]
 DEFAULT_TIMEOUT_SECONDS = 600.0
 DEFAULT_LANDING_IDENTITY = "lusoris <lusoris@proton.me>"
 FOOTER_RE = re.compile(r"^(?:BREAKING CHANGE|BREAKING-CHANGE|Migration): \S")
+CONVENTIONAL_SUBJECT_RE = re.compile(r"^([a-z]+)(\([^)]*\))?(!)?: ")
+
+# Fixed commit subject types supported by praetor internal/forge/commit_message.go
+# (commitSubjectTypes) at pin 4ae64cb27e56.
+# Removal trigger: remove ENGINE_TYPES and substitution when cordanaLLM/praetor 1861 lands.
+ENGINE_TYPES: tuple[str, ...] = (
+    "build",
+    "chore",
+    "ci",
+    "docs",
+    "feat",
+    "fix",
+    "perf",
+    "refactor",
+    "revert",
+    "style",
+    "test",
+)
+
+
+def find_conventional_hook_args(data: dict[str, object]) -> list[object] | None:
+    """Locate args list for conventional-pre-commit hook in parsed YAML."""
+    repos = data.get("repos")
+    if not isinstance(repos, list):
+        return None
+    for repo in repos:
+        if isinstance(repo, dict):
+            hooks = repo.get("hooks")
+            if isinstance(hooks, list):
+                for hook in hooks:
+                    if isinstance(hook, dict) and hook.get("id") == "conventional-pre-commit":
+                        args = hook.get("args")
+                        return args if isinstance(args, list) else None
+    return None
+
+
+def declared_types(repo_root: Path | None = None) -> list[str]:
+    """Load conventional commit types declared in .pre-commit-config.yaml.
+
+    Raises ValueError naming .pre-commit-config.yaml if the configuration file,
+    the conventional-pre-commit hook, or its declared types are missing.
+    """
+    root = repo_root or REPO_ROOT
+    config_path = root / ".pre-commit-config.yaml"
+    if not config_path.is_file():
+        raise ValueError(f".pre-commit-config.yaml not found at {config_path}")
+
+    try:
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise ValueError(f"failed to load .pre-commit-config.yaml: {exc}") from exc
+
+    if not isinstance(data, dict):
+        raise ValueError(f"invalid .pre-commit-config.yaml structure in {config_path}")
+
+    args = find_conventional_hook_args(data)
+    if args is None:
+        raise ValueError(
+            f"conventional-pre-commit hook or args missing in .pre-commit-config.yaml: {config_path}"
+        )
+
+    types = [str(arg) for arg in args if isinstance(arg, str) and not arg.startswith("--")]
+    if not types:
+        raise ValueError(
+            f"no conventional commit types declared in .pre-commit-config.yaml: {config_path}"
+        )
+    return types
+
+
+def engine_subject(subject: str, declared: Sequence[str]) -> str:
+    """Map declared fork types to 'chore' for the engine check until upstream #1861.
+
+    When the subject's conventional commit type is declared in .pre-commit-config.yaml
+    and not yet in ENGINE_TYPES, replace only the type with 'chore', keeping scope,
+    '!' and the rest byte for byte. Any other subject remains unchanged.
+    """
+    m = CONVENTIONAL_SUBJECT_RE.match(subject)
+    if not m:
+        return subject
+    commit_type = m.group(1)
+    if commit_type in declared and commit_type not in ENGINE_TYPES:
+        return f"chore{subject[m.end(1):]}"
+    return subject
+
+
+def engine_message(message: str, declared: Sequence[str]) -> str:
+    """Return `message` with line 1 passed through engine_subject().
+
+    Prints one notice to stderr when the type was substituted, so the run log
+    says which type the engine judged as 'chore'.
+    """
+    line1, sep, rest = message.partition("\n")
+    judged = engine_subject(line1, declared)
+    if judged != line1:
+        commit_type = line1.split(":", 1)[0].split("(", 1)[0].rstrip("!")
+        print(
+            f"squash_message: type '{commit_type}' (declared in .pre-commit-config.yaml) "
+            "judged as 'chore' until cordanaLLM/praetor 1861 lands",
+            file=sys.stderr,
+        )
+    return f"{judged}{sep}{rest}"
 
 
 def extract_footers(body_text: str) -> list[str]:
     """Extract breaking-change and migration footers from the PR body."""
-    footers: list[str] = []
     lines = body_text.split("\n")
-    bound = min(len(lines), MAX_BODY_LINES)
-    for i in range(bound):
-        line = lines[i]
+    if len(lines) > MAX_BODY_LINES:
+        raise ValueError(
+            f"body line count ({len(lines)}) exceeds maximum allowed limit ({MAX_BODY_LINES})"
+        )
+    footers: list[str] = []
+    for line in lines:
         clean_line = line[:-1] if line.endswith("\r") else line
         if FOOTER_RE.match(clean_line):
             if len(footers) >= MAX_FOOTER_LINES:
@@ -102,8 +226,9 @@ def check_message(
       1: message refused by engine policy check
       2: usage error, engine execution failure, timeout, or missing binary
     """
+    root = repo_root or REPO_ROOT
     try:
-        msg = compose(title, number, body_text, identity)
+        msg = engine_message(compose(title, number, body_text, identity), declared_types(root))
     except ValueError as exc:
         return 2, f"composition error: {exc}\n"
 
@@ -123,7 +248,7 @@ def check_message(
         run_args = [*cmd_prefix, str(temp_path)]
         res = subprocess.run(  # noqa: S603 - fixed argv, no shell
             run_args,
-            cwd=str(repo_root or REPO_ROOT),
+            cwd=str(root),
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
@@ -137,7 +262,7 @@ def check_message(
         if res.returncode == 1:
             return 1, combined_output
         return 2, f"engine returned unexpected exit code {res.returncode}:\n{combined_output}"
-    except (subprocess.TimeoutExpired, OSError, Exception) as exc:
+    except (subprocess.TimeoutExpired, OSError) as exc:
         return 2, f"engine execution failed: {exc}\n"
     finally:
         if temp_path and temp_path.exists():
@@ -146,7 +271,7 @@ def check_message(
 
 def resolve_body(args: argparse.Namespace) -> str:
     """Resolve body text from either a file or CLI/env string."""
-    if getattr(args, "body_file", ""):
+    if args.body_file:
         return Path(args.body_file).read_text(encoding="utf-8")
     return str(args.body or "")
 
@@ -181,7 +306,7 @@ def run_check_cmd(args: argparse.Namespace) -> int:
 
     try:
         engine_argv = parse_engine_argv(args.engine_argv)
-    except Exception as exc:
+    except ValueError as exc:
         print(f"squash_message: invalid --engine-argv: {exc}", file=sys.stderr)
         return 2
 
@@ -191,6 +316,8 @@ def run_check_cmd(args: argparse.Namespace) -> int:
         print(f"squash_message: failed to read body-file: {exc}", file=sys.stderr)
         return 2
 
+    repo_root = Path(args.repo_root) if args.repo_root else None
+
     code, output = check_message(
         title=title,
         number=number,
@@ -198,6 +325,7 @@ def run_check_cmd(args: argparse.Namespace) -> int:
         identity=identity,
         engine_argv=engine_argv,
         timeout_seconds=args.timeout,
+        repo_root=repo_root,
     )
     if output:
         if code == 0:
@@ -252,6 +380,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_TIMEOUT_SECONDS,
     )
+    check_p.add_argument("--repo-root", default=None, help="Repository root path override")
 
     body_p = subparsers.add_parser("body", help="Print squash commit message body")
     body_p.add_argument("--title", default=env("PR_TITLE", ""))

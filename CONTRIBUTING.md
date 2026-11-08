@@ -54,7 +54,11 @@ from machines the project does not own, and
 
   A breaking pull request must place `BREAKING CHANGE: <summary>` and
   `Migration: <documentation-or-path>` lines directly in its pull request
-  body. The squash composer (`scripts/ci/squash_message.py`) extracts these
+  body. Each footer line must start in column 0 (not indented, not quoted).
+  The composer reads raw body lines, so a column-0 footer-shaped line inside a
+  fenced code block counts as a footer too. Upstream-port and backend types
+  (`port`, `sycl`, `cuda`, `simd`) pass the check alongside the standard
+  types. The squash composer (`scripts/ci/squash_message.py`) extracts these
   footers so the merge train preserves them in the resulting squash commit
   on `master`, and the `DCO Sign-off` gate refuses any breaking pull request
   that lacks a `Migration:` footer.
