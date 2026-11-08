@@ -947,7 +947,12 @@ All fork-added options and standalone backend filters have been retired in issue
     score them with the CPU `libvmaf` filter, which copies all three planes.
     In an FFmpeg built with the VMAFx series and `--enable-libvmafx`, score CUDA
     frames with the [`vmafx` filter](#the-vmafx-filter) instead,
-    for [supported layouts](#layouts) and models. It imports every plane on the
+    for [supported layouts](#layouts) and models. This needs CUDA support on both
+    sides: libvmafx built with `-Denable_cuda=true`, and FFmpeg configured with
+    CUDA (`ffnvcodec`, which `configure` detects when the NVIDIA codec headers are
+    installed); the [CUDA example](#per-backend-copy-paste-examples) shows both
+    frame paths. Without CUDA in FFmpeg the filter does not accept CUDA frames;
+    download them as above. The filter imports every plane on the
     device, producing bit-identical scores for
     [exact CUDA twins](../development/cross-backend-exact-twins.md)
     (verified by `scripts/ci/cross_backend_parity_gate.py`) and scores within
