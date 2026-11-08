@@ -922,9 +922,10 @@ Upstream stock options include: `model`, `log_path`, `log_fmt`, `feature`, `pool
 All fork-added options and standalone backend filters have been retired in issue #2435. For modern VMAFx features, GPU execution, learned pre-filtering, and encoder tuning, build FFmpeg with `--enable-libvmafx` and use the unified `vmafx`, `vmafx_tune`, and `vmafx_pre` filters. See [Migrating from the libvmaf filters](#migrating-from-the-libvmaf-filters) for the full migration guide.
 
 !!! warning "Known issue: stock FFmpeg's CUDA libvmaf filter copies only the luma plane"
-    In stock FFmpeg (no VMAFx series), the `libvmaf_cuda` filter copies only the
-    first plane of each CUDA frame into libvmaf (features that read U and V see
-    no chroma) and refuses 10-bit, 12-bit and 4:2:2 CUDA frames
+    In stock FFmpeg (no VMAFx series), the stock CUDA libvmaf filter (its name and
+    replacement: [Migrating from the libvmaf filters](#migrating-from-the-libvmaf-filters))
+    copies only the first plane of each CUDA frame into libvmaf (features that read
+    U and V see no chroma) and refuses 10-bit, 12-bit and 4:2:2 CUDA frames
     ([issue 3274](https://github.com/VMAFx/vmafx/issues/3274)). The defect is in
     FFmpeg `libavfilter/vf_libvmaf.c`, not in libvmaf.
 
@@ -937,10 +938,10 @@ All fork-added options and standalone backend filters have been retired in issue
     not support them, so no CUDA frame can carry them. Two other limits remain:
     16-bit 4:2:0 and 4:2:2 layouts are not accepted, and semi-planar `nv12`/`p010`
     frames (as NVDEC produces them) need `scale_cuda=format=<planar format>` first.
-    The fixed filter exists only in a build that also configures
-    `--enable-libvmaf` against a CUDA-enabled libvmaf with `ffnvcodec`
+    The fixed filter exists only in a build that also configures the stock
+    upstream `--enable-libvmaf` flag against a CUDA-enabled libvmaf with `ffnvcodec`
     (`libvmaf_cuda_filter_deps` in FFmpeg `configure`); the default VMAFx build
-    (`--enable-libvmafx` only) does not build `libvmaf_cuda`.
+    (`--enable-libvmafx` only) does not build the upstream CUDA libvmaf filter.
 
     On stock FFmpeg, download the frames (`hwdownload,format=<frame format>`) and
     score them with the CPU `libvmaf` filter, which copies all three planes.
