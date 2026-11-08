@@ -404,6 +404,59 @@ class TestCheckWithStubEngine(unittest.TestCase):
         self.assertIn("sh executable not found", err)
 
 
+class TestEngineAvailableProbe(unittest.TestCase):
+    """Verify probe timeout and caching behavior of engine_available."""
+
+    def setUp(self) -> None:
+        squash_message._engine_available_cached.cache_clear()
+
+    def tearDown(self) -> None:
+        squash_message._engine_available_cached.cache_clear()
+
+    def test_engine_available_positive_timeout(self) -> None:
+        """Prove a probe returning rc 0 gives True and passes timeout=ENGINE_PROBE_TIMEOUT_SECONDS."""
+        mock_proc = subprocess.CompletedProcess(
+            args=["sh", ".config/lefthook/engine.sh", "version"],
+            returncode=0,
+            stdout="praetor 0.1.0\n",
+            stderr="",
+        )
+        with patch("scripts.ci.squash_message.subprocess.run", return_value=mock_proc) as mock_run:
+            result = squash_message.engine_available(REPO_ROOT)
+        self.assertTrue(result)
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        self.assertEqual(kwargs.get("timeout"), squash_message.ENGINE_PROBE_TIMEOUT_SECONDS)
+        self.assertEqual(kwargs.get("timeout"), 360.0)
+
+    def test_engine_available_boundary_cache(self) -> None:
+        """Prove two calls with the same root run subprocess.run once."""
+        mock_proc = subprocess.CompletedProcess(
+            args=["sh", ".config/lefthook/engine.sh", "version"],
+            returncode=0,
+            stdout="praetor 0.1.0\n",
+            stderr="",
+        )
+        with patch("scripts.ci.squash_message.subprocess.run", return_value=mock_proc) as mock_run:
+            first = squash_message.engine_available(REPO_ROOT)
+            second = squash_message.engine_available(REPO_ROOT)
+        self.assertTrue(first)
+        self.assertTrue(second)
+        mock_run.assert_called_once()
+
+    def test_engine_available_negative_timeout_expired(self) -> None:
+        """Prove subprocess.TimeoutExpired gives False."""
+        with patch(
+            "scripts.ci.squash_message.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(
+                cmd=["sh", ".config/lefthook/engine.sh", "version"],
+                timeout=squash_message.ENGINE_PROBE_TIMEOUT_SECONDS,
+            ),
+        ):
+            result = squash_message.engine_available(REPO_ROOT)
+        self.assertFalse(result)
+
+
 class TestRealEngine(unittest.TestCase):
     """Test against the real pinned Praetor engine when available."""
 

@@ -103,6 +103,18 @@ cancelled, failed, or absent checks block both `merge` and `arm`; GitHub CLI exi
 strict gates before requesting GitHub auto-merge. Both use `--match-head-commit`,
 never admin bypass or branch deletion.
 
+Both `merge` and `arm` compose the squash commit message using
+[`scripts/ci/squash_message.py`](../../scripts/ci/squash_message.py) (`Train.merge` in
+`scripts/dev/merge_train_guard.py`). Before merging, they invoke its
+`check_message` against the pinned engine (`.config/lefthook/engine.sh`,
+`forge check-message`); any validation failure aborts with
+`squash message check failed: <engine output>`. The composer formats line 1
+as the trimmed pull request title and parenthesised PR number, while the commit
+body retains any breaking-change and migration footers (`BREAKING CHANGE:`,
+`BREAKING-CHANGE:`, or `Migration:`) followed by the `Signed-off-by` trailer of
+`LANDING_IDENTITY`. The [DCO Sign-off job](../../.github/workflows/rule-enforcement.yml)
+in CI runs the same check on every pull request except release pull requests.
+
 Prefer `merge` in the automatic loop: future local holds cannot stop auto-merge
 already stored on GitHub. When imposing a hold on an armed PR, also disable its
 server auto-merge explicitly. GitHub remains responsible for branch protection

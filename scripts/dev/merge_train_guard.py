@@ -360,6 +360,7 @@ class Train:
         self.gh(*args)
 
     def rebase(self, number: int) -> str:
+        """Rebase an eligible pull request onto master in an isolated worktree."""
         pr = self.guard(number)
         head, branch = pr["headRefOid"], pr["headRefName"]
         runs = self.state / "worktrees"

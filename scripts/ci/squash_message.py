@@ -48,6 +48,7 @@ CLI:
 from __future__ import annotations
 
 import argparse
+import functools
 import os
 import re
 import shutil
@@ -68,6 +69,8 @@ MAX_FOOTER_LINES = 20
 MAX_BODY_LINES = 65_537
 
 DEFAULT_TIMEOUT_SECONDS = 600.0
+# Engine install bound 300 s plus 60 s, matching CI check --timeout 360 (rule-enforcement.yml:524).
+ENGINE_PROBE_TIMEOUT_SECONDS = 360.0
 DEFAULT_LANDING_IDENTITY = "lusoris <lusoris@proton.me>"
 FOOTER_RE = re.compile(r"^(?:BREAKING CHANGE|BREAKING-CHANGE|Migration): \S")
 CONVENTIONAL_SUBJECT_RE = re.compile(r"^([a-z]+)(\([^)]*\))?(!)?: ")
@@ -226,24 +229,30 @@ def engine_wrapper_argv(root: Path) -> tuple[list[str] | None, str]:
     return [str(abs_sh), str(wrapper)], ""
 
 
-def engine_available(root: Path | None = None) -> bool:
-    """Check if the pinned Praetor engine wrapper is runnable."""
-    resolved_root = root or REPO_ROOT
-    prefix, _ = engine_wrapper_argv(resolved_root)
+@functools.cache
+def _engine_available_cached(root: Path) -> bool:
+    """Probe the pinned Praetor engine wrapper at root and cache the result."""
+    prefix, _ = engine_wrapper_argv(root)
     if prefix is None:
         return False
     try:
         res = subprocess.run(  # noqa: S603 -- engine version probe, no shell  # nosec B603
             [*prefix, "version"],
-            cwd=str(resolved_root),
+            cwd=str(root),
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=ENGINE_PROBE_TIMEOUT_SECONDS,
             check=False,
         )
         return res.returncode == 0
-    except OSError, subprocess.TimeoutExpired:
+    except (OSError, subprocess.TimeoutExpired):
         return False
+
+
+def engine_available(root: Path | None = None) -> bool:
+    """Check if the pinned Praetor engine wrapper is runnable."""
+    resolved_root = (Path(root) if root is not None else REPO_ROOT).resolve()
+    return _engine_available_cached(resolved_root)
 
 
 def resolve_engine_cmd(root: Path, engine_argv: list[str] | None) -> tuple[list[str] | None, str]:
