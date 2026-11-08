@@ -155,6 +155,7 @@ class FfmpegPatchesSurfaceCheckTests(_FixtureTree, unittest.TestCase):
         self.assertIn("fork build configs: zero retired filters/options", res.stdout)
         self.assertIn("docs examples: zero retired filters/options", res.stdout)
         self.assertIn("patch tests: zero retired filters/options", res.stdout)
+        self.assertRegex(res.stdout, r"across [1-9][0-9]* scanned doc files")
 
     def test_planted_negative_series_surface(self) -> None:
         """Planted vmaf_pre in a patch causes series surface check failure."""
@@ -267,6 +268,80 @@ class SurfaceOnlyModeTests(_FixtureTree, unittest.TestCase):
             self.assertEqual(res.returncode, 1, f"stderr:\n{res.stderr}")
             self.assertIn("retired filter/option in doc", res.stderr)
             self.assertNotIn(SURFACE_ONLY_DONE_LINE, res.stdout)
+
+    def test_surface_only_fails_on_planted_patch_test(self) -> None:
+        """Planted libvmaf_sycl= in patch test fails in --surface-only mode."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = self._prepare_temp_worktree(Path(td), origin_master=False)
+            target_script = tmp / "ffmpeg-patches" / "test" / "check-sycl-feature-routing.sh"
+            with target_script.open("a", encoding="utf-8") as fp:
+                fp.write(
+                    "\n# planted defect:\n# -filter_complex '[0:v][1:v]libvmaf_sycl=threads=1'\n"
+                )
+
+            res = _run_script(
+                tmp / "scripts" / "ci" / SCRIPT.name, tmp, "--surface-only", REPO_ROOT=str(tmp)
+            )
+            self.assertEqual(res.returncode, 1, f"stderr:\n{res.stderr}")
+            self.assertIn("patch test carries retired filter/option", res.stderr)
+            self.assertNotIn(SURFACE_ONLY_DONE_LINE, res.stdout)
+
+    def test_surface_only_fails_when_zero_docs_scanned(self) -> None:
+        """Zero doc files scanned in fixture tree fails surface check."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = self._prepare_temp_worktree(Path(td), origin_master=False)
+            shutil.rmtree(tmp / "docs", ignore_errors=True)
+            (tmp / "README.md").unlink(missing_ok=True)
+            (tmp / "ffmpeg-patches" / "README.md").unlink(missing_ok=True)
+            _git(tmp, "add", "-A")
+            _git(tmp, "commit", "-q", "-m", "remove docs")
+
+            res = _run_script(
+                tmp / "scripts" / "ci" / SCRIPT.name, tmp, "--surface-only", REPO_ROOT=str(tmp)
+            )
+            self.assertEqual(res.returncode, 1, f"stderr:\n{res.stderr}")
+            self.assertIn("zero doc files scanned", res.stderr)
+            self.assertNotIn(SURFACE_ONLY_DONE_LINE, res.stdout)
+
+    def test_surface_only_fails_when_doc_listing_fails(self) -> None:
+        """A git ls-files failure (corrupt index) is named, never read as an empty doc list."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = self._prepare_temp_worktree(Path(td), origin_master=False)
+            (tmp / ".git" / "index").write_bytes(b"not an index")
+
+            res = _run_script(
+                tmp / "scripts" / "ci" / SCRIPT.name, tmp, "--surface-only", REPO_ROOT=str(tmp)
+            )
+            self.assertEqual(res.returncode, 1, f"stderr:\n{res.stderr}")
+            self.assertIn("[FAIL] cannot list docs", res.stderr)
+            self.assertNotIn("zero doc files scanned", res.stderr)
+            self.assertNotIn(SURFACE_ONLY_DONE_LINE, res.stdout)
+
+    def test_bash_32_contract_no_mapfile_or_readarray(self) -> None:
+        """Script must not use mapfile or readarray because macOS bash 3.2 lacks them."""
+        content = SCRIPT.read_text(encoding="utf-8")
+        for lineno, line in enumerate(content.splitlines(), start=1):
+            code_only = line.split("#", 1)[0]
+            for token in ("mapfile", "readarray"):
+                self.assertNotIn(
+                    token,
+                    code_only,
+                    f"Line {lineno} violates bash 3.2 compatibility by using '{token}': {line}",
+                )
+
+    def test_bash_32_contract_array_loops_survive_empty_arrays(self) -> None:
+        """Bash 3.2 under set -u aborts on "${a[@]}" when a is empty, so every loop is guarded."""
+        content = SCRIPT.read_text(encoding="utf-8")
+        loops = re.findall(r'for \w+ in "\$\{(\w+)\[@\]\}"', content)
+        self.assertTrue(loops, "no array loops found; the pattern no longer matches the script")
+        for name in loops:
+            count_guard = f'"${{#{name}[@]}}" -eq 0'
+            # A quoted first element followed by whitespace or ")" is a literal, never a glob.
+            literal_list = re.search(rf'\b{name}=\(\s*"[^"]*"(?=[\s)])', content)
+            self.assertTrue(
+                count_guard in content or literal_list,
+                f'loop over "${{{name}[@]}}" has no empty-array guard; use ${{{name}[@]+"${{{name}[@]}}"}}',
+            )
 
     def test_bad_arguments_exit_two(self) -> None:
         """An unknown option or a second argument is a usage error, never a pass."""

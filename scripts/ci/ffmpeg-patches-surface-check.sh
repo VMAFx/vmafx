@@ -239,15 +239,27 @@ scan_single_doc() {
 check_surface_docs_examples() {
   local fail=0
   local all_docs=()
+  local docs_list
   if git -C "${REPO_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    mapfile -t all_docs < <(git -C "${REPO_ROOT}" ls-files "docs/*.md" "docs/**/*.md" "README.md" "ffmpeg-patches/README.md")
+    docs_list="$(git -C "${REPO_ROOT}" ls-files "docs/*.md" "docs/**/*.md" "README.md" "ffmpeg-patches/README.md")" || {
+      echo "ffmpeg-patches-surface-check: [FAIL] cannot list docs" >&2
+      return 1
+    }
   else
-    mapfile -t all_docs < <(cd "${REPO_ROOT}" && find docs README.md ffmpeg-patches/README.md -name "*.md" 2>/dev/null | sed "s|^\./||")
+    docs_list="$(cd "${REPO_ROOT}" && find docs README.md ffmpeg-patches/README.md -name "*.md" 2>/dev/null | sed "s|^\./||")" || {
+      echo "ffmpeg-patches-surface-check: [FAIL] cannot list docs" >&2
+      return 1
+    }
   fi
+
+  while IFS= read -r p; do
+    [ -n "$p" ] && all_docs+=("$p")
+  done <<<"$docs_list"
 
   local relpath
   local doc_count=0
-  for relpath in "${all_docs[@]}"; do
+  # ${a[@]+"${a[@]}"}: bash 3.2 under set -u aborts on "${a[@]}" when a is empty.
+  for relpath in ${all_docs[@]+"${all_docs[@]}"}; do
     is_excluded_doc "$relpath" && continue
     [ -f "${REPO_ROOT}/${relpath}" ] || continue
     doc_count=$((doc_count + 1))
@@ -255,6 +267,11 @@ check_surface_docs_examples() {
       fail=1
     fi
   done
+
+  if [ "$doc_count" -eq 0 ]; then
+    echo "ffmpeg-patches-surface-check: [FAIL] docs examples: zero doc files scanned" >&2
+    return 1
+  fi
 
   if [ "$fail" -ne 0 ]; then
     return 1
