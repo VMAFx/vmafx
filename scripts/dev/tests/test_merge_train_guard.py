@@ -62,6 +62,7 @@ ENGINE_FIXTURE_FILES = (".config/lefthook/engine.sh", ".github/workflows/standar
 
 class TrainContract(unittest.TestCase):
     def setUp(self) -> None:
+        """Build temporary Git repo with base/topic commits and initial state directory files."""
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.directory = Path(temporary.name)
@@ -504,6 +505,7 @@ class TrainContract(unittest.TestCase):
         self.assertFalse(self.train.calls)
 
     def test_load_squash_composer_finds_sibling_in_installed_layout(self) -> None:
+        """Prove loader imports sibling squash_message module when in installed release layout."""
         installed_dir = self.directory / "installed_release"
         installed_dir.mkdir()
         fake_guard = installed_dir / "merge_train_guard.py"
@@ -515,6 +517,7 @@ class TrainContract(unittest.TestCase):
             self.assertEqual(getattr(mod, "MARKER", None), "installed_sibling")
 
     def test_load_squash_composer_neither_path_exists_raises_refused(self) -> None:
+        """Prove loader raises Refused instead of OSError when no composer file exists on disk."""
         isolated_dir = self.directory / "isolated_dir"
         isolated_dir.mkdir()
         fake_guard = isolated_dir / "merge_train_guard.py"
@@ -541,6 +544,7 @@ class TrainContract(unittest.TestCase):
             self.assertIn("ImportError", str(ctx.exception))
 
     def test_merge_passes_repo_root_to_composer_check_message(self) -> None:
+        """Prove merge forwards train repository root Path to composer check_message invocation."""
         real_composer = guard.load_squash_composer()
         recorded: dict[str, Any] = {}
 
@@ -565,6 +569,7 @@ class TrainContract(unittest.TestCase):
         self.assertEqual(recorded.get("repo_root"), self.train.root)
 
     def test_python310_grammar_floor(self) -> None:
+        """Prove merge train scripts parse successfully under Python 3.10 syntax grammar."""
         repo_root = Path(__file__).resolve().parents[3]
         files = (
             repo_root / "scripts/dev/merge_train_guard.py",

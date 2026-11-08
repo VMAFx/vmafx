@@ -19,6 +19,7 @@ import merge_train_guard as guard
 
 class MigrationContract(unittest.TestCase):
     def setUp(self) -> None:
+        """Build temporary Git repository with committed scripts and state directory fixtures."""
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.directory = Path(temporary.name)
@@ -113,6 +114,10 @@ class MigrationContract(unittest.TestCase):
             guard.execute([str(self.state / "train.sh")], self.source)
 
     def test_stale_preview_and_source_edits_refuse_before_replacing_runtime(self) -> None:
+        """Prove a stale preview makes install refuse and keeps the runtime files.
+
+        An uncommitted gateway or composer edit makes plan refuse with ValueError.
+        """
         value, committed = self.plan()
         (self.state / "hold.txt").write_text("1422 new hold\n")
         fresh, _ = self.plan()
@@ -172,6 +177,7 @@ class MigrationContract(unittest.TestCase):
         self.assertEqual(arguments[:3], ["rebase", "1422", "--apply"])
 
     def test_installed_composer_recorded_sha_mode_and_loadable(self) -> None:
+        """Prove install writes read-only composer matching recorded hash loadable by gateway."""
         value, committed = self.plan()
         installer.install(value, committed, installer.plan_hash(value))
         release = self.state / "releases" / str(value["gateway_sha256"])
@@ -190,6 +196,7 @@ class MigrationContract(unittest.TestCase):
         self.assertTrue(getattr(loaded_composer, "TEST_COMPOSER", False))
 
     def test_installed_composer_tampering_refuses_launcher(self) -> None:
+        """Prove modified installed composer causes launcher execution to refuse with Refused."""
         value, committed = self.plan()
         installer.install(value, committed, installer.plan_hash(value))
         composer = self.state / "releases" / str(value["gateway_sha256"]) / "squash_message.py"
@@ -199,6 +206,7 @@ class MigrationContract(unittest.TestCase):
             guard.execute([str(self.state / "train.sh")], self.source)
 
     def test_existing_release_with_different_composer_refuses_and_preserves_old(self) -> None:
+        """Prove existing differing composer in release dir raises ValueError and preserves file."""
         value, committed = self.plan()
         release = self.state / "releases" / str(value["gateway_sha256"])
         release.mkdir(parents=True)
