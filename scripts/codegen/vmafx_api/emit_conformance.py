@@ -63,6 +63,7 @@ def _pointer_field(item: Compat) -> str:
 
 
 def header_text(api: Api) -> str:
+    """Return compat_conformance_gen.h: the VmafCompatApi struct, indices and names."""
     items = tabled(api)
     index = "".join(f"    {_index_name(i)},\n" for i in items)
     fields = "".join(_pointer_field(i) + "\n" for i in items)
@@ -143,10 +144,11 @@ def _thunk(number: int, item: Compat) -> str:
             f"#define THUNK_{number} NULL\n"
             f"#endif\n\n"
         )
-    return f"{signature}\n{{\n{body}}}\n" f"#define THUNK_{number} thunk_{number}\n\n"
+    return f"{signature}\n{{\n{body}}}\n#define THUNK_{number} thunk_{number}\n\n"
 
 
 def table_text(api: Api) -> str:
+    """Return compat_conformance_table_gen.c: one counting thunk per function and their table."""
     items = tabled(api)
     thunks = "".join(_thunk(n, i) for n, i in enumerate(items))
     members = "".join(f"    .{i.stem} = THUNK_{n},\n" for n, i in enumerate(items))

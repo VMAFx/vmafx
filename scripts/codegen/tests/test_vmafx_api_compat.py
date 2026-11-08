@@ -142,6 +142,7 @@ class EmittedCompatTest(unittest.TestCase):
             self.assertNotIn("vmaf_sycl_import_d3d11_surface", expected)
 
     def test_conformance_tables_cover_every_compat_definition(self) -> None:
+        """Every tabled compat function has a header entry and a table member."""
         header = emit_conformance.header_text(self.api)
         table = emit_conformance.table_text(self.api)
         tabled = emit_conformance.tabled(self.api)
