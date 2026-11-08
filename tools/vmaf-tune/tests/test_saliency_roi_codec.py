@@ -26,13 +26,17 @@ sys.path.insert(0, str(_HERE.parent / "src"))
 
 np = pytest.importorskip("numpy")
 
-from vmaftune.encode import EncodeRequest
+from vmaftune import cli
+from vmaftune.encode import EncodeRequest, EncodeResult
 from vmaftune.saliency import (
     _SALIENCY_DISPATCH,
     SaliencyConfig,
     SaliencyUnsupportedEncoderError,
     saliency_aware_encode,
 )
+
+# Exit status of a vmaf-tune subcommand that refuses its arguments.
+_EXIT_REFUSED = 2
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -249,10 +253,13 @@ def test_saliency_aware_encode_libaom_qpfile_has_16x16_granularity(tmp_path):
 
     qpfile = Path(captured["cmd"][captured["cmd"].index("-qpfile") + 1])
     data_lines = qpfile.read_text(encoding="ascii").splitlines()[1:]
-    assert len(data_lines) == 4, f"expected 4 MB rows (64/16), got {len(data_lines)}"
+    mbs_per_side = 64 // 16
+    assert len(data_lines) == mbs_per_side, f"expected 4 MB rows (64/16), got {len(data_lines)}"
     for line in data_lines:
         cols = line.split()
-        assert len(cols) == 4, f"expected 4 MB columns (64/16), got {len(cols)}: {line!r}"
+        assert (
+            len(cols) == mbs_per_side
+        ), f"expected 4 MB columns (64/16), got {len(cols)}: {line!r}"
 
 
 def test_saliency_aware_encode_libaom_does_not_emit_encoder_private_roi_params(tmp_path):
@@ -735,8 +742,6 @@ def test_saliency_aware_encode_unknown_encoder_falls_back_to_plain(tmp_path):
     # libx264 is in the dispatch table, but we pass an unsupported name.
     request, _ = _make_request(tmp_path, "libx264")
     # Patch the encoder name to something not in the dispatch table.
-    import dataclasses
-
     request = dataclasses.replace(request, encoder="libvpx-vp9")
     fake_model = tmp_path / "saliency_student_v1.onnx"
     fake_model.write_bytes(b"\x00")
@@ -775,8 +780,6 @@ def test_saliency_aware_encode_unsupported_encoder_raises_by_default(tmp_path):
     silent WARNING-and-continue.  Callers must explicitly opt in via
     allow_unsupported_encoder_fallback=True or VMAFTUNE_SALIENCY_FALLBACK_OK=1.
     """
-    import dataclasses
-
     request, _ = _make_request(tmp_path, "libx264")
     request = dataclasses.replace(request, encoder="h264_nvenc")
     fake_model = tmp_path / "saliency_student_v1.onnx"
@@ -813,8 +816,6 @@ def test_saliency_aware_encode_unsupported_encoder_env_override_allows_fallback(
     ADR-0546: the env var is the non-flag opt-in path for callers that cannot
     easily modify SaliencyConfig (e.g. external scripts or CI wrappers).
     """
-    import dataclasses
-
     request, _ = _make_request(tmp_path, "libx264")
     request = dataclasses.replace(request, encoder="libvpx-vp9")
     fake_model = tmp_path / "saliency_student_v1.onnx"
@@ -890,9 +891,6 @@ def test_recommend_saliency_libaom_default_preset_refuses_cleanly(
     catch ValueError and write a single clean error line to stderr (rc 2).
     The encode runner must never be called.
     """
-    from vmaftune import cli
-    from vmaftune.encode import EncodeResult
-
     argv = _recommend_saliency_libaom_argv(tmp_path, monkeypatch)
 
     def _fail_runner(*args: object, **kwargs: object) -> EncodeResult:
@@ -904,7 +902,7 @@ def test_recommend_saliency_libaom_default_preset_refuses_cleanly(
     rc = cli.main(argv)
 
     captured = capsys.readouterr()
-    assert rc == 2
+    assert rc == _EXIT_REFUSED
     assert "vmaf-tune recommend-saliency:" in captured.err
     assert "cpu-used 7 or 8" in captured.err
     assert "Traceback" not in captured.err
@@ -918,9 +916,6 @@ def test_recommend_saliency_libaom_veryfast_preset_executes_encode(
     Preset 'veryfast' maps to cpu-used 7, satisfying libaom's realtime ROI
     constraint. The stubbed encode runner executes and returns its exit code.
     """
-    from vmaftune import cli
-    from vmaftune.encode import EncodeResult
-
     argv = _recommend_saliency_libaom_argv(tmp_path, monkeypatch, "--preset", "veryfast")
     stub_calls: list[EncodeRequest] = []
 
