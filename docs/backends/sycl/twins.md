@@ -116,6 +116,11 @@ Two device-side controls reduce the remaining deviation:
 - `motion_sycl` writes `VMAF_integer_feature_motion_sad_score` on every frame
   and honours `motion_force_zero`: it returns 0 for every output and computes no
   SAD.
+- Under `--subsample N` (`N > 1`), `motion_sycl` and `psnr_sycl` enqueue and
+  collect on every frame even when paired with non-temporal combined-graph
+  twins (`vif_sycl`, `adm_sycl`, `float_moment_sycl`, `cambi_sycl`); skipped
+  frames run only the active temporal subset so non-temporal pending host
+  buffers stay intact (`test_sycl_subsample_motion_vif`).
 - `motion_five_frame_window=true` runs on the device on `motion_sycl` and
   `motion_v2_sycl`, with the CPU's bits
   ([ADR-1491](../../adr/1491-gpu-motion-five-frame-window.md)). `motion_sycl`

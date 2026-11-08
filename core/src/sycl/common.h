@@ -537,6 +537,13 @@ int vmaf_sycl_graph_register(VmafSyclState *state, VmafSyclGraphEnqueueFn enqueu
                              VmafSyclGraphPreFn pre_fn, VmafSyclGraphPostFn post_fn,
                              VmafSyclGraphConfigFn config_fn, void *priv, const char *name);
 
+int vmaf_sycl_graph_register_flags(VmafSyclState *state, VmafSyclGraphEnqueueFn enqueue_fn,
+                                   VmafSyclGraphPreFn pre_fn, VmafSyclGraphPostFn post_fn,
+                                   VmafSyclGraphConfigFn config_fn, void *priv, const char *name,
+                                   uint64_t flags);
+
+void vmaf_sycl_graph_set_frame(VmafSyclState *state, unsigned index, unsigned n_subsample);
+
 /**
  * Unregister an extractor from the combined command graph.
  * Must be called from close_fex_sycl before the extractor's priv is freed.

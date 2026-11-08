@@ -1577,8 +1577,8 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
     }
     if (!err) {
         // Register with combined command graph
-        err = vmaf_sycl_graph_register(state, enqueue_adm_work, adm_pre_graph, adm_post_graph,
-                                       nullptr, s, "ADM");
+        err = vmaf_sycl_graph_register_flags(state, enqueue_adm_work, adm_pre_graph, adm_post_graph,
+                                             nullptr, s, "ADM", fex->flags);
     }
     if (err) {
         (void)close_fex_sycl(fex);

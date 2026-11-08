@@ -508,8 +508,9 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     s->has_pending = false;
 
-    int const err2 = vmaf_sycl_graph_register(state, enqueue_moment_work, moment_pre_graph,
-                                              moment_post_graph, config_moment_slot, s, "MOMENT");
+    int const err2 = vmaf_sycl_graph_register_flags(state, enqueue_moment_work, moment_pre_graph,
+                                                    moment_post_graph, config_moment_slot, s,
+                                                    "MOMENT", fex->flags);
     if (err2) {
         (void)close_fex_sycl(fex);
         return err2;

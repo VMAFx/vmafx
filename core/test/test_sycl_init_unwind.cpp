@@ -183,6 +183,16 @@ __wrap_vmaf_sycl_graph_register(VmafSyclState *, VmafSyclGraphEnqueueFn, VmafSyc
 }
 
 // cppcheck-suppress unusedFunction
+extern "C" VMAF_WRAP_EXPORT int
+__wrap_vmaf_sycl_graph_register_flags(VmafSyclState *, VmafSyclGraphEnqueueFn, VmafSyclGraphPreFn,
+                                      VmafSyclGraphPostFn, VmafSyclGraphConfigFn, void *,
+                                      const char *, uint64_t)
+{
+    graph_registration_calls++;
+    return fail_graph_registration ? -EIO : 0;
+}
+
+// cppcheck-suppress unusedFunction
 extern "C" VMAF_WRAP_EXPORT int __wrap_vmaf_sycl_graph_unregister(VmafSyclState *, void *)
 {
     graph_unregistration_calls++;

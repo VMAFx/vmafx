@@ -475,8 +475,9 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     s->has_pending = false;
 
-    int const err2 = vmaf_sycl_graph_register(s->sycl_state, enqueue_psnr_work, psnr_pre_graph,
-                                              psnr_post_graph, config_psnr_slot, s, "PSNR");
+    int const err2 =
+        vmaf_sycl_graph_register_flags(s->sycl_state, enqueue_psnr_work, psnr_pre_graph,
+                                       psnr_post_graph, config_psnr_slot, s, "PSNR", fex->flags);
     if (err2) {
         (void)close_fex_sycl(fex);
         return err2;

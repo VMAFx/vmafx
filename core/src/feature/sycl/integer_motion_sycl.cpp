@@ -442,8 +442,9 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->sycl_state = state;
 
     // Register with combined command graph
-    err = vmaf_sycl_graph_register(state, enqueue_motion_work, motion_pre_graph, motion_post_graph,
-                                   config_motion_slot, s, "MOTION");
+    err = vmaf_sycl_graph_register_flags(state, enqueue_motion_work, motion_pre_graph,
+                                         motion_post_graph, config_motion_slot, s, "MOTION",
+                                         fex->flags);
     if (err) {
         close_fex_sycl(fex);
         return err;

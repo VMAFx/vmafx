@@ -1723,7 +1723,8 @@ int check_window_fits_lut(const CambiStateSycl *s)
     return vmaf_cambi_check_window_fits_lut(s->adjusted_window, src_window);
 }
 
-int init_cambi_device(CambiStateSycl *s, unsigned bpc, unsigned width, unsigned height)
+int init_cambi_device(CambiStateSycl *s, unsigned bpc, unsigned width, unsigned height,
+                      uint64_t flags)
 {
     assert(s->sycl_state != nullptr);
     int error = configure_cambi(s, bpc, width, height);
@@ -1742,8 +1743,8 @@ int init_cambi_device(CambiStateSycl *s, unsigned bpc, unsigned width, unsigned 
         error = setup_device_state(s);
     }
     if (!error) {
-        error = vmaf_sycl_graph_register(s->sycl_state, enqueue_cambi_work, nullptr,
-                                         cambi_post_graph, nullptr, s, "cambi_sycl");
+        error = vmaf_sycl_graph_register_flags(s->sycl_state, enqueue_cambi_work, nullptr,
+                                               cambi_post_graph, nullptr, s, "cambi_sycl", flags);
         s->registered = error == 0;
     }
     return error;
@@ -1764,7 +1765,7 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
     int error = s->feature_name_dict ? 0 : -ENOMEM;
     try {
         if (!error) {
-            error = init_cambi_device(s, bpc, width, height);
+            error = init_cambi_device(s, bpc, width, height, fex->flags);
         }
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "cambi_sycl: init failed: %s\n", e.what());

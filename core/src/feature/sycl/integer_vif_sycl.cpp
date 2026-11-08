@@ -1659,8 +1659,8 @@ static int vif_register_graph(VmafFeatureExtractor *fex, VmafSyclState *state, V
         return -ENOMEM;
     }
 
-    const int err = vmaf_sycl_graph_register(state, enqueue_vif_work, vif_pre_graph, vif_post_graph,
-                                             nullptr, s, "VIF");
+    const int err = vmaf_sycl_graph_register_flags(state, enqueue_vif_work, vif_pre_graph,
+                                                   vif_post_graph, nullptr, s, "VIF", fex->flags);
     if (err)
         close_fex_sycl(fex);
     return err;

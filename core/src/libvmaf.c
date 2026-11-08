@@ -3722,7 +3722,8 @@ static int read_pictures_cuda_cleanup(VmafContext *vmaf, VmafPicture *ref_host,
 #endif
 
 #ifdef HAVE_SYCL
-static int read_pictures_sycl_prep(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist)
+static int read_pictures_sycl_prep(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
+                                   unsigned index)
 {
     // SYCL upload must happen BEFORE the extractor loop because SYCL
     // queues are in-order — kernels enqueued during submit read shared
@@ -3730,6 +3731,7 @@ static int read_pictures_sycl_prep(VmafContext *vmaf, VmafPicture *ref, VmafPict
     // Auto-initialize shared buffers on the first frame.
     if (!vmaf->sycl.state)
         return 0;
+    vmaf_sycl_graph_set_frame(vmaf->sycl.state, index, vmaf->cfg.n_subsample);
     // Double-buffered: compute reads buf[cur_compute] while upload
     // writes buf[cur_upload].  No need to wait for previous compute
     // before uploading — the buffers are disjoint.  Just wait for the
@@ -3892,7 +3894,7 @@ static int read_pictures_validate_and_prep(VmafContext *vmaf, VmafPicture *ref, 
         return err;
 #endif
 #ifdef HAVE_SYCL
-    err = read_pictures_sycl_prep(vmaf, ref, dist);
+    err = read_pictures_sycl_prep(vmaf, ref, dist, index);
     if (err)
         return err;
 #endif
@@ -4418,13 +4420,13 @@ int vmaf_engine_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *
 #ifdef HAVE_SYCL
 static int read_pictures_sycl_extractors(VmafContext *vmaf, unsigned index)
 {
+    vmaf_sycl_graph_set_frame(vmaf->sycl.state, index, vmaf->cfg.n_subsample);
     for (unsigned i = 0; i < vmaf->registered_feature_extractors.cnt; i++) {
         VmafFeatureExtractorContext *fex_ctx = vmaf->registered_feature_extractors.fex_ctx[i];
         if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL)) {
             continue;
         }
-        if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL) &&
-            (vmaf->cfg.n_subsample > 1) && (index % vmaf->cfg.n_subsample)) {
+        if (fex_subsample_skip(fex_ctx->fex->flags, index, vmaf->cfg.n_subsample)) {
             continue;
         }
 
