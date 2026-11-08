@@ -501,6 +501,21 @@ jobs:
           AUTO_MERGE_BODY: ${{ github.event.pull_request.auto_merge.commit_message || '' }}
         run: python3 scripts/ci/check-bot-squash-body.py
 
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check the squash commit message
+        if: steps.release_pr.outputs.exempt != 'true'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          LANDING_IDENTITY: "lusoris <lusoris@proton.me>"
+        run: python3 scripts/ci/squash_message.py check
+
   ffmpeg-patches-surface-check:
     needs: tier
     if: needs.tier.outputs.light == 'true'

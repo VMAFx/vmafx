@@ -51,6 +51,13 @@ from machines the project does not own, and
   `conventional-pre-commit`. Allowed types: `feat`, `fix`, `perf`, `refactor`,
   `docs`, `test`, `build`, `ci`, `chore`, `revert`, `port` (upstream cherry-pick),
   `sycl`, `cuda`, `simd`. Use `!` or `BREAKING CHANGE:` for breaking changes.
+
+  A breaking pull request must place `BREAKING CHANGE: <summary>` and
+  `Migration: <documentation-or-path>` lines directly in its pull request
+  body. The squash composer (`scripts/ci/squash_message.py`) extracts these
+  footers so the merge train preserves them in the resulting squash commit
+  on `master`, and the `DCO Sign-off` gate refuses any breaking pull request
+  that lacks a `Migration:` footer.
 - **Engineering principles** — see [`docs/principles.md`](docs/principles.md).
   NASA Power-of-10 + JPL-C-STD + SEI CERT C/C++ + MISRA-C:2012 (informative).
   `.clang-tidy` enforces the subset that can be machine-checked.

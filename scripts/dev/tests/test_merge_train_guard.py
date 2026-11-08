@@ -89,6 +89,8 @@ class TrainContract(unittest.TestCase):
         self.train.git("remote", "add", "origin", str(remote))
         self.train.metadata = {
             "number": 1421,
+            "title": "feat(core): fixture PR title",
+            "body": "fixture body",
             "state": "OPEN",
             "isDraft": True,
             "baseRefName": "master",
@@ -261,8 +263,29 @@ class TrainContract(unittest.TestCase):
         self.train.merge(1421, auto=False)
         self.assertEqual(
             self.train.calls[-1],
-            ("pr", "merge", "1421", "--squash", "--match-head-commit", self.head),
+            (
+                "pr",
+                "merge",
+                "1421",
+                "--squash",
+                "--match-head-commit",
+                self.head,
+                "--subject",
+                "feat(core): fixture PR title (#1421)",
+                "--body",
+                "Signed-off-by: lusoris <lusoris@proton.me>\n",
+            ),
         )
+
+    def test_merge_refused_when_squash_message_check_fails(self) -> None:
+        self.train.validate(1421, self.detached())
+        self.train.metadata["isDraft"] = False
+        self.train.metadata["title"] = "feat(core)!: breaking change without migration"
+        self.train.metadata["body"] = "This PR breaks things without a migration path."
+        with self.assertRaises(guard.Refused) as ctx:
+            self.train.merge(1421, auto=False)
+        self.assertIn("squash message check failed", str(ctx.exception))
+        self.assertFalse(any(call[:2] == ("pr", "merge") for call in self.train.calls))
 
     def test_head_change_or_new_hold_during_checks_prevents_merge(self) -> None:
         self.train.metadata["isDraft"] = False

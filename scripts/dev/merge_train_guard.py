@@ -13,6 +13,7 @@ import argparse
 import fcntl
 import hashlib
 import hmac
+import importlib.util
 import json
 import os
 import re
@@ -32,10 +33,11 @@ from scripts.lib.safe_subprocess import run as run_command
 
 REPO = "VMAFx/vmafx"
 RELEASE_PR = 1213
+LANDING_IDENTITY = "lusoris <lusoris@proton.me>"
 KEY_BYTES = 32
 INVENTORY_LIMIT = 100
 PR_FIELDS = (
-    "number,state,isDraft,baseRefName,headRefName,headRefOid,"
+    "number,title,body,state,isDraft,baseRefName,headRefName,headRefOid,"
     "isCrossRepository,autoMergeRequest,mergeStateStatus"
 )
 GATES = (("make", "lint"), ("make", "test"))
@@ -51,6 +53,16 @@ def encoded(value: Any) -> bytes:
 
 def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load_squash_composer() -> Any:
+    path = Path(__file__).resolve().parent.parent / "ci" / "squash_message.py"
+    spec = importlib.util.spec_from_file_location("squash_message", str(path))
+    if spec is None or spec.loader is None:
+        raise Refused("cannot load squash_message module")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def environment() -> dict[str, str]:
@@ -316,7 +328,31 @@ class Train:
         self.require_validation(pr["headRefOid"])
         self.require_checks(number)
         self.guard(number, pr["headRefOid"])
-        args = ["pr", "merge", str(number), "--squash", "--match-head-commit", pr["headRefOid"]]
+        composer = load_squash_composer()
+        title = pr.get("title", "")
+        body_text = pr.get("body", "") or ""
+        code, output = composer.check_message(
+            title=title,
+            number=number,
+            body_text=body_text,
+            identity=LANDING_IDENTITY,
+        )
+        if code != 0:
+            raise Refused(f"squash message check failed: {output.strip()}")
+        subject_line = composer.subject(title, number)
+        body_content = composer.body(body_text, LANDING_IDENTITY)
+        args = [
+            "pr",
+            "merge",
+            str(number),
+            "--squash",
+            "--match-head-commit",
+            pr["headRefOid"],
+            "--subject",
+            subject_line,
+            "--body",
+            body_content,
+        ]
         if auto:
             args.append("--auto")
         self.gh(*args)
