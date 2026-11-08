@@ -54,7 +54,7 @@ import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MAX_FOOTER_LINES = 20
