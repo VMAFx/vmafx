@@ -317,6 +317,20 @@ class SurfaceOnlyModeTests(_FixtureTree, unittest.TestCase):
             self.assertNotIn("zero doc files scanned", res.stderr)
             self.assertNotIn(SURFACE_ONLY_DONE_LINE, res.stdout)
 
+    def test_surface_only_fails_when_find_listing_fails_outside_git(self) -> None:
+        """Outside a git tree, a find error on one doc root fails closed, not as a partial list."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = self._prepare_temp_worktree(Path(td), origin_master=False)
+            shutil.rmtree(tmp / ".git")
+            (tmp / "ffmpeg-patches" / "README.md").unlink()
+
+            res = _run_script(
+                tmp / "scripts" / "ci" / SCRIPT.name, tmp, "--surface-only", REPO_ROOT=str(tmp)
+            )
+            self.assertEqual(res.returncode, 1, f"stderr:\n{res.stderr}")
+            self.assertIn("[FAIL] cannot list docs", res.stderr)
+            self.assertNotIn(SURFACE_ONLY_DONE_LINE, res.stdout)
+
     def test_bash_32_contract_no_mapfile_or_readarray(self) -> None:
         """Script must not use mapfile or readarray because macOS bash 3.2 lacks them."""
         content = SCRIPT.read_text(encoding="utf-8")
