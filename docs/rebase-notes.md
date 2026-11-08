@@ -251,6 +251,9 @@ Invariants a rebase keeps:
 - The job stays required and keeps all four checks; a renamed subcommand of
   `vmafx_filter_check.py` changes the loop in the same PR.
 - Exit 77 (missing fixture) fails the job; the fetch step brings the pair.
+- The build step keeps `--fatal-warnings` and the build-log warning check,
+  because this is the only gcc build of the series' own C code. The check
+  passes only on grep exit 1 (no match); a grep error fails the step.
 - `scripts/ci/test_ffmpeg_patch_workflow_contract.py`
   (`test_vmafx_filter_job_*`) guards the job, with planted gaps.
 
