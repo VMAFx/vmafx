@@ -9,7 +9,9 @@ existing source checkout. The rationale is [ADR-1244](../adr/1244-merge-train-ow
 ## Inspect and configure
 
 Use Python 3.10 or newer on POSIX, Git, authenticated GitHub CLI, and the existing
-full-gate toolchain. The installed GitHub CLI must support `pr merge
+full-gate toolchain. The installed gateway runs under the `python3` its launcher
+finds, which needs PyYAML for the squash composer; check with
+`python3 -c "import yaml"`. The installed GitHub CLI must support `pr merge
 --match-head-commit` and `pr checks --required --json`. GitHub requests name
 `github.com/VMAFx/vmafx` explicitly. Both origin fetch and push URLs must identify
 only the canonical repository; multiple push destinations are refused.

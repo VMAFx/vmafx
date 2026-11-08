@@ -75,7 +75,9 @@ def load_squash_composer() -> Any:
     try:
         spec.loader.exec_module(module)
     except Exception as exc:  # any import-time failure is a refusal, never a crash
-        raise Refused(f"cannot load squash_message module: {path}") from exc
+        raise Refused(
+            f"cannot load squash_message module: {path}: {type(exc).__name__}: {exc}"
+        ) from exc
     return module
 
 
@@ -342,7 +344,7 @@ class Train:
             raise Refused("draft PRs cannot be armed or merged")
         self.require_validation(pr["headRefOid"])
         self.require_checks(number)
-        self.guard(number, pr["headRefOid"])
+        pr = self.guard(number, pr["headRefOid"])
         composer = load_squash_composer()
         title = pr.get("title", "")
         body_text = pr.get("body", "") or ""
@@ -355,6 +357,9 @@ class Train:
         )
         if code != 0:
             raise Refused(f"squash message check failed: {output.strip()}")
+        fresh = self.guard(number, pr["headRefOid"])
+        if fresh.get("title", "") != title or (fresh.get("body", "") or "") != body_text:
+            raise Refused("PR title or body changed during squash message check")
         subject_line = composer.subject(title, number)
         body_content = composer.body(body_text, LANDING_IDENTITY)
         args = [

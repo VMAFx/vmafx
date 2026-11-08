@@ -55,6 +55,11 @@ class FixtureTrain(guard.Train):
         return result
 
 
+# The engine wrapper reads its PRAETOR_REF pin from standards-gate.yml at the
+# root it runs in, so the fixture links both.
+ENGINE_FIXTURE_FILES = (".config/lefthook/engine.sh", ".github/workflows/standards-gate.yml")
+
+
 class TrainContract(unittest.TestCase):
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()
@@ -81,11 +86,7 @@ class TrainContract(unittest.TestCase):
             (self.root / ".pre-commit-config.yaml").write_bytes(
                 (real_root / ".pre-commit-config.yaml").read_bytes()
             )
-        if (real_root / ".config/lefthook/engine.sh").is_file():
-            (self.root / ".config/lefthook").mkdir(parents=True, exist_ok=True)
-            (self.root / ".config/lefthook/engine.sh").symlink_to(
-                real_root / ".config/lefthook/engine.sh"
-            )
+        self.link_engine_files(real_root)
         self.train.git("add", ".")
         self.train.git("commit", "-m", "fixture base")
         self.train.git("checkout", "-b", "topic")
@@ -113,6 +114,13 @@ class TrainContract(unittest.TestCase):
             "autoMergeRequest": None,
             "mergeStateStatus": "CLEAN",
         }
+
+    def link_engine_files(self, real_root: Path) -> None:
+        """Link the engine wrapper and its pin file so the fixture resolves the pinned engine."""
+        for relative in ENGINE_FIXTURE_FILES:
+            if (real_root / relative).is_file():
+                (self.root / relative).parent.mkdir(parents=True, exist_ok=True)
+                (self.root / relative).symlink_to(real_root / relative)
 
     def detached(self, name: str = "validation") -> Path:
         checkout = self.directory / name
@@ -343,9 +351,59 @@ class TrainContract(unittest.TestCase):
         self.assertIn("HISS-14 violation: stub", str(ctx.exception))
         self.assertFalse(any(call[:2] == ("pr", "merge") for call in self.train.calls))
 
-    @unittest.skipUnless(SQUASH_COMPOSER.engine_available(), "praetor engine unavailable")
+    def test_merge_refused_when_pr_title_or_body_changes_during_check(self) -> None:
+        """Prove merge is refused if PR title or body is mutated while check_message runs."""
+        real_composer = guard.load_squash_composer()
+        self.train.validate(1421, self.detached())
+        self.train.metadata["isDraft"] = False
+
+        def make_composer(target_field: str, target_val: str) -> type:
+            class StubMutatingComposer:
+                """Stub squash composer that mutates metadata during check_message."""
+
+                @staticmethod
+                def check_message(*args: Any, **kwargs: Any) -> tuple[int, str]:
+                    self.train.metadata[target_field] = target_val
+                    return 0, ""
+
+                @staticmethod
+                def subject(title: str, number: int) -> str:
+                    return cast(str, real_composer.subject(title, number))
+
+                @staticmethod
+                def body(body_text: str, identity: str) -> str:
+                    return cast(str, real_composer.body(body_text, identity))
+
+            return StubMutatingComposer
+
+        for field, new_val in (
+            ("title", "feat(core): modified during check"),
+            ("body", "modified body during check"),
+        ):
+            with self.subTest(field=field):
+                self.train.calls.clear()
+                self.train.metadata["title"] = "feat(core): fixture PR title"
+                self.train.metadata["body"] = "fixture body"
+                composer_cls = make_composer(field, new_val)
+                with patch.object(guard, "load_squash_composer", return_value=composer_cls()):
+                    with self.assertRaises(guard.Refused) as ctx:
+                        self.train.merge(1421, auto=False)
+                self.assertIn(
+                    "PR title or body changed during squash message check",
+                    str(ctx.exception),
+                )
+                self.assertFalse(any(call[:2] == ("pr", "merge") for call in self.train.calls))
+
     def test_merge_refused_when_squash_message_check_fails(self) -> None:
         """Prove real engine refuses merge on breaking change without migration footer."""
+        fixture_engine = SQUASH_COMPOSER.engine_available(self.root)
+        self.assertEqual(
+            fixture_engine,
+            SQUASH_COMPOSER.engine_available(),
+            "fixture root and repository root resolve the praetor engine differently",
+        )
+        if not fixture_engine:
+            self.skipTest("praetor engine unavailable for the fixture root")
         self.train.validate(1421, self.detached())
         self.train.metadata["isDraft"] = False
         self.train.metadata["title"] = "feat(core)!: breaking change without migration"
@@ -466,6 +524,21 @@ class TrainContract(unittest.TestCase):
                 guard.load_squash_composer()
             self.assertNotIsInstance(ctx.exception, OSError)
             self.assertIn("cannot load squash_message module", str(ctx.exception))
+
+    def test_load_squash_composer_import_error_includes_cause_in_refused(self) -> None:
+        """Prove load failure preserves the underlying exception in the Refused message."""
+        failed_dir = self.directory / "import_error_layout"
+        failed_dir.mkdir()
+        fake_guard = failed_dir / "merge_train_guard.py"
+        fake_guard.touch()
+        fake_composer = failed_dir / "squash_message.py"
+        fake_composer.write_text("raise ImportError(\"No module named 'yaml'\")\n")
+        with patch.object(guard, "__file__", str(fake_guard)):
+            with self.assertRaises(guard.Refused) as ctx:
+                guard.load_squash_composer()
+            self.assertIn("cannot load squash_message module", str(ctx.exception))
+            self.assertIn("No module named 'yaml'", str(ctx.exception))
+            self.assertIn("ImportError", str(ctx.exception))
 
     def test_merge_passes_repo_root_to_composer_check_message(self) -> None:
         real_composer = guard.load_squash_composer()
