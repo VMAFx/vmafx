@@ -57,6 +57,16 @@ def _run(step: str) -> str:
 FILTER_CHECKS = ("parity", "windows", "contract", "provenance")
 
 
+# The build-log warning gate of the filter job, as the planted case removes it.
+WARNING_GATE = (
+    "          if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' "
+    '"$RUNNER_TEMP/ffmpeg-build.log"; then\n'
+    '            echo "FATAL: FFmpeg emitted compiler warnings" >&2\n'
+    "            exit 1\n"
+    "          fi\n"
+)
+
+
 def _filter_job_findings(workflow: str, aggregator: str) -> list[str]:
     """What the required vmafx filter job lacks; empty when it builds and runs every check."""
     try:
@@ -75,7 +85,15 @@ def _filter_job_findings(workflow: str, aggregator: str) -> list[str]:
     if "'FFmpeg vmafx Filter'," not in aggregator:
         findings.append("aggregator does not require FFmpeg vmafx Filter")
     build = _run(_step(job, "Build FFmpeg with the vmafx filter"))
-    for needle in ("--enable-libvmafx", "CONFIG_VMAFX_FILTER 1", "--keep-tree"):
+    for needle in (
+        "--enable-libvmafx",
+        "CONFIG_VMAFX_FILTER 1",
+        "--keep-tree",
+        "--fatal-warnings",
+        "2>&1 | tee",
+        "grep -Ei '(^|[[:space:]])warning([[:space:]#:])'",
+        "FATAL: FFmpeg emitted compiler warnings",
+    ):
         if needle not in build:
             findings.append(f"filter build lacks {needle}")
     _, found, rest = _run(_step(job, "Check the vmafx filter against the CLI")).partition(
@@ -386,6 +404,22 @@ class FFmpegWorkflowContract(unittest.TestCase):
                 self.workflow.replace("--enable-libvmafx", ""),
                 aggregator,
                 ["filter build lacks --enable-libvmafx"],
+            ),
+            "no fatal warnings": (
+                self.workflow.replace(
+                    "./configure --fatal-warnings --enable-version3",
+                    "./configure --enable-version3",
+                ),
+                aggregator,
+                ["filter build lacks --fatal-warnings"],
+            ),
+            "no warning grep": (
+                self.workflow.replace(WARNING_GATE, ""),
+                aggregator,
+                [
+                    "filter build lacks grep -Ei '(^|[[:space:]])warning([[:space:]#:])'",
+                    "filter build lacks FATAL: FFmpeg emitted compiler warnings",
+                ],
             ),
         }
         for case, (workflow, required, expected) in planted.items():
