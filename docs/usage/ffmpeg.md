@@ -928,15 +928,24 @@ All fork-added options and standalone backend filters have been retired in issue
     ([issue 3274](https://github.com/VMAFx/vmafx/issues/3274)). The defect is in
     FFmpeg `libavfilter/vf_libvmaf.c`, not in libvmaf.
 
-    VMAFx FFmpeg builds carry the fix since
+    The VMAFx patch series carries the fix since
     [shared fix series v0.6.0](../development/ffmpeg-patch-automation.md#shared-ffmpeg-fix-series)
     (patches `0040` and `0041`, from FFmpeg pull request 25708, still under FFmpeg
-    review): every plane is copied, and 8-, 10- and 12-bit planar 4:2:0, 4:2:2 and
-    4:4:4 CUDA frames are accepted. Two limits remain: 16-bit 4:2:0 and 4:2:2
-    layouts are not accepted, and semi-planar `nv12`/`p010` frames (as NVDEC
-    produces them) need `scale_cuda=format=<planar format>` first.
+    review): every plane is copied, and 8- and 10-bit planar 4:2:0, 4:2:2 and
+    4:4:4 CUDA frames are accepted. Patch `0040` also lists the 12-bit planar
+    formats, but FFmpeg's CUDA frame context (`libavutil/hwcontext_cuda.c`) does
+    not support them, so no CUDA frame can carry them. Two other limits remain:
+    16-bit 4:2:0 and 4:2:2 layouts are not accepted, and semi-planar `nv12`/`p010`
+    frames (as NVDEC produces them) need `scale_cuda=format=<planar format>` first.
+    The fixed filter exists only in a build that also configures
+    `--enable-libvmaf` against a CUDA-enabled libvmaf with `ffnvcodec`
+    (`libvmaf_cuda_filter_deps` in FFmpeg `configure`); the default VMAFx build
+    (`--enable-libvmafx` only) does not build `libvmaf_cuda`.
 
-    On a stock build, score CUDA frames with the [`vmafx` filter](#the-vmafx-filter)
+    On stock FFmpeg, download the frames (`hwdownload,format=<frame format>`) and
+    score them with the CPU `libvmaf` filter, which copies all three planes.
+    In an FFmpeg built with the VMAFx series and `--enable-libvmafx`, score CUDA
+    frames with the [`vmafx` filter](#the-vmafx-filter) instead,
     for [supported layouts](#layouts) and models. It imports every plane on the
     device, producing bit-identical scores for
     [exact CUDA twins](../development/cross-backend-exact-twins.md)
