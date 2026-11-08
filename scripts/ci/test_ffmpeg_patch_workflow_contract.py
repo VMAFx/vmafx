@@ -59,12 +59,16 @@ FILTER_CHECKS = ("parity", "windows", "contract", "provenance")
 
 # The build-log warning gate of the filter job, as the planted case removes it.
 WARNING_GATE = (
-    "          if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' "
-    '"$RUNNER_TEMP/ffmpeg-build.log"; then\n'
+    "          warnings=\"$(grep -Ei '(^|[[:space:]])warning([[:space:]#:])' "
+    '"$RUNNER_TEMP/ffmpeg-build.log" || [[ $? -eq 1 ]])"\n'
+    '          if [[ -n "$warnings" ]]; then\n'
+    "            printf '%s\\n' \"$warnings\" >&2\n"
     '            echo "FATAL: FFmpeg emitted compiler warnings" >&2\n'
     "            exit 1\n"
     "          fi\n"
 )
+# Only grep exit 1 (no match) passes; exit 2 must fail the step, not read as clean.
+GREP_STATUS_GUARD = "|| [[ $? -eq 1 ]]"
 
 
 def _filter_job_findings(workflow: str, aggregator: str) -> list[str]:
@@ -92,6 +96,7 @@ def _filter_job_findings(workflow: str, aggregator: str) -> list[str]:
         "--fatal-warnings",
         "2>&1 | tee",
         "grep -Ei '(^|[[:space:]])warning([[:space:]#:])'",
+        GREP_STATUS_GUARD,
         "FATAL: FFmpeg emitted compiler warnings",
     ):
         if needle not in build:
@@ -388,6 +393,7 @@ class FFmpegWorkflowContract(unittest.TestCase):
         self.assertEqual(_filter_job_findings(self.workflow, aggregator), [])
 
     def test_vmafx_filter_job_check_refuses_planted_gaps(self) -> None:
+        """Each planted gap in the filter job or the aggregator yields exactly its finding."""
         aggregator = AGGREGATOR.read_text(encoding="utf-8")
         planted = {
             "dropped check": (
@@ -418,13 +424,64 @@ class FFmpegWorkflowContract(unittest.TestCase):
                 aggregator,
                 [
                     "filter build lacks grep -Ei '(^|[[:space:]])warning([[:space:]#:])'",
+                    f"filter build lacks {GREP_STATUS_GUARD}",
                     "filter build lacks FATAL: FFmpeg emitted compiler warnings",
                 ],
+            ),
+            "grep error read as clean": (
+                self.workflow.replace(GREP_STATUS_GUARD, "|| true"),
+                aggregator,
+                [f"filter build lacks {GREP_STATUS_GUARD}"],
             ),
         }
         for case, (workflow, required, expected) in planted.items():
             with self.subTest(case=case):
                 self.assertEqual(_filter_job_findings(workflow, required), expected)
+
+    def test_vmafx_filter_warning_gate_on_sample_build_logs(self) -> None:
+        """Run the job's own warning gate on sample logs: warnings and a missing log fail it."""
+        build = _run(_step(_job(self.workflow, "filter"), "Build FFmpeg with the vmafx filter"))
+        block = re.search(r'(?ms)^warnings="\$\(grep .*?^fi$', build)
+        self.assertIsNotNone(block, "filter build has no warning gate block")
+        assert block is not None
+        gate = "set -euo pipefail\n" + block.group(0) + "\n"
+        cases = {
+            "gcc warning": (
+                "libavfilter/vf_vmafx.c:211:13: warning: unused variable 'n' "
+                "[-Wunused-variable]\n",
+                1,
+            ),
+            "clang warning": (
+                "libavfilter/vf_vmafx.c:88:5: warning: implicit conversion loses "
+                "integer precision\n1 warning generated.\n",
+                1,
+            ),
+            "linker warning": ("/usr/bin/ld: warning: libvmafx.so: missing .note.GNU-stack\n", 1),
+            "upper-case line start": ("WARNING: unknown option ignored\n", 1),
+            "numbered diagnostic": ("vf_vmafx.c(12): warning #177: variable unused\n", 1),
+            "clean build": ("CC\tlibavfilter/vf_vmafx.o\nLD\tffmpeg_g\nSTRIP\tffmpeg\n", 0),
+            "empty log": ("", 0),
+            "option name only": ("configure --fatal-warnings --enable-libvmafx\n", 0),
+            "word inside a path": ("CC\tlibavutil/warning_helper.o\n", 0),
+            "missing log": (None, 1),
+        }
+        for case, (log, expected) in cases.items():
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                if log is not None:
+                    Path(temporary, "ffmpeg-build.log").write_text(log, encoding="utf-8")
+                result = run_command(
+                    [BASH, "-c", gate],
+                    allowed_executables=(BASH,),
+                    cwd=temporary,
+                    env={**os.environ, "RUNNER_TEMP": temporary, "LC_ALL": "C"},
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout_seconds=60,
+                )
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                fatal = "FATAL: FFmpeg emitted compiler warnings" in result.stderr
+                self.assertEqual(fatal, expected == 1 and log is not None, result.stderr)
 
 
 def _setup_cosign_test_fixture(p: Path, record: Path) -> dict[str, str]:
