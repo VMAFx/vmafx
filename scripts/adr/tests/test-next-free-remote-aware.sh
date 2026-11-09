@@ -18,6 +18,8 @@
 #   9. Positive: gh returns 1000 SHAs (limit reached) → incomplete-scan WARNING.
 #  10. Negative: gh returns 999 SHAs (< limit) → no incomplete-scan WARNING.
 #  11. Boundary: gh prints 1 SHA + non-SHA stderr line, exit 0, TMPDIR missing.
+#  12. Split fetch: branch ADRs survive absent PR head commit SHA.
+#  13. VMAF_ADR_PR_REPO override: positive (custom repo), negative (unset), boundary (empty).
 #
 # All tests run in a throw-away temporary git repository so they cannot touch
 # production ADR state.  The real next-free.sh is invoked via PATH override with
@@ -320,7 +322,7 @@ fi
 #   docs/adr/0700-fork.md. The commit is reachable only as refs/pull/1/head
 #   in the fake origin (no branch on origin).
 #   gh stub outputs the head commit SHA.
-# Expected: allocator returns a number above 0700 (0701).
+# Expected: allocator returns exactly 0701 (0700 + 1).
 
 git -C "${FAKE_REPO}" checkout --quiet -b temp-fork-pr master
 touch "${FAKE_REPO}/docs/adr/0700-fork.md"
@@ -335,23 +337,39 @@ ORIGIN_URL="$(git -C "${FAKE_REPO}" remote get-url origin)"
 cat >"${STUB_BIN}/gh" <<GHEOF
 #!/usr/bin/env bash
 has_repo=0
+has_state_open=0
+has_json_head=0
 prev=""
 for arg in "\$@"; do
   if [ "\${prev}" = "-R" ] && [ "\${arg}" = "${ORIGIN_URL}" ]; then
     has_repo=1
-    break
+  fi
+  if [ "\${prev}" = "--state" ] && [ "\${arg}" = "open" ]; then
+    has_state_open=1
+  fi
+  if [ "\${prev}" = "--json" ] && [ "\${arg}" = "headRefOid" ]; then
+    has_json_head=1
   fi
   prev="\${arg}"
 done
-if [ "\$1" = "pr" ] && [ "\$2" = "list" ]; then
-  if [ "\${has_repo}" -eq 1 ]; then
-    printf '%s\n' "${SHA_FORK}"
-  else
-    printf '%s\n' "dddddddddddddddddddddddddddddddddddddddd"
-  fi
-  exit 0
+if [ "\$1" != "pr" ] || [ "\$2" != "list" ]; then
+  printf 'gh stub: expected pr list, got %s %s\n' "\$1" "\$2" >&2
+  exit 1
 fi
-exit 1
+if [ "\${has_repo}" -ne 1 ]; then
+  printf 'gh stub: missing or invalid -R argument (expected %s)\n' "${ORIGIN_URL}" >&2
+  exit 1
+fi
+if [ "\${has_state_open}" -ne 1 ]; then
+  printf 'gh stub: missing --state open\n' >&2
+  exit 1
+fi
+if [ "\${has_json_head}" -ne 1 ]; then
+  printf 'gh stub: missing --json headRefOid\n' >&2
+  exit 1
+fi
+printf '%s\n' "${SHA_FORK}"
+exit 0
 GHEOF
 chmod +x "${STUB_BIN}/gh"
 
@@ -359,10 +377,17 @@ result_t5=$(_run --claim test-fork-pr 2>/dev/null) || echo "note: _run exited no
 _STUBS_T5=("${FAKE_REPO}/docs/adr/${result_t5}-test-fork-pr.md.stub")
 GIT_COMMON_T5="$(_git_common_dir)"
 
-if [ -n "${result_t5}" ] && [ "$((10#${result_t5}))" -gt 700 ]; then
-  _pass "test 5: fork PR head with ADR 0700 → allocator returns number above 0700: ${result_t5}"
+if [ "${result_t5}" = "0701" ]; then
+  _pass "test 5a: fork PR head with ADR 0700 → allocator returns 0701"
 else
-  _fail "test 5: expected number above 0700, got '${result_t5}'"
+  _fail "test 5a: expected 0701, got '${result_t5}'"
+fi
+
+# Negative: prove the strict gh stub rejects calls without --state open
+if "${STUB_BIN}/gh" pr list -R "${ORIGIN_URL}" --state closed --json headRefOid 2>/dev/null; then
+  _fail "test 5b: strict gh stub accepted --state closed"
+else
+  _pass "test 5b: strict gh stub rejects call without --state open"
 fi
 
 # Clean up stub, claim sidepointer, and refs/pull/1/head.
@@ -373,7 +398,7 @@ git -C "${FAKE_REPO}" update-ref -d "refs/pull/1/head"
 # ── test 6: negative: gh exits 1 → fallback to branches/master + WARNING ──────
 #
 # Scenario: gh stub exits 1 (simulating failure or not logged in).
-# Expected: claim succeeds with exit 0, returns next free number,
+# Expected: claim succeeds with exit 0, returns next free number (0602),
 #           and stderr contains WARNING with reason text.
 
 cat >"${STUB_BIN}/gh" <<'GHEOF'
@@ -387,10 +412,10 @@ stderr_t6="$(mktemp)"
 result_t6=$(_run --claim test-gh-fail-t6 2>"${stderr_t6}") || echo "note: _run exited non-zero" >&2
 GIT_COMMON_T6="$(_git_common_dir)"
 
-if printf '%s' "${result_t6}" | grep -qE '^[0-9]{4}$'; then
-  _pass "test 6a: gh failure still returns 4-digit number: ${result_t6}"
+if [ "${result_t6}" = "0602" ]; then
+  _pass "test 6a: gh failure returns expected number 0602"
 else
-  _fail "test 6a: gh failure returned invalid output: '${result_t6}'"
+  _fail "test 6a: expected 0602, got '${result_t6}'"
 fi
 
 if grep -q "WARNING: open pull request heads not scanned (GraphQL: could not resolve to a Repository); fork pull request ADR numbers may collide" "${stderr_t6}"; then
@@ -406,7 +431,7 @@ rm -f "${stderr_t6}"
 # ── test 7: negative: no gh on PATH → fallback + WARNING with reason ─────────
 #
 # Scenario: gh is completely missing from PATH.
-# Expected: claim succeeds with exit 0, returns next free number,
+# Expected: claim succeeds with exit 0, returns next free number (0602),
 #           and stderr contains WARNING with reason.
 
 NO_GH_BIN="${TMPDIR_BASE}/no-gh-bin"
@@ -421,17 +446,16 @@ result_t7=$(cd "${FAKE_REPO}" && PATH="${NO_GH_BIN}" bash "${SCRIPT}" --claim te
   echo "note: _run exited non-zero" >&2
 GIT_COMMON_T7="$(_git_common_dir)"
 
-if printf '%s' "${result_t7}" | grep -qE '^[0-9]{4}$'; then
-  _pass "test 7a: missing gh still returns 4-digit number: ${result_t7}"
+if [ "${result_t7}" = "0602" ]; then
+  _pass "test 7a: missing gh returns expected number 0602"
 else
-  _fail "test 7a: missing gh returned invalid output: '${result_t7}'"
+  _fail "test 7a: expected 0602, got '${result_t7}'"
 fi
 
-if grep -q "WARNING: open pull request heads not scanned" "${stderr_t7}" &&
-  grep -q "fork pull request ADR numbers may collide" "${stderr_t7}"; then
-  _pass "test 7b: missing gh prints expected WARNING on stderr"
+if grep -q "WARNING: open pull request heads not scanned (gh not found on PATH); fork pull request ADR numbers may collide" "${stderr_t7}"; then
+  _pass "test 7b: missing gh prints expected WARNING with reason 'gh not found on PATH' on stderr"
 else
-  _fail "test 7b: expected WARNING on stderr, got: $(cat "${stderr_t7}")"
+  _fail "test 7b: expected WARNING with 'gh not found on PATH' on stderr, got: $(cat "${stderr_t7}")"
 fi
 
 rm -f "${FAKE_REPO}/docs/adr/${result_t7}-test-no-gh-t7.md.stub"
@@ -441,7 +465,7 @@ rm -f "${stderr_t7}"
 # ── test 8: boundary: gh returns empty list (no open PRs) ────────────────────
 #
 # Scenario: gh succeeds and prints nothing (no open PRs).
-# Expected: no WARNING on stderr, allocator returns next number from branches/master.
+# Expected: no WARNING on stderr, allocator returns next number from branches/master (0602).
 
 cat >"${STUB_BIN}/gh" <<'GHEOF'
 #!/usr/bin/env bash
@@ -453,10 +477,10 @@ stderr_t8="$(mktemp)"
 result_t8=$(_run --claim test-empty-pr-t8 2>"${stderr_t8}") || echo "note: _run exited non-zero" >&2
 GIT_COMMON_T8="$(_git_common_dir)"
 
-if printf '%s' "${result_t8}" | grep -qE '^[0-9]{4}$'; then
-  _pass "test 8a: empty PR list returns 4-digit number: ${result_t8}"
+if [ "${result_t8}" = "0602" ]; then
+  _pass "test 8a: empty PR list returns expected number 0602"
 else
-  _fail "test 8a: empty PR list returned invalid output: '${result_t8}'"
+  _fail "test 8a: expected 0602, got '${result_t8}'"
 fi
 
 if grep -q "WARNING: open pull request heads not scanned" "${stderr_t8}"; then
@@ -591,6 +615,180 @@ rm -f "${FAKE_REPO}/docs/adr/${result_t11}-test-boundary-t11.md.stub"
 rm -f "${GIT_COMMON_T11}/adr-claims/${result_t11}"
 git -C "${FAKE_REPO}" update-ref -d "refs/pull/2/head"
 rm -f "${stderr_t11}"
+
+# ── test 12: split fetch: branch ADRs survive absent PR head commit SHA ───────
+#
+# Scenario: an origin branch holds docs/adr/0750-remote.md.
+#   gh stub returns one valid PR SHA (with docs/adr/0760-pr.md) and one absent
+#   SHA not present on origin.
+#   Batch PR fetch fails on the absent SHA and retries per-SHA, warning on
+#   the absent SHA.
+# Expected: branch tip fetch succeeds independently; allocator skips branch
+#           ADR 0750 and valid PR ADR 0760, returning 0761;
+#           stderr contains per-SHA warning for the absent PR head;
+#           stderr does NOT report branch tips failed to fetch.
+
+git -C "${FAKE_REPO}" checkout --quiet -b branch-t12 master
+touch "${FAKE_REPO}/docs/adr/0750-remote.md"
+git -C "${FAKE_REPO}" add docs/adr/0750-remote.md
+git -C "${FAKE_REPO}" commit --quiet -m "feat: branch adr 0750"
+SHA_BRANCH_12="$(git -C "${FAKE_REPO}" rev-parse HEAD)"
+
+git -C "${FAKE_REPO}" checkout --quiet -b temp-pr-t12 master
+touch "${FAKE_REPO}/docs/adr/0760-pr.md"
+git -C "${FAKE_REPO}" add docs/adr/0760-pr.md
+git -C "${FAKE_REPO}" commit --quiet -m "feat: pr adr 0760"
+SHA_PR_12="$(git -C "${FAKE_REPO}" rev-parse HEAD)"
+
+git -C "${FAKE_REPO}" checkout --quiet master
+git -C "${FAKE_REPO}" branch -D branch-t12 temp-pr-t12 >/dev/null
+
+git -C "${FAKE_REPO}" update-ref "refs/remotes/origin/branch-t12" "${SHA_BRANCH_12}"
+git -C "${FAKE_REPO}" update-ref "refs/pull/12/head" "${SHA_PR_12}"
+
+SHA_ABSENT_12="e00000000000000000000000000000000000000e"
+
+MASTER_SHA_T12="$(git -C "${FAKE_REPO}" rev-parse master)"
+cat >"${STUB_BIN}/git" <<GITEOF
+#!/usr/bin/env bash
+if [ "\$1" = "ls-remote" ] && [ "\$2" = "--heads" ] && [ "\$3" = "origin" ]; then
+  printf '%s\trefs/heads/branch-t12\n' "${SHA_BRANCH_12}"
+  printf '%s\trefs/heads/master\n' "${MASTER_SHA_T12}"
+  exit 0
+fi
+exec "${REAL_GIT}" "\$@"
+GITEOF
+chmod +x "${STUB_BIN}/git"
+
+cat >"${STUB_BIN}/gh" <<GHEOF
+#!/usr/bin/env bash
+printf '%s\n' "${SHA_PR_12}"
+printf '%s\n' "${SHA_ABSENT_12}"
+exit 0
+GHEOF
+chmod +x "${STUB_BIN}/gh"
+
+stderr_t12="$(mktemp)"
+result_t12=$(_run --claim test-split-fetch-t12 2>"${stderr_t12}") || echo "note: _run exited non-zero" >&2
+GIT_COMMON_T12="$(_git_common_dir)"
+
+if [ "${result_t12}" = "0761" ]; then
+  _pass "test 12a: split fetch: branch ADR 0750 survived absent PR head → allocator returns 0761"
+else
+  _fail "test 12a: expected 0761, got '${result_t12}'"
+fi
+
+if grep -q "WARNING: could not fetch open pull request head ${SHA_ABSENT_12}; its ADR numbers are skipped." "${stderr_t12}"; then
+  _pass "test 12b: per-SHA warning printed for absent PR head commit"
+else
+  _fail "test 12b: expected per-SHA warning on stderr, got: $(cat "${stderr_t12}")"
+fi
+
+if grep -q "could not fetch remote branch tips" "${stderr_t12}"; then
+  _fail "test 12c: branch tips incorrectly reported as failed: $(cat "${stderr_t12}")"
+else
+  _pass "test 12c: branch tips fetch not affected by bad PR head"
+fi
+
+rm -f "${FAKE_REPO}/docs/adr/${result_t12}-test-split-fetch-t12.md.stub"
+rm -f "${GIT_COMMON_T12}/adr-claims/${result_t12}"
+git -C "${FAKE_REPO}" update-ref -d "refs/remotes/origin/branch-t12"
+git -C "${FAKE_REPO}" update-ref -d "refs/pull/12/head"
+rm -f "${stderr_t12}" "${STUB_BIN}/git"
+
+# ── test 13: VMAF_ADR_PR_REPO environment override ───────────────────────────
+#
+# Scenario:
+#   13a (positive): VMAF_ADR_PR_REPO is set to custom repo; stub requires -R with that value.
+#   13b (negative): VMAF_ADR_PR_REPO is unset; stub requires -R with origin URL.
+#   13c (boundary): VMAF_ADR_PR_REPO is empty string; falls back to origin URL.
+
+git -C "${FAKE_REPO}" checkout --quiet -b temp-override-pr master
+touch "${FAKE_REPO}/docs/adr/0770-override.md"
+git -C "${FAKE_REPO}" add docs/adr/0770-override.md
+git -C "${FAKE_REPO}" commit --quiet -m "feat: override pr adr 0770"
+SHA_OVERRIDE="$(git -C "${FAKE_REPO}" rev-parse HEAD)"
+git -C "${FAKE_REPO}" checkout --quiet master
+git -C "${FAKE_REPO}" branch -D temp-override-pr >/dev/null
+git -C "${FAKE_REPO}" update-ref "refs/pull/13/head" "${SHA_OVERRIDE}"
+
+CUSTOM_REPO="VMAFx/vmafx"
+
+# 13a: Positive case: VMAF_ADR_PR_REPO set to CUSTOM_REPO
+cat >"${STUB_BIN}/gh" <<GHEOF
+#!/usr/bin/env bash
+has_custom_repo=0
+prev=""
+for arg in "\$@"; do
+  if [ "\${prev}" = "-R" ] && [ "\${arg}" = "${CUSTOM_REPO}" ]; then
+    has_custom_repo=1
+    break
+  fi
+  prev="\${arg}"
+done
+if [ "\$1" = "pr" ] && [ "\$2" = "list" ] && [ "\${has_custom_repo}" -eq 1 ]; then
+  printf '%s\n' "${SHA_OVERRIDE}"
+  exit 0
+fi
+printf 'gh stub: expected -R %s\n' "${CUSTOM_REPO}" >&2
+exit 1
+GHEOF
+chmod +x "${STUB_BIN}/gh"
+
+result_t13a=$(VMAF_ADR_PR_REPO="${CUSTOM_REPO}" _run --claim test-override-pos-t13 2>/dev/null) || echo "note: _run exited non-zero" >&2
+GIT_COMMON_T13="$(_git_common_dir)"
+
+if [ "${result_t13a}" = "0771" ]; then
+  _pass "test 13a: positive: VMAF_ADR_PR_REPO override passed to gh -R → allocator returns 0771"
+else
+  _fail "test 13a: expected 0771 with VMAF_ADR_PR_REPO override, got '${result_t13a}'"
+fi
+rm -f "${FAKE_REPO}/docs/adr/${result_t13a}-test-override-pos-t13.md.stub"
+rm -f "${GIT_COMMON_T13}/adr-claims/${result_t13a}"
+
+# 13b: Negative case: VMAF_ADR_PR_REPO unset → stub receives origin URL
+cat >"${STUB_BIN}/gh" <<GHEOF
+#!/usr/bin/env bash
+has_origin_repo=0
+prev=""
+for arg in "\$@"; do
+  if [ "\${prev}" = "-R" ] && [ "\${arg}" = "${ORIGIN_URL}" ]; then
+    has_origin_repo=1
+    break
+  fi
+  prev="\${arg}"
+done
+if [ "\$1" = "pr" ] && [ "\$2" = "list" ] && [ "\${has_origin_repo}" -eq 1 ]; then
+  printf '%s\n' "${SHA_OVERRIDE}"
+  exit 0
+fi
+printf 'gh stub: expected -R %s\n' "${ORIGIN_URL}" >&2
+exit 1
+GHEOF
+chmod +x "${STUB_BIN}/gh"
+
+result_t13b=$(
+  unset VMAF_ADR_PR_REPO
+  _run --claim test-override-unset-t13 2>/dev/null
+) || echo "note: _run exited non-zero" >&2
+if [ "${result_t13b}" = "0771" ]; then
+  _pass "test 13b: negative: unset VMAF_ADR_PR_REPO falls back to origin URL → allocator returns 0771"
+else
+  _fail "test 13b: expected 0771 with unset VMAF_ADR_PR_REPO, got '${result_t13b}'"
+fi
+rm -f "${FAKE_REPO}/docs/adr/${result_t13b}-test-override-unset-t13.md.stub"
+rm -f "${GIT_COMMON_T13}/adr-claims/${result_t13b}"
+
+# 13c: Boundary case: VMAF_ADR_PR_REPO set to empty string → falls back to origin URL
+result_t13c=$(VMAF_ADR_PR_REPO="" _run --claim test-override-empty-t13 2>/dev/null) || echo "note: _run exited non-zero" >&2
+if [ "${result_t13c}" = "0771" ]; then
+  _pass "test 13c: boundary: empty VMAF_ADR_PR_REPO falls back to origin URL → allocator returns 0771"
+else
+  _fail "test 13c: expected 0771 with empty VMAF_ADR_PR_REPO, got '${result_t13c}'"
+fi
+rm -f "${FAKE_REPO}/docs/adr/${result_t13c}-test-override-empty-t13.md.stub"
+rm -f "${GIT_COMMON_T13}/adr-claims/${result_t13c}"
+git -C "${FAKE_REPO}" update-ref -d "refs/pull/13/head"
 
 # ── summary ───────────────────────────────────────────────────────────────────
 

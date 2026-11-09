@@ -149,6 +149,9 @@ reserving it. That caused about ten renumbers and rebases in a single session
    included) via `gh`; without `gh` or when it fails, it warns on stderr and
    scans branches only. The pull request list comes from the origin repository
    (`gh pr list -R <origin URL>`), so an `upstream` remote does not change it.
+   A contributor with a fork as origin can set `VMAF_ADR_PR_REPO=VMAFx/vmafx`
+   to scan the target repository instead of the fork. A pull request opened
+   after the scan is not seen; the claim file and stub are the coordination.
    It reads at most 1000 open pull requests; when the list holds exactly that
    many, it warns that the scan may be incomplete.
 3. It creates the claim file `.git/adr-claims/NNNN` exclusively (`O_EXCL`, the
