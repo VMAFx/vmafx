@@ -107,6 +107,8 @@ func TestQSVUploadFilter(t *testing.T) {
 	}
 }
 
+// TestAppendVideoFilter covers the -pix_fmt stripping of AppendVideoFilter for upload and non-
+// upload filters.
 func TestAppendVideoFilter(t *testing.T) {
 	t.Parallel()
 	const upload = "format=p010le,hwupload=extra_hw_frames=64"

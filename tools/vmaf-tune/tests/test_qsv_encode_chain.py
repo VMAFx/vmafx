@@ -105,6 +105,7 @@ def test_qsv_upload_follows_output_depth(tmp_path, encoder, pix_fmt, extra, surf
 
 @pytest.mark.parametrize("encoder", ["hevc_qsv", "av1_qsv"])
 def test_qsv_hdr_upload_uses_p010le(tmp_path, encoder):
+    """HDR10 QSV requests upload as p010le and carry no output -pix_fmt after -i."""
     info = hdr.HdrInfo("pq", "bt2020", "bt2020nc", "tv", "yuv420p10le")
     extra = hdr.hdr_codec_args(encoder, info)
     argv = build_ffmpeg_command(_request(tmp_path, encoder, extra_params=extra))

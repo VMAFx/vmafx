@@ -600,6 +600,8 @@ func TestBuildFFmpegCommandQSVOutputDepth(t *testing.T) {
 	}
 }
 
+// TestBuildFFmpegCommandQSVHDRDropsPixFmt checks that HDR10 hevc_qsv and av1_qsv argv carry no
+// output -pix_fmt after hwupload (#3344).
 func TestBuildFFmpegCommandQSVHDRDropsPixFmt(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -636,6 +638,8 @@ func TestBuildFFmpegCommandQSVHDRDropsPixFmt(t *testing.T) {
 	}
 }
 
+// TestBuildFFmpegCommandLibx265HDRKeepsPixFmt checks that a software encoder without an upload
+// filter keeps its output -pix_fmt.
 func TestBuildFFmpegCommandLibx265HDRKeepsPixFmt(t *testing.T) {
 	t.Parallel()
 	extra := append([]string{"-pix_fmt", "p010le"}, hdr.CodecArgs("libx265", &hdr.Info{Transfer: "pq"}, nil)...)
@@ -659,6 +663,8 @@ func TestBuildFFmpegCommandLibx265HDRKeepsPixFmt(t *testing.T) {
 	}
 }
 
+// TestBuildFFmpegCommandQSV8BitPinned pins the full 8-bit hevc_qsv argv so the upload change leaves
+// it unchanged.
 func TestBuildFFmpegCommandQSV8BitPinned(t *testing.T) {
 	t.Parallel()
 	req := ffencode.Request{
@@ -686,6 +692,8 @@ func TestBuildFFmpegCommandQSV8BitPinned(t *testing.T) {
 	}
 }
 
+// TestBuildFFmpegCommandQSVHDRWithScale checks that a caller -vf scale joins the upload chain and
+// the output -pix_fmt is dropped.
 func TestBuildFFmpegCommandQSVHDRWithScale(t *testing.T) {
 	t.Parallel()
 	extra := append([]string{"-vf", "scale=1280:720"}, hdr.CodecArgs("hevc_qsv", &hdr.Info{Transfer: "pq"}, nil)...)
@@ -712,6 +720,8 @@ func TestBuildFFmpegCommandQSVHDRWithScale(t *testing.T) {
 	}
 }
 
+// TestBuildFFmpegCommandQSVPixFmtVFormDropped checks that the stream-specifier form -pix_fmt:v is
+// dropped like -pix_fmt.
 func TestBuildFFmpegCommandQSVPixFmtVFormDropped(t *testing.T) {
 	t.Parallel()
 	extra := []string{"-pix_fmt:v", "p010le", "-profile:v", "main10"}
