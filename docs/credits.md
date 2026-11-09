@@ -380,6 +380,12 @@ credit it:
   `praetorctl adopt` installs are held to their credit;
 - an entry names a path or an evidence file that is not in the checkout.
 
+The check reads `REUSE.toml` as `reuse` 6.2.0 does. Only the last annotation
+whose path matches a file decides it, an annotation without
+`SPDX-License-Identifier` never gives the project's licence, and an annotation
+path matches a whole file path or its `*` and `**` glob, never a directory
+prefix. Write `dir/**` to annotate every file in a tree.
+
 Each check has a planted-defect test in
 `scripts/docs/tests/test_credits.py` that the gate must fail on. The decision is
 [ADR-2485](adr/2485-vmafx-credits-page.md).

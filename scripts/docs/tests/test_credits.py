@@ -643,6 +643,35 @@ class ReusePrecedence(Fixture):
         self.assertTrue(any("third_party/pkg/a.c" in line for line in found))
         self.assertFalse(any("third_party/pkg/b.c" in line for line in found))
 
+    def test_bare_directory_override_does_not_exempt(self) -> None:
+        """Plant headerless third_party/pkg/a.c under an EUPL-1.2 override whose path is the
+        bare directory third_party/pkg; expect the finding to stay, since a REUSE path
+        matches whole file paths and globs, never a directory prefix."""
+        self.put("third_party/pkg/a.c", "int a = 1;\n")
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["third_party/pkg"]\nprecedence = "override"\n'
+            'SPDX-FileCopyrightText = "2026 Lusoris"\nSPDX-License-Identifier = "EUPL-1.2"\n',
+        )
+        self.assertTrue(any("third_party/pkg/a.c" in line for line in self.only("uncredited-path")))
+
+    def test_later_bare_directory_does_not_replace_glob(self) -> None:
+        """Plant an MIT override over pkg/x/** and a later EUPL-1.2 override over the bare
+        directory pkg/x/; expect pkg/x/a.c to keep MIT, since the later path matches no file."""
+        self.put("pkg/x/a.c", "int a = 1;\n")
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "override"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\nSPDX-License-Identifier = "MIT"\n'
+            '[[annotations]]\npath = ["pkg/x/"]\nprecedence = "override"\n'
+            'SPDX-FileCopyrightText = "2026 Lusoris"\nSPDX-License-Identifier = "EUPL-1.2"\n',
+        )
+        found = checks.reuse_third_party_paths(self.root, ["pkg/x/a.c"])
+        self.assertEqual(found, {"pkg/x/a.c": "MIT"})
+        self.assertEqual(checks.reuse_own_override_paths(self.root, ["pkg/x/a.c"]), set())
+
 
 class ThisRepository(unittest.TestCase):
     def test_the_gate_passes_on_this_repository(self) -> None:
