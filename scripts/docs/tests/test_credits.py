@@ -586,6 +586,63 @@ class ReusePrecedence(Fixture):
         with self.assertRaises(lib.CreditsError):
             checks.reuse_third_party_paths(self.root, ["pkg/x/a.c"])
 
+    def test_override_without_licence_does_not_exempt(self) -> None:
+        """Plant headerless third_party/pkg/a.c under an override annotation that names no
+        SPDX-License-Identifier; expect the structural finding to stay."""
+        self.put("third_party/pkg/a.c", "int a = 1;\n")
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["third_party/pkg/**"]\n'
+            'precedence = "override"\nSPDX-FileCopyrightText = "2026 Lusoris"\n',
+        )
+        self.assertTrue(any("third_party/pkg/a.c" in line for line in self.only("uncredited-path")))
+
+    def test_own_holders_skip_annotation_without_licence(self) -> None:
+        """Plant an annotation with a copyright line and no licence; expect its holder not
+        to count as own, while the EUPL-1.2 base annotation's holder still does."""
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text() + '[[annotations]]\npath = ["pkg/x/**"]\n'
+            'SPDX-FileCopyrightText = "2020 Someone Else"\n',
+        )
+        holders = checks.own_holders(self.root)
+        self.assertIn("lusoris", holders)
+        self.assertNotIn("someone else", holders)
+
+    def test_later_own_annotation_governs_overlap(self) -> None:
+        """Plant a GPL annotation over pkg/x/** and a later EUPL-1.2 one over pkg/x/a.c;
+        expect only pkg/x/b.c flagged, since REUSE applies the last matching annotation."""
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text() + '[[annotations]]\npath = ["pkg/x/**"]\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\n'
+            'SPDX-License-Identifier = "GPL-3.0-or-later"\n'
+            '[[annotations]]\npath = ["pkg/x/a.c"]\n'
+            'SPDX-FileCopyrightText = "2026 Lusoris"\nSPDX-License-Identifier = "EUPL-1.2"\n',
+        )
+        self.put("pkg/x/a.c", "int a = 1;\n")
+        self.put("pkg/x/b.c", "int b = 1;\n")
+        found = checks.reuse_third_party_paths(self.root, ["pkg/x/a.c", "pkg/x/b.c"])
+        self.assertEqual(found, {"pkg/x/b.c": "GPL-3.0-or-later"})
+
+    def test_later_third_party_annotation_governs_overlap(self) -> None:
+        """Plant an EUPL-1.2 override over third_party/pkg/** and a later MIT override over
+        third_party/pkg/a.c; expect a.c flagged and b.c still exempt."""
+        self.put("third_party/pkg/a.c", "int a = 1;\n")
+        self.put("third_party/pkg/b.c", "int b = 1;\n")
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["third_party/pkg/**"]\nprecedence = "override"\n'
+            'SPDX-FileCopyrightText = "2026 Lusoris"\nSPDX-License-Identifier = "EUPL-1.2"\n'
+            '[[annotations]]\npath = ["third_party/pkg/a.c"]\nprecedence = "override"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\nSPDX-License-Identifier = "MIT"\n',
+        )
+        found = self.only("uncredited-path")
+        self.assertTrue(any("third_party/pkg/a.c" in line for line in found))
+        self.assertFalse(any("third_party/pkg/b.c" in line for line in found))
+
 
 class ThisRepository(unittest.TestCase):
     def test_the_gate_passes_on_this_repository(self) -> None:

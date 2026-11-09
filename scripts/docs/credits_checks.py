@@ -117,20 +117,37 @@ def note_strings(note: dict[str, object], key: str) -> list[str]:
     return []
 
 
-def reuse_own_override_paths(root: Path, files: list[str]) -> set[str]:
-    """Files whose REUSE terms are project-own under an override annotation."""
-    paths: set[str] = set()
+def own_licensed(note: dict[str, object]) -> bool:
+    """True when the annotation names a licence and every licence in it is the project's own.
+
+    An annotation without ``SPDX-License-Identifier`` states no terms, so it is not own.
+    """
+    tokens = set(license_tokens(str(note.get("SPDX-License-Identifier", ""))))
+    return bool(tokens) and not tokens - set(OWN_LICENSES)
+
+
+def effective_annotations(root: Path, files: list[str]) -> dict[str, dict[str, object]]:
+    """Map each file to the one REUSE.toml annotation that governs it: the last that matches.
+
+    REUSE applies only the latest matching table of a REUSE.toml (reuse 6.2.0,
+    ``ReuseTOML.find_annotations_item``), so an earlier match never decides a file.
+    """
+    found: dict[str, dict[str, object]] = {}
     for note in reuse_annotations(root):
-        if note.get("precedence") != "override":
-            continue
-        expr = str(note.get("SPDX-License-Identifier", ""))
-        if set(license_tokens(expr)) - set(OWN_LICENSES):
-            continue
         for pattern in note_strings(note, "path"):
             for name in files:
                 if path_matches(pattern, name):
-                    paths.add(name)
-    return paths
+                    found[name] = note
+    return found
+
+
+def reuse_own_override_paths(root: Path, files: list[str]) -> set[str]:
+    """Files whose governing REUSE annotation is an own-licence override."""
+    return {
+        name
+        for name, note in effective_annotations(root, files).items()
+        if note.get("precedence") == "override" and own_licensed(note)
+    }
 
 
 def _annotation_precedence(reuse: Path, note: dict[str, object]) -> str:
@@ -142,12 +159,8 @@ def _annotation_precedence(reuse: Path, note: dict[str, object]) -> str:
     return precedence
 
 
-def _should_flag_reuse_file(
-    root: Path, name: str, precedence: str, note_expr: str, own_overrides: set[str]
-) -> str | None:
+def _should_flag_reuse_file(root: Path, name: str, precedence: str, note_expr: str) -> str | None:
     """Return the non-own licence to flag for ``name``, or None if exempt."""
-    if name in own_overrides:
-        return None
     if precedence == "closest":
         header_expr = header_spdx_expression(root, name)
         if header_expr is not None:
@@ -158,24 +171,18 @@ def _should_flag_reuse_file(
 
 
 def reuse_third_party_paths(root: Path, files: list[str]) -> dict[str, str]:
-    """Map each file to the non-own licence that REUSE.toml gives it."""
+    """Map each file to the non-own licence that its governing REUSE.toml annotation gives it."""
     reuse = root / "REUSE.toml"
-    if not reuse.is_file():
-        return {}
-    annotations = reuse_annotations(root)
-    own_overrides = reuse_own_override_paths(root, files)
+    for note in reuse_annotations(root):
+        _annotation_precedence(reuse, note)
     found: dict[str, str] = {}
-    for note in annotations:
-        precedence = _annotation_precedence(reuse, note)
+    for name, note in effective_annotations(root, files).items():
         expr = str(note.get("SPDX-License-Identifier", ""))
         if not set(license_tokens(expr)) - set(OWN_LICENSES):
             continue
-        for pattern in note_strings(note, "path"):
-            for name in files:
-                if path_matches(pattern, name):
-                    flag_expr = _should_flag_reuse_file(root, name, precedence, expr, own_overrides)
-                    if flag_expr is not None:
-                        found[name] = flag_expr
+        flag_expr = _should_flag_reuse_file(root, name, _annotation_precedence(reuse, note), expr)
+        if flag_expr is not None:
+            found[name] = flag_expr
     return found
 
 
@@ -183,7 +190,7 @@ def own_holders(root: Path) -> set[str]:
     """Copyright holders REUSE.toml records on project-licensed annotations."""
     holders: set[str] = set()
     for note in reuse_annotations(root):
-        if set(license_tokens(str(note.get("SPDX-License-Identifier", "")))) - set(OWN_LICENSES):
+        if not own_licensed(note):
             continue
         for item in note_strings(note, "SPDX-FileCopyrightText"):
             holders.add(re.sub(r"^[\d\-\u2013, ]+", "", item).split("<")[0].strip().lower())
