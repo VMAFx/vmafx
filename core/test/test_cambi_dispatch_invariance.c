@@ -94,14 +94,19 @@ typedef struct {
     uint64_t cpumask;
 } DispatchLevel;
 
+#if ARCH_X86
 static const DispatchLevel LEVELS[] = {
     {"host", 0u},
-#if ARCH_X86
     /* AVX512 (bit 4) and AVX512ICL (bit 5): AVX2 kernels only. */
     {"avx2-only", 16u | 32u},
-#endif
     {"scalar", UINT64_MAX},
 };
+#else
+static const DispatchLevel LEVELS[] = {
+    {"host", 0u},
+    {"scalar", UINT64_MAX},
+};
+#endif
 #define NUM_LEVELS (sizeof(LEVELS) / sizeof(LEVELS[0]))
 
 /* A diagonal ramp with a textured block and a per-frame shift. The distorted
