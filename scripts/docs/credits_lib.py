@@ -309,13 +309,16 @@ def _glob_regex(pattern: str) -> re.Pattern[str]:
     return re.compile("".join(out) + r"\Z")
 
 
-def path_matches(pattern: str, name: str) -> bool:
-    """True when ``name`` is ``pattern``, lies under it as a directory, or matches it as a glob."""
+def path_matches(pattern: str, name: str, prefix: bool = True) -> bool:
+    """True when ``name`` is ``pattern``, lies under it as a directory (if ``prefix``), or matches it as a glob."""
     base = pattern.rstrip("/")
-    if name == base or name.startswith(base + "/"):
+    if name == base or (prefix and name.startswith(base + "/")):
         return True
     return "*" in pattern and bool(_glob_regex(pattern).match(name))
 
 
 def covered(name: str, entries: list[Entry]) -> bool:
-    return any(path_matches(p, name) for e in entries for p in e.paths)
+    """True when any entry's declared paths cover ``name``."""
+    return any(
+        path_matches(p, name, prefix=(e.kind != "upstream")) for e in entries for p in e.paths
+    )

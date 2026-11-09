@@ -409,6 +409,10 @@ class Helpers(unittest.TestCase):
         self.assertTrue(lib.path_matches("model/tiny/fast.*", "model/tiny/fast.onnx"))
         self.assertTrue(lib.path_matches("a/**/z.c", "a/b/c/z.c"))
         self.assertFalse(lib.path_matches("a/*.c", "a/b/z.c"))
+        self.assertFalse(lib.path_matches("core/", "core/a/b.c", prefix=False))
+        self.assertFalse(lib.path_matches("core", "core/a/b.c", prefix=False))
+        self.assertTrue(lib.path_matches("core/a/b.c", "core/a/b.c", prefix=False))
+        self.assertTrue(lib.path_matches("core/**", "core/a/b.c", prefix=False))
 
     def test_license_tokens_and_urls(self) -> None:
         self.assertEqual(lib.license_tokens("MIT AND (A OR B WITH C)"), ["MIT", "A", "B", "C"])
@@ -422,6 +426,84 @@ class Helpers(unittest.TestCase):
         text = lib.blocks([e])["summary"]
         self.assertIn("1 entries", text)
         self.assertIn("could not verify", text)
+
+
+class UpstreamMatcher(Fixture):
+    """Matcher rule: kind upstream covers only by exact path or glob, never prefix."""
+
+    def test_upstream_directory_prefix_does_not_cover(self) -> None:
+        self.put("core/sub/foreign.c", "/* Copyright 2026 Foreign Author */\n")
+        self.assertTrue(self.findings()["uncredited-path"])
+
+    def test_kind_code_directory_prefix_covers(self) -> None:
+        self.put("core/sub/foreign.c", "/* Copyright 2026 Foreign Author */\n")
+        self.add_entry(
+            "- id: custom-code\n  name: custom-code\n  url: https://example.org/code\n"
+            "  kind: code\n  relation: vendored\n  license: MIT\n  paths: [core/]\n"
+        )
+        self.assertEqual(self.findings()["uncredited-path"], [])
+
+    def test_upstream_exact_path_covers(self) -> None:
+        self.put("core/sub/foreign.c", "/* Copyright 2026 Foreign Author */\n")
+        (self.root / "docs/credits.yaml").write_text(
+            "entries:\n- id: netflix-vmaf\n  name: Netflix VMAF\n"
+            "  url: https://github.com/Netflix/vmaf\n  kind: upstream\n"
+            "  relation: vendored\n  license: BSD-2-Clause-Patent\n"
+            "  paths: [core/, core/sub/foreign.c]\n"
+        )
+        self.render()
+        self.assertEqual(self.findings()["uncredited-path"], [])
+
+
+class ReusePrecedence(Fixture):
+    """REUSE.toml precedence: closest vs override and SPDX header."""
+
+    def test_closest_with_header_is_not_flagged(self) -> None:
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "closest"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\nSPDX-License-Identifier = "GPL-3.0-or-later"\n',
+        )
+        # REUSE-IgnoreStart
+        self.put("pkg/x/a.c", "/*\n * SPDX-License-Identifier: EUPL-1.2\n */\n")
+        # REUSE-IgnoreEnd
+        self.assertEqual(self.findings()["uncredited-path"], [])
+
+    def test_closest_without_header_is_flagged(self) -> None:
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "closest"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\nSPDX-License-Identifier = "GPL-3.0-or-later"\n',
+        )
+        self.put("pkg/x/a.c", "int a = 1;\n")
+        found = self.only("uncredited-path")
+        self.assertTrue(any("pkg/x/a.c" in line for line in found))
+
+    def test_override_with_header_is_flagged(self) -> None:
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "override"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\nSPDX-License-Identifier = "GPL-3.0-or-later"\n',
+        )
+        # REUSE-IgnoreStart
+        self.put("pkg/x/a.c", "/*\n * SPDX-License-Identifier: EUPL-1.2\n */\n")
+        # REUSE-IgnoreEnd
+        found = self.only("uncredited-path")
+        self.assertTrue(any("pkg/x/a.c" in line for line in found))
+
+    def test_unknown_precedence_raises_credits_error(self) -> None:
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "bogus"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\nSPDX-License-Identifier = "MIT"\n',
+        )
+        self.put("pkg/x/a.c", "int a = 1;\n")
+        with self.assertRaises(lib.CreditsError):
+            checks.reuse_third_party_paths(self.root, ["pkg/x/a.c"])
 
 
 class ThisRepository(unittest.TestCase):

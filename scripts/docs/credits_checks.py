@@ -52,6 +52,10 @@ COPYRIGHT_RE = re.compile(
 )
 HEADER_LINES = 40
 SKIP_TREES = ("docs/", "LICENSES/", ".workingdir/", "testdata/")
+VALID_PRECEDENCE = ("closest", "aggregate", "override")
+# REUSE-IgnoreStart
+SPDX_HEADER_RE = re.compile(r"SPDX-License-Identifier:\s*(?P<expr>\S+)")
+# REUSE-IgnoreEnd
 ADAPTED_RE = re.compile(r"Adapted from \[[^\]]+\]\((https?://[^)\s]+)\)")
 DERIVED_RE = re.compile(r"^\s*derived_from:\s*[\"']?(https?://[^\s\"')]+)", re.M)
 SKILL_FILES = re.compile(r"(^|/)(SKILL\.md|[^/]+\.agent\.md)$|^\.agents/agents/[^/]+\.md$")
@@ -82,20 +86,84 @@ def page_drift(root: Path, entries: list[Entry]) -> list[str]:
     return []
 
 
+def has_spdx_header(root: Path, name: str) -> bool:
+    """True when the file's first HEADER_LINES lines carry an SPDX licence."""
+    head = _read(root, name).splitlines()[:HEADER_LINES]
+    return any(SPDX_HEADER_RE.search(line) for line in head)
+
+
+def has_own_spdx_header(root: Path, name: str) -> bool:
+    """True when the file's first HEADER_LINES lines carry an SPDX licence in OWN_LICENSES."""
+    head = _read(root, name).splitlines()[:HEADER_LINES]
+    for line in head:
+        m = SPDX_HEADER_RE.search(line)
+        if m:
+            expr = line[m.end(0) - len(m.group("expr")) :].strip()
+            tokens = license_tokens(expr)
+            return bool(tokens and not (set(tokens) - set(OWN_LICENSES)))
+    return False
+
+
+def reuse_own_override_paths(root: Path, files: list[str]) -> set[str]:
+    """Files whose REUSE terms are project-own under an override annotation."""
+    reuse = root / "REUSE.toml"
+    if not reuse.is_file():
+        return set()
+    annotations = tomllib.loads(reuse.read_text(encoding="utf-8")).get("annotations", [])
+    paths: set[str] = set()
+    for note in annotations:
+        if note.get("precedence") != "override":
+            continue
+        expr = str(note.get("SPDX-License-Identifier", ""))
+        if set(license_tokens(expr)) - set(OWN_LICENSES):
+            continue
+        for pattern in note.get("path", []):
+            for name in files:
+                if path_matches(pattern, name):
+                    paths.add(name)
+    return paths
+
+
+def _annotation_precedence(reuse: Path, note: dict[str, object]) -> str:
+    """Validate and return the annotation's precedence setting."""
+    raw = note.get("precedence")
+    precedence = str(raw) if raw is not None else "closest"
+    if precedence not in VALID_PRECEDENCE:
+        raise CreditsError(f"{reuse}: unknown precedence '{precedence}'")
+    return precedence
+
+
+def _should_flag_reuse_file(
+    root: Path, name: str, precedence: str, own_overrides: set[str]
+) -> bool:
+    """True when a non-own REUSE annotation applies to ``name``."""
+    if name in own_overrides:
+        return False
+    # reuse 6.2.0 reuse/project.py:280-300: under 'closest', a file's
+    # own header SPDX-License-Identifier takes precedence over annotations.
+    if precedence == "closest" and has_spdx_header(root, name):
+        return False
+    return True
+
+
 def reuse_third_party_paths(root: Path, files: list[str]) -> dict[str, str]:
     """Map each file to the non-own licence that REUSE.toml gives it."""
     reuse = root / "REUSE.toml"
     if not reuse.is_file():
         return {}
     annotations = tomllib.loads(reuse.read_text(encoding="utf-8")).get("annotations", [])
+    own_overrides = reuse_own_override_paths(root, files)
     found: dict[str, str] = {}
     for note in annotations:
+        precedence = _annotation_precedence(reuse, note)
         expr = str(note.get("SPDX-License-Identifier", ""))
         if not set(license_tokens(expr)) - set(OWN_LICENSES):
             continue
         for pattern in note.get("path", []):
             for name in files:
-                if path_matches(pattern, name):
+                if path_matches(pattern, name) and _should_flag_reuse_file(
+                    root, name, precedence, own_overrides
+                ):
                     found[name] = expr
     return found
 
@@ -138,10 +206,13 @@ def foreign_copyright_files(root: Path, files: list[str]) -> dict[str, str]:
     return found
 
 
-def structural_paths(files: list[str]) -> dict[str, str]:
+def structural_paths(files: list[str], root: Path | None = None) -> dict[str, str]:
     """Third-party directories, notice files and fonts, by name alone."""
+    exempt = reuse_own_override_paths(root, files) if root else set()
     found: dict[str, str] = {}
     for name in files:
+        if name in exempt or (root is not None and has_own_spdx_header(root, name)):
+            continue
         parts = name.split("/")
         if any(p in THIRD_PARTY_DIRS for p in parts[:-1]):
             found[name] = "a third_party, 3rdparty or vendor directory"
@@ -190,7 +261,7 @@ def uncredited_paths(
     seen: dict[str, str] = {}
     for source in (
         reuse_third_party_paths(root, files),
-        structural_paths(files),
+        structural_paths(files, root),
         foreign_copyright_files(root, files),
     ):
         for name, why in source.items():
