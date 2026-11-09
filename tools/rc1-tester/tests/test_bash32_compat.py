@@ -19,6 +19,9 @@ from pathlib import Path
 
 import pytest
 
+SCRIPT_TIMEOUT_S = 60
+SUBPROCESS_TIMEOUT_S = 60
+
 _ROOT = Path(__file__).resolve().parents[3]
 BUILD_SH = _ROOT / "scripts" / "ci" / "build-macos-tester-bundle.sh"
 LINKS_SH = _ROOT / "scripts" / "ci" / "check-macos-bundle-links.sh"
@@ -83,7 +86,11 @@ def test_run_sh_is_posix_sh() -> None:
     if shellcheck is None:
         pytest.skip("shellcheck not installed")
     result = subprocess.run(
-        [shellcheck, "--shell=sh", str(RUN_SH)], capture_output=True, text=True, check=False
+        [shellcheck, "--shell=sh", str(RUN_SH)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=SCRIPT_TIMEOUT_S,
     )
     assert result.returncode == 0, result.stdout
 
@@ -95,7 +102,10 @@ def bash32_available() -> bool:
     if shutil.which("docker") is None:
         return False
     probe = subprocess.run(
-        ["docker", "image", "inspect", "bash:3.2"], capture_output=True, check=False
+        ["docker", "image", "inspect", "bash:3.2"],
+        capture_output=True,
+        check=False,
+        timeout=SUBPROCESS_TIMEOUT_S,
     )
     return probe.returncode == 0
 
@@ -157,7 +167,7 @@ def docker_bash32(mount: Path, command: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["docker", "run", "--rm", "--network", "none", "--user", f"{os.getuid()}:{os.getgid()}", "-v", f"{mount}:/w", "-v",
          f"{_ROOT}:/repo:ro", "-w", "/repo", "bash:3.2", "bash", "-c", command],
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=SUBPROCESS_TIMEOUT_S,
     )  # fmt: skip
 
 

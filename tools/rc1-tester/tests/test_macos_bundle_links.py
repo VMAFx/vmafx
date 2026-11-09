@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+SCRIPT_TIMEOUT_S = 60
+
 LINKS = Path(__file__).resolve().parents[3] / "scripts" / "ci" / "check-macos-bundle-links.sh"
 pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
 
@@ -66,6 +68,7 @@ class Bundle:
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
 

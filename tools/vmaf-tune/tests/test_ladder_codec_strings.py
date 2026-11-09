@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+FFMPEG_TIMEOUT_S = 60
+
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
@@ -174,7 +176,11 @@ def _ffmpeg_has(encoder: str) -> bool:
     if shutil.which("ffmpeg") is None:
         return False
     out = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True, check=False
+        ["ffmpeg", "-hide_banner", "-encoders"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=FFMPEG_TIMEOUT_S,
     ).stdout
     return any(line.split()[1:2] == [encoder] for line in out.splitlines())
 

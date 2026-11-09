@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+FFMPEG_TIMEOUT_S = 60
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from vmaftune.codec_adapters import get_adapter
@@ -175,7 +177,11 @@ def test_corpus_row_records_the_abr_rate_control(tmp_path: Path) -> None:
 )
 def test_real_x265_two_pass_at_a_crf_encodes(tmp_path: Path) -> None:
     enc = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True, check=False
+        ["ffmpeg", "-hide_banner", "-encoders"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=FFMPEG_TIMEOUT_S,
     )
     if "libx265" not in enc.stdout:
         pytest.skip("this ffmpeg build has no libx265 encoder")
@@ -199,6 +205,7 @@ def test_real_x265_two_pass_at_a_crf_encodes(tmp_path: Path) -> None:
         ],
         capture_output=True,
         check=False,
+        timeout=FFMPEG_TIMEOUT_S,
     )
     assert gen.returncode == 0
     req = EncodeRequest(

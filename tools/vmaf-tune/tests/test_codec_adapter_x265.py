@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+FFMPEG_TIMEOUT_S = 60
+
 # Make src/ importable without an editable install.
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
@@ -334,6 +336,7 @@ def test_real_x265_smoke_when_runner_has_ffmpeg(tmp_path: Path):
         ],
         capture_output=True,
         check=False,
+        timeout=FFMPEG_TIMEOUT_S,
     )
     if proc.returncode != 0:
         pytest.skip("could not synthesise YUV reference via lavfi testsrc")

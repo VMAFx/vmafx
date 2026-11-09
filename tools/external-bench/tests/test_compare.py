@@ -23,6 +23,8 @@ sys.path.insert(0, str(HERE.parent))
 
 import compare  # noqa: E402
 
+SCRIPT_TIMEOUT_S = 60
+
 # --- test fixture constants -------------------------------------------------
 
 EXPECTED_FRAMES_DEFAULT = 2
@@ -152,6 +154,7 @@ def _run_fork_shell_wrapper(tmp_path: pathlib.Path, competitor: str) -> dict:
         capture_output=True,
         text=True,
         env=env,
+        timeout=SCRIPT_TIMEOUT_S,
     )
     assert proc.returncode == 0, proc.stderr
     return json.loads(out.read_text(encoding="utf-8"))

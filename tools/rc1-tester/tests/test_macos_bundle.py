@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+SCRIPT_TIMEOUT_S = 60
+
 _ROOT = Path(__file__).resolve().parents[3]
 RUN_SH = _ROOT / "tools" / "rc1-tester" / "image" / "macos" / "run.sh"
 
@@ -26,7 +28,9 @@ def script(path: Path, body: str) -> None:
 
 
 def test_run_sh_refuses_other_platforms() -> None:
-    result = subprocess.run(["sh", str(RUN_SH)], capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        ["sh", str(RUN_SH)], capture_output=True, text=True, check=False, timeout=SCRIPT_TIMEOUT_S
+    )
     assert result.returncode == 64 and "Apple silicon" in result.stderr
 
 
@@ -46,7 +50,9 @@ def test_run_sh_end_to_end_with_everything_skipped(tmp_path: Path) -> None:
     args = ["sh", str(bundle / "run.sh")]
     for check_name in ("dispatch", "metal", "unit", "golden"):
         args += ["--skip", check_name]
-    result = subprocess.run(args, env=env, capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        args, env=env, capture_output=True, text=True, check=False, timeout=SCRIPT_TIMEOUT_S
+    )
     report = json.loads(result.stdout)
     assert result.returncode in (1, 2) and "verdict" in result.stderr
     assert report["schema_version"] == "4"
