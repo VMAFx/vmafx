@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import Any
 
 VMAF = os.environ.get("VMAF_BIN", "/src/vmafx/build/tools/vmaf")
+VMAF_TIMEOUT_S = 300
 YUV = Path(os.environ.get("YUV_DIR", "python/test/resource/yuv"))
 NO_SYCL = os.environ.get("REPORT_NO_SYCL", "0") == "1"
 
@@ -130,7 +131,17 @@ def run(ref: str, dist: str, w: int, h: int, backend: str) -> dict[str, Any] | N
         "--json",
     ]
     # cmd is built from the fixed VMAF binary path and the in-file PAIRS table.
-    r = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
+    try:
+        r = subprocess.run(  # noqa: S603
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=VMAF_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as e:
+        sys.stderr.write(f"  [report] {backend} backend timed out after {VMAF_TIMEOUT_S}s: {e}\n")
+        return None
     if r.returncode != 0:
         sys.stderr.write(
             "  [report] %s backend failed (%d): %s\n"

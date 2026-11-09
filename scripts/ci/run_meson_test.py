@@ -26,6 +26,7 @@ CREDENTIAL_ENV_VARS = (
     "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
     "ACTIONS_RUNTIME_TOKEN",
 )
+SUBPROCESS_TIMEOUT_S = 3600
 
 # ADR-1333 amendment (2026-11-05): a fixed list misses credentials exported under
 # other names (a messaging token, a gateway key, a personal ``*_PAT``), and Meson
@@ -99,9 +100,19 @@ def _run_and_wait(command: list[str]) -> int:
     if executable is None:
         print("run_meson_test.py: Meson executable not found", file=sys.stderr)
         return 127
-    # No timeout here: `meson test` enforces its own per-test timeouts.
-    completed = subprocess.run([executable, *command[1:]], check=False)  # noqa: S603
-    return completed.returncode
+    try:
+        completed = subprocess.run(  # noqa: S603
+            [executable, *command[1:]],
+            check=False,
+            timeout=SUBPROCESS_TIMEOUT_S,
+        )
+        return completed.returncode
+    except subprocess.TimeoutExpired:
+        print(
+            f"run_meson_test.py: Meson timed out after {SUBPROCESS_TIMEOUT_S}s",
+            file=sys.stderr,
+        )
+        return 124
 
 
 if __name__ == "__main__":

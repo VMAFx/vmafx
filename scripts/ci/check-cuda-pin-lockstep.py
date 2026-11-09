@@ -59,6 +59,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 GIT = shutil.which("git") or "/usr/bin/git"
+GIT_TIMEOUT_S = 60
 
 # Files that may legitimately pin a CUDA release. Prose under docs/ names old
 # releases on purpose and is not a pin, so it stays out; scripts/ mention
@@ -186,6 +187,7 @@ def scoped_files(root: Path) -> list[str]:
         capture_output=True,
         text=True,
         check=True,
+        timeout=GIT_TIMEOUT_S,
     ).stdout.splitlines()
     return sorted(path for path in listing if any(p.match(path) for p in SCOPE_PATTERNS))
 
@@ -335,6 +337,7 @@ def main() -> int:
             capture_output=True,
             text=True,
             check=True,
+            timeout=GIT_TIMEOUT_S,
         ).stdout.strip()
     )
     version = load_cuda_version(root)

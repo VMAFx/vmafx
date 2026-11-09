@@ -33,6 +33,9 @@ except ImportError:
     yaml = None
 
 MANIFEST_PATH = Path("requirements/locks/manifest.json")
+GIT_TIMEOUT_S = 60
+# 10x the slowest cold-cache uv pip compile of the manifest: 10.6 s.
+SUBPROCESS_TIMEOUT_S = 120
 HASH_RE = re.compile(r"--hash=sha256:[0-9a-f]{64}(?:\s|$)")
 EXACT_REQUIREMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+(?:\[[A-Za-z0-9_,.-]+\])?==[^;\s]+")
 PIP_NAME_RE = re.compile(
@@ -1598,11 +1601,12 @@ def tracked_paths(root: Path) -> list[Path]:
                 [git_bin, "-C", str(root), "ls-files", "-z"],
                 check=True,
                 capture_output=True,
+                timeout=GIT_TIMEOUT_S,
             )
             for raw in result.stdout.split(b"\0"):
                 if raw:
                     raw_paths.append(Path(os.fsdecode(raw)))
-        except (subprocess.CalledProcessError, OSError) as error:
+        except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired) as error:
             raise ContractError(f"git ls-files failed in {root}: {error}") from error
     else:
         for path in root.rglob("*"):
@@ -1793,6 +1797,7 @@ def find_lock_files(root: Path) -> list[Path]:
                 ],
                 check=True,
                 capture_output=True,
+                timeout=GIT_TIMEOUT_S,
             )
             for raw in result.stdout.split(b"\0"):
                 if not raw:
@@ -1803,7 +1808,7 @@ def find_lock_files(root: Path) -> list[Path]:
                 ):
                     locks.append(rel)
             return sorted(locks)
-        except (subprocess.CalledProcessError, OSError) as error:
+        except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired) as error:
             raise ContractError(f"git ls-files failed in {root}: {error}") from error
 
     for path in root.rglob("*"):
@@ -1891,9 +1896,16 @@ def check(root: Path) -> int:
 
 
 def uv_version(binary: str) -> str:
-    result = subprocess.run(  # noqa: S603
-        [binary, "--version"], check=True, text=True, capture_output=True
-    )
+    try:
+        result = subprocess.run(  # noqa: S603
+            [binary, "--version"],
+            check=True,
+            text=True,
+            capture_output=True,
+            timeout=SUBPROCESS_TIMEOUT_S,
+        )
+    except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired) as error:
+        raise ContractError(f"cannot execute {binary} --version: {error}") from error
     match = re.fullmatch(r"uv ([0-9]+(?:\.[0-9]+){2})(?: .*)?\n?", result.stdout)
     if not match:
         raise ContractError(f"cannot parse {binary} --version output: {result.stdout!r}")
@@ -1945,9 +1957,19 @@ def write(root: Path, uv_binary: str) -> int:
                 "-o",
                 str(generated),
             ]
-            result = subprocess.run(  # noqa: S603
-                command, cwd=root, text=True, capture_output=True, check=False
-            )
+            try:
+                result = subprocess.run(  # noqa: S603
+                    command,
+                    cwd=root,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=SUBPROCESS_TIMEOUT_S,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise ContractError(
+                    f"uv timed out after {SUBPROCESS_TIMEOUT_S}s for {raw_entry['output']}"
+                ) from exc
             if result.returncode != 0:
                 detail = result.stderr.strip() or result.stdout.strip()
                 raise ContractError(f"uv failed for {raw_entry['output']}: {detail}")

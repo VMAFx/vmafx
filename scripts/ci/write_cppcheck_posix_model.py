@@ -27,6 +27,7 @@ CONDITION_MODEL = b"""  <function name="pthread_cond_init">
     <arg nr="1" direction="out"><not-null/></arg>
     <arg nr="2" direction="in"/>
   </function>"""
+SUBPROCESS_TIMEOUT_S = 60
 
 
 def legacy_filesdir(binary: str) -> Path | None:
@@ -51,9 +52,13 @@ def cppcheck_filesdir(binary: str) -> Path:
     """Return Cppcheck's compiled-in data directory or fail closed."""
     try:
         result = subprocess.run(  # noqa: S603 -- caller-selected analyzer binary
-            [binary, "--filesdir"], capture_output=True, text=True, check=False
+            [binary, "--filesdir"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=SUBPROCESS_TIMEOUT_S,
         )
-    except OSError as error:
+    except (OSError, subprocess.TimeoutExpired) as error:
         raise ValueError(f"cannot execute Cppcheck binary {binary}: {error}") from error
     filesdir = result.stdout.strip()
     if result.returncode == 0 and filesdir and "\n" not in filesdir:
@@ -166,8 +171,9 @@ def validate_model(binary: str, model: Path, directory: Path) -> None:
             capture_output=True,
             text=True,
             check=False,
+            timeout=SUBPROCESS_TIMEOUT_S,
         )
-    except OSError as error:
+    except (OSError, subprocess.TimeoutExpired) as error:
         raise ValueError(f"cannot validate generated POSIX model: {error}") from error
     finally:
         control.unlink(missing_ok=True)

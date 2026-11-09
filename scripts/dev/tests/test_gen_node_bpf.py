@@ -26,6 +26,8 @@ PIN = "19.1.7"
 OBJECT = b"fake bpf object\n"
 OBJECT_SHA = hashlib.sha256(OBJECT).hexdigest()
 GIT = shutil.which("git") or "git"
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 HAS_LIBBPF = Path("/usr/include/bpf/bpf_helpers.h").is_file()
 
 FAKE_CLANG = """#!/bin/sh
@@ -232,6 +234,7 @@ class GenNodeBpf(unittest.TestCase):
                 [GIT, "check-ignore", "-q", f"cmd/vmafx-node/bpf/{name}"],
                 cwd=REPO,
                 check=False,
+                timeout=GIT_TIMEOUT_S,
             )
             self.assertEqual(result.returncode, 0, f"{name} is not git-ignored")
 
@@ -242,6 +245,7 @@ class GenNodeBpf(unittest.TestCase):
             capture_output=True,
             text=True,
             check=True,
+            timeout=GIT_TIMEOUT_S,
         ).stdout.split()
         self.assertEqual([name for name in tracked if name.endswith(".o")], [])
         self.assertTrue(os.access(SCRIPT, os.X_OK))
@@ -263,7 +267,11 @@ class GenNodeBpf(unittest.TestCase):
         )
         for _ in range(2):
             done = subprocess.run(  # noqa: S603 - fixed argv
-                ["/bin/sh", str(script), str(raw)], capture_output=True, text=True, check=False
+                ["/bin/sh", str(script), str(raw)],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=SCRIPT_TIMEOUT_S,
             )
             self.assertEqual(done.returncode, 0, done.stderr)
         text = raw.read_text(encoding="utf-8")
@@ -272,7 +280,11 @@ class GenNodeBpf(unittest.TestCase):
         other = self.tmp / "other.go"
         other.write_text("package bpf\n", encoding="utf-8")
         refused = subprocess.run(  # noqa: S603 - fixed argv
-            ["/bin/sh", str(script), str(other)], capture_output=True, text=True, check=False
+            ["/bin/sh", str(script), str(other)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertNotEqual(refused.returncode, 0)
         self.assertIn("go:embed", refused.stderr)

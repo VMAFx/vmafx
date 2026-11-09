@@ -21,6 +21,7 @@ import yaml  # type: ignore[import-untyped]  # no PyYAML stubs in the hook envir
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
+SCRIPT_TIMEOUT_S = 60
 
 
 def workflow_step(text: str, name: str) -> str:
@@ -165,7 +166,12 @@ class FailClosedCIContract(unittest.TestCase):
         def run(shards: str, before: str) -> subprocess.CompletedProcess[str]:
             env = {"SHARD_OUTCOMES": shards, "EARLIER_OUTCOMES": before, "PATH": "/usr/bin:/bin"}
             return subprocess.run(  # noqa: S603 - argv is bash plus the tracked workflow step
-                [bash, "-c", script], env=env, capture_output=True, text=True, check=False
+                [bash, "-c", script],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=SCRIPT_TIMEOUT_S,
             )
 
         skipped = run("skipped skipped skipped skipped", earlier)

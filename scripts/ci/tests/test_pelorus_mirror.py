@@ -74,7 +74,9 @@ class ExactMirrorManifest(unittest.TestCase):
                 0,
             )
         run.assert_called_once_with(
-            ["/hook/bin/clang-format", "-i", "-style=file", escaped], check=False
+            ["/hook/bin/clang-format", "-i", "-style=file", escaped],
+            check=False,
+            timeout=mirror.CC_TIMEOUT_S,
         )
 
     def test_clang_format_wrapper_fails_when_formatter_is_missing(self) -> None:

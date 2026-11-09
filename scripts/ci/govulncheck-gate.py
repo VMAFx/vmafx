@@ -40,6 +40,8 @@ ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "build-config.env"
 VEX = ROOT / "security" / "vex" / "go.openvex.json"
 MODULE = "golang.org/x/vuln/cmd/govulncheck"
+# 10x the cold-cache run (module download, build, scan): 36.8 s.
+SUBPROCESS_TIMEOUT_S = 600
 
 
 def configured_version(config: Path = CONFIG) -> str:
@@ -154,10 +156,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         result = subprocess.run(  # noqa: S603 -- fixed argv
-            command(args.packages), cwd=args.dir, capture_output=True, text=True, check=False
+            command(args.packages),
+            cwd=args.dir,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=SUBPROCESS_TIMEOUT_S,
         )
         output = messages(result.stdout)
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, subprocess.TimeoutExpired) as error:
         print(f"govulncheck-gate: the scan did not complete: {error}", file=sys.stderr)
         return 2
     if result.returncode != 0 or not any("config" in m for m in output):

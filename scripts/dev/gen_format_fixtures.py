@@ -34,6 +34,7 @@ WIDTH, HEIGHT = (
 BYTE_DEPTH = 8
 SPDX = "SPDX-" + "License-Identifier: EUPL-1.2"
 OUTPUT = Path("core/test/vmafx_format_fixtures.h")
+FFMPEG_TIMEOUT_S = 60
 
 # (VmafxPixelFormat name, FFmpeg pixel format, planar FFmpeg format of the frame made, bits,
 #  chroma width divisor, chroma height divisor, FFmpeg encoder or None)
@@ -86,9 +87,16 @@ def planar_frame(
 
 def ffmpeg(args: list[str], data: bytes) -> bytes:
     command = ["ffmpeg", "-v", "error", "-nostdin", *args]
-    done = subprocess.run(  # noqa: S603 -- FFmpeg from PATH, argv built here
-        command, input=data, capture_output=True, check=False
-    )
+    try:
+        done = subprocess.run(  # noqa: S603 -- FFmpeg from PATH, argv built here
+            command,
+            input=data,
+            capture_output=True,
+            check=False,
+            timeout=FFMPEG_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise SystemExit(f"ffmpeg {' '.join(args)}: timed out after {FFMPEG_TIMEOUT_S}s") from exc
     if done.returncode != 0:
         raise SystemExit(f"ffmpeg {' '.join(args)}: {done.stderr.decode(errors='replace')}")
     return done.stdout
