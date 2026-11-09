@@ -182,6 +182,18 @@ __wrap_vmaf_sycl_graph_register(VmafSyclState *, VmafSyclGraphEnqueueFn, VmafSyc
     return fail_graph_registration ? -EIO : 0;
 }
 
+/* Link-time stub for vmaf_sycl_graph_register_flags: counts the call in
+ * graph_registration_calls and returns -EIO when fail_graph_registration is set, else 0. */
+// cppcheck-suppress unusedFunction
+extern "C" VMAF_WRAP_EXPORT int
+__wrap_vmaf_sycl_graph_register_flags(VmafSyclState *, VmafSyclGraphEnqueueFn, VmafSyclGraphPreFn,
+                                      VmafSyclGraphPostFn, VmafSyclGraphConfigFn, void *,
+                                      const char *, uint64_t)
+{
+    graph_registration_calls++;
+    return fail_graph_registration ? -EIO : 0;
+}
+
 // cppcheck-suppress unusedFunction
 extern "C" VMAF_WRAP_EXPORT int __wrap_vmaf_sycl_graph_unregister(VmafSyclState *, void *)
 {
