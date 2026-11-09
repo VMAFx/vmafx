@@ -463,19 +463,74 @@ class ReusePrecedence(Fixture):
             "REUSE.toml",
             (self.root / "REUSE.toml").read_text()
             + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "closest"\n'
-            'SPDX-FileCopyrightText = "2020 Someone"\nSPDX-License-Identifier = "GPL-3.0-or-later"\n',
+            'SPDX-FileCopyrightText = "2020 Someone"\n'
+            'SPDX-License-Identifier = "GPL-3.0-or-later"\n',
         )
         # REUSE-IgnoreStart
         self.put("pkg/x/a.c", "/*\n * SPDX-License-Identifier: EUPL-1.2\n */\n")
         # REUSE-IgnoreEnd
         self.assertEqual(self.findings()["uncredited-path"], [])
 
+    def test_closest_with_non_own_header_is_flagged(self) -> None:
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "closest"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\n'
+            'SPDX-License-Identifier = "GPL-3.0-or-later"\n',
+        )
+        # REUSE-IgnoreStart
+        self.put(
+            "pkg/x/a.c",
+            "/*\n * SPDX-License-Identifier: BSD-3-Clause\n */\nint a = 1;\n",
+        )
+        # REUSE-IgnoreEnd
+        found = self.only("uncredited-path")
+        self.assertTrue(any("pkg/x/a.c: BSD-3-Clause" in line for line in found))
+
+    def test_header_spdx_expression_boundary(self) -> None:
+        # REUSE-IgnoreStart
+        self.put("pkg/x/a.c", "/* SPDX-License-Identifier: EUPL-1.2 */\n")
+        # REUSE-IgnoreEnd
+        expr = checks.header_spdx_expression(self.root, "pkg/x/a.c")
+        self.assertEqual(expr, "EUPL-1.2")
+
+    def test_structural_third_party_with_own_override(self) -> None:
+        self.put("third_party/pkg/a.c", "int a = 1;\n")
+        self.assertTrue(any("third_party/pkg/a.c" in line for line in self.only("uncredited-path")))
+        base_reuse = (self.root / "REUSE.toml").read_text()
+        self.put(
+            "REUSE.toml",
+            base_reuse + '[[annotations]]\npath = ["third_party/pkg/**"]\n'
+            'precedence = "override"\nSPDX-FileCopyrightText = "2026 Lusoris"\n'
+            'SPDX-License-Identifier = "EUPL-1.2"\n',
+        )
+        self.assertEqual(self.findings()["uncredited-path"], [])
+        self.put(
+            "REUSE.toml",
+            base_reuse + '[[annotations]]\npath = ["third_party/pkg/**"]\n'
+            'precedence = "override"\nSPDX-FileCopyrightText = "2026 Lusoris"\n'
+            'SPDX-License-Identifier = "BSD-3-Clause"\n',
+        )
+        self.assertTrue(any("third_party/pkg/a.c" in line for line in self.only("uncredited-path")))
+
+    def test_structural_own_header_under_third_party_is_flagged(self) -> None:
+        # REUSE-IgnoreStart
+        self.put(
+            "third_party/pkg/a.py",
+            "# SPDX-License-Identifier: EUPL-1.2\n",
+        )
+        # REUSE-IgnoreEnd
+        found = self.only("uncredited-path")
+        self.assertTrue(any("third_party/pkg/a.py" in line for line in found))
+
     def test_closest_without_header_is_flagged(self) -> None:
         self.put(
             "REUSE.toml",
             (self.root / "REUSE.toml").read_text()
             + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "closest"\n'
-            'SPDX-FileCopyrightText = "2020 Someone"\nSPDX-License-Identifier = "GPL-3.0-or-later"\n',
+            'SPDX-FileCopyrightText = "2020 Someone"\n'
+            'SPDX-License-Identifier = "GPL-3.0-or-later"\n',
         )
         self.put("pkg/x/a.c", "int a = 1;\n")
         found = self.only("uncredited-path")
@@ -486,7 +541,8 @@ class ReusePrecedence(Fixture):
             "REUSE.toml",
             (self.root / "REUSE.toml").read_text()
             + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "override"\n'
-            'SPDX-FileCopyrightText = "2020 Someone"\nSPDX-License-Identifier = "GPL-3.0-or-later"\n',
+            'SPDX-FileCopyrightText = "2020 Someone"\n'
+            'SPDX-License-Identifier = "GPL-3.0-or-later"\n',
         )
         # REUSE-IgnoreStart
         self.put("pkg/x/a.c", "/*\n * SPDX-License-Identifier: EUPL-1.2\n */\n")

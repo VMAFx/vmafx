@@ -310,7 +310,11 @@ def _glob_regex(pattern: str) -> re.Pattern[str]:
 
 
 def path_matches(pattern: str, name: str, prefix: bool = True) -> bool:
-    """True when ``name`` is ``pattern``, lies under it as a directory (if ``prefix``), or matches it as a glob."""
+    """True when ``name`` matches ``pattern`` by path, prefix or glob.
+
+    Matches exact path, under the directory prefix when ``prefix`` is True,
+    or against ``*`` and ``**`` wildcards.
+    """
     base = pattern.rstrip("/")
     if name == base or (prefix and name.startswith(base + "/")):
         return True

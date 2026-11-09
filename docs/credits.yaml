@@ -26,6 +26,10 @@ entries:
   - resource/
   - model/vmaf_*
   - core/test/test_speed_filter.c
+  - compat/python-vmaf/third_party/__init__.py
+  - compat/python-vmaf/third_party/xiph/__init__.py
+  - compat/python-vmaf/third_party/xiph/vmafexec_feature_extractor.py
+  - python/test/third_party/xiph/vmafexec_feature_extractor_test.py
   evidence:
   - docs/adr/1250-eupl-fork-relicense.md
   - docs/licensing.md
@@ -384,7 +388,7 @@ entries:
   relation: integrated
   license: LGPL-2.1-or-later AND GPL-2.0-or-later
   paths:
-  - ffmpeg-patches/*
+  - ffmpeg-patches/**
   evidence:
   - REUSE.toml
   - docs/licensing.md
