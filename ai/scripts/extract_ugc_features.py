@@ -78,6 +78,7 @@ _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
 
 
 def _ffprobe(path: Path) -> dict:
+    """Run ffprobe on a video path and return metadata for the first video stream."""
     cmd = [
         "ffprobe",
         "-v",

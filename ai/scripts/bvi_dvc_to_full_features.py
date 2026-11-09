@@ -126,6 +126,7 @@ def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
 
 
 def _decode_yuv_10bit(src_video: Path, out_yuv: Path) -> tuple[int, int, int]:
+    """Decode video to 10-bit raw YUV and return width, height, and frame count."""
     probe = subprocess.run(
         [
             "ffprobe",

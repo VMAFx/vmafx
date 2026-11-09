@@ -76,6 +76,7 @@ def test_evaluate_model_defaults_and_relaxed() -> None:
 
 
 def test_cli_default_run_fails_with_exit_1() -> None:
+    """The CLI exits with code 1 when default thresholds fail for a model."""
     cmd = [
         sys.executable,
         str(SCRIPT_PATH),
@@ -95,6 +96,7 @@ def test_cli_default_run_fails_with_exit_1() -> None:
 
 
 def test_cli_relaxed_run_succeeds_with_exit_0() -> None:
+    """The CLI exits with code 0 when run with relaxed delta thresholds."""
     cmd = [
         sys.executable,
         str(SCRIPT_PATH),
@@ -117,6 +119,7 @@ def test_cli_relaxed_run_succeeds_with_exit_0() -> None:
 
 
 def test_cli_manifest_output(tmp_path: Path) -> None:
+    """The CLI outputs a valid JSON parity report containing run provenance."""
     out_json = tmp_path / "parity_report.json"
     cmd = [
         sys.executable,
@@ -148,6 +151,7 @@ def test_cli_manifest_output(tmp_path: Path) -> None:
 
 
 def test_cli_all_flag() -> None:
+    """The CLI with the all flag validates quantization parity for all default models."""
     cmd = [
         sys.executable,
         str(SCRIPT_PATH),
@@ -171,6 +175,7 @@ def test_cli_all_flag() -> None:
 
 
 def test_cli_fp32_int8_override() -> None:
+    """The CLI runs quantization parity validation with custom model file overrides."""
     fp32 = REPO_ROOT / "model" / "tiny" / "vmaf_tiny_v4.onnx"
     int8 = REPO_ROOT / "model" / "tiny" / "vmaf_tiny_v4.int8.onnx"
     cmd = [

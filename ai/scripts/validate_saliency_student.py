@@ -106,6 +106,7 @@ def _check_parity(
 
 
 def _check_registry() -> int:
+    """Run the model registry validation script and return its exit code."""
     try:
         rc = subprocess.call(
             [

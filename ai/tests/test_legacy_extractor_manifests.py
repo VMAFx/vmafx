@@ -100,6 +100,7 @@ def test_collect_gpu_calibration_rejects_malformed_frames(
 
 
 def test_benchmark_harness_uses_current_portable_contract() -> None:
+    """The benchmark script and documents satisfy the portable repo-root contract."""
     script = REPO_ROOT / "testdata" / "bench_all.sh"
     source = script.read_text(encoding="utf-8")
     backend_guidance = (

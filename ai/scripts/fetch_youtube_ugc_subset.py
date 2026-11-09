@@ -42,6 +42,7 @@ SUFFIXES = ("orig", "cbr", "vod", "vodlb")
 
 
 def _list_bucket(prefix: str) -> list[dict]:
+    """List items in the GCS bucket matching the specified prefix."""
     url = f"{GCS_LIST_URL}?prefix={prefix}&maxResults=5000&fields=items(name,size)"
     # Defensive scheme guard — see fetch_konvid_1k.py for rationale (bandit B310).
     if not url.startswith("https://"):
@@ -78,6 +79,7 @@ def _group_by_stem(items: list[dict]) -> dict[str, list[tuple[str, int]]]:
 
 
 def _download(url: str, dest: Path) -> None:
+    """Download a remote file from the given URL to the destination path."""
     if dest.exists() and dest.stat().st_size > 0:
         return
     dest.parent.mkdir(parents=True, exist_ok=True)

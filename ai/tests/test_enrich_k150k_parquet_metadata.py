@@ -116,6 +116,7 @@ def _setup_enrich_fixture_data(tmp_path: Path) -> tuple[Path, Path, Path]:
 
 
 def test_cli_enriches_existing_parquet(tmp_path: Path) -> None:
+    """The CLI enriches an existing parquet file and generates a validation manifest."""
     features, metadata, out = _setup_enrich_fixture_data(tmp_path)
 
     proc = subprocess.run(

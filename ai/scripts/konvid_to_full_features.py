@@ -88,6 +88,7 @@ def _resolve_videos_dir(konvid_root: Path) -> Path:
 
 
 def _ffprobe_video(src_mp4: Path) -> tuple[int, int, str]:
+    """Probe a video file with ffprobe and return width, height, and codec name."""
     probe = subprocess.run(
         [
             "ffprobe",
