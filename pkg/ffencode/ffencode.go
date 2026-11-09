@@ -79,6 +79,10 @@ type Request struct {
 	// SourceIsContainer selects container demuxing over raw-YUV geometry.
 	SourceIsContainer bool
 
+	// SourceColorParams holds the raw source's colour options, which the
+	// encoder places before -i only for raw sources.
+	SourceColorParams []string
+
 	// DurationS bounds the encode when SampleClipSeconds is unset. Also used
 	// to derive achieved kbps from the output size.
 	DurationS float64
@@ -248,15 +252,13 @@ var colorTagFlags = []string{
 	"-color_range",
 }
 
-// rawColorInputArgs extracts color signaling options from extraParams for raw
-// video inputs. Raw frames carry no colour props; FFmpeg n9 takes encoder trc
-// and primaries from input frames.
-func rawColorInputArgs(extraParams []string) []string {
+// ColorTagArgs filters and deduplicates colour signalling flags to their last-seen values.
+func ColorTagArgs(params []string) []string {
 	latest := make(map[string]string)
-	for i := 0; i < len(extraParams); i++ {
+	for i := 0; i < len(params); i++ {
 		for _, flag := range colorTagFlags {
-			if extraParams[i] == flag && i+1 < len(extraParams) {
-				latest[flag] = extraParams[i+1]
+			if params[i] == flag && i+1 < len(params) {
+				latest[flag] = params[i+1]
 				i++
 				break
 			}
@@ -276,7 +278,7 @@ func rawColorInputArgs(extraParams []string) []string {
 // the clip window.
 //
 // Raw frames carry no colour props; FFmpeg n9 takes encoder trc/primaries from
-// frames, so raw sources copy color options from req.ExtraParams before "-i".
+// frames, so raw sources copy color options from req.SourceColorParams before "-i".
 //
 // The window precedence mirrors vmaftune.encode.build_ffmpeg_command:
 // sample-clip mode wins (an input-side -ss/-t pair so ffmpeg fast-seeks raw
@@ -296,7 +298,7 @@ func InputArgs(req Request) []string {
 			"-s", fmt.Sprintf("%dx%d", req.Width, req.Height),
 			"-r", pyjson.FloatRepr(req.Framerate),
 		)
-		args = append(args, rawColorInputArgs(req.ExtraParams)...)
+		args = append(args, ColorTagArgs(req.SourceColorParams)...)
 	}
 	switch {
 	case req.SampleClipSeconds > 0.0:

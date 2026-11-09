@@ -72,6 +72,9 @@ class EncodeRequest:
     # input flags so ffmpeg auto-detects the format. sample_clip_seconds
     # uses -ss/-t on the input side when set.
     source_is_container: bool = False
+    # Holds the raw source's colour options, which the encoder places before
+    # -i only for raw sources.
+    source_color_params: tuple[str, ...] = ()
     # BBB e2e v6 Bug #V6-1 (ADR-0506): when the corpus job is bound to
     # an analysed-window length (``CorpusJob.duration_s > 0``) and the
     # caller has NOT opted into sample-clip mode, the encode must still
@@ -370,19 +373,15 @@ _COLOR_TAG_FLAGS: tuple[str, ...] = (
 )
 
 
-def _raw_color_input_args(extra_params: Sequence[str]) -> list[str]:
-    """Extract raw input color tags from extra_params.
-
-    Raw frames carry no colour props; FFmpeg n9 takes encoder trc/primaries
-    from frames, so raw sources must declare them before ``-i``.
-    """
+def color_tag_args(params: Sequence[str]) -> list[str]:
+    """Filter and deduplicate colour signalling flags to their last-seen values."""
     latest: dict[str, str] = {}
     i = 0
-    n = len(extra_params)
+    n = len(params)
     while i < n:
-        flag = extra_params[i]
+        flag = params[i]
         if flag in _COLOR_TAG_FLAGS and i + 1 < n:
-            latest[flag] = extra_params[i + 1]
+            latest[flag] = params[i + 1]
             i += 2
         else:
             i += 1
@@ -397,14 +396,14 @@ def _build_input_args(req: EncodeRequest) -> list[str]:
     """Demuxer flags, seek window and ``-i`` for the source leg.
 
     Raw frames carry no colour props; FFmpeg n9 takes encoder trc/primaries
-    from frames, so raw sources copy color options from req.extra_params.
+    from frames, so raw sources copy color options from req.source_color_params.
     """
     args: list[str] = []
     if not req.source_is_container:
         # Raw YUV source: must tell ffmpeg the format explicitly.
         # A container source is left to ffmpeg's auto-detection.
         args.extend(_raw_demuxer_args(req))
-        args.extend(_raw_color_input_args(req.extra_params))
+        args.extend(color_tag_args(req.source_color_params))
     args.extend(_build_seek_args(req))
     args.extend(["-i", str(req.source)])
     return args
@@ -856,7 +855,7 @@ def _pass1_input_args(req: EncodeRequest) -> list[str]:
     args: list[str] = []
     if not req.source_is_container:
         args.extend(_raw_demuxer_args(req))
-        args.extend(_raw_color_input_args(req.extra_params))
+        args.extend(color_tag_args(req.source_color_params))
     if req.sample_clip_seconds > 0.0:
         args.extend(["-ss", f"{req.sample_clip_start_s}"])
         args.extend(["-t", f"{req.sample_clip_seconds}"])

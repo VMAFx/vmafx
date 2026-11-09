@@ -23,6 +23,7 @@ Covers branches not exercised by the existing encode test suite:
 
 from __future__ import annotations
 
+import functools
 import json
 import shutil
 import subprocess
@@ -47,6 +48,7 @@ from vmaftune.encode import (
     bitrate_kbps,
     build_ffmpeg_command,
     build_pass1_stats_command,
+    color_tag_args,
     iter_grid,
     parse_versions,
     run_encode,
@@ -60,13 +62,17 @@ from vmaftune.hdr import HdrInfo, hdr_codec_args
 # ---------------------------------------------------------------------------
 
 FFMPEG_TIMEOUT_S = 60
+FFMPEG_BIN = shutil.which("ffmpeg")
+FFPROBE_BIN = shutil.which("ffprobe")
 
 
 def _write_raw_10bit(path: Path) -> None:
     """Generate a 10-frame 320x240 yuv420p10le raw clip via FFmpeg testsrc2."""
+    if FFMPEG_BIN is None:
+        pytest.skip("ffmpeg not found on PATH")
     gen = subprocess.run(
         [
-            "ffmpeg",
+            FFMPEG_BIN,
             "-hide_banner",
             "-loglevel",
             "error",
@@ -93,9 +99,11 @@ def _write_raw_10bit(path: Path) -> None:
 
 def _probe_color_tags(path: Path) -> dict[str, str]:
     """Return stream 0 color tags dictionary via ffprobe JSON output."""
+    if FFPROBE_BIN is None:
+        pytest.skip("ffprobe not found on PATH")
     probe = subprocess.run(
         [
-            "ffprobe",
+            FFPROBE_BIN,
             "-v",
             "error",
             "-select_streams",
@@ -125,6 +133,7 @@ def _make_req(
     sample_clip_start_s: float = 0.0,
     duration_s: float = 0.0,
     source_is_container: bool = False,
+    source_color_params: Sequence[str] = (),
     pass_number: int = 0,
     stats_path: Path | None = None,
     extra_params: Sequence[str] = (),
@@ -147,6 +156,7 @@ def _make_req(
         sample_clip_start_s=sample_clip_start_s,
         duration_s=duration_s,
         source_is_container=source_is_container,
+        source_color_params=tuple(source_color_params),
         pass_number=pass_number,
         stats_path=stats_path,
         extra_params=tuple(extra_params),
@@ -264,6 +274,7 @@ class TestBuildFfmpegCommandRawHdrInputColorTags:
             pix_fmt="yuv420p10le",
             encoder="libx265",
             extra_params=extra,
+            source_color_params=tuple(color_tag_args(extra)),
             source_is_container=False,
             tmp_path=tmp_path,
         )
@@ -304,6 +315,7 @@ class TestBuildFfmpegCommandRawHdrInputColorTags:
             pix_fmt="yuv420p10le",
             encoder="libx265",
             extra_params=extra,
+            source_color_params=tuple(color_tag_args(extra)),
             source_is_container=False,
             tmp_path=tmp_path,
         )
@@ -327,6 +339,7 @@ class TestBuildFfmpegCommandRawHdrInputColorTags:
             source_is_container=True,
             encoder="libx265",
             extra_params=extra,
+            source_color_params=tuple(color_tag_args(extra)),
             tmp_path=tmp_path,
         )
         cmd = build_ffmpeg_command(req)
@@ -375,8 +388,8 @@ class TestBuildFfmpegCommandRawHdrInputColorTags:
         ]
 
     def test_boundary_duplicate_flags_and_partial_color_tags(self, tmp_path: Path) -> None:
-        """Prove a repeated -color_trc keeps the last value and adds no untagged colour flags."""
-        extra = [
+        """Prove repeated source_color_params flag keeps last value and adds no untagged flags."""
+        tags = [
             "-color_trc",
             "smpte2084",
             "-color_primaries",
@@ -385,7 +398,7 @@ class TestBuildFfmpegCommandRawHdrInputColorTags:
             "arib-std-b67",
         ]
         req = _make_req(
-            extra_params=extra,
+            source_color_params=tags,
             source_is_container=False,
             tmp_path=tmp_path,
         )
@@ -399,14 +412,31 @@ class TestBuildFfmpegCommandRawHdrInputColorTags:
         assert "-colorspace" not in input_slice
         assert "-color_range" not in input_slice
 
-    @pytest.mark.skipif(
-        shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
-        reason="ffmpeg not on PATH (needs ffmpeg and ffprobe)",
-    )
+    def test_negative_user_extra_params_color_option_stays_output_only(
+        self, tmp_path: Path
+    ) -> None:
+        """Prove user -color_trc in extra_params stays output-only without source_color_params."""
+        req = _make_req(
+            extra_params=["-color_trc", "smpte2084"],
+            source_color_params=(),
+            source_is_container=False,
+            tmp_path=tmp_path,
+        )
+        cmd = build_ffmpeg_command(req)
+        i_idx = cmd.index("-i")
+        input_slice = cmd[:i_idx]
+        output_slice = cmd[i_idx + 2 :]
+        assert "-color_trc" not in input_slice
+        assert "-color_trc" in output_slice
+        assert output_slice[output_slice.index("-color_trc") + 1] == "smpte2084"
+
+    @pytest.mark.skipif(FFMPEG_BIN is None, reason="ffmpeg not found on PATH")
+    @pytest.mark.skipif(FFPROBE_BIN is None, reason="ffprobe not found on PATH")
     def test_real_encode_raw_hdr10_x265_tags_transfer_and_primaries(self, tmp_path: Path) -> None:
         """Verify real libx265 encode from raw HDR10 source preserves color tags (#3345)."""
         if not ffmpeg_reports_encoder("libx265"):
             pytest.skip("libx265 unavailable in local ffmpeg build")
+        assert FFMPEG_BIN is not None
         raw = tmp_path / "src.yuv"
         _write_raw_10bit(raw)
         info = HdrInfo(
@@ -429,17 +459,15 @@ class TestBuildFfmpegCommandRawHdrInputColorTags:
             crf=28,
             output=out,
             extra_params=tuple(extra),
+            source_color_params=tuple(color_tag_args(extra)),
             source_is_container=False,
         )
-        cmd = build_ffmpeg_command(req)
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=FFMPEG_TIMEOUT_S,
+        res = run_encode(
+            req,
+            ffmpeg_bin=FFMPEG_BIN,
+            encoder_runner=functools.partial(subprocess.run, timeout=FFMPEG_TIMEOUT_S),
         )
-        assert proc.returncode == 0, f"encode failed: {proc.stderr}"
+        assert res.exit_status == 0, f"encode failed: {res}"
         stream = _probe_color_tags(out)
         assert stream.get("color_transfer") == "smpte2084"
         assert stream.get("color_primaries") == "bt2020"
