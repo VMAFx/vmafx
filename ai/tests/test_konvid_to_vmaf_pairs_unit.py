@@ -319,42 +319,31 @@ def test_main_returns_2_when_vmaf_bin_missing(tmp_path: Path) -> None:
     assert rc == 2
 
 
-def test_process_all_clips_timeout(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+@pytest.mark.parametrize(
+    "exc",
+    [
+        subprocess.TimeoutExpired(["vmaf", "x"], 60),
+        subprocess.CalledProcessError(1, ["vmaf", "x"]),
+    ],
+    ids=["timeout", "exit"],
+)
+def test_process_all_clips(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    exc: Exception,
 ) -> None:
-    """Verify that clip processing timeout is captured and skipped in batch."""
+    """Verify that clip processing failure is captured and skipped in batch."""
     clip1 = tmp_path / "clip1.mp4"
     clip2 = tmp_path / "clip2.mp4"
     clips = [clip1, clip2]
     args = argparse.Namespace(vmaf_bin=tmp_path / "vmaf", crf=28, scratch=tmp_path / "scratch")
     teacher = types.SimpleNamespace(arg="teacher.model")
 
-    def fake_process_clip(key, *args, **kwargs):
+    def fake_process_clip(key: str, *_args: object, **_kwargs: object) -> list[dict]:
+        """Simulate clip processing failure by raising the given exception."""
         if key == f"KoNViD_1k_videos_{clip1.stem}":
-            raise subprocess.TimeoutExpired(["vmaf", "x"], 60)
-        return [{"a": 1}]
-
-    monkeypatch.setattr(KVP, "_process_clip", fake_process_clip)
-    rows, failed, _elapsed = KVP._process_all_clips(clips, args, None, teacher)
-    assert rows == [{"a": 1}]
-    assert failed == [f"KoNViD_1k_videos_{clip1.stem}"]
-    captured = capsys.readouterr().err
-    assert "FAILED: vmaf x" in captured
-
-
-def test_process_all_clips_called_process_error(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
-) -> None:
-    """Verify that clip processing error is captured and skipped in batch."""
-    clip1 = tmp_path / "clip1.mp4"
-    clip2 = tmp_path / "clip2.mp4"
-    clips = [clip1, clip2]
-    args = argparse.Namespace(vmaf_bin=tmp_path / "vmaf", crf=28, scratch=tmp_path / "scratch")
-    teacher = types.SimpleNamespace(arg="teacher.model")
-
-    def fake_process_clip(key, *args, **kwargs):
-        if key == f"KoNViD_1k_videos_{clip1.stem}":
-            raise subprocess.CalledProcessError(1, ["vmaf", "x"])
+            raise exc
         return [{"a": 1}]
 
     monkeypatch.setattr(KVP, "_process_clip", fake_process_clip)

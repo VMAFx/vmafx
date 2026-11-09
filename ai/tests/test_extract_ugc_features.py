@@ -238,17 +238,12 @@ def test_run_vmaf_honours_valid_scratch_dir(monkeypatch, tmp_path: Path) -> None
     assert frames == out_json["frames"]
 
 
-def test_process_distorted_clip_decode_dis_timeout(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
-) -> None:
-    """Verify that decode-dis timeout logs a failure and skips the clip."""
-    mod = _load_module()
+_TEACHER = types.SimpleNamespace(arg="teacher.model", name="test_teacher")
 
-    def fake_decode(*_args, **_kwargs):
-        raise subprocess.TimeoutExpired(["ffmpeg"], 60)
 
-    monkeypatch.setattr(mod, "_decode_to_yuv", fake_decode)
-    args = argparse.Namespace(
+def _ugc_args(tmp_path: Path) -> argparse.Namespace:
+    """Return mock CLI arguments for UGC feature extraction."""
+    return argparse.Namespace(
         yuv_dir=tmp_path,
         max_frames=100,
         vmaf_bin=tmp_path / "vmaf",
@@ -256,137 +251,80 @@ def test_process_distorted_clip_decode_dis_timeout(
         keep_yuv=False,
         max_height=360,
     )
-    teacher = types.SimpleNamespace(arg="teacher.model", name="test_teacher")
-    rows, ok = mod._process_distorted_clip(
+
+
+def _run_distorted(mod: types.ModuleType, tmp_path: Path) -> tuple[list[dict], bool]:
+    """Run distorted clip processing against mock inputs."""
+    return mod._process_distorted_clip(
         "clip0",
         "dis",
         tmp_path / "dis.mp4",
         tmp_path / "ref.yuv",
         640,
         360,
-        args,
-        teacher,
+        _ugc_args(tmp_path),
+        _TEACHER,
         time.monotonic(),
         0,
     )
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        subprocess.TimeoutExpired(["ffmpeg"], 60),
+        subprocess.CalledProcessError(1, ["ffmpeg"]),
+    ],
+    ids=["timeout", "exit"],
+)
+def test_process_distorted_clip_decode_dis(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    exc: Exception,
+) -> None:
+    """Verify that decode-dis failure logs an error and skips the clip."""
+    mod = _load_module()
+
+    def fake_decode(*_args: object, **_kwargs: object) -> None:
+        """Simulate decode-dis failure by raising the given exception."""
+        raise exc
+
+    monkeypatch.setattr(mod, "_decode_to_yuv", fake_decode)
+    rows, ok = _run_distorted(mod, tmp_path)
     assert (rows, ok) == ([], False)
     captured = capsys.readouterr().out
     assert "decode-dis failed" in captured
 
 
-def test_process_distorted_clip_decode_dis_called_process_error(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+@pytest.mark.parametrize(
+    "exc",
+    [
+        subprocess.TimeoutExpired(["vmaf"], 60),
+        subprocess.CalledProcessError(1, ["vmaf"]),
+    ],
+    ids=["timeout", "exit"],
+)
+def test_process_distorted_clip_vmaf(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    exc: Exception,
 ) -> None:
-    """Verify that decode-dis process error logs a failure and skips the clip."""
+    """Verify that vmaf failure logs an error, unlinks YUV, and skips the clip."""
     mod = _load_module()
 
-    def fake_decode(*_args, **_kwargs):
-        raise subprocess.CalledProcessError(1, ["ffmpeg"])
-
-    monkeypatch.setattr(mod, "_decode_to_yuv", fake_decode)
-    args = argparse.Namespace(
-        yuv_dir=tmp_path,
-        max_frames=100,
-        vmaf_bin=tmp_path / "vmaf",
-        threads=1,
-        keep_yuv=False,
-        max_height=360,
-    )
-    teacher = types.SimpleNamespace(arg="teacher.model", name="test_teacher")
-    rows, ok = mod._process_distorted_clip(
-        "clip0",
-        "dis",
-        tmp_path / "dis.mp4",
-        tmp_path / "ref.yuv",
-        640,
-        360,
-        args,
-        teacher,
-        time.monotonic(),
-        0,
-    )
-    assert (rows, ok) == ([], False)
-    captured = capsys.readouterr().out
-    assert "decode-dis failed" in captured
-
-
-def test_process_distorted_clip_vmaf_timeout(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
-) -> None:
-    """Verify that vmaf timeout logs a failure, unlinks YUV, and skips the clip."""
-    mod = _load_module()
-
-    def fake_decode(_src, dst, *_args, **_kwargs):
+    def fake_decode(_src: object, dst: Path, *_args: object, **_kwargs: object) -> None:
+        """Write placeholder YUV content for distorted clip."""
         dst.write_bytes(b"dis_yuv")
 
-    def fake_run_vmaf(*_args, **_kwargs):
-        raise subprocess.TimeoutExpired(["ffmpeg"], 60)
+    def fake_run_vmaf(*_args: object, **_kwargs: object) -> None:
+        """Simulate vmaf failure by raising the given exception."""
+        raise exc
 
     monkeypatch.setattr(mod, "_decode_to_yuv", fake_decode)
     monkeypatch.setattr(mod, "_run_vmaf", fake_run_vmaf)
-    args = argparse.Namespace(
-        yuv_dir=tmp_path,
-        max_frames=100,
-        vmaf_bin=tmp_path / "vmaf",
-        threads=1,
-        keep_yuv=False,
-        max_height=360,
-    )
-    teacher = types.SimpleNamespace(arg="teacher.model", name="test_teacher")
-    rows, ok = mod._process_distorted_clip(
-        "clip0",
-        "dis",
-        tmp_path / "dis.mp4",
-        tmp_path / "ref.yuv",
-        640,
-        360,
-        args,
-        teacher,
-        time.monotonic(),
-        0,
-    )
-    assert (rows, ok) == ([], False)
-    captured = capsys.readouterr().out
-    assert "vmaf failed" in captured
-    dis_yuv = tmp_path / "clip0_dis_640x360.yuv"
-    assert not dis_yuv.exists()
-
-
-def test_process_distorted_clip_vmaf_called_process_error(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
-) -> None:
-    """Verify that vmaf process error logs a failure, unlinks YUV, and skips the clip."""
-    mod = _load_module()
-
-    def fake_decode(_src, dst, *_args, **_kwargs):
-        dst.write_bytes(b"dis_yuv")
-
-    def fake_run_vmaf(*_args, **_kwargs):
-        raise subprocess.CalledProcessError(1, ["ffmpeg"])
-
-    monkeypatch.setattr(mod, "_decode_to_yuv", fake_decode)
-    monkeypatch.setattr(mod, "_run_vmaf", fake_run_vmaf)
-    args = argparse.Namespace(
-        yuv_dir=tmp_path,
-        max_frames=100,
-        vmaf_bin=tmp_path / "vmaf",
-        threads=1,
-        keep_yuv=False,
-        max_height=360,
-    )
-    teacher = types.SimpleNamespace(arg="teacher.model", name="test_teacher")
-    rows, ok = mod._process_distorted_clip(
-        "clip0",
-        "dis",
-        tmp_path / "dis.mp4",
-        tmp_path / "ref.yuv",
-        640,
-        360,
-        args,
-        teacher,
-        time.monotonic(),
-        0,
-    )
+    rows, ok = _run_distorted(mod, tmp_path)
     assert (rows, ok) == ([], False)
     captured = capsys.readouterr().out
     assert "vmaf failed" in captured
@@ -406,27 +344,7 @@ def test_process_distorted_clip_vmaf_success(
         "_run_vmaf",
         lambda *_args, **_kwargs: [{"frameNum": 0, "metrics": {"vmaf": 90.0}}],
     )
-    args = argparse.Namespace(
-        yuv_dir=tmp_path,
-        max_frames=100,
-        vmaf_bin=tmp_path / "vmaf",
-        threads=1,
-        keep_yuv=False,
-        max_height=360,
-    )
-    teacher = types.SimpleNamespace(arg="teacher.model", name="test_teacher")
-    rows, ok = mod._process_distorted_clip(
-        "clip0",
-        "dis",
-        tmp_path / "dis.mp4",
-        tmp_path / "ref.yuv",
-        640,
-        360,
-        args,
-        teacher,
-        time.monotonic(),
-        0,
-    )
+    rows, ok = _run_distorted(mod, tmp_path)
     assert ok is True
     assert len(rows) == 1
     assert rows[0]["corpus"] == "ugc"
@@ -436,53 +354,31 @@ def test_process_distorted_clip_vmaf_success(
     assert rows[0]["vmaf"] == 90.0
 
 
-def test_decode_orig_timeout(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+@pytest.mark.parametrize(
+    "exc",
+    [
+        subprocess.TimeoutExpired(["ffmpeg"], 60),
+        subprocess.CalledProcessError(1, ["ffmpeg"]),
+    ],
+    ids=["timeout", "exit"],
+)
+def test_decode_orig(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    exc: Exception,
 ) -> None:
-    """Verify that decode-orig timeout logs a failure and returns None."""
+    """Verify that decode-orig failure logs an error and returns None."""
     mod = _load_module()
 
     monkeypatch.setattr(mod, "_ffprobe", lambda _p: {"width": 640, "height": 360})
 
-    def fake_decode(*_args, **_kwargs):
-        raise subprocess.TimeoutExpired(["ffmpeg"], 60)
+    def fake_decode(*_args: object, **_kwargs: object) -> None:
+        """Simulate decode-orig failure by raising the given exception."""
+        raise exc
 
     monkeypatch.setattr(mod, "_decode_to_yuv", fake_decode)
-    args = argparse.Namespace(
-        yuv_dir=tmp_path,
-        max_frames=100,
-        vmaf_bin=tmp_path / "vmaf",
-        threads=1,
-        keep_yuv=False,
-        max_height=360,
-    )
-    res = mod._decode_orig("clip0", tmp_path / "orig.mp4", args)
-    assert res is None
-    captured = capsys.readouterr().out
-    assert "decode-orig failed" in captured
-
-
-def test_decode_orig_called_process_error(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
-) -> None:
-    """Verify that decode-orig process error logs a failure and returns None."""
-    mod = _load_module()
-
-    monkeypatch.setattr(mod, "_ffprobe", lambda _p: {"width": 640, "height": 360})
-
-    def fake_decode(*_args, **_kwargs):
-        raise subprocess.CalledProcessError(1, ["ffmpeg"])
-
-    monkeypatch.setattr(mod, "_decode_to_yuv", fake_decode)
-    args = argparse.Namespace(
-        yuv_dir=tmp_path,
-        max_frames=100,
-        vmaf_bin=tmp_path / "vmaf",
-        threads=1,
-        keep_yuv=False,
-        max_height=360,
-    )
-    res = mod._decode_orig("clip0", tmp_path / "orig.mp4", args)
+    res = mod._decode_orig("clip0", tmp_path / "orig.mp4", _ugc_args(tmp_path))
     assert res is None
     captured = capsys.readouterr().out
     assert "decode-orig failed" in captured
