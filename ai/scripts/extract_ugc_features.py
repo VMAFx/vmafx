@@ -399,7 +399,7 @@ def _process_distorted_clip(
     dis_yuv = args.yuv_dir / f"{stem}_{sfx}_{target_w}x{target_h}.yuv"
     try:
         _decode_to_yuv(dis_src, dis_yuv, target_w, target_h, args.max_frames)
-    except subprocess.CalledProcessError as exc:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         print(f"  [{stem}/{sfx}] decode-dis failed: {exc}", flush=True)
         return [], False
     try:
@@ -412,7 +412,7 @@ def _process_distorted_clip(
             args.threads,
             resolved_teacher.arg,
         )
-    except subprocess.CalledProcessError as exc:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         print(f"  [{stem}/{sfx}] vmaf failed: {exc}", flush=True)
         if not args.keep_yuv:
             dis_yuv.unlink(missing_ok=True)
@@ -461,7 +461,7 @@ def _decode_orig(stem: str, orig: Path, args: argparse.Namespace) -> tuple[Path,
     ref_yuv = args.yuv_dir / f"{stem}_orig_{target_w}x{target_h}.yuv"
     try:
         _decode_to_yuv(orig, ref_yuv, target_w, target_h, args.max_frames)
-    except subprocess.CalledProcessError as exc:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         print(f"  [{stem}] decode-orig failed: {exc}", flush=True)
         return None
     return ref_yuv, target_w, target_h

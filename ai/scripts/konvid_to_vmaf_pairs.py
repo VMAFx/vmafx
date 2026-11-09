@@ -400,7 +400,7 @@ def _process_all_clips(
                 cache_dir,
                 args.scratch,
             )
-        except subprocess.CalledProcessError as exc:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             print(f"[konvid] {key} FAILED: {shlex.join(exc.cmd)}", file=sys.stderr)
             failed_clips.append(key)
             continue
