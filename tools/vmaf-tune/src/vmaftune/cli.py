@@ -2786,12 +2786,11 @@ def _build_real_predict_scorer(
         dist_yuv = workdir / f"dist_{shot.start_frame}_{shot.end_frame}.decoded.yuv"
         decode_cmd = _predict_decode_command(args, dist_path, dist_yuv, geometry.pix_fmt)
         dec = _run_predict_ffmpeg(decode_cmd, "decode", timeout_s)
-        dist_for_score = (
-            dist_yuv if dec is not None and dec.returncode == 0 and dist_yuv.exists() else dist_path
-        )
+        if dec is None or dec.returncode != 0 or not dist_yuv.exists():
+            return dist_path, float("nan")
         score_req = ScoreRequest(
             reference=ref_yuv,
-            distorted=dist_for_score,
+            distorted=dist_yuv,
             width=geometry.width,
             height=geometry.height,
             pix_fmt=geometry.pix_fmt,

@@ -24,7 +24,12 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaf_rc1_tester.safe_process import CommandResult, CommandTimedOut, run_bounded
+from vmaf_rc1_tester.safe_process import (
+    CommandOutputLimitExceeded,
+    CommandResult,
+    CommandTimedOut,
+    run_bounded,
+)
 
 SCRIPT_TIMEOUT_S = 60
 SUBPROCESS_TIMEOUT_S = 60
@@ -243,6 +248,9 @@ def docker_bash32(mount: Path, command: str) -> CommandResult:
             f"docker_bash32 timed out after {SUBPROCESS_TIMEOUT_S}s running {command!r} "
             f"(container {name})"
         )
+    except CommandOutputLimitExceeded:
+        _remove_container(name)
+        raise
 
 
 def test_docker_bash32_raises_pytest_fail_on_timeout(
@@ -285,6 +293,32 @@ def test_docker_bash32_removes_the_container_on_timeout(
     assert name.startswith("vmafx-bash32-")
     assert second_argv == ["/usr/bin/docker", "rm", "--force", name]
     assert name in str(exc_info.value)
+
+
+def test_docker_bash32_removes_the_container_on_output_limit_exceeded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Assert docker_bash32 removes the container on output limit exceeded and re-raises."""
+    calls: list[list[str]] = []
+
+    def fake_run(argv: list[str], **_kwargs: object) -> CommandResult:
+        calls.append(list(argv))
+        if len(argv) > 1 and argv[1] == "run":
+            raise CommandOutputLimitExceeded(MAX_OUTPUT_BYTES, "", "")
+        return CommandResult(0, "", "")
+
+    monkeypatch.setattr(sys.modules[__name__], "run_bounded", fake_run)
+    monkeypatch.setattr(sys.modules[__name__], "DOCKER", "/usr/bin/docker")
+
+    with pytest.raises(CommandOutputLimitExceeded):
+        docker_bash32(tmp_path, "echo test")
+
+    assert len(calls) == DOCKER_CALLS_ON_TIMEOUT
+    first_argv, second_argv = calls[0], calls[1]
+    name_idx = first_argv.index("--name")
+    name = first_argv[name_idx + 1]
+    assert name.startswith("vmafx-bash32-")
+    assert second_argv == ["/usr/bin/docker", "rm", "--force", name]
 
 
 @needs_bash32

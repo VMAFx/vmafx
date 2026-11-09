@@ -3,11 +3,17 @@
 """Tests for predict ffmpeg execution timeout bounding."""
 
 import argparse
+import math
+from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
 # isort: split
+import vmaftune.encode
+import vmaftune.score
 from vmaftune import cli
 from vmaftune.per_shot import Shot
 
@@ -18,6 +24,13 @@ FFMPEG_RATE = 0.04
 SAMPLE_TIMEOUT_S = 72.0
 CUSTOM_TIMEOUT_S = 123.4
 BOUND_FLOOR_S = 60
+DEFAULT_CRF = 23
+TEST_FPS = 24.0
+TEST_CODEC = "libx264"
+TEST_PIX_FMT = "yuv420p"
+PREDICT_VMAF_SCORE = 92.5
+SHOT_START = 0
+SHOT_END = 24
 
 
 def test_predict_ffmpeg_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -178,3 +191,114 @@ def test_extract_shot_to_raw_yuv_timeout_expired(
         cli._extract_shot_to_raw_yuv(args, shot=shot, output=output)
     assert f"{expected_timeout:.0f}s" in str(exc_info.value)
     assert "[0, 36000)" in str(exc_info.value)
+
+
+def _setup_predict_scorer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    decode_return: cli.subprocess.CompletedProcess[str] | None,
+    touch_dist_yuv: bool = True,
+) -> tuple[
+    Callable[[Shot, int, str], tuple[Path, float]],
+    list[object],
+    Path,
+    Path,
+]:
+    """Configure monkeypatches and return a real predict scorer with recorder."""
+    score_requests: list[object] = []
+
+    def fake_run_predict_ffmpeg(
+        cmd: list[str], step: str, timeout_s: float
+    ) -> cli.subprocess.CompletedProcess[str] | None:
+        if step == "reference extraction":
+            Path(cmd[-1]).touch()
+            return cli.subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        if step == "decode":
+            if touch_dist_yuv:
+                Path(cmd[-1]).touch()
+            return decode_return
+        return None
+
+    def fake_run_encode(req: Any, ffmpeg_bin: str = "ffmpeg") -> object:
+        req.output.touch()
+        return SimpleNamespace(exit_status=0)
+
+    def fake_run_score(req: Any) -> object:
+        score_requests.append(req)
+        return SimpleNamespace(vmaf_score=PREDICT_VMAF_SCORE)
+
+    monkeypatch.setattr(cli, "_run_predict_ffmpeg", fake_run_predict_ffmpeg)
+    monkeypatch.setattr(vmaftune.encode, "run_encode", fake_run_encode)
+    monkeypatch.setattr(vmaftune.score, "run_score", fake_run_score)
+
+    args = argparse.Namespace(ffmpeg_bin="ffmpeg", source=tmp_path / "source.mp4")
+    geometry = cli._PredictGeometry(
+        width=SD_360P[0],
+        height=SD_360P[1],
+        fps=TEST_FPS,
+        pix_fmt=TEST_PIX_FMT,
+    )
+    scorer = cli._build_real_predict_scorer(args, tmp_path, geometry)
+    dist_path = tmp_path / f"dist_{SHOT_START}_{SHOT_END}.mp4"
+    dist_yuv = tmp_path / f"dist_{SHOT_START}_{SHOT_END}.decoded.yuv"
+    return scorer, score_requests, dist_path, dist_yuv
+
+
+def test_real_encode_and_score_decode_success_scores_yuv(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Assert successful decode scores decoded YUV and returns measured score."""
+    proc = cli.subprocess.CompletedProcess(args=["ffmpeg"], returncode=0, stdout="", stderr="")
+    scorer, recorded, dist_path, dist_yuv = _setup_predict_scorer(
+        monkeypatch, tmp_path, decode_return=proc, touch_dist_yuv=True
+    )
+    shot = Shot(start_frame=SHOT_START, end_frame=SHOT_END)
+    out_path, score = scorer(shot, DEFAULT_CRF, TEST_CODEC)
+    assert out_path == dist_path
+    assert score == PREDICT_VMAF_SCORE
+    assert len(recorded) == 1
+    assert recorded[0].distorted == dist_yuv
+
+
+def test_real_encode_and_score_decode_timeout_returns_nan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Assert decode timeout returns NaN without running score."""
+    scorer, recorded, dist_path, _ = _setup_predict_scorer(
+        monkeypatch, tmp_path, decode_return=None, touch_dist_yuv=True
+    )
+    shot = Shot(start_frame=SHOT_START, end_frame=SHOT_END)
+    out_path, score = scorer(shot, DEFAULT_CRF, TEST_CODEC)
+    assert out_path == dist_path
+    assert math.isnan(score)
+    assert len(recorded) == 0
+
+
+def test_real_encode_and_score_decode_failure_returns_nan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Assert decode failure exit code returns NaN without running score."""
+    proc = cli.subprocess.CompletedProcess(args=["ffmpeg"], returncode=1, stdout="", stderr="")
+    scorer, recorded, dist_path, _ = _setup_predict_scorer(
+        monkeypatch, tmp_path, decode_return=proc, touch_dist_yuv=True
+    )
+    shot = Shot(start_frame=SHOT_START, end_frame=SHOT_END)
+    out_path, score = scorer(shot, DEFAULT_CRF, TEST_CODEC)
+    assert out_path == dist_path
+    assert math.isnan(score)
+    assert len(recorded) == 0
+
+
+def test_real_encode_and_score_missing_decoded_yuv_returns_nan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Assert decode exit zero with missing output YUV returns NaN without running score."""
+    proc = cli.subprocess.CompletedProcess(args=["ffmpeg"], returncode=0, stdout="", stderr="")
+    scorer, recorded, dist_path, _ = _setup_predict_scorer(
+        monkeypatch, tmp_path, decode_return=proc, touch_dist_yuv=False
+    )
+    shot = Shot(start_frame=SHOT_START, end_frame=SHOT_END)
+    out_path, score = scorer(shot, DEFAULT_CRF, TEST_CODEC)
+    assert out_path == dist_path
+    assert math.isnan(score)
+    assert len(recorded) == 0
