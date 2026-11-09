@@ -39,6 +39,7 @@ class InputContractCliTest(unittest.TestCase):
         self._write_docker_doc()
 
     def _write_patch_fixture(self) -> None:
+        """Write a patch fixture holding the vmafx filter's AV_LOG_INFO input-order call."""
         (self.root / "ffmpeg-patches/0003-add-vmafx-filter.patch").write_text(
             """diff --git a/libavfilter/vf_vmafx.c b/libavfilter/vf_vmafx.c
 --- a/libavfilter/vf_vmafx.c
@@ -212,6 +213,7 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,video \\
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_log_call_removal_fails(self) -> None:
+        """A changed log level on the input-order call fails the contract."""
         self.mutate(
             "ffmpeg-patches/0003-add-vmafx-filter.patch",
             "av_log(ctx, AV_LOG_INFO,",
@@ -220,6 +222,7 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,video \\
         self.assert_fails_with("executable AV_LOG_INFO")
 
     def test_log_message_mutation_fails(self) -> None:
+        """A changed input-order message text fails the contract."""
         self.mutate(
             "ffmpeg-patches/0003-add-vmafx-filter.patch",
             "input 1 (reference) the reference",
@@ -228,6 +231,7 @@ docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,video \\
         self.assert_fails_with("executable AV_LOG_INFO")
 
     def test_commented_log_call_fails(self) -> None:
+        """An input-order call inside a comment does not satisfy the contract."""
         call = (
             "+    av_log(ctx, AV_LOG_INFO,\n"
             '+           "%s: input 0 (main) is the distorted video, input 1 (reference) the reference; "\n'

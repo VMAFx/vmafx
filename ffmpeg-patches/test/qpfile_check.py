@@ -125,6 +125,7 @@ def x264_checks(args: argparse.Namespace, tmp: Path, source: Path) -> list[tuple
 
 
 def libaom_checks(args: argparse.Namespace, tmp: Path, source: Path) -> list[tuple[str, bool, str]]:
+    """Run the libaom-av1 qpfile cases and return (label, passed, stderr tail) rows."""
     if not has_encoder(args, "libaom-av1"):
         return [
             ("libaom-av1 accepts a qpfile (skipped: encoder missing)", True, ""),
@@ -177,6 +178,7 @@ def libaom_checks(args: argparse.Namespace, tmp: Path, source: Path) -> list[tup
 
 
 def other_checks(args: argparse.Namespace, tmp: Path, source: Path) -> list[tuple[str, bool, str]]:
+    """Run the libsvtav1 qpfile case, then the libaom-av1 cases; return the result rows."""
     results: list[tuple[str, bool, str]] = []
     qp = tmp / "plus.qp"
     if not has_encoder(args, "libsvtav1"):

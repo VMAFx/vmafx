@@ -144,6 +144,7 @@ def test_x265_adapter_supports_two_pass_unchanged():
 
 
 def test_augment_extra_params_with_libaom_qpfile_appends_top_level_qpfile(tmp_path):
+    """With no base params, the helper adds -usage realtime and the qpfile."""
     qpfile = tmp_path / "roi.qpfile.txt"
     qpfile.write_text("0 I 0\n", encoding="ascii")
     out = augment_extra_params_with_libaom_qpfile((), qpfile)
@@ -151,6 +152,7 @@ def test_augment_extra_params_with_libaom_qpfile_appends_top_level_qpfile(tmp_pa
 
 
 def test_augment_extra_params_with_libaom_qpfile_preserves_base(tmp_path):
+    """The helper keeps the base params ahead of -usage realtime and the qpfile."""
     qpfile = tmp_path / "roi.qpfile.txt"
     qpfile.write_text("0 I 0\n", encoding="ascii")
     base = ("-threads", "4")

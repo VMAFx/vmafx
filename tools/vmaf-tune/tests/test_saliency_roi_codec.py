@@ -891,6 +891,7 @@ def test_recommend_saliency_libaom_default_preset_refuses_cleanly(
     argv = _recommend_saliency_libaom_argv(tmp_path, monkeypatch)
 
     def _fail_runner(*args: object, **kwargs: object) -> EncodeResult:
+        """Fail the test: the refused preset must never reach an encode."""
         pytest.fail("encode runner should not have been called on refused preset")
 
     monkeypatch.setattr("vmaftune.encode.run_encode", _fail_runner)
@@ -919,6 +920,7 @@ def test_recommend_saliency_libaom_veryfast_preset_executes_encode(
     def _stub_runner(
         req: EncodeRequest, *, ffmpeg_bin: str = "ffmpeg", **kwargs: object
     ) -> EncodeResult:
+        """Record the request and return a successful fake encode."""
         stub_calls.append(req)
         return EncodeResult(
             request=req,

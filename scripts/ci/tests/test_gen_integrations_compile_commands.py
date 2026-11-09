@@ -116,6 +116,7 @@ class GenerateEntries(unittest.TestCase):
 
 class RefusesToMeasureNothing(unittest.TestCase):
     def test_missing_ffmpeg_line_fails(self) -> None:
+        """A build missing the vf_vmafx_pre.c compile line exits 1 and names the file."""
         with tempfile.TemporaryDirectory() as tmp:
             build = Path(tmp)
             _populate(build, gst=GST_SOURCES, ffmpeg=["libavfilter/vf_vmafx.c"])
