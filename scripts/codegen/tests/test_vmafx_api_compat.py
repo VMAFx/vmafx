@@ -142,14 +142,56 @@ class EmittedCompatTest(unittest.TestCase):
             self.assertNotIn("vmaf_sycl_import_d3d11_surface", expected)
 
     def test_conformance_tables_cover_every_compat_definition(self) -> None:
+        """Every tabled compat function has a header entry and a table member."""
         header = emit_conformance.header_text(self.api)
         table = emit_conformance.table_text(self.api)
         tabled = emit_conformance.tabled(self.api)
         self.assertEqual(len(tabled), 110 - 25)
         for item in tabled:
             self.assertIn(f'VMAF_COMPAT_ENTRY("{item.name}"', header)
-            self.assertIn(f"    .{item.stem} = VMAF_COMPAT_THUNK(", table)
+            self.assertIn(f"    .{item.stem} = THUNK_", table)
         self.assertIn('{"vmaf_cuda_state_init", "cuda"}', header)
+
+    def test_conditioned_conformance_table_thunks_emit_null_fallback(self) -> None:
+        """Conditioned compat table thunks emit fallback to NULL when disabled."""
+        table = emit_conformance.table_text(self.api)
+        tabled = emit_conformance.tabled(self.api)
+        conditioned = [
+            (idx, item, emit_conformance.condition(item))
+            for idx, item in enumerate(tabled)
+            if emit_conformance.condition(item)
+        ]
+        self.assertGreater(len(conditioned), 0)
+        self.assertTrue(
+            any(
+                item.name == "vmaf_mcp_available" and cond == "VMAFX_BUILD_MCP"
+                for _, item, cond in conditioned
+            )
+        )
+        for idx, item, cond in conditioned:
+            # One block per thunk: the guard opens, the forwarder and its
+            # THUNK define follow with no other guard in between, and the
+            # NULL fallback closes the same guard.
+            block = re.search(
+                rf"#if {re.escape(cond)}\n((?:(?!#if |#endif\n).)*?)"
+                rf"#define THUNK_{idx} thunk_{idx}\n#else\n#define THUNK_{idx} NULL\n#endif\n",
+                table,
+                re.S,
+            )
+            self.assertIsNotNone(
+                block, f"{item.name}: #if {cond} does not wrap THUNK_{idx} and its NULL fallback"
+            )
+            assert block is not None
+            self.assertIn(f"thunk_{idx}(", block.group(1))
+            self.assertIn(f"{item.name}(", block.group(1))
+            self.assertIn(f"    .{item.stem} = THUNK_{idx},\n", table)
+
+        unconditional = next(
+            (idx, item) for idx, item in enumerate(tabled) if not emit_conformance.condition(item)
+        )
+        u_idx, _ = unconditional
+        self.assertIn(f"#define THUNK_{u_idx} thunk_{u_idx}\n", table)
+        self.assertNotIn(f"#define THUNK_{u_idx} NULL", table)
 
 
 # Error plumbing every compat source uses through compat_errno.h.
