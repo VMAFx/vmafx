@@ -31,9 +31,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.lib.safe_subprocess import (
     CommandOutputLimitExceeded,
-    CommandResult,
     CommandTimedOut,
     CommandValidationError,
+    TextCommandResult,
     resolve_executable,
 )
 from scripts.lib.safe_subprocess import run as run_command
@@ -1915,7 +1915,7 @@ def _run_uv(
     *,
     timeout_seconds: float = SUBPROCESS_TIMEOUT_S,
     max_output_bytes: int = 16 * 1_048_576,
-) -> CommandResult:
+) -> TextCommandResult:
     """Execute uv via safe_subprocess with allowed_executables validation."""
     try:
         return run_command(
