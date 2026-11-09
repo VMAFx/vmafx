@@ -382,28 +382,34 @@ class SafeSubprocessAsyncTests(unittest.IsolatedAsyncioTestCase):
 
 class _StubTaskkillProcess:
     def __init__(self, returncode: int = 0) -> None:
+        """Record the stub returncode for taskkill simulation."""
         self.returncode = returncode
 
     async def wait(self) -> int:
+        """Return the recorded taskkill exit status."""
         return self.returncode
 
     def kill(self) -> None:
-        pass
+        """Stub kill invocation on the taskkill process."""
 
 
 class _StubProcessGroupChild:
     def __init__(self, pid: int = 4242) -> None:
+        """Record the child PID and initialize call order tracking."""
         self.pid = pid
         self.returncode: int | None = None
         self.call_order: list[str] = []
 
     def terminate(self) -> None:
+        """Record terminate invocation in call order."""
         self.call_order.append("terminate")
 
     def kill(self) -> None:
+        """Record kill invocation in call order."""
         self.call_order.append("kill")
 
     async def wait(self) -> int:
+        """Record wait invocation and set returncode."""
         self.returncode = 1
         self.call_order.append("wait")
         return 1
@@ -411,6 +417,7 @@ class _StubProcessGroupChild:
 
 class WindowsTreeTerminationTests(unittest.TestCase):
     def test_windows_tree_termination_invokes_taskkill_with_exact_argv(self) -> None:
+        """Assert that taskkill is invoked with exact PID and flags."""
         stub_proc = _StubTaskkillProcess(returncode=0)
         exec_stub = mock.AsyncMock(return_value=stub_proc)
         with (
@@ -430,6 +437,7 @@ class WindowsTreeTerminationTests(unittest.TestCase):
         )
 
     def test_windows_tree_termination_nonzero_exit_status_returns_false(self) -> None:
+        """Assert that a non-zero taskkill exit status returns False."""
         stub_proc = _StubTaskkillProcess(returncode=128)
         exec_stub = mock.AsyncMock(return_value=stub_proc)
         with (
@@ -446,6 +454,7 @@ class WindowsTreeTerminationTests(unittest.TestCase):
     def test_windows_tree_termination_missing_taskkill_returns_false_and_starts_nothing(
         self,
     ) -> None:
+        """Assert that missing taskkill returns False and starts nothing."""
         exec_stub = mock.AsyncMock()
         with (
             mock.patch(
@@ -460,6 +469,7 @@ class WindowsTreeTerminationTests(unittest.TestCase):
         exec_stub.assert_not_called()
 
     def test_terminate_windows_process_tree_boundary_validation(self) -> None:
+        """Assert that invalid process IDs are rejected and positive PID succeeds."""
         invalid_targets: list[Any] = [0, -1, True, "12"]
         for target in invalid_targets:
             with self.subTest(target=repr(target)), self.assertRaises(CommandValidationError):
@@ -484,10 +494,12 @@ class WindowsTreeTerminationTests(unittest.TestCase):
         )
 
     def test_terminate_process_group_windows_terminates_tree_before_direct_child(self) -> None:
+        """Assert that process tree is terminated before the direct child."""
         fake = _StubProcessGroupChild(pid=4242)
         recorded_pids: list[int] = []
 
         async def record_tree_terminate(pid: int) -> bool:
+            """Record the tree termination PID and call order."""
             recorded_pids.append(pid)
             fake.call_order.append("tree_terminate")
             return True

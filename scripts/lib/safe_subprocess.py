@@ -432,6 +432,12 @@ async def _write_input(writer: asyncio.StreamWriter, data: bytes) -> None:
 
 
 async def _terminate_windows_process_tree(pid: int) -> bool:
+    """Terminate the process tree rooted at `pid` on Windows using taskkill.
+
+    Returns:
+        True when taskkill exits with status 0; False when taskkill fails,
+        times out, or is unavailable.
+    """
     try:
         taskkill = resolve_executable("taskkill")
     except CommandValidationError:
@@ -478,6 +484,9 @@ def terminate_windows_process_tree(pid: int) -> bool:
 
 
 async def _terminate_process_group(process: asyncio.subprocess.Process) -> None:
+    """End the child's process group on POSIX, and on Windows end the process tree first, then
+    terminate, kill and reap the direct child.
+    """
     if os.name == "posix":
         await _terminate_posix_process_group(process)
         return
