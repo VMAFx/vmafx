@@ -88,13 +88,25 @@ def page_drift(root: Path, entries: list[Entry]) -> list[str]:
 
 
 def header_spdx_expression(root: Path, name: str) -> str | None:
-    """Return the SPDX-License-Identifier expression in ``name``'s header, or None."""
+    """Return the SPDX-License-Identifier expression in ``name``'s header, or None.
+
+    Reads all ``SPDX-License-Identifier`` lines in the first ``HEADER_LINES`` lines.
+    When two or more lines match, they are joined as ``(e1) AND (e2)`` so any
+    ``OR`` within a single line preserves its grouping.
+    """
     head = _read(root, name).splitlines()[:HEADER_LINES]
+    matches: list[str] = []
     for line in head:
         m = SPDX_HEADER_RE.search(line)
         if m:
-            return m.group("expr").strip()
-    return None
+            expr = m.group("expr").strip()
+            if expr:
+                matches.append(expr)
+    if not matches:
+        return None
+    if len(matches) == 1:
+        return matches[0]
+    return " AND ".join(f"({expr})" for expr in matches)
 
 
 def reuse_annotations(root: Path) -> list[dict[str, object]]:

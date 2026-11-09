@@ -370,7 +370,8 @@ credit it:
 - the tables differ from the list (page drift);
 - a vendored or inherited third-party path has no entry: any non-project
   licence in `REUSE.toml` (under `precedence = "closest"` the file's own SPDX
-  header decides, as `reuse` resolves it), any file in a `third_party`,
+  header decides, as `reuse` resolves it, and every `SPDX-License-Identifier`
+  line in that header counts), any file in a `third_party`,
   `3rdparty` or `vendor` directory that no `REUSE.toml` `override` annotation
   gives the project's licence, notice and licence files, font files, and source files whose copyright header
   names someone other than the project and its contributors;

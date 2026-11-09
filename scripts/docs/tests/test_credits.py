@@ -577,6 +577,53 @@ class ReusePrecedence(Fixture):
         found = self.only("uncredited-path")
         self.assertTrue(any("pkg/x/a.c: BSD-3-Clause" in line for line in found))
 
+    def test_closest_with_multi_header_including_non_own_is_flagged(self) -> None:
+        """Plant closest GPL annotation and multi-line header with EUPL-1.2 and
+        BSD-3-Clause in pkg/x/a.c; expect one uncredited-path finding naming pkg/x/a.c
+        and BSD-3-Clause."""
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "closest"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\n'
+            'SPDX-License-Identifier = "GPL-3.0-or-later"\n',
+        )
+        # REUSE-IgnoreStart
+        self.put(
+            "pkg/x/a.c",
+            "/*\n"
+            " * SPDX-License-Identifier: EUPL-1.2\n"
+            " * SPDX-License-Identifier: BSD-3-Clause\n"
+            " */\nint a = 1;\n",
+        )
+        # REUSE-IgnoreEnd
+        found = self.only("uncredited-path")
+        self.assertEqual(len(found), 1)
+        self.assertIn("pkg/x/a.c", found[0])
+        self.assertIn("BSD-3-Clause", found[0])
+
+    def test_closest_with_multi_own_header_is_not_flagged(self) -> None:
+        """Plant closest GPL annotation and two own license header lines in pkg/x/a.c;
+        expect no finding."""
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "closest"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\n'
+            'SPDX-License-Identifier = "GPL-3.0-or-later"\n',
+        )
+        second_own = lib.OWN_LICENSES[1]
+        # REUSE-IgnoreStart
+        self.put(
+            "pkg/x/a.c",
+            "/*\n"
+            " * SPDX-License-Identifier: EUPL-1.2\n"
+            f" * SPDX-License-Identifier: {second_own}\n"
+            " */\nint a = 1;\n",
+        )
+        # REUSE-IgnoreEnd
+        self.assertEqual(self.findings()["uncredited-path"], [])
+
     def test_header_spdx_expression_boundary(self) -> None:
         """Plant a one-line /* SPDX ... */ header; expect EUPL-1.2 without the trailing */."""
         # REUSE-IgnoreStart
@@ -584,6 +631,21 @@ class ReusePrecedence(Fixture):
         # REUSE-IgnoreEnd
         expr = checks.header_spdx_expression(self.root, "pkg/x/a.c")
         self.assertEqual(expr, "EUPL-1.2")
+
+    def test_header_spdx_expression_multi_line_boundary(self) -> None:
+        """Plant a two-line header with EUPL-1.2 and MIT OR Apache-2.0; expect
+        exact expression (EUPL-1.2) AND (MIT OR Apache-2.0)."""
+        # REUSE-IgnoreStart
+        self.put(
+            "pkg/x/a.c",
+            "/*\n"
+            " * SPDX-License-Identifier: EUPL-1.2\n"
+            " * SPDX-License-Identifier: MIT OR Apache-2.0\n"
+            " */\n",
+        )
+        # REUSE-IgnoreEnd
+        expr = checks.header_spdx_expression(self.root, "pkg/x/a.c")
+        self.assertEqual(expr, "(EUPL-1.2) AND (MIT OR Apache-2.0)")
 
     def test_structural_third_party_with_own_override(self) -> None:
         """Plant headerless third_party/pkg/a.c: flagged with no annotation, cleared by an
