@@ -22,6 +22,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import run as run_command
+
 ROOT = Path(__file__).resolve().parents[3]
 GATE = ROOT / "scripts/ci/govulncheck-gate.py"
 SCRIPT_TIMEOUT_S = 60
@@ -99,6 +103,50 @@ class GovulncheckGate(unittest.TestCase):
     def test_a_failed_scan_is_not_a_pass(self) -> None:
         self.assertEqual(self.run_gate([CONFIG], status=1).returncode, 2)
         self.assertEqual(self.run_gate([], status=0).returncode, 2)
+
+    def test_package_arg_starting_with_dash_exits_two(self) -> None:
+        """A package argument starting with '-' must exit 2 with clear error."""
+        result = run_command(
+            [sys.executable, str(GATE), "--", "-x"],
+            allowed_executables=(sys.executable,),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=30,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("govulncheck-gate: invalid package pattern '-x'", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_empty_package_arg_exits_two(self) -> None:
+        """An empty package argument must exit 2 with clear error."""
+        result = run_command(
+            [sys.executable, str(GATE), ""],
+            allowed_executables=(sys.executable,),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=30,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("govulncheck-gate: invalid package pattern ''", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_missing_executable_exits_two_without_traceback(self) -> None:
+        """A missing govulncheck executable must exit 2 with clear error and no traceback."""
+        env = dict(os.environ, GOVULNCHECK="/nonexistent/govulncheck")
+        result = run_command(
+            [sys.executable, str(GATE)],
+            allowed_executables=(sys.executable,),
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+            timeout_seconds=30,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("govulncheck-gate: the scan did not complete:", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
 
 
 if __name__ == "__main__":
