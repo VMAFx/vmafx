@@ -78,3 +78,27 @@ def fork_vmaf_under_test(
             "not this fork's CLI; point VMAF_BIN at a VMAFx build"
         )
     return binary
+
+
+def ffmpeg_reports_encoder(encoder: str) -> bool:
+    """Return True iff the local ffmpeg binary advertises ``encoder``."""
+    import shutil
+
+    if shutil.which("ffmpeg") is None:
+        return False
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=10,
+            check=False,
+        )
+        out = result.stdout.decode("utf-8", errors="replace")
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[1] == encoder:
+                return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return False

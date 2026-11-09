@@ -23,6 +23,9 @@ Covers branches not exercised by the existing encode test suite:
 
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -32,6 +35,8 @@ import pytest
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
+
+from _vmaf_cli import ffmpeg_reports_encoder
 
 from vmaftune.encode import (
     _PROBE_CACHE,
@@ -53,6 +58,61 @@ from vmaftune.hdr import HdrInfo, hdr_codec_args
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+FFMPEG_TIMEOUT_S = 60
+
+
+def _write_raw_10bit(path: Path) -> None:
+    """Generate a 10-frame 320x240 yuv420p10le raw clip via FFmpeg testsrc2."""
+    gen = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x240:rate=24",
+            "-frames:v",
+            "10",
+            "-pix_fmt",
+            "yuv420p10le",
+            "-f",
+            "rawvideo",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=FFMPEG_TIMEOUT_S,
+    )
+    assert gen.returncode == 0
+
+
+def _probe_color_tags(path: Path) -> dict[str, str]:
+    """Return stream 0 color tags dictionary via ffprobe JSON output."""
+    probe = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=color_transfer,color_primaries",
+            "-of",
+            "json",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=FFMPEG_TIMEOUT_S,
+    )
+    data = json.loads(probe.stdout)
+    return data["streams"][0]
 
 
 def _make_req(
@@ -332,6 +392,51 @@ class TestBuildFfmpegCommandRawHdrInputColorTags:
         assert input_slice[input_slice.index("-color_primaries") + 1] == "bt2020"
         assert "-colorspace" not in input_slice
         assert "-color_range" not in input_slice
+
+    @pytest.mark.skipif(
+        shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+        reason="ffmpeg not on PATH (needs ffmpeg and ffprobe)",
+    )
+    def test_real_encode_raw_hdr10_x265_tags_transfer_and_primaries(self, tmp_path: Path) -> None:
+        """Verify real libx265 encode from raw HDR10 source preserves color tags (#3345)."""
+        if not ffmpeg_reports_encoder("libx265"):
+            pytest.skip("libx265 unavailable in local ffmpeg build")
+        raw = tmp_path / "src.yuv"
+        _write_raw_10bit(raw)
+        info = HdrInfo(
+            transfer="pq",
+            primaries="bt2020",
+            matrix="bt2020nc",
+            color_range="tv",
+            pix_fmt="yuv420p10le",
+        )
+        extra = list(hdr_codec_args("libx265", info))
+        out = tmp_path / "out.mkv"
+        req = EncodeRequest(
+            source=raw,
+            width=320,
+            height=240,
+            pix_fmt="yuv420p10le",
+            framerate=24.0,
+            encoder="libx265",
+            preset="ultrafast",
+            crf=28,
+            output=out,
+            extra_params=tuple(extra),
+            source_is_container=False,
+        )
+        cmd = build_ffmpeg_command(req)
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=FFMPEG_TIMEOUT_S,
+        )
+        assert proc.returncode == 0, f"encode failed: {proc.stderr}"
+        stream = _probe_color_tags(out)
+        assert stream.get("color_transfer") == "smpte2084"
+        assert stream.get("color_primaries") == "bt2020"
 
 
 class TestBuildFfmpegCommandTwoPass:
