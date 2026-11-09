@@ -24,6 +24,7 @@ EXIT_OK = 0
 EXIT_CLEAN = 1
 EXIT_ERROR = 2
 EXPECTED_JSON_ITEMS = 2
+GIT_TIMEOUT_S = 60
 
 
 def clean_git_environment() -> dict[str, str]:
@@ -52,7 +53,12 @@ def git_cmd(repo: Path, *args: str) -> str:
     """Run git in *repo* with fixed user identity."""
     cmd = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", *args]
     proc = subprocess.run(  # noqa: S603
-        cmd, capture_output=True, text=True, check=True, env=clean_git_environment()
+        cmd,
+        capture_output=True,
+        text=True,
+        check=True,
+        env=clean_git_environment(),
+        timeout=GIT_TIMEOUT_S,
     )
     return proc.stdout.strip()
 
