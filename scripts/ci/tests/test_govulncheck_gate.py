@@ -28,6 +28,7 @@ from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
 GATE = ROOT / "scripts/ci/govulncheck-gate.py"
+SCRIPT_TIMEOUT_S = 60
 CONFIG: dict[str, object] = {
     "config": {"scanner_name": "govulncheck", "scanner_version": "v1.8.0", "scan_level": "symbol"}
 }
@@ -41,6 +42,7 @@ class GovulncheckGate(unittest.TestCase):
     def run_gate(
         self, messages: list[dict[str, object]], status: int = 0
     ) -> subprocess.CompletedProcess[str]:
+        """Execute the govulncheck gate with a stubbed tool producing JSON messages."""
         with tempfile.TemporaryDirectory() as tmp:
             stub = Path(tmp) / "govulncheck"
             payload = Path(tmp) / "out.json"
@@ -54,7 +56,7 @@ class GovulncheckGate(unittest.TestCase):
                 text=True,
                 env=env,
                 check=False,
-                timeout=60,
+                timeout=SCRIPT_TIMEOUT_S,
             )
 
     def test_clean_scan_passes(self) -> None:

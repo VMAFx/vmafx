@@ -24,6 +24,8 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 
 CHART = Path(__file__).resolve().parents[3] / "deploy" / "helm" / "vmafx"
+HELM_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 BASE = """
 controller: {enabled: true}
 auth: {enabled: true, disabled: true}
@@ -47,7 +49,7 @@ def render(values: str = BASE, *args: str) -> list[dict[str, Any]]:
             *args,
         ]
         result = subprocess.run(  # noqa: S603 -- fixed helm executable; argv built here
-            cmd, capture_output=True, text=True, check=False
+            cmd, capture_output=True, text=True, check=False, timeout=HELM_TIMEOUT_S
         )
     if result.returncode != 0:
         raise AssertionError(f"helm template failed: {result.stderr}")
@@ -227,6 +229,7 @@ class HelmControllerWorkloadTest(unittest.TestCase):
         self.assertEqual(idp["ports"], [{"protocol": "TCP", "port": 443}])
 
     def test_selectors_stay_isolated(self) -> None:
+        """Rendered workload selectors must remain isolated across controller components."""
         values = (
             BASE
             + "node: {enabled: true}\noperator: {enabled: true}\npodDisruptionBudget: {enabled: true}\n"
@@ -243,6 +246,7 @@ class HelmControllerWorkloadTest(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=SCRIPT_TIMEOUT_S,
             )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
