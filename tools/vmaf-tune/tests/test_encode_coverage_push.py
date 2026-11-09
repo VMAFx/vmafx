@@ -131,6 +131,7 @@ def _make_req(
     pix_fmt: str = "yuv420p",
     tmp_path: Path | None = None,
 ) -> EncodeRequest:
+    """Build an EncodeRequest with test defaults, overriding only the named fields."""
     base = tmp_path or Path("/tmp")
     return EncodeRequest(
         source=base / "ref.yuv",
@@ -250,6 +251,7 @@ class TestBuildFfmpegCommandRawHdrInputColorTags:
     """Raw HDR input color options before ``-i`` (#3345)."""
 
     def test_raw_source_pq_hdr_copies_color_to_input_and_keeps_output(self, tmp_path: Path) -> None:
+        """Prove raw PQ input gets the four colour tags before -i and keeps them on the output."""
         info = HdrInfo(
             transfer="pq",
             primaries="bt2020",
@@ -289,6 +291,7 @@ class TestBuildFfmpegCommandRawHdrInputColorTags:
             assert output_slice[output_slice.index(flag) + 1] == val
 
     def test_raw_source_hlg_hdr_sets_input_arib_std_b67(self, tmp_path: Path) -> None:
+        """Prove raw HLG input carries -color_trc arib-std-b67 before -i."""
         info = HdrInfo(
             transfer="hlg",
             primaries="bt2020",
@@ -311,6 +314,7 @@ class TestBuildFfmpegCommandRawHdrInputColorTags:
         assert input_slice[input_slice.index("-color_trc") + 1] == "arib-std-b67"
 
     def test_container_source_with_hdr_params_omits_input_color_tags(self, tmp_path: Path) -> None:
+        """Prove a container source gets no input colour tags; ffmpeg auto-detects those."""
         info = HdrInfo(
             transfer="pq",
             primaries="bt2020",
@@ -332,6 +336,7 @@ class TestBuildFfmpegCommandRawHdrInputColorTags:
             assert flag not in input_slice
 
     def test_raw_sdr_without_color_options_matches_master_argv(self, tmp_path: Path) -> None:
+        """Prove raw SDR input without colour options keeps the argv the code built before."""
         req = EncodeRequest(
             source=Path("/src/ref.yuv"),
             width=1920,
