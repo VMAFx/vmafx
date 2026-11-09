@@ -40,6 +40,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SQUASH_SCRIPT = REPO_ROOT / "scripts" / "ci" / "squash_message.py"
 WORKFLOW_FILE = REPO_ROOT / ".github" / "workflows" / "rule-enforcement.yml"
 SH = shutil.which("sh") or "/bin/sh"
+CLI_TIMEOUT_S = 60  # outer deadline for each squash_message.py CLI run
 
 sys.path.insert(0, str(REPO_ROOT))
 from scripts.ci import squash_message  # noqa: E402
@@ -75,6 +76,7 @@ def run_cli_check(
         capture_output=True,
         text=True,
         check=False,
+        timeout=CLI_TIMEOUT_S,
     )
     return res.returncode
 
@@ -334,6 +336,7 @@ class TestCheckWithStubEngine(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=CLI_TIMEOUT_S,
         )
         self.assertEqual(res.returncode, 2)
 
