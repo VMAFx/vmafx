@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import builtins
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -83,3 +84,45 @@ def test_placeholder_registry_missing_is_a_file_not_found_error(
         monkeypatch.setattr(module, "REGISTRY", tmp_path / "missing.json")
         with pytest.raises(FileNotFoundError, match="missing"):
             module._update_registry(tmp_path / "m.onnx")
+
+
+def test_run_one_positive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A clean ``run_one`` call returns ``(0, "")`` and passes ``VMAF_TIMEOUT_S`` to subprocess."""
+    recorded: dict[str, Any] = {}
+
+    def fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        recorded.update(kwargs)
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(collect.subprocess, "run", fake_run)
+    assert collect.run_one(["vmaf", "--help"]) == (0, "")
+    assert recorded.get("timeout") == collect.VMAF_TIMEOUT_S
+
+
+def test_run_one_negative(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failing ``run_one`` call returns its exit code with stderr, else stdout."""
+
+    def fake_run_stderr(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(cmd, returncode=3, stdout="", stderr="boom")
+
+    monkeypatch.setattr(collect.subprocess, "run", fake_run_stderr)
+    assert collect.run_one(["vmaf"]) == (3, "boom")
+
+    def fake_run_stdout(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(cmd, returncode=3, stdout="out", stderr="")
+
+    monkeypatch.setattr(collect.subprocess, "run", fake_run_stdout)
+    assert collect.run_one(["vmaf"]) == (3, "out")
+
+
+def test_run_one_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A timed-out ``run_one`` call returns 124 and a message naming ``VMAF_TIMEOUT_S``."""
+
+    def fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(cmd, collect.VMAF_TIMEOUT_S)
+
+    monkeypatch.setattr(collect.subprocess, "run", fake_run)
+    rc, msg = collect.run_one(["vmaf"])
+    assert rc == 124
+    assert str(collect.VMAF_TIMEOUT_S) in msg
+    assert "VMAF_TIMEOUT_S" in msg

@@ -7,7 +7,9 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -95,3 +97,50 @@ def test_validate_saliency_student_writes_report(
         "registry": True,
     }
     assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"
+
+
+def test_check_registry_positive(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A clean ``_check_registry`` call returns 0 and passes ``SCRIPT_TIMEOUT_S``."""
+    mod = _load_script("validate_saliency_student")
+    recorded: dict[str, Any] = {}
+
+    def fake_call(cmd: list[str], **kwargs: Any) -> int:
+        recorded.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(mod.subprocess, "call", fake_call)
+    rc = mod._check_registry()
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert recorded.get("timeout") == mod.SCRIPT_TIMEOUT_S
+    assert "rc=0" in captured.out
+
+
+def test_check_registry_negative(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failing ``_check_registry`` call returns the exit code of the registry script."""
+    mod = _load_script("validate_saliency_student")
+
+    def fake_call(cmd: list[str], **kwargs: Any) -> int:
+        return 2
+
+    monkeypatch.setattr(mod.subprocess, "call", fake_call)
+    assert mod._check_registry() == 2
+
+
+def test_check_registry_boundary(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A timed-out ``_check_registry`` call returns 124 and names ``SCRIPT_TIMEOUT_S``."""
+    mod = _load_script("validate_saliency_student")
+
+    def fake_call(cmd: list[str], **kwargs: Any) -> int:
+        raise subprocess.TimeoutExpired(cmd, mod.SCRIPT_TIMEOUT_S)
+
+    monkeypatch.setattr(mod.subprocess, "call", fake_call)
+    rc = mod._check_registry()
+    captured = capsys.readouterr()
+    assert rc == 124
+    assert "timed out after" in captured.out
+    assert "SCRIPT_TIMEOUT_S" in captured.out
