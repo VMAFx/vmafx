@@ -28,10 +28,10 @@ import (
 // Image is the PostgreSQL release the chart deploys (ADR-2350 D1). golusoris
 // testutil/pg refuses a test image without a digest (since v0.13.0), so both
 // images are pinned as tag@sha256 of the multi-platform index.
-const Image = "postgres:18.6-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5"
+const Image = "postgres:18.6-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395"
 
 // OldestImage is the oldest release external servers may run.
-const OldestImage = "postgres:16.15-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab"
+const OldestImage = "postgres:16.15-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139"
 
 // setupTimeout bounds every database call of the helpers (HISS-02).
 const setupTimeout = 2 * time.Minute
