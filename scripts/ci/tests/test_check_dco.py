@@ -85,7 +85,7 @@ class Repo:
         self.base = self.git(["rev-parse", "HEAD"]).strip()
 
     def git(self, args: list[str], ident: tuple[str, str] = HUMAN) -> str:
-        """Run a git command in the test repository and return its stdout."""
+        """Guards scripts/ci/check-dco.py by setting up commits and git state in an isolated test repo."""
         done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
             [GIT, *args],
             cwd=self.path,
@@ -106,7 +106,7 @@ class Repo:
         return self.git(["rev-parse", "HEAD"], ident).strip()
 
     def gate(self, *extra: str) -> subprocess.CompletedProcess[str]:
-        """Run the DCO check gate script against the repository and return the result."""
+        """Guards scripts/ci/check-dco.py: runs the DCO gate against commits between base and head in the test repo."""
         head = self.git(["rev-parse", "HEAD"]).strip()
         return subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
             [sys.executable, "-I", str(GATE), "--base", self.base, "--head", head, *extra],
@@ -181,7 +181,7 @@ class DcoGateTest(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
 
     def test_bad_range_is_an_error_not_a_pass(self) -> None:
-        """A bad revision range is an error, not a pass."""
+        """Guards scripts/ci/check-dco.py: proves an unresolvable base/head revision range exits 2 instead of passing."""
         res = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
             [sys.executable, "-I", str(GATE), "--base", "0" * 40, "--head", "HEAD"],
             cwd=self.repo.path,
@@ -193,7 +193,7 @@ class DcoGateTest(unittest.TestCase):
         self.assertEqual(res.returncode, 2)
 
     def test_missing_arguments_is_usage_error(self) -> None:
-        """Missing required base and head arguments causes a usage error."""
+        """Guards scripts/ci/check-dco.py: proves omitting both CLI revision flags and environment fallbacks exits 2."""
         env = {k: v for k, v in os.environ.items() if k not in ("BASE_SHA", "HEAD_SHA")}
         res = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
             [sys.executable, "-I", str(GATE)],
@@ -382,7 +382,7 @@ class DcoLandedGateTest(unittest.TestCase):
         self.assertIn("PASS", res.stdout)
 
     def test_committer_only_match_fails(self) -> None:
-        """A signoff matching only the committer and not the landing identity fails."""
+        """Guards scripts/ci/check-dco.py --landed: requires sign-off to match the landing identity or author, rejecting committer-only matches."""
         n = len(list(self.repo.path.glob("f*.txt")))
         (self.repo.path / f"f{n}.txt").write_text(f"{n}\n")
         self.repo.git(["add", "-A"], BOT_IDENT)
@@ -410,7 +410,7 @@ class DcoLandedGateTest(unittest.TestCase):
         self.assertIn("Signed-off-by", res.stdout)
 
     def test_base_40_zeros_judges_head_only(self) -> None:
-        """When base is forty zeros, the landed gate judges only the head commit."""
+        """Guards scripts/ci/check-dco.py --landed: verifies 40-zero base SHA evaluates strictly the single HEAD commit."""
         # Bad head: unsigned commit -> rc 1
         self.repo.commit("feat: bad head unsigned", HUMAN)
         head_bad = self.repo.git(["rev-parse", "HEAD"]).strip()

@@ -16,6 +16,11 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
+
 ROOT = Path(__file__).resolve().parents[3]
 CHECKER = ROOT / "scripts/ci/check-source-adr-citations.py"
 GIT = shutil.which("git") or "/usr/bin/git"
@@ -43,7 +48,7 @@ class SourceAdrCitationTests(unittest.TestCase):
         self.write("evidence.txt", "fixture evidence\n")
 
     def run_git(self, *args: str) -> str:
-        """Run a git command in the fixture repository and return stripped stdout."""
+        """Guards scripts/ci/check-source-adr-citations.py by running Git in disposable fixture repositories."""
         return subprocess.run(  # noqa: S603 -- fixed Git binary in a disposable fixture
             [
                 GIT,
@@ -90,9 +95,9 @@ class SourceAdrCitationTests(unittest.TestCase):
         self.write("source-adr-citations.json", json.dumps(body, indent=2, sort_keys=True) + "\n")
         self.run_git("add", ".")
 
-    def run_checker(self, *extra: str) -> subprocess.CompletedProcess[str]:
-        """Run the ADR citations checker script against the fixture repository."""
-        return subprocess.run(  # noqa: S603 -- gate under test; fixed executable and argv shape
+    def run_checker(self, *extra: str) -> TextCommandResult:
+        """Guards scripts/ci/check-source-adr-citations.py (ADR-2200): validates source citations against the registry file."""
+        return run_command(
             [
                 PYTHON,
                 str(CHECKER),
@@ -102,12 +107,13 @@ class SourceAdrCitationTests(unittest.TestCase):
                 "source-adr-citations.json",
                 *extra,
             ],
+            allowed_executables=(PYTHON,),
             env=fixture_git_env(),
             text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            capture_output=True,
+            stderr_to_stdout=True,
             check=False,
-            timeout=SCRIPT_TIMEOUT_S,
+            timeout_seconds=SCRIPT_TIMEOUT_S,
         )
 
     def test_a_live_citation_needs_no_registry_entry(self) -> None:
@@ -241,7 +247,7 @@ class SourceAdrCitationTests(unittest.TestCase):
         self.assertEqual(set(registry), {"schema_version", "retired", "fixtures"})
 
     def test_fixture_git_discards_inherited_repository_environment(self) -> None:
-        """Fixture git operations isolate themselves from inherited git environment."""
+        """Guards scripts/ci/check-source-adr-citations.py: proves GIT_DIR and Git environment leaks do not corrupt the check."""
         self.write_adr("0042-original-decision.md")
         self.write("core/example.c", "/* Kept for ADR-0042. */\n")
         self.registry()
@@ -406,15 +412,16 @@ class SourceAdrCitationTests(unittest.TestCase):
         self.assertIn("concurrent_edit", content)
 
     def test_repository_registry_is_current(self) -> None:
-        """The repository source ADR citation registry is current and passes check."""
-        result = subprocess.run(  # noqa: S603 -- gate under test; fixed executable and argv
+        """Guards ADR-2200: validates that the real repository tree matches source-adr-citations.json without drift."""
+        result = run_command(
             [PYTHON, str(CHECKER), "--root", str(ROOT)],
+            allowed_executables=(PYTHON,),
             env=fixture_git_env(),
             text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            capture_output=True,
+            stderr_to_stdout=True,
             check=False,
-            timeout=SCRIPT_TIMEOUT_S,
+            timeout_seconds=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(result.returncode, 0, result.stdout)
 

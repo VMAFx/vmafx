@@ -17,9 +17,15 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
 GATE = ROOT / "scripts" / "ci" / "deliverables-check.sh"
@@ -72,7 +78,7 @@ class RenderOnlyGateTest(unittest.TestCase):
         self.git("checkout", "-q", "-b", "render")
 
     def git(self, *args: str) -> str:
-        """Run a git command in the test repository and return its stdout."""
+        """Guards scripts/ci/deliverables-check.sh: prepares commits, tags, and branches in the fixture repository."""
         env = {**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, **IDENT}
         done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
             [GIT, *args],
@@ -96,22 +102,23 @@ class RenderOnlyGateTest(unittest.TestCase):
         self.git("add", "-A")
         self.git("commit", "-q", "-m", "change")
 
-    def gate(self, body: str = BODY) -> subprocess.CompletedProcess[str]:
-        """Run the render-only gate script with the specified pull request body."""
+    def gate(self, body: str = BODY) -> TextCommandResult:
+        """Guards scripts/ci/deliverables-check.sh (ADR-3295): runs the gate to verify render-only PR qualification."""
         env = {k: v for k, v in os.environ.items() if k not in ("PR_BODY", "BASE_SHA", "HEAD_SHA")}
         env = {k: v for k, v in env.items() if not k.startswith("GIT_")}
         env.update(PR_BODY=body, BASE_SHA=self.base, HEAD_SHA=self.git("rev-parse", "HEAD").strip())
-        return subprocess.run(  # noqa: S603 -- fixed argv, no shell, gate under test
+        return run_command(
             [BASH, str(GATE)],
+            allowed_executables=(BASH,),
             cwd=self.repo,
             env=env,
             capture_output=True,
             text=True,
             check=False,
-            timeout=SCRIPT_TIMEOUT_S,
+            timeout_seconds=SCRIPT_TIMEOUT_S,
         )
 
-    def assert_refused(self, res: subprocess.CompletedProcess[str], needle: str) -> None:
+    def assert_refused(self, res: TextCommandResult, needle: str) -> None:
         out = res.stdout + res.stderr
         self.assertEqual(res.returncode, 1, out)
         self.assertIn(needle, out)

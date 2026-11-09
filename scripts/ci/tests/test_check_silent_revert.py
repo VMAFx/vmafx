@@ -27,6 +27,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
+
 ROOT = Path(__file__).resolve().parents[3]
 GATE = ROOT / "scripts" / "ci" / "check-silent-revert.py"
 GIT = shutil.which("git") or "/usr/bin/git"
@@ -55,7 +60,7 @@ def git_env() -> dict[str, str]:
 
 
 def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    """Run a git command in the repository and return the completed process."""
+    """Guards scripts/ci/check-silent-revert.py by executing Git operations in fixture repositories."""
     return subprocess.run(  # noqa: S603 -- fixed argv, no shell, disposable fixture repo
         [GIT, "-C", str(repo), *args],
         env=git_env(),
@@ -66,15 +71,16 @@ def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
     )
 
 
-def run_gate(repo: Path, base: str, head: str, **env: str) -> subprocess.CompletedProcess[str]:
-    """Run the silent revert gate script between base and head revisions."""
-    return subprocess.run(  # noqa: S603 -- fixed argv, no shell, gate under test
+def run_gate(repo: Path, base: str, head: str, **env: str) -> TextCommandResult:
+    """Guards scripts/ci/check-silent-revert.py (ADR-1284): runs the gate against commits between base and head."""
+    return run_command(
         [sys.executable, str(GATE), "--repo", str(repo), "--base", base, "--head", head],
+        allowed_executables=(sys.executable,),
         env={**git_env(), **env},
         text=True,
         capture_output=True,
         check=False,
-        timeout=SCRIPT_TIMEOUT_S,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
     )
 
 
@@ -502,7 +508,7 @@ class RealHistoryReplayTest(unittest.TestCase):
     """Replay the silent revert that motivated the gate, from this repo's history."""
 
     def test_real_history_replay(self) -> None:
-        """Replaying real history catches the silent revert commit and reports failure."""
+        """Guards scripts/ci/check-silent-revert.py (ADR-1284): replays commits 31a51afb2 and 92ea978a4 to prove silent revert detection."""
         probe = subprocess.run(  # noqa: S603 -- fixed argv, no shell
             [GIT, "-C", str(ROOT), "cat-file", "-e", f"{ADR_0759_REVERTED}^{{commit}}"],
             env=git_env(),

@@ -14,8 +14,12 @@ from pathlib import Path, PureWindowsPath
 
 import pytest
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import check_install_layout as checker
+
+from scripts.lib.safe_subprocess import run as run_command
 
 CC_TIMEOUT_S = 60
 CMAKE_TIMEOUT_S = 60
@@ -474,7 +478,7 @@ def _tool(name: str) -> str:
 
 
 def _write_dummy_vmafx_shared(lib_dir: Path) -> Path:
-    """Compile and write a minimal shared dummy vmafx library returning its path."""
+    """Guards CMake packaging rules by building a minimal shared libvmafx.so exporting vmafx_version_string."""
     lib_dir.mkdir(parents=True, exist_ok=True)
     c_source = lib_dir / "dummy_vmafx.c"
     c_source.write_text('const char *vmafx_version_string(void) { return "1.0.0"; }\n')
@@ -498,7 +502,7 @@ def _write_cmake_version_file(dest: Path, version: str = "1.0.0") -> None:
 
 
 def test_cmake_consumer_find_package_e2e(tmp_path: Path) -> None:
-    """CMake consumer can find and link against the installed vmafx shared library."""
+    """Guards core/cmake/vmafxConfig.cmake.in: verifies find_package(vmafx 1 REQUIRED) links and runs end-to-end."""
     if not shutil.which("cmake") or not shutil.which("cc"):
         pytest.skip("cmake or cc not available")
     prefix = tmp_path / "install"
@@ -516,46 +520,47 @@ def test_cmake_consumer_find_package_e2e(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     consumer.mkdir()
     (consumer / "CMakeLists.txt").write_text(
-        "cmake_minimum_required(VERSION 3.20)\n"
-        "project(consumer_test C)\n"
-        "find_package(vmafx 1 REQUIRED)\n"
-        "add_executable(app main.c)\n"
+        "cmake_minimum_required(VERSION 3.20)\nproject(consumer_test C)\n"
+        "find_package(vmafx 1 REQUIRED)\nadd_executable(app main.c)\n"
         "target_link_libraries(app PRIVATE vmafx::vmafx)\n"
     )
     (consumer / "main.c").write_text(
-        "#include <vmafx/vmafx.h>\n#include <stdio.h>\nint main(void) { puts(vmafx_version_string()); return 0; }\n"
+        "#include <vmafx/vmafx.h>\n#include <stdio.h>\n"
+        "int main(void) { puts(vmafx_version_string()); return 0; }\n"
     )
     build_dir = consumer / "build"
-    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
-        [
-            _tool("cmake"),
-            "-S",
-            str(consumer),
-            "-B",
-            str(build_dir),
-            f"-DCMAKE_PREFIX_PATH={prefix}",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=CMAKE_TIMEOUT_S,
-    )
-    subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
-        [_tool("cmake"), "--build", str(build_dir)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=CMAKE_TIMEOUT_S,
-    )
-    out = subprocess.check_output(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
-        [str(build_dir / "app")],
-        env={**os.environ, "LD_LIBRARY_PATH": str(lib)},
+    cmake_bin = _tool("cmake")
+    run_command(
+        [cmake_bin, "-S", str(consumer), "-B", str(build_dir), f"-DCMAKE_PREFIX_PATH={prefix}"],
+        allowed_executables=(cmake_bin,),
+        capture_output=True,
         text=True,
-        timeout=SUBPROCESS_TIMEOUT_S,
+        check=True,
+        timeout_seconds=CMAKE_TIMEOUT_S,
     )
-    assert out.strip() == "1.0.0"
+    run_command(
+        [cmake_bin, "--build", str(build_dir)],
+        allowed_executables=(cmake_bin,),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout_seconds=CMAKE_TIMEOUT_S,
+    )
+    app_bin = str(build_dir / "app")
+    out = run_command(
+        [app_bin],
+        allowed_executables=(app_bin,),
+        env={**os.environ, "LD_LIBRARY_PATH": str(lib)},
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout_seconds=SUBPROCESS_TIMEOUT_S,
+    )
+    assert out.stdout.strip() == "1.0.0"
 
 
 def test_cmake_consumer_stale_cache_overridden(tmp_path: Path) -> None:
-    """CMake consumer overrides a stale cached library path with the discovered target."""
+    """Guards core/cmake/vmafxConfig.cmake.in: ensures find_package overrides a stale VMAFX_LIBRARY cache entry with discovered targets."""
     if not shutil.which("cmake") or not shutil.which("cc"):
         pytest.skip("cmake or cc not available")
     prefix = tmp_path / "install"
@@ -617,7 +622,7 @@ def test_cmake_consumer_stale_cache_overridden(tmp_path: Path) -> None:
 
 
 def test_cmake_consumer_rejects_static_archive(tmp_path: Path) -> None:
-    """CMake consumer rejects a static archive when looking for the shared library."""
+    """Guards core/cmake/vmafxConfig.cmake.in: ensures find_package rejects a static archive when resolving shared imported targets."""
     if not shutil.which("cmake"):
         pytest.skip("cmake not available")
     prefix = tmp_path / "install"
@@ -659,7 +664,7 @@ def test_cmake_consumer_rejects_static_archive(tmp_path: Path) -> None:
 
 
 def test_cmake_consumer_absolute_dirs(tmp_path: Path) -> None:
-    """CMake consumer resolves imported targets configured with absolute directories."""
+    """Guards core/cmake/vmafxConfig.cmake.in: verifies find_package operates when prefix paths are configured as absolute paths."""
     if not shutil.which("cmake") or not shutil.which("cc"):
         pytest.skip("cmake or cc not available")
     abs_inc = tmp_path / "abs_include" / "vmafx"
@@ -720,7 +725,7 @@ def test_cmake_consumer_absolute_dirs(tmp_path: Path) -> None:
 
 
 def test_cmake_consumer_mingw_import_library(tmp_path: Path) -> None:
-    """CMake consumer maps a MinGW install's DLL and import library onto the imported target."""
+    """Guards core/cmake/vmafxConfig.cmake.in: verifies MinGW layouts correctly populate IMPORTED_LOCATION and IMPORTED_IMPLIB targets."""
     if not shutil.which("cmake"):
         pytest.skip("cmake not available")
     prefix = tmp_path / "install"
@@ -770,7 +775,7 @@ def test_cmake_consumer_mingw_import_library(tmp_path: Path) -> None:
 
 
 def test_cmake_consumer_stale_dll_cache_overridden(tmp_path: Path) -> None:
-    """CMake consumer overrides a stale cached DLL path with the discovered DLL."""
+    """Guards core/cmake/vmafxConfig.cmake.in: ensures find_package overrides a stale cached DLL path on Windows/MinGW layouts."""
     if not shutil.which("cmake"):
         pytest.skip("cmake not available")
     prefix = tmp_path / "install"

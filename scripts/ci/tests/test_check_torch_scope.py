@@ -94,7 +94,7 @@ requires = ["torchao"]
         self.assertEqual(check(files), [])
 
     def test_the_tree_passes(self) -> None:
-        """The repository tree passes the torch scope checker with exit code zero."""
+        """Guards ADR-1886: verifies scripts/ci/check-torch-scope.py accepts the current tree without illegal torch dependencies."""
         result = subprocess.run(  # noqa: S603 -- the script under test
             [sys.executable, str(SCRIPT)],
             capture_output=True,

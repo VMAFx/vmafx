@@ -23,7 +23,7 @@ class CheckWorkflowSizeTests(unittest.TestCase):
         self.tmp_path = Path(self.tmp.name)
 
     def run_checker(self, *args: str) -> subprocess.CompletedProcess[str]:
-        """Run the check-workflow-size script with given arguments and return result."""
+        """Guards scripts/ci/check-workflow-size.py: runs the workflow byte-size checker across positive, negative, and boundary files."""
         return subprocess.run(  # noqa: S603
             [sys.executable, str(CHECKER), *args],
             capture_output=True,
