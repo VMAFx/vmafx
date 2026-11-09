@@ -94,7 +94,10 @@ requires = ["torchao"]
         self.assertEqual(check(files), [])
 
     def test_the_tree_passes(self) -> None:
-        """Guards ADR-1886: verifies scripts/ci/check-torch-scope.py accepts the current tree without illegal torch dependencies."""
+        """Prove scripts/ci/check-torch-scope.py accepts the current tree.
+
+        ADR-1886: verifies the tree contains no illegal torch dependencies.
+        """
         result = subprocess.run(  # noqa: S603 -- the script under test
             [sys.executable, str(SCRIPT)],
             capture_output=True,

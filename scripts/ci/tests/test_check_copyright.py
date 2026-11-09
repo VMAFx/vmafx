@@ -53,7 +53,10 @@ class CheckCopyrightTests(unittest.TestCase):
     def run_check(
         self, *files: Path | str, cwd: Path | None = None, today: str | None = None
     ) -> subprocess.CompletedProcess[str]:
-        """Guards scripts/ci/check-copyright.sh: verifies touched files satisfy copyright notice and SPDX tag requirements."""
+        """Run scripts/ci/check-copyright.sh on the provided files.
+
+        Verifies touched files satisfy copyright notice and SPDX tag requirements.
+        """
         env = dict(os.environ)
         if today:
             env["LINT_EXCEPTIONS_TODAY"] = today

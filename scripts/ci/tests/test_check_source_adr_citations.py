@@ -48,7 +48,10 @@ class SourceAdrCitationTests(unittest.TestCase):
         self.write("evidence.txt", "fixture evidence\n")
 
     def run_git(self, *args: str) -> str:
-        """Guards scripts/ci/check-source-adr-citations.py by running Git in disposable fixture repositories."""
+        """Run fixture Git operations for scripts/ci/check-source-adr-citations.py.
+
+        Executes Git in disposable fixture repositories.
+        """
         return subprocess.run(  # noqa: S603 -- fixed Git binary in a disposable fixture
             [
                 GIT,
@@ -96,7 +99,10 @@ class SourceAdrCitationTests(unittest.TestCase):
         self.run_git("add", ".")
 
     def run_checker(self, *extra: str) -> TextCommandResult:
-        """Guards scripts/ci/check-source-adr-citations.py (ADR-2200): validates source citations against the registry file."""
+        """Run scripts/ci/check-source-adr-citations.py against the fixture repository.
+
+        ADR-2200: validates source citations against the registry file.
+        """
         return run_command(
             [
                 PYTHON,
@@ -247,7 +253,10 @@ class SourceAdrCitationTests(unittest.TestCase):
         self.assertEqual(set(registry), {"schema_version", "retired", "fixtures"})
 
     def test_fixture_git_discards_inherited_repository_environment(self) -> None:
-        """Guards scripts/ci/check-source-adr-citations.py: proves GIT_DIR and Git environment leaks do not corrupt the check."""
+        """Prove GIT_DIR and Git environment leaks do not corrupt the check.
+
+        Guards scripts/ci/check-source-adr-citations.py from inherited Git environment.
+        """
         self.write_adr("0042-original-decision.md")
         self.write("core/example.c", "/* Kept for ADR-0042. */\n")
         self.registry()
@@ -412,7 +421,10 @@ class SourceAdrCitationTests(unittest.TestCase):
         self.assertIn("concurrent_edit", content)
 
     def test_repository_registry_is_current(self) -> None:
-        """Guards ADR-2200: validates that the real repository tree matches source-adr-citations.json without drift."""
+        """Prove real repository tree matches source-adr-citations.json.
+
+        ADR-2200: validates that the real repository tree matches without drift.
+        """
         result = run_command(
             [PYTHON, str(CHECKER), "--root", str(ROOT)],
             allowed_executables=(PYTHON,),

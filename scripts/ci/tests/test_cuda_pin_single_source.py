@@ -406,7 +406,10 @@ class CudaPinGate(unittest.TestCase):
         self.git("add", "-A")
 
     def git(self, *args: str) -> None:
-        """Guards scripts/ci/check-cuda-pin-lockstep.py by preparing Git commits in disposable fixture repos."""
+        """Run fixture Git commands for scripts/ci/check-cuda-pin-lockstep.py.
+
+        Prepares Git commits in disposable fixture repos.
+        """
         subprocess.run(  # noqa: S603 -- fixed Git commands in a disposable fixture
             [GIT, *args],
             cwd=self.repo,
@@ -417,7 +420,10 @@ class CudaPinGate(unittest.TestCase):
         )
 
     def gate(self, *args: str) -> subprocess.CompletedProcess[str]:
-        """Guards scripts/ci/check-cuda-pin-lockstep.py: runs the single-source pin gate across synthetic drift cases."""
+        """Run scripts/ci/check-cuda-pin-lockstep.py in the fixture repository.
+
+        Runs the single-source pin gate across synthetic drift cases.
+        """
         return subprocess.run(  # noqa: S603 -- the gate under test, in its fixture
             [sys.executable, GATE, *args],
             cwd=self.repo,

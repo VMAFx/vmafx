@@ -54,7 +54,10 @@ def git(
     committer_name: str = BOT_NAME,
     committer_email: str = BOT_EMAIL,
 ) -> str:
-    """Guards scripts/ci/check-bot-squash-body.py by running fixture Git commands with synthetic identities."""
+    """Run fixture Git commands for scripts/ci/check-bot-squash-body.py.
+
+    Executes commands with synthetic identities in the test repository.
+    """
     env = _fixture_env(author_name, author_email, committer_name, committer_email)
     result = subprocess.run(  # noqa: S603 - fixed argv, no shell
         [GIT, "-c", "commit.gpgsign=false", *args],
@@ -116,7 +119,10 @@ def add_human_commit(repo: Path) -> None:
 
 
 def run_check(repo: Path, base: str, head: str, **env_overrides: str) -> int:
-    """Guards scripts/ci/check-bot-squash-body.py: verifies gate exit codes across simulated PR metadata and commit authors."""
+    """Run scripts/ci/check-bot-squash-body.py in the test repository.
+
+    Verifies gate exit codes across simulated PR metadata and commit authors.
+    """
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")} | {
         "GIT_CONFIG_GLOBAL": os.devnull,
         "GIT_CONFIG_SYSTEM": os.devnull,

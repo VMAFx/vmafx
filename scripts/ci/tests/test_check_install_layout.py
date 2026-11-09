@@ -478,7 +478,10 @@ def _tool(name: str) -> str:
 
 
 def _write_dummy_vmafx_shared(lib_dir: Path) -> Path:
-    """Guards CMake packaging rules by building a minimal shared libvmafx.so exporting vmafx_version_string."""
+    """Build a minimal shared libvmafx.so exporting vmafx_version_string.
+
+    Guards CMake packaging rules.
+    """
     lib_dir.mkdir(parents=True, exist_ok=True)
     c_source = lib_dir / "dummy_vmafx.c"
     c_source.write_text('const char *vmafx_version_string(void) { return "1.0.0"; }\n')
@@ -502,7 +505,10 @@ def _write_cmake_version_file(dest: Path, version: str = "1.0.0") -> None:
 
 
 def test_cmake_consumer_find_package_e2e(tmp_path: Path) -> None:
-    """Guards core/cmake/vmafxConfig.cmake.in: verifies find_package(vmafx 1 REQUIRED) links and runs end-to-end."""
+    """Prove core/cmake/vmafxConfig.cmake.in links and runs end-to-end.
+
+    Verifies find_package(vmafx 1 REQUIRED) links and runs end-to-end.
+    """
     if not shutil.which("cmake") or not shutil.which("cc"):
         pytest.skip("cmake or cc not available")
     prefix = tmp_path / "install"
@@ -560,7 +566,7 @@ def test_cmake_consumer_find_package_e2e(tmp_path: Path) -> None:
 
 
 def test_cmake_consumer_stale_cache_overridden(tmp_path: Path) -> None:
-    """Guards core/cmake/vmafxConfig.cmake.in: ensures find_package overrides a stale VMAFX_LIBRARY cache entry with discovered targets."""
+    """Prove core/cmake/vmafxConfig.cmake.in replaces a stale VMAFX_LIBRARY cache entry."""
     if not shutil.which("cmake") or not shutil.which("cc"):
         pytest.skip("cmake or cc not available")
     prefix = tmp_path / "install"
@@ -622,7 +628,10 @@ def test_cmake_consumer_stale_cache_overridden(tmp_path: Path) -> None:
 
 
 def test_cmake_consumer_rejects_static_archive(tmp_path: Path) -> None:
-    """Guards core/cmake/vmafxConfig.cmake.in: ensures find_package rejects a static archive when resolving shared imported targets."""
+    """Prove core/cmake/vmafxConfig.cmake.in rejects static archives.
+
+    Ensures find_package rejects a static archive when resolving shared imported targets.
+    """
     if not shutil.which("cmake"):
         pytest.skip("cmake not available")
     prefix = tmp_path / "install"
@@ -664,7 +673,7 @@ def test_cmake_consumer_rejects_static_archive(tmp_path: Path) -> None:
 
 
 def test_cmake_consumer_absolute_dirs(tmp_path: Path) -> None:
-    """Guards core/cmake/vmafxConfig.cmake.in: verifies find_package operates when prefix paths are configured as absolute paths."""
+    """Prove core/cmake/vmafxConfig.cmake.in resolves absolute install directories."""
     if not shutil.which("cmake") or not shutil.which("cc"):
         pytest.skip("cmake or cc not available")
     abs_inc = tmp_path / "abs_include" / "vmafx"
@@ -725,7 +734,10 @@ def test_cmake_consumer_absolute_dirs(tmp_path: Path) -> None:
 
 
 def test_cmake_consumer_mingw_import_library(tmp_path: Path) -> None:
-    """Guards core/cmake/vmafxConfig.cmake.in: verifies MinGW layouts correctly populate IMPORTED_LOCATION and IMPORTED_IMPLIB targets."""
+    """Prove core/cmake/vmafxConfig.cmake.in supports MinGW import libraries.
+
+    Verifies MinGW layouts correctly populate IMPORTED_LOCATION and IMPORTED_IMPLIB targets.
+    """
     if not shutil.which("cmake"):
         pytest.skip("cmake not available")
     prefix = tmp_path / "install"
@@ -775,7 +787,10 @@ def test_cmake_consumer_mingw_import_library(tmp_path: Path) -> None:
 
 
 def test_cmake_consumer_stale_dll_cache_overridden(tmp_path: Path) -> None:
-    """Guards core/cmake/vmafxConfig.cmake.in: ensures find_package overrides a stale cached DLL path on Windows/MinGW layouts."""
+    """Prove core/cmake/vmafxConfig.cmake.in overrides stale cached DLL paths.
+
+    Ensures find_package overrides a stale cached DLL path on Windows/MinGW layouts.
+    """
     if not shutil.which("cmake"):
         pytest.skip("cmake not available")
     prefix = tmp_path / "install"

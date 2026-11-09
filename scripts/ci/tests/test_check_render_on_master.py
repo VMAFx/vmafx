@@ -61,7 +61,10 @@ class RenderOnMasterTest(unittest.TestCase):
         self.commit({"CHANGELOG.md": "- fixed a\n"}, age_h=99)
 
     def git(self, *args: str, date: str | None = None) -> str:
-        """Guards scripts/ci/check_render_on_master.py by constructing fixture commits with fixed commit timestamps."""
+        """Run fixture Git commands for scripts/ci/check_render_on_master.py.
+
+        Constructs fixture commits with fixed commit timestamps.
+        """
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         env.update(IDENT)
         if date is not None:
@@ -86,7 +89,10 @@ class RenderOnMasterTest(unittest.TestCase):
         self.git("commit", "-q", "-m", "change", date=f"@{int(NOW - age_h * HOUR)} +0000")
 
     def check(self, *extra: str) -> subprocess.CompletedProcess[str]:
-        """Guards scripts/ci/check_render_on_master.py (ADR-3295): runs the master render check at a simulated wall-clock time."""
+        """Run scripts/ci/check_render_on_master.py at a simulated wall-clock time.
+
+        ADR-3295: runs the master render check at a simulated wall-clock time.
+        """
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         return subprocess.run(  # noqa: S603 -- fixed argv, no shell, check under test
             [sys.executable, str(CHECK), "--root", str(self.repo), "--now", str(NOW), *extra],

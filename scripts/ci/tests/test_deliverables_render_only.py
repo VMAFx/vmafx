@@ -78,7 +78,10 @@ class RenderOnlyGateTest(unittest.TestCase):
         self.git("checkout", "-q", "-b", "render")
 
     def git(self, *args: str) -> str:
-        """Guards scripts/ci/deliverables-check.sh: prepares commits, tags, and branches in the fixture repository."""
+        """Run fixture Git commands for scripts/ci/deliverables-check.sh.
+
+        Prepares commits, tags, and branches in the fixture repository.
+        """
         env = {**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, **IDENT}
         done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
             [GIT, *args],
@@ -103,7 +106,10 @@ class RenderOnlyGateTest(unittest.TestCase):
         self.git("commit", "-q", "-m", "change")
 
     def gate(self, body: str = BODY) -> TextCommandResult:
-        """Guards scripts/ci/deliverables-check.sh (ADR-3295): runs the gate to verify render-only PR qualification."""
+        """Run scripts/ci/deliverables-check.sh on the fixture repository.
+
+        ADR-3295: runs the gate to verify render-only PR qualification.
+        """
         env = {k: v for k, v in os.environ.items() if k not in ("PR_BODY", "BASE_SHA", "HEAD_SHA")}
         env = {k: v for k, v in env.items() if not k.startswith("GIT_")}
         env.update(PR_BODY=body, BASE_SHA=self.base, HEAD_SHA=self.git("rev-parse", "HEAD").strip())
