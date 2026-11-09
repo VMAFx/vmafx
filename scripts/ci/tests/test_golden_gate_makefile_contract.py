@@ -231,6 +231,7 @@ class GoldenArm64PreflightTest(unittest.TestCase):
     def _run(
         self, host: dict[str, str], compiler: str = "gcc", cross: str | None = None
     ) -> subprocess.CompletedProcess[str]:
+        """Run the ARM64 preflight script against a configured stub host environment."""
         return subprocess.run(  # noqa: S603 -- fixed interpreter and script path.
             ["/bin/bash", str(PREFLIGHT), compiler, cross or host["cross"], host["sysroot"]],
             env={"PATH": host["path"], "GOLDEN_ARM64_BINFMT_ENTRY": host["entry"]},
@@ -285,6 +286,7 @@ class GoldenArm64PreflightTest(unittest.TestCase):
                 self.assertIn(needle, result.stderr)
 
     def test_unknown_compiler_and_wrong_arity_are_usage_errors(self) -> None:
+        """An unknown compiler or incorrect argument count results in a usage error."""
         with tempfile.TemporaryDirectory() as tmp:
             host = self._host(Path(tmp), tools=self.GCC, loader=True, binfmt=self.ENABLED)
             self.assertEqual(self._run(host, "icx").returncode, 2)
@@ -299,6 +301,7 @@ class GoldenArm64PreflightTest(unittest.TestCase):
         self.assertIn("usage:", short.stderr)
 
     def test_setup_script_refuses_a_missing_cross_file_before_meson(self) -> None:
+        """The setup script rejects a missing cross-file before invoking meson."""
         with tempfile.TemporaryDirectory() as tmp:
             result = subprocess.run(  # noqa: S603 -- fixed interpreter and script path.
                 ["/bin/bash", str(SETUP_GOLDEN), str(Path(tmp) / "build"), "core", "ninja"],

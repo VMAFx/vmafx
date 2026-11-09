@@ -95,6 +95,7 @@ def problems_in(text: str) -> list[str]:
 
 
 def tracked_files() -> list[str]:
+    """Return a list of all tracked file paths in the repository using git ls-files."""
     git = shutil.which("git")
     if git is None:
         raise unittest.SkipTest("git is not installed")

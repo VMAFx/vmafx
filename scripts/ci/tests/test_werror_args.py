@@ -36,6 +36,7 @@ ARGS_OUTPUT = "${{ steps.werror.outputs.args }}"
 
 
 def run_script(*args: str, os_name: str | None = None) -> subprocess.CompletedProcess[str]:
+    """Execute the werror-args script with optional OS name environment override."""
     env = {key: value for key, value in os.environ.items() if key != "WERROR_ARGS_OS"}
     if os_name is not None:
         env["WERROR_ARGS_OS"] = os_name

@@ -229,6 +229,7 @@ class HelmControllerWorkloadTest(unittest.TestCase):
         self.assertEqual(idp["ports"], [{"protocol": "TCP", "port": 443}])
 
     def test_selectors_stay_isolated(self) -> None:
+        """Rendered workload selectors must remain isolated across controller components."""
         values = (
             BASE
             + "node: {enabled: true}\noperator: {enabled: true}\npodDisruptionBudget: {enabled: true}\n"

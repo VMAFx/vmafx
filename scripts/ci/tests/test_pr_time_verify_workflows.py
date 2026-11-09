@@ -58,6 +58,7 @@ def validate_script(name: str) -> str:
 
 
 def _git(env: dict[str, str], cwd: Path, *args: str) -> str:
+    """Run a git command in the specified working directory and return stripped stdout."""
     return subprocess.run(  # noqa: S603 -- fixed git argv, no shell
         [GIT, *args],
         cwd=cwd,

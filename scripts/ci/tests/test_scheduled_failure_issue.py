@@ -45,6 +45,7 @@ class ScheduledFailureIssueTest(unittest.TestCase):
         *args: str,
         env_override: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
+        """Run the scheduled failure issue script against the stubbed gh environment."""
         env = {
             **os.environ,
             "SCHEDULED_FAILURE_GH": str(self.stub),
@@ -125,6 +126,7 @@ class ScheduledFailureIssueTest(unittest.TestCase):
         self.assertIn(custom_title, creates[0])
 
     def test_rejects_malformed_arguments(self) -> None:
+        """Malformed positional arguments to the script cause it to exit with code 2."""
         test_cases = (
             ("VMAFx", "123", "Title", "Hint"),
             ("VMAFx/vmafx", "12x", "Title", "Hint"),
@@ -147,6 +149,7 @@ class ScheduledFailureIssueTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 2)
 
     def test_env_fallback_to_tidy_drift_gh(self) -> None:
+        """The script uses TIDY_DRIFT_GH when SCHEDULED_FAILURE_GH is empty."""
         # When SCHEDULED_FAILURE_GH is unset, TIDY_DRIFT_GH should be used
         env = {
             **os.environ,
@@ -175,6 +178,7 @@ class ScheduledFailureIssueTest(unittest.TestCase):
         self.assertTrue(any(c.startswith("issue create") for c in self.calls()))
 
     def test_a_failed_api_read_fails_closed(self) -> None:
+        """A failure during GitHub API reading causes the script to fail closed."""
         failing = Path(self.tmp.name) / "gh-fail"
         failing.write_text("#!/usr/bin/env bash\nexit 4\n", encoding="utf-8")
         failing.chmod(failing.stat().st_mode | stat.S_IXUSR)

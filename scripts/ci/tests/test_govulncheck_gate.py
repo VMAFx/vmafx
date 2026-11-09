@@ -38,6 +38,7 @@ class GovulncheckGate(unittest.TestCase):
     def run_gate(
         self, messages: list[dict[str, object]], status: int = 0
     ) -> subprocess.CompletedProcess[str]:
+        """Execute the govulncheck gate with a stubbed tool producing JSON messages."""
         with tempfile.TemporaryDirectory() as tmp:
             stub = Path(tmp) / "govulncheck"
             payload = Path(tmp) / "out.json"

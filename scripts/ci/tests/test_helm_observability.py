@@ -64,6 +64,7 @@ def helm_fails(values: str) -> str:
 
 
 def run(*argv: str) -> str:
+    """Execute a subprocess command in the repository root and return its standard output."""
     result = subprocess.run(  # noqa: S603 -- fixed go / bash executables; argv built here
         list(argv),
         cwd=ROOT,

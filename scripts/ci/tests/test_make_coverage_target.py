@@ -46,6 +46,7 @@ class CoverageRecipe(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
+        """Capture make coverage-check dry-run output across test cases in this class."""
         if MAKE is None:
             raise unittest.SkipTest("make not installed")
         cls.dry = subprocess.run(  # noqa: S603 -- fixed make argv, no shell
@@ -73,6 +74,7 @@ class CoverageRecipe(unittest.TestCase):
 
 class CoverageScript(unittest.TestCase):
     def _run(self, text: str, suffix: str) -> subprocess.CompletedProcess[str]:
+        """Run the coverage-check script against temporary coverage output file content."""
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / f"cov{suffix}"
             path.write_text(text, encoding="utf-8")

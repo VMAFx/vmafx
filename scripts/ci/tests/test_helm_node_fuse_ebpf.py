@@ -43,6 +43,7 @@ storage:
 
 
 def helm(values: str) -> subprocess.CompletedProcess[str]:
+    """Run helm template on the vmafx chart with the specified values string."""
     with tempfile.NamedTemporaryFile("w", suffix=".yaml") as fh:
         fh.write(values)
         fh.flush()

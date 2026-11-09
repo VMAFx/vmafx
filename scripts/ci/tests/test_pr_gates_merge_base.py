@@ -80,6 +80,7 @@ class BehindBase(unittest.TestCase):
         self.fork = self.rev("HEAD")
 
     def git(self, *args: str) -> str:
+        """Execute a git command within the test repository and return its output."""
         env = {**CLEAN, **IDENT}
         done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
             [GIT, *args],
@@ -119,6 +120,7 @@ class BehindBase(unittest.TestCase):
     def run_gate(
         self, script: str, base: str, head: str, **env: str
     ) -> subprocess.CompletedProcess[str]:
+        """Execute a CI gate script against the fixture repository with base and head."""
         clean = {k: v for k, v in CLEAN.items() if k not in ("PR_BODY", "PR_TITLE")}
         clean.update(BASE_SHA=base, HEAD_SHA=head, **env)
         return subprocess.run(  # noqa: S603 -- fixed argv, no shell, gate under test

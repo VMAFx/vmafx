@@ -145,6 +145,7 @@ def fixture_env() -> dict[str, str]:
 
 
 def git(*args: str) -> str:
+    """Execute a git command within the fixture environment and return standard output."""
     return subprocess.run(  # noqa: S603 -- fixed argv, fixture repo
         [GIT, *args],
         check=True,
@@ -224,6 +225,7 @@ class OpenRenderPrTest(unittest.TestCase):
         extra_env: dict[str, str] | None = None,
         remove_env: tuple[str, ...] = (),
     ) -> subprocess.CompletedProcess[str]:
+        """Execute the open-render-pr script with test harness environment and stubs."""
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         env.update(
             PATH=f"{self.bin_dir}:{env.get('PATH', '')}",

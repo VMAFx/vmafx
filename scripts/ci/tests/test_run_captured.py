@@ -16,6 +16,7 @@ SCRIPT_TIMEOUT_S = 60
 
 
 def run(*args: str) -> subprocess.CompletedProcess[str]:
+    """Execute the run_captured script with arguments and return the completed process."""
     return (
         subprocess.run(  # noqa: S603 -- the interpreter and the script are this repository's own.
             [PYTHON, str(SCRIPT), *args],

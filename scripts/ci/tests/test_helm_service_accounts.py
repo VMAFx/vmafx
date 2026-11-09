@@ -45,6 +45,7 @@ auth:
 
 
 def render(values: str) -> list[dict[str, Any]]:
+    """Render chart templates with the given values and return parsed YAML documents."""
     with tempfile.NamedTemporaryFile("w", suffix=".yaml") as fh:
         fh.write(values)
         fh.flush()

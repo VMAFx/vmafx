@@ -43,6 +43,7 @@ class UpstreamWatchCountTests(unittest.TestCase):
         sleep_scale: str = "0",
         extra_env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
+        """Run the upstream watch count script with custom environment and arguments."""
         env = dict(os.environ)
         env["PATH"] = f"{self.bin_dir}:{env.get('PATH', '')}"
         env["UPSTREAM_WATCH_SLEEP_SCALE"] = sleep_scale

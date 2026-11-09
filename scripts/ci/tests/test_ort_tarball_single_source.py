@@ -21,6 +21,7 @@ class OrtTarballSingleSourceTest(unittest.TestCase):
     def run_check(
         self, *args: str | Path, cwd: Path | None = None
     ) -> subprocess.CompletedProcess[str]:
+        """Run the check_ort_tarball_pins script with the given arguments."""
         cmd = [sys.executable, str(SCRIPT)] + [str(a) for a in args]
         return subprocess.run(  # noqa: S603
             cmd,

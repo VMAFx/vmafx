@@ -32,6 +32,7 @@ PACKAGE_DOC_SURFACES = ("Scorer", "ScoreDirect", "StreamScorer", "DNNSession", "
 
 
 def go_sources() -> list[Path]:
+    """Return all tracked non-test Go source files in the repository."""
     out = subprocess.run(  # noqa: S603 -- fixed argv, repository-local git
         ["git", "-C", str(ROOT), "ls-files", "*.go"],  # noqa: S607
         check=True,

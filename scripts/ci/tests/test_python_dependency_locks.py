@@ -1151,6 +1151,7 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn(Path(".devcontainer/Dockerfile.praetor"), paths)
 
     def test_out_of_tree_cli_check_passes_from_unrelated_cwd(self) -> None:
+        """The lock checker passes when run from an unrelated working directory."""
         with tempfile.TemporaryDirectory() as temp_dir:
             result = subprocess.run(  # noqa: S603
                 [sys.executable, str(CHECKER), "--root", str(ROOT), "check"],
@@ -1264,6 +1265,7 @@ class RepositoryContractTests(unittest.TestCase):
             self._assert_dockerfile_python_contract(mut_venv)
 
     def test_repository_contract_is_current(self) -> None:
+        """The repository satisfies the Python dependency lock contract."""
         result = subprocess.run(  # noqa: S603
             [sys.executable, str(CHECKER), "--root", str(ROOT), "check"],
             text=True,

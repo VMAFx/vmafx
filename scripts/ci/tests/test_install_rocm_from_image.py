@@ -198,6 +198,7 @@ def _run_installer(
     dest_dir: Path,
     env: dict[str, str],
 ) -> subprocess.CompletedProcess[str]:
+    """Execute the ROCm image installer script with the given arguments and environment."""
     cmd = [
         "bash",
         str(SCRIPT_PATH),

@@ -145,6 +145,7 @@ class GenerateEntries(unittest.TestCase):
 @unittest.skipUnless(shutil.which("cc"), "no C compiler")
 class StubsAreSufficient(unittest.TestCase):
     def test_every_mex_source_parses_against_the_stubs(self) -> None:
+        """Every MEX source file must parse cleanly with syntax-only compilation."""
         for src in gen.mex_sources(REPO):
             entry = gen.entry_for(src, REPO, REPO)
             argv = [*shlex.split(entry["command"])[:-2], "-fsyntax-only"]
@@ -154,6 +155,7 @@ class StubsAreSufficient(unittest.TestCase):
             self.assertEqual(done.returncode, 0, f"{src}: {done.stderr[-400:]}")
 
     def test_standalone_sources_parse(self) -> None:
+        """Standalone source files must parse cleanly with syntax-only compilation."""
         for src in gen.STANDALONE_SOURCES:
             entry = gen.entry_for(src, REPO, REPO)
             argv = [*shlex.split(entry["command"])[:-2], "-fsyntax-only"]
