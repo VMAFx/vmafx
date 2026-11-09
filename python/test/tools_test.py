@@ -40,6 +40,7 @@ class MiscTest(unittest.TestCase):
 
     @staticmethod
     def _run_python_with_warnings_as_errors(source):
+        """Execute Python source code in a subprocess with warnings treated as errors."""
         env = os.environ.copy()
         python_path = VmafConfig.root_path("python")
         if env.get("PYTHONPATH"):

@@ -173,6 +173,7 @@ def vmafx_findings(symbols: DynamicSymbols, listed: dict[str, str]) -> list[str]
 
 
 def demangled(names: list[str]) -> dict[str, str]:
+    """Demangle symbol names using c++filt and return a mapping to demangled names."""
     cxxfilt = shutil.which("c++filt")
     if cxxfilt is None:
         print("SKIP: c++filt not found")

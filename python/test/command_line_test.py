@@ -155,6 +155,7 @@ class CommandLineTest(MyTestCase):
         self.assertEqual(ret, 0)
 
     def test_run_vmaf_both_local_explain_and_ci(self):
+        """Passing both --local-explain and --ci returns exit code 2."""
         exe = VmafConfig.root_path("python", "vmaf", "script", "run_vmaf.py")
         line = (
             "yuv420p 576 324 {root}/python/test/resource/yuv/src01_hrc00_576x324.yuv "
@@ -218,6 +219,7 @@ class VmafexecCommandLineTest(MyTestCase):
         super().tearDown()
 
     def test_run_vmafexec(self):
+        """Run vmafexec and assert successful execution with expected PSNR output."""
         exe = ExternalProgram.vmafexec
         cmd = (
             "{exe} --reference {ref} --distorted {dis} --width 576 --height 324 --pixel_format 420 --bitdepth 8 --xml --feature psnr "
@@ -244,6 +246,7 @@ class VmafexecCommandLineTest(MyTestCase):
             )
 
     def test_run_vmafexec_with_frame_skipping(self):
+        """Run vmafexec with equal frame skipping and assert expected PSNR output."""
         exe = ExternalProgram.vmafexec
         cmd = (
             "{exe} --reference {ref} --distorted {dis} --width 576 --height 324 --pixel_format 420 --bitdepth 8 --xml --feature psnr "
@@ -270,6 +273,7 @@ class VmafexecCommandLineTest(MyTestCase):
             )
 
     def test_run_vmafexec_with_frame_skipping_unequal(self):
+        """Run vmafexec with unequal frame skipping and assert expected PSNR output."""
         exe = ExternalProgram.vmafexec
         cmd = (
             "{exe} --reference {ref} --distorted {dis} --width 576 --height 324 --pixel_format 420 --bitdepth 8 --xml --feature psnr "

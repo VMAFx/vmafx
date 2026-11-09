@@ -622,6 +622,7 @@ class NetflixBitExactTest(unittest.TestCase):
                 self._require_inputs(absent)
 
     def test_netflix_576x324_matches_c_api_float_hex(self) -> None:
+        """The Python binding pooled float hex matches the C API contract output."""
         lib_path = Path(os.environ["VMAFX_LIBRARY"]).resolve()
         contract_bin = lib_path.parent.parent / "test" / "vmafx_score_contract"
         self._require_inputs((self.REF_YUV, self.DIST_YUV, self.MODEL_JSON, contract_bin))

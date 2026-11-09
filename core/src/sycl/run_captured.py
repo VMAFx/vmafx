@@ -24,6 +24,7 @@ CC_TIMEOUT_S = 120
 
 
 def main(argv: list[str]) -> int:
+    """Run a command with combined output and a timeout, returning its exit code."""
     if argv[:1] != ["--"] or len(argv) == 1:
         sys.stderr.write("usage: run_captured.py -- COMMAND [ARGS...]\n")
         return 2

@@ -27,6 +27,7 @@ VMAF_TIMEOUT_S = 120
 
 
 def hdr_conversion_available():
+    """Return whether HDR conversion and zimg support are available in vmafexec."""
     # The HDR model needs a vmaf built with zimg (picture conversion); a build
     # without it exits non-zero naming it.
     ref_path, _, _, _ = set_default_576_324_hdr_videos_for_testing()

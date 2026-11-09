@@ -802,6 +802,7 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             obj = Path(tmp) / "probe.o"
 
             def compile_with(flags: list[str]) -> subprocess.CompletedProcess[str]:
+                """Compile the C probe source with icx using the given compiler flags."""
                 return subprocess.run(  # noqa: S603 -- icx is resolved on PATH above.
                     [icx, "-O2", "-Werror", *flags, "-c", str(src), "-o", str(obj)],
                     capture_output=True,

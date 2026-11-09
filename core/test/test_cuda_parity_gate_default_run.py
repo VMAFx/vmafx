@@ -81,6 +81,7 @@ def skip_reason(binary: Path | None) -> str | None:
 
 
 def main() -> int:
+    """Run the CUDA parity gate under the GPU lock and return its exit code, or 77 to skip."""
     binary = find_binary()
     reason = skip_reason(binary)
     if reason is not None:

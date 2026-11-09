@@ -138,6 +138,7 @@ class TestCheckProgramExist:
         recorded_kwargs = {}
 
         def stub_call(*args, **kwargs):
+            """Record keyword arguments and raise TimeoutExpired."""
             recorded_kwargs.update(kwargs)
             raise subprocess.TimeoutExpired(cmd="x", timeout=1)
 
