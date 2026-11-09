@@ -148,6 +148,7 @@ def judge(output: list[dict[str, Any]], justified: dict[str, str]) -> tuple[list
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run govulncheck against Go packages and evaluate vulnerabilities against VEX statements."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("packages", nargs="*", default=["./..."])
     parser.add_argument(

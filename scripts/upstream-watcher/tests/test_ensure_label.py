@@ -54,6 +54,7 @@ class EnsureLabelTest(unittest.TestCase):
         hidden_reads: int = 0,
         listed: str = "upstream-blocked",
     ) -> subprocess.CompletedProcess[str]:
+        """Execute the ensure-label script with the configured test stub environment."""
         env = {
             **os.environ,
             "UPSTREAM_WATCHER_GH": str(self.stub),

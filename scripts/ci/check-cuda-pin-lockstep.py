@@ -323,6 +323,7 @@ def rewrite(root: Path, sites: list[Site], version: str) -> list[str]:
 
 
 def main() -> int:
+    """Check every CUDA pin site against CUDA_VERSION, or rewrite them with --write."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--write",

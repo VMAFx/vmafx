@@ -229,6 +229,7 @@ class GenNodeBpf(unittest.TestCase):
         self.assertIn("commit the regenerated binding", changed.stderr)
 
     def test_repository_ignores_the_generated_files(self) -> None:
+        """Assert that generated eBPF artifacts are ignored by Git."""
         for name in ("rclonebypass_bpfel.o", ".rclonebypass.stamp"):
             result = subprocess.run(  # noqa: S603 - fixed argv
                 [GIT, "check-ignore", "-q", f"cmd/vmafx-node/bpf/{name}"],
@@ -239,6 +240,7 @@ class GenNodeBpf(unittest.TestCase):
             self.assertEqual(result.returncode, 0, f"{name} is not git-ignored")
 
     def test_repository_tracks_no_ebpf_object(self) -> None:
+        """Assert that no compiled eBPF object files are tracked in the repository."""
         tracked = subprocess.run(  # noqa: S603 - fixed argv
             [GIT, "ls-files", "cmd/vmafx-node/bpf"],
             cwd=REPO,
@@ -259,6 +261,7 @@ class GenNodeBpf(unittest.TestCase):
         self.assertIn("var _RcloneBypassBytes = embeddedObject()", binding)
 
     def test_embed_rewrite_is_idempotent_and_refuses_unknown_output(self) -> None:
+        """Assert that embedding rewrite is idempotent and rejects input lacking go:embed."""
         script = REPO / "cmd" / "vmafx-node" / "bpf" / "embed_generated_object.sh"
         raw = self.tmp / "raw.go"
         raw.write_text(

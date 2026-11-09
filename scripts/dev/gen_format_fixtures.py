@@ -86,6 +86,7 @@ def planar_frame(
 
 
 def ffmpeg(args: list[str], data: bytes) -> bytes:
+    """Execute FFmpeg with the given arguments and return its standard output bytes."""
     command = ["ffmpeg", "-v", "error", "-nostdin", *args]
     try:
         done = subprocess.run(  # noqa: S603 -- FFmpeg from PATH, argv built here

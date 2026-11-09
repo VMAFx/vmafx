@@ -129,6 +129,7 @@ def violations(files: list[str], read: Callable[[str], str]) -> list[str]:
 
 
 def tracked_files(root: Path) -> list[str]:
+    """Return the list of Git-tracked file paths relative to the repository root."""
     git = shutil.which("git") or "/usr/bin/git"
     result = subprocess.run(  # noqa: S603 -- fixed argv, resolved git
         [git, "-C", str(root), "ls-files"],
@@ -141,6 +142,7 @@ def tracked_files(root: Path) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the torch-scope check across tracked repository files and return an exit code."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
     args = parser.parse_args(argv)

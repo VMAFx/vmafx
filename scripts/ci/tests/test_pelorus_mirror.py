@@ -62,6 +62,7 @@ class ExactMirrorManifest(unittest.TestCase):
         )
 
     def test_clang_format_wrapper_keeps_unmanifested_cpp(self) -> None:
+        """Assert the wrapper formats only the C++ file outside the mirror manifest."""
         exact = "core/src/interop/pelorus_interop.c"
         escaped = "core/src/interop/pelorus_escape.cpp"
         with (

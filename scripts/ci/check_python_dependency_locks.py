@@ -1592,6 +1592,7 @@ def scan_workflow_checkout_ordering(path: Path, text: str, root: Path | None = N
 
 
 def tracked_paths(root: Path) -> list[Path]:
+    """Return the files git tracks, or without a .git directory the files in the tree."""
     git_dir = root / ".git"
     raw_paths: list[Path] = []
     if git_dir.exists():
@@ -1779,6 +1780,7 @@ def validate_lock(root: Path, manifest: dict[str, Any], entry: dict[str, Any]) -
 
 
 def find_lock_files(root: Path) -> list[Path]:
+    """Return sorted repository-relative paths to all python lockfiles."""
     locks: list[Path] = []
     git_dir = root / ".git"
     if git_dir.exists():
@@ -1896,6 +1898,7 @@ def check(root: Path) -> int:
 
 
 def uv_version(binary: str) -> str:
+    """Execute the uv binary and return its parsed version string."""
     try:
         result = subprocess.run(  # noqa: S603
             [binary, "--version"],
@@ -1937,6 +1940,7 @@ def stamp_lock(
 
 
 def write(root: Path, uv_binary: str) -> int:
+    """Regenerate all manifest lockfiles using uv and verify the updated locks."""
     manifest = load_manifest(root)
     actual = uv_version(uv_binary)
     if actual != manifest["uv_version"]:
