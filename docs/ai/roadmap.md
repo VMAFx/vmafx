@@ -25,7 +25,7 @@ The four capabilities already in-tree are described in
 | Inference (`core/src/dnn/`, ONNX Runtime, op allowlist, 50 MB cap) | Shipped | [ADR-0023](../adr/0023-tinyai-user-surfaces.md) | [inference.md](inference.md) |
 | Model signing verification (`--tiny-model-verify`) | Shipped | ADR-0211 | [security.md](security.md) |
 | Model registry | Shipped, 26 entries | ADR-0211 | [model-registry.md](model-registry.md) |
-| FFmpeg `vmafx` tiny options, `vmafx_pre` (8/10/12-bit, optional chroma) | Shipped | ADR-0482 | `ffmpeg-patches/0004`, `ffmpeg-patches/0005` |
+| FFmpeg `vmafx` tiny options, `vmafx_pre` (8/10/12-bit, optional chroma) | Shipped | ADR-0482 | `ffmpeg-patches/0003`, `ffmpeg-patches/0004` |
 | FR baselines (`fr_regressor_v1`, `vmaf_tiny_v2`) | Shipped | [ADR-0249](../adr/0249-fr-regressor-v1.md), [ADR-0244](../adr/0244-vmaf-tiny-v2.md) | [model cards](models/vmaf_tiny_v2.md) |
 | `nr_metric_v1`, `learned_filter_v1` | Shipped | [ADR-0168](../adr/0168-tinyai-konvid-baselines.md) | [nr_metric_v1](models/nr_metric_v1.md), [learned_filter_v1](models/learned_filter_v1.md) |
 | LPIPS-SqueezeNet FR extractor | Shipped | none | [lpips_sq](models/lpips_sq.md) |
@@ -52,8 +52,8 @@ The shipped surface:
 - **C API.** `vmaf_use_tiny_model()` and `VmafDnnSession` open, run and close.
 - **CLI.** `vmaf --tiny-model PATH --tiny-device STR`. The 12 device strings are
   listed in [inference.md](inference.md#execution-provider-matrix).
-- **FFmpeg.** `ffmpeg-patches/0004` adds the tiny-model options to `vmafx`,
-  and `ffmpeg-patches/0005` adds the `vmafx_pre` learned-filter filter.
+- **FFmpeg.** `ffmpeg-patches/0003` adds the tiny-model options to `vmafx`,
+  and `ffmpeg-patches/0004` adds the `vmafx_pre` learned-filter filter.
 - **Checkpoints.** `model/tiny/` holds 26 registry entries, see
   [model-registry.md](model-registry.md).
 - **Signing.** `--tiny-model-verify` is wired to `cosign verify-blob`
@@ -196,7 +196,7 @@ The planned slots in sections 3.2 and 3.3 below are not filled by the current
 
 ### 3.1 `vmafx_pre`: 10-bit and chroma (shipped)
 
-`ffmpeg-patches/0005` ("add vmafx_pre filter")
+`ffmpeg-patches/0004` ("add vmafx_pre filter")
 accepts 8, 10 and 12-bit planar 4:2:0, 4:2:2 and 4:4:4 input, and filters the
 U/V
 planes when `chroma=1` (default 0, luma only). Chroma and HDR sources are where
