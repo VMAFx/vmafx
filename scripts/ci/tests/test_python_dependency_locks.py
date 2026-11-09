@@ -21,6 +21,11 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.lib.safe_subprocess import (
+    CommandOutputLimitExceeded,
+    CommandTimedOut,
+    CommandValidationError,
+)
 from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -2275,6 +2280,51 @@ class UvExecutionAndCompileArgsTests(unittest.TestCase):
                 with self.assertRaisesRegex(self.checker.ContractError, "cannot execute uv"):
                     self.checker.write(root, "nonexistent-uv-binary")
                 mock_run.assert_not_called()
+
+    def test_run_uv_timeout_raises_contract_error(self) -> None:
+        """CommandTimedOut from run_command causes _run_uv to report timeout."""
+
+        def stub(*_args: Any, **_kwargs: Any) -> Any:
+            raise CommandTimedOut(("uv",), 120.0, "", "")
+
+        with mock.patch.object(self.checker, "run_command", stub):
+            with self.assertRaises(self.checker.ContractError) as ctx:
+                self.checker._run_uv("uv", ["--version"])
+        self.assertIn("uv timed out after", str(ctx.exception))
+
+    def test_run_uv_os_error_raises_contract_error(self) -> None:
+        """Plain OSError causes _run_uv to report cannot execute without timeout."""
+
+        def stub(*_args: Any, **_kwargs: Any) -> Any:
+            raise FileNotFoundError(2, "No such file or directory", "uv")
+
+        with mock.patch.object(self.checker, "run_command", stub):
+            with self.assertRaises(self.checker.ContractError) as ctx:
+                self.checker._run_uv("uv", ["--version"])
+        self.assertIn("cannot execute uv", str(ctx.exception))
+        self.assertNotIn("timed out", str(ctx.exception))
+
+    def test_run_uv_output_limit_exceeded_raises_contract_error(self) -> None:
+        """CommandOutputLimitExceeded causes _run_uv to report limit exceeded."""
+
+        def stub(*_args: Any, **_kwargs: Any) -> Any:
+            raise CommandOutputLimitExceeded(("uv",), 16 * 1_048_576, "", "")
+
+        with mock.patch.object(self.checker, "run_command", stub):
+            with self.assertRaises(self.checker.ContractError) as ctx:
+                self.checker._run_uv("uv", ["--version"])
+        self.assertIn("uv output exceeded", str(ctx.exception))
+
+    def test_run_uv_validation_error_raises_contract_error(self) -> None:
+        """CommandValidationError causes _run_uv to report cannot execute uv."""
+
+        def stub(*_args: Any, **_kwargs: Any) -> Any:
+            raise CommandValidationError("command not allowed: uv")
+
+        with mock.patch.object(self.checker, "run_command", stub):
+            with self.assertRaises(self.checker.ContractError) as ctx:
+                self.checker._run_uv("uv", ["--version"])
+        self.assertIn("cannot execute uv", str(ctx.exception))
 
 
 if __name__ == "__main__":

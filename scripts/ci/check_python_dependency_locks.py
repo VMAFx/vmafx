@@ -1928,12 +1928,12 @@ def _run_uv(
             timeout_seconds=timeout_seconds,
             max_output_bytes=max_output_bytes,
         )
-    except (CommandValidationError, OSError) as error:
-        raise ContractError(f"cannot execute uv ({binary}): {error}") from error
     except CommandTimedOut as error:
         raise ContractError(f"uv timed out after {timeout_seconds:g}s: {error}") from error
     except CommandOutputLimitExceeded as error:
         raise ContractError(f"uv output exceeded {max_output_bytes} bytes: {error}") from error
+    except (CommandValidationError, OSError) as error:
+        raise ContractError(f"cannot execute uv ({binary}): {error}") from error
 
 
 def uv_version(binary: str) -> str:
