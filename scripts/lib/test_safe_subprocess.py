@@ -172,8 +172,11 @@ class SafeSubprocessTests(unittest.TestCase):
 
     def test_resolve_executable_bare_name_and_relative_path(self) -> None:
         """Bare names on PATH and relative paths against root resolve to absolute files."""
-        # Bare name on PATH -> absolute path that exists
-        resolved_python = resolve_executable("python3")
+        # Bare name on PATH -> absolute path that exists; PATH holds only the running interpreter
+        python = Path(PYTHON)
+        with mock.patch.dict(os.environ, {"PATH": str(python.parent)}):
+            resolved_python = resolve_executable(python.name)
+        self.assertEqual(resolved_python, PYTHON)
         self.assertTrue(Path(resolved_python).is_absolute())
         self.assertTrue(Path(resolved_python).is_file())
         self.assertTrue(os.access(resolved_python, os.X_OK))
