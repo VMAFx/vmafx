@@ -101,7 +101,20 @@ def reuse_annotations(root: Path) -> list[dict[str, object]]:
     reuse = root / "REUSE.toml"
     if not reuse.is_file():
         return []
-    return tomllib.loads(reuse.read_text(encoding="utf-8")).get("annotations", [])
+    notes: list[dict[str, object]] = tomllib.loads(reuse.read_text(encoding="utf-8")).get(
+        "annotations", []
+    )
+    return notes
+
+
+def note_strings(note: dict[str, object], key: str) -> list[str]:
+    """Return ``note[key]`` as strings; REUSE.toml allows one string or an array."""
+    raw = note.get(key, [])
+    if isinstance(raw, str):
+        return [raw]
+    if isinstance(raw, list):
+        return [str(item) for item in raw]
+    return []
 
 
 def reuse_own_override_paths(root: Path, files: list[str]) -> set[str]:
@@ -113,7 +126,7 @@ def reuse_own_override_paths(root: Path, files: list[str]) -> set[str]:
         expr = str(note.get("SPDX-License-Identifier", ""))
         if set(license_tokens(expr)) - set(OWN_LICENSES):
             continue
-        for pattern in note.get("path", []):
+        for pattern in note_strings(note, "path"):
             for name in files:
                 if path_matches(pattern, name):
                     paths.add(name)
@@ -157,7 +170,7 @@ def reuse_third_party_paths(root: Path, files: list[str]) -> dict[str, str]:
         expr = str(note.get("SPDX-License-Identifier", ""))
         if not set(license_tokens(expr)) - set(OWN_LICENSES):
             continue
-        for pattern in note.get("path", []):
+        for pattern in note_strings(note, "path"):
             for name in files:
                 if path_matches(pattern, name):
                     flag_expr = _should_flag_reuse_file(root, name, precedence, expr, own_overrides)
@@ -172,8 +185,7 @@ def own_holders(root: Path) -> set[str]:
     for note in reuse_annotations(root):
         if set(license_tokens(str(note.get("SPDX-License-Identifier", "")))) - set(OWN_LICENSES):
             continue
-        text = note.get("SPDX-FileCopyrightText", [])
-        for item in [text] if isinstance(text, str) else text:
+        for item in note_strings(note, "SPDX-FileCopyrightText"):
             holders.add(re.sub(r"^[\d\-\u2013, ]+", "", item).split("<")[0].strip().lower())
     return holders
 

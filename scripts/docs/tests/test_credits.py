@@ -422,6 +422,15 @@ class Helpers(unittest.TestCase):
             checks.normalise_url("https://github.com/o/r/graphs/contributors"), "github.com/o/r"
         )
 
+    def test_note_strings_shapes(self) -> None:
+        """Verify a string, an array, a missing key and a non-string value of an annotation."""
+        note: dict[str, object] = {"path": ["a/**", 3], "SPDX-FileCopyrightText": "2026 X"}
+        self.assertEqual(checks.note_strings(note, "path"), ["a/**", "3"])
+        self.assertEqual(checks.note_strings(note, "SPDX-FileCopyrightText"), ["2026 X"])
+        self.assertEqual(checks.note_strings(note, "missing"), [])
+        self.assertEqual(checks.note_strings({"path": 7}, "path"), [])
+        self.assertEqual(checks.note_strings({"path": []}, "path"), [])
+
     def test_counts_and_unverified_summary(self) -> None:
         e = lib.Entry("a", "A", "https://x", "code", "vendored", "unknown")
         text = lib.blocks([e])["summary"]
