@@ -24,6 +24,7 @@ Covers branches not exercised by the existing encode test suite:
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +48,7 @@ from vmaftune.encode import (
     run_encode_with_stats,
     run_two_pass_encode,
 )
+from vmaftune.hdr import HdrInfo, hdr_codec_args
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -65,6 +67,8 @@ def _make_req(
     source_is_container: bool = False,
     pass_number: int = 0,
     stats_path: Path | None = None,
+    extra_params: Sequence[str] = (),
+    pix_fmt: str = "yuv420p",
     tmp_path: Path | None = None,
 ) -> EncodeRequest:
     base = tmp_path or Path("/tmp")
@@ -72,7 +76,7 @@ def _make_req(
         source=base / "ref.yuv",
         width=320,
         height=240,
-        pix_fmt="yuv420p",
+        pix_fmt=pix_fmt,
         framerate=24.0,
         encoder=encoder,
         preset=preset,
@@ -84,6 +88,7 @@ def _make_req(
         source_is_container=source_is_container,
         pass_number=pass_number,
         stats_path=stats_path,
+        extra_params=tuple(extra_params),
     )
 
 
@@ -179,6 +184,154 @@ class TestBuildFfmpegCommandSampleClip:
         cmd = build_ffmpeg_command(req)
         assert "-t" in cmd
         assert cmd[cmd.index("-t") + 1] == "7.5"
+
+
+class TestBuildFfmpegCommandRawHdrInputColorTags:
+    """Raw HDR input color options before ``-i`` (#3345)."""
+
+    def test_raw_source_pq_hdr_copies_color_to_input_and_keeps_output(self, tmp_path: Path) -> None:
+        info = HdrInfo(
+            transfer="pq",
+            primaries="bt2020",
+            matrix="bt2020nc",
+            color_range="tv",
+            pix_fmt="yuv420p10le",
+        )
+        extra = list(hdr_codec_args("libx265", info))
+        req = _make_req(
+            pix_fmt="yuv420p10le",
+            encoder="libx265",
+            extra_params=extra,
+            source_is_container=False,
+            tmp_path=tmp_path,
+        )
+        cmd = build_ffmpeg_command(req)
+        i_idx = cmd.index("-i")
+        input_slice = cmd[:i_idx]
+        output_slice = cmd[i_idx + 2 :]
+        assert input_slice[-8:] == [
+            "-color_primaries",
+            "bt2020",
+            "-color_trc",
+            "smpte2084",
+            "-colorspace",
+            "bt2020nc",
+            "-color_range",
+            "tv",
+        ]
+        for flag, val in [
+            ("-color_primaries", "bt2020"),
+            ("-color_trc", "smpte2084"),
+            ("-colorspace", "bt2020nc"),
+            ("-color_range", "tv"),
+        ]:
+            assert flag in output_slice
+            assert output_slice[output_slice.index(flag) + 1] == val
+
+    def test_raw_source_hlg_hdr_sets_input_arib_std_b67(self, tmp_path: Path) -> None:
+        info = HdrInfo(
+            transfer="hlg",
+            primaries="bt2020",
+            matrix="bt2020nc",
+            color_range="tv",
+            pix_fmt="yuv420p10le",
+        )
+        extra = list(hdr_codec_args("libx265", info))
+        req = _make_req(
+            pix_fmt="yuv420p10le",
+            encoder="libx265",
+            extra_params=extra,
+            source_is_container=False,
+            tmp_path=tmp_path,
+        )
+        cmd = build_ffmpeg_command(req)
+        i_idx = cmd.index("-i")
+        input_slice = cmd[:i_idx]
+        assert "-color_trc" in input_slice
+        assert input_slice[input_slice.index("-color_trc") + 1] == "arib-std-b67"
+
+    def test_container_source_with_hdr_params_omits_input_color_tags(self, tmp_path: Path) -> None:
+        info = HdrInfo(
+            transfer="pq",
+            primaries="bt2020",
+            matrix="bt2020nc",
+            color_range="tv",
+            pix_fmt="yuv420p10le",
+        )
+        extra = list(hdr_codec_args("libx265", info))
+        req = _make_req(
+            source_is_container=True,
+            encoder="libx265",
+            extra_params=extra,
+            tmp_path=tmp_path,
+        )
+        cmd = build_ffmpeg_command(req)
+        i_idx = cmd.index("-i")
+        input_slice = cmd[:i_idx]
+        for flag in ("-color_primaries", "-color_trc", "-colorspace", "-color_range"):
+            assert flag not in input_slice
+
+    def test_raw_sdr_without_color_options_matches_master_argv(self, tmp_path: Path) -> None:
+        req = EncodeRequest(
+            source=Path("/src/ref.yuv"),
+            width=1920,
+            height=1080,
+            pix_fmt="yuv420p",
+            framerate=24.0,
+            encoder="libx264",
+            preset="medium",
+            crf=23,
+            output=Path("/out/enc.mp4"),
+        )
+        cmd = build_ffmpeg_command(req)
+        assert cmd == [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "info",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "yuv420p",
+            "-s",
+            "1920x1080",
+            "-r",
+            "24.0",
+            "-i",
+            "/src/ref.yuv",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "23",
+            "/out/enc.mp4",
+        ]
+
+    def test_boundary_duplicate_flags_and_partial_color_tags(self, tmp_path: Path) -> None:
+        extra = [
+            "-color_trc",
+            "smpte2084",
+            "-color_primaries",
+            "bt2020",
+            "-color_trc",
+            "arib-std-b67",
+        ]
+        req = _make_req(
+            extra_params=extra,
+            source_is_container=False,
+            tmp_path=tmp_path,
+        )
+        cmd = build_ffmpeg_command(req)
+        i_idx = cmd.index("-i")
+        input_slice = cmd[:i_idx]
+        assert input_slice.count("-color_trc") == 1
+        assert input_slice[input_slice.index("-color_trc") + 1] == "arib-std-b67"
+        assert input_slice.count("-color_primaries") == 1
+        assert input_slice[input_slice.index("-color_primaries") + 1] == "bt2020"
+        assert "-colorspace" not in input_slice
+        assert "-color_range" not in input_slice
 
 
 class TestBuildFfmpegCommandTwoPass:

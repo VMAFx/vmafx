@@ -241,8 +241,42 @@ func withABRRateControl(args []string, req Request) ([]string, error) {
 		"BuildFFmpegCommand: ABRBitrateKbps set but the %q argv has no -crf to replace", req.Encoder)
 }
 
+var colorTagFlags = []string{
+	"-color_primaries",
+	"-color_trc",
+	"-colorspace",
+	"-color_range",
+}
+
+// rawColorInputArgs extracts color signaling options from extraParams for raw
+// video inputs. Raw frames carry no colour props; FFmpeg n9 takes encoder trc
+// and primaries from input frames.
+func rawColorInputArgs(extraParams []string) []string {
+	latest := make(map[string]string)
+	for i := 0; i < len(extraParams); i++ {
+		for _, flag := range colorTagFlags {
+			if extraParams[i] == flag && i+1 < len(extraParams) {
+				latest[flag] = extraParams[i+1]
+				i++
+				break
+			}
+		}
+	}
+	var out []string
+	for _, flag := range colorTagFlags {
+		if val, ok := latest[flag]; ok {
+			out = append(out, flag, val)
+		}
+	}
+	return out
+}
+
 // InputArgs returns the input-side argv that precedes "-i": the raw-video
-// geometry quartet when the source is not a container, then the clip window.
+// geometry quartet and color tags when the source is not a container, then
+// the clip window.
+//
+// Raw frames carry no colour props; FFmpeg n9 takes encoder trc/primaries from
+// frames, so raw sources copy color options from req.ExtraParams before "-i".
 //
 // The window precedence mirrors vmaftune.encode.build_ffmpeg_command:
 // sample-clip mode wins (an input-side -ss/-t pair so ffmpeg fast-seeks raw
@@ -262,6 +296,7 @@ func InputArgs(req Request) []string {
 			"-s", fmt.Sprintf("%dx%d", req.Width, req.Height),
 			"-r", pyjson.FloatRepr(req.Framerate),
 		)
+		args = append(args, rawColorInputArgs(req.ExtraParams)...)
 	}
 	switch {
 	case req.SampleClipSeconds > 0.0:
