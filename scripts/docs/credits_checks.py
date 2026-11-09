@@ -251,6 +251,14 @@ def uncredited_paths(
     waivers: list[Waiver] | None = None,
     today: datetime.date | None = None,
 ) -> list[str]:
+    """Return a finding line for each third-party path no credits entry covers.
+
+    Merges reuse_third_party_paths, structural_paths and foreign_copyright_files; the first
+    detector to name a path supplies its reason. A path is dropped when an entry covers it or
+    an unexpired waiver names it. Lines read "<path>: <reason>; no credits entry lists this
+    path", followed by waiver_findings lines for expired waivers and waivers that excuse
+    nothing.
+    """
     waivers = waivers or []
     today = today or datetime.date.today()
     seen: dict[str, str] = {}

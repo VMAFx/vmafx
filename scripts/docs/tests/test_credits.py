@@ -402,6 +402,7 @@ class Validation(Fixture):
 
 class Helpers(unittest.TestCase):
     def test_path_matches(self) -> None:
+        """Verify path matching for prefix, exact, and glob patterns with prefix on and off."""
         self.assertTrue(lib.path_matches("core/", "core/a/b.c"))
         self.assertTrue(lib.path_matches("core", "core/a/b.c"))
         self.assertTrue(lib.path_matches("a/b.c", "a/b.c"))
@@ -432,10 +433,13 @@ class UpstreamMatcher(Fixture):
     """Matcher rule: kind upstream covers only by exact path or glob, never prefix."""
 
     def test_upstream_directory_prefix_does_not_cover(self) -> None:
+        """Plant core/sub/foreign.c with a foreign copyright line under the upstream core/
+        prefix entry; expect an uncredited-path finding."""
         self.put("core/sub/foreign.c", "/* Copyright 2026 Foreign Author */\n")
         self.assertTrue(self.findings()["uncredited-path"])
 
     def test_kind_code_directory_prefix_covers(self) -> None:
+        """Plant core/sub/foreign.c and a kind: code prefix entry; expect no finding."""
         self.put("core/sub/foreign.c", "/* Copyright 2026 Foreign Author */\n")
         self.add_entry(
             "- id: custom-code\n  name: custom-code\n  url: https://example.org/code\n"
@@ -444,6 +448,7 @@ class UpstreamMatcher(Fixture):
         self.assertEqual(self.findings()["uncredited-path"], [])
 
     def test_upstream_exact_path_covers(self) -> None:
+        """Plant core/sub/foreign.c and credit its exact path under upstream; expect no finding."""
         self.put("core/sub/foreign.c", "/* Copyright 2026 Foreign Author */\n")
         (self.root / "docs/credits.yaml").write_text(
             "entries:\n- id: netflix-vmaf\n  name: Netflix VMAF\n"
@@ -459,6 +464,7 @@ class ReusePrecedence(Fixture):
     """REUSE.toml precedence: closest vs override and SPDX header."""
 
     def test_closest_with_header_is_not_flagged(self) -> None:
+        """Plant closest GPL annotation and own header in pkg/x/a.c; expect no finding."""
         self.put(
             "REUSE.toml",
             (self.root / "REUSE.toml").read_text()
@@ -472,6 +478,8 @@ class ReusePrecedence(Fixture):
         self.assertEqual(self.findings()["uncredited-path"], [])
 
     def test_closest_with_non_own_header_is_flagged(self) -> None:
+        """Plant a closest GPL annotation and a BSD-3-Clause header in pkg/x/a.c; expect a
+        finding that names the header expression BSD-3-Clause."""
         self.put(
             "REUSE.toml",
             (self.root / "REUSE.toml").read_text()
@@ -489,6 +497,7 @@ class ReusePrecedence(Fixture):
         self.assertTrue(any("pkg/x/a.c: BSD-3-Clause" in line for line in found))
 
     def test_header_spdx_expression_boundary(self) -> None:
+        """Plant a one-line /* SPDX ... */ header; expect EUPL-1.2 without the trailing */."""
         # REUSE-IgnoreStart
         self.put("pkg/x/a.c", "/* SPDX-License-Identifier: EUPL-1.2 */\n")
         # REUSE-IgnoreEnd
@@ -496,6 +505,8 @@ class ReusePrecedence(Fixture):
         self.assertEqual(expr, "EUPL-1.2")
 
     def test_structural_third_party_with_own_override(self) -> None:
+        """Plant headerless third_party/pkg/a.c: flagged with no annotation, cleared by an
+        EUPL-1.2 override annotation, flagged again under a BSD-3-Clause override."""
         self.put("third_party/pkg/a.c", "int a = 1;\n")
         self.assertTrue(any("third_party/pkg/a.c" in line for line in self.only("uncredited-path")))
         base_reuse = (self.root / "REUSE.toml").read_text()
@@ -515,6 +526,8 @@ class ReusePrecedence(Fixture):
         self.assertTrue(any("third_party/pkg/a.c" in line for line in self.only("uncredited-path")))
 
     def test_structural_own_header_under_third_party_is_flagged(self) -> None:
+        """Plant third_party/pkg/a.py with an EUPL-1.2 header and no annotation; expect an
+        uncredited-path finding, since an own header alone does not exempt third_party/."""
         # REUSE-IgnoreStart
         self.put(
             "third_party/pkg/a.py",
@@ -525,6 +538,7 @@ class ReusePrecedence(Fixture):
         self.assertTrue(any("third_party/pkg/a.py" in line for line in found))
 
     def test_closest_without_header_is_flagged(self) -> None:
+        """Plant closest GPL annotation and headerless pkg/x/a.c; expect uncredited-path."""
         self.put(
             "REUSE.toml",
             (self.root / "REUSE.toml").read_text()
@@ -537,6 +551,7 @@ class ReusePrecedence(Fixture):
         self.assertTrue(any("pkg/x/a.c" in line for line in found))
 
     def test_override_with_header_is_flagged(self) -> None:
+        """Plant override GPL annotation and own header in pkg/x/a.c; expect uncredited-path."""
         self.put(
             "REUSE.toml",
             (self.root / "REUSE.toml").read_text()
@@ -551,6 +566,7 @@ class ReusePrecedence(Fixture):
         self.assertTrue(any("pkg/x/a.c" in line for line in found))
 
     def test_unknown_precedence_raises_credits_error(self) -> None:
+        """Plant REUSE annotation with unknown precedence and pkg/x/a.c; expect CreditsError."""
         self.put(
             "REUSE.toml",
             (self.root / "REUSE.toml").read_text()
