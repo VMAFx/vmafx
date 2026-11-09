@@ -355,7 +355,10 @@ credit it:
    `relation` (the table above), `license`, and optionally `license_note`,
    `paths` (repository paths or globs that use it), `evidence` (repository files
    that state the facts you wrote, required in spirit for models, datasets and
-   papers) and `note`.
+   papers) and `note`. A directory in `paths` covers every file below it,
+   except in an entry of kind `upstream`: there a file the gate flags is covered
+   only by its exact path or a glob, so the entry for the inherited tree cannot
+   hide a third-party file inside it.
 2. Copy the licence from the upstream. If it names none, write `none`; if you
    cannot tell, write `unknown`. Never guess.
 3. Run `make docs-fragments-write` to render the tables, then
@@ -366,8 +369,10 @@ credit it:
 
 - the tables differ from the list (page drift);
 - a vendored or inherited third-party path has no entry: any non-project
-  licence in `REUSE.toml`, any `third_party`, `3rdparty` or `vendor` directory,
-  notice and licence files, font files, and source files whose copyright header
+  licence in `REUSE.toml` (under `precedence = "closest"` the file's own SPDX
+  header decides, as `reuse` resolves it), any file in a `third_party`,
+  `3rdparty` or `vendor` directory that no `REUSE.toml` `override` annotation
+  gives the project's licence, notice and licence files, font files, and source files whose copyright header
   names someone other than the project and its contributors;
 - a `LICENSES/*.txt` text is used by no entry and no project code;
 - a skill or agent file says it was derived from an upstream (`derived_from`, or
