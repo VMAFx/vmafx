@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import subprocess
@@ -14,7 +15,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts.lib.safe_subprocess import CommandValidationError, resolve_executable
+from scripts.lib.safe_subprocess import (
+    TERMINATION_GRACE_SECONDS,
+    CommandValidationError,
+    resolve_executable,
+    terminate_windows_process_tree,
+)
 
 CREDENTIAL_ENV_VARS = (
     "GITHUB_PERSONAL_ACCESS_TOKEN",
@@ -98,26 +104,29 @@ def _run_and_wait(command: list[str]) -> int:
     ends this process at once with status 0, so every caller saw success while
     ``meson test`` was still running, and CI moved on after the first tests
     (ADR-1364). The child inherits this process's already-sanitized
-    environment block; no mapping is passed or copied.
+    environment block; no mapping is passed or copied. On timeout the runner
+    ends Meson's whole process tree, not only Meson.
     """
     try:
         executable = resolve_executable(command[0])
     except CommandValidationError:
         print("run_meson_test.py: Meson executable not found", file=sys.stderr)
         return 127
-    try:
-        completed = subprocess.run(  # noqa: S603 -- resolved path, no shell  # nosec B603
-            [executable, *command[1:]],
-            check=False,
-            timeout=SUBPROCESS_TIMEOUT_S,
-        )
-        return completed.returncode
-    except subprocess.TimeoutExpired:
-        print(
-            f"run_meson_test.py: Meson timed out after {SUBPROCESS_TIMEOUT_S}s",
-            file=sys.stderr,
-        )
-        return 124
+    with subprocess.Popen(  # noqa: S603 -- resolved path, no shell  # nosec B603
+        [executable, *command[1:]]
+    ) as process:
+        try:
+            return process.wait(timeout=SUBPROCESS_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            terminate_windows_process_tree(process.pid)
+            process.kill()
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                process.wait(timeout=TERMINATION_GRACE_SECONDS)
+            print(
+                f"run_meson_test.py: Meson timed out after {SUBPROCESS_TIMEOUT_S}s",
+                file=sys.stderr,
+            )
+            return 124
 
 
 if __name__ == "__main__":

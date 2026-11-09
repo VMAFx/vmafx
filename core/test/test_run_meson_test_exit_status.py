@@ -99,6 +99,33 @@ class RunMesonTestExitStatusTest(unittest.TestCase):
             self.assertEqual(status, 127)
         self.assertIn("Meson executable not found", stderr_buffer.getvalue())
 
+    def test_run_and_wait_timeout_terminates_process_tree_and_returns_124(self) -> None:
+        """_run_and_wait terminates the child process tree and returns 124 on timeout."""
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            script = Path(directory) / "sleep.py"
+            script.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+            recorded_pids: list[int] = []
+            stderr_buffer = io.StringIO()
+            started = time.monotonic()
+            with (
+                mock.patch.object(run_meson_test, "SUBPROCESS_TIMEOUT_S", 1),
+                mock.patch.object(
+                    run_meson_test,
+                    "terminate_windows_process_tree",
+                    side_effect=lambda pid: recorded_pids.append(pid) or True,
+                ),
+                mock.patch("sys.stderr", stderr_buffer),
+            ):
+                status = run_meson_test._run_and_wait([sys.executable, str(script)])
+            elapsed = time.monotonic() - started
+
+        self.assertEqual(status, 124)
+        self.assertEqual(len(recorded_pids), 1)
+        self.assertIsInstance(recorded_pids[0], int)
+        self.assertNotIsInstance(recorded_pids[0], bool)
+        self.assertIn("1s", stderr_buffer.getvalue())
+        self.assertLess(elapsed, 10.0)
+
 
 if __name__ == "__main__":
     unittest.main()
