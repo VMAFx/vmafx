@@ -56,7 +56,11 @@
  * `pthread_self` nor `pthread_equal`, so the MSVC builds could not link this
  * test. The address of a thread-local object is unique among live threads on
  * every platform. */
-static _Thread_local unsigned char g_thread_marker;
+#ifdef _MSC_VER
+static __declspec(thread) unsigned char g_thread_marker;
+#else
+static __thread unsigned char g_thread_marker;
+#endif
 static const unsigned char *g_caller;
 
 static bool on_caller_thread(void)
