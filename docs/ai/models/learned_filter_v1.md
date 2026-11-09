@@ -105,7 +105,7 @@ The synthetic training pairs are produced inside `export_tiny_models.py`:
 
 ## Usage — `vmafx_pre` FFmpeg filter
 
-The `vmafx_pre` filter of `ffmpeg-patches/0005` loads this model through its
+The `vmafx_pre` filter of `ffmpeg-patches/0004` loads this model through its
 `model` option (`device`, `threads` and `chroma` are the other options):
 
 ```bash

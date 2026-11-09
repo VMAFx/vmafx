@@ -338,24 +338,40 @@ static char *test_check_sample_range_refuses_other_values(void)
     return NULL;
 }
 
+static const MuTest leading_tests[] = {
+    MU_TEST(test_frame_colour_reaches_the_conversion),
+    MU_TEST(test_default_colour_for_frames_without_one),
+    MU_TEST(test_frame_colour_wins_over_the_default),
+    MU_TEST(test_older_desc_carries_no_colour),
+    MU_TEST(test_pool_and_wrapped_frames_keep_the_colour),
+    MU_TEST(test_preallocated_frames_keep_the_colour),
+};
+
+#ifdef HAVE_ZIMG
+static const MuTest platform_tests[] = {
+    MU_TEST(test_busy_after_the_first_converted_pair),
+};
+#else
+static const MuTest platform_tests[] = {
+    MU_TEST(test_nothing_converted_keeps_the_default_open),
+};
+#endif
+
+static const MuTest trailing_tests[] = {
+    MU_TEST(test_check_sample_range_option),
+    MU_TEST(test_check_sample_range_refuses_other_values),
+};
+
+/* Run frame input tests and return the first failure message, or NULL on success. */
 char *run_tests(void)
 {
-    static const MuTest tests[] = {
-        MU_TEST(test_frame_colour_reaches_the_conversion),
-        MU_TEST(test_default_colour_for_frames_without_one),
-        MU_TEST(test_frame_colour_wins_over_the_default),
-        MU_TEST(test_older_desc_carries_no_colour),
-        MU_TEST(test_pool_and_wrapped_frames_keep_the_colour),
-        MU_TEST(test_preallocated_frames_keep_the_colour),
-#ifdef HAVE_ZIMG
-        MU_TEST(test_busy_after_the_first_converted_pair),
-#else
-        MU_TEST(test_nothing_converted_keeps_the_default_open),
-#endif
-        MU_TEST(test_check_sample_range_option),
-        MU_TEST(test_check_sample_range_refuses_other_values),
-    };
-    return mu_run_table(tests, MU_TABLE_LEN(tests));
+    char *msg = mu_run_table(leading_tests, MU_TABLE_LEN(leading_tests));
+    if (msg)
+        return msg;
+    msg = mu_run_table(platform_tests, MU_TABLE_LEN(platform_tests));
+    if (msg)
+        return msg;
+    return mu_run_table(trailing_tests, MU_TABLE_LEN(trailing_tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

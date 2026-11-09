@@ -31,11 +31,27 @@
             return message;                                                                        \
     } while (0)
 
+/* Set by a test that could not exercise its subject at all -- no GPU device
+ * present, device kernels not compiled in, and so on. main() then exits 77,
+ * meson's "skipped" status, instead of reporting a pass.
+ *
+ * A skip that reports success is indistinguishable from a real pass, and that
+ * silently breaks any test registered `should_fail : true` because it is
+ * expected to fail only on capable hardware: on a runner without the device
+ * the test skips, exits 0, and meson reports UNEXPECTEDPASS. Exiting 77 keeps
+ * "could not run" and "ran and passed" distinct. */
 #ifdef __cplusplus
 using mu_message_t = const char *;
 extern "C" {
+extern int mu_tests_run;
+extern int mu_skipped;
+mu_message_t run_tests(void);
+}
 #else
 typedef char *mu_message_t;
+extern int mu_tests_run;
+extern int mu_skipped;
+mu_message_t run_tests(void);
 #endif
 
 /* Propagate a helper's failure message. Mirrors mu_assert for helpers that
@@ -48,25 +64,6 @@ typedef char *mu_message_t;
         if (mu_helper_msg)                                                                         \
             return mu_helper_msg;                                                                  \
     } while (0)
-
-extern int mu_tests_run;
-
-/* Set by a test that could not exercise its subject at all -- no GPU device
- * present, device kernels not compiled in, and so on. main() then exits 77,
- * meson's "skipped" status, instead of reporting a pass.
- *
- * A skip that reports success is indistinguishable from a real pass, and that
- * silently breaks any test registered `should_fail : true` because it is
- * expected to fail only on capable hardware: on a runner without the device
- * the test skips, exits 0, and meson reports UNEXPECTEDPASS. Exiting 77 keeps
- * "could not run" and "ran and passed" distinct. */
-extern int mu_skipped;
-
-mu_message_t run_tests(void);
-
-#ifdef __cplusplus
-}
-#endif
 
 /* Reports pass/fail for one test and returns its message (NULL on
  * pass). Lives here as a `static inline` helper so every TU that

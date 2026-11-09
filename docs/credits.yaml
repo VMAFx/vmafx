@@ -25,6 +25,11 @@ entries:
   - python/
   - resource/
   - model/vmaf_*
+  - core/test/test_speed_filter.c
+  - compat/python-vmaf/third_party/__init__.py
+  - compat/python-vmaf/third_party/xiph/__init__.py
+  - compat/python-vmaf/third_party/xiph/vmafexec_feature_extractor.py
+  - python/test/third_party/xiph/vmafexec_feature_extractor_test.py
   evidence:
   - docs/adr/1250-eupl-fork-relicense.md
   - docs/licensing.md
@@ -289,6 +294,8 @@ entries:
   - core/src/feature/metal/ssimulacra2.metal
   - core/src/feature/metal/ssimulacra2_metal.mm
   - core/src/feature/ssimulacra2.c
+  - core/src/feature/ssimulacra2_gaussian.h
+  - core/src/feature/ssimulacra2_weights.h
   - core/src/feature/sycl/ssimulacra2_sycl.cpp
   - core/src/feature/sycl/sycl_ssimulacra2_math.h
   - core/src/feature/x86/ssimulacra2_avx2.c
@@ -381,7 +388,7 @@ entries:
   relation: integrated
   license: LGPL-2.1-or-later AND GPL-2.0-or-later
   paths:
-  - ffmpeg-patches/
+  - ffmpeg-patches/**
   evidence:
   - REUSE.toml
   - docs/licensing.md

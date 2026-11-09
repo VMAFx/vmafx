@@ -76,22 +76,35 @@ typedef struct SsimDispatch {
     iqa_convolve_fn convolve;
 } SsimDispatch;
 
+#if ARCH_X86 && HAVE_AVX512
 static const SsimDispatch k_dispatches[] = {
-#if ARCH_X86
     {"avx2", VMAF_X86_CPU_FLAG_AVX2, ssim_precompute_avx2, ssim_variance_avx2, ssim_accumulate_avx2,
      iqa_convolve_avx2},
-#if HAVE_AVX512
     {"avx512", VMAF_X86_CPU_FLAG_AVX512, ssim_precompute_avx512, ssim_variance_avx512,
      ssim_accumulate_avx512, iqa_convolve_avx512},
-#endif
-#endif
-#if ARCH_AARCH64
-    {"neon", VMAF_ARM_CPU_FLAG_NEON, ssim_precompute_neon, ssim_variance_neon, ssim_accumulate_neon,
-     iqa_convolve_neon},
-#endif
     /* Sentinel: keeps the array non-empty on a host without a SIMD dispatch. */
     {NULL, 0u, NULL, NULL, NULL, NULL},
 };
+#elif ARCH_X86
+static const SsimDispatch k_dispatches[] = {
+    {"avx2", VMAF_X86_CPU_FLAG_AVX2, ssim_precompute_avx2, ssim_variance_avx2, ssim_accumulate_avx2,
+     iqa_convolve_avx2},
+    /* Sentinel: keeps the array non-empty on a host without a SIMD dispatch. */
+    {NULL, 0u, NULL, NULL, NULL, NULL},
+};
+#elif ARCH_AARCH64
+static const SsimDispatch k_dispatches[] = {
+    {"neon", VMAF_ARM_CPU_FLAG_NEON, ssim_precompute_neon, ssim_variance_neon, ssim_accumulate_neon,
+     iqa_convolve_neon},
+    /* Sentinel: keeps the array non-empty on a host without a SIMD dispatch. */
+    {NULL, 0u, NULL, NULL, NULL, NULL},
+};
+#else
+static const SsimDispatch k_dispatches[] = {
+    /* Sentinel: keeps the array non-empty on a host without a SIMD dispatch. */
+    {NULL, 0u, NULL, NULL, NULL, NULL},
+};
+#endif
 #define SUBW_NUM_DISPATCHES ((int)(sizeof(k_dispatches) / sizeof(k_dispatches[0])) - 1)
 
 typedef struct PlaneSize {
