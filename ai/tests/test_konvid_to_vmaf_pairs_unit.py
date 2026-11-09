@@ -319,7 +319,7 @@ def test_main_returns_2_when_vmaf_bin_missing(tmp_path: Path) -> None:
     assert rc == 2
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
     "exc",
     [
         subprocess.TimeoutExpired(["vmaf", "x"], 60),

@@ -253,9 +253,9 @@ def _ugc_args(tmp_path: Path) -> argparse.Namespace:
     )
 
 
-def _run_distorted(mod: types.ModuleType, tmp_path: Path) -> tuple[list[dict], bool]:
+def _run_distorted(mod: types.ModuleType, tmp_path: Path) -> tuple[list[dict[str, object]], bool]:
     """Run distorted clip processing against mock inputs."""
-    return mod._process_distorted_clip(
+    result: tuple[list[dict[str, object]], bool] = mod._process_distorted_clip(
         "clip0",
         "dis",
         tmp_path / "dis.mp4",
@@ -267,9 +267,10 @@ def _run_distorted(mod: types.ModuleType, tmp_path: Path) -> tuple[list[dict], b
         time.monotonic(),
         0,
     )
+    return result
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
     "exc",
     [
         subprocess.TimeoutExpired(["ffmpeg"], 60),
@@ -297,7 +298,7 @@ def test_process_distorted_clip_decode_dis(
     assert "decode-dis failed" in captured
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
     "exc",
     [
         subprocess.TimeoutExpired(["vmaf"], 60),
@@ -354,7 +355,7 @@ def test_process_distorted_clip_vmaf_success(
     assert rows[0]["vmaf"] == 90.0
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
     "exc",
     [
         subprocess.TimeoutExpired(["ffmpeg"], 60),
