@@ -370,6 +370,7 @@ class TestBuildFfmpegCommandRawHdrInputColorTags:
         ]
 
     def test_boundary_duplicate_flags_and_partial_color_tags(self, tmp_path: Path) -> None:
+        """Prove a repeated -color_trc keeps the last value and adds no untagged colour flags."""
         extra = [
             "-color_trc",
             "smpte2084",
