@@ -118,6 +118,8 @@ static CUresult(CUDAAPI fake_get_error_name)(CUresult error, const char **pstr)
     return CUDA_SUCCESS;
 }
 
+/* Push ctx onto fake driver context stack, bumping g_drv.pushes and raising max_context_depth;
+ * inject FAKE_CUDA_ERROR_INVALID_CONTEXT when pushes reaches fail_push_at or on overflow. */
 static CUresult(CUDAAPI fake_ctx_push)(CUcontext ctx)
 {
     g_drv.pushes++;
@@ -133,6 +135,8 @@ static CUresult(CUDAAPI fake_ctx_push)(CUcontext ctx)
     return CUDA_SUCCESS;
 }
 
+/* Pop top context from fake driver context stack into pctx, bumping g_drv.pops;
+ * inject FAKE_CUDA_ERROR_INVALID_CONTEXT when pops reaches fail_pop_at or on underflow. */
 static CUresult(CUDAAPI fake_ctx_pop)(CUcontext *pctx)
 {
     g_drv.pops++;
@@ -146,6 +150,8 @@ static CUresult(CUDAAPI fake_ctx_pop)(CUcontext *pctx)
     return CUDA_SUCCESS;
 }
 
+/* Allocate fake stream handle and bump g_drv.stream_create_calls and streams_created;
+ * inject FAKE_CUDA_ERROR_OUT_OF_MEMORY when stream_create_calls reaches fail_stream_create_at. */
 static CUresult(CUDAAPI fake_stream_create)(CUstream *stream, unsigned flags, int priority)
 {
     (void)flags;
@@ -159,6 +165,8 @@ static CUresult(CUDAAPI fake_stream_create)(CUstream *stream, unsigned flags, in
     return CUDA_SUCCESS;
 }
 
+/* Destroy fake stream, recording stream_destroy_context and bumping stream_destroy_calls;
+ * inject FAKE_CUDA_ERROR_INVALID_CONTEXT when calls reach fail_stream_destroy_at. */
 static CUresult(CUDAAPI fake_stream_destroy)(CUstream stream)
 {
     (void)stream;
@@ -171,6 +179,8 @@ static CUresult(CUDAAPI fake_stream_destroy)(CUstream stream)
     return CUDA_SUCCESS;
 }
 
+/* Synchronize fake stream, bumping g_drv.stream_sync_calls;
+ * inject FAKE_CUDA_ERROR_OUT_OF_MEMORY when stream_sync_calls reaches fail_stream_sync_at. */
 static CUresult(CUDAAPI fake_stream_sync)(CUstream stream)
 {
     (void)stream;
@@ -188,6 +198,8 @@ static CUresult(CUDAAPI fake_stream_wait_event)(CUstream stream, CUevent event, 
     return CUDA_SUCCESS;
 }
 
+/* Allocate fake event handle, bumping g_drv.event_create_calls and events_created;
+ * inject FAKE_CUDA_ERROR_OUT_OF_MEMORY when event_create_calls reaches fail_event_create_at. */
 static CUresult(CUDAAPI fake_event_create)(CUevent *event, unsigned flags)
 {
     (void)flags;
@@ -199,6 +211,8 @@ static CUresult(CUDAAPI fake_event_create)(CUevent *event, unsigned flags)
     return CUDA_SUCCESS;
 }
 
+/* Destroy fake event, recording event_destroy_context and bumping event_destroy_calls;
+ * inject FAKE_CUDA_ERROR_INVALID_CONTEXT when calls reach fail_event_destroy_at. */
 static CUresult(CUDAAPI fake_event_destroy)(CUevent event)
 {
     (void)event;
@@ -218,6 +232,8 @@ static CUresult(CUDAAPI fake_event_record)(CUevent event, CUstream stream)
     return CUDA_SUCCESS;
 }
 
+/* Unload fake module, recording module_unload_context and bumping modules_unloaded;
+ * inject FAKE_CUDA_ERROR_INVALID_CONTEXT when modules_unloaded reaches fail_module_unload_at. */
 static CUresult(CUDAAPI fake_module_unload)(CUmodule module)
 {
     (void)module;
@@ -228,6 +244,8 @@ static CUresult(CUDAAPI fake_module_unload)(CUmodule module)
     return CUDA_SUCCESS;
 }
 
+/* Allocate pitched device memory, setting pitch to width and bumping g_drv.allocations;
+ * inject FAKE_CUDA_ERROR_OUT_OF_MEMORY when next allocation matches fail_alloc_at. */
 static CUresult(CUDAAPI fake_mem_alloc_pitch)(CUdeviceptr *dptr, size_t *pitch, size_t width,
                                               size_t height, unsigned element_size)
 {
@@ -241,6 +259,8 @@ static CUresult(CUDAAPI fake_mem_alloc_pitch)(CUdeviceptr *dptr, size_t *pitch, 
     return CUDA_SUCCESS;
 }
 
+/* Count a device free in g_drv.frees (nothing is freed);
+ * inject FAKE_CUDA_ERROR_INVALID_CONTEXT when frees reaches fail_mem_free_at. */
 static CUresult(CUDAAPI fake_mem_free)(CUdeviceptr dptr)
 {
     (void)dptr;
@@ -250,6 +270,8 @@ static CUresult(CUDAAPI fake_mem_free)(CUdeviceptr dptr)
     return CUDA_SUCCESS;
 }
 
+/* Allocate linear device memory, bumping g_drv.allocations and synthesizing dptr;
+ * inject FAKE_CUDA_ERROR_OUT_OF_MEMORY when next allocation matches fail_alloc_at. */
 static CUresult(CUDAAPI fake_mem_alloc)(CUdeviceptr *dptr, size_t bytesize)
 {
     (void)bytesize;
@@ -260,6 +282,8 @@ static CUresult(CUDAAPI fake_mem_alloc)(CUdeviceptr *dptr, size_t bytesize)
     return CUDA_SUCCESS;
 }
 
+/* Stand in for pinned host memory: calloc at least 1 byte into pp (flags ignored);
+ * return FAKE_CUDA_ERROR_OUT_OF_MEMORY when calloc fails. */
 static CUresult(CUDAAPI fake_mem_host_alloc)(void **pp, size_t bytesize, unsigned int flags)
 {
     (void)flags;
@@ -269,6 +293,8 @@ static CUresult(CUDAAPI fake_mem_host_alloc)(void **pp, size_t bytesize, unsigne
     return CUDA_SUCCESS;
 }
 
+/* Free host memory via libc free, bumping g_drv.frees; inject
+ * FAKE_CUDA_ERROR_INVALID_CONTEXT when frees reaches fail_mem_free_host_at (p is then kept). */
 static CUresult(CUDAAPI fake_mem_free_host)(void *p)
 {
     g_drv.frees++;
@@ -278,6 +304,8 @@ static CUresult(CUDAAPI fake_mem_free_host)(void *p)
     return CUDA_SUCCESS;
 }
 
+/* Count a primary-context release for dev in g_drv.primary_release_calls;
+ * inject CUDA_ERROR_UNKNOWN when primary_release_calls reaches fail_primary_release_at. */
 static CUresult(CUDAAPI fake_primary_ctx_release)(CUdevice dev)
 {
     (void)dev;

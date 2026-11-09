@@ -178,6 +178,8 @@ class WalkKernel : public VmafSyclKernelShape<16, 0>
     {
     }
 
+    /* Execute the ordered-sum walk on the first work-item of the work-group, writing
+     * the summed result into out; non-zero local IDs return immediately. */
     [[VMAF_SYCL_FUNCTOR_SG_ATTR(16)]] __attribute__((flatten)) void
     operator()(sycl::nd_item<1> it) const
     {

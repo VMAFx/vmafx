@@ -130,6 +130,8 @@ __wrap_vmaf_sycl_malloc_host(VmafSyclState *, size_t)
     return allocate_tracked();
 }
 
+/* Fake vmaf_sycl_free: pass a non-null pointer to release_tracked, which marks its
+ * tracked allocation freed and frees it; ignore null. */
 // cppcheck-suppress unusedFunction
 extern "C" __attribute__((visibility("default"))) void __wrap_vmaf_sycl_free(VmafSyclState *,
                                                                              void *pointer)
@@ -149,6 +151,8 @@ __wrap_vmaf_feature_name_dict_from_provided_features(const char **, const VmafOp
     return reinterpret_cast<VmafDictionary *>(&fake_dictionary_storage);
 }
 
+/* Fake vmaf_dictionary_free: accept only the fake dictionary, clear dictionary_live and
+ * null the caller's pointer; return -EINVAL for a null or any other pointer. */
 // cppcheck-suppress unusedFunction
 extern "C" __attribute__((visibility("default"))) int
 __wrap_vmaf_dictionary_free(VmafDictionary **dictionary)

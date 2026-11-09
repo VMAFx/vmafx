@@ -107,9 +107,9 @@ typedef struct GateTicket {
     unsigned frame;
 } GateTicket;
 
+static CUhostFn hold_until_open;
 /* Host function: hold the producer's stream until the ticket's frame is
  * opened, GATE_TIMEOUT_S at most. No CUDA call. */
-static CUhostFn hold_until_open;
 static void hold_until_open(void *arg)
 {
     const GateTicket *const t = arg;

@@ -46,6 +46,9 @@ typedef struct FadmProbeArgs FadmProbeArgs;
 
 #define FADM_HD_FN(name) FADM_HD void name
 
+/* Evaluate each float ADM helper once on one sample (in = 3 reference band values, then 3
+ * distorted): CSF outputs per band in out[0..11], masking threshold in out[12], denominator
+ * terms per band in out[13..15], contrast-masking term in out[16], angle flag in out[17]. */
 FADM_HD_FN(fadm_probe_sample)(const FadmProbeArgs *a, const float *in, float *out)
 {
     const float *o = in;
