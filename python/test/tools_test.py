@@ -9,6 +9,8 @@ from vmaf.config import VmafConfig
 from vmaf.core.quality_runner import PsnrQualityRunner
 from vmaf.tools.misc import MyTestCase, QualityRunnerTestMixin, import_python_file
 
+SCRIPT_TIMEOUT_S = 60
+
 
 class QualityRunnerTestMixinTest(MyTestCase, QualityRunnerTestMixin):
 
@@ -50,6 +52,7 @@ class MiscTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     def test_sigproc_import_is_warning_free(self):

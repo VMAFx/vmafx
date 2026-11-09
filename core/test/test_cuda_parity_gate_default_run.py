@@ -23,6 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "ci" / "cross_backend_parity_gate.py"
+SCRIPT_TIMEOUT_S = 300
 REF = ROOT / "python" / "test" / "resource" / "yuv" / "src01_hrc00_576x324.yuv"
 DIS = ROOT / "python" / "test" / "resource" / "yuv" / "src01_hrc01_576x324.yuv"
 
@@ -105,7 +106,19 @@ def main() -> int:
         "cuda",
     ]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
+    try:
+        proc = subprocess.run(  # noqa: S603
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=SCRIPT_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        sys.stderr.write(
+            f"Default parity gate timed out after {SCRIPT_TIMEOUT_S}s (SCRIPT_TIMEOUT_S)\n"
+        )
+        return 124
     if proc.returncode != 0:
         if cuda_unavailable(proc.stdout + proc.stderr):
             sys.stderr.write("CUDA is not available to this binary; skipping (77)\n")

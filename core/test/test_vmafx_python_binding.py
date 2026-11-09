@@ -29,6 +29,7 @@ import vmafx as package
 from vmafx import _api as vmafx
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+VMAF_TIMEOUT_S = 120
 WRAPPED_CLASSES = (
     vmafx.Library,
     vmafx.Context,
@@ -638,6 +639,7 @@ class NetflixBitExactTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=True,
+            timeout=VMAF_TIMEOUT_S,
         )
         c_payload = json.loads(proc.stdout)
         w, h = 576, 324

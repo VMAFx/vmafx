@@ -10,6 +10,7 @@ from vmaf.tools.misc import MyTestCase
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
+VMAF_TIMEOUT_S = 300
 
 
 class RunProcessTest(MyTestCase):
@@ -166,7 +167,7 @@ class CommandLineTest(MyTestCase):
         # flows in. shell=True is needed for `>/dev/null 2>&1` redirection /
         # CLI argument quoting. See Research-0090, F13–F17.
         # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true
-        ret = subprocess.call(cmd, shell=True)
+        ret = subprocess.call(cmd, shell=True, timeout=VMAF_TIMEOUT_S)
         self.assertEqual(ret, 2)
 
     def test_run_psnr(self):
@@ -232,7 +233,7 @@ class VmafexecCommandLineTest(MyTestCase):
         # flows in. shell=True is needed for `>/dev/null 2>&1` redirection /
         # CLI argument quoting. See Research-0090, F13–F17.
         # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true
-        ret = subprocess.call(cmd, shell=True)
+        ret = subprocess.call(cmd, shell=True, timeout=VMAF_TIMEOUT_S)
         self.assertEqual(ret, self.RC_SUCCESS)
         with open(self.output_file_path, "rt") as fo:
             fc = fo.read()
@@ -258,7 +259,7 @@ class VmafexecCommandLineTest(MyTestCase):
         # flows in. shell=True is needed for `>/dev/null 2>&1` redirection /
         # CLI argument quoting. See Research-0090, F13–F17.
         # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true
-        ret = subprocess.call(cmd, shell=True)
+        ret = subprocess.call(cmd, shell=True, timeout=VMAF_TIMEOUT_S)
         self.assertEqual(ret, self.RC_SUCCESS)
         with open(self.output_file_path, "rt") as fo:
             fc = fo.read()
@@ -284,7 +285,7 @@ class VmafexecCommandLineTest(MyTestCase):
         # flows in. shell=True is needed for `>/dev/null 2>&1` redirection /
         # CLI argument quoting. See Research-0090, F13–F17.
         # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true
-        ret = subprocess.call(cmd, shell=True)
+        ret = subprocess.call(cmd, shell=True, timeout=VMAF_TIMEOUT_S)
         self.assertEqual(ret, self.RC_SUCCESS)
         with open(self.output_file_path, "rt") as fo:
             fc = fo.read()

@@ -25,6 +25,7 @@ from vmaf.tools.scanf import FormatError, IncompleteCaptureError, sscanf
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
+SUBPROCESS_TIMEOUT_S = 60
 
 
 def get_stdout_logger():
@@ -427,8 +428,14 @@ def check_program_exist(program):
     """
     try:
         with open(os.devnull, "wb") as devnull_fd:
-            subprocess.call(program.split(), stdout=devnull_fd)
+            subprocess.call(
+                program.split(),
+                stdout=devnull_fd,
+                timeout=SUBPROCESS_TIMEOUT_S,
+            )
         return True
+    except subprocess.TimeoutExpired:
+        return False
     except OSError as e:
         if e.errno == errno.ENOENT:
             return False

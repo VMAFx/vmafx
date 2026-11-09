@@ -83,6 +83,7 @@ COMPILER_VARIANT_SUFFIX = re.compile(r"\|_\._\.\d+\._\.\d+$")
 
 UNDEFINED_TYPES = {"U", "w", "v"}
 NM_TIMEOUT = 120  # seconds; HISS-02 bounds every external call
+CXXFILT_TIMEOUT_S = 60
 
 
 @dataclass(frozen=True)
@@ -176,7 +177,12 @@ def demangled(names: list[str]) -> dict[str, str]:
         print("SKIP: c++filt not found")
         raise SystemExit(77)
     out = subprocess.run(  # noqa: S603 -- resolved c++filt path, names on stdin, no shell
-        [cxxfilt], input="\n".join(names), check=True, capture_output=True, text=True
+        [cxxfilt],
+        input="\n".join(names),
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=CXXFILT_TIMEOUT_S,
     ).stdout.splitlines()
     # c++filt answers one line per input line; a mismatch is a tool failure.
     return dict(zip(names, out, strict=True))

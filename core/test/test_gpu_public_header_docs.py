@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 
 INCLUDE_DIR = Path(__file__).resolve().parents[1] / "include" / "libvmaf"
+SUBPROCESS_TIMEOUT_S = 60
 # Between a block and its declaration only a deprecation marker may stand
 # (VMAF_DEPRECATED, ADR-1852 decision D7).
 ATTACHED_GAP = re.compile(r'\s*(?:VMAF_DEPRECATED\("[^"]*"\)\s*)?')
@@ -166,6 +167,7 @@ class PublicHeaderDoxygenContractTest(unittest.TestCase):
                 cwd=str(self.repo_root),
                 capture_output=True,
                 text=True,
+                timeout=SUBPROCESS_TIMEOUT_S,
             )
             self.assertEqual(proc.returncode, 0, f"doxygen failed: {proc.stderr}\n{proc.stdout}")
             if warn_log.exists():

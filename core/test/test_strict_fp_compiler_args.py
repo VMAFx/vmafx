@@ -29,6 +29,8 @@ import unittest
 from pathlib import Path
 
 SOURCE_MESON = Path(__file__).resolve().parents[1] / "src" / "meson.build"
+MESON_TIMEOUT_S = 60
+CC_TIMEOUT_S = 60
 TEST_MESON = Path(__file__).resolve().with_name("meson.build")
 TOOLS_MESON = Path(__file__).resolve().parents[1] / "tools" / "meson.build"
 METAL_MESON = Path(__file__).resolve().parents[1] / "src" / "metal" / "meson.build"
@@ -410,6 +412,7 @@ def _meson_setup(case: unittest.TestCase, name: str, fixture: str) -> None:
             capture_output=True,
             check=False,
             encoding="utf-8",
+            timeout=MESON_TIMEOUT_S,
         )
         case.assertEqual(
             result.returncode,
@@ -803,6 +806,7 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
                     capture_output=True,
                     text=True,
                     check=False,
+                    timeout=CC_TIMEOUT_S,
                 )
 
             ok = compile_with(strict)
@@ -817,6 +821,7 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=CC_TIMEOUT_S,
             )
             self.assertEqual(disasm.returncode, 0, disasm.stderr)
             self.assertNotIn("vfmadd", disasm.stdout)

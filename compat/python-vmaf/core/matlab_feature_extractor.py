@@ -13,6 +13,7 @@ from vmaf.tools.stats import ListStats
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
+SCRIPT_TIMEOUT_S = 600
 
 
 def _run_matlab(matlab_bin: str, matlab_script: str, log_file_path: str | None = None) -> None:
@@ -45,7 +46,13 @@ def _run_matlab(matlab_bin: str, matlab_script: str, log_file_path: str | None =
     env["LANG"] = "C"
     try:
         if log_file_path is None:
-            subprocess.check_output(argv, stderr=subprocess.STDOUT, env=env, shell=False)
+            subprocess.check_output(
+                argv,
+                stderr=subprocess.STDOUT,
+                env=env,
+                shell=False,
+                timeout=SCRIPT_TIMEOUT_S,
+            )
         else:
             with open(log_file_path, "ab") as log_fh:
                 subprocess.run(
@@ -55,9 +62,14 @@ def _run_matlab(matlab_bin: str, matlab_script: str, log_file_path: str | None =
                     env=env,
                     shell=False,
                     check=True,
+                    timeout=SCRIPT_TIMEOUT_S,
                 )
     except subprocess.CalledProcessError as e:
         raise AssertionError(f"Process returned {e.returncode}, cmd: {argv}, msg: {str(e.output)}")
+    except subprocess.TimeoutExpired as e:
+        raise AssertionError(
+            f"Process timed out after {SCRIPT_TIMEOUT_S}s (SCRIPT_TIMEOUT_S), cmd: {argv}, msg: {str(e.output)}"
+        )
 
 
 class MatlabFeatureExtractor(FeatureExtractor):
