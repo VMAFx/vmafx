@@ -17,6 +17,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SCRIPT = REPO_ROOT / "scripts" / "ci" / "install-rocm-from-image.sh"
 SCRIPT_PATH = Path(os.environ.get("VMAFX_INSTALL_ROCM_SCRIPT", str(DEFAULT_SCRIPT)))
+SCRIPT_TIMEOUT_S = 60
 
 ROCM_DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 EMPTY_DIGEST = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -211,6 +212,7 @@ def _run_installer(
         capture_output=True,
         text=True,
         check=False,
+        timeout=SCRIPT_TIMEOUT_S,
     )
 
 

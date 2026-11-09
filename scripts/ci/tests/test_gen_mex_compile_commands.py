@@ -18,6 +18,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+CC_TIMEOUT_S = 60
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE.parent / "gen-mex-compile-commands.py"
 
@@ -147,14 +148,18 @@ class StubsAreSufficient(unittest.TestCase):
         for src in gen.mex_sources(REPO):
             entry = gen.entry_for(src, REPO, REPO)
             argv = [*shlex.split(entry["command"])[:-2], "-fsyntax-only"]
-            done = subprocess.run(argv, capture_output=True, text=True, check=False)  # noqa: S603
+            done = subprocess.run(  # noqa: S603
+                argv, capture_output=True, text=True, check=False, timeout=CC_TIMEOUT_S
+            )
             self.assertEqual(done.returncode, 0, f"{src}: {done.stderr[-400:]}")
 
     def test_standalone_sources_parse(self) -> None:
         for src in gen.STANDALONE_SOURCES:
             entry = gen.entry_for(src, REPO, REPO)
             argv = [*shlex.split(entry["command"])[:-2], "-fsyntax-only"]
-            done = subprocess.run(argv, capture_output=True, text=True, check=False)  # noqa: S603
+            done = subprocess.run(  # noqa: S603
+                argv, capture_output=True, text=True, check=False, timeout=CC_TIMEOUT_S
+            )
             self.assertEqual(done.returncode, 0, f"{src}: {done.stderr[-400:]}")
 
 

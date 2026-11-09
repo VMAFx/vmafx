@@ -28,6 +28,7 @@ import yaml  # type: ignore[import-untyped]
 from test_helm_controller_workload import CHART, named, render
 
 ROOT = CHART.parents[2]
+SUBPROCESS_TIMEOUT_S = 60
 DEPLOYED = """
 controller: {enabled: true}
 node: {enabled: true}
@@ -64,7 +65,12 @@ def helm_fails(values: str) -> str:
 
 def run(*argv: str) -> str:
     result = subprocess.run(  # noqa: S603 -- fixed go / bash executables; argv built here
-        list(argv), cwd=ROOT, capture_output=True, text=True, check=False
+        list(argv),
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=SUBPROCESS_TIMEOUT_S,
     )
     if result.returncode != 0:
         raise AssertionError(f"{argv} failed: {result.stdout}{result.stderr}")

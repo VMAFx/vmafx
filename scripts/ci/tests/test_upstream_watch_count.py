@@ -14,6 +14,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "ci" / "upstream_watch_count.sh"
+SCRIPT_TIMEOUT_S = 60
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 
 WORKFLOW_FILES = (
@@ -53,6 +54,7 @@ class UpstreamWatchCountTests(unittest.TestCase):
             text=True,
             check=False,
             env=env,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     def test_positive_returns_integer_and_exits_zero(self) -> None:

@@ -21,6 +21,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 CHECKER = ROOT / "scripts/ci/check_python_dependency_locks.py"
+SCRIPT_TIMEOUT_S = 60
 
 
 def load_checker() -> Any:
@@ -1157,6 +1158,7 @@ class RepositoryContractTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=SCRIPT_TIMEOUT_S,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("python dependency locks: OK", result.stdout)
@@ -1267,6 +1269,7 @@ class RepositoryContractTests(unittest.TestCase):
             text=True,
             capture_output=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 

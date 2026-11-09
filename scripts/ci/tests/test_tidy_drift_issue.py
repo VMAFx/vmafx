@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "tidy-drift-issue.sh"
+SCRIPT_TIMEOUT_S = 60
 
 # A stand-in for `gh`: it appends its arguments to $STUB_LOG and answers the three
 # calls the script makes from $STUB_JOBS (failed job names) and $STUB_EXISTING (an
@@ -53,6 +54,7 @@ class TidyDriftIssue(unittest.TestCase):
             text=True,
             capture_output=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     def calls(self) -> list[str]:
@@ -89,6 +91,7 @@ class TidyDriftIssue(unittest.TestCase):
                     text=True,
                     capture_output=True,
                     check=False,
+                    timeout=SCRIPT_TIMEOUT_S,
                 )
                 self.assertEqual(result.returncode, 2)
 
@@ -102,6 +105,7 @@ class TidyDriftIssue(unittest.TestCase):
             text=True,
             capture_output=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(result.returncode, 1)
         self.assertIn("cannot read the jobs", result.stderr)

@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scheduled-failure-issue.sh"
+SCRIPT_TIMEOUT_S = 60
 
 STUB = """#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$STUB_LOG"
@@ -66,6 +67,7 @@ class ScheduledFailureIssueTest(unittest.TestCase):
             text=True,
             capture_output=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     def calls(self) -> list[str]:
@@ -140,6 +142,7 @@ class ScheduledFailureIssueTest(unittest.TestCase):
                     text=True,
                     capture_output=True,
                     check=False,
+                    timeout=SCRIPT_TIMEOUT_S,
                 )
                 self.assertEqual(result.returncode, 2)
 
@@ -166,6 +169,7 @@ class ScheduledFailureIssueTest(unittest.TestCase):
             text=True,
             capture_output=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(any(c.startswith("issue create") for c in self.calls()))
@@ -187,6 +191,7 @@ class ScheduledFailureIssueTest(unittest.TestCase):
             text=True,
             capture_output=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(result.returncode, 1)
         self.assertIn("cannot read the jobs", result.stderr)

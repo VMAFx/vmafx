@@ -36,6 +36,8 @@ ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github" / "workflows"
 GIT = shutil.which("git") or "/usr/bin/git"
 BASH = shutil.which("bash") or "/bin/bash"
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 SHA_PIN = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
 
 
@@ -57,7 +59,13 @@ def validate_script(name: str) -> str:
 
 def _git(env: dict[str, str], cwd: Path, *args: str) -> str:
     return subprocess.run(  # noqa: S603 -- fixed git argv, no shell
-        [GIT, *args], cwd=cwd, env=env, check=True, capture_output=True, text=True
+        [GIT, *args],
+        cwd=cwd,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=GIT_TIMEOUT_S,
     ).stdout.strip()
 
 
@@ -125,6 +133,7 @@ def run_validate(
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         lines = out.read_text(encoding="utf-8").splitlines()
         return done.returncode, dict(ln.split("=", 1) for ln in lines if "=" in ln), done.stderr

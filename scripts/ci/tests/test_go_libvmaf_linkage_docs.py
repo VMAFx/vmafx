@@ -20,6 +20,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
+GIT_TIMEOUT_S = 60
 LIBVMAF_IMPORT = '"github.com/VMAFx/vmafx/pkg/libvmaf"'
 CGO_IMPORT = re.compile(r'^import "C"\s*$', re.MULTILINE)
 CGO_VMAF = re.compile(r"#cgo\b.*\bvmaf\b|#include <libvmaf/", re.MULTILINE)
@@ -36,6 +37,7 @@ def go_sources() -> list[Path]:
         check=True,
         capture_output=True,
         text=True,
+        timeout=GIT_TIMEOUT_S,
     ).stdout
     return [ROOT / line for line in out.splitlines() if line and not line.endswith("_test.go")]
 

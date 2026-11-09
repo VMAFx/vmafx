@@ -23,6 +23,8 @@ ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "ci" / "coverage-check.sh"
 MAKE = shutil.which("make")
 BASH = shutil.which("bash")
+SUBPROCESS_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 
 
 def _summary(overall: float, dnn: float) -> dict[str, Any]:
@@ -51,6 +53,7 @@ class CoverageRecipe(unittest.TestCase):
             capture_output=True,
             text=True,
             check=True,
+            timeout=SUBPROCESS_TIMEOUT_S,
         ).stdout
 
     def test_recipe_uses_gcovr_json_summary(self) -> None:
@@ -78,6 +81,7 @@ class CoverageScript(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=SCRIPT_TIMEOUT_S,
             )
 
     def test_passes_a_gcovr_summary_above_the_floors(self) -> None:

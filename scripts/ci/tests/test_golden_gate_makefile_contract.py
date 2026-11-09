@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 PREFLIGHT = ROOT / "scripts" / "ci" / "golden-arm64-preflight.sh"
 SETUP_GOLDEN = ROOT / "scripts" / "ci" / "setup-golden-build.sh"
+SCRIPT_TIMEOUT_S = 60
 
 
 class GoldenGateMakefileContractTest(unittest.TestCase):
@@ -236,6 +237,7 @@ class GoldenArm64PreflightTest(unittest.TestCase):
             capture_output=True,
             check=False,
             encoding="utf-8",
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     GCC = ("aarch64-linux-gnu-gcc", "aarch64-linux-gnu-g++")
@@ -287,7 +289,11 @@ class GoldenArm64PreflightTest(unittest.TestCase):
             host = self._host(Path(tmp), tools=self.GCC, loader=True, binfmt=self.ENABLED)
             self.assertEqual(self._run(host, "icx").returncode, 2)
         short = subprocess.run(  # noqa: S603 -- fixed interpreter and script path.
-            ["/bin/bash", str(PREFLIGHT), "gcc"], capture_output=True, check=False, encoding="utf-8"
+            ["/bin/bash", str(PREFLIGHT), "gcc"],
+            capture_output=True,
+            check=False,
+            encoding="utf-8",
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(short.returncode, 2)
         self.assertIn("usage:", short.stderr)
@@ -301,6 +307,7 @@ class GoldenArm64PreflightTest(unittest.TestCase):
                 check=False,
                 encoding="utf-8",
                 cwd=ROOT,
+                timeout=SCRIPT_TIMEOUT_S,
             )
             self.assertEqual(result.returncode, 1)
             self.assertIn("GOLDEN_CROSS_FILE", result.stderr)

@@ -14,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts/ci/check_ort_tarball_pins.py"
+SCRIPT_TIMEOUT_S = 60
 
 
 class OrtTarballSingleSourceTest(unittest.TestCase):
@@ -27,6 +28,7 @@ class OrtTarballSingleSourceTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     def test_repo_tree_passes(self) -> None:

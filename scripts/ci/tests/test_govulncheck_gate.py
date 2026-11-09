@@ -24,6 +24,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 GATE = ROOT / "scripts/ci/govulncheck-gate.py"
+SCRIPT_TIMEOUT_S = 60
 CONFIG: dict[str, object] = {
     "config": {"scanner_name": "govulncheck", "scanner_version": "v1.8.0", "scan_level": "symbol"}
 }
@@ -45,7 +46,12 @@ class GovulncheckGate(unittest.TestCase):
             stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
             env = dict(os.environ, GOVULNCHECK=str(stub))
             return subprocess.run(  # noqa: S603 -- the gate under test
-                [sys.executable, str(GATE)], capture_output=True, text=True, env=env, check=False
+                [sys.executable, str(GATE)],
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+                timeout=SCRIPT_TIMEOUT_S,
             )
 
     def test_clean_scan_passes(self) -> None:

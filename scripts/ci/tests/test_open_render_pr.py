@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "ci" / "open-render-pr.sh"
 GIT = shutil.which("git") or "/usr/bin/git"
 BASH = shutil.which("bash") or "/bin/bash"
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 
 MIN_CALL_LEN = 2
 TEST_TOKEN = "test-token"  # noqa: S105 -- dummy token for fixture
@@ -144,7 +146,12 @@ def fixture_env() -> dict[str, str]:
 
 def git(*args: str) -> str:
     return subprocess.run(  # noqa: S603 -- fixed argv, fixture repo
-        [GIT, *args], check=True, env=fixture_env(), capture_output=True, text=True
+        [GIT, *args],
+        check=True,
+        env=fixture_env(),
+        capture_output=True,
+        text=True,
+        timeout=GIT_TIMEOUT_S,
     ).stdout
 
 
@@ -247,6 +254,7 @@ class OpenRenderPrTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     def test_case_a_foreign_pr_on_render_branch_not_closed_when_render_not_due(self) -> None:

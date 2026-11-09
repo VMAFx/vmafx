@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts/ci/werror-args.sh"
+SCRIPT_TIMEOUT_S = 60
 MATRIX = ROOT / ".github/workflows/libvmaf-build-matrix.yml"
 BUILD = ROOT / ".github/workflows/build.yml"
 CI_DOC = ROOT / "docs/development/ci.md"
@@ -44,6 +45,7 @@ def run_script(*args: str, os_name: str | None = None) -> subprocess.CompletedPr
         text=True,
         check=False,
         env=env,
+        timeout=SCRIPT_TIMEOUT_S,
     )
 
 

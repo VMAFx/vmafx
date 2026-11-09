@@ -29,6 +29,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
+GIT_TIMEOUT_S = 60
 
 # Files that quote licence texts as data (the relicensing tool and its tests)
 # or are licence texts themselves. The Pelorus sync script left this list with
@@ -98,7 +99,10 @@ def tracked_files() -> list[str]:
     if git is None:
         raise unittest.SkipTest("git is not installed")
     out = subprocess.run(  # noqa: S603 -- fixed argv
-        [git, "-C", str(ROOT), "ls-files", "-z"], capture_output=True, check=True
+        [git, "-C", str(ROOT), "ls-files", "-z"],
+        capture_output=True,
+        check=True,
+        timeout=GIT_TIMEOUT_S,
     ).stdout
     return [name for name in out.decode("utf-8").split("\0") if name]
 

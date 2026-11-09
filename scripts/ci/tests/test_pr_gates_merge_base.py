@@ -26,6 +26,8 @@ ROOT = Path(__file__).resolve().parents[3]
 CI = ROOT / "scripts" / "ci"
 GIT = shutil.which("git") or "/usr/bin/git"
 BASH = shutil.which("bash") or "/bin/bash"
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 # A git hook exports GIT_DIR and GIT_INDEX_FILE; with them the fixture's init, commits and
 # checkouts, and the gates under test, would act on the caller's repository.
 CLEAN = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
@@ -80,7 +82,13 @@ class BehindBase(unittest.TestCase):
     def git(self, *args: str) -> str:
         env = {**CLEAN, **IDENT}
         done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
-            [GIT, *args], cwd=self.repo, env=env, capture_output=True, text=True, check=True
+            [GIT, *args],
+            cwd=self.repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=GIT_TIMEOUT_S,
         )
         return done.stdout
 
@@ -121,6 +129,7 @@ class BehindBase(unittest.TestCase):
             text=True,
             check=False,
             stdin=subprocess.DEVNULL,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     # --- deliverables-check.sh ---------------------------------------------
