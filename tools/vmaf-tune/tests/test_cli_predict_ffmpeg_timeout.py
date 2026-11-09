@@ -3,11 +3,11 @@
 """Tests for predict ffmpeg execution timeout bounding."""
 
 import argparse
-import subprocess
 from pathlib import Path
 
 import pytest
 
+# isort: split
 from vmaftune import cli
 from vmaftune.per_shot import Shot
 
@@ -15,24 +15,31 @@ UHD_4K = (3840, 2160)
 UHD_8K = (7680, 4320)
 SD_360P = (640, 360)
 FFMPEG_RATE = 0.04
+SAMPLE_TIMEOUT_S = 72.0
+CUSTOM_TIMEOUT_S = 123.4
+BOUND_FLOOR_S = 60
 
 
 def test_predict_ffmpeg_success(monkeypatch: pytest.MonkeyPatch) -> None:
     """Finished run with returncode 0 is returned unchanged and observed timeout bound."""
     calls: list[dict[str, object]] = []
 
-    def stub_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def stub_run(*args: object, **kwargs: object) -> cli.subprocess.CompletedProcess[str]:
         """Record call arguments and return a successful completed process."""
         calls.append({"args": args, "kwargs": kwargs})
-        return subprocess.CompletedProcess(args=["ffmpeg"], returncode=0, stdout="ok", stderr="")
+        return cli.subprocess.CompletedProcess(
+            args=["ffmpeg"], returncode=0, stdout="ok", stderr=""
+        )
 
     monkeypatch.setattr(cli.subprocess, "run", stub_run)
-    result = cli._run_predict_ffmpeg(["ffmpeg", "-i", "in.yuv"], "reference extraction", 72.0)
+    result = cli._run_predict_ffmpeg(
+        ["ffmpeg", "-i", "in.yuv"], "reference extraction", SAMPLE_TIMEOUT_S
+    )
     assert result is not None
     assert result.returncode == 0
     assert result.stdout == "ok"
     assert len(calls) == 1
-    assert calls[0]["kwargs"].get("timeout") == 72.0
+    assert calls[0]["kwargs"].get("timeout") == SAMPLE_TIMEOUT_S
 
 
 def test_predict_ffmpeg_timeout(
@@ -40,12 +47,14 @@ def test_predict_ffmpeg_timeout(
 ) -> None:
     """TimeoutExpired returns None and emits bound warning message to stderr."""
 
-    def stub_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def stub_run(*args: object, **kwargs: object) -> cli.subprocess.CompletedProcess[str]:
         """Simulate an ffmpeg timeout by raising TimeoutExpired."""
-        raise subprocess.TimeoutExpired(cmd=["ffmpeg"], timeout=72.0)
+        raise cli.subprocess.TimeoutExpired(cmd=["ffmpeg"], timeout=SAMPLE_TIMEOUT_S)
 
     monkeypatch.setattr(cli.subprocess, "run", stub_run)
-    result = cli._run_predict_ffmpeg(["ffmpeg", "-i", "in.yuv"], "reference extraction", 72.0)
+    result = cli._run_predict_ffmpeg(
+        ["ffmpeg", "-i", "in.yuv"], "reference extraction", SAMPLE_TIMEOUT_S
+    )
     assert result is None
     captured = capsys.readouterr()
     assert "vmaf-tune: ffmpeg reference extraction timed out after 72s" in captured.err
@@ -57,14 +66,14 @@ def test_predict_ffmpeg_nonzero_exit(
 ) -> None:
     """Finished run with nonzero returncode is returned unchanged without stderr output."""
 
-    def stub_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def stub_run(*args: object, **kwargs: object) -> cli.subprocess.CompletedProcess[str]:
         """Return a completed process with returncode 1 simulating failure."""
-        return subprocess.CompletedProcess(
+        return cli.subprocess.CompletedProcess(
             args=["ffmpeg"], returncode=1, stdout="", stderr="ffmpeg failed"
         )
 
     monkeypatch.setattr(cli.subprocess, "run", stub_run)
-    result = cli._run_predict_ffmpeg(["ffmpeg", "-i", "in.yuv"], "decode", 72.0)
+    result = cli._run_predict_ffmpeg(["ffmpeg", "-i", "in.yuv"], "decode", SAMPLE_TIMEOUT_S)
     assert result is not None
     assert result.returncode == 1
     assert result.stderr == "ffmpeg failed"
@@ -76,14 +85,16 @@ def test_run_predict_ffmpeg_passes_timeout(monkeypatch: pytest.MonkeyPatch) -> N
     """_run_predict_ffmpeg passes timeout_s directly to subprocess.run."""
     calls: list[dict[str, object]] = []
 
-    def stub_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def stub_run(*args: object, **kwargs: object) -> cli.subprocess.CompletedProcess[str]:
         calls.append({"args": args, "kwargs": kwargs})
-        return subprocess.CompletedProcess(args=["ffmpeg"], returncode=0, stdout="ok", stderr="")
+        return cli.subprocess.CompletedProcess(
+            args=["ffmpeg"], returncode=0, stdout="ok", stderr=""
+        )
 
     monkeypatch.setattr(cli.subprocess, "run", stub_run)
-    cli._run_predict_ffmpeg(["ffmpeg"], "reference extraction", 123.4)
+    cli._run_predict_ffmpeg(["ffmpeg"], "reference extraction", CUSTOM_TIMEOUT_S)
     assert len(calls) == 1
-    assert calls[0]["kwargs"].get("timeout") == 123.4
+    assert calls[0]["kwargs"].get("timeout") == CUSTOM_TIMEOUT_S
 
 
 def test_frame_scaled_timeout_s_positive() -> None:
@@ -111,7 +122,7 @@ def test_frame_scaled_timeout_s_scaling() -> None:
 
 def test_bound_floor_s_pins_sixty_second_minimum() -> None:
     """Assert BOUND_FLOOR_S contract floor is exactly 60 seconds."""
-    assert cli.BOUND_FLOOR_S == 60
+    assert cli.BOUND_FLOOR_S == BOUND_FLOOR_S
 
 
 def test_extract_shot_to_raw_yuv_records_timeout(
@@ -121,10 +132,10 @@ def test_extract_shot_to_raw_yuv_records_timeout(
     calls: list[dict[str, object]] = []
     output = tmp_path / "out.yuv"
 
-    def stub_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def stub_run(*args: object, **kwargs: object) -> cli.subprocess.CompletedProcess[str]:
         calls.append({"args": args, "kwargs": kwargs})
         output.write_bytes(b"")
-        return subprocess.CompletedProcess(args=["ffmpeg"], returncode=0, stdout="", stderr="")
+        return cli.subprocess.CompletedProcess(args=["ffmpeg"], returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(cli.subprocess, "run", stub_run)
     args = argparse.Namespace(
@@ -140,7 +151,7 @@ def test_extract_shot_to_raw_yuv_records_timeout(
     expected_timeout = cli._frame_scaled_timeout_s(36000, 3840, 2160, cli.FFMPEG_FRAME_TIMEOUT_S)
     assert len(calls) == 1
     assert calls[0]["kwargs"].get("timeout") == expected_timeout
-    assert expected_timeout > 60
+    assert expected_timeout > BOUND_FLOOR_S
 
 
 def test_extract_shot_to_raw_yuv_timeout_expired(
@@ -150,8 +161,8 @@ def test_extract_shot_to_raw_yuv_timeout_expired(
     output = tmp_path / "out.yuv"
     expected_timeout = cli._frame_scaled_timeout_s(36000, 3840, 2160, cli.FFMPEG_FRAME_TIMEOUT_S)
 
-    def stub_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-        raise subprocess.TimeoutExpired(cmd=["ffmpeg"], timeout=expected_timeout)
+    def stub_run(*args: object, **kwargs: object) -> cli.subprocess.CompletedProcess[str]:
+        raise cli.subprocess.TimeoutExpired(cmd=["ffmpeg"], timeout=expected_timeout)
 
     monkeypatch.setattr(cli.subprocess, "run", stub_run)
     args = argparse.Namespace(

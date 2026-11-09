@@ -23,7 +23,7 @@ FFMPEG = shutil.which("ffmpeg")
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from vmaftune import cli
+from vmaftune import cli, compare
 from vmaftune.codec_strings import (
     CodecStringError,
     codec_string_from_mp4,
@@ -178,13 +178,11 @@ def _ffmpeg_has(encoder: str) -> bool:
     if FFMPEG is None:
         return False
     try:
-        out = subprocess.run(
-            [FFMPEG, "-hide_banner", "-encoders"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=FFMPEG_TIMEOUT_S,
-        ).stdout
+        out = compare._probe_stdout_text(
+            compare._default_probe_runner(
+                [FFMPEG, "-hide_banner", "-encoders"], timeout=FFMPEG_TIMEOUT_S
+            )
+        )
     except subprocess.TimeoutExpired:
         return False
     return any(line.split()[1:2] == [encoder] for line in out.splitlines())
@@ -206,7 +204,7 @@ def test_ffmpeg_has_returns_false_on_probe_timeout(monkeypatch: pytest.MonkeyPat
     def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         raise subprocess.TimeoutExpired(cmd=["ffmpeg"], timeout=FFMPEG_TIMEOUT_S)
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(compare, "_default_probe_runner", fake_run)
     monkeypatch.setattr(sys.modules[__name__], "FFMPEG", "/usr/bin/ffmpeg")
     assert _ffmpeg_has("libx264") is False
 

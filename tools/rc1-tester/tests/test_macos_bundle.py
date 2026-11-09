@@ -8,13 +8,19 @@ import json
 import os
 import shutil
 import stat
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
+_HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(_HERE.parent / "src"))
+
+from vmaf_rc1_tester.safe_process import run_bounded
+
 SCRIPT_TIMEOUT_S = 60
+MAX_OUTPUT_BYTES = 4 * 1024 * 1024
+NON_APPLE_SILICON_EXIT_CODE = 64
 
 _ROOT = Path(__file__).resolve().parents[3]
 RUN_SH = _ROOT / "tools" / "rc1-tester" / "image" / "macos" / "run.sh"
@@ -32,10 +38,12 @@ def script(path: Path, body: str) -> None:
 
 def test_run_sh_refuses_other_platforms() -> None:
     """Assert run.sh exits with code 64 when invoked on non-Apple-silicon platforms."""
-    result = subprocess.run(
-        [SH, str(RUN_SH)], capture_output=True, text=True, check=False, timeout=SCRIPT_TIMEOUT_S
+    result = run_bounded(
+        [SH, str(RUN_SH)],
+        timeout_seconds=SCRIPT_TIMEOUT_S,
+        max_output_bytes=MAX_OUTPUT_BYTES,
     )
-    assert result.returncode == 64 and "Apple silicon" in result.stderr
+    assert result.returncode == NON_APPLE_SILICON_EXIT_CODE and "Apple silicon" in result.stderr
 
 
 def test_run_sh_end_to_end_with_everything_skipped(tmp_path: Path) -> None:
@@ -55,8 +63,11 @@ def test_run_sh_end_to_end_with_everything_skipped(tmp_path: Path) -> None:
     args = [SH, str(bundle / "run.sh")]
     for check_name in ("dispatch", "metal", "unit", "golden"):
         args += ["--skip", check_name]
-    result = subprocess.run(
-        args, env=env, capture_output=True, text=True, check=False, timeout=SCRIPT_TIMEOUT_S
+    result = run_bounded(
+        args,
+        environment=env,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
+        max_output_bytes=MAX_OUTPUT_BYTES,
     )
     report = json.loads(result.stdout)
     assert result.returncode in (1, 2) and "verdict" in result.stderr
