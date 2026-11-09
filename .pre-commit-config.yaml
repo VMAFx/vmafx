@@ -86,7 +86,7 @@ repos:
       - id: forbid-new-submodules
 
   - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v23.1.3
+    rev: v23.1.5
     hooks:
       - id: clang-format
         entry: python3 scripts/ci/pelorus_mirror.py clang-format
@@ -123,7 +123,7 @@ repos:
         exclude: '^\.config/hiss/testdata/HISS-02/python/positive/spaced-while-true\.py$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.3
+    rev: v0.17.4
     hooks:
       - id: ruff-check
         # Same scope rule as black above; list: .config/lint-exceptions.d/ruff.toml.
@@ -1168,7 +1168,7 @@ repos:
         # every CI run.
         language: python
         # semgrep 1.183.0 dropped the Intel macOS wheel; that platform stays on 1.182.1 until a later release ships one again.
-        additional_dependencies: ['semgrep>=1.183.0,<2.0; sys_platform != "darwin" or platform_machine != "x86_64"', 'semgrep>=1.182.1,<1.183; sys_platform == "darwin" and platform_machine == "x86_64"']
+        additional_dependencies: ['semgrep>=1.184.0,<2.0; sys_platform != "darwin" or platform_machine != "x86_64"', 'semgrep>=1.184.0,<1.185; sys_platform == "darwin" and platform_machine == "x86_64"']
         require_serial: true
         types_or: [c, c++, cuda, python]
         # Paths this hook skips: (a) upstream vendored subprojects,
@@ -1206,7 +1206,7 @@ repos:
         # Same isolated semgrep environment and serial execution as above.
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_semgrep_vendored_scope.py
         language: python
-        additional_dependencies: ['semgrep>=1.183.0,<2.0; sys_platform != "darwin" or platform_machine != "x86_64"', 'semgrep>=1.182.1,<1.183; sys_platform == "darwin" and platform_machine == "x86_64"']
+        additional_dependencies: ['semgrep>=1.184.0,<2.0; sys_platform != "darwin" or platform_machine != "x86_64"', 'semgrep>=1.184.0,<1.185; sys_platform == "darwin" and platform_machine == "x86_64"']
         require_serial: true
         files: '^(\.semgrep\.yml|\.semgrepignore|\.pre-commit-config\.yaml|scripts/ci/tests/test_semgrep_vendored_scope\.py|core/src/pdjson\.(c|h)|core/src/mcp/3rdparty/.*)$'
         pass_filenames: false
@@ -1219,7 +1219,7 @@ repos:
         # then scans the real tests (ADR-1502).
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_semgrep_float_identity.py
         language: python
-        additional_dependencies: ['semgrep>=1.183.0,<2.0; sys_platform != "darwin" or platform_machine != "x86_64"', 'semgrep>=1.182.1,<1.183; sys_platform == "darwin" and platform_machine == "x86_64"', "pyyaml==6.0.3"]
+        additional_dependencies: ['semgrep>=1.184.0,<2.0; sys_platform != "darwin" or platform_machine != "x86_64"', 'semgrep>=1.184.0,<1.185; sys_platform == "darwin" and platform_machine == "x86_64"', "pyyaml==6.0.3"]
         require_serial: true
         files: '^(\.semgrep\.yml|\.pre-commit-config\.yaml|scripts/ci/(lint_exceptions|tests/test_semgrep_(float_identity|vendored_scope))\.py|\.config/lint-exceptions\.d/vmaf-test-float-identity-[a-z-]+\.toml|core/test/.+\.(c|h|cc|cpp|cxx|hh|hpp|hxx))$'
         pass_filenames: false
