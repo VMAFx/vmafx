@@ -41,7 +41,34 @@ SHARED_SERIES_KEYS = (
     "FFMPEG_FIX_SERIES_SHA256",
 )
 SHARED_SERIES_SCRIPT = Path(__file__).with_name("ffmpeg-shared-series.sh")
-SHARED_SERIES_SECONDS = 600
+SHARED_SERIES_MAX_DOWNLOADS = 3
+SHARED_SERIES_DEFAULT_TIMEOUT_SECONDS = 600
+# Mirrors DOWNLOAD_SECONDS default in ffmpeg-shared-series.sh.
+SHARED_SERIES_DEFAULT_DOWNLOAD_SECONDS = 120
+
+
+def shared_series_timeout_seconds(env: dict[str, str] | None = None) -> int:
+    """Derive the execution timeout for ffmpeg-shared-series.sh from FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS.
+
+    Returns max(600, N * 2 * S + 120) where N = SHARED_SERIES_MAX_DOWNLOADS and
+    S = int(val) when FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS matches ^[1-9][0-9]{0,5}$,
+    or S = SHARED_SERIES_DEFAULT_DOWNLOAD_SECONDS when unset or empty (840 s),
+    or 600 if invalid (the script then exits 2).
+    """
+    source = os.environ if env is None else env
+    val = source.get("FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS", "")
+    if not val:
+        s = SHARED_SERIES_DEFAULT_DOWNLOAD_SECONDS
+    elif re.match(r"^[1-9][0-9]{0,5}$", val):
+        s = int(val)
+    else:
+        return SHARED_SERIES_DEFAULT_TIMEOUT_SECONDS
+    return max(
+        SHARED_SERIES_DEFAULT_TIMEOUT_SECONDS,
+        SHARED_SERIES_MAX_DOWNLOADS * 2 * s + 120,
+    )
+
+
 # Files the series carries whose source of truth is ffmpeg-patches/src/ (RC4
 # WP9): FFmpeg path -> file under ffmpeg-patches/src/. The one patch that adds
 # or changes the path gets the source's bytes at replay; --check then sees a
@@ -219,7 +246,7 @@ class Replay:
             env={**self.environment, "BUILD_CONFIG": str(repo / "build-config.env")},
             text=True,
             capture_output=True,
-            timeout_seconds=SHARED_SERIES_SECONDS,
+            timeout_seconds=shared_series_timeout_seconds(self.environment),
             max_output_bytes=16 * 1_048_576,
         )
         with (self.output / "replay.log").open("a") as log:
