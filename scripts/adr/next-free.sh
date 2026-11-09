@@ -243,10 +243,13 @@ _ls_remote_heads() {
   git ls-remote --heads origin 2>/dev/null
 }
 
+# Upper bound on open pull request heads fetched from GitHub CLI.
+readonly _OPEN_PR_HEAD_LIMIT=1000
+
 # Query GitHub CLI for head commit SHAs of open pull requests in the given repository.
 _collect_open_pr_heads() {
   local repo="$1"
-  gh pr list -R "${repo}" --state open --limit 1000 --json headRefOid --jq '.[].headRefOid'
+  gh pr list -R "${repo}" --state open --limit "${_OPEN_PR_HEAD_LIMIT}" --json headRefOid --jq '.[].headRefOid'
 }
 
 # _collect_remote_branch_numbers: internal worker; called from a process
@@ -515,26 +518,32 @@ if [ "${REMOTE_OFFLINE}" -eq 0 ]; then
   elif ! _origin_url="$(git remote get-url origin 2>/dev/null)" || [ -z "${_origin_url}" ]; then
     printf 'WARNING: open pull request heads not scanned (no origin remote); fork pull request ADR numbers may collide.\n' >&2
   else
-    _gh_err_file="$(mktemp)"
-    _gh_shas=""
-    if _gh_shas="$(_collect_open_pr_heads "${_origin_url}" 2>"${_gh_err_file}")"; then
-      while IFS= read -r _sha; do
-        if [[ "${_sha}" =~ ^[0-9a-fA-F]{40,64}$ ]]; then
-          if [ -n "${ls_remote_out}" ]; then
-            ls_remote_out+=$'\n'"${_sha}"$'\trefs/pull/open/head'
-          else
-            ls_remote_out="${_sha}"$'\trefs/pull/open/head'
+    _gh_out=""
+    if _gh_out="$(_collect_open_pr_heads "${_origin_url}" 2>&1)"; then
+      _gh_sha_count=0
+      if [ -n "${_gh_out}" ]; then
+        while IFS= read -r _sha; do
+          if [[ "${_sha}" =~ ^[0-9a-fA-F]{40,64}$ ]]; then
+            _gh_sha_count=$((_gh_sha_count + 1))
+            if [ -n "${ls_remote_out}" ]; then
+              ls_remote_out+=$'\n'"${_sha}"$'\trefs/pull/open/head'
+            else
+              ls_remote_out="${_sha}"$'\trefs/pull/open/head'
+            fi
           fi
-        fi
-      done <<<"${_gh_shas}"
+        done <<<"${_gh_out}"
+      fi
+      if [ "${_gh_sha_count}" -eq "${_OPEN_PR_HEAD_LIMIT}" ]; then
+        printf 'WARNING: open pull request heads scan incomplete (%s-head limit reached); fork pull request ADR numbers may collide.\n' \
+          "${_OPEN_PR_HEAD_LIMIT}" >&2
+      fi
     else
       _gh_rc=$?
-      _gh_err="$(tr '\n' ' ' <"${_gh_err_file}" | sed 's/[[:space:]]*$//')"
+      _gh_err="$(printf '%s' "${_gh_out}" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
       _gh_reason="${_gh_err:-gh exited with status ${_gh_rc}}"
       printf 'WARNING: open pull request heads not scanned (%s); fork pull request ADR numbers may collide.\n' \
         "${_gh_reason}" >&2
     fi
-    rm -f "${_gh_err_file}"
   fi
 fi
 

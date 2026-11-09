@@ -15,6 +15,9 @@
 #   6. Negative: gh failure → fallback to branches/master with WARNING.
 #   7. Negative: no gh on PATH → fallback with WARNING with reason.
 #   8. Boundary: gh returns empty list → no warning, number as before.
+#   9. Positive: gh returns 1000 SHAs (limit reached) → incomplete-scan WARNING.
+#  10. Negative: gh returns 999 SHAs (< limit) → no incomplete-scan WARNING.
+#  11. Boundary: gh prints 1 SHA + non-SHA stderr line, exit 0, TMPDIR missing.
 #
 # All tests run in a throw-away temporary git repository so they cannot touch
 # production ADR state.  The real next-free.sh is invoked via PATH override with
@@ -371,10 +374,11 @@ git -C "${FAKE_REPO}" update-ref -d "refs/pull/1/head"
 #
 # Scenario: gh stub exits 1 (simulating failure or not logged in).
 # Expected: claim succeeds with exit 0, returns next free number,
-#           and stderr contains WARNING.
+#           and stderr contains WARNING with reason text.
 
 cat >"${STUB_BIN}/gh" <<'GHEOF'
 #!/usr/bin/env bash
+printf 'GraphQL: could not resolve to a Repository\n' >&2
 exit 1
 GHEOF
 chmod +x "${STUB_BIN}/gh"
@@ -389,9 +393,8 @@ else
   _fail "test 6a: gh failure returned invalid output: '${result_t6}'"
 fi
 
-if grep -q "WARNING: open pull request heads not scanned" "${stderr_t6}" &&
-  grep -q "fork pull request ADR numbers may collide" "${stderr_t6}"; then
-  _pass "test 6b: gh failure prints expected WARNING on stderr"
+if grep -q "WARNING: open pull request heads not scanned (GraphQL: could not resolve to a Repository); fork pull request ADR numbers may collide" "${stderr_t6}"; then
+  _pass "test 6b: gh failure prints expected WARNING with reason text on stderr"
 else
   _fail "test 6b: expected WARNING on stderr, got: $(cat "${stderr_t6}")"
 fi
@@ -465,6 +468,129 @@ fi
 rm -f "${FAKE_REPO}/docs/adr/${result_t8}-test-empty-pr-t8.md.stub"
 rm -f "${GIT_COMMON_T8}/adr-claims/${result_t8}"
 rm -f "${stderr_t8}"
+
+# ── test 9: positive: gh returns 1000 SHAs (limit reached) → WARNING on stderr ─
+#
+# Scenario: gh stub returns exactly 1000 distinct 40-hex SHAs (limit reached).
+# Expected: claim succeeds with exit 0, returns next free number,
+#           and stderr contains the incomplete-scan WARNING.
+
+cat >"${STUB_BIN}/gh" <<'GHEOF'
+#!/usr/bin/env bash
+for ((i = 1; i <= 1000; i++)); do
+  printf '%040d\n' "${i}"
+done
+exit 0
+GHEOF
+chmod +x "${STUB_BIN}/gh"
+
+stderr_t9="$(mktemp)"
+result_t9=$(_run --claim test-limit-1000-t9 2>"${stderr_t9}") || echo "note: _run exited non-zero" >&2
+GIT_COMMON_T9="$(_git_common_dir)"
+
+if printf '%s' "${result_t9}" | grep -qE '^[0-9]{4}$'; then
+  _pass "test 9a: 1000-head limit still returns 4-digit number: ${result_t9}"
+else
+  _fail "test 9a: 1000-head limit returned invalid output: '${result_t9}'"
+fi
+
+if grep -q "WARNING: open pull request heads scan incomplete (1000-head limit reached); fork pull request ADR numbers may collide." "${stderr_t9}"; then
+  _pass "test 9b: 1000-head limit prints incomplete-scan WARNING on stderr"
+else
+  _fail "test 9b: expected incomplete-scan WARNING on stderr, got: $(cat "${stderr_t9}")"
+fi
+
+rm -f "${FAKE_REPO}/docs/adr/${result_t9}-test-limit-1000-t9.md.stub"
+rm -f "${GIT_COMMON_T9}/adr-claims/${result_t9}"
+rm -f "${stderr_t9}"
+
+# ── test 10: negative: gh returns 999 SHAs (< limit) → no WARNING ─────────────
+#
+# Scenario: gh stub returns 999 distinct 40-hex SHAs (below limit).
+# Expected: claim succeeds with exit 0, returns next free number,
+#           and stderr does NOT contain the incomplete-scan WARNING.
+
+cat >"${STUB_BIN}/gh" <<'GHEOF'
+#!/usr/bin/env bash
+for ((i = 1; i <= 999; i++)); do
+  printf '%040d\n' "${i}"
+done
+exit 0
+GHEOF
+chmod +x "${STUB_BIN}/gh"
+
+stderr_t10="$(mktemp)"
+result_t10=$(_run --claim test-limit-999-t10 2>"${stderr_t10}") || echo "note: _run exited non-zero" >&2
+GIT_COMMON_T10="$(_git_common_dir)"
+
+if printf '%s' "${result_t10}" | grep -qE '^[0-9]{4}$'; then
+  _pass "test 10a: 999-head scan returns 4-digit number: ${result_t10}"
+else
+  _fail "test 10a: 999-head scan returned invalid output: '${result_t10}'"
+fi
+
+if grep -q "WARNING: open pull request heads scan incomplete" "${stderr_t10}"; then
+  _fail "test 10b: unexpected incomplete-scan WARNING on stderr: $(cat "${stderr_t10}")"
+else
+  _pass "test 10b: 999-head scan prints no incomplete-scan WARNING"
+fi
+
+rm -f "${FAKE_REPO}/docs/adr/${result_t10}-test-limit-999-t10.md.stub"
+rm -f "${GIT_COMMON_T10}/adr-claims/${result_t10}"
+rm -f "${stderr_t10}"
+
+# ── test 11: boundary: gh prints 1 SHA + non-SHA stderr line, exit 0, TMPDIR missing ──
+#
+# Scenario: gh stub outputs one valid SHA on stdout and a non-SHA warning line
+#   on stderr, exiting 0. TMPDIR names a directory that does not exist, so under
+#   set -e any mktemp on the scan path fails the claim.
+# Expected: the SHA is used, no WARNING is printed, and TMPDIR is never created.
+
+git -C "${FAKE_REPO}" checkout --quiet -b temp-boundary-pr master
+touch "${FAKE_REPO}/docs/adr/0800-boundary.md"
+git -C "${FAKE_REPO}" add docs/adr/0800-boundary.md
+git -C "${FAKE_REPO}" commit --quiet -m "feat: boundary pr adr 0800"
+SHA_BOUNDARY="$(git -C "${FAKE_REPO}" rev-parse HEAD)"
+git -C "${FAKE_REPO}" checkout --quiet master
+git -C "${FAKE_REPO}" branch -D temp-boundary-pr >/dev/null
+git -C "${FAKE_REPO}" update-ref "refs/pull/2/head" "${SHA_BOUNDARY}"
+
+cat >"${STUB_BIN}/gh" <<GHEOF
+#!/usr/bin/env bash
+printf '%s\n' "${SHA_BOUNDARY}"
+printf 'warning: new gh release available\n' >&2
+exit 0
+GHEOF
+chmod +x "${STUB_BIN}/gh"
+
+PRIVATE_TMPDIR="${TMPDIR_BASE}/missing-tmp-t11"
+
+stderr_t11="$(mktemp)"
+result_t11=$(TMPDIR="${PRIVATE_TMPDIR}" _run --claim test-boundary-t11 2>"${stderr_t11}") || echo "note: _run exited non-zero" >&2
+GIT_COMMON_T11="$(_git_common_dir)"
+
+if [ -n "${result_t11}" ] && [ "$((10#${result_t11}))" -gt 800 ]; then
+  _pass "test 11a: boundary PR head with ADR 0800 → SHA is used, returns number above 0800: ${result_t11}"
+else
+  _fail "test 11a: expected number above 0800, got '${result_t11}'"
+fi
+
+if grep -q "WARNING:" "${stderr_t11}"; then
+  _fail "test 11b: unexpected WARNING on stderr: $(cat "${stderr_t11}")"
+else
+  _pass "test 11b: non-SHA warning on stderr produces no allocator WARNING"
+fi
+
+if [ ! -e "${PRIVATE_TMPDIR}" ]; then
+  _pass "test 11c: missing TMPDIR was never created"
+else
+  _fail "test 11c: ${PRIVATE_TMPDIR} was created: $(ls -A "${PRIVATE_TMPDIR}")"
+fi
+
+rm -f "${FAKE_REPO}/docs/adr/${result_t11}-test-boundary-t11.md.stub"
+rm -f "${GIT_COMMON_T11}/adr-claims/${result_t11}"
+git -C "${FAKE_REPO}" update-ref -d "refs/pull/2/head"
+rm -f "${stderr_t11}"
 
 # ── summary ───────────────────────────────────────────────────────────────────
 
