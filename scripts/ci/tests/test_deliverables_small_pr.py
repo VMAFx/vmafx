@@ -66,6 +66,7 @@ class SmallPrGateTest(unittest.TestCase):
         self.base = self.git("rev-parse", "HEAD").strip()
 
     def git(self, *args: str) -> str:
+        """Run a git command in the test repository and return its stdout."""
         env = {**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, **IDENT}
         done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
             [GIT, *args],
@@ -91,6 +92,7 @@ class SmallPrGateTest(unittest.TestCase):
         self.git("commit", "-q", "-m", "change")
 
     def gate(self, body: str) -> subprocess.CompletedProcess[str]:
+        """Run the small PR gate script with the specified pull request body."""
         env = {k: v for k, v in os.environ.items() if k not in ("PR_BODY", "BASE_SHA", "HEAD_SHA")}
         env.update(PR_BODY=body, BASE_SHA=self.base, HEAD_SHA=self.git("rev-parse", "HEAD").strip())
         return subprocess.run(  # noqa: S603 -- fixed argv, no shell, gate under test

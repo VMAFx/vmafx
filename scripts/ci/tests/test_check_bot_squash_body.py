@@ -54,6 +54,7 @@ def git(
     committer_name: str = BOT_NAME,
     committer_email: str = BOT_EMAIL,
 ) -> str:
+    """Run a git command in the test repository and return its stripped output."""
     env = _fixture_env(author_name, author_email, committer_name, committer_email)
     result = subprocess.run(  # noqa: S603 - fixed argv, no shell
         [GIT, "-c", "commit.gpgsign=false", *args],
@@ -115,6 +116,7 @@ def add_human_commit(repo: Path) -> None:
 
 
 def run_check(repo: Path, base: str, head: str, **env_overrides: str) -> int:
+    """Run the bot squash body check script and return its exit code."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")} | {
         "GIT_CONFIG_GLOBAL": os.devnull,
         "GIT_CONFIG_SYSTEM": os.devnull,

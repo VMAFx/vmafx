@@ -55,6 +55,7 @@ def git_env() -> dict[str, str]:
 
 
 def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    """Run a git command in the repository and return the completed process."""
     return subprocess.run(  # noqa: S603 -- fixed argv, no shell, disposable fixture repo
         [GIT, "-C", str(repo), *args],
         env=git_env(),
@@ -66,6 +67,7 @@ def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
 
 
 def run_gate(repo: Path, base: str, head: str, **env: str) -> subprocess.CompletedProcess[str]:
+    """Run the silent revert gate script between base and head revisions."""
     return subprocess.run(  # noqa: S603 -- fixed argv, no shell, gate under test
         [sys.executable, str(GATE), "--repo", str(repo), "--base", base, "--head", head],
         env={**git_env(), **env},
@@ -500,6 +502,7 @@ class RealHistoryReplayTest(unittest.TestCase):
     """Replay the silent revert that motivated the gate, from this repo's history."""
 
     def test_real_history_replay(self) -> None:
+        """Replaying real history catches the silent revert commit and reports failure."""
         probe = subprocess.run(  # noqa: S603 -- fixed argv, no shell
             [GIT, "-C", str(ROOT), "cat-file", "-e", f"{ADR_0759_REVERTED}^{{commit}}"],
             env=git_env(),

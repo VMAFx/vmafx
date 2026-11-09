@@ -72,6 +72,7 @@ class RenderOnlyGateTest(unittest.TestCase):
         self.git("checkout", "-q", "-b", "render")
 
     def git(self, *args: str) -> str:
+        """Run a git command in the test repository and return its stdout."""
         env = {**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, **IDENT}
         done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
             [GIT, *args],
@@ -96,6 +97,7 @@ class RenderOnlyGateTest(unittest.TestCase):
         self.git("commit", "-q", "-m", "change")
 
     def gate(self, body: str = BODY) -> subprocess.CompletedProcess[str]:
+        """Run the render-only gate script with the specified pull request body."""
         env = {k: v for k, v in os.environ.items() if k not in ("PR_BODY", "BASE_SHA", "HEAD_SHA")}
         env = {k: v for k, v in env.items() if not k.startswith("GIT_")}
         env.update(PR_BODY=body, BASE_SHA=self.base, HEAD_SHA=self.git("rev-parse", "HEAD").strip())

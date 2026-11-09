@@ -474,6 +474,7 @@ def _tool(name: str) -> str:
 
 
 def _write_dummy_vmafx_shared(lib_dir: Path) -> Path:
+    """Compile and write a minimal shared dummy vmafx library returning its path."""
     lib_dir.mkdir(parents=True, exist_ok=True)
     c_source = lib_dir / "dummy_vmafx.c"
     c_source.write_text('const char *vmafx_version_string(void) { return "1.0.0"; }\n')
@@ -497,6 +498,7 @@ def _write_cmake_version_file(dest: Path, version: str = "1.0.0") -> None:
 
 
 def test_cmake_consumer_find_package_e2e(tmp_path: Path) -> None:
+    """CMake consumer can find and link against the installed vmafx shared library."""
     if not shutil.which("cmake") or not shutil.which("cc"):
         pytest.skip("cmake or cc not available")
     prefix = tmp_path / "install"
@@ -553,6 +555,7 @@ def test_cmake_consumer_find_package_e2e(tmp_path: Path) -> None:
 
 
 def test_cmake_consumer_stale_cache_overridden(tmp_path: Path) -> None:
+    """CMake consumer overrides a stale cached library path with the discovered target."""
     if not shutil.which("cmake") or not shutil.which("cc"):
         pytest.skip("cmake or cc not available")
     prefix = tmp_path / "install"
@@ -614,6 +617,7 @@ def test_cmake_consumer_stale_cache_overridden(tmp_path: Path) -> None:
 
 
 def test_cmake_consumer_rejects_static_archive(tmp_path: Path) -> None:
+    """CMake consumer rejects a static archive when looking for the shared library."""
     if not shutil.which("cmake"):
         pytest.skip("cmake not available")
     prefix = tmp_path / "install"
@@ -655,6 +659,7 @@ def test_cmake_consumer_rejects_static_archive(tmp_path: Path) -> None:
 
 
 def test_cmake_consumer_absolute_dirs(tmp_path: Path) -> None:
+    """CMake consumer resolves imported targets configured with absolute directories."""
     if not shutil.which("cmake") or not shutil.which("cc"):
         pytest.skip("cmake or cc not available")
     abs_inc = tmp_path / "abs_include" / "vmafx"
@@ -715,6 +720,7 @@ def test_cmake_consumer_absolute_dirs(tmp_path: Path) -> None:
 
 
 def test_cmake_consumer_mingw_import_library(tmp_path: Path) -> None:
+    """CMake consumer maps a MinGW install's DLL and import library onto the imported target."""
     if not shutil.which("cmake"):
         pytest.skip("cmake not available")
     prefix = tmp_path / "install"
@@ -764,6 +770,7 @@ def test_cmake_consumer_mingw_import_library(tmp_path: Path) -> None:
 
 
 def test_cmake_consumer_stale_dll_cache_overridden(tmp_path: Path) -> None:
+    """CMake consumer overrides a stale cached DLL path with the discovered DLL."""
     if not shutil.which("cmake"):
         pytest.skip("cmake not available")
     prefix = tmp_path / "install"

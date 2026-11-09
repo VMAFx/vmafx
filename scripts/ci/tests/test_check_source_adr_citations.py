@@ -43,6 +43,7 @@ class SourceAdrCitationTests(unittest.TestCase):
         self.write("evidence.txt", "fixture evidence\n")
 
     def run_git(self, *args: str) -> str:
+        """Run a git command in the fixture repository and return stripped stdout."""
         return subprocess.run(  # noqa: S603 -- fixed Git binary in a disposable fixture
             [
                 GIT,
@@ -90,6 +91,7 @@ class SourceAdrCitationTests(unittest.TestCase):
         self.run_git("add", ".")
 
     def run_checker(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        """Run the ADR citations checker script against the fixture repository."""
         return subprocess.run(  # noqa: S603 -- gate under test; fixed executable and argv shape
             [
                 PYTHON,
@@ -239,6 +241,7 @@ class SourceAdrCitationTests(unittest.TestCase):
         self.assertEqual(set(registry), {"schema_version", "retired", "fixtures"})
 
     def test_fixture_git_discards_inherited_repository_environment(self) -> None:
+        """Fixture git operations isolate themselves from inherited git environment."""
         self.write_adr("0042-original-decision.md")
         self.write("core/example.c", "/* Kept for ADR-0042. */\n")
         self.registry()
@@ -403,6 +406,7 @@ class SourceAdrCitationTests(unittest.TestCase):
         self.assertIn("concurrent_edit", content)
 
     def test_repository_registry_is_current(self) -> None:
+        """The repository source ADR citation registry is current and passes check."""
         result = subprocess.run(  # noqa: S603 -- gate under test; fixed executable and argv
             [PYTHON, str(CHECKER), "--root", str(ROOT)],
             env=fixture_git_env(),
