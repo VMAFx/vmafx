@@ -9,6 +9,7 @@ from vmaf.config import VmafConfig
 from vmaf.core.quality_runner import PsnrQualityRunner
 from vmaf.tools.misc import MyTestCase, QualityRunnerTestMixin, import_python_file
 
+# Bound = max(60, 10x the slowest measured run): the script took 0.95 s.
 SCRIPT_TIMEOUT_S = 60
 
 

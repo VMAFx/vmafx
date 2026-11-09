@@ -10,6 +10,7 @@ from vmaf.tools.misc import MyTestCase
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
+# Bound = 10x the slowest measured run, rounded up: the slowest call took 28.61 s cold.
 VMAF_TIMEOUT_S = 300
 
 

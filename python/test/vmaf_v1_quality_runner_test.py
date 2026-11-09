@@ -22,6 +22,7 @@ __license__ = "BSD+Patent"
 # Set only on the CI leg built with -Denable_zimg=false: there the HDR cases assert the
 # refusal that names zimg. A build with zimg fails that assertion.
 EXPECT_NO_ZIMG = os.environ.get("VMAF_EXPECT_NO_ZIMG") == "1"
+# Bound = 10x the slowest measured run, rounded up: the HDR probe took 11.52 s cold.
 VMAF_TIMEOUT_S = 120
 
 
@@ -60,10 +61,8 @@ def hdr_conversion_available():
             "--color_matrix_" + suffix,
             "bt2020nc",
         ]
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=VMAF_TIMEOUT_S)
-    except subprocess.TimeoutExpired:
-        return False
+    # A timeout raises: returning False here would pass the no-zimg leg silently.
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=VMAF_TIMEOUT_S)
     return not (
         proc.returncode != 0
         and (

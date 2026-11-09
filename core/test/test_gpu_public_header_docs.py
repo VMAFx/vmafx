@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 
 INCLUDE_DIR = Path(__file__).resolve().parents[1] / "include" / "libvmaf"
+# Bound = max(60, 10x the slowest measured run): the call took 0.09 s.
 SUBPROCESS_TIMEOUT_S = 60
 # Between a block and its declaration only a deprecation marker may stand
 # (VMAF_DEPRECATED, ADR-1852 decision D7).

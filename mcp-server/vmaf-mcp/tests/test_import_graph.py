@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+# Bound = max(60, 10x the slowest measured run): each call took 0.58 s or less.
 SCRIPT_TIMEOUT_S = 60
 
 

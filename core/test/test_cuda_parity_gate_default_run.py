@@ -23,6 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "ci" / "cross_backend_parity_gate.py"
+# Not measured: the parity gate needs a free GPU, which the measuring host did not have.
 SCRIPT_TIMEOUT_S = 300
 REF = ROOT / "python" / "test" / "resource" / "yuv" / "src01_hrc00_576x324.yuv"
 DIS = ROOT / "python" / "test" / "resource" / "yuv" / "src01_hrc01_576x324.yuv"

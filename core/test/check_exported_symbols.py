@@ -83,6 +83,7 @@ COMPILER_VARIANT_SUFFIX = re.compile(r"\|_\._\.\d+\._\.\d+$")
 
 UNDEFINED_TYPES = {"U", "w", "v"}
 NM_TIMEOUT = 120  # seconds; HISS-02 bounds every external call
+# Bound = max(60, 10x the slowest measured run): c++filt took 0.004 s.
 CXXFILT_TIMEOUT_S = 60
 
 

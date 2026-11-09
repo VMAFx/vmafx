@@ -18,7 +18,9 @@ from __future__ import annotations
 import subprocess
 import sys
 
-CC_TIMEOUT_S = 60
+# Bound = 10x the slowest measured run, rounded up: the scratch_check.cpp AOT
+# compile for 19 device targets took 10.72 s.
+CC_TIMEOUT_S = 120
 
 
 def main(argv: list[str]) -> int:

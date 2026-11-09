@@ -29,6 +29,7 @@ import unittest
 from pathlib import Path
 
 SOURCE_MESON = Path(__file__).resolve().parents[1] / "src" / "meson.build"
+# Bounds = max(60, 10x the slowest measured run): the meson call took 1.33 s, icx 0.09 s.
 MESON_TIMEOUT_S = 60
 CC_TIMEOUT_S = 60
 TEST_MESON = Path(__file__).resolve().with_name("meson.build")

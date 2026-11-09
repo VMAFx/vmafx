@@ -25,6 +25,8 @@ from vmaf.tools.scanf import FormatError, IncompleteCaptureError, sscanf
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
+# Bound = max(60, 10x the slowest measured run): check_program_exist("ls") took
+# 0.002 s. The check only needs the program to start.
 SUBPROCESS_TIMEOUT_S = 60
 
 
@@ -435,7 +437,8 @@ def check_program_exist(program):
             )
         return True
     except subprocess.TimeoutExpired:
-        return False
+        # The program started, so it exists; the timeout only stopped a long run.
+        return True
     except OSError as e:
         if e.errno == errno.ENOENT:
             return False

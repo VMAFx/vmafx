@@ -11,10 +11,12 @@
 from __future__ import annotations
 
 import os
+import subprocess
 
 import pytest
 
 from vmaf.tools.misc import (
+    SUBPROCESS_TIMEOUT_S,
     check_program_exist,
     check_scanf_match,
     cmd_option_exists,
@@ -130,6 +132,18 @@ class TestCheckProgramExist:
 
     def test_existing_program_pwd(self):
         assert check_program_exist("pwd") is True
+
+    def test_timeout_means_program_exists(self, monkeypatch):
+        """A timeout indicates the program started, so it exists."""
+        recorded_kwargs = {}
+
+        def stub_call(*args, **kwargs):
+            recorded_kwargs.update(kwargs)
+            raise subprocess.TimeoutExpired(cmd="x", timeout=1)
+
+        monkeypatch.setattr("vmaf.tools.misc.subprocess.call", stub_call)
+        assert check_program_exist("ls") is True
+        assert recorded_kwargs.get("timeout") == SUBPROCESS_TIMEOUT_S
 
 
 # ---------------------------------------------------------------------------

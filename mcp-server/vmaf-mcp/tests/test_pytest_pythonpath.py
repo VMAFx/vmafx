@@ -15,6 +15,7 @@ import tomllib
 from pathlib import Path
 
 _MCP_ROOT = Path(__file__).resolve().parents[1]
+# Bound = max(60, 10x the slowest measured run): each call took 0.58 s or less.
 SCRIPT_TIMEOUT_S = 60
 
 

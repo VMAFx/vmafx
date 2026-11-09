@@ -29,7 +29,8 @@ import vmafx as package
 from vmafx import _api as vmafx
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-VMAF_TIMEOUT_S = 120
+# Bound = max(60, 10x the slowest measured run): the vmaf call took 0.17 s cold.
+VMAF_TIMEOUT_S = 60
 WRAPPED_CLASSES = (
     vmafx.Library,
     vmafx.Context,

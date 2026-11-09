@@ -13,7 +13,9 @@ from vmaf.tools.stats import ListStats
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
-SCRIPT_TIMEOUT_S = 600
+# Not measured: MATLAB is not installed on the measuring host. One call runs a
+# whole-video MATLAB feature script, so the bound leaves room for long clips.
+SCRIPT_TIMEOUT_S = 3600
 
 
 def _run_matlab(matlab_bin: str, matlab_script: str, log_file_path: str | None = None) -> None:
