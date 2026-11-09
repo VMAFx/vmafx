@@ -538,6 +538,45 @@ int vmaf_sycl_graph_register(VmafSyclState *state, VmafSyclGraphEnqueueFn enqueu
                              VmafSyclGraphConfigFn config_fn, void *priv, const char *name);
 
 /**
+ * Register an extractor's GPU work with the combined command graph, with its
+ * feature-extractor flags. Same contract as vmaf_sycl_graph_register(), which
+ * forwards here with flags 0 (non-temporal).
+ *
+ * An extractor whose flags carry VMAF_FEATURE_EXTRACTOR_TEMPORAL or
+ * VMAF_FEATURE_EXTRACTOR_PREV_REF runs on every frame. Any other extractor
+ * runs only on frames that vmaf_sycl_graph_set_frame() marks as scored under
+ * the frame subsample. Graph replay is used only on frames where every
+ * registered extractor runs; other frames submit directly (#3356).
+ *
+ * @param state       The SYCL state.
+ * @param enqueue_fn  Kernel launches (recorded inside the command graph).
+ * @param pre_fn      Pre-graph work: memset ops (may be NULL).
+ * @param post_fn     Post-graph work: D2H memcpy ops (may be NULL).
+ * @param config_fn   Per-slot configuration for graph recording (may be NULL).
+ * @param priv        Extractor private state (passed to callbacks).
+ * @param name        Extractor name, used for dispatch selection and logs.
+ * @param flags       The extractor's VmafFeatureExtractor flags.
+ *
+ * @return 0 on success, -EINVAL if state or enqueue_fn is NULL, -ENOMEM if
+ *         the extractor table is full or the combined queue cannot be made.
+ */
+int vmaf_sycl_graph_register_flags(VmafSyclState *state, VmafSyclGraphEnqueueFn enqueue_fn,
+                                   VmafSyclGraphPreFn pre_fn, VmafSyclGraphPostFn post_fn,
+                                   VmafSyclGraphConfigFn config_fn, void *priv, const char *name,
+                                   uint64_t flags);
+
+/**
+ * Tell the combined graph which frame comes next and the frame subsample in
+ * force, so vmaf_sycl_graph_submit() runs only the extractors scored on it.
+ * Call once per frame before any SYCL extractor's extract callback.
+ *
+ * @param state        The SYCL state (NULL is ignored).
+ * @param index        Index of the frame about to be extracted.
+ * @param n_subsample  Frame subsample; 0 is treated as 1 (every frame).
+ */
+void vmaf_sycl_graph_set_frame(VmafSyclState *state, unsigned index, unsigned n_subsample);
+
+/**
  * Unregister an extractor from the combined command graph.
  * Must be called from close_fex_sycl before the extractor's priv is freed.
  * Invalidates any recorded graphs so they are re-recorded on the next
@@ -592,6 +631,20 @@ int vmaf_sycl_graph_wait(VmafSyclState *state);
  * @return 1 if graphs are recorded, 0 otherwise.
  */
 int vmaf_sycl_graphs_recorded(VmafSyclState *state);
+
+/**
+ * Count the combined-graph replays since vmaf_sycl_state_init().
+ *
+ * One replay is one frame whose compute phase ran the recorded graph instead
+ * of submitting each extractor directly. Replay happens only on frames where
+ * every registered extractor runs, so under a frame subsample the count is at
+ * most the number of frames that run every extractor (#3356).
+ *
+ * @param state  The SYCL state (NULL returns 0).
+ *
+ * @return The replay count.
+ */
+uint64_t vmaf_sycl_graph_replays(VmafSyclState *state);
 
 /**
  * Wait unconditionally for the combined compute queue to drain.

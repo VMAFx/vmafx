@@ -105,9 +105,11 @@ mu_message_t test_model_partial_copy()
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ADR-0723; Research-2047: GNU link wrapping ABI.
 extern "C" int __real_vmaf_dictionary_copy(VmafDictionary **src, VmafDictionary **dst);
 
-/* Visible on purpose, as in test_fex_ctx_vector.cpp: the library builds with
- * -fvisibility=hidden, and the linker must reach this wrapper. */
-#define VMAF_WRAP_EXPORT __attribute__((visibility("default")))
+/* Every `__wrap_*` below carries `__attribute__((visibility("default")))` on purpose,
+ * as in test_fex_ctx_vector.cpp: the library builds with -fvisibility=hidden, and the
+ * linker must reach this wrapper. The attribute is written out directly on each wrapper
+ * instead of via a macro because the Semgrep C/C++ parser fails on a macro before the
+ * return type (issue 3252). */
 
 // Research-2048: `-Wl,--wrap=vmaf_dictionary_copy` routes every library call to
 // this wrapper, which fails only the requested copy; every other call runs the
@@ -116,8 +118,8 @@ extern "C" int __real_vmaf_dictionary_copy(VmafDictionary **src, VmafDictionary 
 // worked only while the shared library exported this internal function.
 // cppcheck-suppress unusedFunction
 // NOLINTBEGIN(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0723; Research-2047: GNU linker calls this entry point.
-extern "C" VMAF_WRAP_EXPORT int __wrap_vmaf_dictionary_copy(VmafDictionary **src,
-                                                            VmafDictionary **dst)
+extern "C" __attribute__((visibility("default"))) int
+__wrap_vmaf_dictionary_copy(VmafDictionary **src, VmafDictionary **dst)
 {
     if (fail_next_copy.exchange(false)) {
         if (!src || !*src || !dst || (*src)->cnt < 2)
