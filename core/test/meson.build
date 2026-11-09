@@ -3641,7 +3641,7 @@ test('test_ffmpeg_vmafx_pelorus_scan_contract',
     timeout : 30,
 )
 
-# ADR-2093 / FFmpeg patch 0004: the vmafx filter declares the AVFrame colour to
+# ADR-2093 / FFmpeg patch 0003: the vmafx filter declares the AVFrame colour to
 # VMAFx. Device-free: reads the series; the FFmpeg run is
 # ffmpeg-patches/test/check-vmafx-input-colorimetry.sh.
 test('test_ffmpeg_libvmaf_input_colorimetry_contract',

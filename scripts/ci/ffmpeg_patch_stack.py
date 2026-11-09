@@ -77,7 +77,6 @@ SOURCES = {
     "libavfilter/vf_vmafx.c": "vf_vmafx.c",
     "libavfilter/vf_vmafx_options.h": "vf_vmafx_options.h",
     "libavfilter/vf_vmafx_pre.c": "vf_vmafx_pre.c",
-    "fftools/ffmpeg_dec_hwaccel.c": "ffmpeg_dec_hwaccel.c",
 }
 
 
