@@ -60,6 +60,31 @@ class BashInputsLineEndings(unittest.TestCase):
         self.assertEqual(result.stdout.splitlines(), [f"{path}: eol: lf" for path in paths])
 
 
+class SharedSeriesTimeoutDerivation(unittest.TestCase):
+    """Verify shared-series wrapper timeout derivation in ffmpeg_patch_stack.py."""
+
+    def test_shared_series_timeout_derivation(self) -> None:
+        """Plant unset, standard S=120, extreme S=999999, and invalid values and assert expected timeout."""
+        n = STACK.SHARED_SERIES_MAX_DOWNLOADS
+        self.assertEqual(STACK.shared_series_timeout_seconds({}), 600)
+        self.assertEqual(
+            STACK.shared_series_timeout_seconds({"FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS": "120"}),
+            max(600, n * 2 * 120 + 120),
+        )
+        self.assertEqual(
+            STACK.shared_series_timeout_seconds({"FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS": "999999"}),
+            max(600, n * 2 * 999999 + 120),
+        )
+        for invalid in ("0", "abc", "-1", "1e3", "1000000", ""):
+            with self.subTest(invalid=invalid):
+                self.assertEqual(
+                    STACK.shared_series_timeout_seconds(
+                        {"FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS": invalid}
+                    ),
+                    600,
+                )
+
+
 class RealReplay(unittest.TestCase):
     def git(self, path: Path, *args: str) -> str:
         # Fixed Git executable and fixture-owned arguments; no shell.

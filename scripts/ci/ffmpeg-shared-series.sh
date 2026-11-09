@@ -152,23 +152,48 @@ sha256_of() { # sha256_of FILE
   fi
 }
 
-# Runs COMMAND and stops it with TERM after SECONDS; returns its status.
+# Runs COMMAND and stops it after SECONDS; returns COMMAND status, or 124/142 on timeout.
+# Parent terminates child before reaping to avoid PID reuse races.
 run_with_deadline() { # run_with_deadline SECONDS COMMAND [ARG...]
   local seconds="$1"
   shift
-  "$@" &
-  local child=$!
-  (
-    trap 'kill $(jobs -p) 2>/dev/null; exit 0' TERM
-    sleep "$seconds" &
-    wait "$!" && kill -TERM "$child" 2>/dev/null
-  ) </dev/null >/dev/null 2>&1 &
-  local watcher=$! status=0
-  wait "$child" || status=$?
-  if kill -TERM "$watcher" 2>/dev/null && ! wait "$watcher" 2>/dev/null; then
-    : # stopped before its trap; no sleep to stop
+  if command -v timeout >/dev/null 2>&1; then
+    note "deadline helper: using timeout"
+    timeout "$seconds" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    note "deadline helper: using gtimeout"
+    gtimeout "$seconds" "$@"
+  elif command -v perl >/dev/null 2>&1; then
+    note "deadline helper: using perl"
+    perl -e '
+      my $seconds = shift @ARGV;
+      my $pid = fork();
+      if (!defined $pid) { die "fork failed: $!\n"; }
+      if ($pid == 0) {
+        exec { $ARGV[0] } @ARGV;
+        die "exec failed: $!\n";
+      }
+      my $timed_out = 0;
+      local $SIG{ALRM} = sub {
+        $timed_out = 1;
+        kill("TERM", $pid);
+      };
+      alarm($seconds);
+      waitpid($pid, 0);
+      my $status = $?;
+      alarm(0);
+      if ($timed_out) {
+        exit 142;
+      }
+      if ($status & 127) {
+        exit(128 + ($status & 127));
+      }
+      exit($status >> 8);
+    ' "$seconds" "$@"
+  else
+    note "deadline helper: timeout, gtimeout, and perl are missing"
+    return 127
   fi
-  return "$status"
 }
 
 # Fetches a failed github.com release asset with gh release download, capped in size.
@@ -214,6 +239,10 @@ release_fallback() { # release_fallback URL DESTINATION
 }
 
 # Fetches URL to DESTINATION with curl or wget, then the forge API fallback.
+# In one script run, fetch_series executes at most N = 3 download calls
+# (tarball, SHA256SUMS, SHA256SUMS.sigstore.json). Both direct (curl/wget) and
+# fallback (gh) paths are bounded by DOWNLOAD_SECONDS (S) via run_with_deadline,
+# giving a worst-case bound of N * 2 * S = 6 * S (720 s at default S = 120).
 download() { # download URL DESTINATION
   local url=$1 destination=$2
   case "$url" in
@@ -222,12 +251,12 @@ download() { # download URL DESTINATION
       ;;
     https://*)
       if command -v curl >/dev/null 2>&1; then
-        curl --fail --silent --show-error --location --retry 3 \
+        run_with_deadline "$DOWNLOAD_SECONDS" curl --fail --silent --show-error --location --retry 3 \
           --max-time "$DOWNLOAD_SECONDS" --output "$destination" "$url" ||
           release_fallback "$url" "$destination" ||
           die 1 "download failed: $url"
       elif command -v wget >/dev/null 2>&1; then
-        wget --quiet --tries=3 --timeout="$DOWNLOAD_SECONDS" --output-document="$destination" "$url" ||
+        run_with_deadline "$DOWNLOAD_SECONDS" wget --quiet --tries=3 --timeout="$DOWNLOAD_SECONDS" --output-document="$destination" "$url" ||
           release_fallback "$url" "$destination" ||
           die 1 "download failed: $url"
       else
@@ -391,7 +420,8 @@ apply_series() { # apply_series METHOD TREE
   note "applied $count patches of ${FFMPEG_FIX_SERIES_TAG} to $tree (git $method)"
 }
 
-main() {
+# Dispatches CLI commands (fetch, apply; _run_with_deadline is test-only).
+main() { # main COMMAND [ARG...]
   local command="${1:-}" method=am
   [ -n "$command" ] || die 2 "usage: $0 fetch DEST | apply [--method am|apply] TREE"
   shift
@@ -414,6 +444,9 @@ main() {
       load_config
       fetch_series
       apply_series "$method" "$1"
+      ;;
+    _run_with_deadline)
+      run_with_deadline "$@"
       ;;
     *) die 2 "unknown command: $command" ;;
   esac

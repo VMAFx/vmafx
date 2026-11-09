@@ -15,6 +15,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.ci import ffmpeg_shared_series_fixture as shared_series
+from scripts.ci.ffmpeg_patch_stack import (
+    SHARED_SERIES_MAX_DOWNLOADS,
+    shared_series_timeout_seconds,
+)
 from scripts.lib.safe_subprocess import TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -59,6 +63,9 @@ class SharedSeriesFallbackTest(unittest.TestCase):
             "sleep",
             "kill",
             "python3",
+            "timeout",
+            "gtimeout",
+            "perl",
         ]
         for tool in tools:
             path = shutil.which(tool)
@@ -176,14 +183,15 @@ class SharedSeriesFallbackTest(unittest.TestCase):
         config: Path | None = None,
         extra_env: dict[str, str] | None = None,
         include_gh: bool = True,
+        bin_dir: Path | None = None,
     ) -> TextCommandResult:
         """Execute ffmpeg-shared-series.sh inside the isolated environment."""
-        effective_bin = self.bin_dir
+        effective_bin = bin_dir or self.bin_dir
         if not include_gh:
             effective_bin = self.temp_dir / "bin_no_gh"
             if not effective_bin.exists():
                 effective_bin.mkdir()
-                for child in self.bin_dir.iterdir():
+                for child in (bin_dir or self.bin_dir).iterdir():
                     if child.name != "gh":
                         (effective_bin / child.name).symlink_to(child)
         cfg = config or self.write_config()
@@ -207,6 +215,33 @@ class SharedSeriesFallbackTest(unittest.TestCase):
             env=env,
             check=False,
             timeout_seconds=60,
+        )
+        assert isinstance(result, TextCommandResult)
+        return result
+
+    def run_deadline(
+        self,
+        seconds: int | str,
+        *cmd: str,
+        path_dir: Path | None = None,
+    ) -> TextCommandResult:
+        """Run run_with_deadline helper directly with isolated PATH."""
+        effective_bin = path_dir if path_dir is not None else self.bin_dir
+        bash = shutil.which("bash")
+        self.assertIsNotNone(bash)
+        assert bash is not None
+        env = {
+            "PATH": str(effective_bin),
+            "LC_ALL": "C",
+        }
+        result = run_command(
+            [bash, str(SCRIPT), "_run_with_deadline", str(seconds), *cmd],
+            allowed_executables=(bash,),
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+            timeout_seconds=30,
         )
         assert isinstance(result, TextCommandResult)
         return result
@@ -341,18 +376,95 @@ class SharedSeriesFallbackTest(unittest.TestCase):
         self.assertLess(elapsed, 20.0)
         self.assertIn("download failed:", res.stderr)
         self.assertFalse(dest.exists())
-        pgrep = shutil.which("pgrep")
-        assert pgrep is not None
-        check = run_command(
-            [pgrep, "-f", f"^sleep {sleep_arg}$"],
-            allowed_executables=(pgrep,),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout_seconds=60,
+        with self.subTest("process cleanup"):
+            pgrep = shutil.which("pgrep")
+            if pgrep is None:
+                self.skipTest("pgrep not on PATH")
+            check = run_command(
+                [pgrep, "-f", f"^sleep {sleep_arg}$"],
+                allowed_executables=(pgrep,),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout_seconds=60,
+            )
+            self.assertEqual(check.returncode, 1)
+            self.assertEqual(check.stdout, "")
+
+    def test_positive_deadline_helper_stops_hanging_command(self) -> None:
+        """Plant a hanging stub command and verify run_with_deadline stops it within bound."""
+        start = time.monotonic()
+        res = self.run_deadline(1, "sleep", "15")
+        elapsed = time.monotonic() - start
+        self.assertNotEqual(res.returncode, 0)
+        self.assertLess(elapsed, 5.0)
+
+    def test_negative_deadline_helper_preserves_command_exit_status(self) -> None:
+        """Plant fast commands returning 0 and 42; verify run_with_deadline preserves status without timeout note."""
+        res0 = self.run_deadline(5, "bash", "-c", "exit 0")
+        self.assertEqual(res0.returncode, 0)
+        self.assertNotIn("missing", res0.stderr)
+        res42 = self.run_deadline(5, "bash", "-c", "exit 42")
+        self.assertEqual(res42.returncode, 42)
+        self.assertNotIn("missing", res42.stderr)
+
+    def test_boundary_deadline_helper_perl_fallback(self) -> None:
+        """Plant PATH with perl but without timeout and gtimeout; verify perl path stops a hanging stub."""
+        bin_perl = self.temp_dir / "bin_perl"
+        bin_perl.mkdir()
+        for tool in ("bash", "dirname", "perl", "sleep", "kill", "python3"):
+            path = shutil.which(tool)
+            if path:
+                (bin_perl / tool).symlink_to(path)
+        start = time.monotonic()
+        res = self.run_deadline(1, "sleep", "15", path_dir=bin_perl)
+        elapsed = time.monotonic() - start
+        self.assertNotEqual(res.returncode, 0)
+        self.assertLess(elapsed, 5.0)
+        self.assertIn("deadline helper: using perl", res.stderr)
+
+    def test_boundary_deadline_helper_missing_all_tools(self) -> None:
+        """Plant PATH lacking timeout, gtimeout, and perl; verify run_with_deadline fails closed with missing-tools note."""
+        bin_none = self.temp_dir / "bin_none"
+        bin_none.mkdir()
+        for tool in ("bash", "dirname", "sleep"):
+            path = shutil.which(tool)
+            if path:
+                (bin_none / tool).symlink_to(path)
+        res = self.run_deadline(1, "sleep", "0.1", path_dir=bin_none)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("deadline helper: timeout, gtimeout, and perl are missing", res.stderr)
+
+    def test_positive_wget_timeout_reaches_fallback(self) -> None:
+        """Plant a stub wget that sleeps past S; verify direct download stops within bound and reaches forge API fallback."""
+        bin_wget = self.temp_dir / "bin_wget"
+        bin_wget.mkdir()
+        for child in self.bin_dir.iterdir():
+            if child.name != "curl":
+                (bin_wget / child.name).symlink_to(child)
+        wget_stub = bin_wget / "wget"
+        wget_stub.write_text(
+            "#!/usr/bin/env python3\n"
+            '"""Stub wget that hangs beyond deadline."""\n'
+            "import os, sys\n"
+            'os.execvp("sleep", ["sleep", "30"])\n'
         )
-        self.assertEqual(check.returncode, 1)
-        self.assertEqual(check.stdout, "")
+        wget_stub.chmod(0o755)
+
+        dest = self.temp_dir / "dest_wget"
+        start = time.monotonic()
+        res = self.run_script(
+            "fetch",
+            str(dest),
+            bin_dir=bin_wget,
+            extra_env={"FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS": "2"},
+        )
+        elapsed = time.monotonic() - start
+        self.assertEqual(res.returncode, 0)
+        self.assertLess(elapsed, 15.0)
+        self.assertTrue((dest / "series.txt").exists())
+        self.assertIn("fetching it with gh release download", res.stderr)
+        self.assertIn("fetched", res.stderr)
 
     def test_boundary_download_seconds_invalid(self) -> None:
         """Verify invalid FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS values exit code 2."""
@@ -366,6 +478,39 @@ class SharedSeriesFallbackTest(unittest.TestCase):
                 )
                 self.assertEqual(res.returncode, 2)
                 self.assertIn("FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS", res.stderr)
+
+
+class SharedSeriesWrapperTimeoutTest(unittest.TestCase):
+    """Verify shared-series wrapper timeout derivation in ffmpeg_patch_stack.py."""
+
+    def test_timeout_derivation_unset_uses_default(self) -> None:
+        """Plant unset FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS and expect default 600 s."""
+        self.assertEqual(shared_series_timeout_seconds({}), 600)
+
+    def test_timeout_derivation_standard_s_120(self) -> None:
+        """Plant S=120 and expect max(600, N * 2 * 120 + 120) with N = SHARED_SERIES_MAX_DOWNLOADS."""
+        expected = max(600, SHARED_SERIES_MAX_DOWNLOADS * 2 * 120 + 120)
+        self.assertEqual(
+            shared_series_timeout_seconds({"FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS": "120"}),
+            expected,
+        )
+
+    def test_timeout_derivation_extreme_s_999999(self) -> None:
+        """Plant S=999999 and expect N * 2 * 999999 + 120."""
+        expected = SHARED_SERIES_MAX_DOWNLOADS * 2 * 999999 + 120
+        self.assertEqual(
+            shared_series_timeout_seconds({"FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS": "999999"}),
+            expected,
+        )
+
+    def test_timeout_derivation_invalid_strings_revert_to_default(self) -> None:
+        """Plant invalid values ('0', 'abc', '-1', '1e3', '1000000', '') and expect default 600 s."""
+        for invalid in ("0", "abc", "-1", "1e3", "1000000", ""):
+            with self.subTest(invalid=invalid):
+                self.assertEqual(
+                    shared_series_timeout_seconds({"FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS": invalid}),
+                    600,
+                )
 
 
 if __name__ == "__main__":
