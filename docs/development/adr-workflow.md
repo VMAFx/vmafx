@@ -144,7 +144,11 @@ reserving it. That caused about ten renumbers and rebases in a single session
    the file and prints a `WARNING: took over a stale ADR allocator lock` line.
    A lock whose holder still runs is never taken over.
 2. It scans remote branches via `git ls-remote --heads` and `git ls-tree` to
-   also skip numbers already claimed by in-flight branches on origin.
+   also skip numbers already claimed by in-flight branches on origin. In claim
+   mode, the scan also covers the heads of open pull requests (fork PRs
+   included) via `gh`; without `gh` or when it fails, it warns on stderr and
+   scans branches only. The pull request list comes from the origin repository
+   (`gh pr list -R <origin URL>`), so an `upstream` remote does not change it.
 3. It creates the claim file `.git/adr-claims/NNNN` exclusively (`O_EXCL`, the
    shell's `noclobber`). If another caller already created it, the number is
    taken and the next one is tried, up to 100 times. This step decides the

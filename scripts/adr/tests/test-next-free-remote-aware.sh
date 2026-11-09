@@ -11,6 +11,10 @@
 #   2. Offline mode (mocked ls-remote failure) → local fallback + WARNING on stderr.
 #   3. Sibling worktree claim via .git/adr-claims/ → second call returns higher number.
 #   4. Performance smoke (must complete within 5 s on a synthetic-branch set).
+#   5. Fork pull request head with ADR file → allocator returns number above PR ADR.
+#   6. Negative: gh failure → fallback to branches/master with WARNING.
+#   7. Negative: no gh on PATH → fallback with WARNING with reason.
+#   8. Boundary: gh returns empty list → no warning, number as before.
 #
 # All tests run in a throw-away temporary git repository so they cannot touch
 # production ADR state.  The real next-free.sh is invoked via PATH override with
@@ -30,7 +34,7 @@ set -euo pipefail
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-SCRIPT="${REPO_ROOT}/scripts/adr/next-free.sh"
+SCRIPT="${SCRIPT:-${REPO_ROOT}/scripts/adr/next-free.sh}"
 
 # Resolve the real git binary path at test-script startup time so stubs can
 # use it without going through PATH (which would recurse back into the stub).
@@ -60,6 +64,13 @@ TMPDIR_BASE="$(mktemp -d)"
 FAKE_REPO="${TMPDIR_BASE}/fakerepo"
 STUB_BIN="${TMPDIR_BASE}/stub-bin"
 mkdir -p "${FAKE_REPO}/docs/adr" "${STUB_BIN}"
+
+# Default gh stub: returns 0 with no PRs (tests override as needed).
+cat >"${STUB_BIN}/gh" <<'GHEOF'
+#!/usr/bin/env bash
+exit 0
+GHEOF
+chmod +x "${STUB_BIN}/gh"
 
 # Initialise the fake repo and create a minimal origin/master state.
 git -C "${FAKE_REPO}" init --quiet
@@ -299,6 +310,161 @@ if printf '%s' "${result_t4}" | grep -qE '^[0-9]{4}$'; then
 else
   _fail "test 4b: performance smoke returned invalid output: '${result_t4}'"
 fi
+
+# ── test 5: fork pull request head with ADR file ──────────────────────────────
+#
+# Scenario: an open pull request from a fork has a head commit that contains
+#   docs/adr/0700-fork.md. The commit is reachable only as refs/pull/1/head
+#   in the fake origin (no branch on origin).
+#   gh stub outputs the head commit SHA.
+# Expected: allocator returns a number above 0700 (0701).
+
+git -C "${FAKE_REPO}" checkout --quiet -b temp-fork-pr master
+touch "${FAKE_REPO}/docs/adr/0700-fork.md"
+git -C "${FAKE_REPO}" add docs/adr/0700-fork.md
+git -C "${FAKE_REPO}" commit --quiet -m "feat: fork pr adr 0700"
+SHA_FORK="$(git -C "${FAKE_REPO}" rev-parse HEAD)"
+git -C "${FAKE_REPO}" checkout --quiet master
+git -C "${FAKE_REPO}" branch -D temp-fork-pr >/dev/null
+git -C "${FAKE_REPO}" update-ref "refs/pull/1/head" "${SHA_FORK}"
+
+ORIGIN_URL="$(git -C "${FAKE_REPO}" remote get-url origin)"
+cat >"${STUB_BIN}/gh" <<GHEOF
+#!/usr/bin/env bash
+has_repo=0
+prev=""
+for arg in "\$@"; do
+  if [ "\${prev}" = "-R" ] && [ "\${arg}" = "${ORIGIN_URL}" ]; then
+    has_repo=1
+    break
+  fi
+  prev="\${arg}"
+done
+if [ "\$1" = "pr" ] && [ "\$2" = "list" ]; then
+  if [ "\${has_repo}" -eq 1 ]; then
+    printf '%s\n' "${SHA_FORK}"
+  else
+    printf '%s\n' "dddddddddddddddddddddddddddddddddddddddd"
+  fi
+  exit 0
+fi
+exit 1
+GHEOF
+chmod +x "${STUB_BIN}/gh"
+
+result_t5=$(_run --claim test-fork-pr 2>/dev/null) || echo "note: _run exited non-zero" >&2
+_STUBS_T5=("${FAKE_REPO}/docs/adr/${result_t5}-test-fork-pr.md.stub")
+GIT_COMMON_T5="$(_git_common_dir)"
+
+if [ -n "${result_t5}" ] && [ "$((10#${result_t5}))" -gt 700 ]; then
+  _pass "test 5: fork PR head with ADR 0700 → allocator returns number above 0700: ${result_t5}"
+else
+  _fail "test 5: expected number above 0700, got '${result_t5}'"
+fi
+
+# Clean up stub, claim sidepointer, and refs/pull/1/head.
+rm -f "${_STUBS_T5[@]+"${_STUBS_T5[@]}"}"
+rm -f "${GIT_COMMON_T5}/adr-claims/${result_t5}"
+git -C "${FAKE_REPO}" update-ref -d "refs/pull/1/head"
+
+# ── test 6: negative: gh exits 1 → fallback to branches/master + WARNING ──────
+#
+# Scenario: gh stub exits 1 (simulating failure or not logged in).
+# Expected: claim succeeds with exit 0, returns next free number,
+#           and stderr contains WARNING.
+
+cat >"${STUB_BIN}/gh" <<'GHEOF'
+#!/usr/bin/env bash
+exit 1
+GHEOF
+chmod +x "${STUB_BIN}/gh"
+
+stderr_t6="$(mktemp)"
+result_t6=$(_run --claim test-gh-fail-t6 2>"${stderr_t6}") || echo "note: _run exited non-zero" >&2
+GIT_COMMON_T6="$(_git_common_dir)"
+
+if printf '%s' "${result_t6}" | grep -qE '^[0-9]{4}$'; then
+  _pass "test 6a: gh failure still returns 4-digit number: ${result_t6}"
+else
+  _fail "test 6a: gh failure returned invalid output: '${result_t6}'"
+fi
+
+if grep -q "WARNING: open pull request heads not scanned" "${stderr_t6}" &&
+  grep -q "fork pull request ADR numbers may collide" "${stderr_t6}"; then
+  _pass "test 6b: gh failure prints expected WARNING on stderr"
+else
+  _fail "test 6b: expected WARNING on stderr, got: $(cat "${stderr_t6}")"
+fi
+
+rm -f "${FAKE_REPO}/docs/adr/${result_t6}-test-gh-fail-t6.md.stub"
+rm -f "${GIT_COMMON_T6}/adr-claims/${result_t6}"
+rm -f "${stderr_t6}"
+
+# ── test 7: negative: no gh on PATH → fallback + WARNING with reason ─────────
+#
+# Scenario: gh is completely missing from PATH.
+# Expected: claim succeeds with exit 0, returns next free number,
+#           and stderr contains WARNING with reason.
+
+NO_GH_BIN="${TMPDIR_BASE}/no-gh-bin"
+mkdir -p "${NO_GH_BIN}"
+for cmd in bash git cut rm rmdir sort grep sleep find sed mkdir date tr mktemp; do
+  if [ -x "${NO_GH_BIN}/${cmd}" ]; then continue; fi
+  ln -s "$(command -v "${cmd}")" "${NO_GH_BIN}/${cmd}"
+done
+
+stderr_t7="$(mktemp)"
+result_t7=$(cd "${FAKE_REPO}" && PATH="${NO_GH_BIN}" bash "${SCRIPT}" --claim test-no-gh-t7 2>"${stderr_t7}") ||
+  echo "note: _run exited non-zero" >&2
+GIT_COMMON_T7="$(_git_common_dir)"
+
+if printf '%s' "${result_t7}" | grep -qE '^[0-9]{4}$'; then
+  _pass "test 7a: missing gh still returns 4-digit number: ${result_t7}"
+else
+  _fail "test 7a: missing gh returned invalid output: '${result_t7}'"
+fi
+
+if grep -q "WARNING: open pull request heads not scanned" "${stderr_t7}" &&
+  grep -q "fork pull request ADR numbers may collide" "${stderr_t7}"; then
+  _pass "test 7b: missing gh prints expected WARNING on stderr"
+else
+  _fail "test 7b: expected WARNING on stderr, got: $(cat "${stderr_t7}")"
+fi
+
+rm -f "${FAKE_REPO}/docs/adr/${result_t7}-test-no-gh-t7.md.stub"
+rm -f "${GIT_COMMON_T7}/adr-claims/${result_t7}"
+rm -f "${stderr_t7}"
+
+# ── test 8: boundary: gh returns empty list (no open PRs) ────────────────────
+#
+# Scenario: gh succeeds and prints nothing (no open PRs).
+# Expected: no WARNING on stderr, allocator returns next number from branches/master.
+
+cat >"${STUB_BIN}/gh" <<'GHEOF'
+#!/usr/bin/env bash
+exit 0
+GHEOF
+chmod +x "${STUB_BIN}/gh"
+
+stderr_t8="$(mktemp)"
+result_t8=$(_run --claim test-empty-pr-t8 2>"${stderr_t8}") || echo "note: _run exited non-zero" >&2
+GIT_COMMON_T8="$(_git_common_dir)"
+
+if printf '%s' "${result_t8}" | grep -qE '^[0-9]{4}$'; then
+  _pass "test 8a: empty PR list returns 4-digit number: ${result_t8}"
+else
+  _fail "test 8a: empty PR list returned invalid output: '${result_t8}'"
+fi
+
+if grep -q "WARNING: open pull request heads not scanned" "${stderr_t8}"; then
+  _fail "test 8b: unexpected WARNING on stderr: $(cat "${stderr_t8}")"
+else
+  _pass "test 8b: empty PR list prints no open-PR WARNING"
+fi
+
+rm -f "${FAKE_REPO}/docs/adr/${result_t8}-test-empty-pr-t8.md.stub"
+rm -f "${GIT_COMMON_T8}/adr-claims/${result_t8}"
+rm -f "${stderr_t8}"
 
 # ── summary ───────────────────────────────────────────────────────────────────
 

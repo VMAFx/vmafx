@@ -243,6 +243,12 @@ _ls_remote_heads() {
   git ls-remote --heads origin 2>/dev/null
 }
 
+# Query GitHub CLI for head commit SHAs of open pull requests in the given repository.
+_collect_open_pr_heads() {
+  local repo="$1"
+  gh pr list -R "${repo}" --state open --limit 1000 --json headRefOid --jq '.[].headRefOid'
+}
+
 # _collect_remote_branch_numbers: internal worker; called from a process
 # substitution.  Receives the raw ls-remote output on stdin (piped from the
 # main shell) so it never calls git ls-remote itself.
@@ -501,6 +507,35 @@ fi
 ls_remote_out=""
 if ! ls_remote_out="$(_ls_remote_heads 2>/dev/null)"; then
   REMOTE_OFFLINE=1
+fi
+
+if [ "${REMOTE_OFFLINE}" -eq 0 ]; then
+  if ! command -v gh >/dev/null 2>&1; then
+    printf 'WARNING: open pull request heads not scanned (gh not found on PATH); fork pull request ADR numbers may collide.\n' >&2
+  elif ! _origin_url="$(git remote get-url origin 2>/dev/null)" || [ -z "${_origin_url}" ]; then
+    printf 'WARNING: open pull request heads not scanned (no origin remote); fork pull request ADR numbers may collide.\n' >&2
+  else
+    _gh_err_file="$(mktemp)"
+    _gh_shas=""
+    if _gh_shas="$(_collect_open_pr_heads "${_origin_url}" 2>"${_gh_err_file}")"; then
+      while IFS= read -r _sha; do
+        if [[ "${_sha}" =~ ^[0-9a-fA-F]{40,64}$ ]]; then
+          if [ -n "${ls_remote_out}" ]; then
+            ls_remote_out+=$'\n'"${_sha}"$'\trefs/pull/open/head'
+          else
+            ls_remote_out="${_sha}"$'\trefs/pull/open/head'
+          fi
+        fi
+      done <<<"${_gh_shas}"
+    else
+      _gh_rc=$?
+      _gh_err="$(tr '\n' ' ' <"${_gh_err_file}" | sed 's/[[:space:]]*$//')"
+      _gh_reason="${_gh_err:-gh exited with status ${_gh_rc}}"
+      printf 'WARNING: open pull request heads not scanned (%s); fork pull request ADR numbers may collide.\n' \
+        "${_gh_reason}" >&2
+    fi
+    rm -f "${_gh_err_file}"
+  fi
 fi
 
 remote_numbers=()
