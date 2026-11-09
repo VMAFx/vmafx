@@ -31,6 +31,8 @@ if str(AI_SRC) not in sys.path:
 
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
+API_TIMEOUT_S = 60
+
 GCS_LIST_URL = "https://storage.googleapis.com/storage/v1/b/ugc-dataset/o"
 GCS_OBJ_URL = "https://storage.googleapis.com/ugc-dataset/{name}"
 PREFIX = "vp9_compressed_videos/"
@@ -44,7 +46,7 @@ def _list_bucket(prefix: str) -> list[dict]:
         raise ValueError(f"refusing non-https URL scheme: {url!r}")
     # nosec B310: scheme is restricted to https above; URL is built from
     # the hardcoded GCS_LIST_URL module constant.
-    with urllib.request.urlopen(url) as resp:  # nosec B310
+    with urllib.request.urlopen(url, timeout=API_TIMEOUT_S) as resp:  # nosec B310
         data = json.loads(resp.read().decode())
     return data.get("items", [])
 
@@ -84,7 +86,7 @@ def _download(url: str, dest: Path) -> None:
     tmp = dest.with_suffix(dest.suffix + ".tmp")
     # nosec B310: scheme restricted to https above; URL built from the
     # GCS_OBJ_URL module constant plus a bucket-object name.
-    with urllib.request.urlopen(url) as r, tmp.open("wb") as f:  # nosec B310
+    with urllib.request.urlopen(url, timeout=API_TIMEOUT_S) as r, tmp.open("wb") as f:  # nosec B310
         for chunk in iter(lambda: r.read(1 << 20), b""):
             f.write(chunk)
     tmp.rename(dest)

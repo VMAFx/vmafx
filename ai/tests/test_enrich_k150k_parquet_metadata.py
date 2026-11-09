@@ -17,6 +17,7 @@ pd = pytest.importorskip("pandas")
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_DIR = _REPO_ROOT / "ai" / "scripts"
 _SCRIPT_PATH = _SCRIPT_DIR / "enrich_k150k_parquet_metadata.py"
+SCRIPT_TIMEOUT_S = 60
 
 
 def _load_module():
@@ -132,6 +133,7 @@ def test_cli_enriches_existing_parquet(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         check=True,
+        timeout=SCRIPT_TIMEOUT_S,
     )
 
     summary = json.loads(proc.stdout)

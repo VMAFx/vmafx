@@ -122,6 +122,8 @@ else:
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True, include_vmaf_tune_src=True)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 DEFAULT_CHUG_SPLIT_SEED = "chug-hdr-v1"
+FFMPEG_TIMEOUT_S = 60
+VMAF_TIMEOUT_S = 60
 
 
 def _load_runtime_helpers() -> tuple[Any, ...]:
@@ -342,6 +344,7 @@ def _probe_geometry(mp4: Path) -> tuple[int, int, str, str, dict[str, str]]:
         capture_output=True,
         text=True,
         check=True,
+        timeout=FFMPEG_TIMEOUT_S,
     )
     s = json.loads(proc.stdout)["streams"][0]
     pix_fmt: str = s.get("pix_fmt", "yuv420p")
@@ -536,6 +539,7 @@ def _decode_to_yuv(mp4: Path, yuv_path: Path, pix_fmt: str) -> None:
                 str(tmp),
             ],
             check=True,
+            timeout=FFMPEG_TIMEOUT_S,
         )
         tmp.rename(yuv_path)
     except Exception:
@@ -618,7 +622,12 @@ def _run_vmaf_json(
         is_hdr=is_hdr,
         motion_fps_weight_value=motion_fps_weight_value,
     )
-    subprocess.run(cmd, check=True, capture_output=True)
+    subprocess.run(
+        cmd,
+        check=True,
+        capture_output=True,
+        timeout=VMAF_TIMEOUT_S,
+    )
     with out_json.open() as f:
         data = json.load(f)
     return [fr["metrics"] for fr in data.get("frames", [])]

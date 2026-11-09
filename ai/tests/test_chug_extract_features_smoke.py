@@ -43,6 +43,7 @@ from scripts.lib import vmaftest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "chug_extract_features.py"
+FFMPEG_TIMEOUT_S = 60
 
 
 def _load_module():
@@ -73,7 +74,7 @@ def _write_solid_grey_mp4(out: Path, *, width: int, height: int, frames: int) ->
         "yuv420p",
         str(out),
     ]
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, timeout=FFMPEG_TIMEOUT_S)
 
 
 def _write_textured_mp4(out: Path, *, width: int, height: int, frames: int) -> None:
@@ -97,7 +98,7 @@ def _write_textured_mp4(out: Path, *, width: int, height: int, frames: int) -> N
         "yuv420p",
         str(out),
     ]
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, timeout=FFMPEG_TIMEOUT_S)
 
 
 def _chug_rows(width: int, height: int, dis_count: int) -> list[dict]:

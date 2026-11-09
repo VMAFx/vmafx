@@ -48,6 +48,8 @@ if str(REPO_ROOT / "ai" / "src") not in sys.path:
 
 from aiutils.run_manifest import write_run_manifest  # noqa: E402
 
+VMAF_TIMEOUT_S = 60
+
 # Reuse the parity gate's authoritative feature ↔ metric-name table and
 # backend ↔ extractor-suffix table. Importing from a sibling top-level
 # package would require packaging shenanigans, so we duplicate the
@@ -181,8 +183,16 @@ def build_command(
 
 def run_one(cmd: list[str]) -> tuple[int, str]:
     """Run one ``vmaf`` invocation. Returns ``(returncode, stderr_or_stdout)``."""
-
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=VMAF_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        return 124, f"vmaf timed out after {VMAF_TIMEOUT_S}s (VMAF_TIMEOUT_S)"
     if proc.returncode != 0:
         return proc.returncode, (proc.stderr or proc.stdout)
     return 0, ""

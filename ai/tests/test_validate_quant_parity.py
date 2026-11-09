@@ -30,6 +30,8 @@ from ai.scripts.validate_quant_parity import (  # noqa: E402
     _load_features,
 )
 
+SCRIPT_TIMEOUT_S = 60
+
 
 def test_load_features_json() -> None:
     features, gt = _load_features(SCORES_JSON)
@@ -79,7 +81,13 @@ def test_cli_default_run_fails_with_exit_1() -> None:
         "--model",
         "vmaf_tiny_v3",
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        timeout=SCRIPT_TIMEOUT_S,
+    )
     assert proc.returncode == 1, f"Expected exit code 1, got {proc.returncode}"
     assert "FAIL" in proc.stdout
     assert "Retraining under QAT (Epic #1246) is required" in proc.stdout
@@ -96,7 +104,13 @@ def test_cli_relaxed_run_succeeds_with_exit_0() -> None:
         "--max-single-delta",
         "1.5",
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        timeout=SCRIPT_TIMEOUT_S,
+    )
     assert proc.returncode == 0, f"Expected exit code 0, got {proc.returncode}\n{proc.stderr}"
     assert "Overall Parity Gate: PASS" in proc.stdout
 
@@ -115,7 +129,13 @@ def test_cli_manifest_output(tmp_path: Path) -> None:
         "--max-single-delta",
         "1.5",
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        timeout=SCRIPT_TIMEOUT_S,
+    )
     assert proc.returncode == 0
     assert out_json.is_file()
     data = json.loads(out_json.read_text())
@@ -136,7 +156,13 @@ def test_cli_all_flag() -> None:
         "--max-single-delta",
         "3.0",
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        timeout=SCRIPT_TIMEOUT_S,
+    )
     assert proc.returncode == 0, f"Expected exit code 0, got {proc.returncode}\n{proc.stderr}"
     assert "vmaf_tiny_v3" in proc.stdout
     assert "vmaf_tiny_v4" in proc.stdout
@@ -160,6 +186,12 @@ def test_cli_fp32_int8_override() -> None:
         "--max-single-delta",
         "1.5",
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        timeout=SCRIPT_TIMEOUT_S,
+    )
     assert proc.returncode == 0, f"Expected exit code 0, got {proc.returncode}\n{proc.stderr}"
     assert "Model: custom_v4_test" in proc.stdout

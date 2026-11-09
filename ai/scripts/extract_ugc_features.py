@@ -49,6 +49,9 @@ from ai.data.feature_extractor import (  # noqa: E402
 )
 from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
 
+FFMPEG_TIMEOUT_S = 60
+VMAF_TIMEOUT_S = 60
+
 SCHEMA_COLS = (*FULL_FEATURES, "teacher_model", "vmaf")
 
 _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
@@ -84,7 +87,7 @@ def _ffprobe(path: Path) -> dict:
         "-show_streams",
         str(path),
     ]
-    out = subprocess.check_output(cmd)
+    out = subprocess.check_output(cmd, timeout=FFMPEG_TIMEOUT_S)
     return json.loads(out)["streams"][0]
 
 
@@ -116,7 +119,7 @@ def _decode_to_yuv(src: Path, dest: Path, w: int, h: int, max_frames: int) -> in
         "rawvideo",
         str(tmp),
     ]
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, timeout=FFMPEG_TIMEOUT_S)
     tmp.rename(dest)
     frame_bytes = w * h * 3 // 2
     return dest.stat().st_size // frame_bytes
@@ -235,7 +238,13 @@ def _run_vmaf(
     out = _resolve_scratch_file(ref, dis)
     try:
         cmd = _build_vmaf_cmd(vmaf_bin, ref, dis, w, h, n_threads, model, out)
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            cmd,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=VMAF_TIMEOUT_S,
+        )
         with out.open() as f:
             doc = json.load(f)
         return doc.get("frames", [])

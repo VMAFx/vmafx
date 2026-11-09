@@ -56,6 +56,8 @@ from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: 
 from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
+FFMPEG_TIMEOUT_S = 60
+
 
 def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, check=True, **kw)
@@ -100,6 +102,7 @@ def _ffprobe_video(src_mp4: Path) -> tuple[int, int, str]:
         capture_output=True,
         text=True,
         check=True,
+        timeout=FFMPEG_TIMEOUT_S,
     )
     stream = json.loads(probe.stdout)["streams"][0]
     return int(stream["width"]), int(stream["height"]), str(stream.get("codec_name", "unknown"))

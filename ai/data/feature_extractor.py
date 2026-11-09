@@ -41,6 +41,7 @@ DEFAULT_FEATURES: tuple[str, ...] = (
 )
 
 DEFAULT_VMAF_BINARY = Path("core") / "build-cpu" / "tools" / "vmaf"
+VMAF_TIMEOUT_S = 60
 
 # Full feature set the fork's extractors can produce (per Research-0026,
 # extended by ADR-0559 to include SpEED chroma/temporal features).
@@ -280,7 +281,13 @@ def _run_vmaf_json(
             *feat_args,
             *extra_args,
         ]
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=VMAF_TIMEOUT_S,
+        )
         return json.loads(out_path.read_text())
     finally:
         out_path.unlink(missing_ok=True)

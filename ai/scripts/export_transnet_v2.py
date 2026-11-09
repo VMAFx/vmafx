@@ -85,6 +85,8 @@ from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: 
 from aiutils.file_utils import sha256  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
+SCRIPT_TIMEOUT_S = 300
+
 # Pinned upstream provenance — bumping these is a deliberate weights swap.
 UPSTREAM_REPO = "https://github.com/soCzech/TransNetV2"
 UPSTREAM_COMMIT = "a0942ca347ee00aa455631147641954278b1d1a5"
@@ -190,7 +192,7 @@ def _convert_to_onnx(wrapped_dir: Path, onnx_path: Path, opset: int) -> None:
     env = dict(os.environ)
     env.setdefault("CUDA_VISIBLE_DEVICES", "-1")
     env.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
-    subprocess.run(cmd, check=True, env=env)
+    subprocess.run(cmd, check=True, env=env, timeout=SCRIPT_TIMEOUT_S)
 
 
 def _find_segmentsum_node(g: Any) -> tuple[Any | None, int]:

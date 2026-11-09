@@ -67,6 +67,8 @@ from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
+FFMPEG_TIMEOUT_S = 60
+
 # Canonical-6 student features — same set the LOSO trainer expects.
 DEFAULT_FEATURES = (
     "vif_scale0",
@@ -100,6 +102,7 @@ def _decode_yuv(src_mp4: Path, out_yuv: Path) -> tuple[int, int, int]:
         capture_output=True,
         text=True,
         check=True,
+        timeout=FFMPEG_TIMEOUT_S,
     )
     w, h, n = (int(x) for x in probe.stdout.strip().split("\n"))
     _run(

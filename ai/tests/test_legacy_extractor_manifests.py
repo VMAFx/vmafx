@@ -19,6 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "ai" / "scripts"
 EXPECTED_BENCHMARK_CALLS = 9
 EXPECTED_FALLBACK_WARNINGS = 6
+SCRIPT_TIMEOUT_S = 60
 
 
 def _load_script(name: str) -> ModuleType:
@@ -130,7 +131,7 @@ def test_benchmark_harness_uses_current_portable_contract() -> None:
     assert "| Vulkan |" not in backend_guidance
     assert 'SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"' in source
     assert 'REPO_ROOT="${VMAF_ROOT:-$(cd -- "${SCRIPT_DIR}/.." && pwd)}"' in source
-    subprocess.run(["bash", "-n", str(script)], check=True)
+    subprocess.run(["bash", "-n", str(script)], check=True, timeout=SCRIPT_TIMEOUT_S)
 
 
 def test_benchmark_harness_resolves_root_from_script_path(tmp_path: Path) -> None:

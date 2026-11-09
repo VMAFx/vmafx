@@ -44,6 +44,8 @@ if str(REPO_ROOT / "ai" / "src") not in sys.path:
 
 from aiutils.run_manifest import write_run_manifest  # noqa: E402
 
+FFMPEG_TIMEOUT_S = 60
+
 MANIFEST = REPO_ROOT / "ai" / "src" / "vmaf_train" / "data" / "manifests" / "konvid-1k.yaml"
 DATA_DIR = REPO_ROOT / "ai" / "data"
 
@@ -74,6 +76,7 @@ def _extract_middle_frame_y(mp4: Path, target_hw: int) -> np.ndarray:
         check=True,
         capture_output=True,
         text=True,
+        timeout=FFMPEG_TIMEOUT_S,
     )
     dur = float(proc.stdout.strip())
     seek_s = max(0.0, dur / 2.0)
@@ -98,7 +101,12 @@ def _extract_middle_frame_y(mp4: Path, target_hw: int) -> np.ndarray:
         "gray",
         "-",
     ]
-    rv = subprocess.run(cmd, check=True, capture_output=True)
+    rv = subprocess.run(
+        cmd,
+        check=True,
+        capture_output=True,
+        timeout=FFMPEG_TIMEOUT_S,
+    )
     arr = np.frombuffer(rv.stdout, dtype=np.uint8)
     expected = target_hw * target_hw
     if arr.size != expected:

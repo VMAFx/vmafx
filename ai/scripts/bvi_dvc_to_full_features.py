@@ -92,6 +92,7 @@ from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 EXTRACTORS = tuple(_extractors_for(FULL_FEATURES))
+FFMPEG_TIMEOUT_S = 60
 
 
 # Filename pattern for zip-sourced MP4s:
@@ -139,6 +140,7 @@ def _decode_yuv_10bit(src_video: Path, out_yuv: Path) -> tuple[int, int, int]:
         check=True,
         capture_output=True,
         text=True,
+        timeout=FFMPEG_TIMEOUT_S,
     )
     info = json.loads(probe.stdout)["streams"][0]
     w = int(info["width"])
