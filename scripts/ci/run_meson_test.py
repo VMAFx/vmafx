@@ -106,7 +106,7 @@ def _run_and_wait(command: list[str]) -> int:
         print("run_meson_test.py: Meson executable not found", file=sys.stderr)
         return 127
     try:
-        completed = subprocess.run(  # noqa: S603
+        completed = subprocess.run(  # noqa: S603 -- resolved path, no shell  # nosec B603
             [executable, *command[1:]],
             check=False,
             timeout=SUBPROCESS_TIMEOUT_S,
