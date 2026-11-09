@@ -24,6 +24,11 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO
 
+# Bounds = max(60, 10x) the slowest measured run: 300-frame 4K window
+# (default 5 s sample at 60 fps), ffmpeg extract/decode 1.16 s, vmaf 40.92 s.
+FFMPEG_TIMEOUT_S = 60
+VMAF_TIMEOUT_S = 600
+
 if TYPE_CHECKING:
     from .report import CodecRow, CodecSweepPoint
 
@@ -2723,6 +2728,22 @@ def _predict_decode_command(
     ]
 
 
+def _run_predict_ffmpeg(cmd: list[str], step: str) -> subprocess.CompletedProcess[str] | None:
+    """Run an ffmpeg subprocess command under the predict timeout bound.
+
+    None means the timeout fired; a finished run is returned whatever its return code.
+    """
+    try:
+        return subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=FFMPEG_TIMEOUT_S
+        )
+    except subprocess.TimeoutExpired:
+        sys.stderr.write(
+            f"vmaf-tune: ffmpeg {step} timed out after FFMPEG_TIMEOUT_S={FFMPEG_TIMEOUT_S}s\n"
+        )
+        return None
+
+
 def _build_real_predict_scorer(
     args: argparse.Namespace, workdir: Path, geometry: _PredictGeometry
 ) -> Callable[[Shot, int, str], tuple[Path, float]]:
@@ -2734,8 +2755,8 @@ def _build_real_predict_scorer(
         ref_yuv = workdir / f"ref_{shot.start_frame}_{shot.end_frame}.yuv"
         dist_path = workdir / f"dist_{shot.start_frame}_{shot.end_frame}.mp4"
         extract_cmd = _predict_reference_command(args, geometry, shot, ref_yuv)
-        completed = subprocess.run(extract_cmd, capture_output=True, text=True, check=False)
-        if completed.returncode != 0 or not ref_yuv.exists():
+        completed = _run_predict_ffmpeg(extract_cmd, "reference extraction")
+        if completed is None or completed.returncode != 0 or not ref_yuv.exists():
             return dist_path, float("nan")
         encode_req = EncodeRequest(
             source=ref_yuv,
@@ -2753,8 +2774,10 @@ def _build_real_predict_scorer(
             return dist_path, float("nan")
         dist_yuv = workdir / f"dist_{shot.start_frame}_{shot.end_frame}.decoded.yuv"
         decode_cmd = _predict_decode_command(args, dist_path, dist_yuv, geometry.pix_fmt)
-        dec = subprocess.run(decode_cmd, capture_output=True, text=True, check=False)
-        dist_for_score = dist_yuv if dec.returncode == 0 and dist_yuv.exists() else dist_path
+        dec = _run_predict_ffmpeg(decode_cmd, "decode")
+        dist_for_score = (
+            dist_yuv if dec is not None and dec.returncode == 0 and dist_yuv.exists() else dist_path
+        )
         score_req = ScoreRequest(
             reference=ref_yuv,
             distorted=dist_for_score,
@@ -3257,7 +3280,15 @@ def _extract_shot_to_raw_yuv(
             str(output),
         ]
     )
-    completed = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    try:
+        completed = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=FFMPEG_TIMEOUT_S
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"ffmpeg shot extraction timed out after FFMPEG_TIMEOUT_S={FFMPEG_TIMEOUT_S}s "
+            f"for [{shot.start_frame}, {shot.end_frame})"
+        ) from exc
     if completed.returncode != 0 or not output.exists():
         tail = (completed.stderr or "").strip().splitlines()
         detail = tail[-1] if tail else "no stderr"
@@ -4782,7 +4813,14 @@ def _score_fast_sample(
         with tempfile.TemporaryDirectory(prefix="fast-score-") as score_tmp:
             json_path = Path(score_tmp) / "vmaf.json"
             command = build_vmaf_command(request, json_path, vmaf_bin=args.vmaf_bin, backend=None)
-            completed = subprocess.run(command, capture_output=True, text=True, check=False)
+            try:
+                completed = subprocess.run(
+                    command, capture_output=True, text=True, check=False, timeout=VMAF_TIMEOUT_S
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise RuntimeError(
+                    f"fast sample_extractor: vmaf score timed out after VMAF_TIMEOUT_S={VMAF_TIMEOUT_S}s"
+                ) from exc
             if completed.returncode != 0:
                 raise RuntimeError(
                     "fast sample_extractor: vmaf score failed "
