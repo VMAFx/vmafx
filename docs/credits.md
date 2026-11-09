@@ -56,17 +56,17 @@ header keep the upstream terms (ADR-1250); the paths column lists them.
 | [Daala video input code](https://github.com/xiph/daala) | vendored | `BSD-2-Clause` | `core/tools/vidinput.c`, `core/tools/vidinput.h`, `core/tools/y4m_input.c` | Y4M and video readers of the CLI. |
 | [dav1d CPU detection and atomics shim](https://code.videolan.org/videolan/dav1d) | vendored | `BSD-2-Clause` | `core/src/compat/gcc/stdatomic.h`, `core/src/x86/cpu.c`, `core/src/x86/cpuid.asm`, `tools/rc1-tester/image/published-rc/scans/v1.0.0-rc.1/cpu.json`, and 7 more | VideoLAN and dav1d authors, Two Orioles, LLC. |
 | [Dmitry Popovich's SYCL build and container work](https://github.com/VMAFx/vmafx/pull/2216) | adapted | `EUPL-1.2` | `Containerfile.vmafx`, `docs/adr/3357-hybrid-gcc-cpu-icpx-sycl.md`, `docs/adr/3358-vmafx-sycl-ffmpeg-container.md` | Dmitry Popovich (@Tualua) designed the hybrid GCC and icpx build and the SYCL plus FFmpeg image in PR 2216; the project reworked them into PR 2883 and PR 2891. |
-| [FFmpeg](https://github.com/FFmpeg/FFmpeg) | integrated | `LGPL-2.1-or-later AND GPL-2.0-or-later` | `ffmpeg-patches/` | The patch series adds libvmaf filters. The shared fix series applied before it (VMAFx/ffmpeg-patches, fetched at build time) also touches GPL units. Upstream states most files LGPL v2.1 or later and some GPL. |
+| [FFmpeg](https://github.com/FFmpeg/FFmpeg) | integrated | `LGPL-2.1-or-later AND GPL-2.0-or-later` | `ffmpeg-patches/**` | The patch series adds libvmaf filters. The shared fix series applied before it (VMAFx/ffmpeg-patches, fetched at build time) also touches GPL units. Upstream states most files LGPL v2.1 or later and some GPL. |
 | [HACL*](https://github.com/hacl-star/hacl-star) | shipped | `MIT` | `tools/rc1-tester/image/licenses/hacl-star.txt` | Linked into the interpreter of the tester artifacts; the licence text is reproduced for their notices (ADR-1503). |
 | [interfig (from hindsight)](https://github.com/vectorize-io/hindsight) | vendored | `MIT` | `tools/figures/third_party/interfig/` | Figure engine vendored for interactive figures (ADR-0015). |
 | [IQA by Tom Distler](https://tdistler.com/) | vendored | `BSD-3-Clause` | `core/src/feature/arm64/convolve_neon.c`, `core/src/feature/arm64/convolve_neon.h`, `core/src/feature/arm64/ms_ssim_decimate_neon.c`, `core/src/feature/arm64/ms_ssim_decimate_neon.h`, and 62 more | Image-quality library behind the SSIM and MS-SSIM extractors; SIMD and GPU twins keep its header. |
 | [Kubernetes OpenAPI v3 specification](https://github.com/kubernetes/kubernetes) | vendored | `Apache-2.0` | `deploy/helm/vmafx/values.schema.json`, `deploy/helm/vmafx/THIRD-PARTY-NOTICES.txt`, `api/kubernetes/openapi-subset.json`, `scripts/codegen/k8s_openapi.py`, and 1 more | Type schemas of the Helm chart's values schema, from the release build-config.env pins (K8S_SCHEMA_VERSION); attributed in the chart's THIRD-PARTY-NOTICES.txt (ADR-2350 D13, ADR-2673). |
-| [libjxl SSIMULACRA 2 reference](https://github.com/libjxl/libjxl) | adapted | `BSD-3-Clause` | `core/src/feature/arm64/ssimulacra2_arm64_common.h`, `core/src/feature/arm64/ssimulacra2_host_neon.c`, `core/src/feature/arm64/ssimulacra2_host_neon.h`, `core/src/feature/arm64/ssimulacra2_neon.c`, and 29 more | The JPEG XL Project Authors tools/ssimulacra2.cc is the reference the SSIMULACRA 2 port follows. |
+| [libjxl SSIMULACRA 2 reference](https://github.com/libjxl/libjxl) | adapted | `BSD-3-Clause` | `core/src/feature/arm64/ssimulacra2_arm64_common.h`, `core/src/feature/arm64/ssimulacra2_host_neon.c`, `core/src/feature/arm64/ssimulacra2_host_neon.h`, `core/src/feature/arm64/ssimulacra2_neon.c`, and 31 more | The JPEG XL Project Authors tools/ssimulacra2.cc is the reference the SSIMULACRA 2 port follows. |
 | [libsvm](https://github.com/cjlin1/libsvm) | vendored | `BSD-3-Clause` | `core/src/svm.cpp`, `core/src/svm.h` | Chih-Chung Chang and Chih-Jen Lin; SVM model evaluation for VMAF models. |
 | [LIME local explainer](https://github.com/marcotcr/lime) | vendored | `BSD-2-Clause` | `compat/python-vmaf/core/local_explainer.py` | Marco Tulio Correia Ribeiro, 2016. |
 | [MATLAB reference implementations (iCID, SpEED, STMAD, matlabPyrTools, colorspace)](https://github.com/Netflix/vmaf) | vendored | `unknown` | `compat/python-vmaf/matlab/` | Inherited from Netflix/vmaf; most files state no licence. iCID is supplementary material of Preiss, Fernandes and Urban (IEEE TIP 2014); the colorspace code is by Pascal Getreuer. |
 | [mkdirp.c by Stephen Mathieson](https://github.com/stephenmathieson/mkdirp.c) | adapted | `MIT` | `core/src/feature/mkdirp.cpp`, `core/src/feature/mkdirp.h` | C++ conversion of the original C implementation. |
-| [Netflix VMAF](https://github.com/Netflix/vmaf) | vendored | `BSD-2-Clause-Patent AND BSD-3-Clause-Clear` (the inherited Python harness files are tagged BSD-3-Clause-Clear) | `NOTICE`, `core/`, `compat/python-vmaf/`, `python/`, and 2 more | The project VMAFx is forked from. Inherited files keep Netflix terms (ADR-1250). |
+| [Netflix VMAF](https://github.com/Netflix/vmaf) | vendored | `BSD-2-Clause-Patent AND BSD-3-Clause-Clear` (the inherited Python harness files are tagged BSD-3-Clause-Clear) | `NOTICE`, `core/`, `compat/python-vmaf/`, `python/`, and 7 more | The project VMAFx is forked from. Inherited files keep Netflix terms (ADR-1250). |
 | [nv-codec-headers](https://git.ffmpeg.org/gitweb/ffmpeg/nv-codec-headers.git) | shipped | `MIT` | `tools/rc1-tester/image/licenses/nv-codec-headers.txt` | Notice reproduced for the CUDA images published before ADR-1513 (ADR-1578). |
 | [NVIDIA's CUDA backend in Netflix VMAF](https://github.com/Netflix/vmaf) | vendored | `BSD-2-Clause-Patent` | `core/src/cuda/common.c`, `core/src/cuda/common.h`, `core/src/cuda/cuda_helper.cuh`, `core/src/cuda/picture_cuda.c`, and 32 more | Files that carry NVIDIA Corporation copyright, from the CUDA backend NVIDIA contributed to Netflix/vmaf. |
 | [pdjson](https://github.com/skeeto/pdjson) | vendored | `Unlicense` | `core/src/pdjson.c`, `core/src/pdjson.h` | Streaming JSON parser for model files. |
@@ -355,7 +355,10 @@ credit it:
    `relation` (the table above), `license`, and optionally `license_note`,
    `paths` (repository paths or globs that use it), `evidence` (repository files
    that state the facts you wrote, required in spirit for models, datasets and
-   papers) and `note`.
+   papers) and `note`. A directory in `paths` covers every file below it,
+   except in an entry of kind `upstream`: there a file the gate flags is covered
+   only by its exact path or a glob, so the entry for the inherited tree cannot
+   hide a third-party file inside it.
 2. Copy the licence from the upstream. If it names none, write `none`; if you
    cannot tell, write `unknown`. Never guess.
 3. Run `make docs-fragments-write` to render the tables, then
@@ -366,14 +369,25 @@ credit it:
 
 - the tables differ from the list (page drift);
 - a vendored or inherited third-party path has no entry: any non-project
-  licence in `REUSE.toml`, any `third_party`, `3rdparty` or `vendor` directory,
-  notice and licence files, font files, and source files whose copyright header
+  licence in `REUSE.toml` (under `precedence = "closest"` the file's own SPDX
+  header decides, as `reuse` resolves it, and every `SPDX-License-Identifier`
+  line in that header counts), any file in a `third_party`,
+  `3rdparty` or `vendor` directory that no `REUSE.toml` `override` annotation
+  gives the project's licence, notice and licence files, font files, and source files whose copyright header
   names someone other than the project and its contributors;
 - a `LICENSES/*.txt` text is used by no entry and no project code;
 - a skill or agent file says it was derived from an upstream (`derived_from`, or
   "Adapted from [name](url)") and no entry has that URL, which is how files that
   `praetorctl adopt` installs are held to their credit;
 - an entry names a path or an evidence file that is not in the checkout.
+
+The check reads `REUSE.toml` as `reuse` 6.2.0 does. Only the last annotation
+whose path matches a file decides it, an annotation without
+`SPDX-License-Identifier` never gives the project's licence, and an annotation
+path matches a whole file path or its `*` and `**` glob, never a directory
+prefix; a `**` run also matches zero directories (`dir/**/x.c` covers
+`dir/x.c`). A backslash in an annotation path stops the check with an error.
+Write `dir/**` to annotate every file in a tree.
 
 Each check has a planted-defect test in
 `scripts/docs/tests/test_credits.py` that the gate must fail on. The decision is
