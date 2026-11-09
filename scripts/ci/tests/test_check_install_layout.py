@@ -17,6 +17,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import check_install_layout as checker
 
+CC_TIMEOUT_S = 60
+CMAKE_TIMEOUT_S = 60
+SUBPROCESS_TIMEOUT_S = 60
+
 NODE = "VMAFX_TEST_1"
 SYMBOL = "vmafx_version_string"
 EXPECTED = {SYMBOL: NODE}
@@ -478,6 +482,7 @@ def _write_dummy_vmafx_shared(lib_dir: Path) -> Path:
         [_tool("cc"), "-shared", "-fPIC", str(c_source), "-o", str(so_path)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        timeout=CC_TIMEOUT_S,
     )
     return so_path
 
@@ -530,16 +535,19 @@ def test_cmake_consumer_find_package_e2e(tmp_path: Path) -> None:
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        timeout=CMAKE_TIMEOUT_S,
     )
     subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [_tool("cmake"), "--build", str(build_dir)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        timeout=CMAKE_TIMEOUT_S,
     )
     out = subprocess.check_output(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [str(build_dir / "app")],
         env={**os.environ, "LD_LIBRARY_PATH": str(lib)},
         text=True,
+        timeout=SUBPROCESS_TIMEOUT_S,
     )
     assert out.strip() == "1.0.0"
 
@@ -588,16 +596,19 @@ def test_cmake_consumer_stale_cache_overridden(tmp_path: Path) -> None:
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        timeout=CMAKE_TIMEOUT_S,
     )
     subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [_tool("cmake"), "--build", str(build_dir)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        timeout=CMAKE_TIMEOUT_S,
     )
     out = subprocess.check_output(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [str(build_dir / "app")],
         env={**os.environ, "LD_LIBRARY_PATH": str(lib)},
         text=True,
+        timeout=SUBPROCESS_TIMEOUT_S,
     )
     assert out.strip() == "1.0.0"
 
@@ -637,6 +648,7 @@ def test_cmake_consumer_rejects_static_archive(tmp_path: Path) -> None:
         ],
         capture_output=True,
         text=True,
+        timeout=CMAKE_TIMEOUT_S,
     )
     assert res.returncode != 0
     assert "Could NOT find vmafx (missing: VMAFX_LIBRARY)" in res.stderr
@@ -685,16 +697,19 @@ def test_cmake_consumer_absolute_dirs(tmp_path: Path) -> None:
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        timeout=CMAKE_TIMEOUT_S,
     )
     subprocess.check_call(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [_tool("cmake"), "--build", str(build_dir)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        timeout=CMAKE_TIMEOUT_S,
     )
     out = subprocess.check_output(  # noqa: S603 -- resolved tool path or built test binary, argv list, no shell  # nosec B603
         [str(build_dir / "app")],
         env={**os.environ, "LD_LIBRARY_PATH": str(abs_lib)},
         text=True,
+        timeout=SUBPROCESS_TIMEOUT_S,
     )
     assert out.strip() == "1.0.0"
 
@@ -741,6 +756,7 @@ def test_cmake_consumer_mingw_import_library(tmp_path: Path) -> None:
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        timeout=CMAKE_TIMEOUT_S,
     )
     props = (build_dir / "target_props.txt").read_text(encoding="utf-8").splitlines()
     assert Path(props[0]) == bin_dir / "vmafx.dll"
@@ -793,6 +809,7 @@ def test_cmake_consumer_stale_dll_cache_overridden(tmp_path: Path) -> None:
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        timeout=CMAKE_TIMEOUT_S,
     )
     loc = (build_dir / "target_loc.txt").read_text(encoding="utf-8").strip()
     assert Path(loc) == bin_dir / "vmafx.dll"

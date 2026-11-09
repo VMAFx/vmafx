@@ -26,6 +26,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 GATE = ROOT / "scripts" / "ci" / "check-dco.py"
 GIT = shutil.which("git") or "/usr/bin/git"
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 HUMAN = ("Ada Example", "ada@example.org")
 BOT_LOGIN = "renovate[bot]"
 BOT_IDENT = (BOT_LOGIN, "29139614+renovate[bot]@users.noreply.github.com")
@@ -90,6 +92,7 @@ class Repo:
             capture_output=True,
             text=True,
             check=True,
+            timeout=GIT_TIMEOUT_S,
         )
         return done.stdout
 
@@ -110,6 +113,7 @@ class Repo:
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
 
@@ -181,13 +185,19 @@ class DcoGateTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(res.returncode, 2)
 
     def test_missing_arguments_is_usage_error(self) -> None:
         env = {k: v for k, v in os.environ.items() if k not in ("BASE_SHA", "HEAD_SHA")}
         res = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
-            [sys.executable, "-I", str(GATE)], env=env, capture_output=True, text=True, check=False
+            [sys.executable, "-I", str(GATE)],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(res.returncode, 2)
 
@@ -382,6 +392,7 @@ class DcoLandedGateTest(unittest.TestCase):
             cwd=self.repo.path,
             env=env,
             check=True,
+            timeout=GIT_TIMEOUT_S,
         )
         res = self.repo.gate("--landed", "--landing-identity", LANDING_ID)
         self.assertEqual(res.returncode, 1)
@@ -415,6 +426,7 @@ class DcoLandedGateTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(res_bad.returncode, 1)
         self.assertIn("Signed-off-by", res_bad.stdout)
@@ -441,6 +453,7 @@ class DcoLandedGateTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(res_good.returncode, 0, res_good.stdout + res_good.stderr)
         self.assertIn("PASS", res_good.stdout)

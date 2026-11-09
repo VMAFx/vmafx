@@ -28,6 +28,8 @@ WORKFLOW = ROOT / ".github" / "workflows" / "lint-and-format.yml"
 RENDER_PR_WORKFLOW = ROOT / ".github" / "workflows" / "docs-render-pr.yml"
 RENDER_PR_SCRIPT = ROOT / "scripts" / "ci" / "open-render-pr.sh"
 GIT = shutil.which("git") or "/usr/bin/git"
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 NOW = 1_800_000_000
 HOUR = 3600
 IDENT = {
@@ -64,7 +66,13 @@ class RenderOnMasterTest(unittest.TestCase):
         if date is not None:
             env.update(GIT_AUTHOR_DATE=date, GIT_COMMITTER_DATE=date)
         done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
-            [GIT, *args], cwd=self.repo, env=env, capture_output=True, text=True, check=True
+            [GIT, *args],
+            cwd=self.repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=GIT_TIMEOUT_S,
         )
         return done.stdout
 
@@ -84,6 +92,7 @@ class RenderOnMasterTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     def assert_status(

@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 CHECK_SCRIPT = ROOT / "scripts/ci/check-copyright.sh"
+SCRIPT_TIMEOUT_S = 60
 SPDX_TAG = "SPDX-License" + "-Identifier:"
 # The suffixes check-copyright.sh reads for the SPDX rule.
 SPDX_SUFFIXES = frozenset(
@@ -62,6 +63,7 @@ class CheckCopyrightTests(unittest.TestCase):
             text=True,
             check=False,
             env=env,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     def test_valid_c_file_passes(self) -> None:

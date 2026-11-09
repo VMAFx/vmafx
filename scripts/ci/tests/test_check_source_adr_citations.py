@@ -20,6 +20,8 @@ ROOT = Path(__file__).resolve().parents[3]
 CHECKER = ROOT / "scripts/ci/check-source-adr-citations.py"
 GIT = shutil.which("git") or "/usr/bin/git"
 PYTHON = sys.executable
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 
 
 def fixture_git_env() -> dict[str, str]:
@@ -55,6 +57,7 @@ class SourceAdrCitationTests(unittest.TestCase):
             env=fixture_git_env(),
             text=True,
             stdout=subprocess.PIPE,
+            timeout=GIT_TIMEOUT_S,
         ).stdout.strip()
 
     def write(self, relative: str, body: str) -> None:
@@ -102,6 +105,7 @@ class SourceAdrCitationTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     def test_a_live_citation_needs_no_registry_entry(self) -> None:
@@ -248,6 +252,7 @@ class SourceAdrCitationTests(unittest.TestCase):
                 [GIT, "-c", "core.hooksPath=/dev/null", "init", "-q", str(caller)],
                 check=True,
                 env=clean_env,
+                timeout=GIT_TIMEOUT_S,
             )
             (caller / "caller.txt").write_text("caller state\n", encoding="utf-8")
             subprocess.run(  # noqa: S603 -- fixed Git binary and disposable caller fixture
@@ -255,6 +260,7 @@ class SourceAdrCitationTests(unittest.TestCase):
                 check=True,
                 cwd=caller,
                 env=clean_env,
+                timeout=GIT_TIMEOUT_S,
             )
             caller_index = caller / ".git/index"
             caller_config = caller / ".git/config"
@@ -404,6 +410,7 @@ class SourceAdrCitationTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(result.returncode, 0, result.stdout)
 

@@ -40,6 +40,8 @@ from scripts.lib.renovate_regex import to_python
 
 ROOT = Path(__file__).resolve().parents[3]
 GIT = shutil.which("git") or "/usr/bin/git"
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 GATE = "scripts/ci/check-cuda-pin-lockstep.py"
 
 SPEC = importlib.util.spec_from_file_location("cuda_pin_lockstep", ROOT / GATE)
@@ -364,7 +366,7 @@ class CudaPinCoverage(unittest.TestCase):
         selected = [
             path
             for path in subprocess.check_output(  # noqa: S603 -- fixed read-only Git command
-                [GIT, "-C", str(ROOT), "ls-files"], text=True
+                [GIT, "-C", str(ROOT), "ls-files"], text=True, timeout=GIT_TIMEOUT_S
             ).splitlines()
             if any(pattern.search(path) for pattern in patterns)
         ]
@@ -405,7 +407,12 @@ class CudaPinGate(unittest.TestCase):
 
     def git(self, *args: str) -> None:
         subprocess.run(  # noqa: S603 -- fixed Git commands in a disposable fixture
-            [GIT, *args], cwd=self.repo, env=self.env, check=True, capture_output=True
+            [GIT, *args],
+            cwd=self.repo,
+            env=self.env,
+            check=True,
+            capture_output=True,
+            timeout=GIT_TIMEOUT_S,
         )
 
     def gate(self, *args: str) -> subprocess.CompletedProcess[str]:
@@ -415,6 +422,7 @@ class CudaPinGate(unittest.TestCase):
             env=self.env,
             capture_output=True,
             text=True,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     def pin(self, name: str) -> str:

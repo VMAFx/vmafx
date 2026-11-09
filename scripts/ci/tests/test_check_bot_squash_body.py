@@ -22,6 +22,8 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent.parent / "check-bot-squash-body.py"
 GIT = "git"
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 
 
 BOT_EMAIL = "29139614+renovate[bot]@users.noreply.github.com"
@@ -60,6 +62,7 @@ def git(
         text=True,
         check=False,
         env=env,
+        timeout=GIT_TIMEOUT_S,
     )
     if check and result.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)}: {result.stderr}")
@@ -130,6 +133,7 @@ def run_check(repo: Path, base: str, head: str, **env_overrides: str) -> int:
         text=True,
         check=False,
         env=env,
+        timeout=SCRIPT_TIMEOUT_S,
     )
     return result.returncode
 

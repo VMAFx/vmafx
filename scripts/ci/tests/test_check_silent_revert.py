@@ -30,6 +30,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 GATE = ROOT / "scripts" / "ci" / "check-silent-revert.py"
 GIT = shutil.which("git") or "/usr/bin/git"
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 
 # The historical pair the gate was built from; see
 # .workingdir/evidence/silent-reverts-2026-09-18.md and ADR-1284.
@@ -59,6 +61,7 @@ def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
         text=True,
         capture_output=True,
         check=check,
+        timeout=GIT_TIMEOUT_S,
     )
 
 
@@ -69,6 +72,7 @@ def run_gate(repo: Path, base: str, head: str, **env: str) -> subprocess.Complet
         text=True,
         capture_output=True,
         check=False,
+        timeout=SCRIPT_TIMEOUT_S,
     )
 
 
@@ -502,6 +506,7 @@ class RealHistoryReplayTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=GIT_TIMEOUT_S,
         )
         if probe.returncode != 0:
             self.skipTest(f"{ADR_0759_REVERTED} not in this clone (shallow checkout)")
