@@ -10,13 +10,16 @@ import io
 import json
 import shlex
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import run as run_command
 
 CC_TIMEOUT_S = 60
 HERE = Path(__file__).resolve().parent
@@ -150,8 +153,13 @@ class StubsAreSufficient(unittest.TestCase):
             entry = gen.entry_for(src, REPO, REPO)
             argv = [*shlex.split(entry["command"])[:-2], "-fsyntax-only"]
             self.assertEqual(argv[0], "cc", argv)  # entry_for builds every command on cc
-            done = subprocess.run(  # noqa: S603
-                argv, capture_output=True, text=True, check=False, timeout=CC_TIMEOUT_S
+            done = run_command(
+                argv,
+                allowed_executables=("cc",),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout_seconds=CC_TIMEOUT_S,
             )
             self.assertEqual(done.returncode, 0, f"{src}: {done.stderr[-400:]}")
 
@@ -161,8 +169,13 @@ class StubsAreSufficient(unittest.TestCase):
             entry = gen.entry_for(src, REPO, REPO)
             argv = [*shlex.split(entry["command"])[:-2], "-fsyntax-only"]
             self.assertEqual(argv[0], "cc", argv)  # entry_for builds every command on cc
-            done = subprocess.run(  # noqa: S603
-                argv, capture_output=True, text=True, check=False, timeout=CC_TIMEOUT_S
+            done = run_command(
+                argv,
+                allowed_executables=("cc",),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout_seconds=CC_TIMEOUT_S,
             )
             self.assertEqual(done.returncode, 0, f"{src}: {done.stderr[-400:]}")
 
