@@ -45,13 +45,11 @@
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ADR-0723; Research-2047: GNU linker wrapping ABI.
 extern int __real_vmaf_thread_pool_destroy(void *tpool);
 
-#define VMAF_WRAP_EXPORT __attribute__((visibility("default")))
-
 static int fail_pool_destroy_once;
 
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0723; Research-2047: GNU linker calls this entry point.
-VMAF_WRAP_EXPORT int __wrap_vmaf_thread_pool_destroy(void *tpool)
+__attribute__((visibility("default"))) int __wrap_vmaf_thread_pool_destroy(void *tpool)
 {
     if (fail_pool_destroy_once) {
         fail_pool_destroy_once = 0;
