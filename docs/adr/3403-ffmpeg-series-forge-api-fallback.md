@@ -76,7 +76,7 @@ download failures on `https://github.com/...` release asset URLs.
 
 ## References
 
-- Controller ledger `vmafx-frontier-feed-20261108-1000-0630-noted` (2026-11-09, paraphrased): each repository carries its own forge-API fallback for the release-download 504 class.
+- Source: controller ledger record `vmafx-frontier-feed-20261108-1000-0630-noted` (2026-11-09, paraphrased): each repository carries its own forge-API fallback for the release-download 504 class.
 - [Research-3403](../research/3403-ffmpeg-series-forge-api-fallback.md) — Shared FFmpeg fix series forge API download fallback.
 - [ADR-3143](3143-ffmpeg-shared-fix-series.md) — VMAFx consumes the shared FFmpeg fix series.
 - [FFmpeg patch automation](../development/ffmpeg-patch-automation.md#shared-ffmpeg-fix-series).
