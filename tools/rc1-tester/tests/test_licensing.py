@@ -687,6 +687,7 @@ def source_repo(tmp: Path) -> tuple[Path, str]:
     write(repo / "patches/numactl/0001.patch", "patch\n")
 
     def git(*argv: str) -> str:  # never the caller's repository, even under a git hook
+        """Run a git command in the upstream test repository and return stripped stdout."""
         done = subprocess.run(["git", *argv], cwd=repo, check=True, capture_output=True, text=True,
                               env=lic.git_environment(), timeout=GIT_TIMEOUT_S)  # fmt: skip
         return done.stdout.strip()
@@ -700,6 +701,7 @@ def source_repo(tmp: Path) -> tuple[Path, str]:
 
 
 def test_a_source_tree_is_fetched_by_its_commit_and_archived(tmp_path: Path) -> None:
+    """Assert a source tree is fetched from git by commit and archived as a tar.gz file."""
     repo, commit = source_repo(tmp_path)
     (tmp_path / "out" / "archives").mkdir(parents=True)
     archive = {"file": "Tree-x.tar.gz", "git": repo.as_uri(), "commit": commit, "why": "test"}

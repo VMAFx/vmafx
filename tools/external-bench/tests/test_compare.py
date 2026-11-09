@@ -114,6 +114,7 @@ out.write_text(json.dumps({
 
 
 def _run_fork_shell_wrapper(tmp_path: pathlib.Path, competitor: str) -> dict:
+    """Run a fork benchmark wrapper script and return its parsed JSON output."""
     fake_vmaf_tune = _write_fake_vmaf_tune(tmp_path)
     model_dir = tmp_path / "models"
     model_dir.mkdir()

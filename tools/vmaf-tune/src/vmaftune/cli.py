@@ -2752,6 +2752,7 @@ def _build_real_predict_scorer(
     from .score import ScoreRequest, run_score
 
     def _real_encode_and_score(shot: Shot, crf: int, codec: str) -> tuple[Path, float]:
+        """Extract reference frames, encode at the given CRF, and compute the VMAF score."""
         ref_yuv = workdir / f"ref_{shot.start_frame}_{shot.end_frame}.yuv"
         dist_path = workdir / f"dist_{shot.start_frame}_{shot.end_frame}.mp4"
         extract_cmd = _predict_reference_command(args, geometry, shot, ref_yuv)

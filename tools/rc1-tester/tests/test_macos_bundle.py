@@ -28,6 +28,7 @@ def script(path: Path, body: str) -> None:
 
 
 def test_run_sh_refuses_other_platforms() -> None:
+    """Assert run.sh exits with code 64 when invoked on non-Apple-silicon platforms."""
     result = subprocess.run(
         ["sh", str(RUN_SH)], capture_output=True, text=True, check=False, timeout=SCRIPT_TIMEOUT_S
     )
@@ -35,6 +36,7 @@ def test_run_sh_refuses_other_platforms() -> None:
 
 
 def test_run_sh_end_to_end_with_everything_skipped(tmp_path: Path) -> None:
+    """Assert run.sh emits a valid JSON report when all checks are skipped."""
     bundle = tmp_path / "b"
     (bundle / "runtime" / "bin").mkdir(parents=True)
     (bundle / "runtime" / "bin" / "python3").symlink_to(sys.executable)

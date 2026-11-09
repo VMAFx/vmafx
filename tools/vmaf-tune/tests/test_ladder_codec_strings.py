@@ -173,6 +173,7 @@ def test_probe_failure_is_an_error(tmp_path):
 
 
 def _ffmpeg_has(encoder: str) -> bool:
+    """Return True if ffmpeg is available on PATH and supports the specified encoder."""
     if shutil.which("ffmpeg") is None:
         return False
     out = subprocess.run(

@@ -14,6 +14,7 @@ def test_predict_ffmpeg_success(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, object]] = []
 
     def stub_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Record call arguments and return a successful completed process."""
         calls.append({"args": args, "kwargs": kwargs})
         return subprocess.CompletedProcess(args=["ffmpeg"], returncode=0, stdout="ok", stderr="")
 
@@ -32,6 +33,7 @@ def test_predict_ffmpeg_timeout(
     """TimeoutExpired returns None and emits bound warning message to stderr."""
 
     def stub_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Simulate an ffmpeg timeout by raising TimeoutExpired."""
         raise subprocess.TimeoutExpired(cmd=["ffmpeg"], timeout=cli.FFMPEG_TIMEOUT_S)
 
     monkeypatch.setattr(cli.subprocess, "run", stub_run)
@@ -49,6 +51,7 @@ def test_predict_ffmpeg_nonzero_exit(
     """Finished run with nonzero returncode is returned unchanged without stderr output."""
 
     def stub_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Return a completed process with returncode 1 simulating failure."""
         return subprocess.CompletedProcess(
             args=["ffmpeg"], returncode=1, stdout="", stderr="ffmpeg failed"
         )

@@ -313,6 +313,7 @@ def test_run_encode_handles_filenotfounderror_when_ffmpeg_absent(tmp_path: Path)
     reason="set VMAF_TUNE_INTEGRATION=1 to exercise the real ffmpeg/x265 stack",
 )
 def test_real_x265_smoke_when_runner_has_ffmpeg(tmp_path: Path):
+    """Assert real ffmpeg encodes a synthetic YUV clip using libx265."""
     if shutil.which("ffmpeg") is None:
         pytest.skip("ffmpeg not on PATH")
     # Generate a tiny YUV420 reference via ffmpeg's testsrc filter.

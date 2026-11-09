@@ -81,6 +81,7 @@ def test_the_scan_catches_what_broke_the_runner() -> None:
 
 
 def test_run_sh_is_posix_sh() -> None:
+    """Assert run.sh starts with a POSIX sh shebang and passes shellcheck."""
     assert RUN_SH.read_text(encoding="utf-8").startswith("#!/bin/sh\n")
     shellcheck = shutil.which("shellcheck")
     if shellcheck is None:
@@ -99,6 +100,7 @@ def test_run_sh_is_posix_sh() -> None:
 
 
 def bash32_available() -> bool:
+    """Return True if docker is installed and the bash:3.2 image is available."""
     if shutil.which("docker") is None:
         return False
     probe = subprocess.run(
@@ -164,6 +166,7 @@ def test_shasum_stub_reads_its_input_like_shasum(tmp_path: Path) -> None:
 
 
 def docker_bash32(mount: Path, command: str) -> subprocess.CompletedProcess:
+    """Execute a command in a bash:3.2 docker container and return the process result."""
     return subprocess.run(
         ["docker", "run", "--rm", "--network", "none", "--user", f"{os.getuid()}:{os.getgid()}", "-v", f"{mount}:/w", "-v",
          f"{_ROOT}:/repo:ro", "-w", "/repo", "bash:3.2", "bash", "-c", command],

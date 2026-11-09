@@ -61,6 +61,7 @@ class Bundle:
         return path
 
     def check(self) -> subprocess.CompletedProcess:
+        """Run the macos bundle links check script and return the completed process."""
         env = {**os.environ, "PATH": f"{self.fake}:{os.environ['PATH']}"}
         return subprocess.run(
             ["bash", str(LINKS), str(self.root)],

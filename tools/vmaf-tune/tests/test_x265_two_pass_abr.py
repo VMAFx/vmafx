@@ -176,6 +176,7 @@ def test_corpus_row_records_the_abr_rate_control(tmp_path: Path) -> None:
     reason="needs ffmpeg and ffprobe on PATH",
 )
 def test_real_x265_two_pass_at_a_crf_encodes(tmp_path: Path) -> None:
+    """Assert two-pass libx265 encoding at a given CRF completes and produces output."""
     enc = subprocess.run(
         ["ffmpeg", "-hide_banner", "-encoders"],
         capture_output=True,
