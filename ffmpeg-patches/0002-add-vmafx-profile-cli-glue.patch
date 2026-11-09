@@ -11,7 +11,7 @@ command that reads the report and encodes.
  1 file changed, 19 insertions(+)
 
 diff --git a/fftools/ffmpeg_opt.c b/fftools/ffmpeg_opt.c
-index aadb9ff8f62a4753de15925e6722ee5d9a277aed..fb92acf2e5f28d6c66c158e77402a20aff27eb31 100644
+index 808de4ec08900d7af126e1e73497f8b2b1ba9a25..81a82bec4c252076031f8b90d30e7f2f810e73b1 100644
 --- a/fftools/ffmpeg_opt.c
 +++ b/fftools/ffmpeg_opt.c
 @@ -1046,6 +1046,22 @@ static int opt_pass_autotune(void *optctx, const char *opt, const char *arg)

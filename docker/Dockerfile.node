@@ -203,9 +203,11 @@ RUN --mount=type=bind,source=tools/rc1-tester/image,target=/src/tools/rc1-tester
 # variants add HW encoder support on top of this common base.
 #
 # libaom is intentionally excluded — see dev/Containerfile §"NOTE: libaom"
-# for the detailed rationale. The core issue: ffmpeg-patches/0007 references
-# aom_roi_map_t fields not present in any released libaom version.
-# SVT-AV1 (libsvtav1) covers the AV1 production lane.
+# for the detailed rationale. The core issue: shared fix series patch 0043
+# needs libaom >= 3.13.0 (first release with required aom_roi_map_t fields;
+# v3.12.1 and older lack them). The node builder base (Debian 13) ships 3.12.1;
+# enabling there needs libaom >= 3.13.0. SVT-AV1 (libsvtav1) covers the AV1
+# production lane.
 FROM ${RELEASE_BUILDER_BASE} AS ffmpeg-deps-base
 
 ARG DEBIAN_FRONTEND=noninteractive
