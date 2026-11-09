@@ -13,6 +13,7 @@ then the repository's build directories, never ``PATH``.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable
@@ -82,13 +83,12 @@ def fork_vmaf_under_test(
 
 def ffmpeg_reports_encoder(encoder: str) -> bool:
     """Return True iff the local ffmpeg binary advertises ``encoder``."""
-    import shutil
-
-    if shutil.which("ffmpeg") is None:
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
         return False
     try:
         result = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-encoders"],
+            [ffmpeg, "-hide_banner", "-encoders"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             timeout=10,
