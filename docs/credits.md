@@ -384,7 +384,9 @@ The check reads `REUSE.toml` as `reuse` 6.2.0 does. Only the last annotation
 whose path matches a file decides it, an annotation without
 `SPDX-License-Identifier` never gives the project's licence, and an annotation
 path matches a whole file path or its `*` and `**` glob, never a directory
-prefix. Write `dir/**` to annotate every file in a tree.
+prefix; a `**` run also matches zero directories (`dir/**/x.c` covers
+`dir/x.c`). A backslash in an annotation path stops the check with an error.
+Write `dir/**` to annotate every file in a tree.
 
 Each check has a planted-defect test in
 `scripts/docs/tests/test_credits.py` that the gate must fail on. The decision is

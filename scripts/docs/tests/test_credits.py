@@ -21,6 +21,9 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import ModuleType
 
+import reuse
+from reuse.global_licensing import AnnotationsItem
+
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
@@ -400,6 +403,35 @@ class Validation(Fixture):
             self.assertEqual(GATE.main([], root=self.root), 2)
 
 
+REUSE_TABLE: tuple[tuple[str, str, bool], ...] = (
+    ("pkg/**/x.c", "pkg/x.c", True),
+    ("pkg/**/x.c", "pkg/a/x.c", True),
+    ("pkg/**/x.c", "pkg/a/b/x.c", True),
+    ("pkg/**/x.c", "pkg/ax.c", True),
+    ("pkg/**", "pkg/x.c", True),
+    ("pkg/**", "pkg/a/x.c", True),
+    ("pkg/**", "pkg", False),
+    ("pkg/**", "pkgx/y", False),
+    ("pkg/*", "pkg/x.c", True),
+    ("pkg/*", "pkg/a/x.c", False),
+    ("pkg/*.c", "pkg/x.c", True),
+    ("pkg/*.c", "pkg/a/x.c", False),
+    ("**/x.c", "x.c", True),
+    ("**/x.c", "a/x.c", True),
+    ("**", "a/b", True),
+    ("pkg", "pkg/x.c", False),
+    ("pkg/", "pkg/x.c", False),
+    ("pkg/x.c", "pkg/x.c", True),
+    ("pkg/*/x.c", "pkg/x.c", False),
+    ("pkg/*/x.c", "pkg/a/x.c", True),
+    ("a**b", "a/x/b", True),
+    ("a/**b", "a/xb", True),
+    ("a/**b", "a/b", True),
+    ("a/***/b", "a/b", True),
+    ("a.c", "abc", False),
+)
+
+
 class Helpers(unittest.TestCase):
     def test_path_matches(self) -> None:
         """Verify path matching for prefix, exact, and glob patterns with prefix on and off."""
@@ -437,6 +469,32 @@ class Helpers(unittest.TestCase):
         self.assertIn("1 entries", text)
         self.assertIn("could not verify", text)
 
+    def test_reuse_path_matches_table(self) -> None:
+        """Verify reuse_path_matches against every row of the specification table."""
+        for pattern, name, expected in REUSE_TABLE:
+            with self.subTest(pattern=pattern, name=name):
+                self.assertEqual(lib.reuse_path_matches(pattern, name), expected)
+
+    def test_reuse_path_matches_differential(self) -> None:
+        """Verify reuse_path_matches differential against reuse 6.2.0 AnnotationsItem."""
+        self.assertEqual(reuse.__version__, "6.2.0")
+        for pattern, name, _ in REUSE_TABLE:
+            with self.subTest(pattern=pattern, name=name):
+                self.assertEqual(
+                    lib.reuse_path_matches(pattern, name),
+                    AnnotationsItem(paths={pattern}).matches(name),
+                )
+
+    def test_reuse_path_matches_backslash_negative(self) -> None:
+        """Verify backslash in pattern raises CreditsError."""
+        with self.assertRaises(lib.CreditsError) as ctx:
+            lib.reuse_path_matches("a\\*b", "a*b")
+        self.assertIn("a\\*b", str(ctx.exception))
+        self.assertIn(
+            "backslash escapes in REUSE.toml paths are not supported",
+            str(ctx.exception),
+        )
+
 
 class UpstreamMatcher(Fixture):
     """Matcher rule: kind upstream covers only by exact path or glob, never prefix."""
@@ -467,6 +525,20 @@ class UpstreamMatcher(Fixture):
         )
         self.render()
         self.assertEqual(self.findings()["uncredited-path"], [])
+
+    def test_upstream_glob_entry_still_does_not_cover_zero_directories(self) -> None:
+        """Verify covered() with an upstream entry on pkg/**/x.c does not cover pkg/x.c."""
+        entry = lib.Entry(
+            id="test-upstream",
+            name="Test Upstream",
+            url="https://example.com/test",
+            kind="upstream",
+            relation="vendored",
+            license="MIT",
+            paths=("pkg/**/x.c",),
+        )
+        self.assertFalse(lib.covered("pkg/x.c", [entry]))
+        self.assertTrue(lib.covered("pkg/a/x.c", [entry]))
 
 
 class ReusePrecedence(Fixture):
@@ -671,6 +743,33 @@ class ReusePrecedence(Fixture):
         found = checks.reuse_third_party_paths(self.root, ["pkg/x/a.c"])
         self.assertEqual(found, {"pkg/x/a.c": "MIT"})
         self.assertEqual(checks.reuse_own_override_paths(self.root, ["pkg/x/a.c"]), set())
+
+    def test_reuse_glob_double_star_matches_zero_directories(self) -> None:
+        """Plant pkg/**/x.c under an MIT override; expect pkg/x.c to be recognized as MIT."""
+        self.put("pkg/x.c", "int a = 1;\n")
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/**/x.c"]\nprecedence = "override"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\nSPDX-License-Identifier = "MIT"\n',
+        )
+        found = checks.reuse_third_party_paths(self.root, ["pkg/x.c"])
+        self.assertEqual(found, {"pkg/x.c": "MIT"})
+
+    def test_effective_annotations_backslash_raises_credits_error(self) -> None:
+        """Plant an annotation path with backslash; expect effective_annotations to raise."""
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["a\\\\*b"]\nprecedence = "override"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\nSPDX-License-Identifier = "MIT"\n',
+        )
+        with self.assertRaises(lib.CreditsError) as ctx:
+            checks.effective_annotations(self.root, ["a*b"])
+        self.assertIn(
+            "backslash escapes in REUSE.toml paths are not supported",
+            str(ctx.exception),
+        )
 
 
 class ThisRepository(unittest.TestCase):

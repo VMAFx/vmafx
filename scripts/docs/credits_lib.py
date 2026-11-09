@@ -326,3 +326,29 @@ def covered(name: str, entries: list[Entry]) -> bool:
     return any(
         path_matches(p, name, prefix=(e.kind != "upstream")) for e in entries for p in e.paths
     )
+
+
+def reuse_path_matches(pattern: str, name: str) -> bool:
+    """Matches a REUSE.toml annotation path the way reuse 6.2.0 does."""
+    if "\\" in pattern:
+        raise CreditsError(
+            f"{pattern}: backslash escapes in REUSE.toml paths are not supported by the credits check"
+        )
+    out: list[str] = []
+    i = 0
+    while i < len(pattern):
+        if pattern[i] == "*":
+            star_count = 0
+            while i < len(pattern) and pattern[i] == "*":
+                star_count += 1
+                i += 1
+            if star_count == 1:
+                out.append("[^/]*")
+            else:
+                if i < len(pattern) and pattern[i] == "/":
+                    i += 1
+                out.append(".*")
+        else:
+            out.append(re.escape(pattern[i]))
+            i += 1
+    return bool(re.compile("".join(out) + r"\Z").match(name))

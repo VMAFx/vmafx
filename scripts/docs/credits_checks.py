@@ -36,6 +36,7 @@ from scripts.docs.credits_lib import (
     covered,
     license_tokens,
     path_matches,
+    reuse_path_matches,
 )
 
 THIRD_PARTY_DIRS = ("third_party", "3rdparty", "vendor")
@@ -131,14 +132,15 @@ def effective_annotations(root: Path, files: list[str]) -> dict[str, dict[str, o
 
     REUSE applies only the latest matching table of a REUSE.toml (reuse 6.2.0,
     ``ReuseTOML.find_annotations_item``), so an earlier match never decides a file.
-    A REUSE path matches the whole file path or its ``*`` and ``**`` globs, never a
-    directory prefix (``AnnotationsItem.matches``), so a bare directory covers no file.
+    A REUSE path matches the whole file path or its ``*`` and ``**`` globs the way
+    reuse 6.2.0 does (``reuse_path_matches``, ``AnnotationsItem.matches``), never a
+    directory prefix, so a bare directory covers no file.
     """
     found: dict[str, dict[str, object]] = {}
     for note in reuse_annotations(root):
         for pattern in note_strings(note, "path"):
             for name in files:
-                if path_matches(pattern, name, prefix=False):
+                if reuse_path_matches(pattern, name):
                     found[name] = note
     return found
 
