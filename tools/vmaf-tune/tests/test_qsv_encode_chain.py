@@ -22,7 +22,7 @@ sys.path.insert(0, str(_HERE.parent / "src"))
 
 from vmaftune import cli, compare, hdr, hw_devices
 from vmaftune.codec_adapters._qsv_common import QSV_UPLOAD_FILTER
-from vmaftune.encode import EncodeRequest, build_ffmpeg_command
+from vmaftune.encode import EncodeRequest, build_ffmpeg_command, with_upload_filter
 
 QSV = ("h264_qsv", "hevc_qsv", "av1_qsv")
 DEVICE = "/dev/dri/renderD131"
@@ -145,6 +145,27 @@ def test_libx265_hdr_keeps_pix_fmt(tmp_path):
     tail = argv[argv.index("-i") :]
     assert "-pix_fmt" in tail
     assert tail[tail.index("-pix_fmt") + 1] == "p010le"
+
+
+_UPLOAD_P010 = "format=p010le,hwupload=extra_hw_frames=64"
+
+
+def test_with_upload_filter_dangling_pix_fmt_keeps_following_option():
+    """A dangling -pix_fmt before an option keeps the option."""
+    got = with_upload_filter(["-pix_fmt", "-vf", "scale=1280:720"], _UPLOAD_P010)
+    assert got == ["-vf", f"scale=1280:720,{_UPLOAD_P010}"]
+
+
+def test_with_upload_filter_dangling_pix_fmt_v_keeps_following_option():
+    """A dangling -pix_fmt:v before an option keeps the option."""
+    got = with_upload_filter(["-pix_fmt:v", "-profile:v", "main10"], _UPLOAD_P010)
+    assert got == ["-vf", _UPLOAD_P010, "-profile:v", "main10"]
+
+
+def test_with_upload_filter_drops_trailing_dangling_pix_fmt():
+    """A trailing dangling -pix_fmt is dropped."""
+    got = with_upload_filter(["-profile:v", "main10", "-pix_fmt"], _UPLOAD_P010)
+    assert got == ["-vf", _UPLOAD_P010, "-profile:v", "main10"]
 
 
 def test_hevc_qsv_8bit_argv_pinned(tmp_path):

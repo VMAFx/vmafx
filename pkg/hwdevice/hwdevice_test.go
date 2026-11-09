@@ -154,6 +154,24 @@ func TestAppendVideoFilter(t *testing.T) {
 			filter: upload,
 			want:   []string{"-vf", upload, "-profile:v", "main10"},
 		},
+		{
+			name:   "dangling -pix_fmt before an option keeps the option",
+			args:   []string{"-pix_fmt", "-vf", "scale=1280:720"},
+			filter: upload,
+			want:   []string{"-vf", "scale=1280:720," + upload},
+		},
+		{
+			name:   "dangling -pix_fmt:v before an option keeps the option",
+			args:   []string{"-pix_fmt:v", "-profile:v", "main10"},
+			filter: upload,
+			want:   []string{"-vf", upload, "-profile:v", "main10"},
+		},
+		{
+			name:   "trailing dangling -pix_fmt is dropped",
+			args:   []string{"-profile:v", "main10", "-pix_fmt"},
+			filter: upload,
+			want:   []string{"-vf", upload, "-profile:v", "main10"},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := AppendVideoFilter(tc.args, tc.filter)

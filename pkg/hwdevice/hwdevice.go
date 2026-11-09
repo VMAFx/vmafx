@@ -122,26 +122,39 @@ func QSVInitArgs(vaapiDevice string) []string {
 	}
 }
 
+// dropOutputPixFmt drops -pix_fmt and -pix_fmt:v tokens together with the next
+// token only when a next token exists and does not start with "-". Otherwise
+// only the flag is dropped and the next token is kept.
+func dropOutputPixFmt(args []string) []string {
+	var out []string
+	for i := 0; i < len(args); {
+		if args[i] == "-pix_fmt" || args[i] == "-pix_fmt:v" {
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				i += 2
+			} else {
+				i++
+			}
+		} else {
+			out = append(out, args[i])
+			i++
+		}
+	}
+	return out
+}
+
 // AppendVideoFilter adds filter to the end of the caller's "-vf" chain, or
 // prepends "-vf filter" when there is none. ffmpeg keeps only the last "-vf"
 // of an output, so a second flag would drop the caller's chain (a ladder
 // rung's scale) or the upload. Output -pix_fmt is dropped when uploading
 // hardware frames so ffmpeg does not attempt an unsupported conversion back
-// to software frames.
+// to software frames. A dangling flag is dropped alone.
 func AppendVideoFilter(args []string, filter string) []string {
 	if filter == "" {
 		return append([]string(nil), args...)
 	}
 	var out []string
 	if strings.Contains(filter, "hwupload") {
-		for i := 0; i < len(args); {
-			if args[i] == "-pix_fmt" || args[i] == "-pix_fmt:v" {
-				i += 2
-			} else {
-				out = append(out, args[i])
-				i++
-			}
-		}
+		out = dropOutputPixFmt(args)
 	} else {
 		out = append([]string(nil), args...)
 	}
