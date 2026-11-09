@@ -226,6 +226,9 @@ class ConfiguredLintTests(unittest.TestCase):
 
     def install_model_fixtures(self) -> None:
         shutil.copy2(POSIX_MODEL_SCRIPT, self.root / "scripts/ci/write_cppcheck_posix_model.py")
+        helper = self.root / "scripts/lib/safe_subprocess.py"
+        helper.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "scripts/lib/safe_subprocess.py", helper)
         self.cppcheck_filesdir = self.root / "cppcheck-data"
         posix_model = self.cppcheck_filesdir / "cfg/posix.cfg"
         posix_model.parent.mkdir(parents=True)
