@@ -26,6 +26,7 @@ from scripts.lib.safe_subprocess import (
     CommandTimedOut,
     CommandValidationError,
     executable_argument,
+    resolve_executable,
     run,
     run_async,
     signal_process_group,
@@ -168,6 +169,47 @@ class SafeSubprocessTests(unittest.TestCase):
             (Path(tmp) / "vmafx").symlink_to("vmaf")
             # The CLI picks vmafx mode from argv0, so the alias must survive.
             self.assertEqual(executable_argument("./vmafx", root=tmp), str(Path(tmp) / "vmafx"))
+
+    def test_resolve_executable_bare_name_and_relative_path(self) -> None:
+        """Bare names on PATH and relative paths against root resolve to absolute files."""
+        # Bare name on PATH -> absolute path that exists
+        resolved_python = resolve_executable("python3")
+        self.assertTrue(Path(resolved_python).is_absolute())
+        self.assertTrue(Path(resolved_python).is_file())
+        self.assertTrue(os.access(resolved_python, os.X_OK))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            tool = bin_dir / "runner"
+            tool.touch()
+            tool.chmod(0o755)
+
+            # Relative path with a directory part -> resolved against root
+            rel_path = Path("bin") / "runner"
+            resolved_rel = resolve_executable(rel_path, root=root)
+            self.assertEqual(resolved_rel, str(tool.resolve()))
+
+            # Bare name in custom PATH
+            with mock.patch.dict(os.environ, {"PATH": str(bin_dir)}):
+                resolved_bare = resolve_executable("runner")
+                self.assertEqual(resolved_bare, str(tool.resolve()))
+
+    def test_resolve_executable_missing_name_raises(self) -> None:
+        """Missing executable name raises CommandValidationError."""
+        with self.assertRaises(CommandValidationError):
+            resolve_executable("nonexistent-tool-binary-xyz")
+
+    @unittest.skipIf(os.name == "nt", "POSIX execute permissions are not enforced on Windows")
+    def test_resolve_executable_non_executable_file_raises(self) -> None:
+        """Existing file without execute permission raises CommandValidationError."""
+        with tempfile.TemporaryDirectory() as tmp:
+            unexecutable = Path(tmp) / "plain_file.txt"
+            unexecutable.touch()
+            unexecutable.chmod(0o644)
+            with self.assertRaises(CommandValidationError):
+                resolve_executable(unexecutable)
 
     def test_capture_limit_terminates_a_flooding_child(self) -> None:
         with self.assertRaises(CommandOutputLimitExceeded) as raised:

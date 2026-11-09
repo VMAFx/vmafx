@@ -2267,6 +2267,15 @@ class UvExecutionAndCompileArgsTests(unittest.TestCase):
                         ):
                             self.checker.write(root, "uv")
 
+    def test_missing_uv_binary_in_write_raises_contract_error_before_compile(self) -> None:
+        """A missing uv binary given to write() raises ContractError before running commands."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with mock.patch.object(self.checker, "run_command") as mock_run:
+                with self.assertRaisesRegex(self.checker.ContractError, "cannot execute uv"):
+                    self.checker.write(root, "nonexistent-uv-binary")
+                mock_run.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

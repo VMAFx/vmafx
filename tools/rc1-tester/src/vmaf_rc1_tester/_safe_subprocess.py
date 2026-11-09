@@ -268,6 +268,23 @@ def executable_argument(executable: Arg, root: Arg) -> str:
     return os.path.normpath((Path(root) / path).absolute())
 
 
+def resolve_executable(executable: Arg, root: Arg | None = None) -> str:
+    """Return the absolute, runnable path `run()` would execute for `executable`.
+
+    Resolves a bare name on PATH or a relative path against `root` (defaulting
+    to the current working directory).
+
+    Returns:
+        The validated, absolute path to the runnable executable file.
+
+    Raises:
+        CommandValidationError: If the executable is missing, not a regular file,
+            or not executable.
+    """
+    value = executable_argument(executable, root if root is not None else Path.cwd())
+    return _resolve_allowed_executable(value, (value,), os.environ.get("PATH", os.defpath))
+
+
 def _validated_argv(
     argv: Sequence[Arg], allowed_executables: Collection[Arg], search_path: str
 ) -> tuple[str, ...]:

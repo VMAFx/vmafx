@@ -14,12 +14,19 @@ and only after the stand-in has finished.
 
 from __future__ import annotations
 
+import io
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.ci import run_meson_test
+from scripts.lib.safe_subprocess import CommandValidationError
 
 RUNNER = Path(__file__).resolve().parents[2] / "scripts" / "ci" / "run_meson_test.py"
 DELAY_SECONDS = 1.0
@@ -76,6 +83,21 @@ class RunMesonTestExitStatusTest(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 127)
         self.assertIn("Meson executable not found", completed.stderr)
+
+    def test_run_and_wait_missing_meson_returns_127(self) -> None:
+        """_run_and_wait returns 127 when resolve_executable cannot find Meson."""
+        stderr_buffer = io.StringIO()
+        with (
+            mock.patch.object(
+                run_meson_test,
+                "resolve_executable",
+                side_effect=CommandValidationError("meson not found"),
+            ),
+            mock.patch("sys.stderr", stderr_buffer),
+        ):
+            status = run_meson_test._run_and_wait(["meson", "test"])
+            self.assertEqual(status, 127)
+        self.assertIn("Meson executable not found", stderr_buffer.getvalue())
 
 
 if __name__ == "__main__":

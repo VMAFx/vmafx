@@ -14,29 +14,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(
-    0,
-    str(
-        next(
-            (
-                p
-                for base in (
-                    Path(__file__).resolve().parents[2],
-                    Path(os.environ.get("PWD", "")),
-                    Path.cwd(),
-                )
-                for p in (base, *base.parents)
-                if (p / "scripts/lib/safe_subprocess.py").is_file()
-            ),
-            Path(__file__).resolve().parents[2],
-        )
-    ),
-)
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.lib.safe_subprocess import (
     CommandOutputLimitExceeded,
     CommandTimedOut,
     CommandValidationError,
+    resolve_executable,
 )
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -187,12 +171,10 @@ def corrected_model(source: Path) -> bytes:
 
 def resolve_cppcheck(binary: str) -> str:
     """Resolve the Cppcheck binary once to an absolute executable path."""
-    resolved = shutil.which(binary)
-    if resolved is None and Path(binary).is_absolute() and os.access(binary, os.X_OK):
-        resolved = binary
-    if resolved is None:
-        raise ValueError(f"Cppcheck binary is unavailable or not executable: {binary}")
-    return str(Path(resolved).resolve())
+    try:
+        return resolve_executable(binary)
+    except CommandValidationError as error:
+        raise ValueError(f"Cppcheck binary is unavailable or not executable: {binary}") from error
 
 
 def validate_model(binary: str, model: Path, directory: Path) -> None:

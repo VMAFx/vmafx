@@ -399,7 +399,7 @@ int main(void) {
         output = self.directory / "generated.cfg"
         with self.assertRaisesRegex(
             ValueError,
-            "Cppcheck binary is unavailable or not executable|cannot execute Cppcheck binary",
+            "Cppcheck binary is unavailable or not executable",
         ):
             WRITE_MODEL(str(missing), output)
         self.assertFalse(output.exists())

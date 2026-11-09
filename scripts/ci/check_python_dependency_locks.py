@@ -34,6 +34,7 @@ from scripts.lib.safe_subprocess import (
     CommandResult,
     CommandTimedOut,
     CommandValidationError,
+    resolve_executable,
 )
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -1975,8 +1976,12 @@ def stamp_lock(
 
 def write(root: Path, uv_binary: str) -> int:
     """Regenerate all manifest lockfiles using uv and verify the updated locks."""
+    try:
+        resolved_uv = resolve_executable(uv_binary, root=root)
+    except CommandValidationError as error:
+        raise ContractError(f"cannot execute uv ({uv_binary}): {error}") from error
     manifest = load_manifest(root)
-    actual = uv_version(uv_binary)
+    actual = uv_version(resolved_uv)
     if actual != manifest["uv_version"]:
         raise ContractError(
             f"uv {actual} does not match reviewed generator {manifest['uv_version']}"
@@ -1996,7 +2001,7 @@ def write(root: Path, uv_binary: str) -> int:
                 )
             generated = temp_root / f"{index}.txt"
             command = ["pip", "compile", *compile_args, "-o", str(generated)]
-            result = _run_uv(uv_binary, command, cwd=root)
+            result = _run_uv(resolved_uv, command, cwd=root)
             if result.returncode != 0:
                 detail = result.stderr.strip() or result.stdout.strip()
                 raise ContractError(f"uv failed for {raw_entry['output']}: {detail}")

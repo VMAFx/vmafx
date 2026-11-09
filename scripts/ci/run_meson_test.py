@@ -7,10 +7,14 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import subprocess
 import sys
 from collections.abc import MutableMapping, Sequence
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import CommandValidationError, resolve_executable
 
 CREDENTIAL_ENV_VARS = (
     "GITHUB_PERSONAL_ACCESS_TOKEN",
@@ -96,8 +100,9 @@ def _run_and_wait(command: list[str]) -> int:
     (ADR-1364). The child inherits this process's already-sanitized
     environment block; no mapping is passed or copied.
     """
-    executable = shutil.which(command[0])
-    if executable is None:
+    try:
+        executable = resolve_executable(command[0])
+    except CommandValidationError:
         print("run_meson_test.py: Meson executable not found", file=sys.stderr)
         return 127
     try:
