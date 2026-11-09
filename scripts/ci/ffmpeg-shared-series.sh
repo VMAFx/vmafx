@@ -16,8 +16,10 @@
 # patch-stack replay (scripts/ci/ffmpeg_patch_stack.py), the smoke build
 # (ffmpeg-patches/test/build-and-run.sh), the FFmpeg workflows and the four
 # container builds all call it. It needs bash, git, tar, a sha256 tool and
-# curl or wget; nothing else, so it runs in a builder stage, on macOS and in
-# the MSYS2 shell of the Windows leg.
+# curl or wget; a failed github.com release download falls back to gh release
+# download (forge API, GH_TOKEN or the gh login), the same checks apply after
+# it; nothing else, so it runs in a builder stage, on macOS and in the MSYS2
+# shell of the Windows leg.
 #
 # Usage:
 #   ffmpeg-shared-series.sh fetch DEST
@@ -47,6 +49,8 @@
 #   FFMPEG_FIX_SERIES_SUMS_URL  SHA256SUMS location instead of the release's (a
 #                             file:// URL in the tests); without it, a
 #                             FFMPEG_FIX_SERIES_URL override skips that check
+#   FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS  timeout in seconds for downloads (default:
+#                             120); overrides DOWNLOAD_SECONDS
 #   FFMPEG_FIX_SERIES_CACHE   where the verified tarball is kept (default:
 #                             the user cache); `none` keeps nothing, for an
 #                             image build. The series is unpacked afresh from
@@ -60,7 +64,9 @@ set -euo pipefail
 export LC_ALL=C
 
 readonly PROG="ffmpeg-shared-series"
-readonly DOWNLOAD_SECONDS=120
+DOWNLOAD_SECONDS=120
+# Bound for the fallback stream; the v0.7.0 tarball and SUMS are far smaller.
+readonly DOWNLOAD_MAX_BYTES=67108864
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # What this run created and removes on exit.
 work_dir=""
@@ -85,6 +91,22 @@ die() { # die STATUS MESSAGE...
 
 note() { printf '%s: %s\n' "$PROG" "$*" >&2; }
 
+# Sets DOWNLOAD_SECONDS from FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS (1 to 999999) or 120.
+validate_download_seconds() {
+  local val="${FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS:-}"
+  if [ -n "$val" ]; then
+    if [[ "$val" =~ ^[1-9][0-9]{0,5}$ ]]; then
+      DOWNLOAD_SECONDS="$val"
+    else
+      die 2 "FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS must match ^[1-9][0-9]{0,5}$: $val"
+    fi
+  else
+    DOWNLOAD_SECONDS=120
+  fi
+}
+validate_download_seconds
+
+# Reads build-config.env, checks the series pins and sets the release and tarball URLs.
 load_config() {
   local config="${BUILD_CONFIG:-}" candidate
   if [ -z "$config" ]; then
@@ -99,6 +121,7 @@ load_config() {
     [ -f "$config" ] || die 2 "build configuration not found: $config"
     # shellcheck disable=SC1090  # the repository's own pin file
     . "$config"
+    validate_download_seconds
   fi
   local key
   for key in FFMPEG_FIX_SERIES_REPO FFMPEG_FIX_SERIES_TAG FFMPEG_FIX_SERIES_SHA256 \
@@ -129,6 +152,68 @@ sha256_of() { # sha256_of FILE
   fi
 }
 
+# Runs COMMAND and stops it with TERM after SECONDS; returns its status.
+run_with_deadline() { # run_with_deadline SECONDS COMMAND [ARG...]
+  local seconds="$1"
+  shift
+  "$@" &
+  local child=$!
+  (
+    trap 'kill $(jobs -p) 2>/dev/null; exit 0' TERM
+    sleep "$seconds" &
+    wait "$!" && kill -TERM "$child" 2>/dev/null
+  ) </dev/null >/dev/null 2>&1 &
+  local watcher=$! status=0
+  wait "$child" || status=$?
+  if kill -TERM "$watcher" 2>/dev/null && ! wait "$watcher" 2>/dev/null; then
+    : # stopped before its trap; no sleep to stop
+  fi
+  return "$status"
+}
+
+# Fetches a failed github.com release asset with gh release download, capped in size.
+release_fallback() { # release_fallback URL DESTINATION
+  local url=$1 destination=$2
+  local regex='^https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/releases/download/([A-Za-z0-9_.+-]+)/([A-Za-z0-9_.+-]+)$'
+  if [[ ! "$url" =~ $regex ]]; then
+    return 1
+  fi
+  local repo="${BASH_REMATCH[1]}" tag="${BASH_REMATCH[2]}" asset="${BASH_REMATCH[3]}"
+  if ! command -v gh >/dev/null 2>&1; then
+    note "download failed: $url; no gh on PATH for fallback"
+    return 1
+  fi
+  note "download failed: $url; fetching it with gh release download (forge API)"
+  local -a statuses=(1 1)
+  if run_with_deadline "$DOWNLOAD_SECONDS" gh release download "$tag" --repo "$repo" --pattern "$asset" --output - |
+    head -c "$((DOWNLOAD_MAX_BYTES + 1))" >"$destination"; then
+    statuses=("${PIPESTATUS[@]}")
+  else
+    statuses=("${PIPESTATUS[@]}")
+  fi
+  if [ -f "$destination" ]; then
+    local size
+    size="$(wc -c <"$destination")"
+    size="${size//[[:space:]]/}"
+    if [ "$size" -gt "$DOWNLOAD_MAX_BYTES" ]; then
+      rm -f -- "$destination"
+      note "download failed: $url exceeded maximum size ($DOWNLOAD_MAX_BYTES bytes)"
+      return 1
+    fi
+  fi
+  if [ "${statuses[0]}" -ne 0 ] || [ "${statuses[1]}" -ne 0 ]; then
+    rm -f -- "$destination"
+    note "gh release download failed (status ${statuses[0]}): $url"
+    return 1
+  fi
+  note "fetched $url with gh release download"
+  if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+    printf '::warning title=Release download fallback::%s failed; fetched with gh release download\n' "$url"
+  fi
+  return 0
+}
+
+# Fetches URL to DESTINATION with curl or wget, then the forge API fallback.
 download() { # download URL DESTINATION
   local url=$1 destination=$2
   case "$url" in
@@ -139,9 +224,11 @@ download() { # download URL DESTINATION
       if command -v curl >/dev/null 2>&1; then
         curl --fail --silent --show-error --location --retry 3 \
           --max-time "$DOWNLOAD_SECONDS" --output "$destination" "$url" ||
+          release_fallback "$url" "$destination" ||
           die 1 "download failed: $url"
       elif command -v wget >/dev/null 2>&1; then
         wget --quiet --tries=3 --timeout="$DOWNLOAD_SECONDS" --output-document="$destination" "$url" ||
+          release_fallback "$url" "$destination" ||
           die 1 "download failed: $url"
       else
         die 2 "curl or wget is required to download $url"
