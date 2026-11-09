@@ -22,6 +22,7 @@ because nothing connected the other fourteen to it.
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import re
@@ -33,6 +34,7 @@ import unittest
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, ClassVar
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
@@ -364,7 +366,7 @@ class CudaPinCoverage(unittest.TestCase):
         selected = [
             path
             for path in subprocess.check_output(  # noqa: S603 -- fixed read-only Git command
-                [GIT, "-C", str(ROOT), "ls-files"], text=True
+                [GIT, "-C", str(ROOT), "ls-files"], text=True, timeout=60
             ).splitlines()
             if any(pattern.search(path) for pattern in patterns)
         ]
@@ -405,7 +407,7 @@ class CudaPinGate(unittest.TestCase):
 
     def git(self, *args: str) -> None:
         subprocess.run(  # noqa: S603 -- fixed Git commands in a disposable fixture
-            [GIT, *args], cwd=self.repo, env=self.env, check=True, capture_output=True
+            [GIT, *args], cwd=self.repo, env=self.env, check=True, capture_output=True, timeout=60
         )
 
     def gate(self, *args: str) -> subprocess.CompletedProcess[str]:
@@ -415,6 +417,7 @@ class CudaPinGate(unittest.TestCase):
             env=self.env,
             capture_output=True,
             text=True,
+            timeout=60,
         )
 
     def pin(self, name: str) -> str:
@@ -573,6 +576,32 @@ class CudaPinGate(unittest.TestCase):
         )
         self.git("add", "--", "build-config.env")
         self.assertEqual(self.gate().returncode, 2)
+
+    def test_git_timeout_returns_two_with_error_on_stderr(self) -> None:
+        """A Git timeout must return exit code 2 and print the error on stderr."""
+        with (
+            mock.patch(
+                "cuda_pin_lockstep.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd=[GIT, "rev-parse"], timeout=60),
+            ),
+            mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+        ):
+            code = MODULE.main([])
+        self.assertEqual(code, 2)
+        self.assertIn("check-cuda-pin-lockstep: error:", stderr.getvalue())
+
+    def test_git_failure_returns_two_with_error_on_stderr(self) -> None:
+        """A Git failure (CalledProcessError) must return exit code 2."""
+        with (
+            mock.patch(
+                "cuda_pin_lockstep.subprocess.run",
+                side_effect=subprocess.CalledProcessError(128, [GIT, "rev-parse"]),
+            ),
+            mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+        ):
+            code = MODULE.main([])
+        self.assertEqual(code, 2)
+        self.assertIn("check-cuda-pin-lockstep: error:", stderr.getvalue())
 
 
 if __name__ == "__main__":

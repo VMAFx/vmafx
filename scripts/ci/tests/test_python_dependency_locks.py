@@ -19,6 +19,10 @@ from pathlib import Path
 from typing import Any, cast
 from unittest import mock
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import run as run_command
+
 ROOT = Path(__file__).resolve().parents[3]
 CHECKER = ROOT / "scripts/ci/check_python_dependency_locks.py"
 
@@ -1157,6 +1161,7 @@ class RepositoryContractTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=60,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("python dependency locks: OK", result.stdout)
@@ -1267,6 +1272,7 @@ class RepositoryContractTests(unittest.TestCase):
             text=True,
             capture_output=True,
             check=False,
+            timeout=60,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -2197,6 +2203,69 @@ class FingerprintTests(unittest.TestCase):
                 self.assertEqual(before, self.checker.entry_digest(root, entry))
                 source.write_text(PYPROJECT.replace("numpy", "scipy"), encoding="utf-8")
                 self.assertNotEqual(before, self.checker.entry_digest(root, entry))
+
+
+class UvExecutionAndCompileArgsTests(unittest.TestCase):
+    """Verify uv execution through safe_subprocess and compile_args validation."""
+
+    def setUp(self) -> None:
+        self.checker = load_checker()
+
+    def test_missing_uv_executable_raises_contract_error(self) -> None:
+        """A missing uv executable raises ContractError on version inspection."""
+        with self.assertRaises(self.checker.ContractError):
+            self.checker.uv_version("nonexistent-uv-binary")
+
+    def test_missing_uv_cli_write_exits_one_without_traceback(self) -> None:
+        """CLI write with missing uv binary exits 1 and prints clean error."""
+        result = run_command(
+            [sys.executable, str(CHECKER), "--root", str(ROOT), "write", "--uv", "nonexistent-uv"],
+            allowed_executables=(sys.executable,),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=30,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR:", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_malformed_compile_args_raises_contract_error(self) -> None:
+        """compile_args that is not a list of str must raise ContractError."""
+        cases = [
+            ("string", "not-a-list"),
+            ("none", None),
+            ("int-item", [123]),
+            ("mixed", ["arg", 456]),
+        ]
+        for name, bad_args in cases:
+            with self.subTest(case=name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    manifest_dir = root / "requirements" / "locks"
+                    manifest_dir.mkdir(parents=True)
+                    manifest_file = manifest_dir / "manifest.json"
+                    entry = {
+                        "output": "pkg/lock.txt",
+                        "inputs": ["pkg/requirements.in"],
+                        "compile_args": bad_args,
+                    }
+                    manifest_file.write_text(
+                        json.dumps({"uv_version": "0.12.18", "locks": [entry]}),
+                        encoding="utf-8",
+                    )
+                    with (
+                        mock.patch.object(self.checker, "uv_version", return_value="0.12.18"),
+                        mock.patch.object(
+                            self.checker,
+                            "load_manifest",
+                            return_value={"uv_version": "0.12.18", "locks": [entry]},
+                        ),
+                    ):
+                        with self.assertRaisesRegex(
+                            self.checker.ContractError, "compile_args must be a list of str"
+                        ):
+                            self.checker.write(root, "uv")
 
 
 if __name__ == "__main__":

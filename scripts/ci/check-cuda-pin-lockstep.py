@@ -45,7 +45,7 @@ is a build failure rather than a silent copy.
 apt metadata, which requires a live NVIDIA repository/manifest check.
 
 Usage: check-cuda-pin-lockstep.py [--write]
-Exit: 0 clean, 1 drift or an unrecognised site, 2 the config is missing.
+Exit: 0 clean, 1 drift or an unrecognised site, 2 missing config or CUDA_VERSION, or a Git failure or timeout.
 """
 
 from __future__ import annotations
@@ -57,6 +57,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Sequence
 
 GIT = shutil.which("git") or "/usr/bin/git"
 GIT_TIMEOUT_S = 60
@@ -322,15 +323,15 @@ def rewrite(root: Path, sites: list[Site], version: str) -> list[str]:
     return edits
 
 
-def main() -> int:
-    """Check every CUDA pin site against CUDA_VERSION, or rewrite them with --write."""
+def _main(argv: Sequence[str] | None = None) -> int:
+    """Internal implementation checking CUDA pin sites against CUDA_VERSION."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--write",
         action="store_true",
         help="rewrite the derived CUDA spellings from CUDA_VERSION",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     root = Path(
         subprocess.run(  # noqa: S603 -- fixed read-only Git command
@@ -377,6 +378,15 @@ def main() -> int:
         return 1
     print(f"check-cuda-pin-lockstep: OK ({len(sites)} sites on CUDA {version})")
     return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Check every CUDA pin site against CUDA_VERSION, catching Git failures."""
+    try:
+        return _main(argv)
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+        print(f"check-cuda-pin-lockstep: error: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

@@ -23,9 +23,19 @@ import stat
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, cast
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import (
+    CommandOutputLimitExceeded,
+    CommandResult,
+    CommandTimedOut,
+    CommandValidationError,
+)
+from scripts.lib.safe_subprocess import run as run_command
 
 try:
     yaml: Any = importlib.import_module("yaml")
@@ -1897,18 +1907,42 @@ def check(root: Path) -> int:
     return 0
 
 
-def uv_version(binary: str) -> str:
-    """Execute the uv binary and return its parsed version string."""
+def _run_uv(
+    binary: str,
+    args: Sequence[str],
+    cwd: Path | None = None,
+    *,
+    timeout_seconds: float = SUBPROCESS_TIMEOUT_S,
+    max_output_bytes: int = 16 * 1_048_576,
+) -> CommandResult:
+    """Execute uv via safe_subprocess with allowed_executables validation."""
     try:
-        result = subprocess.run(  # noqa: S603
-            [binary, "--version"],
-            check=True,
+        return run_command(
+            [binary, *args],
+            allowed_executables=(binary,),
+            cwd=cwd,
             text=True,
             capture_output=True,
-            timeout=SUBPROCESS_TIMEOUT_S,
+            check=False,
+            timeout_seconds=timeout_seconds,
+            max_output_bytes=max_output_bytes,
         )
-    except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired) as error:
-        raise ContractError(f"cannot execute {binary} --version: {error}") from error
+    except (CommandValidationError, OSError) as error:
+        raise ContractError(f"cannot execute uv ({binary}): {error}") from error
+    except CommandTimedOut as error:
+        raise ContractError(f"uv timed out after {timeout_seconds:g}s: {error}") from error
+    except CommandOutputLimitExceeded as error:
+        raise ContractError(f"uv output exceeded {max_output_bytes} bytes: {error}") from error
+
+
+def uv_version(binary: str) -> str:
+    """Execute the uv binary and return its parsed version string."""
+    result = _run_uv(binary, ["--version"], cwd=None)
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip()
+        raise ContractError(
+            f"cannot execute {binary} --version: uv exited {result.returncode} ({detail})"
+        )
     match = re.fullmatch(r"uv ([0-9]+(?:\.[0-9]+){2})(?: .*)?\n?", result.stdout)
     if not match:
         raise ContractError(f"cannot parse {binary} --version output: {result.stdout!r}")
@@ -1952,28 +1986,17 @@ def write(root: Path, uv_binary: str) -> int:
         for index, raw_entry in enumerate(manifest["locks"]):
             if not isinstance(raw_entry, dict):
                 raise ContractError("manifest lock entry is not an object")
-            generated = temp_root / f"{index}.txt"
-            command = [
-                uv_binary,
-                "pip",
-                "compile",
-                *raw_entry["compile_args"],
-                "-o",
-                str(generated),
-            ]
-            try:
-                result = subprocess.run(  # noqa: S603
-                    command,
-                    cwd=root,
-                    text=True,
-                    capture_output=True,
-                    check=False,
-                    timeout=SUBPROCESS_TIMEOUT_S,
-                )
-            except subprocess.TimeoutExpired as exc:
+            compile_args = raw_entry.get("compile_args")
+            if not isinstance(compile_args, list) or not all(
+                isinstance(arg, str) for arg in compile_args
+            ):
+                target = raw_entry.get("output", index)
                 raise ContractError(
-                    f"uv timed out after {SUBPROCESS_TIMEOUT_S}s for {raw_entry['output']}"
-                ) from exc
+                    f"manifest lock entry {target!r} compile_args must be a list of str"
+                )
+            generated = temp_root / f"{index}.txt"
+            command = ["pip", "compile", *compile_args, "-o", str(generated)]
+            result = _run_uv(uv_binary, command, cwd=root)
             if result.returncode != 0:
                 detail = result.stderr.strip() or result.stdout.strip()
                 raise ContractError(f"uv failed for {raw_entry['output']}: {detail}")

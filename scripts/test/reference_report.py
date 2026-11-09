@@ -41,11 +41,20 @@ hosts). Exit 0 iff every row is within tolerance.
 
 import json
 import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import (
+    CommandOutputLimitExceeded,
+    CommandTimedOut,
+    CommandValidationError,
+    executable_argument,
+)
+from scripts.lib.safe_subprocess import run as run_command
 
 VMAF = os.environ.get("VMAF_BIN", "/src/vmafx/build/tools/vmaf")
 VMAF_TIMEOUT_S = 300
@@ -106,8 +115,9 @@ XBACKEND_METRICS = [
 def run(ref: str, dist: str, w: int, h: int, backend: str) -> dict[str, Any] | None:
     """Run vmaf for one pair on one backend; return pooled_metrics or None."""
     out = Path(tempfile.gettempdir()) / ("reference_report_%s.json" % backend)
+    vmaf_bin = executable_argument(VMAF, Path.cwd())
     cmd = [
-        VMAF,
+        vmaf_bin,
         "--backend",
         backend,
         "-r",
@@ -130,17 +140,20 @@ def run(ref: str, dist: str, w: int, h: int, backend: str) -> dict[str, Any] | N
         str(out),
         "--json",
     ]
-    # cmd is built from the fixed VMAF binary path and the in-file PAIRS table.
     try:
-        r = subprocess.run(  # noqa: S603
+        r = run_command(
             cmd,
+            allowed_executables=(vmaf_bin,),
             capture_output=True,
             text=True,
             check=False,
-            timeout=VMAF_TIMEOUT_S,
+            timeout_seconds=VMAF_TIMEOUT_S,
         )
-    except subprocess.TimeoutExpired as e:
+    except (CommandTimedOut, TimeoutError) as e:
         sys.stderr.write(f"  [report] {backend} backend timed out after {VMAF_TIMEOUT_S}s: {e}\n")
+        return None
+    except (CommandValidationError, CommandOutputLimitExceeded, OSError) as e:
+        sys.stderr.write(f"  [report] {backend} backend failed to run: {e}\n")
         return None
     if r.returncode != 0:
         sys.stderr.write(
