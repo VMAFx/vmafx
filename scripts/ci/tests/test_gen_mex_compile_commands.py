@@ -149,6 +149,7 @@ class StubsAreSufficient(unittest.TestCase):
         for src in gen.mex_sources(REPO):
             entry = gen.entry_for(src, REPO, REPO)
             argv = [*shlex.split(entry["command"])[:-2], "-fsyntax-only"]
+            self.assertEqual(argv[0], "cc", argv)  # entry_for builds every command on cc
             done = subprocess.run(  # noqa: S603
                 argv, capture_output=True, text=True, check=False, timeout=CC_TIMEOUT_S
             )
@@ -159,6 +160,7 @@ class StubsAreSufficient(unittest.TestCase):
         for src in gen.STANDALONE_SOURCES:
             entry = gen.entry_for(src, REPO, REPO)
             argv = [*shlex.split(entry["command"])[:-2], "-fsyntax-only"]
+            self.assertEqual(argv[0], "cc", argv)  # entry_for builds every command on cc
             done = subprocess.run(  # noqa: S603
                 argv, capture_output=True, text=True, check=False, timeout=CC_TIMEOUT_S
             )
