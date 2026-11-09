@@ -48,7 +48,9 @@ if str(REPO_ROOT / "ai" / "src") not in sys.path:
 
 from aiutils.run_manifest import write_run_manifest  # noqa: E402
 
-VMAF_TIMEOUT_S = 60
+# Bound = 10x the slowest measured run, rounded up: CPU ciede on a 1080p
+# 300-frame pair took 168.31 s. The GPU legs are not measured.
+VMAF_TIMEOUT_S = 1800
 
 # Reuse the parity gate's authoritative feature ↔ metric-name table and
 # backend ↔ extractor-suffix table. Importing from a sibling top-level

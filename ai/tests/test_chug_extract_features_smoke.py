@@ -43,6 +43,7 @@ from scripts.lib import vmaftest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "chug_extract_features.py"
+# Bound = max(60, 10x the slowest measured run): each call took 0.6 s or less.
 FFMPEG_TIMEOUT_S = 60
 
 

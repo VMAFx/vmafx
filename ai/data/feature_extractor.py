@@ -41,7 +41,9 @@ DEFAULT_FEATURES: tuple[str, ...] = (
 )
 
 DEFAULT_VMAF_BINARY = Path("core") / "build-cpu" / "tools" / "vmaf"
-VMAF_TIMEOUT_S = 60
+# Bound = 10x the slowest measured run, rounded up: FULL_FEATURES on a 1080p
+# 300-frame pair took 229.38 s (default features 7.95 s).
+VMAF_TIMEOUT_S = 3600
 
 # Full feature set the fork's extractors can produce (per Research-0026,
 # extended by ADR-0559 to include SpEED chroma/temporal features).

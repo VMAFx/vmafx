@@ -31,6 +31,8 @@ if str(AI_SRC) not in sys.path:
 
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
+# urlopen applies this per socket operation, so it bounds a stall, not a whole
+# download. Not measured: it depends on the network.
 API_TIMEOUT_S = 60
 
 GCS_LIST_URL = "https://storage.googleapis.com/storage/v1/b/ugc-dataset/o"

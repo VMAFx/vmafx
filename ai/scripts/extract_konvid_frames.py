@@ -44,6 +44,8 @@ if str(REPO_ROOT / "ai" / "src") not in sys.path:
 
 from aiutils.run_manifest import write_run_manifest  # noqa: E402
 
+# Bound = max(60, 10x the slowest measured run): one middle-frame extract took
+# 0.20 s on a 1080p clip.
 FFMPEG_TIMEOUT_S = 60
 
 MANIFEST = REPO_ROOT / "ai" / "src" / "vmaf_train" / "data" / "manifests" / "konvid-1k.yaml"

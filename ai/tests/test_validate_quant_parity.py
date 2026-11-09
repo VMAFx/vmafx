@@ -30,6 +30,7 @@ from ai.scripts.validate_quant_parity import (  # noqa: E402
     _load_features,
 )
 
+# Bound = max(60, 10x the slowest measured run): each call took 0.6 s or less.
 SCRIPT_TIMEOUT_S = 60
 
 

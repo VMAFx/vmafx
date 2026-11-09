@@ -42,6 +42,7 @@ from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: 
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 from vmaf_train.op_allowlist import check_model  # noqa: E402  # type: ignore[import-not-found]
 
+# Bound = max(60, 10x the slowest measured run): validate_model_registry took 0.53 s.
 SCRIPT_TIMEOUT_S = 60
 
 

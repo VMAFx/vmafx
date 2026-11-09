@@ -19,6 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "ai" / "scripts"
 EXPECTED_BENCHMARK_CALLS = 9
 EXPECTED_FALLBACK_WARNINGS = 6
+# Bound = max(60, 10x the slowest measured run): each call took 0.6 s or less.
 SCRIPT_TIMEOUT_S = 60
 
 

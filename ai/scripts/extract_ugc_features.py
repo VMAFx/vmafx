@@ -49,6 +49,8 @@ from ai.data.feature_extractor import (  # noqa: E402
 )
 from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
 
+# Bounds = max(60, 10x the slowest measured run): at the default --max-height 360
+# and --max-frames 300, ffprobe took 0.20 s, decode 0.29 s, vmaf 4.20 s.
 FFMPEG_TIMEOUT_S = 60
 VMAF_TIMEOUT_S = 60
 

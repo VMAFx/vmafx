@@ -122,8 +122,11 @@ else:
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True, include_vmaf_tune_src=True)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 DEFAULT_CHUG_SPLIT_SEED = "chug-hdr-v1"
+# Bounds = max(60, 10x the slowest measured run), rounded up: on a CHUG 1080p
+# 10-bit 301-frame clip, probe took 0.16 s, decode 1.25 s and vmaf at the
+# default --threads 2 took 123.81 s.
 FFMPEG_TIMEOUT_S = 60
-VMAF_TIMEOUT_S = 60
+VMAF_TIMEOUT_S = 1800
 
 
 def _load_runtime_helpers() -> tuple[Any, ...]:

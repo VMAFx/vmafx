@@ -85,7 +85,9 @@ from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: 
 from aiutils.file_utils import sha256  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
-SCRIPT_TIMEOUT_S = 300
+# Not measured: tf2onnx was not installed on the measuring host. The export runs
+# once per weights swap, so the bound leaves room for a slow conversion.
+SCRIPT_TIMEOUT_S = 1800
 
 # Pinned upstream provenance — bumping these is a deliberate weights swap.
 UPSTREAM_REPO = "https://github.com/soCzech/TransNetV2"

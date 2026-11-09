@@ -56,6 +56,8 @@ from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: 
 from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
+# Bound = max(60, 10x the slowest measured run): the header ffprobe took 0.15 s
+# on a 1080p clip and 0.03 s on a KonViD clip.
 FFMPEG_TIMEOUT_S = 60
 
 

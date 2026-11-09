@@ -17,6 +17,7 @@ pd = pytest.importorskip("pandas")
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_DIR = _REPO_ROOT / "ai" / "scripts"
 _SCRIPT_PATH = _SCRIPT_DIR / "enrich_k150k_parquet_metadata.py"
+# Bound = max(60, 10x the slowest measured run): each call took 0.6 s or less.
 SCRIPT_TIMEOUT_S = 60
 
 
