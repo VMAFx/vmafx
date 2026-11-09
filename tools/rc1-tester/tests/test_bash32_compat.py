@@ -15,12 +15,17 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 SCRIPT_TIMEOUT_S = 60
 SUBPROCESS_TIMEOUT_S = 60
+
+BASH = shutil.which("bash")
+DOCKER = shutil.which("docker")
+SHELLCHECK = shutil.which("shellcheck")
 
 _ROOT = Path(__file__).resolve().parents[3]
 BUILD_SH = _ROOT / "scripts" / "ci" / "build-macos-tester-bundle.sh"
@@ -83,11 +88,10 @@ def test_the_scan_catches_what_broke_the_runner() -> None:
 def test_run_sh_is_posix_sh() -> None:
     """Assert run.sh starts with a POSIX sh shebang and passes shellcheck."""
     assert RUN_SH.read_text(encoding="utf-8").startswith("#!/bin/sh\n")
-    shellcheck = shutil.which("shellcheck")
-    if shellcheck is None:
+    if SHELLCHECK is None:
         pytest.skip("shellcheck not installed")
     result = subprocess.run(
-        [shellcheck, "--shell=sh", str(RUN_SH)],
+        [SHELLCHECK, "--shell=sh", str(RUN_SH)],
         capture_output=True,
         text=True,
         check=False,
@@ -101,14 +105,17 @@ def test_run_sh_is_posix_sh() -> None:
 
 def bash32_available() -> bool:
     """Return True if docker is installed and the bash:3.2 image is available."""
-    if shutil.which("docker") is None:
+    if DOCKER is None:
         return False
-    probe = subprocess.run(
-        ["docker", "image", "inspect", "bash:3.2"],
-        capture_output=True,
-        check=False,
-        timeout=SUBPROCESS_TIMEOUT_S,
-    )
+    try:
+        probe = subprocess.run(
+            [DOCKER, "image", "inspect", "bash:3.2"],
+            capture_output=True,
+            check=False,
+            timeout=SUBPROCESS_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        return False
     return probe.returncode == 0
 
 
@@ -124,6 +131,25 @@ def bash32_skip_reason(available: bool, required: bool) -> str | None:
     if required:
         pytest.fail("VMAFX_REQUIRE_BASH32=1 but docker image bash:3.2 is not available")
     return "docker image bash:3.2 not available (docker pull bash:3.2)"
+
+
+def test_bash32_available_returns_false_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Assert bash32_available returns False when the docker probe raises TimeoutExpired."""
+
+    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(cmd=["docker"], timeout=SUBPROCESS_TIMEOUT_S)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(sys.modules[__name__], "DOCKER", "/usr/bin/docker")
+    assert bash32_available() is False
+
+
+def test_bash32_available_returns_false_when_docker_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Assert bash32_available returns False when docker executable is not found."""
+    monkeypatch.setattr(sys.modules[__name__], "DOCKER", None)
+    assert bash32_available() is False
 
 
 def test_required_bash32_never_skips() -> None:
@@ -160,18 +186,60 @@ def test_shasum_stub_reads_its_input_like_shasum(tmp_path: Path) -> None:
         "echo reached"
     )
     result = subprocess.run(
-        ["bash", "-c", late_writer], capture_output=True, text=True, check=False, timeout=60
+        [BASH, "-c", late_writer],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=SUBPROCESS_TIMEOUT_S,
     )
     assert result.returncode == 0 and "reached" in result.stdout, (result.returncode, result.stderr)
 
 
 def docker_bash32(mount: Path, command: str) -> subprocess.CompletedProcess:
     """Execute a command in a bash:3.2 docker container and return the process result."""
-    return subprocess.run(
-        ["docker", "run", "--rm", "--network", "none", "--user", f"{os.getuid()}:{os.getgid()}", "-v", f"{mount}:/w", "-v",
-         f"{_ROOT}:/repo:ro", "-w", "/repo", "bash:3.2", "bash", "-c", command],
-        capture_output=True, text=True, check=False, timeout=SUBPROCESS_TIMEOUT_S,
-    )  # fmt: skip
+    try:
+        return subprocess.run(
+            [
+                DOCKER,
+                "run",
+                "--rm",
+                "--network",
+                "none",
+                "--user",
+                f"{os.getuid()}:{os.getgid()}",
+                "-v",
+                f"{mount}:/w",
+                "-v",
+                f"{_ROOT}:/repo:ro",
+                "-w",
+                "/repo",
+                "bash:3.2",
+                "bash",
+                "-c",
+                command,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=SUBPROCESS_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"docker_bash32 timed out after {SUBPROCESS_TIMEOUT_S}s running {command!r}")
+
+
+def test_docker_bash32_raises_pytest_fail_on_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Assert docker_bash32 fails naming the bound in seconds and the command string."""
+    cmd = "echo slow_command_test"
+
+    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(cmd=["docker"], timeout=SUBPROCESS_TIMEOUT_S)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    pattern = rf"{SUBPROCESS_TIMEOUT_S}.*{re.escape(cmd)}"
+    with pytest.raises(pytest.fail.Exception, match=pattern):
+        docker_bash32(tmp_path, cmd)
 
 
 @needs_bash32

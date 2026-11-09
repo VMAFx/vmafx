@@ -18,6 +18,8 @@ from pathlib import Path
 import pytest
 
 FFMPEG_TIMEOUT_S = 60
+FFMPEG = shutil.which("ffmpeg")
+FFPROBE = shutil.which("ffprobe")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
@@ -172,13 +174,13 @@ def test_corpus_row_records_the_abr_rate_control(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(
-    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    FFMPEG is None or FFPROBE is None,
     reason="needs ffmpeg and ffprobe on PATH",
 )
 def test_real_x265_two_pass_at_a_crf_encodes(tmp_path: Path) -> None:
     """Assert two-pass libx265 encoding at a given CRF completes and produces output."""
     enc = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-encoders"],
+        [FFMPEG, "-hide_banner", "-encoders"],
         capture_output=True,
         text=True,
         check=False,
@@ -189,7 +191,7 @@ def test_real_x265_two_pass_at_a_crf_encodes(tmp_path: Path) -> None:
     yuv = tmp_path / "src.yuv"
     gen = subprocess.run(
         [
-            "ffmpeg",
+            FFMPEG,
             "-hide_banner",
             "-loglevel",
             "error",

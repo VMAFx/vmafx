@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 FFMPEG_TIMEOUT_S = 60
+FFMPEG = shutil.which("ffmpeg")
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
@@ -174,10 +175,10 @@ def test_probe_failure_is_an_error(tmp_path):
 
 def _ffmpeg_has(encoder: str) -> bool:
     """Return True if ffmpeg is available on PATH and supports the specified encoder."""
-    if shutil.which("ffmpeg") is None:
+    if FFMPEG is None:
         return False
     out = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-encoders"],
+        [FFMPEG, "-hide_banner", "-encoders"],
         capture_output=True,
         text=True,
         check=False,

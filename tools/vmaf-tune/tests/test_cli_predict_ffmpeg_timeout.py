@@ -11,6 +11,11 @@ import pytest
 from vmaftune import cli
 from vmaftune.per_shot import Shot
 
+UHD_4K = (3840, 2160)
+UHD_8K = (7680, 4320)
+SD_360P = (640, 360)
+FFMPEG_RATE = 0.04
+
 
 def test_predict_ffmpeg_success(monkeypatch: pytest.MonkeyPatch) -> None:
     """Finished run with returncode 0 is returned unchanged and observed timeout bound."""
@@ -83,20 +88,30 @@ def test_run_predict_ffmpeg_passes_timeout(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_frame_scaled_timeout_s_positive() -> None:
     """Positive helper cases at 4K resolution."""
-    assert cli._frame_scaled_timeout_s(300, 3840, 2160, 0.04) == 72.0
-    assert cli._frame_scaled_timeout_s(36000, 3840, 2160, 0.04) == 1500.0
+    assert cli._frame_scaled_timeout_s(300, *UHD_4K, FFMPEG_RATE) == cli.BOUND_FLOOR_S + 12.0
+    assert cli._frame_scaled_timeout_s(36000, *UHD_4K, FFMPEG_RATE) == cli.BOUND_FLOOR_S + 1440.0
 
 
 def test_frame_scaled_timeout_s_boundary() -> None:
     """Boundary helper cases with clamping for sub-4K resolutions and <= 0 frames."""
-    assert round(cli._frame_scaled_timeout_s(1, 640, 360, 0.04), 2) == 60.04
-    assert cli._frame_scaled_timeout_s(0, 640, 360, 0.04) == 60.0
-    assert cli._frame_scaled_timeout_s(-5, 640, 360, 0.04) == 60.0
+    assert (
+        round(cli._frame_scaled_timeout_s(1, *SD_360P, FFMPEG_RATE), 2) == cli.BOUND_FLOOR_S + 0.04
+    )
+    assert cli._frame_scaled_timeout_s(0, *SD_360P, FFMPEG_RATE) == float(cli.BOUND_FLOOR_S)
+    assert cli._frame_scaled_timeout_s(-5, *SD_360P, FFMPEG_RATE) == float(cli.BOUND_FLOOR_S)
 
 
 def test_frame_scaled_timeout_s_scaling() -> None:
     """Helper scaling for 8K resolution has 4 times the 4K area."""
-    assert cli._frame_scaled_timeout_s(300, 7680, 4320, 0.04) == 60.0 + 300 * 4 * 0.04
+    assert (
+        cli._frame_scaled_timeout_s(300, *UHD_8K, FFMPEG_RATE)
+        == cli.BOUND_FLOOR_S + 300 * 4 * FFMPEG_RATE
+    )
+
+
+def test_bound_floor_s_pins_sixty_second_minimum() -> None:
+    """Assert BOUND_FLOOR_S contract floor is exactly 60 seconds."""
+    assert cli.BOUND_FLOOR_S == 60
 
 
 def test_extract_shot_to_raw_yuv_records_timeout(

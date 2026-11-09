@@ -19,7 +19,10 @@ SCRIPT_TIMEOUT_S = 60
 _ROOT = Path(__file__).resolve().parents[3]
 RUN_SH = _ROOT / "tools" / "rc1-tester" / "image" / "macos" / "run.sh"
 
-pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
+BASH = shutil.which("bash")
+SH = shutil.which("sh")
+
+pytestmark = pytest.mark.skipif(BASH is None or SH is None, reason="needs bash and sh")
 
 
 def script(path: Path, body: str) -> None:
@@ -30,7 +33,7 @@ def script(path: Path, body: str) -> None:
 def test_run_sh_refuses_other_platforms() -> None:
     """Assert run.sh exits with code 64 when invoked on non-Apple-silicon platforms."""
     result = subprocess.run(
-        ["sh", str(RUN_SH)], capture_output=True, text=True, check=False, timeout=SCRIPT_TIMEOUT_S
+        [SH, str(RUN_SH)], capture_output=True, text=True, check=False, timeout=SCRIPT_TIMEOUT_S
     )
     assert result.returncode == 64 and "Apple silicon" in result.stderr
 
@@ -49,7 +52,7 @@ def test_run_sh_end_to_end_with_everything_skipped(tmp_path: Path) -> None:
     fake.mkdir()
     script(fake / "uname", 'case "$1" in -s) echo Darwin;; -m) echo arm64;; esac\n')
     env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}"}
-    args = ["sh", str(bundle / "run.sh")]
+    args = [SH, str(bundle / "run.sh")]
     for check_name in ("dispatch", "metal", "unit", "golden"):
         args += ["--skip", check_name]
     result = subprocess.run(
