@@ -6,6 +6,7 @@ package hwdevice
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -101,6 +102,61 @@ func TestQSVUploadFilter(t *testing.T) {
 			want := "format=" + tc.surface + ",hwupload=extra_hw_frames=64"
 			if got := QSVUploadFilter(tc.pixFmt, tc.extra); got != want {
 				t.Errorf("QSVUploadFilter(%q, %v) = %q, want %q", tc.pixFmt, tc.extra, got, want)
+			}
+		})
+	}
+}
+
+func TestAppendVideoFilter(t *testing.T) {
+	t.Parallel()
+	const upload = "format=p010le,hwupload=extra_hw_frames=64"
+	for _, tc := range []struct {
+		name   string
+		args   []string
+		filter string
+		want   []string
+	}{
+		{
+			name:   "drops -pix_fmt flag and value on hwupload",
+			args:   []string{"-pix_fmt", "p010le", "-profile:v", "main10"},
+			filter: upload,
+			want:   []string{"-vf", upload, "-profile:v", "main10"},
+		},
+		{
+			name:   "drops -pix_fmt:v form on hwupload",
+			args:   []string{"-pix_fmt:v", "p010le", "-profile:v", "main10"},
+			filter: upload,
+			want:   []string{"-vf", upload, "-profile:v", "main10"},
+		},
+		{
+			name:   "joins caller -vf chain and drops -pix_fmt",
+			args:   []string{"-vf", "scale=1280:720", "-pix_fmt", "p010le"},
+			filter: upload,
+			want:   []string{"-vf", "scale=1280:720," + upload},
+		},
+		{
+			name:   "empty filter returns args unchanged and keeps -pix_fmt",
+			args:   []string{"-pix_fmt", "p010le", "-profile:v", "main10"},
+			filter: "",
+			want:   []string{"-pix_fmt", "p010le", "-profile:v", "main10"},
+		},
+		{
+			name:   "filter without hwupload keeps -pix_fmt",
+			args:   []string{"-pix_fmt", "p010le"},
+			filter: "scale=1280:720",
+			want:   []string{"-vf", "scale=1280:720", "-pix_fmt", "p010le"},
+		},
+		{
+			name:   "boundary without pix_fmt adds filter prepended",
+			args:   []string{"-profile:v", "main10"},
+			filter: upload,
+			want:   []string{"-vf", upload, "-profile:v", "main10"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := AppendVideoFilter(tc.args, tc.filter)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("AppendVideoFilter(%v, %q) = %v, want %v", tc.args, tc.filter, got, tc.want)
 			}
 		})
 	}

@@ -313,16 +313,29 @@ def with_upload_filter(extra_params: Sequence[str], upload_filter: str) -> list[
     appended to the caller's chain (``scale=W:H,format=nv12,hwupload...``)
     rather than added as a second ``-vf`` that would drop the scale or
     the upload. Without a caller chain it becomes ``-vf <upload_filter>``.
-    An empty ``upload_filter`` returns the params unchanged.
+    An empty ``upload_filter`` returns the params unchanged. Output
+    ``-pix_fmt`` is dropped when uploading hardware frames so ffmpeg does
+    not attempt an unsupported conversion back to software frames.
     """
-    out = list(extra_params)
     if not upload_filter:
-        return out
-    for i in range(len(out) - 1):
-        if out[i] in ("-vf", "-filter:v"):
-            out[i + 1] = f"{out[i + 1]},{upload_filter}"
-            return out
-    return ["-vf", upload_filter, *out]
+        return list(extra_params)
+    if "hwupload" in upload_filter:
+        params: list[str] = []
+        i = 0
+        n = len(extra_params)
+        while i < n:
+            if extra_params[i] in ("-pix_fmt", "-pix_fmt:v"):
+                i += 2
+            else:
+                params.append(extra_params[i])
+                i += 1
+    else:
+        params = list(extra_params)
+    for i in range(len(params) - 1):
+        if params[i] in ("-vf", "-filter:v"):
+            params[i + 1] = f"{params[i + 1]},{upload_filter}"
+            return params
+    return ["-vf", upload_filter, *params]
 
 
 def _build_seek_args(req: EncodeRequest) -> list[str]:
