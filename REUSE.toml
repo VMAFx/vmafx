@@ -285,6 +285,15 @@ SPDX-FileCopyrightText = "2011, Tom Distler (http://tdistler.com)"
 SPDX-License-Identifier = "BSD-3-Clause"
 
 [[annotations]]
+path = [
+    "core/src/feature/iqa/AGENTS.md",
+    "core/src/feature/third_party/xiph/AGENTS.md",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Lusoris"
+SPDX-License-Identifier = "EUPL-1.2"
+
+[[annotations]]
 path = ["core/src/x86/cpuid.asm"]
 precedence = "closest"
 SPDX-FileCopyrightText = ["2018, VideoLAN and dav1d authors", "2018, Two Orioles, LLC"]

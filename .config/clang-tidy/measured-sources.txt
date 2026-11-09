@@ -827,6 +827,7 @@ core/test/test_sycl_ssim_parity.c
 core/test/test_sycl_ssimulacra2_math.c
 core/test/test_sycl_ssimulacra2_math_probe.cpp
 core/test/test_sycl_ssimulacra2_parity.c
+core/test/test_sycl_subsample_motion_vif.c
 core/test/test_sycl_twin_option_parity.c
 core/test/test_sycl_vif_min_dim.c
 core/test/test_sycl_vif_parity.c
