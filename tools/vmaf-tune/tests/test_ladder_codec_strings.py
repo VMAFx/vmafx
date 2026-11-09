@@ -174,16 +174,19 @@ def test_probe_failure_is_an_error(tmp_path):
 
 
 def _ffmpeg_has(encoder: str) -> bool:
-    """Return True if ffmpeg is available on PATH and supports the specified encoder."""
+    """Return True if ffmpeg supports the encoder; a probe that times out counts as unavailable."""
     if FFMPEG is None:
         return False
-    out = subprocess.run(
-        [FFMPEG, "-hide_banner", "-encoders"],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=FFMPEG_TIMEOUT_S,
-    ).stdout
+    try:
+        out = subprocess.run(
+            [FFMPEG, "-hide_banner", "-encoders"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=FFMPEG_TIMEOUT_S,
+        ).stdout
+    except subprocess.TimeoutExpired:
+        return False
     return any(line.split()[1:2] == [encoder] for line in out.splitlines())
 
 
@@ -195,6 +198,17 @@ def test_real_probe_names_the_level_of_each_geometry():
         for w, h, f in ((640, 360, 24.0), (1920, 1080, 30.0), (3840, 2160, 60.0))
     ]
     assert got == ["avc1.64001e", "avc1.640028", "avc1.640034"]
+
+
+def test_ffmpeg_has_returns_false_on_probe_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Assert _ffmpeg_has returns False when the ffmpeg probe raises TimeoutExpired."""
+
+    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(cmd=["ffmpeg"], timeout=FFMPEG_TIMEOUT_S)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(sys.modules[__name__], "FFMPEG", "/usr/bin/ffmpeg")
+    assert _ffmpeg_has("libx264") is False
 
 
 def test_ladder_cli_resolves_codecs_for_hls_and_dash(tmp_path, monkeypatch):
