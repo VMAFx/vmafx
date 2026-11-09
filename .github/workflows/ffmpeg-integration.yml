@@ -108,6 +108,8 @@ jobs:
           sudo ninja -vC core/build install
 
       - name: Build FFmpeg
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           scripts/ci/checkout-annotated-tag.sh "$FFMPEG_REMOTE" "$FFMPEG_TAG" ffmpeg
           cd ffmpeg
@@ -247,6 +249,8 @@ jobs:
             ninja -vC core/build install
 
       - name: Build FFmpeg with SYCL patch series
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           scripts/ci/checkout-annotated-tag.sh "$FFMPEG_REMOTE" "$FFMPEG_TAG" ffmpeg
           cd ffmpeg
@@ -396,6 +400,7 @@ jobs:
         env:
           FFMPEG_TOOLCHAIN: msvc
           VMAF_SCORE_CHECK: '1'
+          GH_TOKEN: ${{ github.token }}
           # The login shell's profile resets PKG_CONFIG_PATH, and the inherited
           # list is in Windows form; a static libvmaf needs zimg.pc from it.
           WINDOWS_PC_PATH: ${{ env.PKG_CONFIG_PATH }}
