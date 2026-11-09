@@ -57,7 +57,8 @@ default 120) bounds each direct download attempt and each forge API fallback
 attempt through the deadline helper. One script run makes at most $N = 3$
 download calls (tarball, `SHA256SUMS` and `SHA256SUMS.sigstore.json`), so the
 worst-case download time is $N \times 2 \times S = 6 \times S$ (720 s at the
-default $S = 120$).
+default $S = 120$). `scripts/ci/ffmpeg_patch_stack.py` gives the script
+`max(600, N * 2 * S + 120)` seconds, so 840 s when $S$ is unset.
 
 Whatever the verify mode, the script also downloads the release's `SHA256SUMS`,
 prints the tarball's sha256 next to the line it lists and refuses a difference

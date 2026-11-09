@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.ci import ffmpeg_shared_series_fixture as shared_series
 from scripts.ci.ffmpeg_patch_stack import (
+    SHARED_SERIES_DEFAULT_DOWNLOAD_SECONDS,
     SHARED_SERIES_MAX_DOWNLOADS,
     shared_series_timeout_seconds,
 )
@@ -484,8 +485,16 @@ class SharedSeriesWrapperTimeoutTest(unittest.TestCase):
     """Verify shared-series wrapper timeout derivation in ffmpeg_patch_stack.py."""
 
     def test_timeout_derivation_unset_uses_default(self) -> None:
-        """Plant unset FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS and expect default 600 s."""
-        self.assertEqual(shared_series_timeout_seconds({}), 600)
+        """Plant unset or empty FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS and expect formula default."""
+        expected = max(
+            600,
+            SHARED_SERIES_MAX_DOWNLOADS * 2 * SHARED_SERIES_DEFAULT_DOWNLOAD_SECONDS + 120,
+        )
+        self.assertEqual(shared_series_timeout_seconds({}), expected)
+        self.assertEqual(
+            shared_series_timeout_seconds({"FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS": ""}),
+            expected,
+        )
 
     def test_timeout_derivation_standard_s_120(self) -> None:
         """Plant S=120 and expect max(600, N * 2 * 120 + 120) with N = SHARED_SERIES_MAX_DOWNLOADS."""
@@ -504,8 +513,8 @@ class SharedSeriesWrapperTimeoutTest(unittest.TestCase):
         )
 
     def test_timeout_derivation_invalid_strings_revert_to_default(self) -> None:
-        """Plant invalid values ('0', 'abc', '-1', '1e3', '1000000', '') and expect default 600 s."""
-        for invalid in ("0", "abc", "-1", "1e3", "1000000", ""):
+        """Plant invalid values ('0', 'abc', '-1', '1e3', '1000000') and expect default 600 s."""
+        for invalid in ("0", "abc", "-1", "1e3", "1000000"):
             with self.subTest(invalid=invalid):
                 self.assertEqual(
                     shared_series_timeout_seconds({"FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS": invalid}),

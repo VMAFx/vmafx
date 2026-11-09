@@ -39,7 +39,7 @@ How can `scripts/ci/ffmpeg-shared-series.sh` reliably retrieve shared FFmpeg fix
    - The series tarball (`ffmpeg-patches-<tag>.tar.gz`)
    - The checksum list (`SHA256SUMS`)
    - The cryptographic signature bundle (`SHA256SUMS.sigstore.json`)
-   Each operation performs a direct download bounded by $S$ seconds, followed by a fallback attempt bounded by $S$ seconds if the direct attempt fails. The worst-case total download duration is $N \times 2 \times S = 3 \times 2 \times S = 6 \times S$ (720 seconds at default $S = 120$). The wrapper in `scripts/ci/ffmpeg_patch_stack.py` uses this bound to set `timeout = max(600, N * 2 * S + 120)`.
+   Each operation performs a direct download bounded by $S$ seconds, followed by a fallback attempt bounded by $S$ seconds if the direct attempt fails. The worst-case total download duration is $N \times 2 \times S = 3 \times 2 \times S = 6 \times S$ (720 seconds at default $S = 120$). The wrapper in `scripts/ci/ffmpeg_patch_stack.py` uses this bound to set `timeout = max(600, N * 2 * S + 120)`; unset uses $S = 120$ (840 s).
 
 5. **Parent-supervised deadline helper**:
    An asynchronous watcher process killing a target PID after background `sleep` suffers from PID reuse races: if the command exits, bash reaps it on SIGCHLD, permitting the OS to assign the recycled PID to an unrelated process before the watcher is stopped.
