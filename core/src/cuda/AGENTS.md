@@ -364,11 +364,11 @@ cuda/
   CUDA fatbin and HIP HSACO kernel header dependency tracking via explicit depend_files and compiler depfiles.
 
 - **FFmpeg `vmafx` filter — CUDA frame consumer** (fork-local, ADR-2125, ADR-2023):
-  [`ffmpeg-patches/0004-add-vmafx-filter.patch`](../../../ffmpeg-patches/0004-add-vmafx-filter.patch)
+  [`ffmpeg-patches/0003-add-vmafx-filter.patch`](../../../ffmpeg-patches/0003-add-vmafx-filter.patch)
   (source `ffmpeg-patches/src/vf_vmafx.c`, `cuda_open` / `cuda_import`) opens the device with
   `vmafx_device_create()` and hands CUDA frames over with `vmafx_context_import_frame()`; it
   calls no `include/libvmaf/libvmaf_cuda.h` function. Patch `0010` (libvmaf `cuda` selector)
-  is retired. **On rename / signature change of those VMAFx entry points**: patch 0004 updates
+  is retired. **On rename / signature change of those VMAFx entry points**: patch 0003 updates
   in same PR. Verify by cumulative `git am --3way` replay of `ffmpeg-patches/series.txt`
   against pristine FFmpeg at the tag in `build-config.env`.
 

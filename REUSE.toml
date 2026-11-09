@@ -35,18 +35,16 @@ SPDX-FileCopyrightText = "2020 Netflix, Inc."
 SPDX-License-Identifier = "BSD-2-Clause-Patent"
 
 # FFmpeg patch files are derivative source contributions.  They touch
-# LGPL-2.1-or-later translation units; 0006 also carries Lawrence Curtis's
-# no-CLA contribution.  The diagnostics patch that spanned LGPL and GPL units
-# (0019) is now part of the shared fix series, which is not in this tree
+# LGPL-2.1-or-later translation units.  The qpfile and loopback hwaccel
+# patches and the diagnostics patch that spanned LGPL and GPL units (0019)
+# are now part of the shared fix series, which is not in this tree
 # (ADR-3143).
 [[annotations]]
 path = [
-    "ffmpeg-patches/0001-codec-qpfile-unified.patch",
-    "ffmpeg-patches/0002-pass-autotune-cli-glue.patch",
-    "ffmpeg-patches/0003-add-vmafx-profile-cli-glue.patch",
-    "ffmpeg-patches/0004-add-vmafx-filter.patch",
-    "ffmpeg-patches/0005-add-vmafx-pre-filter.patch",
-    "ffmpeg-patches/0006-fftools-loopback-decoder-hwaccel.patch",
+    "ffmpeg-patches/0001-pass-autotune-cli-glue.patch",
+    "ffmpeg-patches/0002-add-vmafx-profile-cli-glue.patch",
+    "ffmpeg-patches/0003-add-vmafx-filter.patch",
+    "ffmpeg-patches/0004-add-vmafx-pre-filter.patch",
 ]
 precedence = "override"
 SPDX-FileCopyrightText = ["2000-2026 the FFmpeg developers", "2026 Lusoris"]
@@ -285,6 +283,15 @@ path = ["core/src/feature/iqa/**"]
 precedence = "closest"
 SPDX-FileCopyrightText = "2011, Tom Distler (http://tdistler.com)"
 SPDX-License-Identifier = "BSD-3-Clause"
+
+[[annotations]]
+path = [
+    "core/src/feature/iqa/AGENTS.md",
+    "core/src/feature/third_party/xiph/AGENTS.md",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Lusoris"
+SPDX-License-Identifier = "EUPL-1.2"
 
 [[annotations]]
 path = ["core/src/x86/cpuid.asm"]

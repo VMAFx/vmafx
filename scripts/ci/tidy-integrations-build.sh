@@ -59,7 +59,7 @@ for flag in CONFIG_CUDA CONFIG_VULKAN CONFIG_LIBDRM CONFIG_VMAFX_FILTER \
     exit 1
   fi
 done
-OBJECTS=(libavfilter/vf_vmafx.o libavfilter/vf_vmafx_pre.o fftools/ffmpeg_dec_hwaccel.o)
+OBJECTS=(libavfilter/vf_vmafx.o libavfilter/vf_vmafx_pre.o)
 make -j "$JOBS" V=1 "${OBJECTS[@]}" >"$BUILD/ffmpeg-objs.log" 2>&1 || {
   tail -n 40 "$BUILD/ffmpeg-objs.log" >&2
   exit 1

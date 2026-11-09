@@ -3384,7 +3384,11 @@ def _emit_saliency_payload(payload: dict[str, Any], report_path: Path | None) ->
 def _run_recommend_saliency(args: argparse.Namespace) -> int:
     """Run one plain or saliency-aware encode and emit its result."""
     output, report_path = _saliency_output_paths(args.output)
-    result = _run_saliency_encode(args, _build_saliency_request(args, output))
+    try:
+        result = _run_saliency_encode(args, _build_saliency_request(args, output))
+    except ValueError as exc:
+        sys.stderr.write(f"vmaf-tune recommend-saliency: {exc}\n")
+        return 2
     _emit_saliency_payload(_saliency_payload(args, result), report_path)
     return result.exit_status
 
