@@ -899,6 +899,8 @@ static void shared_close(Shared *s)
     }
 }
 
+/* Run one attempt of sharing imported HIP frames across two contexts, checking parity
+ * against host runs and verifying that release fences hold until both readers finish. */
 static char *one_import_two_contexts_once(void)
 {
     Shared s;

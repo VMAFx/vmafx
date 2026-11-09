@@ -234,6 +234,7 @@ def _functor_failures(name: str, code: str, everywhere: str) -> list[str]:
 
 
 def _source_failures(sources: dict[str, str], allowed: set[int]) -> list[str]:
+    """Check SYCL sources for raw attributes, invalid requested sizes, and functor mismatches."""
     failures: list[str] = []
     everywhere = "\n".join(_code(text) for text in sources.values())
     for name, text in sources.items():
@@ -252,6 +253,7 @@ def _source_failures(sources: dict[str, str], allowed: set[int]) -> list[str]:
 
 
 def _contract_failures(options: str, compat: str, sources: dict[str, str]) -> list[str]:
+    """Validate SYCL sub-group contract across options, sycl_compat.h, and source files."""
     targets = aot.default_targets(options)
     unknown = [target for target in targets if aot.supported_sizes(target) is None]
     if unknown or not targets:
@@ -380,6 +382,7 @@ class SyclSubGroupSizeContract(unittest.TestCase):
         self._detected(_contract_failures(options, compat, sources), "must accept exactly")
 
     def test_unchecked_macro_is_detected(self) -> None:
+        """Feed unconstrained reqd_sub_group_size(N); expect 'no longer checked'."""
         options, compat, sources = _live()
         compat = compat.replace(
             "sycl::reqd_sub_group_size(VmafSyclSubGroupSize<N>::value)",
@@ -402,6 +405,7 @@ class SyclSubGroupSizeContract(unittest.TestCase):
         )
 
     def test_functor_missing_attribute_on_walk_kernel_is_detected(self) -> None:
+        """Strip attribute from WalkKernel; expect 'carries no VMAF_SYCL_FUNCTOR_SG_*'."""
         options, compat, sources = _live()
         name = "core/test/test_sycl_ordered_sum_probe.cpp"
         self.assertIn("[[VMAF_SYCL_FUNCTOR_SG_ATTR(16)]]", sources[name])
@@ -412,6 +416,7 @@ class SyclSubGroupSizeContract(unittest.TestCase):
         )
 
     def test_functor_missing_attribute_on_planted_functor_is_detected(self) -> None:
+        """Plant unannotated struct X; expect 'carries no VMAF_SYCL_FUNCTOR_SG_*'."""
         options, compat, sources = _live()
         name = "core/test/test_sycl_ordered_sum_probe.cpp"
         sources[
@@ -423,6 +428,7 @@ class SyclSubGroupSizeContract(unittest.TestCase):
         )
 
     def test_functor_shape_size_0_needs_no_attribute(self) -> None:
+        """Plant struct Z with shape size 0; expect no failure text (empty failure list)."""
         options, compat, sources = _live()
         name = "core/test/test_sycl_ordered_sum_probe.cpp"
         sources[
@@ -431,6 +437,7 @@ class SyclSubGroupSizeContract(unittest.TestCase):
         self.assertEqual(_contract_failures(options, compat, sources), [])
 
     def test_functor_mismatched_attribute_size_is_detected(self) -> None:
+        """Plant struct Y with shape 16 and attr 32; expect 'states sub-group size 32'."""
         options, compat, sources = _live()
         name = "core/test/test_sycl_ordered_sum_probe.cpp"
         sources[
@@ -442,6 +449,7 @@ class SyclSubGroupSizeContract(unittest.TestCase):
         )
 
     def test_function_call_shape_without_attribute_is_detected(self) -> None:
+        """Strip attr from IntegerVifHoriKernel; expect 'carries no VMAF_SYCL_FUNCTOR_SG_*'."""
         # integer_vif_sycl.cpp's horizontal kernel takes its size from a constexpr function.
         options, compat, sources = _live()
         name = "core/src/feature/sycl/integer_vif_sycl.cpp"
@@ -455,6 +463,7 @@ class SyclSubGroupSizeContract(unittest.TestCase):
         )
 
     def test_unannotated_overload_is_detected(self) -> None:
+        """Plant unannotated overload on struct W; expect 'carries no VMAF_SYCL_FUNCTOR_SG_*'."""
         options, compat, sources = _live()
         name = "core/test/test_sycl_ordered_sum_probe.cpp"
         sources[name] += (
@@ -469,6 +478,7 @@ class SyclSubGroupSizeContract(unittest.TestCase):
         )
 
     def test_unreadable_shape_size_is_detected(self) -> None:
+        """Plant struct V with non-literal size; expect 'a size that is no literal'."""
         options, compat, sources = _live()
         name = "core/test/test_sycl_ordered_sum_probe.cpp"
         sources[name] += (
@@ -481,6 +491,7 @@ class SyclSubGroupSizeContract(unittest.TestCase):
         )
 
     def test_shape_outside_a_class_base_is_detected(self) -> None:
+        """Plant unparsed shape base; expect 'a VmafSyclKernelShape use that is not the base'."""
         options, compat, sources = _live()
         name = "core/test/test_sycl_ordered_sum_probe.cpp"
         sources[name] += (
@@ -493,6 +504,7 @@ class SyclSubGroupSizeContract(unittest.TestCase):
         )
 
     def test_size_8_in_an_attr_macro_is_detected(self) -> None:
+        """Plant attribute size 8 in macro; expect failure text 'requires sub-group size 8'."""
         options, compat, sources = _live()
         name = "core/test/test_sycl_ordered_sum_probe.cpp"
         self.assertIn("VMAF_SYCL_FUNCTOR_SG_ATTR(16)", sources[name])

@@ -436,6 +436,7 @@ class SemgrepFloatIdentity(unittest.TestCase):
         )
 
     def test_parse_entries_expire(self) -> None:
+        """Check that all declared PARSE_RULE exceptions expire, expecting an empty live set."""
         # Issue 3252 removes every entry, and then the rule file itself; zero entries pass.
         entries = [e for e in lint_exceptions.load(ROOT)[0] if e.rule == PARSE_RULE]
         last = max((e.expires for e in entries), default=lint_exceptions.today())

@@ -307,6 +307,8 @@ static double lz_worst(const LzRun *run, const LzScores *cpu, const LzScores *gp
     return worst;
 }
 
+/* Score one run on the GPU twin and on CPU and assert that every frame and output
+ * matches exactly; skip (exit 77) when no device or no kernels are present. */
 static char *lz_check(const LzRun *run)
 {
     LzScores cpu;

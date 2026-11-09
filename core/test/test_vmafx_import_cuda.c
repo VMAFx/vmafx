@@ -757,6 +757,8 @@ static void shared_close(Shared *s)
     }
 }
 
+/* Submit imported CUDA frames to two separate contexts, asserting score parity
+ * against host reference runs and checking that release fences wait for both readers. */
 static char *test_one_import_two_contexts(void)
 {
     Shared s;
