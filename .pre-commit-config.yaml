@@ -1367,6 +1367,24 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: ffmpeg-patches-surface-docs
+        name: Documentation names retired FFmpeg filters only in the migration guide
+        # The CI job ffmpeg-patches-surface-check (rule-enforcement.yml)
+        # runs this script on every pull request, but no local hook ran it,
+        # so a docs note naming a retired filter outside "Migrating from the
+        # libvmaf filters" first failed in CI (pull request 3359).
+        # --surface-only runs the tree checks alone. The pull request gate
+        # needs a PR body for its opt-out line and a merge base to diff
+        # from, which a local commit does not have, so it stays in CI.
+        # `files` names every path the tree checks read;
+        # scripts/ci/tests/test_ffmpeg_patches_surface_check.py pins it to
+        # the script's build-config list.
+        entry: bash scripts/ci/ffmpeg-patches-surface-check.sh --surface-only
+        language: system
+        files: '^(docs/.*\.md|README\.md|ffmpeg-patches/.*|Containerfile\.vmafx|Dockerfile|Dockerfile\.ffmpeg|dev/Containerfile|docker/Dockerfile\.node|scripts/test/sycl-dev-container\.sh|\.github/workflows/ffmpeg-patch-stack\.yml|scripts/ci/tidy-integrations-build\.sh|scripts/ci/ffmpeg-patches-surface-check\.sh)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: mkdocs-strict
         name: Build changed documentation with MkDocs strict validation
         entry: scripts/git-hooks/pre-push-mkdocs-strict.sh
