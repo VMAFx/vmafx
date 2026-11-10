@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "ensure_label.sh"
+SCRIPT_TIMEOUT_S = 60
 
 STUB = """#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$STUB_LOG"
@@ -53,6 +54,7 @@ class EnsureLabelTest(unittest.TestCase):
         hidden_reads: int = 0,
         listed: str = "upstream-blocked",
     ) -> subprocess.CompletedProcess[str]:
+        """Execute the ensure-label script with the configured test stub environment."""
         env = {
             **os.environ,
             "UPSTREAM_WATCHER_GH": str(self.stub),
@@ -69,6 +71,7 @@ class EnsureLabelTest(unittest.TestCase):
             text=True,
             capture_output=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     def calls(self) -> list[str]:

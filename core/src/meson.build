@@ -70,9 +70,14 @@ _strict_fp_compiler_id = cc.get_id()
 vmaf_fp_model_args = []
 vmaf_strict_fp_args = ['-ffp-contract=off']
 vmaf_cuda_host_strict_fp_args = ['-Xcompiler=-ffp-contract=off']
-if host_machine.system() == 'windows'
+if build_machine.system() == 'windows'
     # nvcc's Windows host compiler is cl.exe even when another driver builds
     # libvmaf, so forward the native MSVC spelling rather than a Unix option.
+    # The frontend is picked by the BUILD machine (cf. the -ccbin selection
+    # below): on a Linux build machine cross-compiling for Windows the host
+    # frontend is the gcc family, and a `/fp:precise` -Xcompiler argument
+    # reaches gcc as an input file ("cannot specify '-o' with '-c' ... with
+    # multiple files"), so the Unix spelling must survive.
     vmaf_cuda_host_strict_fp_args = ['-Xcompiler=/fp:precise']
 endif
 if _strict_fp_compiler_id == 'intel-llvm'
@@ -1861,7 +1866,15 @@ if is_cuda_enabled
     # Absolute paths derived from meson.current_{source,build}_dir(), matching
     # what the SYCL block below already does.
     cuda_extra_includes = []
-    if host_machine.system() == 'windows'
+    if build_machine.system() == 'windows'
+        # Same build-machine rule as the -ccbin selection and the strict-fp
+        # spelling above: the shim is only needed when nvcc's host frontend is
+        # cl.exe, which has no <pthread.h>. On a Linux build machine the
+        # frontend is the gcc family; <pthread.h> then resolves to the real
+        # system header during device preprocessing, and cudafe strips the
+        # host declarations it guards, so the shim must stay off the -I path
+        # (its `#ifndef _WIN32` guard would fire: the build-host compiler does
+        # not define the target's _WIN32).
         cuda_extra_includes += ['-I', meson.current_source_dir() / 'compat' / 'win32']
     endif
     cuda_inc_flags = [

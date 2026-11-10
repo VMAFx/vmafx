@@ -76,6 +76,7 @@ jobs:
         shell: bash
         env:
           FFMPEG_FIX_SERIES_VERIFY: cosign
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           output_dir="$RUNNER_TEMP/ffmpeg-patch-check"
@@ -166,16 +167,27 @@ jobs:
         shell: bash
         env:
           FFMPEG_FIX_SERIES_VERIFY: cosign
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tree="$RUNNER_TEMP/ffmpeg"
           python3 scripts/ci/ffmpeg_patch_stack.py --check --keep-tree "$tree"
           export PKG_CONFIG_PATH="$GITHUB_WORKSPACE/core/build/meson-uninstalled"
           cd "$tree"
-          ./configure --enable-version3 --enable-libvmafx \
+          # The series' own C code is compiled by gcc only here, so this job
+          # carries the warning gate the other FFmpeg builds carry (issue 2477).
+          ./configure --fatal-warnings --enable-version3 --enable-libvmafx \
             --disable-doc --disable-indevs --enable-indev=lavfi --disable-outdevs
           grep -qE '^#define CONFIG_VMAFX_FILTER 1$' config_components.h
-          make -j "$(getconf _NPROCESSORS_ONLN)" ffmpeg
+          make -j "$(getconf _NPROCESSORS_ONLN)" ffmpeg 2>&1 | tee "$RUNNER_TEMP/ffmpeg-build.log"
+          # grep exit 1 means no warning; any other failure (exit 2, unreadable
+          # log) fails this assignment and so the step under set -e.
+          warnings="$(grep -Ei '(^|[[:space:]])warning([[:space:]#:])' "$RUNNER_TEMP/ffmpeg-build.log" || [[ $? -eq 1 ]])"
+          if [[ -n "$warnings" ]]; then
+            printf '%s\n' "$warnings" >&2
+            echo "FATAL: FFmpeg emitted compiler warnings" >&2
+            exit 1
+          fi
       - name: Check the vmafx filter against the CLI
         if: steps.impact.outputs.mode == 'full' || steps.impact.outputs.c_core == 'true' || steps.impact.outputs.actions == 'true'
         shell: bash
@@ -224,6 +236,7 @@ jobs:
         shell: bash
         env:
           FFMPEG_FIX_SERIES_VERIFY: cosign
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           output_dir="$RUNNER_TEMP/ffmpeg-patch-refresh"
