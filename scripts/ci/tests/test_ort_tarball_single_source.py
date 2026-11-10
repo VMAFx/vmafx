@@ -14,12 +14,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts/ci/check_ort_tarball_pins.py"
+SCRIPT_TIMEOUT_S = 60
 
 
 class OrtTarballSingleSourceTest(unittest.TestCase):
     def run_check(
         self, *args: str | Path, cwd: Path | None = None
     ) -> subprocess.CompletedProcess[str]:
+        """Run the check_ort_tarball_pins script with the given arguments."""
         cmd = [sys.executable, str(SCRIPT)] + [str(a) for a in args]
         return subprocess.run(  # noqa: S603
             cmd,
@@ -27,6 +29,7 @@ class OrtTarballSingleSourceTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     def test_repo_tree_passes(self) -> None:

@@ -309,6 +309,28 @@ def _hw_upload_filter(adapter: object | None, req: EncodeRequest) -> str:
     return getattr(adapter, "hw_upload_filter", "")
 
 
+def _drop_output_pix_fmt(extra_params: Sequence[str]) -> list[str]:
+    """Drop ``-pix_fmt`` / ``-pix_fmt:v`` tokens and their following values.
+
+    A ``-pix_fmt`` or ``-pix_fmt:v`` token is dropped together with the next
+    token only when a next token exists and does not start with ``-``.
+    Otherwise only the flag is dropped and the next token is kept.
+    """
+    params: list[str] = []
+    i = 0
+    n = len(extra_params)
+    while i < n:
+        if extra_params[i] in ("-pix_fmt", "-pix_fmt:v"):
+            if i + 1 < n and not extra_params[i + 1].startswith("-"):
+                i += 2
+            else:
+                i += 1
+        else:
+            params.append(extra_params[i])
+            i += 1
+    return params
+
+
 def with_upload_filter(extra_params: Sequence[str], upload_filter: str) -> list[str]:
     """Return ``extra_params`` with ``upload_filter`` ending its ``-vf`` chain.
 
@@ -316,16 +338,22 @@ def with_upload_filter(extra_params: Sequence[str], upload_filter: str) -> list[
     appended to the caller's chain (``scale=W:H,format=nv12,hwupload...``)
     rather than added as a second ``-vf`` that would drop the scale or
     the upload. Without a caller chain it becomes ``-vf <upload_filter>``.
-    An empty ``upload_filter`` returns the params unchanged.
+    An empty ``upload_filter`` returns the params unchanged. Output
+    ``-pix_fmt`` is dropped when uploading hardware frames so ffmpeg does
+    not attempt an unsupported conversion back to software frames. A dangling
+    flag is dropped alone.
     """
-    out = list(extra_params)
     if not upload_filter:
-        return out
-    for i in range(len(out) - 1):
-        if out[i] in ("-vf", "-filter:v"):
-            out[i + 1] = f"{out[i + 1]},{upload_filter}"
-            return out
-    return ["-vf", upload_filter, *out]
+        return list(extra_params)
+    if "hwupload" in upload_filter:
+        params = _drop_output_pix_fmt(extra_params)
+    else:
+        params = list(extra_params)
+    for i in range(len(params) - 1):
+        if params[i] in ("-vf", "-filter:v"):
+            params[i + 1] = f"{params[i + 1]},{upload_filter}"
+            return params
+    return ["-vf", upload_filter, *params]
 
 
 def _build_seek_args(req: EncodeRequest) -> list[str]:

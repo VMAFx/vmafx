@@ -21,6 +21,7 @@ import yaml  # type: ignore[import-untyped]  # no PyYAML stubs in the hook envir
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
+SCRIPT_TIMEOUT_S = 60
 
 
 def workflow_step(text: str, name: str) -> str:
@@ -149,6 +150,7 @@ class FailClosedCIContract(unittest.TestCase):
         self.assertIn("'Coverage GPU',", aggregator)
 
     def test_coverage_shard_assertion_names_why_a_shard_was_skipped(self) -> None:
+        """Assert that the coverage workflow identifies why a skipped shard was skipped."""
         workflow = (WORKFLOWS / "tests-and-quality-gates.yml").read_text(encoding="utf-8")
         assertion = workflow_step(workflow, "Assert every Python coverage shard passed")
         coverage = workflow_job(workflow, "coverage")
@@ -163,9 +165,15 @@ class FailClosedCIContract(unittest.TestCase):
         earlier = "Build-with-gcov=success Meson-unit-suite=failure Prepare-Python-suite=skipped"
 
         def run(shards: str, before: str) -> subprocess.CompletedProcess[str]:
+            """Execute the coverage assertion script under bash with the given outcomes."""
             env = {"SHARD_OUTCOMES": shards, "EARLIER_OUTCOMES": before, "PATH": "/usr/bin:/bin"}
             return subprocess.run(  # noqa: S603 - argv is bash plus the tracked workflow step
-                [bash, "-c", script], env=env, capture_output=True, text=True, check=False
+                [bash, "-c", script],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=SCRIPT_TIMEOUT_S,
             )
 
         skipped = run("skipped skipped skipped skipped", earlier)
