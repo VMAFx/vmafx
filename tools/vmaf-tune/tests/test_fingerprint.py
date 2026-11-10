@@ -23,8 +23,6 @@ from pathlib import Path
 
 import pytest
 
-FFMPEG_TIMEOUT_S = 60
-
 from vmaftune import fingerprint
 from vmaftune.cache import CachedResult, TuneCache, params_key
 from vmaftune.fingerprint import (
@@ -36,6 +34,8 @@ from vmaftune.fingerprint import (
     match,
     require_fingerprint_deps,
 )
+
+FFMPEG_TIMEOUT_S = 60
 
 
 def _make_synthetic_frames(

@@ -17,11 +17,7 @@ from pathlib import Path
 
 import pytest
 
-FFMPEG_TIMEOUT_S = 60
-FFMPEG = shutil.which("ffmpeg")
-
-_HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(_HERE.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from vmaftune import cli, compare
 from vmaftune.codec_strings import (
@@ -32,6 +28,9 @@ from vmaftune.codec_strings import (
     vp9_level,
 )
 from vmaftune.ladder import Rendition, emit_manifest
+
+FFMPEG_TIMEOUT_S = 60
+FFMPEG = shutil.which("ffmpeg")
 
 
 def _box(fourcc: bytes, payload: bytes) -> bytes:

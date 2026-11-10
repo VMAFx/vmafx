@@ -24,20 +24,6 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO
 
-# Measurement: 300 frames, 3840x2160 yuv420p 8-bit, ffmpeg extract 1.16 s, decode 1.13 s,
-# vmaf 40.92 s; per-frame bound = 10x measured, rounded up; frame areas below 4K use the 4K bound.
-BOUND_FLOOR_S = 60
-BOUND_REFERENCE_AREA = 3840 * 2160
-FFMPEG_FRAME_TIMEOUT_S = 0.04
-VMAF_FRAME_TIMEOUT_S = 1.4
-
-
-def _frame_scaled_timeout_s(frames: int, width: int, height: int, per_frame_s: float) -> float:
-    """Return a timeout bound that grows with frame count and frame area."""
-    area = max(1.0, (width * height) / BOUND_REFERENCE_AREA)
-    return BOUND_FLOOR_S + max(frames, 0) * area * per_frame_s
-
-
 if TYPE_CHECKING:
     from .report import CodecRow, CodecSweepPoint
 
@@ -85,6 +71,19 @@ from .prefilter import (
 )
 from .resolution import neg_model_for
 from .score_backend import ALL_BACKENDS, BackendUnavailableError, select_backend
+
+# Measurement: 300 frames, 3840x2160 yuv420p 8-bit, ffmpeg extract 1.16 s, decode 1.13 s,
+# vmaf 40.92 s; per-frame bound = 10x measured, rounded up; frame areas below 4K use the 4K bound.
+BOUND_FLOOR_S = 60
+BOUND_REFERENCE_AREA = 3840 * 2160
+FFMPEG_FRAME_TIMEOUT_S = 0.04
+VMAF_FRAME_TIMEOUT_S = 1.4
+
+
+def _frame_scaled_timeout_s(frames: int, width: int, height: int, per_frame_s: float) -> float:
+    """Return a timeout bound that grows with frame count and frame area."""
+    area = max(1.0, (width * height) / BOUND_REFERENCE_AREA)
+    return BOUND_FLOOR_S + max(frames, 0) * area * per_frame_s
 
 
 class _TrackedDefaultAction(argparse.Action):

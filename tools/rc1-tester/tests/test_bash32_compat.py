@@ -21,8 +21,7 @@ from pathlib import Path
 
 import pytest
 
-_HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(_HERE.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from vmaf_rc1_tester.safe_process import (
     CommandOutputLimitExceeded,

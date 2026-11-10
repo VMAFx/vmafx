@@ -17,10 +17,6 @@ from pathlib import Path
 
 import pytest
 
-FFMPEG_TIMEOUT_S = 60
-FFMPEG = shutil.which("ffmpeg")
-FFPROBE = shutil.which("ffprobe")
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from vmaftune.codec_adapters import get_adapter
@@ -30,6 +26,10 @@ from vmaftune.encode import (
     build_ffmpeg_command,
     run_two_pass_encode,
 )
+
+FFMPEG_TIMEOUT_S = 60
+FFMPEG = shutil.which("ffmpeg")
+FFPROBE = shutil.which("ffprobe")
 
 
 class _Done:
