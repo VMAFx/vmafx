@@ -27,7 +27,6 @@ from __future__ import annotations
 import argparse
 import io
 import os
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -37,12 +36,21 @@ import pandas as pd
 import yaml
 from PIL import Image
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-if str(REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from aiutils.run_manifest import write_run_manifest  # noqa: E402
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+
+# Bound = max(60, 10x the slowest measured run): one middle-frame extract took
+# 0.20 s on a 1080p clip.
+FFMPEG_TIMEOUT_S = 60
 
 MANIFEST = REPO_ROOT / "ai" / "src" / "vmaf_train" / "data" / "manifests" / "konvid-1k.yaml"
 DATA_DIR = REPO_ROOT / "ai" / "data"
@@ -60,7 +68,7 @@ def _default_root() -> Path:
 def _extract_middle_frame_y(mp4: Path, target_hw: int) -> np.ndarray:
     """Use ffmpeg to read 1 luma frame at the clip midpoint, resized to NxN."""
     # Probe duration once so we can seek to the middle.
-    proc = subprocess.run(
+    proc = run_command(
         [
             "ffprobe",
             "-v",
@@ -71,9 +79,11 @@ def _extract_middle_frame_y(mp4: Path, target_hw: int) -> np.ndarray:
             "csv=p=0",
             str(mp4),
         ],
+        allowed_executables=("ffprobe",),
         check=True,
         capture_output=True,
         text=True,
+        timeout_seconds=FFMPEG_TIMEOUT_S,
     )
     dur = float(proc.stdout.strip())
     seek_s = max(0.0, dur / 2.0)
@@ -98,7 +108,13 @@ def _extract_middle_frame_y(mp4: Path, target_hw: int) -> np.ndarray:
         "gray",
         "-",
     ]
-    rv = subprocess.run(cmd, check=True, capture_output=True)
+    rv = run_command(
+        cmd,
+        allowed_executables=("ffmpeg",),
+        check=True,
+        capture_output=True,
+        timeout_seconds=FFMPEG_TIMEOUT_S,
+    )
     arr = np.frombuffer(rv.stdout, dtype=np.uint8)
     expected = target_hw * target_hw
     if arr.size != expected:

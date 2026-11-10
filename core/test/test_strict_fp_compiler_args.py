@@ -335,13 +335,18 @@ def _marked_block(begin: str, end: str, what: str) -> str:
 
 def _policy_block() -> str:
     block = _marked_block(POLICY_BEGIN, POLICY_END, "strict-FP compiler")
-    return block.replace(
+    block = block.replace(
         "_strict_fp_compiler_id = cc.get_id()",
         "_strict_fp_compiler_id = strict_fp_fixture_compiler_id",
-    ).replace(
-        "host_machine.system()",
-        "strict_fp_fixture_system",
     )
+    # The CUDA host FP spelling follows the BUILD machine: nvcc's host frontend
+    # is the build machine's own, which in a native build is also the host
+    # machine. The two machine expressions are substituted INDEPENDENTLY so the
+    # matrix can state a cross build (build=linux, host=windows): a rebase that
+    # reverts the shipped condition to host_machine.system() then fails that
+    # row instead of passing under either spelling.
+    block = block.replace("build_machine.system()", "strict_fp_fixture_build_system")
+    return block.replace("host_machine.system()", "strict_fp_fixture_host_system")
 
 
 def _meson_list(values: list[str]) -> str:
@@ -451,7 +456,8 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
                 fixture = textwrap.dedent(f"""\
                     project('strict-fp-args-{compiler_id}')
                     strict_fp_fixture_compiler_id = '{compiler_id}'
-                    strict_fp_fixture_system = '{system}'
+                    strict_fp_fixture_build_system = '{system}'
+                    strict_fp_fixture_host_system = '{system}'
 
                     {policy}
 
@@ -463,6 +469,53 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
                            'wrong CUDA host FP arguments for {compiler_id}')
                     """)
                 _meson_setup(self, compiler_id, fixture)
+        # Cross rows: nvcc's host frontend is the BUILD machine's own, so a
+        # linux build machine must keep the Unix spelling even though the
+        # TARGET (host machine) is windows. A rebase that reverts the shipped
+        # condition to host_machine.system() fails exactly here, which is what
+        # lets docs/rebase-notes.d/build-machine-cuda-host-flags.md claim the
+        # test guards the fix.
+        cross_cuda_host_args = ["-Xcompiler=-ffp-contract=off"]
+        for compiler_id, (_, model_args, strict_args, _) in COMPILER_MATRIX.items():
+            with self.subTest(compiler_id=compiler_id, cross="build=linux host=windows"):
+                fixture = textwrap.dedent(f"""\
+                    project('strict-fp-args-{compiler_id}-cross')
+                    strict_fp_fixture_compiler_id = '{compiler_id}'
+                    strict_fp_fixture_build_system = 'linux'
+                    strict_fp_fixture_host_system = 'windows'
+
+                    {policy}
+
+                    assert(vmaf_fp_model_args == {_meson_list(model_args)},
+                           'wrong general FP model arguments for {compiler_id}')
+                    assert(vmaf_strict_fp_args == {_meson_list(strict_args)},
+                           'wrong strict FP arguments for {compiler_id}')
+                    assert(vmaf_cuda_host_strict_fp_args == {_meson_list(cross_cuda_host_args)},
+                           'CUDA host FP spelling must follow the build machine for {compiler_id}')
+                    """)
+                _meson_setup(self, f"{compiler_id}-cross", fixture)
+
+    def test_cuda_host_policies_key_on_the_build_machine(self) -> None:
+        """Both nvcc host-side gates follow the BUILD machine, not the host.
+
+        nvcc shells its host pass out to the build machine's own frontend (the
+        -ccbin selection is keyed the same way since #3293). The strict-FP
+        spelling and the win32 pthread shim include path used to key on
+        host_machine.system(): on a linux->windows cross the first turned
+        `/fp:precise` into a gcc input-file error and the second put compat/win32
+        on the include path where its own `#ifndef _WIN32` guard fires. The
+        matrix above catches an FP revert dynamically; this check pins both
+        spellings statically so either revert is caught on its own.
+        """
+        raw = SOURCE_MESON.read_text(encoding="utf-8")
+        policy = _meson_code(raw[raw.index(POLICY_BEGIN) : raw.index(POLICY_END)])
+        self.assertIn("build_machine.system()", policy)
+        self.assertNotIn("host_machine.system()", policy)
+        start = raw.index("cuda_extra_includes = []")
+        gate = _meson_code(raw[start : raw.index("endif", start)])
+        self.assertIn("'compat' / 'win32'", gate)
+        self.assertIn("build_machine.system()", gate)
+        self.assertNotIn("host_machine.system()", gate)
 
     def test_fixture_project_with_a_language_is_refused(self) -> None:
         self.assertIsNone(_fixture_project_failure("project('strict-fp-args-gcc')\n"))
