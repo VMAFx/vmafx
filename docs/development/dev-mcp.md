@@ -373,7 +373,7 @@ into ffmpeg` (ADR-0543). The matrix:
 | `libx265` | `libx265-dev` (apt) | none |
 | `libvpx-vp9` | `libvpx-dev` (apt) | none |
 | `libsvtav1` | source build (SVT-AV1 pinned in `dev/Containerfile`) | none |
-| `libaom-av1` | adapter exists, but the in-image FFmpeg intentionally omits libaom until patch 0007's ROI bridge targets released libaom fields | external FFmpeg with `--enable-libaom`, or wait for the patch-stack follow-up |
+| `libaom-av1` | adapter exists, but the in-image FFmpeg intentionally omits libaom until a separate build change enables libaom >= 3.13.0 (patch 0043 needs >= 3.13.0; v3.12.1 and older lack the ROI fields) | external FFmpeg with `--enable-libaom`, or separate build change |
 | `libvvenc` | source build (Fraunhofer VVenC v1.14.0) | none |
 | `h264_nvenc` / `hevc_nvenc` / `av1_nvenc` | `--enable-nvenc` + `nv-codec-headers` | NVIDIA GPU + Container Toolkit; NVENC capability bit on host driver (`av1_nvenc` requires Ada or newer; RTX 4090 is fine) |
 | `h264_qsv` / `hevc_qsv` / `av1_qsv` | `--enable-libvpl` + `libvpl-dev` dispatcher + pinned `intel/vpl-gpu-rt` (`libmfx-gen.so`) source build installed under `/usr/lib/x86_64-linux-gnu/` | Intel GPU + `/dev/dri/renderD*` passthrough; the container auto-selects the Intel render node for QSV |

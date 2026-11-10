@@ -18,6 +18,7 @@ from typing import ClassVar
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.ci import ffmpeg_shared_series_fixture as shared_series
 from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -56,6 +57,20 @@ def _run(step: str) -> str:
 FILTER_CHECKS = ("parity", "windows", "contract", "provenance")
 
 
+# The build-log warning gate of the filter job, as the planted case removes it.
+WARNING_GATE = (
+    "          warnings=\"$(grep -Ei '(^|[[:space:]])warning([[:space:]#:])' "
+    '"$RUNNER_TEMP/ffmpeg-build.log" || [[ $? -eq 1 ]])"\n'
+    '          if [[ -n "$warnings" ]]; then\n'
+    "            printf '%s\\n' \"$warnings\" >&2\n"
+    '            echo "FATAL: FFmpeg emitted compiler warnings" >&2\n'
+    "            exit 1\n"
+    "          fi\n"
+)
+# Only grep exit 1 (no match) passes; exit 2 must fail the step, not read as clean.
+GREP_STATUS_GUARD = "|| [[ $? -eq 1 ]]"
+
+
 def _filter_job_findings(workflow: str, aggregator: str) -> list[str]:
     """What the required vmafx filter job lacks; empty when it builds and runs every check."""
     try:
@@ -74,7 +89,19 @@ def _filter_job_findings(workflow: str, aggregator: str) -> list[str]:
     if "'FFmpeg vmafx Filter'," not in aggregator:
         findings.append("aggregator does not require FFmpeg vmafx Filter")
     build = _run(_step(job, "Build FFmpeg with the vmafx filter"))
-    for needle in ("--enable-libvmafx", "CONFIG_VMAFX_FILTER 1", "--keep-tree"):
+    first_line = next((line for line in build.splitlines() if line.strip()), "")
+    if first_line != "set -euo pipefail":
+        findings.append("filter build does not start with set -euo pipefail")
+    for needle in (
+        "--enable-libvmafx",
+        "CONFIG_VMAFX_FILTER 1",
+        "--keep-tree",
+        "--fatal-warnings",
+        "2>&1 | tee",
+        "grep -Ei '(^|[[:space:]])warning([[:space:]#:])'",
+        GREP_STATUS_GUARD,
+        "FATAL: FFmpeg emitted compiler warnings",
+    ):
         if needle not in build:
             findings.append(f"filter build lacks {needle}")
     _, found, rest = _run(_step(job, "Check the vmafx filter against the CLI")).partition(
@@ -369,8 +396,20 @@ class FFmpegWorkflowContract(unittest.TestCase):
         self.assertEqual(_filter_job_findings(self.workflow, aggregator), [])
 
     def test_vmafx_filter_job_check_refuses_planted_gaps(self) -> None:
+        """Each planted gap in the filter job or the aggregator yields exactly its finding."""
         aggregator = AGGREGATOR.read_text(encoding="utf-8")
+        no_strict = self.workflow.replace(
+            '          set -euo pipefail\n          tree="$RUNNER_TEMP/ffmpeg"\n',
+            '          tree="$RUNNER_TEMP/ffmpeg"\n',
+            1,
+        )
+        self.assertNotEqual(no_strict, self.workflow, "no strict mode replace was a no-op")
         planted = {
+            "no strict mode": (
+                no_strict,
+                aggregator,
+                ["filter build does not start with set -euo pipefail"],
+            ),
             "dropped check": (
                 self.workflow.replace("parity windows contract provenance", "parity windows"),
                 aggregator,
@@ -386,10 +425,130 @@ class FFmpegWorkflowContract(unittest.TestCase):
                 aggregator,
                 ["filter build lacks --enable-libvmafx"],
             ),
+            "no fatal warnings": (
+                self.workflow.replace(
+                    "./configure --fatal-warnings --enable-version3",
+                    "./configure --enable-version3",
+                ),
+                aggregator,
+                ["filter build lacks --fatal-warnings"],
+            ),
+            "no warning grep": (
+                self.workflow.replace(WARNING_GATE, ""),
+                aggregator,
+                [
+                    "filter build lacks grep -Ei '(^|[[:space:]])warning([[:space:]#:])'",
+                    f"filter build lacks {GREP_STATUS_GUARD}",
+                    "filter build lacks FATAL: FFmpeg emitted compiler warnings",
+                ],
+            ),
+            "grep error read as clean": (
+                self.workflow.replace(GREP_STATUS_GUARD, "|| true"),
+                aggregator,
+                [f"filter build lacks {GREP_STATUS_GUARD}"],
+            ),
         }
         for case, (workflow, required, expected) in planted.items():
             with self.subTest(case=case):
                 self.assertEqual(_filter_job_findings(workflow, required), expected)
+
+    def test_vmafx_filter_warning_gate_on_sample_build_logs(self) -> None:
+        """Run the job's own warning gate on sample logs: warnings and a missing log fail it."""
+        build = _run(_step(_job(self.workflow, "filter"), "Build FFmpeg with the vmafx filter"))
+        block = re.search(r'(?ms)^warnings="\$\(grep .*?^fi$', build)
+        self.assertIsNotNone(block, "filter build has no warning gate block")
+        assert block is not None
+        line = next((entry for entry in build.splitlines() if entry.strip()), "")
+        self.assertEqual(line, "set -euo pipefail", "filter build has no strict mode")
+        gate = line + "\n" + block.group(0) + "\n"
+        cases = {
+            "gcc warning": (
+                "libavfilter/vf_vmafx.c:211:13: warning: unused variable 'n' "
+                "[-Wunused-variable]\n",
+                1,
+            ),
+            "clang warning": (
+                "libavfilter/vf_vmafx.c:88:5: warning: implicit conversion loses "
+                "integer precision\n1 warning generated.\n",
+                1,
+            ),
+            "linker warning": ("/usr/bin/ld: warning: libvmafx.so: missing .note.GNU-stack\n", 1),
+            "upper-case line start": ("WARNING: unknown option ignored\n", 1),
+            "numbered diagnostic": ("vf_vmafx.c(12): warning #177: variable unused\n", 1),
+            "clean build": ("CC\tlibavfilter/vf_vmafx.o\nLD\tffmpeg_g\nSTRIP\tffmpeg\n", 0),
+            "empty log": ("", 0),
+            "option name only": ("configure --fatal-warnings --enable-libvmafx\n", 0),
+            "word inside a path": ("CC\tlibavutil/warning_helper.o\n", 0),
+            "missing log": (None, 1),
+        }
+        for case, (log, expected) in cases.items():
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                if log is not None:
+                    Path(temporary, "ffmpeg-build.log").write_text(log, encoding="utf-8")
+                result = run_command(
+                    [BASH, "-c", gate],
+                    allowed_executables=(BASH,),
+                    cwd=temporary,
+                    env={**os.environ, "RUNNER_TEMP": temporary, "LC_ALL": "C"},
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout_seconds=60,
+                )
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                fatal = "FATAL: FFmpeg emitted compiler warnings" in result.stderr
+                self.assertEqual(fatal, expected == 1 and log is not None, result.stderr)
+
+
+def _setup_cosign_test_fixture(p: Path, record: Path) -> dict[str, str]:
+    bin_dir = p / "bin"
+    bin_dir.mkdir()
+    tarball, sha = shared_series.tarball(
+        p / "release",
+        "n9.0.2",
+        "946fcce07b6dcd0331c8cc609192aeff5e1924f8",
+        {"0001-fix.patch": "diff\n"},
+    )
+    curl = bin_dir / "curl"
+    curl.write_text(
+        "#!/bin/sh\n"
+        'dest=""\nurl=""\n'
+        "while [ $# -gt 0 ]; do\n"
+        '  case "$1" in\n'
+        '    -o|--output) dest="$2"; shift 2 ;;\n'
+        '    http*|file*|ftp*) url="$1"; shift ;;\n'
+        "    *) shift ;;\n"
+        "  esac\ndone\n"
+        f'case "$url" in *tar.gz) cp "{tarball}" "$dest" ;; '
+        f'*SHA256SUMS) cp "{tarball.parent / "SHA256SUMS"}" "$dest" ;; '
+        '*sigstore.json) echo "{}" > "$dest" ;; esac\n'
+    )
+    curl.chmod(0o755)
+    cosign = bin_dir / "cosign"
+    cosign.write_text(
+        f'#!/bin/sh\n[ "$1" = "verify-blob" ] && printf "%s\\n" "${{TUF_ROOT:-UNSET}}" > "{record}"\nexit 0\n'
+    )
+    cosign.chmod(0o755)
+    config = p / "build-config.env"
+    config.write_text(
+        'FFMPEG_REMOTE="https://github.com/FFmpeg/FFmpeg.git"\n'
+        'FFMPEG_TAG="n9.0.2"\n'
+        'FFMPEG_COMMIT="946fcce07b6dcd0331c8cc609192aeff5e1924f8"\n'
+        'FFMPEG_FIX_SERIES_REPO="https://github.com/VMAFx/ffmpeg-patches"\n'
+        f'FFMPEG_FIX_SERIES_TAG="v0.0.0-fixture"\nFFMPEG_FIX_SERIES_SHA256="{sha}"\n'
+    )
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith("FFMPEG_FIX_SERIES_") and k != "TUF_ROOT"
+    }
+    env.update(
+        PATH=f"{bin_dir}:{env.get('PATH', '')}",
+        BUILD_CONFIG=str(config),
+        FFMPEG_FIX_SERIES_CACHE="none",
+        FFMPEG_FIX_SERIES_VERIFY="cosign",
+    )
+    return env
 
 
 class SharedFixSeriesContract(unittest.TestCase):
@@ -537,6 +696,42 @@ class SharedFixSeriesContract(unittest.TestCase):
                     )
                     self.assertEqual(result.returncode, 2, result.stderr)
                     self.assertIn(needle, str(result.stderr))
+
+    def test_the_script_isolates_cosign_tuf_root(self) -> None:
+        """The script isolates cosign's TUF cache so read-only home sandboxes succeed."""
+        text = (ROOT / "scripts/ci" / self.SCRIPT).read_text(encoding="utf-8")
+        needle = 'export TUF_ROOT="${TUF_ROOT:-$work/sigstore}"'
+        self.assertIn(needle, text)
+        self.assertLess(text.index(needle), text.index("cosign verify-blob"))
+
+    def test_cosign_invocation_inherits_or_defaults_tuf_root(self) -> None:
+        """Verify cosign executes with TUF_ROOT defaulted to work/sigstore or inherited."""
+        script = ROOT / "scripts/ci" / self.SCRIPT
+        with tempfile.TemporaryDirectory() as directory:
+            p = Path(directory)
+            record = p / "tuf_root.txt"
+            env = _setup_cosign_test_fixture(p, record)
+            res = run_command(
+                [BASH, str(script), "fetch", str(p / "out1")],
+                allowed_executables=(BASH,),
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout_seconds=60,
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertTrue(record.read_text().strip().endswith("/sigstore"))
+
+            res2 = run_command(
+                [BASH, str(script), "fetch", str(p / "out2")],
+                allowed_executables=(BASH,),
+                env=dict(env, TUF_ROOT=str(p / "custom_tuf")),
+                capture_output=True,
+                text=True,
+                timeout_seconds=60,
+            )
+            self.assertEqual(res2.returncode, 0, res2.stderr)
+            self.assertEqual(record.read_text().strip(), str(p / "custom_tuf"))
 
 
 MSYS2_STEP = re.compile(r"(?m)^([ \t]*)- uses: msys2/setup-msys2@")

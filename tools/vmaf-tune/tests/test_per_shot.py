@@ -324,7 +324,7 @@ def _stub_per_shot_run(payload: str, *, stdout: str, on_ffmpeg=None):
     that argv before the file is written.
     """
 
-    def _run(cmd, capture_output, text, check):
+    def _run(cmd, capture_output, text, check, timeout=None):
         if cmd[0] == "vmaf-perShot":
             out_path = Path(cmd[cmd.index("--output") + 1])
             out_path.write_text(payload, encoding="utf-8")

@@ -36,6 +36,7 @@ from scripts.docs.credits_lib import (
     covered,
     license_tokens,
     path_matches,
+    reuse_path_matches,
 )
 
 THIRD_PARTY_DIRS = ("third_party", "3rdparty", "vendor")
@@ -52,6 +53,10 @@ COPYRIGHT_RE = re.compile(
 )
 HEADER_LINES = 40
 SKIP_TREES = ("docs/", "LICENSES/", ".workingdir/", "testdata/")
+VALID_PRECEDENCE = ("closest", "aggregate", "override")
+# REUSE-IgnoreStart
+SPDX_HEADER_RE = re.compile(r"SPDX-License-Identifier:\s*(?P<expr>.+?)(?:\s*(?:\*/|-->))?\s*$")
+# REUSE-IgnoreEnd
 ADAPTED_RE = re.compile(r"Adapted from \[[^\]]+\]\((https?://[^)\s]+)\)")
 DERIVED_RE = re.compile(r"^\s*derived_from:\s*[\"']?(https?://[^\s\"')]+)", re.M)
 SKILL_FILES = re.compile(r"(^|/)(SKILL\.md|[^/]+\.agent\.md)$|^\.agents/agents/[^/]+\.md$")
@@ -82,35 +87,128 @@ def page_drift(root: Path, entries: list[Entry]) -> list[str]:
     return []
 
 
-def reuse_third_party_paths(root: Path, files: list[str]) -> dict[str, str]:
-    """Map each file to the non-own licence that REUSE.toml gives it."""
+def header_spdx_expression(root: Path, name: str) -> str | None:
+    """Return the SPDX-License-Identifier expression in ``name``'s header, or None.
+
+    Reads all ``SPDX-License-Identifier`` lines in the first ``HEADER_LINES`` lines.
+    When two or more lines match, they are joined as ``(e1) AND (e2)`` so any
+    ``OR`` within a single line preserves its grouping.
+    """
+    head = _read(root, name).splitlines()[:HEADER_LINES]
+    matches: list[str] = []
+    for line in head:
+        m = SPDX_HEADER_RE.search(line)
+        if m:
+            expr = m.group("expr").strip()
+            if expr:
+                matches.append(expr)
+    if not matches:
+        return None
+    if len(matches) == 1:
+        return matches[0]
+    return " AND ".join(f"({expr})" for expr in matches)
+
+
+def reuse_annotations(root: Path) -> list[dict[str, object]]:
+    """Annotations declared in REUSE.toml, or an empty list when absent."""
     reuse = root / "REUSE.toml"
     if not reuse.is_file():
-        return {}
-    annotations = tomllib.loads(reuse.read_text(encoding="utf-8")).get("annotations", [])
+        return []
+    notes: list[dict[str, object]] = tomllib.loads(reuse.read_text(encoding="utf-8")).get(
+        "annotations", []
+    )
+    return notes
+
+
+def note_strings(note: dict[str, object], key: str) -> list[str]:
+    """Return ``note[key]`` as strings; REUSE.toml allows one string or an array."""
+    raw = note.get(key, [])
+    if isinstance(raw, str):
+        return [raw]
+    if isinstance(raw, list):
+        return [str(item) for item in raw]
+    return []
+
+
+def own_licensed(note: dict[str, object]) -> bool:
+    """True when the annotation names a licence and every licence in it is the project's own.
+
+    An annotation without ``SPDX-License-Identifier`` states no terms, so it is not own.
+    """
+    tokens = set(license_tokens(str(note.get("SPDX-License-Identifier", ""))))
+    return bool(tokens) and not tokens - set(OWN_LICENSES)
+
+
+def effective_annotations(root: Path, files: list[str]) -> dict[str, dict[str, object]]:
+    """Map each file to the one REUSE.toml annotation that governs it: the last that matches.
+
+    REUSE applies only the latest matching table of a REUSE.toml (reuse 6.2.0,
+    ``ReuseTOML.find_annotations_item``), so an earlier match never decides a file.
+    A REUSE path matches the whole file path or its ``*`` and ``**`` globs the way
+    reuse 6.2.0 does (``reuse_path_matches``, ``AnnotationsItem.matches``), never a
+    directory prefix, so a bare directory covers no file.
+    """
+    found: dict[str, dict[str, object]] = {}
+    for note in reuse_annotations(root):
+        for pattern in note_strings(note, "path"):
+            for name in files:
+                if reuse_path_matches(pattern, name):
+                    found[name] = note
+    return found
+
+
+def reuse_own_override_paths(root: Path, files: list[str]) -> set[str]:
+    """Files whose governing REUSE annotation is an own-licence override."""
+    return {
+        name
+        for name, note in effective_annotations(root, files).items()
+        if note.get("precedence") == "override" and own_licensed(note)
+    }
+
+
+def _annotation_precedence(reuse: Path, note: dict[str, object]) -> str:
+    """Validate and return the annotation's precedence setting."""
+    raw = note.get("precedence")
+    precedence = str(raw) if raw is not None else "closest"
+    if precedence not in VALID_PRECEDENCE:
+        raise CreditsError(f"{reuse}: unknown precedence '{precedence}'")
+    return precedence
+
+
+def _should_flag_reuse_file(root: Path, name: str, precedence: str, note_expr: str) -> str | None:
+    """Return the non-own licence to flag for ``name``, or None if exempt."""
+    if precedence == "closest":
+        header_expr = header_spdx_expression(root, name)
+        if header_expr is not None:
+            if set(license_tokens(header_expr)) - set(OWN_LICENSES):
+                return header_expr
+            return None
+    return note_expr
+
+
+def reuse_third_party_paths(root: Path, files: list[str]) -> dict[str, str]:
+    """Map each file to the non-own licence that its governing REUSE.toml annotation gives it."""
+    reuse = root / "REUSE.toml"
+    for note in reuse_annotations(root):
+        _annotation_precedence(reuse, note)
     found: dict[str, str] = {}
-    for note in annotations:
+    for name, note in effective_annotations(root, files).items():
         expr = str(note.get("SPDX-License-Identifier", ""))
         if not set(license_tokens(expr)) - set(OWN_LICENSES):
             continue
-        for pattern in note.get("path", []):
-            for name in files:
-                if path_matches(pattern, name):
-                    found[name] = expr
+        flag_expr = _should_flag_reuse_file(root, name, _annotation_precedence(reuse, note), expr)
+        if flag_expr is not None:
+            found[name] = flag_expr
     return found
 
 
 def own_holders(root: Path) -> set[str]:
     """Copyright holders REUSE.toml records on project-licensed annotations."""
-    reuse = root / "REUSE.toml"
     holders: set[str] = set()
-    if not reuse.is_file():
-        return holders
-    for note in tomllib.loads(reuse.read_text(encoding="utf-8")).get("annotations", []):
-        if set(license_tokens(str(note.get("SPDX-License-Identifier", "")))) - set(OWN_LICENSES):
+    for note in reuse_annotations(root):
+        if not own_licensed(note):
             continue
-        text = note.get("SPDX-FileCopyrightText", [])
-        for item in [text] if isinstance(text, str) else text:
+        for item in note_strings(note, "SPDX-FileCopyrightText"):
             holders.add(re.sub(r"^[\d\-\u2013, ]+", "", item).split("<")[0].strip().lower())
     return holders
 
@@ -138,10 +236,13 @@ def foreign_copyright_files(root: Path, files: list[str]) -> dict[str, str]:
     return found
 
 
-def structural_paths(files: list[str]) -> dict[str, str]:
+def structural_paths(files: list[str], root: Path | None = None) -> dict[str, str]:
     """Third-party directories, notice files and fonts, by name alone."""
+    exempt = reuse_own_override_paths(root, files) if root else set()
     found: dict[str, str] = {}
     for name in files:
+        if name in exempt:
+            continue
         parts = name.split("/")
         if any(p in THIRD_PARTY_DIRS for p in parts[:-1]):
             found[name] = "a third_party, 3rdparty or vendor directory"
@@ -185,12 +286,20 @@ def uncredited_paths(
     waivers: list[Waiver] | None = None,
     today: datetime.date | None = None,
 ) -> list[str]:
+    """Return a finding line for each third-party path no credits entry covers.
+
+    Merges reuse_third_party_paths, structural_paths and foreign_copyright_files; the first
+    detector to name a path supplies its reason. A path is dropped when an entry covers it or
+    an unexpired waiver names it. Lines read "<path>: <reason>; no credits entry lists this
+    path", followed by waiver_findings lines for expired waivers and waivers that excuse
+    nothing.
+    """
     waivers = waivers or []
     today = today or datetime.date.today()
     seen: dict[str, str] = {}
     for source in (
         reuse_third_party_paths(root, files),
-        structural_paths(files),
+        structural_paths(files, root),
         foreign_copyright_files(root, files),
     ):
         for name, why in source.items():

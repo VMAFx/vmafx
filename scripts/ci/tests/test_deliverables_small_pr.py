@@ -16,14 +16,22 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
 GATE = ROOT / "scripts" / "ci" / "deliverables-check.sh"
 GIT = shutil.which("git") or "/usr/bin/git"
 BASH = shutil.which("bash") or "/bin/bash"
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 IDENT = {
     "GIT_AUTHOR_NAME": "Ada",
     "GIT_AUTHOR_EMAIL": "ada@example.org",
@@ -64,9 +72,19 @@ class SmallPrGateTest(unittest.TestCase):
         self.base = self.git("rev-parse", "HEAD").strip()
 
     def git(self, *args: str) -> str:
+        """Run fixture Git commands for scripts/ci/deliverables-check.sh.
+
+        Configures baseline and branch commits in the fixture repository.
+        """
         env = {**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, **IDENT}
         done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
-            [GIT, *args], cwd=self.repo, env=env, capture_output=True, text=True, check=True
+            [GIT, *args],
+            cwd=self.repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=GIT_TIMEOUT_S,
         )
         return done.stdout
 
@@ -82,17 +100,28 @@ class SmallPrGateTest(unittest.TestCase):
         self.git("add", "-A")
         self.git("commit", "-q", "-m", "change")
 
-    def gate(self, body: str) -> subprocess.CompletedProcess[str]:
+    def gate(self, body: str) -> TextCommandResult:
+        """Run scripts/ci/deliverables-check.sh on the fixture repository.
+
+        ADR-2461: proves the small-PR marker rules and line limits.
+        """
         env = {k: v for k, v in os.environ.items() if k not in ("PR_BODY", "BASE_SHA", "HEAD_SHA")}
         env.update(PR_BODY=body, BASE_SHA=self.base, HEAD_SHA=self.git("rev-parse", "HEAD").strip())
-        return subprocess.run(  # noqa: S603 -- fixed argv, no shell, gate under test
-            [BASH, str(GATE)], cwd=self.repo, env=env, capture_output=True, text=True, check=False
+        return run_command(
+            [BASH, str(GATE)],
+            allowed_executables=(BASH,),
+            cwd=self.repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=SCRIPT_TIMEOUT_S,
         )
 
     def small(self, extra: str = "") -> str:
         return f"{MARKER}\n{KEPT}{extra}"
 
-    def assert_refused(self, res: subprocess.CompletedProcess[str], needle: str) -> None:
+    def assert_refused(self, res: TextCommandResult, needle: str) -> None:
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
         self.assertIn("ADR-2461", res.stdout + res.stderr)
         self.assertIn(needle, res.stdout + res.stderr)

@@ -35,6 +35,8 @@ from vmaftune.fingerprint import (
     require_fingerprint_deps,
 )
 
+FFMPEG_TIMEOUT_S = 60
+
 
 def _make_synthetic_frames(
     count: int,
@@ -157,6 +159,7 @@ def test_duration_mismatch_refused(tmp_path: Path):
             str(c1),
         ],
         stderr=subprocess.DEVNULL,
+        timeout=FFMPEG_TIMEOUT_S,
     )
     subprocess.check_call(
         [
@@ -175,6 +178,7 @@ def test_duration_mismatch_refused(tmp_path: Path):
             str(c2),
         ],
         stderr=subprocess.DEVNULL,
+        timeout=FFMPEG_TIMEOUT_S,
     )
 
     fp1 = compute_fingerprint(c1)
@@ -208,6 +212,7 @@ def test_aspect_ratio_mismatch_refused(tmp_path: Path):
             str(c1),
         ],
         stderr=subprocess.DEVNULL,
+        timeout=FFMPEG_TIMEOUT_S,
     )
     # 320x240 is 4:3
     subprocess.check_call(
@@ -227,6 +232,7 @@ def test_aspect_ratio_mismatch_refused(tmp_path: Path):
             str(c2),
         ],
         stderr=subprocess.DEVNULL,
+        timeout=FFMPEG_TIMEOUT_S,
     )
 
     fp1 = compute_fingerprint(c1)
@@ -259,6 +265,7 @@ def test_too_few_frames_refused(tmp_path: Path):
             str(c1),
         ],
         stderr=subprocess.DEVNULL,
+        timeout=FFMPEG_TIMEOUT_S,
     )
 
     fp = compute_fingerprint(c1)

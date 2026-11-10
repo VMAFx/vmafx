@@ -4,7 +4,7 @@
 #
 # check-vmafx-import-failure.sh — the vmafx filter stops immediately on import
 # failure, logs an error naming the frame and input, and prints no pooled
-# score line; it never passes a frame through unscored (patch 0004).
+# score line; it never passes a frame through unscored (patch 0003).
 #
 # Bounded retry on transient acquisition delay lives in core under decision D8
 # (vmafx_context_import_frame(), core/src/vmafx/frame_import_admit.c, proven

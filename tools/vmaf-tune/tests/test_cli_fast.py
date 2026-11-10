@@ -553,7 +553,7 @@ def _install_decode_fakes(
         vmaf_commands.append(score_req.distorted)
         return ["echo", "vmaf", "--output", str(json_path)]
 
-    def _sub_run_writing_json(cmd, capture_output=True, text=True, check=False):
+    def _sub_run_writing_json(cmd, capture_output=True, text=True, check=False, timeout=None):
         if "--output" in cmd:
             out_path = Path(cmd[cmd.index("--output") + 1])
             out_path.write_text(json.dumps(_PROBE_VMAF_PAYLOAD), encoding="utf-8")
@@ -633,7 +633,7 @@ def test_build_fast_sample_extractor_raises_on_nonzero_vmaf_exit(
 
     monkeypatch.setattr("vmaftune.score.maybe_decode_distorted", _fake_maybe_decode_distorted)
 
-    def _fake_sub_run(cmd, capture_output=True, text=True, check=False):
+    def _fake_sub_run(cmd, capture_output=True, text=True, check=False, timeout=None):
         return MagicMock(returncode=255, stdout="", stderr="Error reading YUV frame data")
 
     monkeypatch.setattr("subprocess.run", _fake_sub_run)

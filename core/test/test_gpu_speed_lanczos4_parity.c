@@ -130,6 +130,8 @@ static int lz_device_close(LzDevice *device)
 }
 #endif
 
+#define LZ_DIFFERS_MSG(b) "lanczos4 prescale: the " b " twin differs from the CPU extractor"
+
 /* The error a twin without device kernels reports; 0 for a backend that has
  * no such build, where nothing compares equal to it. */
 #ifndef LZ_SCAFFOLD_ERRNO
@@ -305,6 +307,8 @@ static double lz_worst(const LzRun *run, const LzScores *cpu, const LzScores *gp
     return worst;
 }
 
+/* Score one run on the GPU twin and on CPU and assert that every frame and output
+ * matches exactly; skip (exit 77) when no device or no kernels are present. */
 static char *lz_check(const LzRun *run)
 {
     LzScores cpu;
@@ -313,7 +317,7 @@ static char *lz_check(const LzRun *run)
     memset(&gpu, 0, sizeof(gpu));
     const int device = lz_score_twin(run, &gpu);
     if (device == 1 || (device != 0 && device == LZ_SCAFFOLD_ERRNO)) {
-        (void)fprintf(stderr, "[skip: no " LZ_BACKEND " device%s] ",
+        (void)fprintf(stderr, "[skip: no %s device%s] ", LZ_BACKEND,
                       device == 1 ? "" : " kernels in this build");
         mu_skipped = 1; /* exit 77, not a pass */
         return NULL;
@@ -327,8 +331,7 @@ static char *lz_check(const LzRun *run)
         (void)fprintf(stderr, "\n%s prescale %s lanczos4: worst relative difference %.3e\n",
                       run->twin, run->prescale, worst);
     }
-    mu_assert("lanczos4 prescale: the " LZ_BACKEND " twin differs from the CPU extractor",
-              worst == 0.0);
+    mu_assert(LZ_DIFFERS_MSG(LZ_BACKEND), worst == 0.0);
     return NULL;
 }
 

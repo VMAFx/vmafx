@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, cast
 from unittest import mock
 
+from scripts.lib import safe_subprocess
 from scripts.lib.safe_subprocess import (
     MAX_ARG_BYTES,
     CommandFailed,
@@ -26,9 +27,11 @@ from scripts.lib.safe_subprocess import (
     CommandTimedOut,
     CommandValidationError,
     executable_argument,
+    resolve_executable,
     run,
     run_async,
     signal_process_group,
+    terminate_windows_process_tree,
 )
 
 PYTHON = str(Path(sys.executable).resolve(strict=True))
@@ -168,6 +171,50 @@ class SafeSubprocessTests(unittest.TestCase):
             (Path(tmp) / "vmafx").symlink_to("vmaf")
             # The CLI picks vmafx mode from argv0, so the alias must survive.
             self.assertEqual(executable_argument("./vmafx", root=tmp), str(Path(tmp) / "vmafx"))
+
+    def test_resolve_executable_bare_name_and_relative_path(self) -> None:
+        """Bare names on PATH and relative paths against root resolve to absolute files."""
+        # Bare name on PATH -> absolute path that exists; PATH holds only the running interpreter
+        python = Path(PYTHON)
+        with mock.patch.dict(os.environ, {"PATH": str(python.parent)}):
+            resolved_python = resolve_executable(python.name)
+        self.assertEqual(resolved_python, PYTHON)
+        self.assertTrue(Path(resolved_python).is_absolute())
+        self.assertTrue(Path(resolved_python).is_file())
+        self.assertTrue(os.access(resolved_python, os.X_OK))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            tool = bin_dir / "runner"
+            tool.touch()
+            tool.chmod(0o755)
+
+            # Relative path with a directory part -> resolved against root
+            rel_path = Path("bin") / "runner"
+            resolved_rel = resolve_executable(rel_path, root=root)
+            self.assertEqual(resolved_rel, str(tool.resolve()))
+
+            # Bare name in custom PATH
+            with mock.patch.dict(os.environ, {"PATH": str(bin_dir)}):
+                resolved_bare = resolve_executable("runner")
+                self.assertEqual(resolved_bare, str(tool.resolve()))
+
+    def test_resolve_executable_missing_name_raises(self) -> None:
+        """Missing executable name raises CommandValidationError."""
+        with self.assertRaises(CommandValidationError):
+            resolve_executable("nonexistent-tool-binary-xyz")
+
+    @unittest.skipIf(os.name == "nt", "POSIX execute permissions are not enforced on Windows")
+    def test_resolve_executable_non_executable_file_raises(self) -> None:
+        """Existing file without execute permission raises CommandValidationError."""
+        with tempfile.TemporaryDirectory() as tmp:
+            unexecutable = Path(tmp) / "plain_file.txt"
+            unexecutable.touch()
+            unexecutable.chmod(0o644)
+            with self.assertRaises(CommandValidationError):
+                resolve_executable(unexecutable)
 
     def test_capture_limit_terminates_a_flooding_child(self) -> None:
         with self.assertRaises(CommandOutputLimitExceeded) as raised:
@@ -331,6 +378,146 @@ class SafeSubprocessAsyncTests(unittest.IsolatedAsyncioTestCase):
                     task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await task
+
+
+class _StubTaskkillProcess:
+    def __init__(self, returncode: int = 0) -> None:
+        """Record the stub returncode for taskkill simulation."""
+        self.returncode = returncode
+
+    async def wait(self) -> int:
+        """Return the recorded taskkill exit status."""
+        return self.returncode
+
+    def kill(self) -> None:
+        """Stub kill invocation on the taskkill process."""
+
+
+class _StubProcessGroupChild:
+    def __init__(self, pid: int = 4242) -> None:
+        """Record the child PID and initialize call order tracking."""
+        self.pid = pid
+        self.returncode: int | None = None
+        self.call_order: list[str] = []
+
+    def terminate(self) -> None:
+        """Record terminate invocation in call order."""
+        self.call_order.append("terminate")
+
+    def kill(self) -> None:
+        """Record kill invocation in call order."""
+        self.call_order.append("kill")
+
+    async def wait(self) -> int:
+        """Record wait invocation and set returncode."""
+        self.returncode = 1
+        self.call_order.append("wait")
+        return 1
+
+
+class WindowsTreeTerminationTests(unittest.TestCase):
+    def test_windows_tree_termination_invokes_taskkill_with_exact_argv(self) -> None:
+        """Assert that taskkill is invoked with exact PID and flags."""
+        stub_proc = _StubTaskkillProcess(returncode=0)
+        exec_stub = mock.AsyncMock(return_value=stub_proc)
+        with (
+            mock.patch(
+                "scripts.lib.safe_subprocess.resolve_executable",
+                return_value="C:/Windows/System32/taskkill.exe",
+            ),
+            mock.patch("scripts.lib.safe_subprocess.asyncio.create_subprocess_exec", exec_stub),
+        ):
+            result = terminate_windows_process_tree(4242)
+
+        self.assertTrue(result)
+        exec_stub.assert_called_once()
+        self.assertEqual(
+            exec_stub.call_args[0],
+            ("C:/Windows/System32/taskkill.exe", "/PID", "4242", "/T", "/F"),
+        )
+
+    def test_windows_tree_termination_nonzero_exit_status_returns_false(self) -> None:
+        """Assert that a non-zero taskkill exit status returns False."""
+        stub_proc = _StubTaskkillProcess(returncode=128)
+        exec_stub = mock.AsyncMock(return_value=stub_proc)
+        with (
+            mock.patch(
+                "scripts.lib.safe_subprocess.resolve_executable",
+                return_value="C:/Windows/System32/taskkill.exe",
+            ),
+            mock.patch("scripts.lib.safe_subprocess.asyncio.create_subprocess_exec", exec_stub),
+        ):
+            result = terminate_windows_process_tree(4242)
+
+        self.assertFalse(result)
+
+    def test_windows_tree_termination_missing_taskkill_returns_false_and_starts_nothing(
+        self,
+    ) -> None:
+        """Assert that missing taskkill returns False and starts nothing."""
+        exec_stub = mock.AsyncMock()
+        with (
+            mock.patch(
+                "scripts.lib.safe_subprocess.resolve_executable",
+                side_effect=CommandValidationError("taskkill is unavailable"),
+            ),
+            mock.patch("scripts.lib.safe_subprocess.asyncio.create_subprocess_exec", exec_stub),
+        ):
+            result = terminate_windows_process_tree(4242)
+
+        self.assertFalse(result)
+        exec_stub.assert_not_called()
+
+    def test_terminate_windows_process_tree_boundary_validation(self) -> None:
+        """Assert that invalid process IDs are rejected and positive PID succeeds."""
+        invalid_targets: list[Any] = [0, -1, True, "12"]
+        for target in invalid_targets:
+            with self.subTest(target=repr(target)), self.assertRaises(CommandValidationError):
+                terminate_windows_process_tree(target)
+
+        stub_proc = _StubTaskkillProcess(returncode=0)
+        exec_stub = mock.AsyncMock(return_value=stub_proc)
+        with (
+            mock.patch(
+                "scripts.lib.safe_subprocess.resolve_executable",
+                return_value="C:/Windows/System32/taskkill.exe",
+            ),
+            mock.patch("scripts.lib.safe_subprocess.asyncio.create_subprocess_exec", exec_stub),
+        ):
+            result = terminate_windows_process_tree(1)
+
+        self.assertTrue(result)
+        exec_stub.assert_called_once()
+        self.assertEqual(
+            exec_stub.call_args[0],
+            ("C:/Windows/System32/taskkill.exe", "/PID", "1", "/T", "/F"),
+        )
+
+    def test_terminate_process_group_windows_terminates_tree_before_direct_child(self) -> None:
+        """Assert that process tree is terminated before the direct child."""
+        fake = _StubProcessGroupChild(pid=4242)
+        recorded_pids: list[int] = []
+
+        async def record_tree_terminate(pid: int) -> bool:
+            """Record the tree termination PID and call order."""
+            recorded_pids.append(pid)
+            fake.call_order.append("tree_terminate")
+            return True
+
+        with (
+            mock.patch("scripts.lib.safe_subprocess.os.name", "nt"),
+            mock.patch(
+                "scripts.lib.safe_subprocess._terminate_windows_process_tree",
+                side_effect=record_tree_terminate,
+            ),
+        ):
+            asyncio.run(safe_subprocess._terminate_process_group(cast(Any, fake)))
+
+        self.assertEqual(recorded_pids, [4242])
+        self.assertIn("terminate", fake.call_order)
+        tree_idx = fake.call_order.index("tree_terminate")
+        term_idx = fake.call_order.index("terminate")
+        self.assertLess(tree_idx, term_idx)
 
 
 if __name__ == "__main__":
