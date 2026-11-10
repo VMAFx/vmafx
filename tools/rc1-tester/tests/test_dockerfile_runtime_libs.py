@@ -111,6 +111,12 @@ RUNTIME_STAGES = (
 )
 
 
+def _copied_debian_packages(stage: str, verb: str) -> list[str]:
+    """Debian packages whose library the stage copies out of /usr/lib."""
+    pattern = rf"{re.escape(verb)} /usr/lib/\*-linux-gnu\*?/(lib\w+)\.so"
+    return [DEBIAN_COPIES.get(lib, lib) for lib in sorted(set(re.findall(pattern, stage)))]
+
+
 def _copy_gaps(stage: str, verb: str) -> list[str]:
     """Debian packages whose library the stage copies without recording its SOURCE and copyright."""
     pattern = rf"{re.escape(verb)} /usr/lib/\*-linux-gnu\*?/(lib\w+)\.so"
@@ -150,9 +156,16 @@ def _inherited(stages: dict[str, tuple[str, str]], name: str) -> str:
     ids=[f"{Path(path).name}:{stage}" for path, stage, _verb in COPY_SITES],
 )
 def test_copied_debian_libraries_carry_their_source(path: str, stage: str, verb: str) -> None:
-    """A library copied out of a Debian package ships that package's copyright and SOURCE."""
-    text = (REPO / path).read_text(encoding="utf-8")
-    assert _copy_gaps(_stage(text, stage), verb) == []
+    """A library copied out of a Debian package ships that package's copyright and SOURCE.
+
+    The non-empty check is the point of the parametrization: a stage that stops
+    copying the library (or a rename that makes `_stage` return the wrong body)
+    would otherwise pass this test while asserting nothing.
+    """
+    body = _stage((REPO / path).read_text(encoding="utf-8"), stage)
+    copied = _copied_debian_packages(body, verb)
+    assert "libzimg2" in copied, f"{path}:{stage} copies no libzimg2 with '{verb}'"
+    assert _copy_gaps(body, verb) == []
 
 
 @pytest.mark.parametrize("verb", ("cp -a", "cp -d"))
@@ -214,10 +227,26 @@ def test_the_oneapi_build_script_records_the_libzimg2_it_stages() -> None:
     Two published images take /dist/lib from builder-oneapi2026: the production
     oneAPI image and the node SYCL image. Both inherit the zimg component, so the
     script is a copy site like the Dockerfiles above and is held to the same rule.
+    The `builder-oneapi2026` stages themselves carry no copy line — they only run
+    this script — so the script, not those stages, is what `COPY_SITES` cannot
+    cover and what this test pins.
     """
     script = (REPO / "scripts/ci/build-oneapi-libvmaf.sh").read_text(encoding="utf-8")
+    assert _copied_debian_packages(script, "cp -d") == ["libzimg2"]
     assert _copy_gaps(script, "cp -d") == []
     assert "dpkg-query" in script and "/usr/share/doc/libzimg2/copyright" in script
+
+
+def test_the_oneapi_stages_stage_no_library_themselves() -> None:
+    """The two builder-oneapi2026 stages run the shared script and copy nothing themselves.
+
+    Recorded so a future edit that moves a copy line into one of those stages is
+    noticed: it would be a copy site outside `COPY_SITES` and outside the script.
+    """
+    for path in ("docker/Dockerfile.production-gpu", "docker/Dockerfile.node"):
+        body = _stage((REPO / path).read_text(encoding="utf-8"), "builder-oneapi2026")
+        assert _copied_debian_packages(body, "cp -d") == [], path
+        assert "build-oneapi-libvmaf.sh" in body, path
 
 
 def test_a_oneapi_build_script_without_the_record_fails() -> None:
