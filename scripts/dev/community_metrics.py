@@ -49,6 +49,10 @@ MAINTAINERS_MD = ROOT / "MAINTAINERS.md"
 GH = "gh"
 FETCH_LIMIT = 5000
 LIST_LIMIT = 2000
+# The search-backed listings (`gh <kind> list --search ...`) stop at the
+# search API's 1000-result ceiling no matter what --limit asks for; a busy
+# window is undercounted silently unless the cap fails loudly.
+SEARCH_RESULT_CAP = 1000
 AGING_DAYS = 30
 BOT_SUFFIX = "[bot]"
 _LOGIN = re.compile(r"@([A-Za-z0-9][A-Za-z0-9-]{0,38})")
@@ -112,7 +116,8 @@ def fetch_merged_pull_requests(repo: str, limit: int = FETCH_LIMIT) -> list[dict
 
 
 def _list(repo: str, kind: str, search: str) -> list[dict[str, Any]]:
-    return run_gh(
+    """One search-backed window listing; fails at the cap instead of undercounting."""
+    rows = run_gh(
         [
             kind,
             "list",
@@ -128,6 +133,13 @@ def _list(repo: str, kind: str, search: str) -> list[dict[str, Any]]:
             str(LIST_LIMIT),
         ]
     )
+    if len(rows) >= min(LIST_LIMIT, SEARCH_RESULT_CAP):
+        raise RuntimeError(
+            f"{kind} list for {search!r} reached its result cap of "
+            f"{min(LIST_LIMIT, SEARCH_RESULT_CAP)}; narrow the window instead "
+            "of trusting an undercounted opened/closed total"
+        )
+    return rows
 
 
 def fetch_window_items(repo: str, since: str, until: str) -> list[dict[str, Any]]:
@@ -159,27 +171,72 @@ def fetch_window_items(repo: str, since: str, until: str) -> list[dict[str, Any]
 def fetch_first_response_inputs(
     repo: str, item: dict[str, Any]
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Comments and, for a pull request, reviews of one item."""
-    kind = "pulls" if item["is_pr"] else "issues"
-    comments = run_gh(
-        [
-            "api",
-            f"repos/{repo}/{kind}/{item['number']}/comments",
-            "--jq",
-            "[.[] | {author: .user.login, createdAt: .created_at}]",
-        ]
+    """Conversation comments and, for a pull request, reviews of one item.
+
+    Conversation comments live on the ``issues`` endpoint for both kinds: the
+    ``pulls/comments`` endpoint only returns inline review comments, so a
+    maintainer's plain reply would be invisible. Both queries paginate —
+    ``--paginate --slurp`` yields the pages as JSON and the rows are mapped
+    here, because ``--jq`` runs once per page and cannot be combined with
+    ``--slurp``. A ``PENDING`` review carries no ``submitted_at`` and is
+    skipped: it is not a response.
+    """
+    pages = run_gh(
+        ["api", "--paginate", "--slurp", f"repos/{repo}/issues/{item['number']}/comments"]
     )
+    comments = [
+        {
+            "author": str((row.get("user") or {}).get("login", "")),
+            "createdAt": str(row["created_at"]),
+        }
+        for page in pages
+        for row in page or []
+        if row.get("created_at")
+    ]
     reviews: list[dict[str, Any]] = []
     if item["is_pr"]:
-        reviews = run_gh(
-            [
-                "api",
-                f"repos/{repo}/pulls/{item['number']}/reviews",
-                "--jq",
-                "[.[] | {author: .user.login, createdAt: .submitted_at}]",
-            ]
+        pages = run_gh(
+            ["api", "--paginate", "--slurp", f"repos/{repo}/pulls/{item['number']}/reviews"]
         )
+        reviews = [
+            {
+                "author": str((row.get("user") or {}).get("login", "")),
+                "createdAt": str(row["submitted_at"]),
+            }
+            for page in pages
+            for row in page or []
+            if row.get("submitted_at")
+        ]
     return comments, reviews
+
+
+def fetch_open_pull_requests(repo: str) -> list[dict[str, Any]]:
+    """Every open pull request: the aging metric is window-independent.
+
+    An open pull request created long before the window is exactly the one
+    the aging section exists to surface, so the list comes from its own query
+    instead of the window listings.
+    """
+    rows = run_gh(
+        [
+            "pr",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "open",
+            "--json",
+            "number,title,createdAt",
+            "--limit",
+            str(LIST_LIMIT),
+        ]
+    )
+    if len(rows) >= LIST_LIMIT:
+        raise RuntimeError(
+            f"open pull request list reached the fetch limit of {LIST_LIMIT}; "
+            "raise the limit instead of trusting a truncated aging section"
+        )
+    return rows
 
 
 def first_response(
@@ -263,6 +320,7 @@ def compute_report(
     now: datetime.datetime,
     window_items: list[dict[str, Any]],
     merged: list[dict[str, Any]],
+    open_pull_requests: list[dict[str, Any]],
     responses: dict[int, dict[str, Any] | None],
     maintainers: list[str],
     open_labels: dict[str, int],
@@ -296,10 +354,8 @@ def compute_report(
             "title": str(item["title"]),
             "age_days": round(days_between(str(item["createdAt"]), now), 1),
         }
-        for item in window_items
-        if item["is_pr"]
-        and not item.get("closedAt")
-        and days_between(str(item["createdAt"]), now) > AGING_DAYS
+        for item in open_pull_requests
+        if days_between(str(item["createdAt"]), now) > AGING_DAYS
     ]
     window_start = datetime.datetime.fromisoformat(f"{since}T00:00:00+00:00")
     window_end = datetime.datetime.fromisoformat(f"{until}T23:59:59+00:00")
@@ -383,6 +439,35 @@ def render_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def fetch_open_label_counts(repo: str) -> dict[str, int]:
+    """Current open counts for the two labelled queues; fails at the fetch limit."""
+    counts: dict[str, int] = {}
+    for label in ("good first issue", "help wanted"):
+        rows = run_gh(
+            [
+                "issue",
+                "list",
+                "--repo",
+                repo,
+                "--state",
+                "open",
+                "--label",
+                label,
+                "--json",
+                "number",
+                "--limit",
+                str(LIST_LIMIT),
+            ]
+        )
+        if len(rows) >= LIST_LIMIT:
+            raise RuntimeError(
+                f"label {label!r} list reached the fetch limit of {LIST_LIMIT}; "
+                "raise the limit instead of reporting a capped count as exact"
+            )
+        counts[label] = len(rows)
+    return counts
+
+
 def main(argv: list[str] | None = None) -> int:
     today = datetime.datetime.now(datetime.timezone.utc)
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -399,32 +484,14 @@ def main(argv: list[str] | None = None) -> int:
     maintainers = maintainer_logins()
     window_items = fetch_window_items(repo, args.since, until)
     merged = fetch_merged_pull_requests(repo)
+    open_pull_requests = fetch_open_pull_requests(repo)
     responses: dict[int, dict[str, Any] | None] = {}
     for item in window_items:
         if not item["opened_in_window"]:
             continue
         comments, reviews = fetch_first_response_inputs(repo, item)
         responses[int(item["number"])] = first_response(item, comments, reviews, set(maintainers))
-    open_labels = {}
-    for label in ("good first issue", "help wanted"):
-        open_labels[label] = len(
-            run_gh(
-                [
-                    "issue",
-                    "list",
-                    "--repo",
-                    repo,
-                    "--state",
-                    "open",
-                    "--label",
-                    label,
-                    "--json",
-                    "number",
-                    "--limit",
-                    str(LIST_LIMIT),
-                ]
-            )
-        )
+    open_labels = fetch_open_label_counts(repo)
     report = compute_report(
         repo=repo,
         since=args.since,
@@ -432,6 +499,7 @@ def main(argv: list[str] | None = None) -> int:
         now=today,
         window_items=window_items,
         merged=merged,
+        open_pull_requests=open_pull_requests,
         responses=responses,
         maintainers=maintainers,
         open_labels=open_labels,
