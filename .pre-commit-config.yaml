@@ -808,6 +808,22 @@ repos:
         files: '^(scripts/ci/(check-workflow-size\.py|tests/test_check_workflow_size\.py)|\.pre-commit-config\.yaml)$'
         pass_filenames: false
 
+      - id: readme-badge-design
+        name: Every README image keeps the one badge design (ADR-3519)
+        entry: python3 -B scripts/ci/readme_badges.py check-readme --readme README.md
+        language: system
+        files: '^(README\.md|scripts/ci/readme_badges\.py)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: test-readme-badges
+        name: README badge renderer and design check keep positive, negative and boundary cases (ADR-3519)
+        entry: bash -c 'python3 -B scripts/ci/tests/test_readme_badges.py && python3 -B scripts/ci/tests/test_ci_tier.py'
+        language: system
+        files: '^(README\.md|scripts/ci/(readme_badges|ci_tier|tests/test_readme_badges|tests/test_ci_tier)\.py|tools/badges/.*|\.github/workflows/.*\.yml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: check-hosted-runner-labels
         name: Workflow jobs name an explicit hosted Ubuntu image, an older one only with a dated fallback
         entry: python3 scripts/ci/check_hosted_runner_labels.py

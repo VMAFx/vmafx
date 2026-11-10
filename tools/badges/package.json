@@ -1,0 +1,14 @@
+{
+  "name": "@vmafx/readme-badges",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Renders the README status badges (scripts/ci/readme_badges.py) with the shields.io badge renderer",
+  "license": "EUPL-1.2",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "badge-maker": "6.0.0"
+  }
+}
