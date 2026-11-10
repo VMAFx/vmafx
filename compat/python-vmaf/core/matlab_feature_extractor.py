@@ -25,6 +25,21 @@ def _matlab_output(output: str | bytes | None) -> str:
     return output.decode("utf-8", errors="replace") if isinstance(output, bytes) else output or ""
 
 
+def _matlab_char(value: str) -> str:
+    """Quote `value` as a MATLAB character vector for a ``-r`` script.
+
+    A single quote ends a MATLAB character vector; two single quotes stand for
+    one quote inside it (MathWorks, "Text in String and Character Arrays").
+    The argv call keeps asset paths away from a shell, but MATLAB parses the
+    script itself, so an unquoted path holding a quote could end the literal
+    and add statements. A value with a control character is refused, since a
+    newline would split the one-line script.
+    """
+    if not value.isprintable():
+        raise ValueError(f"MATLAB script argument holds a control character: {value!r}")
+    return "'" + value.replace("'", "''") + "'"
+
+
 @contextmanager
 def _matlab_workspace(workspace: str) -> Iterator[None]:
     """Restore the caller's working directory even when MATLAB fails or times out."""
@@ -149,9 +164,9 @@ class StrredFeatureExtractor(MatlabFeatureExtractor):
         quality_width, quality_height = asset.quality_width_height
 
         matlab_bin = VmafExternalConfig.get_and_assert_matlab()
-        matlab_script = "run_strred('{ref}', '{dis}', {h}, {w}); exit;".format(
-            ref=ref_procfile_path,
-            dis=dis_procfile_path,
+        matlab_script = "run_strred({ref}, {dis}, {h}, {w}); exit;".format(
+            ref=_matlab_char(ref_procfile_path),
+            dis=_matlab_char(dis_procfile_path),
             w=quality_width,
             h=quality_height,
         )
@@ -252,9 +267,9 @@ class StrredOptFeatureExtractor(MatlabFeatureExtractor):
         quality_width, quality_height = asset.quality_width_height
 
         matlab_bin = VmafExternalConfig.get_and_assert_matlab()
-        matlab_script = "run_strred_opt('{ref}', '{dis}', {w}, {h}); exit;".format(
-            ref=ref_procfile_path,
-            dis=dis_procfile_path,
+        matlab_script = "run_strred_opt({ref}, {dis}, {w}, {h}); exit;".format(
+            ref=_matlab_char(ref_procfile_path),
+            dis=_matlab_char(dis_procfile_path),
             w=quality_width,
             h=quality_height,
         )
@@ -350,15 +365,13 @@ class SpEEDMatlabFeatureExtractor(MatlabFeatureExtractor):
         log_file_path = make_absolute_path(log_file_path, current_dir)
         quality_width, quality_height = asset.quality_width_height
         matlab_bin = VmafExternalConfig.get_and_assert_matlab()
-        matlab_script = (
-            "run_speed('{ref}', '{dis}', {w}, {h}, {bands}, '{yuv_type}'); exit;".format(
-                ref=ref_procfile_path,
-                dis=dis_procfile_path,
-                w=quality_width,
-                h=quality_height,
-                bands=self.scale_list,
-                yuv_type=self._get_workfile_yuv_type(asset),
-            )
+        matlab_script = "run_speed({ref}, {dis}, {w}, {h}, {bands}, {yuv_type}); exit;".format(
+            ref=_matlab_char(ref_procfile_path),
+            dis=_matlab_char(dis_procfile_path),
+            w=quality_width,
+            h=quality_height,
+            bands=self.scale_list,
+            yuv_type=_matlab_char(self._get_workfile_yuv_type(asset)),
         )
         if self.logger:
             self.logger.info(
@@ -459,9 +472,9 @@ class STMADFeatureExtractor(MatlabFeatureExtractor):
         quality_width, quality_height = asset.quality_width_height
 
         matlab_bin = VmafExternalConfig.get_and_assert_matlab()
-        matlab_script = "run_stmad('{ref}', '{dis}', {w}, {h}); exit;".format(
-            ref=ref_procfile_path,
-            dis=dis_procfile_path,
+        matlab_script = "run_stmad({ref}, {dis}, {w}, {h}); exit;".format(
+            ref=_matlab_char(ref_procfile_path),
+            dis=_matlab_char(dis_procfile_path),
             w=quality_width,
             h=quality_height,
         )
@@ -547,12 +560,12 @@ class iCIDFeatureExtractor(MatlabFeatureExtractor):
         quality_width, quality_height = asset.quality_width_height
 
         matlab_bin = VmafExternalConfig.get_and_assert_matlab()
-        matlab_script = "run_icid('{ref}', '{dis}', {h}, {w}, '{yuvtype}'); exit;".format(
-            ref=ref_workfile_path,
-            dis=dis_workfile_path,
+        matlab_script = "run_icid({ref}, {dis}, {h}, {w}, {yuvtype}); exit;".format(
+            ref=_matlab_char(ref_workfile_path),
+            dis=_matlab_char(dis_workfile_path),
             w=quality_width,
             h=quality_height,
-            yuvtype=asset.ref_yuv_type,
+            yuvtype=_matlab_char(asset.ref_yuv_type),
         )
         if self.logger:
             self.logger.info(

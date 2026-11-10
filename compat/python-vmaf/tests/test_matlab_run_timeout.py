@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Clear
+# SPDX-License-Identifier: EUPL-1.2
 #
 # Unit tests for _run_matlab timeout and error handling in
 # compat/python-vmaf/core/matlab_feature_extractor.py.
