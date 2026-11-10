@@ -299,6 +299,9 @@ class DefaultRunProcessCleanupTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             pid_file, lock = root / "pid", root / "lock"
+            reference, distorted = root / "reference.yuv", root / "distorted.yuv"
+            reference.write_bytes(b"reference")
+            distorted.write_bytes(b"distorted")
             fake = root / "vmaf"
             fake.write_text(
                 f"#!{sys.executable}\nimport os, time\nfrom pathlib import Path\n"
@@ -307,14 +310,13 @@ class DefaultRunProcessCleanupTest(unittest.TestCase):
                 encoding="utf-8",
             )
             fake.chmod(0o755)
-            command = module.gate_command(fake, lock_path=lock)
-            command += ["--features", "motion", "--workdir", str(root / "work")]
             stdout, stderr = io.StringIO(), io.StringIO()
             try:
                 with (
+                    mock.patch.object(module, "REF", reference),
+                    mock.patch.object(module, "DIS", distorted),
                     mock.patch.object(module, "find_binary", return_value=fake),
                     mock.patch.object(module, "skip_reason", return_value=None),
-                    mock.patch.object(module, "gate_command", return_value=command),
                     mock.patch.object(
                         module.subprocess, "Popen", side_effect=popen_when_ready(pid_file)
                     ),
@@ -323,7 +325,10 @@ class DefaultRunProcessCleanupTest(unittest.TestCase):
                     contextlib.redirect_stdout(stdout),
                     contextlib.redirect_stderr(stderr),
                 ):
-                    self.assertEqual(module.main(), 124)
+                    command = module.gate_command(fake, lock_path=lock)
+                    command += ["--features", "motion", "--workdir", str(root / "work")]
+                    with mock.patch.object(module, "gate_command", return_value=command):
+                        self.assertEqual(module.main(), 124)
                 self.assertIn("timed out after 3s", stderr.getvalue())
                 self.assertTrue(pid_file.is_file(), stderr.getvalue())
                 pid = int(pid_file.read_text())
@@ -430,11 +435,13 @@ def kill_pid_in(pid_file: Path) -> None:
         os.kill(int(pid_file.read_text(encoding="utf-8")), signal.SIGKILL)
 
 
-def wait_for_file(path: Path) -> bool:
+def wait_for_file(path: Path, proc: subprocess.Popen[str]) -> bool:
     """Poll for at most ten seconds until `path` exists."""
     for _ in range(200):
         if path.is_file():
             return True
+        if proc.poll() is not None:
+            return False
         time.sleep(0.05)
     return False
 
@@ -451,10 +458,20 @@ def popen_when_ready(
     def start(*args: Any, **kwargs: Any) -> subprocess.Popen[str]:
         """Start the real process, then hold until it reports ready."""
         proc: subprocess.Popen[str] = REAL_POPEN(*args, **kwargs)
-        if not wait_for_file(ready_file):
-            proc.kill()
-            proc.wait(timeout=5)
-            raise AssertionError(f"the child did not write {ready_file} within 10 s")
+        if not wait_for_file(ready_file, proc):
+            try:
+                if proc.poll() is None:
+                    proc.kill()
+                proc.wait(timeout=5)
+                stderr_start = proc.stderr.read(500) if proc.stderr is not None else ""
+                raise AssertionError(
+                    f"the child did not write {ready_file}; exit code {proc.returncode}; "
+                    f"stderr starts with {stderr_start!r}"
+                )
+            finally:
+                for pipe in (proc.stdin, proc.stdout, proc.stderr):
+                    if pipe is not None:
+                        pipe.close()
         if on_ready is not None:
             on_ready(proc)
         return proc
