@@ -436,7 +436,7 @@ def kill_pid_in(pid_file: Path) -> None:
 
 
 def wait_for_file(path: Path, proc: subprocess.Popen[str]) -> bool:
-    """Poll for at most ten seconds until `path` exists."""
+    """Poll for at most ten seconds until `path` exists or the child exits."""
     for _ in range(200):
         if path.is_file():
             return True
@@ -444,6 +444,24 @@ def wait_for_file(path: Path, proc: subprocess.Popen[str]) -> bool:
             return False
         time.sleep(0.05)
     return False
+
+
+def stop_and_collect(proc: subprocess.Popen[str]) -> str:
+    """Stop and reap a child, closing its pipes even if a descendant holds them open."""
+    if proc.poll() is None:
+        proc.kill()
+    try:
+        try:
+            _, stderr = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            stderr = ""
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.wait(timeout=5)
+        return stderr or ""
+    finally:
+        for pipe in (proc.stdin, proc.stdout, proc.stderr):
+            if pipe is not None:
+                pipe.close()
 
 
 def popen_when_ready(
@@ -459,21 +477,18 @@ def popen_when_ready(
         """Start the real process, then hold until it reports ready."""
         proc: subprocess.Popen[str] = REAL_POPEN(*args, **kwargs)
         if not wait_for_file(ready_file, proc):
-            try:
-                if proc.poll() is None:
-                    proc.kill()
-                proc.wait(timeout=5)
-                stderr_start = proc.stderr.read(500) if proc.stderr is not None else ""
-                raise AssertionError(
-                    f"the child did not write {ready_file}; exit code {proc.returncode}; "
-                    f"stderr starts with {stderr_start!r}"
-                )
-            finally:
-                for pipe in (proc.stdin, proc.stdout, proc.stderr):
-                    if pipe is not None:
-                        pipe.close()
+            stderr_start = stop_and_collect(proc)[:500]
+            raise AssertionError(
+                f"the child did not write {ready_file}; exit code {proc.returncode}; "
+                f"stderr starts with {stderr_start!r}"
+            )
         if on_ready is not None:
-            on_ready(proc)
+            try:
+                on_ready(proc)
+            except BaseException:
+                with contextlib.suppress(BaseException):
+                    stop_and_collect(proc)
+                raise
         return proc
 
     return start
