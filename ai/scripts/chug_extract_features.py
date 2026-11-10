@@ -252,6 +252,7 @@ def _ffprobe_hdr_payload(
     ffprobe_bin: str,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> dict[str, Any] | None:
+    """Return the ffprobe stream payload, or None when the probe fails or times out."""
     cmd = [
         ffprobe_bin,
         "-v",
@@ -511,6 +512,7 @@ def _decode_to_yuv10(
     ffmpeg_bin: str,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> None:
+    """Decode a clip to raw 10-bit 4:2:0 at the given size; a timeout propagates."""
     out.parent.mkdir(parents=True, exist_ok=True)
     scale_filter = f"scale={width}:{height}:flags=bicubic,format=yuv420p10le"
     cmd = [
