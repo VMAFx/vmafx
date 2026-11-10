@@ -51,7 +51,7 @@ How can the ten README status badges (seven workflow badges, OpenSSF Scorecard, 
 
 ## Open questions
 
-- Publishing with a dedicated GitHub App token plus a second managed ruleset on `badges`, so that no other workflow can write the branch. `check_repository_security.py` manages one ruleset today; a second one needs a policy change and an App installation.
+- Publishing with a dedicated GitHub App token plus a second managed ruleset on `badges`, so that no other workflow can write the branch. `check_repository_security.py` manages one ruleset today; a second one needs a policy change and an App installation. Tracked in issue 3394.
 - The Praetor governance badge keeps GitHub's design until Praetor offers the style (Praetor issue 1893).
 
 ## Related

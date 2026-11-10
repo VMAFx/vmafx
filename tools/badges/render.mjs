@@ -22,6 +22,14 @@ const COLOR = /^#[0-9a-f]{6}$/
 const TEXT = /^[\x20-\x7e]{1,40}$/
 const MAX_BADGES = 32
 
+/**
+ * Return a render-list entry when it has exactly the four keys and each
+ * value matches its pattern; throw naming the entry otherwise.
+ *
+ * @param {unknown} entry one object of the render list
+ * @param {number} index its position, for the error text
+ * @returns {{slug: string, label: string, message: string, color: string}}
+ */
 function checked(entry, index) {
   const keys = Object.keys(entry ?? {}).sort().join(',')
   if (keys !== 'color,label,message,slug') {
@@ -35,6 +43,12 @@ function checked(entry, index) {
   return entry
 }
 
+/**
+ * Write one for-the-badge SVG per render-list entry into the output
+ * directory; throw on a malformed list or a slug listed twice.
+ *
+ * @param {string[]} argv the spec path and the output directory
+ */
 function main(argv) {
   if (argv.length !== 2) {
     throw new Error('usage: node tools/badges/render.mjs <spec.json> <out-dir>')

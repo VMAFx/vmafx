@@ -78,7 +78,11 @@ GitHub API:
 The job's token has `contents: write`, the narrowest right that can make a
 commit. GitHub cannot limit that right to one branch; the script writes only
 `refs/heads/badges`, and the master ruleset requires a pull request, so the
-token cannot move `master`.
+token cannot move `master`. No ruleset guards `badges` yet, so any other
+token with `contents: write` (another workflow, an installed app, a person
+with write access) can push to it too. Issue 3394 tracks a dedicated GitHub
+App as the only publisher, with a `badges` ruleset that refuses every other
+writer.
 
 Both jobs run only on the default branch (`github.ref` is
 `refs/heads/master`): a manual run started on another branch does nothing, so

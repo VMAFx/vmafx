@@ -631,6 +631,7 @@ def design_faults(readme: str, root: Path) -> list[str]:
 
 
 def cmd_check_readme(args: argparse.Namespace) -> int:
+    """Print every design fault of the README; 1 when there is one."""
     readme = args.readme.resolve()
     faults = design_faults(readme.read_text(encoding="utf-8"), readme.parent)
     for fault in faults:
@@ -647,15 +648,18 @@ def cmd_check_readme(args: argparse.Namespace) -> int:
 
 
 def write_json(path: Path, doc: object) -> None:
+    """Write ``doc`` as sorted, indented JSON, creating the parent directory."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def cmd_spec(args: argparse.Namespace, env: Mapping[str, str], now: datetime) -> int:
+    """Read every source, then write the render list and the new state."""
     repository, token = env["GITHUB_REPOSITORY"], env["GITHUB_TOKEN"]
 
     @functools.cache
     def github(path: str) -> object:
+        """GET ``path`` from the GitHub API with the workflow token, once per run."""
         return ci_tier.api_request("GET", API + path, token)
 
     previous, problem = previous_state(github, repository)
@@ -677,9 +681,11 @@ def cmd_spec(args: argparse.Namespace, env: Mapping[str, str], now: datetime) ->
 
 
 def cmd_publish(args: argparse.Namespace, env: Mapping[str, str], now: datetime) -> int:
+    """Commit the rendered SVGs and the state file to the badges branch."""
     repository, token = env["GITHUB_REPOSITORY"], env["GITHUB_TOKEN"]
 
     def call(method: str, path: str, payload: object | None) -> object:
+        """Send one GitHub API request with the workflow token."""
         return ci_tier.api_request(method, API + path, token, payload)
 
     print(f"{BRANCH}: {publish(call, repository, collect(args.dir, BADGES), now)}")
@@ -687,6 +693,7 @@ def cmd_publish(args: argparse.Namespace, env: Mapping[str, str], now: datetime)
 
 
 def cmd_verdict(args: argparse.Namespace) -> int:
+    """Turn the run red, with one annotation per line, when a source failed."""
     failures = json.loads(args.state.read_text(encoding="utf-8")).get("failures")
     if not isinstance(failures, list):
         raise BadgeError(f"{args.state}: no failures list")
@@ -703,6 +710,7 @@ def cmd_verdict(args: argparse.Namespace) -> int:
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
+    """Parse the four subcommands and their paths."""
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -720,6 +728,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None, env: Mapping[str, str] | None = None) -> int:
+    """Run one subcommand; 2 for a missing input or a handled error."""
     args = parse_args(sys.argv[1:] if argv is None else argv)
     env = os.environ if env is None else env
     now = datetime.now(UTC)

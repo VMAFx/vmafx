@@ -64,14 +64,16 @@ governance badge, which Praetor writes. The full rules are in
   hours count from the read time `state.json` records, which an unchanged
   badge refreshes only once an hour, so `stale` can come up to 75 minutes
   early; committing on every run would quadruple the branch's growth.
-- **Neutral / follow-ups**: a ruleset for the `badges` branch in
-  `.github/repository-security-policy.json` (deletion and non-fast-forward
-  refused); the Praetor governance badge in the `praetor:readme-governance`
-  block keeps GitHub's design until Praetor offers the style (Praetor issue
-  1893), and `check-readme` then drops its one exception. Publishing with a
-  GitHub App token instead of the workflow token, so that a `badges` ruleset
-  can refuse every other writer, is open. This style is the reference for the
-  ecosystem README badge audit.
+- **Neutral / follow-ups**: issue 3394 tracks publishing with a dedicated
+  GitHub App token instead of the workflow token, plus a second ruleset on
+  `refs/heads/badges`, managed by `scripts/dev/check_repository_security.py`,
+  that lets only that App write the branch. A ruleset that only refuses
+  deletion and non-fast-forward updates would still let any writer add
+  commits, so it is not a follow-up on its own. The Praetor governance badge
+  in the `praetor:readme-governance` block keeps GitHub's design until
+  Praetor offers the style (Praetor issue 1893), and `check-readme` then
+  drops its one exception. This style is the reference for the ecosystem
+  README badge audit.
 
 ## References
 
@@ -86,6 +88,10 @@ governance badge, which Praetor writes. The full rules are in
   least rights, a stale marker after six hours; it answers the operator order
   `vmafx-readme-badges-and-lint-red-20261110` (paraphrased: the README badge
   row mixes designs).
+- Operator answer `vmafx-badges-app-token-ruleset` (2026-11-10, option a,
+  paraphrased): land on the workflow token now, and harden the `badges`
+  branch with a GitHub App token and its own ruleset as a follow-up
+  (issue 3394).
 - [ADR-3366](3366-readme-presentation-standard.md): the README presentation
   standard.
 - shields.io GitHub Actions workflow status service:
