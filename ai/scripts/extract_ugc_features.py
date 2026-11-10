@@ -396,6 +396,7 @@ def _process_distorted_clip(
     t0: float,
     current_row_count: int,
 ) -> tuple[list[dict], bool]:
+    """Decode and score one distorted clip; return its frame rows, and False when it is skipped."""
     dis_yuv = args.yuv_dir / f"{stem}_{sfx}_{target_w}x{target_h}.yuv"
     try:
         _decode_to_yuv(dis_src, dis_yuv, target_w, target_h, args.max_frames)
@@ -439,6 +440,7 @@ def _process_distorted_clip(
 
 
 def _decode_orig(stem: str, orig: Path, args: argparse.Namespace) -> tuple[Path, int, int] | None:
+    """Probe and decode the reference clip; return its yuv path and size, or None to skip it."""
     try:
         probe = _ffprobe(orig)
         ow = int(probe["width"])
