@@ -27,6 +27,10 @@ from vmaftune.encode import (
     run_two_pass_encode,
 )
 
+FFMPEG_TIMEOUT_S = 60
+FFMPEG = shutil.which("ffmpeg")
+FFPROBE = shutil.which("ffprobe")
+
 
 class _Done:
     def __init__(self, returncode: int, stdout: str = "", stderr: str = "") -> None:
@@ -170,19 +174,24 @@ def test_corpus_row_records_the_abr_rate_control(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(
-    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    FFMPEG is None or FFPROBE is None,
     reason="needs ffmpeg and ffprobe on PATH",
 )
 def test_real_x265_two_pass_at_a_crf_encodes(tmp_path: Path) -> None:
+    """Assert two-pass libx265 encoding at a given CRF completes and produces output."""
     enc = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True, check=False
+        [FFMPEG, "-hide_banner", "-encoders"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=FFMPEG_TIMEOUT_S,
     )
     if "libx265" not in enc.stdout:
         pytest.skip("this ffmpeg build has no libx265 encoder")
     yuv = tmp_path / "src.yuv"
     gen = subprocess.run(
         [
-            "ffmpeg",
+            FFMPEG,
             "-hide_banner",
             "-loglevel",
             "error",
@@ -199,6 +208,7 @@ def test_real_x265_two_pass_at_a_crf_encodes(tmp_path: Path) -> None:
         ],
         capture_output=True,
         check=False,
+        timeout=FFMPEG_TIMEOUT_S,
     )
     assert gen.returncode == 0
     req = EncodeRequest(

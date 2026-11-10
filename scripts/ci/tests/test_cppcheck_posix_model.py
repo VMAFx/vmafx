@@ -67,8 +67,9 @@ class CppcheckPosixModelTests(unittest.TestCase):
             stdout="",
             stderr='cppcheck: error: unrecognized command line option: "--filesdir"\n',
         )
-        with mock.patch.object(
-            CPPCHECK_FILESDIR.__globals__["subprocess"], "run", return_value=unsupported
+        with mock.patch.dict(
+            CPPCHECK_FILESDIR.__globals__,
+            {"run_command": mock.MagicMock(return_value=unsupported)},
         ):
             self.assertEqual(CPPCHECK_FILESDIR(str(binary)), model_root)
 
@@ -391,6 +392,40 @@ int main(void) {
         code, _diagnostics, output = self.analyze(HEADERS_CONTROL, extra=(f"--library={missing}",))
         self.assertNotEqual(code, 0, output)
         self.assertIn("Failed to load library configuration file", output)
+
+    def test_missing_cppcheck_executable_triggers_error_path(self) -> None:
+        """A missing or non-executable Cppcheck binary triggers the script's error path."""
+        missing = self.directory / "bin/nonexistent-cppcheck"
+        output = self.directory / "generated.cfg"
+        with self.assertRaisesRegex(
+            ValueError,
+            "Cppcheck binary is unavailable or not executable",
+        ):
+            WRITE_MODEL(str(missing), output)
+        self.assertFalse(output.exists())
+
+    def test_missing_cppcheck_cli_exits_one_without_traceback(self) -> None:
+        """CLI with missing cppcheck binary exits 1 with clean error on stderr."""
+        missing = self.directory / "bin/nonexistent-cppcheck"
+        output = self.directory / "generated.cfg"
+        result = run_command(
+            [
+                sys.executable,
+                str(ROOT / "scripts/ci/write_cppcheck_posix_model.py"),
+                "--cppcheck",
+                str(missing),
+                "--output",
+                str(output),
+            ],
+            allowed_executables=(sys.executable,),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=30,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("write-cppcheck-posix-model: error:", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
 
 
 if __name__ == "__main__":

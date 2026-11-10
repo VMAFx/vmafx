@@ -120,11 +120,7 @@ class ReuseComplianceTests(unittest.TestCase):
                 {"christosb", "Lusoris"},
             ),
             # FFmpeg derivatives follow the exact source units they patch.
-            "ffmpeg-patches/0001-codec-qpfile-unified.patch": (
-                {"LGPL-2.1-or-later"},
-                {"the FFmpeg developers", "Lusoris"},
-            ),
-            "ffmpeg-patches/0006-fftools-loopback-decoder-hwaccel.patch": (
+            "ffmpeg-patches/0001-pass-autotune-cli-glue.patch": (
                 {"LGPL-2.1-or-later"},
                 {"the FFmpeg developers", "Lusoris"},
             ),

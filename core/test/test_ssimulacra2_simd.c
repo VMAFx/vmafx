@@ -1200,14 +1200,14 @@ char *run_tests(void)
      * has selected so qemu / native runs can be told apart in CI logs.
      * Pure stderr — no test assertion depends on the value. */
     const unsigned arm_flags = vmaf_get_cpu_flags_arm();
+#if HAVE_SVE2
     (void)fprintf(stderr, "ssimulacra2 simd dispatch: NEON=%u SVE2=%u\n",
                   (arm_flags & VMAF_ARM_CPU_FLAG_NEON) ? 1u : 0u,
-#if HAVE_SVE2
-                  (arm_flags & VMAF_ARM_CPU_FLAG_SVE2) ? 1u : 0u
+                  (arm_flags & VMAF_ARM_CPU_FLAG_SVE2) ? 1u : 0u);
 #else
-                  0u
+    (void)fprintf(stderr, "ssimulacra2 simd dispatch: NEON=%u SVE2=%u\n",
+                  (arm_flags & VMAF_ARM_CPU_FLAG_NEON) ? 1u : 0u, 0u);
 #endif
-    );
 #endif
 #if ARCH_X86 || ARCH_AARCH64
     mu_run_test(test_multiply);

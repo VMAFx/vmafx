@@ -39,6 +39,11 @@
  *      requires 8 does not compile for Xe2 (lnl-m, bmg-g21, bmg-g31),
  *      and one such kernel fails its whole translation unit.
  *
+ *    VMAF_SYCL_REQD_SG_ATTR(N)
+ *      Attribute contents only (without enclosing `[[ ]]`). Use inside
+ *      `[[ ]]` where a parser must read the code; expands under the same
+ *      rules as VMAF_SYCL_REQD_SG_SIZE(N) (empty under AdaptiveCpp).
+ *
  *    VmafSyclKernelShape<SG, GRF>  (ADR-1395)
  *      Base class for a kernel functor that needs the large register
  *      file. Under icpx it gives the functor get(properties_tag), which
@@ -55,6 +60,12 @@
  *      target has one (ADR-1501). For a kernel that fits SIMD-8 on Xe-LP,
  *      which has no large register file, but spills at the SIMD-32 icpx
  *      picks for Xe2. Its call operator carries no sub-group attribute.
+ *
+ *    VMAF_SYCL_FUNCTOR_SG_ATTR(N)
+ *      Attribute contents only (without enclosing `[[ ]]`) for a kernel
+ *      functor's call operator: empty when VMAF_SYCL_KERNEL_PROPERTIES is 1
+ *      (size stated in properties), else VMAF_SYCL_REQD_SG_ATTR(N). Use
+ *      inside `[[ ]]` where a parser must read the code.
  *
  *    VMAF_SYCL_ALWAYS_INLINE  (ADR-1395)
  *      `inline` plus the always-inline attribute, for header functions a
@@ -95,15 +106,18 @@ template <int N> struct VmafSyclSubGroupSize {
 /* icpx / DPC++ — use the SYCL 2020 standard attribute.
  * [[intel::reqd_sub_group_size(N)]] was deprecated in oneAPI 2026.0 in
  * favour of [[sycl::reqd_sub_group_size(N)]] (supported since 2023.0). */
-#define VMAF_SYCL_REQD_SG_SIZE(N) [[sycl::reqd_sub_group_size(VmafSyclSubGroupSize<N>::value)]]
+#define VMAF_SYCL_REQD_SG_ATTR(N) sycl::reqd_sub_group_size(VmafSyclSubGroupSize<N>::value)
+#define VMAF_SYCL_REQD_SG_SIZE(N) [[VMAF_SYCL_REQD_SG_ATTR(N)]]
 #elif defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL)
 /* AdaptiveCpp — Intel sub-group-size attribute not supported; the
  * runtime picks the sub-group size per backend at JIT time. */
+#define VMAF_SYCL_REQD_SG_ATTR(N) /* AdaptiveCpp: no-op */
 #define VMAF_SYCL_REQD_SG_SIZE(N) /* AdaptiveCpp: no-op */
 #else
 /* Unknown SYCL implementation — use the SYCL 2020 standard attribute;
  * if the toolchain doesn't support it, add a branch above. */
-#define VMAF_SYCL_REQD_SG_SIZE(N) [[sycl::reqd_sub_group_size(VmafSyclSubGroupSize<N>::value)]]
+#define VMAF_SYCL_REQD_SG_ATTR(N) sycl::reqd_sub_group_size(VmafSyclSubGroupSize<N>::value)
+#define VMAF_SYCL_REQD_SG_SIZE(N) [[VMAF_SYCL_REQD_SG_ATTR(N)]]
 #endif
 
 /* ADR-1395: kernel properties (sub-group size, register file size) come
@@ -115,10 +129,12 @@ template <int N> struct VmafSyclSubGroupSize {
 #if defined(__INTEL_LLVM_COMPILER) && __has_include(<sycl/ext/intel/experimental/grf_size_properties.hpp>)
 #include <sycl/ext/intel/experimental/grf_size_properties.hpp>
 #define VMAF_SYCL_KERNEL_PROPERTIES 1
+#define VMAF_SYCL_FUNCTOR_SG_ATTR(N) /* in VmafSyclKernelShape::get() */
 #define VMAF_SYCL_FUNCTOR_SG_SIZE(N) /* in VmafSyclKernelShape::get() */
 #else
 #define VMAF_SYCL_KERNEL_PROPERTIES 0
-#define VMAF_SYCL_FUNCTOR_SG_SIZE(N) VMAF_SYCL_REQD_SG_SIZE(N)
+#define VMAF_SYCL_FUNCTOR_SG_ATTR(N) VMAF_SYCL_REQD_SG_ATTR(N)
+#define VMAF_SYCL_FUNCTOR_SG_SIZE(N) [[VMAF_SYCL_FUNCTOR_SG_ATTR(N)]]
 #endif
 
 /* VMAF_SYCL_ALWAYS_INLINE: for a function a kernel calls many times per
