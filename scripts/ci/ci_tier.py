@@ -57,6 +57,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = REPO_ROOT / ".github" / "ci-tier.json"
 EXEMPT_SCRIPT = REPO_ROOT / "scripts" / "ci" / "release-pr-exempt.sh"
 API_TIMEOUT_S = 30
+API_MAX_BYTES = 32 << 20  # a 100-entry API page is well under 1 MiB
 PAGE_SIZE = 100
 MAX_PAGES = 30
 PULL_REQUEST_EVENTS = frozenset({"pull_request", "pull_request_target"})
@@ -163,23 +164,47 @@ def decide(
     return Decision(LIGHT, "pull request from this repository")
 
 
-def api_request(method: str, url: str, token: str) -> object:
-    """One bounded GitHub API call; the only network access of the tier scripts."""
+def api_request(method: str, url: str, token: str, payload: object | None = None) -> object:
+    """One bounded GitHub API call; the only network access of the tier scripts.
+
+    ``payload`` goes out as the JSON request body; without one a POST sends
+    an empty body.
+    """
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    data = b"" if method == "POST" else None
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    return https_json(method, url, headers, data, API_TIMEOUT_S, API_MAX_BYTES)
+
+
+def https_json(
+    method: str,
+    url: str,
+    headers: Mapping[str, str],
+    data: bytes | None,
+    timeout_s: float,
+    limit: int,
+) -> object:
+    """One https request whose answer is JSON, bounded in time and in size.
+
+    The scheme check and the size cap live here so every caller gets them; an
+    empty answer reads as an empty object.
+    """
     if urllib.parse.urlsplit(url).scheme != "https":
         raise TierError(f"refusing a non-https API URL: {url}")
     request = urllib.request.Request(  # noqa: S310 - the scheme is checked above
-        url,
-        method=method,
-        data=b"" if method == "POST" else None,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+        url, method=method, data=data, headers=dict(headers)
     )
-    with urllib.request.urlopen(request, timeout=API_TIMEOUT_S) as response:  # noqa: S310
-        body = response.read().decode("utf-8")
-    return json.loads(body) if body else {}
+    with urllib.request.urlopen(request, timeout=timeout_s) as response:  # noqa: S310
+        body = response.read(limit + 1)
+    if len(body) > limit:
+        raise TierError(f"{url}: answer larger than {limit} bytes")
+    return json.loads(body.decode("utf-8")) if body else {}
 
 
 def _paged(fetch: Fetcher, path: str) -> list[object]:

@@ -11,8 +11,10 @@ import os
 import sys
 import tempfile
 import unittest
+import urllib.request
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
@@ -155,6 +157,74 @@ class Api(unittest.TestCase):
         for url in ("http://api.github.com/x", "file:///etc/passwd", "ftp://h/x"):
             with self.subTest(url=url), self.assertRaises(ci_tier.TierError):
                 ci_tier.api_request("GET", url, "t")
+
+    def sent(
+        self, method: str, payload: object | None = None, answer: bytes = b"{}"
+    ) -> tuple[urllib.request.Request, Any]:
+        """The request api_request hands to urlopen, and what it returned."""
+        opened = mock.MagicMock()
+        opened.__enter__.return_value.read.return_value = answer
+        with mock.patch.object(urllib.request, "urlopen", return_value=opened) as urlopen:
+            result = ci_tier.api_request(method, "https://api.github.com/x", "t", payload)
+        return urlopen.call_args.args[0], result
+
+    def test_a_payload_goes_out_as_a_json_body(self) -> None:
+        request, _ = self.sent("PATCH", {"sha": "c1", "force": False})
+        data = request.data
+        if not isinstance(data, bytes):
+            self.fail(f"request body is {type(data).__name__}, not bytes")
+        self.assertEqual(json.loads(data), {"sha": "c1", "force": False})
+        self.assertEqual(request.get_header("Content-type"), "application/json")
+        self.assertEqual(request.get_method(), "PATCH")
+
+    def test_a_post_without_payload_sends_an_empty_body(self) -> None:
+        request, _ = self.sent("POST")
+        self.assertEqual(request.data, b"")
+        self.assertIsNone(request.get_header("Content-type"))
+
+    def test_a_get_sends_no_body(self) -> None:
+        request, _ = self.sent("GET")
+        self.assertIsNone(request.data)
+        self.assertEqual(request.get_header("Authorization"), "Bearer t")
+
+    def test_an_empty_answer_reads_as_an_empty_object(self) -> None:
+        self.assertEqual(self.sent("GET", answer=b"")[1], {})
+
+
+class HttpsJson(unittest.TestCase):
+    def answer(
+        self, body: bytes, limit: int, headers: dict[str, str] | None = None
+    ) -> tuple[Any, Any, Any]:
+        """https_json's result for ``body`` and the request and read size it used."""
+        opened = mock.MagicMock()
+        opened.__enter__.return_value.read.return_value = body
+        with mock.patch.object(urllib.request, "urlopen", return_value=opened) as urlopen:
+            result = ci_tier.https_json("GET", "https://h/x", headers or {}, None, 5, limit)
+        read = opened.__enter__.return_value.read
+        return result, urlopen.call_args, read.call_args
+
+    def test_an_answer_of_exactly_the_limit_is_read(self) -> None:
+        result, opened, read = self.answer(b'{"a":1}', 7)
+        self.assertEqual(result, {"a": 1})
+        self.assertEqual(read.args, (8,))
+        self.assertEqual(opened.kwargs["timeout"], 5)
+
+    def test_an_answer_one_byte_over_the_limit_is_refused(self) -> None:
+        with self.assertRaisesRegex(ci_tier.TierError, "larger than 6 bytes"):
+            self.answer(b'{"a":1}', 6)
+
+    def test_the_caller_headers_go_out_and_nothing_else(self) -> None:
+        _, opened, _ = self.answer(b"{}", 10, {"Accept": "application/json"})
+        request = opened.args[0]
+        self.assertEqual(request.get_header("Accept"), "application/json")
+        self.assertIsNone(request.get_header("Authorization"))
+
+    def test_a_non_https_url_is_refused_before_any_request(self) -> None:
+        with mock.patch.object(urllib.request, "urlopen") as urlopen:
+            for url in ("http://h/x", "file:///etc/passwd"):
+                with self.subTest(url=url), self.assertRaises(ci_tier.TierError):
+                    ci_tier.https_json("GET", url, {}, None, 5, 10)
+        urlopen.assert_not_called()
 
 
 class Config(unittest.TestCase):
