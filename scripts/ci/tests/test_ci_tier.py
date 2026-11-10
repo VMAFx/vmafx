@@ -5,14 +5,18 @@
 
 from __future__ import annotations
 
+import http.client
 import io
 import json
 import os
 import sys
 import tempfile
 import unittest
+import urllib.error
+import urllib.request
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
@@ -151,10 +155,183 @@ class LiveLabels(unittest.TestCase):
 
 
 class Api(unittest.TestCase):
+    """``api_request`` sends GitHub API calls over the https-only opener."""
+
     def test_a_non_https_url_is_refused(self) -> None:
         for url in ("http://api.github.com/x", "file:///etc/passwd", "ftp://h/x"):
             with self.subTest(url=url), self.assertRaises(ci_tier.TierError):
                 ci_tier.api_request("GET", url, "t")
+
+    def sent(
+        self, method: str, payload: object | None = None, answer: bytes = b"{}"
+    ) -> tuple[urllib.request.Request, Any]:
+        """The request api_request hands to the https opener, and what it returned."""
+        opened = mock.MagicMock()
+        opened.__enter__.return_value.read.return_value = answer
+        with mock.patch.object(ci_tier.HTTPS_OPENER, "open", return_value=opened) as sent:
+            result = ci_tier.api_request(method, "https://api.github.com/x", "t", payload)
+        return sent.call_args.args[0], result
+
+    def test_a_payload_goes_out_as_a_json_body(self) -> None:
+        """A payload goes out as a JSON body with its content type and method."""
+        request, _ = self.sent("PATCH", {"sha": "c1", "force": False})
+        data = request.data
+        if not isinstance(data, bytes):
+            self.fail(f"request body is {type(data).__name__}, not bytes")
+        self.assertEqual(json.loads(data), {"sha": "c1", "force": False})
+        self.assertEqual(request.get_header("Content-type"), "application/json")
+        self.assertEqual(request.get_method(), "PATCH")
+
+    def test_a_post_without_payload_sends_an_empty_body(self) -> None:
+        """A POST without payload sends an empty body and no content type."""
+        request, _ = self.sent("POST")
+        self.assertEqual(request.data, b"")
+        self.assertIsNone(request.get_header("Content-type"))
+
+    def test_a_get_sends_no_body(self) -> None:
+        """A GET sends no body and carries the bearer token."""
+        request, _ = self.sent("GET")
+        self.assertIsNone(request.data)
+        self.assertEqual(request.get_header("Authorization"), "Bearer t")
+
+    def test_an_empty_answer_reads_as_an_empty_object(self) -> None:
+        """An empty answer reads as an empty object."""
+        self.assertEqual(self.sent("GET", answer=b"")[1], {})
+
+
+class HttpsJson(unittest.TestCase):
+    """``https_json`` sends the caller's headers and bounds the answer size."""
+
+    def answer(
+        self, body: bytes, limit: int, headers: dict[str, str] | None = None
+    ) -> tuple[Any, Any, Any]:
+        """https_json's result for ``body`` and the request and read size it used."""
+        opened = mock.MagicMock()
+        opened.__enter__.return_value.read.return_value = body
+        with mock.patch.object(ci_tier.HTTPS_OPENER, "open", return_value=opened) as sent:
+            result = ci_tier.https_json("GET", "https://h/x", headers or {}, None, 5, limit)
+        read = opened.__enter__.return_value.read
+        return result, sent.call_args, read.call_args
+
+    def test_an_answer_of_exactly_the_limit_is_read(self) -> None:
+        """An answer of exactly the limit is read, with one byte more requested."""
+        result, opened, read = self.answer(b'{"a":1}', 7)
+        self.assertEqual(result, {"a": 1})
+        self.assertEqual(read.args, (8,))
+        self.assertEqual(opened.kwargs["timeout"], 5)
+
+    def test_an_answer_one_byte_over_the_limit_is_refused(self) -> None:
+        """An answer one byte over the limit is refused."""
+        with self.assertRaisesRegex(ci_tier.TierError, "larger than 6 bytes"):
+            self.answer(b'{"a":1}', 6)
+
+    def test_the_caller_headers_go_out_and_nothing_else(self) -> None:
+        """Only the caller's headers go out; no Authorization is added."""
+        _, opened, _ = self.answer(b"{}", 10, {"Accept": "application/json"})
+        request = opened.args[0]
+        self.assertEqual(request.get_header("Accept"), "application/json")
+        self.assertIsNone(request.get_header("Authorization"))
+
+    def test_a_broken_answer_is_a_tier_error(self) -> None:
+        """A cut-off body or a broken status line on open or read is a TierError."""
+        for where, error in (
+            ("read", http.client.IncompleteRead(b"par")),
+            ("read", http.client.LineTooLong("header line")),
+            ("open", http.client.BadStatusLine("x")),
+            ("open", http.client.RemoteDisconnected("closed")),
+        ):
+            with self.subTest(where=where, error=type(error).__name__):
+                opened = mock.MagicMock()
+                opened.__enter__.return_value.read.side_effect = error
+                kind = {"return_value": opened} if where == "read" else {"side_effect": error}
+                with (
+                    mock.patch.object(ci_tier.HTTPS_OPENER, "open", **kind),
+                    self.assertRaisesRegex(ci_tier.TierError, type(error).__name__),
+                ):
+                    ci_tier.https_json("GET", "https://h/x", {}, None, 5, 10)
+
+    def test_an_error_status_stays_an_http_error(self) -> None:
+        """An error status is not turned into a TierError; callers read its code."""
+        error = urllib.error.HTTPError("https://h/x", 404, "Not Found", None, None)  # type: ignore[arg-type]
+        with (
+            mock.patch.object(ci_tier.HTTPS_OPENER, "open", side_effect=error),
+            self.assertRaises(urllib.error.HTTPError) as raised,
+        ):
+            ci_tier.https_json("GET", "https://h/x", {}, None, 5, 10)
+        self.assertEqual(raised.exception.code, 404)
+        raised.exception.close()
+
+    def test_a_non_https_url_is_refused_before_any_request(self) -> None:
+        """A non-https URL is refused before the opener is called."""
+        with mock.patch.object(ci_tier.HTTPS_OPENER, "open") as sent:
+            for url in ("http://h/x", "file:///etc/passwd"):
+                with self.subTest(url=url), self.assertRaises(ci_tier.TierError):
+                    ci_tier.https_json("GET", url, {}, None, 5, 10)
+        sent.assert_not_called()
+
+
+class HttpsOpener(unittest.TestCase):
+    """The shared opener speaks https only and follows no redirect."""
+
+    @staticmethod
+    def response(code: int, location: str | None = None) -> mock.Mock:
+        """A stand-in for an https answer with ``code`` and an optional Location."""
+        headers = http.client.HTTPMessage()
+        if location is not None:
+            headers["Location"] = location
+        answer = mock.Mock(code=code, msg="status")
+        answer.info.return_value = headers
+        return answer
+
+    def test_an_https_address_reaches_the_https_handler(self) -> None:
+        """An https address reaches the https handler unchanged."""
+        answer = self.response(200)
+        with mock.patch.object(
+            urllib.request.HTTPSHandler, "https_open", return_value=answer
+        ) as https_open:
+            self.assertIs(ci_tier.HTTPS_OPENER.open("https://h/x", timeout=1), answer)
+        self.assertEqual(https_open.call_args.args[0].full_url, "https://h/x")
+
+    def test_a_non_https_address_fails_without_being_opened(self) -> None:
+        """Every other scheme fails as an unknown url type."""
+        for url in ("file:///etc/passwd", "data:text/plain,x", "ftp://h/x", "http://h/x"):
+            with (
+                self.subTest(url=url),
+                self.assertRaisesRegex(urllib.error.URLError, "unknown url type"),
+            ):
+                ci_tier.HTTPS_OPENER.open(url, timeout=1)
+
+    def test_a_redirect_is_not_followed(self) -> None:
+        """Every 3xx answer is an HTTPError after exactly one request."""
+        # An https target too: following it would resend the Authorization header.
+        targets = ("https://other.example/y", "http://h/y", "ftp://h/y", "file:///etc/passwd")
+        for code in (301, 302, 307, 308):
+            for target in targets:
+                with (
+                    self.subTest(code=code, target=target),
+                    mock.patch.object(
+                        urllib.request.HTTPSHandler,
+                        "https_open",
+                        return_value=self.response(code, target),
+                    ) as https_open,
+                ):
+                    with self.assertRaises(urllib.error.HTTPError) as raised:
+                        ci_tier.HTTPS_OPENER.open("https://h/x", timeout=1)
+                    raised.exception.close()
+                    self.assertEqual(raised.exception.code, code)
+                    self.assertEqual(https_open.call_count, 1)
+
+    def test_an_error_answer_is_an_http_error(self) -> None:
+        """A 404 answer is an HTTPError."""
+        with (
+            mock.patch.object(
+                urllib.request.HTTPSHandler, "https_open", return_value=self.response(404)
+            ),
+            self.assertRaises(urllib.error.HTTPError) as raised,
+        ):
+            ci_tier.HTTPS_OPENER.open("https://h/x", timeout=1)
+        raised.exception.close()
+        self.assertEqual(raised.exception.code, 404)
 
 
 class Config(unittest.TestCase):
