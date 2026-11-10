@@ -117,18 +117,11 @@ expect_large_stub() {
 # large=early|late swaps in a ~2 MiB import table whose libwinpthread line
 # sits in the first bytes (early) or after the filler (late) — the shape
 # that made the old printf|grep -q read die of SIGPIPE under pipefail.
-build_mingw_stub() {
-  local dir="$1" model="$2" dumpversion="$3" winpthread="$4" resolve="$5"
-  local large="${6:-none}"
-  local model_line=""
-  if [ "${model}" != "none" ]; then
-    model_line="Thread model: ${model}"
-  fi
-  mkdir -p "${dir}/bin" "${dir}/runtime"
-  for f in libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll; do
-    printf 'planted payload, not a PE: the stub objdump owns the import table\n' >"${dir}/runtime/${f}"
-  done
-
+# write_stub_gcc <dir> <model_line> <dumpversion> <resolve>
+# Plants the stub cross driver answering --version, -dumpversion, -v and
+# -print-file-name=<lib> (issue #3307).
+write_stub_gcc() {
+  local dir="$1" model_line="$2" dumpversion="$3" resolve="$4"
   cat >"${dir}/bin/x86_64-w64-mingw32-gcc" <<EOF
 #!/bin/sh
 # Stub cross driver planted by test-toolchain-probe-mingw.sh (issue #3307).
@@ -160,7 +153,14 @@ case "\$1" in
 esac
 EOF
   chmod +x "${dir}/bin/x86_64-w64-mingw32-gcc"
+}
 
+# write_stub_objdump <dir> <winpthread: yes|no> <large: none|early|late>
+# Plants the stub target objdump printing the crafted import table of the
+# planted flavour. The large=early|late SIGPIPE shape is documented on
+# build_mingw_stub above.
+write_stub_objdump() {
+  local dir="$1" winpthread="$2" large="$3"
   cat >"${dir}/bin/x86_64-w64-mingw32-objdump" <<EOF
 #!/bin/sh
 # Stub objdump planted by test-toolchain-probe-mingw.sh (issue #3307): the
@@ -200,6 +200,21 @@ esac
 exit 0
 EOF
   chmod +x "${dir}/bin/x86_64-w64-mingw32-objdump"
+}
+
+build_mingw_stub() {
+  local dir="$1" model="$2" dumpversion="$3" winpthread="$4" resolve="$5"
+  local large="${6:-none}"
+  local model_line=""
+  if [ "${model}" != "none" ]; then
+    model_line="Thread model: ${model}"
+  fi
+  mkdir -p "${dir}/bin" "${dir}/runtime"
+  for f in libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll; do
+    printf 'planted payload, not a PE: the stub objdump owns the import table\n' >"${dir}/runtime/${f}"
+  done
+  write_stub_gcc "${dir}" "${model_line}" "${dumpversion}" "${resolve}"
+  write_stub_objdump "${dir}" "${winpthread}" "${large}"
 }
 
 # ---------- Case 1: Positive — win32 model + win32-flavoured runtime ----------
