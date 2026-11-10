@@ -9,7 +9,9 @@ existing source checkout. The rationale is [ADR-1244](../adr/1244-merge-train-ow
 ## Inspect and configure
 
 Use Python 3.10 or newer on POSIX, Git, authenticated GitHub CLI, and the existing
-full-gate toolchain. The installed GitHub CLI must support `pr merge
+full-gate toolchain. The installed gateway runs under the `python3` its launcher
+finds, which needs PyYAML for the squash composer; check with
+`python3 -c "import yaml"`. The installed GitHub CLI must support `pr merge
 --match-head-commit` and `pr checks --required --json`. GitHub requests name
 `github.com/VMAFx/vmafx` explicitly. Both origin fetch and push URLs must identify
 only the canonical repository; multiple push destinations are refused.
@@ -103,6 +105,23 @@ cancelled, failed, or absent checks block both `merge` and `arm`; GitHub CLI exi
 strict gates before requesting GitHub auto-merge. Both use `--match-head-commit`,
 never admin bypass or branch deletion.
 
+Both `merge` and `arm` compose the squash commit message using
+[`scripts/ci/squash_message.py`](../../scripts/ci/squash_message.py) (`Train.merge` in
+`scripts/dev/merge_train_guard.py`). Before merging, they invoke its
+`check_message` against the pinned engine (`.config/lefthook/engine.sh`,
+`forge check-message`); any validation failure aborts with
+`squash message check failed: <engine output>`. The composer formats line 1
+as the trimmed pull request title and parenthesised PR number, while the commit
+body retains any breaking-change and migration footers (`BREAKING CHANGE:`,
+`BREAKING-CHANGE:`, or `Migration:`) followed by the `Signed-off-by` trailer of
+`LANDING_IDENTITY`. A footer is kept only when its line starts in column zero
+with one of those prefixes and a non-blank value (`FOOTER_RE`); continuation
+lines below it are dropped, so write each migration step as its own footer
+line. More than 20 footer lines (`MAX_FOOTER_LINES`) or a body above 65,537
+lines make the composer raise an error instead of truncating the message. The
+[DCO Sign-off job](../../.github/workflows/rule-enforcement.yml)
+in CI runs the same check on every pull request except release pull requests.
+
 Prefer `merge` in the automatic loop: future local holds cannot stop auto-merge
 already stored on GitHub. When imposing a hold on an armed PR, also disable its
 server auto-merge explicitly. GitHub remains responsible for branch protection
@@ -139,10 +158,19 @@ After reviewing the JSON plan, repeat the same command with
 `--apply --expect-plan THE_PRINTED_SHA256`. Any changed runtime target or gateway
 source requires a new preview. The helper backs up originals/modes into a fresh
 `migration-*/` directory with `plan.json` and `receipt.json`, copies the committed
-gateway to `releases/GATEWAY_SHA256/`, and leaves `PAUSED` present. It preserves
-existing hold text and unions new protected owners into the existing policy.
+gateway and composer to `releases/RELEASE_NAME/`, and leaves `PAUSED` present.
+`RELEASE_NAME` is the SHA-256 of `GATEWAY_SHA256:COMPOSER_SHA256`, so a change
+to either script installs into a new directory and leaves the old one intact.
+It preserves existing hold text and unions new protected owners into the
+existing policy.
 Every generated entry point verifies the gateway's hash before execution. A
 failure preserves the backups and pause; do not start an incomplete migration.
+
+The release directory holds both the gateway (`merge_train_guard.py`) and the
+squash message composer (`squash_message.py`), installed read-only (`0o444`).
+Every generated entry point verifies both the gateway's hash and the composer's
+hash before execution; tampering with either file causes the launcher to refuse.
+
 The helper never kills or launches a process. It installs this mapping:
 
 | Legacy entry | Replacement |

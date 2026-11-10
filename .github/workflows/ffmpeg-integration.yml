@@ -108,6 +108,8 @@ jobs:
           sudo ninja -vC core/build install
 
       - name: Build FFmpeg
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           scripts/ci/checkout-annotated-tag.sh "$FFMPEG_REMOTE" "$FFMPEG_TAG" ffmpeg
           cd ffmpeg
@@ -247,12 +249,14 @@ jobs:
             ninja -vC core/build install
 
       - name: Build FFmpeg with SYCL patch series
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           scripts/ci/checkout-annotated-tag.sh "$FFMPEG_REMOTE" "$FFMPEG_TAG" ffmpeg
           cd ffmpeg
           # The shared FFmpeg fix series first (ADR-3143), then the patch
-          # series in series.txt order. Patch 0003 (SYCL) depends on fields
-          # added by 0001 (tiny-AI), so applying out of order breaks the build.
+          # series in series.txt order; later patches build on earlier ones,
+          # so applying out of order breaks the build.
           ../scripts/ci/ffmpeg-shared-series.sh apply --method am .
           while IFS= read -r line; do
             case "$line" in ''|\#*) continue ;; esac
@@ -262,8 +266,8 @@ jobs:
               exit 1
             fi
           done < ../ffmpeg-patches/series.txt
-          # libvmaf-sycl is auto-detected by check_pkg_config in patch 0003;
-          # there is no `--enable-libvmaf-sycl` flag to pass.
+          # No patch in the series adds an `--enable-libvmaf-sycl` flag, so
+          # there is none to pass.
           PKG_CONFIG_PATH="/usr/local/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH" \
           ./configure --fatal-warnings --enable-version3 --enable-libvmaf \
             --enable-libvpl --disable-indevs --cc="$CC" --cxx="$CXX" \
@@ -396,6 +400,7 @@ jobs:
         env:
           FFMPEG_TOOLCHAIN: msvc
           VMAF_SCORE_CHECK: '1'
+          GH_TOKEN: ${{ github.token }}
           # The login shell's profile resets PKG_CONFIG_PATH, and the inherited
           # list is in Windows form; a static libvmaf needs zimg.pc from it.
           WINDOWS_PC_PATH: ${{ env.PKG_CONFIG_PATH }}
@@ -535,9 +540,8 @@ jobs:
   # the fork entirely (core/src/vulkan/, feature/vulkan/, libvmaf_vulkan.h all
   # deleted). The meson `enable_vulkan` option no longer exists, so any attempt
   # to pass -Denable_vulkan=enabled to meson setup fails with
-  # "Unknown option: enable_vulkan". The patches 0004 + 0006 remain in the
-  # series.txt chain as no-op compatibility shims (see series.txt comment and
-  # ADR-0860) but produce zero linked code at FFmpeg configure time.
+  # "Unknown option: enable_vulkan". ADR-2166 removed the no-op Vulkan
+  # compatibility shims that ADR-0860 had kept in the series.txt chain.
 
   # Folded from upstream-consumers.yml (one check suite fewer per pull request;
   # see scripts/ci/pr_workflow_budget.py). The `upstream_consumers` selector

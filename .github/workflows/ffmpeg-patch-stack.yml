@@ -76,6 +76,7 @@ jobs:
         shell: bash
         env:
           FFMPEG_FIX_SERIES_VERIFY: cosign
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           output_dir="$RUNNER_TEMP/ffmpeg-patch-check"
@@ -166,6 +167,7 @@ jobs:
         shell: bash
         env:
           FFMPEG_FIX_SERIES_VERIFY: cosign
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tree="$RUNNER_TEMP/ffmpeg"
@@ -234,6 +236,7 @@ jobs:
         shell: bash
         env:
           FFMPEG_FIX_SERIES_VERIFY: cosign
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           output_dir="$RUNNER_TEMP/ffmpeg-patch-refresh"

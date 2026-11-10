@@ -685,8 +685,8 @@ func BuildAugment(encoder string, qpMap []int, width, height, durationFrames int
 }
 
 // buildMacroblockAugment shares the 16x16 reduction across four encoders.
-// x264, libaom-av1 and libsvtav1 take an x264-style qpfile through patch
-// 0007's top-level -qpfile AVOption. The SVT-AV1 bridge maps the macroblocks
+// x264, libaom-av1 and libsvtav1 take an x264-style qpfile through shared
+// fix series patch 0043's top-level -qpfile AVOption. The SVT-AV1 bridge maps the macroblocks
 // to 64x64 super-blocks with at most eight segment QPs (ADR-3386).
 // x265 takes the spatial mean as a zones= parameter instead of a sidecar.
 func buildMacroblockAugment(
@@ -735,16 +735,16 @@ func ExtraParamsFor(encoder, sidecarPath string) []string {
 	switch encoder {
 	case "libx264":
 		// libx264 has no qpfile parameter (that is a feature of the x264
-		// command line): the fork's patch stack (patch 0007) exposes the
-		// shared top-level -qpfile AVOption and feeds the offsets through
+		// command line): shared fix series patch 0043 exposes the
+		// top-level -qpfile AVOption and feeds the offsets through
 		// x264's quant_offsets. Stock FFmpeg refuses the option, so the
 		// encode fails instead of running without the ROI.
 		return []string{"-qpfile", sidecarPath}
 	case "libaom-av1":
-		// The fork's patch stack exposes a shared top-level -qpfile AVOption.
+		// Shared fix series patch 0043 exposes the top-level -qpfile AVOption.
 		return []string{"-qpfile", sidecarPath}
 	case "libsvtav1":
-		// Patch 0007 exposes the shared -qpfile ROI bridge (ADR-3386).
+		// Shared fix series patch 0043 exposes the -qpfile ROI bridge (ADR-3386).
 		// Stock FFmpeg refuses -qpfile, so the encode fails instead of
 		// silently dropping the map as -svtav1-params qp-file= did.
 		return []string{"-qpfile", sidecarPath}
