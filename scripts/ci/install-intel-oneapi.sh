@@ -132,7 +132,7 @@ trap 'rm -rf "$tmp"' EXIT
 # --- repository key: keep exactly the pinned key --------------------------
 key_url="https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB"
 keyring=/usr/share/keyrings/intel-oneapi-archive-keyring.gpg
-curl -fsSL --connect-timeout 20 --max-time 120 --proto '=https' --tlsv1.2 -o "$tmp/intel.pub" "$key_url"
+curl --retry 3 --retry-all-errors -fsSL --connect-timeout 20 --max-time 120 --proto '=https' --tlsv1.2 -o "$tmp/intel.pub" "$key_url"
 export GNUPGHOME="$tmp/gnupg"
 mkdir -m 0700 "$GNUPGHOME"
 # Without gpg-agent (a Recommends of gpg) the import still stores the public

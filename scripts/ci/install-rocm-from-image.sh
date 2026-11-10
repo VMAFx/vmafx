@@ -189,7 +189,7 @@ extract_layer() {
   local digest="$1" attempt=1 statuses
   while [ "$attempt" -le "$LAYER_ATTEMPTS" ]; do
     set +e
-    curl -fsSL --max-time "$LAYER_MAX_TIME" \
+    curl --retry 3 --retry-all-errors -fsSL --max-time "$LAYER_MAX_TIME" \
       -H "Authorization: Bearer ${TOKEN}" \
       "https://${REGISTRY}/v2/${REPO}/blobs/${digest}" |
       "${decomp[@]}" |

@@ -1152,6 +1152,29 @@ first earlier step that did not succeed (`shard 1/4 outcome was skipped: step
 Meson-unit-suite outcome was failure`), and `scripts/ci/test_fail_closed_ci.py`
 runs that step's script against planted outcomes.
 
+### Connection retries on downloads
+
+On 2026-11-10 the `Tidy Lane (cuda)` job failed on its first attempt to fetch
+the apt.llvm.org signing key: `curl: (7) Failed to connect to apt.llvm.org port
+443`. The fetch had `--retry 3`, but curl's `--retry` alone does not retry a
+failed connection, and `--retry-connrefused` adds only a refused one, not an
+unreachable network or host.
+
+Every HTTP(S) fetch in a shell script, workflow or container recipe therefore
+retries connection failures:
+
+- **curl:** `--retry N --retry-all-errors`, with N positive.
+- **wget:** `--tries=N --retry-connrefused --retry-on-host-error`, with N
+  positive.
+- **APT in `scripts/dev/tidy-lane.sh`:** `-o Acquire::Retries=3`.
+
+Each site keeps its own `--max-time` and `--connect-timeout` bounds.
+`scripts/ci/tests/test_fetch_connect_retry.py` checks every tracked fetch for
+these flags and runs as the `test-fetch-connect-retry` pre-commit hook. Fetches
+that must fail fast, such as a local health probe inside its own bounded poll,
+are listed with a reason in its `ALLOWLIST`; an entry whose site is gone fails
+the test.
+
 ## Apt archive cache
 
 Every job in `tests-and-quality-gates.yml` that runs `apt-get install` caches

@@ -128,7 +128,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # umf/tcm/tbb component dirs together without missing-dependency surprises.
 # The ~10 GB it installs never leaves this stage — stage 3 copies out only
 # the specific .so's `ldd` says vmaf/ffmpeg/libvmaf actually link (below).
-RUN curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+RUN curl --retry 3 --retry-all-errors -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
         | gpg --dearmor \
         | tee /usr/share/keyrings/intel-sw-products.gpg > /dev/null \
     && printf 'deb [signed-by=/usr/share/keyrings/intel-sw-products.gpg] https://apt.repos.intel.com/oneapi all main\n' \

@@ -662,7 +662,7 @@ jobs:
         run: |
           printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
             | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
-          wget -qO- \
+          wget --tries=3 --retry-connrefused --retry-on-host-error -qO- \
             https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
             | sudo gpg --dearmor \
                 -o /usr/share/keyrings/oneapi-archive-keyring.gpg
@@ -1132,7 +1132,7 @@ jobs:
           fi
           url="https://github.com/stoplightio/spectral/releases/download/v${version}/spectral-linux-x64"
           mkdir -p "${RUNNER_TEMP}/spectral"
-          curl -fsSL --retry 3 --max-time 300 -o "${RUNNER_TEMP}/spectral/spectral" "${url}"
+          curl -fsSL --retry 3 --retry-all-errors --max-time 300 -o "${RUNNER_TEMP}/spectral/spectral" "${url}"
           echo "${sha}  ${RUNNER_TEMP}/spectral/spectral" | sha256sum -c -
           chmod +x "${RUNNER_TEMP}/spectral/spectral"
           echo "${RUNNER_TEMP}/spectral" >> "${GITHUB_PATH}"
@@ -1271,7 +1271,7 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/trivy-bin"
           tarball="trivy_${version}_Linux-64bit.tar.gz"
           url="https://github.com/aquasecurity/trivy/releases/download/v${version}/${tarball}"
-          curl -fsSL --retry 3 --max-time 300 -o "${RUNNER_TEMP}/${tarball}" "${url}"
+          curl -fsSL --retry 3 --retry-all-errors --max-time 300 -o "${RUNNER_TEMP}/${tarball}" "${url}"
           echo "${expected_sha}  ${RUNNER_TEMP}/${tarball}" | sha256sum -c -
           tar -xzf "${RUNNER_TEMP}/${tarball}" -C "${RUNNER_TEMP}/trivy-bin" trivy
           echo "${RUNNER_TEMP}/trivy-bin" >> "${GITHUB_PATH}"
