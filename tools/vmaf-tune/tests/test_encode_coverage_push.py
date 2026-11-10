@@ -61,15 +61,24 @@ from vmaftune.hdr import HdrInfo, hdr_codec_args
 # Helpers
 # ---------------------------------------------------------------------------
 
+
+def _absolute_tool_path(name: str) -> str | None:
+    """Return the absolute path of ``name`` found on PATH, or None when absent or relative."""
+    path = shutil.which(name)
+    if path is None or not Path(path).is_absolute():
+        return None
+    return path
+
+
 FFMPEG_TIMEOUT_S = 60
-FFMPEG_BIN = shutil.which("ffmpeg")
-FFPROBE_BIN = shutil.which("ffprobe")
+FFMPEG_BIN = _absolute_tool_path("ffmpeg")
+FFPROBE_BIN = _absolute_tool_path("ffprobe")
 
 
 def _write_raw_10bit(path: Path) -> None:
     """Generate a 10-frame 320x240 yuv420p10le raw clip via FFmpeg testsrc2."""
     if FFMPEG_BIN is None:
-        pytest.skip("ffmpeg not found on PATH")
+        pytest.skip("ffmpeg not found on PATH as an absolute path")
     gen = subprocess.run(
         [
             FFMPEG_BIN,
@@ -100,7 +109,7 @@ def _write_raw_10bit(path: Path) -> None:
 def _probe_color_tags(path: Path) -> dict[str, str]:
     """Return stream 0 color tags dictionary via ffprobe JSON output."""
     if FFPROBE_BIN is None:
-        pytest.skip("ffprobe not found on PATH")
+        pytest.skip("ffprobe not found on PATH as an absolute path")
     probe = subprocess.run(
         [
             FFPROBE_BIN,
@@ -121,6 +130,27 @@ def _probe_color_tags(path: Path) -> dict[str, str]:
     )
     data = json.loads(probe.stdout)
     return data["streams"][0]
+
+
+def test_absolute_tool_path_returns_absolute_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Return the absolute path when shutil.which finds an absolute path."""
+    expected = str(tmp_path / "ffmpeg")
+    monkeypatch.setattr(shutil, "which", lambda _name: expected)
+    assert _absolute_tool_path("ffmpeg") == expected
+
+
+def test_absolute_tool_path_returns_none_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Return None when shutil.which returns None for a missing binary."""
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    assert _absolute_tool_path("ffmpeg") is None
+
+
+def test_absolute_tool_path_rejects_relative_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Return None when shutil.which returns a relative path."""
+    monkeypatch.setattr(shutil, "which", lambda _name: "bin/ffmpeg")
+    assert _absolute_tool_path("ffmpeg") is None
 
 
 def _make_req(
@@ -430,8 +460,8 @@ class TestBuildFfmpegCommandRawHdrInputColorTags:
         assert "-color_trc" in output_slice
         assert output_slice[output_slice.index("-color_trc") + 1] == "smpte2084"
 
-    @pytest.mark.skipif(FFMPEG_BIN is None, reason="ffmpeg not found on PATH")
-    @pytest.mark.skipif(FFPROBE_BIN is None, reason="ffprobe not found on PATH")
+    @pytest.mark.skipif(FFMPEG_BIN is None, reason="ffmpeg not found on PATH as an absolute path")
+    @pytest.mark.skipif(FFPROBE_BIN is None, reason="ffprobe not found on PATH as an absolute path")
     def test_real_encode_raw_hdr10_x265_tags_transfer_and_primaries(self, tmp_path: Path) -> None:
         """Verify real libx265 encode from raw HDR10 source preserves color tags (#3345)."""
         if not ffmpeg_reports_encoder("libx265"):
