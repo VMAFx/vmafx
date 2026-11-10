@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "digest": "sha256:1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809"
+  },
+  "frames": [
+    {
+      "time": { "frame_index": 0 },
+      "scores": { "vif": 0.95102 }
+    }
+  ],
+  "windows": [],
+  "events": [
+    {
+      "type": "drop",
+      "detail": { "reason": "duplicate pts" }
+    }
+  ]
+}
