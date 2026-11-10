@@ -522,6 +522,9 @@
   ([FFmpeg with MSVC](docs/getting-started/building-on-windows.md#ffmpeg-with-msvc)).
 
 
+- **Local check for retired FFmpeg filter names.** A commit or push that touches documentation, the FFmpeg patch series, its tests or a fork build config now runs `scripts/ci/ffmpeg-patches-surface-check.sh --surface-only` (hook `ffmpeg-patches-surface-docs`), so a retired filter or option named outside the migration guide and the dated records the check skips (ADRs, research digests, rebase notes, changelogs, the state ledger, backlog audits, SYCL history) fails locally instead of first in CI. The new `--surface-only` mode runs only the tree checks and needs no PR body or `origin/master`.
+
+
 - **CI builds and checks the `vmafx` FFmpeg filter (#2475).** The required
   check `FFmpeg vmafx Filter` builds FFmpeg with `--enable-libvmafx` and
   compares the filter's report with the `vmaf` CLI (`parity`, `windows`,
@@ -1229,6 +1232,19 @@
   CI's `vmafx_filter_check.py filters` fails a fork build that registers a `libvmaf`-family filter.
 
   Migration: see [Migrating from the libvmaf filters](docs/usage/ffmpeg.md#migrating-from-the-libvmaf-filters).
+
+
+- **FFmpeg `-qpfile` and GPU loopback decoding now come from the shared fix series.**
+  The fork's own `0001-codec-qpfile-unified.patch` and `0006-fftools-loopback-decoder-hwaccel.patch`
+  are dropped, together with `ffmpeg-patches/src/ffmpeg_dec_hwaccel.c`: the shared FFmpeg fix series
+  (`VMAFx/ffmpeg-patches` release `v0.7.0`, patches `0043` and `0044`) now carries both changes
+  for every consumer.
+  The remaining VMAFx patches are renumbered `0001` to `0004` without gaps (issue #2435).
+  The `-qpfile` codec option and a loopback decoder's `-hwaccel`, `-hwaccel_device` and
+  `-hwaccel_output_format` options keep their names; libaom-av1 `-qpfile` now needs
+  `-usage realtime -cpu-used 7|8` and refuses other settings (before, libaom silently
+  ignored the map there), and `vmaf-tune` saliency-aware libaom adds `-usage realtime`
+  and refuses other presets (`recommend-saliency` exits with code 2 and a one-line error).
 
 
 - **Run the MS-SSIM decimate and SSIMULACRA 2 PTLR bit-exactness checks on Windows.** The two Windows skips (`TODO(ms-ssim-mingw)`, `TODO(ssimulacra2-ptlr-mingw)`) are stale: the scalar references already get a correctly-rounded fma on every compiler — the PTLR test TU is compiled with `-mavx2 -mfma` (gcc inlines `fmaf` as hardware `vfmadd`; the binary contains no `fmaf` libcall), and the decimate scalar uses `vmaf_fmaf_exact`, whose double detour is correctly rounded on every in-range input we swept. Without `-mfma`, mingw-w64's static software `fmaf()` deviates from correctly-rounded on 28.1% of the tests' input grids (1-ulp errors) — the skips' premise was right about the libm, but the build and the decimate scalar had already routed around it. Both tests pass on Windows (`test_ms_ssim_decimate` 10/10, `test_ssimulacra2_simd` 13/13 including all five PTLR cases, MinGW-w64 gcc 16.2), so both skips are removed. Closes VMAFx/vmafx#2886.
@@ -2548,6 +2564,9 @@
 - **CI:** the `FFmpeg vmafx Filter` job fails on any compiler warning and on a build log its warning scan cannot read, so the series' own C code meets the warning gate the other FFmpeg builds already enforce (issue 2477).
 
 
+- **Lint:** the float-identity Semgrep rule reads all 16 CUDA, HIP, SYCL and Vulkan test sources it could not parse, and their exception rows are gone; the SYCL sub-group contract test also checks `constexpr`-sized functors, every `operator()` overload and shape uses it cannot read (issue 3252).
+
+
 - **Stop the requirements guide from restating the uv version.** `requirements/AGENTS.md` still named uv 0.13.1 after `requirements/locks/manifest.json` moved to 0.13.6; it now points at `uv_version` in the manifest, and `scripts/ci/check_python_dependency_locks.py check` refuses any Markdown guide line that names `uv` or `uv_version` next to a version number (changelog, archive, research, state rows and decision records excepted).
 
 
@@ -2574,6 +2593,34 @@
 
 
 - **Score SYCL device frames in a build that also enables CUDA.** `translate_picture()` (`core/src/libvmaf.c`) had no case for a frame in SYCL device memory, so with `-Denable_cuda=true -Denable_sycl=true` the first imported SYCL frame (for example a GL texture through `vmafx_context_import_frame()`) failed with `VMAFX_E_INVALID` (`-EINVAL`). SYCL device frames now go to the SYCL twins in the host slot as HIP device frames do, and a CUDA extractor that would read one is refused with `-ENOTSUP`. `test_live_sycl_textures_without_workers` in `core/test/test_vmafx_window_live.c` failed before the fix.
+
+
+- **HDR10 encodes with `hevc_qsv` Main 10 and `av1_qsv` open again (#3344).**
+  The HDR arguments added an output `-pix_fmt p010le` after the `hwupload` filter, so FFmpeg
+  tried to convert the uploaded hardware frames back to a software format and the encoder
+  failed to open with exit 218. `vmaf-tune` and the Go encode chain now drop an output
+  `-pix_fmt` or `-pix_fmt:v` whenever they append an upload filter; chains without an upload
+  keep it.
+
+
+- **Run active SYCL combined-graph extractors on subsampled frames (#3356).**
+  `vmaf_sycl_graph_submit()` now counts and enqueues only the registered graph extractors that run
+  on the current frame under `--subsample N` (`N > 1`), using direct per-extractor submission on
+  frames where non-temporal extractors (`vif_sycl`, `adm_sycl`, `float_moment_sycl`, `cambi_sycl`)
+  are skipped so temporal `motion_sycl` and `psnr_sycl` update every frame without overwriting
+  pending host results of skipped extractors. A recorded combined graph replays only on frames
+  where every registered extractor runs.
+
+
+- **Credits page:** the credits check no longer lets the Netflix VMAF entry's `core/` directory cover every third-party file below it, and under `closest` REUSE precedence it reads a file's own licence header, so the two SSIMULACRA 2 headers are now credited to libjxl and the inherited speed-filter test and four inherited Python `third_party/` files to Netflix VMAF (issue 3370).
+
+
+- **ADR allocator scans open pull request heads to avoid fork PR collisions.**
+  In claim mode, `scripts/adr/next-free.sh` queries `gh` for open pull request
+  head commit SHAs and scans their `docs/adr` trees alongside origin branches.
+  Contributors with a fork as origin can set `VMAF_ADR_PR_REPO=VMAFx/vmafx`.
+  When `gh` is missing or fails, it warns on stderr and scans origin branches
+  only.
 
 
 - ADR tooling: `scripts/adr/next-free.sh --claim` no longer hands two parallel
@@ -2642,6 +2689,9 @@
   now carry an explicit commit body with sign-off and no tool or bot
   `Co-authored-by:` lines, and pushes to `master` verify landed squash bodies
   against disallowed trailers ([ADR-3389](docs/adr/3389-landed-commit-message-gate.md)).
+
+
+- Build: the nvcc host-compiler frontend flags now follow the build machine, not the target platform, so a Linux host cross-compiling the CUDA-enabled Windows library compiles every fatbin instead of failing on the flags meant for cl.exe. The `-Xcompiler` strict-FP spelling is `-ffp-contract=off` there (it was `/fp:precise`, which gcc took for an input file), and the win32 pthread shim stays off the include path (its `#ifndef _WIN32` guard fired under the host gcc frontend). Native Windows and native Linux builds are unchanged.
 
 
 - Build: nvcc's host compiler frontend is now selected by the build machine instead of the target platform. A Linux host cross-compiling the CUDA-enabled Windows library no longer dies at "MSVC cl.exe not found" — the CUDA kernels compile `--fatbin -DDEVICE_CODE` (device code only, no host pass) and load through `cuModuleLoadData` at run time, so no MSVC is needed on the build machine. Native Windows builds are unchanged.
@@ -2880,6 +2930,13 @@
   the CLI, and in the context's log callback for the VMAFx API.
 
 
+- **The shared FFmpeg fix series fetches a failed github.com release download via the forge API.**
+  `scripts/ci/ffmpeg-shared-series.sh` fetches a github.com release asset again with
+  `gh release download` (forge API) when curl or wget fails on it, as it did with HTTP 504 for
+  anonymous traffic on 2026-11-09. The sha256, `SHA256SUMS` and signature checks run unchanged
+  after either path, and the output names the path that ran.
+
+
 - **`-qpfile` works on libx264, and the saliency tools no longer run a libx264
   encode without the ROI they asked for
   ([ADR-2167](docs/adr/2167-ffmpeg-x264-qpfile-quant-offsets.md)).** Patch
@@ -2995,6 +3052,9 @@
 
 
 - **Check `vmafx_rgb_plan_init()` in the CUDA, HIP and SYCL RGB imports.** Under `NDEBUG` the assertion vanished and a rejected plan sent an uninitialised `VmafxRgbPlan` to the device kernel. `rgb_plane()` now zero-initialises the plan and fails the import with a device error instead of launching.
+
+
+- The `vmaf` Python package's project URLs point at VMAFx (issue #2338): Homepage, Repository and Issues at github.com/VMAFx/vmafx and Documentation at vmafx.dev, instead of a single Homepage at Netflix/vmaf.
 
 
 - **Helm: a node without a models volume scores with the image's models.**
@@ -3124,6 +3184,11 @@
 - Build: the Windows MinGW UCRT64 build compiles again. The VMAFx API's printf-format
   attribute now names MinGW's own archetype (`__MINGW_PRINTF_FORMAT`), so GCC accepts `%zu`
   under UCRT instead of failing with `-Werror=format`.
+
+
+- Test: the Windows MinGW CUDA build compiles the test suite again. `test_metal_psnr_hvs_math.c`
+  declared a static array named `VARIANT`, which collided with the Windows COM `VARIANT` typedef
+  that reaches the translation unit through `nvEncodeAPI.h`; the array is now named `VARIANT_TABLE`.
 
 
 - Build: the Windows MinGW-w64 (UCRT64) build links again with link-time optimisation. `VMAFX_EXPORT` no longer expands to an ELF visibility attribute under MinGW GCC, which ignores it and warned at every LTO use; it is empty there, as `VMAF_EXPORT` already was. Exported symbols are unchanged.
