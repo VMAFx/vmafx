@@ -75,6 +75,7 @@ from scripts.lib.safe_subprocess import (  # noqa: E402
 
 # Bound = max(60, 10x the slowest measured run): the header ffprobe took 0.15 s
 # on a 1080p clip and 0.03 s on a KonViD clip.
+# Decode took 0.34 s and libx264 encode+decode 0.44 s on a 540p 149-frame clip.
 FFMPEG_TIMEOUT_S = 60
 # Bound = max(60, 10x slowest measured run): libvmaf CLI took 0.39 s on a 540p 149-frame clip.
 VMAF_TIMEOUT_S = 60
@@ -141,49 +142,51 @@ def _decode_yuv(src_mp4: Path, out_yuv: Path) -> tuple[int, int, int]:
 def _encode_dis(src_mp4: Path, out_yuv: Path, crf: int) -> None:
     """Round-trip through libx264 @ @p crf to introduce compression artefacts."""
     intermediate = out_yuv.with_suffix(".dis.mp4")
-    _run(
-        [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-i",
-            str(src_mp4),
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            str(crf),
-            "-pix_fmt",
-            "yuv420p",
-            "-f",
-            "mp4",
-            str(intermediate),
-        ],
-        allowed=("ffmpeg",),
-        timeout_s=FFMPEG_TIMEOUT_S,
-    )
-    _run(
-        [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-i",
-            str(intermediate),
-            "-pix_fmt",
-            "yuv420p",
-            "-f",
-            "rawvideo",
-            str(out_yuv),
-        ],
-        allowed=("ffmpeg",),
-        timeout_s=FFMPEG_TIMEOUT_S,
-    )
-    intermediate.unlink(missing_ok=True)
+    try:
+        _run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(src_mp4),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                str(crf),
+                "-pix_fmt",
+                "yuv420p",
+                "-f",
+                "mp4",
+                str(intermediate),
+            ],
+            allowed=("ffmpeg",),
+            timeout_s=FFMPEG_TIMEOUT_S,
+        )
+        _run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(intermediate),
+                "-pix_fmt",
+                "yuv420p",
+                "-f",
+                "rawvideo",
+                str(out_yuv),
+            ],
+            allowed=("ffmpeg",),
+            timeout_s=FFMPEG_TIMEOUT_S,
+        )
+    finally:
+        intermediate.unlink(missing_ok=True)
 
 
 def _run_vmaf(

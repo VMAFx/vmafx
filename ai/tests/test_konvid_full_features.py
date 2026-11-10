@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shlex
 import sys
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ from ai.data.feature_extractor import FULL_FEATURES
 from scripts.lib.safe_subprocess import (
     CommandFailed,
     CommandTimedOut,
+    CommandValidationError,
     TextCommandResult,
 )
 
@@ -296,6 +298,7 @@ def test_encode_step_command_timed_out_skips_clip_and_cleans_intermediate(
     _out_plain, _out_folds = _setup_full_features_run(tmp_path, monkeypatch)
 
     intermediate_paths: list[Path] = []
+    timed_out_cmd: list[list[str]] = []
 
     def fake_run(cmd, **kw):
         if cmd[0] == "ffprobe":
@@ -307,6 +310,7 @@ def test_encode_step_command_timed_out_skips_clip_and_cleans_intermediate(
             )
         if "-c:v" in cmd:
             # First encode step: plant intermediate file and simulate timeout
+            timed_out_cmd.append(list(cmd))
             inter = Path(cmd[-1])
             intermediate_paths.append(inter)
             inter.parent.mkdir(parents=True, exist_ok=True)
@@ -321,6 +325,18 @@ def test_encode_step_command_timed_out_skips_clip_and_cleans_intermediate(
     captured = capsys.readouterr().err
     assert "[konvid-full]" in captured
     assert "timed out after 60s" in captured
+    assert len(timed_out_cmd) > 0
+    expected_stderr = (
+        f"[konvid-full] 10008004183 FAILED: {shlex.join(timed_out_cmd[0])} (timed out after 60s)"
+    )
+    assert expected_stderr in captured.splitlines()
     assert len(intermediate_paths) > 0
     for inter in intermediate_paths:
         assert not inter.exists(), f"Intermediate {inter} was not unlinked in finally"
+
+
+def test_run_rejects_unallowed_executable() -> None:
+    """Invoking _run with an executable not in the allowlist raises CommandValidationError."""
+    mod = _load_module()
+    with pytest.raises(CommandValidationError):
+        mod._run(["sh", "-c", "true"], allowed=("ffmpeg",), timeout_s=1)

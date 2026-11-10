@@ -16,8 +16,13 @@ sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
 
 import collect_gpu_calibration_data as collect  # noqa: E402
+import export_transnet_v2 as transnet  # noqa: E402
 
-from scripts.lib.safe_subprocess import CommandTimedOut, TextCommandResult  # noqa: E402
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    CommandFailed,
+    CommandTimedOut,
+    TextCommandResult,
+)
 
 TIMEOUT_EXIT_CODE = 124
 
@@ -129,3 +134,90 @@ def test_run_one_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
     assert rc == TIMEOUT_EXIT_CODE
     assert str(collect.VMAF_TIMEOUT_S) in msg
     assert "VMAF_TIMEOUT_S" in msg
+
+
+def test_export_transnet_v2_convert_to_onnx_positive(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """_convert_to_onnx passes sys.executable allowlist, SCRIPT_TIMEOUT_S, and expected argv."""
+    captured_cmd: list[str] = []
+    captured_kw: dict[str, Any] = {}
+
+    def fake_run(cmd: list[str], **kwargs: Any) -> TextCommandResult:
+        captured_cmd.extend(cmd)
+        captured_kw.update(kwargs)
+        return TextCommandResult(tuple(cmd), 0, "", "")
+
+    monkeypatch.setattr(transnet, "run_command", fake_run)
+    wrapped_dir = tmp_path / "w"
+    onnx_path = tmp_path / "out.onnx"
+    transnet._convert_to_onnx(wrapped_dir, onnx_path, 17)
+
+    assert captured_kw.get("allowed_executables") == (sys.executable,)
+    assert captured_kw.get("timeout_seconds") == transnet.SCRIPT_TIMEOUT_S
+    assert captured_kw.get("check") is True
+    assert captured_cmd[:3] == [sys.executable, "-m", "tf2onnx.convert"]
+    assert "--saved-model" in captured_cmd
+    assert str(wrapped_dir) in captured_cmd
+    assert "--output" in captured_cmd
+    assert str(onnx_path) in captured_cmd
+    assert "--opset" in captured_cmd
+    assert "17" in captured_cmd
+
+
+def test_export_transnet_v2_main_command_failed_negative(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """CommandFailed in export_transnet_v2 main exits cleanly with a string message."""
+    monkeypatch.setattr(transnet, "_verify_upstream", lambda _path: None)
+    monkeypatch.setattr(transnet, "_wrap_to_savedmodel", lambda _up, _wr: None)
+
+    def fake_run_failed(cmd: list[str], **kwargs: Any) -> TextCommandResult:
+        raise CommandFailed(TextCommandResult(tuple(cmd), 1, "", "convert failed"))
+
+    monkeypatch.setattr(transnet, "run_command", fake_run_failed)
+
+    cli_args = [
+        "--upstream-dir",
+        str(tmp_path / "upstream"),
+        "--output",
+        str(tmp_path / "out.onnx"),
+        "--wrapped-savedmodel",
+        str(tmp_path / "wrapped"),
+        "--skip-verify",
+        "--no-registry",
+    ]
+    with pytest.raises(SystemExit) as exc_info:
+        transnet.main(cli_args)
+
+    assert isinstance(exc_info.value.code, str)
+    assert "command exited 1" in exc_info.value.code
+
+
+def test_export_transnet_v2_main_command_timed_out_boundary(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """CommandTimedOut in export_transnet_v2 main exits with message containing timeout."""
+    monkeypatch.setattr(transnet, "_verify_upstream", lambda _path: None)
+    monkeypatch.setattr(transnet, "_wrap_to_savedmodel", lambda _up, _wr: None)
+
+    def fake_run_timeout(cmd: list[str], **kwargs: Any) -> TextCommandResult:
+        raise CommandTimedOut(tuple(cmd), transnet.SCRIPT_TIMEOUT_S, None, None)
+
+    monkeypatch.setattr(transnet, "run_command", fake_run_timeout)
+
+    cli_args = [
+        "--upstream-dir",
+        str(tmp_path / "upstream"),
+        "--output",
+        str(tmp_path / "out.onnx"),
+        "--wrapped-savedmodel",
+        str(tmp_path / "wrapped"),
+        "--skip-verify",
+        "--no-registry",
+    ]
+    with pytest.raises(SystemExit) as exc_info:
+        transnet.main(cli_args)
+
+    assert isinstance(exc_info.value.code, str)
+    assert "timed out after 1800s" in str(exc_info.value.code)

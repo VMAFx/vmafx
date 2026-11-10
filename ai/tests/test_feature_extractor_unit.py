@@ -30,7 +30,11 @@ from ai.data.feature_extractor import (
     aggregate_clip_stats,
     extract_features,
 )
-from scripts.lib.safe_subprocess import CommandFailed, TextCommandResult
+from scripts.lib.safe_subprocess import (
+    CommandFailed,
+    CommandValidationError,
+    TextCommandResult,
+)
 
 # ---------------------------------------------------------------------------
 # _ensure_binary
@@ -132,6 +136,7 @@ def test_run_vmaf_json_composes_argv(tmp_path: Path) -> None:
     assert captured_kw.get("timeout_seconds") == fe_mod.VMAF_TIMEOUT_S
     argv = captured[0]
     assert argv[0] == str(binary)
+    assert captured_kw.get("allowed_executables") == (argv[0],)
     assert argv[argv.index("-r") + 1] == str(ref)
     assert argv[argv.index("-d") + 1] == str(dis)
     assert argv[argv.index("-w") + 1] == "320"
@@ -206,6 +211,32 @@ def test_run_vmaf_json_cleans_up_temp_on_subprocess_error(tmp_path: Path) -> Non
     with (
         patch.object(fe_mod, "run_command", side_effect=fake_run),
         pytest.raises(CommandFailed),
+    ):
+        _run_vmaf_json(
+            binary,
+            tmp_path / "r.yuv",
+            tmp_path / "d.yuv",
+            16,
+            16,
+            features=DEFAULT_FEATURES,
+        )
+
+    assert leftover and not leftover[0].exists(), "Temp output file was not removed"
+
+
+def test_run_vmaf_json_cleans_up_temp_on_validation_error(tmp_path: Path) -> None:
+    """A CommandValidationError from run_command propagates and cleans up the temp output file."""
+    binary = tmp_path / "vmaf"
+    binary.write_text("")
+    leftover: list[Path] = []
+
+    def fake_run(cmd, **kw):
+        leftover.append(Path(cmd[cmd.index("-o") + 1]))
+        raise CommandValidationError("validation error")
+
+    with (
+        patch.object(fe_mod, "run_command", side_effect=fake_run),
+        pytest.raises(CommandValidationError),
     ):
         _run_vmaf_json(
             binary,

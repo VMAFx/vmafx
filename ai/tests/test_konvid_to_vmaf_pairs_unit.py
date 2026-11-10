@@ -21,6 +21,7 @@ import pytest
 from scripts.lib.safe_subprocess import (
     CommandFailed,
     CommandTimedOut,
+    CommandValidationError,
     TextCommandResult,
 )
 
@@ -363,8 +364,10 @@ def test_process_all_clips(
         assert "FAILED: vmaf x" in captured
 
 
-def test_run_command_bounds_and_allowlist(tmp_path: Path) -> None:
+def test_run_command_bounds_and_allowlist(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Verify run_command carries expected timeout_seconds and allowed_executables for all steps."""
+    distinct_timeout_s = 61
+    monkeypatch.setattr(KVP, "VMAF_TIMEOUT_S", distinct_timeout_s)
     src = tmp_path / "clip.mp4"
     src.write_bytes(b"\x00")
     ref = tmp_path / "ref.yuv"
@@ -408,7 +411,38 @@ def test_run_command_bounds_and_allowlist(tmp_path: Path) -> None:
     # vmaf step
     vmaf_arg = KVP.executable_argument(binary, Path.cwd())
     assert recorded[4]["allowed"] == (vmaf_arg,)
+    assert recorded[4]["timeout"] == distinct_timeout_s
     assert recorded[4]["timeout"] == KVP.VMAF_TIMEOUT_S
+
+
+def test_run_rejects_unallowed_executable() -> None:
+    """Invoking _run with an executable not in the allowlist raises CommandValidationError."""
+    with pytest.raises(CommandValidationError):
+        KVP._run(["sh", "-c", "true"], allowed=("ffmpeg",), timeout_s=1)
+
+
+def test_encode_dis_cleans_up_intermediate_on_timeout(tmp_path: Path) -> None:
+    """_encode_dis unlinks intermediate file when second _run times out and propagates error."""
+    src = tmp_path / "clip.mp4"
+    src.write_bytes(b"\x00")
+    out_yuv = tmp_path / "dis.yuv"
+    intermediate = out_yuv.with_suffix(".dis.mp4")
+
+    calls = 0
+
+    def fake_run(cmd, **kw):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            intermediate.write_bytes(b"temp")
+            return TextCommandResult(tuple(cmd), 0, "", "")
+        raise CommandTimedOut(tuple(cmd), 60.0, None, None)
+
+    with patch.object(KVP, "run_command", side_effect=fake_run):
+        with pytest.raises(CommandTimedOut):
+            KVP._encode_dis(src, out_yuv, crf=28)
+
+    assert not intermediate.exists()
 
 
 def test_vmaf_step_command_failed_logs_and_skips_clip(

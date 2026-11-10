@@ -65,6 +65,7 @@ from scripts.lib.safe_subprocess import (  # noqa: E402
 
 # Bound = max(60, 10x the slowest measured run): the header ffprobe took 0.15 s
 # on a 1080p clip and 0.03 s on a KonViD clip.
+# Decode took 0.34 s and libx264 encode+decode 0.44 s on a 540p 149-frame clip.
 FFMPEG_TIMEOUT_S = 60
 # Bound = max(60, 10x slowest measured run): libvmaf with FULL_FEATURES took 27.56 s
 # on a 540p 149-frame clip (scaled 1.6x for 8 s clips).
@@ -581,8 +582,8 @@ def _process_all_clips(
         except Exception as exc:
             # An audio-only / no-video clip raises IndexError on the
             # ffprobe streams[0] lookup, and a corrupt cache raises a
-            # JSON / value error — neither is a CalledProcessError, so
-            # without this broader catch one bad clip aborts the whole
+            # JSON / value error — neither is a CommandFailed / CommandTimedOut,
+            # so without this broader catch one bad clip aborts the whole
             # run. Log the key and continue.
             print(f"[konvid-full] {key} FAILED: {exc}", file=sys.stderr)
             continue

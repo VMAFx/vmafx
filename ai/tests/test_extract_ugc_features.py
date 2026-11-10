@@ -11,6 +11,7 @@ import sys
 import time
 import types
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -83,6 +84,85 @@ def test_run_vmaf_command_requests_full_feature_extractors(monkeypatch, tmp_path
     assert cmd.count("--feature") >= 10
     assert "speed_temporal" in cmd
     assert "speed_chroma" in cmd
+
+
+def test_ffprobe_executable_allowlist_and_timeout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """_ffprobe passes allowed_executables=('ffprobe',) and timeout_seconds=FFMPEG_TIMEOUT_S."""
+    mod = _load_module()
+    captured_kwargs: dict[str, Any] = {}
+    expected_width = 640
+
+    def fake_run(cmd, **kwargs):
+        captured_kwargs.update(kwargs)
+        return TextCommandResult(
+            tuple(cmd),
+            0,
+            json.dumps({"streams": [{"width": expected_width, "height": 360}]}),
+            "",
+        )
+
+    monkeypatch.setattr(mod, "run_command", fake_run)
+    stream = mod._ffprobe(tmp_path / "video.mp4")
+    assert stream["width"] == expected_width
+    assert captured_kwargs.get("allowed_executables") == ("ffprobe",)
+    assert captured_kwargs.get("timeout_seconds") == mod.FFMPEG_TIMEOUT_S
+
+
+def test_ffmpeg_decode_to_yuv_executable_allowlist_and_timeout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """_decode_to_yuv runs ffmpeg with the ffmpeg allowlist and FFMPEG_TIMEOUT_S."""
+    mod = _load_module()
+    captured_kwargs: dict[str, Any] = {}
+
+    def fake_run(cmd, **kwargs):
+        captured_kwargs.update(kwargs)
+        tmp_dest = Path(cmd[-1])
+        tmp_dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp_dest.write_bytes(b"\x00" * 384)
+        return TextCommandResult(tuple(cmd), 0, "", "")
+
+    monkeypatch.setattr(mod, "run_command", fake_run)
+    frames = mod._decode_to_yuv(tmp_path / "src.mp4", tmp_path / "dest.yuv", 16, 16, 1)
+    assert frames == 1
+    assert captured_kwargs.get("allowed_executables") == ("ffmpeg",)
+    assert captured_kwargs.get("timeout_seconds") == mod.FFMPEG_TIMEOUT_S
+
+
+def test_vmaf_executable_allowlist_and_timeout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """_run_vmaf passes allowed_executables=(argv[0],) and timeout_seconds=VMAF_TIMEOUT_S."""
+    mod = _load_module()
+    distinct_timeout_s = 61
+    monkeypatch.setattr(mod, "VMAF_TIMEOUT_S", distinct_timeout_s)
+    captured_cmd: list[str] = []
+    captured_kwargs: dict[str, Any] = {}
+    out_json = {"frames": [{"frameNum": 0, "metrics": {"vmaf": 90.0}}]}
+
+    def fake_run(cmd, **kwargs):
+        captured_cmd.extend(cmd)
+        captured_kwargs.update(kwargs)
+        out_path = Path(cmd[cmd.index("--output") + 1])
+        out_path.write_text(json.dumps(out_json))
+        return TextCommandResult(tuple(cmd), 0, "", "")
+
+    monkeypatch.setattr(mod, "run_command", fake_run)
+    frames = mod._run_vmaf(
+        tmp_path / "vmaf",
+        tmp_path / "ref.yuv",
+        tmp_path / "dis.yuv",
+        16,
+        16,
+        1,
+        tmp_path / "model.json",
+    )
+    assert frames == out_json["frames"]
+    assert captured_kwargs.get("allowed_executables") == (captured_cmd[0],)
+    assert captured_kwargs.get("timeout_seconds") == distinct_timeout_s
+    assert captured_kwargs.get("timeout_seconds") == mod.VMAF_TIMEOUT_S
 
 
 def _make_main_fixture(tmp_path: Path) -> dict[str, Path]:
