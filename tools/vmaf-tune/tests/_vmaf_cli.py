@@ -15,22 +15,19 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import pytest
 
 # isort: split
-# tests/conftest.py puts ../src on sys.path before any test module imports this one.
+# tests/conftest.py puts ../src and the repository root on sys.path before this loads.
+from scripts.lib import safe_subprocess, vmaftest
+
+# isort: split
 from vmaftune.codec_adapters._ffmpeg_listing import encoder_listed
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-# Imported after the sys.path line above, which makes it importable.
-from scripts.lib import safe_subprocess, vmaftest
 
 
 def repo_source(relative: str) -> str:
