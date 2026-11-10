@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "chug_to_corpus_jsonl.py"
@@ -413,6 +414,64 @@ class _FakeFeatureRunner:
         return subprocess.CompletedProcess(args=cmd, returncode=0)
 
 
+def test_chug_subprocess_calls_receive_timeout(tmp_path: Path) -> None:
+    """Both HDR probing and 10-bit decoding receive the configured timeout."""
+    calls: list[tuple[list[str], dict[str, Any]]] = []
+
+    def runner(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append((cmd, kwargs))
+        return subprocess.CompletedProcess(cmd, 0, stdout="{}")
+
+    CHUG_FEATURES.probe_clip_hdr_metadata(tmp_path / "clip.mp4", runner=runner)
+    CHUG_FEATURES._decode_to_yuv10(
+        src=tmp_path / "clip.mp4",
+        out=tmp_path / "clip.yuv",
+        width=32,
+        height=18,
+        ffmpeg_bin="ffmpeg",
+        runner=runner,
+    )
+
+    assert [cmd[0] for cmd, _kwargs in calls] == ["ffprobe", "ffmpeg"]
+    assert [kwargs.get("timeout") for _cmd, kwargs in calls] == [
+        CHUG_FEATURES.FFMPEG_TIMEOUT_S,
+        CHUG_FEATURES.FFMPEG_TIMEOUT_S,
+    ]
+
+
+def test_chug_hdr_probe_timeout_returns_unknown(tmp_path: Path) -> None:
+    """A timed-out HDR probe produces the unknown-metadata defaults."""
+
+    def runner(cmd: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(cmd, 60)
+
+    metadata = CHUG_FEATURES.probe_clip_hdr_metadata(tmp_path / "clip.mp4", runner=runner)
+
+    assert metadata == CHUG_FEATURES.hdr_metadata_from_payload(None)
+
+
+def test_chug_decode_timeout_propagates(tmp_path: Path) -> None:
+    """A timed-out 10-bit decode propagates its timeout to the pair loop."""
+
+    def runner(cmd: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(cmd, 60)
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        CHUG_FEATURES._decode_to_yuv10(
+            src=tmp_path / "clip.mp4",
+            out=tmp_path / "clip.yuv",
+            width=32,
+            height=18,
+            ffmpeg_bin="ffmpeg",
+            runner=runner,
+        )
+
+
+def test_chug_subprocess_timeout_policy_floor() -> None:
+    """The subprocess timeout uses the policy floor of 60 seconds."""
+    assert CHUG_FEATURES.FFMPEG_TIMEOUT_S == 60
+
+
 def _assert_chug_materialised_row(row: dict[str, Any]) -> None:
     assert row["feature_source"] == "chug-fr-ref-aligned"
     assert row["feature_alignment"] == "distorted_scaled_to_reference"
@@ -441,7 +500,30 @@ def _assert_chug_materialised_row(row: dict[str, Any]) -> None:
     assert row["adm2_mean"] == 2.0
 
 
-def test_chug_feature_materialiser_writes_mean_features(tmp_path: Path) -> None:
+def _timeout_bad_clip_runner(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+    """Time out the bad clip's decode and materialise all other clips."""
+    if cmd[0] == "ffmpeg" and Path(cmd[cmd.index("-i") + 1]).name == "bad.mp4":
+        raise subprocess.TimeoutExpired(cmd, CHUG_FEATURES.FFMPEG_TIMEOUT_S)
+    return _FakeFeatureRunner()(cmd, **kwargs)
+
+
+def _fake_mean_extract(*_args: Any, **kwargs: Any) -> CHUG_FEATURES.FeatureExtractionResult:
+    """Return two feature frames with a mean of two."""
+    names = kwargs["features"]
+    data = np.ones((2, len(names)), dtype=np.float32)
+    data[1, :] = 3.0
+    return CHUG_FEATURES.FeatureExtractionResult(
+        feature_names=names,
+        per_frame=data,
+        n_frames=2,
+    )
+
+
+@pytest.mark.parametrize("timeout_first", [False, True])
+def test_chug_feature_materialiser_writes_mean_features(
+    tmp_path: Path, timeout_first: bool, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Write the good pair's features even when the preceding pair's decode times out."""
     chug_jsonl = tmp_path / "chug.jsonl"
     output = tmp_path / "features.jsonl"
     clips_dir = tmp_path / "clips"
@@ -466,17 +548,10 @@ def test_chug_feature_materialiser_writes_mean_features(tmp_path: Path) -> None:
             sha="r" * 64,
         ),
     ]
+    if timeout_first:
+        (clips_dir / "bad.mp4").write_bytes(b"bad")
+        rows.insert(0, dict(rows[0], src="bad.mp4", src_sha256="b" * 64, chug_video_id="bad"))
     chug_jsonl.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
-
-    def fake_extract(*_args, **kwargs):
-        names = kwargs["features"]
-        data = np.ones((2, len(names)), dtype=np.float32)
-        data[1, :] = 3.0
-        return CHUG_FEATURES.FeatureExtractionResult(
-            feature_names=names,
-            per_frame=data,
-            n_frames=2,
-        )
 
     written = CHUG_FEATURES.run(
         input_jsonl=chug_jsonl,
@@ -484,13 +559,18 @@ def test_chug_feature_materialiser_writes_mean_features(tmp_path: Path) -> None:
         clips_dir=clips_dir,
         cache_dir=tmp_path / "cache",
         max_rows=None,
-        runner=_FakeFeatureRunner(),
-        extractor=fake_extract,
+        runner=_timeout_bad_clip_runner,
+        extractor=_fake_mean_extract,
     )
 
     assert written == 1
     row = json.loads(output.read_text(encoding="utf-8"))
     _assert_chug_materialised_row(row)
+    assert row["src"] == "dist.mp4"
+    if timeout_first:
+        stderr = capsys.readouterr().err
+        assert "[chug-features] FAIL canonical-" in stderr
+        assert "timed out after 60 seconds" in stderr
 
 
 def test_chug_visual_signal_helper_reads_yuv10_luma(tmp_path: Path) -> None:
