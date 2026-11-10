@@ -23,8 +23,8 @@ a badge reports.
 ## Decision
 
 We render the ten status badges ourselves.
-`.github/workflows/readme-badges.yml` runs every 15 minutes and on demand: its
-render job (`actions: read`, `contents: read`) runs
+`.github/workflows/readme-badges.yml` is scheduled every 15 minutes and runs
+on demand: its render job (`actions: read`, `contents: read`) runs
 `scripts/ci/readme_badges.py spec`, which reads the newest decisive push run of
 each badged workflow on the default branch and the public Scorecard, Best
 Practices and Codacy APIs, and `tools/badges/render.mjs` draws the SVGs with
@@ -33,17 +33,17 @@ Practices and Codacy APIs, and `tools/badges/render.mjs` draws the SVGs with
 the SVGs and `state.json` to the `badges` branch through the GitHub API, and
 the README links `https://raw.githubusercontent.com/VMAFx/vmafx/badges/<slug>.svg`.
 Both jobs run only on the default branch and check out the commit the run
-started from. A source that fails keeps its last value for six hours, then
-reads `stale`, and the run turns red. Every other README badge, the backends
-row included, uses `for-the-badge`; the one exception is the Praetor
-governance badge, which Praetor writes. The full rules are in
+started from. A source that fails turns the run red at once; its badge keeps
+the last value for six hours, then reads `stale`. Every other README badge,
+the backends row included, uses `for-the-badge`; the one exception is the
+Praetor governance badge, which Praetor writes. The full rules are in
 [docs/development/readme-badges.md](../development/readme-badges.md).
 
 ## Alternatives considered
 
 | Option | Pros | Cons | Why not chosen |
 |---|---|---|---|
-| Rendered badges on a `badges` branch, schedule trigger (chosen) | One design; the project decides which run a badge shows; Scorecard shows its score; no third-party request per page view | Up to 15 minutes of lag; a job with `contents: write`; a branch that grows by about one commit an hour | Chosen |
+| Rendered badges on a `badges` branch, schedule trigger (chosen) | One design; the project decides which run a badge shows; Scorecard shows its score; no third-party request per page view | About 15 minutes of lag, more when GitHub delays a scheduled run; a job with `contents: write`; a branch that grows by about one commit an hour | Chosen |
 | Same, triggered by `workflow_run` | Badge within a minute of a master run | zizmor rates `workflow_run` a dangerous trigger; its `branches: [master]` filter matches a fork's branch named `master` too | The 15-minute lag is the smaller cost |
 | shields.io dynamic URLs with `style=for-the-badge` | No workflow or branch; one design | Each page view depends on shields.io; the workflow badge scrapes GitHub's `badge.svg`, so run selection stays GitHub's; Scorecard and Codacy would need per-service shields routes | Keeps a third party on every page view and leaves run selection out of reach |
 | Keep each service's own badge | Nothing to build | Four designs in one block, against ADR-3366; the Scorecard badge shows no score | It is the defect this decision fixes |

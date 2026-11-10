@@ -36,6 +36,7 @@ after a label changed.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import shutil
@@ -218,15 +219,22 @@ def https_json(
     """One https request whose answer is JSON, bounded in time and in size.
 
     The scheme check and the size cap live here so every caller gets them; an
-    empty answer reads as an empty object.
+    empty answer reads as an empty object. A broken answer (cut off, a bad
+    status line, an overlong header) raises ``http.client.HTTPException``,
+    which is no ``OSError``; it becomes a ``TierError`` here so every caller
+    treats it as the failed request it is. An error status stays an
+    ``HTTPError`` for the caller to read its code.
     """
     if urllib.parse.urlsplit(url).scheme != "https":
         raise TierError(f"refusing a non-https API URL: {url}")
     request = urllib.request.Request(  # noqa: S310 - the scheme is checked above
         url, method=method, data=data, headers=dict(headers)
     )
-    with HTTPS_OPENER.open(request, timeout=timeout_s) as response:
-        body = response.read(limit + 1)
+    try:
+        with HTTPS_OPENER.open(request, timeout=timeout_s) as response:
+            body = response.read(limit + 1)
+    except http.client.HTTPException as exc:
+        raise TierError(f"{url}: broken answer ({type(exc).__name__}: {exc})") from exc
     if len(body) > limit:
         raise TierError(f"{url}: answer larger than {limit} bytes")
     return json.loads(body.decode("utf-8")) if body else {}

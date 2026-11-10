@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import email.message
+import http.client
 import io
 import json
 import re
@@ -377,6 +378,23 @@ class Refresh(unittest.TestCase):
                 self.assertEqual(len(failures), 1)
                 self.assertTrue(failures[0].startswith("go: "))
 
+    def test_a_cut_off_answer_keeps_the_last_value(self) -> None:
+        """A source whose answer breaks off mid-body keeps its last value."""
+        previous = {"go": entry(fetched=rb.stamp(NOW - timedelta(hours=1)))}
+        opened = mock.MagicMock()
+        opened.__enter__.return_value.read.side_effect = http.client.IncompleteRead(b"par")
+
+        def read(badge: rb.Badge) -> rb.Value:
+            """Read a public source the way the real readers do."""
+            rb.public_json("https://h/x")
+            return rb.PASSING
+
+        with mock.patch.object(ci_tier.HTTPS_OPENER, "open", return_value=opened):
+            entries, failures = rb.refresh(self.BADGE, previous, NOW, read)
+        self.assertEqual(entries["go"]["message"], "passing")
+        self.assertEqual(len(failures), 1)
+        self.assertIn("IncompleteRead", failures[0])
+
     def test_an_unexpected_error_is_not_swallowed(self) -> None:
         """An error outside the expected kinds propagates."""
 
@@ -423,6 +441,21 @@ class PreviousState(unittest.TestCase):
         with self.assertRaises(rb.BadgeError):
             rb.previous_state(self.fetch(failed), REPO)
         self.assertTrue(failed.fp.closed)
+
+    def test_a_broken_state_answer_stops_the_run(self) -> None:
+        """A state.json answer with a broken status line stops the run, not a crash."""
+
+        def github(path: str) -> object:
+            """Read the state file through the real API helper."""
+            return ci_tier.api_request("GET", "https://api.github.com" + path, "t")
+
+        with (
+            mock.patch.object(
+                ci_tier.HTTPS_OPENER, "open", side_effect=http.client.BadStatusLine("x")
+            ),
+            self.assertRaisesRegex(rb.BadgeError, "BadStatusLine"),
+        ):
+            rb.previous_state(github, REPO)
 
     def test_the_badges_of_the_state_file_are_read(self) -> None:
         """The badges object of state.json is returned."""

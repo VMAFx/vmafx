@@ -232,6 +232,35 @@ class HttpsJson(unittest.TestCase):
         self.assertEqual(request.get_header("Accept"), "application/json")
         self.assertIsNone(request.get_header("Authorization"))
 
+    def test_a_broken_answer_is_a_tier_error(self) -> None:
+        """A cut-off body or a broken status line on open or read is a TierError."""
+        for where, error in (
+            ("read", http.client.IncompleteRead(b"par")),
+            ("read", http.client.LineTooLong("header line")),
+            ("open", http.client.BadStatusLine("x")),
+            ("open", http.client.RemoteDisconnected("closed")),
+        ):
+            with self.subTest(where=where, error=type(error).__name__):
+                opened = mock.MagicMock()
+                opened.__enter__.return_value.read.side_effect = error
+                kind = {"return_value": opened} if where == "read" else {"side_effect": error}
+                with (
+                    mock.patch.object(ci_tier.HTTPS_OPENER, "open", **kind),
+                    self.assertRaisesRegex(ci_tier.TierError, type(error).__name__),
+                ):
+                    ci_tier.https_json("GET", "https://h/x", {}, None, 5, 10)
+
+    def test_an_error_status_stays_an_http_error(self) -> None:
+        """An error status is not turned into a TierError; callers read its code."""
+        error = urllib.error.HTTPError("https://h/x", 404, "Not Found", None, None)  # type: ignore[arg-type]
+        with (
+            mock.patch.object(ci_tier.HTTPS_OPENER, "open", side_effect=error),
+            self.assertRaises(urllib.error.HTTPError) as raised,
+        ):
+            ci_tier.https_json("GET", "https://h/x", {}, None, 5, 10)
+        self.assertEqual(raised.exception.code, 404)
+        raised.exception.close()
+
     def test_a_non_https_url_is_refused_before_any_request(self) -> None:
         """A non-https URL is refused before the opener is called."""
         with mock.patch.object(ci_tier.HTTPS_OPENER, "open") as sent:

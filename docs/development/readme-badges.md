@@ -10,8 +10,10 @@ each one with
 
 ## Where a badge value comes from
 
-The README Badges workflow (`.github/workflows/readme-badges.yml`) runs every
-15 minutes, at minutes 7, 22, 37 and 52, and on demand:
+The README Badges workflow (`.github/workflows/readme-badges.yml`) is
+scheduled every 15 minutes, at minutes 7, 22, 37 and 52, and runs on demand.
+GitHub can start a scheduled run late, or drop it, when Actions is under load,
+so 15 minutes is the intended step, not a promise:
 
 ```bash
 gh workflow run readme-badges.yml -R VMAFx/vmafx
@@ -51,10 +53,11 @@ with the time each one was read. A time without a UTC offset, or one that
 cannot be read, counts as stale.
 
 The six hours run from the read time `state.json` holds. A run whose SVGs are
-all unchanged commits nothing for an hour (see below), so that time trails the
-last successful read by at most one hour plus one 15-minute schedule step. A
-badge can therefore turn `stale` up to 75 minutes before six hours have passed
-since its last successful read, and at most one schedule step after.
+all unchanged commits nothing for an hour (see below), so with runs on
+schedule that time trails the last successful read by up to one hour plus one
+15-minute schedule step. A badge can therefore turn `stale` up to 75 minutes
+before six hours have passed since its last successful read, and one schedule
+step after, plus any delay GitHub adds to a scheduled run.
 Committing `state.json` on every run would close that gap at the cost of
 about four commits an hour instead of one.
 
@@ -97,7 +100,7 @@ A `workflow_run` trigger would refresh a badge within a minute of each master
 run. zizmor rates `workflow_run` a dangerous trigger, and its
 `branches: [master]` filter matches the branch name only, so a pull request
 from a fork's branch named `master` would start it too. The schedule costs up
-to 15 minutes of lag and has neither problem.
+to 15 minutes of lag, more when GitHub delays a run, and has neither problem.
 
 ## Limits
 
@@ -105,7 +108,8 @@ to 15 minutes of lag and has neither problem.
   scheduled runs paused after 60 days without repository activity), no run
   starts, so none turns red, and the badges keep showing the last values,
   green ones included. The signal is a missing run: the newest README Badges
-  run is older than 15 minutes. Check it, then re-enable the workflow:
+  run is more than an hour old (a single scheduled run can start late or be
+  dropped). Check it, then re-enable the workflow:
 
   ```bash
   gh run list -R VMAFx/vmafx --workflow readme-badges.yml --limit 1 --json createdAt,conclusion
