@@ -34,6 +34,7 @@ import tempfile
 import threading
 import time
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -43,6 +44,8 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_RUN = ROOT / "core" / "test" / "test_cuda_parity_gate_default_run.py"
 MESON_BUILD = ROOT / "core" / "test" / "meson.build"
 CLI = ROOT / "core" / "tools" / "vmaf.cpp"
+# The real Popen, kept before any test replaces subprocess.Popen with a stand-in.
+REAL_POPEN = subprocess.Popen
 
 # The refusal in validate_requested_backend(), split over two C string literals.
 REFUSAL = re.compile(
@@ -312,6 +315,9 @@ class DefaultRunProcessCleanupTest(unittest.TestCase):
                     mock.patch.object(module, "find_binary", return_value=fake),
                     mock.patch.object(module, "skip_reason", return_value=None),
                     mock.patch.object(module, "gate_command", return_value=command),
+                    mock.patch.object(
+                        module.subprocess, "Popen", side_effect=popen_when_ready(pid_file)
+                    ),
                     mock.patch.object(module, "SCRIPT_TIMEOUT_S", 3),
                     mock.patch.object(module, "INTERRUPT_GRACE_S", 5),
                     contextlib.redirect_stdout(stdout),
@@ -332,41 +338,44 @@ class DefaultRunProcessCleanupTest(unittest.TestCase):
     def test_interrupt_ignoring_gate_is_killed_and_partial_output_is_printed(self) -> None:
         """Bound fallback even for a gate ignoring SIGINT, with a watchdog for mutants."""
         module = load_default_run()
-        popen = subprocess.Popen
         watchdogs = []
+        ready_at: list[float] = []
 
-        def start(*args: Any, **kwargs: Any) -> subprocess.Popen[str]:
-            """Start a real gate and arrange bounded cleanup if the fallback is removed."""
-            proc: subprocess.Popen[str] = popen(*args, **kwargs)
+        def arm(proc: subprocess.Popen[str]) -> None:
+            """Note when the gate is ready; kill it at 3 s if the fallback is removed."""
+            ready_at.append(time.monotonic())
             watchdog = threading.Timer(3, proc.kill)
             watchdog.start()
             watchdogs.append(watchdog)
-            return proc
 
-        script = (
-            "import signal, sys, time; signal.signal(signal.SIGINT, signal.SIG_IGN); "
-            "print('partial out', flush=True); "
-            "print('partial err', file=sys.stderr, flush=True); time.sleep(600)"
-        )
-        stdout, stderr = io.StringIO(), io.StringIO()
-        started = time.monotonic()
-        try:
-            with (
-                mock.patch.object(module.subprocess, "Popen", side_effect=start),
-                mock.patch.object(module, "SCRIPT_TIMEOUT_S", 0.5),
-                mock.patch.object(module, "INTERRUPT_GRACE_S", 0.5),
-                contextlib.redirect_stdout(stdout),
-                contextlib.redirect_stderr(stderr),
-            ):
-                result = module.run_gate([sys.executable, "-c", script])
-            self.assertIsNone(result)
-            self.assertLess(time.monotonic() - started, 2.5)
-            self.assertIn("partial out", stdout.getvalue())
-            self.assertIn("partial err", stderr.getvalue())
-        finally:
-            for watchdog in watchdogs:
-                watchdog.cancel()
-                watchdog.join()
+        with tempfile.TemporaryDirectory() as directory:
+            ready = Path(directory) / "ready"
+            script = (
+                "import signal, sys, time; signal.signal(signal.SIGINT, signal.SIG_IGN); "
+                "print('partial out', flush=True); "
+                "print('partial err', file=sys.stderr, flush=True); "
+                f"open({str(ready)!r}, 'w').close(); time.sleep(600)"
+            )
+            stdout, stderr = io.StringIO(), io.StringIO()
+            try:
+                with (
+                    mock.patch.object(
+                        module.subprocess, "Popen", side_effect=popen_when_ready(ready, arm)
+                    ),
+                    mock.patch.object(module, "SCRIPT_TIMEOUT_S", 0.5),
+                    mock.patch.object(module, "INTERRUPT_GRACE_S", 0.5),
+                    contextlib.redirect_stdout(stdout),
+                    contextlib.redirect_stderr(stderr),
+                ):
+                    result = module.run_gate([sys.executable, "-c", script])
+                self.assertIsNone(result)
+                self.assertLess(time.monotonic() - ready_at[0], 2.5)
+                self.assertIn("partial out", stdout.getvalue())
+                self.assertIn("partial err", stderr.getvalue())
+            finally:
+                for watchdog in watchdogs:
+                    watchdog.cancel()
+                    watchdog.join()
 
     def test_a_descendant_holding_the_pipes_does_not_hang_the_kill(self) -> None:
         """After SIGKILL, wait at most KILL_GRACE_S for pipes a descendant kept open."""
@@ -381,14 +390,22 @@ class DefaultRunProcessCleanupTest(unittest.TestCase):
                 f"open({str(pid_file)!r}, 'w').write(str(holder.pid)); "
                 "print('partial out', flush=True); time.sleep(600)"
             )
-            # Without the bound the test would hang; the watchdog closes the pipes at 4 s,
-            # so a removed bound fails the elapsed-time assertion instead.
+            # Without the bound the test would hang; the watchdog closes the pipes 4 s after
+            # the child is ready, so a removed bound fails the elapsed-time assertion instead.
             watchdog = threading.Timer(4, kill_pid_in, args=(pid_file,))
+            ready_at: list[float] = []
+
+            def arm(_proc: subprocess.Popen[str]) -> None:
+                """Note when the holder exists and start the watchdog from that point."""
+                ready_at.append(time.monotonic())
+                watchdog.start()
+
             stdout, stderr = io.StringIO(), io.StringIO()
-            started = time.monotonic()
-            watchdog.start()
             try:
                 with (
+                    mock.patch.object(
+                        module.subprocess, "Popen", side_effect=popen_when_ready(pid_file, arm)
+                    ),
                     mock.patch.object(module, "SCRIPT_TIMEOUT_S", 0.5),
                     mock.patch.object(module, "INTERRUPT_GRACE_S", 0.5),
                     mock.patch.object(module, "KILL_GRACE_S", 0.5),
@@ -397,12 +414,13 @@ class DefaultRunProcessCleanupTest(unittest.TestCase):
                 ):
                     result = module.run_gate([sys.executable, "-c", script])
                 self.assertIsNone(result)
-                self.assertLess(time.monotonic() - started, 3.5)
+                self.assertLess(time.monotonic() - ready_at[0], 3.5)
                 self.assertIn("partial out", stdout.getvalue())
                 self.assertIn("still held the output pipes 0.5s after the kill", stderr.getvalue())
             finally:
                 watchdog.cancel()
-                watchdog.join()
+                if watchdog.is_alive():
+                    watchdog.join()
                 kill_pid_in(pid_file)
 
 
@@ -410,6 +428,38 @@ def kill_pid_in(pid_file: Path) -> None:
     """SIGKILL the process whose PID `pid_file` holds, if it was written and still runs."""
     with contextlib.suppress(OSError, ValueError):
         os.kill(int(pid_file.read_text(encoding="utf-8")), signal.SIGKILL)
+
+
+def wait_for_file(path: Path) -> bool:
+    """Poll for at most ten seconds until `path` exists."""
+    for _ in range(200):
+        if path.is_file():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def popen_when_ready(
+    ready_file: Path, on_ready: Callable[[subprocess.Popen[str]], None] | None = None
+) -> Callable[..., subprocess.Popen[str]]:
+    """Popen stand-in that returns only once the child has written `ready_file`.
+
+    The timeout under test starts when Popen returns. Waiting for the child's own
+    signal first means start-up time on a loaded host cannot decide the result.
+    """
+
+    def start(*args: Any, **kwargs: Any) -> subprocess.Popen[str]:
+        """Start the real process, then hold until it reports ready."""
+        proc: subprocess.Popen[str] = REAL_POPEN(*args, **kwargs)
+        if not wait_for_file(ready_file):
+            proc.kill()
+            proc.wait(timeout=5)
+            raise AssertionError(f"the child did not write {ready_file} within 10 s")
+        if on_ready is not None:
+            on_ready(proc)
+        return proc
+
+    return start
 
 
 def wait_until_gone(pid: int) -> bool:
