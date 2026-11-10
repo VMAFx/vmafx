@@ -45,7 +45,7 @@ cp -d /usr/lib/*-linux-gnu*/libzimg.so* "${dist_dir}/lib/"
 # copyright file as the licence text, as the tester images already do.
 mkdir -p "${dist_dir}/doc/libzimg2"
 cp /usr/share/doc/libzimg2/copyright "${dist_dir}/doc/libzimg2/copyright"
-dpkg-query -W -f='${source:Package}=${source:Version}\n' libzimg2 > "${dist_dir}/doc/libzimg2/SOURCE"
+dpkg-query -W -f='${source:Package}=${source:Version}\n' libzimg2 >"${dist_dir}/doc/libzimg2/SOURCE"
 cp "${build_dir}/tools/vmaf" "${dist_dir}/bin/"
 cp -r model/. "${dist_dir}/model/"
 
