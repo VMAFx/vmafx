@@ -24,7 +24,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "ci" / "cross_backend_parity_gate.py"
 # Not measured: the parity gate needs a free GPU, which the measuring host did not have.
-SCRIPT_TIMEOUT_S = 300
+# Set under the 120 s Meson timeout of this test (core/test/meson.build), so this
+# message, not Meson's kill, names the stuck run; it covers the lock wait too.
+SCRIPT_TIMEOUT_S = 110
 REF = ROOT / "python" / "test" / "resource" / "yuv" / "src01_hrc00_576x324.yuv"
 DIS = ROOT / "python" / "test" / "resource" / "yuv" / "src01_hrc01_576x324.yuv"
 
@@ -80,16 +82,15 @@ def skip_reason(binary: Path | None) -> str | None:
     return None
 
 
-def main() -> int:
-    """Run the CUDA parity gate under the GPU lock and return its exit code, or 77 to skip."""
-    binary = find_binary()
-    reason = skip_reason(binary)
-    if reason is not None:
-        sys.stderr.write(f"{reason}; skipping (77)\n")
-        return 77
+def gate_command(binary: Path) -> list[str]:
+    """The parity gate command for `binary`, run under the GPU lock.
 
-    cmd = [
+    --no-fork: flock execs the gate, so the timeout kills the gate itself and
+    frees the lock; a forked gate would outlive the kill and keep the lock.
+    """
+    return [
         "flock",
+        "--no-fork",
         str(Path.home() / ".cache" / "vmafx-locks" / "cuda-4090.lock"),
         sys.executable,
         str(SCRIPT),
@@ -108,6 +109,16 @@ def main() -> int:
         "cuda",
     ]
 
+
+def main() -> int:
+    """Run the CUDA parity gate under the GPU lock and return its exit code, or 77 to skip."""
+    binary = find_binary()
+    reason = skip_reason(binary)
+    if reason is not None or binary is None:
+        sys.stderr.write(f"{reason}; skipping (77)\n")
+        return 77
+
+    cmd = gate_command(binary)
     try:
         proc = subprocess.run(  # noqa: S603
             cmd,
