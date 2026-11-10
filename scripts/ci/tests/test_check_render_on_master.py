@@ -28,6 +28,8 @@ WORKFLOW = ROOT / ".github" / "workflows" / "lint-and-format.yml"
 RENDER_PR_WORKFLOW = ROOT / ".github" / "workflows" / "docs-render-pr.yml"
 RENDER_PR_SCRIPT = ROOT / "scripts" / "ci" / "open-render-pr.sh"
 GIT = shutil.which("git") or "/usr/bin/git"
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 NOW = 1_800_000_000
 HOUR = 3600
 IDENT = {
@@ -59,12 +61,22 @@ class RenderOnMasterTest(unittest.TestCase):
         self.commit({"CHANGELOG.md": "- fixed a\n"}, age_h=99)
 
     def git(self, *args: str, date: str | None = None) -> str:
+        """Run fixture Git commands for scripts/ci/check_render_on_master.py.
+
+        Constructs fixture commits with fixed commit timestamps.
+        """
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         env.update(IDENT)
         if date is not None:
             env.update(GIT_AUTHOR_DATE=date, GIT_COMMITTER_DATE=date)
         done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
-            [GIT, *args], cwd=self.repo, env=env, capture_output=True, text=True, check=True
+            [GIT, *args],
+            cwd=self.repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=GIT_TIMEOUT_S,
         )
         return done.stdout
 
@@ -77,6 +89,10 @@ class RenderOnMasterTest(unittest.TestCase):
         self.git("commit", "-q", "-m", "change", date=f"@{int(NOW - age_h * HOUR)} +0000")
 
     def check(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        """Run scripts/ci/check_render_on_master.py at a simulated wall-clock time.
+
+        ADR-3295: runs the master render check at a simulated wall-clock time.
+        """
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         return subprocess.run(  # noqa: S603 -- fixed argv, no shell, check under test
             [sys.executable, str(CHECK), "--root", str(self.repo), "--now", str(NOW), *extra],
@@ -84,6 +100,7 @@ class RenderOnMasterTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     def assert_status(

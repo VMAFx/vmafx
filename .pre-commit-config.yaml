@@ -1311,7 +1311,7 @@ repos:
         entry: bash -c 'bash ffmpeg-patches/test/check-sycl-feature-routing.sh && python -m pytest -p no:cacheprovider -q scripts/test/test_zerocopy_e2e_compare.py'
         language: python
         additional_dependencies: [pytest==9.2.0]
-        files: '^(ffmpeg-patches/(0004-[^/]*\.patch|src/vf_vmafx\.c|test/check-sycl-feature-routing\.sh)|scripts/test/(zerocopy[-_]e2e[^/]*|test_zerocopy_e2e_compare\.py)|scripts/ci/cross_backend_parity_gate\.py|Makefile$|\.github/workflows/ffmpeg-patch-stack\.yml$|\.pre-commit-config\.yaml$)'
+        files: '^(ffmpeg-patches/(0003-[^/]*\.patch|src/vf_vmafx\.c|test/check-sycl-feature-routing\.sh)|scripts/test/(zerocopy[-_]e2e[^/]*|test_zerocopy_e2e_compare\.py)|scripts/ci/cross_backend_parity_gate\.py|Makefile$|\.github/workflows/ffmpeg-patch-stack\.yml$|\.pre-commit-config\.yaml$)'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
@@ -1364,6 +1364,24 @@ repos:
         entry: bash scripts/ci/tests/test-pr-body-input-selection.sh
         language: system
         files: '^(scripts/ci/(?:deliverables-check|validate-pr-body|pr-body-input|ffmpeg-patches-surface-check|state-md-touch-check)\.sh|scripts/ci/tests/test-pr-body-input-selection\.sh|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: ffmpeg-patches-surface-docs
+        name: Documentation names retired FFmpeg filters only in the migration guide
+        # The CI job ffmpeg-patches-surface-check (rule-enforcement.yml)
+        # runs this script on every pull request, but no local hook ran it,
+        # so a docs note naming a retired filter outside "Migrating from the
+        # libvmaf filters" first failed in CI (pull request 3359).
+        # --surface-only runs the tree checks alone. The pull request gate
+        # needs a PR body for its opt-out line and a merge base to diff
+        # from, which a local commit does not have, so it stays in CI.
+        # `files` names every path the tree checks read;
+        # scripts/ci/tests/test_ffmpeg_patches_surface_check.py pins it to
+        # the script's build-config list.
+        entry: bash scripts/ci/ffmpeg-patches-surface-check.sh --surface-only
+        language: system
+        files: '^(docs/.*\.md|README\.md|ffmpeg-patches/.*|Containerfile\.vmafx|Dockerfile|Dockerfile\.ffmpeg|dev/Containerfile|docker/Dockerfile\.node|scripts/test/sycl-dev-container\.sh|\.github/workflows/ffmpeg-patch-stack\.yml|scripts/ci/tidy-integrations-build\.sh|scripts/ci/ffmpeg-patches-surface-check\.sh)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

@@ -24,6 +24,7 @@
 #include <string.h>
 
 #include "config.h"
+#include "float_bits.h"
 #include "mu_table.h"
 #include "test.h"
 #include "model.h"
@@ -40,33 +41,39 @@ static int model_compare(VmafModel *model_a, VmafModel *model_b)
 {
     int err = 0;
 
-    err += model_a->slope != model_b->slope;
-    err += model_a->intercept != model_b->intercept;
+    err += !vmaf_test_identical_f64(model_a->slope, model_b->slope);
+    err += !vmaf_test_identical_f64(model_a->intercept, model_b->intercept);
 
     err += model_a->n_features != model_b->n_features;
     for (unsigned i = 0; i < model_a->n_features; i++) {
-        err += model_a->feature[i].slope != model_b->feature[i].slope;
-        err += model_a->feature[i].intercept != model_b->feature[i].intercept;
+        err += !vmaf_test_identical_f64(model_a->feature[i].slope, model_b->feature[i].slope);
+        err +=
+            !vmaf_test_identical_f64(model_a->feature[i].intercept, model_b->feature[i].intercept);
         err += !model_a->feature[i].opts_dict != !model_b->feature[i].opts_dict;
     }
 
     err += model_a->score_clip.enabled != model_b->score_clip.enabled;
-    err += model_a->score_clip.min != model_b->score_clip.min;
-    err += model_a->score_clip.max != model_b->score_clip.max;
+    err += !vmaf_test_identical_f64(model_a->score_clip.min, model_b->score_clip.min);
+    err += !vmaf_test_identical_f64(model_a->score_clip.max, model_b->score_clip.max);
 
     err += model_a->norm_type != model_b->norm_type;
 
     err += model_a->score_transform.enabled != model_b->score_transform.enabled;
     err += model_a->score_transform.p0.enabled != model_b->score_transform.p0.enabled;
-    err += model_a->score_transform.p0.value != model_b->score_transform.p0.value;
+    err += !vmaf_test_identical_f64(model_a->score_transform.p0.value,
+                                    model_b->score_transform.p0.value);
     err += model_a->score_transform.p1.enabled != model_b->score_transform.p1.enabled;
-    err += model_a->score_transform.p1.value != model_b->score_transform.p1.value;
+    err += !vmaf_test_identical_f64(model_a->score_transform.p1.value,
+                                    model_b->score_transform.p1.value);
     err += model_a->score_transform.p2.enabled != model_b->score_transform.p2.enabled;
-    err += model_a->score_transform.p2.value != model_b->score_transform.p2.value;
+    err += !vmaf_test_identical_f64(model_a->score_transform.p2.value,
+                                    model_b->score_transform.p2.value);
     err += model_a->score_transform.knots.enabled != model_b->score_transform.knots.enabled;
     for (unsigned i = 0; i < model_a->score_transform.knots.n_knots; i++) {
-        err += model_a->score_transform.knots.list[i].x != model_b->score_transform.knots.list[i].x;
-        err += model_a->score_transform.knots.list[i].y != model_b->score_transform.knots.list[i].y;
+        err += !vmaf_test_identical_f64(model_a->score_transform.knots.list[i].x,
+                                        model_b->score_transform.knots.list[i].x);
+        err += !vmaf_test_identical_f64(model_a->score_transform.knots.list[i].y,
+                                        model_b->score_transform.knots.list[i].y);
     }
     err += model_a->score_transform.out_lte_in != model_b->score_transform.out_lte_in;
     err += model_a->score_transform.out_gte_in != model_b->score_transform.out_gte_in;
@@ -2043,12 +2050,18 @@ static char *test_json_model_malformed_after_model_dict_rejects(void)
  * file-local copy of it.
  */
 /* Model lifecycle, flag handling and the feature surface. */
-static const MuTest model_api_tests[] = {
+static const MuTest model_api_leading_tests[] = {
     MU_TEST(test_json_model),
+};
+
 #if VMAF_BUILT_IN_MODELS
+static const MuTest model_api_builtin_tests[] = {
     MU_TEST(test_built_in_model),
     MU_TEST(test_built_in_model_still),
+};
 #endif
+
+static const MuTest model_api_trailing_tests[] = {
     MU_TEST(test_model_load_and_destroy),
     MU_TEST(test_model_load_rejects_null_version),
     MU_TEST(test_model_check_default_behavior_unset_flags),
@@ -2139,9 +2152,16 @@ static const MuTest json_reject_tests[] = {
     MU_TEST(test_splice_model_json_bounds),
 };
 
+/* Run model tests and return the first failure message, or NULL on success. */
 mu_message_t run_tests(void)
 {
-    mu_message_t msg = mu_run_table(model_api_tests, MU_TABLE_LEN(model_api_tests));
+    mu_message_t msg = mu_run_table(model_api_leading_tests, MU_TABLE_LEN(model_api_leading_tests));
+#if VMAF_BUILT_IN_MODELS
+    if (!msg)
+        msg = mu_run_table(model_api_builtin_tests, MU_TABLE_LEN(model_api_builtin_tests));
+#endif
+    if (!msg)
+        msg = mu_run_table(model_api_trailing_tests, MU_TABLE_LEN(model_api_trailing_tests));
     if (!msg)
         msg = mu_run_table(json_model_tests, MU_TABLE_LEN(json_model_tests));
     if (!msg)

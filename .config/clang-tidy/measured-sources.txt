@@ -827,6 +827,7 @@ core/test/test_sycl_ssim_parity.c
 core/test/test_sycl_ssimulacra2_math.c
 core/test/test_sycl_ssimulacra2_math_probe.cpp
 core/test/test_sycl_ssimulacra2_parity.c
+core/test/test_sycl_subsample_motion_vif.c
 core/test/test_sycl_twin_option_parity.c
 core/test/test_sycl_vif_min_dim.c
 core/test/test_sycl_vif_parity.c
@@ -930,7 +931,6 @@ core/tools/vmaf_vpl.c
 core/tools/vmaf_vpl_core.c
 core/tools/y4m_input.c
 core/tools/yuv_input.c
-ffmpeg-patches/src/ffmpeg_dec_hwaccel.c
 ffmpeg-patches/src/vf_vmafx.c
 ffmpeg-patches/src/vf_vmafx_pre.c
 ffmpeg-patches/test/fault_inject_libvmaf.c

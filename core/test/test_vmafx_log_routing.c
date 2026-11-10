@@ -53,7 +53,11 @@
 enum { W = 176, H = 144, N_FRAMES = 6, MAX_LINES = 64, CAPTURE_MAX = 4096 };
 
 /* Set on every thread the test starts; library worker threads leave it 0. */
-static _Thread_local int on_test_thread;
+#ifdef _MSC_VER
+static __declspec(thread) int on_test_thread;
+#else
+static __thread int on_test_thread;
+#endif
 
 /* ---- A thread-safe recorder ------------------------------------------------------- */
 

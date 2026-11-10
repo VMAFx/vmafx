@@ -21,6 +21,7 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 
 CHART = Path(__file__).resolve().parents[3] / "deploy" / "helm" / "vmafx"
+HELM_TIMEOUT_S = 60
 
 
 def render(*sets: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -32,7 +33,7 @@ def render(*sets: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     for value in sets:
         argv += ["--set", value]
     return subprocess.run(  # noqa: S603 -- resolved helm binary, fixed argv, no shell
-        argv, capture_output=True, text=True, check=check
+        argv, capture_output=True, text=True, check=check, timeout=HELM_TIMEOUT_S
     )
 
 

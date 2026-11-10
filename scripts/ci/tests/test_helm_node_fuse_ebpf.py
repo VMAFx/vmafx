@@ -24,6 +24,7 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 
 CHART = Path(__file__).resolve().parents[3] / "deploy" / "helm" / "vmafx"
+HELM_TIMEOUT_S = 60
 FUSE = """
 node:
   enabled: true
@@ -42,12 +43,13 @@ storage:
 
 
 def helm(values: str) -> subprocess.CompletedProcess[str]:
+    """Run helm template on the vmafx chart with the specified values string."""
     with tempfile.NamedTemporaryFile("w", suffix=".yaml") as fh:
         fh.write(values)
         fh.flush()
         cmd = ["helm", "template", "vmafx", str(CHART), "--namespace", "vmafx", "-f", fh.name]
         return subprocess.run(  # noqa: S603 -- fixed helm executable; argv built here
-            cmd, capture_output=True, text=True, check=False
+            cmd, capture_output=True, text=True, check=False, timeout=HELM_TIMEOUT_S
         )
 
 
