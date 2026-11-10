@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -110,12 +109,14 @@ def test_cli_relaxed_run_succeeds_with_exit_0() -> None:
         "--max-single-delta",
         "1.5",
     ]
-    proc = subprocess.run(
+    proc = run_command(
         cmd,
+        allowed_executables=(sys.executable,),
+        cwd=REPO_ROOT,
         capture_output=True,
         text=True,
-        cwd=REPO_ROOT,
-        timeout=SCRIPT_TIMEOUT_S,
+        check=False,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
     )
     assert proc.returncode == 0, f"Expected exit code 0, got {proc.returncode}\n{proc.stderr}"
     assert "Overall Parity Gate: PASS" in proc.stdout
@@ -136,12 +137,14 @@ def test_cli_manifest_output(tmp_path: Path) -> None:
         "--max-single-delta",
         "1.5",
     ]
-    proc = subprocess.run(
+    proc = run_command(
         cmd,
+        allowed_executables=(sys.executable,),
+        cwd=REPO_ROOT,
         capture_output=True,
         text=True,
-        cwd=REPO_ROOT,
-        timeout=SCRIPT_TIMEOUT_S,
+        check=False,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
     )
     assert proc.returncode == 0
     assert out_json.is_file()
@@ -164,12 +167,14 @@ def test_cli_all_flag() -> None:
         "--max-single-delta",
         "3.0",
     ]
-    proc = subprocess.run(
+    proc = run_command(
         cmd,
+        allowed_executables=(sys.executable,),
+        cwd=REPO_ROOT,
         capture_output=True,
         text=True,
-        cwd=REPO_ROOT,
-        timeout=SCRIPT_TIMEOUT_S,
+        check=False,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
     )
     assert proc.returncode == 0, f"Expected exit code 0, got {proc.returncode}\n{proc.stderr}"
     assert "vmaf_tiny_v3" in proc.stdout
@@ -195,12 +200,14 @@ def test_cli_fp32_int8_override() -> None:
         "--max-single-delta",
         "1.5",
     ]
-    proc = subprocess.run(
+    proc = run_command(
         cmd,
+        allowed_executables=(sys.executable,),
+        cwd=REPO_ROOT,
         capture_output=True,
         text=True,
-        cwd=REPO_ROOT,
-        timeout=SCRIPT_TIMEOUT_S,
+        check=False,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
     )
     assert proc.returncode == 0, f"Expected exit code 0, got {proc.returncode}\n{proc.stderr}"
     assert "Model: custom_v4_test" in proc.stdout

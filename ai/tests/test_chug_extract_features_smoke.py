@@ -101,7 +101,7 @@ def _write_textured_mp4(out: Path, *, width: int, height: int, frames: int) -> N
         "yuv420p",
         str(out),
     ]
-    subprocess.run(cmd, check=True, timeout=FFMPEG_TIMEOUT_S)
+    run_command(cmd, allowed_executables=("ffmpeg",), check=True, timeout_seconds=FFMPEG_TIMEOUT_S)
 
 
 def _chug_rows(width: int, height: int, dis_count: int) -> list[dict]:
