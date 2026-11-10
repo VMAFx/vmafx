@@ -190,7 +190,7 @@ __wrap_vmaf_sycl_graph_register(VmafSyclState *, VmafSyclGraphEnqueueFn, VmafSyc
 /* Link-time stub for vmaf_sycl_graph_register_flags: counts the call in
  * graph_registration_calls and returns -EIO when fail_graph_registration is set, else 0. */
 // cppcheck-suppress unusedFunction
-extern "C" VMAF_WRAP_EXPORT int
+extern "C" __attribute__((visibility("default"))) int
 __wrap_vmaf_sycl_graph_register_flags(VmafSyclState *, VmafSyclGraphEnqueueFn, VmafSyclGraphPreFn,
                                       VmafSyclGraphPostFn, VmafSyclGraphConfigFn, void *,
                                       const char *, uint64_t)
