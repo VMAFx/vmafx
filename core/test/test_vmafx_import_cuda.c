@@ -757,14 +757,16 @@ static void shared_close(Shared *s)
     }
 }
 
+/* Submit imported CUDA frames to two separate contexts, asserting score parity
+ * against host reference runs and checking that release fences wait for both readers. */
 static char *test_one_import_two_contexts(void)
 {
     Shared s;
     memset(&s, 0, sizeof(s));
     s.event = (VmafxFence)VMAFX_FENCE_INIT;
     s.host = (VmafxFence)VMAFX_FENCE_INIT;
-    char *msg = (s.clip = clip8, true) &&
-                        vmafx_model_load(NULL, MODEL, &s.models[0], NULL) == VMAFX_OK &&
+    s.clip = clip8;
+    char *msg = vmafx_model_load(NULL, MODEL, &s.models[0], NULL) == VMAFX_OK &&
                         vmafx_model_load(NULL, "vmaf_v0.6.1", &s.models[1], NULL) == VMAFX_OK ?
                     NULL :
                     "setup";

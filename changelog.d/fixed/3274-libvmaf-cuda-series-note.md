@@ -1,0 +1,1 @@
+- **FFmpeg guide:** state that VMAFx FFmpeg builds carry the `libvmaf_cuda` plane-copy and pixel-format fix since shared fix series v0.6.0, and limit the known-issue note to stock FFmpeg (issue 3274).

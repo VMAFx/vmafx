@@ -84,7 +84,6 @@ except ModuleNotFoundError:
 bootstrap_ai_script(__file__, include_repo_root=True)
 
 from ai.data.scores import resolve_teacher_model  # noqa: E402
-
 from aiutils.file_utils import sha256  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 from vmaf_train.registry import write_registry_json  # noqa: E402

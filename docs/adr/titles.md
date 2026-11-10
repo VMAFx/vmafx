@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1438), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1439), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5763,3 +5763,7 @@ Every ADR, one heading each (1438), so the site search finds an ADR by its title
 ## ADR-3401: Outside contributors hold copyright in the files they write
 
 [3401-outside-contributor-copyright-holder](3401-outside-contributor-copyright-holder.md)
+
+## ADR-3403: Shared FFmpeg fix series forge API download fallback
+
+[3403-ffmpeg-series-forge-api-fallback](3403-ffmpeg-series-forge-api-fallback.md)

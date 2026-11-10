@@ -45,7 +45,8 @@ is a build failure rather than a silent copy.
 apt metadata, which requires a live NVIDIA repository/manifest check.
 
 Usage: check-cuda-pin-lockstep.py [--write]
-Exit: 0 clean, 1 drift or an unrecognised site, 2 the config is missing.
+Exit: 0 clean, 1 drift or an unrecognised site, 2 missing config or CUDA_VERSION,
+      or a Git failure or timeout.
 """
 
 from __future__ import annotations
@@ -55,10 +56,12 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 GIT = shutil.which("git") or "/usr/bin/git"
+GIT_TIMEOUT_S = 60
 
 # Files that may legitimately pin a CUDA release. Prose under docs/ names old
 # releases on purpose and is not a pin, so it stays out; scripts/ mention
@@ -186,6 +189,7 @@ def scoped_files(root: Path) -> list[str]:
         capture_output=True,
         text=True,
         check=True,
+        timeout=GIT_TIMEOUT_S,
     ).stdout.splitlines()
     return sorted(path for path in listing if any(p.match(path) for p in SCOPE_PATTERNS))
 
@@ -320,14 +324,15 @@ def rewrite(root: Path, sites: list[Site], version: str) -> list[str]:
     return edits
 
 
-def main() -> int:
+def _main(argv: Sequence[str] | None = None) -> int:
+    """Check every CUDA pin site against CUDA_VERSION, or rewrite them with --write."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--write",
         action="store_true",
         help="rewrite the derived CUDA spellings from CUDA_VERSION",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     root = Path(
         subprocess.run(  # noqa: S603 -- fixed read-only Git command
@@ -335,6 +340,7 @@ def main() -> int:
             capture_output=True,
             text=True,
             check=True,
+            timeout=GIT_TIMEOUT_S,
         ).stdout.strip()
     )
     version = load_cuda_version(root)
@@ -373,6 +379,15 @@ def main() -> int:
         return 1
     print(f"check-cuda-pin-lockstep: OK ({len(sites)} sites on CUDA {version})")
     return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run the check and report a Git failure or timeout as exit 2."""
+    try:
+        return _main(argv)
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+        print(f"check-cuda-pin-lockstep: error: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

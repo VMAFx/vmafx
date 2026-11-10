@@ -168,7 +168,7 @@ static char *run_and_check(Operands *op, const char *label)
     const int err = FP_ARITH_PROBE(op->a, op->b, op->c, op->n, op->mad, op->quot, op->root);
 #endif
     if (err == -ENODEV) {
-        (void)fprintf(stderr, "  [SKIP] %s: no " FP_ARITH_DEVICE " device\n", label);
+        (void)fprintf(stderr, "  [SKIP] %s: no %s device\n", label, FP_ARITH_DEVICE);
         mu_skipped = 1;
         return NULL;
     }

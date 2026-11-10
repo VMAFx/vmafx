@@ -89,7 +89,7 @@ void run_kernel(sycl::queue &q, const ProbeBuffers &host, const StatisticParams 
     float *den = num + n;
     q.memcpy(moments, host.moments, kMomentFloats * n * sizeof(float));
     q.wait_and_throw();
-    q.parallel_for(sycl::range<1>(n), [=](sycl::id<1> i) VMAF_SYCL_REQD_SG_SIZE(16) {
+    q.parallel_for(sycl::range<1>(n), [=](sycl::id<1> i) [[VMAF_SYCL_REQD_SG_ATTR(16)]] {
         const Term term = statistic_of(moments + kMomentFloats * i[0], params);
         num[i] = term.num;
         den[i] = term.den;

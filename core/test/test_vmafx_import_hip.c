@@ -899,14 +899,16 @@ static void shared_close(Shared *s)
     }
 }
 
+/* Run one attempt of sharing imported HIP frames across two contexts, checking parity
+ * against host runs and verifying that release fences hold until both readers finish. */
 static char *one_import_two_contexts_once(void)
 {
     Shared s;
     memset(&s, 0, sizeof(s));
     s.event = (VmafxFence)VMAFX_FENCE_INIT;
     s.host = (VmafxFence)VMAFX_FENCE_INIT;
-    char *msg = (s.clip = clip8, true) &&
-                        vmafx_model_load(NULL, MODEL, &s.models[0], NULL) == VMAFX_OK &&
+    s.clip = clip8;
+    char *msg = vmafx_model_load(NULL, MODEL, &s.models[0], NULL) == VMAFX_OK &&
                         vmafx_model_load(NULL, "vmaf_v0.6.1", &s.models[1], NULL) == VMAFX_OK ?
                     NULL :
                     "setup";

@@ -26,6 +26,14 @@ source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 SCRIPT="${REPO_ROOT}/scripts/adr/next-free.sh"
 TMPDIR_BASE="$(mktemp -d)"
+STUB_BIN="${TMPDIR_BASE}/stub-bin"
+mkdir -p "${STUB_BIN}"
+cat >"${STUB_BIN}/gh" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "${STUB_BIN}/gh"
+export PATH="${STUB_BIN}:${PATH}"
 LIVE_PID=""
 FAIL=0
 

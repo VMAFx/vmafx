@@ -24,6 +24,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+SCRIPT_TIMEOUT_S = 60
 
 
 class PytestPythonpathContract(unittest.TestCase):
@@ -73,7 +74,7 @@ class PytestPythonpathContract(unittest.TestCase):
                 "import vmaf_mcp",
             ]
             proc = subprocess.run(  # noqa: S603 -- fixed argv test fixture
-                cmd, env=child_env, capture_output=True, text=True
+                cmd, env=child_env, capture_output=True, text=True, timeout=SCRIPT_TIMEOUT_S
             )
             self.assertNotEqual(proc.returncode, 0)
             self.assertIn("ModuleNotFoundError", proc.stderr)
@@ -99,7 +100,7 @@ class PytestPythonpathContract(unittest.TestCase):
         ]
         child_env = os.environ.copy()
         proc = subprocess.run(  # noqa: S603 -- fixed argv test fixture
-            cmd, env=child_env, capture_output=True, text=True
+            cmd, env=child_env, capture_output=True, text=True, timeout=SCRIPT_TIMEOUT_S
         )
         self.assertEqual(proc.returncode, 0, f"Import failed: {proc.stderr}")
 
