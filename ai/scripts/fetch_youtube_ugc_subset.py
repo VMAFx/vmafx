@@ -118,10 +118,14 @@ def _download(url: str, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     print(f"  downloading {url} -> {dest}", flush=True)
     tmp = dest.with_suffix(dest.suffix + ".tmp")
-    with _opener(url).open(url, timeout=API_TIMEOUT_S) as r, tmp.open("wb") as f:
-        for chunk in iter(lambda: r.read(1 << 20), b""):
-            f.write(chunk)
-    tmp.rename(dest)
+    try:
+        with _opener(url).open(url, timeout=API_TIMEOUT_S) as r, tmp.open("wb") as f:
+            for chunk in iter(lambda: r.read(1 << 20), b""):
+                f.write(chunk)
+        tmp.rename(dest)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _suffix_for_name(filename: str) -> str:

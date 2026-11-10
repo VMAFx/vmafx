@@ -76,11 +76,12 @@ layer remains the portable one-line override for containers and other hosts.
 
 ## Subprocess timeouts
 
-Every external command an `ai/` script starts (ffprobe, ffmpeg, the `vmaf`
-binary, a Python helper) runs with a time limit, so a hung process fails one
-step instead of stalling a whole corpus run. Where a step was measured, its
-limit is at least ten times the slowest measured run, and never under 60
-seconds; the table names the measurement or says it was not measured.
+The scripts listed in the table below run every external command they start
+(ffprobe, ffmpeg, the `vmaf` binary, a Python helper) with a time limit, so a
+hung process fails one step instead of stalling a whole corpus run. Where a
+step was measured, its limit is at least ten times the slowest measured run,
+and never under 60 seconds; the table names the measurement or says it was
+not measured.
 
 | Script | Step | Constant | Value | Measured |
 | --- | --- | --- | --- | --- |
@@ -88,6 +89,7 @@ seconds; the table names the measurement or says it was not measured.
 | [bvi_dvc_to_full_features.py][bvi] | Header probe | `FFMPEG_TIMEOUT_S` | 60s | 0.15s (1080p) |
 | [bvi_dvc_to_full_features.py][bvi] | 10-bit pipe | `TRANSCODE_TIMEOUT_S` | 300s | 10.72s (x2) |
 | [bvi_dvc_to_full_features.py][bvi] | libvmaf full | `VMAF_TIMEOUT_S` | 2400s | 96.52s (x2) |
+| [chug_extract_features.py][chug] | HDR probe / 10-bit decode | `FFMPEG_TIMEOUT_S` | 60s | 0.04s / 1.23s (1080p, 10 s) |
 | [collect_gpu_calibration_data.py][gpu] | Calibration | `VMAF_TIMEOUT_S` | 1800s | 168.31s CPU ciede (1080p, 300 frames); GPU legs not measured |
 | [export_transnet_v2.py][trans] | tf2onnx export | `SCRIPT_TIMEOUT_S` | 1800s | Not measured (tf2onnx not installed on the measuring host) |
 | [extract_k150k_features.py][k150k] | Probe / decode | `FFMPEG_TIMEOUT_S` | 60s | 0.16s / 1.25s |
@@ -104,6 +106,7 @@ seconds; the table names the measurement or says it was not measured.
 
 [fe]: ../../ai/data/feature_extractor.py
 [bvi]: ../../ai/scripts/bvi_dvc_to_full_features.py
+[chug]: ../../ai/scripts/chug_extract_features.py
 [gpu]: ../../ai/scripts/collect_gpu_calibration_data.py
 [trans]: ../../ai/scripts/export_transnet_v2.py
 [k150k]: ../../ai/scripts/extract_k150k_features.py
@@ -119,7 +122,12 @@ script:
 
 - The KonViD scripts log the clip as `FAILED`, the BVI-DVC script logs it as
   `FAIL`, and both continue with the rest of the batch.
-- [`collect_gpu_calibration_data.py`][gpu] returns rc 124.
+- [`chug_extract_features.py`][chug] records a timed-out HDR probe as unknown
+  metadata, logs a timed-out decode as `FAIL` for that pair, and continues with
+  the batch.
+- [`collect_gpu_calibration_data.py`][gpu] logs the timed-out cell on stderr
+  with rc 124 and skips it. The CLI exits 0 when any cell produced rows, or 1
+  when none did.
 - [`export_transnet_v2.py`][trans] exits with the timeout message.
 - A missing executable, one outside the script's allowlist, or an argument
   holding a NUL byte fails validation (`ValueError`) before any process starts.

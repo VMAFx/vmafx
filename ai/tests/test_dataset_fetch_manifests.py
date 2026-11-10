@@ -5,9 +5,11 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -23,6 +25,59 @@ def _load_module(name: str):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_download_streams_bytes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A successful transfer publishes every chunk and removes the temporary file."""
+    mod = _load_module("fetch_youtube_ugc_subset")
+    body = b"v" * ((1 << 20) + 3)
+    monkeypatch.setattr(
+        mod, "_opener", lambda _url: SimpleNamespace(open=lambda *_a, **_k: io.BytesIO(body))
+    )
+    dest = tmp_path / "clip.mp4"
+
+    mod._download("https://storage.googleapis.com/ugc-dataset/clip.mp4", dest)
+
+    assert dest.read_bytes() == body
+    assert not dest.with_suffix(".mp4.tmp").exists()
+
+
+def test_download_timeout_removes_partial_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A timeout after one chunk propagates and leaves no destination or temporary file."""
+    mod = _load_module("fetch_youtube_ugc_subset")
+
+    class Response(io.BytesIO):
+        def read(self, size: int = -1) -> bytes:
+            if self.tell():
+                raise TimeoutError("transfer stalled")
+            return super().read(size)
+
+    monkeypatch.setattr(
+        mod, "_opener", lambda _url: SimpleNamespace(open=lambda *_a, **_k: Response(b"partial"))
+    )
+    dest = tmp_path / "clip.mp4"
+
+    with pytest.raises(TimeoutError, match="transfer stalled"):
+        mod._download("https://storage.googleapis.com/ugc-dataset/clip.mp4", dest)
+
+    assert not dest.exists()
+    assert not dest.with_suffix(".mp4.tmp").exists()
+
+
+def test_download_empty_body(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An empty response publishes an empty destination and removes the temporary file."""
+    mod = _load_module("fetch_youtube_ugc_subset")
+    monkeypatch.setattr(
+        mod, "_opener", lambda _url: SimpleNamespace(open=lambda *_a, **_k: io.BytesIO())
+    )
+    dest = tmp_path / "clip.mp4"
+
+    mod._download("https://storage.googleapis.com/ugc-dataset/clip.mp4", dest)
+
+    assert dest.read_bytes() == b""
+    assert not dest.with_suffix(".mp4.tmp").exists()
 
 
 def test_fetch_youtube_ugc_subset_writes_run_manifest(tmp_path: Path, monkeypatch) -> None:
