@@ -415,9 +415,10 @@ ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64
 # does not publish year-quarter-versioned meta-packages (e.g.,
 # `intel-basekit-2025.3` does not exist in the apt repo); the versioning is
 # tracked internally by the component packages the meta-package pulls in.
-RUN curl --retry 3 --retry-all-errors -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
-        | gpg --dearmor \
-        | tee /usr/share/keyrings/intel-sw-products.gpg > /dev/null \
+RUN key="$(mktemp)" \
+    && curl --retry 3 --retry-all-errors -fsSL -o "$key" https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+    && gpg --dearmor < "$key" | tee /usr/share/keyrings/intel-sw-products.gpg > /dev/null \
+    && rm -f "$key" \
     && printf 'deb [signed-by=/usr/share/keyrings/intel-sw-products.gpg] https://apt.repos.intel.com/oneapi all main\n' \
         > /etc/apt/sources.list.d/intel-oneapi.list
 

@@ -132,9 +132,13 @@ for pattern in "${EXCLUDES[@]}"; do
   tar_excludes+=("--exclude=$pattern")
 done
 
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+
 echo "==> Authenticating to $REGISTRY for $REPO"
-TOKEN="$(curl -fsSL --max-time "$API_MAX_TIME" --retry 5 --retry-delay 10 --retry-all-errors \
-  "${AUTH}?service=${AUTH_SERVICE}&scope=repository:${REPO}:pull" | jq -r .token)"
+curl -fsSL --max-time "$API_MAX_TIME" --retry 5 --retry-delay 10 --retry-all-errors \
+  -o "$STAGE/.token.json" "${AUTH}?service=${AUTH_SERVICE}&scope=repository:${REPO}:pull"
+TOKEN="$(jq -r .token "$STAGE/.token.json")"
 if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
   echo "install-rocm-from-image.sh: failed to obtain a registry pull token" >&2
   exit 1
@@ -145,7 +149,8 @@ ACCEPT='application/vnd.docker.distribution.manifest.v2+json,application/vnd.doc
 fetch_manifest() {
   curl -fsSL --max-time "$API_MAX_TIME" --retry 5 --retry-delay 10 --retry-all-errors \
     -H "Authorization: Bearer ${TOKEN}" -H "Accept: ${ACCEPT}" \
-    "https://${REGISTRY}/v2/${REPO}/manifests/$1"
+    -o "$STAGE/.manifest.json" "https://${REGISTRY}/v2/${REPO}/manifests/$1" &&
+    cat "$STAGE/.manifest.json"
 }
 
 echo "==> Fetching manifest $DIGEST"
@@ -171,8 +176,6 @@ if [ -z "$LAYER_COUNT" ] || [ "$LAYER_COUNT" = "null" ] || [ "$LAYER_COUNT" -eq 
 fi
 echo "==> $LAYER_COUNT layers to scan"
 
-STAGE="$(mktemp -d)"
-trap 'rm -rf "$STAGE"' EXIT
 TAR_ERRORS="$STAGE/.tar-errors"
 
 # One layer, streamed from the registry into tar. A layer with no opt/rocm/
@@ -180,16 +183,15 @@ TAR_ERRORS="$STAGE/.tar-errors"
 # most layers; any other failure of the download, the decompression or tar
 # stops the install instead of leaving a partial tree.
 #
-# If a network drop or mid-stream reset occurs, curl's in-pipe retry cannot
-# recover because downstream decompressor and tar processes have already died.
-# We therefore retry the entire pipeline (curl | decomp | tar) up to
+# An inner curl retry would append to the pipe, duplicating partial body data.
+# Retry the entire pipeline (curl | decomp | tar) up to
 # LAYER_ATTEMPTS times. Re-extracting a layer over a partial extraction is safe:
 # tar overwrites the same paths.
 extract_layer() {
   local digest="$1" attempt=1 statuses
   while [ "$attempt" -le "$LAYER_ATTEMPTS" ]; do
     set +e
-    curl --retry 3 --retry-all-errors -fsSL --max-time "$LAYER_MAX_TIME" \
+    curl -fsSL --max-time "$LAYER_MAX_TIME" \
       -H "Authorization: Bearer ${TOKEN}" \
       "https://${REGISTRY}/v2/${REPO}/blobs/${digest}" |
       "${decomp[@]}" |

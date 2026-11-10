@@ -87,8 +87,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     if [ "$ENABLE_SYCL" = "true" ]; then \
         apt-get update && apt-get install -y --no-install-recommends gnupg2 ca-certificates && \
-        wget --tries=3 --retry-connrefused --retry-on-host-error -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
-            | gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg && \
+        key="$(mktemp)" && \
+        wget --tries=3 --retry-connrefused --retry-on-host-error -qO "$key" https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB && \
+        gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg "$key" && \
+        rm -f "$key" && \
         echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
             > /etc/apt/sources.list.d/oneapi.list && \
         apt-get update && apt-get install -y --no-install-recommends \

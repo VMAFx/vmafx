@@ -1160,20 +1160,40 @@ the apt.llvm.org signing key: `curl: (7) Failed to connect to apt.llvm.org port
 failed connection, and `--retry-connrefused` adds only a refused one, not an
 unreachable network or host.
 
-Every HTTP(S) fetch in a shell script, workflow or container recipe therefore
-retries connection failures:
+Every curl and wget HTTP(S) fetch in a shell script, workflow or container
+recipe retries connection failures:
 
 - **curl:** `--retry N --retry-all-errors`, with N positive.
 - **wget:** `--tries=N --retry-connrefused --retry-on-host-error`, with N
   positive.
-- **APT in `scripts/dev/tidy-lane.sh`:** `-o Acquire::Retries=3`.
+- **APT in `scripts/dev/tidy-lane.sh`:** `-o Acquire::Retries=N`, with N a
+  literal positive integer, on every `update` and `install` command.
+
+Retried downloads must write the body to a file before a consumer reads it.
+In curl 8.23.0, [`docs/cmdline-opts/retry-all-errors.md`](https://github.com/curl/curl/blob/3163ec065643ba20709f190111f42c3e1fe95273/docs/cmdline-opts/retry-all-errors.md)
+explains that curl clears partial output from its own output file before
+retrying; pipes, command capture and shell `>` redirection can instead append
+duplicate partial data. Wget follows the same file-first rule as a precaution;
+its pipe behavior on retry has not been measured. Header-only requests and
+explicit body disposal to `/dev/null` need no saved body.
 
 Each site keeps its own `--max-time` and `--connect-timeout` bounds.
-`scripts/ci/tests/test_fetch_connect_retry.py` checks every tracked fetch for
-these flags and runs as the `test-fetch-connect-retry` pre-commit hook. Fetches
-that must fail fast, such as a local health probe inside its own bounded poll,
-are listed with a reason in its `ALLOWLIST`; an entry whose site is gone fails
-the test.
+`scripts/ci/tests/test_fetch_connect_retry.py` audits tracked sources offline
+and runs as the `test-fetch-connect-retry` pre-commit hook. Its option allow-list
+models value consumption and final flag state. Unknown options fail: add a row
+from curl 8.23.0 `src/tool_getparam.c` (the pinned source above) or the installed
+GNU Wget 1.25.0 `wget --help`, rather than silently accepting a new spelling.
+
+Exemptions require an exact path, parsed URL and reason in `ALLOWLIST`; stale
+or ambiguous entries fail. Local health checks within bounded outer polls may
+need to fail fast. The ROCm layer download in
+`scripts/ci/install-rocm-from-image.sh` retries the whole curl, decompressor and
+tar pipeline up to `LAYER_ATTEMPTS` times; inner curl retries would append to the
+pipe, so this streaming fetch is exempt from both inner retries and file output.
+
+**Not covered:** `git clone` and APT calls outside the tidy lane. Follow-up
+issue #3392 tracks these gaps; the tests whose docstrings start
+`Known gap (#3392):` replay both forms so the scanner's limits stay explicit.
 
 ## Apt archive cache
 

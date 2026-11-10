@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Offline contract for connection retries at every tracked shell fetch site."""
+"""Audit curl/wget fetches and tidy-lane APT offline; git/other APT gap: #3392."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import sys
 import tempfile
 import unittest
 from collections import Counter
+from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -19,9 +20,15 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
-# Exact path + URL argument + reason. No implicit loopback exemption: a new
-# probe must demonstrate its own bounded poll, or why repeating it is incorrect.
+# Curl/wget fetches + tidy-lane APT only; git clone/other APT gap: #3392.
+# Exact path + parsed URL + reason; exempt commands skip every check.
 ALLOWLIST = (
+    (
+        "scripts/ci/install-rocm-from-image.sh",
+        "https://${REGISTRY}/v2/${REPO}/blobs/${digest}",
+        "extract_layer retries the whole curl | decompress | tar pipeline LAYER_ATTEMPTS times; "
+        "an inner retry would append to the pipe",
+    ),
     (
         "scripts/ci/observability-compose-smoke.sh",
         "http://localhost:9090/api/v1/query?query=up%7Bjob%3D%22vmafx-node%22%7D%3D%3D1",
@@ -94,7 +101,7 @@ def tracked_sources() -> list[tuple[str, str]]:
         check=True,
         timeout_seconds=30,
     )
-    sources = []
+    sources: list[tuple[str, str]] = []
     for path in result.stdout.split("\0"):
         source = ROOT / path
         if not path or not source.is_file() or source.is_symlink():
@@ -110,7 +117,7 @@ def tracked_sources() -> list[tuple[str, str]]:
 
 def logical_lines(text: str) -> list[tuple[int, str]]:
     """Join shell, PowerShell, and cmd continuations without losing source locations."""
-    lines = []
+    lines: list[tuple[int, str]] = []
     pending = ""
     start = 1
     for number, line in enumerate(text.splitlines(), 1):
@@ -126,99 +133,313 @@ def logical_lines(text: str) -> list[tuple[int, str]]:
     return lines
 
 
+# curl 8.23.0, commit 3163ec065643ba20709f190111f42c3e1fe95273:
+# src/tool_getparam.c aliases[]; src/tool_getparam.h:321-326.
+# ARG_STRG/FILE/SECS/UNUM consume values; ARG_BOOL accepts --no-.
+# Rows: long name, short letter, takes value, accepts --no-.
+CURL_OPTIONS = (
+    ("connect-timeout", None, True, False),
+    ("create-dirs", None, False, True),
+    ("data", "d", True, False),
+    ("data-urlencode", None, True, False),
+    ("fail", "f", False, True),
+    ("fail-with-body", None, False, True),
+    ("get", "G", False, True),
+    ("header", "H", True, False),
+    ("location", "L", False, True),
+    ("max-time", "m", True, False),
+    ("oauth2-bearer", None, True, False),
+    ("output", "o", True, False),
+    ("proto", None, True, False),
+    ("remove-on-error", None, False, True),
+    ("retry", None, True, False),
+    ("retry-all-errors", None, False, True),
+    ("retry-connrefused", None, False, True),
+    ("retry-delay", None, True, False),
+    ("retry-max-time", None, True, False),
+    ("show-error", "S", False, True),
+    ("silent", "s", False, True),
+    ("tlsv1.2", None, False, False),
+    ("url", None, True, False),
+    ("user-agent", "A", True, False),
+    ("write-out", "w", True, False),
+    ("head", "I", False, True),
+    ("remote-name", "O", False, True),
+)
+# GNU Wget 1.25.0, LC_ALL=C wget --help; flag --no- forms measured at rc 0
+# in review; --no-tries=3 rejected at rc 2. Same row format as curl.
+WGET_OPTIONS = (
+    ("output-document", "O", True, False),
+    ("quiet", "q", False, True),
+    ("retry-connrefused", None, False, True),
+    ("retry-on-host-error", None, False, True),
+    ("timeout", "T", True, False),
+    ("tries", "t", True, False),
+    ("waitretry", None, True, False),
+    ("spider", None, False, True),
+)
+APT_RETRY_PATHS = ("scripts/dev/tidy-lane.sh",)
+
+
+@dataclass
+class ParsedFetch:
+    """Hold consumed options, URLs, redirection and parser diagnostics."""
+
+    tool: str
+    values: dict[str, str] = field(default_factory=dict)
+    flags: dict[str, bool] = field(default_factory=dict)
+    urls: list[str] = field(default_factory=list)
+    stdout_target: str = ""
+    errors: list[str] = field(default_factory=list)
+
+
+def quoted_end(command: str, index: int) -> int:
+    """Skip a quoted span while honoring double-quote backslash escapes."""
+    quote = command[index]
+    index += 1
+    while index < len(command):
+        char = command[index]
+        index += 1
+        if quote == '"' and char == "\\":
+            index += 1
+        elif char == quote:
+            break
+    return index
+
+
+def strip_comment(command: str) -> str:
+    """Strip shell comments while retaining quoted and in-word hash characters."""
+    index = 0
+    while index < len(command):
+        char = command[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char in ("'", '"'):
+            index = quoted_end(command, index)
+            continue
+        word_start = index == 0 or command[index - 1].isspace() or command[index - 1] in ";&|()"
+        if char == "#" and word_start:
+            return command[:index]
+        index += 1
+    return command
+
+
 def command_args(command: str) -> list[str]:
-    """Tokenize one fetch, stopping before the next shell command or enclosing $()."""
+    """Tokenize one fetch up to shell control after removing actual comments."""
+    command = strip_comment(command)
     lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()")
     lexer.whitespace_split = True
+    lexer.commenters = ""
     try:
-        tokens = list(lexer)
+        arguments = list(lexer)
     except ValueError:
         # Embedded shell/YAML fragments may end inside an enclosing quote.
-        # Keep auditing the whole fetch rather than discarding that line.
-        tokens = [token.strip("\"'") for token in command.split()]
-    args = []
-    for token in tokens:
-        if token in CONTROL or token.startswith("#"):
+        arguments = [argument.strip("\"'") for argument in command.split()]
+    args: list[str] = []
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument == "&" and index + 1 < len(arguments) and arguments[index + 1].startswith(">"):
+            index += 1
+            argument += arguments[index]
+        elif argument in CONTROL:
             break
-        args.append(token)
+        args.append(argument)
+        index += 1
     return args
 
 
-def fetch_commands(text: str) -> list[tuple[int, list[str]]]:
-    """Inventory literal and variable URL fetches on every logical source line."""
-    commands = []
-    for line_number, line in logical_lines(text):
-        if line.lstrip().startswith("#"):
+def consume_value(
+    args: list[str], index: int, attached: str | None, parsed: ParsedFetch, name: str
+) -> int:
+    """Consume an attached or following value without interpreting its contents."""
+    if attached is not None:
+        value = attached
+        consumed = 1
+    elif index + 1 < len(args):
+        value = args[index + 1]
+        consumed = 2
+    else:
+        parsed.errors.append(f"{parsed.tool} option --{name} needs a value")
+        return 1
+    parsed.values[name] = value
+    if name == "url":
+        parsed.urls.append(value)
+    return consumed
+
+
+def parse_long(args: list[str], index: int, parsed: ParsedFetch) -> int:
+    """Validate a long option and consume its value or final flag state."""
+    option, equals, value = args[index][2:].partition("=")
+    negated = option.startswith("no-")
+    name = option[3:] if negated else option
+    rows = WGET_OPTIONS if parsed.tool == "wget" else CURL_OPTIONS
+    row = next((row for row in rows if row[0] == name), None)
+    if row is None or (negated and not row[3]):
+        parsed.errors.append(f"unknown {parsed.tool} option --{option}")
+        return 1
+    if row[2]:
+        return consume_value(args, index, value if equals else None, parsed, name)
+    if equals:
+        parsed.errors.append(f"{parsed.tool} flag --{option} does not take a value")
+    else:
+        parsed.flags[name] = not negated
+    return 1
+
+
+def parse_short(args: list[str], index: int, parsed: ParsedFetch) -> int:
+    """Read short bundles left to right with value options consuming the remainder."""
+    rows = WGET_OPTIONS if parsed.tool == "wget" else CURL_OPTIONS
+    bundle = args[index][1:]
+    for offset, letter in enumerate(bundle):
+        row = next((row for row in rows if row[1] == letter), None)
+        if row is None:
+            parsed.errors.append(f"unknown {parsed.tool} option -{letter}")
             continue
+        if row[2]:
+            attached = bundle[offset + 1 :] or None
+            return consume_value(args, index, attached, parsed, row[0])
+        parsed.flags[row[0]] = True
+    return 1
+
+
+def parse_redirect(args: list[str], index: int, parsed: ParsedFetch) -> int:
+    """Skip redirection targets and record the destination of standard output."""
+    match = re.match(r"([012&]?)(>>?|<<?)(.*)", args[index])
+    if match is None:
+        return 0
+    descriptor, operator, target = match.groups()
+    consumed = 1
+    if not target and index + 1 < len(args):
+        target = args[index + 1]
+        consumed = 2
+    if operator.startswith(">") and descriptor != "2":
+        parsed.stdout_target = target
+    return consumed
+
+
+def parse_fetch(args: list[str]) -> ParsedFetch:
+    """Parse only allow-listed curl or wget options with their real value consumption."""
+    parsed = ParsedFetch("curl" if args[0] == "curl.exe" else args[0])
+    index = 1
+    positional = False
+    while index < len(args):
+        arg = args[index]
+        redirected = parse_redirect(args, index, parsed)
+        if redirected:
+            index += redirected
+            continue
+        if arg == "--":
+            positional = True
+        elif not positional and arg.startswith("--"):
+            index += parse_long(args, index, parsed)
+            continue
+        elif not positional and arg.startswith("-") and arg != "-":
+            index += parse_short(args, index, parsed)
+            continue
+        else:
+            parsed.urls.append(arg)
+        index += 1
+    return parsed
+
+
+def fetch_commands(text: str) -> list[tuple[int, ParsedFetch]]:
+    """Inventory parsed literal and variable URLs, including long URL options."""
+    commands: list[tuple[int, ParsedFetch]] = []
+    for line_number, source_line in logical_lines(text):
+        line = strip_comment(source_line)
         for match in FETCH.finditer(line):
-            args = command_args(line[match.start() :])
-            # Include variable URLs (including Windows %URL%), not just literal
-            # hosts. Package lists and command -v checks have no URL arguments.
-            if any(re.match(r"https?://|\$|%", arg) for arg in args[1:]):
-                commands.append((line_number, args))
+            parsed = parse_fetch(command_args(line[match.start() :]))
+            if any(re.match(r"https?://|\$|%", url) for url in parsed.urls):
+                commands.append((line_number, parsed))
     return commands
 
 
-def option_value(args: list[str], option: str) -> str:
-    """Read the last value supplied with a long option."""
-    value = ""
-    for index, arg in enumerate(args):
-        if arg.startswith(option + "="):
-            value = arg.partition("=")[2]
-        elif arg == option:
-            value = args[index + 1] if index + 1 < len(args) else ""
-    return value
+def positive_count(parsed: ParsedFetch, option: str) -> bool:
+    """Accept only literal positive integer retry counts from consumed values."""
+    return bool(re.fullmatch(r"[1-9][0-9]*", parsed.values.get(option, "")))
 
 
-def positive_count(args: list[str], option: str) -> bool:
-    """Accept only literal positive integer retry counts."""
-    return bool(re.fullmatch(r"[1-9][0-9]*", option_value(args, option)))
-
-
-def enabled(args: list[str], option: str) -> bool:
-    """Honor the last explicit enable or disable switch."""
-    switches = [arg for arg in args if arg in (option, option.replace("--", "--no-", 1))]
-    return bool(switches) and switches[-1] == option
-
-
-def retry_errors(args: list[str]) -> list[str]:
+def retry_errors(parsed: ParsedFetch) -> list[str]:
     """Require positive retries and the fetch tool's connection error switches."""
-    if args[0] == "wget":
+    if parsed.tool == "wget":
         if (
-            positive_count(args, "--tries")
-            and enabled(args, "--retry-connrefused")
-            and enabled(args, "--retry-on-host-error")
+            positive_count(parsed, "tries")
+            and parsed.flags.get("retry-connrefused")
+            and parsed.flags.get("retry-on-host-error")
         ):
             return []
         return ["wget needs positive --tries, --retry-connrefused and --retry-on-host-error"]
     errors: list[str] = []
-    if not positive_count(args, "--retry"):
+    if not positive_count(parsed, "retry"):
         errors.append("curl needs positive --retry")
-    if not enabled(args, "--retry-all-errors"):
+    if not parsed.flags.get("retry-all-errors"):
         errors.append("curl needs --retry-all-errors")
     return errors
 
 
+def body_errors(parsed: ParsedFetch) -> list[str]:
+    """Reject retried bodies on stdout except explicit disposal to /dev/null."""
+    if parsed.tool == "wget":
+        stdout = parsed.values.get("output-document") == "-" and not parsed.flags.get("spider")
+    else:
+        stdout = (
+            parsed.values.get("output", "-") == "-"
+            and not parsed.flags.get("remote-name")
+            and not parsed.flags.get("head")
+        )
+    if stdout and parsed.stdout_target != "/dev/null":
+        return [f"{parsed.tool} retry must write the body to a file, not stdout"]
+    return []
+
+
 def matching_exemptions(
-    path: str, args: list[str], allowlist: tuple[tuple[str, str, str], ...]
+    path: str, parsed: ParsedFetch, allowlist: tuple[tuple[str, str, str], ...]
 ) -> list[tuple[str, str, str]]:
-    """Match exemptions by both tracked path and complete URL argument."""
-    return [entry for entry in allowlist if entry[0] == path and entry[1] in args]
+    """Match exemptions by both tracked path and complete parsed URL."""
+    return [entry for entry in allowlist if entry[0] == path and entry[1] in parsed.urls]
+
+
+def apt_errors(path: str, text: str) -> list[str]:
+    """Require positive literal APT retry counts in the declared tidy lane only."""
+    errors: list[str] = []
+    if path not in APT_RETRY_PATHS:
+        return errors
+    for line, command in logical_lines(text):
+        command_text = strip_comment(command)
+        for match in re.finditer(r"(?<![\w.-])apt-get\s+", command_text):
+            args = command_args(command_text[match.end() :])
+            if {"update", "install"} & set(args) and not apt_positive_retries(args):
+                errors.append(f"{path}:{line}: apt-get needs -o Acquire::Retries=N with N positive")
+    return errors
+
+
+def apt_positive_retries(args: list[str]) -> bool:
+    """Validate the final explicit APT retry setting against positive literal integers."""
+    retries = [
+        args[index + 1]
+        for index, arg in enumerate(args[:-1])
+        if arg == "-o" and args[index + 1].startswith("Acquire::Retries=")
+    ]
+    return bool(retries and re.fullmatch(r"Acquire::Retries=[1-9][0-9]*", retries[-1]))
 
 
 def audit_sources(
     sources: list[tuple[str, str]], allowlist: tuple[tuple[str, str, str], ...] = ALLOWLIST
 ) -> list[str]:
-    """Audit fetch arguments and reject stale or ambiguous allow-list entries."""
+    """Audit parsed fetches and APT while rejecting stale or ambiguous exemptions."""
     errors: list[str] = []
     seen: Counter[tuple[str, str, str]] = Counter()
     for path, text in sources:
-        for line, args in fetch_commands(text):
-            matches = matching_exemptions(path, args, allowlist)
+        errors.extend(apt_errors(path, text))
+        for line, parsed in fetch_commands(text):
+            matches = matching_exemptions(path, parsed, allowlist)
             if matches:
                 seen.update(matches)
             else:
-                errors.extend(f"{path}:{line}: {error}" for error in retry_errors(args))
+                findings = parsed.errors + retry_errors(parsed) + body_errors(parsed)
+                errors.extend(f"{path}:{line}: {error}" for error in findings)
     for entry in allowlist:
         if not entry[2] or seen[entry] != 1:
             errors.append(
@@ -239,7 +460,7 @@ class FetchConnectRetryTests(unittest.TestCase):
         """Accept curl and wget with every required retry option."""
         self.assertEqual(
             self.check_script(
-                "curl -fsSL --retry 3 --retry-all-errors https://example.invalid/x\n"
+                "curl -o out -fsSL --retry 3 --retry-all-errors https://example.invalid/x\n"
                 "wget -q --tries=3 --retry-connrefused --retry-on-host-error "
                 "https://example.invalid/x\n"
             ),
@@ -248,12 +469,16 @@ class FetchConnectRetryTests(unittest.TestCase):
 
     def test_plain_retry_does_not_cover_refused_connection(self) -> None:
         """Reject curl retries that omit all-errors coverage."""
-        self.assertTrue(self.check_script("curl -fsSL --retry 3 https://example.invalid/x\n"))
+        self.assertTrue(
+            self.check_script("curl -o out -fsSL --retry 3 https://example.invalid/x\n")
+        )
 
     def test_curl_retry_connrefused_alone_does_not_cover_unreachable_connection(self) -> None:
         """Reject refused-only curl retries because other exit-7 causes remain fatal."""
         self.assertEqual(
-            self.check_script("curl --retry 3 --retry-connrefused https://example.invalid/x\n"),
+            self.check_script(
+                "curl -o out --retry 3 --retry-connrefused https://example.invalid/x\n"
+            ),
             ["fetch.sh:1: curl needs --retry-all-errors"],
         )
 
@@ -280,7 +505,9 @@ class FetchConnectRetryTests(unittest.TestCase):
     def test_existing_all_errors_retry_is_accepted(self) -> None:
         """Accept the existing curl all-errors retry convention."""
         self.assertEqual(
-            self.check_script("curl -f --retry 5 --retry-all-errors https://example.invalid/x\n"),
+            self.check_script(
+                "curl -o out -f --retry 5 --retry-all-errors https://example.invalid/x\n"
+            ),
             [],
         )
 
@@ -290,7 +517,7 @@ class FetchConnectRetryTests(unittest.TestCase):
             with self.subTest(continuation=continuation):
                 self.assertEqual(
                     self.check_script(
-                        f"curl -fsSL --retry 3 {continuation}\n"
+                        f"curl -o out -fsSL --retry 3 {continuation}\n"
                         f"  --retry-all-errors {continuation}\n"
                         "  https://example.invalid/x\n"
                     ),
@@ -319,12 +546,12 @@ class FetchConnectRetryTests(unittest.TestCase):
         for suffix in (" # --retry-all-errors", " | echo --retry-all-errors"):
             with self.subTest(suffix=suffix):
                 self.assertTrue(
-                    self.check_script("curl --retry 3 https://example.invalid/x" + suffix)
+                    self.check_script("curl -o out --retry 3 https://example.invalid/x" + suffix)
                 )
 
     def test_retry_must_be_enabled_and_positive(self) -> None:
         """Reject missing, nonpositive, noninteger, and disabled curl retries."""
-        compliant = "curl --retry 3 --retry-all-errors https://example.invalid/x"
+        compliant = "curl -o out --retry 3 --retry-all-errors https://example.invalid/x"
         for mutation in (
             compliant.replace("--retry 3", ""),
             compliant.replace("--retry 3", "--retry 0"),
@@ -353,11 +580,11 @@ class FetchConnectRetryTests(unittest.TestCase):
         for url in ('https://example.invalid/x"', "'https://example.invalid/x"):
             with self.subTest(url=url):
                 self.assertEqual(
-                    self.check_script(f"curl --retry 3 {url}\n"),
+                    self.check_script(f"curl -o out --retry 3 {url}\n"),
                     ["fetch.sh:1: curl needs --retry-all-errors"],
                 )
                 self.assertEqual(
-                    self.check_script(f"curl --retry 3 --retry-all-errors {url}\n"), []
+                    self.check_script(f"curl -o out --retry 3 --retry-all-errors {url}\n"), []
                 )
 
     def test_fetch_names_in_diagnostic_prose_are_not_commands(self) -> None:
@@ -395,6 +622,179 @@ class FetchConnectRetryTests(unittest.TestCase):
                 self.assertTrue(in_scope(path, ""))
         self.assertTrue(in_scope("fetch", "#!/usr/bin/env bash\n"))
         self.assertFalse(in_scope("README.md", "curl https://example.invalid/x"))
+
+    def test_url_options(self) -> None:
+        """Audit both long URL spellings and their consumed values."""
+        for url in ("--url=https://example.invalid/x", "--url https://example.invalid/x"):
+            with self.subTest(url=url):
+                self.assertIn(
+                    "fetch.sh:1: curl needs positive --retry",
+                    self.check_script(f"curl {url} -o out"),
+                )
+                self.assertEqual(
+                    self.check_script(f"curl {url} --retry 3 --retry-all-errors -o out"), []
+                )
+
+    def test_option_value_consumption(self) -> None:
+        """Keep option-looking values out of the flag state."""
+        self.assertEqual(
+            self.check_script(
+                "curl --output --retry-all-errors --retry 3 https://example.invalid/x"
+            ),
+            ["fetch.sh:1: curl needs --retry-all-errors"],
+        )
+        for output in ("-fsSLo out", "--output=out", "-oout"):
+            self.assertEqual(
+                self.check_script(
+                    f"curl {output} --retry=3 --retry-all-errors https://example.invalid/x"
+                ),
+                [],
+            )
+        for output in ("-qO out", "-qOout", "--output-document=out"):
+            self.assertEqual(
+                self.check_script(
+                    f"wget {output} --tries=3 --retry-connrefused --retry-on-host-error "
+                    "https://example.invalid/x"
+                ),
+                [],
+            )
+
+    def test_invalid_options(self) -> None:
+        """Reject unknown options, flag values, and missing option values."""
+        base = "curl -o out --retry 3 --retry-all-errors https://example.invalid/x "
+        for option, error in (
+            ("--retry-all-errors=1", "curl flag --retry-all-errors does not take a value"),
+            ("--retry", "curl option --retry needs a value"),
+            ("--bogus", "unknown curl option --bogus"),
+            ("-Z", "unknown curl option -Z"),
+            ("--no-output=out", "unknown curl option --no-output"),
+            ("--no-tlsv1.2", "unknown curl option --no-tlsv1.2"),
+        ):
+            with self.subTest(option=option):
+                self.assertIn(f"fetch.sh:1: {error}", self.check_script(base + option))
+        self.assertIn(
+            "fetch.sh:1: unknown wget option --no-tries",
+            self.check_script("wget --no-tries=3 https://example.invalid/x"),
+        )
+
+    def test_body_stdout(self) -> None:
+        """Reject pipe, capture, redirected-file and explicit stdout bodies."""
+        base = "curl --retry 3 --retry-all-errors https://example.invalid/x"
+        for command in (
+            base + " | tar",
+            f'body="$({base})"',
+            base + " > file",
+            base + " -o -",
+            base + " 1>file",
+            base + " &>file",
+            base + " >>file",
+            base + " -o out -o -",
+            base + " -I --no-head",
+            base + " -O --no-remote-name",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(
+                    self.check_script(command),
+                    ["fetch.sh:1: curl retry must write the body to a file, not stdout"],
+                )
+        self.assertEqual(
+            self.check_script(
+                "wget -qO- --tries=3 --retry-connrefused --retry-on-host-error "
+                "https://example.invalid/x"
+            ),
+            ["fetch.sh:1: wget retry must write the body to a file, not stdout"],
+        )
+
+    def test_body_file_or_discard(self) -> None:
+        """Accept files, explicit disposal, remote names and header-only fetches."""
+        base = "curl --retry 3 --retry-all-errors https://example.invalid/x"
+        for suffix in (
+            " >/dev/null",
+            " > /dev/null",
+            " 1>/dev/null",
+            " &>/dev/null",
+            " -o /dev/null",
+            " -I",
+            " -O",
+            " -o out 2>errors <input",
+            " -o out 2> errors < input",
+            " --no-head -I",
+            " --no-remote-name -O",
+            " -o - -o out",
+        ):
+            with self.subTest(suffix=suffix):
+                self.assertEqual(self.check_script(base + suffix), [])
+        self.assertEqual(
+            self.check_script(
+                "wget -qO- --tries=3 --retry-connrefused --retry-on-host-error "
+                "https://example.invalid/x --spider"
+            ),
+            [],
+        )
+
+    def test_comment_fragments(self) -> None:
+        """Preserve URL fragments while excluding flags and apostrophes in comments."""
+        for url in (
+            "https://example.invalid/x#frag",
+            "'https://example.invalid/x#frag'",
+            '"https://example.invalid/x#frag"',
+        ):
+            self.assertEqual(
+                self.check_script(f"curl --retry 3 {url} --retry-all-errors -o out"), []
+            )
+        self.assertEqual(
+            self.check_script(
+                "curl --retry 3 -o out https://example.invalid/x # don't --retry-all-errors"
+            ),
+            ["fetch.sh:1: curl needs --retry-all-errors"],
+        )
+        self.assertEqual(strip_comment("a#b # end"), "a#b ")
+        self.assertEqual(strip_comment(r"a\#b # end"), r"a\#b ")
+        self.assertEqual(strip_comment(r'"a\"#b" # end'), r'"a\"#b" ')
+        self.assertEqual(strip_comment("echo ok;# end"), "echo ok;")
+
+    def test_apt_retries(self) -> None:
+        """Require positive literal retry settings for tidy-lane update and install."""
+        path = "scripts/dev/tidy-lane.sh"
+        for verb in ("update", "install -y package"):
+            self.assertEqual(
+                audit_sources([(path, f"apt-get -o Acquire::Retries=3 {verb}")], ()), []
+            )
+            for setting in (
+                "",
+                "-o Acquire::Retries=0",
+                "-o Acquire::Retries=x",
+                "-o Acquire::Retries=3 -o Acquire::Retries=0",
+            ):
+                with self.subTest(verb=verb, setting=setting):
+                    self.assertEqual(
+                        audit_sources([(path, f"apt-get {setting} {verb}")], ()),
+                        [f"{path}:1: apt-get needs -o Acquire::Retries=N with N positive"],
+                    )
+        self.assertEqual(audit_sources([(path, "apt-get --version")], ()), [])
+        self.assertEqual(
+            audit_sources([(path, "echo ready && apt-get update")], ()),
+            [f"{path}:1: apt-get needs -o Acquire::Retries=N with N positive"],
+        )
+        self.assertEqual(audit_sources([(path, "# apt-get update")], ()), [])
+
+    def test_known_gap_git_clone(self) -> None:
+        """Known gap (#3392): Git clone retries remain outside this scanner."""
+        self.assertEqual(self.check_script("git clone https://example.invalid/r.git"), [])
+
+    def test_known_gap_other_apt(self) -> None:
+        """Known gap (#3392): APT outside tidy-lane remains outside this scanner."""
+        for setting in ("", "-o Acquire::Retries=0", "-o Acquire::Retries=x"):
+            self.assertEqual(audit_sources([("other.sh", f"apt-get {setting} install x")], ()), [])
+
+    def test_url_exemption(self) -> None:
+        """Match exemptions against URLs consumed by long options."""
+        entry = (("fetch.sh", "http://localhost:8080/healthz", "bounded outer poll"),)
+        for url in ("--url=http://localhost:8080/healthz", "--url http://localhost:8080/healthz"):
+            self.assertEqual(audit_sources([("fetch.sh", f"curl {url}")], entry), [])
+        self.assertTrue(
+            audit_sources([("fetch.sh", "curl --url=http://localhost:8080/other")], entry)
+        )
 
     def test_tracked_fetches_retry_connect_failures(self) -> None:
         """Enforce the retry contract across the live tracked site inventory."""
