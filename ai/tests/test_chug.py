@@ -504,10 +504,11 @@ def _timeout_bad_clip_runner(cmd: list[str], **kwargs: Any) -> subprocess.Comple
     """Time out the bad clip's decode and materialise all other clips."""
     if cmd[0] == "ffmpeg" and Path(cmd[cmd.index("-i") + 1]).name == "bad.mp4":
         raise subprocess.TimeoutExpired(cmd, CHUG_FEATURES.FFMPEG_TIMEOUT_S)
-    return _FakeFeatureRunner()(cmd, **kwargs)
+    result: subprocess.CompletedProcess[str] = _FakeFeatureRunner()(cmd, **kwargs)
+    return result
 
 
-def _fake_mean_extract(*_args: Any, **kwargs: Any) -> CHUG_FEATURES.FeatureExtractionResult:
+def _fake_mean_extract(*_args: Any, **kwargs: Any) -> Any:
     """Return two feature frames with a mean of two."""
     names = kwargs["features"]
     data = np.ones((2, len(names)), dtype=np.float32)
@@ -519,7 +520,9 @@ def _fake_mean_extract(*_args: Any, **kwargs: Any) -> CHUG_FEATURES.FeatureExtra
     )
 
 
-@pytest.mark.parametrize("timeout_first", [False, True])
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest untyped for the mypy gate
+    "timeout_first", [False, True]
+)
 def test_chug_feature_materialiser_writes_mean_features(
     tmp_path: Path, timeout_first: bool, capsys: pytest.CaptureFixture[str]
 ) -> None:

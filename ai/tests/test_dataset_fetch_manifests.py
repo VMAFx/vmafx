@@ -49,7 +49,7 @@ def test_download_timeout_removes_partial_file(
     mod = _load_module("fetch_youtube_ugc_subset")
 
     class Response(io.BytesIO):
-        def read(self, size: int = -1) -> bytes:
+        def read(self, size: int | None = -1) -> bytes:
             if self.tell():
                 raise TimeoutError("transfer stalled")
             return super().read(size)
