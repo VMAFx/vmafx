@@ -17,6 +17,8 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "chug_to_corpus_jsonl.py"
 _FEATURE_SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "chug_extract_features.py"
+# Policy floor for subprocess bounds: max(60 s, 10x the slowest measured run).
+_TIMEOUT_POLICY_FLOOR_S = 60
 
 
 def _load_module():
@@ -469,7 +471,7 @@ def test_chug_decode_timeout_propagates(tmp_path: Path) -> None:
 
 def test_chug_subprocess_timeout_policy_floor() -> None:
     """The subprocess timeout uses the policy floor of 60 seconds."""
-    assert CHUG_FEATURES.FFMPEG_TIMEOUT_S == 60
+    assert CHUG_FEATURES.FFMPEG_TIMEOUT_S == _TIMEOUT_POLICY_FLOOR_S
 
 
 def _assert_chug_materialised_row(row: dict[str, Any]) -> None:
