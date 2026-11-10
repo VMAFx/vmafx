@@ -191,7 +191,7 @@ def retry_errors(args: list[str]) -> list[str]:
         ):
             return []
         return ["wget needs positive --tries, --retry-connrefused and --retry-on-host-error"]
-    errors = []
+    errors: list[str] = []
     if not positive_count(args, "--retry"):
         errors.append("curl needs positive --retry")
     if not enabled(args, "--retry-all-errors"):
@@ -210,7 +210,7 @@ def audit_sources(
     sources: list[tuple[str, str]], allowlist: tuple[tuple[str, str, str], ...] = ALLOWLIST
 ) -> list[str]:
     """Audit fetch arguments and reject stale or ambiguous allow-list entries."""
-    errors = []
+    errors: list[str] = []
     seen: Counter[tuple[str, str, str]] = Counter()
     for path, text in sources:
         for line, args in fetch_commands(text):
