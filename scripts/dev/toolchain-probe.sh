@@ -424,6 +424,29 @@ mingw_assert_pairing() {
   return 0
 }
 
+# mingw_find_objdump <driver> <driver_dir>
+# Prints the objdump binary to use for the pairing assertion: the
+# target-prefixed binary next to the driver first, then the same prefix on
+# PATH, then plain objdump. Returns 1 when none of the three exists; the
+# caller turns that into the pairing-unverified refusal.
+mingw_find_objdump() {
+  local driver="$1" driver_dir="$2" candidate=""
+  candidate="${driver_dir}/${driver%-gcc}-objdump"
+  if [ -x "${candidate}" ]; then
+    printf '%s\n' "${candidate}"
+    return 0
+  fi
+  if candidate="$(command -v "${driver%-gcc}-objdump")"; then
+    printf '%s\n' "${candidate}"
+    return 0
+  fi
+  if candidate="$(command -v objdump)"; then
+    printf '%s\n' "${candidate}"
+    return 0
+  fi
+  return 1
+}
+
 # The MinGW cross probe. Exits non-zero only for a FOUND driver whose runtime
 # cannot be resolved or whose flavour contradicts the thread model; the
 # absence of the cross toolchain on a host is exit 0, like the other tools.
@@ -478,14 +501,9 @@ probe_mingw_cross() {
   fi
 
   # objdump: the target-prefixed binary next to the driver first, then PATH.
-  objdump_bin="$(dirname "${p}")/${driver%-gcc}-objdump"
-  if [ ! -x "${objdump_bin}" ]; then
-    if ! objdump_bin="$(command -v "${driver%-gcc}-objdump")"; then
-      if ! objdump_bin="$(command -v objdump)"; then
-        printf "toolchain-probe: %s pairing-unverified no objdump found (target-prefixed or plain); refusing to pass an unasserted stage\n" "${driver}"
-        return 1
-      fi
-    fi
+  if ! objdump_bin="$(mingw_find_objdump "${driver}" "$(dirname "${p}")")"; then
+    printf "toolchain-probe: %s pairing-unverified no objdump found (target-prefixed or plain); refusing to pass an unasserted stage\n" "${driver}"
+    return 1
   fi
 
   mingw_assert_pairing "${driver}" "${objdump_bin}" "${model:-unknown}" "${stdcxx}"
