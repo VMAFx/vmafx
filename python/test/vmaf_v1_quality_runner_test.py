@@ -2,8 +2,9 @@
 from __future__ import absolute_import
 
 import os
-import subprocess
+import sys
 import unittest
+from pathlib import Path
 from test.testutil import (
     set_default_576_324_hdr_videos_for_testing,
     set_default_576_324_videos_for_testing,
@@ -14,6 +15,12 @@ from vmaf.config import VmafConfig
 from vmaf.core.asset import Asset
 from vmaf.core.quality_runner import VmafexecQualityRunner
 from vmaf.tools.misc import MyTestCase
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
@@ -63,7 +70,14 @@ def hdr_conversion_available():
             "bt2020nc",
         ]
     # A timeout raises: returning False here would pass the no-zimg leg silently.
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=VMAF_TIMEOUT_S)
+    proc = run_command(
+        cmd,
+        allowed_executables=[cmd[0]],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout_seconds=VMAF_TIMEOUT_S,
+    )
     return not (
         proc.returncode != 0
         and (

@@ -4,7 +4,7 @@ import itertools
 import multiprocessing
 import os
 import re
-import subprocess
+import subprocess  # nosec B404 -- bounded argv existence check with closed stdin, no shell.
 import sys
 import tempfile
 import unittest
@@ -414,7 +414,7 @@ def _parallel_map_serialized(func, list_args, serialization_keys, processes=None
 
 
 def check_program_exist(program):
-    """
+    """Return whether the program starts, closing stdin and bounding the wait.
 
     >>> check_program_exist("xxxafasd34df")
     False
@@ -430,8 +430,9 @@ def check_program_exist(program):
     """
     try:
         with open(os.devnull, "wb") as devnull_fd:
-            subprocess.call(
+            subprocess.call(  # noqa: S603  # nosec B603 -- split argv without a shell; existence check only.
                 program.split(),
+                stdin=subprocess.DEVNULL,
                 stdout=devnull_fd,
                 timeout=SUBPROCESS_TIMEOUT_S,
             )

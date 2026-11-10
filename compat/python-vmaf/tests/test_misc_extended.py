@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import os
-import subprocess
+import subprocess  # nosec B404 -- construct subprocess results and exceptions for test doubles.
 
 import pytest
 
@@ -145,6 +145,7 @@ class TestCheckProgramExist:
         monkeypatch.setattr("vmaf.tools.misc.subprocess.call", stub_call)
         assert check_program_exist("ls") is True
         assert recorded_kwargs.get("timeout") == SUBPROCESS_TIMEOUT_S
+        assert recorded_kwargs.get("stdin") == subprocess.DEVNULL
 
 
 # ---------------------------------------------------------------------------

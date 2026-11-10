@@ -21,12 +21,34 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
+
+# Direct script execution also needs the canonical repository subprocess helper.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from test_cuda_parity_gate_skip import meson_timeout
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
+
+# One deadline for this Meson test process, shared by all matrix and compiler calls.
+TEST_TIMEOUT_S = 80
+TEST_DEADLINE = time.monotonic() + TEST_TIMEOUT_S
+
+
+def remaining_timeout(bound: float) -> float:
+    """Limit a command to the shared test deadline, refusing work after it expires."""
+    remaining = TEST_DEADLINE - time.monotonic()
+    if remaining <= 0:
+        raise AssertionError(f"strict-FP test deadline exhausted after {TEST_TIMEOUT_S}s")
+    return min(bound, remaining)
+
 
 SOURCE_MESON = Path(__file__).resolve().parents[1] / "src" / "meson.build"
 # Bounds = max(60, 10x the slowest measured run): the meson call took 1.33 s, icx 0.09 s.
@@ -413,12 +435,14 @@ def _meson_setup(case: unittest.TestCase, name: str, fixture: str) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "meson.build").write_text(fixture, encoding="utf-8")
-        result = subprocess.run(  # noqa: S603 -- Meson is resolved locally.
+        result = run_command(
             [*MESON_COMMAND, "setup", str(root / "build"), str(root)],
+            allowed_executables=[MESON_COMMAND[0]],
             capture_output=True,
             check=False,
+            text=True,
             encoding="utf-8",
-            timeout=MESON_TIMEOUT_S,
+            timeout_seconds=remaining_timeout(MESON_TIMEOUT_S),
         )
         case.assertEqual(
             result.returncode,
@@ -440,6 +464,27 @@ def _target_block(source: str, target: str) -> str:
         if depth == 0:
             return source[start : position + 1]
     raise AssertionError(f"{target}: unbalanced static_library() call")
+
+
+class StrictFpDeadlineTest(unittest.TestCase):
+    """Keep all calls inside the Meson timeout and reject an exhausted budget."""
+
+    def test_deadline_is_under_meson_timeout(self) -> None:
+        """Leave time for process-group cleanup before Meson kills the test."""
+        self.assertLess(TEST_TIMEOUT_S, meson_timeout("test_strict_fp_compiler_args"))
+
+    def test_remaining_budget_caps_the_call_bound(self) -> None:
+        """Use the smaller of the call bound and time remaining in the test."""
+        with mock.patch.object(time, "monotonic", return_value=TEST_DEADLINE - 3):
+            self.assertEqual(remaining_timeout(60), 3)
+            self.assertEqual(remaining_timeout(1), 1)
+
+    def test_exhausted_deadline_names_the_bound(self) -> None:
+        """Refuse subprocess calls at or beyond the shared deadline."""
+        for offset in (0, 1):
+            with mock.patch.object(time, "monotonic", return_value=TEST_DEADLINE + offset):
+                with self.assertRaisesRegex(AssertionError, f"deadline.*{TEST_TIMEOUT_S}s"):
+                    remaining_timeout(60)
 
 
 class StrictFpCompilerArgsTest(unittest.TestCase):
@@ -854,14 +899,15 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             src.write_text("float f(float a, float b, float c) { return a * b + c; }\n")
             obj = Path(tmp) / "probe.o"
 
-            def compile_with(flags: list[str]) -> subprocess.CompletedProcess[str]:
+            def compile_with(flags: list[str]) -> TextCommandResult:
                 """Compile the C probe source with icx using the given compiler flags."""
-                return subprocess.run(  # noqa: S603 -- icx is resolved on PATH above.
+                return run_command(
                     [icx, "-O2", "-Werror", *flags, "-c", str(src), "-o", str(obj)],
+                    allowed_executables=[icx],
                     capture_output=True,
                     text=True,
                     check=False,
-                    timeout=CC_TIMEOUT_S,
+                    timeout_seconds=remaining_timeout(CC_TIMEOUT_S),
                 )
 
             ok = compile_with(strict)
@@ -871,12 +917,13 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             self.assertNotEqual(bad.returncode, 0)
             self.assertIn("-Woverriding-option", bad.stderr)
             # No contraction: a * b + c is two instructions with the strict spelling.
-            disasm = subprocess.run(  # noqa: S603 -- icx is resolved on PATH above.
+            disasm = run_command(
                 [icx, "-O2", "-mavx2", "-mfma", *strict, "-S", "-o", "-", str(src)],
+                allowed_executables=[icx],
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=CC_TIMEOUT_S,
+                timeout_seconds=remaining_timeout(CC_TIMEOUT_S),
             )
             self.assertEqual(disasm.returncode, 0, disasm.stderr)
             self.assertNotIn("vfmadd", disasm.stdout)

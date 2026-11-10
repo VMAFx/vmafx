@@ -8,7 +8,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
-import subprocess
+import subprocess  # nosec B404 -- launch the fixed repository script in integration tests.
 import sys
 import unittest
 from pathlib import Path
@@ -32,14 +32,12 @@ def load_run_captured_module() -> ModuleType:
 
 def run(*args: str) -> subprocess.CompletedProcess[str]:
     """Execute the run_captured script with arguments and return the completed process."""
-    return (
-        subprocess.run(  # noqa: S603 -- the interpreter and the script are this repository's own.
-            [PYTHON, str(SCRIPT), *args],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=SCRIPT_TIMEOUT_S,
-        )
+    return subprocess.run(  # noqa: S603  # nosec B603 -- fixed interpreter and repository script.
+        [PYTHON, str(SCRIPT), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=SCRIPT_TIMEOUT_S,
     )
 
 
@@ -65,20 +63,20 @@ class RunCapturedTests(unittest.TestCase):
         """Verify successful in-process run returns zero and records the configured timeout."""
         mod = load_run_captured_module()
         fake_result = subprocess.CompletedProcess(["fake", "cmd"], 0, stdout="", stderr="")
-        with mock.patch.object(mod.subprocess, "run", return_value=fake_result) as mock_run:
+        with mock.patch.object(mod, "run_command", return_value=fake_result) as mock_run:
             stdout_buf = io.StringIO()
             stderr_buf = io.StringIO()
             with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
                 rc = mod.main(["--", "fake", "cmd"])
             self.assertEqual(rc, 0)
-            self.assertEqual(mock_run.call_args.kwargs.get("timeout"), mod.CC_TIMEOUT_S)
+            self.assertEqual(mock_run.call_args.kwargs.get("timeout_seconds"), mod.CC_TIMEOUT_S)
 
     def test_in_process_timeout_str_boundary(self) -> None:
         """Verify string timeout output returns code 124 and echoes stdout and stderr."""
         mod = load_run_captured_module()
         cmd = ["fake", "cmd"]
-        timeout_exc = subprocess.TimeoutExpired(cmd, mod.CC_TIMEOUT_S, output="partial")
-        with mock.patch.object(mod.subprocess, "run", side_effect=timeout_exc):
+        timeout_exc = mod.CommandTimedOut(tuple(cmd), mod.CC_TIMEOUT_S, "partial", None)
+        with mock.patch.object(mod, "run_command", side_effect=timeout_exc):
             stdout_buf = io.StringIO()
             stderr_buf = io.StringIO()
             with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
@@ -93,8 +91,8 @@ class RunCapturedTests(unittest.TestCase):
         """Verify byte timeout output decodes without error and returns code 124."""
         mod = load_run_captured_module()
         cmd = ["fake", "cmd"]
-        timeout_exc = subprocess.TimeoutExpired(cmd, mod.CC_TIMEOUT_S, output=b"partial\xff")
-        with mock.patch.object(mod.subprocess, "run", side_effect=timeout_exc):
+        timeout_exc = mod.CommandTimedOut(tuple(cmd), mod.CC_TIMEOUT_S, b"partial\xff", None)
+        with mock.patch.object(mod, "run_command", side_effect=timeout_exc):
             stdout_buf = io.StringIO()
             stderr_buf = io.StringIO()
             with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
@@ -106,8 +104,8 @@ class RunCapturedTests(unittest.TestCase):
         """Verify timeout with None output returns code 124 and empty stdout."""
         mod = load_run_captured_module()
         cmd = ["fake", "cmd"]
-        timeout_exc = subprocess.TimeoutExpired(cmd, mod.CC_TIMEOUT_S, output=None)
-        with mock.patch.object(mod.subprocess, "run", side_effect=timeout_exc):
+        timeout_exc = mod.CommandTimedOut(tuple(cmd), mod.CC_TIMEOUT_S, None, None)
+        with mock.patch.object(mod, "run_command", side_effect=timeout_exc):
             stdout_buf = io.StringIO()
             stderr_buf = io.StringIO()
             with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):

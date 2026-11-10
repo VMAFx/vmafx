@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
+import signal
+import subprocess  # nosec B404 -- fixed repository gate requires SIGINT supervision.
 import sys
 from pathlib import Path
 
@@ -26,7 +27,8 @@ SCRIPT = ROOT / "scripts" / "ci" / "cross_backend_parity_gate.py"
 # Not measured: the parity gate needs a free GPU, which the measuring host did not have.
 # Set under the 120 s Meson timeout of this test (core/test/meson.build), so this
 # message, not Meson's kill, names the stuck run; it covers the lock wait too.
-SCRIPT_TIMEOUT_S = 110
+SCRIPT_TIMEOUT_S = 105
+INTERRUPT_GRACE_S = 10
 REF = ROOT / "python" / "test" / "resource" / "yuv" / "src01_hrc00_576x324.yuv"
 DIS = ROOT / "python" / "test" / "resource" / "yuv" / "src01_hrc01_576x324.yuv"
 
@@ -82,16 +84,19 @@ def skip_reason(binary: Path | None) -> str | None:
     return None
 
 
-def gate_command(binary: Path) -> list[str]:
-    """The parity gate command for `binary`, run under the GPU lock.
+def gate_command(binary: Path, lock_path: Path | None = None) -> list[str]:
+    """The parity gate command for `binary`, run under the GPU lock at `lock_path`.
 
-    --no-fork: flock execs the gate, so the timeout kills the gate itself and
-    frees the lock; a forked gate would outlive the kill and keep the lock.
+    --no-fork: flock execs the gate, so the timeout path signals the gate itself and the
+    lock frees only when the gate exits; a forked gate would outlive a kill and keep the
+    lock. `lock_path` defaults to the shared 4090 lock; tests pass a temporary one.
     """
+    if lock_path is None:
+        lock_path = Path.home() / ".cache" / "vmafx-locks" / "cuda-4090.lock"
     return [
         "flock",
         "--no-fork",
-        str(Path.home() / ".cache" / "vmafx-locks" / "cuda-4090.lock"),
+        str(lock_path),
         sys.executable,
         str(SCRIPT),
         "--vmaf-binary",
@@ -110,6 +115,30 @@ def gate_command(binary: Path) -> list[str]:
     ]
 
 
+def run_gate(cmd: list[str]) -> subprocess.CompletedProcess[str] | None:
+    """Interrupt a timed-out gate so its asyncio supervisor reaps vmaf before unlocking."""
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+    with subprocess.Popen(  # noqa: S603  # nosec B603 -- fixed argv uses sys.executable and a repository script.
+        cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    ) as proc:
+        try:
+            stdout, stderr = proc.communicate(timeout=SCRIPT_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            proc.send_signal(signal.SIGINT)
+            try:
+                stdout, stderr = proc.communicate(timeout=INTERRUPT_GRACE_S)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout, stderr = proc.communicate()
+            sys.stdout.write(stdout or "")
+            sys.stderr.write(stderr or "")
+            sys.stderr.write(
+                f"Default parity gate timed out after {SCRIPT_TIMEOUT_S}s (SCRIPT_TIMEOUT_S)\n"
+            )
+            return None
+        return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+
+
 def main() -> int:
     """Run the CUDA parity gate under the GPU lock and return its exit code, or 77 to skip."""
     binary = find_binary()
@@ -119,18 +148,8 @@ def main() -> int:
         return 77
 
     cmd = gate_command(binary)
-    try:
-        proc = subprocess.run(  # noqa: S603
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=SCRIPT_TIMEOUT_S,
-        )
-    except subprocess.TimeoutExpired:
-        sys.stderr.write(
-            f"Default parity gate timed out after {SCRIPT_TIMEOUT_S}s (SCRIPT_TIMEOUT_S)\n"
-        )
+    proc = run_gate(cmd)
+    if proc is None:
         return 124
     if proc.returncode != 0:
         if cuda_unavailable(proc.stdout + proc.stderr):

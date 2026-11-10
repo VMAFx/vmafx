@@ -24,9 +24,15 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import re
-import subprocess
+import shutil
+import signal
+import subprocess  # nosec B404 -- fixed gate supervision results and timeout test doubles.
+import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from types import ModuleType
@@ -45,6 +51,7 @@ REFUSAL = re.compile(
 
 
 def load_default_run():
+    """Load the repository parity wrapper for device-free tests."""
     spec = importlib.util.spec_from_file_location("parity_gate_default_run", DEFAULT_RUN)
     if spec is None or spec.loader is None:
         raise AssertionError(f"cannot load {DEFAULT_RUN}")
@@ -115,6 +122,7 @@ class BuildHasCudaTest(unittest.TestCase):
         self.assertIsNone(self.has_cuda(json.dumps([{"name": "enable_cuda", "value": "auto"}])))
 
     def test_a_build_without_cuda_is_skipped_before_the_device_lock(self) -> None:
+        """Skip CPU-only builds before constructing or launching the lock command."""
         module = load_default_run()
         options = json.dumps([{"name": "enable_cuda", "value": False}])
         with build_dir_with(options) as build:
@@ -122,6 +130,17 @@ class BuildHasCudaTest(unittest.TestCase):
             binary.parent.mkdir()
             binary.write_text("", encoding="utf-8")
             self.assertEqual(module.skip_reason(binary), "This build was configured without CUDA")
+            with (
+                mock.patch.object(module, "find_binary", return_value=binary),
+                mock.patch.object(
+                    module.subprocess,
+                    "Popen",
+                    side_effect=AssertionError("lock acquired before skip"),
+                ) as popen,
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                self.assertEqual(module.main(), 77)
+                popen.assert_not_called()
         self.assertEqual(module.skip_reason(None), "vmaf binary not found")
         # main() decides the skip ahead of the command that waits for the lock.
         source = DEFAULT_RUN.read_text(encoding="utf-8")
@@ -157,33 +176,141 @@ class DefaultRunTimeoutTest(unittest.TestCase):
         with contextlib.ExitStack() as stack:
             stack.enter_context(mock.patch.object(module, "find_binary", return_value=binary))
             stack.enter_context(mock.patch.object(module, "skip_reason", return_value=None))
-            gate = stack.enter_context(mock.patch.object(module.subprocess, "run"))
+            gate = stack.enter_context(mock.patch.object(module.subprocess, "Popen"))
+            proc = gate.return_value.__enter__.return_value
             if isinstance(outcome, BaseException):
-                gate.side_effect = outcome
+                proc.communicate.side_effect = [outcome, ("partial stdout", "partial stderr")]
             else:
-                gate.return_value = outcome
+                proc.returncode = outcome.returncode
+                proc.communicate.return_value = (outcome.stdout, outcome.stderr)
+            stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             stack.enter_context(contextlib.redirect_stderr(stderr))
             rc = module.main()
         return module, rc, stderr.getvalue(), gate
 
     def test_a_clean_run_passes_and_flock_execs_the_gate(self) -> None:
+        """Retain flock exec semantics and bound communicate on successful runs."""
         cells = "motion         cpu    ↔ cuda  PASS\ncambi          cpu    ↔ cuda  PASS\n"
         module, rc, _, gate = self.run_main(subprocess.CompletedProcess([], 0, cells, ""))
         self.assertEqual(rc, 0)
         # Without --no-fork the timeout kills flock and the forked gate keeps the lock.
         self.assertEqual(gate.call_args.args[0][:2], ["flock", "--no-fork"])
-        self.assertEqual(gate.call_args.kwargs.get("timeout"), module.SCRIPT_TIMEOUT_S)
+        proc = gate.return_value.__enter__.return_value
+        proc.communicate.assert_called_once_with(timeout=module.SCRIPT_TIMEOUT_S)
 
     def test_a_hung_gate_returns_124_and_names_the_bound(self) -> None:
-        module, rc, stderr, _ = self.run_main(subprocess.TimeoutExpired(["flock"], 110))
+        """Interrupt a hung gate, retaining diagnostics and the named timeout."""
+        module, rc, stderr, gate = self.run_main(subprocess.TimeoutExpired(["flock"], 105))
         self.assertEqual(rc, 124)
         self.assertIn(f"timed out after {module.SCRIPT_TIMEOUT_S}s (SCRIPT_TIMEOUT_S)", stderr)
+        self.assertIn("partial stderr", stderr)
+        proc = gate.return_value.__enter__.return_value
+        proc.send_signal.assert_called_once_with(signal.SIGINT)
+        self.assertEqual(proc.communicate.call_args.kwargs["timeout"], module.INTERRUPT_GRACE_S)
 
     def test_the_bound_is_under_the_meson_timeout(self) -> None:
+        """Keep the command timeout and interrupt grace below Meson termination."""
         # At or over the Meson timeout, Meson kills the test first and the
         # message above never prints.
-        bound = load_default_run().SCRIPT_TIMEOUT_S
+        module = load_default_run()
+        bound = module.SCRIPT_TIMEOUT_S + module.INTERRUPT_GRACE_S
         self.assertLess(bound, meson_timeout("test_cuda_parity_gate_default_run"))
+
+
+@unittest.skipUnless(os.name == "posix" and shutil.which("flock"), "POSIX flock is unavailable")
+class DefaultRunProcessCleanupTest(unittest.TestCase):
+    """Exercise the real gate supervisor with a fake vmaf, without a GPU."""
+
+    def test_timeout_reaps_vmaf_before_releasing_the_lock(self) -> None:
+        """SIGINT must reap the safe_subprocess child before the GPU lock is free."""
+        import fcntl  # noqa: PLC0415 -- unavailable on Windows; imported only after POSIX skip.
+
+        module = load_default_run()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pid_file, lock = root / "pid", root / "lock"
+            fake = root / "vmaf"
+            fake.write_text(
+                f"#!{sys.executable}\nimport os, time\nfrom pathlib import Path\n"
+                f"Path({str(pid_file)!r}).write_text(str(os.getpid()))\n"
+                "print('fake vmaf started', flush=True)\ntime.sleep(600)\n",
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+            command = module.gate_command(fake, lock_path=lock)
+            command += ["--features", "motion", "--workdir", str(root / "work")]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            try:
+                with (
+                    mock.patch.object(module, "find_binary", return_value=fake),
+                    mock.patch.object(module, "skip_reason", return_value=None),
+                    mock.patch.object(module, "gate_command", return_value=command),
+                    mock.patch.object(module, "SCRIPT_TIMEOUT_S", 3),
+                    mock.patch.object(module, "INTERRUPT_GRACE_S", 5),
+                    contextlib.redirect_stdout(stdout),
+                    contextlib.redirect_stderr(stderr),
+                ):
+                    self.assertEqual(module.main(), 124)
+                self.assertIn("timed out after 3s", stderr.getvalue())
+                self.assertTrue(pid_file.is_file(), stderr.getvalue())
+                pid = int(pid_file.read_text())
+                self.assertTrue(wait_until_gone(pid), f"vmaf {pid} survived gate timeout")
+                with lock.open("a") as descriptor:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            finally:
+                if pid_file.is_file():
+                    with contextlib.suppress(ProcessLookupError):
+                        os.kill(int(pid_file.read_text()), signal.SIGKILL)
+
+    def test_interrupt_ignoring_gate_is_killed_and_partial_output_is_printed(self) -> None:
+        """Bound fallback even for a gate ignoring SIGINT, with a watchdog for mutants."""
+        module = load_default_run()
+        popen = subprocess.Popen
+        watchdogs = []
+
+        def start(*args, **kwargs):
+            """Start a real gate and arrange bounded cleanup if the fallback is removed."""
+            proc = popen(*args, **kwargs)
+            watchdog = threading.Timer(3, proc.kill)
+            watchdog.start()
+            watchdogs.append(watchdog)
+            return proc
+
+        script = (
+            "import signal, sys, time; signal.signal(signal.SIGINT, signal.SIG_IGN); "
+            "print('partial out', flush=True); "
+            "print('partial err', file=sys.stderr, flush=True); time.sleep(600)"
+        )
+        stdout, stderr = io.StringIO(), io.StringIO()
+        started = time.monotonic()
+        try:
+            with (
+                mock.patch.object(module.subprocess, "Popen", side_effect=start),
+                mock.patch.object(module, "SCRIPT_TIMEOUT_S", 0.5),
+                mock.patch.object(module, "INTERRUPT_GRACE_S", 0.5),
+                contextlib.redirect_stdout(stdout),
+                contextlib.redirect_stderr(stderr),
+            ):
+                result = module.run_gate([sys.executable, "-c", script])
+            self.assertIsNone(result)
+            self.assertLess(time.monotonic() - started, 2.5)
+            self.assertIn("partial out", stdout.getvalue())
+            self.assertIn("partial err", stderr.getvalue())
+        finally:
+            for watchdog in watchdogs:
+                watchdog.cancel()
+                watchdog.join()
+
+
+def wait_until_gone(pid: int) -> bool:
+    """Poll for at most five seconds until the child PID has been reaped."""
+    for _ in range(100):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        time.sleep(0.05)
+    return False
 
 
 if __name__ == "__main__":

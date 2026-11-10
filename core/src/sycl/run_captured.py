@@ -15,12 +15,20 @@ Usage: run_captured.py -- COMMAND [ARGS...]
 
 from __future__ import annotations
 
-import subprocess
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import CommandTimedOut
+from scripts.lib.safe_subprocess import run as run_command
 
 # Bound = 10x the slowest measured run, rounded up: the scratch_check.cpp AOT
 # compile for 19 device targets took 10.72 s.
 CC_TIMEOUT_S = 120
+# Budget: 1 MiB of diagnostics per AOT target plus 1 MiB for the driver (19 targets).
+# This 20 MiB ceiling allows verbose failures without retaining an unbounded compiler log.
+MAX_COMPILE_OUTPUT_BYTES = 20 * 1_048_576
 
 
 def main(argv: list[str]) -> int:
@@ -29,16 +37,18 @@ def main(argv: list[str]) -> int:
         sys.stderr.write("usage: run_captured.py -- COMMAND [ARGS...]\n")
         return 2
     try:
-        result = subprocess.run(  # noqa: S603 -- the command is the build's own compiler line.
+        result = run_command(
             argv[1:],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            allowed_executables=[argv[1]],
+            capture_output=True,
+            stderr_to_stdout=True,
             text=True,
             errors="replace",
             check=False,
-            timeout=CC_TIMEOUT_S,
+            timeout_seconds=CC_TIMEOUT_S,
+            max_output_bytes=MAX_COMPILE_OUTPUT_BYTES,
         )
-    except subprocess.TimeoutExpired as exc:
+    except CommandTimedOut as exc:
         sys.stderr.write(
             f"run_captured: command timed out after {CC_TIMEOUT_S}s (CC_TIMEOUT_S): {argv[1:]}\n"
         )
