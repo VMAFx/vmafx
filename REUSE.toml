@@ -9,6 +9,14 @@ precedence = "closest"
 SPDX-FileCopyrightText = "2026 Lusoris"
 SPDX-License-Identifier = "EUPL-1.2"
 
+# The toolchain-probe scripts are contributor-authored (PR #3317): the
+# fork-local EUPL-1.2 default applies, credited to their author.
+[[annotations]]
+path = ["scripts/dev/toolchain-probe.sh", "scripts/ci/tests/test-toolchain-probe-mingw.sh"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 luoye-cpu"
+SPDX-License-Identifier = "EUPL-1.2"
+
 # These six files descend from Netflix/vmaf root files.  ADR-1250 requires
 # inherited work, and every fork contribution to it, to remain on the terms it
 # already carried rather than being swept into the fork-local EUPL default.
