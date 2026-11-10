@@ -69,6 +69,9 @@ WARNING_GATE = (
 )
 # Only grep exit 1 (no match) passes; exit 2 must fail the step, not read as clean.
 GREP_STATUS_GUARD = "|| [[ $? -eq 1 ]]"
+# The Dockerfile gates hard-code this scratch prefix; the sample-log replay
+# redirects it into the test's own temporary directory.
+DOCKERFILE_TMP = "/tmp/"  # noqa: S108 -- a path inside the container, not a host temp file
 
 
 def _filter_job_findings(workflow: str, aggregator: str) -> list[str]:
@@ -191,6 +194,91 @@ class FFmpegWorkflowContract(unittest.TestCase):
         self.assertIn("../scripts/ci/ffmpeg-shared-series.sh apply --method am .", ordinary)
         self.assertNotIn("patch -p1", integration)
         self.assertIn("FATAL: ffmpeg-patches/$line did not apply", sycl)
+
+    def test_warning_gates_fail_closed_on_scan_errors(self) -> None:
+        """Issue #3361: only grep exit 1 is clean; a broken scan fails the gate."""
+        integration = INTEGRATION_WORKFLOW.read_text(encoding="utf-8")
+        integration_gates = re.findall(
+            r"(?ms)^          if grep -Ei '[^\n]*/tmp/ffmpeg-build\.log; then\n.*?^          fi$",
+            integration,
+        )
+        self.assertEqual(len(integration_gates), 2, "integration workflow has two warning gates")
+        for gate in integration_gates:
+            with self.subTest(surface="ffmpeg-integration.yml"):
+                self.assertIn("elif [ $? -gt 1 ]; then", gate)
+                self.assertIn("FATAL: the warning scan failed to read the build log", gate)
+
+        ffmpeg_dockerfile = (ROOT / "Dockerfile.ffmpeg").read_text(encoding="utf-8")
+        self.assertIn("elif [ $? -gt 1 ]; then", ffmpeg_dockerfile)
+        self.assertIn("FATAL: the warning scan failed to read the build log", ffmpeg_dockerfile)
+
+        for name, source in (
+            ("Dockerfile", (ROOT / "Dockerfile").read_text(encoding="utf-8")),
+            ("dev/Containerfile", (ROOT / "dev/Containerfile").read_text(encoding="utf-8")),
+            (
+                "docker/Dockerfile.node",
+                (ROOT / "docker/Dockerfile.node").read_text(encoding="utf-8"),
+            ),
+        ):
+            with self.subTest(surface=name):
+                # The scan writes its status into the chain: exit 2 aborts the
+                # build instead of feeding an empty match list to the filter.
+                self.assertIn(
+                    "> /tmp/ffmpeg-warnings.txt || [ $? -eq 1 ]",
+                    source,
+                    "a broken scan would read as clean",
+                )
+                self.assertIn(
+                    "rm /tmp/ffmpeg-build.log /tmp/ffmpeg-warnings.txt",
+                    source,
+                )
+
+    def test_integration_and_ffmpeg_dockerfile_warning_gates_on_sample_logs(self) -> None:
+        """Run the unfiltered gates on sample logs: warnings and a broken scan fail."""
+        integration = INTEGRATION_WORKFLOW.read_text(encoding="utf-8")
+        gates = re.findall(
+            r"(?ms)^          (if grep -Ei '[^\n]*/tmp/ffmpeg-build\.log; then\n.*?^          fi)$",
+            integration,
+        )
+        self.assertEqual(len(gates), 2)
+        dockerfile_gate = re.search(
+            r"(?ms)^    (if grep -Ei '[^\n]*/tmp/ffmpeg-build\.log; then \\\n.*?^    fi) && \\$",
+            (ROOT / "Dockerfile.ffmpeg").read_text(encoding="utf-8"),
+        )
+        self.assertIsNotNone(dockerfile_gate, "Dockerfile.ffmpeg has no warning gate block")
+        assert dockerfile_gate is not None
+        cases = {
+            "gcc warning": (
+                "libavfilter/vf_libvmaf.c:211:13: warning: unused variable 'n' "
+                "[-Wunused-variable]\n",
+                1,
+            ),
+            "clean build": ("CC\tlibavfilter/vf_libvmaf.o\nLD\tffmpeg_g\n", 0),
+            "missing log": (None, 1),
+        }
+        for index, block in enumerate([*gates, dockerfile_gate.group(1)]):
+            for case, (log, expected) in cases.items():
+                with (
+                    self.subTest(gate=index, case=case),
+                    tempfile.TemporaryDirectory() as temporary,
+                ):
+                    if log is not None:
+                        Path(temporary, "ffmpeg-build.log").write_text(log, encoding="utf-8")
+                    script = block.replace("\\\n", "\n")
+                    script = script.replace(DOCKERFILE_TMP, temporary.replace("\\", "/") + "/")
+                    result = run_command(
+                        [BASH, "-c", "set -e\n" + script + "\n"],
+                        allowed_executables=(BASH,),
+                        cwd=temporary,
+                        env={**os.environ, "LC_ALL": "C"},
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout_seconds=60,
+                    )
+                    self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                    fatal = "FATAL: FFmpeg emitted compiler warnings" in result.stderr
+                    self.assertEqual(fatal, expected == 1 and log is not None, result.stderr)
 
     def test_msvc_leg_builds_the_series_against_the_static_msvc_install(self) -> None:
         # ADR-2783: the configured release with the whole series, cl.exe through

@@ -3,7 +3,11 @@ paths:
   - .github/workflows/ffmpeg-integration.yml
   - .github/workflows/ffmpeg-patch-stack.yml
   - ffmpeg-patches/series.txt
-invariant: FFmpeg builds configure with --fatal-warnings and fail on diagnostics; exact git apply without fuzzy patch.
+  - Dockerfile
+  - Dockerfile.ffmpeg
+  - dev/Containerfile
+  - docker/Dockerfile.node
+invariant: FFmpeg builds configure with --fatal-warnings; every warning gate fails closed on a broken scan; exact git apply.
 ---
 # FFmpeg diagnostics are fail-closed
 
@@ -29,3 +33,14 @@ pattern (issue 2477). Only grep exit 1 passes (`|| [[ $? -eq 1 ]]`, same form
 as `ffmpeg-patches/test/build-and-run.sh`); exit 2 or unreadable log fails
 step. `scripts/ci/test_ffmpeg_patch_workflow_contract.py` checks all parts and
 runs gate on sample build logs.
+
+Every build-log warning gate fails closed on its own scan failing, not only on
+a matched warning: only grep exit 1 (no match) reads as clean (issue 3361).
+The two `ffmpeg-integration.yml` gates, the `Dockerfile.ffmpeg` gate and the
+`ffmpeg-patch-stack.yml` filter gate take `elif [ $? -gt 1 ]` / the
+`|| [[ $? -eq 1 ]]` guard; the three patched-file-filtered builders (root
+`Dockerfile`, `dev/Containerfile`, `docker/Dockerfile.node`) write the scan to
+`/tmp/ffmpeg-warnings.txt` behind `|| [ $? -eq 1 ]` and filter that file, so a
+missing build log aborts the build instead of feeding the filter an empty
+match list. `test_ffmpeg_patch_workflow_contract.py` holds the guarded forms
+statically and replays the unfiltered gates on sample logs.

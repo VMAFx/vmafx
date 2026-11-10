@@ -1245,12 +1245,12 @@ RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,g
         exit 1; \
     fi \
     && echo "warning gate covers $(wc -l < /tmp/ffmpeg-patched-files.txt) fork-patched file(s)" \
-    && if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' /tmp/ffmpeg-build.log \
-        | grep -Ff /tmp/ffmpeg-patched-files.txt; then \
+    && { grep -Ei '(^|[[:space:]])warning([[:space:]#:])' /tmp/ffmpeg-build.log > /tmp/ffmpeg-warnings.txt || [ $? -eq 1 ]; } \
+    && if [ -s /tmp/ffmpeg-warnings.txt ] && grep -Ff /tmp/ffmpeg-patched-files.txt /tmp/ffmpeg-warnings.txt; then \
         echo "FATAL: a file this fork patches emitted compiler warnings" >&2; \
         exit 1; \
     fi \
-    && rm /tmp/ffmpeg-build.log /tmp/ffmpeg-patched-files.txt
+    && rm /tmp/ffmpeg-build.log /tmp/ffmpeg-warnings.txt /tmp/ffmpeg-patched-files.txt
 
 USER root
 # Install into a staging root; libvmaf-build copies only that root.

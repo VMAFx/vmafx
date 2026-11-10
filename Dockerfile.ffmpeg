@@ -55,6 +55,9 @@ RUN ./configure \
     if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' /tmp/ffmpeg-build.log; then \
         echo "FATAL: FFmpeg emitted compiler warnings" >&2; \
         exit 1; \
+    elif [ $? -gt 1 ]; then \
+        echo "FATAL: the warning scan failed to read the build log" >&2; \
+        exit 1; \
     fi && \
     rm /tmp/ffmpeg-build.log && \
     make install

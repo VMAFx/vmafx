@@ -147,6 +147,9 @@ jobs:
           if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' /tmp/ffmpeg-build.log; then
             echo "FATAL: FFmpeg emitted compiler warnings" >&2
             exit 1
+          elif [ $? -gt 1 ]; then
+            echo "FATAL: the warning scan failed to read the build log" >&2
+            exit 1
           fi
           sudo make install
 
@@ -285,6 +288,9 @@ jobs:
           make -j "$(nproc)" "${fate_targets[@]}" 2>&1 | tee -a /tmp/ffmpeg-build.log
           if grep -Ei '(^|[[:space:]])warning([[:space:]#:])' /tmp/ffmpeg-build.log; then
             echo "FATAL: FFmpeg emitted compiler warnings" >&2
+            exit 1
+          elif [ $? -gt 1 ]; then
+            echo "FATAL: the warning scan failed to read the build log" >&2
             exit 1
           fi
           sudo make install
