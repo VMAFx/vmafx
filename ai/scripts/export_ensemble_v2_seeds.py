@@ -58,7 +58,6 @@ REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 # Reuse the LOSO trainer's corpus loader + canonical constants so the
 # codec block layout is identical to what was gate-validated.
-from ai.data.scores import resolve_teacher_model  # noqa: E402
 from train_fr_regressor_v2_ensemble_loso import (  # noqa: E402  # type: ignore[import-not-found]
     CANONICAL_6,
     CODEC_BLOCK_DIM,
@@ -68,6 +67,7 @@ from train_fr_regressor_v2_ensemble_loso import (  # noqa: E402  # type: ignore[
     _set_seed_all,
 )
 
+from ai.data.scores import resolve_teacher_model  # noqa: E402
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.file_utils import sha256  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402

@@ -22,6 +22,7 @@ because nothing connected the other fourteen to it.
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import re
 import shutil
@@ -32,6 +33,7 @@ import unittest
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, ClassVar
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
@@ -40,6 +42,8 @@ from scripts.lib.renovate_regex import to_python
 
 ROOT = Path(__file__).resolve().parents[3]
 GIT = shutil.which("git") or "/usr/bin/git"
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 GATE = "scripts/ci/check-cuda-pin-lockstep.py"
 
 SPEC = importlib.util.spec_from_file_location("cuda_pin_lockstep", ROOT / GATE)
@@ -364,7 +368,7 @@ class CudaPinCoverage(unittest.TestCase):
         selected = [
             path
             for path in subprocess.check_output(  # noqa: S603 -- fixed read-only Git command
-                [GIT, "-C", str(ROOT), "ls-files"], text=True
+                [GIT, "-C", str(ROOT), "ls-files"], text=True, timeout=GIT_TIMEOUT_S
             ).splitlines()
             if any(pattern.search(path) for pattern in patterns)
         ]
@@ -404,17 +408,31 @@ class CudaPinGate(unittest.TestCase):
         self.git("add", "-A")
 
     def git(self, *args: str) -> None:
+        """Run fixture Git commands for scripts/ci/check-cuda-pin-lockstep.py.
+
+        Prepares Git commits in disposable fixture repos.
+        """
         subprocess.run(  # noqa: S603 -- fixed Git commands in a disposable fixture
-            [GIT, *args], cwd=self.repo, env=self.env, check=True, capture_output=True
+            [GIT, *args],
+            cwd=self.repo,
+            env=self.env,
+            check=True,
+            capture_output=True,
+            timeout=GIT_TIMEOUT_S,
         )
 
     def gate(self, *args: str) -> subprocess.CompletedProcess[str]:
+        """Run scripts/ci/check-cuda-pin-lockstep.py in the fixture repository.
+
+        Runs the single-source pin gate across synthetic drift cases.
+        """
         return subprocess.run(  # noqa: S603 -- the gate under test, in its fixture
             [sys.executable, GATE, *args],
             cwd=self.repo,
             env=self.env,
             capture_output=True,
             text=True,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     def pin(self, name: str) -> str:
@@ -573,6 +591,32 @@ class CudaPinGate(unittest.TestCase):
         )
         self.git("add", "--", "build-config.env")
         self.assertEqual(self.gate().returncode, 2)
+
+    def test_git_timeout_returns_two_with_error_on_stderr(self) -> None:
+        """A Git timeout must return exit code 2 and print the error on stderr."""
+        with (
+            mock.patch(
+                "cuda_pin_lockstep.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd=[GIT, "rev-parse"], timeout=60),
+            ),
+            mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+        ):
+            code = MODULE.main([])
+        self.assertEqual(code, 2)
+        self.assertIn("check-cuda-pin-lockstep: error:", stderr.getvalue())
+
+    def test_git_failure_returns_two_with_error_on_stderr(self) -> None:
+        """A Git failure (CalledProcessError) must return exit code 2."""
+        with (
+            mock.patch(
+                "cuda_pin_lockstep.subprocess.run",
+                side_effect=subprocess.CalledProcessError(128, [GIT, "rev-parse"]),
+            ),
+            mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+        ):
+            code = MODULE.main([])
+        self.assertEqual(code, 2)
+        self.assertIn("check-cuda-pin-lockstep: error:", stderr.getvalue())
 
 
 if __name__ == "__main__":

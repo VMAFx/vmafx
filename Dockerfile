@@ -6,7 +6,7 @@
 # every container base in this repository. These defaults are mirrors kept in
 # sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
 # these lines, then run that script with --write.
-ARG CUDA_BUILDER="ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944"
+ARG CUDA_BUILDER="ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c"
 
 FROM ${CUDA_BUILDER}
 
@@ -138,8 +138,8 @@ WORKDIR /vmaf/FFmpeg-${FFMPEG_TAG}
 # tarball pinned in build-config.env; the release archive is not a checkout.
 RUN FFMPEG_FIX_SERIES_CACHE=none \
     bash /vmaf/scripts/ci/ffmpeg-shared-series.sh apply --method apply .
-# Apply the patch series in series.txt order. Patch 0003 depends on
-# fields added by 0001, so applying out of order breaks the build.
+# Apply the patch series in series.txt order; later patches build on
+# earlier ones, so applying out of order breaks the build.
 RUN set -e; \
     while IFS= read -r line; do \
         case "$line" in ''|\#*) continue ;; esac; \

@@ -32,10 +32,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.lib import git_env
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[3]
 GATE = ROOT / "scripts" / "ci" / "check-silent-revert.py"
 GIT = shutil.which("git") or "/usr/bin/git"
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 
 # The historical pair the gate was built from; see
 # .workingdir/evidence/silent-reverts-2026-09-18.md and ADR-1284.
@@ -59,22 +63,33 @@ def fixture_git_env() -> dict[str, str]:
 
 
 def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    """Run fixture Git operations for scripts/ci/check-silent-revert.py.
+
+    Executes Git commands in disposable fixture repositories.
+    """
     return subprocess.run(  # noqa: S603 -- fixed argv, no shell, disposable fixture repo
         [GIT, "-C", str(repo), *args],
         env=fixture_git_env(),
         text=True,
         capture_output=True,
         check=check,
+        timeout=GIT_TIMEOUT_S,
     )
 
 
-def run_gate(repo: Path, base: str, head: str, **env: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 -- fixed argv, no shell, gate under test
+def run_gate(repo: Path, base: str, head: str, **env: str) -> TextCommandResult:
+    """Run scripts/ci/check-silent-revert.py between base and head revisions.
+
+    ADR-1284: runs the gate against commits between base and head.
+    """
+    return run_command(
         [sys.executable, str(GATE), "--repo", str(repo), "--base", base, "--head", head],
+        allowed_executables=(sys.executable,),
         env={**fixture_git_env(), **env},
         text=True,
         capture_output=True,
         check=False,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
     )
 
 
@@ -502,12 +517,17 @@ class RealHistoryReplayTest(unittest.TestCase):
     """Replay the silent revert that motivated the gate, from this repo's history."""
 
     def test_real_history_replay(self) -> None:
+        """Prove silent revert detection by replaying commits 31a51afb2 and 92ea978a4.
+
+        ADR-1284: replays historical commits to verify scripts/ci/check-silent-revert.py.
+        """
         probe = subprocess.run(  # noqa: S603 -- fixed argv, no shell
             [GIT, "-C", str(ROOT), "cat-file", "-e", f"{ADR_0759_REVERTED}^{{commit}}"],
             env=fixture_git_env(),
             capture_output=True,
             text=True,
             check=False,
+            timeout=GIT_TIMEOUT_S,
         )
         if probe.returncode != 0:
             self.skipTest(f"{ADR_0759_REVERTED} not in this clone (shallow checkout)")

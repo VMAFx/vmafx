@@ -14,6 +14,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "ci" / "upstream_watch_count.sh"
+SCRIPT_TIMEOUT_S = 60
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 
 WORKFLOW_FILES = (
@@ -42,6 +43,7 @@ class UpstreamWatchCountTests(unittest.TestCase):
         sleep_scale: str = "0",
         extra_env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
+        """Run the upstream watch count script with custom environment and arguments."""
         env = dict(os.environ)
         env["PATH"] = f"{self.bin_dir}:{env.get('PATH', '')}"
         env["UPSTREAM_WATCH_SLEEP_SCALE"] = sleep_scale
@@ -53,6 +55,7 @@ class UpstreamWatchCountTests(unittest.TestCase):
             text=True,
             check=False,
             env=env,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     def test_positive_returns_integer_and_exits_zero(self) -> None:

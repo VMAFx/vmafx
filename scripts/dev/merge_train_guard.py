@@ -13,6 +13,7 @@ import argparse
 import fcntl
 import hashlib
 import hmac
+import importlib.util
 import json
 import os
 import re
@@ -33,10 +34,11 @@ from scripts.lib.safe_subprocess import run as run_command
 
 REPO = "VMAFx/vmafx"
 RELEASE_PR = 1213
+LANDING_IDENTITY = "lusoris <lusoris@proton.me>"
 KEY_BYTES = 32
 INVENTORY_LIMIT = 100
 PR_FIELDS = (
-    "number,state,isDraft,baseRefName,headRefName,headRefOid,"
+    "number,title,body,state,isDraft,baseRefName,headRefName,headRefOid,"
     "isCrossRepository,autoMergeRequest,mergeStateStatus"
 )
 GATES = (("make", "lint"), ("make", "test"))
@@ -52,6 +54,32 @@ def encoded(value: Any) -> bytes:
 
 def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load_squash_composer() -> Any:
+    """Load the squash_message module that ships with this gateway.
+
+    An installed gateway (``releases/<sha>/merge_train_guard.py``) loads the
+    composer installed beside it, whose hash the launcher checked; the
+    repository copy (``scripts/dev/``) loads ``scripts/ci/squash_message.py``.
+    A missing or failing module raises ``Refused``.
+    """
+    here = Path(__file__).resolve().parent
+    candidates = (here / "squash_message.py", here.parent / "ci" / "squash_message.py")
+    path = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if path is None:
+        raise Refused(f"cannot load squash_message module: {candidates[0]} or {candidates[1]}")
+    spec = importlib.util.spec_from_file_location("squash_message", str(path))
+    if spec is None or spec.loader is None:
+        raise Refused(f"cannot load squash_message module: {path}")
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:  # any import-time failure is a refusal, never a crash
+        raise Refused(
+            f"cannot load squash_message module: {path}: {type(exc).__name__}: {exc}"
+        ) from exc
+    return module
 
 
 def environment() -> dict[str, str]:
@@ -310,18 +338,48 @@ class Train:
             raise Refused("required checks are not eligible for this action")
 
     def merge(self, number: int, auto: bool) -> None:
+        """Execute validated merge after verifying checks and squash commit message."""
         pr = self.guard(number)
         if pr["isDraft"]:
             raise Refused("draft PRs cannot be armed or merged")
         self.require_validation(pr["headRefOid"])
         self.require_checks(number)
-        self.guard(number, pr["headRefOid"])
-        args = ["pr", "merge", str(number), "--squash", "--match-head-commit", pr["headRefOid"]]
+        pr = self.guard(number, pr["headRefOid"])
+        composer = load_squash_composer()
+        title = pr.get("title", "")
+        body_text = pr.get("body", "") or ""
+        code, output = composer.check_message(
+            title=title,
+            number=number,
+            body_text=body_text,
+            identity=LANDING_IDENTITY,
+            repo_root=self.root,
+        )
+        if code != 0:
+            raise Refused(f"squash message check failed: {output.strip()}")
+        fresh = self.guard(number, pr["headRefOid"])
+        if fresh.get("title", "") != title or (fresh.get("body", "") or "") != body_text:
+            raise Refused("PR title or body changed during squash message check")
+        subject_line = composer.subject(title, number)
+        body_content = composer.body(body_text, LANDING_IDENTITY)
+        args = [
+            "pr",
+            "merge",
+            str(number),
+            "--squash",
+            "--match-head-commit",
+            pr["headRefOid"],
+            "--subject",
+            subject_line,
+            "--body",
+            body_content,
+        ]
         if auto:
             args.append("--auto")
         self.gh(*args)
 
     def rebase(self, number: int) -> str:
+        """Rebase an eligible pull request onto master in an isolated worktree."""
         pr = self.guard(number)
         head, branch = pr["headRefOid"], pr["headRefName"]
         runs = self.state / "worktrees"

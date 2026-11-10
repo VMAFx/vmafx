@@ -210,6 +210,66 @@ def test_build_backend_floor_covers_the_license_metadata_form():
         )
 
 
+# --------------------------------------------------------------- project.urls
+#
+# Issue 2338: the harness package's `[project.urls]` carried one URL and it
+# was the upstream repository, so the distribution page and every tool that
+# reads the metadata sent VMAFx users to Netflix/vmaf. These tests hold the
+# four URLs the package must ship, plus the negative forms the issue names:
+# a URL that is not https fails the check, and so does the upstream one.
+
+HARNESS_URLS = {
+    "Homepage": "https://github.com/VMAFx/vmafx",
+    "Repository": "https://github.com/VMAFx/vmafx",
+    "Documentation": "https://vmafx.dev/",
+    "Issues": "https://github.com/VMAFx/vmafx/issues",
+}
+
+
+def _project_urls() -> dict[str, str]:
+    """The harness package's `[project.urls]`, verbatim."""
+    project = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]
+    return project.get("urls", {})
+
+
+def _url_problems(urls: dict[str, str]) -> list[str]:
+    """Why `urls` is not the four https fork URLs the package must ship."""
+    problems: list[str] = []
+    for key, expected in HARNESS_URLS.items():
+        actual = urls.get(key)
+        if actual is None:
+            problems.append(f"[project.urls] lacks {key} ({expected})")
+        elif not actual.startswith("https://"):
+            problems.append(f"[project.urls].{key} is not https: {actual}")
+        elif actual != expected:
+            problems.append(f"[project.urls].{key} is {actual}, expected {expected}")
+    return problems
+
+
+def test_harness_package_urls_point_at_the_fork() -> None:
+    """The distribution metadata must send users to the fork, not upstream."""
+    problems = _url_problems(_project_urls())
+    assert problems == [], "\n".join(problems)
+
+
+def test_the_url_check_refuses_a_url_that_is_not_https() -> None:
+    """Negative from the issue: a URL that is not https fails the check."""
+    urls = dict(HARNESS_URLS)
+    urls["Homepage"] = "http://github.com/VMAFx/vmafx"
+    problems = _url_problems(urls)
+    assert any("not https" in problem for problem in problems), problems
+
+
+def test_the_url_check_refuses_the_upstream_repository() -> None:
+    """Negative from the issue: the Netflix/vmaf homepage fails the check."""
+    urls = dict(HARNESS_URLS)
+    urls["Homepage"] = "https://github.com/Netflix/vmaf"
+    problems = _url_problems(urls)
+    assert any(
+        "expected https://github.com/VMAFx/vmafx" in problem for problem in problems
+    ), problems
+
+
 # ------------------------------------------------------------------ licences
 #
 # ADR-1250 makes each file's SPDX header the truth about its licence, and

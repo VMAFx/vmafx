@@ -26,6 +26,8 @@ from scripts.lib import git_env
 
 SCRIPT = Path(__file__).resolve().parent.parent / "check-bot-squash-body.py"
 GIT = "git"
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 
 
 BOT_EMAIL = "29139614+renovate[bot]@users.noreply.github.com"
@@ -56,6 +58,10 @@ def git(
     committer_name: str = BOT_NAME,
     committer_email: str = BOT_EMAIL,
 ) -> str:
+    """Run fixture Git commands for scripts/ci/check-bot-squash-body.py.
+
+    Executes commands with synthetic identities in the test repository.
+    """
     env = _fixture_env(author_name, author_email, committer_name, committer_email)
     result = subprocess.run(  # noqa: S603 - fixed argv, no shell
         [GIT, "-c", "commit.gpgsign=false", *args],
@@ -64,6 +70,7 @@ def git(
         text=True,
         check=False,
         env=env,
+        timeout=GIT_TIMEOUT_S,
     )
     if check and result.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)}: {result.stderr}")
@@ -116,6 +123,10 @@ def add_human_commit(repo: Path) -> None:
 
 
 def run_check(repo: Path, base: str, head: str, **env_overrides: str) -> int:
+    """Run scripts/ci/check-bot-squash-body.py in the test repository.
+
+    Verifies gate exit codes across simulated PR metadata and commit authors.
+    """
     env = git_env.drop() | {
         "GIT_CONFIG_GLOBAL": os.devnull,
         "GIT_CONFIG_SYSTEM": os.devnull,
@@ -134,6 +145,7 @@ def run_check(repo: Path, base: str, head: str, **env_overrides: str) -> int:
         text=True,
         check=False,
         env=env,
+        timeout=SCRIPT_TIMEOUT_S,
     )
     return result.returncode
 

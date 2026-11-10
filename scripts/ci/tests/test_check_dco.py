@@ -32,6 +32,8 @@ from scripts.lib import git_env
 ROOT = Path(__file__).resolve().parents[3]
 GATE = ROOT / "scripts" / "ci" / "check-dco.py"
 GIT = shutil.which("git") or "/usr/bin/git"
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 HUMAN = ("Ada Example", "ada@example.org")
 BOT_LOGIN = "renovate[bot]"
 BOT_IDENT = (BOT_LOGIN, "29139614+renovate[bot]@users.noreply.github.com")
@@ -89,6 +91,10 @@ class Repo:
         self.base = self.git(["rev-parse", "HEAD"]).strip()
 
     def git(self, args: list[str], ident: tuple[str, str] = HUMAN) -> str:
+        """Run fixture Git commands for scripts/ci/check-dco.py.
+
+        Sets up commits and git state in an isolated test repo.
+        """
         done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
             [GIT, *args],
             cwd=self.path,
@@ -96,6 +102,7 @@ class Repo:
             capture_output=True,
             text=True,
             check=True,
+            timeout=GIT_TIMEOUT_S,
         )
         return done.stdout
 
@@ -108,6 +115,10 @@ class Repo:
         return self.git(["rev-parse", "HEAD"], ident).strip()
 
     def gate(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        """Run scripts/ci/check-dco.py against commits in the test repo.
+
+        Runs the DCO gate against commits between base and head in the test repo.
+        """
         head = self.git(["rev-parse", "HEAD"]).strip()
         return subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
             [sys.executable, "-I", str(GATE), "--base", self.base, "--head", head, *extra],
@@ -116,6 +127,7 @@ class Repo:
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
 
@@ -181,19 +193,33 @@ class DcoGateTest(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
 
     def test_bad_range_is_an_error_not_a_pass(self) -> None:
+        """Prove scripts/ci/check-dco.py rejects an unresolvable revision range.
+
+        Verifies that an unresolvable base/head revision range exits 2 instead of passing.
+        """
         res = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
             [sys.executable, "-I", str(GATE), "--base", "0" * 40, "--head", "HEAD"],
             cwd=self.repo.path,
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(res.returncode, 2)
 
     def test_missing_arguments_is_usage_error(self) -> None:
+        """Prove scripts/ci/check-dco.py exits 2 when revision arguments are missing.
+
+        Omitting both CLI revision flags and environment fallbacks must exit 2.
+        """
         env = {k: v for k, v in os.environ.items() if k not in ("BASE_SHA", "HEAD_SHA")}
         res = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
-            [sys.executable, "-I", str(GATE)], env=env, capture_output=True, text=True, check=False
+            [sys.executable, "-I", str(GATE)],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(res.returncode, 2)
 
@@ -374,6 +400,11 @@ class DcoLandedGateTest(unittest.TestCase):
         self.assertIn("PASS", res.stdout)
 
     def test_committer_only_match_fails(self) -> None:
+        """Prove scripts/ci/check-dco.py --landed rejects committer-only matches.
+
+        Requires sign-off to match the landing identity or author, rejecting
+        committer-only matches.
+        """
         n = len(list(self.repo.path.glob("f*.txt")))
         (self.repo.path / f"f{n}.txt").write_text(f"{n}\n")
         self.repo.git(["add", "-A"], BOT_IDENT)
@@ -388,6 +419,7 @@ class DcoLandedGateTest(unittest.TestCase):
             cwd=self.repo.path,
             env=env,
             check=True,
+            timeout=GIT_TIMEOUT_S,
         )
         res = self.repo.gate("--landed", "--landing-identity", LANDING_ID)
         self.assertEqual(res.returncode, 1)
@@ -400,6 +432,10 @@ class DcoLandedGateTest(unittest.TestCase):
         self.assertIn("Signed-off-by", res.stdout)
 
     def test_base_40_zeros_judges_head_only(self) -> None:
+        """Prove scripts/ci/check-dco.py --landed evaluates only HEAD on 40-zero base.
+
+        Verifies that a 40-zero base SHA evaluates strictly the single HEAD commit.
+        """
         # Bad head: unsigned commit -> rc 1
         self.repo.commit("feat: bad head unsigned", HUMAN)
         head_bad = self.repo.git(["rev-parse", "HEAD"]).strip()
@@ -421,6 +457,7 @@ class DcoLandedGateTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(res_bad.returncode, 1)
         self.assertIn("Signed-off-by", res_bad.stdout)
@@ -447,6 +484,7 @@ class DcoLandedGateTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(res_good.returncode, 0, res_good.stdout + res_good.stderr)
         self.assertIn("PASS", res_good.stdout)
