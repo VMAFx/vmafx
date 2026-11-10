@@ -168,7 +168,9 @@ def meson_timeout(test_name: str) -> int:
 class DefaultRunTimeoutTest(unittest.TestCase):
     """main() of the default run, with the device-free steps replaced by stubs."""
 
-    def run_main(self, outcome: object) -> tuple[ModuleType, int, str, mock.MagicMock]:
+    def run_main(
+        self, outcome: subprocess.CompletedProcess[str] | BaseException
+    ) -> tuple[ModuleType, int, str, mock.MagicMock]:
         """Run main() with `outcome` as the result, or the exception, of the gate run."""
         module = load_default_run()
         stderr = io.StringIO()
@@ -209,12 +211,20 @@ class DefaultRunTimeoutTest(unittest.TestCase):
         self.assertEqual(proc.communicate.call_args.kwargs["timeout"], module.INTERRUPT_GRACE_S)
 
     def test_the_bound_is_under_the_meson_timeout(self) -> None:
-        """Keep the command timeout and interrupt grace below Meson termination."""
+        """Keep the command timeout and both kill graces below Meson termination."""
         # At or over the Meson timeout, Meson kills the test first and the
         # message above never prints.
         module = load_default_run()
-        bound = module.SCRIPT_TIMEOUT_S + module.INTERRUPT_GRACE_S
+        bound = module.SCRIPT_TIMEOUT_S + module.INTERRUPT_GRACE_S + module.KILL_GRACE_S
         self.assertLess(bound, meson_timeout("test_cuda_parity_gate_default_run"))
+
+    def test_partial_output_is_decoded_or_empty(self) -> None:
+        """TimeoutExpired carries bytes or None; undecodable bytes are replaced, not raised."""
+        module = load_default_run()
+        self.assertEqual(module.as_text(b"partial \xff"), "partial �")
+        self.assertEqual(module.as_text(None), "")
+        self.assertEqual(module.as_text(""), "")
+        self.assertEqual(module.as_text("already text"), "already text")
 
 
 @unittest.skipUnless(os.name == "posix" and shutil.which("flock"), "POSIX flock is unavailable")
@@ -300,6 +310,49 @@ class DefaultRunProcessCleanupTest(unittest.TestCase):
             for watchdog in watchdogs:
                 watchdog.cancel()
                 watchdog.join()
+
+    def test_a_descendant_holding_the_pipes_does_not_hang_the_kill(self) -> None:
+        """After SIGKILL, wait at most KILL_GRACE_S for pipes a descendant kept open."""
+        module = load_default_run()
+        with tempfile.TemporaryDirectory() as directory:
+            pid_file = Path(directory) / "pid"
+            script = (
+                "import signal, subprocess, sys, time; "
+                "signal.signal(signal.SIGINT, signal.SIG_IGN); "
+                "holder = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'],"
+                " start_new_session=True); "
+                f"open({str(pid_file)!r}, 'w').write(str(holder.pid)); "
+                "print('partial out', flush=True); time.sleep(600)"
+            )
+            # Without the bound the test would hang; the watchdog closes the pipes at 4 s,
+            # so a removed bound fails the elapsed-time assertion instead.
+            watchdog = threading.Timer(4, kill_pid_in, args=(pid_file,))
+            stdout, stderr = io.StringIO(), io.StringIO()
+            started = time.monotonic()
+            watchdog.start()
+            try:
+                with (
+                    mock.patch.object(module, "SCRIPT_TIMEOUT_S", 0.5),
+                    mock.patch.object(module, "INTERRUPT_GRACE_S", 0.5),
+                    mock.patch.object(module, "KILL_GRACE_S", 0.5),
+                    contextlib.redirect_stdout(stdout),
+                    contextlib.redirect_stderr(stderr),
+                ):
+                    result = module.run_gate([sys.executable, "-c", script])
+                self.assertIsNone(result)
+                self.assertLess(time.monotonic() - started, 3.5)
+                self.assertIn("partial out", stdout.getvalue())
+                self.assertIn("still held the output pipes 0.5s after the kill", stderr.getvalue())
+            finally:
+                watchdog.cancel()
+                watchdog.join()
+                kill_pid_in(pid_file)
+
+
+def kill_pid_in(pid_file: Path) -> None:
+    """SIGKILL the process whose PID `pid_file` holds, if it was written and still runs."""
+    with contextlib.suppress(OSError, ValueError):
+        os.kill(int(pid_file.read_text(encoding="utf-8")), signal.SIGKILL)
 
 
 def wait_until_gone(pid: int) -> bool:

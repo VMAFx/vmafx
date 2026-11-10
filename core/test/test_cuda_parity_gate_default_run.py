@@ -29,6 +29,9 @@ SCRIPT = ROOT / "scripts" / "ci" / "cross_backend_parity_gate.py"
 # message, not Meson's kill, names the stuck run; it covers the lock wait too.
 SCRIPT_TIMEOUT_S = 105
 INTERRUPT_GRACE_S = 10
+# After SIGKILL the gate dies at once; this only waits for the pipes to close, which a
+# descendant that kept them open would otherwise hold forever.
+KILL_GRACE_S = 2
 REF = ROOT / "python" / "test" / "resource" / "yuv" / "src01_hrc00_576x324.yuv"
 DIS = ROOT / "python" / "test" / "resource" / "yuv" / "src01_hrc01_576x324.yuv"
 
@@ -115,6 +118,30 @@ def gate_command(binary: Path, lock_path: Path | None = None) -> list[str]:
     ]
 
 
+def as_text(output: str | bytes | None) -> str:
+    """Partial output of a TimeoutExpired, which communicate() leaves undecoded."""
+    if isinstance(output, bytes):
+        return output.decode("utf-8", errors="replace")
+    return output or ""
+
+
+def stop_gate(proc: subprocess.Popen[str]) -> tuple[str, str]:
+    """SIGINT, then SIGKILL, each wait bounded; return the output collected so far."""
+    proc.send_signal(signal.SIGINT)
+    try:
+        return proc.communicate(timeout=INTERRUPT_GRACE_S)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+    try:
+        return proc.communicate(timeout=KILL_GRACE_S)
+    except subprocess.TimeoutExpired as exc:
+        sys.stderr.write(
+            f"A gate descendant still held the output pipes {KILL_GRACE_S}s after the kill"
+            " (KILL_GRACE_S)\n"
+        )
+        return as_text(exc.stdout), as_text(exc.stderr)
+
+
 def run_gate(cmd: list[str]) -> subprocess.CompletedProcess[str] | None:
     """Interrupt a timed-out gate so its asyncio supervisor reaps vmaf before unlocking."""
     # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
@@ -124,12 +151,7 @@ def run_gate(cmd: list[str]) -> subprocess.CompletedProcess[str] | None:
         try:
             stdout, stderr = proc.communicate(timeout=SCRIPT_TIMEOUT_S)
         except subprocess.TimeoutExpired:
-            proc.send_signal(signal.SIGINT)
-            try:
-                stdout, stderr = proc.communicate(timeout=INTERRUPT_GRACE_S)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                stdout, stderr = proc.communicate()
+            stdout, stderr = stop_gate(proc)
             sys.stdout.write(stdout or "")
             sys.stderr.write(stderr or "")
             sys.stderr.write(
