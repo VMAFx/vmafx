@@ -16,17 +16,21 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import pytest
+
+# isort: split
+# tests/conftest.py puts ../src on sys.path before any test module imports this one.
+from vmaftune.codec_adapters._ffmpeg_listing import encoder_listed
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 # Imported after the sys.path line above, which makes it importable.
-from scripts.lib import vmaftest
+from scripts.lib import safe_subprocess, vmaftest
 
 
 def repo_source(relative: str) -> str:
@@ -81,29 +85,54 @@ def fork_vmaf_under_test(
     return binary
 
 
-# An `ffmpeg -encoders` row is "<flags> <encoder name> <description>"; a row with fewer
-# fields names no encoder.
-ENCODER_ROW_MIN_FIELDS = 2
+def run_absolute_tool(
+    argv: Sequence[str],
+    *,
+    capture_output: bool = False,
+    text: bool = False,
+    errors: str = "strict",
+    check: bool = False,
+    timeout: float = safe_subprocess.DEFAULT_TIMEOUT_SECONDS,
+) -> safe_subprocess.CommandResult:
+    """Run ``argv`` through the repository's bounded runner with ``subprocess.run`` keywords.
+
+    ``argv[0]`` must be an absolute path and is the only allowlisted executable, so a
+    bare tool name fails here instead of resolving through ``PATH``. ``timeout`` is in
+    seconds; the runner terminates the whole process group when it expires and raises
+    ``safe_subprocess.CommandTimedOut``. The keyword names match ``subprocess.run`` so
+    the function can stand in for it as a ``runner`` / ``encoder_runner`` hook.
+    """
+    executable = str(argv[0])
+    if not Path(executable).is_absolute():
+        raise ValueError(f"tool path must be absolute: {executable}")
+    return safe_subprocess.run(
+        list(argv),
+        allowed_executables=[executable],
+        capture_output=capture_output,
+        text=text,
+        errors=errors,
+        check=check,
+        timeout_seconds=timeout,
+    )
 
 
 def ffmpeg_reports_encoder(encoder: str) -> bool:
     """Return True iff the local ffmpeg binary advertises ``encoder``."""
     ffmpeg = shutil.which("ffmpeg")
-    if ffmpeg is None:
+    if ffmpeg is None or not Path(ffmpeg).is_absolute():
         return False
     try:
-        result = subprocess.run(
+        result = run_absolute_tool(
             [ffmpeg, "-hide_banner", "-encoders"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            capture_output=True,
+            text=True,
+            errors="replace",
             timeout=10,
-            check=False,
         )
-        out = result.stdout.decode("utf-8", errors="replace")
-        for line in out.splitlines():
-            parts = line.split()
-            if len(parts) >= ENCODER_ROW_MIN_FIELDS and parts[1] == encoder:
-                return True
-    except (OSError, subprocess.SubprocessError):
+    except (
+        OSError,
+        safe_subprocess.CommandValidationError,
+        safe_subprocess.CommandOutputLimitExceeded,
+    ):
         return False
-    return False
+    return encoder_listed(str(result.stdout), encoder)

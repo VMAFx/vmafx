@@ -26,7 +26,6 @@ from __future__ import annotations
 import functools
 import json
 import shutil
-import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -36,7 +35,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from _vmaf_cli import ffmpeg_reports_encoder
+from _vmaf_cli import ffmpeg_reports_encoder, run_absolute_tool
 
 # isort: split
 from vmaftune.encode import (
@@ -79,7 +78,7 @@ def _write_raw_10bit(path: Path) -> None:
     """Generate a 10-frame 320x240 yuv420p10le raw clip via FFmpeg testsrc2."""
     if FFMPEG_BIN is None:
         pytest.skip("ffmpeg not found on PATH as an absolute path")
-    gen = subprocess.run(
+    gen = run_absolute_tool(
         [
             FFMPEG_BIN,
             "-hide_banner",
@@ -110,7 +109,7 @@ def _probe_color_tags(path: Path) -> dict[str, str]:
     """Return stream 0 color tags dictionary via ffprobe JSON output."""
     if FFPROBE_BIN is None:
         pytest.skip("ffprobe not found on PATH as an absolute path")
-    probe = subprocess.run(
+    probe = run_absolute_tool(
         [
             FFPROBE_BIN,
             "-v",
@@ -128,8 +127,9 @@ def _probe_color_tags(path: Path) -> dict[str, str]:
         check=True,
         timeout=FFMPEG_TIMEOUT_S,
     )
-    data = json.loads(probe.stdout)
-    return data["streams"][0]
+    data = json.loads(str(probe.stdout))
+    stream: dict[str, str] = data["streams"][0]
+    return stream
 
 
 def test_absolute_tool_path_returns_absolute_path(
@@ -151,6 +151,45 @@ def test_absolute_tool_path_rejects_relative_path(monkeypatch: pytest.MonkeyPatc
     """Return None when shutil.which returns a relative path."""
     monkeypatch.setattr(shutil, "which", lambda _name: "bin/ffmpeg")
     assert _absolute_tool_path("ffmpeg") is None
+
+
+def test_run_absolute_tool_runs_absolute_executable() -> None:
+    """An absolute interpreter path runs and its captured stdout comes back as text."""
+    res = run_absolute_tool(
+        [sys.executable, "-c", "print('ok')"], capture_output=True, text=True, timeout=30
+    )
+    assert res.returncode == 0
+    assert str(res.stdout).strip() == "ok"
+
+
+def test_run_absolute_tool_rejects_relative_executable() -> None:
+    """A bare tool name is refused before anything runs."""
+    with pytest.raises(ValueError, match="absolute"):
+        run_absolute_tool(["python3", "-c", "pass"], timeout=30)
+
+
+def test_run_absolute_tool_enforces_timeout() -> None:
+    """A child that outlives ``timeout`` is terminated and raises a TimeoutError."""
+    with pytest.raises(TimeoutError):
+        run_absolute_tool([sys.executable, "-c", "import time; time.sleep(30)"], timeout=0.5)
+
+
+def test_ffmpeg_reports_encoder_false_without_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No ffmpeg on PATH means no encoder is reported."""
+    monkeypatch.setattr("_vmaf_cli.shutil.which", lambda _name: None)
+    assert ffmpeg_reports_encoder("rawvideo") is False
+
+
+@pytest.mark.skipif(FFMPEG_BIN is None, reason="ffmpeg not found on PATH as an absolute path")
+def test_ffmpeg_reports_encoder_finds_builtin_encoder() -> None:
+    """The ``rawvideo`` encoder is built into every FFmpeg, so the listing reports it."""
+    assert ffmpeg_reports_encoder("rawvideo") is True
+
+
+@pytest.mark.skipif(FFMPEG_BIN is None, reason="ffmpeg not found on PATH as an absolute path")
+def test_ffmpeg_reports_encoder_rejects_unknown_encoder() -> None:
+    """A name FFmpeg does not list is not reported."""
+    assert ffmpeg_reports_encoder("no_such_encoder_vmafx") is False
 
 
 def _make_req(
@@ -495,7 +534,7 @@ class TestBuildFfmpegCommandRawHdrInputColorTags:
         res = run_encode(
             req,
             ffmpeg_bin=FFMPEG_BIN,
-            encoder_runner=functools.partial(subprocess.run, timeout=FFMPEG_TIMEOUT_S),
+            encoder_runner=functools.partial(run_absolute_tool, timeout=FFMPEG_TIMEOUT_S),
         )
         assert res.exit_status == 0, f"encode failed: {res}"
         stream = _probe_color_tags(out)
