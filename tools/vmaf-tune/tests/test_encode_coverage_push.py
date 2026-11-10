@@ -132,6 +132,49 @@ def _probe_color_tags(path: Path) -> dict[str, str]:
     return stream
 
 
+def _raw_hdr10_x265_tags(
+    tmp_path: Path, extra_params: Sequence[str], source_color_params: Sequence[str]
+) -> dict[str, str]:
+    """Encode a raw 10-bit clip with libx265 through run_encode; return the output colour tags."""
+    if FFMPEG_BIN is None:
+        pytest.skip("ffmpeg not found on PATH as an absolute path")
+    if not ffmpeg_reports_encoder("libx265"):
+        pytest.skip("libx265 unavailable in local ffmpeg build")
+    raw = tmp_path / "src.yuv"
+    _write_raw_10bit(raw)
+    out = tmp_path / "out.mkv"
+    req = EncodeRequest(
+        source=raw,
+        width=320,
+        height=240,
+        pix_fmt="yuv420p10le",
+        framerate=24.0,
+        encoder="libx265",
+        preset="ultrafast",
+        crf=28,
+        output=out,
+        extra_params=tuple(extra_params),
+        source_color_params=tuple(source_color_params),
+        source_is_container=False,
+    )
+    res = run_encode(
+        req,
+        ffmpeg_bin=FFMPEG_BIN,
+        encoder_runner=functools.partial(run_absolute_tool, timeout=FFMPEG_TIMEOUT_S),
+    )
+    assert res.exit_status == 0, f"encode failed: {res}"
+    return _probe_color_tags(out)
+
+
+_PQ_BT2020 = HdrInfo(
+    transfer="pq",
+    primaries="bt2020",
+    matrix="bt2020nc",
+    color_range="tv",
+    pix_fmt="yuv420p10le",
+)
+
+
 def test_absolute_tool_path_returns_absolute_path(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -503,43 +546,29 @@ class TestBuildFfmpegCommandRawHdrInputColorTags:
     @pytest.mark.skipif(FFPROBE_BIN is None, reason="ffprobe not found on PATH as an absolute path")
     def test_real_encode_raw_hdr10_x265_tags_transfer_and_primaries(self, tmp_path: Path) -> None:
         """Verify real libx265 encode from raw HDR10 source preserves color tags (#3345)."""
-        if not ffmpeg_reports_encoder("libx265"):
-            pytest.skip("libx265 unavailable in local ffmpeg build")
-        assert FFMPEG_BIN is not None
-        raw = tmp_path / "src.yuv"
-        _write_raw_10bit(raw)
-        info = HdrInfo(
-            transfer="pq",
-            primaries="bt2020",
-            matrix="bt2020nc",
-            color_range="tv",
-            pix_fmt="yuv420p10le",
-        )
-        extra = list(hdr_codec_args("libx265", info))
-        out = tmp_path / "out.mkv"
-        req = EncodeRequest(
-            source=raw,
-            width=320,
-            height=240,
-            pix_fmt="yuv420p10le",
-            framerate=24.0,
-            encoder="libx265",
-            preset="ultrafast",
-            crf=28,
-            output=out,
-            extra_params=tuple(extra),
-            source_color_params=tuple(color_tag_args(extra)),
-            source_is_container=False,
-        )
-        res = run_encode(
-            req,
-            ffmpeg_bin=FFMPEG_BIN,
-            encoder_runner=functools.partial(run_absolute_tool, timeout=FFMPEG_TIMEOUT_S),
-        )
-        assert res.exit_status == 0, f"encode failed: {res}"
-        stream = _probe_color_tags(out)
+        extra = list(hdr_codec_args("libx265", _PQ_BT2020))
+        stream = _raw_hdr10_x265_tags(tmp_path, extra, color_tag_args(extra))
         assert stream.get("color_transfer") == "smpte2084"
         assert stream.get("color_primaries") == "bt2020"
+
+    @pytest.mark.skipif(FFMPEG_BIN is None, reason="ffmpeg not found on PATH as an absolute path")
+    @pytest.mark.skipif(FFPROBE_BIN is None, reason="ffprobe not found on PATH as an absolute path")
+    def test_real_encode_raw_source_color_params_alone_tag_output(self, tmp_path: Path) -> None:
+        """Prove the input-side colour tags alone reach the libx265 output, no output params."""
+        extra = list(hdr_codec_args("libx265", _PQ_BT2020))
+        stream = _raw_hdr10_x265_tags(tmp_path, (), color_tag_args(extra))
+        assert stream.get("color_transfer") == "smpte2084"
+        assert stream.get("color_primaries") == "bt2020"
+
+    @pytest.mark.skipif(FFMPEG_BIN is None, reason="ffmpeg not found on PATH as an absolute path")
+    @pytest.mark.skipif(FFPROBE_BIN is None, reason="ffprobe not found on PATH as an absolute path")
+    def test_real_encode_raw_without_color_params_leaves_output_untagged(
+        self, tmp_path: Path
+    ) -> None:
+        """Control: with no colour params at all the raw encode carries no PQ or BT.2020 tag."""
+        stream = _raw_hdr10_x265_tags(tmp_path, (), ())
+        assert stream.get("color_transfer") != "smpte2084"
+        assert stream.get("color_primaries") != "bt2020"
 
 
 class TestBuildFfmpegCommandTwoPass:
