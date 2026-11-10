@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -57,6 +58,25 @@ SCATTERND_ERROR = (
     "ScatterND node. Name:'fork_segmentsum_scatter' Status Message: element_type 6 "
     "(int32) not implemented for ScatterND operator."
 )
+
+
+def mock_session(
+    providers: list[str],
+    input_meta: dict[str, Any] | None = None,
+) -> MagicMock:
+    """A mocked ORT session reporting the given bound providers.
+
+    The metadata contract the gate reads is get_providers() and get_inputs();
+    input_meta overrides the mocked input's kwargs (name, shape, type) when a
+    test needs a specific input signature. A session built without input_meta
+    leaves get_inputs at its MagicMock default, for the paths that never reach
+    it.
+    """
+    session = MagicMock()
+    session.get_providers.return_value = list(providers)
+    if input_meta is not None:
+        session.get_inputs.return_value = [MagicMock(**input_meta)]
+    return session
 
 
 def test_missing_target_provider_fails_closed() -> None:
@@ -105,13 +125,10 @@ def test_missing_reference_provider_fails_closed() -> None:
 
 def test_target_provider_unbound_detection(tmp_path: Path) -> None:
     """If target session falls back and does not bind target provider, fail closed."""
-    mock_ref_sess = MagicMock()
-    mock_ref_sess.get_providers.return_value = ["CPUExecutionProvider"]
-    mock_ref_sess.get_inputs.return_value = [MagicMock(name="features")]
+    mock_ref_sess = mock_session(["CPUExecutionProvider"], {"name": "features"})
 
-    mock_target_sess = MagicMock()
     # Simulate ORT fallback: requested CUDA, but session bound CPU only
-    mock_target_sess.get_providers.return_value = ["CPUExecutionProvider"]
+    mock_target_sess = mock_session(["CPUExecutionProvider"])
 
     with patch(
         "scripts.ci.tiny_ai_cross_device_parity_gate.create_session",
@@ -133,13 +150,8 @@ def test_target_provider_unbound_detection(tmp_path: Path) -> None:
 
 def test_numerical_mismatch_fp32_fails_closed() -> None:
     """Error exceeding FP32 tolerance (1e-4) must fail closed."""
-    mock_ref_sess = MagicMock()
-    mock_ref_sess.get_providers.return_value = ["CPUExecutionProvider"]
-    mock_ref_sess.get_inputs.return_value = [MagicMock(name="features")]
-
-    mock_target_sess = MagicMock()
-    mock_target_sess.get_providers.return_value = ["TargetProvider"]
-    mock_target_sess.get_inputs.return_value = [MagicMock(name="features")]
+    mock_ref_sess = mock_session(["CPUExecutionProvider"], {"name": "features"})
+    mock_target_sess = mock_session(["TargetProvider"], {"name": "features"})
 
     ref_output = np.array([50.0, 60.0, 70.0], dtype=np.float32)
     # Delta of 5e-4 exceeds tolerance of 1e-4
@@ -172,13 +184,8 @@ def test_numerical_mismatch_fp32_fails_closed() -> None:
 
 def test_numerical_mismatch_fp16_fails_closed() -> None:
     """Error exceeding FP16 tolerance (1e-2) must fail closed."""
-    mock_ref_sess = MagicMock()
-    mock_ref_sess.get_providers.return_value = ["CPUExecutionProvider"]
-    mock_ref_sess.get_inputs.return_value = [MagicMock(name="x")]
-
-    mock_target_sess = MagicMock()
-    mock_target_sess.get_providers.return_value = ["TargetProvider"]
-    mock_target_sess.get_inputs.return_value = [MagicMock(name="x")]
+    mock_ref_sess = mock_session(["CPUExecutionProvider"], {"name": "x"})
+    mock_target_sess = mock_session(["TargetProvider"], {"name": "x"})
 
     ref_output = np.array([[[[0.5, 0.5], [0.5, 0.5]]]], dtype=np.float16)
     # Delta of 0.05 exceeds tolerance of 0.01
@@ -210,13 +217,8 @@ def test_numerical_mismatch_fp16_fails_closed() -> None:
 
 def test_numerical_match_within_tolerance_passes() -> None:
     """Error within tolerance must report status OK and ok=True."""
-    mock_ref_sess = MagicMock()
-    mock_ref_sess.get_providers.return_value = ["CPUExecutionProvider"]
-    mock_ref_sess.get_inputs.return_value = [MagicMock(name="features")]
-
-    mock_target_sess = MagicMock()
-    mock_target_sess.get_providers.return_value = ["TargetProvider"]
-    mock_target_sess.get_inputs.return_value = [MagicMock(name="features")]
+    mock_ref_sess = mock_session(["CPUExecutionProvider"], {"name": "features"})
+    mock_target_sess = mock_session(["TargetProvider"], {"name": "features"})
 
     ref_output = np.array([50.0, 60.0, 70.0], dtype=np.float32)
     # Delta of 5e-5 is within tolerance of 1e-4
@@ -307,11 +309,10 @@ def test_transnet_v2_named_cause_is_not_accepted_off_cuda() -> None:
 
 def test_transnet_v2_successful_execute_reports_the_gap_closed() -> None:
     """A gap-listed model that executes on the target is fine: reported, never a failure."""
-    bound = MagicMock()
-    bound.get_providers.return_value = ["CUDAExecutionProvider"]
-    bound.get_inputs.return_value = [
-        MagicMock(name="frames", shape=[1, 100, 3, 27, 48], type="tensor(float)")
-    ]
+    bound = mock_session(
+        ["CUDAExecutionProvider"],
+        {"name": "frames", "shape": [1, 100, 3, 27, 48], "type": "tensor(float)"},
+    )
     bound.run.return_value = [np.zeros((1, 100), dtype=np.float32)]
     with patch("scripts.ci.tiny_ai_cross_device_parity_gate.create_session", return_value=bound):
         case = evaluate_provider_gap(FP32_MODEL, "CUDAExecutionProvider")
@@ -322,11 +323,10 @@ def test_transnet_v2_successful_execute_reports_the_gap_closed() -> None:
 
 def test_transnet_v2_run_time_scatternd_failure_is_the_expected_gap() -> None:
     """The gap is a Run-time kernel failure: a bound session that fails Run matches."""
-    bound = MagicMock()
-    bound.get_providers.return_value = ["CUDAExecutionProvider"]
-    bound.get_inputs.return_value = [
-        MagicMock(name="frames", shape=[1, 100, 3, 27, 48], type="tensor(float)")
-    ]
+    bound = mock_session(
+        ["CUDAExecutionProvider"],
+        {"name": "frames", "shape": [1, 100, 3, 27, 48], "type": "tensor(float)"},
+    )
     bound.run.side_effect = RuntimeError(SCATTERND_ERROR)
     with patch("scripts.ci.tiny_ai_cross_device_parity_gate.create_session", return_value=bound):
         case = evaluate_provider_gap(FP32_MODEL, "CUDAExecutionProvider")
@@ -337,11 +337,10 @@ def test_transnet_v2_run_time_scatternd_failure_is_the_expected_gap() -> None:
 
 def test_transnet_v2_run_time_other_failure_fails_closed() -> None:
     """A bound session whose Run fails for any other reason still fails the gate."""
-    bound = MagicMock()
-    bound.get_providers.return_value = ["CUDAExecutionProvider"]
-    bound.get_inputs.return_value = [
-        MagicMock(name="frames", shape=[1, 100, 3, 27, 48], type="tensor(float)")
-    ]
+    bound = mock_session(
+        ["CUDAExecutionProvider"],
+        {"name": "frames", "shape": [1, 100, 3, 27, 48], "type": "tensor(float)"},
+    )
     bound.run.side_effect = RuntimeError("Non-zero status code returned while running Conv node")
     with patch("scripts.ci.tiny_ai_cross_device_parity_gate.create_session", return_value=bound):
         case = evaluate_provider_gap(FP32_MODEL, "CUDAExecutionProvider")
@@ -351,9 +350,10 @@ def test_transnet_v2_run_time_other_failure_fails_closed() -> None:
 
 def test_transnet_v2_unfeedable_input_type_fails_closed() -> None:
     """A probe input the execute probe cannot feed is an error, not a gap."""
-    bound = MagicMock()
-    bound.get_providers.return_value = ["CUDAExecutionProvider"]
-    bound.get_inputs.return_value = [MagicMock(name="x", shape=[1, 4], type="tensor(int64)")]
+    bound = mock_session(
+        ["CUDAExecutionProvider"],
+        {"name": "x", "shape": [1, 4], "type": "tensor(int64)"},
+    )
     with patch("scripts.ci.tiny_ai_cross_device_parity_gate.create_session", return_value=bound):
         case = evaluate_provider_gap(FP32_MODEL, "CUDAExecutionProvider")
     assert not case.ok
@@ -362,8 +362,7 @@ def test_transnet_v2_unfeedable_input_type_fails_closed() -> None:
 
 def test_transnet_v2_silent_fallback_fails_closed() -> None:
     """The probe session falling back to the CPU fails closed, as elsewhere."""
-    fallback = MagicMock()
-    fallback.get_providers.return_value = ["CPUExecutionProvider"]
+    fallback = mock_session(["CPUExecutionProvider"])
     with patch("scripts.ci.tiny_ai_cross_device_parity_gate.create_session", return_value=fallback):
         case = evaluate_provider_gap(FP32_MODEL, "CUDAExecutionProvider")
     assert not case.ok
