@@ -26,7 +26,6 @@ import argparse
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
@@ -48,6 +47,14 @@ from ai.data.feature_extractor import (  # noqa: E402
     _extractors_for,
 )
 from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    CommandFailed,
+    CommandTimedOut,
+    executable_argument,
+)
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    run as run_command,
+)
 
 # Bounds = max(60, 10x the slowest measured run): at the default --max-height 360
 # and --max-frames 300, ffprobe took 0.20 s, decode 0.29 s, vmaf 4.20 s.
@@ -90,7 +97,14 @@ def _ffprobe(path: Path) -> dict:
         "-show_streams",
         str(path),
     ]
-    out = subprocess.check_output(cmd, timeout=FFMPEG_TIMEOUT_S)
+    out = run_command(
+        cmd,
+        allowed_executables=("ffprobe",),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout_seconds=FFMPEG_TIMEOUT_S,
+    ).stdout
     return json.loads(out)["streams"][0]
 
 
@@ -122,7 +136,12 @@ def _decode_to_yuv(src: Path, dest: Path, w: int, h: int, max_frames: int) -> in
         "rawvideo",
         str(tmp),
     ]
-    subprocess.run(cmd, check=True, timeout=FFMPEG_TIMEOUT_S)
+    run_command(
+        cmd,
+        allowed_executables=("ffmpeg",),
+        check=True,
+        timeout_seconds=FFMPEG_TIMEOUT_S,
+    )
     tmp.rename(dest)
     frame_bytes = w * h * 3 // 2
     return dest.stat().st_size // frame_bytes
@@ -239,15 +258,20 @@ def _run_vmaf(
     """Run vmaf with FULL_FEATURES + the v0.6.1 model. Return frames list."""
     _validate_run_vmaf_args(vmaf_bin, ref, dis, w, h, n_threads, model)
     out = _resolve_scratch_file(ref, dis)
+    vmaf_bin_arg = executable_argument(vmaf_bin, Path.cwd())
     try:
-        cmd = _build_vmaf_cmd(vmaf_bin, ref, dis, w, h, n_threads, model, out)
-        subprocess.run(
-            cmd,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=VMAF_TIMEOUT_S,
-        )
+        cmd = _build_vmaf_cmd(Path(vmaf_bin_arg), ref, dis, w, h, n_threads, model, out)
+        # Path() normalises the string; the allowlist compares argv[0] verbatim.
+        cmd[0] = vmaf_bin_arg
+        with open(os.devnull, "wb") as sink:
+            run_command(
+                cmd,
+                allowed_executables=(vmaf_bin_arg,),
+                stdout=sink,
+                stderr=sink,
+                check=True,
+                timeout_seconds=VMAF_TIMEOUT_S,
+            )
         with out.open() as f:
             doc = json.load(f)
         return doc.get("frames", [])
@@ -400,7 +424,7 @@ def _process_distorted_clip(
     dis_yuv = args.yuv_dir / f"{stem}_{sfx}_{target_w}x{target_h}.yuv"
     try:
         _decode_to_yuv(dis_src, dis_yuv, target_w, target_h, args.max_frames)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+    except (CommandFailed, CommandTimedOut) as exc:
         print(f"  [{stem}/{sfx}] decode-dis failed: {exc}", flush=True)
         return [], False
     try:
@@ -413,7 +437,7 @@ def _process_distorted_clip(
             args.threads,
             resolved_teacher.arg,
         )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+    except (CommandFailed, CommandTimedOut) as exc:
         print(f"  [{stem}/{sfx}] vmaf failed: {exc}", flush=True)
         if not args.keep_yuv:
             dis_yuv.unlink(missing_ok=True)
@@ -463,7 +487,7 @@ def _decode_orig(stem: str, orig: Path, args: argparse.Namespace) -> tuple[Path,
     ref_yuv = args.yuv_dir / f"{stem}_orig_{target_w}x{target_h}.yuv"
     try:
         _decode_to_yuv(orig, ref_yuv, target_w, target_h, args.max_frames)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+    except (CommandFailed, CommandTimedOut) as exc:
         print(f"  [{stem}] decode-orig failed: {exc}", flush=True)
         return None
     return ref_yuv, target_w, target_h

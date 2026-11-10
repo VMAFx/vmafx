@@ -75,7 +75,7 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 TINY_DIR = REPO_ROOT / "model" / "tiny"
@@ -84,6 +84,12 @@ REGISTRY = TINY_DIR / "registry.json"
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.file_utils import sha256  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    CommandTimedOut,
+)
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    run as run_command,
+)
 
 # Not measured: tf2onnx was not installed on the measuring host. The export runs
 # once per weights swap, so the bound leaves room for a slow conversion.
@@ -176,8 +182,6 @@ def _convert_to_onnx(wrapped_dir: Path, onnx_path: Path, opset: int) -> None:
     tf2onnx can't lower; we splice an equivalent ScatterND subgraph in
     afterwards via ``_replace_segmentsum``.
     """
-    import subprocess
-
     onnx_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         sys.executable,
@@ -194,7 +198,13 @@ def _convert_to_onnx(wrapped_dir: Path, onnx_path: Path, opset: int) -> None:
     env = dict(os.environ)
     env.setdefault("CUDA_VISIBLE_DEVICES", "-1")
     env.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
-    subprocess.run(cmd, check=True, env=env, timeout=SCRIPT_TIMEOUT_S)
+    run_command(
+        cmd,
+        allowed_executables=(sys.executable,),
+        env=env,
+        check=True,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
+    )
 
 
 def _find_segmentsum_node(g: Any) -> tuple[Any | None, int]:
@@ -507,7 +517,7 @@ def main(argv: list[str] | None = None) -> None:
 
         if not args.no_registry:
             _write_artifacts(args, raw_argv)
-    except (FileNotFoundError, ValueError, RuntimeError) as err:
+    except (FileNotFoundError, ValueError, RuntimeError, CommandTimedOut) as err:
         sys.exit(str(err))
 
 

@@ -29,6 +29,7 @@ from ai.scripts.validate_quant_parity import (  # noqa: E402
     _evaluate_model,
     _load_features,
 )
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 # Bound = max(60, 10x the slowest measured run): each call took 0.6 s or less.
 SCRIPT_TIMEOUT_S = 60
@@ -83,12 +84,14 @@ def test_cli_default_run_fails_with_exit_1() -> None:
         "--model",
         "vmaf_tiny_v3",
     ]
-    proc = subprocess.run(
+    proc = run_command(
         cmd,
+        allowed_executables=(sys.executable,),
+        cwd=REPO_ROOT,
         capture_output=True,
         text=True,
-        cwd=REPO_ROOT,
-        timeout=SCRIPT_TIMEOUT_S,
+        check=False,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
     )
     assert proc.returncode == 1, f"Expected exit code 1, got {proc.returncode}"
     assert "FAIL" in proc.stdout

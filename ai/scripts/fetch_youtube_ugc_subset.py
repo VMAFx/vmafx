@@ -22,6 +22,8 @@ import json
 import sys
 import urllib.request
 from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AI_SRC = REPO_ROOT / "ai" / "src"
@@ -41,15 +43,45 @@ PREFIX = "vp9_compressed_videos/"
 SUFFIXES = ("orig", "cbr", "vod", "vodlb")
 
 
+def _validate_https_url(url: str) -> None:
+    """Reject non-HTTPS schemes, non-GCS hostnames, credentials, or non-standard ports."""
+    parsed = urlsplit(url)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "storage.googleapis.com"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.port not in {None, 443}
+    ):
+        raise ValueError(f"refusing non-GCS HTTPS URL: {url!r}")
+
+
+class _HttpsOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Keep urllib redirects inside the same validated HTTPS trust boundary."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        _validate_https_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _opener(url: str) -> urllib.request.OpenerDirector:
+    """Build an opener for url enforcing GCS HTTPS-only redirect validation."""
+    _validate_https_url(url)
+    return urllib.request.build_opener(_HttpsOnlyRedirectHandler())
+
+
 def _list_bucket(prefix: str) -> list[dict]:
     """List items in the GCS bucket matching the specified prefix."""
     url = f"{GCS_LIST_URL}?prefix={prefix}&maxResults=5000&fields=items(name,size)"
-    # Defensive scheme guard — see fetch_konvid_1k.py for rationale (bandit B310).
-    if not url.startswith("https://"):
-        raise ValueError(f"refusing non-https URL scheme: {url!r}")
-    # nosec B310: scheme is restricted to https above; URL is built from
-    # the hardcoded GCS_LIST_URL module constant.
-    with urllib.request.urlopen(url, timeout=API_TIMEOUT_S) as resp:  # nosec B310
+    with _opener(url).open(url, timeout=API_TIMEOUT_S) as resp:
         data = json.loads(resp.read().decode())
     return data.get("items", [])
 
@@ -83,14 +115,9 @@ def _download(url: str, dest: Path) -> None:
     if dest.exists() and dest.stat().st_size > 0:
         return
     dest.parent.mkdir(parents=True, exist_ok=True)
-    # Defensive scheme guard — see fetch_konvid_1k.py for rationale (bandit B310).
-    if not url.startswith("https://"):
-        raise ValueError(f"refusing non-https URL scheme: {url!r}")
     print(f"  downloading {url} -> {dest}", flush=True)
     tmp = dest.with_suffix(dest.suffix + ".tmp")
-    # nosec B310: scheme restricted to https above; URL built from the
-    # GCS_OBJ_URL module constant plus a bucket-object name.
-    with urllib.request.urlopen(url, timeout=API_TIMEOUT_S) as r, tmp.open("wb") as f:  # nosec B310
+    with _opener(url).open(url, timeout=API_TIMEOUT_S) as r, tmp.open("wb") as f:
         for chunk in iter(lambda: r.read(1 << 20), b""):
             f.write(chunk)
     tmp.rename(dest)

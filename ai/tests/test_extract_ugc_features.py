@@ -7,7 +7,6 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
-import subprocess
 import sys
 import time
 import types
@@ -16,6 +15,9 @@ from pathlib import Path
 import pytest
 
 from ai.data.feature_extractor import FULL_FEATURES
+from scripts.lib.safe_subprocess import CommandFailed, CommandTimedOut, TextCommandResult
+
+EXPECTED_VMAF_SCORE = 90.0
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "extract_ugc_features.py"
@@ -60,9 +62,9 @@ def test_run_vmaf_command_requests_full_feature_extractors(monkeypatch, tmp_path
         captured["cmd"] = cmd
         out_path = Path(cmd[cmd.index("--output") + 1])
         out_path.write_text(__import__("json").dumps(out_json))
-        return None
+        return TextCommandResult(tuple(cmd), 0, "", "")
 
-    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(mod, "run_command", fake_run)
 
     frames = mod._run_vmaf(
         tmp_path / "vmaf",
@@ -125,7 +127,7 @@ def test_main_skips_clip_with_zero_height_instead_of_crashing(monkeypatch, tmp_p
 
     Before the fix the geometry arithmetic ran outside the per-clip try and
     ``target_w = (ow * target_h) // oh`` raised ZeroDivisionError, which is
-    NOT one of the ``subprocess.CalledProcessError`` cases the loop handled —
+    NOT one of the ``CommandFailed`` cases the loop handled —
     so it propagated out of main().  Now it is caught and the run returns the
     graceful "no rows extracted" exit code (2) instead of raising.
     """
@@ -222,9 +224,9 @@ def test_run_vmaf_honours_valid_scratch_dir(monkeypatch, tmp_path: Path) -> None
         out_path = Path(cmd[cmd.index("--output") + 1])
         assert scratch.resolve() in out_path.parents or out_path.parent == scratch.resolve()
         out_path.write_text(__import__("json").dumps(out_json))
-        return None
+        return TextCommandResult(tuple(cmd), 0, "", "")
 
-    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(mod, "run_command", fake_run)
 
     frames = mod._run_vmaf(
         tmp_path / "vmaf",
@@ -273,8 +275,8 @@ def _run_distorted(mod: types.ModuleType, tmp_path: Path) -> tuple[list[dict[str
 @pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
     "exc",
     [
-        subprocess.TimeoutExpired(["ffmpeg"], 60),
-        subprocess.CalledProcessError(1, ["ffmpeg"]),
+        CommandTimedOut(("ffmpeg",), 60, None, None),
+        CommandFailed(TextCommandResult(("ffmpeg",), 1, "", "")),
     ],
     ids=["timeout", "exit"],
 )
@@ -301,8 +303,8 @@ def test_process_distorted_clip_decode_dis(
 @pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
     "exc",
     [
-        subprocess.TimeoutExpired(["vmaf"], 60),
-        subprocess.CalledProcessError(1, ["vmaf"]),
+        CommandTimedOut(("vmaf",), 60, None, None),
+        CommandFailed(TextCommandResult(("vmaf",), 1, "", "")),
     ],
     ids=["timeout", "exit"],
 )
@@ -343,7 +345,7 @@ def test_process_distorted_clip_vmaf_success(
     monkeypatch.setattr(
         mod,
         "_run_vmaf",
-        lambda *_args, **_kwargs: [{"frameNum": 0, "metrics": {"vmaf": 90.0}}],
+        lambda *_args, **_kwargs: [{"frameNum": 0, "metrics": {"vmaf": EXPECTED_VMAF_SCORE}}],
     )
     rows, ok = _run_distorted(mod, tmp_path)
     assert ok is True
@@ -352,14 +354,14 @@ def test_process_distorted_clip_vmaf_success(
     assert rows[0]["source"] == "ugc-clip0-dis"
     assert rows[0]["frame_index"] == 0
     assert rows[0]["teacher_model"] == "test_teacher"
-    assert rows[0]["vmaf"] == 90.0
+    assert rows[0]["vmaf"] == EXPECTED_VMAF_SCORE
 
 
 @pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
     "exc",
     [
-        subprocess.TimeoutExpired(["ffmpeg"], 60),
-        subprocess.CalledProcessError(1, ["ffmpeg"]),
+        CommandTimedOut(("ffmpeg",), 60, None, None),
+        CommandFailed(TextCommandResult(("ffmpeg",), 1, "", "")),
     ],
     ids=["timeout", "exit"],
 )

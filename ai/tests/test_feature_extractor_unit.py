@@ -14,7 +14,6 @@ Covers:
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -31,6 +30,7 @@ from ai.data.feature_extractor import (
     aggregate_clip_stats,
     extract_features,
 )
+from scripts.lib.safe_subprocess import CommandFailed, TextCommandResult
 
 # ---------------------------------------------------------------------------
 # _ensure_binary
@@ -96,12 +96,12 @@ def test_lookup_prefers_direct_over_integer_prefix() -> None:
 
 
 def _make_fake_run_ok(out_payload: dict):
-    """Return a side-effect function for subprocess.run that writes the output JSON."""
+    """Return a side-effect function for run_command that writes the output JSON."""
 
     def fake_run(cmd, **kw):
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.write_text(json.dumps(out_payload))
-        return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+        return TextCommandResult(tuple(cmd), 0, "", "")
 
     return fake_run
 
@@ -116,17 +116,20 @@ def test_run_vmaf_json_composes_argv(tmp_path: Path) -> None:
 
     payload = {"frames": []}
     captured: list[list[str]] = []
+    captured_kw: dict[str, object] = {}
 
     def fake_run(cmd, **kw):
         captured.append(list(cmd))
+        captured_kw.update(kw)
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.write_text(json.dumps(payload))
-        return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+        return TextCommandResult(tuple(cmd), 0, "", "")
 
-    with patch.object(fe_mod.subprocess, "run", side_effect=fake_run):
+    with patch.object(fe_mod, "run_command", side_effect=fake_run):
         result = _run_vmaf_json(binary, ref, dis, 320, 240, features=DEFAULT_FEATURES)
 
-    assert captured, "subprocess.run not called"
+    assert captured, "run_command not called"
+    assert captured_kw.get("timeout_seconds") == fe_mod.VMAF_TIMEOUT_S
     argv = captured[0]
     assert argv[0] == str(binary)
     assert argv[argv.index("-r") + 1] == str(ref)
@@ -146,9 +149,9 @@ def test_run_vmaf_json_passes_custom_pix_fmt_and_bitdepth(tmp_path: Path) -> Non
     def fake_run(cmd, **kw):
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.write_text(json.dumps({"frames": []}))
-        return subprocess.CompletedProcess(cmd, returncode=0)
+        return TextCommandResult(tuple(cmd), 0, "", "")
 
-    with patch.object(fe_mod.subprocess, "run", side_effect=fake_run) as m:
+    with patch.object(fe_mod, "run_command", side_effect=fake_run) as m:
         _run_vmaf_json(
             binary,
             tmp_path / "r.yuv",
@@ -171,9 +174,9 @@ def test_run_vmaf_json_includes_feature_flags(tmp_path: Path) -> None:
     def fake_run(cmd, **kw):
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.write_text(json.dumps({"frames": []}))
-        return subprocess.CompletedProcess(cmd, returncode=0)
+        return TextCommandResult(tuple(cmd), 0, "", "")
 
-    with patch.object(fe_mod.subprocess, "run", side_effect=fake_run) as m:
+    with patch.object(fe_mod, "run_command", side_effect=fake_run) as m:
         _run_vmaf_json(
             binary,
             tmp_path / "r.yuv",
@@ -196,11 +199,13 @@ def test_run_vmaf_json_cleans_up_temp_on_subprocess_error(tmp_path: Path) -> Non
 
     def fake_run(cmd, **kw):
         leftover.append(Path(cmd[cmd.index("-o") + 1]))
-        raise subprocess.CalledProcessError(returncode=1, cmd=cmd)
+        if kw.get("check"):
+            raise CommandFailed(TextCommandResult(tuple(cmd), 1, "", ""))
+        return TextCommandResult(tuple(cmd), 1, "", "")
 
     with (
-        patch.object(fe_mod.subprocess, "run", side_effect=fake_run),
-        pytest.raises(subprocess.CalledProcessError),
+        patch.object(fe_mod, "run_command", side_effect=fake_run),
+        pytest.raises(CommandFailed),
     ):
         _run_vmaf_json(
             binary,

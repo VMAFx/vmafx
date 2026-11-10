@@ -23,13 +23,15 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+
+from scripts.lib.safe_subprocess import executable_argument
+from scripts.lib.safe_subprocess import run as run_command
 
 DEFAULT_FEATURES: tuple[str, ...] = (
     "adm2",
@@ -263,8 +265,9 @@ def _run_vmaf_json(
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tf:
         out_path = Path(tf.name)
     try:
+        vmaf_bin = executable_argument(binary, Path.cwd())
         cmd = [
-            str(binary),
+            vmaf_bin,
             "-r",
             str(ref),
             "-d",
@@ -283,12 +286,13 @@ def _run_vmaf_json(
             *feat_args,
             *extra_args,
         ]
-        subprocess.run(
+        run_command(
             cmd,
-            check=True,
+            allowed_executables=(vmaf_bin,),
             capture_output=True,
             text=True,
-            timeout=VMAF_TIMEOUT_S,
+            check=True,
+            timeout_seconds=VMAF_TIMEOUT_S,
         )
         return json.loads(out_path.read_text())
     finally:

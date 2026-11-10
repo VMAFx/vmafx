@@ -7,7 +7,6 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +14,8 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "ai" / "scripts"
+REGISTRY_FAILURE_EXIT_CODE = 2
+TIMEOUT_EXIT_CODE = 124
 
 
 def _load_script(name: str):
@@ -123,10 +124,10 @@ def test_check_registry_negative(monkeypatch: pytest.MonkeyPatch) -> None:
     mod = _load_script("validate_saliency_student")
 
     def fake_call(cmd: list[str], **kwargs: Any) -> int:
-        return 2
+        return REGISTRY_FAILURE_EXIT_CODE
 
     monkeypatch.setattr(mod.subprocess, "call", fake_call)
-    assert mod._check_registry() == 2
+    assert mod._check_registry() == REGISTRY_FAILURE_EXIT_CODE
 
 
 def test_check_registry_boundary(
@@ -136,11 +137,11 @@ def test_check_registry_boundary(
     mod = _load_script("validate_saliency_student")
 
     def fake_call(cmd: list[str], **kwargs: Any) -> int:
-        raise subprocess.TimeoutExpired(cmd, mod.SCRIPT_TIMEOUT_S)
+        raise mod.subprocess.TimeoutExpired(cmd, mod.SCRIPT_TIMEOUT_S)
 
     monkeypatch.setattr(mod.subprocess, "call", fake_call)
     rc = mod._check_registry()
     captured = capsys.readouterr()
-    assert rc == 124
+    assert rc == TIMEOUT_EXIT_CODE
     assert "timed out after" in captured.out
     assert "SCRIPT_TIMEOUT_S" in captured.out

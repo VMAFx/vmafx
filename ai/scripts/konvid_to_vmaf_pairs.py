@@ -63,7 +63,6 @@ _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
-
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 

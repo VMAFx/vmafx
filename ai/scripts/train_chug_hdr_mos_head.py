@@ -28,7 +28,6 @@ if TYPE_CHECKING:
         FEATURE_SCHEMA_KONVID_V1,
     )
     from ai.scripts.train_konvid_mos_head import main as _train_mos_head_main
-
     from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
 else:
     try:

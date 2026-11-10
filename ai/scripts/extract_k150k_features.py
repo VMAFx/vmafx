@@ -132,7 +132,6 @@ VMAF_TIMEOUT_S = 1800
 def _load_runtime_helpers() -> tuple[Any, ...]:
     """Import helpers after the direct-script bootstrap installs package roots."""
     from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model
-
     from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
     return (

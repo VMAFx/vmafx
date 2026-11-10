@@ -6,7 +6,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import urllib.request
 from pathlib import Path
+
+import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPTS = _REPO_ROOT / "ai" / "scripts"
@@ -109,3 +112,52 @@ def test_fetch_konvid_1k_writes_fetch_manifest(tmp_path: Path, monkeypatch) -> N
     assert manifest["extracted"]["metadata_dir_exists"] is True
     assert manifest["run_provenance"]["schema"] == "ai-run-provenance-v1"
     assert manifest["run_provenance"]["outputs"]["manifest"]["path"].endswith("fetch_manifest.json")
+
+
+def test_validate_https_url_positive() -> None:
+    """_validate_https_url accepts valid HTTPS storage.googleapis.com URLs."""
+    mod = _load_module("fetch_youtube_ugc_subset")
+    mod._validate_https_url("https://storage.googleapis.com/ugc-dataset/test.mp4")
+    mod._validate_https_url("https://storage.googleapis.com/storage/v1/b/ugc-dataset/o?prefix=test")
+    opener = mod._opener("https://storage.googleapis.com/ugc-dataset/test.mp4")
+    assert isinstance(opener, urllib.request.OpenerDirector)
+
+
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "http://storage.googleapis.com/ugc-dataset/test.mp4",
+        "file:///etc/passwd",
+        "https://evil.com/ugc-dataset/test.mp4",
+        "https://user:pw@storage.googleapis.com/x",
+    ],
+)
+def test_validate_https_url_negative(bad_url: str) -> None:
+    """_validate_https_url rejects non-HTTPS schemes, other hosts, and credentials."""
+    mod = _load_module("fetch_youtube_ugc_subset")
+    with pytest.raises(ValueError, match="refusing non-GCS HTTPS URL"):
+        mod._validate_https_url(bad_url)
+
+
+def test_validate_https_url_boundary() -> None:
+    """_validate_https_url permits port 443, refuses port 8443, and redirect handler blocks."""
+    mod = _load_module("fetch_youtube_ugc_subset")
+    # Port 443 is accepted
+    mod._validate_https_url("https://storage.googleapis.com:443/ugc-dataset/test.mp4")
+
+    # Port 8443 is refused
+    with pytest.raises(ValueError, match="refusing non-GCS HTTPS URL"):
+        mod._validate_https_url("https://storage.googleapis.com:8443/ugc-dataset/test.mp4")
+
+    # Redirect to http:// refused via handler with a stub request
+    handler = mod._HttpsOnlyRedirectHandler()
+    req = urllib.request.Request("https://storage.googleapis.com/source")
+    with pytest.raises(ValueError, match="refusing non-GCS HTTPS URL"):
+        handler.redirect_request(
+            req,
+            fp=None,
+            code=302,
+            msg="Found",
+            headers={},
+            newurl="http://storage.googleapis.com/dest",
+        )
