@@ -114,32 +114,34 @@ void discard_outstanding_allocations()
 
 } // namespace
 
-/* These names are fixed by GNU ld's --wrap ABI. */
-#define VMAF_WRAP_EXPORT __attribute__((visibility("default")))
-
 // cppcheck-suppress unusedFunction
 // ADR-0141 load-bearing linker ABI; see the BUG-048 section-E research digest.
 // NOLINTBEGIN(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage)
-extern "C" VMAF_WRAP_EXPORT void *__wrap_vmaf_sycl_malloc_device(VmafSyclState *, size_t)
+extern "C" __attribute__((visibility("default"))) void *
+__wrap_vmaf_sycl_malloc_device(VmafSyclState *, size_t)
 {
     return allocate_tracked();
 }
 
 // cppcheck-suppress unusedFunction
-extern "C" VMAF_WRAP_EXPORT void *__wrap_vmaf_sycl_malloc_host(VmafSyclState *, size_t)
+extern "C" __attribute__((visibility("default"))) void *
+__wrap_vmaf_sycl_malloc_host(VmafSyclState *, size_t)
 {
     return allocate_tracked();
 }
 
+/* Fake vmaf_sycl_free: pass a non-null pointer to release_tracked, which marks its
+ * tracked allocation freed and frees it; ignore null. */
 // cppcheck-suppress unusedFunction
-extern "C" VMAF_WRAP_EXPORT void __wrap_vmaf_sycl_free(VmafSyclState *, void *pointer)
+extern "C" __attribute__((visibility("default"))) void __wrap_vmaf_sycl_free(VmafSyclState *,
+                                                                             void *pointer)
 {
     if (pointer)
         release_tracked(pointer);
 }
 
 // cppcheck-suppress unusedFunction
-extern "C" VMAF_WRAP_EXPORT VmafDictionary *
+extern "C" __attribute__((visibility("default"))) VmafDictionary *
 __wrap_vmaf_feature_name_dict_from_provided_features(const char **, const VmafOption *,
                                                      const void *)
 {
@@ -149,8 +151,11 @@ __wrap_vmaf_feature_name_dict_from_provided_features(const char **, const VmafOp
     return reinterpret_cast<VmafDictionary *>(&fake_dictionary_storage);
 }
 
+/* Fake vmaf_dictionary_free: accept only the fake dictionary, clear dictionary_live and
+ * null the caller's pointer; return -EINVAL for a null or any other pointer. */
 // cppcheck-suppress unusedFunction
-extern "C" VMAF_WRAP_EXPORT int __wrap_vmaf_dictionary_free(VmafDictionary **dictionary)
+extern "C" __attribute__((visibility("default"))) int
+__wrap_vmaf_dictionary_free(VmafDictionary **dictionary)
 {
     if (!dictionary || *dictionary != reinterpret_cast<VmafDictionary *>(&fake_dictionary_storage))
         return -EINVAL;
@@ -160,21 +165,21 @@ extern "C" VMAF_WRAP_EXPORT int __wrap_vmaf_dictionary_free(VmafDictionary **dic
 }
 
 // cppcheck-suppress unusedFunction
-extern "C" VMAF_WRAP_EXPORT int __wrap_vmaf_sycl_shared_frame_init(VmafSyclState *, unsigned,
-                                                                   unsigned, unsigned)
+extern "C" __attribute__((visibility("default"))) int
+__wrap_vmaf_sycl_shared_frame_init(VmafSyclState *, unsigned, unsigned, unsigned)
 {
     return 0;
 }
 
 // cppcheck-suppress unusedFunction
-extern "C" VMAF_WRAP_EXPORT int __wrap_vmaf_sycl_shared_chroma_init(VmafSyclState *, unsigned,
-                                                                    unsigned)
+extern "C" __attribute__((visibility("default"))) int
+__wrap_vmaf_sycl_shared_chroma_init(VmafSyclState *, unsigned, unsigned)
 {
     return 0;
 }
 
 // cppcheck-suppress unusedFunction
-extern "C" VMAF_WRAP_EXPORT int
+extern "C" __attribute__((visibility("default"))) int
 __wrap_vmaf_sycl_graph_register(VmafSyclState *, VmafSyclGraphEnqueueFn, VmafSyclGraphPreFn,
                                 VmafSyclGraphPostFn, VmafSyclGraphConfigFn, void *, const char *)
 {
@@ -185,7 +190,7 @@ __wrap_vmaf_sycl_graph_register(VmafSyclState *, VmafSyclGraphEnqueueFn, VmafSyc
 /* Link-time stub for vmaf_sycl_graph_register_flags: counts the call in
  * graph_registration_calls and returns -EIO when fail_graph_registration is set, else 0. */
 // cppcheck-suppress unusedFunction
-extern "C" VMAF_WRAP_EXPORT int
+extern "C" __attribute__((visibility("default"))) int
 __wrap_vmaf_sycl_graph_register_flags(VmafSyclState *, VmafSyclGraphEnqueueFn, VmafSyclGraphPreFn,
                                       VmafSyclGraphPostFn, VmafSyclGraphConfigFn, void *,
                                       const char *, uint64_t)
@@ -195,7 +200,8 @@ __wrap_vmaf_sycl_graph_register_flags(VmafSyclState *, VmafSyclGraphEnqueueFn, V
 }
 
 // cppcheck-suppress unusedFunction
-extern "C" VMAF_WRAP_EXPORT int __wrap_vmaf_sycl_graph_unregister(VmafSyclState *, void *)
+extern "C" __attribute__((visibility("default"))) int
+__wrap_vmaf_sycl_graph_unregister(VmafSyclState *, void *)
 {
     graph_unregistration_calls++;
     return 0;
