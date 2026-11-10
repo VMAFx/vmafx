@@ -78,8 +78,10 @@ GitHub API:
 - When every SVG is unchanged, the last commit is less than an hour old, and
   `state.json` on the branch holds each badge's read time less than an hour
   before this run's, nothing is committed, so the branch grows by about one
-  commit an hour. A read time that is missing, unreadable, in the future or on
-  one side only means a commit.
+  commit an hour. A badge whose source has never answered has no read time in
+  either file; that counts as recorded, since there is nothing to record. A
+  missing state file or badge entry, a different set of badges, or a read time
+  that is unreadable, in the future or on one side only means a commit.
 - A commit made with the workflow token starts no other workflow.
 
 The job's token has `contents: write`, the narrowest right that can make a
