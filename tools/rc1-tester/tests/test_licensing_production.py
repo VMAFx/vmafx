@@ -335,6 +335,77 @@ def test_the_release_files_carry_checked_notices() -> None:
     assert {"release-native", "release-models"} <= records.keys()
 
 
+# ------------------------------------------------- the Debian zimg record (issue #3242)
+
+
+def test_the_production_zimg_component_reads_the_debian_record() -> None:
+    """The production images copy libzimg2 out of Debian, so their zimg entry says so.
+
+    The tester entry already reads `usr/share/doc/libzimg2/SOURCE` and takes the
+    package's copyright file as its licence text; the production entry described
+    upstream zimg 3.0.6, which those images do not ship.
+    """
+    expanded = lic.load_manifest()["artifacts"]
+    tester = next(c for c in expanded["image"]["components"] if c["id"] == "zimg")
+    production = next(
+        c for c in expanded["production-cli-image"]["components"] if c["id"] == "zimg"
+    )
+    assert production["debian_source_file"] == tester["debian_source_file"]
+    assert production["texts"] == tester["texts"]
+    assert production["copyright"] == tester["copyright"]
+    assert production["licence"] == "WTFPL"
+    assert "usr/share/doc/libzimg2/**" in production["paths"]
+    assert production["source"] == tester["source"]
+
+
+def test_every_production_image_that_ships_zimg_reads_that_one_record() -> None:
+    """The eight production records inherit the component, so they agree with it."""
+    expanded = lic.load_manifest()["artifacts"]
+    cli = next(c for c in expanded["production-cli-image"]["components"] if c["id"] == "zimg")
+    for kind in (
+        "production-server-image",
+        "production-go-server-image",
+        "production-controller-image",
+        "production-node-image",
+        "production-node-sycl-image",
+        "production-cuda-image",
+        "production-rocm-image",
+        "production-oneapi-image",
+    ):
+        component = next(c for c in expanded[kind]["components"] if c["id"] == "zimg")
+        assert component == cli, kind
+
+
+def test_the_debian_record_is_the_text_the_gate_demands() -> None:
+    """The gate requires the copyright text by path, so the one in the record is it."""
+    record = lic.load_manifest()["artifacts"]["production-cli-image"]
+    scan = {"licences": [], "files": []}
+    needed = lic.needed_texts(record, scan, lic.load_manifest(), set())
+    assert "/usr/share/doc/libzimg2/copyright" in needed
+    assert needed["/usr/share/doc/libzimg2/copyright"]["artifact"] == (
+        "usr/share/doc/libzimg2/copyright"
+    )
+
+
+def test_the_images_that_link_zimg_from_source_keep_their_own_record() -> None:
+    """macOS, the Windows zips and the native release build zimg themselves.
+
+    Issue #3242 leaves them alone: each links zimg from upstream's source archive
+    (Homebrew, vcpkg, the release container's zimg-devel), so none of them has a
+    Debian SOURCE file to point at and none may claim one.
+    """
+    expanded = lic.load_manifest()["artifacts"]
+    for kind in ("macos", "windows-zip", "windows-cuda-zip", "windows-sycl-zip", "release-native"):
+        component = next(c for c in expanded[kind]["components"] if c["id"] == "zimg")
+        assert "debian_source_file" not in component, kind
+        assert not any(
+            "usr/share/doc/libzimg2" in text for text in json.dumps(component["texts"]).split()
+        ), kind
+        assert "sekrit-twc/zimg" in component["source"] or "zimg-3.0.6-COPYING" in json.dumps(
+            component
+        ), kind
+
+
 def test_production_node_sycl_image_shares_runtime_and_node_components() -> None:
     """production-node-sycl-image shares the oneAPI SYCL runtime components and the
     Intel GPU user-mode stack from sycl-image and the worker node components from production-node-image (ADR-3371).

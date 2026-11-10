@@ -143,6 +143,27 @@ stage Meson's generated `meson-private/libvmaf.pc`; never synthesize it from
 `scripts/ci/test_e2e_runtime_contract.py` pins these invariants for both
 Dockerfiles.
 
+## The Debian zimg record every copying builder stages (issue #3242)
+
+`libzimg.so*` is **Debian's** `libzimg2`, never upstream's 3.0.6 archive, in every
+image that copies it out of `/usr/lib/*-linux-gnu*` — which is what makes
+`zimg` of `production-cli-image` read
+`debian_source_file: usr/share/doc/libzimg2/SOURCE` and take the package's
+copyright file as its licence text, as the tester entry already did. Six builder
+lines copy it (`docker/Dockerfile.production:86`, `Dockerfile.production-gpu:130`
+and `:182`, `docker/Dockerfile.controller:98`, `Dockerfile.go-server:102`,
+`docker/Dockerfile.node:184`); a seventh site is the shared
+`scripts/ci/build-oneapi-libvmaf.sh` that the two oneAPI images run. **All of them,
+and any new copying builder, stage `copyright` + a `dpkg-query` `SOURCE` line
+under `/dist/doc/libzimg2`; every runtime stage that publishes `libzimg.so*`
+installs that directory at `/usr/share/doc/libzimg2`.** Omitting it fails the
+image's `licensing.py sources` (the source offer cannot name a Debian package it
+has no record of) and leaves the notice naming a version the image does not
+ship. `tools/rc1-tester/tests/test_dockerfile_runtime_libs.py` holds the six
+builders, the nine published runtime stages (following each `FROM` chain) and
+the shared script to it. The macOS bundle, the Windows zips and `release-native`
+build zimg from source themselves and keep the 3.0.6 archive entry.
+
 ## Fedora optional SYCL repository
 
 `dev/fedora-40.Dockerfile` writes seven literal oneAPI repository lines with
