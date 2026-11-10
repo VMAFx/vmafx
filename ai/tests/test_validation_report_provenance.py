@@ -108,6 +108,7 @@ def test_check_registry_positive(
     recorded: dict[str, Any] = {}
 
     def fake_call(cmd: list[str], **kwargs: Any) -> int:
+        """Fake successful validator execution by recording options and returning zero."""
         recorded.update(kwargs)
         return 0
 
@@ -124,6 +125,7 @@ def test_check_registry_negative(monkeypatch: pytest.MonkeyPatch) -> None:
     mod = _load_script("validate_saliency_student")
 
     def fake_call(cmd: list[str], **kwargs: Any) -> int:
+        """Fake validator execution by returning the registry failure exit code."""
         return REGISTRY_FAILURE_EXIT_CODE
 
     monkeypatch.setattr(mod.subprocess, "call", fake_call)
@@ -137,6 +139,7 @@ def test_check_registry_boundary(
     mod = _load_script("validate_saliency_student")
 
     def fake_call(cmd: list[str], **kwargs: Any) -> int:
+        """Fake validator execution by raising TimeoutExpired with the script timeout."""
         raise mod.subprocess.TimeoutExpired(cmd, mod.SCRIPT_TIMEOUT_S)
 
     monkeypatch.setattr(mod.subprocess, "call", fake_call)

@@ -99,6 +99,7 @@ def test_run_one_positive(monkeypatch: pytest.MonkeyPatch) -> None:
     recorded: dict[str, Any] = {}
 
     def fake_run(cmd: list[str], **kwargs: Any) -> TextCommandResult:
+        """Fake successful command execution by recording options and returning empty output."""
         recorded.update(kwargs)
         return TextCommandResult(tuple(cmd), 0, "", "")
 
@@ -111,12 +112,14 @@ def test_run_one_negative(monkeypatch: pytest.MonkeyPatch) -> None:
     """A failing ``run_one`` call returns its exit code with stderr, else stdout."""
 
     def fake_run_stderr(cmd: list[str], **kwargs: Any) -> TextCommandResult:
+        """Fake failed command execution by returning status three and a standard error message."""
         return TextCommandResult(tuple(cmd), 3, "", "boom")
 
     monkeypatch.setattr(collect, "run_command", fake_run_stderr)
     assert collect.run_one(["vmaf"]) == (3, "boom")
 
     def fake_run_stdout(cmd: list[str], **kwargs: Any) -> TextCommandResult:
+        """Fake failed command execution by returning status three and standard output text."""
         return TextCommandResult(tuple(cmd), 3, "out", "")
 
     monkeypatch.setattr(collect, "run_command", fake_run_stdout)
@@ -127,6 +130,7 @@ def test_run_one_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
     """A timed-out ``run_one`` call returns 124 and a message naming ``VMAF_TIMEOUT_S``."""
 
     def fake_run(cmd: list[str], **kwargs: Any) -> TextCommandResult:
+        """Fake command execution by raising CommandTimedOut with the collection timeout."""
         raise CommandTimedOut(tuple(cmd), collect.VMAF_TIMEOUT_S, None, None)
 
     monkeypatch.setattr(collect, "run_command", fake_run)
@@ -144,6 +148,7 @@ def test_export_transnet_v2_convert_to_onnx_positive(
     captured_kw: dict[str, Any] = {}
 
     def fake_run(cmd: list[str], **kwargs: Any) -> TextCommandResult:
+        """Fake successful conversion by recording its arguments and returning empty output."""
         captured_cmd.extend(cmd)
         captured_kw.update(kwargs)
         return TextCommandResult(tuple(cmd), 0, "", "")
@@ -173,6 +178,7 @@ def test_export_transnet_v2_main_command_failed_negative(
     monkeypatch.setattr(transnet, "_wrap_to_savedmodel", lambda _up, _wr: None)
 
     def fake_run_failed(cmd: list[str], **kwargs: Any) -> TextCommandResult:
+        """Fake conversion by raising CommandFailed with a conversion error message."""
         raise CommandFailed(TextCommandResult(tuple(cmd), 1, "", "convert failed"))
 
     monkeypatch.setattr(transnet, "run_command", fake_run_failed)
@@ -202,6 +208,7 @@ def test_export_transnet_v2_main_command_timed_out_boundary(
     monkeypatch.setattr(transnet, "_wrap_to_savedmodel", lambda _up, _wr: None)
 
     def fake_run_timeout(cmd: list[str], **kwargs: Any) -> TextCommandResult:
+        """Fake conversion by raising CommandTimedOut with the script timeout."""
         raise CommandTimedOut(tuple(cmd), transnet.SCRIPT_TIMEOUT_S, None, None)
 
     monkeypatch.setattr(transnet, "run_command", fake_run_timeout)

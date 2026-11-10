@@ -184,6 +184,7 @@ def _decode_yuv_10bit(src_video: Path, out_yuv: Path) -> tuple[int, int, int]:
 
 
 def _encode_dis_10bit(src_video: Path, out_yuv: Path, crf: int) -> None:
+    """Encode lossy 10-bit video and decode it to raw YUV through a timed pipeline."""
     out_yuv.parent.mkdir(parents=True, exist_ok=True)
     # libx264 10-bit lossy compression at CRF 35 (matches KoNViD flow);
     # matroska pipe container so the moov atom doesn't need seekable

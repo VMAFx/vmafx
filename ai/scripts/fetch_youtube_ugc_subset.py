@@ -68,6 +68,7 @@ class _HttpsOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
         headers: Any,
         newurl: str,
     ) -> urllib.request.Request | None:
+        """Validate the HTTPS redirect target before delegating request creation."""
         _validate_https_url(newurl)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 

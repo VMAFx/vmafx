@@ -56,6 +56,7 @@ def test_default_features_includes_canonical_six() -> None:
 
 
 def test_decode_yuv_invokes_ffprobe_then_ffmpeg(tmp_path: Path) -> None:
+    """Verify decoding reads stream metadata before invoking the video decoder."""
     src = tmp_path / "clip.mp4"
     src.write_bytes(b"\x00")
     out_yuv = tmp_path / "ref.yuv"
@@ -63,6 +64,7 @@ def test_decode_yuv_invokes_ffprobe_then_ffmpeg(tmp_path: Path) -> None:
     calls: list[list[str]] = []
 
     def fake_run(cmd, check=True, **kw):
+        """Record commands and fake successful metadata extraction or video decoding."""
         calls.append(list(cmd))
         if cmd[0] == "ffprobe":
             return TextCommandResult(tuple(cmd), 0, stdout="320\n240\n5\n", stderr="")
@@ -81,6 +83,7 @@ def test_decode_yuv_invokes_ffprobe_then_ffmpeg(tmp_path: Path) -> None:
 
 
 def test_encode_dis_writes_intermediate_then_decodes(tmp_path: Path) -> None:
+    """Verify encoding creates an intermediate video before decoding it to raw YUV."""
     src = tmp_path / "src.mp4"
     src.write_bytes(b"\x00")
     out_yuv = tmp_path / "dis.yuv"
@@ -88,6 +91,7 @@ def test_encode_dis_writes_intermediate_then_decodes(tmp_path: Path) -> None:
     calls: list[list[str]] = []
 
     def fake_run(cmd, check=True, **kw):
+        """Fake successful transcoding by recording calls and writing an intermediate file."""
         calls.append(list(cmd))
         # The first ffmpeg call writes the .dis.mp4 intermediate.
         if "-c:v" in cmd:
@@ -109,6 +113,7 @@ def test_encode_dis_writes_intermediate_then_decodes(tmp_path: Path) -> None:
 
 
 def test_run_vmaf_argv(tmp_path: Path) -> None:
+    """Verify scoring composes the expected input, output, and backend arguments."""
     binary = tmp_path / "vmaf"
     binary.write_text("")
     ref = tmp_path / "r.yuv"
@@ -122,6 +127,7 @@ def test_run_vmaf_argv(tmp_path: Path) -> None:
     captured: list[list[str]] = []
 
     def fake_run(cmd, check=True, **kw):
+        """Fake scoring by recording the command and returning empty successful output."""
         captured.append(list(cmd))
         return TextCommandResult(tuple(cmd), 0, stdout="", stderr="")
 
@@ -379,6 +385,7 @@ def test_run_command_bounds_and_allowlist(monkeypatch: pytest.MonkeyPatch, tmp_p
     recorded: list[dict[str, Any]] = []
 
     def fake_run(cmd, *, allowed_executables, timeout_seconds, **kw):
+        """Record command constraints and fake successful metadata extraction or transcoding."""
         recorded.append(
             {
                 "cmd": list(cmd),
@@ -431,6 +438,7 @@ def test_encode_dis_cleans_up_intermediate_on_timeout(tmp_path: Path) -> None:
     calls = 0
 
     def fake_run(cmd, **kw):
+        """Fake successful intermediate creation, then raise CommandTimedOut on decoding."""
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -456,6 +464,7 @@ def test_vmaf_step_command_failed_logs_and_skips_clip(
     teacher = types.SimpleNamespace(arg="teacher.model")
 
     def fake_process_clip(key: str, *_args: object, **_kwargs: object) -> list[dict]:
+        """Fake clip processing by raising CommandFailed for one clip or returning a metric."""
         if key == f"KoNViD_1k_videos_{clip1.stem}":
             raise CommandFailed(TextCommandResult(("vmaf", "--reference"), 1, "", "crash"))
         return [{"metric": 1}]
@@ -479,6 +488,7 @@ def test_encode_step_command_timed_out_skips_clip(
     teacher = types.SimpleNamespace(arg="teacher.model")
 
     def fake_process_clip(key: str, *_args: object, **_kwargs: object) -> list[dict]:
+        """Fake clip processing by raising CommandTimedOut for one clip or returning a metric."""
         if key == f"KoNViD_1k_videos_{clip1.stem}":
             raise CommandTimedOut(("ffmpeg", "-i", "clip1.mp4"), 60.0, None, None)
         return [{"metric": 1}]

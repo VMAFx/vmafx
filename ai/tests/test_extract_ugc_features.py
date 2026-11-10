@@ -55,11 +55,13 @@ def test_frame_row_reads_full_features_and_speed_aliases() -> None:
 
 
 def test_run_vmaf_command_requests_full_feature_extractors(monkeypatch, tmp_path: Path) -> None:
+    """Verify scoring requests the full feature extractors and returns the decoded frames."""
     mod = _load_module()
     captured: dict[str, list[str]] = {}
     out_json = {"frames": [{"frameNum": 0, "metrics": {"vmaf": 90.0}}]}
 
     def fake_run(cmd, **kwargs):
+        """Fake scoring by recording its command, writing frame JSON, and returning success."""
         captured["cmd"] = cmd
         out_path = Path(cmd[cmd.index("--output") + 1])
         out_path.write_text(__import__("json").dumps(out_json))
@@ -95,6 +97,7 @@ def test_ffprobe_executable_allowlist_and_timeout(
     expected_width = 640
 
     def fake_run(cmd, **kwargs):
+        """Fake metadata extraction by recording options and returning successful stream JSON."""
         captured_kwargs.update(kwargs)
         return TextCommandResult(
             tuple(cmd),
@@ -118,6 +121,7 @@ def test_ffmpeg_decode_to_yuv_executable_allowlist_and_timeout(
     captured_kwargs: dict[str, Any] = {}
 
     def fake_run(cmd, **kwargs):
+        """Fake decoding by recording options, writing raw video bytes, and returning success."""
         captured_kwargs.update(kwargs)
         tmp_dest = Path(cmd[-1])
         tmp_dest.parent.mkdir(parents=True, exist_ok=True)
@@ -143,6 +147,7 @@ def test_vmaf_executable_allowlist_and_timeout(
     out_json = {"frames": [{"frameNum": 0, "metrics": {"vmaf": 90.0}}]}
 
     def fake_run(cmd, **kwargs):
+        """Fake scoring by recording its arguments, writing frame JSON, and returning success."""
         captured_cmd.extend(cmd)
         captured_kwargs.update(kwargs)
         out_path = Path(cmd[cmd.index("--output") + 1])
@@ -292,6 +297,7 @@ def test_run_vmaf_validates_scratch_dir(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_run_vmaf_honours_valid_scratch_dir(monkeypatch, tmp_path: Path) -> None:
+    """Verify scoring writes temporary output under the configured scratch directory."""
     mod = _load_module()
     scratch = tmp_path / "custom_scratch"
     monkeypatch.setenv("VMAF_TINY_AI_SCRATCH", str(scratch))
@@ -300,6 +306,7 @@ def test_run_vmaf_honours_valid_scratch_dir(monkeypatch, tmp_path: Path) -> None
     captured: dict[str, list[str]] = {}
 
     def fake_run(cmd, **kwargs):
+        """Fake scoring by checking its scratch output path, writing JSON, and returning success."""
         captured["cmd"] = cmd
         out_path = Path(cmd[cmd.index("--output") + 1])
         assert scratch.resolve() in out_path.parents or out_path.parent == scratch.resolve()

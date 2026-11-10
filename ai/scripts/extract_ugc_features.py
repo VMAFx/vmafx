@@ -263,7 +263,7 @@ def _run_vmaf(
         cmd = _build_vmaf_cmd(Path(vmaf_bin_arg), ref, dis, w, h, n_threads, model, out)
         # Path() normalises the string; the allowlist compares argv[0] verbatim.
         cmd[0] = vmaf_bin_arg
-        with open(os.devnull, "wb") as sink:
+        with Path(os.devnull).open("wb") as sink:
             run_command(
                 cmd,
                 allowed_executables=(vmaf_bin_arg,),

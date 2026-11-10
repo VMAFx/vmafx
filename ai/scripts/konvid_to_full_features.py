@@ -125,6 +125,7 @@ def _ffprobe_video(src_mp4: Path) -> tuple[int, int, str]:
 
 
 def _decode_yuv(src_mp4: Path, out_yuv: Path) -> tuple[int, int, str]:
+    """Decode video to raw YUV and return its width, height, and codec name."""
     width, height, codec_name = _ffprobe_video(src_mp4)
     out_yuv.parent.mkdir(parents=True, exist_ok=True)
     _run(

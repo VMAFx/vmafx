@@ -103,6 +103,7 @@ def _make_fake_run_ok(out_payload: dict):
     """Return a side-effect function for run_command that writes the output JSON."""
 
     def fake_run(cmd, **kw):
+        """Fake scoring by writing the canned output JSON and returning command success."""
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.write_text(json.dumps(out_payload))
         return TextCommandResult(tuple(cmd), 0, "", "")
@@ -111,6 +112,7 @@ def _make_fake_run_ok(out_payload: dict):
 
 
 def test_run_vmaf_json_composes_argv(tmp_path: Path) -> None:
+    """Verify scoring composes the expected command arguments and execution constraints."""
     binary = tmp_path / "vmaf"
     binary.write_text("")
     ref = tmp_path / "ref.yuv"
@@ -123,6 +125,7 @@ def test_run_vmaf_json_composes_argv(tmp_path: Path) -> None:
     captured_kw: dict[str, object] = {}
 
     def fake_run(cmd, **kw):
+        """Fake scoring by recording arguments, writing output JSON, and returning success."""
         captured.append(list(cmd))
         captured_kw.update(kw)
         out_path = Path(cmd[cmd.index("-o") + 1])
@@ -148,10 +151,12 @@ def test_run_vmaf_json_composes_argv(tmp_path: Path) -> None:
 
 
 def test_run_vmaf_json_passes_custom_pix_fmt_and_bitdepth(tmp_path: Path) -> None:
+    """Verify scoring forwards the custom pixel format and bit depth."""
     binary = tmp_path / "vmaf"
     binary.write_text("")
 
     def fake_run(cmd, **kw):
+        """Fake scoring by writing empty frame JSON and returning command success."""
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.write_text(json.dumps({"frames": []}))
         return TextCommandResult(tuple(cmd), 0, "", "")
@@ -173,10 +178,12 @@ def test_run_vmaf_json_passes_custom_pix_fmt_and_bitdepth(tmp_path: Path) -> Non
 
 
 def test_run_vmaf_json_includes_feature_flags(tmp_path: Path) -> None:
+    """Verify scoring translates requested features into extractor flags."""
     binary = tmp_path / "vmaf"
     binary.write_text("")
 
     def fake_run(cmd, **kw):
+        """Fake scoring by writing empty frame JSON and returning command success."""
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.write_text(json.dumps({"frames": []}))
         return TextCommandResult(tuple(cmd), 0, "", "")
@@ -198,11 +205,13 @@ def test_run_vmaf_json_includes_feature_flags(tmp_path: Path) -> None:
 
 
 def test_run_vmaf_json_cleans_up_temp_on_subprocess_error(tmp_path: Path) -> None:
+    """Verify scoring removes its temporary output after a command failure."""
     binary = tmp_path / "vmaf"
     binary.write_text("")
     leftover: list[Path] = []
 
     def fake_run(cmd, **kw):
+        """Fake failed scoring by recording its output path and raising when checking is enabled."""
         leftover.append(Path(cmd[cmd.index("-o") + 1]))
         if kw.get("check"):
             raise CommandFailed(TextCommandResult(tuple(cmd), 1, "", ""))
@@ -231,6 +240,7 @@ def test_run_vmaf_json_cleans_up_temp_on_validation_error(tmp_path: Path) -> Non
     leftover: list[Path] = []
 
     def fake_run(cmd, **kw):
+        """Fake scoring by recording its output path and raising CommandValidationError."""
         leftover.append(Path(cmd[cmd.index("-o") + 1]))
         raise CommandValidationError("validation error")
 

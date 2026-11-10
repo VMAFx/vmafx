@@ -495,6 +495,7 @@ def _write_artifacts(args: argparse.Namespace, raw_argv: list[str]) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Export, verify, and register the graph; raise SystemExit on help or handled errors."""
     raw_argv = collect_cli_argv(argv)
     args = _build_parser().parse_args(raw_argv)
 

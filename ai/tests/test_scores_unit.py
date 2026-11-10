@@ -124,6 +124,7 @@ def test_resolve_teacher_model_directory_ignored(
 def test_run_vmaf_score_default_passes_version_arg(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Verify scoring selects the default version argument when no override exists."""
     monkeypatch.delenv("VMAF_MODEL_PATH", raising=False)
     fake_binary = tmp_path / "vmaf"
     fake_binary.write_text("")
@@ -135,6 +136,7 @@ def test_run_vmaf_score_default_passes_version_arg(
     captured_argv: list[list[str]] = []
 
     def fake_run(cmd, **kw):
+        """Fake scoring by recording arguments, writing empty score JSON, and returning success."""
         captured_argv.append(list(cmd))
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.write_text(json.dumps({"frames": [], "pooled_metrics": {}}))
@@ -162,6 +164,7 @@ def test_run_vmaf_score_default_passes_version_arg(
 
 
 def test_run_vmaf_score_composes_argv(tmp_path: Path) -> None:
+    """Verify scoring composes input dimensions, pixel settings, and a custom scoring path."""
     fake_binary = tmp_path / "vmaf"
     fake_binary.write_text("")  # contents irrelevant under mock
     ref = tmp_path / "ref.yuv"
@@ -174,6 +177,7 @@ def test_run_vmaf_score_composes_argv(tmp_path: Path) -> None:
     captured_argv: list[list[str]] = []
 
     def fake_run(cmd, **kw):
+        """Fake scoring by recording arguments, writing empty score JSON, and returning success."""
         captured_argv.append(list(cmd))
         # The function reads <out_path>.json — write a stub.
         out_path = Path(cmd[cmd.index("-o") + 1])
@@ -206,6 +210,7 @@ def test_run_vmaf_score_composes_argv(tmp_path: Path) -> None:
 
 
 def test_run_vmaf_score_cleans_up_output_on_subprocess_failure(tmp_path: Path) -> None:
+    """Verify scoring removes its temporary output after a command failure."""
     fake_binary = tmp_path / "vmaf"
     fake_binary.write_text("")
     ref = tmp_path / "ref.yuv"
@@ -218,6 +223,7 @@ def test_run_vmaf_score_cleans_up_output_on_subprocess_failure(tmp_path: Path) -
     leftover: list[Path] = []
 
     def fake_run(cmd, **kw):
+        """Fake scoring by recording its output path and raising CommandFailed."""
         leftover.append(Path(cmd[cmd.index("-o") + 1]))
         raise CommandFailed(TextCommandResult(tuple(cmd), 2, "", ""))
 

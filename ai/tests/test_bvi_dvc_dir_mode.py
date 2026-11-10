@@ -435,6 +435,7 @@ def test_run_command_bounds_and_allowlist(tmp_path: Path) -> None:
     recorded: list[dict[str, Any]] = []
 
     def fake_run(cmd, *, allowed_executables, timeout_seconds, **kw):
+        """Record command constraints and fake metadata or empty successful command output."""
         recorded.append(
             {
                 "cmd": list(cmd),
@@ -493,6 +494,7 @@ def test_vmaf_step_command_failed_skips_clip(
     out_parquet = tmp_path / "out.parquet"
 
     def fake_run(cmd, **kw):
+        """Fake command execution by raising on scoring or returning successful empty JSON."""
         if "--output" in cmd:
             raise CommandFailed(TextCommandResult(tuple(cmd), 1, "", "vmaf failed"))
         return TextCommandResult(tuple(cmd), 0, "{}", "")
@@ -541,6 +543,7 @@ def test_encode_step_command_timed_out_skips_clip(
     out_parquet = tmp_path / "out.parquet"
 
     def fake_run(cmd, **kw):
+        """Fake command execution by timing out the pipeline or returning successful empty JSON."""
         if cmd and cmd[0] == "bash":
             raise CommandTimedOut(tuple(cmd), 300.0, None, None)
         return TextCommandResult(tuple(cmd), 0, "{}", "")

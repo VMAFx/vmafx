@@ -51,6 +51,7 @@ def _make_fake_vmaf_json(n_frames: int = 2) -> str:
 
 
 def _mock_run_command(cmd, **kwargs):
+    """Fake successful commands with stream metadata or a written scoring JSON fixture."""
     stdout = ""
     if cmd and cmd[0] == "ffprobe":
         stdout = json.dumps({"streams": [{"width": 960, "height": 540, "codec_name": "h264"}]})
@@ -176,6 +177,7 @@ def _setup_full_features_run(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
 
 
 def test_main_writes_full_and_folded_parquets(tmp_path: Path, monkeypatch) -> None:
+    """Verify extraction writes full and folded parquet tables with provenance metadata."""
     mod = _load_module()
     out_plain, out_folds = _setup_full_features_run(tmp_path, monkeypatch)
 
@@ -222,6 +224,7 @@ def test_run_command_bounds_and_allowlist(tmp_path: Path) -> None:
     recorded: list[dict[str, Any]] = []
 
     def fake_run(cmd, *, allowed_executables, timeout_seconds, **kw):
+        """Record command constraints and fake metadata or empty successful command output."""
         recorded.append(
             {
                 "cmd": list(cmd),
@@ -270,6 +273,7 @@ def test_vmaf_step_command_failed_skips_clip(
     _out_plain, _out_folds = _setup_full_features_run(tmp_path, monkeypatch)
 
     def fake_run(cmd, **kw):
+        """Fake metadata success, raise on scoring, and return success for other commands."""
         if cmd[0] == "ffprobe":
             return TextCommandResult(
                 tuple(cmd),
@@ -301,6 +305,7 @@ def test_encode_step_command_timed_out_skips_clip_and_cleans_intermediate(
     timed_out_cmd: list[list[str]] = []
 
     def fake_run(cmd, **kw):
+        """Fake metadata success or write a partial encoded file and raise CommandTimedOut."""
         if cmd[0] == "ffprobe":
             return TextCommandResult(
                 tuple(cmd),
