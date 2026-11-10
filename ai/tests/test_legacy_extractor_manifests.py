@@ -139,6 +139,7 @@ def test_benchmark_harness_uses_current_portable_contract() -> None:
     bash = shutil.which("bash")
     if bash is None:
         pytest.skip("bash not on PATH")
+        return  # pytest is untyped for the mypy gate; the return narrows bash to str
     run_command(
         [bash, "-n", str(script)],
         allowed_executables=(bash,),

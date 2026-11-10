@@ -123,7 +123,7 @@ def test_validate_https_url_positive() -> None:
     assert isinstance(opener, urllib.request.OpenerDirector)
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest untyped for the mypy gate
     "bad_url",
     [
         "http://storage.googleapis.com/ugc-dataset/test.mp4",
