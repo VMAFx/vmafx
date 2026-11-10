@@ -14,7 +14,6 @@ import sys
 import tempfile
 import unittest
 import urllib.error
-import urllib.request
 from collections.abc import Callable
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import UTC, datetime, timedelta
@@ -26,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import ci_tier
 from scripts.ci import readme_badges as rb
+from scripts.lib.safe_subprocess import CommandValidationError
 
 ROOT = Path(__file__).resolve().parents[3]
 NOW = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
@@ -38,6 +38,17 @@ RAW = re.compile(
 
 def runs(*conclusions: object) -> dict[str, object]:
     return {"workflow_runs": [{"conclusion": c} for c in conclusions]}
+
+
+def commit_answering(answer: object, call: rb.Call) -> rb.Call:
+    """``call``, except that creating a commit answers ``answer``."""
+
+    def answered(method: str, path: str, payload: object) -> object:
+        if path.endswith("/git/commits"):
+            return answer
+        return call(method, path, payload)
+
+    return answered
 
 
 def http_error(code: int) -> urllib.error.HTTPError:
@@ -347,10 +358,10 @@ class PublicJson(unittest.TestCase):
         self.assertEqual((timeout, limit), (rb.PUBLIC_TIMEOUT_S, rb.MAX_RESPONSE_BYTES))
 
     def test_a_non_https_source_is_refused_before_any_request(self) -> None:
-        with mock.patch.object(urllib.request, "urlopen") as urlopen:
+        with mock.patch.object(ci_tier.HTTPS_OPENER, "open") as sent:
             with self.assertRaises(ci_tier.TierError):
                 rb.public_json("http://api.scorecard.dev/x")
-        urlopen.assert_not_called()
+        sent.assert_not_called()
 
 
 class Collect(unittest.TestCase):
@@ -463,20 +474,8 @@ class Publish(unittest.TestCase):
         for answer in ({"sha": "c1"}, {"sha": "c1", "verification": {"verified": "true"}}):
             with self.subTest(answer=answer):
                 call, calls = self.fake("c0")
-
-                def answered(
-                    method: str,
-                    path: str,
-                    payload: object,
-                    answer: object = answer,
-                    call: rb.Call = call,
-                ) -> object:
-                    if path.endswith("/git/commits"):
-                        return answer
-                    return call(method, path, payload)
-
                 with self.assertRaisesRegex(rb.BadgeError, "c1 is not signed"):
-                    rb.publish(answered, REPO, self.FILES, NOW)
+                    rb.publish(commit_answering(answer, call), REPO, self.FILES, NOW)
                 self.assertFalse([c for c in calls if "/git/refs" in c[1]])
 
     def test_a_tree_answer_without_a_list_is_refused(self) -> None:
@@ -522,6 +521,33 @@ class Publish(unittest.TestCase):
     def test_blob_sha_is_the_git_object_id(self) -> None:
         # `printf 'hi\n' | git hash-object --stdin`
         self.assertEqual(rb.blob_sha(b"hi\n"), "45b983be36b73c0788dc9cbcb76cbb80fc7bb057")
+
+    def test_the_empty_blob_has_the_well_known_id(self) -> None:
+        # `git hash-object --stdin </dev/null`
+        self.assertEqual(rb.blob_sha(b""), "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")
+
+    def test_a_failing_or_garbled_git_is_refused(self) -> None:
+        answers = (
+            mock.Mock(returncode=128, stdout=b"", stderr=b"fatal: no"),
+            mock.Mock(
+                returncode=1, stdout=b"45b983be36b73c0788dc9cbcb76cbb80fc7bb057\n", stderr=b""
+            ),
+            mock.Mock(returncode=0, stdout=b"not-an-id\n", stderr=b""),
+            mock.Mock(returncode=0, stdout=b"a" * 64 + b"\n", stderr=b""),
+        )
+        for answer in answers:
+            with (
+                self.subTest(stdout=answer.stdout),
+                mock.patch.object(rb, "run_command", return_value=answer),
+                self.assertRaisesRegex(rb.BadgeError, "git hash-object exited"),
+            ):
+                rb.blob_sha(b"hi\n")
+
+    def test_a_missing_git_is_a_badge_error(self) -> None:
+        missing = CommandValidationError("required executable not found: git")
+        with mock.patch.object(rb, "run_command", side_effect=missing):
+            with self.assertRaisesRegex(rb.BadgeError, "not found: git"):
+                rb.blob_sha(b"hi\n")
 
 
 class Verdict(unittest.TestCase):

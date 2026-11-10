@@ -5,12 +5,14 @@
 
 from __future__ import annotations
 
+import http.client
 import io
 import json
 import os
 import sys
 import tempfile
 import unittest
+import urllib.error
 import urllib.request
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -161,12 +163,12 @@ class Api(unittest.TestCase):
     def sent(
         self, method: str, payload: object | None = None, answer: bytes = b"{}"
     ) -> tuple[urllib.request.Request, Any]:
-        """The request api_request hands to urlopen, and what it returned."""
+        """The request api_request hands to the https opener, and what it returned."""
         opened = mock.MagicMock()
         opened.__enter__.return_value.read.return_value = answer
-        with mock.patch.object(urllib.request, "urlopen", return_value=opened) as urlopen:
+        with mock.patch.object(ci_tier.HTTPS_OPENER, "open", return_value=opened) as sent:
             result = ci_tier.api_request(method, "https://api.github.com/x", "t", payload)
-        return urlopen.call_args.args[0], result
+        return sent.call_args.args[0], result
 
     def test_a_payload_goes_out_as_a_json_body(self) -> None:
         request, _ = self.sent("PATCH", {"sha": "c1", "force": False})
@@ -198,10 +200,10 @@ class HttpsJson(unittest.TestCase):
         """https_json's result for ``body`` and the request and read size it used."""
         opened = mock.MagicMock()
         opened.__enter__.return_value.read.return_value = body
-        with mock.patch.object(urllib.request, "urlopen", return_value=opened) as urlopen:
+        with mock.patch.object(ci_tier.HTTPS_OPENER, "open", return_value=opened) as sent:
             result = ci_tier.https_json("GET", "https://h/x", headers or {}, None, 5, limit)
         read = opened.__enter__.return_value.read
-        return result, urlopen.call_args, read.call_args
+        return result, sent.call_args, read.call_args
 
     def test_an_answer_of_exactly_the_limit_is_read(self) -> None:
         result, opened, read = self.answer(b'{"a":1}', 7)
@@ -220,11 +222,55 @@ class HttpsJson(unittest.TestCase):
         self.assertIsNone(request.get_header("Authorization"))
 
     def test_a_non_https_url_is_refused_before_any_request(self) -> None:
-        with mock.patch.object(urllib.request, "urlopen") as urlopen:
+        with mock.patch.object(ci_tier.HTTPS_OPENER, "open") as sent:
             for url in ("http://h/x", "file:///etc/passwd"):
                 with self.subTest(url=url), self.assertRaises(ci_tier.TierError):
                     ci_tier.https_json("GET", url, {}, None, 5, 10)
-        urlopen.assert_not_called()
+        sent.assert_not_called()
+
+
+class HttpsOpener(unittest.TestCase):
+    @staticmethod
+    def response(code: int, location: str | None = None) -> mock.Mock:
+        """A stand-in for an https answer with ``code`` and an optional Location."""
+        headers = http.client.HTTPMessage()
+        if location is not None:
+            headers["Location"] = location
+        answer = mock.Mock(code=code, msg="status")
+        answer.info.return_value = headers
+        return answer
+
+    def test_an_https_address_reaches_the_https_handler(self) -> None:
+        answer = self.response(200)
+        with mock.patch.object(
+            urllib.request.HTTPSHandler, "https_open", return_value=answer
+        ) as https_open:
+            self.assertIs(ci_tier.HTTPS_OPENER.open("https://h/x", timeout=1), answer)
+        self.assertEqual(https_open.call_args.args[0].full_url, "https://h/x")
+
+    def test_a_non_https_address_fails_without_being_opened(self) -> None:
+        for url in ("file:///etc/passwd", "data:text/plain,x", "ftp://h/x", "http://h/x"):
+            with (
+                self.subTest(url=url),
+                self.assertRaisesRegex(urllib.error.URLError, "unknown url type"),
+            ):
+                ci_tier.HTTPS_OPENER.open(url, timeout=1)
+
+    def test_a_redirect_off_https_is_not_followed(self) -> None:
+        for target in ("http://h/y", "ftp://h/y", "file:///etc/passwd"):
+            with (
+                self.subTest(target=target),
+                mock.patch.object(
+                    urllib.request.HTTPSHandler,
+                    "https_open",
+                    return_value=self.response(302, target),
+                ) as https_open,
+            ):
+                with self.assertRaises(urllib.error.URLError) as raised:
+                    ci_tier.HTTPS_OPENER.open("https://h/x", timeout=1)
+                if isinstance(raised.exception, urllib.error.HTTPError):
+                    raised.exception.close()
+                self.assertEqual(https_open.call_count, 1)
 
 
 class Config(unittest.TestCase):

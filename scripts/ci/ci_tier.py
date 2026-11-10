@@ -64,6 +64,29 @@ PULL_REQUEST_EVENTS = frozenset({"pull_request", "pull_request_target"})
 _BASH_PATH = shutil.which("bash")
 BASH = str(Path(_BASH_PATH).resolve(strict=True)) if _BASH_PATH is not None else None
 
+
+def _https_opener() -> urllib.request.OpenerDirector:
+    """An opener that speaks https only.
+
+    ``urlopen`` also opens ``file:``, ``ftp:``, ``data:`` and plain ``http:``
+    addresses. This opener has no handler for them, so neither a caller nor a
+    redirect can reach one: the address fails as an unknown URL type.
+    """
+    opener = urllib.request.OpenerDirector()
+    for handler in (
+        urllib.request.ProxyHandler(),
+        urllib.request.UnknownHandler(),
+        urllib.request.HTTPSHandler(),
+        urllib.request.HTTPDefaultErrorHandler(),
+        urllib.request.HTTPRedirectHandler(),
+        urllib.request.HTTPErrorProcessor(),
+    ):
+        opener.add_handler(handler)
+    return opener
+
+
+HTTPS_OPENER = _https_opener()
+
 FULL = "full"
 LIGHT = "light"
 RELEASE_LIGHT = "release-light"
@@ -200,7 +223,7 @@ def https_json(
     request = urllib.request.Request(  # noqa: S310 - the scheme is checked above
         url, method=method, data=data, headers=dict(headers)
     )
-    with urllib.request.urlopen(request, timeout=timeout_s) as response:  # noqa: S310
+    with HTTPS_OPENER.open(request, timeout=timeout_s) as response:
         body = response.read(limit + 1)
     if len(body) > limit:
         raise TierError(f"{url}: answer larger than {limit} bytes")

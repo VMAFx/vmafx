@@ -27,7 +27,6 @@ from __future__ import annotations
 import argparse
 import base64
 import functools
-import hashlib
 import json
 import os
 import re
@@ -43,11 +42,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.ci import ci_tier
+from scripts.lib.safe_subprocess import (
+    CommandOutputLimitExceeded,
+    CommandTimedOut,
+    CommandValidationError,
+)
+from scripts.lib.safe_subprocess import run as run_command
 
 API = "https://api.github.com"
 BRANCH = "badges"
 STATE = "state.json"
 STALE_AFTER = timedelta(hours=6)
+GIT_TIMEOUT_S = 30
+OBJECT_ID = re.compile(r"[0-9a-f]{40}")
 QUIET_WINDOW = timedelta(hours=1)
 RUNS_PER_PAGE = 30
 PUBLIC_TIMEOUT_S = 20
@@ -303,8 +310,22 @@ def previous_state(github: GitHub, repository: str) -> tuple[dict[str, object], 
 
 
 def blob_sha(data: bytes) -> str:
-    """Git object id of a blob holding ``data``."""
-    return hashlib.sha1(b"blob %d\x00" % len(data) + data, usedforsecurity=False).hexdigest()
+    """Git object id of a blob holding ``data``, as git computes it (stdin skips filters)."""
+    try:
+        result = run_command(
+            ["git", "hash-object", "--stdin"],
+            allowed_executables=("git",),
+            input_data=data,
+            capture_output=True,
+            timeout_seconds=GIT_TIMEOUT_S,
+        )
+    except (CommandValidationError, CommandTimedOut, CommandOutputLimitExceeded, OSError) as error:
+        raise BadgeError(f"git hash-object: {error}") from error
+    sha = result.stdout.decode("ascii", "replace").strip()
+    if result.returncode or not OBJECT_ID.fullmatch(sha):
+        detail = result.stderr.decode("utf-8", "replace").strip()
+        raise BadgeError(f"git hash-object exited {result.returncode}: {sha or detail}")
+    return sha
 
 
 def collect(directory: Path, badges: tuple[Badge, ...]) -> dict[str, bytes]:
