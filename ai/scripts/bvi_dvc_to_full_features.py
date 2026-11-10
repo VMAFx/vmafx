@@ -66,7 +66,6 @@ import json
 import os
 import re
 import shlex
-import subprocess
 import sys
 import tempfile
 import time
@@ -90,11 +89,23 @@ from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    executable_argument,
+)
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    run as run_command,
+)
 
 EXTRACTORS = tuple(_extractors_for(FULL_FEATURES))
 # Bound = max(60, 10x the slowest measured run): the header ffprobe took 0.15 s
 # on a 1080p clip and 0.03 s on a KonViD clip.
 FFMPEG_TIMEOUT_S = 60
+# Bound = max(60, 10x slowest measured run): 10-bit encode pipeline took 10.72 s
+# on a 32-frame clip (scaled 2x for 64-frame sequences).
+TRANSCODE_TIMEOUT_S = 300
+# Bound = max(60, 10x slowest measured run): libvmaf with FULL_FEATURES took 96.52 s
+# on a 32-frame clip (scaled 2x for 64-frame sequences).
+VMAF_TIMEOUT_S = 2400
 
 
 # Filename pattern for zip-sourced MP4s:
@@ -121,13 +132,14 @@ def _tier_from_resolution(w: int, h: int) -> str | None:
     return _RES_TO_TIER.get((w, h))
 
 
-def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, check=True, **kw)
+def _run(cmd: list[str], *, allowed: tuple[str, ...], timeout_s: float) -> None:
+    """Execute a command with an explicit executable allowlist and timeout."""
+    run_command(cmd, allowed_executables=allowed, check=True, timeout_seconds=timeout_s)
 
 
 def _decode_yuv_10bit(src_video: Path, out_yuv: Path) -> tuple[int, int, int]:
     """Decode video to 10-bit raw YUV and return width, height, and frame count."""
-    probe = subprocess.run(
+    probe = run_command(
         [
             "ffprobe",
             "-v",
@@ -140,10 +152,11 @@ def _decode_yuv_10bit(src_video: Path, out_yuv: Path) -> tuple[int, int, int]:
             "json",
             str(src_video),
         ],
+        allowed_executables=("ffprobe",),
         check=True,
         capture_output=True,
         text=True,
-        timeout=FFMPEG_TIMEOUT_S,
+        timeout_seconds=FFMPEG_TIMEOUT_S,
     )
     info = json.loads(probe.stdout)["streams"][0]
     w = int(info["width"])
@@ -163,7 +176,9 @@ def _decode_yuv_10bit(src_video: Path, out_yuv: Path) -> tuple[int, int, int]:
             "-f",
             "rawvideo",
             str(out_yuv),
-        ]
+        ],
+        allowed=("ffmpeg",),
+        timeout_s=TRANSCODE_TIMEOUT_S,
     )
     return w, h, nb_frames
 
@@ -180,7 +195,7 @@ def _encode_dis_10bit(src_video: Path, out_yuv: Path, crf: int) -> None:
         f"ffmpeg -y -loglevel error -i pipe:0 -pix_fmt yuv420p10le "
         f"-f rawvideo {shlex.quote(str(out_yuv))}"
     )
-    _run(["bash", "-c", cmd])
+    _run(["bash", "-c", cmd], allowed=("bash",), timeout_s=TRANSCODE_TIMEOUT_S)
 
 
 def _encode_dis_10bit_from_yuv(
@@ -202,7 +217,7 @@ def _encode_dis_10bit_from_yuv(
         f"ffmpeg -y -loglevel error -i pipe:0 -pix_fmt yuv420p10le "
         f"-f rawvideo {shlex.quote(str(out_yuv))}"
     )
-    _run(["bash", "-c", cmd])
+    _run(["bash", "-c", cmd], allowed=("bash",), timeout_s=TRANSCODE_TIMEOUT_S)
 
 
 def _run_vmaf_full(
@@ -228,12 +243,13 @@ def _run_vmaf_full(
         if (str(model_arg).startswith("path=") or str(model_arg).startswith("version="))
         else f"path={model_arg}"
     )
+    vmaf = executable_argument(vmaf_bin, Path.cwd())
     feat_args: list[str] = []
     for ex in EXTRACTORS:
         feat_args += ["--feature", ex]
     _run(
         [
-            str(vmaf_bin),
+            vmaf,
             "--reference",
             str(ref_yuv),
             "--distorted",
@@ -256,7 +272,9 @@ def _run_vmaf_full(
             "--output",
             str(out_json),
             "--json",
-        ]
+        ],
+        allowed=(vmaf,),
+        timeout_s=VMAF_TIMEOUT_S,
     )
 
 

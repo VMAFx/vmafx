@@ -28,7 +28,6 @@ import hashlib
 import json
 import os
 import shlex
-import subprocess
 import sys
 import tempfile
 import time
@@ -55,14 +54,26 @@ from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    CommandFailed,
+    CommandTimedOut,
+    executable_argument,
+)
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    run as run_command,
+)
 
 # Bound = max(60, 10x the slowest measured run): the header ffprobe took 0.15 s
 # on a 1080p clip and 0.03 s on a KonViD clip.
 FFMPEG_TIMEOUT_S = 60
+# Bound = max(60, 10x slowest measured run): libvmaf with FULL_FEATURES took 27.56 s
+# on a 540p 149-frame clip (scaled 1.6x for 8 s clips).
+VMAF_TIMEOUT_S = 600
 
 
-def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, check=True, **kw)
+def _run(cmd: list[str], *, allowed: tuple[str, ...], timeout_s: float) -> None:
+    """Execute a command with an explicit executable allowlist and timeout."""
+    run_command(cmd, allowed_executables=allowed, check=True, timeout_seconds=timeout_s)
 
 
 def _default_konvid_root() -> Path:
@@ -89,7 +100,7 @@ def _resolve_videos_dir(konvid_root: Path) -> Path:
 
 def _ffprobe_video(src_mp4: Path) -> tuple[int, int, str]:
     """Probe a video file with ffprobe and return width, height, and codec name."""
-    probe = subprocess.run(
+    probe = run_command(
         [
             "ffprobe",
             "-v",
@@ -102,10 +113,11 @@ def _ffprobe_video(src_mp4: Path) -> tuple[int, int, str]:
             "json",
             str(src_mp4),
         ],
+        allowed_executables=("ffprobe",),
         capture_output=True,
         text=True,
         check=True,
-        timeout=FFMPEG_TIMEOUT_S,
+        timeout_seconds=FFMPEG_TIMEOUT_S,
     )
     stream = json.loads(probe.stdout)["streams"][0]
     return int(stream["width"]), int(stream["height"]), str(stream.get("codec_name", "unknown"))
@@ -128,51 +140,60 @@ def _decode_yuv(src_mp4: Path, out_yuv: Path) -> tuple[int, int, str]:
             "-f",
             "rawvideo",
             str(out_yuv),
-        ]
+        ],
+        allowed=("ffmpeg",),
+        timeout_s=FFMPEG_TIMEOUT_S,
     )
     return width, height, codec_name
 
 
 def _encode_dis(src_mp4: Path, out_yuv: Path, crf: int) -> None:
+    """Encode distorted stream and decode to rawvideo YUV."""
     intermediate = out_yuv.with_suffix(".dis.mp4")
-    _run(
-        [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-i",
-            str(src_mp4),
-            "-an",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            str(crf),
-            "-pix_fmt",
-            "yuv420p",
-            str(intermediate),
-        ]
-    )
-    _run(
-        [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-i",
-            str(intermediate),
-            "-pix_fmt",
-            "yuv420p",
-            "-f",
-            "rawvideo",
-            str(out_yuv),
-        ]
-    )
-    intermediate.unlink(missing_ok=True)
+    try:
+        _run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(src_mp4),
+                "-an",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                str(crf),
+                "-pix_fmt",
+                "yuv420p",
+                str(intermediate),
+            ],
+            allowed=("ffmpeg",),
+            timeout_s=FFMPEG_TIMEOUT_S,
+        )
+        _run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(intermediate),
+                "-pix_fmt",
+                "yuv420p",
+                "-f",
+                "rawvideo",
+                str(out_yuv),
+            ],
+            allowed=("ffmpeg",),
+            timeout_s=FFMPEG_TIMEOUT_S,
+        )
+    finally:
+        intermediate.unlink(missing_ok=True)
 
 
 def _run_vmaf_full(
@@ -184,12 +205,14 @@ def _run_vmaf_full(
     out_json: Path,
     model_arg: str,
 ) -> None:
+    """Run libvmaf CLI with FULL_FEATURES extractors and teacher model."""
+    vmaf = executable_argument(vmaf_bin, Path.cwd())
     feat_args: list[str] = []
     for extractor in _extractors_for(FULL_FEATURES):
         feat_args += ["--feature", extractor]
     _run(
         [
-            str(vmaf_bin),
+            vmaf,
             "--reference",
             str(ref_yuv),
             "--distorted",
@@ -213,7 +236,9 @@ def _run_vmaf_full(
             str(out_json),
             "--json",
             "-q",
-        ]
+        ],
+        allowed=(vmaf,),
+        timeout_s=VMAF_TIMEOUT_S,
     )
 
 
@@ -544,8 +569,14 @@ def _process_all_clips(
                     args.codec_from_source,
                 )
             )
-        except subprocess.CalledProcessError as exc:
-            print(f"[konvid-full] {key} FAILED: {shlex.join(exc.cmd)}", file=sys.stderr)
+        except (CommandFailed, CommandTimedOut) as exc:
+            argv = exc.result.argv if isinstance(exc, CommandFailed) else exc.argv
+            suffix = (
+                f" (timed out after {exc.timeout_seconds:g}s)"
+                if isinstance(exc, CommandTimedOut)
+                else ""
+            )
+            print(f"[konvid-full] {key} FAILED: {shlex.join(argv)}{suffix}", file=sys.stderr)
             continue
         except Exception as exc:
             # An audio-only / no-video clip raises IndexError on the
