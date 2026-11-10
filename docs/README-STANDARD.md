@@ -75,8 +75,12 @@ never reorders them:
 5. **Licence**: one badge naming every licence that applies.
 6. **Support**: sponsorship links (GitHub Sponsors, Ko-fi and the like).
 
-Each group is introduced by an HTML comment (`<!-- 2 CI/build -->`) so a
-reviewer can check the order without rendering the page.
+Each group carries an HTML comment (`<!-- 2 CI/build -->`) so a reviewer can
+check the order without rendering the page. The comment trails the first badge
+line of its own group (the banner line for the first group) and never starts a
+line of its own: a line that begins with `<!--` opens a CommonMark HTML block
+that interrupts the badge paragraph, and the block then renders as one centred
+row per group instead of one band.
 
 Version badges for languages, toolchains, backends and integrations (C, Go,
 Rust, Python, CUDA, ROCm and the like) are not part of the top block. Where
