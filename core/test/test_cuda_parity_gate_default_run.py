@@ -16,13 +16,17 @@ whenever another job held the lock.
 from __future__ import annotations
 
 import json
-import os
 import signal
 import subprocess  # nosec B404 -- fixed repository gate requires SIGINT supervision.
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.lib import vmaftest  # noqa: E402 - needs the repository root on sys.path
+
 SCRIPT = ROOT / "scripts" / "ci" / "cross_backend_parity_gate.py"
 # Not measured: the parity gate needs a free GPU, which the measuring host did not have.
 # Set under the 120 s Meson timeout of this test (core/test/meson.build), so this
@@ -67,19 +71,20 @@ def build_has_cuda(build_dir: Path) -> bool | None:
 
 
 def find_binary() -> Path | None:
-    """The vmaf CLI of VMAF_BUILD_DIR, of `build/`, or of the working directory."""
-    vmaf_bin = os.environ.get("VMAF_BUILD_DIR")
-    binary = Path(vmaf_bin) / "tools" / "vmaf" if vmaf_bin else ROOT / "build" / "tools" / "vmaf"
-    if binary.is_file():
-        return binary
-    binary = Path.cwd() / "tools" / "vmaf"
-    return binary if binary.is_file() else None
+    """The vmaf CLI under test, from the one resolver every Python test uses.
+
+    scripts/lib/vmaftest.py reads VMAF_BIN, VMAF_BIN_FOR_TESTS, then the repository's
+    build directories. Those directories are usually CPU builds, which skip_reason() skips:
+    name a CUDA build with VMAF_BIN. A set variable that names no executable raises
+    vmaftest.InvalidVmafBinary.
+    """
+    return vmaftest.find(root=ROOT)
 
 
 def skip_reason(binary: Path | None) -> str | None:
     """Why there is nothing to compare, or None. Decided without the device."""
     if binary is None:
-        return "vmaf binary not found"
+        return vmaftest.MISSING_MESSAGE
     if build_has_cuda(binary.parent.parent) is False:
         return "This build was configured without CUDA"
     if not REF.is_file() or not DIS.is_file():
@@ -144,7 +149,6 @@ def stop_gate(proc: subprocess.Popen[str]) -> tuple[str, str]:
 
 def run_gate(cmd: list[str]) -> subprocess.CompletedProcess[str] | None:
     """Interrupt a timed-out gate so its asyncio supervisor reaps vmaf before unlocking."""
-    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
     with subprocess.Popen(  # noqa: S603  # nosec B603 -- fixed argv uses sys.executable and a repository script.
         cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     ) as proc:
@@ -161,16 +165,8 @@ def run_gate(cmd: list[str]) -> subprocess.CompletedProcess[str] | None:
         return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
 
 
-def main() -> int:
-    """Run the CUDA parity gate under the GPU lock and return its exit code, or 77 to skip."""
-    binary = find_binary()
-    reason = skip_reason(binary)
-    if reason is not None or binary is None:
-        sys.stderr.write(f"{reason}; skipping (77)\n")
-        return 77
-
-    cmd = gate_command(binary)
-    proc = run_gate(cmd)
+def gate_verdict(proc: subprocess.CompletedProcess[str] | None) -> int:
+    """The exit code for a finished gate run: 0, 77 to skip, 124 on timeout, else a failure."""
     if proc is None:
         return 124
     if proc.returncode != 0:
@@ -190,6 +186,21 @@ def main() -> int:
         return 1
 
     return 0
+
+
+def main() -> int:
+    """Run the CUDA parity gate under the GPU lock and return its exit code, or 77 to skip."""
+    try:
+        binary = find_binary()
+    except vmaftest.InvalidVmafBinary as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 1
+    reason = skip_reason(binary)
+    if reason is not None or binary is None:
+        sys.stderr.write(f"{reason}; skipping (77)\n")
+        return 77
+
+    return gate_verdict(run_gate(gate_command(binary)))
 
 
 if __name__ == "__main__":

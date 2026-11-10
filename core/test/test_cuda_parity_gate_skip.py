@@ -36,6 +36,7 @@ import time
 import unittest
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -50,7 +51,7 @@ REFUSAL = re.compile(
 )
 
 
-def load_default_run():
+def load_default_run() -> ModuleType:
     """Load the repository parity wrapper for device-free tests."""
     spec = importlib.util.spec_from_file_location("parity_gate_default_run", DEFAULT_RUN)
     if spec is None or spec.loader is None:
@@ -88,7 +89,7 @@ class CudaParityGateSkipTest(unittest.TestCase):
         self.assertFalse(module.cuda_unavailable(cli_refusal("sycl")))
 
 
-def build_dir_with(options: str | None) -> tempfile.TemporaryDirectory:
+def build_dir_with(options: str | None) -> tempfile.TemporaryDirectory[str]:
     """A build directory whose Meson option record holds `options`, or none."""
     build = tempfile.TemporaryDirectory()
     if options is not None:
@@ -98,10 +99,66 @@ def build_dir_with(options: str | None) -> tempfile.TemporaryDirectory:
     return build
 
 
+def make_cli(build: Path) -> Path:
+    """Create an empty executable `tools/vmaf` under `build` and return its path."""
+    binary = build / "tools" / "vmaf"
+    binary.parent.mkdir(parents=True)
+    binary.write_text("", encoding="utf-8")
+    binary.chmod(0o755)
+    return binary
+
+
+class FindBinaryTest(unittest.TestCase):
+    """The CLI comes from scripts/lib/vmaftest.py, not from a lookup of this test's own."""
+
+    def run_with(self, root: Path, env: dict[str, str]) -> tuple[ModuleType, Path | None]:
+        """find_binary() with `root` as repository root and `env` as the whole environment."""
+        module = load_default_run()
+        with mock.patch.object(module, "ROOT", root), mock.patch.dict(os.environ, env, clear=True):
+            found: Path | None = module.find_binary()
+        return module, found
+
+    def test_vmaf_bin_names_the_cli(self) -> None:
+        """VMAF_BIN wins over a build directory, so a CUDA build can be named."""
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as cuda:
+            make_cli(Path(root) / "build")
+            binary = make_cli(Path(cuda))
+            self.assertEqual(self.run_with(Path(root), {"VMAF_BIN": str(binary)})[1], binary)
+
+    def test_build_is_the_fallback(self) -> None:
+        """Without a variable, the CLI under the repository's `build/` is used."""
+        with tempfile.TemporaryDirectory() as root:
+            binary = make_cli(Path(root) / "build")
+            self.assertEqual(self.run_with(Path(root), {})[1], binary)
+
+    def test_no_cli_is_a_skip(self) -> None:
+        """No variable and no build: main() skips with the resolver's message."""
+        with tempfile.TemporaryDirectory() as root:
+            module, found = self.run_with(Path(root), {})
+            self.assertIsNone(found)
+            self.assertEqual(module.skip_reason(None), module.vmaftest.MISSING_MESSAGE)
+
+    def test_invalid_vmaf_bin_is_a_failure(self) -> None:
+        """A VMAF_BIN naming no executable fails the run, not skips it or falls through."""
+        module = load_default_run()
+        with tempfile.TemporaryDirectory() as root:
+            make_cli(Path(root) / "build")
+            missing = str(Path(root) / "missing" / "vmaf")
+            stderr = io.StringIO()
+            with (
+                mock.patch.object(module, "ROOT", Path(root)),
+                mock.patch.dict(os.environ, {"VMAF_BIN": missing}, clear=True),
+                contextlib.redirect_stderr(stderr),
+            ):
+                self.assertEqual(module.main(), 1)
+            self.assertIn(f"VMAF_BIN={missing} does not name an executable file", stderr.getvalue())
+
+
 class BuildHasCudaTest(unittest.TestCase):
     def has_cuda(self, options: str | None) -> bool | None:
         with build_dir_with(options) as build:
-            return load_default_run().build_has_cuda(Path(build))
+            has_cuda: bool | None = load_default_run().build_has_cuda(Path(build))
+        return has_cuda
 
     def test_build_configured_without_cuda_is_recognised(self) -> None:
         options = json.dumps(
@@ -141,7 +198,7 @@ class BuildHasCudaTest(unittest.TestCase):
             ):
                 self.assertEqual(module.main(), 77)
                 popen.assert_not_called()
-        self.assertEqual(module.skip_reason(None), "vmaf binary not found")
+        self.assertEqual(module.skip_reason(None), module.vmaftest.MISSING_MESSAGE)
         # main() decides the skip ahead of the command that waits for the lock.
         source = DEFAULT_RUN.read_text(encoding="utf-8")
         main = source[source.index("def main() -> int:") :]
@@ -278,9 +335,9 @@ class DefaultRunProcessCleanupTest(unittest.TestCase):
         popen = subprocess.Popen
         watchdogs = []
 
-        def start(*args, **kwargs):
+        def start(*args: Any, **kwargs: Any) -> subprocess.Popen[str]:
             """Start a real gate and arrange bounded cleanup if the fallback is removed."""
-            proc = popen(*args, **kwargs)
+            proc: subprocess.Popen[str] = popen(*args, **kwargs)
             watchdog = threading.Timer(3, proc.kill)
             watchdog.start()
             watchdogs.append(watchdog)
