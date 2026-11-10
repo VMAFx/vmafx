@@ -38,6 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from _vmaf_cli import ffmpeg_reports_encoder
 
+# isort: split
 from vmaftune.codec_adapters._qsv_common import BaseQsvAdapter
 from vmaftune.compare import (
     _DEFAULT_VAAPI_DEVICE,
