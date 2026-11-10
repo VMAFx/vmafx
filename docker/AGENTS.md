@@ -161,8 +161,14 @@ image's `licensing.py sources` (the source offer cannot name a Debian package it
 has no record of) and leaves the notice naming a version the image does not
 ship. `tools/rc1-tester/tests/test_dockerfile_runtime_libs.py` holds the six
 builders, the nine published runtime stages (following each `FROM` chain) and
-the shared script to it. The macOS bundle, the Windows zips and `release-native`
-build zimg from source themselves and keep the 3.0.6 archive entry.
+the shared script to it. It **discovers** the copy sites from `COPY_SOURCES`
+rather than listing them, so a stage that starts copying a Debian library fails
+the contract by name until it is declared. `docker/Dockerfile.tester`'s
+`vmaf-build` is the one audited build-only exception: `runtime` overwrites
+`/opt/vmafx/lib` from `python-venv` (which carries the record) before installing
+it, and a test proves that order. The macOS bundle, the Windows zips and
+`release-native` build zimg from source themselves and keep the 3.0.6 archive
+entry.
 
 ## Fedora optional SYCL repository
 
