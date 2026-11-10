@@ -399,14 +399,53 @@ def branch_head(call: Call, repository: str) -> dict[str, str] | None:
     }
 
 
+def read_lag(recorded: object, fresh: object) -> timedelta | None:
+    """How far a recorded state entry's read time trails a fresh one's; ``None`` if incomparable.
+
+    Two entries that both lack a read time trail by nothing. An entry this
+    script would not write, or a read time on one side only or unreadable,
+    cannot be compared.
+    """
+    old, new = usable(recorded), usable(fresh)
+    if old is None or new is None:
+        return None
+    old_at, new_at = old["fetched_at"], new["fetched_at"]
+    if old_at is None or new_at is None:
+        return timedelta(0) if old_at == new_at else None
+    then, latest = read_time(old_at), read_time(new_at)
+    return latest - then if then is not None and latest is not None else None
+
+
+def reads_recorded(call: Call, repository: str, files: Mapping[str, bytes]) -> bool:
+    """True when the branch's state file holds every badge's read time well enough.
+
+    Well enough: for the same badges, each recorded read time lies less than
+    QUIET_WINDOW before the one about to be published, and not after it. A
+    source that recovers with its old value thus gets its new read time
+    committed, so a later failure carries that time, not the one from before
+    the outage. An unreadable state on either side means commit.
+    """
+    recorded, problem = previous_state(lambda path: call("GET", path, None), repository)
+    doc = json.loads(files[STATE].decode("utf-8"))
+    fresh = doc.get("badges") if isinstance(doc, dict) else None
+    if problem or not isinstance(fresh, dict) or set(recorded) != set(fresh):
+        return False
+    lags = (read_lag(recorded[slug], entry) for slug, entry in fresh.items())
+    return all(lag is not None and timedelta(0) <= lag < QUIET_WINDOW for lag in lags)
+
+
 def unchanged(
     call: Call, repository: str, head: Mapping[str, str], files: Mapping[str, bytes], now: datetime
 ) -> bool:
-    """True when every SVG matches the branch and its last commit is younger than QUIET_WINDOW.
+    """True when a commit would add nothing the branch needs.
 
-    The state file is left out on purpose: its read times change every run, so
-    comparing it would commit every run. The branch's read times therefore
-    trail the newest read by less than QUIET_WINDOW plus one schedule interval.
+    That is: the branch's last commit is younger than QUIET_WINDOW, every SVG
+    matches the branch, and the branch's state file already holds each
+    badge's read time to within QUIET_WINDOW (``reads_recorded``). The state
+    file's bytes are not compared, since its run time changes every run. So a
+    carried value's read time trails the newest successful read by less than
+    QUIET_WINDOW, and the commit-age rule keeps the branch's run time and
+    failure list from aging past it either.
     """
     committed = read_time(head["date"])
     if committed is None or now - committed >= QUIET_WINDOW:
@@ -417,7 +456,8 @@ def unchanged(
     current = {str(field(e, "path")): str(field(e, "sha")) for e in rows}
     if set(current) != set(files):
         return False
-    return all(current[name] == blob_sha(data) for name, data in files.items() if name != STATE)
+    svgs = (current[name] == blob_sha(data) for name, data in files.items() if name != STATE)
+    return all(svgs) and reads_recorded(call, repository, files)
 
 
 def publish(call: Call, repository: str, files: Mapping[str, bytes], now: datetime) -> str:

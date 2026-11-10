@@ -61,9 +61,11 @@ Praetor governance badge, which Praetor writes. The full rules are in
   forces, and the master ruleset requires a pull request, so the token cannot
   move `master`. An SVG cannot age by itself: if the workflow stops, the
   badges keep their last values until someone sees the missing run. The six
-  hours count from the read time `state.json` records, which an unchanged
-  badge refreshes only once an hour, so `stale` can come up to 75 minutes
-  early; committing on every run would quadruple the branch's growth.
+  hours count from the read time `state.json` records. A run with unchanged
+  SVGs commits once a badge's new read time is an hour or more newer than the
+  recorded one, so the recorded time trails the last successful read by less
+  than an hour and `stale` can come up to an hour early; committing on every
+  run would quadruple the branch's growth.
 - **Neutral / follow-ups**: issue 3394 tracks publishing with a dedicated
   GitHub App token instead of the workflow token, plus a second ruleset on
   `refs/heads/badges`, managed by `scripts/dev/check_repository_security.py`,

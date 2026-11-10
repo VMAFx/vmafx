@@ -35,7 +35,7 @@ How can the ten README status badges (seven workflow badges, OpenSSF Scorecard, 
 
 5. **Signed commits.** Commits the workflow token creates through the Git data API with no custom author or committer are signed by GitHub and show as verified (committer `web-flow`). The publish job sets no author or committer and moves the branch only to a commit GitHub reports as verified, so every commit the publish job adds is verified without any signing key in the workflow. That covers the publish job's commits, not the whole branch: until issue 3394 lands, another writer with `contents: write` can add commits of its own (finding 4).
 
-6. **Staleness.** A source that fails turns that run red at once: its `verdict` step exits 1. The badge itself keeps the last value for `STALE_AFTER` = 6 hours and then reads `stale`. The publish job skips the commit while every SVG matches the branch and the branch's last commit is younger than `QUIET_WINDOW` = 1 hour, so with runs on schedule the read time `state.json` records can lag the true last read by up to 1 hour plus one 15-minute step: `stale` can come up to 75 minutes early, and one schedule step late plus any delay GitHub adds to a scheduled run. Committing `state.json` on every run would remove that lag at the cost of about four commits an hour instead of one.
+6. **Staleness.** A source that fails turns that run red at once: its `verdict` step exits 1. The badge itself keeps the last value for `STALE_AFTER` = 6 hours and then reads `stale`. The publish job skips the commit only while every SVG matches the branch, the branch's last commit is younger than `QUIET_WINDOW` = 1 hour, and the branch's `state.json` holds each badge's read time less than an hour before this run's. The read time `state.json` records therefore lags the last successful read by less than an hour, also when a source recovers with its old value: `stale` can come up to an hour early, and one schedule step late plus any delay GitHub adds to a scheduled run. Committing `state.json` on every run would remove that lag at the cost of about four commits an hour instead of one.
 
 7. **Scorecard threshold.** The badge is green from an unrounded 8.5, the gate [docs/principles.md](../principles.md) and [ADR-1247](../adr/1247-scorecard-exact-head-gates.md) set for master. A score of 8.46 shows `8.5 / 10` in amber, so the rounded text never hides a miss.
 
@@ -47,7 +47,7 @@ How can the ten README status badges (seven workflow badges, OpenSSF Scorecard, 
 - **shields.io dynamic URLs with `style=for-the-badge`**: Rejected. Every page view depends on shields.io, and the workflow badge keeps GitHub's run choice.
 - **Each service's own badge**: Rejected. Four designs in one block and a Scorecard badge without a score.
 - **GitHub Pages files**: Rejected. Pages deploys the documentation site; a second deploy path for ten files is not worth it.
-- **Commit `state.json` on every run**: Rejected. Removes the 75-minute early `stale`, but quadruples the branch's growth.
+- **Commit `state.json` on every run**: Rejected. Removes the up to one hour early `stale`, but quadruples the branch's growth.
 - **Rendered SVGs on a `badges` branch, schedule trigger, workflow token**: Chosen.
 
 ## Open questions

@@ -53,11 +53,12 @@ with the time each one was read. A time without a UTC offset, or one that
 cannot be read, counts as stale.
 
 The six hours run from the read time `state.json` holds. A run whose SVGs are
-all unchanged commits nothing for an hour (see below), so with runs on
-schedule that time trails the last successful read by up to one hour plus one
-15-minute schedule step. A badge can therefore turn `stale` up to 75 minutes
-before six hours have passed since its last successful read, and one schedule
-step after, plus any delay GitHub adds to a scheduled run.
+all unchanged still commits once a badge's new read time is an hour or more
+newer than the one on the branch (see below), so that time trails the last
+successful read by less than an hour, also right after a source recovers with
+its old value. A badge can therefore turn `stale` up to an hour before six
+hours have passed since its last successful read, and one schedule step after,
+plus any delay GitHub adds to a scheduled run.
 Committing `state.json` on every run would close that gap at the cost of
 about four commits an hour instead of one.
 
@@ -74,8 +75,11 @@ GitHub API:
 - GitHub signs the commit. A commit that comes back unverified is not
   published, and the branch stays where it was.
 - The branch only moves forward (`force: false`).
-- When every SVG is unchanged and the last commit is less than an hour old,
-  nothing is committed, so the branch grows by about one commit an hour.
+- When every SVG is unchanged, the last commit is less than an hour old, and
+  `state.json` on the branch holds each badge's read time less than an hour
+  before this run's, nothing is committed, so the branch grows by about one
+  commit an hour. A read time that is missing, unreadable, in the future or on
+  one side only means a commit.
 - A commit made with the workflow token starts no other workflow.
 
 The job's token has `contents: write`, the narrowest right that can make a

@@ -55,6 +55,12 @@ def commit_answering(answer: object, call: rb.Call) -> rb.Call:
     return answered
 
 
+def state_file(fetched_at: str | None, slug: str = "go") -> bytes:
+    """A state file holding one passing badge read at ``fetched_at``."""
+    entry = {"message": "passing", "color": rb.GREEN, "fetched_at": fetched_at}
+    return json.dumps({"version": 1, "badges": {slug: entry}}).encode("utf-8")
+
+
 def http_error(code: int) -> urllib.error.HTTPError:
     """An HTTPError with ``code`` and an empty body, as urllib raises it."""
     return urllib.error.HTTPError(
@@ -584,7 +590,10 @@ class Collect(unittest.TestCase):
 class Publish(unittest.TestCase):
     """``publish`` writes one signed commit and moves the badges branch forward only."""
 
-    FILES: ClassVar[dict[str, bytes]] = {"go.svg": b"<svg >go</svg>", "state.json": b"{}"}
+    FILES: ClassVar[dict[str, bytes]] = {
+        "go.svg": b"<svg >go</svg>",
+        "state.json": state_file(rb.stamp(NOW)),
+    }
     OLD = rb.stamp(NOW - rb.QUIET_WINDOW)
 
     def fake(
@@ -593,14 +602,25 @@ class Publish(unittest.TestCase):
         date: str = OLD,
         verified: bool = True,
         tree_files: dict[str, bytes] | None = None,
+        state: bytes | None = None,
     ) -> tuple[rb.Call, list[tuple[str, str, Any]]]:
-        """A GitHub stub for ``publish`` that records each call; no ``head`` means no branch."""
+        """A GitHub stub for ``publish`` that records each call; no ``head`` means no branch.
+
+        ``state`` is the branch's state file, by default the one in ``FILES``.
+        """
         calls: list[tuple[str, str, Any]] = []
         tree_files = self.FILES if tree_files is None else tree_files
+        state = self.FILES["state.json"] if state is None else state
 
         def call(method: str, path: str, payload: object) -> object:
-            """Record the call and answer it like the Git data API."""
+            """Record the call; answer the state file read like the contents API."""
             calls.append((method, path, payload))
+            if path == f"/repos/{REPO}/contents/state.json?ref=badges":
+                return {"content": base64.b64encode(state).decode("ascii")}
+            return git(path)
+
+        def git(path: str) -> object:
+            """Answer like the Git data API."""
             if path.endswith("/git/ref/heads/badges"):
                 if head is None:
                     raise http_error(404)
@@ -687,6 +707,101 @@ class Publish(unittest.TestCase):
             "c0", date=young, tree_files={"go.svg": b"<svg >old</svg>", "state.json": b"{}"}
         )
         self.assertEqual(rb.publish(call, REPO, self.FILES, NOW), "c1")
+
+    def young_publish(self, state: bytes, files: dict[str, bytes] | None = None) -> str:
+        """``publish`` against a head five minutes old with the same SVG and ``state`` on it."""
+        call, _ = self.fake("c0", date=rb.stamp(NOW - timedelta(minutes=5)), state=state)
+        return rb.publish(call, REPO, self.FILES if files is None else files, NOW)
+
+    def test_read_times_inside_the_quiet_window_commit_nothing(self) -> None:
+        """A recorded read time up to just under an hour before this run's commits nothing."""
+        for lag in (timedelta(0), rb.QUIET_WINDOW - timedelta(seconds=1)):
+            with self.subTest(lag=lag):
+                self.assertEqual(
+                    self.young_publish(state_file(rb.stamp(NOW - lag))), "unchanged at c0"
+                )
+
+    def test_a_recovered_read_time_is_committed_inside_the_quiet_window(self) -> None:
+        """A read time an hour or more newer than the branch's is committed, SVGs unchanged."""
+        for lag in (rb.QUIET_WINDOW, timedelta(hours=5)):
+            with self.subTest(lag=lag):
+                self.assertEqual(self.young_publish(state_file(rb.stamp(NOW - lag))), "c1")
+
+    def test_a_recorded_read_time_that_cannot_be_compared_is_committed(self) -> None:
+        """A future, unreadable, one-sided or missing recorded read time, or bad state, commits."""
+        cases = {
+            "future": state_file(rb.stamp(NOW + timedelta(seconds=1))),
+            "naive": state_file("2026-11-10T12:00:00"),
+            "none on the branch": state_file(None),
+            "other badge": state_file(rb.stamp(NOW), slug="lint"),
+            "extra badge": json.dumps(
+                {"badges": {**json.loads(state_file(rb.stamp(NOW)))["badges"], "lint": {}}}
+            ).encode(),
+            "entry not an object": b'{"badges": {"go": "passing"}}',
+            "no badges": b"{}",
+            "not json": b"{",
+        }
+        for name, state in cases.items():
+            with self.subTest(case=name):
+                self.assertEqual(self.young_publish(state), "c1")
+
+    def test_a_fresh_state_that_cannot_be_compared_is_committed(self) -> None:
+        """A run's own state without a read time, or without a badges object, commits."""
+        for state in (state_file(None), b"[]", b'{"badges": []}', b'{"badges": ["go"]}'):
+            with self.subTest(state=state):
+                files = {**self.FILES, "state.json": state}
+                self.assertEqual(self.young_publish(self.FILES["state.json"], files), "c1")
+
+    def test_an_unreadable_branch_state_is_committed_with_nothing_to_compare(self) -> None:
+        """A branch state.json that cannot be parsed is replaced even when no badge is listed."""
+        files = {**self.FILES, "state.json": b'{"badges": {}}'}
+        self.assertEqual(self.young_publish(b'{"badges": {}}', files), "unchanged at c0")
+        self.assertEqual(self.young_publish(b"{", files), "c1")
+
+    def test_no_read_time_on_both_sides_commits_nothing(self) -> None:
+        """A badge never read, on the branch and in this run, needs no commit."""
+        files = {**self.FILES, "state.json": state_file(None)}
+        self.assertEqual(self.young_publish(state_file(None), files), "unchanged at c0")
+
+    def test_a_missing_branch_state_file_is_committed(self) -> None:
+        """A branch without state.json (404) commits."""
+        call, _ = self.fake("c0", date=rb.stamp(NOW - timedelta(minutes=5)))
+
+        def answered(method: str, path: str, payload: object) -> object:
+            """Answer the state file read with 404; pass every other call on."""
+            if "/contents/" in path:
+                raise http_error(404)
+            return call(method, path, payload)
+
+        self.assertEqual(rb.publish(answered, REPO, self.FILES, NOW), "c1")
+
+    def test_a_failure_after_an_unchanged_recovery_carries_the_recovered_time(self) -> None:
+        """Outage, recovery with the same value, then a new failure: the badge stays current.
+
+        The branch holds the read time from before a five-hour outage and a
+        commit five minutes old. The source answers again with its old value,
+        so the SVG is unchanged; the publish still commits the new read time,
+        and a failure 75 minutes later keeps "passing" instead of "stale".
+        """
+        go = rb.Badge("go", "Go", "workflow", "go-ci.yml")
+        before = rb.stamp(NOW - timedelta(hours=5))
+        recovered, _ = rb.refresh((go,), {}, NOW, lambda b: rb.PASSING)
+        files = {**self.FILES, "state.json": json.dumps({"badges": recovered}).encode()}
+        call, calls = self.fake(
+            "c0", date=rb.stamp(NOW - timedelta(minutes=5)), state=state_file(before)
+        )
+        self.assertEqual(rb.publish(call, REPO, files, NOW), "c1")
+        tree = next(c[2]["tree"] for c in calls if c[1].endswith("/git/trees"))
+        branch = json.loads(next(e["content"] for e in tree if e["path"] == "state.json"))
+        later = NOW + timedelta(minutes=75)
+
+        def fails(badge: rb.Badge) -> rb.Value:
+            """The source fails again."""
+            raise rb.BadgeError(f"{badge.slug}: timed out")
+
+        entries, _ = rb.refresh((go,), branch["badges"], later, fails)
+        self.assertEqual(entries["go"]["message"], "passing")
+        self.assertEqual(entries["go"]["fetched_at"], rb.stamp(NOW))
 
     def test_a_ref_lookup_error_other_than_404_is_raised(self) -> None:
         """A failing ref lookup other than 404 propagates."""
@@ -1133,9 +1248,9 @@ class Consistency(unittest.TestCase):
 
     def test_a_carried_read_time_trails_by_less_than_the_stale_bound(self) -> None:
         """The quiet window plus the largest schedule gap stays under a quarter of six hours."""
-        # The state file is committed with the SVGs only once QUIET_WINDOW has
-        # passed, so its read times trail the newest read by at most that plus
-        # one schedule gap; that lag must stay well inside STALE_AFTER.
+        # The branch's state file holds each read time to within QUIET_WINDOW
+        # (reads_recorded), so `stale` comes at most that early and one
+        # schedule gap late; together they must stay well inside STALE_AFTER.
         workflow = (ROOT / ".github/workflows/readme-badges.yml").read_text(encoding="utf-8")
         cron = re.search(r'cron: "(?P<minutes>[0-9,]+) \* \* \* \*"', workflow)
         self.assertIsNotNone(cron)
