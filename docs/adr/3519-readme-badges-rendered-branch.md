@@ -32,9 +32,11 @@ Practices and Codacy APIs, and `tools/badges/render.mjs` draws the SVGs with
 `tools/badges/package-lock.json`. Its publish job (`contents: write`) commits
 the SVGs and `state.json` to the `badges` branch through the GitHub API, and
 the README links `https://raw.githubusercontent.com/VMAFx/vmafx/badges/<slug>.svg`.
-A source that fails keeps its last value for six hours, then reads `stale`,
-and the run turns red. Every other README badge, the backends row included,
-uses `for-the-badge`. The full rules are in
+Both jobs run only on the default branch and check out the commit the run
+started from. A source that fails keeps its last value for six hours, then
+reads `stale`, and the run turns red. Every other README badge, the backends
+row included, uses `for-the-badge`; the one exception is the Praetor
+governance badge, which Praetor writes. The full rules are in
 [docs/development/readme-badges.md](../development/readme-badges.md).
 
 ## Alternatives considered
@@ -58,16 +60,26 @@ uses `for-the-badge`. The full rules are in
   limit to one branch. The script writes only `refs/heads/badges` and never
   forces, and the master ruleset requires a pull request, so the token cannot
   move `master`. An SVG cannot age by itself: if the workflow stops, the
-  badges keep their last values until someone sees the red or missing run.
+  badges keep their last values until someone sees the missing run. The six
+  hours count from the read time `state.json` records, which an unchanged
+  badge refreshes only once an hour, so `stale` can come up to 75 minutes
+  early; committing on every run would quadruple the branch's growth.
 - **Neutral / follow-ups**: a ruleset for the `badges` branch in
   `.github/repository-security-policy.json` (deletion and non-fast-forward
   refused); the Praetor governance badge in the `praetor:readme-governance`
   block keeps GitHub's design until Praetor offers the style (Praetor issue
-  1893), and `check-readme` then drops its one exception. This style is
-  the reference for the ecosystem README badge audit.
+  1893), and `check-readme` then drops its one exception. Publishing with a
+  GitHub App token instead of the workflow token, so that a `badges` ruleset
+  can refuse every other writer, is open. This style is the reference for the
+  ecosystem README badge audit.
 
 ## References
 
+- Source: `req` (operator order `vmafx-readme-badges-and-lint-red-20261110`,
+  2026-11-10, paraphrased): every README badge in one design, and no red
+  default branch anywhere in the fleet.
+- [Research-3519](../research/3519-readme-badges-rendered-branch.md): the
+  sources, measurements and alternatives behind this decision.
 - Controller answer `vmafx-readme-badge-style-r1` (2026-11-10, option b,
   paraphrased): one `for-the-badge` design everywhere, a workflow rendering the
   dynamic badges with a pinned `badge-maker` onto a `badges` branch with the

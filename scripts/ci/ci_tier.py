@@ -66,11 +66,14 @@ BASH = str(Path(_BASH_PATH).resolve(strict=True)) if _BASH_PATH is not None else
 
 
 def _https_opener() -> urllib.request.OpenerDirector:
-    """An opener that speaks https only.
+    """An opener that speaks https only and follows no redirect.
 
     ``urlopen`` also opens ``file:``, ``ftp:``, ``data:`` and plain ``http:``
-    addresses. This opener has no handler for them, so neither a caller nor a
-    redirect can reach one: the address fails as an unknown URL type.
+    addresses. This opener has no handler for them, so a caller cannot reach
+    one: the address fails as an unknown URL type. It has no redirect handler
+    either, so a 3xx answer is an ``HTTPError``: urllib's redirect handler
+    would resend the ``Authorization`` header to whichever host the
+    ``Location`` names, and every API these scripts call answers 200 directly.
     """
     opener = urllib.request.OpenerDirector()
     for handler in (
@@ -78,7 +81,6 @@ def _https_opener() -> urllib.request.OpenerDirector:
         urllib.request.UnknownHandler(),
         urllib.request.HTTPSHandler(),
         urllib.request.HTTPDefaultErrorHandler(),
-        urllib.request.HTTPRedirectHandler(),
         urllib.request.HTTPErrorProcessor(),
     ):
         opener.add_handler(handler)

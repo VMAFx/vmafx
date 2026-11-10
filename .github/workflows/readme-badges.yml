@@ -28,7 +28,14 @@ jobs:
     name: Read the sources and render
     # github.com only: the job reads and the publish job writes through the
     # GitHub API, which a mirror's token cannot reach (as in supply-chain.yml).
-    if: github.repository == 'VMAFx/vmafx' && github.server_url == 'https://github.com'
+    # Default branch only: a manual run picked on another branch runs nothing,
+    # so the publish token never meets a branch's own copy of this file.
+    # .github/repository-security-policy.json holds both names; a test keeps
+    # these in step with it.
+    if: >-
+      github.repository == 'VMAFx/vmafx'
+      && github.server_url == 'https://github.com'
+      && github.ref == 'refs/heads/master'
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
@@ -37,7 +44,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: master
+          # The commit this run started from, in both jobs: a master push
+          # between them cannot hand the publisher other code than the
+          # renderer ran.
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
@@ -85,7 +95,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: master
+          # The commit this run started from, in both jobs: a master push
+          # between them cannot hand the publisher other code than the
+          # renderer ran.
+          ref: ${{ github.sha }}
           persist-credentials: false
       - if: ${{ env.GITEA_ACTIONS != 'true' }}
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2

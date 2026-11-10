@@ -11,9 +11,10 @@
     readme_badges.py verdict --state DIR/state.json
         Exit 1 when a source failed this run, so the run turns red.
     readme_badges.py check-readme [--readme README.md]
-        Exit 1 when a README image is not a rendered badge, a shields.io
-        badge in for-the-badge with the dark label, or a local image.
-        Offline; pre-commit runs it on every README change.
+        Exit 1 when a README image is not a badge rendered onto this
+        repository's badges branch, a shields.io badge in for-the-badge with
+        the dark label, or a file in the repository. Offline; pre-commit runs
+        it on every README change.
 
 Sources: the latest decisive completed push run of each workflow on the
 default branch (GitHub API with GITHUB_TOKEN), and the OpenSSF Scorecard
@@ -42,6 +43,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.ci import ci_tier
+from scripts.dev.check_repository_security import POLICY as SECURITY_POLICY
 from scripts.lib.safe_subprocess import (
     CommandOutputLimitExceeded,
     CommandTimedOut,
@@ -66,8 +68,11 @@ RED = "#cf222e"
 AMBER = "#9a6700"
 GREY = "#6e7781"
 SCORE_MAX = 10  # OpenSSF Scorecard scores run from 0 to 10
-SCORE_GREEN = 7.0  # shown score from which the badge is green
-SCORE_AMBER = 4.0  # shown score from which it is amber; red below
+# The unrounded score from which the badge is green: the master requirement in
+# docs/principles.md (ADR-1247). The badge colours the public score only; the
+# exact-head check stays the Scorecard workflow's job.
+SCORE_GREEN = 8.5
+SCORE_AMBER = 4.0  # unrounded score from which it is amber; red below
 TEXT = re.compile(r"[\x20-\x7e]{1,40}")
 COLOR = re.compile(r"#[0-9a-f]{6}")
 
@@ -79,6 +84,12 @@ DECISIVE = {
     "timed_out": FAILING,
     "startup_failure": FAILING,
 }
+# Runs that say nothing about the code: no conclusion yet, cancelled or
+# skipped. The badge looks past them. Any other conclusion of the newest run
+# (action_required, neutral, stale) reads "unknown", never an older run's value.
+# A tuple, not a set: membership then compares and never hashes the API value.
+PASSED_OVER = (None, "cancelled", "skipped")
+UNKNOWN = ("unknown", GREY)
 BEST_PRACTICES = {
     "in_progress": ("in progress", AMBER),
     "passing": PASSING,
@@ -127,28 +138,32 @@ def stamp(moment: datetime) -> str:
 
 
 def workflow_value(runs: object) -> Value:
-    """Value of the newest run that passed or failed; cancelled and skipped runs do not count."""
+    """Value of the newest run that has a conclusion and was not cancelled or skipped.
+
+    That run reads "passing" or "failing" when it passed or failed, "unknown"
+    otherwise; so does an answer with no such run.
+    """
     rows = runs.get("workflow_runs") if isinstance(runs, dict) else None
     if not isinstance(rows, list):
         raise BadgeError("the runs answer has no workflow_runs list")
     for row in rows:
         conclusion = row.get("conclusion") if isinstance(row, dict) else None
-        if conclusion in DECISIVE:
-            return DECISIVE[conclusion]
-    return ("unknown", GREY)
+        if conclusion not in PASSED_OVER:
+            return DECISIVE.get(conclusion, UNKNOWN) if isinstance(conclusion, str) else UNKNOWN
+    return UNKNOWN
 
 
 def scorecard_value(doc: object) -> Value:
-    """OpenSSF Scorecard score out of 10: green from 7, amber from 4, red below.
+    """OpenSSF Scorecard score out of 10: green from 8.5, amber from 4, red below.
 
-    The colour follows the shown one-decimal score, so 6.96 reads "7.0" in green.
+    The colour follows the unrounded score, as the master requirement does, so
+    8.46 reads "8.5 / 10" in amber.
     """
     score = doc.get("score") if isinstance(doc, dict) else None
     if isinstance(score, bool) or not isinstance(score, int | float) or not 0 <= score <= SCORE_MAX:
         raise BadgeError(f"Scorecard score {score!r} is not a number from 0 to 10")
-    shown = round(float(score), 1)
-    color = GREEN if shown >= SCORE_GREEN else AMBER if shown >= SCORE_AMBER else RED
-    return (f"{shown:.1f} / 10", color)
+    color = GREEN if score >= SCORE_GREEN else AMBER if score >= SCORE_AMBER else RED
+    return (f"{float(score):.1f} / 10", color)
 
 
 def best_practices_value(rows: object, repo_url: str) -> Value:
@@ -225,16 +240,25 @@ def usable(entry: object) -> dict[str, str | None] | None:
     return {"message": message, "color": color, "fetched_at": fetched}
 
 
+def read_time(text: str) -> datetime | None:
+    """The time ``text`` names in ISO 8601 with a UTC offset; ``None`` when unreadable or naive."""
+    try:
+        value = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return value if value.utcoffset() is not None else None
+
+
 def carried(previous: Mapping[str, str | None] | None, now: datetime) -> dict[str, str | None]:
-    """Keep the last value up to STALE_AFTER after it was read; then show "stale"."""
+    """Keep the last value up to STALE_AFTER after it was read; then show "stale".
+
+    A read time that is unreadable, names no UTC offset or lies in the future
+    counts as stale.
+    """
     fetched = previous.get("fetched_at") if previous else None
-    if previous and fetched:
-        try:
-            age = now - datetime.fromisoformat(fetched)
-        except ValueError:
-            age = None
-        if age is not None and timedelta(0) <= age <= STALE_AFTER:
-            return dict(previous)
+    read_at = read_time(fetched) if previous and fetched else None
+    if previous and read_at is not None and timedelta(0) <= now - read_at <= STALE_AFTER:
+        return dict(previous)
     return {"message": "stale", "color": GREY, "fetched_at": fetched}
 
 
@@ -291,16 +315,22 @@ def field(doc: object, *keys: str) -> object:
 
 
 def previous_state(github: GitHub, repository: str) -> tuple[dict[str, object], str | None]:
-    """Badge entries of the badges branch's state file; none when the branch is new."""
+    """Badge entries of the badges branch's state file; none when the branch is new.
+
+    A failed read other than a 404 raises BadgeError: refreshing without the
+    last values would turn every failing source "stale" at once, so the run
+    stops and the branch keeps what it has. A file that was read but cannot be
+    parsed holds no value worth keeping; it reads as empty, with a failure line.
+    """
     try:
         doc = github(f"/repos/{repository}/contents/{STATE}?ref={BRANCH}")
     except urllib.error.HTTPError as error:
-        error.close()  # it holds the answer body; a 404 or a carried failure ends here
+        error.close()  # it holds the answer body; the 404 and the raise below end here
         if error.code == HTTPStatus.NOT_FOUND:
             return {}, None
-        return {}, f"{STATE}: {error}"
+        raise BadgeError(f"{STATE}: {error}; the badges keep their values") from error
     except (ci_tier.TierError, OSError, ValueError) as error:
-        return {}, f"{STATE}: {error}"
+        raise BadgeError(f"{STATE}: {error}; the badges keep their values") from error
     try:
         text = base64.b64decode(str(field(doc, "content"))).decode("utf-8")
         badges = json.loads(text).get("badges")
@@ -372,8 +402,14 @@ def branch_head(call: Call, repository: str) -> dict[str, str] | None:
 def unchanged(
     call: Call, repository: str, head: Mapping[str, str], files: Mapping[str, bytes], now: datetime
 ) -> bool:
-    """True when every SVG matches the branch and its last commit is younger than QUIET_WINDOW."""
-    if now - datetime.fromisoformat(head["date"]) >= QUIET_WINDOW:
+    """True when every SVG matches the branch and its last commit is younger than QUIET_WINDOW.
+
+    The state file is left out on purpose: its read times change every run, so
+    comparing it would commit every run. The branch's read times therefore
+    trail the newest read by less than QUIET_WINDOW plus one schedule interval.
+    """
+    committed = read_time(head["date"])
+    if committed is None or now - committed >= QUIET_WINDOW:
         return False
     rows = field(call("GET", f"/repos/{repository}/git/trees/{head['tree']}", None), "tree")
     if not isinstance(rows, list):
@@ -385,7 +421,10 @@ def unchanged(
 
 
 def publish(call: Call, repository: str, files: Mapping[str, bytes], now: datetime) -> str:
-    """Commit ``files`` as the whole badges tree; GitHub signs the commit, the ref moves only forward."""
+    """Commit ``files`` as the whole badges tree.
+
+    GitHub signs the commit, and the ref moves only forward.
+    """
     head = branch_head(call, repository)
     if head and unchanged(call, repository, head, files, now):
         return f"unchanged at {head['sha']}"
@@ -409,12 +448,12 @@ def publish(call: Call, repository: str, files: Mapping[str, bytes], now: dateti
     return sha
 
 
-# The one README badge design, as an allow-list: a badge rendered onto the
-# badges branch, a shields.io badge in for-the-badge with the dark label, or a
-# local image. Anything else, a reference-style image whose address this check
-# cannot see included, is a fault. The Praetor-managed governance block may
-# also hold its own GitHub workflow badge until Praetor issue 1893 offers the
-# style; then GOVERNANCE_BADGE goes.
+# The one README badge design, as an allow-list: a badge rendered onto this
+# repository's badges branch, a shields.io badge in for-the-badge with the dark
+# label, or a file in the repository. Anything else, a reference-style image
+# whose address this check cannot see included, is a fault. The Praetor-managed
+# governance block may also hold this repository's own GitHub workflow badge
+# until Praetor issue 1893 offers the style; then governance_badge() goes.
 FENCE = re.compile(r"^(?P<mark>`{3,}|~{3,})[^\n]*\n.*?^(?P=mark)[ \t]*$", re.M | re.S)
 CODE_SPAN = re.compile(r"`[^`\n]+`")
 MANAGED_BLOCK = re.compile(
@@ -426,17 +465,48 @@ REFERENCE_IMAGE = re.compile(r"!\[(?P<alt>[^\]\n]*)\](?:\[(?P<ref>[^\]\n]*)\])?"
 REFERENCE_DEF = re.compile(r"^ {0,3}\[(?P<ref>[^\]\n]+)\]:[ \t]*<?(?P<url>[^\s>]+)>?", re.M)
 HTML_IMAGE = re.compile(r"<(?:img|source)\b[^>]*>", re.I)
 HTML_SOURCE = re.compile(r'\b(?:src|srcset)[ \t]*=[ \t]*"(?P<url>[^"]*)"', re.I)
-RENDERED = re.compile(
-    r"https://raw\.githubusercontent\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/"
-    + re.escape(BRANCH)
-    + r"/(?P<slug>[a-z0-9-]+)\.svg"
-)
+REPOSITORY_PART = re.compile(r"[A-Za-z0-9_.-]+")
 LOCAL_IMAGE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]*")
-GOVERNANCE_BADGE = re.compile(
-    r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/workflows/praetor-docs\.yml/badge\.svg"
-)
 SHIELDS_HOST = "img.shields.io"
 SHIELDS_DESIGN = {"style": "for-the-badge", "labelColor": "111a35"}
+
+
+@functools.cache
+def home_repository() -> str:
+    """``owner/name`` of this repository, as its security policy file declares it."""
+    try:
+        name = json.loads(SECURITY_POLICY.read_text(encoding="utf-8"))["repository"]
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise BadgeError(f"{SECURITY_POLICY}: no repository name ({error})") from error
+    if not isinstance(name, str):
+        raise BadgeError(f"{SECURITY_POLICY}: repository {name!r} is not owner/name")
+    owner, slash, repo = name.partition("/")
+    if not (slash and REPOSITORY_PART.fullmatch(owner) and REPOSITORY_PART.fullmatch(repo)):
+        raise BadgeError(f"{SECURITY_POLICY}: repository {name!r} is not owner/name")
+    return name
+
+
+def repository_pattern() -> str:
+    """This repository's ``owner/name`` as a regex; GitHub matches both case-insensitively."""
+    return f"(?i:{re.escape(home_repository())})"
+
+
+@functools.cache
+def rendered_badge() -> re.Pattern[str]:
+    """A badge rendered onto this repository's badges branch, with its slug."""
+    return re.compile(
+        rf"https://raw\.githubusercontent\.com/{repository_pattern()}/{re.escape(BRANCH)}"
+        r"/(?P<slug>[a-z0-9-]+)\.svg"
+    )
+
+
+@functools.cache
+def governance_badge() -> re.Pattern[str]:
+    """This repository's own Praetor docs workflow badge; only the governance block may show it."""
+    return re.compile(
+        rf"https://github\.com/{repository_pattern()}"
+        r"/actions/workflows/praetor-docs\.yml/badge\.svg"
+    )
 
 
 def blanked(match: re.Match[str]) -> str:
@@ -449,9 +519,27 @@ def local_image(url: str) -> bool:
     return LOCAL_IMAGE.fullmatch(url) is not None and ".." not in url.split("/")
 
 
-def image_fault(url: str) -> str | None:
-    """Why the image at ``url`` breaks the one badge design; ``None`` when it keeps it."""
-    rendered = RENDERED.fullmatch(url)
+def missing_file(url: str, root: Path) -> str | None:
+    """Why the local image ``url`` shows nothing from ``root``; ``None`` when it is a file there.
+
+    The path is resolved with its symbolic links, so a link that leaves
+    ``root`` is a fault as well.
+    """
+    base = root.resolve()
+    target = (base / url).resolve()
+    if not target.is_relative_to(base):
+        return f"{url}: resolves outside {base}"
+    if not target.is_file():
+        return f"{url}: no such file next to the README"
+    return None
+
+
+def image_fault(url: str, root: Path) -> str | None:
+    """Why the image at ``url`` breaks the one badge design; ``None`` when it keeps it.
+
+    ``root`` is the directory of the README, which relative paths start from.
+    """
+    rendered = rendered_badge().fullmatch(url)
     if rendered:
         if rendered["slug"] in {badge.slug for badge in BADGES}:
             return None
@@ -464,7 +552,7 @@ def image_fault(url: str) -> str | None:
         ]
         return f"{url}: a shields.io badge needs {' and '.join(wrong)}" if wrong else None
     if local_image(url):
-        return None
+        return missing_file(url, root)
     return f"{url}: not a rendered badge, a for-the-badge shields.io badge or a local image"
 
 
@@ -481,22 +569,29 @@ def image_url(text: str, start: int, refs: Mapping[str, str]) -> str | None:
 
 
 def markdown_faults(
-    text: str, span: tuple[int, int], refs: Mapping[str, str], extra: re.Pattern[str] | None
+    text: str,
+    span: tuple[int, int],
+    refs: Mapping[str, str],
+    extra: re.Pattern[str] | None,
+    root: Path,
 ) -> list[str]:
-    """One line per Markdown image in ``text[span]`` that breaks the design; ``extra`` also passes."""
+    """One line per Markdown image in ``text[span]`` that breaks the design.
+
+    An image whose address ``extra`` matches passes as well.
+    """
     faults: list[str] = []
     for found in IMAGE_START.finditer(text, *span):
         line = text.count("\n", 0, found.start()) + 1
         url = image_url(text, found.start(), refs)
         if url is None:
             faults.append(f"{line}: an image without an inline address this check can read")
-        elif not (extra and extra.fullmatch(url)) and (fault := image_fault(url)):
+        elif not (extra and extra.fullmatch(url)) and (fault := image_fault(url, root)):
             faults.append(f"{line}: {fault}")
     return faults
 
 
-def html_faults(text: str) -> list[str]:
-    """One line per HTML ``<img>`` or ``<source>`` that shows anything but a local image."""
+def html_faults(text: str, root: Path) -> list[str]:
+    """One line per HTML ``<img>`` or ``<source>`` that shows anything but a local file."""
     faults: list[str] = []
     for tag in HTML_IMAGE.finditer(text):
         line = text.count("\n", 0, tag.start()) + 1
@@ -508,16 +603,19 @@ def html_faults(text: str) -> list[str]:
         ]
         if not urls:
             faults.append(f"{line}: an HTML image without a double-quoted src or srcset")
-        faults += [
-            f"{line}: {url}: an HTML image must be a local file"
-            for url in urls
-            if not local_image(url)
-        ]
+        for url in urls:
+            if not local_image(url):
+                faults.append(f"{line}: {url}: an HTML image must be a local file")
+            elif fault := missing_file(url, root):
+                faults.append(f"{line}: {fault}")
     return faults
 
 
-def design_faults(readme: str) -> list[str]:
-    """Every image in ``readme`` that breaks the one badge design, as ``line: reason``."""
+def design_faults(readme: str, root: Path) -> list[str]:
+    """Every image in ``readme`` that breaks the one badge design, as ``line: reason``.
+
+    ``root`` is the directory of the README, which relative paths start from.
+    """
     text = CODE_SPAN.sub(blanked, FENCE.sub(blanked, readme))
     faults: list[str] = []
     for block in MANAGED_BLOCK.finditer(text):
@@ -525,20 +623,22 @@ def design_faults(readme: str) -> list[str]:
             d["ref"].strip().lower(): d["url"]
             for d in REFERENCE_DEF.finditer(text, block.start(), block.end())
         }
-        faults += markdown_faults(text, block.span(), refs, GOVERNANCE_BADGE)
+        faults += markdown_faults(text, block.span(), refs, governance_badge(), root)
     outside = MANAGED_BLOCK.sub(blanked, text)
-    faults += markdown_faults(outside, (0, len(outside)), {}, None)
-    faults += html_faults(text)
+    faults += markdown_faults(outside, (0, len(outside)), {}, None, root)
+    faults += html_faults(text, root)
     return sorted(faults, key=lambda fault: int(fault.split(":", 1)[0]))
 
 
 def cmd_check_readme(args: argparse.Namespace) -> int:
-    faults = design_faults(args.readme.read_text(encoding="utf-8"))
+    readme = args.readme.resolve()
+    faults = design_faults(readme.read_text(encoding="utf-8"), readme.parent)
     for fault in faults:
         print(f"{args.readme}:{fault}", file=sys.stderr)
     if faults:
         print(
-            f"{len(faults)} README images break the one badge design (docs/development/readme-badges.md)",
+            f"{len(faults)} README images break the one badge design"
+            " (docs/development/readme-badges.md)",
             file=sys.stderr,
         )
         return 1
@@ -594,7 +694,8 @@ def cmd_verdict(args: argparse.Namespace) -> int:
         print(f"::error title=Badge source failed::{line}")
     if failures:
         print(
-            f"{len(failures)} badge sources failed; the badges keep their last value up to {STALE_AFTER}"
+            f"{len(failures)} badge sources failed;"
+            f" the badges keep their last value up to {STALE_AFTER}"
         )
         return 1
     print("every badge source answered")

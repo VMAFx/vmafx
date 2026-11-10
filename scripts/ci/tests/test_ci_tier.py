@@ -256,21 +256,35 @@ class HttpsOpener(unittest.TestCase):
             ):
                 ci_tier.HTTPS_OPENER.open(url, timeout=1)
 
-    def test_a_redirect_off_https_is_not_followed(self) -> None:
-        for target in ("http://h/y", "ftp://h/y", "file:///etc/passwd"):
-            with (
-                self.subTest(target=target),
-                mock.patch.object(
-                    urllib.request.HTTPSHandler,
-                    "https_open",
-                    return_value=self.response(302, target),
-                ) as https_open,
-            ):
-                with self.assertRaises(urllib.error.URLError) as raised:
-                    ci_tier.HTTPS_OPENER.open("https://h/x", timeout=1)
-                if isinstance(raised.exception, urllib.error.HTTPError):
+    def test_a_redirect_is_not_followed(self) -> None:
+        # An https target too: following it would resend the Authorization header.
+        targets = ("https://other.example/y", "http://h/y", "ftp://h/y", "file:///etc/passwd")
+        for code in (301, 302, 307, 308):
+            for target in targets:
+                with (
+                    self.subTest(code=code, target=target),
+                    mock.patch.object(
+                        urllib.request.HTTPSHandler,
+                        "https_open",
+                        return_value=self.response(code, target),
+                    ) as https_open,
+                ):
+                    with self.assertRaises(urllib.error.HTTPError) as raised:
+                        ci_tier.HTTPS_OPENER.open("https://h/x", timeout=1)
                     raised.exception.close()
-                self.assertEqual(https_open.call_count, 1)
+                    self.assertEqual(raised.exception.code, code)
+                    self.assertEqual(https_open.call_count, 1)
+
+    def test_an_error_answer_is_an_http_error(self) -> None:
+        with (
+            mock.patch.object(
+                urllib.request.HTTPSHandler, "https_open", return_value=self.response(404)
+            ),
+            self.assertRaises(urllib.error.HTTPError) as raised,
+        ):
+            ci_tier.HTTPS_OPENER.open("https://h/x", timeout=1)
+        raised.exception.close()
+        self.assertEqual(raised.exception.code, 404)
 
 
 class Config(unittest.TestCase):

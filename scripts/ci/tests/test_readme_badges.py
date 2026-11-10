@@ -10,6 +10,7 @@ import email.message
 import io
 import json
 import re
+import secrets
 import sys
 import tempfile
 import unittest
@@ -74,8 +75,25 @@ class WorkflowValue(unittest.TestCase):
 
     def test_an_unfinished_or_cancelled_run_does_not_mask_a_failure(self) -> None:
         # Planted case of the red-reader miss: the newest run had no conclusion yet.
-        answer = runs(None, "cancelled", "skipped", "action_required", "failure", "success")
+        answer = runs(None, "cancelled", "skipped", "failure", "success")
         self.assertEqual(rb.workflow_value(answer), rb.FAILING)
+
+    def test_any_other_newest_conclusion_is_unknown_not_an_older_value(self) -> None:
+        # Planted case from the pull request 3393 review: action_required read
+        # as the older success behind it.
+        conclusions: tuple[object, ...] = (
+            "action_required",
+            "neutral",
+            "stale",
+            "new_kind",
+            7,
+            ["x"],
+            {},
+        )
+        for conclusion in conclusions:
+            with self.subTest(conclusion=conclusion):
+                answer = runs("cancelled", conclusion, "success")
+                self.assertEqual(rb.workflow_value(answer), ("unknown", rb.GREY))
 
     def test_no_decisive_run_is_unknown(self) -> None:
         self.assertEqual(rb.workflow_value(runs()), ("unknown", rb.GREY))
@@ -94,12 +112,16 @@ class WorkflowValue(unittest.TestCase):
 
 class ScorecardValue(unittest.TestCase):
     def test_colour_boundaries(self) -> None:
+        # Green from the unrounded 8.5 of docs/principles.md (ADR-1247), so a
+        # score shown as "8.5" can still be amber.
         cases = {
             10: ("10.0 / 10", rb.GREEN),
-            7.0: ("7.0 / 10", rb.GREEN),
-            6.96: ("7.0 / 10", rb.GREEN),
-            6.9: ("6.9 / 10", rb.AMBER),
+            8.5: ("8.5 / 10", rb.GREEN),
+            8.46: ("8.5 / 10", rb.AMBER),
+            7.0: ("7.0 / 10", rb.AMBER),
+            6.96: ("7.0 / 10", rb.AMBER),
             4: ("4.0 / 10", rb.AMBER),
+            3.96: ("4.0 / 10", rb.RED),
             3.9: ("3.9 / 10", rb.RED),
             0: ("0.0 / 10", rb.RED),
         }
@@ -115,6 +137,10 @@ class ScorecardValue(unittest.TestCase):
     def test_an_answer_that_is_not_an_object_is_refused(self) -> None:
         with self.assertRaises(rb.BadgeError):
             rb.scorecard_value([8.9])
+
+    def test_green_starts_at_the_master_requirement(self) -> None:
+        principles = (ROOT / "docs/principles.md").read_text(encoding="utf-8")
+        self.assertIn(f"{rb.SCORE_GREEN}", principles)
 
 
 class BestPracticesValue(unittest.TestCase):
@@ -241,9 +267,23 @@ class Carried(unittest.TestCase):
         self.assertEqual(got, {"message": "stale", "color": rb.GREY, "fetched_at": fetched})
 
     def test_a_future_or_unreadable_time_reads_stale(self) -> None:
-        for fetched in (rb.stamp(NOW + timedelta(seconds=1)), "yesterday"):
+        # The naive times are planted cases from the pull request 3393 review:
+        # they raised TypeError and stopped the run.
+        naive = ("2026-11-10T12:00:00", "2026-11-10")
+        for fetched in (rb.stamp(NOW + timedelta(seconds=1)), "yesterday", *naive):
             with self.subTest(fetched=fetched):
                 self.assertEqual(rb.carried(entry(fetched=fetched), NOW)["message"], "stale")
+
+    def test_a_time_with_any_utc_offset_is_read(self) -> None:
+        for fetched in ("2026-11-10T13:00:00+01:00", "2026-11-10T12:00:00+00:00"):
+            with self.subTest(fetched=fetched):
+                self.assertEqual(rb.carried(entry(fetched=fetched), NOW)["message"], "passing")
+
+    def test_read_time_needs_an_offset(self) -> None:
+        self.assertEqual(rb.read_time(rb.stamp(NOW)), NOW)
+        for text in ("2026-11-10T12:00:00", "2026-11-10", "", "noon"):
+            with self.subTest(text=text):
+                self.assertIsNone(rb.read_time(text))
 
     def test_no_previous_value_reads_stale(self) -> None:
         self.assertEqual(rb.carried(None, NOW)["message"], "stale")
@@ -310,20 +350,32 @@ class PreviousState(unittest.TestCase):
         self.assertEqual(rb.previous_state(self.fetch(http_error(404)), REPO), ({}, None))
 
     def test_a_handled_error_is_closed(self) -> None:
-        for code in (404, 500):
-            with self.subTest(code=code):
-                error = http_error(code)
-                rb.previous_state(self.fetch(error), REPO)
-                self.assertTrue(error.fp.closed)
+        missing = http_error(404)
+        rb.previous_state(self.fetch(missing), REPO)
+        self.assertTrue(missing.fp.closed)
+        failed = http_error(500)
+        with self.assertRaises(rb.BadgeError):
+            rb.previous_state(self.fetch(failed), REPO)
+        self.assertTrue(failed.fp.closed)
 
     def test_the_badges_of_the_state_file_are_read(self) -> None:
         text = json.dumps({"badges": {"go": entry()}}).encode()
         doc = {"content": base64.b64encode(text).decode()}
         self.assertEqual(rb.previous_state(self.fetch(doc), REPO), ({"go": entry()}, None))
 
+    def test_a_failed_read_stops_the_run(self) -> None:
+        # Planted case from the pull request 3393 review: a failed read returned
+        # no state, so every failing source turned "stale" at once.
+        failed = (http_error(500), OSError("down"), ci_tier.TierError("too large"), ValueError("x"))
+        for answer in failed:
+            with (
+                self.subTest(answer=type(answer).__name__),
+                self.assertRaisesRegex(rb.BadgeError, "the badges keep their values"),
+            ):
+                rb.previous_state(self.fetch(answer), REPO)
+
     def test_an_unreadable_state_is_a_problem_not_a_crash(self) -> None:
-        unreadable = (http_error(500), OSError("down"), ci_tier.TierError("too large"))
-        for answer in (*unreadable, {}, {"content": "!!"}, {"content": ""}, {"content": 7}):
+        for answer in ({}, {"content": "!!"}, {"content": ""}, {"content": 7}):
             with self.subTest(answer=answer):
                 badges, problem = rb.previous_state(self.fetch(answer), REPO)
                 self.assertEqual(badges, {})
@@ -366,14 +418,10 @@ class PublicJson(unittest.TestCase):
 
 class Collect(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = tempfile.TemporaryDirectory()
-        self.dir = Path(self.tmp.name)
+        self.dir = Path(self.enterContext(tempfile.TemporaryDirectory()))
         for badge in rb.BADGES:
             (self.dir / f"{badge.slug}.svg").write_text('<svg xmlns="x"></svg>\n', encoding="utf-8")
         (self.dir / "state.json").write_text("{}\n", encoding="utf-8")
-
-    def tearDown(self) -> None:
-        self.tmp.cleanup()
 
     def test_one_svg_per_badge_and_the_state_file(self) -> None:
         self.assertEqual(len(rb.collect(self.dir, rb.BADGES)), len(rb.BADGES) + 1)
@@ -494,6 +542,12 @@ class Publish(unittest.TestCase):
         self.assertEqual(rb.publish(call, REPO, self.FILES, NOW), "unchanged at c0")
         self.assertFalse([c for c in calls if c[0] != "GET"])
 
+    def test_a_naive_or_unreadable_head_date_commits(self) -> None:
+        for date in ("2026-11-10T11:59:00", "2026-11-10", "soon"):
+            with self.subTest(date=date):
+                call, _ = self.fake("c0", date=date)
+                self.assertEqual(rb.publish(call, REPO, self.FILES, NOW), "c1")
+
     def test_a_changed_svg_inside_the_quiet_window_is_committed(self) -> None:
         young = rb.stamp(NOW - timedelta(minutes=5))
         call, _ = self.fake(
@@ -580,6 +634,20 @@ class Main(unittest.TestCase):
                 self.assertEqual(rb.main(argv, env={"GITHUB_REPOSITORY": REPO}), 2)
             self.assertIn("set GITHUB_TOKEN", err.getvalue())
 
+    def test_a_failed_state_read_writes_nothing_to_publish(self) -> None:
+        def fail(*_args: object) -> object:
+            raise http_error(503)
+
+        env = {"GITHUB_REPOSITORY": REPO, "GITHUB_TOKEN": secrets.token_urlsafe(8)}
+        with tempfile.TemporaryDirectory() as tmp:
+            spec, state = Path(tmp) / "spec.json", Path(tmp) / "badges/state.json"
+            err = io.StringIO()
+            with mock.patch.object(ci_tier, "api_request", side_effect=fail), redirect_stderr(err):
+                argv = ["spec", "--spec", str(spec), "--state", str(state)]
+                self.assertEqual(rb.main(argv, env=env), 2)
+            self.assertFalse(spec.exists() or state.exists())
+        self.assertIn("the badges keep their values", err.getvalue())
+
 
 SHIELDS = "https://img.shields.io/badge/C-23-3b82f6?style=for-the-badge&labelColor=111a35"
 GOVERNANCE = "https://github.com/vmafx/vmafx/actions/workflows/praetor-docs.yml/badge.svg"
@@ -607,9 +675,10 @@ class ImageFault(unittest.TestCase):
             "https://img.shields.io/static/v1?label=release&message=v1&style=for-the-badge&color=3b82f6&labelColor=111a35",
             "docs/assets/vmafx-readme-banner.svg",
         ]
+        allowed.append("https://raw.githubusercontent.com/vmafx/VMAFX/badges/tests.svg")
         for url in allowed:
             with self.subTest(url=url):
-                self.assertIsNone(rb.image_fault(url))
+                self.assertIsNone(rb.image_fault(url, ROOT))
 
     def test_another_design_or_host_is_a_fault(self) -> None:
         refused = {
@@ -621,6 +690,13 @@ class ImageFault(unittest.TestCase):
             "http://img.shields.io/badge/C-23-3b82f6?style=for-the-badge&labelColor=111a35": "not a rendered",
             f"https://raw.githubusercontent.com/{REPO}/badges/coverage.svg": "no rendered badge is named 'coverage'",
             f"https://raw.githubusercontent.com/{REPO}/master/tests.svg": "not a rendered",
+            # Planted cases from the pull request 3393 review: other repositories.
+            "https://raw.githubusercontent.com/someone/vmafx/badges/tests.svg": "not a rendered",
+            "https://raw.githubusercontent.com/VMAFx/vmafx-fork/badges/tests.svg": "not a rendered",
+            "https://raw.githubusercontent.com/VMAFx/vmafx/badges/x/tests.svg": "not a rendered",
+            # Planted cases from the pull request 3393 review: missing files.
+            "docs/assets/no-such-banner.svg": "no such file next to the README",
+            "docs/assets": "no such file next to the README",
             "/docs/assets/banner.svg": "not a rendered",
             "../banner.svg": "not a rendered",
             "docs/../../banner.svg": "not a rendered",
@@ -629,7 +705,19 @@ class ImageFault(unittest.TestCase):
         }
         for url, reason in refused.items():
             with self.subTest(url=url):
-                self.assertIn(reason, rb.image_fault(url) or "")
+                self.assertIn(reason, rb.image_fault(url, ROOT) or "")
+
+    def test_a_link_out_of_the_readme_directory_is_a_fault(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root, outside = Path(tmp) / "repo", Path(tmp) / "outside.svg"
+            root.mkdir()
+            outside.write_text("<svg/>", encoding="utf-8")
+            (root / "inside.svg").write_text("<svg/>", encoding="utf-8")
+            (root / "link.svg").symlink_to(outside)
+            (root / "local-link.svg").symlink_to(root / "inside.svg")
+            self.assertIn("resolves outside", rb.image_fault("link.svg", root) or "")
+            self.assertIsNone(rb.image_fault("inside.svg", root))
+            self.assertIsNone(rb.image_fault("local-link.svg", root))
 
     def test_a_repeated_or_empty_design_parameter_is_a_fault(self) -> None:
         for query in (
@@ -640,34 +728,88 @@ class ImageFault(unittest.TestCase):
         ):
             with self.subTest(query=query):
                 self.assertIsNotNone(
-                    rb.image_fault(f"https://img.shields.io/badge/C-23-3b82f6?{query}")
+                    rb.image_fault(f"https://img.shields.io/badge/C-23-3b82f6?{query}", ROOT)
                 )
+
+
+class HomeRepository(unittest.TestCase):
+    def setUp(self) -> None:
+        self.clear()
+        self.addCleanup(self.clear)
+
+    @staticmethod
+    def clear() -> None:
+        for cached in (rb.home_repository, rb.rendered_badge, rb.governance_badge):
+            cached.cache_clear()
+
+    def test_the_policy_names_this_repository(self) -> None:
+        self.assertEqual(rb.home_repository(), REPO)
+
+    def test_a_missing_or_malformed_policy_is_a_badge_error(self) -> None:
+        for text in (
+            None,
+            "{",
+            "[]",
+            "{}",
+            '{"repository": 7}',
+            '{"repository": "vmafx"}',
+            '{"repository": "a/b/c"}',
+            '{"repository": "a b/c"}',
+            '{"repository": "/c"}',
+        ):
+            with self.subTest(text=text), tempfile.TemporaryDirectory() as tmp:
+                policy = Path(tmp) / "policy.json"
+                if text is not None:
+                    policy.write_text(text, encoding="utf-8")
+                with mock.patch.object(rb, "SECURITY_POLICY", policy):
+                    self.clear()
+                    with self.assertRaises(rb.BadgeError):
+                        rb.home_repository()
+                    self.clear()
+
+    def test_the_rendered_badge_follows_the_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            policy = Path(tmp) / "policy.json"
+            policy.write_text('{"repository": "adopter/fork"}', encoding="utf-8")
+            with mock.patch.object(rb, "SECURITY_POLICY", policy):
+                self.clear()
+                ours = "https://raw.githubusercontent.com/adopter/fork/badges/tests.svg"
+                self.assertIsNone(rb.image_fault(ours, ROOT))
+                theirs = f"https://raw.githubusercontent.com/{REPO}/badges/tests.svg"
+                self.assertIn("not a rendered", rb.image_fault(theirs, ROOT) or "")
+                self.clear()
 
 
 class DesignFaults(unittest.TestCase):
     def test_the_readme_has_the_one_design(self) -> None:
-        self.assertEqual(rb.design_faults((ROOT / "README.md").read_text(encoding="utf-8")), [])
+        self.assertEqual(
+            rb.design_faults((ROOT / "README.md").read_text(encoding="utf-8"), ROOT), []
+        )
 
     def test_an_empty_readme_has_no_fault(self) -> None:
-        self.assertEqual(rb.design_faults(""), [])
+        self.assertEqual(rb.design_faults("", ROOT), [])
 
     def test_a_fault_names_its_line(self) -> None:
         readme = "# Title\n\n" + image(SHIELDS.replace("for-the-badge", "flat-square"))
         self.assertEqual(
-            rb.design_faults(readme),
+            rb.design_faults(readme, ROOT),
             [
                 f"3: {SHIELDS.replace('for-the-badge', 'flat-square')}: a shields.io badge needs style=for-the-badge"
             ],
         )
 
     def test_the_governance_block_may_hold_its_own_badge(self) -> None:
-        self.assertEqual(rb.design_faults("# Title\n\n" + BLOCK), [])
+        self.assertEqual(rb.design_faults("# Title\n\n" + BLOCK, ROOT), [])
 
     def test_the_block_exception_covers_only_the_governance_badge(self) -> None:
         flat = BLOCK.replace(GOVERNANCE, SHIELDS.replace("for-the-badge", "flat-square"))
-        self.assertEqual(len(rb.design_faults(flat)), 1)
+        self.assertEqual(len(rb.design_faults(flat, ROOT)), 1)
         unresolved = BLOCK.replace("[docs-badge]:", "[other]:")
-        self.assertIn("without an inline address", rb.design_faults(unresolved)[0])
+        self.assertIn("without an inline address", rb.design_faults(unresolved, ROOT)[0])
+
+    def test_another_repository_governance_badge_is_a_fault(self) -> None:
+        other = GOVERNANCE.replace("vmafx/vmafx", "someone/vmafx")
+        self.assertEqual(len(rb.design_faults(BLOCK.replace(GOVERNANCE, other), ROOT)), 1)
 
     def test_the_governance_badge_outside_the_block_is_a_fault(self) -> None:
         for readme in (
@@ -676,7 +818,7 @@ class DesignFaults(unittest.TestCase):
             BLOCK.replace("<!-- praetor:readme-governance:start -->\n", ""),
         ):
             with self.subTest(readme=readme[:40]):
-                self.assertNotEqual(rb.design_faults(readme), [])
+                self.assertNotEqual(rb.design_faults(readme, ROOT), [])
 
     def test_a_reference_style_image_outside_the_block_is_a_fault(self) -> None:
         for readme in (
@@ -686,7 +828,7 @@ class DesignFaults(unittest.TestCase):
         ):
             with self.subTest(readme=readme.splitlines()[0]):
                 self.assertEqual(
-                    rb.design_faults(readme),
+                    rb.design_faults(readme, ROOT),
                     ["1: an image without an inline address this check can read"],
                 )
 
@@ -698,43 +840,52 @@ class DesignFaults(unittest.TestCase):
             f"Write `![x]({flat})` for a badge.\n",
         ):
             with self.subTest(readme=readme.splitlines()[0]):
-                self.assertEqual(rb.design_faults(readme), [])
+                self.assertEqual(rb.design_faults(readme, ROOT), [])
 
     def test_an_unclosed_fence_hides_nothing(self) -> None:
         flat = SHIELDS.replace("for-the-badge", "flat-square")
-        self.assertEqual(len(rb.design_faults(f"```\n![x]({flat})\n")), 1)
+        self.assertEqual(len(rb.design_faults(f"```\n![x]({flat})\n", ROOT)), 1)
 
     def test_an_html_image_must_be_a_local_file(self) -> None:
         passing = (
-            '<img src="docs/assets/vmafx-readme-banner.svg" alt="VMAFx" height="120" />\n',
+            '<img src="docs/a.svg" alt="VMAFx" height="120" />\n',
             '<picture><source media="(prefers-color-scheme: dark)" srcset="docs/a.svg 2x, docs/b.svg"></picture>\n',
         )
-        for readme in passing:
-            with self.subTest(readme=readme):
-                self.assertEqual(rb.design_faults(readme), [])
         failing = (
             f'<img src="{SHIELDS}">\n',
             f'<IMG SRC="{GOVERNANCE}">\n',
             f'<source srcset="docs/a.svg 1x, {SHIELDS} 2x">\n',
             '<img alt="no source">\n',
             f"<img src='{SHIELDS}'>\n",
+            '<img src="docs/c.svg">\n',
+            '<source srcset="docs/a.svg 1x, docs/c.svg 2x">\n',
         )
-        for readme in failing:
-            with self.subTest(readme=readme):
-                self.assertEqual(len(rb.design_faults(readme)), 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "docs").mkdir()
+            for name in ("a.svg", "b.svg"):
+                (root / "docs" / name).write_text("<svg/>", encoding="utf-8")
+            for readme in passing:
+                with self.subTest(readme=readme):
+                    self.assertEqual(rb.design_faults(readme, root), [])
+            for readme in failing:
+                with self.subTest(readme=readme):
+                    self.assertEqual(len(rb.design_faults(readme, root)), 1)
 
     def test_faults_come_in_line_order(self) -> None:
         readme = f'<img src="{SHIELDS}">\n' + image(GOVERNANCE) + f'<img src="{SHIELDS}">\n'
-        lines = [int(fault.split(":", 1)[0]) for fault in rb.design_faults(readme)]
+        lines = [int(fault.split(":", 1)[0]) for fault in rb.design_faults(readme, ROOT)]
         self.assertEqual(lines, [1, 2, 3])
 
 
 class CheckReadme(unittest.TestCase):
-    def check(self, text: str | None) -> tuple[int, str, str]:
+    def check(self, text: str | None, files: tuple[str, ...] = ()) -> tuple[int, str, str]:
         with tempfile.TemporaryDirectory() as tmp:
             readme = Path(tmp) / "README.md"
             if text is not None:
                 readme.write_text(text, encoding="utf-8")
+            for name in files:
+                (Path(tmp) / name).write_text("<svg/>", encoding="utf-8")
             out, err = io.StringIO(), io.StringIO()
             with redirect_stdout(out), redirect_stderr(err):
                 rc = rb.main(["check-readme", "--readme", str(readme)], env={})
@@ -754,6 +905,12 @@ class CheckReadme(unittest.TestCase):
     def test_a_missing_readme_is_an_error(self) -> None:
         self.assertEqual(self.check(None)[0], 2)
 
+    def test_a_local_image_is_looked_up_next_to_the_readme(self) -> None:
+        self.assertEqual(self.check(image("banner.svg"), files=("banner.svg",))[0], 0)
+        rc, _, err = self.check(image("banner.svg"))
+        self.assertEqual(rc, 1)
+        self.assertIn("banner.svg: no such file next to the README", err)
+
 
 class Consistency(unittest.TestCase):
     def test_render_mjs_allows_the_same_text_and_colours(self) -> None:
@@ -767,6 +924,30 @@ class Consistency(unittest.TestCase):
             with self.subTest(badge=badge.slug):
                 first = re.search(r"^name: (.+)$", path.read_text(encoding="utf-8"), re.M)
                 self.assertEqual(first.group(1).strip() if first else None, badge.label)
+
+    def test_the_workflow_runs_only_on_the_policy_repository_and_branch(self) -> None:
+        policy = json.loads(
+            (ROOT / ".github/repository-security-policy.json").read_text(encoding="utf-8")
+        )
+        workflow = (ROOT / ".github/workflows/readme-badges.yml").read_text(encoding="utf-8")
+        self.assertIn(f"github.repository == '{policy['repository']}'", workflow)
+        self.assertIn(f"github.ref == 'refs/heads/{policy['default_branch']}'", workflow)
+        # Both jobs check out the commit the run started from, so a master push
+        # between them cannot change the code the publisher runs.
+        self.assertEqual(workflow.count("ref: ${{ github.sha }}"), 2)
+        self.assertNotRegex(workflow, r"ref: (?!\$\{\{ github\.sha \}\})")
+
+    def test_a_carried_read_time_trails_by_less_than_the_stale_bound(self) -> None:
+        # The state file is committed with the SVGs only once QUIET_WINDOW has
+        # passed, so its read times trail the newest read by at most that plus
+        # one schedule gap; that lag must stay well inside STALE_AFTER.
+        workflow = (ROOT / ".github/workflows/readme-badges.yml").read_text(encoding="utf-8")
+        cron = re.search(r'cron: "(?P<minutes>[0-9,]+) \* \* \* \*"', workflow)
+        self.assertIsNotNone(cron)
+        minutes = sorted(int(m) for m in cron["minutes"].split(",")) if cron else []
+        gaps = [b - a for a, b in zip(minutes, [*minutes[1:], minutes[0] + 60], strict=True)]
+        lag = rb.QUIET_WINDOW + timedelta(minutes=max(gaps))
+        self.assertLess(lag, rb.STALE_AFTER / 4)
 
     def test_the_readme_shows_every_badge_once_with_its_label(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")

@@ -22,13 +22,15 @@ for the current value:
 
 | Badge | Source | Message and colour |
 | --- | --- | --- |
-| Tests, Builds, Lint, FFmpeg, Go, Rust, Security | GitHub API: the newest completed push run of the workflow on the default branch whose conclusion is `success`, `failure`, `timed_out` or `startup_failure`. Cancelled, skipped and waiting runs are passed over, so a run in progress never hides a red one. | `passing` green, `failing` red, `unknown` grey when none of the last 30 runs decided. |
-| OpenSSF Scorecard | `https://api.scorecard.dev/projects/github.com/VMAFx/vmafx` | the score with one decimal, `7.0 / 10`; green from 7.0, amber from 4.0, red below. The colour follows the shown value, so 6.96 reads `7.0 / 10` in green. |
+| Tests, Builds, Lint, FFmpeg, Go, Rust, Security | GitHub API: the newest push run of the workflow on the default branch, among the last 30, that has a conclusion and was not cancelled or skipped. Runs in progress, cancelled and skipped are passed over, so a run in progress never hides a red one. | `passing` green for `success`; `failing` red for `failure`, `timed_out` or `startup_failure`; `unknown` grey for any other conclusion (`action_required`, `neutral`, `stale`) and when no run qualifies. An older run's value never stands in. |
+| OpenSSF Scorecard | `https://api.scorecard.dev/projects/github.com/VMAFx/vmafx` | the score with one decimal, `8.5 / 10`; green from an unrounded 8.5, the master requirement in [the principles](../principles.md) ([ADR-1247](../adr/1247-scorecard-exact-head-gates.md)), amber from 4.0, red below. The colour follows the unrounded score, so 8.46 reads `8.5 / 10` in amber. |
 | OpenSSF Best Practices | `https://www.bestpractices.dev/projects.json?url=https://github.com/VMAFx/vmafx` | `in progress` amber, `passing`, `silver` or `gold` green. |
 | Codacy | `https://app.codacy.com/api/v3/analysis/organizations/gh/VMAFx/repositories/vmafx` | the grade letter; A and B green, C amber, D to F red. |
 
 Only the GitHub API call carries the workflow token. The three public
-sources get a plain request with no token.
+sources get a plain request with no token. Every request goes over https
+only, and a redirect is not followed: it fails as an error, so the token
+never travels to another address.
 
 The workflow writes the list to `build/badges-spec.json`, and
 `tools/badges/render.mjs` draws one SVG per entry with `badge-maker`, the
@@ -45,7 +47,20 @@ turns red at its last step (`readme_badges.py verdict`), so the failure shows
 in the Actions tab the same day, not when someone notices an old badge.
 
 The last values live in `state.json` on the `badges` branch, next to the SVGs,
-with the time each one was read.
+with the time each one was read. A time without a UTC offset, or one that
+cannot be read, counts as stale.
+
+The six hours run from the read time `state.json` holds. A run whose SVGs are
+all unchanged commits nothing for an hour (see below), so that time trails the
+last successful read by at most one hour plus one 15-minute schedule step. A
+badge can therefore turn `stale` up to 75 minutes before six hours have passed
+since its last successful read, and at most one schedule step after.
+Committing `state.json` on every run would close that gap at the cost of
+about four commits an hour instead of one.
+
+When `state.json` itself cannot be read (any answer but 404, which means the
+branch is new), the run stops before it renders anything. The badges keep
+their values instead of all turning `stale` at once.
 
 ## How the badges branch is written
 
@@ -65,6 +80,13 @@ commit. GitHub cannot limit that right to one branch; the script writes only
 `refs/heads/badges`, and the master ruleset requires a pull request, so the
 token cannot move `master`.
 
+Both jobs run only on the default branch (`github.ref` is
+`refs/heads/master`): a manual run started on another branch does nothing, so
+the publish token never runs a branch's own copy of the workflow. Both jobs
+check out `github.sha`, the commit the run started from, so a master push
+between the two jobs cannot hand the publisher other code than the renderer
+ran.
+
 ## Why a schedule and not `workflow_run`
 
 A `workflow_run` trigger would refresh a badge within a minute of each master
@@ -76,9 +98,16 @@ to 15 minutes of lag and has neither problem.
 ## Limits
 
 - An SVG cannot age by itself. When the workflow itself stops (disabled, or
-  scheduled runs paused after 60 days without repository activity), the
-  badges keep showing the last values. The red run and the README Badges
-  entry in the Actions tab are the signal.
+  scheduled runs paused after 60 days without repository activity), no run
+  starts, so none turns red, and the badges keep showing the last values,
+  green ones included. The signal is a missing run: the newest README Badges
+  run is older than 15 minutes. Check it, then re-enable the workflow:
+
+  ```bash
+  gh run list -R VMAFx/vmafx --workflow readme-badges.yml --limit 1 --json createdAt,conclusion
+  gh workflow enable readme-badges.yml -R VMAFx/vmafx
+  ```
+
 - The Praetor governance badge in the `praetor:readme-governance` block is
   written by Praetor and keeps GitHub's design.
 
@@ -90,12 +119,17 @@ python3 -m pytest scripts/ci/tests/test_readme_badges.py
 ```
 
 `check-readme` fails when any image in the README breaks the one design. An
-image passes only when it is one of the rendered SVGs on the `badges` branch,
-a shields.io badge with both `style=for-the-badge` and `labelColor=111a35`, or
-a file inside the repository (the banner). Images inside code fences and code
-spans are ignored. The one exception is the Praetor governance badge inside
-the `praetor:readme-governance` block; it goes once Praetor can draw that
-badge in the same style (Praetor issue 1893). Each fault names the line:
+image passes only when it is one of the rendered SVGs on this repository's
+`badges` branch, a shields.io badge with both `style=for-the-badge` and
+`labelColor=111a35`, or a file that exists inside the repository (the
+banner). The repository name comes from
+`.github/repository-security-policy.json`; a badge rendered for any other
+repository or a fork fails. A local path fails when it names no file or
+resolves outside the README's directory, through a symbolic link included.
+Images inside code fences and code spans are ignored. The one exception is
+the Praetor governance badge inside the `praetor:readme-governance` block;
+it goes once Praetor can draw that badge in the same style (Praetor issue
+1893). Each fault names the line:
 
 ```text
 README.md:117: https://img.shields.io/badge/FFmpeg-n9.0.2-8b5cf6?style=flat-square&labelColor=111a35: a shields.io badge needs style=for-the-badge
