@@ -23,13 +23,15 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+
+from scripts.lib.safe_subprocess import executable_argument
+from scripts.lib.safe_subprocess import run as run_command
 
 DEFAULT_FEATURES: tuple[str, ...] = (
     "adm2",
@@ -41,6 +43,9 @@ DEFAULT_FEATURES: tuple[str, ...] = (
 )
 
 DEFAULT_VMAF_BINARY = Path("core") / "build-cpu" / "tools" / "vmaf"
+# Bound = 10x the slowest measured run, rounded up: FULL_FEATURES on a 1080p
+# 300-frame pair took 229.38 s (default features 7.95 s).
+VMAF_TIMEOUT_S = 3600
 
 # Full feature set the fork's extractors can produce (per Research-0026,
 # extended by ADR-0559 to include SpEED chroma/temporal features).
@@ -260,8 +265,9 @@ def _run_vmaf_json(
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tf:
         out_path = Path(tf.name)
     try:
+        vmaf_bin = executable_argument(binary, Path.cwd())
         cmd = [
-            str(binary),
+            vmaf_bin,
             "-r",
             str(ref),
             "-d",
@@ -280,7 +286,14 @@ def _run_vmaf_json(
             *feat_args,
             *extra_args,
         ]
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        run_command(
+            cmd,
+            allowed_executables=(vmaf_bin,),
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout_seconds=VMAF_TIMEOUT_S,
+        )
         return json.loads(out_path.read_text())
     finally:
         out_path.unlink(missing_ok=True)

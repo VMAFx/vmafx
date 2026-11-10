@@ -1,0 +1,1 @@
+- **Lint:** the float-identity Semgrep rule reads all 16 CUDA, HIP, SYCL and Vulkan test sources it could not parse, and their exception rows are gone; the SYCL sub-group contract test also checks `constexpr`-sized functors, every `operator()` overload and shape uses it cannot read (issue 3252).

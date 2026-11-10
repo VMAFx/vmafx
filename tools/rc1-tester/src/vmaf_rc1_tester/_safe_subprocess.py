@@ -16,6 +16,7 @@ operator-owned log, not an allocation controlled by child output.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import locale
 import os
 import shutil
@@ -31,6 +32,7 @@ MAX_ARGV_BYTES = 1_048_576
 DEFAULT_TIMEOUT_SECONDS = 120.0
 DEFAULT_MAX_OUTPUT_BYTES = 4 * 1_048_576
 TERMINATION_GRACE_SECONDS = 2.0
+WINDOWS_TREE_KILL_TIMEOUT_SECONDS = 30.0
 READ_CHUNK_BYTES = 65_536
 _WINDOWS_CREATE_NEW_PROCESS_GROUP = 0x00000200
 
@@ -268,6 +270,23 @@ def executable_argument(executable: Arg, root: Arg) -> str:
     return os.path.normpath((Path(root) / path).absolute())
 
 
+def resolve_executable(executable: Arg, root: Arg | None = None) -> str:
+    """Return the absolute, runnable path `run()` would execute for `executable`.
+
+    Resolves a bare name on PATH or a relative path against `root` (defaulting
+    to the current working directory).
+
+    Returns:
+        The validated, absolute path to the runnable executable file.
+
+    Raises:
+        CommandValidationError: If the executable is missing, not a regular file,
+            or not executable.
+    """
+    value = executable_argument(executable, root if root is not None else Path.cwd())
+    return _resolve_allowed_executable(value, (value,), os.environ.get("PATH", os.defpath))
+
+
 def _validated_argv(
     argv: Sequence[Arg], allowed_executables: Collection[Arg], search_path: str
 ) -> tuple[str, ...]:
@@ -412,12 +431,68 @@ async def _write_input(writer: asyncio.StreamWriter, data: bytes) -> None:
         writer.close()
 
 
+async def _terminate_windows_process_tree(pid: int) -> bool:
+    """Terminate the process tree rooted at `pid` on Windows using taskkill.
+
+    Returns:
+        True when taskkill exits with status 0; False when taskkill fails,
+        times out, or is unavailable.
+    """
+    try:
+        taskkill = resolve_executable("taskkill")
+    except CommandValidationError:
+        return False
+    try:
+        process = await asyncio.create_subprocess_exec(
+            taskkill,
+            "/PID",
+            str(pid),
+            "/T",
+            "/F",
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except OSError:
+        return False
+    try:
+        await asyncio.wait_for(process.wait(), timeout=WINDOWS_TREE_KILL_TIMEOUT_SECONDS)
+    except TimeoutError:
+        with contextlib.suppress(OSError):
+            process.kill()
+        with contextlib.suppress(TimeoutError, OSError):
+            await asyncio.wait_for(process.wait(), timeout=TERMINATION_GRACE_SECONDS)
+        return False
+    except OSError:
+        return False
+    return process.returncode == 0
+
+
+def terminate_windows_process_tree(pid: int) -> bool:
+    """Terminate the process tree rooted at `pid` on Windows using taskkill.
+
+    Returns:
+        True when taskkill exits with status 0; False when taskkill fails,
+        times out, or is unavailable.
+
+    Raises:
+        CommandValidationError: When `pid` is not a positive integer.
+    """
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        raise CommandValidationError(f"invalid process id: {pid!r}")
+    return asyncio.run(_terminate_windows_process_tree(pid))
+
+
 async def _terminate_process_group(process: asyncio.subprocess.Process) -> None:
+    """End the child's process group on POSIX, and on Windows end the process tree first, then
+    terminate, kill and reap the direct child.
+    """
     if os.name == "posix":
         await _terminate_posix_process_group(process)
         return
     if process.returncode is not None:
         return
+    await _terminate_windows_process_tree(process.pid)
     try:
         process.terminate()
     except ProcessLookupError:

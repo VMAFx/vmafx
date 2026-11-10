@@ -1,17 +1,18 @@
 <!-- markdownlint-disable MD060 -->
 # Using vmaf-tune with FFmpeg's encoder-side hooks
 
-Four FFmpeg-side hooks from the `ffmpeg-patches/` series let you use
+Four FFmpeg-side hooks from the VMAFx patch series and the shared FFmpeg
+fix series let you use
 `vmaf-tune`'s results from a plain `ffmpeg` command line. This page shows
 how to build the patched FFmpeg and how each hook fits a vmaf-tune
 operating mode.
 
 | Hook | Patch | What it does | vmaf-tune mode |
 |---|---|---|---|
-| `-qpfile <path>` | 0001 | Per-block QP offsets for `libx264`, `libsvtav1`, `libaom-av1`. | [Saliency-aware encoding](vmaf-tune-saliency-aware.md) |
-| `-lavfi vmafx_tune` | 0004 | Scores a pair and logs a recommended CRF. | CRF recommendation |
-| `-pass-autotune` | 0002 | Advisory flag for external 2-pass orchestration. | 2-pass autotuning |
-| `-vmafx-profile <path>` | 0003 | Advisory hand-off to `vmaf-tune encode-profile`. | Report-profile encodes |
+| `-qpfile <path>` | shared fix series 0043 | Per-block QP offsets for `libx264`, `libsvtav1`, `libaom-av1`. | [Saliency-aware encoding](vmaf-tune-saliency-aware.md) |
+| `-lavfi vmafx_tune` | 0003 | Scores a pair and logs a recommended CRF. | CRF recommendation |
+| `-pass-autotune` | 0001 | Advisory flag for external 2-pass orchestration. | 2-pass autotuning |
+| `-vmafx-profile <path>` | 0002 | Advisory hand-off to `vmaf-tune encode-profile`. | Report-profile encodes |
 
 ## Prerequisites
 
@@ -24,9 +25,11 @@ maintained stable release, verified on 2026-09-20).
     cd /path/to/ffmpeg && git checkout n9.0.2
     ```
 
-2. Apply the whole series in order:
+2. Apply the shared FFmpeg fix series, which carries `-qpfile` (patch
+   0043), then the whole VMAFx series in order:
 
     ```bash
+    /path/to/vmaf/scripts/ci/ffmpeg-shared-series.sh apply .
     while IFS= read -r patch; do
         case "$patch" in ""|\#*) continue ;; esac
         git am --3way "/path/to/vmaf/ffmpeg-patches/$patch" || exit 1
@@ -40,6 +43,9 @@ maintained stable release, verified on 2026-09-20).
     make -j$(nproc)
     ```
 
+    `--enable-libaom` needs libaom v3.13.0 or later with the shared
+    series; see the libaom section of Hook 1.
+
 Confirm that the new options are recognised:
 
 ```bash
@@ -51,7 +57,7 @@ Confirm that the new options are recognised:
 ./ffmpeg -h | grep -i vmafx-profile
 ```
 
-## Hook 1: `-qpfile <path>` (patch 0001)
+## Hook 1: `-qpfile <path>` (shared series 0043)
 
 The `-qpfile` option on `libx264`, `libsvtav1` and `libaom-av1` reads the
 qpfile format that vmaf-tune's saliency module
@@ -161,8 +167,27 @@ Upgrade SVT-AV1 to activate the bridge (ADR-0312).
 ### libaom-av1: full ROI bridge
 
 ```bash
-ffmpeg -f rawvideo ... -c:v libaom-av1 -crf 32 -qpfile clip.qpfile.txt clip.av1
+ffmpeg -f rawvideo ... -c:v libaom-av1 -usage realtime -cpu-used 8 -crf 32 -qpfile clip.qpfile.txt clip.av1
 ```
+
+`-qpfile` on libaom-av1 needs one-pass encoding with `-usage realtime` and
+`-cpu-used 7` or `8`: libaom 3.15.3 ignores ROI map content in other modes,
+so shared patch 0043 refuses them at encoder open instead of encoding
+without the map. Another usage mode or `-cpu-used` below 7 fails with:
+
+```text
+libaom: -qpfile with libaom-av1 needs -usage realtime -cpu-used 7 or 8; libaom ignores ROI maps otherwise.
+```
+
+Two-pass encoding (`-pass 1` or `-pass 2`) fails with:
+
+```text
+libaom: -qpfile needs one-pass encoding: libaom applies ROI maps only without recode.
+```
+
+The bridge needs libaom v3.13.0 or later: older releases lack the
+`aom_roi_map_t` fields patch 0043 sets, so `--enable-libaom` against them
+fails to compile.
 
 The adapter loads the qpfile and allocates a per-mode-info-cell segment-id
 map. The map is sized at libaom's mode-info grid, which is each dimension
@@ -190,7 +215,7 @@ macroblock rounds to the nearest. libaom copies the segment map and the
 !!! note "8-segment limit"
     The limit is a quantisation step: nearby QP offsets round together.
 
-## Hook 2: `-lavfi vmafx_tune` (patch 0004)
+## Hook 2: `-lavfi vmafx_tune` (patch 0003)
 
 The filter takes two video inputs, runs alongside a 1-pass encode and
 emits a recommended CRF for the next pass:
@@ -208,7 +233,7 @@ At the end of the run the filter logs:
 ```
 
 !!! note "FFmpeg version"
-    Patch 0004 uses the post-n7 libavfilter API (`ff_filter_link()` for
+    Patch 0003 uses the post-n7 libavfilter API (`ff_filter_link()` for
     per-link metadata such as `frame_rate`), so it needs FFmpeg `n7.0` or
     newer; it does not compile against `n6.x`. The series targets
     `n9.0.2`, so the prerequisites above satisfy this.
@@ -242,7 +267,7 @@ Python tool: `tools/vmaf-tune/src/vmaftune/recommend.py` sweeps real
 CRF-to-VMAF rows from a corpus instead of projecting from one
 observation.
 
-## Hook 3: `-pass-autotune` (patch 0002)
+## Hook 3: `-pass-autotune` (patch 0001)
 
 An advisory CLI flag for vmaf-tune-driven 2-pass encodes:
 
@@ -262,7 +287,7 @@ and in [`--two-pass`](vmaf-tune-multipass.md). The flag exists so shell
 scripts that call `ffmpeg` directly can signal the intent without
 inventing their own log conventions.
 
-## Hook 4: `-vmafx-profile <path>` (patch 0003)
+## Hook 4: `-vmafx-profile <path>` (patch 0002)
 
 `vmaf-tune compare --format html|both` and `vmaf-tune report` embed a
 versioned `encoder_profile` payload in the generated report. The Python

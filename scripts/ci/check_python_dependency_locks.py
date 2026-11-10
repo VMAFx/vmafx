@@ -23,9 +23,20 @@ import stat
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, cast
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import (
+    CommandOutputLimitExceeded,
+    CommandTimedOut,
+    CommandValidationError,
+    TextCommandResult,
+    resolve_executable,
+)
+from scripts.lib.safe_subprocess import run as run_command
 
 try:
     yaml: Any = importlib.import_module("yaml")
@@ -33,6 +44,9 @@ except ImportError:
     yaml = None
 
 MANIFEST_PATH = Path("requirements/locks/manifest.json")
+GIT_TIMEOUT_S = 60
+# 10x the slowest cold-cache uv pip compile of the manifest: 10.6 s.
+SUBPROCESS_TIMEOUT_S = 120
 HASH_RE = re.compile(r"--hash=sha256:[0-9a-f]{64}(?:\s|$)")
 EXACT_REQUIREMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+(?:\[[A-Za-z0-9_,.-]+\])?==[^;\s]+")
 PIP_NAME_RE = re.compile(
@@ -1589,6 +1603,7 @@ def scan_workflow_checkout_ordering(path: Path, text: str, root: Path | None = N
 
 
 def tracked_paths(root: Path) -> list[Path]:
+    """Return the files git tracks, or without a .git directory the files in the tree."""
     git_dir = root / ".git"
     raw_paths: list[Path] = []
     if git_dir.exists():
@@ -1598,11 +1613,12 @@ def tracked_paths(root: Path) -> list[Path]:
                 [git_bin, "-C", str(root), "ls-files", "-z"],
                 check=True,
                 capture_output=True,
+                timeout=GIT_TIMEOUT_S,
             )
             for raw in result.stdout.split(b"\0"):
                 if raw:
                     raw_paths.append(Path(os.fsdecode(raw)))
-        except (subprocess.CalledProcessError, OSError) as error:
+        except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired) as error:
             raise ContractError(f"git ls-files failed in {root}: {error}") from error
     else:
         for path in root.rglob("*"):
@@ -1775,6 +1791,7 @@ def validate_lock(root: Path, manifest: dict[str, Any], entry: dict[str, Any]) -
 
 
 def find_lock_files(root: Path) -> list[Path]:
+    """Return sorted repository-relative paths to all python lockfiles."""
     locks: list[Path] = []
     git_dir = root / ".git"
     if git_dir.exists():
@@ -1793,6 +1810,7 @@ def find_lock_files(root: Path) -> list[Path]:
                 ],
                 check=True,
                 capture_output=True,
+                timeout=GIT_TIMEOUT_S,
             )
             for raw in result.stdout.split(b"\0"):
                 if not raw:
@@ -1803,7 +1821,7 @@ def find_lock_files(root: Path) -> list[Path]:
                 ):
                     locks.append(rel)
             return sorted(locks)
-        except (subprocess.CalledProcessError, OSError) as error:
+        except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired) as error:
             raise ContractError(f"git ls-files failed in {root}: {error}") from error
 
     for path in root.rglob("*"):
@@ -1890,10 +1908,42 @@ def check(root: Path) -> int:
     return 0
 
 
+def _run_uv(
+    binary: str,
+    args: Sequence[str],
+    cwd: Path | None = None,
+    *,
+    timeout_seconds: float = SUBPROCESS_TIMEOUT_S,
+    max_output_bytes: int = 16 * 1_048_576,
+) -> TextCommandResult:
+    """Execute uv via safe_subprocess with allowed_executables validation."""
+    try:
+        return run_command(
+            [binary, *args],
+            allowed_executables=(binary,),
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout_seconds=timeout_seconds,
+            max_output_bytes=max_output_bytes,
+        )
+    except CommandTimedOut as error:
+        raise ContractError(f"uv timed out after {timeout_seconds:g}s: {error}") from error
+    except CommandOutputLimitExceeded as error:
+        raise ContractError(f"uv output exceeded {max_output_bytes} bytes: {error}") from error
+    except (CommandValidationError, OSError) as error:
+        raise ContractError(f"cannot execute uv ({binary}): {error}") from error
+
+
 def uv_version(binary: str) -> str:
-    result = subprocess.run(  # noqa: S603
-        [binary, "--version"], check=True, text=True, capture_output=True
-    )
+    """Execute the uv binary and return its parsed version string."""
+    result = _run_uv(binary, ["--version"], cwd=None)
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip()
+        raise ContractError(
+            f"cannot execute {binary} --version: uv exited {result.returncode} ({detail})"
+        )
     match = re.fullmatch(r"uv ([0-9]+(?:\.[0-9]+){2})(?: .*)?\n?", result.stdout)
     if not match:
         raise ContractError(f"cannot parse {binary} --version output: {result.stdout!r}")
@@ -1925,8 +1975,13 @@ def stamp_lock(
 
 
 def write(root: Path, uv_binary: str) -> int:
+    """Regenerate all manifest lockfiles using uv and verify the updated locks."""
+    try:
+        resolved_uv = resolve_executable(uv_binary, root=root)
+    except CommandValidationError as error:
+        raise ContractError(f"cannot execute uv ({uv_binary}): {error}") from error
     manifest = load_manifest(root)
-    actual = uv_version(uv_binary)
+    actual = uv_version(resolved_uv)
     if actual != manifest["uv_version"]:
         raise ContractError(
             f"uv {actual} does not match reviewed generator {manifest['uv_version']}"
@@ -1936,18 +1991,17 @@ def write(root: Path, uv_binary: str) -> int:
         for index, raw_entry in enumerate(manifest["locks"]):
             if not isinstance(raw_entry, dict):
                 raise ContractError("manifest lock entry is not an object")
+            compile_args = raw_entry.get("compile_args")
+            if not isinstance(compile_args, list) or not all(
+                isinstance(arg, str) for arg in compile_args
+            ):
+                target = raw_entry.get("output", index)
+                raise ContractError(
+                    f"manifest lock entry {target!r} compile_args must be a list of str"
+                )
             generated = temp_root / f"{index}.txt"
-            command = [
-                uv_binary,
-                "pip",
-                "compile",
-                *raw_entry["compile_args"],
-                "-o",
-                str(generated),
-            ]
-            result = subprocess.run(  # noqa: S603
-                command, cwd=root, text=True, capture_output=True, check=False
-            )
+            command = ["pip", "compile", *compile_args, "-o", str(generated)]
+            result = _run_uv(resolved_uv, command, cwd=root)
             if result.returncode != 0:
                 detail = result.stderr.strip() or result.stdout.strip()
                 raise ContractError(f"uv failed for {raw_entry['output']}: {detail}")
