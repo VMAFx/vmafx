@@ -34,8 +34,7 @@ from typing import Any
 
 import pytest
 
-_HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(_HERE.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from _vmaf_cli import ffmpeg_reports_encoder
 

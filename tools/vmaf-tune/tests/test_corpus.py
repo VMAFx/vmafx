@@ -13,8 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 # Make src/ importable without an editable install.
-_HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(_HERE.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from vmaftune import CORPUS_ROW_KEYS, SCHEMA_VERSION
 from vmaftune.cache import cache_key
@@ -681,7 +680,7 @@ def test_coarse_to_fine_speedup_vs_full_grid_is_documented(tmp_path: Path):
 
 def test_cell_encode_request_raw_hdr_carries_source_color_params(tmp_path: Path):
     """Prove raw HDR cell carries source_color_params on encode request."""
-    hdr_extra = _PQ_COLOR_OPTIONS + ("-x265-params", "hdr10-opt=1")
+    hdr_extra = (*_PQ_COLOR_OPTIONS, "-x265-params", "hdr10-opt=1")
     sweep = _hdr_sweep("/src/ref.yuv", hdr_extra)
     req = _cell_encode_request(sweep, "medium", 28, tmp_path / "out.mkv")
     assert req.source_color_params == tuple(color_tag_args(hdr_extra))
@@ -690,7 +689,7 @@ def test_cell_encode_request_raw_hdr_carries_source_color_params(tmp_path: Path)
 
 def test_cell_encode_request_container_hdr_has_no_input_color_tags(tmp_path: Path):
     """Prove container HDR cell omits input color tags before -i."""
-    hdr_extra = _PQ_COLOR_OPTIONS + ("-x265-params", "hdr10-opt=1")
+    hdr_extra = (*_PQ_COLOR_OPTIONS, "-x265-params", "hdr10-opt=1")
     sweep = _hdr_sweep("/src/ref.mp4", hdr_extra)
     req = _cell_encode_request(sweep, "medium", 28, tmp_path / "out.mkv")
     assert req.source_is_container is True

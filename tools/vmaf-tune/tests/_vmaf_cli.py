@@ -81,6 +81,11 @@ def fork_vmaf_under_test(
     return binary
 
 
+# An `ffmpeg -encoders` row is "<flags> <encoder name> <description>"; a row with fewer
+# fields names no encoder.
+ENCODER_ROW_MIN_FIELDS = 2
+
+
 def ffmpeg_reports_encoder(encoder: str) -> bool:
     """Return True iff the local ffmpeg binary advertises ``encoder``."""
     ffmpeg = shutil.which("ffmpeg")
@@ -97,7 +102,7 @@ def ffmpeg_reports_encoder(encoder: str) -> bool:
         out = result.stdout.decode("utf-8", errors="replace")
         for line in out.splitlines():
             parts = line.split()
-            if len(parts) >= 2 and parts[1] == encoder:
+            if len(parts) >= ENCODER_ROW_MIN_FIELDS and parts[1] == encoder:
                 return True
     except (OSError, subprocess.SubprocessError):
         return False
