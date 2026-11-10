@@ -94,7 +94,7 @@ vmaftune.saliency` command.
 | Encoder | ROI channel | Granularity | argv slot |
 |---|---|---|---|
 | `libx264` | patched FFmpeg `-qpfile` ROI bridge (per-macroblock offsets through x264 `quant_offsets`; needs `aq-mode` other than 0) | 16x16 luma macroblock | `-qpfile ...` |
-| `libaom-av1` | patched FFmpeg `-qpfile` ROI bridge | 16x16 macroblock mapped onto libaom mode-info cells | `-qpfile ...` |
+| `libaom-av1` | patched FFmpeg `-qpfile` ROI bridge (needs `-usage realtime` with `-cpu-used` 7 or 8; `vmaf-tune` adds `-usage realtime` and accepts only presets `veryfast` and `superfast`) | 16x16 macroblock mapped onto libaom mode-info cells | `-usage realtime -qpfile ...` |
 | `libx265` | `--zones` QP delta | whole-clip spatial mean | `-x265-params zones=0,N,q=<delta>` |
 | `libsvtav1` | patched FFmpeg `-qpfile` bridge | x264-style 16x16 macroblocks bridged to 64x64 superblocks, at most eight segments | `-qpfile ...` |
 | `libvvenc` | no saliency ROI channel; refused (ADR-3386) | unavailable | none |
@@ -171,7 +171,12 @@ variable and the flag are equivalent.
   whose format differs from x264's.
 - **libaom segment quantisation.** The FFmpeg bridge maps 16x16 deltas
   onto libaom's mode-info grid with at most eight segment QPs, so very
-  fine deltas snap to the nearest segment.
+  fine deltas snap to the nearest segment. `vmaf-tune` adds `-usage realtime`
+  and accepts only presets `veryfast` and `superfast` (cpu-used 7 or 8)
+  for saliency-aware libaom; other presets or two-pass are refused because
+  libaom ignores ROI maps outside realtime cpu-used 7..8. The refusal comes
+  before any encode: `vmaf-tune recommend-saliency` prints one
+  `vmaf-tune recommend-saliency: ...` line on stderr and exits with code 2.
 - **SVT-AV1 and VVenC use 64x64 blocks.** Both document 64x64 as the ROI
   unit, so the mask is reduced with `reduce_qp_map_to_blocks(qp_map,
   block=64)` before writing.

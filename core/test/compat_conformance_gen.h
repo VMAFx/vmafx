@@ -177,73 +177,29 @@ typedef struct VmafCompatApi {
     int (*registered_feature_extractor)(VmafContext *vmaf, unsigned index, const char **name,
                                         enum VmafBackend *backend);
     const char *(*version)(void);
-#if !VMAFX_ENGINE_EXPORTS_HIP
     int (*hip_available)(void);
-#endif
-#if !VMAFX_ENGINE_EXPORTS_HIP
     int (*hip_state_init)(VmafHipState **out, VmafHipConfiguration cfg);
-#endif
-#if !VMAFX_ENGINE_EXPORTS_HIP
     int (*hip_import_state)(VmafContext *ctx, VmafHipState *state);
-#endif
-#if !VMAFX_ENGINE_EXPORTS_HIP
     void (*hip_state_free)(VmafHipState **state);
-#endif
-#if !VMAFX_ENGINE_EXPORTS_HIP
     int (*hip_list_devices)(void);
-#endif
-#if VMAFX_BUILD_MCP
     int (*mcp_available)(void);
-#endif
-#if VMAFX_BUILD_MCP
     int (*mcp_transport_available)(VmafMcpTransport transport);
-#endif
-#if VMAFX_BUILD_MCP
     int (*mcp_init)(VmafMcpServer **out, VmafContext *ctx, const VmafMcpConfig *cfg);
-#endif
-#if VMAFX_BUILD_MCP
     int (*mcp_start_sse)(VmafMcpServer *server, VmafMcpSseConfig *cfg);
-#endif
-#if VMAFX_BUILD_MCP
     int (*mcp_start_uds)(VmafMcpServer *server, const VmafMcpUdsConfig *cfg);
-#endif
-#if VMAFX_BUILD_MCP
     int (*mcp_start_stdio)(VmafMcpServer *server, const VmafMcpStdioConfig *cfg);
-#endif
-#if VMAFX_BUILD_MCP
     int (*mcp_stop)(VmafMcpServer *server);
-#endif
-#if VMAFX_BUILD_MCP
     void (*mcp_close)(VmafMcpServer **server);
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
     int (*metal_available)(void);
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
     int (*metal_state_init)(VmafMetalState **out, VmafMetalConfiguration cfg);
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
     int (*metal_import_state)(VmafContext *ctx, VmafMetalState *state);
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
     void (*metal_state_free)(VmafMetalState **state);
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
     int (*metal_list_devices)(void);
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
     int (*metal_state_init_external)(VmafMetalState **out, VmafMetalExternalHandles handles);
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
     int (*metal_picture_import)(VmafMetalState *state, uintptr_t iosurface, unsigned plane,
                                 unsigned w, unsigned h, unsigned bpc, int is_ref, unsigned index);
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
     int (*metal_wait_compute)(VmafMetalState *state);
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
     int (*metal_read_imported_pictures)(VmafContext *ctx, unsigned index);
-#endif
     int (*model_load)(VmafModel **model, VmafModelConfig *cfg, const char *version);
     int (*model_load_from_path)(VmafModel **model, VmafModelConfig *cfg, const char *path);
     int (*model_feature_overload)(VmafModel *model, const char *feature_name,

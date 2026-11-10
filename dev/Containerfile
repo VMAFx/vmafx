@@ -66,9 +66,9 @@
 #
 # They must precede the FIRST FROM: an ARG declared after one is scoped to the
 # stage it follows, so `FROM ${ROCM_BUILDER}` above would expand to nothing.
-ARG DEV_BASE="ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944"
+ARG DEV_BASE="ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c"
 ARG NATIVE_RELEASE_BUILDER_BASE="quay.io/pypa/manylinux_2_28_x86_64@sha256:7e41b1c7fd64dfc69703a1124b43c404382973ee06ec5d764b85c34d2221fded"
-ARG DEV_GO_BASE="golang:1.27-trixie@sha256:604106102d33b1084e37ca08adf98ac0813624ae8595bd0d7f3965ecebded09c"
+ARG DEV_GO_BASE="golang:1.27-trixie@sha256:af1bfc2614ebb1dbd31af514b78740fd678850e76498762b425ecee4c5c6ea80"
 ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.1.0-full@sha256:4f5ed1bf6532a4b9920400401b0ad0f706af356dae61e40afefbfd6c8073f0ce"
 
 FROM ${ROCM_BUILDER} AS rocm-src
@@ -964,16 +964,16 @@ USER root
 #     probe therefore fails with `ERROR: SvtAv1Enc >= 0.9.0 not found
 #     using pkg-config` even when the library is present on disk.
 #
-#   * libaom-dev (Ubuntu 24.04 → 3.8.2) is too old for the patched FFmpeg build:
-#     `libavcodec/libaomenc.c` uses `aom_roi_map_t` fields (`enabled`,
-#     `skip`, `ref_frame`, `delta_qp_enabled`) added in libaom 3.10+,
-#     so the in-image FFmpeg build fails with
-#     `'aom_roi_map_t' has no member named 'enabled'` etc. against
-#     Ubuntu's older struct layout.
+#   * libaom-dev: patch 0043's ROI helper in `libavcodec/libaomenc.c`
+#     sets `aom_roi_map_t` fields (`enabled`, `skip`, `ref_frame`,
+#     `delta_qp_enabled`) that first shipped in libaom 3.13.0, so a
+#     build against an older libaom fails with
+#     `'aom_roi_map_t' has no member named 'enabled'` etc. libaom is
+#     not enabled at all for now; see the libaom note below.
 #
-# Both libraries are built from source in dedicated layers below
-# (analogous to libvvenc and AMF), which install pinned upstream
-# releases under `/usr/local/` with the correct headers + .pc files.
+# SVT-AV1 is built from source in a dedicated layer below (analogous
+# to libvvenc and AMF), which installs a pinned upstream release under
+# `/usr/local/` with the correct headers + .pc file.
 #
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -987,29 +987,23 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # NOTE: libaom (Alliance for Open Media reference AV1 encoder) is
 # intentionally NOT built or enabled.
 #
-# The fork's `ffmpeg-patches/0001-codec-qpfile-unified.patch`
+# The shared fix series patch `0043-libavcodec-unified-qpfile-across-libx264-libsvtav1-l.patch`
 # adds a `qpfile_aom_apply_roi` helper to `libavcodec/libaomenc.c`
 # that references `aom_roi_map_t` fields (`enabled`, `skip`,
-# `ref_frame`, `delta_qp_enabled`) that DO NOT EXIST in any released
-# libaom version including v3.11.0 (verified 2026-05-18 against
-# upstream `aom/aomcx.h:1609` — the public struct only has
-# `roi_map`, `rows`, `cols`, `delta_q`, `delta_lf`,
-# `static_threshold`). The patch was likely written against a
-# libaom development branch whose ROI API never shipped. Enabling
-# `--enable-libaom` therefore hard-errors at FFmpeg compile time
-# regardless of the libaom version installed.
+# `ref_frame`, `delta_qp_enabled`). These fields require libaom >= 3.13.0
+# (first release with those fields; v3.12.1 and older lack them).
+# The dev container base (Ubuntu 26.04) ships 3.13.1 (has the fields);
+# libaom remains omitted until a separate build change adds `libaom-dev`
+# and `--enable-libaom` and a patch-stack build proves it.
+# The node builder base (Debian 13) ships 3.12.1 (lacks the fields);
+# enabling there needs libaom >= 3.13.0.
 #
 # Disposition: SVT-AV1 (built above) is the production AV1 lane
 # anyway (Intel / Netflix maintain it as the fast software encoder);
 # libaom-av1 is the slow reference rarely used in production
 # pipelines. Dropping it from the in-image FFmpeg costs `libaom-av1`
 # in the compare-sweep matrix but keeps the fork's patch stack
-# rebase-stable. Re-enabling libaom requires first fixing
-# `ffmpeg-patches/0001-codec-qpfile-unified.patch` to either
-# (a) target a libaom version that actually ships the assumed ROI
-# fields, or (b) make the ROI bridge libaom-version-gated (mirror
-# the SVT-AV1 `>= 1.6.0` log-and-continue pattern already in the
-# patch). Tracked as a follow-up; out of ADR-0541's scope.
+# rebase-stable.
 
 # ---- SVT-AV1 (Scalable Video Tech for AV1) source build ---------------------
 # Built from upstream because Ubuntu's `libsvtav1-dev` package omits
@@ -1139,12 +1133,13 @@ RUN git config user.email "vmaf-dev-mcp@localhost" && git config user.name "vmaf
 #   Software AV1:
 #     --enable-libsvtav1   SVT-AV1 (Intel/Netflix, the production
 #                          software AV1 encoder).
-#     `--enable-libaom` is intentionally NOT passed — the fork's
-#     ffmpeg-patches/0007 carries a libaom-ROI helper that references
-#     `aom_roi_map_t` fields not present in any released libaom (the
-#     patch was written against an unreleased dev branch). Enabling
-#     libaom hard-errors at compile time. See the comment block on
-#     the libaom skip above for the follow-up plan.
+#     `--enable-libaom` is intentionally NOT passed — shared fix series
+#     patch 0043 needs libaom >= 3.13.0 for its ROI fields (v3.12.1 and older
+#     lack them). The dev container base ships 3.13.1 (has the fields), but
+#     libaom is omitted until a separate build change adds libaom-dev and
+#     `--enable-libaom` and a patch-stack build proves it. The node builder base
+#     (Debian 13) ships 3.12.1 (lacks the fields). SVT-AV1 covers the AV1
+#     production lane. See the comment block on the libaom skip above.
 #
 #   Software VVC (H.266):
 #     --enable-libvvenc    Fraunhofer reference VVC encoder

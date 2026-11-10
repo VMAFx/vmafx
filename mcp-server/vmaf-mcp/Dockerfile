@@ -13,7 +13,7 @@
 #
 # The server runs as UID/GID 65532; mount the corpus readable by that user.
 
-FROM ubuntu:26.04@sha256:42527649dbc4f9197a6073f426f488cbff0e9cc9f2afce32d91c383e4875634a AS build
+FROM ubuntu:26.04@sha256:157dc3d6e4a3e4f2c68d12df9df9ed6e808b59af6d4c3757b432b4f519916725 AS build
 
 ENV DEBIAN_FRONTEND=noninteractive
 # hadolint ignore=DL3008
@@ -33,7 +33,7 @@ RUN python3 -m pip install --no-cache-dir --break-system-packages --ignore-insta
         -r requirements/locks/package-build.txt \
     && python3 -m build --no-isolation --wheel --outdir /wheels mcp-server/vmaf-mcp
 
-FROM ubuntu:26.04@sha256:42527649dbc4f9197a6073f426f488cbff0e9cc9f2afce32d91c383e4875634a
+FROM ubuntu:26.04@sha256:157dc3d6e4a3e4f2c68d12df9df9ed6e808b59af6d4c3757b432b4f519916725
 
 ENV DEBIAN_FRONTEND=noninteractive \
     VMAF_BIN=/opt/vmaf/vmaf \

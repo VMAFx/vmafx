@@ -18,6 +18,9 @@ from pathlib import Path
 
 import pytest
 
+GIT_TIMEOUT_S = 60
+SUBPROCESS_TIMEOUT_S = 60
+
 _IMAGE = Path(__file__).resolve().parents[1] / "image"
 _spec = importlib.util.spec_from_file_location("licensing", _IMAGE / "licensing.py")
 lic = importlib.util.module_from_spec(_spec)
@@ -684,25 +687,29 @@ def source_repo(tmp: Path) -> tuple[Path, str]:
     write(repo / "patches/numactl/0001.patch", "patch\n")
 
     def git(*argv: str) -> str:  # never the caller's repository, even under a git hook
+        """Run a git command in the upstream test repository and return stripped stdout."""
         done = subprocess.run(["git", *argv], cwd=repo, check=True, capture_output=True, text=True,
-                              env=lic.git_environment())  # fmt: skip
+                              env=lic.git_environment(), timeout=GIT_TIMEOUT_S)  # fmt: skip
         return done.stdout.strip()
 
     git("init", "-q")
     git("config", "uploadpack.allowAnySHA1InWant", "true")
+    git("config", "commit.gpgsign", "false")  # hermetic: no host signing key
     git("add", ".")
     git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "c")
     return repo, git("rev-parse", "HEAD")
 
 
 def test_a_source_tree_is_fetched_by_its_commit_and_archived(tmp_path: Path) -> None:
+    """Assert a source tree is fetched from git by commit and archived as a tar.gz file."""
     repo, commit = source_repo(tmp_path)
     (tmp_path / "out" / "archives").mkdir(parents=True)
     archive = {"file": "Tree-x.tar.gz", "git": repo.as_uri(), "commit": commit, "why": "test"}
     line = lic.fetch_archive(archive, tmp_path / "out")
     assert f"at commit {commit} (git archive)" in line
     names = subprocess.run(["tar", "-tzf", str(tmp_path / "out/archives/Tree-x.tar.gz")],
-                           check=True, capture_output=True, text=True).stdout.split()  # fmt: skip
+                           check=True, capture_output=True, text=True,
+                           timeout=SUBPROCESS_TIMEOUT_S).stdout.split()  # fmt: skip
     assert "Tree-x/patches/numactl/0001.patch" in names
     assert not any(p.name.startswith(".") for p in (tmp_path / "out/archives").iterdir())
     # ADR-1591: gzip at level 9 writes XFL = 2 in byte 8 of its header (RFC 1952).
