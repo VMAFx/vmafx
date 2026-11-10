@@ -3641,7 +3641,7 @@ test('test_ffmpeg_vmafx_pelorus_scan_contract',
     timeout : 30,
 )
 
-# ADR-2093 / FFmpeg patch 0004: the vmafx filter declares the AVFrame colour to
+# ADR-2093 / FFmpeg patch 0003: the vmafx filter declares the AVFrame colour to
 # VMAFx. Device-free: reads the series; the FFmpeg run is
 # ffmpeg-patches/test/check-vmafx-input-colorimetry.sh.
 test('test_ffmpeg_libvmaf_input_colorimetry_contract',
@@ -7937,6 +7937,27 @@ test('test_sycl_motion_five_frame_window', test_sycl_motion_five_frame_window,
     is_parallel : false,
     timeout : 120)
 
+test_sycl_subsample_motion_vif = executable('test_sycl_subsample_motion_vif',
+    ['test.c', 'test_sycl_subsample_motion_vif.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : vmaf_test_link,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
+)
+test('test_sycl_subsample_motion_vif', test_sycl_subsample_motion_vif,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false,
+    timeout : 120)
+# Same binary under forced graph dispatch: every SYCL run must also record
+# the combined graph, so replay runs on frames where all extractors are
+# active (#3362 review).
+test('test_sycl_subsample_motion_vif_graph', test_sycl_subsample_motion_vif,
+    suite : ['fast', 'gpu', 'sycl'],
+    env : ['VMAF_SYCL_DISPATCH=MOTION:graph,PSNR:graph', 'VMAFX_TEST_EXPECT_SYCL_GRAPH=1'],
+    is_parallel : false,
+    timeout : 120)
+
 # ADR-1395: SYCL kernels use no scratch memory (private arrays in memory,
 # register spills) on Intel GPUs, where the Linux xe driver returns wrong
 # values from them. Builds every registered kernel for the default GPU and
@@ -7999,6 +8020,7 @@ if host_machine.system() == 'linux' and get_option('default_library') != 'shared
             '-Wl,--wrap=vmaf_sycl_shared_frame_init',
             '-Wl,--wrap=vmaf_sycl_shared_chroma_init',
             '-Wl,--wrap=vmaf_sycl_graph_register',
+            '-Wl,--wrap=vmaf_sycl_graph_register_flags',
             '-Wl,--wrap=vmaf_sycl_graph_unregister',
         ],
         kwargs : test_link_kwargs,

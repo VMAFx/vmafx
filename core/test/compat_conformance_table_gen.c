@@ -15,12 +15,10 @@
  * compat library). */
 
 #if VMAF_COMPAT_SIDE_NEW
-#define VMAF_COMPAT_THUNK(n) new_##n
 #define VMAF_COMPAT_CALLS vmaf_compat_calls_new
 #define VMAF_COMPAT_TABLE vmaf_compat_new
 #define VMAF_COMPAT_ENTRIES_DEFINE
 #else
-#define VMAF_COMPAT_THUNK(n) old_##n
 #define VMAF_COMPAT_CALLS vmaf_compat_calls_old
 #define VMAF_COMPAT_TABLE vmaf_compat_old
 #endif
@@ -34,726 +32,796 @@
 
 unsigned VMAF_COMPAT_CALLS[VMAF_COMPAT_COUNT];
 
-static int VMAF_COMPAT_THUNK(0)(void)
+static int thunk_0(void)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_DNN_AVAILABLE]++;
     return vmaf_dnn_available();
 }
+#define THUNK_0 thunk_0
 
-static int VMAF_COMPAT_THUNK(1)(VmafContext *ctx, const char *onnx_path, const VmafDnnConfig *cfg)
+static int thunk_1(VmafContext *ctx, const char *onnx_path, const VmafDnnConfig *cfg)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_USE_TINY_MODEL]++;
     return vmaf_use_tiny_model(ctx, onnx_path, cfg);
 }
+#define THUNK_1 thunk_1
 
-static int VMAF_COMPAT_THUNK(2)(VmafContext *ctx, const char *codec_name, const char *preset,
-                                int crf)
+static int thunk_2(VmafContext *ctx, const char *codec_name, const char *preset, int crf)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_DNN_SET_CODEC_CONTEXT]++;
     return vmaf_dnn_set_codec_context(ctx, codec_name, preset, crf);
 }
+#define THUNK_2 thunk_2
 
-static int VMAF_COMPAT_THUNK(3)(const VmafContext *ctx)
+static int thunk_3(const VmafContext *ctx)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_DNN_IS_CODEC_AWARE]++;
     return vmaf_dnn_is_codec_aware(ctx);
 }
+#define THUNK_3 thunk_3
 
-static int VMAF_COMPAT_THUNK(4)(VmafContext *ctx, VmafDnnResizeMode mode)
+static int thunk_4(VmafContext *ctx, VmafDnnResizeMode mode)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_DNN_SET_RESIZE_MODE]++;
     return vmaf_dnn_set_resize_mode(ctx, mode);
 }
+#define THUNK_4 thunk_4
 
-static int VMAF_COMPAT_THUNK(5)(VmafDnnSession **out, const char *onnx_path,
-                                const VmafDnnConfig *cfg)
+static int thunk_5(VmafDnnSession **out, const char *onnx_path, const VmafDnnConfig *cfg)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_DNN_SESSION_OPEN]++;
     return vmaf_dnn_session_open(out, onnx_path, cfg);
 }
+#define THUNK_5 thunk_5
 
-static int VMAF_COMPAT_THUNK(6)(VmafDnnSession *sess, const uint8_t *in, size_t in_stride, int w,
-                                int h, uint8_t *out, size_t out_stride)
+static int thunk_6(VmafDnnSession *sess, const uint8_t *in, size_t in_stride, int w, int h,
+                   uint8_t *out, size_t out_stride)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_DNN_SESSION_RUN_LUMA8]++;
     return vmaf_dnn_session_run_luma8(sess, in, in_stride, w, h, out, out_stride);
 }
+#define THUNK_6 thunk_6
 
-static int VMAF_COMPAT_THUNK(7)(VmafDnnSession *sess, const uint16_t *in, size_t in_stride, int w,
-                                int h, int bpc, uint16_t *out, size_t out_stride)
+static int thunk_7(VmafDnnSession *sess, const uint16_t *in, size_t in_stride, int w, int h,
+                   int bpc, uint16_t *out, size_t out_stride)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_DNN_SESSION_RUN_PLANE16]++;
     return vmaf_dnn_session_run_plane16(sess, in, in_stride, w, h, bpc, out, out_stride);
 }
+#define THUNK_7 thunk_7
 
-static int VMAF_COMPAT_THUNK(8)(VmafDnnSession *sess, const VmafDnnInput *inputs, size_t n_inputs,
-                                VmafDnnOutput *outputs, size_t n_outputs)
+static int thunk_8(VmafDnnSession *sess, const VmafDnnInput *inputs, size_t n_inputs,
+                   VmafDnnOutput *outputs, size_t n_outputs)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_DNN_SESSION_RUN]++;
     return vmaf_dnn_session_run(sess, inputs, n_inputs, outputs, n_outputs);
 }
+#define THUNK_8 thunk_8
 
-static void VMAF_COMPAT_THUNK(9)(VmafDnnSession *sess)
+static void thunk_9(VmafDnnSession *sess)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_DNN_SESSION_CLOSE]++;
     vmaf_dnn_session_close(sess);
 }
+#define THUNK_9 thunk_9
 
-static const char *VMAF_COMPAT_THUNK(10)(VmafDnnSession *sess)
+static const char *thunk_10(VmafDnnSession *sess)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_DNN_SESSION_ATTACHED_EP]++;
     return vmaf_dnn_session_attached_ep(sess);
 }
+#define THUNK_10 thunk_10
 
-static int VMAF_COMPAT_THUNK(11)(const char *onnx_path, const char *registry_path)
+static int thunk_11(const char *onnx_path, const char *registry_path)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_DNN_VERIFY_SIGNATURE]++;
     return vmaf_dnn_verify_signature(onnx_path, registry_path);
 }
+#define THUNK_11 thunk_11
 
-static int VMAF_COMPAT_THUNK(12)(VmafFeatureDictionary **dict, const char *key, const char *val)
+static int thunk_12(VmafFeatureDictionary **dict, const char *key, const char *val)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_FEATURE_DICTIONARY_SET]++;
     return vmaf_feature_dictionary_set(dict, key, val);
 }
+#define THUNK_12 thunk_12
 
-static int VMAF_COMPAT_THUNK(13)(VmafFeatureDictionary **dict)
+static int thunk_13(VmafFeatureDictionary **dict)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_FEATURE_DICTIONARY_FREE]++;
     return vmaf_feature_dictionary_free(dict);
 }
+#define THUNK_13 thunk_13
 
-static int VMAF_COMPAT_THUNK(14)(VmafContext **vmaf, VmafConfiguration cfg)
+static int thunk_14(VmafContext **vmaf, VmafConfiguration cfg)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_INIT]++;
     return vmaf_init(vmaf, cfg);
 }
+#define THUNK_14 thunk_14
 
-static int VMAF_COMPAT_THUNK(15)(VmafContext *vmaf, VmafModel *model)
+static int thunk_15(VmafContext *vmaf, VmafModel *model)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_USE_FEATURES_FROM_MODEL]++;
     return vmaf_use_features_from_model(vmaf, model);
 }
+#define THUNK_15 thunk_15
 
-static int VMAF_COMPAT_THUNK(16)(VmafContext *vmaf, VmafModelCollection *model_collection)
+static int thunk_16(VmafContext *vmaf, VmafModelCollection *model_collection)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_USE_FEATURES_FROM_MODEL_COLLECTION]++;
     return vmaf_use_features_from_model_collection(vmaf, model_collection);
 }
+#define THUNK_16 thunk_16
 
-static int VMAF_COMPAT_THUNK(17)(VmafContext *vmaf, const char *feature_name,
-                                 VmafFeatureDictionary *opts_dict)
+static int thunk_17(VmafContext *vmaf, const char *feature_name, VmafFeatureDictionary *opts_dict)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_USE_FEATURE]++;
     return vmaf_use_feature(vmaf, feature_name, opts_dict);
 }
+#define THUNK_17 thunk_17
 
-static int VMAF_COMPAT_THUNK(18)(VmafContext *vmaf, const char *feature_name, double value,
-                                 unsigned index)
+static int thunk_18(VmafContext *vmaf, const char *feature_name, double value, unsigned index)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_IMPORT_FEATURE_SCORE]++;
     return vmaf_import_feature_score(vmaf, feature_name, value, index);
 }
+#define THUNK_18 thunk_18
 
-static int VMAF_COMPAT_THUNK(19)(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist,
-                                 unsigned index)
+static int thunk_19(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, unsigned index)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_READ_PICTURES]++;
     return vmaf_read_pictures(vmaf, ref, dist, index);
 }
+#define THUNK_19 thunk_19
 
-static int VMAF_COMPAT_THUNK(20)(VmafContext *vmaf, int enabled)
+static int thunk_20(VmafContext *vmaf, int enabled)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_SET_SAMPLE_RANGE_CHECK_ENABLED]++;
     return vmaf_set_sample_range_check_enabled(vmaf, enabled);
 }
+#define THUNK_20 thunk_20
 
-static int VMAF_COMPAT_THUNK(21)(VmafContext *vmaf, const VmafColor *ref, const VmafColor *dist)
+static int thunk_21(VmafContext *vmaf, const VmafColor *ref, const VmafColor *dist)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_SET_INPUT_COLORIMETRY]++;
     return vmaf_set_input_colorimetry(vmaf, ref, dist);
 }
+#define THUNK_21 thunk_21
 
-static int VMAF_COMPAT_THUNK(22)(VmafContext *vmaf, VmafModel *model, double *score, unsigned index)
+static int thunk_22(VmafContext *vmaf, VmafModel *model, double *score, unsigned index)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_SCORE_AT_INDEX]++;
     return vmaf_score_at_index(vmaf, model, score, index);
 }
+#define THUNK_22 thunk_22
 
-static int VMAF_COMPAT_THUNK(23)(VmafContext *vmaf, VmafModelCollection *model_collection,
-                                 VmafModelCollectionScore *score, unsigned index)
+static int thunk_23(VmafContext *vmaf, VmafModelCollection *model_collection,
+                    VmafModelCollectionScore *score, unsigned index)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_SCORE_AT_INDEX_MODEL_COLLECTION]++;
     return vmaf_score_at_index_model_collection(vmaf, model_collection, score, index);
 }
+#define THUNK_23 thunk_23
 
-static int VMAF_COMPAT_THUNK(24)(VmafContext *vmaf, const char *feature_name, double *score,
-                                 unsigned index)
+static int thunk_24(VmafContext *vmaf, const char *feature_name, double *score, unsigned index)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_FEATURE_SCORE_AT_INDEX]++;
     return vmaf_feature_score_at_index(vmaf, feature_name, score, index);
 }
+#define THUNK_24 thunk_24
 
-static int VMAF_COMPAT_THUNK(25)(VmafContext *vmaf, VmafModel *model,
-                                 enum VmafPoolingMethod pool_method, double *score,
-                                 unsigned index_low, unsigned index_high)
+static int thunk_25(VmafContext *vmaf, VmafModel *model, enum VmafPoolingMethod pool_method,
+                    double *score, unsigned index_low, unsigned index_high)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_SCORE_POOLED]++;
     return vmaf_score_pooled(vmaf, model, pool_method, score, index_low, index_high);
 }
+#define THUNK_25 thunk_25
 
-static int VMAF_COMPAT_THUNK(26)(VmafContext *vmaf, VmafModelCollection *model_collection,
-                                 enum VmafPoolingMethod pool_method,
-                                 VmafModelCollectionScore *score, unsigned index_low,
-                                 unsigned index_high)
+static int thunk_26(VmafContext *vmaf, VmafModelCollection *model_collection,
+                    enum VmafPoolingMethod pool_method, VmafModelCollectionScore *score,
+                    unsigned index_low, unsigned index_high)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_SCORE_POOLED_MODEL_COLLECTION]++;
     return vmaf_score_pooled_model_collection(vmaf, model_collection, pool_method, score, index_low,
                                               index_high);
 }
+#define THUNK_26 thunk_26
 
-static int VMAF_COMPAT_THUNK(27)(VmafContext *vmaf, const char *feature_name,
-                                 enum VmafPoolingMethod pool_method, double *score,
-                                 unsigned index_low, unsigned index_high)
+static int thunk_27(VmafContext *vmaf, const char *feature_name, enum VmafPoolingMethod pool_method,
+                    double *score, unsigned index_low, unsigned index_high)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_FEATURE_SCORE_POOLED]++;
     return vmaf_feature_score_pooled(vmaf, feature_name, pool_method, score, index_low, index_high);
 }
+#define THUNK_27 thunk_27
 
-static int VMAF_COMPAT_THUNK(28)(VmafContext *vmaf, VmafPictureConfiguration cfg)
+static int thunk_28(VmafContext *vmaf, VmafPictureConfiguration cfg)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PREALLOCATE_PICTURES]++;
     return vmaf_preallocate_pictures(vmaf, cfg);
 }
+#define THUNK_28 thunk_28
 
-static int VMAF_COMPAT_THUNK(29)(VmafContext *vmaf, VmafPicture *pic)
+static int thunk_29(VmafContext *vmaf, VmafPicture *pic)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_FETCH_PREALLOCATED_PICTURE]++;
     return vmaf_fetch_preallocated_picture(vmaf, pic);
 }
+#define THUNK_29 thunk_29
 
-static int VMAF_COMPAT_THUNK(30)(VmafContext *vmaf)
+static int thunk_30(VmafContext *vmaf)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_CLOSE]++;
     return vmaf_close(vmaf);
 }
+#define THUNK_30 thunk_30
 
-static int VMAF_COMPAT_THUNK(31)(VmafContext *vmaf, const char *output_path,
-                                 enum VmafOutputFormat fmt)
+static int thunk_31(VmafContext *vmaf, const char *output_path, enum VmafOutputFormat fmt)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_WRITE_OUTPUT]++;
     return vmaf_write_output(vmaf, output_path, fmt);
 }
+#define THUNK_31 thunk_31
 
-static int VMAF_COMPAT_THUNK(32)(VmafContext *vmaf, const char *output_path,
-                                 enum VmafOutputFormat fmt, const char *score_format)
+static int thunk_32(VmafContext *vmaf, const char *output_path, enum VmafOutputFormat fmt,
+                    const char *score_format)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_WRITE_OUTPUT_WITH_FORMAT]++;
     return vmaf_write_output_with_format(vmaf, output_path, fmt, score_format);
 }
+#define THUNK_32 thunk_32
 
-static int VMAF_COMPAT_THUNK(33)(VmafContext *vmaf, enum VmafBackend *out)
+static int thunk_33(VmafContext *vmaf, enum VmafBackend *out)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_CONTEXT_GET_BACKEND]++;
     return vmaf_context_get_backend(vmaf, out);
 }
+#define THUNK_33 thunk_33
 
-static int VMAF_COMPAT_THUNK(34)(VmafContext *vmaf, const char *feature_name,
-                                 const VmafFeatureDictionary *opts_dict,
-                                 const VmafPictureConfiguration *pic_cfg, const char **twin_name,
-                                 const char **unsupported_option)
+static int thunk_34(VmafContext *vmaf, const char *feature_name,
+                    const VmafFeatureDictionary *opts_dict, const VmafPictureConfiguration *pic_cfg,
+                    const char **twin_name, const char **unsupported_option)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_FEATURE_BACKEND_TWIN]++;
     return vmaf_feature_backend_twin(vmaf, feature_name, opts_dict, pic_cfg, twin_name,
                                      unsupported_option);
 }
+#define THUNK_34 thunk_34
 
-static int VMAF_COMPAT_THUNK(35)(VmafContext *vmaf, unsigned index, const char **name,
-                                 enum VmafBackend *backend)
+static int thunk_35(VmafContext *vmaf, unsigned index, const char **name, enum VmafBackend *backend)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_REGISTERED_FEATURE_EXTRACTOR]++;
     return vmaf_registered_feature_extractor(vmaf, index, name, backend);
 }
+#define THUNK_35 thunk_35
 
-static const char *VMAF_COMPAT_THUNK(36)(void)
+static const char *thunk_36(void)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_VERSION]++;
     return vmaf_version();
 }
+#define THUNK_36 thunk_36
 
 #if !VMAFX_ENGINE_EXPORTS_HIP
-static int VMAF_COMPAT_THUNK(37)(void)
+static int thunk_37(void)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_HIP_AVAILABLE]++;
     return vmaf_hip_available();
 }
-
+#define THUNK_37 thunk_37
+#else
+#define THUNK_37 NULL
 #endif
+
 #if !VMAFX_ENGINE_EXPORTS_HIP
-static int VMAF_COMPAT_THUNK(38)(VmafHipState **out, VmafHipConfiguration cfg)
+static int thunk_38(VmafHipState **out, VmafHipConfiguration cfg)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_HIP_STATE_INIT]++;
     return vmaf_hip_state_init(out, cfg);
 }
-
+#define THUNK_38 thunk_38
+#else
+#define THUNK_38 NULL
 #endif
+
 #if !VMAFX_ENGINE_EXPORTS_HIP
-static int VMAF_COMPAT_THUNK(39)(VmafContext *ctx, VmafHipState *state)
+static int thunk_39(VmafContext *ctx, VmafHipState *state)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_HIP_IMPORT_STATE]++;
     return vmaf_hip_import_state(ctx, state);
 }
-
+#define THUNK_39 thunk_39
+#else
+#define THUNK_39 NULL
 #endif
+
 #if !VMAFX_ENGINE_EXPORTS_HIP
-static void VMAF_COMPAT_THUNK(40)(VmafHipState **state)
+static void thunk_40(VmafHipState **state)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_HIP_STATE_FREE]++;
     vmaf_hip_state_free(state);
 }
-
+#define THUNK_40 thunk_40
+#else
+#define THUNK_40 NULL
 #endif
+
 #if !VMAFX_ENGINE_EXPORTS_HIP
-static int VMAF_COMPAT_THUNK(41)(void)
+static int thunk_41(void)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_HIP_LIST_DEVICES]++;
     return vmaf_hip_list_devices();
 }
-
+#define THUNK_41 thunk_41
+#else
+#define THUNK_41 NULL
 #endif
+
 #if VMAFX_BUILD_MCP
-static int VMAF_COMPAT_THUNK(42)(void)
+static int thunk_42(void)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MCP_AVAILABLE]++;
     return vmaf_mcp_available();
 }
-
+#define THUNK_42 thunk_42
+#else
+#define THUNK_42 NULL
 #endif
+
 #if VMAFX_BUILD_MCP
-static int VMAF_COMPAT_THUNK(43)(VmafMcpTransport transport)
+static int thunk_43(VmafMcpTransport transport)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MCP_TRANSPORT_AVAILABLE]++;
     return vmaf_mcp_transport_available(transport);
 }
-
+#define THUNK_43 thunk_43
+#else
+#define THUNK_43 NULL
 #endif
+
 #if VMAFX_BUILD_MCP
-static int VMAF_COMPAT_THUNK(44)(VmafMcpServer **out, VmafContext *ctx, const VmafMcpConfig *cfg)
+static int thunk_44(VmafMcpServer **out, VmafContext *ctx, const VmafMcpConfig *cfg)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MCP_INIT]++;
     return vmaf_mcp_init(out, ctx, cfg);
 }
-
+#define THUNK_44 thunk_44
+#else
+#define THUNK_44 NULL
 #endif
+
 #if VMAFX_BUILD_MCP
-static int VMAF_COMPAT_THUNK(45)(VmafMcpServer *server, VmafMcpSseConfig *cfg)
+static int thunk_45(VmafMcpServer *server, VmafMcpSseConfig *cfg)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MCP_START_SSE]++;
     return vmaf_mcp_start_sse(server, cfg);
 }
-
+#define THUNK_45 thunk_45
+#else
+#define THUNK_45 NULL
 #endif
+
 #if VMAFX_BUILD_MCP
-static int VMAF_COMPAT_THUNK(46)(VmafMcpServer *server, const VmafMcpUdsConfig *cfg)
+static int thunk_46(VmafMcpServer *server, const VmafMcpUdsConfig *cfg)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MCP_START_UDS]++;
     return vmaf_mcp_start_uds(server, cfg);
 }
-
+#define THUNK_46 thunk_46
+#else
+#define THUNK_46 NULL
 #endif
+
 #if VMAFX_BUILD_MCP
-static int VMAF_COMPAT_THUNK(47)(VmafMcpServer *server, const VmafMcpStdioConfig *cfg)
+static int thunk_47(VmafMcpServer *server, const VmafMcpStdioConfig *cfg)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MCP_START_STDIO]++;
     return vmaf_mcp_start_stdio(server, cfg);
 }
-
+#define THUNK_47 thunk_47
+#else
+#define THUNK_47 NULL
 #endif
+
 #if VMAFX_BUILD_MCP
-static int VMAF_COMPAT_THUNK(48)(VmafMcpServer *server)
+static int thunk_48(VmafMcpServer *server)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MCP_STOP]++;
     return vmaf_mcp_stop(server);
 }
-
+#define THUNK_48 thunk_48
+#else
+#define THUNK_48 NULL
 #endif
+
 #if VMAFX_BUILD_MCP
-static void VMAF_COMPAT_THUNK(49)(VmafMcpServer **server)
+static void thunk_49(VmafMcpServer **server)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MCP_CLOSE]++;
     vmaf_mcp_close(server);
 }
-
+#define THUNK_49 thunk_49
+#else
+#define THUNK_49 NULL
 #endif
+
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static int VMAF_COMPAT_THUNK(50)(void)
+static int thunk_50(void)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_AVAILABLE]++;
     return vmaf_metal_available();
 }
-
+#define THUNK_50 thunk_50
+#else
+#define THUNK_50 NULL
 #endif
+
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static int VMAF_COMPAT_THUNK(51)(VmafMetalState **out, VmafMetalConfiguration cfg)
+static int thunk_51(VmafMetalState **out, VmafMetalConfiguration cfg)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_STATE_INIT]++;
     return vmaf_metal_state_init(out, cfg);
 }
-
+#define THUNK_51 thunk_51
+#else
+#define THUNK_51 NULL
 #endif
+
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static int VMAF_COMPAT_THUNK(52)(VmafContext *ctx, VmafMetalState *state)
+static int thunk_52(VmafContext *ctx, VmafMetalState *state)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_IMPORT_STATE]++;
     return vmaf_metal_import_state(ctx, state);
 }
-
+#define THUNK_52 thunk_52
+#else
+#define THUNK_52 NULL
 #endif
+
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static void VMAF_COMPAT_THUNK(53)(VmafMetalState **state)
+static void thunk_53(VmafMetalState **state)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_STATE_FREE]++;
     vmaf_metal_state_free(state);
 }
-
+#define THUNK_53 thunk_53
+#else
+#define THUNK_53 NULL
 #endif
+
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static int VMAF_COMPAT_THUNK(54)(void)
+static int thunk_54(void)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_LIST_DEVICES]++;
     return vmaf_metal_list_devices();
 }
-
+#define THUNK_54 thunk_54
+#else
+#define THUNK_54 NULL
 #endif
+
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static int VMAF_COMPAT_THUNK(55)(VmafMetalState **out, VmafMetalExternalHandles handles)
+static int thunk_55(VmafMetalState **out, VmafMetalExternalHandles handles)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_STATE_INIT_EXTERNAL]++;
     return vmaf_metal_state_init_external(out, handles);
 }
-
+#define THUNK_55 thunk_55
+#else
+#define THUNK_55 NULL
 #endif
+
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static int VMAF_COMPAT_THUNK(56)(VmafMetalState *state, uintptr_t iosurface, unsigned plane,
-                                 unsigned w, unsigned h, unsigned bpc, int is_ref, unsigned index)
+static int thunk_56(VmafMetalState *state, uintptr_t iosurface, unsigned plane, unsigned w,
+                    unsigned h, unsigned bpc, int is_ref, unsigned index)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_PICTURE_IMPORT]++;
     return vmaf_metal_picture_import(state, iosurface, plane, w, h, bpc, is_ref, index);
 }
-
+#define THUNK_56 thunk_56
+#else
+#define THUNK_56 NULL
 #endif
+
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static int VMAF_COMPAT_THUNK(57)(VmafMetalState *state)
+static int thunk_57(VmafMetalState *state)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_WAIT_COMPUTE]++;
     return vmaf_metal_wait_compute(state);
 }
-
+#define THUNK_57 thunk_57
+#else
+#define THUNK_57 NULL
 #endif
+
 #if !VMAFX_ENGINE_EXPORTS_METAL
-static int VMAF_COMPAT_THUNK(58)(VmafContext *ctx, unsigned index)
+static int thunk_58(VmafContext *ctx, unsigned index)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_METAL_READ_IMPORTED_PICTURES]++;
     return vmaf_metal_read_imported_pictures(ctx, index);
 }
-
+#define THUNK_58 thunk_58
+#else
+#define THUNK_58 NULL
 #endif
-static int VMAF_COMPAT_THUNK(59)(VmafModel **model, VmafModelConfig *cfg, const char *version)
+
+static int thunk_59(VmafModel **model, VmafModelConfig *cfg, const char *version)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_LOAD]++;
     return vmaf_model_load(model, cfg, version);
 }
+#define THUNK_59 thunk_59
 
-static int VMAF_COMPAT_THUNK(60)(VmafModel **model, VmafModelConfig *cfg, const char *path)
+static int thunk_60(VmafModel **model, VmafModelConfig *cfg, const char *path)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_LOAD_FROM_PATH]++;
     return vmaf_model_load_from_path(model, cfg, path);
 }
+#define THUNK_60 thunk_60
 
-static int VMAF_COMPAT_THUNK(61)(VmafModel *model, const char *feature_name,
-                                 VmafFeatureDictionary *opts_dict)
+static int thunk_61(VmafModel *model, const char *feature_name, VmafFeatureDictionary *opts_dict)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_FEATURE_OVERLOAD]++;
     return vmaf_model_feature_overload(model, feature_name, opts_dict);
 }
+#define THUNK_61 thunk_61
 
-static void VMAF_COMPAT_THUNK(62)(VmafModel *model)
+static void thunk_62(VmafModel *model)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_DESTROY]++;
     vmaf_model_destroy(model);
 }
+#define THUNK_62 thunk_62
 
-static unsigned VMAF_COMPAT_THUNK(63)(const VmafModel *model)
+static unsigned thunk_63(const VmafModel *model)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_FEATURE_COUNT]++;
     return vmaf_model_feature_count(model);
 }
+#define THUNK_63 thunk_63
 
-static const char *VMAF_COMPAT_THUNK(64)(const VmafModel *model, unsigned index)
+static const char *thunk_64(const VmafModel *model, unsigned index)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_FEATURE_NAME]++;
     return vmaf_model_feature_name(model, index);
 }
+#define THUNK_64 thunk_64
 
-static int VMAF_COMPAT_THUNK(65)(VmafModel **model, VmafModelCollection **model_collection,
-                                 VmafModelConfig *cfg, const char *version)
+static int thunk_65(VmafModel **model, VmafModelCollection **model_collection, VmafModelConfig *cfg,
+                    const char *version)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_COLLECTION_LOAD]++;
     return vmaf_model_collection_load(model, model_collection, cfg, version);
 }
+#define THUNK_65 thunk_65
 
-static int VMAF_COMPAT_THUNK(66)(VmafModel **model, VmafModelCollection **model_collection,
-                                 VmafModelConfig *cfg, const char *path)
+static int thunk_66(VmafModel **model, VmafModelCollection **model_collection, VmafModelConfig *cfg,
+                    const char *path)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_COLLECTION_LOAD_FROM_PATH]++;
     return vmaf_model_collection_load_from_path(model, model_collection, cfg, path);
 }
+#define THUNK_66 thunk_66
 
-static int VMAF_COMPAT_THUNK(67)(VmafModel *model, VmafModelCollection **model_collection,
-                                 const char *feature_name, VmafFeatureDictionary *opts_dict)
+static int thunk_67(VmafModel *model, VmafModelCollection **model_collection,
+                    const char *feature_name, VmafFeatureDictionary *opts_dict)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_COLLECTION_FEATURE_OVERLOAD]++;
     return vmaf_model_collection_feature_overload(model, model_collection, feature_name, opts_dict);
 }
+#define THUNK_67 thunk_67
 
-static void VMAF_COMPAT_THUNK(68)(VmafModelCollection *model_collection)
+static void thunk_68(VmafModelCollection *model_collection)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_COLLECTION_DESTROY]++;
     vmaf_model_collection_destroy(model_collection);
 }
+#define THUNK_68 thunk_68
 
-static const void *VMAF_COMPAT_THUNK(69)(const void *prev, const char **version)
+static const void *thunk_69(const void *prev, const char **version)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_MODEL_VERSION_NEXT]++;
     return vmaf_model_version_next(prev, version);
 }
+#define THUNK_69 thunk_69
 
-static const char *VMAF_COMPAT_THUNK(70)(void)
+static const char *thunk_70(void)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_DEFAULT_MODEL_VERSION]++;
     return vmaf_default_model_version();
 }
+#define THUNK_70 thunk_70
 
-static int VMAF_COMPAT_THUNK(71)(VmafContext *vmaf, int enabled)
+static int thunk_71(VmafContext *vmaf, int enabled)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_SET_PERCEPTUAL_WEIGHT_ENABLED]++;
     return vmaf_set_perceptual_weight_enabled(vmaf, enabled);
 }
+#define THUNK_71 thunk_71
 
-static int VMAF_COMPAT_THUNK(72)(VmafContext *vmaf, double strength)
+static int thunk_72(VmafContext *vmaf, double strength)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_SET_PERCEPTUAL_WEIGHT_STRENGTH]++;
     return vmaf_set_perceptual_weight_strength(vmaf, strength);
 }
+#define THUNK_72 thunk_72
 
-static int VMAF_COMPAT_THUNK(73)(VmafContext *vmaf, const uint8_t *blob, size_t len,
-                                 unsigned pic_index)
+static int thunk_73(VmafContext *vmaf, const uint8_t *blob, size_t len, unsigned pic_index)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_SET_PERCEPTUAL_SIDEDATA]++;
     return vmaf_set_perceptual_sidedata(vmaf, blob, len, pic_index);
 }
+#define THUNK_73 thunk_73
 
-static int VMAF_COMPAT_THUNK(74)(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                                 unsigned w, unsigned h)
+static int thunk_74(VmafPicture *pic, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
+                    unsigned h)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_ALLOC]++;
     return vmaf_picture_alloc(pic, pix_fmt, bpc, w, h);
 }
+#define THUNK_74 thunk_74
 
-static int VMAF_COMPAT_THUNK(75)(VmafPicture *pic)
+static int thunk_75(VmafPicture *pic)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_UNREF]++;
     return vmaf_picture_unref(pic);
 }
+#define THUNK_75 thunk_75
 
-static int VMAF_COMPAT_THUNK(76)(VmafPicture *pic, VmafPictureWrapped pic_wrapped)
+static int thunk_76(VmafPicture *pic, VmafPictureWrapped pic_wrapped)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_WRAP]++;
     return vmaf_picture_wrap(pic, pic_wrapped);
 }
+#define THUNK_76 thunk_76
 
-static int VMAF_COMPAT_THUNK(77)(VmafPictureConvertContext **ctx, const VmafPicture *src,
-                                 const VmafColor *src_color, const VmafPictureConvertTarget *target)
+static int thunk_77(VmafPictureConvertContext **ctx, const VmafPicture *src,
+                    const VmafColor *src_color, const VmafPictureConvertTarget *target)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_CONVERT_CONTEXT_INIT_WITH_COLOR]++;
     return vmaf_picture_convert_context_init_with_color(ctx, src, src_color, target);
 }
+#define THUNK_77 thunk_77
 
-static int VMAF_COMPAT_THUNK(78)(VmafPictureConvertContext *ctx, VmafPicture *dst,
-                                 const VmafPicture *src)
+static int thunk_78(VmafPictureConvertContext *ctx, VmafPicture *dst, const VmafPicture *src)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_CONVERT]++;
     return vmaf_picture_convert(ctx, dst, src);
 }
+#define THUNK_78 thunk_78
 
-static int VMAF_COMPAT_THUNK(79)(VmafPictureConvertContext *ctx)
+static int thunk_79(VmafPictureConvertContext *ctx)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_CONVERT_CONTEXT_CLOSE]++;
     return vmaf_picture_convert_context_close(ctx);
 }
+#define THUNK_79 thunk_79
 
-static int VMAF_COMPAT_THUNK(80)(VmafPicture2 *pic, enum VmafPixelFormat pix_fmt, unsigned bpc,
-                                 unsigned w, unsigned h)
+static int thunk_80(VmafPicture2 *pic, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
+                    unsigned h)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE2_ALLOC]++;
     return vmaf_picture2_alloc(pic, pix_fmt, bpc, w, h);
 }
+#define THUNK_80 thunk_80
 
-static int VMAF_COMPAT_THUNK(81)(VmafPicture2 *pic)
+static int thunk_81(VmafPicture2 *pic)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE2_UNREF]++;
     return vmaf_picture2_unref(pic);
 }
+#define THUNK_81 thunk_81
 
-static int VMAF_COMPAT_THUNK(82)(const VmafPicture *src, VmafPicture2 *dst)
+static int thunk_82(const VmafPicture *src, VmafPicture2 *dst)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_V1_TO_V2]++;
     return vmaf_picture_v1_to_v2(src, dst);
 }
+#define THUNK_82 thunk_82
 
-static int VMAF_COMPAT_THUNK(83)(const VmafPicture2 *src, VmafPicture *dst)
+static int thunk_83(const VmafPicture2 *src, VmafPicture *dst)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_PICTURE_V2_TO_V1]++;
     return vmaf_picture_v2_to_v1(src, dst);
 }
+#define THUNK_83 thunk_83
 
-static const char *VMAF_COMPAT_THUNK(84)(VmafBackendHandle backend)
+static const char *thunk_84(VmafBackendHandle backend)
 {
     VMAF_COMPAT_CALLS[VMAF_COMPAT_BACKEND_HANDLE_NAME]++;
     return vmaf_backend_handle_name(backend);
 }
+#define THUNK_84 thunk_84
 
 const VmafCompatApi VMAF_COMPAT_TABLE = {
     .count = VMAF_COMPAT_COUNT,
-    .dnn_available = VMAF_COMPAT_THUNK(0),
-    .use_tiny_model = VMAF_COMPAT_THUNK(1),
-    .dnn_set_codec_context = VMAF_COMPAT_THUNK(2),
-    .dnn_is_codec_aware = VMAF_COMPAT_THUNK(3),
-    .dnn_set_resize_mode = VMAF_COMPAT_THUNK(4),
-    .dnn_session_open = VMAF_COMPAT_THUNK(5),
-    .dnn_session_run_luma8 = VMAF_COMPAT_THUNK(6),
-    .dnn_session_run_plane16 = VMAF_COMPAT_THUNK(7),
-    .dnn_session_run = VMAF_COMPAT_THUNK(8),
-    .dnn_session_close = VMAF_COMPAT_THUNK(9),
-    .dnn_session_attached_ep = VMAF_COMPAT_THUNK(10),
-    .dnn_verify_signature = VMAF_COMPAT_THUNK(11),
-    .feature_dictionary_set = VMAF_COMPAT_THUNK(12),
-    .feature_dictionary_free = VMAF_COMPAT_THUNK(13),
-    .init = VMAF_COMPAT_THUNK(14),
-    .use_features_from_model = VMAF_COMPAT_THUNK(15),
-    .use_features_from_model_collection = VMAF_COMPAT_THUNK(16),
-    .use_feature = VMAF_COMPAT_THUNK(17),
-    .import_feature_score = VMAF_COMPAT_THUNK(18),
-    .read_pictures = VMAF_COMPAT_THUNK(19),
-    .set_sample_range_check_enabled = VMAF_COMPAT_THUNK(20),
-    .set_input_colorimetry = VMAF_COMPAT_THUNK(21),
-    .score_at_index = VMAF_COMPAT_THUNK(22),
-    .score_at_index_model_collection = VMAF_COMPAT_THUNK(23),
-    .feature_score_at_index = VMAF_COMPAT_THUNK(24),
-    .score_pooled = VMAF_COMPAT_THUNK(25),
-    .score_pooled_model_collection = VMAF_COMPAT_THUNK(26),
-    .feature_score_pooled = VMAF_COMPAT_THUNK(27),
-    .preallocate_pictures = VMAF_COMPAT_THUNK(28),
-    .fetch_preallocated_picture = VMAF_COMPAT_THUNK(29),
-    .close = VMAF_COMPAT_THUNK(30),
-    .write_output = VMAF_COMPAT_THUNK(31),
-    .write_output_with_format = VMAF_COMPAT_THUNK(32),
-    .context_get_backend = VMAF_COMPAT_THUNK(33),
-    .feature_backend_twin = VMAF_COMPAT_THUNK(34),
-    .registered_feature_extractor = VMAF_COMPAT_THUNK(35),
-    .version = VMAF_COMPAT_THUNK(36),
-#if !VMAFX_ENGINE_EXPORTS_HIP
-    .hip_available = VMAF_COMPAT_THUNK(37),
-#endif
-#if !VMAFX_ENGINE_EXPORTS_HIP
-    .hip_state_init = VMAF_COMPAT_THUNK(38),
-#endif
-#if !VMAFX_ENGINE_EXPORTS_HIP
-    .hip_import_state = VMAF_COMPAT_THUNK(39),
-#endif
-#if !VMAFX_ENGINE_EXPORTS_HIP
-    .hip_state_free = VMAF_COMPAT_THUNK(40),
-#endif
-#if !VMAFX_ENGINE_EXPORTS_HIP
-    .hip_list_devices = VMAF_COMPAT_THUNK(41),
-#endif
-#if VMAFX_BUILD_MCP
-    .mcp_available = VMAF_COMPAT_THUNK(42),
-#endif
-#if VMAFX_BUILD_MCP
-    .mcp_transport_available = VMAF_COMPAT_THUNK(43),
-#endif
-#if VMAFX_BUILD_MCP
-    .mcp_init = VMAF_COMPAT_THUNK(44),
-#endif
-#if VMAFX_BUILD_MCP
-    .mcp_start_sse = VMAF_COMPAT_THUNK(45),
-#endif
-#if VMAFX_BUILD_MCP
-    .mcp_start_uds = VMAF_COMPAT_THUNK(46),
-#endif
-#if VMAFX_BUILD_MCP
-    .mcp_start_stdio = VMAF_COMPAT_THUNK(47),
-#endif
-#if VMAFX_BUILD_MCP
-    .mcp_stop = VMAF_COMPAT_THUNK(48),
-#endif
-#if VMAFX_BUILD_MCP
-    .mcp_close = VMAF_COMPAT_THUNK(49),
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_available = VMAF_COMPAT_THUNK(50),
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_state_init = VMAF_COMPAT_THUNK(51),
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_import_state = VMAF_COMPAT_THUNK(52),
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_state_free = VMAF_COMPAT_THUNK(53),
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_list_devices = VMAF_COMPAT_THUNK(54),
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_state_init_external = VMAF_COMPAT_THUNK(55),
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_picture_import = VMAF_COMPAT_THUNK(56),
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_wait_compute = VMAF_COMPAT_THUNK(57),
-#endif
-#if !VMAFX_ENGINE_EXPORTS_METAL
-    .metal_read_imported_pictures = VMAF_COMPAT_THUNK(58),
-#endif
-    .model_load = VMAF_COMPAT_THUNK(59),
-    .model_load_from_path = VMAF_COMPAT_THUNK(60),
-    .model_feature_overload = VMAF_COMPAT_THUNK(61),
-    .model_destroy = VMAF_COMPAT_THUNK(62),
-    .model_feature_count = VMAF_COMPAT_THUNK(63),
-    .model_feature_name = VMAF_COMPAT_THUNK(64),
-    .model_collection_load = VMAF_COMPAT_THUNK(65),
-    .model_collection_load_from_path = VMAF_COMPAT_THUNK(66),
-    .model_collection_feature_overload = VMAF_COMPAT_THUNK(67),
-    .model_collection_destroy = VMAF_COMPAT_THUNK(68),
-    .model_version_next = VMAF_COMPAT_THUNK(69),
-    .default_model_version = VMAF_COMPAT_THUNK(70),
-    .set_perceptual_weight_enabled = VMAF_COMPAT_THUNK(71),
-    .set_perceptual_weight_strength = VMAF_COMPAT_THUNK(72),
-    .set_perceptual_sidedata = VMAF_COMPAT_THUNK(73),
-    .picture_alloc = VMAF_COMPAT_THUNK(74),
-    .picture_unref = VMAF_COMPAT_THUNK(75),
-    .picture_wrap = VMAF_COMPAT_THUNK(76),
-    .picture_convert_context_init_with_color = VMAF_COMPAT_THUNK(77),
-    .picture_convert = VMAF_COMPAT_THUNK(78),
-    .picture_convert_context_close = VMAF_COMPAT_THUNK(79),
-    .picture2_alloc = VMAF_COMPAT_THUNK(80),
-    .picture2_unref = VMAF_COMPAT_THUNK(81),
-    .picture_v1_to_v2 = VMAF_COMPAT_THUNK(82),
-    .picture_v2_to_v1 = VMAF_COMPAT_THUNK(83),
-    .backend_handle_name = VMAF_COMPAT_THUNK(84),
+    .dnn_available = THUNK_0,
+    .use_tiny_model = THUNK_1,
+    .dnn_set_codec_context = THUNK_2,
+    .dnn_is_codec_aware = THUNK_3,
+    .dnn_set_resize_mode = THUNK_4,
+    .dnn_session_open = THUNK_5,
+    .dnn_session_run_luma8 = THUNK_6,
+    .dnn_session_run_plane16 = THUNK_7,
+    .dnn_session_run = THUNK_8,
+    .dnn_session_close = THUNK_9,
+    .dnn_session_attached_ep = THUNK_10,
+    .dnn_verify_signature = THUNK_11,
+    .feature_dictionary_set = THUNK_12,
+    .feature_dictionary_free = THUNK_13,
+    .init = THUNK_14,
+    .use_features_from_model = THUNK_15,
+    .use_features_from_model_collection = THUNK_16,
+    .use_feature = THUNK_17,
+    .import_feature_score = THUNK_18,
+    .read_pictures = THUNK_19,
+    .set_sample_range_check_enabled = THUNK_20,
+    .set_input_colorimetry = THUNK_21,
+    .score_at_index = THUNK_22,
+    .score_at_index_model_collection = THUNK_23,
+    .feature_score_at_index = THUNK_24,
+    .score_pooled = THUNK_25,
+    .score_pooled_model_collection = THUNK_26,
+    .feature_score_pooled = THUNK_27,
+    .preallocate_pictures = THUNK_28,
+    .fetch_preallocated_picture = THUNK_29,
+    .close = THUNK_30,
+    .write_output = THUNK_31,
+    .write_output_with_format = THUNK_32,
+    .context_get_backend = THUNK_33,
+    .feature_backend_twin = THUNK_34,
+    .registered_feature_extractor = THUNK_35,
+    .version = THUNK_36,
+    .hip_available = THUNK_37,
+    .hip_state_init = THUNK_38,
+    .hip_import_state = THUNK_39,
+    .hip_state_free = THUNK_40,
+    .hip_list_devices = THUNK_41,
+    .mcp_available = THUNK_42,
+    .mcp_transport_available = THUNK_43,
+    .mcp_init = THUNK_44,
+    .mcp_start_sse = THUNK_45,
+    .mcp_start_uds = THUNK_46,
+    .mcp_start_stdio = THUNK_47,
+    .mcp_stop = THUNK_48,
+    .mcp_close = THUNK_49,
+    .metal_available = THUNK_50,
+    .metal_state_init = THUNK_51,
+    .metal_import_state = THUNK_52,
+    .metal_state_free = THUNK_53,
+    .metal_list_devices = THUNK_54,
+    .metal_state_init_external = THUNK_55,
+    .metal_picture_import = THUNK_56,
+    .metal_wait_compute = THUNK_57,
+    .metal_read_imported_pictures = THUNK_58,
+    .model_load = THUNK_59,
+    .model_load_from_path = THUNK_60,
+    .model_feature_overload = THUNK_61,
+    .model_destroy = THUNK_62,
+    .model_feature_count = THUNK_63,
+    .model_feature_name = THUNK_64,
+    .model_collection_load = THUNK_65,
+    .model_collection_load_from_path = THUNK_66,
+    .model_collection_feature_overload = THUNK_67,
+    .model_collection_destroy = THUNK_68,
+    .model_version_next = THUNK_69,
+    .default_model_version = THUNK_70,
+    .set_perceptual_weight_enabled = THUNK_71,
+    .set_perceptual_weight_strength = THUNK_72,
+    .set_perceptual_sidedata = THUNK_73,
+    .picture_alloc = THUNK_74,
+    .picture_unref = THUNK_75,
+    .picture_wrap = THUNK_76,
+    .picture_convert_context_init_with_color = THUNK_77,
+    .picture_convert = THUNK_78,
+    .picture_convert_context_close = THUNK_79,
+    .picture2_alloc = THUNK_80,
+    .picture2_unref = THUNK_81,
+    .picture_v1_to_v2 = THUNK_82,
+    .picture_v2_to_v1 = THUNK_83,
+    .backend_handle_name = THUNK_84,
 };
 
 /* NOLINTEND(modernize-use-nullptr) */
