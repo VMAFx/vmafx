@@ -8,13 +8,22 @@ call is mocked so the tests run without any media-tool dependency.
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
-import subprocess
+import types
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
+
+from scripts.lib.safe_subprocess import (
+    CommandFailed,
+    CommandTimedOut,
+    CommandValidationError,
+    TextCommandResult,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPO_ROOT / "ai" / "scripts" / "konvid_to_vmaf_pairs.py"
@@ -47,6 +56,7 @@ def test_default_features_includes_canonical_six() -> None:
 
 
 def test_decode_yuv_invokes_ffprobe_then_ffmpeg(tmp_path: Path) -> None:
+    """Verify decoding reads stream metadata before invoking the video decoder."""
     src = tmp_path / "clip.mp4"
     src.write_bytes(b"\x00")
     out_yuv = tmp_path / "ref.yuv"
@@ -54,12 +64,13 @@ def test_decode_yuv_invokes_ffprobe_then_ffmpeg(tmp_path: Path) -> None:
     calls: list[list[str]] = []
 
     def fake_run(cmd, check=True, **kw):
+        """Record commands and fake successful metadata extraction or video decoding."""
         calls.append(list(cmd))
         if cmd[0] == "ffprobe":
-            return subprocess.CompletedProcess(cmd, 0, stdout="320\n240\n5\n", stderr="")
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            return TextCommandResult(tuple(cmd), 0, stdout="320\n240\n5\n", stderr="")
+        return TextCommandResult(tuple(cmd), 0, stdout="", stderr="")
 
-    with patch.object(KVP.subprocess, "run", side_effect=fake_run):
+    with patch.object(KVP, "run_command", side_effect=fake_run):
         w, h, n = KVP._decode_yuv(src, out_yuv)
     assert (w, h, n) == (320, 240, 5)
     assert calls[0][0] == "ffprobe"
@@ -72,6 +83,7 @@ def test_decode_yuv_invokes_ffprobe_then_ffmpeg(tmp_path: Path) -> None:
 
 
 def test_encode_dis_writes_intermediate_then_decodes(tmp_path: Path) -> None:
+    """Verify encoding creates an intermediate video before decoding it to raw YUV."""
     src = tmp_path / "src.mp4"
     src.write_bytes(b"\x00")
     out_yuv = tmp_path / "dis.yuv"
@@ -79,14 +91,15 @@ def test_encode_dis_writes_intermediate_then_decodes(tmp_path: Path) -> None:
     calls: list[list[str]] = []
 
     def fake_run(cmd, check=True, **kw):
+        """Fake successful transcoding by recording calls and writing an intermediate file."""
         calls.append(list(cmd))
         # The first ffmpeg call writes the .dis.mp4 intermediate.
         if "-c:v" in cmd:
             inter = out_yuv.with_suffix(".dis.mp4")
             inter.write_bytes(b"\x00")
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return TextCommandResult(tuple(cmd), 0, stdout="", stderr="")
 
-    with patch.object(KVP.subprocess, "run", side_effect=fake_run):
+    with patch.object(KVP, "run_command", side_effect=fake_run):
         KVP._encode_dis(src, out_yuv, crf=28)
     assert len(calls) == 2  # encode then decode
     assert calls[0][0] == "ffmpeg"
@@ -100,6 +113,7 @@ def test_encode_dis_writes_intermediate_then_decodes(tmp_path: Path) -> None:
 
 
 def test_run_vmaf_argv(tmp_path: Path) -> None:
+    """Verify scoring composes the expected input, output, and backend arguments."""
     binary = tmp_path / "vmaf"
     binary.write_text("")
     ref = tmp_path / "r.yuv"
@@ -113,10 +127,11 @@ def test_run_vmaf_argv(tmp_path: Path) -> None:
     captured: list[list[str]] = []
 
     def fake_run(cmd, check=True, **kw):
+        """Fake scoring by recording the command and returning empty successful output."""
         captured.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return TextCommandResult(tuple(cmd), 0, stdout="", stderr="")
 
-    with patch.object(KVP.subprocess, "run", side_effect=fake_run):
+    with patch.object(KVP, "run_command", side_effect=fake_run):
         KVP._run_vmaf(binary, ref, dis, 320, 240, out_json, model)
 
     cmd = captured[0]
@@ -315,3 +330,172 @@ def test_main_returns_2_when_vmaf_bin_missing(tmp_path: Path) -> None:
         ]
     )
     assert rc == 2
+
+
+@pytest.mark.parametrize(  # type: ignore[untyped-decorator]  # pytest is untyped for the mypy gate (--no-site-packages)
+    "exc",
+    [
+        CommandTimedOut(("vmaf", "x"), 60.0, None, None),
+        CommandFailed(TextCommandResult(("vmaf", "x"), 1, "", "")),
+    ],
+    ids=["timeout", "exit"],
+)
+def test_process_all_clips(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    exc: Exception,
+) -> None:
+    """Verify that clip processing failure is captured and skipped in batch."""
+    clip1 = tmp_path / "clip1.mp4"
+    clip2 = tmp_path / "clip2.mp4"
+    clips = [clip1, clip2]
+    args = argparse.Namespace(vmaf_bin=tmp_path / "vmaf", crf=28, scratch=tmp_path / "scratch")
+    teacher = types.SimpleNamespace(arg="teacher.model")
+
+    def fake_process_clip(key: str, *_args: object, **_kwargs: object) -> list[dict]:
+        """Simulate clip processing failure by raising the given exception."""
+        if key == f"KoNViD_1k_videos_{clip1.stem}":
+            raise exc
+        return [{"a": 1}]
+
+    monkeypatch.setattr(KVP, "_process_clip", fake_process_clip)
+    rows, failed, _elapsed = KVP._process_all_clips(clips, args, None, teacher)
+    assert rows == [{"a": 1}]
+    assert failed == [f"KoNViD_1k_videos_{clip1.stem}"]
+    captured = capsys.readouterr().err
+    if isinstance(exc, CommandTimedOut):
+        assert "FAILED: vmaf x (timed out after 60s)" in captured
+    else:
+        assert "FAILED: vmaf x" in captured
+
+
+def test_run_command_bounds_and_allowlist(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Verify run_command carries expected timeout_seconds and allowed_executables for all steps."""
+    distinct_timeout_s = 61
+    monkeypatch.setattr(KVP, "VMAF_TIMEOUT_S", distinct_timeout_s)
+    src = tmp_path / "clip.mp4"
+    src.write_bytes(b"\x00")
+    ref = tmp_path / "ref.yuv"
+    dis = tmp_path / "dis.yuv"
+    out_json = tmp_path / "vmaf.json"
+    binary = tmp_path / "vmaf"
+    binary.write_text("")
+
+    recorded: list[dict[str, Any]] = []
+
+    def fake_run(cmd, *, allowed_executables, timeout_seconds, **kw):
+        """Record command constraints and fake successful metadata extraction or transcoding."""
+        recorded.append(
+            {
+                "cmd": list(cmd),
+                "allowed": allowed_executables,
+                "timeout": timeout_seconds,
+            }
+        )
+        if cmd[0] == "ffprobe":
+            return TextCommandResult(tuple(cmd), 0, stdout="320\n240\n5\n", stderr="")
+        return TextCommandResult(tuple(cmd), 0, stdout="", stderr="")
+
+    with patch.object(KVP, "run_command", side_effect=fake_run):
+        KVP._decode_yuv(src, ref)
+        KVP._encode_dis(src, dis, crf=28)
+        KVP._run_vmaf(binary, ref, dis, 320, 240, out_json)
+
+    expected_call_count = 5
+    assert len(recorded) == expected_call_count
+    # ffprobe step
+    assert recorded[0]["allowed"] == ("ffprobe",)
+    assert recorded[0]["timeout"] == KVP.FFMPEG_TIMEOUT_S
+    # ffmpeg decode step
+    assert recorded[1]["allowed"] == ("ffmpeg",)
+    assert recorded[1]["timeout"] == KVP.FFMPEG_TIMEOUT_S
+    # ffmpeg encode steps
+    assert recorded[2]["allowed"] == ("ffmpeg",)
+    assert recorded[2]["timeout"] == KVP.FFMPEG_TIMEOUT_S
+    assert recorded[3]["allowed"] == ("ffmpeg",)
+    assert recorded[3]["timeout"] == KVP.FFMPEG_TIMEOUT_S
+    # vmaf step
+    vmaf_arg = KVP.executable_argument(binary, Path.cwd())
+    assert recorded[4]["allowed"] == (vmaf_arg,)
+    assert recorded[4]["timeout"] == distinct_timeout_s
+    assert recorded[4]["timeout"] == KVP.VMAF_TIMEOUT_S
+
+
+def test_run_rejects_unallowed_executable() -> None:
+    """Invoking _run with an executable not in the allowlist raises CommandValidationError."""
+    with pytest.raises(CommandValidationError):
+        KVP._run(["sh", "-c", "true"], allowed=("ffmpeg",), timeout_s=1)
+
+
+def test_encode_dis_cleans_up_intermediate_on_timeout(tmp_path: Path) -> None:
+    """_encode_dis unlinks intermediate file when second _run times out and propagates error."""
+    src = tmp_path / "clip.mp4"
+    src.write_bytes(b"\x00")
+    out_yuv = tmp_path / "dis.yuv"
+    intermediate = out_yuv.with_suffix(".dis.mp4")
+
+    calls = 0
+
+    def fake_run(cmd, **kw):
+        """Fake successful intermediate creation, then raise CommandTimedOut on decoding."""
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            intermediate.write_bytes(b"temp")
+            return TextCommandResult(tuple(cmd), 0, "", "")
+        raise CommandTimedOut(tuple(cmd), 60.0, None, None)
+
+    with patch.object(KVP, "run_command", side_effect=fake_run):
+        with pytest.raises(CommandTimedOut):
+            KVP._encode_dis(src, out_yuv, crf=28)
+
+    assert not intermediate.exists()
+
+
+def test_vmaf_step_command_failed_logs_and_skips_clip(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """Negative test: CommandFailed from vmaf step logs FAILED and continues batch."""
+    clip1 = tmp_path / "clip1.mp4"
+    clip2 = tmp_path / "clip2.mp4"
+    clips = [clip1, clip2]
+    args = argparse.Namespace(vmaf_bin=tmp_path / "vmaf", crf=28, scratch=tmp_path / "scratch")
+    teacher = types.SimpleNamespace(arg="teacher.model")
+
+    def fake_process_clip(key: str, *_args: object, **_kwargs: object) -> list[dict]:
+        """Fake clip processing by raising CommandFailed for one clip or returning a metric."""
+        if key == f"KoNViD_1k_videos_{clip1.stem}":
+            raise CommandFailed(TextCommandResult(("vmaf", "--reference"), 1, "", "crash"))
+        return [{"metric": 1}]
+
+    monkeypatch.setattr(KVP, "_process_clip", fake_process_clip)
+    rows, failed, _elapsed = KVP._process_all_clips(clips, args, None, teacher)
+    assert rows == [{"metric": 1}]
+    assert failed == [f"KoNViD_1k_videos_{clip1.stem}"]
+    captured = capsys.readouterr().err
+    assert f"[konvid] KoNViD_1k_videos_{clip1.stem} FAILED: vmaf --reference" in captured
+
+
+def test_encode_step_command_timed_out_skips_clip(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """Boundary test: CommandTimedOut from encode step skips clip and batch continues."""
+    clip1 = tmp_path / "clip1.mp4"
+    clip2 = tmp_path / "clip2.mp4"
+    clips = [clip1, clip2]
+    args = argparse.Namespace(vmaf_bin=tmp_path / "vmaf", crf=28, scratch=tmp_path / "scratch")
+    teacher = types.SimpleNamespace(arg="teacher.model")
+
+    def fake_process_clip(key: str, *_args: object, **_kwargs: object) -> list[dict]:
+        """Fake clip processing by raising CommandTimedOut for one clip or returning a metric."""
+        if key == f"KoNViD_1k_videos_{clip1.stem}":
+            raise CommandTimedOut(("ffmpeg", "-i", "clip1.mp4"), 60.0, None, None)
+        return [{"metric": 1}]
+
+    monkeypatch.setattr(KVP, "_process_clip", fake_process_clip)
+    rows, failed, _elapsed = KVP._process_all_clips(clips, args, None, teacher)
+    assert rows == [{"metric": 1}]
+    assert failed == [f"KoNViD_1k_videos_{clip1.stem}"]
+    captured = capsys.readouterr().err
+    assert "timed out after 60s" in captured
