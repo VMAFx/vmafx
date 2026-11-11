@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import os
 import re
 import shlex
 import shutil
@@ -14,14 +15,28 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from functools import partial
 from pathlib import Path
 from unittest import mock
 
 import yaml  # type: ignore[import-untyped]  # no PyYAML stubs in the hook environment, as in scripts/ci/check_composite_actions.py
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
+# Hook runs keep the staged index for this checkout; fixtures drop caller GIT_* (issue #3324).
+from scripts.ci.check_agent_copyright_rule import git_environment  # noqa: E402
+from scripts.lib.safe_subprocess import CommandFailed, TextCommandResult  # noqa: E402
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+
 WORKFLOWS = ROOT / ".github" / "workflows"
 SCRIPT_TIMEOUT_S = 60
+# 466 tracked source files at introduction; allow fourfold growth.
+MAX_CI_TEXT_FILES = 1_864
+PPA_SOURCE_TEXT = re.compile(
+    r"add-apt-repository|apt-add-repository|\bppa:|ppa\.launchpad(?:content)?\.net",
+    re.IGNORECASE,
+)
 
 
 def workflow_step(text: str, name: str) -> str:
@@ -95,8 +110,334 @@ def python_lint_job_problems(job: str) -> list[str]:
     return problems
 
 
+def ppa_text_problems(path: Path, text: str) -> list[str]:
+    """Reject source-registration text once per matching physical line, including data."""
+    problems: list[str] = []
+    for number, line in enumerate(text.splitlines(), 1):
+        match = PPA_SOURCE_TEXT.search(line)
+        if match is not None:
+            problems.append(
+                f"{path.as_posix()}:{number}: {match.group(0)} registers a Launchpad PPA source; "
+                "install from the Ubuntu archive (ADR-3533)"
+            )
+    return problems
+
+
+def listing_git_environment(root: Path) -> dict[str, str]:
+    """Return git's environment for listing `root`.
+
+    This checkout keeps the caller's environment, so a commit hook lists the staged index.
+    Any other tree (a test fixture) drops every inherited GIT_* variable and reads neither
+    system nor global configuration, so a caller's ~/.gitconfig cannot change the listing.
+    """
+    env = git_environment(root)
+    if root.resolve() != ROOT.resolve():
+        env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
+    return env
+
+
+def ci_text_paths(root: Path) -> list[Path]:
+    """List tracked YAML, shell and container source paths throughout the repository."""
+    result = run_command(
+        ["git", "-C", str(root), "ls-files", "-z"],
+        allowed_executables=("git",),
+        env=listing_git_environment(root),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
+    )
+    paths = [
+        root / name
+        for name in result.stdout.split("\0")
+        if name
+        and (
+            Path(name).suffix in (".yml", ".yaml", ".sh", ".bash")
+            or Path(name).name.startswith(("Dockerfile", "Containerfile"))
+        )
+    ]
+    if len(paths) > MAX_CI_TEXT_FILES:
+        raise AssertionError(f"CI text exceeds {MAX_CI_TEXT_FILES} files")
+    return sorted(paths)
+
+
+def launchpad_ppa_problems(root: Path) -> list[str]:
+    """Ban registration text in tracked sources; report skipped non-regular paths."""
+    problems: list[str] = []
+    for path in ci_text_paths(root):
+        relative = path.relative_to(root)
+        if not path.is_file(follow_symlinks=False):
+            print(f"{relative}: skipped tracked non-regular file", file=sys.stderr)
+            continue
+        problems.extend(
+            ppa_text_problems(relative, path.read_text(encoding="utf-8", errors="replace"))
+        )
+    return problems
+
+
+class LaunchpadPPAContract(unittest.TestCase):
+    """Keep tracked installation sources independent of live Launchpad registration."""
+
+    def setUp(self) -> None:
+        """Create disposable Git state isolated from caller repository and configuration."""
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        # Strip every inherited GIT_* variable and disable caller system/global configuration.
+        self.git_run = partial(subprocess.run, env=listing_git_environment(self.root))
+        self.git_run(self.git_argv("init", "-q"), check=True, capture_output=True, timeout=10)
+        self.enterContext(mock.patch.object(subprocess, "run", side_effect=self.git_run))
+
+    def git_argv(self, *args: str) -> list[str]:
+        """Return Git arguments confined to disposable state, hooks and signing disabled."""
+        return [
+            "git",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "commit.gpgsign=false",
+            "-C",
+            str(self.root),
+            *args,
+        ]
+
+    def track(self, files: dict[str, str]) -> None:
+        """Write and index only explicitly supplied disposable files."""
+        for relative, content in files.items():
+            path = self.root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        self.git_run(
+            self.git_argv("add", "--", *files), check=True, capture_output=True, timeout=10
+        )
+
+    def test_current_tree_has_no_registration_text(self) -> None:
+        """Every tracked installation source must satisfy ADR-3533."""
+        problems = launchpad_ppa_problems(ROOT)
+        self.assertEqual(problems, [], "\n".join(problems))
+
+    def test_tracked_sources_name_each_path_and_line(self) -> None:
+        """Reject registration text across repository paths, suffixes and container names."""
+        paths = (
+            ".github/workflows/x.yml",
+            ".github/actions/a/action.yaml",
+            "tools/elsewhere/action.yml",
+            "scripts/ci/setup.sh",
+            "scripts/setup.bash",
+            "docker/Dockerfile.ci",
+            "Containerfile",
+            "docs/example.yaml",
+            "Dockerfile",
+            "docker/Containerfile.ci",
+        )
+        self.track(dict.fromkeys(paths, "# setup\nsudo add-apt-repository -y ppa:x/y\n"))
+        expected = [
+            f"{path}:2: add-apt-repository registers a Launchpad PPA source; "
+            "install from the Ubuntu archive (ADR-3533)"
+            for path in sorted(paths)
+        ]
+        self.assertEqual(launchpad_ppa_problems(self.root), expected)
+
+    def test_registration_forms_and_source_lines(self) -> None:
+        """Reject nested commands, aliases, variables, merges, heredocs and comments."""
+        for text, matches in (
+            ("run: add-apt-repository -y ppa:x/y\n", ((1, "add-apt-repository"),)),
+            ("run: bash -c 'add-apt-repository -y ppa:x/y'\n", ((1, "add-apt-repository"),)),
+            ('src=ppa:x/y\nadd-apt-repository "$src"\n', ((1, "ppa:"), (2, "add-apt-repository"))),
+            (
+                "step: &step\n  run: add-apt-repository ppa:x/y\nsteps:\n  - <<: *step\n",
+                ((2, "add-apt-repository"),),
+            ),
+            ("cat <<'EOF'\nadd-apt-repository ppa:x/y\nEOF\n", ((2, "add-apt-repository"),)),
+            ("apt-add-repository -y ppa:x/y\n", ((1, "apt-add-repository"),)),
+            (
+                "deb https://ppa.launchpadcontent.net/x/y/ubuntu noble main\n",
+                ((1, "ppa.launchpadcontent.net"),),
+            ),
+            ("deb https://ppa.launchpad.net/x/y/ubuntu noble main\n", ((1, "ppa.launchpad.net"),)),
+            ("PPA:x/y\n", ((1, "PPA:"),)),
+            ("ADD-APT-REPOSITORY ppa:x/y\n", ((1, "ADD-APT-REPOSITORY"),)),
+            ("# add-apt-repository ppa:x/y\n", ((1, "add-apt-repository"),)),
+            ('echo "a\nppa:x/y"\n', ((2, "ppa:"),)),
+        ):
+            with self.subTest(text=text):
+                self.track({"fixture.yml": text})
+                expected = [
+                    f"fixture.yml:{line}: {match} registers a Launchpad PPA source; "
+                    "install from the Ubuntu archive (ADR-3533)"
+                    for line, match in matches
+                ]
+                self.assertEqual(ppa_text_problems(Path("fixture.yml"), text), expected)
+                self.assertEqual(launchpad_ppa_problems(self.root), expected)
+
+    def test_unquoted_output_is_banned(self) -> None:
+        """Fail closed: unquoted echo data counts, with one finding per matching line."""
+        problems = ppa_text_problems(Path("fixture.sh"), "echo add-apt-repository ppa:x/y\n")
+        self.assertEqual(
+            problems,
+            [
+                "fixture.sh:1: add-apt-repository registers a Launchpad PPA source; "
+                "install from the Ubuntu archive (ADR-3533)"
+            ],
+        )
+
+    def test_allowed_text_and_untracked_or_other_files(self) -> None:
+        """Allow archive installs, empty or malformed text, and files outside tracked scope."""
+        self.track(
+            {
+                "setup.sh": 'Launchpad\napt-get install -y gcc-15\necho "a\nb"\n',
+                "empty.yaml": "",
+                "example.py": "add-apt-repository ppa:x/y\n",
+                "example.md": "add-apt-repository ppa:x/y\n",
+            }
+        )
+        (self.root / "untracked.yml").write_text("ppa:x/y\n", encoding="utf-8")
+        self.assertEqual(launchpad_ppa_problems(self.root), [])
+
+    def test_file_count_boundary(self) -> None:
+        """Accept exactly the tracked-file bound; reject one additional source path."""
+        names = [f"setup-{number}.sh" for number in range(MAX_CI_TEXT_FILES + 1)]
+        listing = "\0".join(names[:-1]) + "\0"
+        result = TextCommandResult(argv=("git",), returncode=0, stdout=listing, stderr="")
+        module = sys.modules[__name__]
+        with mock.patch.object(module, "run_command", return_value=result) as run:
+            self.assertEqual(len(ci_text_paths(self.root)), MAX_CI_TEXT_FILES)
+            run.assert_called_once_with(
+                ["git", "-C", str(self.root), "ls-files", "-z"],
+                allowed_executables=("git",),
+                env=listing_git_environment(self.root),
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout_seconds=SCRIPT_TIMEOUT_S,
+            )
+            run.return_value = TextCommandResult(
+                argv=("git",), returncode=0, stdout=listing + names[-1] + "\0", stderr=""
+            )
+            with self.assertRaisesRegex(AssertionError, f"{MAX_CI_TEXT_FILES} files"):
+                ci_text_paths(self.root)
+
+    def test_inherited_git_state_cannot_reach_disposable_repository(self) -> None:
+        """Poisoned caller repository, index and configuration variables stay outside fixtures."""
+        bad_config = self.root.parent / f"{self.root.name}-bad.gitconfig"
+        bad_config.write_text("[broken\n", encoding="utf-8")
+        self.addCleanup(bad_config.unlink)
+        poison = {
+            "GIT_DIR": str(self.root / "missing.git"),
+            "GIT_WORK_TREE": str(self.root / "missing"),
+            "GIT_INDEX_FILE": str(self.root / "missing.index"),
+            "GIT_PREFIX": "missing/",
+            "GIT_CONFIG_GLOBAL": str(bad_config),
+            "GIT_CONFIG_SYSTEM": str(bad_config),
+            "GIT_CONFIG_COUNT": "bogus",
+        }
+        with mock.patch.dict(os.environ, poison):
+            self.setUp()
+            self.track({"setup.sh": "add-apt-repository ppa:x/y\n"})
+            problems = launchpad_ppa_problems(self.root)
+        self.assertEqual(
+            problems,
+            [
+                "setup.sh:1: add-apt-repository registers a Launchpad PPA source; "
+                "install from the Ubuntu archive (ADR-3533)"
+            ],
+        )
+
+    def test_caller_global_configuration_cannot_reach_fixture_listing(self) -> None:
+        """A malformed caller ~/.gitconfig or XDG Git configuration cannot break fixture scans."""
+        self.track({"setup.sh": "add-apt-repository ppa:x/y\n"})
+        home = self.root.parent / f"{self.root.name}-home"
+        (home / ".config" / "git").mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, home)
+        (home / ".gitconfig").write_text("[broken\n", encoding="utf-8")
+        (home / ".config" / "git" / "config").write_text("[broken\n", encoding="utf-8")
+        with mock.patch.dict(
+            os.environ, {"HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config")}
+        ):
+            problems = launchpad_ppa_problems(self.root)
+        self.assertEqual(
+            problems,
+            [
+                "setup.sh:1: add-apt-repository registers a Launchpad PPA source; "
+                "install from the Ubuntu archive (ADR-3533)"
+            ],
+        )
+
+    def test_this_checkout_keeps_caller_git_environment(self) -> None:
+        """The real checkout keeps hook state; only fixtures drop caller configuration."""
+        with mock.patch.dict(os.environ, {"GIT_INDEX_FILE": "hook.index"}):
+            self.assertEqual(listing_git_environment(ROOT), dict(os.environ))
+
+    def test_git_listing_failure_propagates(self) -> None:
+        """A failed tracked-path lookup cannot silently pass the contract."""
+        with self.assertRaises(CommandFailed):
+            launchpad_ppa_problems(self.root / "missing")
+
+    def test_non_regular_tracked_path_is_reported(self) -> None:
+        """Only listed non-regular paths may be skipped, with an explicit diagnostic."""
+        self.track({"missing.sh": ""})
+        (self.root / "missing.sh").unlink()
+        with mock.patch("sys.stderr") as stderr:
+            self.assertEqual(launchpad_ppa_problems(self.root), [])
+        self.assertIn(
+            "missing.sh: skipped tracked non-regular file", str(stderr.write.call_args_list)
+        )
+
+    def test_tracked_symlink_is_skipped_not_followed(self) -> None:
+        """A tracked link is non-regular: report the skip, never scan the target text."""
+        target = self.root / "target.txt"
+        target.write_text("add-apt-repository ppa:x/y\n", encoding="utf-8")
+        try:
+            (self.root / "linked.sh").symlink_to(target.name)
+        except OSError as error:
+            self.skipTest(f"symbolic links unavailable: {error}")
+        self.git_run(
+            self.git_argv("add", "--", "linked.sh"), check=True, capture_output=True, timeout=10
+        )
+        with mock.patch("sys.stderr") as stderr:
+            self.assertEqual(launchpad_ppa_problems(self.root), [])
+        self.assertIn(
+            "linked.sh: skipped tracked non-regular file", str(stderr.write.call_args_list)
+        )
+
+    def test_replacement_decoding_preserves_registration_check(self) -> None:
+        """Undecodable source bytes cannot hide registration text or crash scanning."""
+        self.track({"setup.sh": ""})
+        (self.root / "setup.sh").write_bytes(b"# \xff\nppa:x/y\n")
+        self.assertEqual(
+            launchpad_ppa_problems(self.root),
+            [
+                "setup.sh:2: ppa: registers a Launchpad PPA source; "
+                "install from the Ubuntu archive (ADR-3533)"
+            ],
+        )
+
+    def test_planted_tidy_registration_fails_contract(self) -> None:
+        """Restoring the removed tidy registration fails with its precise source location."""
+        relative = ".github/workflows/lint-and-format.yml"
+        content = (ROOT / relative).read_text(encoding="utf-8")
+        self.track(
+            {
+                relative: content
+                + "\n        sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test\n"
+            }
+        )
+        problems = launchpad_ppa_problems(self.root)
+        line = len(content.splitlines()) + 2
+        self.assertEqual(
+            problems,
+            [
+                f"{relative}:{line}: add-apt-repository registers a Launchpad PPA source; "
+                "install from the Ubuntu archive (ADR-3533)"
+            ],
+        )
+        with self.assertRaisesRegex(AssertionError, rf"lint-and-format\.yml:{line}:"):
+            self.assertEqual(problems, [], "\n".join(problems))
+
+
 class FailClosedCIContract(unittest.TestCase):
     def test_contract_is_wired_into_required_ci_and_local_hooks(self) -> None:
+        """Keep the CI contract in Tooling Tests and local hooks for every tracked installation source."""
         rules = (WORKFLOWS / "rule-enforcement.yml").read_text(encoding="utf-8")
         hooks = (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
         # A test runs once in CI (ADR-1568): Tooling Tests runs this file.
@@ -110,7 +451,29 @@ class FailClosedCIContract(unittest.TestCase):
         hook = hooks.split("      - id: fail-closed-ci-contract\n", maxsplit=1)[1].split(
             "      - id:", maxsplit=1
         )[0]
-        self.assertIn("lint-and-format", hook)
+        pattern = yaml.safe_load(hook)["files"]
+        for path in (
+            ".github/workflows/lint-and-format.yml",
+            ".github/workflows/new-workflow.yaml",
+            ".github/actions/nested/example/action.yml",
+            ".github/actions/new-action/action.yaml",
+            "tools/elsewhere/action.yml",
+            "scripts/ci/setup.sh",
+            "scripts/setup.bash",
+            "docs/example.yaml",
+            "Dockerfile",
+            "docker/Dockerfile.ci",
+            "Containerfile",
+            "docker/Containerfile.ci",
+            "scripts/ci/test_fail_closed_ci.py",
+            "python/tox.ini",
+            ".pre-commit-config.yaml",
+        ):
+            with self.subTest(path=path):
+                self.assertIsNotNone(re.search(pattern, path))
+        for path in ("docs/example.md", "scripts/example.py", "docker/OtherDockerfile"):
+            with self.subTest(path=path):
+                self.assertIsNone(re.search(pattern, path))
 
     def test_python_tox_warnings_and_coverage_fail_closed(self) -> None:
         tox = (ROOT / "python" / "tox.ini").read_text(encoding="utf-8")
@@ -206,9 +569,10 @@ class FailClosedCIContract(unittest.TestCase):
         )
 
     def test_nightly_clang_tidy_configuration_and_toolchain(self) -> None:
+        """Keep the archive GCC and existing LLVM installer aligned with the CPU baseline."""
         workflow = (WORKFLOWS / "nightly.yml").read_text(encoding="utf-8")
         tidy_job = workflow_job(workflow, "clang-tidy-full")
-        self.assertIn("ppa:ubuntu-toolchain-r/test", tidy_job)
+        self.assertNotIn("ppa:ubuntu-toolchain-r/test", tidy_job)
         self.assertIn("sudo bash scripts/ci/install-llvm.sh 22", tidy_job)
         # The packages come from the job's apt list (apt archive cache).
         self.assertIn(
