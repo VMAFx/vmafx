@@ -843,8 +843,8 @@ class ExecutableLinkTrustTests(unittest.TestCase):
 
     def test_without_getuid_launches_resolved_file(self) -> None:
         """The Windows ownership fallback launches the checked file, not a link."""
-        with mock.patch.object(safe_subprocess.os, "getuid", create=True):
-            del safe_subprocess.os.getuid
+        with mock.patch.object(os, "getuid", create=True):
+            del os.getuid
             self.assertEqual(
                 safe_subprocess._checked_executable(str(self.link), ALLOW_PYTHON, ""),
                 (PYTHON, Path(PYTHON)),
