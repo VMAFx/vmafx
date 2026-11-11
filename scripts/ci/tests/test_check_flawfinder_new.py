@@ -31,7 +31,11 @@ from identify import extensions  # pre-commit's file classifier
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import check_flawfinder_new as check
-from scripts.ci.tests.scanner_test_support import isolate_pre_commit_environment
+from scripts.ci.tests.scanner_test_support import (
+    assert_push_contract,
+    isolate_pre_commit_environment,
+    run_push_entry,
+)
 from scripts.lib.safe_subprocess import run as run_command
 
 BASE = """\
@@ -85,7 +89,14 @@ class CheckFlawfinderNew(unittest.TestCase):
             "GIT_COMMITTER_EMAIL": "t@example.invalid",
         }
         proc = run_command(
-            [git, "-c", "commit.gpgsign=false", *args],
+            [
+                git,
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                f"core.hooksPath={self.root / 'no-hooks'}",
+                *args,
+            ],
             allowed_executables=(git,),
             cwd=self.root,
             env=env,
@@ -106,6 +117,90 @@ class CheckFlawfinderNew(unittest.TestCase):
         finally:
             os.chdir(cwd)
         return status, out.getvalue()
+
+    def outgoing_entry(self, **kwargs) -> tuple[int, str, str]:
+        """Invoke the parsed push entry using the fixture's default comparison branch."""
+        self.git("branch", "-f", "origin/master", "master")
+        return run_push_entry(self.root, "flawfinder", **kwargs)
+
+    def commit_outgoing(self, name: str, source: str) -> None:
+        """Commit one source fixture without staging the copied hook implementation."""
+        (self.root / name).write_text(source)
+        self.git("add", name)
+        self.git("commit", "-q", "-m", "outgoing source")
+
+    def test_push_hook_contract(self) -> None:
+        """Only the push hook runs unconditionally without positional filenames."""
+        assert_push_contract(self, "flawfinder")
+
+    def test_installed_push_entry_absent_worktree_file(self) -> None:
+        """A new-branch push catches its sole new source while master is checked out."""
+        self.commit_outgoing("new.c", BASE)
+        self.git("switch", "-q", "master")
+        self.assertFalse((self.root / "new.c").exists())
+        status, out, err = self.outgoing_entry(from_ref="master", to_ref="change")
+        self.assertEqual(status, 1, err)
+        self.assertIn("new.c:", out)
+
+    def test_installed_push_entry_docs_followup(self) -> None:
+        """A docs-only push still catches findings already on the remote feature tip."""
+        self.commit_outgoing("new.c", BASE)
+        self.git("branch", "previous-tip")
+        self.commit_outgoing("README.md", "documentation only\n")
+        self.git("switch", "-q", "master")
+        status, out, err = self.outgoing_entry(from_ref="previous-tip", to_ref="change")
+        self.assertEqual(status, 1, err)
+        self.assertIn("new.c:", out)
+
+    def test_outgoing_without_new_findings(self) -> None:
+        """A safe outgoing addition exits 0 with no findings."""
+        self.commit_outgoing("new.c", "int main(void) { return 0; }\n")
+        self.git("switch", "-q", "master")
+        status, out, err = self.outgoing_entry(to_ref="change")
+        self.assertEqual(status, 0, err)
+        self.assertEqual(out, "")
+
+    def test_outgoing_deleted_only(self) -> None:
+        """An outgoing deletion needs no source scan and exits 0."""
+        self.git("rm", "harness.c")
+        self.git("commit", "-q", "-m", "delete only")
+        self.git("switch", "-q", "master")
+        status, out, err = self.outgoing_entry(to_ref="change")
+        self.assertEqual(status, 0, err)
+        self.assertEqual(out, "")
+
+    def test_outgoing_rejects_positional_files(self) -> None:
+        """Outgoing selection combined with positional files is a usage error."""
+        status, _, err = self.outgoing_entry(extra=("new.c",))
+        self.assertEqual(status, 2, err)
+        self.assertIn("--outgoing cannot be combined", err)
+
+    def test_outgoing_without_merge_base(self) -> None:
+        """Unrelated histories fail closed with exit 2."""
+        self.git("checkout", "-q", "--orphan", "unrelated")
+        self.git("commit", "-q", "-m", "unrelated root")
+        status, _, err = self.outgoing_entry(to_ref="unrelated")
+        self.assertEqual(status, 2, err)
+        self.assertIn("no merge base", err)
+
+    def test_outgoing_manual_reads_head(self) -> None:
+        """Manual outgoing mode reads HEAD even when the worktree removes its finding."""
+        self.commit_outgoing("new.c", BASE)
+        (self.root / "new.c").write_text("int main(void) { return 0; }\n")
+        status, out, err = self.outgoing_entry()
+        self.assertEqual(status, 1, err)
+        self.assertIn("new.c:", out)
+
+    def test_outgoing_rename_keeps_base_finding(self) -> None:
+        """A Git-detected outgoing rename retains the base finding despite another checkout."""
+        self.commit_outgoing("new.c", BASE)
+        self.git("branch", "-f", "master", "HEAD")
+        self.git("mv", "new.c", "renamed.c")
+        self.git("commit", "-q", "-m", "rename")
+        self.git("switch", "-q", "master")
+        status, out, err = self.outgoing_entry(to_ref="change")
+        self.assertEqual(status, 0, err)
+        self.assertEqual(out, "")
 
     def test_push_scans_outgoing_blob(self) -> None:
         """A new outgoing fopen finding returns 1 even when the working copy lacks it."""

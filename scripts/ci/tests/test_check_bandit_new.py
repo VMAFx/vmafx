@@ -17,13 +17,17 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import yaml  # type: ignore[import-untyped]  # no PyYAML stubs in the hook environment
 from identify.identify import tags_from_filename
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import check_bandit_new as check
-from scripts.ci.tests.scanner_test_support import isolate_pre_commit_environment
+from scripts.ci.tests.scanner_test_support import (
+    assert_push_contract,
+    isolate_pre_commit_environment,
+    run_push_entry,
+    scanner_hooks,
+)
 from scripts.lib import new_scanner_findings as shared
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -63,7 +67,14 @@ class CheckBanditNew(unittest.TestCase):
             "GIT_COMMITTER_EMAIL": "t@example.invalid",
         }
         proc = run_command(
-            [git, "-c", "commit.gpgsign=false", *args],
+            [
+                git,
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                f"core.hooksPath={self.root / 'no-hooks'}",
+                *args,
+            ],
             allowed_executables=(git,),
             cwd=self.root,
             env=env,
@@ -105,6 +116,100 @@ class CheckBanditNew(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-q", "-m", "baseline")
         self.git("branch", "-f", "master", "HEAD")
+
+    def outgoing_entry(self, **kwargs) -> tuple[int, str, str]:
+        """Invoke the parsed push entry using the fixture's default comparison branch."""
+        self.git("branch", "-f", "origin/master", "master")
+        return run_push_entry(self.root, "bandit", **kwargs)
+
+    def commit_outgoing(self, name: str, source: str) -> None:
+        """Commit one source fixture without staging the copied hook implementation."""
+        (self.root / name).write_text(source)
+        self.git("add", name)
+        self.git("commit", "-q", "-m", "outgoing source")
+
+    def test_push_hook_contract(self) -> None:
+        """Only the push hook runs unconditionally without positional filenames."""
+        assert_push_contract(self, "bandit")
+
+    def test_installed_push_entry_absent_worktree_file(self) -> None:
+        """A new-branch push catches its sole new source while master is checked out."""
+        self.commit_outgoing("new.py", BASE + UNSAFE)
+        self.git("switch", "-q", "master")
+        self.assertFalse((self.root / "new.py").exists())
+        status, out, err = self.outgoing_entry(from_ref="master", to_ref="change")
+        self.assertEqual(status, 1, err)
+        self.assertIn("new.py:", out)
+
+    def test_installed_push_entry_docs_followup(self) -> None:
+        """A docs-only push still catches findings already on the remote feature tip."""
+        self.commit_outgoing("new.py", BASE + UNSAFE)
+        self.git("branch", "previous-tip")
+        self.commit_outgoing("README.md", "documentation only\n")
+        self.git("switch", "-q", "master")
+        status, out, err = self.outgoing_entry(from_ref="previous-tip", to_ref="change")
+        self.assertEqual(status, 1, err)
+        self.assertIn("new.py:", out)
+
+    def test_outgoing_config_scans_unchanged_source(self) -> None:
+        """A filename-free outgoing rule change scans unchanged tracked Python source."""
+        (self.root / "harness.py").write_text("assert True\n")
+        self.commit_base()
+        self.commit_outgoing("bandit.yml", "tests: [B101]\n")
+        self.git("switch", "-q", "master")
+        status, out, err = self.outgoing_entry(to_ref="change")
+        self.assertEqual(status, 1, err)
+        self.assertIn("harness.py:1: B101", out)
+
+    def test_outgoing_without_new_findings(self) -> None:
+        """A safe outgoing addition exits 0 with no findings."""
+        self.commit_outgoing("new.py", BASE)
+        self.git("switch", "-q", "master")
+        status, out, err = self.outgoing_entry(to_ref="change")
+        self.assertEqual(status, 0, err)
+        self.assertEqual(out, "")
+
+    def test_outgoing_deleted_only(self) -> None:
+        """An outgoing deletion needs no source scan and exits 0."""
+        self.git("rm", "harness.py")
+        self.git("commit", "-q", "-m", "delete only")
+        self.git("switch", "-q", "master")
+        status, out, err = self.outgoing_entry(to_ref="change")
+        self.assertEqual(status, 0, err)
+        self.assertEqual(out, "")
+
+    def test_outgoing_rejects_positional_files(self) -> None:
+        """Outgoing selection combined with positional files is a usage error."""
+        status, _, err = self.outgoing_entry(extra=("new.py",))
+        self.assertEqual(status, 2, err)
+        self.assertIn("--outgoing cannot be combined", err)
+
+    def test_outgoing_without_merge_base(self) -> None:
+        """Unrelated histories fail closed with exit 2."""
+        self.git("checkout", "-q", "--orphan", "unrelated")
+        self.git("commit", "-q", "-m", "unrelated root")
+        status, _, err = self.outgoing_entry(to_ref="unrelated")
+        self.assertEqual(status, 2, err)
+        self.assertIn("no merge base", err)
+
+    def test_outgoing_manual_reads_head(self) -> None:
+        """Manual outgoing mode reads HEAD even when the worktree removes its finding."""
+        self.commit_outgoing("new.py", BASE + UNSAFE)
+        (self.root / "new.py").write_text(BASE)
+        status, out, err = self.outgoing_entry()
+        self.assertEqual(status, 1, err)
+        self.assertIn("new.py:", out)
+
+    def test_outgoing_rename_keeps_base_finding(self) -> None:
+        """A Git-detected outgoing rename retains the base finding despite another checkout."""
+        self.commit_outgoing("new.py", BASE + UNSAFE)
+        self.git("branch", "-f", "master", "HEAD")
+        self.git("mv", "new.py", "renamed.py")
+        self.git("commit", "-q", "-m", "rename")
+        self.git("switch", "-q", "master")
+        status, out, err = self.outgoing_entry(to_ref="change")
+        self.assertEqual(status, 0, err)
+        self.assertEqual(out, "")
 
     def test_push_scans_outgoing_blob_with_clean_worktree(self) -> None:
         """A new outgoing finding exits 1 even when the checked-out baseline is clean."""
@@ -406,8 +511,9 @@ class CheckBanditNew(unittest.TestCase):
 
     def test_hook_selects_configuration_and_stub_files(self) -> None:
         """The serial hook selects configuration, stubs, extensionless scripts and sources."""
-        hooks = yaml.safe_load((check.CONFIG.parent / ".pre-commit-config.yaml").read_text())
-        hook = next(h for r in hooks["repos"] for h in r["hooks"] if h["id"] == "bandit-new")
+        hook, push = scanner_hooks("bandit")
+        self.assertEqual(hook["stages"], ["pre-commit"])
+        self.assertEqual(push["stages"], ["pre-push"])
         self.assertEqual(hook.get("types", ["file"]), ["file"])
         self.assertNotIn("types_or", hook)
         # A config change scans the whole tree; parallel workers would repeat it.
@@ -421,8 +527,8 @@ class CheckBanditNew(unittest.TestCase):
     def test_tooling_suite_installs_hook_scanner_pin(self) -> None:
         """Both tooling dependency files contain the hook's single Bandit version pin."""
         root = check.CONFIG.parent
-        config = yaml.safe_load((root / ".pre-commit-config.yaml").read_text())
-        hook = next(h for r in config["repos"] for h in r["hooks"] if h["id"] == "bandit-new")
+        hook, push = scanner_hooks("bandit")
+        self.assertEqual(hook["additional_dependencies"], push["additional_dependencies"])
         pins = [pin for pin in hook["additional_dependencies"] if pin.startswith("bandit==")]
         self.assertEqual(len(pins), 1)
         self.assertIn(
@@ -473,7 +579,7 @@ class CheckBanditNew(unittest.TestCase):
 
     def test_missing_bandit_is_error(self) -> None:
         """An unavailable Bandit executable returns 2 and reports the missing scanner."""
-        with mock.patch.object(check, "tool", side_effect=shared.ToolError("bandit missing")):
+        with mock.patch.object(shared, "tool", side_effect=shared.ToolError("bandit missing")):
             status, _, err = self.run_check("harness.py", BASE)
         self.assertEqual(status, 2)
         self.assertIn("bandit missing", err)

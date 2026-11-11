@@ -282,8 +282,13 @@ dependencies).
   `Gitleaks` CI
   gate and as a pre-commit hook. `flawfinder-new` checks changed C/C++ files;
   `bandit-new` compares Python files with their merge-base copies. Pre-commit
-  scans the working tree; pre-push scans the outgoing commit, including its
-  configuration. The default comparison branch follows `origin/HEAD`, with
+  scans the working tree. The separate `flawfinder-new-push` and
+  `bandit-new-push` hooks use `--outgoing` to scan the complete pre-push
+  merge-base delta and outgoing configuration, even on docs-only follow-up
+  pushes or when outgoing files are absent from the working tree. Both run
+  unconditionally without pre-commit filenames. A manual `--outgoing` run
+  reads HEAD blobs; positional files cannot be combined with that flag. The
+  default comparison branch follows `origin/HEAD`, with
   `origin/master` as fallback; `--base-branch` overrides it. Both reject only
   new findings. The Python check uses each revision's [Bandit patterns](../bandit.yml);
   a missing base configuration uses the current configuration. A configuration

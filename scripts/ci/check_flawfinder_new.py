@@ -36,8 +36,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.lib.new_scanner_findings import (
     Comparison,
     ToolError,
+    comparison_arguments,
     new_findings,
-    tool,
 )
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -111,13 +111,9 @@ def scan_changes(flawfinder: str, comparison: Comparison, paths: list[Path]) -> 
 def main(argv: list[str] | None = None) -> int:
     """Return 0 for no new flawfinder findings, 1 for new findings, or 2 for scan errors."""
     parser = argparse.ArgumentParser(description=(__doc__ or "").partition("\n")[0])
-    parser.add_argument("--base-branch")
-    parser.add_argument("files", nargs="*", type=Path)
-    args = parser.parse_args(argv)
-    root = Path.cwd()
     try:
-        flawfinder, git = tool("flawfinder"), tool("git")
-        failed = scan_changes(flawfinder, Comparison(git, root, args.base_branch), args.files)
+        scanner, comparison, paths = comparison_arguments(parser, argv, "flawfinder")
+        failed = scan_changes(scanner, comparison, paths)
     except (ToolError, OSError, ValueError, RuntimeError) as error:
         print(f"check_flawfinder_new: {error}", file=sys.stderr)
         return 2

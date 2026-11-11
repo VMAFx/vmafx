@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import argparse
 import collections
 import io
 import os
@@ -62,18 +63,18 @@ def default_branch(git: str, root: Path) -> str:
     return output.strip() if status == 0 else "origin/master"
 
 
-def merge_base(git: str, root: Path, branch: str) -> str:
+def merge_base(git: str, root: Path, branch: str, ref: str) -> str:
     """Return the common ancestor of branch and the outgoing ref or HEAD; raise if absent."""
-    ref = os.environ.get("PRE_COMMIT_TO_REF") or "HEAD"
+    ref = ref or "HEAD"
     status, output = git_output(git, ["merge-base", ref, branch], root)
     if status != 0 or not output.strip():
         raise ToolError(f"no merge base between {ref} and {branch}")
     return output.strip()
 
 
-def renames(git: str, root: Path, base: str) -> dict[str, str]:
+def renames(git: str, root: Path, base: str, ref: str) -> dict[str, str]:
     """Map each path renamed since base to its original path."""
-    target = [os.environ["PRE_COMMIT_TO_REF"]] if os.environ.get("PRE_COMMIT_TO_REF") else []
+    target = [ref] if ref else []
     status, output = git_output(
         git, ["diff", "-M", "--name-status", "-z", "--diff-filter=R", base, *target], root
     )
@@ -140,16 +141,15 @@ class Comparison:
     branch: str | None
     base: str = field(init=False)
     moved: dict[str, str] = field(init=False)
-    ref: str = field(init=False)
+    ref: str = field(default_factory=lambda: os.environ.get("PRE_COMMIT_TO_REF") or "")
     _modes: dict[str, dict[str, str]] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         """Resolve the outgoing revision, merge base and detected rename mapping."""
-        self.ref = os.environ.get("PRE_COMMIT_TO_REF") or ""
         self.base = merge_base(
-            self.git, self.root, self.branch or default_branch(self.git, self.root)
+            self.git, self.root, self.branch or default_branch(self.git, self.root), self.ref
         )
-        self.moved = renames(self.git, self.root, self.base)
+        self.moved = renames(self.git, self.root, self.base, self.ref)
 
     def current_bytes(self, relative: str) -> bytes | None:
         """Return regular outgoing or local bytes, skipping links and rejecting local escapes."""
@@ -180,6 +180,17 @@ class Comparison:
             self._modes[ref] = revision_modes(self.git, self.root, ref)
         return self._modes[ref]
 
+    def outgoing_paths(self) -> list[Path]:
+        """List added or modified outgoing paths across the complete merge-base delta."""
+        status, output = git_output(
+            self.git,
+            ["diff", "-M", "--name-only", "-z", "--diff-filter=ACMRT", self.base, self.ref],
+            self.root,
+        )
+        if status != 0:
+            raise ToolError(f"git diff against {self.base} failed")
+        return [Path(name) for name in output.split("\0") if name]
+
     def tracked_paths(self) -> list[Path]:
         """List tracked outgoing paths with cached modes, or retain local index selection."""
         if self.ref:
@@ -203,6 +214,25 @@ class Comparison:
         # Preserve shebang classification even when outgoing files are absent locally.
         target.chmod(0o700)
         return relative, target
+
+
+def comparison_arguments(
+    parser: argparse.ArgumentParser, argv: list[str] | None, scanner: str
+) -> tuple[str, Comparison, list[Path]]:
+    """Parse shared scanner options and select positional or complete outgoing paths."""
+    parser.add_argument("--base-branch")
+    parser.add_argument(
+        "--outgoing", action="store_true", help="scan the outgoing merge-base delta"
+    )
+    parser.add_argument("files", nargs="*", type=Path)
+    args = parser.parse_args(argv)
+    if args.outgoing and args.files:
+        parser.error("--outgoing cannot be combined with positional files")
+    executable = tool(scanner)
+    ref = os.environ.get("PRE_COMMIT_TO_REF") or ("HEAD" if args.outgoing else "")
+    comparison = Comparison(tool("git"), Path.cwd(), args.base_branch, ref=ref)
+    paths = comparison.outgoing_paths() if args.outgoing else args.files
+    return executable, comparison, paths
 
 
 def new_findings(
