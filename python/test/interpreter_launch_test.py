@@ -8,6 +8,7 @@ import os
 import stat
 import sys
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -36,13 +37,23 @@ def _directory_listing(directory: Path) -> str:
     return f"{listing.stdout}{listing.stderr}".strip()
 
 
-def _launch_chain_report(executable: Path) -> str:
+def _current_uid() -> int | None:
+    """Read the current UID when the platform exposes os.getuid at call time."""
+    getuid = getattr(os, "getuid", None)
+    return getuid() if getuid is not None else None
+
+
+def _launch_chain_report(
+    executable: Path, *, getuid: Callable[[], int | None] | None = _current_uid
+) -> str:
     """Describe every followed link, its owner and its directory's rights for a failed launch."""
-    if not hasattr(os, "getuid"):
-        return f"no os.getuid on {sys.platform}: the runner launches the resolved file"
-    mask = os.umask(0o022)
-    os.umask(mask)
-    lines = [f"uid={os.getuid()} umask={mask:04o} executable={executable}"]
+    uid = getuid() if getuid is not None else None
+    if uid is None:
+        return (
+            f"no os.getuid on {sys.platform}: the runner launches the resolved file "
+            f"{executable.resolve()}"
+        )
+    lines = [f"uid={uid} executable={executable}"]
     for link in safe_subprocess._executable_links(executable):
         directory = link.parent.stat()
         retargetable = safe_subprocess._directory_allows_link_retargeting(directory, link.parent)
@@ -58,6 +69,7 @@ class InterpreterLaunchTest(unittest.TestCase):
     """Tests that spawn `sys.executable` need its packages, so the launch must keep the venv."""
 
     def test_launch_keeps_the_interpreter_prefix(self) -> None:
+        """Launch the test interpreter and preserve its virtual environment prefix."""
         completed = safe_subprocess.run(
             [sys.executable, "-c", "import sys; print(sys.prefix)"],
             allowed_executables=[sys.executable],
@@ -67,26 +79,33 @@ class InterpreterLaunchTest(unittest.TestCase):
             timeout_seconds=LAUNCH_TIMEOUT_S,
         )
 
-        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"{completed.stderr}\n{_launch_chain_report(Path(sys.executable))}",
+        )
         self.assertEqual(
             completed.stdout.strip(), sys.prefix, _launch_chain_report(Path(sys.executable))
         )
 
     def test_report_names_each_link_of_a_chain(self) -> None:
+        """Describe every followed link or name the platform's resolved launch."""
         report = _launch_chain_report(Path(sys.executable))
 
-        self.assertIn(f"executable={sys.executable}", report)
         if hasattr(os, "getuid"):
+            self.assertIn(f"executable={sys.executable}", report)
             links = safe_subprocess._executable_links(Path(sys.executable))
             self.assertEqual(report.count("\nlink="), len(links))
+        else:
+            self.assertIn(f"launches the resolved file {Path(sys.executable).resolve()}", report)
+            self.assertNotIn("executable=", report)
 
     def test_report_without_getuid_says_resolved_launch(self) -> None:
-        getuid = getattr(os, "getuid", None)
-        if getuid is not None:
-            del os.getuid
-            self.addCleanup(setattr, os, "getuid", getuid)
-
-        self.assertIn("launches the resolved file", _launch_chain_report(Path(sys.executable)))
+        """Exercise the resolved-launch fallback without changing the os module."""
+        executable = Path(sys.executable)
+        report = _launch_chain_report(executable, getuid=None)
+        self.assertNotIn("executable=", report)
+        self.assertIn(f"launches the resolved file {executable.resolve()}", report)
 
 
 if __name__ == "__main__":

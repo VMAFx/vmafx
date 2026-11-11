@@ -497,6 +497,7 @@
         "requirements/locks/build.txt",
         "requirements/locks/pytest-timeout.txt",
         "requirements/locks/tox.txt",
+        "scripts/__init__.py",
         "scripts/ci/prune-corrupt-fixtures.sh",
         "scripts/lib/__init__.py",
         "scripts/lib/http_stand_in.py",

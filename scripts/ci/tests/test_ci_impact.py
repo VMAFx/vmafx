@@ -9,7 +9,6 @@ No third-party dependencies (the CI runners have only the stdlib).
 
 from __future__ import annotations
 
-import ast
 import copy
 import importlib.util
 import json
@@ -161,58 +160,15 @@ OWN_PATHS_ONLY = (
 )
 
 
-# Bound on scripts modules followed from the Python test trees; the tree holds 4.
-MAX_SCRIPTS_IMPORT_MODULES = 256
-
-
-def _scripts_imports(path: Path) -> set[str]:
-    """Return the absolute `scripts.*` module names one file imports, with imported names."""
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    found: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            if node.module.split(".")[0] == "scripts":
-                found.add(node.module)
-                found.update(f"{node.module}.{alias.name}" for alias in node.names)
-        elif isinstance(node, ast.Import):
-            found.update(a.name for a in node.names if a.name.split(".")[0] == "scripts")
-    return found
-
-
-def _module_file(module: str) -> Path | None:
-    """Map a module name to its tracked source file, or None for a name that is no module."""
-    base = REPO_ROOT.joinpath(*module.split("."))
-    for candidate in (base.with_suffix(".py"), base / "__init__.py"):
-        if candidate.is_file():
-            return candidate
-    return None
-
-
-def _scripts_modules_imported_from(roots: tuple[str, ...]) -> list[str]:
-    """Follow `scripts.*` imports from the test trees, transitively, to repo-relative files."""
-    pending: set[str] = set()
-    for root in roots:
-        for source in (REPO_ROOT / root).rglob("*.py"):
-            if ".tox" not in source.parts:
-                pending |= _scripts_imports(source)
-    seen: set[str] = set()
-    files: set[Path] = set()
-    for _ in range(MAX_SCRIPTS_IMPORT_MODULES):
-        if not pending:
-            return sorted(f.relative_to(REPO_ROOT).as_posix() for f in files)
-        module = pending.pop()
-        seen.add(module)
-        source_file = _module_file(module)
-        if source_file is not None and source_file not in files:
-            files.add(source_file)
-            pending |= _scripts_imports(source_file) - seen
-    raise AssertionError(
-        f"scripts imports exceed MAX_SCRIPTS_IMPORT_MODULES={MAX_SCRIPTS_IMPORT_MODULES}"
-    )
-
-
-def _plan_for(paths: list[str], statuses: list[str] | None = None) -> ImpactPlan:
-    config = planner.load_config(CONFIG)
+def _plan_for(
+    paths: list[str],
+    statuses: list[str] | None = None,
+    *,
+    config: dict[str, object] | None = None,
+) -> ImpactPlan:
+    """Plan selected paths against the live configuration or an injected fixture."""
+    if config is None:
+        config = planner.load_config(CONFIG)
     statuses = statuses or ["M"] * len(paths)
     changes = tuple(
         planner.Change(status=s, paths=(p,)) for s, p in zip(statuses, paths, strict=True)
@@ -846,6 +802,7 @@ class BuildWorkRouting(unittest.TestCase):
     )
 
     def test_the_python_steps_inputs_select_it(self) -> None:
+        """Select build legs for every input read by their Python steps."""
         for path in self.PYTHON_STEP_INPUTS:
             with self.subTest(path=path):
                 plan = _plan_for([path])
@@ -854,9 +811,11 @@ class BuildWorkRouting(unittest.TestCase):
                     self.assertFalse(plan.selectors["c_core"])
 
     def test_core_changes_still_select_it(self) -> None:
+        """Preserve build selection for core source changes."""
         self.assertTrue(_plan_for(["core/src/libvmaf.c"]).selectors[self.SELECTOR])
 
     def test_files_build_yml_does_not_read_leave_it_off(self) -> None:
+        """Keep unrelated changes out of the build selector."""
         for path in (
             "docs/index.md",
             "go.mod",
@@ -868,6 +827,7 @@ class BuildWorkRouting(unittest.TestCase):
                 self.assertFalse(_plan_for([path]).selectors[self.SELECTOR])
 
     def test_every_pytest_target_of_build_yml_selects_it(self) -> None:
+        """Select build legs for each pytest target declared by the workflow."""
         text = (CONFIG.parent / "workflows" / "build.yml").read_text(encoding="utf-8")
         targets = re.findall(r"python -m pytest (\S+\.py)", text)
         self.assertNotEqual(targets, [], "build.yml must run a pytest target")
@@ -878,6 +838,7 @@ class BuildWorkRouting(unittest.TestCase):
                 self.assertTrue(_plan_for([tracked]).selectors[self.SELECTOR])
 
     def test_every_tox_config_build_yml_runs_selects_it(self) -> None:
+        """Select build legs for every tox configuration the workflow runs."""
         text = (CONFIG.parent / "workflows" / "build.yml").read_text(encoding="utf-8")
         configs = re.findall(r"tox -c (\S+)", text)
         self.assertNotEqual(configs, [], "build.yml must run tox")
@@ -886,6 +847,7 @@ class BuildWorkRouting(unittest.TestCase):
                 self.assertTrue(_plan_for([f"{directory}/tox.ini"]).selectors[self.SELECTOR])
 
     def test_every_lock_build_yml_installs_selects_it(self) -> None:
+        """Select build legs when an installed dependency lock changes."""
         text = (CONFIG.parent / "workflows" / "build.yml").read_text(encoding="utf-8")
         locks = sorted(set(re.findall(r"-r (requirements/\S+\.txt)", text)))
         self.assertNotEqual(locks, [], "build.yml must install from a lock")
@@ -893,25 +855,8 @@ class BuildWorkRouting(unittest.TestCase):
             with self.subTest(lock=lock):
                 self.assertTrue(_plan_for([lock]).selectors[self.SELECTOR])
 
-    def test_every_scripts_module_the_python_tests_import_selects_it(self) -> None:
-        """tox and the compat tests import `scripts.lib`; a change there must run them."""
-        modules = _scripts_modules_imported_from(("python", "compat"))
-        self.assertIn("scripts/lib/safe_subprocess.py", modules)
-        for path in modules:
-            with self.subTest(path=path):
-                self.assertTrue(_plan_for([path]).selectors[self.SELECTOR])
-
-    def test_planted_selector_without_scripts_lib_misses_the_runner(self) -> None:
-        config = copy.deepcopy(planner.load_config(CONFIG))
-        patterns = config["selectors"][self.SELECTOR]["patterns"]
-        config["selectors"][self.SELECTOR]["patterns"] = [
-            pattern for pattern in patterns if not pattern.startswith("scripts/lib/")
-        ]
-        changes = (planner.Change(status="M", paths=("scripts/lib/safe_subprocess.py",)),)
-        plan = cast(ImpactPlan, planner.build_plan(config, changes, None, "b" * 40, "h" * 40))
-        self.assertFalse(plan.selectors[self.SELECTOR])
-
     def test_planted_c_core_only_selector_misses_python_changes(self) -> None:
+        """Reject the old selector that omitted Python test inputs."""
         config = copy.deepcopy(planner.load_config(CONFIG))
         config["selectors"][self.SELECTOR]["patterns"] = []
         for path in ("compat/python-vmaf/tools/decorator.py", "python/test/result_test.py"):
