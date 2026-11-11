@@ -1046,6 +1046,18 @@ repos:
         # paths would only narrow the scan and hide dead twins.
         pass_filenames: false
 
+      # Defence: every push runs tests that name changed paths.
+      # First run builds the suite venv; ai needs about 6 GB.
+      - id: affected-tests
+        name: tests naming changed files
+        entry: python3 scripts/ci/run_affected_suites.py --focused --merge-base origin/master
+        language: system
+        always_run: true
+        pass_filenames: false
+        require_serial: true
+        verbose: true
+        stages: [pre-push]
+
       - id: mypy-local
         name: mypy (ai/ + scripts/, fork-added Python)
         entry: python3 scripts/git-hooks/pre-push-mypy.py

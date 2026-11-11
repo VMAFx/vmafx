@@ -15,22 +15,27 @@ import hashlib
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from scripts.ci import run_affected_suites as runner  # noqa: E402
 from scripts.ci import suite_registry as registry_lib  # noqa: E402
+from scripts.lib import push_head  # noqa: E402
+from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 SCRIPT = ROOT / "scripts" / "ci" / "run_affected_suites.py"
 GIT = shutil.which("git")
 TIMEOUT_SECONDS = 300
 LOCK = "pkg/requirements-dev-lock.txt"
+ROCM_SCRIPT = "scripts/ci/" + "install-rocm-" + "from-image.sh"
+ROCM_NAME = Path(ROCM_SCRIPT).name
 
 
 def manifest() -> dict[str, object]:
@@ -101,6 +106,178 @@ class MappingTests(unittest.TestCase):
         self.assertEqual(
             runner.parse_file_list("a.py,b.py c.py\nd.py,,"), ["a.py", "b.py", "c.py", "d.py"]
         )
+
+
+class FocusedSelectionTests(unittest.TestCase):
+    def test_live_rocm_script_selects_exactly_its_two_tests(self) -> None:
+        registry = registry_lib.load_registry(ROOT)
+        tracked = registry_lib.tracked_files(ROOT)
+        texts = {
+            path: (ROOT / path).read_text(encoding="utf-8")
+            for path in registry_lib.suite_files(registry, tracked, "tooling")
+        }
+        selected, unnamed = runner.focused_selection([ROCM_SCRIPT], tracked, texts)
+        self.assertEqual(
+            selected,
+            [
+                "scripts/ci/tests/test_install_rocm_from_image.py",
+                "scripts/ci/tests/test_required_release_legs.py",
+            ],
+        )
+        self.assertEqual(unnamed, [])
+
+    def test_a_changed_test_selects_itself(self) -> None:
+        test = "pkg/tests/test_changed.py"
+        self.assertEqual(runner.focused_selection([test], [test], {test: ""}), ([test], []))
+
+    def test_repo_relative_path_selects_with_ambiguous_basename(self) -> None:
+        path = "pkg/meson.build"
+        selected, unnamed = runner.focused_selection(
+            [path], [path, "other/meson.build"], {"test.py": repr(path)}
+        )
+        self.assertEqual((selected, unnamed), (["test.py"], []))
+
+    def test_unique_basename_selects(self) -> None:
+        path = ROCM_SCRIPT
+        selected, unnamed = runner.focused_selection(
+            [path], [path], {"test.py": repr(Path(ROCM_SCRIPT).name)}
+        )
+        self.assertEqual((selected, unnamed), (["test.py"], []))
+
+    def test_dotted_module_selects(self) -> None:
+        path = "scripts/ci/check_dco.py"
+        selected, unnamed = runner.focused_selection(
+            [path], [path], {"test.py": "from scripts.ci.check_dco import main"}
+        )
+        self.assertEqual((selected, unnamed), (["test.py"], []))
+
+    def test_unique_stem_in_import_selects(self) -> None:
+        path = "scripts/ci/check_dco.py"
+        for text in ("import check_dco", "from scripts.ci import (\n    check_dco,\n)"):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    runner.focused_selection([path], [path], {"test.py": text}),
+                    (["test.py"], []),
+                )
+
+    def test_nonunique_basename_selects_nothing(self) -> None:
+        for name in ("__init__.py", "meson.build"):
+            with self.subTest(name=name):
+                path = f"pkg/{name}"
+                self.assertEqual(
+                    runner.focused_selection(
+                        [path], [path, f"other/{name}"], {"test.py": repr(name)}
+                    ),
+                    ([], [path]),
+                )
+
+    def test_longer_path_token_does_not_select(self) -> None:
+        path = ROCM_SCRIPT
+        for text in (
+            "'xinstall-rocm-from-image.sh.bak'",
+            "'install-rocm-from-image.sh.bak'",
+            "'install-rocm-from-image.sh-old'",
+            "'scripts/ci/install-rocm-from-image.sh/x'",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    runner.focused_selection([path], [path], {"test.py": text}), ([], [path])
+                )
+
+    def test_path_after_a_root_prefix_selects(self) -> None:
+        path = ROCM_SCRIPT
+        tracked = [path, "other/" + ROCM_NAME]
+        for text in (
+            'f"{ROOT}/' + path + '"',
+            "'./" + path + "'",
+            "# runs " + path + ".",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    runner.focused_selection([path], tracked, {"test.py": text}),
+                    (["test.py"], []),
+                )
+
+    def test_unique_basename_after_a_directory_selects(self) -> None:
+        path = ROCM_SCRIPT
+        text = "HERE / '../" + ROCM_NAME + "'"
+        self.assertEqual(
+            runner.focused_selection([path], [path], {"test.py": text}), (["test.py"], [])
+        )
+
+    def test_dotted_module_attribute_selects(self) -> None:
+        path = "scripts/ci/check_dco.py"
+        text = "mock.patch('scripts.ci.check_dco.run')"
+        self.assertEqual(
+            runner.focused_selection([path], [path], {"test.py": text}), (["test.py"], [])
+        )
+
+    def test_stem_in_prose_or_alias_does_not_select(self) -> None:
+        path = "scripts/ci/check_dco.py"
+        for text in ("# check_dco", "import other as check_dco", "# invalid Python\n!check_dco"):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    runner.focused_selection([path], [path], {"test.py": text}), ([], [path])
+                )
+
+    def test_nonunique_stem_in_import_does_not_select(self) -> None:
+        path = "pkg/common.py"
+        self.assertEqual(
+            runner.focused_selection(
+                [path], [path, "other/common.py"], {"test.py": "from pkg import common"}
+            ),
+            ([], [path]),
+        )
+
+    def test_longer_module_does_not_select(self) -> None:
+        path = "pkg/mod.py"
+        self.assertEqual(
+            runner.focused_selection([path], [path], {"test.py": "# pkg.mod_extra"}),
+            ([], [path]),
+        )
+
+
+class PushHeadTests(unittest.TestCase):
+    def test_equal_outgoing_ref_passes_for_both_framework_variables(self) -> None:
+        for variable in ("PRE_COMMIT_TO_REF", "PRE_COMMIT_LOCAL_BRANCH"):
+            with (
+                self.subTest(variable=variable),
+                patch.object(os, "environ", {variable: "pushed", "GIT_DIR": "/unrelated"}),
+                patch.object(push_head, "run_command") as command,
+            ):
+                command.return_value.returncode = 0
+                command.return_value.stdout = "same\n"
+                push_head.outgoing_head("same", ROOT)
+                self.assertEqual(command.call_args.kwargs["env"], {variable: "pushed"})
+                self.assertEqual(command.call_args.args[0][-1], "pushed^{commit}")
+
+    def test_differing_ref_raises(self) -> None:
+        with (
+            patch.object(os, "environ", {"PRE_COMMIT_TO_REF": "pushed"}),
+            patch.object(push_head, "run_command") as command,
+        ):
+            command.return_value.returncode = 0
+            command.return_value.stdout = "other\n"
+            with self.assertRaisesRegex(RuntimeError, "outgoing ref differs from HEAD"):
+                push_head.outgoing_head("head", ROOT)
+
+    def test_unset_outgoing_ref_passes_without_git(self) -> None:
+        with (
+            patch.object(os, "environ", {}),
+            patch.object(push_head, "run_command") as command,
+        ):
+            push_head.outgoing_head("head", ROOT)
+            command.assert_not_called()
+
+    def test_missing_outgoing_ref_fails_closed(self) -> None:
+        with (
+            patch.object(os, "environ", {"PRE_COMMIT_TO_REF": "missing"}),
+            patch.object(push_head, "run_command") as command,
+        ):
+            command.return_value.returncode = 128
+            command.return_value.stderr = "missing"
+            with self.assertRaisesRegex(RuntimeError, "cannot resolve outgoing ref"):
+                push_head.outgoing_head("head", ROOT)
 
 
 class VenvKeyTests(unittest.TestCase):
@@ -186,15 +363,33 @@ class RunTests(unittest.TestCase):
         self.repo = Path(self._tmp.name)
         self.env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         self.git("init", "-q")
+        self.parent: str | None = None
 
-    def git(self, *args: str) -> None:
-        subprocess.run(  # noqa: S603 - fixed git argv in a temporary repository
+    def git(self, *args: str, input_data: str | None = None) -> str:
+        result = run_command(
             [str(GIT), "-C", str(self.repo), *args],
+            allowed_executables=(str(GIT),),
+            input_data=input_data,
+            text=True,
             check=True,
             env=self.env,
             capture_output=True,
-            timeout=TIMEOUT_SECONDS,
+            timeout_seconds=TIMEOUT_SECONDS,
         )
+
+        return result.stdout.strip()
+
+    def commit(self) -> None:
+        """Write fixture history without invoking a credential-backed signing tool."""
+        tree = self.git("write-tree")
+        parent = f"parent {self.parent}\n" if self.parent else ""
+        content = (
+            f"tree {tree}\n{parent}"
+            "author Fixture <fixture@example.invalid> 1 +0000\n"
+            "committer Fixture <fixture@example.invalid> 1 +0000\n\nfixture\n"
+        )
+        self.parent = self.git("hash-object", "-t", "commit", "-w", "--stdin", input_data=content)
+        self.git("update-ref", "HEAD", self.parent)
 
     def build(self, tests: dict[str, str]) -> None:
         files = {
@@ -210,8 +405,8 @@ class RunTests(unittest.TestCase):
             path.write_text(text, encoding="utf-8")
         self.git("add", "-A")
 
-    def run_script(self, *args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(  # noqa: S603 - this interpreter running the script under test
+    def run_script(self, *args: str) -> TextCommandResult:
+        return run_command(
             [
                 sys.executable,
                 str(SCRIPT),
@@ -221,11 +416,12 @@ class RunTests(unittest.TestCase):
                 sys.executable,
                 *args,
             ],
+            allowed_executables=(sys.executable,),
             check=False,
             env=self.env,
             capture_output=True,
             text=True,
-            timeout=TIMEOUT_SECONDS,
+            timeout_seconds=TIMEOUT_SECONDS,
         )
 
     def test_docs_only_change_runs_nothing_and_passes(self) -> None:
@@ -285,12 +481,62 @@ class RunTests(unittest.TestCase):
 
     def test_base_and_head_select_the_files_that_differ(self) -> None:
         self.build({"pkg/tests/test_ok.py": "def test_ok():\n    assert True\n"})
-        self.git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "base")
+        self.commit()
         (self.repo / "pkg" / "tests" / "test_ok.py").write_text("def test_ok():\n    assert 1\n")
         self.git("add", "-A")
-        self.git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "head")
+        self.commit()
         result = self.run_script("--list", "--base", "HEAD~1", "--head", "HEAD")
         self.assertIn("pkg: 1 changed file(s), e.g. pkg/tests/test_ok.py", result.stdout)
+
+    def test_focused_unnamed_file_is_not_run_or_counted_passed(self) -> None:
+        self.build({"pkg/tests/test_bad.py": "def test_bad():\n    assert False\n"})
+        result = self.run_script("--focused", "--files", LOCK)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f"NOT RUN {LOCK}: no test names this file", result.stdout)
+        self.assertIn("pkg: NOT RUN (no test names a changed file)", result.stdout)
+        self.assertNotIn("passed", result.stdout)
+        strict = self.run_script("--strict", "--focused", "--files", LOCK)
+        self.assertEqual(strict.returncode, 1, strict.stdout + strict.stderr)
+
+    def test_focused_changed_test_runs_only_itself(self) -> None:
+        self.build(
+            {
+                "pkg/tests/test_ok.py": "def test_ok():\n    assert True\n",
+                "pkg/tests/test_bad.py": "def test_bad():\n    assert False\n",
+            }
+        )
+        result = self.run_script("--focused", "--files", "pkg/tests/test_ok.py")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("selected 1 test file(s)", result.stdout)
+        self.assertIn("pkg: passed: 1 passed", result.stdout)
+
+    def test_focused_named_and_unnamed_files_report_separately(self) -> None:
+        self.build({"pkg/tests/test_ok.py": "def test_ok():\n    assert True\n"})
+        result = self.run_script("--focused", "--files", f"{LOCK},pkg/tests/test_ok.py")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f"NOT RUN {LOCK}: no test names this file", result.stdout)
+        self.assertIn("pkg: passed: 1 passed", result.stdout)
+
+    def test_merge_base_conflicting_modes_are_usage_errors(self) -> None:
+        for args in (("--files", "x"), ("--base", "x", "--head", "y"), ("--head", "x")):
+            with self.subTest(args=args):
+                self.assertEqual(self.run_script("--merge-base", "HEAD", *args).returncode, 2)
+
+    def test_merge_base_uses_head_and_checks_outgoing_ref(self) -> None:
+        self.build({"pkg/tests/test_ok.py": "def test_ok():\n    assert True\n"})
+        self.commit()
+        path = self.repo / "pkg/tests/test_ok.py"
+        path.write_text("def test_ok():\n    assert 1\n", encoding="utf-8")
+        self.git("add", "-A")
+        self.commit()
+        self.env["PRE_COMMIT_TO_REF"] = "HEAD"
+        good = self.run_script("--focused", "--merge-base", "HEAD~1")
+        self.assertEqual(good.returncode, 0, good.stdout + good.stderr)
+        self.assertIn("pkg: passed: 1 passed", good.stdout)
+        self.env["PRE_COMMIT_TO_REF"] = "HEAD~1"
+        bad = self.run_script("--focused", "--merge-base", "HEAD~1")
+        self.assertEqual(bad.returncode, 2, bad.stdout + bad.stderr)
+        self.assertIn("outgoing ref differs from HEAD", bad.stderr)
 
     def test_base_without_head_is_a_usage_error(self) -> None:
         self.build({})

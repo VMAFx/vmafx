@@ -30,6 +30,7 @@ does not change the status unless ``--strict`` is given.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import os
 import re
@@ -38,7 +39,8 @@ import sys
 import tempfile
 import time
 import xml.etree.ElementTree as ET
-from collections.abc import Iterable, Sequence
+from collections import Counter
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO
@@ -46,6 +48,7 @@ from typing import IO
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.ci import suite_registry as registry_lib
+from scripts.lib.push_head import outgoing_head
 from scripts.lib.safe_subprocess import CommandTimedOut, TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -146,6 +149,63 @@ def affected_suites(
         if hits:
             result[suite.name] = hits
     return result
+
+
+def _import_names(text: str) -> set[str]:
+    """Python stems actually named by imports, excluding aliases and ordinary prose."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return set()
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            names.update(alias.name.rsplit(".", 1)[-1] for alias in node.names)
+        if isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module.rsplit(".", 1)[-1])
+    return names
+
+
+def _reference_pattern(path: str, basenames: Counter[str]) -> re.Pattern[str]:
+    # A path or unique basename may follow "/" (f"{ROOT}/scripts/x.sh", "./x.sh") and
+    # end a sentence ("x.sh."); a longer name ("xx.sh", "x.sh.bak", "x.sh-old") is not it.
+    # Selecting one test too many costs time; missing one lets a red test through.
+    paths = [path]
+    if basenames[Path(path).name] == 1:
+        paths.append(Path(path).name)
+    path_form = r"(?<![\w.-])(?:" + "|".join(map(re.escape, paths)) + r")(?![\w/-])(?!\.\w)"
+    if not path.endswith(".py"):
+        return re.compile(path_form)
+    module = re.escape(path[:-3].replace("/", "."))
+    return re.compile(path_form + r"|(?<![\w./-])" + module + r"(?![\w/-])")
+
+
+def focused_selection(
+    changed: Sequence[str], tracked: Sequence[str], test_texts: Mapping[str, str]
+) -> tuple[list[str], list[str]]:
+    """Pure selection: narrowed tests and changed paths no candidate test names.
+
+    Only complete path/module tokens, globally unique basenames, and unique
+    Python stems in imports count. Changed candidate tests select themselves.
+    """
+    basenames = Counter(Path(path).name for path in tracked)
+    stems = Counter(Path(path).stem for path in tracked if path.endswith(".py"))
+    imports = {test: _import_names(text) for test, text in test_texts.items()}
+    selected: set[str] = set()
+    unnamed: list[str] = []
+    for path in changed:
+        pattern = _reference_pattern(path, basenames)
+        stem = Path(path).stem
+        importable = path.endswith(".py") and stems[stem] == 1
+        matches = {
+            test
+            for test, text in test_texts.items()
+            if test == path or pattern.search(text) or (importable and stem in imports[test])
+        }
+        selected.update(matches)
+        if not matches:
+            unnamed.append(path)
+    return sorted(selected), unnamed
 
 
 def venv_key(root: Path, owner: registry_lib.Suite) -> str:
@@ -417,17 +477,48 @@ def suite_test_files(root: Path, registry: registry_lib.Registry, name: str) -> 
     return [f for f in files if (root / f).is_file()]
 
 
+def _focused_suite_files(
+    root: Path, registry: registry_lib.Registry, affected: dict[str, list[str]]
+) -> dict[str, list[str]]:
+    """Read candidate tests once; report unmatched source paths across affected suites."""
+    tracked = registry_lib.tracked_files(root)
+    changed = sorted({path for hits in affected.values() for path in hits})
+    selected: dict[str, list[str]] = {}
+    named: set[str] = set()
+    tests: set[str] = set()
+    for name in affected:
+        files = registry_lib.suite_files(registry, tracked, name)
+        tests.update(files)
+        texts = {
+            path: (root / path).read_text(encoding="utf-8", errors="replace")
+            for path in files
+            if (root / path).is_file()
+        }
+        selected[name], unnamed = focused_selection(changed, tracked, texts)
+        named.update(set(changed) - set(unnamed))
+        print(f"{name}: selected {len(selected[name])} test file(s)", flush=True)
+    for path in sorted(set(changed) - named - tests):
+        print(f"NOT RUN {path}: no test names this file", flush=True)
+    return selected
+
+
 def run_suite(
     root: Path,
     registry: registry_lib.Registry,
     suite: registry_lib.Suite,
     options: argparse.Namespace,
+    files: Sequence[str] | None = None,
 ) -> SuiteResult:
     """Build or reuse the venv, then run the suite's Python and shell tests."""
+    if files is not None and not files:
+        return SuiteResult(suite.name, "not-run", notes=["no test names a changed file"])
     if suite.not_local is not None:
-        return SuiteResult(suite.name, "not-run", notes=[suite.not_local])
+        return SuiteResult(
+            suite.name, "not-run", notes=[f"cannot run on a workstation: {suite.not_local}"]
+        )
     owner = venv_owner(registry, suite)
-    files = suite_test_files(root, registry, suite.name)
+    if files is None:
+        files = suite_test_files(root, registry, suite.name)
     env = _env_without_git()
     binary = find_vmaf_bin(root, options.vmaf_bin)
     if binary:
@@ -452,6 +543,8 @@ def run_suite(
             )
     result.seconds = time.monotonic() - started
     result.venv = venv_note
+    if result.status == "failed":
+        details.insert(0, "test files: " + ", ".join(files))
     result.notes = details
     return result
 
@@ -477,7 +570,7 @@ def _run_in(
 
 def format_result(result: SuiteResult) -> str:
     if result.status == "not-run":
-        return f"{result.name}: NOT RUN (cannot run on a workstation: {result.notes[0]})"
+        return f"{result.name}: NOT RUN ({result.notes[0]})"
     verdict = "passed" if result.status == "passed" else "FAILED"
     return (
         f"{result.name}: {verdict}: {result.passed} passed, {result.failed} failed, "
@@ -490,7 +583,13 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--root", type=Path, default=REPO_ROOT, help="repository root")
     parser.add_argument("--base", help="base commit of the change")
     parser.add_argument("--head", help="head commit of the change")
+    parser.add_argument(
+        "--merge-base", metavar="REF", help="diff merge-base of REF and HEAD to HEAD"
+    )
     parser.add_argument("--files", help="changed files, comma or space separated ('-': stdin)")
+    parser.add_argument(
+        "--focused", action="store_true", help="run only tests naming changed files"
+    )
     parser.add_argument("--list", action="store_true", help="print the affected suites only")
     parser.add_argument("--strict", action="store_true", help="a suite that cannot run fails")
     parser.add_argument("--time-cap", type=float, default=DEFAULT_TIME_CAP_SECONDS)
@@ -505,8 +604,9 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="run in this interpreter instead of a cached venv (diagnostics)",
     )
     args = parser.parse_args(argv)
-    if (args.base is None) != (args.head is None) or (args.base is None) == (args.files is None):
-        parser.error("give --base with --head, or --files")
+    modes = sum(value is not None for value in (args.base, args.files, args.merge_base))
+    if modes != 1 or (args.base is None) != (args.head is None):
+        parser.error("give --base with --head, --files, or --merge-base (mutually exclusive)")
     return args
 
 
@@ -514,6 +614,11 @@ def collect_changed(options: argparse.Namespace) -> list[str]:
     if options.files is not None:
         text = sys.stdin.read() if options.files == "-" else options.files
         return parse_file_list(text)
+    if options.merge_base is not None:
+        head = _git(options.root, "rev-parse", "--verify", "HEAD^{commit}").strip()
+        outgoing_head(head, options.root)
+        base = _git(options.root, "merge-base", options.merge_base, "HEAD").strip()
+        return changed_files(options.root, base, head)
     return changed_files(options.root, options.base, options.head)
 
 
@@ -523,13 +628,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         registry = registry_lib.load_registry(options.root)
         affected = affected_suites(registry, collect_changed(options))
         if options.list or not affected:
-            return _report_list(registry, affected)
+            if not options.focused or not affected:
+                return _report_list(registry, affected)
+        selected = _focused_suite_files(options.root, registry, affected) if options.focused else {}
+        if options.list:
+            for name, files in selected.items():
+                print(f"{name}: " + ", ".join(files))
+            return 0
         results = [
-            run_suite(options.root, registry, s, options)
+            run_suite(options.root, registry, s, options, selected.get(s.name))
             for s in registry.suites
             if s.name in affected
         ]
-    except (RunnerError, registry_lib.RegistryError) as exc:
+    except (RunnerError, registry_lib.RegistryError, RuntimeError, OSError) as exc:
         print(f"run-affected-suites: error: {exc}", file=sys.stderr)
         return 2
     return _report_results(results, options.strict)

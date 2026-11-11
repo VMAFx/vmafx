@@ -204,6 +204,45 @@ spec. A documentation-only change affects nothing and the command exits 0. The
 mapping is the registry's own, so a new suite or test directory needs no change
 here.
 
+For fast feedback, use focused mode:
+
+```bash
+python3 scripts/ci/run_affected_suites.py --focused --merge-base origin/master
+python3 scripts/ci/run_affected_suites.py --focused --files scripts/ci/install-rocm-from-image.sh
+```
+
+`--merge-base REF` compares `git merge-base REF HEAD` with `HEAD`; it is
+mutually exclusive with `--base`, `--head` and `--files`. During a push, the
+runner refuses an outgoing ref that differs from the checked-out `HEAD`, so
+it cannot validate the wrong branch.
+
+Within each affected suite, `--focused` selects changed test files and tests
+whose text names a changed file through its repository-relative path, its
+basename if unique among tracked files, or its dotted Python module path.
+A Python stem in an import also counts if unique among tracked Python stems;
+imports can span lines. Path and module matches require complete tokens:
+`xinstall-rocm-from-image.sh.bak` does not name `install-rocm-from-image.sh`.
+A path may follow a `/`, so `f"{ROOT}/scripts/ci/install-rocm-from-image.sh"`
+and `./scripts/ci/install-rocm-from-image.sh` name the script, and a sentence
+may end right after it. The rule leans towards selecting a test too many,
+which costs run time, over missing one, which lets a red test through.
+Unqualified `__init__.py` and `meson.build` names cannot select tests when
+those basenames occur more than once. This is a textual selection rule,
+not a dependency graph; a test that constructs a path from pieces may be missed.
+`--focused --list` shows the selection without running tests or building venvs.
+
+Each unmatched changed non-test file under an affected suite prints
+`NOT RUN <path>: no test names this file`. An empty selection prints
+`<suite>: NOT RUN (no test names a changed file)` and never counts as passed.
+These lines leave the exit status at 0 unless `--strict` makes an unrun suite
+fail. Test failures still exit 1; usage and I/O errors exit 2.
+
+The `affected-tests` pre-push hook runs focused mode against `origin/master`
+on every push. Its first run builds the affected suites' cached environments;
+allow disk space and download time, especially for `ai` (about 6 GB).
+The hook reuses the same suite registry, locks, timeouts and skip policy as
+the full runner. Omit `--focused` when full-suite coverage is needed.
+
 For each affected suite the runner builds a virtual environment once in
 `~/.cache/vmafx-suite-venvs/<suite>-<hash of its lock files>`
 (`VMAFX_SUITE_VENVS` or `--venv-root` moves it), installs the registry's locks
@@ -241,7 +280,7 @@ the workflow; a follow-up makes them read `install` too.
 
 ## Pre-commit hooks that run tests
 
-Fifty-one local pre-commit hooks run a test of the tooling suite when a file
+Eighty-one local pre-commit hooks run a test of the tooling suite when a file
 they watch changes. They stay active at commit time, where they give the
 fastest feedback. The CI `Pre-Commit` job skips them, because Tooling Tests runs the
 same files on every pull request and push:
