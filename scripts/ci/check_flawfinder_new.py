@@ -25,17 +25,21 @@ git is missing or fails.
 from __future__ import annotations
 
 import argparse
-import collections
 import csv
 import io
-import os
-import shutil
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.lib.new_scanner_findings import (
+    ToolError,
+    base_text,
+    merge_base,
+    new_findings,
+    renames,
+    tool,
+)
 from scripts.lib.safe_subprocess import run as run_command
 
 # Every suffix pre-commit's `identify` maps to the hook's types_or (c, c++,
@@ -66,18 +70,6 @@ SUFFIXES = frozenset(
         ".tpp",
     }
 )
-Key = tuple[str, str]
-
-
-class ToolError(RuntimeError):
-    """flawfinder or git is missing or failed."""
-
-
-def tool(name: str) -> str:
-    path = shutil.which(name)
-    if path is None:
-        raise ToolError(f"{name} is not on PATH")
-    return path
 
 
 def findings(flawfinder: str, source: Path) -> list[tuple[int, str, str]]:
@@ -96,64 +88,6 @@ def findings(flawfinder: str, source: Path) -> list[tuple[int, str, str]]:
     return [(int(row["Line"]), row["Name"], row["Context"].strip()) for row in rows]
 
 
-def git_output(git: str, args: list[str], cwd: Path) -> tuple[int, str]:
-    # Read-only git in `cwd`; the hook's GIT_DIR / GIT_INDEX_FILE are dropped so
-    # `cwd` alone names the repository.
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-    proc = run_command(
-        [git, *args],
-        allowed_executables=(git,),
-        cwd=cwd,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout_seconds=60,
-        max_output_bytes=64 * 1_048_576,
-    )
-    return proc.returncode, proc.stdout
-
-
-def renames(git: str, root: Path, base: str) -> dict[str, str]:
-    """Map each path renamed since `base` (working tree and index) to its old path."""
-    status, text = git_output(
-        git, ["diff", "-M", "--name-status", "-z", "--diff-filter=R", base], root
-    )
-    if status != 0:
-        raise ToolError(f"git diff against {base} failed")
-    fields = text.split("\0")
-    # -z rename records: "R<score>", old path, new path.
-    return {fields[i + 2]: fields[i + 1] for i in range(0, len(fields) - 2, 3)}
-
-
-def base_text(git: str, root: Path, base: str, relative: str) -> str:
-    """Return the file at `base`, or "" when it did not exist there."""
-    status, text = git_output(git, ["show", f"{base}:{relative}"], root)
-    return text if status == 0 else ""
-
-
-def new_findings(flawfinder: str, current: Path, old_text: str) -> list[tuple[int, str, str]]:
-    """Return the findings of `current` that its old text does not carry."""
-    with tempfile.TemporaryDirectory(prefix="flawfinder-base-") as temp:
-        old = Path(temp) / current.name
-        old.write_text(old_text, encoding="utf-8")
-        old_keys = collections.Counter((name, line) for _, name, line in findings(flawfinder, old))
-    added = []
-    for found in findings(flawfinder, current):
-        key: Key = (found[1], found[2])
-        if old_keys[key] > 0:
-            old_keys[key] -= 1
-        else:
-            added.append(found)
-    return added
-
-
-def merge_base(git: str, root: Path, branch: str) -> str:
-    status, text = git_output(git, ["merge-base", "HEAD", branch], root)
-    if status != 0 or not text.strip():
-        raise ToolError(f"no merge base between HEAD and {branch}")
-    return text.strip()
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").partition("\n")[0])
     parser.add_argument("--base-branch", default="origin/master")
@@ -170,7 +104,9 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             relative = path.resolve().relative_to(root.resolve()).as_posix()
             for line, name, context in new_findings(
-                flawfinder, path, base_text(git, root, base, moved.get(relative, relative))
+                lambda source: findings(flawfinder, source),
+                path,
+                base_text(git, root, base, moved.get(relative, relative)),
             ):
                 print(f"{relative}:{line}: flawfinder {name}: {context}")
                 failed += 1
