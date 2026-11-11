@@ -17,6 +17,7 @@ import time
 import unittest
 from collections.abc import Iterator, Sequence
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest import mock
 
@@ -854,12 +855,11 @@ class ExecutableLinkTrustTests(unittest.TestCase):
         """Inject Linux ioctl replies or errors on a selected architecture, offline."""
         reply = flags.to_bytes(ctypes.sizeof(ctypes.c_long), sys.byteorder)
         failure = OSError(error, "planted flag-read error") if error is not None else None
+        reader = mock.MagicMock(name="ioctl", return_value=reply, side_effect=failure)
         with (
             mock.patch.object(sys, "platform", "linux"),
             mock.patch("scripts.lib.safe_subprocess.platform.machine", return_value=machine),
-            mock.patch(
-                "scripts.lib.safe_subprocess.fcntl.ioctl", return_value=reply, side_effect=failure
-            ) as reader,
+            mock.patch.object(safe_subprocess, "fcntl", SimpleNamespace(ioctl=reader), create=True),
         ):
             yield reader
 
@@ -1029,6 +1029,23 @@ class ExecutableLinkTrustTests(unittest.TestCase):
                 (str(self.link), target),
             )
         reader.assert_called_once()
+
+    def test_linux_flags_without_host_fcntl_binding(self) -> None:
+        """Hosts that skip importing fcntl still run Linux ioctl flag cases offline."""
+        with mock.patch.dict(safe_subprocess.__dict__):
+            safe_subprocess.__dict__.pop("fcntl", None)
+            self.assertFalse(hasattr(safe_subprocess, "fcntl"))
+            self.test_linux_does_not_inspect_darwin_acls()
+            target = self.same_directory_link()
+            with self.linux_flags(0x10) as reader:
+                self.assert_resolved_launch(self.link, target)
+            self.assertFalse(hasattr(safe_subprocess, "fcntl"))
+        size = ctypes.sizeof(ctypes.c_long)
+        request = (2 << 30) | (size << 16) | (ord("f") << 8) | 1
+        self.assertIsNotNone(reader.call_args)
+        assert reader.call_args is not None
+        self.assertIsInstance(reader.call_args.args[0], int)
+        self.assertEqual(reader.call_args, mock.call(mock.ANY, request, bytes(size)))
 
     def test_same_directory_writable_modes_keep_named_launch(self) -> None:
         """A writable link directory adds no exposure when it also contains the file."""
@@ -1215,7 +1232,7 @@ class ExecutableLinkTrustTests(unittest.TestCase):
     def test_linux_does_not_inspect_darwin_acls(self) -> None:
         """Linux mode bits cover the POSIX ACL mask without loading the macOS interface."""
         with (
-            mock.patch.object(sys, "platform", "linux"),
+            self.linux_flags(),
             mock.patch.object(safe_subprocess, "_darwin_acl_allows_entries") as acl,
         ):
             self.assertEqual(
