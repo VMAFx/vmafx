@@ -60,7 +60,7 @@ $manifestUrl = "$base/redistrib_$cudaVersion.json"
 $manifestFile = Join-Path $env:RUNNER_TEMP "redistrib_$cudaVersion.json"
 
 Write-Host "install-cuda-toolkit: CUDA $cudaVersion from $manifestUrl"
-curl.exe --fail --location --silent --show-error --retry 5 --retry-delay 10 `
+curl.exe --fail --location --silent --show-error --retry 5 --retry-all-errors --retry-delay 10 `
   --output $manifestFile $manifestUrl
 if ($LASTEXITCODE -ne 0) {
   throw "install-cuda-toolkit: no redistrib manifest for CUDA $cudaVersion at $manifestUrl"
@@ -94,7 +94,7 @@ foreach ($component in $components) {
   $relative = $platform.relative_path
   $archive = Join-Path $env:RUNNER_TEMP (Split-Path -Leaf $relative)
   Write-Host "  $component $($entry.version) -> $(Split-Path -Leaf $relative)"
-  curl.exe --fail --location --silent --show-error --retry 5 --retry-delay 10 `
+  curl.exe --fail --location --silent --show-error --retry 5 --retry-all-errors --retry-delay 10 `
     --output $archive "$base/$relative"
   if ($LASTEXITCODE -ne 0) {
     throw "install-cuda-toolkit: download failed for $base/$relative"

@@ -42,7 +42,7 @@ local_files=("${wheels[@]}" "${sdists[0]}")
 
 response="$(mktemp)"
 trap 'rm -f "$response"' EXIT
-http_code="$(curl --retry 3 --max-time 60 --silent --show-error \
+http_code="$(curl --retry 3 --retry-all-errors --max-time 60 --silent --show-error \
   --output "$response" --write-out '%{http_code}' \
   "https://pypi.org/pypi/$project/$version/json")"
 

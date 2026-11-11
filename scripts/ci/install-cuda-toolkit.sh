@@ -181,7 +181,7 @@ if ! command -v curl >/dev/null 2>&1 || ! dpkg -s ca-certificates >/dev/null 2>&
   $SUDO apt-get install -y -qq --no-install-recommends curl ca-certificates
 fi
 
-if ! curl -fsSI --connect-timeout 20 --max-time 60 "${base}/cuda-keyring_1.1-1_all.deb" >/dev/null; then
+if ! curl --retry 3 --retry-all-errors -fsSI --connect-timeout 20 --max-time 60 "${base}/cuda-keyring_1.1-1_all.deb" >/dev/null; then
   echo "::error::install-cuda-toolkit: NVIDIA publishes no CUDA repository for '${distro}'." \
     "Pin the runner to a release NVIDIA serves, or add the mapping here." >&2
   exit 1
@@ -189,7 +189,7 @@ fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-curl -fsSL --connect-timeout 20 --max-time 300 -o "$tmp/cuda-keyring.deb" "${base}/cuda-keyring_1.1-1_all.deb"
+curl --retry 3 --retry-all-errors -fsSL --connect-timeout 20 --max-time 300 -o "$tmp/cuda-keyring.deb" "${base}/cuda-keyring_1.1-1_all.deb"
 $SUDO dpkg -i "$tmp/cuda-keyring.deb"
 $SUDO apt-get update -qq
 
