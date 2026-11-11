@@ -22,16 +22,15 @@ Three nets, because each one misses what another catches:
 
 from __future__ import annotations
 
+import ast
 import concurrent.futures
 import datetime
-import io
 import json
 import os
 import re
 import shutil
 import sys
 import tempfile
-import tokenize
 import unittest
 from collections.abc import Callable
 from functools import partial
@@ -109,29 +108,16 @@ CODE_GIT_WRITE = re.compile(
     r"""|["']config["']\s*,\s*(?:["']--(?:local|global|worktree|system|add|replace-all)["']\s*,\s*)*"""
     r"""["'][\w.-]+\.[\w.-]+["']\s*,\s*\S"""
 )
-# What counts as dropping the caller's variables: the two shell helpers (or their loop), and a
-# filter on the GIT_ prefix in Python, Node and Go.
+# What counts as dropping the caller's variables in shell, Node and Go; Python uses AST checks.
 ISOLATION_MARKER = re.compile(
     r"""(?:clean|drop)-git-env\.sh|compgen -A variable GIT_"""
-    r"""|startswith\(\s*\(?\s*["']GIT_|startsWith\(\s*["']GIT_|HasPrefix\([^)\n]*"GIT_"""
-    r"""|clean_git_environment\(|\bgit_environment\("""
+    r"""|startsWith\(\s*["']GIT_|HasPrefix\([^)\n]*"GIT_"""
 )
-PYTHON_MARKER = re.compile(r"""startswith\(\s*\(?\s*["']GIT_""")
-ENVIRONMENT_FILTER = re.compile(
-    r"for\s+(?P<key>\w+)(?:\s*,\s*\w+)?\s+in\s+os\s*\.\s*environ"
-    r"(?:\s*\.\s*(?:items|keys)\s*\(\s*\))?"
-)
-GIT_PREFIX_LITERAL = re.compile(r"""["']GIT_[^"']*["']""")
-CANONICAL_CONDITION = re.compile(
-    r"not\s+(?P<key>\w+)\s*\.\s*startswith\s*\(\s*"
-    r"""(?:["']GIT_["']|\(\s*["']GIT_["'](?:\s*,\s*["'][^"']*["'])*\s*,?\s*\))\s*\)"""
-)
-CONFIG_KEY_LOOKUP = re.compile(
-    r"(?P<key>\w+)\s*\.\s*startswith\s*\(\s*"
-    r"""["']GIT_CONFIG_KEY_["']\s*\)\s+and\s+\w+\s*==\s*["'][^"']*["']"""
-)
-LAMBDA_HEADER_TOKENS = 5
-CONFIG_KEY_SUFFIX_TOKENS = 8
+PYTHON_HELPERS = ("clean_git_environment", "git_environment")
+COMPREHENSION_NODES = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+FILTER_NODES = (*COMPREHENSION_NODES, ast.Call)
+BARRIER_NULL_KEYS = ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM")
+PAIR_LENGTH = 2
 # One file, one reason, one expiry: a file whose git runs isolated in a way the marker cannot
 # see, with the place that does it. The sentinel run covers every test script among them.
 ISOLATION_EXCEPTION_EXPIRY = "2026-12-31"
@@ -162,137 +148,358 @@ ISOLATION_EXCEPTIONS = {
 }
 
 
-def condition_end(tokens: list[tokenize.TokenInfo], start: int) -> int:
-    """Locate the enclosing comprehension delimiter without parsing an expression AST."""
-    depth = 0
-    for index in range(start, len(tokens)):
-        token = tokens[index]
-        if token.type != tokenize.OP:
-            continue
-        if token.string == "," and depth == 0:
-            return index
-        if token.string in ("}", ")", "]"):
-            if depth == 0:
-                return index
-            depth -= 1
-        elif token.string in ("{", "(", "["):
-            depth += 1
-    return len(tokens)
+def is_str_constant(node: ast.AST | None, expected: str | None = None) -> bool:
+    """True when node is a str Constant, optionally equal to expected."""
+    if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+        return False
+    return expected is None or node.value == expected
 
 
-def comprehension_condition(
-    tokens: list[tokenize.TokenInfo], index: int
-) -> tuple[str, int, int] | None:
-    """Find a direct os.environ comprehension filter within its bounded header."""
-    stop = next(
-        (i for i in range(index + 1, min(index + 20, len(tokens))) if tokens[i].string == "if"),
-        None,
+def is_os_attr(node: ast.AST, attr: str) -> bool:
+    """True when node is the attribute expression os.<attr>."""
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == attr
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "os"
     )
-    if stop is None:
-        return None
-    header = ENVIRONMENT_FILTER.fullmatch(" ".join(t.string for t in tokens[index:stop]))
-    if header is None:
-        return None
-    return header["key"], stop + 1, condition_end(tokens, stop + 1)
 
 
-def lambda_filter_condition(
-    tokens: list[tokenize.TokenInfo], index: int
-) -> tuple[str, int, int] | None:
-    """Find filter(lambda name: condition, os.environ) without evaluating source."""
-    header = [t.string for t in tokens[index : index + LAMBDA_HEADER_TOKENS]]
+def is_environ_copy(node: ast.expr) -> bool:
+    """True when node is os.environ.copy()."""
+    return (
+        isinstance(node, ast.Call)
+        and not node.args
+        and not node.keywords
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "copy"
+        and is_os_attr(node.func.value, "environ")
+    )
+
+
+def is_environ_dict_arg(node: ast.expr) -> bool:
+    """True when node is os.environ, os.environ.copy() or .items() on either."""
+    if is_os_attr(node, "environ") or is_environ_copy(node):
+        return True
+    return (
+        isinstance(node, ast.Call)
+        and not node.args
+        and not node.keywords
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "items"
+        and (is_os_attr(node.func.value, "environ") or is_environ_copy(node.func.value))
+    )
+
+
+def is_environ_mapping(node: ast.expr) -> bool:
+    """True when node evaluates to os.environ, os.environ.copy() or dict(os.environ)."""
+    if is_os_attr(node, "environ") or is_environ_copy(node):
+        return True
+    if not (
+        isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "dict"
+    ):
+        return False
+    if len(node.args) == 1 and is_environ_dict_arg(node.args[0]):
+        return True
+    return any(
+        kw.arg is None and (is_os_attr(kw.value, "environ") or is_environ_copy(kw.value))
+        for kw in node.keywords
+    )
+
+
+def environ_iterable_kind(node: ast.expr) -> str | None:
+    """Classify an iterable derived from os.environ, or None when unrelated."""
+    if is_environ_mapping(node):
+        return "mapping"
     if (
-        len(header) != LAMBDA_HEADER_TOKENS
-        or header[:3] != ["filter", "(", "lambda"]
-        or header[4] != ":"
+        isinstance(node, ast.Call)
+        and not node.args
+        and not node.keywords
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in ("items", "keys", "values")
+        and is_environ_mapping(node.func.value)
+    ):
+        return node.func.attr
+    return None
+
+
+def startswith_prefix_arg(node: ast.expr, receiver: str | None = None) -> ast.expr | None:
+    """Return the sole prefix argument of <receiver>.startswith(arg), else None."""
+    if not (isinstance(node, ast.Call) and len(node.args) == 1 and not node.keywords):
+        return None
+    if not (isinstance(node.func, ast.Attribute) and node.func.attr == "startswith"):
+        return None
+    if receiver is not None and not (
+        isinstance(node.func.value, ast.Name) and node.func.value.id == receiver
     ):
         return None
-    start = index + LAMBDA_HEADER_TOKENS
-    stop = condition_end(tokens, start)
-    end = condition_end(tokens, stop + 1)
-    source = " ".join(t.string for t in tokens[stop + 1 : end])
-    if not ENVIRONMENT_FILTER.fullmatch("for " + header[3] + " in " + source):
-        return None
-    return header[3], start, stop
+    return node.args[0]
 
 
-def condition_text(text: str, tokens: list[tokenize.TokenInfo]) -> str:
-    """Preserve the original condition spelling for actionable diagnostics."""
-    lines = text.splitlines(keepends=True)
-    first_line, first_column = tokens[0].start
-    last_line, last_column = tokens[-1].end
-    if first_line == last_line:
-        return lines[first_line - 1][first_column:last_column]
+def is_canonical_prefix(arg: ast.expr) -> bool:
+    """True for 'GIT_' or a tuple of str constants starting with 'GIT_'."""
+    if is_str_constant(arg, "GIT_"):
+        return True
     return (
-        lines[first_line - 1][first_column:]
-        + "".join(lines[first_line : last_line - 1])
-        + lines[last_line - 1][:last_column]
+        isinstance(arg, ast.Tuple)
+        and bool(arg.elts)
+        and all(is_str_constant(elt) for elt in arg.elts)
+        and is_str_constant(arg.elts[0], "GIT_")
     )
 
 
-def allowed_python_condition(
-    tokens: list[tokenize.TokenInfo], index: int, key: str, spelling: str
-) -> bool:
-    """Allow canonical exclusion or a single planted-config key-suffix lookup."""
-    canonical = CANONICAL_CONDITION.fullmatch(spelling)
-    if canonical is not None:
-        return canonical["key"] == key
-    lookup = CONFIG_KEY_LOOKUP.fullmatch(spelling)
-    if lookup is None or lookup["key"] != key or tokens[index].string != "for":
+def is_canonical_exclusion(cond: ast.expr, key: str) -> bool:
+    """True when cond is exclusively `not <key>.startswith('GIT_' | ('GIT_', ...))`."""
+    if not (isinstance(cond, ast.UnaryOp) and isinstance(cond.op, ast.Not)):
         return False
-    # This expression returns one config-key suffix, not an environment mapping.
-    output = [t.string for t in tokens[max(0, index - CONFIG_KEY_SUFFIX_TOKENS) : index]]
-    return output in (
-        [key, "[", "len", "(", '"GIT_CONFIG_KEY_"', ")", ":", "]"],
-        [key, "[", "len", "(", "'GIT_CONFIG_KEY_'", ")", ":", "]"],
+    prefix = startswith_prefix_arg(cond.operand, key)
+    return prefix is not None and is_canonical_prefix(prefix)
+
+
+def is_config_key_slice(elt: ast.expr, key: str) -> bool:
+    """True when elt is `<key>[len('GIT_CONFIG_KEY_'):]`."""
+    if not (
+        isinstance(elt, ast.Subscript)
+        and isinstance(elt.value, ast.Name)
+        and elt.value.id == key
+        and isinstance(elt.slice, ast.Slice)
+        and elt.slice.upper is None
+        and elt.slice.step is None
+    ):
+        return False
+    lower = elt.slice.lower
+    return (
+        isinstance(lower, ast.Call)
+        and isinstance(lower.func, ast.Name)
+        and lower.func.id == "len"
+        and len(lower.args) == 1
+        and not lower.keywords
+        and is_str_constant(lower.args[0], "GIT_CONFIG_KEY_")
     )
 
 
-def python_filter_violation(name: str, text: str) -> str:
-    """Allow only complete canonical GIT_* exclusion conditions over os.environ."""
-    ignored = {tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.COMMENT}
-    try:
-        tokens = [
-            t for t in tokenize.generate_tokens(io.StringIO(text).readline) if t.type not in ignored
-        ]
-    except (tokenize.TokenError, IndentationError) as error:
-        return f"{name}: cannot inspect environment filters: {error}"
-    readers = {"for": comprehension_condition, "filter": lambda_filter_condition}
-    for index, token in enumerate(tokens):
-        if token.type != tokenize.NAME or token.string not in readers:
-            continue
-        candidate = readers[token.string](tokens, index)
-        if candidate is None:
-            continue
-        key, start, stop = candidate
-        condition = tokens[start:stop]
-        if not condition:
-            continue
-        spelling = condition_text(text, condition)
-        if not GIT_PREFIX_LITERAL.search(spelling):
-            continue
-        if not allowed_python_condition(tokens, index, key, spelling):
-            return f"{name}:{condition[0].start[0]}: noncanonical environment condition: {spelling}"
+def is_config_key_lookup(elt: ast.expr, cond: ast.expr, key: str, value: str) -> bool:
+    """Allow extracting one planted GIT_CONFIG_KEY_* suffix by exact value match."""
+    if not is_config_key_slice(elt, key):
+        return False
+    if not (
+        isinstance(cond, ast.BoolOp)
+        and isinstance(cond.op, ast.And)
+        and len(cond.values) == PAIR_LENGTH
+    ):
+        return False
+    prefix = startswith_prefix_arg(cond.values[0], key)
+    compare = cond.values[1]
+    return (
+        prefix is not None
+        and is_str_constant(prefix, "GIT_CONFIG_KEY_")
+        and isinstance(compare, ast.Compare)
+        and isinstance(compare.left, ast.Name)
+        and compare.left.id == value
+        and len(compare.ops) == 1
+        and isinstance(compare.ops[0], ast.Eq)
+        and len(compare.comparators) == 1
+        and is_str_constant(compare.comparators[0])
+    )
+
+
+def comprehension_targets(target: ast.expr, kind: str) -> tuple[str | None, str | None]:
+    """Extract (key_name, value_name) bound by an os.environ comprehension target."""
+    if kind in ("mapping", "keys") and isinstance(target, ast.Name):
+        return target.id, None
+    if (
+        kind == "items"
+        and isinstance(target, (ast.Tuple, ast.List))
+        and len(target.elts) == PAIR_LENGTH
+        and isinstance(target.elts[0], ast.Name)
+        and isinstance(target.elts[1], ast.Name)
+    ):
+        return target.elts[0].id, target.elts[1].id
+    return None, None
+
+
+def comprehension_violation(
+    name: str,
+    text: str,
+    node: ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp,
+) -> str:
+    """Validate any comprehension iterating over an os.environ-derived iterable."""
+    kinds = [environ_iterable_kind(gen.iter) for gen in node.generators]
+    if not any(kind is not None for kind in kinds):
+        return ""
+    gen = node.generators[0]
+    if len(node.generators) != 1 or gen.is_async or len(gen.ifs) != 1 or kinds[0] is None:
+        segment = ast.get_source_segment(text, node) or ""
+        return f"{name}:{node.lineno}: noncanonical environment filter: {segment}"
+    cond = gen.ifs[0]
+    key_name, value_name = comprehension_targets(gen.target, kinds[0])
+    allowed = key_name is not None and (
+        is_canonical_exclusion(cond, key_name)
+        or (
+            not isinstance(node, ast.DictComp)
+            and value_name is not None
+            and is_config_key_lookup(node.elt, cond, key_name, value_name)
+        )
+    )
+    if allowed:
+        return ""
+    segment = ast.get_source_segment(text, cond) or ""
+    return f"{name}:{cond.lineno}: noncanonical environment condition: {segment}"
+
+
+def is_filter_call(node: ast.Call) -> bool:
+    """True when node calls builtin filter(...)."""
+    if isinstance(node.func, ast.Name):
+        return node.func.id == "filter"
+    return (
+        isinstance(node.func, ast.Attribute)
+        and node.func.attr == "filter"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "builtins"
+    )
+
+
+def plain_lambda_parameter(node: ast.expr) -> str | None:
+    """Return the sole parameter name of a plain single-argument lambda, else None."""
+    if not isinstance(node, ast.Lambda):
+        return None
+    params = node.args
+    if (
+        len(params.args) != 1
+        or params.posonlyargs
+        or params.kwonlyargs
+        or params.vararg is not None
+        or params.kwarg is not None
+        or params.defaults
+        or params.kw_defaults
+    ):
+        return None
+    return params.args[0].arg
+
+
+def filter_call_violation(name: str, text: str, node: ast.Call) -> str:
+    """Validate filter(...) calls whose iterable derives from os.environ."""
+    if not is_filter_call(node):
+        return ""
+    kinds = [environ_iterable_kind(arg) for arg in node.args]
+    kw_environ = any(environ_iterable_kind(kw.value) is not None for kw in node.keywords)
+    if not any(kind is not None for kind in kinds) and not kw_environ:
+        return ""
+    key_name = plain_lambda_parameter(node.args[0]) if node.args else None
+    if (
+        len(node.args) == PAIR_LENGTH
+        and not node.keywords
+        and kinds[1] in ("mapping", "keys")
+        and key_name is not None
+        and isinstance(node.args[0], ast.Lambda)
+        and is_canonical_exclusion(node.args[0].body, key_name)
+    ):
+        return ""
+    focus: ast.AST = node
+    if node.args:
+        focus = node.args[0].body if isinstance(node.args[0], ast.Lambda) else node.args[0]
+    line = getattr(focus, "lineno", node.lineno)
+    segment = ast.get_source_segment(text, focus) or ""
+    return f"{name}:{line}: noncanonical environment condition: {segment}"
+
+
+def python_filter_violation(name: str, text: str, tree: ast.AST) -> str:
+    """Allow only complete canonical GIT_* exclusion filters over os.environ."""
+    candidates = sorted(
+        (node for node in ast.walk(tree) if isinstance(node, FILTER_NODES)),
+        key=lambda node: (node.lineno, node.col_offset),
+    )
+    for node in candidates:
+        violation = (
+            filter_call_violation(name, text, node)
+            if isinstance(node, ast.Call)
+            else comprehension_violation(name, text, node)
+        )
+        if violation:
+            return violation
     return ""
 
 
-def fixture_config_violation(name: str, text: str) -> str:
+def is_marker_prefix(arg: ast.expr) -> bool:
+    """True when arg is a GIT_* str constant or a tuple containing one."""
+    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+        return arg.value.startswith("GIT_")
+    return isinstance(arg, ast.Tuple) and any(
+        isinstance(elt, ast.Constant)
+        and isinstance(elt.value, str)
+        and elt.value.startswith("GIT_")
+        for elt in arg.elts
+    )
+
+
+def has_python_marker(tree: ast.AST) -> bool:
+    """True when tree calls an environment helper or startswith('GIT_*')."""
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name) and node.func.id in PYTHON_HELPERS:
+            return True
+        if isinstance(node.func, ast.Attribute) and node.func.attr in PYTHON_HELPERS:
+            return True
+        prefix = startswith_prefix_arg(node)
+        if prefix is not None and is_marker_prefix(prefix):
+            return True
+    return False
+
+
+def is_barrier_value(key: str, value: ast.expr) -> bool:
+    """True when value assigns the accepted barrier target for key."""
+    if key in BARRIER_NULL_KEYS:
+        return is_os_attr(value, "devnull") or is_str_constant(value, "/dev/null")
+    if key == "GIT_CONFIG_NOSYSTEM":
+        return is_str_constant(value, "1")
+    return False
+
+
+def node_barrier_pairs(node: ast.AST) -> list[tuple[str, ast.expr]]:
+    """Extract executable (key, value) candidate assignments from one AST node."""
+    if isinstance(node, ast.Dict):
+        return [
+            (key.value, val)
+            for key, val in zip(node.keys, node.values, strict=True)
+            if isinstance(key, ast.Constant) and isinstance(key.value, str)
+        ]
+    if isinstance(node, ast.Call) and (
+        (isinstance(node.func, ast.Name) and node.func.id == "dict")
+        or (isinstance(node.func, ast.Attribute) and node.func.attr == "update")
+    ):
+        return [(kw.arg, kw.value) for kw in node.keywords if kw.arg is not None]
+    if isinstance(node, ast.Assign):
+        return [
+            (target.slice.value, node.value)
+            for target in node.targets
+            if isinstance(target, ast.Subscript)
+            and isinstance(target.slice, ast.Constant)
+            and isinstance(target.slice.value, str)
+        ]
+    if (
+        isinstance(node, ast.AnnAssign)
+        and node.value is not None
+        and isinstance(node.target, ast.Subscript)
+        and isinstance(node.target.slice, ast.Constant)
+        and isinstance(node.target.slice.value, str)
+    ):
+        return [(node.target.slice.value, node.value)]
+    return []
+
+
+def fixture_config_violation(name: str, tree: ast.AST) -> str:
     """Require explicit global and system config isolation in Python fixture files."""
     path = Path(name)
     fixture = TEST_SCRIPT.search(name) or "tests" in path.parts or "fixture" in path.name
     if not fixture:
         return ""
-    null = r"""(?:os\.devnull|["']/dev/null["'])"""
-    values = {
-        "GIT_CONFIG_GLOBAL": null,
-        "GIT_CONFIG_SYSTEM": null,
-        "GIT_CONFIG_NOSYSTEM": r"[\"']1[\"']",
+    assigned = {
+        key
+        for node in ast.walk(tree)
+        for key, value in node_barrier_pairs(node)
+        if is_barrier_value(key, value)
     }
-    assigned = set()
-    for key, value in values.items():
-        assignment = rf"""(?:["']{key}["']\s*:|\b{key}\s*=|\[\s*["']{key}["']\s*\]\s*=)\s*{value}"""
-        if re.search(assignment, text):
-            assigned.add(key)
     if "GIT_CONFIG_GLOBAL" not in assigned:
         return f"{name}: missing GIT_CONFIG_GLOBAL assignment to os.devnull"
     if not assigned.intersection(("GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM")):
@@ -300,19 +507,29 @@ def fixture_config_violation(name: str, text: str) -> str:
     return ""
 
 
-def unisolated_git(name: str, text: str) -> str:
-    """Return the first unsafe Git write, filter condition or missing fixture config key."""
-    shell = name.endswith(SHELL_SUFFIXES)
-    found = (SHELL_GIT_WRITE if shell else CODE_GIT_WRITE).search(text)
+def python_isolation_violation(name: str, text: str, *, require_marker: bool = True) -> str:
+    """Validate Python syntax, os.environ filters, isolation markers and fixture barriers."""
+    try:
+        tree = ast.parse(text, filename=name)
+    except SyntaxError as error:
+        return f"{name}:{error.lineno or 1}: cannot parse Python source: {error.msg}"
+    found = CODE_GIT_WRITE.search(text)
     if found is None:
         return ""
-    if ISOLATION_MARKER.search(text):
-        if name.endswith(".py"):
-            if PYTHON_MARKER.search(text):
-                violation = python_filter_violation(name, text)
-                if violation:
-                    return violation
-            return fixture_config_violation(name, text)
+    violation = python_filter_violation(name, text, tree)
+    if violation:
+        return violation
+    if require_marker and not has_python_marker(tree):
+        return found.group(0).strip()[:100]
+    return fixture_config_violation(name, tree)
+
+
+def unisolated_git(name: str, text: str) -> str:
+    """Return the first unsafe Git write, filter condition or missing fixture config key."""
+    if name.endswith(".py"):
+        return python_isolation_violation(name, text)
+    found = (SHELL_GIT_WRITE if name.endswith(SHELL_SUFFIXES) else CODE_GIT_WRITE).search(text)
+    if found is None or ISOLATION_MARKER.search(text):
         return ""
     return found.group(0).strip()[:100]
 
@@ -326,8 +543,16 @@ def unisolated_offenders(root: Path, names: list[str], today: str) -> list[str]:
         path = root / name
         if not path.is_file():
             continue
-        sample = unisolated_git(name, path.read_text(encoding="utf-8", errors="replace"))
-        if sample and (name not in ISOLATION_EXCEPTIONS or today > ISOLATION_EXCEPTION_EXPIRY):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        excepted = name in ISOLATION_EXCEPTIONS and today <= ISOLATION_EXCEPTION_EXPIRY
+        if excepted and not name.endswith(".py"):
+            continue
+        sample = (
+            python_isolation_violation(name, text, require_marker=not excepted)
+            if name.endswith(".py")
+            else unisolated_git(name, text)
+        )
+        if sample:
             offenders.append(sample if sample.startswith(name + ":") else f"{name}: {sample}")
     return offenders
 
@@ -843,8 +1068,77 @@ class GitFixtureIsolation(unittest.TestCase):
                 )
                 self.assertIn(name, diagnostic)
                 self.assertIn(missing, diagnostic)
+        self.test_python_ast_barrier_refuses_non_executable_forms()
+        self.test_python_ast_marker_refuses_comments_and_strings()
+        self.test_python_ast_comprehension_and_filter_allowlist()
         self.check_accepted_python_isolation(canonical, create)
         self.check_planted_python_isolation()
+
+    def test_python_ast_barrier_refuses_non_executable_forms(self) -> None:
+        """Refuse barriers appearing only in strings, comments, docstrings or setdefault."""
+        name = "tests/test_fixture.py"
+        canonical = 'env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}\n'
+        create = 'git("init", "-q")\n'
+        for header in (
+            '"""env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")"""\n',
+            '# env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")\n',
+            "note = 'env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM=\"1\")'\n",
+            'env.setdefault("GIT_CONFIG_GLOBAL", os.devnull)\n'
+            'env.setdefault("GIT_CONFIG_NOSYSTEM", "1")\n',
+        ):
+            with self.subTest(header=header):
+                diagnostic = unisolated_git(name, header + canonical + create)
+                self.assertIn("missing GIT_CONFIG_GLOBAL", diagnostic)
+
+    def test_python_ast_marker_refuses_comments_and_strings(self) -> None:
+        """Require AST call markers, check helper-marked fixtures, and report syntax lines."""
+        name = "tests/test_fixture.py"
+        config = 'env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")\n'
+        create = 'git("init", "-q")\n'
+        for fake_marker in (
+            '"""k.startswith("GIT_") and clean_git_environment()"""\n',
+            '# not k.startswith("GIT_") clean_git_environment()\n',
+            "text = 'clean_git_environment() k.startswith(\"GIT_\")'\n",
+        ):
+            with self.subTest(fake_marker=fake_marker):
+                self.assertEqual(unisolated_git(name, fake_marker + config + create), 'git("init",')
+        for helper_call in ("env = clean_git_environment()\n", "env = mod.git_environment()\n"):
+            with self.subTest(helper_call=helper_call):
+                self.assertIn(
+                    "missing GIT_CONFIG_GLOBAL", unisolated_git(name, helper_call + create)
+                )
+        broken = unisolated_git("tests/test_broken.py", create + "def broken(\n")
+        self.assertIn("tests/test_broken.py:2:", broken)
+        self.assertIn("cannot parse Python source", broken)
+        self.assertIn("tests/test_broken.py:1:", unisolated_git("tests/test_broken.py", "def f(\n"))
+        self.assertEqual(unisolated_git(name, ""), "")
+
+    def test_python_ast_comprehension_and_filter_allowlist(self) -> None:
+        """Fail closed on noncanonical conditions, copied os.environ sources and extra clauses."""
+        name = "tests/test_fixture.py"
+        config = 'env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")\n'
+        create = 'git("init", "-q")\n'
+        for expression in (
+            "{k: v for k, v in os.environ.items() if k not in drop}",
+            "{k: v for k, v in os.environ.items() if not k.startswith(PREFIX)}",
+            '{k: v for k, v in os.environ.items() if not k.startswith("GIT" + "_")}',
+            '{k: v for k, v in os.environ.items() if not k.startswith("GIT" "_")'
+            ' or k.startswith("GIT" "_CONFIG_")}',
+            '{k: v for k, v in os.environ.copy().items() if not k.startswith("GIT_")'
+            ' or k.startswith("GIT_CONFIG_")}',
+            '{k: v for k, v in dict(os.environ).items() if not k.startswith("GIT_CONFIG_")}',
+            "[k for k in os.environ.copy() if keep(k)]",
+            'filter(lambda k: not k.startswith("GIT_") or flag, dict(os.environ).keys())',
+            '{k: v for k, v in os.environ.items() for _ in (0,) if not k.startswith("GIT_")'
+            ' or k.startswith("GIT_CONFIG_")}',
+            '{k: v for k, v in os.environ.items() if not k.startswith("GIT_") if keep(k)}',
+            "{k: v for k, v in os.environ.items()}",
+            "filter(keep_env, os.environ)",
+            "filter(lambda k: helper(k), os.environ)",
+        ):
+            with self.subTest(expression=expression):
+                diagnostic = unisolated_git(name, f"env = {expression}\n" + config + create)
+                self.assertIn(f"{name}:1:", diagnostic)
 
     def check_accepted_python_isolation(self, canonical: str, create: str) -> None:
         """Accept config assignment styles, tuple prefixes and caller-poison selection."""
@@ -857,7 +1151,11 @@ class GitFixtureIsolation(unittest.TestCase):
             for expression in (
                 canonical,
                 canonical.replace('"GIT_"', '("GIT_", "X_")'),
+                canonical.replace("os.environ.items()", "os.environ.copy().items()"),
+                canonical.replace("os.environ.items()", "dict(os.environ).items()"),
                 'filter(lambda k: not k.startswith("GIT_"), os.environ)',
+                'filter(lambda k: not k.startswith("GIT_"), os.environ.copy())',
+                "clean_git_environment()",
             ):
                 with self.subTest(config=config, expression=expression):
                     text = "env = " + expression + "\n" + config + create
@@ -895,6 +1193,57 @@ class GitFixtureIsolation(unittest.TestCase):
             self.assertIn('k.startswith("GIT_CONFIG_")', rejected[0])
             path.write_text(original, encoding="utf-8")
             self.assertEqual(unisolated_offenders(root, [name], today), [])
+        self.test_isolation_exceptions_enforce_python_fixture_barriers()
+
+    def test_isolation_exceptions_enforce_python_fixture_barriers(self) -> None:
+        """ISOLATION_EXCEPTIONS excuses the GIT_* marker only, not Python fixture barriers."""
+        name = "scripts/dev/tests/test_merge_train_guard.py"
+        self.assertIn(name, ISOLATION_EXCEPTIONS)
+        original = (ROOT / name).read_text(encoding="utf-8")
+        stripped = original.replace("GIT_CONFIG_GLOBAL=os.devnull, ", "", 1)
+        self.assertNotEqual(original, stripped)
+        today = datetime.date.today().isoformat()
+        with tempfile.TemporaryDirectory(prefix="git-exception-barrier-") as directory:
+            root = Path(directory)
+            path = root / name
+            path.parent.mkdir(parents=True)
+            path.write_text(stripped, encoding="utf-8")
+            rejected = unisolated_offenders(root, [name], today)
+            self.assertEqual(len(rejected), 1, rejected)
+            self.assertTrue(rejected[0].startswith(name + ":"), rejected)
+            self.assertIn("missing GIT_CONFIG_GLOBAL", rejected[0])
+            path.write_text(original, encoding="utf-8")
+            self.assertEqual(unisolated_offenders(root, [name], today), [])
+
+    def test_known_gap_python_imperative_environment_mutation(self) -> None:
+        """Known gap: imperative mutation after copying os.environ is not data-flow tracked."""
+        name = "tests/test_fixture.py"
+        setup = (
+            'clean = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}\n'
+            'clean.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")\n'
+        )
+        for mutation in (
+            'env = os.environ.copy()\nenv["GIT_DIR"] = "/tmp/caller"\ngit("init", "-q")\n',
+            'env = os.environ.copy()\nfor k in list(env):\n    if k == "GIT_DIR":\n'
+            '        env.pop(k)\ngit("init", "-q")\n',
+        ):
+            with self.subTest(mutation=mutation):
+                self.assertEqual(unisolated_git(name, setup + mutation), "")
+
+    def test_known_gap_node_and_go_environment_readmission(self) -> None:
+        """Known gap: Node and Go marker checks do not inspect filter re-admission or mutation."""
+        node_fixture = (
+            'const keep = Object.keys(process.env).filter((k) => !k.startsWith("GIT_")'
+            ' || k.startsWith("GIT_CONFIG_"));\n'
+            'command("git", ["init", "--quiet"], { cwd: fixture });\n'
+        )
+        go_fixture = (
+            '\tif !strings.HasPrefix(entry, "GIT_") || strings.HasPrefix(entry, "GIT_CONFIG_") {\n'
+            "\t\tenv = append(env, entry)\n\t}\n"
+            '\trunTool(ctx, repo, "git", "init", "--quiet")\n'
+        )
+        self.assertEqual(unisolated_git("tests/fixture.mjs", node_fixture), "")
+        self.assertEqual(unisolated_git("tools/fixture_test.go", go_fixture), "")
 
     def test_isolation_exceptions_are_live_and_needed(self) -> None:
         self.assertGreaterEqual(
@@ -920,6 +1269,7 @@ class GitFixtureIsolation(unittest.TestCase):
                 '    git("config", "uploadpack.allowAnySHA1InWant", "true")\n',
                 '    run_git(root, "config", "core.bare", "true")\n',
                 '    run((git, "clone", "--bare", str(src), str(dst)))\n',
+                '# k.startswith("GIT_")\nself.git("init", "-q")\n',
             ),
             "t.mjs": ('  command("git", ["init", "--quiet"], { cwd: fixture });\n',),
             "t.go": ('\trunTool(ctx, repo, "git", "init", "--quiet")\n',),
@@ -951,6 +1301,7 @@ class GitFixtureIsolation(unittest.TestCase):
                 'git -C "$repo" log --oneline\n',
             ),
             "t.py": (
+                "",
                 'value = git("config", "--get", "user.email")\n',
                 'state = registration.get("init", "")\n',
                 '# self.git("init") is what the fixture used to do\n',

@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import stat
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import install_merge_train_guard as installer
@@ -18,8 +20,19 @@ import merge_train_guard as guard
 
 
 class MigrationContract(unittest.TestCase):
+    def isolate_git_config(self) -> None:
+        base = guard.environment
+        isolated = patch.object(
+            guard,
+            "environment",
+            side_effect=lambda: dict(base(), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1"),
+        )
+        isolated.start()
+        self.addCleanup(isolated.stop)
+
     def setUp(self) -> None:
         """Build temporary Git repository with committed scripts and state directory fixtures."""
+        self.isolate_git_config()
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.directory = Path(temporary.name)

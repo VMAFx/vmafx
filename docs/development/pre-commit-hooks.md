@@ -701,18 +701,27 @@ other than the caller's (a scratch repository, a clone into a temporary director
     file: one of the two shell helpers, or an environment built without keys that
     start with `GIT_`. This is the check for a pytest-only test and for a script that
     is not a test. A file isolated in a way the check cannot see is named in
-    `ISOLATION_EXCEPTIONS` with its reason; the list expires.
-    Python comprehensions and `filter` lambdas over `os.environ` must exclude
-    the complete `GIT_` prefix with only `not name.startswith("GIT_")`, or
-    a tuple starting with `GIT_`. Additional Boolean clauses fail with the
-    path, line and condition text, even when another filter in the file is
-    correct. Selection of planted `GIT_CONFIG_KEY_*` values remains valid.
+    `ISOLATION_EXCEPTIONS` with its reason (excusing only the `GIT_*` drop
+    marker, never Python fixture configuration barriers); the list expires.
+    Python files are parsed with `ast.parse()`: markers must be executable
+    calls (`startswith` on a `GIT_` prefix or `clean_git_environment` /
+    `git_environment`), and every comprehension or `filter(...)` call over
+    `os.environ`, `os.environ.copy()` or `dict(os.environ)` (plus `.items()` /
+    `.keys()`) must use a single generator and single `if` clause (or
+    single-argument `lambda`) with only `not name.startswith("GIT_")` or a
+    tuple starting with `GIT_`. Callback predicates, extra generators or
+    clauses, and non-literal prefixes fail closed with the path, line and
+    source segment, even when another filter in the file is correct. Selection
+    of planted `GIT_CONFIG_KEY_*` values remains valid.
     Python fixture files must explicitly assign the global and system
-    configuration keys above: existing test-script names, files beneath
-    `tests/`, and Python basenames containing `fixture` are covered. Dictionary,
-    keyword, update and subscript assignment forms are accepted. Product files
-    remain outside this configuration check. Node and Go retain marker checks;
-    re-admission analysis for those languages requires separate extraction.
+    configuration keys above via executable AST forms (`dict` literals,
+    `dict(...)` / `.update(...)` keyword arguments, or subscript assignments):
+    existing test-script names, files beneath `tests/`, and Python basenames
+    containing `fixture` are covered. Comments, docstrings and string literals
+    do not count. Product files remain outside this configuration check. Shell,
+    Node and Go retain regex marker checks; Python imperative mutation after
+    copying `os.environ` and Node/Go filter re-admission stay documented known
+    gaps with `Known gap:` replay tests.
   - **Sentinel run.** Every scratch-repository test script that runs on its own is
     executed under a sentinel `GIT_DIR` and fails when the sentinel's config, index,
     refs or objects change. Planted scripts that write an identity, `core.bare` or

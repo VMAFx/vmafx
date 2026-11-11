@@ -23,65 +23,81 @@ configuration.
 
 ## Decision
 
-Extend `unisolated_git()` through the existing
+Extend `unisolated_git()` and `unisolated_offenders()` through the existing
 `test_no_script_creates_or_configures_a_repository_unisolated` method and
-`git-fixture-isolation-static` hook. Keep both new checks and their replay cases
-on that existing entry point.
+`git-fixture-isolation-static` hook. Keep the Python checks and their replay
+cases on that existing entry point.
 
-Use a text allow-list for Python environment filters. Tokenization locates
-direct comprehensions and `filter` lambdas over `os.environ`, ignores comments
-and stored source strings, and retains the original condition for diagnostics.
-An exclusion of the complete `GIT_` prefix must consist solely of a negated
-`startswith` call on the iterated name. A tuple beginning with `GIT_` may
-exclude additional prefixes. Additional conditions fail with the source path,
-line and condition text. Selection of planted `GIT_CONFIG_KEY_*` values does not
-claim to exclude the complete prefix and remains valid.
+Parse Python files with `ast.parse()` in
+`scripts/ci/test_git_fixture_isolation.py` and fail closed with the file path
+and `SyntaxError` line when source cannot be parsed. Decide Python isolation
+markers from executable `ast.Call` nodes (`startswith` with a `GIT_`-prefixed
+string constant or tuple containing one, or a call to `clean_git_environment` /
+`git_environment`), so comments, docstrings and string literals never count as
+markers. Validate every comprehension and `filter(...)` call whose iterable
+derives from `os.environ` (`os.environ`, `os.environ.copy()`,
+`dict(os.environ)`, and `.items()` / `.keys()` on each) against an explicit AST
+allow-list. A comprehension is valid only with one synchronous generator and one
+`if` clause consisting solely of `not <key>.startswith("GIT_")` (or a tuple of
+string constants starting with `"GIT_"`), or the single planted
+`GIT_CONFIG_KEY_*` suffix lookup; `filter(...)` is valid only with a
+single-argument `lambda` carrying that canonical exclusion. Callback predicates,
+extra generators or `if` clauses, missing `if` clauses and non-literal prefixes
+fail with `<file>:<line>` and `ast.get_source_segment()`.
 
-For Python fixtures that create or configure repositories and carry an isolation
-marker, require explicit assignments setting `GIT_CONFIG_GLOBAL` to the null
-device and either `GIT_CONFIG_SYSTEM` to the null device or
-`GIT_CONFIG_NOSYSTEM` to `1`. Accept dictionary entries, keyword arguments,
-dictionary updates and subscript assignments. Fixture scope includes existing
-test-script names, files under a `tests/` directory and Python basenames
-containing `fixture`. Preserve all inherited-variable exclusions and both
-configuration barriers when updating helpers. Reuse imported environment helpers
-where available.
+For Python fixtures that create or configure repositories, require executable
+AST assignments setting `GIT_CONFIG_GLOBAL` to `os.devnull` or `"/dev/null"` and
+either `GIT_CONFIG_SYSTEM` to `os.devnull` / `"/dev/null"` or
+`GIT_CONFIG_NOSYSTEM` to `"1"`. Accept dictionary literals, keyword arguments on
+`dict(...)` or `<mapping>.update(...)`, and subscript assignments; ignore
+comments, docstrings, string literals and `setdefault`. Fixture scope includes
+existing test-script names, files under a `tests/` directory and Python
+basenames containing `fixture`. Run the barrier check on every isolated Python
+fixture (both `startswith`-marked and helper-marked) as well as Python fixtures
+listed in `ISOLATION_EXCEPTIONS`, where exceptions excuse only the missing
+`GIT_*` drop marker.
 
-Apply the missing keys to the fifteen fixture files. Keep production licensing
-behavior unchanged: its temporary archive-fetch repositories are outside the
-fixture configuration rule. Normalize two other existing Python filters to meet
-the complete-condition allow-list while preserving their removal of additional
-variables.
+Apply the missing barriers and canonical `os.environ` filters across the
+affected fixture files and fixture helpers while preserving additional dropped
+variables. Keep production licensing behavior unchanged: its temporary
+archive-fetch repositories remain outside the fixture configuration rule.
 
-Node and Go retain the existing isolation-marker check. Additional re-admission
-analysis is deferred: callback predicates and imperative environment mutation
-need language-specific extraction beyond this Python text check. The agent
-invariant page `scripts/ci/AGENTS.d/git-fixture-isolation.md` records this
-coverage limit.
+Shell, Node and Go retain the regex isolation-marker path. Python callback
+predicates on `filter(...)` are refused by the AST allow-list; imperative
+environment mutation after copying `os.environ`, alias/interprocedural data flow
+and Node/Go filter re-admission remain outside the static check and are pinned
+with `Known gap:` replay tests in `scripts/ci/test_git_fixture_isolation.py`.
+The agent invariant page `scripts/ci/AGENTS.d/git-fixture-isolation.md` records
+these rules and limits.
 
 ## Alternatives considered
 
 | Option | Advantages | Limitations | Outcome |
 | --- | --- | --- | --- |
-| AST parse | Precise expression structure and source locations | Requires parseable complete Python and more structural policy machinery | Deferred |
-| Text allow-list with token boundaries | Small explicit accepted language; ignores stored test source; actionable conditions | Does not prove data flow or helper behavior | Chosen |
+| AST parse | Exact expression structure, executable call/assignment forms and source locations; ignores comments, docstrings and string literals | Requires parseable complete Python; does not track imperative mutation, aliases or interprocedural data flow | Chosen for Python |
+| Text allow-list with token boundaries | Small explicit pattern set without language-specific AST machinery | Raw-source regexes match strings and comments; bounded token headers miss multi-generator comprehensions, copied `os.environ` mappings and non-literal predicates | Rejected for Python; regex marker path kept for shell, Node and Go |
 | Runtime-only sentinel | Detects observable writes to a temporary caller repository | Cannot cover every product script or pytest-only fixture; configuration inheritance need not damage the sentinel | Retained as complementary coverage |
 
 ## Consequences
 
 - Fixture commits ignore caller signing defaults and all inherited `GIT_*`
-  variables.
-- Extra Boolean clauses fail even when they only exclude more keys; separate
-  operations preserve additional removals.
-- The existing static test replays rejected filters, missing keys, accepted
-  assignment styles, tuple prefixes, caller-poison selection and a product-file
-  exemption. A temporary copy of `test_ci_impact.py` fails the shared
-  `unisolated_offenders()` check after re-admission is planted and passes after
-  restoration; the check runs on the copy directly, so the test never re-enters
-  itself.
-- Configuration assignments are checked textually within each file. Alias
-  handling, interprocedural data flow and assignment-to-subprocess association
-  remain outside this check.
+  variables, including excepted Python fixtures.
+- Noncanonical `os.environ` comprehensions and `filter(...)` calls fail closed
+  even without an inline `GIT_` literal or when iterating over
+  `os.environ.copy()` / `dict(os.environ)`; separate `.pop()` operations
+  preserve additional removals.
+- The existing static test replays rejected filters, non-executable markers and
+  barriers, missing keys, accepted assignment styles, tuple prefixes, copied
+  `os.environ` sources, helper-marked and excepted fixtures, caller-poison
+  selection and a product-file exemption. Temporary copies of
+  `test_ci_impact.py` and excepted `test_merge_train_guard.py` fail
+  `unisolated_offenders()` when a bypass or missing barrier is planted and pass
+  after restoration.
+- Configuration assignments and markers are checked via AST within each Python
+  file. Imperative mutation after copying `os.environ`, alias handling,
+  interprocedural data flow, assignment-to-subprocess association and Node/Go
+  filter re-admission remain outside this check and are replayed by `Known gap:`
+  tests.
 
 ## References
 

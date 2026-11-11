@@ -293,7 +293,7 @@ class DcoGateTest(unittest.TestCase):
 
         Omitting both CLI revision flags and environment fallbacks must exit 2.
         """
-        env = {k: v for k, v in os.environ.items() if k not in ("BASE_SHA", "HEAD_SHA")}
+        env = fx.clean_env()
         res = run(
             [sys.executable, "-I", str(fx.GATE)],
             allowed_executables=(sys.executable,),
