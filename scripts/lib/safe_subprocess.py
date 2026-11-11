@@ -17,27 +17,28 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ctypes
+import errno
 import locale
 import os
 import shutil
 import signal
 import stat
+import sys
 from collections import deque
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, Literal, overload
 
-if hasattr(os, "getuid"):
-    import grp
-    import pwd
-
 MAX_ARG_COUNT = 4096
 MAX_ARG_BYTES = 65_536
 MAX_ARGV_BYTES = 1_048_576
 MAX_EXECUTABLE_LINK_HOPS = 40
 MAX_EXECUTABLE_WALK_STEPS = 4096
-MAX_GROUP_ACCOUNTS = 65_536
+MAX_DARWIN_ACL_ENTRIES = 128
+_DARWIN_ACL_EXTENDED_DENY = 2
+_DARWIN_ACL_TYPE_EXTENDED = 0x100
 DEFAULT_TIMEOUT_SECONDS = 120.0
 DEFAULT_MAX_OUTPUT_BYTES = 4 * 1_048_576
 TERMINATION_GRACE_SECONDS = 2.0
@@ -253,42 +254,70 @@ def _executable_links(launch: Path) -> tuple[Path, ...]:
     return tuple(links)
 
 
-def _group_accounts_trusted(gid: int, trusted_owners: tuple[int, ...]) -> bool:
-    """Authorize group write only for bounded, resolvable root/current-user membership."""
+def _darwin_acl_library() -> ctypes.CDLL:
+    """Declare the native extended-ACL interface before inspecting directory entries."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.acl_get_link_np.argtypes = [ctypes.c_char_p, ctypes.c_int]
+    libc.acl_get_link_np.restype = ctypes.c_void_p
+    libc.acl_get_entry.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)]
+    libc.acl_get_entry.restype = ctypes.c_int
+    libc.acl_get_tag_type.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
+    libc.acl_get_tag_type.restype = ctypes.c_int
+    libc.acl_free.argtypes = [ctypes.c_void_p]
+    libc.acl_free.restype = ctypes.c_int
+    return libc
+
+
+def _darwin_acl_entries_allow(libc: ctypes.CDLL, acl: int) -> bool:
+    """Reject allow entries, unreadable tags and ACLs exceeding the native entry bound."""
+    entry = ctypes.c_void_p()
+    tag = ctypes.c_int()
+    for index in range(MAX_DARWIN_ACL_ENTRIES + 1):
+        ctypes.set_errno(0)
+        status = libc.acl_get_entry(acl, 0 if index == 0 else -1, ctypes.byref(entry))
+        if status != 0:
+            return status != -1 or ctypes.get_errno() != errno.EINVAL
+        if index == MAX_DARWIN_ACL_ENTRIES:
+            return True
+        if (
+            libc.acl_get_tag_type(entry, ctypes.byref(tag)) != 0
+            or tag.value != _DARWIN_ACL_EXTENDED_DENY
+        ):
+            return True
+    return True
+
+
+def _darwin_acl_allows_entries(path: Path) -> bool:
+    """Fail closed unless a directory has no extended ACL or only readable deny entries."""
     try:
-        members = grp.getgrgid(gid).gr_mem
-        accounts = pwd.getpwall()
-        if len(members) > MAX_GROUP_ACCOUNTS or len(accounts) > MAX_GROUP_ACCOUNTS:
-            return False
-        names = set(members)
-        names.update(account.pw_name for account in accounts if account.pw_gid == gid)
-        return all(pwd.getpwnam(name).pw_uid in trusted_owners for name in names)
-    except (KeyError, OSError):
-        return False
-
-
-def _directory_allows_link_retargeting(
-    directory: os.stat_result,
-    trusted_owners: tuple[int, ...],
-    group_verdicts: dict[int, bool],
-) -> bool:
-    """Refuse unprotected directory writes by other users, caching each group's verdict."""
-    if directory.st_mode & stat.S_ISVTX:
-        return False
-    if directory.st_mode & 0o002:
+        libc = _darwin_acl_library()
+    except (OSError, AttributeError):
         return True
-    if not directory.st_mode & 0o020:
-        return False
-    gid = directory.st_gid
-    if gid not in group_verdicts:
-        group_verdicts[gid] = _group_accounts_trusted(gid, trusted_owners)
-    return not group_verdicts[gid]
+    ctypes.set_errno(0)
+    acl = libc.acl_get_link_np(os.fsencode(path), _DARWIN_ACL_TYPE_EXTENDED)
+    if not acl:
+        return ctypes.get_errno() != errno.ENOENT
+    verdict = True
+    try:
+        verdict = _darwin_acl_entries_allow(libc, acl)
+    finally:
+        if libc.acl_free(acl) != 0:
+            verdict = True
+    return verdict
+
+
+def _directory_allows_link_retargeting(directory: os.stat_result, path: Path) -> bool:
+    """Reject macOS ACL grants and nonsticky group/other directory write permission."""
+    if sys.platform == "darwin" and _darwin_acl_allows_entries(path):
+        return True
+    return not directory.st_mode & stat.S_ISVTX and bool(directory.st_mode & 0o022)
 
 
 def _executable_links_trusted(links: tuple[Path, ...]) -> bool:
-    """Check link owners and directory writers, caching group verdicts only per call."""
+    """Preserve links only with trusted owners and inspected Linux/macOS directory rights."""
+    if not (sys.platform.startswith("linux") or sys.platform == "darwin"):
+        return False
     trusted_owners = (0, os.getuid())
-    group_verdicts: dict[int, bool] = {}
     for link in links:
         try:
             owner = link.lstat().st_uid
@@ -298,7 +327,7 @@ def _executable_links_trusted(links: tuple[Path, ...]) -> bool:
         if (
             owner not in trusted_owners
             or directory.st_uid not in trusted_owners
-            or _directory_allows_link_retargeting(directory, trusted_owners, group_verdicts)
+            or _directory_allows_link_retargeting(directory, link.parent)
         ):
             return False
     return True
@@ -542,6 +571,7 @@ async def _read_bounded(
 
 
 async def _write_input(writer: asyncio.StreamWriter, data: bytes) -> None:
+    """Close child input after writing, tolerating a child that closes its pipe early."""
     try:
         writer.write(data)
         await writer.drain()

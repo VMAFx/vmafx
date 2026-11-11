@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ctypes
+import errno
 import os
 import signal
 import sys
@@ -15,7 +17,6 @@ import time
 import unittest
 from collections.abc import Sequence
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, cast
 from unittest import mock
 
@@ -566,6 +567,196 @@ class WindowsTreeTerminationTests(unittest.TestCase):
         self.assertLess(tree_idx, term_idx)
 
 
+class DarwinAclTests(unittest.TestCase):
+    """Replay native ACL return conventions without requiring a macOS host."""
+
+    def fake_libc(self, tags: Sequence[int]) -> mock.Mock:
+        """Supply native-shaped ACL functions and bounded synthetic entry enumeration."""
+        libc = mock.Mock()
+        position = 0
+
+        def get_entry(_acl: int, _selector: int, entry: Any) -> int:
+            """Return entries in order, then the native EINVAL end marker."""
+            nonlocal position
+            if position == len(tags):
+                ctypes.set_errno(errno.EINVAL)
+                return -1
+            position += 1
+            ctypes.cast(entry, ctypes.POINTER(ctypes.c_void_p))[0] = position
+            return 0
+
+        def get_tag(_entry: Any, tag: Any) -> int:
+            """Write the enumerated tag through the native output pointer."""
+            ctypes.cast(tag, ctypes.POINTER(ctypes.c_int))[0] = tags[position - 1]
+            return 0
+
+        libc.acl_get_link_np.return_value = 42
+        libc.acl_get_entry.side_effect = get_entry
+        libc.acl_get_tag_type.side_effect = get_tag
+        libc.acl_free.return_value = 0
+        self.factory = self.enterContext(mock.patch.object(ctypes, "CDLL", return_value=libc))
+        return libc
+
+    def test_missing_acl_is_not_a_grant(self) -> None:
+        """ENOENT with a NULL ACL is the native representation of no extended ACL."""
+        libc = self.fake_libc([])
+        libc.acl_get_link_np.side_effect = lambda *_: ctypes.set_errno(errno.ENOENT)
+        self.assertFalse(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+        libc.acl_free.assert_not_called()
+
+    def test_null_acl_errors_fail_closed(self) -> None:
+        """Unreadable or unspecified NULL results cannot authorize a directory."""
+        libc = self.fake_libc([])
+        for error in (errno.EACCES, 0):
+            with self.subTest(error=error):
+                libc.acl_get_link_np.side_effect = lambda *_, error=error: ctypes.set_errno(error)
+                self.assertTrue(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+        libc.acl_free.assert_not_called()
+
+    def test_library_or_symbol_unavailable_fails_closed(self) -> None:
+        """Library and symbol lookup errors cannot silently bypass ACL inspection."""
+        for error in (OSError("planted load error"), AttributeError("acl_get_link_np")):
+            with (
+                self.subTest(error=error),
+                mock.patch.object(ctypes, "CDLL", side_effect=error),
+            ):
+                self.assertTrue(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+
+    def test_missing_symbol_fails_closed_before_allocating_acl(self) -> None:
+        """An incomplete native ACL interface cannot leave a live allocation behind."""
+        libc = self.fake_libc([])
+        del libc.acl_get_entry
+        self.assertTrue(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+        libc.acl_get_link_np.assert_not_called()
+        libc.acl_free.assert_not_called()
+
+    def test_empty_and_deny_only_acls_are_not_grants(self) -> None:
+        """Zero through exactly the native entry bound of deny entries remain trusted."""
+        self.assertEqual(safe_subprocess.MAX_DARWIN_ACL_ENTRIES, 128)
+        for count in (0, 1, 128):
+            with self.subTest(count=count):
+                libc = self.fake_libc([2] * count)
+                self.assertFalse(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+                libc.acl_free.assert_called_once_with(42)
+                selectors = [call.args[1] for call in libc.acl_get_entry.call_args_list]
+                self.assertEqual(selectors, [0] + [-1] * count)
+
+    def test_allow_or_unknown_tag_fails_closed(self) -> None:
+        """Any allow entry or unrecognized tag prevents named-path authorization."""
+        for tags in ([1], [2, 1], [99]):
+            with self.subTest(tags=tags):
+                libc = self.fake_libc(tags)
+                self.assertTrue(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+                libc.acl_free.assert_called_once_with(42)
+
+    def test_tag_read_failure_fails_closed_and_frees_acl(self) -> None:
+        """Unreadable tags do not hide permissions or leak the native ACL allocation."""
+        libc = self.fake_libc([2])
+        libc.acl_get_tag_type.side_effect = None
+        libc.acl_get_tag_type.return_value = -1
+        self.assertTrue(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+        libc.acl_free.assert_called_once_with(42)
+
+    def test_entry_read_failure_fails_closed_and_frees_acl(self) -> None:
+        """Only the native EINVAL end marker terminates a successful enumeration."""
+        libc = self.fake_libc([2])
+
+        def denied_entry(*_args: Any) -> int:
+            """Plant an entry read error distinct from the end marker."""
+            ctypes.set_errno(errno.EACCES)
+            return -1
+
+        libc.acl_get_entry.side_effect = denied_entry
+        self.assertTrue(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+        libc.acl_free.assert_called_once_with(42)
+
+    def test_acl_over_bound_fails_closed_and_frees_acl(self) -> None:
+        """The first extra entry rejects the ACL without reading beyond the bound."""
+        libc = self.fake_libc([2] * 129)
+        self.assertTrue(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+        self.assertEqual(libc.acl_get_entry.call_count, 129)
+        self.assertEqual(libc.acl_get_tag_type.call_count, 128)
+        libc.acl_free.assert_called_once_with(42)
+
+    def test_acl_free_failure_fails_closed(self) -> None:
+        """An unsuccessful native cleanup cannot report complete ACL inspection."""
+        libc = self.fake_libc([2])
+        libc.acl_free.return_value = -1
+        self.assertTrue(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+        libc.acl_free.assert_called_once_with(42)
+
+    def test_native_signatures_and_encoded_path(self) -> None:
+        """Native pointers retain their width and paths use filesystem encoding."""
+        libc = self.fake_libc([])
+        directory = Path("/directory-ä")
+        self.assertFalse(safe_subprocess._darwin_acl_allows_entries(directory))
+        self.factory.assert_called_once_with(None, use_errno=True)
+        libc.acl_get_link_np.assert_called_once_with(os.fsencode(directory), 0x100)
+        self.assertEqual(libc.acl_get_link_np.argtypes, [ctypes.c_char_p, ctypes.c_int])
+        self.assertIs(libc.acl_get_link_np.restype, ctypes.c_void_p)
+        self.assertEqual(
+            libc.acl_get_entry.argtypes,
+            [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)],
+        )
+        self.assertIs(libc.acl_get_entry.restype, ctypes.c_int)
+        self.assertEqual(
+            libc.acl_get_tag_type.argtypes, [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
+        )
+        self.assertIs(libc.acl_get_tag_type.restype, ctypes.c_int)
+        self.assertEqual(libc.acl_free.argtypes, [ctypes.c_void_p])
+        self.assertIs(libc.acl_free.restype, ctypes.c_int)
+        libc.acl_free.assert_called_once_with(42)
+
+
+@unittest.skipUnless(sys.platform == "darwin", "native extended ACLs require macOS")
+class DarwinAclLinkTests(unittest.TestCase):
+    """Validate real directory ACLs through the executable launch selector on macOS."""
+
+    def setUp(self) -> None:
+        """Create a mode-protected link directory with no inherited ACL entries."""
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.root.chmod(0o755)
+        self.link = self.root / "python-link"
+        self.link.symlink_to(PYTHON)
+        run(["/bin/chmod", "-N", str(self.root)], allowed_executables=("/bin/chmod",), check=True)
+        self.addCleanup(
+            run,
+            ["/bin/chmod", "-N", str(self.root)],
+            allowed_executables=("/bin/chmod",),
+            check=True,
+        )
+
+    def assert_launch(self, expected: str) -> None:
+        """Require the actual launch path chosen for the real directory permissions."""
+        result = run([str(self.link), "-V"], allowed_executables=ALLOW_PYTHON, check=True)
+        self.assertEqual(result.argv[0], expected)
+
+    def test_no_acl_keeps_named_launch(self) -> None:
+        """A trusted mode without an extended ACL preserves the interpreter link."""
+        self.assert_launch(str(self.link))
+
+    def test_allow_entries_launch_resolved_file(self) -> None:
+        """Real add/delete-child grants force resolved launch despite mode 0755."""
+        run(
+            ["/bin/chmod", "+a", "everyone allow add_file,delete_child", str(self.root)],
+            allowed_executables=("/bin/chmod",),
+            check=True,
+        )
+        self.assertEqual(self.root.stat().st_mode & 0o777, 0o755)
+        self.assert_launch(PYTHON)
+
+    def test_deny_only_acl_keeps_named_launch(self) -> None:
+        """A real deny entry grants no right to replace the interpreter link."""
+        run(
+            ["/bin/chmod", "+a", "everyone deny delete", str(self.root)],
+            allowed_executables=("/bin/chmod",),
+            check=True,
+        )
+        self.assert_launch(str(self.link))
+
+
 @unittest.skipUnless(hasattr(os, "getuid"), "POSIX link ownership requires os.getuid")
 class ExecutableLinkTrustTests(unittest.TestCase):
     """Exercise trusted launch paths and bounded traversal without elevated privileges."""
@@ -626,128 +817,64 @@ class ExecutableLinkTrustTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), self.link.name)
 
     def test_group_writable_link_directory_launches_resolved_file(self) -> None:
-        """A supplementary group member with another uid can replace the link."""
-        self.mock_group_accounts(members=["other"])
-        self.root.chmod(0o775)
-        self.assert_resolved_launch(self.link)
-
-    def mock_group_accounts(
-        self, members: list[str] | None = None, accounts: list[Any] | None = None
-    ) -> tuple[Any, Any, Any]:
-        """Supply account records without consulting or changing host group membership."""
-        gid = self.root.stat().st_gid
-        records = {
-            "current": SimpleNamespace(pw_name="current", pw_uid=os.getuid(), pw_gid=gid),
-            "root": SimpleNamespace(pw_name="root", pw_uid=0, pw_gid=gid),
-            "other": SimpleNamespace(pw_name="other", pw_uid=os.getuid() + 1, pw_gid=gid),
-        }
-        group = self.enterContext(
-            mock.patch(
-                "grp.getgrgid",
-                return_value=SimpleNamespace(
-                    gr_mem=["current", "root"] if members is None else members
-                ),
-            )
-        )
-        passwd = self.enterContext(
-            mock.patch("pwd.getpwall", return_value=[] if accounts is None else accounts)
-        )
-        names = self.enterContext(mock.patch("pwd.getpwnam", side_effect=records.__getitem__))
-        return group, passwd, names
-
-    def test_group_writable_trusted_members_keep_launch_link(self) -> None:
-        """Root and the current user may share write access without losing launch identity."""
-        self.mock_group_accounts()
-        self.root.chmod(0o775)
-        result = run([str(self.link), "-V"], allowed_executables=ALLOW_PYTHON)
-        self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.argv[0], str(self.link))
-
-    def test_group_writable_foreign_primary_member_launches_resolved_file(self) -> None:
-        """Primary group membership counts even when gr_mem omits the account."""
-        self.mock_group_accounts(
-            accounts=[SimpleNamespace(pw_name="other", pw_gid=self.root.stat().st_gid)]
-        )
-        self.root.chmod(0o775)
-        self.assert_resolved_launch(self.link)
-
-    def test_group_writable_unknown_gid_launches_resolved_file(self) -> None:
-        """An unavailable group record cannot authorize a writable directory."""
-        group, _, _ = self.mock_group_accounts()
-        group.side_effect = KeyError("unknown gid")
-        self.root.chmod(0o775)
-        self.assert_resolved_launch(self.link)
-
-    def test_group_writable_unknown_name_launches_resolved_file(self) -> None:
-        """An unresolved member name fails closed rather than disappearing from the group."""
-        self.mock_group_accounts(members=["unknown"])
-        self.root.chmod(0o775)
-        self.assert_resolved_launch(self.link)
-
-    def test_group_writable_lookup_oserrors_launch_resolved_file(self) -> None:
-        """Every account lookup fails closed on operating-system errors."""
-        lookups = self.mock_group_accounts()
-        self.root.chmod(0o775)
-        for lookup in lookups:
-            with self.subTest(lookup=lookup):
-                lookup.side_effect = OSError("planted lookup failure")
+        """Group write is untrusted regardless of membership, including setgid directories."""
+        self.assertFalse(hasattr(safe_subprocess, "grp"))
+        self.assertFalse(hasattr(safe_subprocess, "pwd"))
+        for mode in (0o775, 0o770, 0o2775):
+            with self.subTest(mode=oct(mode)):
+                self.root.chmod(mode)
                 self.assert_resolved_launch(self.link)
-                lookup.side_effect = None
 
-    def test_group_writable_passwd_over_bound_launches_resolved_file(self) -> None:
-        """A passwd database exceeding the named account bound cannot authorize a group."""
-        self.mock_group_accounts(accounts=[None] * (65_536 + 1))
-        self.root.chmod(0o775)
-        self.assertEqual(safe_subprocess.MAX_GROUP_ACCOUNTS, 65_536)
-        self.assert_resolved_launch(self.link)
+    def test_other_posix_platform_launches_resolved_file(self) -> None:
+        """Uninspected ACL models cannot authorize a named launch through trusted modes."""
+        with mock.patch.object(sys, "platform", "freebsd14"):
+            self.assert_resolved_launch(self.link)
 
-    def test_group_writable_member_list_over_bound_launches_resolved_file(self) -> None:
-        """Supplementary member enumeration also stays within the named account bound."""
-        self.mock_group_accounts(members=["current"] * (65_536 + 1))
-        self.root.chmod(0o775)
-        self.assert_resolved_launch(self.link)
+    def test_linux_does_not_inspect_darwin_acls(self) -> None:
+        """Linux mode bits cover the POSIX ACL mask without loading the macOS interface."""
+        with (
+            mock.patch.object(sys, "platform", "linux"),
+            mock.patch.object(safe_subprocess, "_darwin_acl_allows_entries") as acl,
+        ):
+            self.assertEqual(
+                safe_subprocess._checked_executable(str(self.link), ALLOW_PYTHON, ""),
+                (str(self.link), Path(PYTHON)),
+            )
+        acl.assert_not_called()
 
-    def test_group_writable_passwd_exact_bound_is_evaluated(self) -> None:
-        """Exactly the named account bound is accepted after evaluating trusted members."""
-        account = SimpleNamespace(pw_name="current", pw_gid=self.root.stat().st_gid)
-        _, _, names = self.mock_group_accounts(members=[], accounts=[account] * 65_536)
-        self.root.chmod(0o775)
-        result = run([str(self.link), "-V"], allowed_executables=ALLOW_PYTHON)
-        self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.argv[0], str(self.link))
-        names.assert_called_once_with("current")
-
-    def test_group_writable_exact_bound_foreign_primary_member_launches_resolved_file(self) -> None:
-        """The final passwd entry at the bound is checked for foreign primary membership."""
-        gid = self.root.stat().st_gid
-        accounts = [SimpleNamespace(pw_name="current", pw_gid=gid)] * (65_536 - 1)
-        accounts.append(SimpleNamespace(pw_name="other", pw_gid=gid))
-        self.mock_group_accounts(members=[], accounts=accounts)
-        self.root.chmod(0o775)
-        self.assert_resolved_launch(self.link)
-
-    def test_world_writable_directory_resolves_with_trusted_group(self) -> None:
-        """Trusted group membership grants no exception for nonsticky other-write access."""
-        self.mock_group_accounts()
-        self.root.chmod(0o777)
-        self.assert_resolved_launch(self.link)
-
-    def test_group_verdict_is_cached_only_within_each_validation(self) -> None:
-        """Repeated gids share one verdict, but subsequent validation rechecks membership."""
-        group, passwd, names = self.mock_group_accounts()
-        self.root.chmod(0o775)
-        second = self.root / "second"
+    def test_darwin_checks_each_link_directory(self) -> None:
+        """Each followed link's parent receives one ACL check per validation."""
+        nested = self.root / "nested"
+        nested.mkdir(mode=0o755)
+        second = nested / "second"
         second.symlink_to(PYTHON)
         self.link.unlink()
-        self.link.symlink_to(second.name)
-        result = run([str(self.link), "-V"], allowed_executables=ALLOW_PYTHON)
-        self.assertEqual(result.argv[0], str(self.link))
-        group.assert_called_once_with(self.root.stat().st_gid)
-        passwd.assert_called_once_with()
-        names.side_effect = None
-        names.return_value = SimpleNamespace(pw_uid=os.getuid() + 1)
-        self.assert_resolved_launch(self.link)
-        self.assertEqual(group.call_count, 3)
+        self.link.symlink_to("nested/second")
+        with (
+            mock.patch.object(sys, "platform", "darwin"),
+            mock.patch.object(
+                safe_subprocess, "_darwin_acl_allows_entries", return_value=False
+            ) as acl,
+        ):
+            self.assertEqual(
+                safe_subprocess._checked_executable(str(self.link), ALLOW_PYTHON, ""),
+                (str(self.link), Path(PYTHON)),
+            )
+        self.assertEqual(acl.call_args_list, [mock.call(self.root), mock.call(nested)])
+
+    def test_darwin_acl_grant_launches_resolved_file(self) -> None:
+        """An ACL grant overrides trusted modes and sticky directory protection."""
+        for mode in (0o755, 0o1777):
+            with self.subTest(mode=oct(mode)):
+                self.root.chmod(mode)
+                with (
+                    mock.patch.object(sys, "platform", "darwin"),
+                    mock.patch.object(
+                        safe_subprocess, "_darwin_acl_allows_entries", return_value=True
+                    ) as acl,
+                ):
+                    self.assert_resolved_launch(self.link)
+                self.assertEqual(acl.call_args_list, [mock.call(self.root)] * 2)
 
     def test_second_link_in_untrusted_directory_launches_resolved_file(self) -> None:
         """Every hop needs protection, including a relative target in another directory."""
