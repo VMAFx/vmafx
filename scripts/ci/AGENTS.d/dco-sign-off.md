@@ -26,8 +26,9 @@ Gate: `Signed-off-by:` trailer on each non-merge PR commit; model/tool attributi
    `CONTRIBUTING.md`.
 7. **Attribution.** Commit author/committer name/email scanned before bot sign-off exemption;
    `[bot]` ignored for identities. Message lines and PR body lines share trailer/footer checks.
-   NFKC first; leading Unicode `Cf`/whitespace removed before shared line rules.
-   Markdown quote/bullet/comment/heading prefixes: shared stripper before co-author/footer checks; no exemption.
+   Lines + identities: shared NFKC normalization. Identities: every `Cf` removed, then lowercase substring tokens.
+   Markdown quote/bullet (`-`, `*`, `+`)/comment/heading/ordered-list prefixes: shared linear stripper before co-author/footer checks; no exemption.
+   Leading/interleaved whitespace + Unicode `Cf`: stripped. Ordered marker: 1–9 ASCII digits + `.`/`)`, then whitespace/`Cf`/end; 10 digits -> prose unchanged.
    `--pr-body-file` (`--pr-body`) overrides local `PR_BODY`; CI `--pr-body-from-event` reads
    `GITHUB_EVENT_PATH` JSON. Unreadable/malformed file exits 2; null event body = empty.
    Named byte/line bounds: excess -> exit 1 with bound name, never truncated.

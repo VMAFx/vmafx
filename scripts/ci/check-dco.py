@@ -118,6 +118,7 @@ GENERATED_LINE_RE = re.compile(
     r"^(?:generated|created)\s+(?:with|by)\b",
     re.IGNORECASE,
 )
+ORDERED_MARKER_RE = re.compile(r"[0-9]{1,9}[.)]")
 SIGNOFF_RE = re.compile(r"^signed-off-by:\s+(.+?)\s+<([^<>\s]+@[^<>\s]+)>\s*$", re.IGNORECASE)
 FIELD_SEP = "\0"
 LOG_FIELDS = 7  # sha, author name/e-mail, committer name/e-mail, subject, body
@@ -286,17 +287,37 @@ def check_banned_coauthor(line: str) -> str | None:
     return None
 
 
+def ordered_marker_end(line: str, start: int) -> int:
+    """Return the end of a terminated ordered marker, or start when none matches."""
+    # CommonMark 0.31.2 §5.2, List items: 1-9 ASCII digits followed by '.' or ')'.
+    # https://spec.commonmark.org/0.31.2/#list-items
+    match = ORDERED_MARKER_RE.match(line, start)
+    if match is None:
+        return start
+    end = match.end()
+    if end == len(line) or line[end].isspace() or unicodedata.category(line[end]) == "Cf":
+        return end
+    return start
+
+
 def strip_attribution_prefix(line: str) -> str:
-    """Remove leading comment, bullet, quote, heading, and whitespace prefixes linearly."""
+    """Remove leading comment, list, quote, heading, whitespace, and format prefixes linearly."""
     start = 0
     # Each iteration consumes at least one character: at most len(line) iterations.
     while start < len(line):
         if line.startswith("<!--", start):
             start += 4
-        elif line[start] in "-*#>" or line[start].isspace():
+        elif (
+            line[start] in "-+*#>"
+            or line[start].isspace()
+            or unicodedata.category(line[start]) == "Cf"
+        ):
             start += 1
         else:
-            break
+            end = ordered_marker_end(line, start)
+            if end == start:
+                break
+            start = end
     return line[start:]
 
 
@@ -305,15 +326,9 @@ def check_machine_attribution(line: str) -> bool:
     return bool(GENERATED_LINE_RE.match(strip_attribution_prefix(line)) or "\U0001f916" in line)
 
 
-def normalize_attribution_line(line: str) -> str:
-    """Normalize compatibility characters and remove leading whitespace/format chars."""
-    line = unicodedata.normalize("NFKC", line)
-    start = 0
-    for character in line:
-        if not character.isspace() and unicodedata.category(character) != "Cf":
-            break
-        start += 1
-    return line[start:]
+def normalize_attribution_text(text: str) -> str:
+    """Normalize compatibility characters for both line and identity matching."""
+    return unicodedata.normalize("NFKC", text)
 
 
 def input_bound_reason(text: str, source: str, max_bytes: int, max_lines: int) -> str | None:
@@ -327,7 +342,7 @@ def input_bound_reason(text: str, source: str, max_bytes: int, max_lines: int) -
 
 def line_attribution_reason(line: str, source: str) -> str | None:
     """Apply shared message and PR body rules without exempting Markdown prefixes."""
-    line = normalize_attribution_line(line)
+    line = normalize_attribution_text(line)
     token = check_banned_coauthor(strip_attribution_prefix(line))
     if token:
         return f"disallowed Co-authored-by trailer ({token})"
@@ -347,7 +362,11 @@ def commit_attribution_reason(commit: Commit) -> str | None:
         ("author", commit.author_name, commit.author_email),
         ("committer", commit.committer_name, commit.committer_email),
     ):
-        identity = f"{name} <{email}>".lower()
+        identity = "".join(
+            character
+            for character in normalize_attribution_text(f"{name} <{email}>")
+            if unicodedata.category(character) != "Cf"
+        ).lower()
         for candidate in BANNED_COAUTHOR_TOKENS:
             if candidate != "[bot]" and candidate in identity:
                 return f"{role} identity names a model or coding tool ({candidate})"

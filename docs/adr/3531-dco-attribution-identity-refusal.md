@@ -25,7 +25,7 @@ Extend `scripts/ci/check-dco.py` to refuse model/tool identities in commit autho
 
 ## Consequences
 
-- **Positive**: the same attribution policy runs before landing and in the landed-commit alarm; bot sign-off exemptions do not bypass attribution checks.
+- **Positive**: the same attribution policy runs before landing and in the landed-commit alarm; bot sign-off exemptions do not bypass attribution checks. The shared linear prefix scanner strips list markers (including `+` and terminated one-to-nine-digit ordered markers) and interleaved Unicode `Cf` characters after NFKC normalization; identity matching applies the same NFKC normalization, removes every `Cf` character, and then uses case-insensitive substring tokens with the existing `[bot]` exclusion.
 - **Negative**: substring tokens can collide with human identities, and quoted or fenced attribution examples can be refused. The 2026-11-11 scan measured zero matches across 6,290 master identity records and 300 PR bodies; that is an observed false-positive surface, not a guarantee for future contributors. The [digest](../research/3531-dco-attribution-scan.md) records both corpora, their fingerprints and the rerun command.
 - **Neutral / follow-ups**: token changes must remain synchronized with the engine. Byte/line limits require a recorded corpus and stated headroom; regression tests cover exact-bound and bound-plus-one input. CI uses event-file input; local body files and the environment fallback remain supported. No history rewrite is required.
 

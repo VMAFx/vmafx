@@ -59,11 +59,17 @@ authors remain valid. The same message-line rules reject `Co-authored-by:`
 lines with a banned token, generated or created attribution footers, and the
 robot emoji. Pull request mode applies those line rules to the body as well.
 
-Before the line rules run, text is normalized with Unicode NFKC and leading
-whitespace and format characters (category `Cf`) are removed. This includes
-U+FEFF, U+200B through U+200D, and U+2060. The normalization applies to both
-commit-message and PR-body lines. Ordinary human co-authors remain permitted.
-Identity token matching remains case-insensitive substring matching.
+Before the line rules run, text is normalized with Unicode NFKC. The shared
+prefix scanner removes leading whitespace, format characters (category `Cf`),
+and Markdown quote, heading, comment, and list prefixes, including `+` and
+ordered-list markers. Format characters interleaved among prefixes are also
+removed; examples include U+FEFF, U+200B through U+200D, and U+2060. Ordered
+markers use one to nine ASCII digits followed by `.` or `)`, then whitespace,
+a format character, or end of line. A ten-digit marker remains intact and its
+line is treated as prose. These rules apply to both commit-message and PR-body
+lines. Ordinary human co-authors remain permitted. Identity matching applies
+NFKC, removes every `Cf` character anywhere in the identity, then uses
+case-insensitive substring matching with the same tokens.
 
 The checker refuses inputs above a named bound with exit `1` and the bound
 name; it never silently truncates. Limits apply to UTF-8 bytes and Unicode
@@ -92,9 +98,9 @@ message with `git commit --amend`, which keeps the original author. If the
 author identity is refused, use `--author="Name <email>"` on the refused commit
 to correct that author, or `--reset-author` to assign authorship to the current
 committer. If only the committer identity is refused, correct `user.name` and
-`user.email`, then use `git commit --amend --no-edit -S` for the last commit:
+`user.email`, then use `git commit --amend --no-edit` for the last commit:
 amend retains the author and message while recording the current committer
-identity and signing the replacement commit. The [`git-commit(1)`
+identity. The [`git-commit(1)`
 manual](https://git-scm.com/docs/git-commit) documents these options and the
 identity configuration; explicit author/committer settings or environment
 variables override `user.name` and `user.email`. For a series,
