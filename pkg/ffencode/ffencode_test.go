@@ -115,6 +115,142 @@ func TestBuildFFmpegCommand(t *testing.T) {
 			},
 		},
 		{
+			name: "raw source with PQ HDR color options copies to input and keeps output",
+			req: ffencode.Request{
+				Source: "/src/ref.yuv", Width: 1920, Height: 1080,
+				PixFmt: "yuv420p10le", Framerate: 24.0,
+				Encoder: "libx265", Preset: "medium", CRF: 28,
+				Output: "/out/enc.mp4",
+				ExtraParams: []string{
+					"-color_primaries", "bt2020",
+					"-color_trc", "smpte2084",
+					"-colorspace", "bt2020nc",
+					"-color_range", "tv",
+					"-x265-params", "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:range=limited:hdr10-opt=1",
+				},
+				SourceColorParams: []string{
+					"-color_primaries", "bt2020",
+					"-color_trc", "smpte2084",
+					"-colorspace", "bt2020nc",
+					"-color_range", "tv",
+				},
+			},
+			want: []string{
+				"ffmpeg", "-y", "-hide_banner", "-loglevel", "info",
+				"-f", "rawvideo", "-pix_fmt", "yuv420p10le", "-s", "1920x1080", "-r", "24.0",
+				"-color_primaries", "bt2020",
+				"-color_trc", "smpte2084",
+				"-colorspace", "bt2020nc",
+				"-color_range", "tv",
+				"-i", "/src/ref.yuv",
+				"-c:v", "libx265", "-preset", "medium", "-crf", "28",
+				"-color_primaries", "bt2020",
+				"-color_trc", "smpte2084",
+				"-colorspace", "bt2020nc",
+				"-color_range", "tv",
+				"-x265-params", "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:range=limited:hdr10-opt=1",
+				"/out/enc.mp4",
+			},
+		},
+		{
+			name: "raw source with HLG HDR sets input arib-std-b67",
+			req: ffencode.Request{
+				Source: "/src/ref.yuv", Width: 1920, Height: 1080,
+				PixFmt: "yuv420p10le", Framerate: 24.0,
+				Encoder: "libx265", Preset: "medium", CRF: 28,
+				Output: "/out/enc.mp4",
+				ExtraParams: []string{
+					"-color_primaries", "bt2020",
+					"-color_trc", "arib-std-b67",
+					"-colorspace", "bt2020nc",
+					"-color_range", "tv",
+				},
+				SourceColorParams: []string{
+					"-color_primaries", "bt2020",
+					"-color_trc", "arib-std-b67",
+					"-colorspace", "bt2020nc",
+					"-color_range", "tv",
+				},
+			},
+			want: []string{
+				"ffmpeg", "-y", "-hide_banner", "-loglevel", "info",
+				"-f", "rawvideo", "-pix_fmt", "yuv420p10le", "-s", "1920x1080", "-r", "24.0",
+				"-color_primaries", "bt2020", "-color_trc", "arib-std-b67", "-colorspace", "bt2020nc", "-color_range", "tv",
+				"-i", "/src/ref.yuv",
+				"-c:v", "libx265", "-preset", "medium", "-crf", "28",
+				"-color_primaries", "bt2020", "-color_trc", "arib-std-b67", "-colorspace", "bt2020nc", "-color_range", "tv",
+				"/out/enc.mp4",
+			},
+		},
+		{
+			name: "container source with HDR extra params omits input color options",
+			req: ffencode.Request{
+				Source: "/src/ref.mp4", Width: 1920, Height: 1080,
+				PixFmt: "yuv420p10le", Framerate: 24.0,
+				Encoder: "libx265", Preset: "medium", CRF: 28,
+				Output: "/out/enc.mp4", SourceIsContainer: true,
+				ExtraParams: []string{
+					"-color_primaries", "bt2020",
+					"-color_trc", "smpte2084",
+					"-colorspace", "bt2020nc",
+					"-color_range", "tv",
+				},
+				SourceColorParams: []string{
+					"-color_primaries", "bt2020",
+					"-color_trc", "smpte2084",
+					"-colorspace", "bt2020nc",
+					"-color_range", "tv",
+				},
+			},
+			want: []string{
+				"ffmpeg", "-y", "-hide_banner", "-loglevel", "info",
+				"-i", "/src/ref.mp4",
+				"-c:v", "libx265", "-preset", "medium", "-crf", "28",
+				"-color_primaries", "bt2020", "-color_trc", "smpte2084", "-colorspace", "bt2020nc", "-color_range", "tv",
+				"/out/enc.mp4",
+			},
+		},
+		{
+			name: "duplicate color options use last value and partial copies only present",
+			req: ffencode.Request{
+				Source: "/src/ref.yuv", Width: 1920, Height: 1080,
+				PixFmt: "yuv420p", Framerate: 24.0,
+				Encoder: "libx264", Preset: "medium", CRF: 23,
+				Output: "/out/enc.mp4",
+				SourceColorParams: []string{
+					"-color_trc", "smpte2084",
+					"-color_primaries", "bt2020",
+					"-color_trc", "arib-std-b67",
+				},
+			},
+			want: []string{
+				"ffmpeg", "-y", "-hide_banner", "-loglevel", "info",
+				"-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", "1920x1080", "-r", "24.0",
+				"-color_primaries", "bt2020", "-color_trc", "arib-std-b67",
+				"-i", "/src/ref.yuv",
+				"-c:v", "libx264", "-preset", "medium", "-crf", "23",
+				"/out/enc.mp4",
+			},
+		},
+		{
+			name: "raw source with user extra params color option stays output only",
+			req: ffencode.Request{
+				Source: "/src/ref.yuv", Width: 1920, Height: 1080,
+				PixFmt: "yuv420p", Framerate: 24.0,
+				Encoder: "libx264", Preset: "medium", CRF: 23,
+				Output:      "/out/enc.mp4",
+				ExtraParams: []string{"-color_trc", "smpte2084"},
+			},
+			want: []string{
+				"ffmpeg", "-y", "-hide_banner", "-loglevel", "info",
+				"-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", "1920x1080", "-r", "24.0",
+				"-i", "/src/ref.yuv",
+				"-c:v", "libx264", "-preset", "medium", "-crf", "23",
+				"-color_trc", "smpte2084",
+				"/out/enc.mp4",
+			},
+		},
+		{
 			name: "pass 1 discards the bitstream",
 			req: ffencode.Request{
 				Source: "/src/ref.yuv", Width: 1920, Height: 1080,
@@ -868,6 +1004,86 @@ func TestMergeCodecParams(t *testing.T) {
 			t.Parallel()
 			if got := ffencode.MergeCodecParams(tt.in); !slices.Equal(got, tt.want) {
 				t.Errorf("MergeCodecParams(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInputArgs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		req  ffencode.Request
+		want []string
+	}{
+		{
+			name: "negative user extra params color option stays output only",
+			req: ffencode.Request{
+				Source: "/src/ref.yuv", Width: 1920, Height: 1080,
+				PixFmt: "yuv420p", Framerate: 24.0,
+				ExtraParams: []string{"-color_trc", "smpte2084"},
+			},
+			want: []string{
+				"-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", "1920x1080", "-r", "24.0",
+			},
+		},
+		{
+			name: "raw source with SourceColorParams",
+			req: ffencode.Request{
+				Source: "/src/ref.yuv", Width: 1920, Height: 1080,
+				PixFmt: "yuv420p10le", Framerate: 24.0,
+				SourceColorParams: []string{
+					"-color_primaries", "bt2020",
+					"-color_trc", "smpte2084",
+					"-colorspace", "bt2020nc",
+					"-color_range", "tv",
+				},
+			},
+			want: []string{
+				"-f", "rawvideo", "-pix_fmt", "yuv420p10le", "-s", "1920x1080", "-r", "24.0",
+				"-color_primaries", "bt2020",
+				"-color_trc", "smpte2084",
+				"-colorspace", "bt2020nc",
+				"-color_range", "tv",
+			},
+		},
+		{
+			name: "container source with SourceColorParams omits color options",
+			req: ffencode.Request{
+				Source:            "/src/ref.mp4",
+				SourceIsContainer: true,
+				SourceColorParams: []string{
+					"-color_primaries", "bt2020",
+					"-color_trc", "smpte2084",
+				},
+			},
+			want: nil,
+		},
+		{
+			name: "boundary duplicate options keep last value and partial copies only present",
+			req: ffencode.Request{
+				Source: "/src/ref.yuv", Width: 1920, Height: 1080,
+				PixFmt: "yuv420p", Framerate: 24.0,
+				SourceColorParams: []string{
+					"-color_trc", "smpte2084",
+					"-color_primaries", "bt2020",
+					"-color_trc", "arib-std-b67",
+				},
+			},
+			want: []string{
+				"-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", "1920x1080", "-r", "24.0",
+				"-color_primaries", "bt2020", "-color_trc", "arib-std-b67",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := ffencode.InputArgs(tc.req)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("InputArgs(%+v) = %v, want %v", tc.req, got, tc.want)
 			}
 		})
 	}
