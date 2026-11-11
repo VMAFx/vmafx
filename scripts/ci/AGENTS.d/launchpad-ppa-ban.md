@@ -33,4 +33,8 @@ listing, count overflow, relocated actions, aliases, both source hosts.
 Planted tidy registration -> rejection; current tracked tree -> no findings.
 Temporary repositories strip every inherited `GIT_*` variable, disable caller
 system/global configuration, hooks and signing; poisoned repository, index and
-configuration variables regression keeps that isolation.
+configuration variables regression keeps that isolation. Listing env =
+`listing_git_environment(root)`: this checkout -> caller env (hook index);
+any other root -> no `GIT_*`, `GIT_CONFIG_NOSYSTEM=1`,
+`GIT_CONFIG_GLOBAL=os.devnull`. Malformed caller `~/.gitconfig` and XDG config
+regression keeps fixture listing working.

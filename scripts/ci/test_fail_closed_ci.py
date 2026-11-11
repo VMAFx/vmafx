@@ -123,12 +123,25 @@ def ppa_text_problems(path: Path, text: str) -> list[str]:
     return problems
 
 
+def listing_git_environment(root: Path) -> dict[str, str]:
+    """Return git's environment for listing `root`.
+
+    This checkout keeps the caller's environment, so a commit hook lists the staged index.
+    Any other tree (a test fixture) drops every inherited GIT_* variable and reads neither
+    system nor global configuration, so a caller's ~/.gitconfig cannot change the listing.
+    """
+    env = git_environment(root)
+    if root.resolve() != ROOT.resolve():
+        env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
+    return env
+
+
 def ci_text_paths(root: Path) -> list[Path]:
     """List tracked YAML, shell and container source paths throughout the repository."""
     result = run_command(
         ["git", "-C", str(root), "ls-files", "-z"],
         allowed_executables=("git",),
-        env=git_environment(root),
+        env=listing_git_environment(root),
         capture_output=True,
         text=True,
         check=True,
@@ -171,9 +184,7 @@ class LaunchpadPPAContract(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
         # Strip every inherited GIT_* variable and disable caller system/global configuration.
-        git_env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-        git_env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
-        self.git_run = partial(subprocess.run, env=git_env)
+        self.git_run = partial(subprocess.run, env=listing_git_environment(self.root))
         self.git_run(self.git_argv("init", "-q"), check=True, capture_output=True, timeout=10)
         self.enterContext(mock.patch.object(subprocess, "run", side_effect=self.git_run))
 
@@ -294,7 +305,7 @@ class LaunchpadPPAContract(unittest.TestCase):
             run.assert_called_once_with(
                 ["git", "-C", str(self.root), "ls-files", "-z"],
                 allowed_executables=("git",),
-                env=git_environment(self.root),
+                env=listing_git_environment(self.root),
                 capture_output=True,
                 text=True,
                 check=True,
@@ -331,6 +342,31 @@ class LaunchpadPPAContract(unittest.TestCase):
                 "install from the Ubuntu archive (ADR-3533)"
             ],
         )
+
+    def test_caller_global_configuration_cannot_reach_fixture_listing(self) -> None:
+        """A malformed caller ~/.gitconfig or XDG Git configuration cannot break fixture scans."""
+        self.track({"setup.sh": "add-apt-repository ppa:x/y\n"})
+        home = self.root.parent / f"{self.root.name}-home"
+        (home / ".config" / "git").mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, home)
+        (home / ".gitconfig").write_text("[broken\n", encoding="utf-8")
+        (home / ".config" / "git" / "config").write_text("[broken\n", encoding="utf-8")
+        with mock.patch.dict(
+            os.environ, {"HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config")}
+        ):
+            problems = launchpad_ppa_problems(self.root)
+        self.assertEqual(
+            problems,
+            [
+                "setup.sh:1: add-apt-repository registers a Launchpad PPA source; "
+                "install from the Ubuntu archive (ADR-3533)"
+            ],
+        )
+
+    def test_this_checkout_keeps_caller_git_environment(self) -> None:
+        """The real checkout keeps hook state; only fixtures drop caller configuration."""
+        with mock.patch.dict(os.environ, {"GIT_INDEX_FILE": "hook.index"}):
+            self.assertEqual(listing_git_environment(ROOT), dict(os.environ))
 
     def test_git_listing_failure_propagates(self) -> None:
         """A failed tracked-path lookup cannot silently pass the contract."""
