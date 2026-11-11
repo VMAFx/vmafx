@@ -370,6 +370,7 @@ def is_signoff_reason(reason: str) -> bool:
 
 
 def report(failures: list[tuple[Commit, str]], landed: bool = False) -> None:
+    """Print commit failures and repair advice appropriate to sign-off or attribution errors."""
     for commit, reason in failures:
         title = "DCO sign-off" if is_signoff_reason(reason) else "DCO attribution"
         print(f"::error title={title}::{commit.sha[:10]} {commit.subject}: {reason}")
@@ -501,6 +502,7 @@ def check_landed(args: argparse.Namespace) -> int:
 
 
 def check_pr(args: argparse.Namespace) -> int:
+    """Enforce commit sign-offs and body attribution rules after applying PR exemptions."""
     if args.release_pr:
         print("dco: machine-generated release pull request, exempt.")
         return 0
@@ -533,6 +535,7 @@ def check(args: argparse.Namespace) -> int:
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
+    """Parse revision, identity, body-source, and enforcement options with environment defaults."""
     env = os.environ.get
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--base", default=env("BASE_SHA", ""))
@@ -554,6 +557,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str]) -> int:
+    """Validate required inputs and return distinct statuses for policy and usage failures."""
     args = parse_args(argv)
     if not args.base or not args.head:
         print(
