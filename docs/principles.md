@@ -281,10 +281,15 @@ dependencies).
   `p/cwe-top-25` and `p/cert-c-strict` rule sets). Gitleaks runs as the
   `Gitleaks` CI
   gate and as a pre-commit hook. `flawfinder-new` checks changed C/C++ files;
-  `bandit-new` checks changed Python files against the merge-base copy, at
-  pre-commit and pre-push. Both reject only new findings. The Python check
-  runs the [Codacy Bandit patterns](../bandit.yml) from the one list Codacy
-  reads on each analysed branch. Editing that file changes Codacy's patterns;
+  `bandit-new` compares Python files with their merge-base copies. Pre-commit
+  scans the working tree; pre-push scans the outgoing commit, including its
+  configuration. The default comparison branch follows `origin/HEAD`, with
+  `origin/master` as fallback; `--base-branch` overrides it. Both reject only
+  new findings. The Python check uses each revision's [Bandit patterns](../bandit.yml);
+  a missing base configuration uses the current configuration. A configuration
+  change scans all tracked Python files, including unchanged sources. Codacy
+  reads that list on each analysed branch after its configuration-file option
+  is enabled. Editing that file changes Codacy's patterns;
   without it, Codacy uses its UI patterns. Refresh the list from Codacy's
   enabled Bandit IDs, then run the planted recall test in
   `scripts/ci/tests/test_check_bandit_new.py`.

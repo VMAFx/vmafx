@@ -8,16 +8,19 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
 from pathlib import Path
+
+from identify.identify import tags_from_filename, tags_from_path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.lib.new_scanner_findings import (
+    Comparison,
     ToolError,
-    base_text,
-    merge_base,
     new_findings,
-    renames,
+    python_text,
+    revision_bytes,
     tool,
 )
 from scripts.lib.safe_subprocess import run as run_command
@@ -25,11 +28,11 @@ from scripts.lib.safe_subprocess import run as run_command
 CONFIG = Path(__file__).resolve().parents[2] / "bandit.yml"
 
 
-def findings(bandit: str, source: Path) -> list[tuple[int, str, str]]:
+def findings(bandit: str, source: Path, config: Path = CONFIG) -> list[tuple[int, str, str]]:
     """Read Bandit JSON and return rule IDs keyed by stripped source lines."""
     try:
         proc = run_command(
-            [bandit, "-c", str(CONFIG), "-f", "json", str(source)],
+            [bandit, "-c", str(config), "-f", "json", str(source)],
             allowed_executables=(bandit,),
             capture_output=True,
             text=True,
@@ -43,7 +46,7 @@ def findings(bandit: str, source: Path) -> list[tuple[int, str, str]]:
             raise ToolError(f"invalid Bandit JSON on {source}")
         if not isinstance(report.get("errors"), list) or report["errors"]:
             raise ToolError(f"Bandit reported scan errors on {source}: {report.get('errors')}")
-        lines = source.read_text(encoding="utf-8").splitlines()
+        lines = python_text(source.read_bytes()).splitlines()
         found = []
         for issue in report["results"]:
             number, rule = issue["line_number"], issue["test_id"]
@@ -53,33 +56,64 @@ def findings(bandit: str, source: Path) -> list[tuple[int, str, str]]:
                 raise ToolError(f"invalid Bandit rule on {source}")
             found.append((number, rule, lines[number - 1].strip()))
         return found
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        RuntimeError,
+        SyntaxError,
+        LookupError,
+    ) as error:
         raise ToolError(f"Bandit failed on {source}: {error}") from error
+
+
+def scan_changes(bandit: str, comparison: Comparison, paths: list[Path]) -> int:
+    current_config = comparison.current_bytes("bandit.yml")
+    if current_config is None:
+        raise ToolError("Bandit configuration missing: bandit.yml")
+    base_config = revision_bytes(comparison.git, comparison.root, comparison.base, "bandit.yml")
+    changed_config = base_config != current_config
+    if changed_config:
+        paths = sorted(set(paths + comparison.tracked_paths()))
+    failed = 0
+    with tempfile.TemporaryDirectory(prefix="bandit-comparison-") as temp:
+        directory = Path(temp)
+        current, old = directory / "current.yml", directory / "base.yml"
+        current.write_bytes(current_config)
+        old.write_bytes(base_config if base_config is not None else current_config)
+        for path in paths:
+            tags = tags_from_filename(str(path))
+            if tags and not {"python", "pyi"} & tags:
+                continue
+            copied = comparison.copy(path, directory / "source")
+            if copied is None:
+                continue
+            relative, source = copied
+            if not {"python", "pyi"} & tags_from_path(str(source)):
+                continue
+            added = new_findings(
+                lambda source: findings(bandit, source, current),
+                source,
+                comparison.old_bytes(relative),
+                old_scan=lambda source: findings(bandit, source, old),
+                force=changed_config,
+            )
+            for line, rule, source_line in added:
+                print(f"{relative}:{line}: {rule}: {source_line}")
+                failed += 1
+    return failed
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").strip())
-    parser.add_argument("--base-branch", default="origin/master")
+    parser.add_argument("--base-branch")
     parser.add_argument("files", nargs="*", type=Path)
     args = parser.parse_args(argv)
     root = Path.cwd()
     try:
         bandit, git = tool("bandit"), tool("git")
-        if not CONFIG.is_file():
-            raise ToolError(f"Bandit configuration missing: {CONFIG}")
-        base = merge_base(git, root, args.base_branch)
-        moved = renames(git, root, base)
-        failed = 0
-        for path in args.files:
-            if path.suffix != ".py" or not path.is_file():
-                continue
-            relative = path.resolve().relative_to(root.resolve()).as_posix()
-            old = base_text(git, root, base, moved.get(relative, relative))
-            for line, rule, source_line in new_findings(
-                lambda source: findings(bandit, source), path, old
-            ):
-                print(f"{relative}:{line}: {rule}: {source_line}")
-                failed += 1
+        failed = scan_changes(bandit, Comparison(git, root, args.base_branch), args.files)
     except (ToolError, OSError, ValueError, RuntimeError) as error:
         print(f"check_bandit_new: {error}", file=sys.stderr)
         return 2

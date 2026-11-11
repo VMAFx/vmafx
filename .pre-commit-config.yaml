@@ -1262,14 +1262,19 @@ repos:
         name: No new Codacy Bandit findings in changed Python files
         entry: python3 scripts/ci/check_bandit_new.py
         language: python
-        additional_dependencies: ["bandit==1.9.4"]
-        types: [python]
+        additional_dependencies: ["bandit==1.9.4", "identify==2.6.20"]
+        # Classify Python (including pyi and shebangs) inside the gate so
+        # a config-only change also selects every tracked Python source.
+        types: [file]
+        # One process: a bandit.yml change scans every tracked source, and
+        # parallel partitions would each repeat that scan and its output.
+        require_serial: true
         stages: [pre-commit, pre-push]
       - id: test-bandit-new
         name: bandit-new gate (planted-defect recall)
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_check_bandit_new.py
         language: python
-        additional_dependencies: ["bandit==1.9.4"]
+        additional_dependencies: ["bandit==1.9.4", "identify==2.6.20"]
         files: '^(\.pre-commit-config\.yaml|bandit\.yml|scripts/(lib/new_scanner_findings\.py|ci/(check_bandit_new|tests/test_check_bandit_new)\.py))$'
         pass_filenames: false
         stages: [pre-commit, pre-push]

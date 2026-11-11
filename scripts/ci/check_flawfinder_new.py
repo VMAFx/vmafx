@@ -28,16 +28,15 @@ import argparse
 import csv
 import io
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.lib.new_scanner_findings import (
+    Comparison,
     ToolError,
-    base_text,
-    merge_base,
     new_findings,
-    renames,
     tool,
 )
 from scripts.lib.safe_subprocess import run as run_command
@@ -88,29 +87,36 @@ def findings(flawfinder: str, source: Path) -> list[tuple[int, str, str]]:
     return [(int(row["Line"]), row["Name"], row["Context"].strip()) for row in rows]
 
 
+def scan_changes(flawfinder: str, comparison: Comparison, paths: list[Path]) -> int:
+    failed = 0
+    with tempfile.TemporaryDirectory(prefix="flawfinder-comparison-") as temp:
+        for path in paths:
+            if path.suffix not in SUFFIXES:
+                continue
+            copied = comparison.copy(path, Path(temp))
+            if copied is None:
+                continue
+            relative, source = copied
+            for line, name, context in new_findings(
+                lambda source: findings(flawfinder, source),
+                source,
+                comparison.old_bytes(relative),
+            ):
+                print(f"{relative}:{line}: flawfinder {name}: {context}")
+                failed += 1
+    return failed
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").partition("\n")[0])
-    parser.add_argument("--base-branch", default="origin/master")
+    parser.add_argument("--base-branch")
     parser.add_argument("files", nargs="*", type=Path)
     args = parser.parse_args(argv)
     root = Path.cwd()
     try:
         flawfinder, git = tool("flawfinder"), tool("git")
-        base = merge_base(git, root, args.base_branch)
-        moved = renames(git, root, base)
-        failed = 0
-        for path in args.files:
-            if path.suffix not in SUFFIXES or not path.is_file():
-                continue
-            relative = path.resolve().relative_to(root.resolve()).as_posix()
-            for line, name, context in new_findings(
-                lambda source: findings(flawfinder, source),
-                path,
-                base_text(git, root, base, moved.get(relative, relative)),
-            ):
-                print(f"{relative}:{line}: flawfinder {name}: {context}")
-                failed += 1
-    except ToolError as error:
+        failed = scan_changes(flawfinder, Comparison(git, root, args.base_branch), args.files)
+    except (ToolError, OSError, ValueError, RuntimeError) as error:
         print(f"check_flawfinder_new: {error}", file=sys.stderr)
         return 2
     if failed:

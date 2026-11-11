@@ -3,7 +3,8 @@
 # One Bandit pattern list for Codacy and scripts/ci/check_bandit_new.py.
 # Codacy reads this root file from the analysed branch; editing it changes Codacy's patterns.
 # If the branch lacks this file, Codacy falls back to its UI patterns.
-# These 56 IDs matched Codacy's enabled Bandit patterns on 2026-11-11.
+# These 56 IDs match codacy-bandit docs/patterns.json enabled defaults (1.9.4, 2026-11-11).
+# Source and verification: docs/research/bandit-codacy-pattern-list-2026-11-11.md.
 # Refresh: compare Codacy's enabled Bandit IDs, then edit this list; Codacy follows.
 tests:
   - B102

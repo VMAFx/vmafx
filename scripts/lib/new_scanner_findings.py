@@ -5,10 +5,13 @@
 from __future__ import annotations
 
 import collections
+import io
 import os
 import shutil
 import tempfile
+import tokenize
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from scripts.lib.safe_subprocess import run as run_command
@@ -27,7 +30,7 @@ def tool(name: str) -> str:
     return path
 
 
-def git_output(git: str, args: list[str], cwd: Path) -> tuple[int, str]:
+def git_bytes(git: str, args: list[str], cwd: Path) -> tuple[int, bytes]:
     """Run a read-only git command in the selected repository."""
     # Read-only git in `cwd`; the hook's GIT_DIR / GIT_INDEX_FILE are dropped so
     # `cwd` alone names the repository.
@@ -38,24 +41,36 @@ def git_output(git: str, args: list[str], cwd: Path) -> tuple[int, str]:
         cwd=cwd,
         env=env,
         capture_output=True,
-        text=True,
+        text=False,
         timeout_seconds=60,
         max_output_bytes=64 * 1_048_576,
     )
     return proc.returncode, proc.stdout
 
 
+def git_output(git: str, args: list[str], cwd: Path) -> tuple[int, str]:
+    status, output = git_bytes(git, args, cwd)
+    return status, os.fsdecode(output)
+
+
+def default_branch(git: str, root: Path) -> str:
+    status, output = git_output(git, ["symbolic-ref", "refs/remotes/origin/HEAD"], root)
+    return output.strip() if status == 0 else "origin/master"
+
+
 def merge_base(git: str, root: Path, branch: str) -> str:
-    status, output = git_output(git, ["merge-base", "HEAD", branch], root)
+    ref = os.environ.get("PRE_COMMIT_TO_REF") or "HEAD"
+    status, output = git_output(git, ["merge-base", ref, branch], root)
     if status != 0 or not output.strip():
-        raise ToolError(f"no merge base between HEAD and {branch}")
+        raise ToolError(f"no merge base between {ref} and {branch}")
     return output.strip()
 
 
 def renames(git: str, root: Path, base: str) -> dict[str, str]:
     """Map each path renamed since base to its original path."""
+    target = [os.environ["PRE_COMMIT_TO_REF"]] if os.environ.get("PRE_COMMIT_TO_REF") else []
     status, output = git_output(
-        git, ["diff", "-M", "--name-status", "-z", "--diff-filter=R", base], root
+        git, ["diff", "-M", "--name-status", "-z", "--diff-filter=R", base, *target], root
     )
     if status != 0:
         raise ToolError(f"git diff against {base} failed")
@@ -63,32 +78,103 @@ def renames(git: str, root: Path, base: str) -> dict[str, str]:
     return {fields[index + 2]: fields[index + 1] for index in range(0, len(fields) - 2, 3)}
 
 
-def base_text(git: str, root: Path, base: str, relative: str) -> str:
-    """Return the file at base, or empty text when it did not exist there."""
-    status, names = git_output(git, ["ls-tree", "-z", "--name-only", base, "--", relative], root)
+def revision_bytes(git: str, root: Path, ref: str, relative: str) -> bytes | None:
+    """Read one literal blob; absence differs from an empty file."""
+    status, names = git_output(
+        git, ["--literal-pathspecs", "ls-tree", "-z", "--name-only", ref, "--", relative], root
+    )
     if status != 0:
-        raise ToolError(f"git ls-tree against {base} failed")
+        raise ToolError(f"git ls-tree against {ref} failed")
     if relative not in names.split("\0"):
-        return ""
-    status, output = git_output(git, ["show", f"{base}:{relative}"], root)
+        return None
+    status, output = git_bytes(git, ["--literal-pathspecs", "show", f"{ref}:{relative}"], root)
     if status != 0:
-        raise ToolError(f"git show {base}:{relative} failed")
+        raise ToolError(f"git show {ref}:{relative} failed")
     return output
 
 
+def base_text(git: str, root: Path, base: str, relative: str) -> bytes:
+    return revision_bytes(git, root, base, relative) or b""
+
+
+def python_text(content: bytes) -> str:
+    """Decode Python source using its BOM or PEP 263 encoding cookie."""
+    encoding, _ = tokenize.detect_encoding(io.BytesIO(content).readline)
+    return content.decode(encoding)
+
+
+@dataclass
+class Comparison:
+    """One shared revision selection for Bandit and flawfinder."""
+
+    git: str
+    root: Path
+    branch: str | None
+    base: str = field(init=False)
+    moved: dict[str, str] = field(init=False)
+    ref: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.ref = os.environ.get("PRE_COMMIT_TO_REF") or ""
+        self.base = merge_base(
+            self.git, self.root, self.branch or default_branch(self.git, self.root)
+        )
+        self.moved = renames(self.git, self.root, self.base)
+
+    def current_bytes(self, relative: str) -> bytes | None:
+        if self.ref:
+            return revision_bytes(self.git, self.root, self.ref, relative)
+        path = self.root / relative
+        if path.is_symlink():
+            return None
+        if not path.resolve().is_relative_to(self.root.resolve()):
+            raise ToolError(f"source path escapes repository: {relative}")
+        return path.read_bytes() if path.is_file() else None
+
+    def old_bytes(self, relative: str) -> bytes:
+        return base_text(self.git, self.root, self.base, self.moved.get(relative, relative))
+
+    def tracked_paths(self) -> list[Path]:
+        args = ["ls-tree", "-r", "-z", "--name-only", self.ref] if self.ref else ["ls-files", "-z"]
+        status, output = git_output(self.git, args, self.root)
+        if status != 0:
+            raise ToolError("cannot list tracked source files")
+        return [Path(name) for name in output.split("\0") if name]
+
+    def copy(self, path: Path, directory: Path) -> tuple[str, Path] | None:
+        if ".." in path.parts:
+            raise ToolError(f"source path escapes repository: {path}")
+        relative = path.absolute().relative_to(self.root.resolve()).as_posix()
+        content = self.current_bytes(relative)
+        if content is None:
+            return None
+        target = directory / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+        # Preserve shebang classification even when outgoing files are absent locally.
+        target.chmod(0o700)
+        return relative, target
+
+
 def new_findings(
-    scan: Callable[[Path], list[Finding]], current: Path, old_text: str
+    scan: Callable[[Path], list[Finding]],
+    current: Path,
+    old_text: str | bytes,
+    *,
+    old_scan: Callable[[Path], list[Finding]] | None = None,
+    force: bool = False,
 ) -> list[Finding]:
     """Return findings absent at base; skip both scans when the bytes match.
 
     Bytes, not decoded text: a file that is not UTF-8 still reaches the scanner.
     """
-    if current.read_bytes() == old_text.encode("utf-8"):
+    old_bytes = old_text.encode("utf-8") if isinstance(old_text, str) else old_text
+    if not force and current.read_bytes() == old_bytes:
         return []
     with tempfile.TemporaryDirectory(prefix="scanner-base-") as temp:
         old = Path(temp) / current.name
-        old.write_text(old_text, encoding="utf-8")
-        old_keys = collections.Counter((rule, line) for _, rule, line in scan(old))
+        old.write_bytes(old_bytes)
+        old_keys = collections.Counter((rule, line) for _, rule, line in (old_scan or scan)(old))
     added = []
     for found in scan(current):
         key = (found[1], found[2])
