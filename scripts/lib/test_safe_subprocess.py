@@ -579,14 +579,21 @@ class ExecutableLinkTrustTests(unittest.TestCase):
         self.link = self.root / "python-link"
         self.link.symlink_to(PYTHON)
 
-    def assert_refused(self, launch: Path, offending: Path) -> None:
-        """Require a diagnostic identifying the link that another user could replace."""
-        with self.assertRaises(CommandValidationError) as raised:
-            run([str(launch), "-V"], allowed_executables=ALLOW_PYTHON)
+    def assert_resolved_launch(self, launch: Path) -> None:
+        """Require resolved-file execution while preserving the caller's argument name."""
         self.assertEqual(
-            str(raised.exception),
-            f"executable link can be retargeted by another user: {offending}",
+            safe_subprocess._checked_executable(str(launch), ALLOW_PYTHON, ""),
+            (PYTHON, Path(PYTHON)),
         )
+        result = run(
+            [str(launch), "-c", "import sys; print(sys.orig_argv[0])"],
+            allowed_executables=ALLOW_PYTHON,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.argv[0], PYTHON)
+        self.assertEqual(result.stdout.strip(), str(launch))
 
     def test_sticky_world_writable_link_directory_is_accepted(self) -> None:
         """Sticky directories protect an owned link despite world write permission."""
@@ -595,16 +602,34 @@ class ExecutableLinkTrustTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.argv[0], str(self.link))
 
-    def test_nonsticky_world_writable_link_directory_is_refused(self) -> None:
-        """World write permission without sticky protection permits link replacement."""
+    def test_nonsticky_world_writable_link_directory_launches_resolved_file(self) -> None:
+        """Hosted tool-cache permissions select resolved launch and retain caller argv[0]."""
         self.root.chmod(0o777)
-        self.assert_refused(self.link, self.link)
+        self.assert_resolved_launch(self.link)
 
-    def test_group_writable_link_directory_is_refused(self) -> None:
+    def test_nonsticky_world_writable_path_link_launches_resolved_file(self) -> None:
+        """Bare-name lookup also avoids writable links while retaining the bare argv[0]."""
+        self.root.chmod(0o777)
+        self.assertEqual(
+            safe_subprocess._checked_executable(self.link.name, (self.link.name,), str(self.root)),
+            (PYTHON, Path(PYTHON)),
+        )
+        result = run(
+            [self.link.name, "-c", "import sys; print(sys.orig_argv[0])"],
+            allowed_executables=(self.link.name,),
+            env={"PATH": str(self.root)},
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.argv[0], PYTHON)
+        self.assertEqual(result.stdout.strip(), self.link.name)
+
+    def test_group_writable_link_directory_launches_resolved_file(self) -> None:
         """A supplementary group member with another uid can replace the link."""
         self.mock_group_accounts(members=["other"])
         self.root.chmod(0o775)
-        self.assert_refused(self.link, self.link)
+        self.assert_resolved_launch(self.link)
 
     def mock_group_accounts(
         self, members: list[str] | None = None, accounts: list[Any] | None = None
@@ -638,49 +663,49 @@ class ExecutableLinkTrustTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.argv[0], str(self.link))
 
-    def test_group_writable_foreign_primary_member_is_refused(self) -> None:
+    def test_group_writable_foreign_primary_member_launches_resolved_file(self) -> None:
         """Primary group membership counts even when gr_mem omits the account."""
         self.mock_group_accounts(
             accounts=[SimpleNamespace(pw_name="other", pw_gid=self.root.stat().st_gid)]
         )
         self.root.chmod(0o775)
-        self.assert_refused(self.link, self.link)
+        self.assert_resolved_launch(self.link)
 
-    def test_group_writable_unknown_gid_is_refused(self) -> None:
+    def test_group_writable_unknown_gid_launches_resolved_file(self) -> None:
         """An unavailable group record cannot authorize a writable directory."""
         group, _, _ = self.mock_group_accounts()
         group.side_effect = KeyError("unknown gid")
         self.root.chmod(0o775)
-        self.assert_refused(self.link, self.link)
+        self.assert_resolved_launch(self.link)
 
-    def test_group_writable_unknown_name_is_refused(self) -> None:
+    def test_group_writable_unknown_name_launches_resolved_file(self) -> None:
         """An unresolved member name fails closed rather than disappearing from the group."""
         self.mock_group_accounts(members=["unknown"])
         self.root.chmod(0o775)
-        self.assert_refused(self.link, self.link)
+        self.assert_resolved_launch(self.link)
 
-    def test_group_writable_lookup_oserrors_are_refused(self) -> None:
+    def test_group_writable_lookup_oserrors_launch_resolved_file(self) -> None:
         """Every account lookup fails closed on operating-system errors."""
         lookups = self.mock_group_accounts()
         self.root.chmod(0o775)
         for lookup in lookups:
             with self.subTest(lookup=lookup):
                 lookup.side_effect = OSError("planted lookup failure")
-                self.assert_refused(self.link, self.link)
+                self.assert_resolved_launch(self.link)
                 lookup.side_effect = None
 
-    def test_group_writable_passwd_over_bound_is_refused(self) -> None:
+    def test_group_writable_passwd_over_bound_launches_resolved_file(self) -> None:
         """A passwd database exceeding the named account bound cannot authorize a group."""
         self.mock_group_accounts(accounts=[None] * (65_536 + 1))
         self.root.chmod(0o775)
         self.assertEqual(safe_subprocess.MAX_GROUP_ACCOUNTS, 65_536)
-        self.assert_refused(self.link, self.link)
+        self.assert_resolved_launch(self.link)
 
-    def test_group_writable_member_list_over_bound_is_refused(self) -> None:
+    def test_group_writable_member_list_over_bound_launches_resolved_file(self) -> None:
         """Supplementary member enumeration also stays within the named account bound."""
         self.mock_group_accounts(members=["current"] * (65_536 + 1))
         self.root.chmod(0o775)
-        self.assert_refused(self.link, self.link)
+        self.assert_resolved_launch(self.link)
 
     def test_group_writable_passwd_exact_bound_is_evaluated(self) -> None:
         """Exactly the named account bound is accepted after evaluating trusted members."""
@@ -692,20 +717,20 @@ class ExecutableLinkTrustTests(unittest.TestCase):
         self.assertEqual(result.argv[0], str(self.link))
         names.assert_called_once_with("current")
 
-    def test_group_writable_exact_bound_foreign_primary_member_is_refused(self) -> None:
+    def test_group_writable_exact_bound_foreign_primary_member_launches_resolved_file(self) -> None:
         """The final passwd entry at the bound is checked for foreign primary membership."""
         gid = self.root.stat().st_gid
         accounts = [SimpleNamespace(pw_name="current", pw_gid=gid)] * (65_536 - 1)
         accounts.append(SimpleNamespace(pw_name="other", pw_gid=gid))
         self.mock_group_accounts(members=[], accounts=accounts)
         self.root.chmod(0o775)
-        self.assert_refused(self.link, self.link)
+        self.assert_resolved_launch(self.link)
 
-    def test_world_writable_directory_refused_with_trusted_group(self) -> None:
+    def test_world_writable_directory_resolves_with_trusted_group(self) -> None:
         """Trusted group membership grants no exception for nonsticky other-write access."""
         self.mock_group_accounts()
         self.root.chmod(0o777)
-        self.assert_refused(self.link, self.link)
+        self.assert_resolved_launch(self.link)
 
     def test_group_verdict_is_cached_only_within_each_validation(self) -> None:
         """Repeated gids share one verdict, but subsequent validation rechecks membership."""
@@ -721,10 +746,10 @@ class ExecutableLinkTrustTests(unittest.TestCase):
         passwd.assert_called_once_with()
         names.side_effect = None
         names.return_value = SimpleNamespace(pw_uid=os.getuid() + 1)
-        self.assert_refused(self.link, self.link)
-        self.assertEqual(group.call_count, 2)
+        self.assert_resolved_launch(self.link)
+        self.assertEqual(group.call_count, 3)
 
-    def test_second_link_in_untrusted_directory_is_refused(self) -> None:
+    def test_second_link_in_untrusted_directory_launches_resolved_file(self) -> None:
         """Every hop needs protection, including a relative target in another directory."""
         unsafe = self.root / "unsafe"
         unsafe.mkdir()
@@ -733,10 +758,10 @@ class ExecutableLinkTrustTests(unittest.TestCase):
         second.symlink_to(PYTHON)
         self.link.unlink()
         self.link.symlink_to("unsafe/second")
-        self.assert_refused(self.link, second)
+        self.assert_resolved_launch(self.link)
 
-    def test_foreign_link_owner_is_refused(self) -> None:
-        """A link owned by a third user fails even inside an owned directory."""
+    def test_foreign_link_owner_launches_resolved_file(self) -> None:
+        """A foreign-owned link selects the resolved file even inside an owned directory."""
         original = Path.lstat
 
         def foreign_owner(path: Path) -> os.stat_result:
@@ -749,9 +774,9 @@ class ExecutableLinkTrustTests(unittest.TestCase):
             return metadata
 
         with mock.patch.object(Path, "lstat", foreign_owner):
-            self.assert_refused(self.link, self.link)
+            self.assert_resolved_launch(self.link)
 
-    def test_foreign_directory_owner_is_refused(self) -> None:
+    def test_foreign_directory_owner_launches_resolved_file(self) -> None:
         """A third-user directory owner can replace links even in sticky directories."""
         self.root.chmod(0o1777)
         original = Path.stat
@@ -766,13 +791,14 @@ class ExecutableLinkTrustTests(unittest.TestCase):
             return metadata
 
         with mock.patch.object(Path, "stat", foreign_owner):
-            self.assert_refused(self.link, self.link)
+            self.assert_resolved_launch(self.link)
 
-    def test_link_metadata_lookup_failure_is_refused(self) -> None:
-        """Ownership lookup errors fail closed with the offending link's name."""
-        with mock.patch.object(Path, "lstat", side_effect=PermissionError("planted")):
-            with self.assertRaisesRegex(CommandValidationError, str(self.link)):
-                safe_subprocess._validate_executable_links((self.link,))
+    def test_link_metadata_lookup_failure_is_untrusted(self) -> None:
+        """Link and directory metadata errors cannot authorize named-path execution."""
+        for method in ("lstat", "stat"):
+            with self.subTest(method=method):
+                with mock.patch.object(Path, method, side_effect=PermissionError("planted")):
+                    self.assertFalse(safe_subprocess._executable_links_trusted((self.link,)))
 
     def test_link_walk_follows_targets_before_dotdot(self) -> None:
         """Directory links, absolute targets, dots and dotdots retain kernel order."""

@@ -285,30 +285,30 @@ def _directory_allows_link_retargeting(
     return not group_verdicts[gid]
 
 
-def _validate_executable_links(links: tuple[Path, ...]) -> None:
-    """Require trusted link owners and directory writers, with group verdicts per call."""
+def _executable_links_trusted(links: tuple[Path, ...]) -> bool:
+    """Check link owners and directory writers, caching group verdicts only per call."""
     trusted_owners = (0, os.getuid())
     group_verdicts: dict[int, bool] = {}
     for link in links:
-        message = f"executable link can be retargeted by another user: {link}"
         try:
             owner = link.lstat().st_uid
             directory = link.parent.stat()
-        except OSError as exc:
-            raise CommandValidationError(message) from exc
+        except OSError:
+            return False
         if (
             owner not in trusted_owners
             or directory.st_uid not in trusted_owners
             or _directory_allows_link_retargeting(directory, trusted_owners, group_verdicts)
         ):
-            raise CommandValidationError(message)
+            return False
+    return True
 
 
-def _resolve_launch_file(launch: Path) -> Path:
-    """Resolve an executable only after checking the trust of its POSIX link chain."""
-    if hasattr(os, "getuid"):
-        _validate_executable_links(_executable_links(launch))
-    return launch.resolve(strict=True)
+def _resolve_launch_file(launch: Path) -> tuple[Path, Path]:
+    """Select named launch only for trusted POSIX links, then resolve the checked file."""
+    trusted = hasattr(os, "getuid") and _executable_links_trusted(_executable_links(launch))
+    resolved = launch.resolve(strict=True)
+    return (launch if trusted else resolved), resolved
 
 
 def _resolve_absolute_executable(
@@ -316,10 +316,10 @@ def _resolve_absolute_executable(
     requested: Path,
     allowed: _AllowedExecutables,
     search_path: str,
-) -> Path:
-    """Require an absolute executable's resolved file to match the allowlist."""
+) -> tuple[Path, Path]:
+    """Select a launch path and require its resolved file to match the allowlist."""
     try:
-        resolved = _resolve_launch_file(requested)
+        launch, resolved = _resolve_launch_file(requested)
     except OSError as exc:
         raise CommandValidationError(f"executable is unavailable: {executable}") from exc
     name_matches: set[Path] = set()
@@ -329,7 +329,7 @@ def _resolve_absolute_executable(
             name_matches.add(Path(found).resolve(strict=True))
     if resolved not in allowed.paths and resolved not in name_matches:
         raise CommandValidationError(f"executable is not allowlisted: {resolved}")
-    return resolved
+    return launch, resolved
 
 
 def _checked_executable(
@@ -337,31 +337,27 @@ def _checked_executable(
 ) -> tuple[str, Path]:
     """Validate the resolved file and preserve trusted POSIX links for venv discovery.
 
-    Platforms without os.getuid (Windows) launch the resolved file instead.
+    Untrusted chains and platforms without os.getuid launch the resolved file instead.
     """
     allowed = _parse_allowed_executables(allowed_values)
 
     requested = Path(executable).expanduser()
     if requested.is_absolute():
-        launch = str(requested)
-        resolved = _resolve_absolute_executable(executable, requested, allowed, search_path)
+        launch, resolved = _resolve_absolute_executable(executable, requested, allowed, search_path)
     elif len(requested.parts) == 1:
         if executable not in allowed.names:
             raise CommandValidationError(f"executable name is not allowlisted: {executable}")
         found = shutil.which(executable, path=search_path)
         if found is None:
             raise CommandValidationError(f"executable is unavailable: {executable}")
-        # absolute(), not resolve(): the launch path keeps the links on PATH.
-        launch = str(Path(found).absolute())
-        resolved = _resolve_launch_file(Path(launch))
+        # Keep PATH links for trust validation before selecting the launch path.
+        launch, resolved = _resolve_launch_file(Path(found).absolute())
     else:
         raise CommandValidationError(f"executable path must be absolute or bare: {executable}")
 
     if not resolved.is_file() or not os.access(resolved, os.X_OK):
         raise CommandValidationError(f"executable is not a runnable file: {resolved}")
-    if not hasattr(os, "getuid"):
-        launch = str(resolved)
-    return launch, resolved
+    return str(launch), resolved
 
 
 def _resolve_allowed_executable(
@@ -887,8 +883,8 @@ async def run_async(
         settings=settings,
         encoding=encoding,
     )
-    # Launch the validated absolute path with its links intact, and keep the
-    # caller's argv[0]: a multi-call program (the `vmafx` link to `vmaf`)
+    # Keep trusted launch links intact; untrusted chains launch the resolved file.
+    # Preserve the caller's argv[0]: a multi-call program (the `vmafx` link to `vmaf`)
     # selects its mode from that name.
     process = await asyncio.create_subprocess_exec(
         _stringify(argv[0], label="argv[0]"),
