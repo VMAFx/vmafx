@@ -35,8 +35,10 @@ Gate: `Signed-off-by:` trailer on each non-merge PR commit; model/tool attributi
 8. **Bounds.** `MAX_COMMIT_MESSAGE_BYTES/LINES` = measured master maxima ×4;
    `MAX_PR_BODY_BYTES/LINES` = PRs 2906-3395 (300 bodies) maxima ×4. JSON event envelope =
    body bytes ×6 + 1 MiB metadata. Boundary/+1 tests mandatory for every input bound.
-9. **Token sync.** `BANNED_COAUTHOR_TOKENS` = praetor `BANNED_COAUTHORS` + engine
-   `bannedCoauthorsRegex`; change all three together.
+9. **Token sync.** `BANNED_COAUTHOR_TOKENS` == praetor `BANNED_COAUTHORS`: all 13, substring matching.
+   Engine `bannedCoauthorsRegex`: same 11 word tokens, word-boundary matching.
+   E-mail + `[bot]` entries: Python-only. Token change -> update praetor tuple + local tuple;
+   word-token change -> update engine regex word list together.
 
 Required context `DCO Sign-off` = job `dco-sign-off` in `rule-enforcement.yml`; one entry in
 `required-aggregator.yml` list (`check-aggregator-names.sh`).

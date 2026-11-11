@@ -77,7 +77,7 @@ name; it never silently truncates. Limits apply to UTF-8 bytes and Unicode
 Commit limits use four times the measured maxima of the 6,290-commit master
 snapshot. PR limits use four times the measured maxima of the 300 PR bodies
 numbered 2906-3395; see the
-[research digest](../research/dco-attribution-scan-2026-11-11.md) for the
+[research digest](../research/3531-dco-attribution-scan.md) for the
 corpus fingerprints and the reproduction command. File reads consume at most
 the byte limit plus one byte. Event JSON has an additional
 `MAX_PR_EVENT_BYTES` envelope: six times the body-byte limit plus 1 MiB for
@@ -87,11 +87,18 @@ for metadata); exceeding this capture bound also refuses the input. Git
 fields and records are NUL-delimited so embedded legacy separators cannot
 move identity text into another field.
 
-For a refused commit, remove attribution trailers or footers and re-author
-the commit with your own identity. For a refused pull request body, edit its
-text. Bot commit sign-off exemptions do not exempt attribution. Machine-generated
-release pull requests and pull requests grandfathered by the cutoff keep their
-existing exemptions.
+For a commit refused only because of an attribution trailer or footer, edit the
+message and keep the original author: an amend or reword preserves the author by
+default. The [`git-commit(1)`
+manual](https://git-scm.com/docs/git-commit) documents that `--amend` keeps
+the author and `--reset-author` assigns authorship to the committer. Change
+authorship with `--reset-author` or `--author` only when the refusal names an
+author or committer identity, correcting the refused field. If only the
+committer identity is refused, correct that identity while retaining the
+original author. For a refused pull request body, edit its text. Bot commit
+sign-off exemptions do not exempt attribution. Machine-generated release pull
+requests and pull requests grandfathered by the cutoff keep their existing
+exemptions.
 
 ## Exemptions
 

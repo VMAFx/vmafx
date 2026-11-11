@@ -26,13 +26,13 @@ Extend `scripts/ci/check-dco.py` to refuse model/tool identities in commit autho
 ## Consequences
 
 - **Positive**: the same attribution policy runs before landing and in the landed-commit alarm; bot sign-off exemptions do not bypass attribution checks.
-- **Negative**: substring tokens can collide with human identities, and quoted or fenced attribution examples can be refused. The 2026-11-11 scan measured zero matches across 6,290 master identity records and 300 PR bodies; that is an observed false-positive surface, not a guarantee for future contributors. The [digest](../research/dco-attribution-scan-2026-11-11.md) records both corpora, their fingerprints and the rerun command.
+- **Negative**: substring tokens can collide with human identities, and quoted or fenced attribution examples can be refused. The 2026-11-11 scan measured zero matches across 6,290 master identity records and 300 PR bodies; that is an observed false-positive surface, not a guarantee for future contributors. The [digest](../research/3531-dco-attribution-scan.md) records both corpora, their fingerprints and the rerun command.
 - **Neutral / follow-ups**: token changes must remain synchronized with the engine. Byte/line limits require a recorded corpus and stated headroom; regression tests cover exact-bound and bound-plus-one input. CI uses event-file input; local body files and the environment fallback remain supported. No history rewrite is required.
 
 ## References
 
 - [ADR-2462: DCO sign-off required](2462-dco-sign-off-required.md).
 - [ADR-3389: Landed squash commit message check](3389-landed-commit-message-gate.md).
-- [Research digest and reproducible corpus scan](../research/dco-attribution-scan-2026-11-11.md).
+- [Research digest and reproducible corpus scan](../research/3531-dco-attribution-scan.md).
 - `scripts/ci/tests/test_check_dco.py`: positive, negative, delimiter, Unicode, event-file, and input-bound fixtures.
 - Decision `vmafx-attribution-scan-placement`, option c, 2026-11-11, attribution scan placement (paraphrased): enforce the repository half in `check-dco.py` on PR commits and bodies.

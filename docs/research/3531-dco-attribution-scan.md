@@ -1,4 +1,4 @@
-# DCO attribution scan — 2026-11-11
+# Research-3531: DCO attribution scan
 
 The DCO check rejects model/tool commit identities and attribution lines in
 commits and PR bodies before landing.
@@ -149,16 +149,21 @@ temporary-repository injection cases, Unicode-prefix and NFKC cases, fixture
 event bodies, large multibyte event text, and exact-bound/bound-plus-one cases
 for bytes and lines. Mutation runs restore each vulnerable path on the working
 copy, require its new tests to fail, and restore the fix. Run only the named
-module in the lane:
+module for focused validation:
 
 ```bash
 CUDA_VISIBLE_DEVICES= praetorctl admit --label test -- python3 -B -m pytest -q -p no:cacheprovider -rs scripts/ci/tests/test_check_dco.py
 ```
 
-Local Git 2.56.0 documentation (`git-log(1)`, literal-format and terminator
-sections) and a two-record capture validated `%x00` and NUL termination.
-Python's installed `unicodedata.normalize` and `unicodedata.category`
+Local Git 2.56.0 documentation
+([`git-log(1)`](https://git-scm.com/docs/git-log#Documentation/git-log.txt--z),
+literal-format and terminator sections) and a two-record capture validated
+`%x00` and NUL termination. Python's installed
+[`unicodedata.normalize`](https://docs.python.org/3/library/unicodedata.html#unicodedata.normalize)
+and
+[`unicodedata.category`](https://docs.python.org/3/library/unicodedata.html#unicodedata.category)
 documentation validated the normalization/category APIs. Workflow body
-extraction uses installed jq 1.8.2's raw-output option and the existing squash
-check's `--body-file` interface. No new dependency, action pin, or permission is
+extraction uses installed [jq 1.8.2's raw-output
+option](https://jqlang.org/manual/v1.8/) and the existing squash check's
+`--body-file` interface. No new dependency, action pin, or permission is
 introduced.

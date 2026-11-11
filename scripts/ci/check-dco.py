@@ -90,9 +90,11 @@ MAX_COMMIT_LOG_BYTES = MAX_COMMIT_MESSAGE_BYTES * 2 + 65_536
 # list in docs/development/dco.md in step with this one.
 BOT_LOGINS = ("renovate[bot]", "dependabot[bot]", "github-actions[bot]")
 
-# Keep tokens synchronized with praetor tools/planning/commit_msg_check.py
-# BANNED_COAUTHORS and engine internal/forge/commit_message.go bannedCoauthorsRegex;
-# a token change lands in all three.
+# All 13 tokens equal praetor tools/planning/commit_msg_check.py BANNED_COAUTHORS;
+# both Python tuples use substring matching. Engine internal/forge/commit_message.go
+# bannedCoauthorsRegex holds only the 11 word tokens, with word-boundary matching;
+# the e-mail and [bot] entries are Python-only. Update both tuples together and
+# synchronize word-token changes with the engine regex word list.
 # On GitHub squash merges, GitHub (noreply@github.com) is the committer on every
 # landed commit, so committer identity cannot authorize a commit sign-off; only
 # the commit author or the designated landing identity is accepted.
@@ -113,7 +115,7 @@ BANNED_COAUTHOR_TOKENS = (
 )
 
 GENERATED_LINE_RE = re.compile(
-    r"^(?:<!--\s*|[-*]\s*|[#>\s]*)*(?:generated|created)\s+(?:with|by)\b",
+    r"^(?:generated|created)\s+(?:with|by)\b",
     re.IGNORECASE,
 )
 SIGNOFF_RE = re.compile(r"^signed-off-by:\s+(.+?)\s+<([^<>\s]+@[^<>\s]+)>\s*$", re.IGNORECASE)
@@ -284,9 +286,23 @@ def check_banned_coauthor(line: str) -> str | None:
     return None
 
 
+def strip_attribution_prefix(line: str) -> str:
+    """Remove leading comment, bullet, quote, heading, and whitespace prefixes linearly."""
+    start = 0
+    # Each iteration consumes at least one character: at most len(line) iterations.
+    while start < len(line):
+        if line.startswith("<!--", start):
+            start += 4
+        elif line[start] in "-*#>" or line[start].isspace():
+            start += 1
+        else:
+            break
+    return line[start:]
+
+
 def check_machine_attribution(line: str) -> bool:
     """Return True if line matches machine attribution patterns or contains robot emoji."""
-    return bool(GENERATED_LINE_RE.match(line.strip()) or "\U0001f916" in line)
+    return bool(GENERATED_LINE_RE.match(strip_attribution_prefix(line)) or "\U0001f916" in line)
 
 
 def normalize_attribution_line(line: str) -> str:
