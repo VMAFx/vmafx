@@ -19,6 +19,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import check_bandit_new as check
+from scripts.lib import new_scanner_findings as shared
 from scripts.lib.safe_subprocess import run as run_command
 
 BASE = "from pathlib import Path\n\nexe = Path('tool')\n"
@@ -79,7 +80,9 @@ class CheckBanditNew(unittest.TestCase):
         status, out, err = self.run_check("harness.py", BASE + UNSAFE)
         self.assertEqual(status, 1, err)
         self.assertIn("harness.py:6: B603:", out)
-        self.assertIn("scripts/lib/safe_subprocess.run", err)
+        self.assertIn("fix each finding", err)
+        self.assertIn("scripts.lib.safe_subprocess.run", err)
+        self.assertIn("# noqa does not silence Bandit", err)
 
     def test_moved_base_finding_is_old(self) -> None:
         (self.root / "harness.py").write_text(BASE + UNSAFE, encoding="utf-8")
@@ -115,23 +118,68 @@ class CheckBanditNew(unittest.TestCase):
     def test_bandit_json_errors_are_error(self) -> None:
         result = mock.Mock(returncode=0, stdout=json.dumps({"results": [], "errors": ["bad"]}))
         with mock.patch.object(check, "run_command", return_value=result):
-            status, _, err = self.run_check("harness.py", BASE)
+            status, _, err = self.run_check("harness.py", BASE + "# changed\n")
         self.assertEqual(status, 2)
         self.assertIn("scan errors", err)
 
     def test_invalid_json_is_error(self) -> None:
         result = mock.Mock(returncode=0, stdout="not JSON")
         with mock.patch.object(check, "run_command", return_value=result):
-            status, _, err = self.run_check("harness.py", BASE)
+            status, _, err = self.run_check("harness.py", BASE + "# changed\n")
         self.assertEqual(status, 2)
         self.assertIn("Bandit failed", err)
 
     def test_unexpected_bandit_exit_is_error(self) -> None:
         result = mock.Mock(returncode=3, stdout="", stderr="scan failed")
         with mock.patch.object(check, "run_command", return_value=result):
-            status, _, err = self.run_check("harness.py", BASE)
+            status, _, err = self.run_check("harness.py", BASE + "# changed\n")
         self.assertEqual(status, 2)
         self.assertIn("exited 3", err)
+
+
+class CheckSharedScannerFindings(unittest.TestCase):
+    def test_git_output_drops_injected_git_configuration(self) -> None:
+        injected = {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "diff.noprefix",
+            "GIT_CONFIG_VALUE_0": "true",
+            "GIT_DIR": "/wrong/repository",
+            "SAFE_ENV": "kept",
+        }
+        result = mock.Mock(returncode=0, stdout="repository config")
+        with (
+            mock.patch.object(shared, "os", mock.Mock(environ=injected)),
+            mock.patch.object(shared, "run_command", return_value=result) as run,
+        ):
+            self.assertEqual(
+                shared.git_output("git", ["config", "--get", "diff.noprefix"], Path.cwd()),
+                (0, "repository config"),
+            )
+        self.assertEqual(run.call_args.kwargs["env"], {"SAFE_ENV": "kept"})
+
+    def test_identical_text_skips_both_scans(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="vmafx-scanner-") as temp:
+            current = Path(temp) / "same.py"
+            current.write_text("one line\n", encoding="utf-8")
+            scan = mock.Mock(side_effect=AssertionError("scan called"))
+            self.assertEqual(shared.new_findings(scan, current, "one line\n"), [])
+        scan.assert_not_called()
+
+    def test_one_changed_byte_scans_both_copies(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="vmafx-scanner-") as temp:
+            current = Path(temp) / "changed.py"
+            current.write_text("one line!\n", encoding="utf-8")
+            scan = mock.Mock(return_value=[])
+            self.assertEqual(shared.new_findings(scan, current, "one line\n"), [])
+        self.assertEqual(scan.call_count, 2)
+
+    def test_non_utf8_file_scans_both_copies(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="vmafx-scanner-") as temp:
+            current = Path(temp) / "latin1.c"
+            current.write_bytes(b"/* caf\xe9 */\n")
+            scan = mock.Mock(return_value=[])
+            self.assertEqual(shared.new_findings(scan, current, ""), [])
+        self.assertEqual(scan.call_count, 2)
 
 
 if __name__ == "__main__":

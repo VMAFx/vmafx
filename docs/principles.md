@@ -283,9 +283,10 @@ dependencies).
   gate and as a pre-commit hook. `flawfinder-new` checks changed C/C++ files;
   `bandit-new` checks changed Python files against the merge-base copy, at
   pre-commit and pre-push. Both reject only new findings. The Python check
-  runs the [Codacy Bandit patterns](../bandit.yml) from the same configuration
-  file Codacy reads. Refresh that file from the enabled Bandit pattern IDs in
-  Codacy, then run the planted recall test in
+  runs the [Codacy Bandit patterns](../bandit.yml) from the one list Codacy
+  reads on each analysed branch. Editing that file changes Codacy's patterns;
+  without it, Codacy uses its UI patterns. Refresh the list from Codacy's
+  enabled Bandit IDs, then run the planted recall test in
   `scripts/ci/tests/test_check_bandit_new.py`.
 - ✅ CodeQL — zero security-and-quality issues at `security-extended` suite
 - ✅ Conventional commit messages (enforced by commit-msg hook)

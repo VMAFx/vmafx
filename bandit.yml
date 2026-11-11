@@ -1,8 +1,10 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-# Codacy Bandit code patterns for VMAFx/vmafx, read from the Codacy API on 2026-11-11.
-# Codacy detects this file; scripts/ci/check_bandit_new.py passes it to Bandit with -c.
-# Refresh: compare Codacy's enabled Bandit pattern IDs, then update this one list.
+# One Bandit pattern list for Codacy and scripts/ci/check_bandit_new.py.
+# Codacy reads this root file from the analysed branch; editing it changes Codacy's patterns.
+# If the branch lacks this file, Codacy falls back to its UI patterns.
+# These 56 IDs matched Codacy's enabled Bandit patterns on 2026-11-11.
+# Refresh: compare Codacy's enabled Bandit IDs, then edit this list; Codacy follows.
 tests:
   - B102
   - B103

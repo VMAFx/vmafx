@@ -85,8 +85,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if failed:
         print(
-            f"{failed} new Bandit finding(s); run processes through "
-            "scripts/lib/safe_subprocess.run",
+            f"{failed} new Bandit finding(s); fix each finding "
+            "(process calls go through scripts.lib.safe_subprocess.run; "
+            "# noqa does not silence Bandit)",
             file=sys.stderr,
         )
         return 1

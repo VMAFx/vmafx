@@ -14,18 +14,6 @@ from pathlib import Path
 from scripts.lib.safe_subprocess import run as run_command
 
 Finding = tuple[int, str, str]
-GIT_REPOSITORY_ENV = frozenset(
-    {
-        "GIT_DIR",
-        "GIT_WORK_TREE",
-        "GIT_INDEX_FILE",
-        "GIT_COMMON_DIR",
-        "GIT_OBJECT_DIRECTORY",
-        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-        "GIT_NAMESPACE",
-        "GIT_PREFIX",
-    }
-)
 
 
 class ToolError(RuntimeError):
@@ -41,8 +29,9 @@ def tool(name: str) -> str:
 
 def git_output(git: str, args: list[str], cwd: Path) -> tuple[int, str]:
     """Run a read-only git command in the selected repository."""
-    # Only repository routing is isolated; keep credential configuration intact.
-    env = {key: value for key, value in os.environ.items() if key not in GIT_REPOSITORY_ENV}
+    # Read-only git in `cwd`; the hook's GIT_DIR / GIT_INDEX_FILE are dropped so
+    # `cwd` alone names the repository.
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     proc = run_command(
         [git, *args],
         allowed_executables=(git,),
@@ -90,7 +79,12 @@ def base_text(git: str, root: Path, base: str, relative: str) -> str:
 def new_findings(
     scan: Callable[[Path], list[Finding]], current: Path, old_text: str
 ) -> list[Finding]:
-    """Return current findings absent at base, regardless of line movement."""
+    """Return findings absent at base; skip both scans when the bytes match.
+
+    Bytes, not decoded text: a file that is not UTF-8 still reaches the scanner.
+    """
+    if current.read_bytes() == old_text.encode("utf-8"):
+        return []
     with tempfile.TemporaryDirectory(prefix="scanner-base-") as temp:
         old = Path(temp) / current.name
         old.write_text(old_text, encoding="utf-8")
