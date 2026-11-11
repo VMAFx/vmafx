@@ -16,13 +16,26 @@ whenever another job held the lock.
 from __future__ import annotations
 
 import json
-import os
-import subprocess
+import signal
+import subprocess  # nosec B404 -- fixed repository gate requires SIGINT supervision.
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.lib import vmaftest  # noqa: E402 - needs the repository root on sys.path
+
 SCRIPT = ROOT / "scripts" / "ci" / "cross_backend_parity_gate.py"
+# Not measured: the parity gate needs a free GPU, which the measuring host did not have.
+# Set under the 120 s Meson timeout of this test (core/test/meson.build), so this
+# message, not Meson's kill, names the stuck run; it covers the lock wait too.
+SCRIPT_TIMEOUT_S = 105
+INTERRUPT_GRACE_S = 10
+# After SIGKILL the gate dies at once; this only waits for the pipes to close, which a
+# descendant that kept them open would otherwise hold forever.
+KILL_GRACE_S = 2
 REF = ROOT / "python" / "test" / "resource" / "yuv" / "src01_hrc00_576x324.yuv"
 DIS = ROOT / "python" / "test" / "resource" / "yuv" / "src01_hrc01_576x324.yuv"
 
@@ -58,19 +71,20 @@ def build_has_cuda(build_dir: Path) -> bool | None:
 
 
 def find_binary() -> Path | None:
-    """The vmaf CLI of VMAF_BUILD_DIR, of `build/`, or of the working directory."""
-    vmaf_bin = os.environ.get("VMAF_BUILD_DIR")
-    binary = Path(vmaf_bin) / "tools" / "vmaf" if vmaf_bin else ROOT / "build" / "tools" / "vmaf"
-    if binary.is_file():
-        return binary
-    binary = Path.cwd() / "tools" / "vmaf"
-    return binary if binary.is_file() else None
+    """The vmaf CLI under test, from the one resolver every Python test uses.
+
+    scripts/lib/vmaftest.py reads VMAF_BIN, VMAF_BIN_FOR_TESTS, then the repository's
+    build directories. Those directories are usually CPU builds, which skip_reason() skips:
+    name a CUDA build with VMAF_BIN. A set variable that names no executable raises
+    vmaftest.InvalidVmafBinary.
+    """
+    return vmaftest.find(root=ROOT)
 
 
 def skip_reason(binary: Path | None) -> str | None:
     """Why there is nothing to compare, or None. Decided without the device."""
     if binary is None:
-        return "vmaf binary not found"
+        return vmaftest.MISSING_MESSAGE
     if build_has_cuda(binary.parent.parent) is False:
         return "This build was configured without CUDA"
     if not REF.is_file() or not DIS.is_file():
@@ -78,16 +92,19 @@ def skip_reason(binary: Path | None) -> str | None:
     return None
 
 
-def main() -> int:
-    binary = find_binary()
-    reason = skip_reason(binary)
-    if reason is not None:
-        sys.stderr.write(f"{reason}; skipping (77)\n")
-        return 77
+def gate_command(binary: Path, lock_path: Path | None = None) -> list[str]:
+    """The parity gate command for `binary`, run under the GPU lock at `lock_path`.
 
-    cmd = [
+    --no-fork: flock execs the gate, so the timeout path signals the gate itself and the
+    lock frees only when the gate exits; a forked gate would outlive a kill and keep the
+    lock. `lock_path` defaults to the shared 4090 lock; tests pass a temporary one.
+    """
+    if lock_path is None:
+        lock_path = Path.home() / ".cache" / "vmafx-locks" / "cuda-4090.lock"
+    return [
         "flock",
-        str(Path.home() / ".cache" / "vmafx-locks" / "cuda-4090.lock"),
+        "--no-fork",
+        str(lock_path),
         sys.executable,
         str(SCRIPT),
         "--vmaf-binary",
@@ -105,7 +122,53 @@ def main() -> int:
         "cuda",
     ]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
+
+def as_text(output: str | bytes | None) -> str:
+    """Partial output of a TimeoutExpired, which communicate() leaves undecoded."""
+    if isinstance(output, bytes):
+        return output.decode("utf-8", errors="replace")
+    return output or ""
+
+
+def stop_gate(proc: subprocess.Popen[str]) -> tuple[str, str]:
+    """SIGINT, then SIGKILL, each wait bounded; return the output collected so far."""
+    proc.send_signal(signal.SIGINT)
+    try:
+        return proc.communicate(timeout=INTERRUPT_GRACE_S)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+    try:
+        return proc.communicate(timeout=KILL_GRACE_S)
+    except subprocess.TimeoutExpired as exc:
+        sys.stderr.write(
+            f"A gate descendant still held the output pipes {KILL_GRACE_S}s after the kill"
+            " (KILL_GRACE_S)\n"
+        )
+        return as_text(exc.stdout), as_text(exc.stderr)
+
+
+def run_gate(cmd: list[str]) -> subprocess.CompletedProcess[str] | None:
+    """Interrupt a timed-out gate so its asyncio supervisor reaps vmaf before unlocking."""
+    with subprocess.Popen(  # noqa: S603  # nosec B603 -- fixed argv uses sys.executable and a repository script.
+        cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    ) as proc:
+        try:
+            stdout, stderr = proc.communicate(timeout=SCRIPT_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            stdout, stderr = stop_gate(proc)
+            sys.stdout.write(stdout or "")
+            sys.stderr.write(stderr or "")
+            sys.stderr.write(
+                f"Default parity gate timed out after {SCRIPT_TIMEOUT_S}s (SCRIPT_TIMEOUT_S)\n"
+            )
+            return None
+        return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+
+
+def gate_verdict(proc: subprocess.CompletedProcess[str] | None) -> int:
+    """The exit code for a finished gate run: 0, 77 to skip, 124 on timeout, else a failure."""
+    if proc is None:
+        return 124
     if proc.returncode != 0:
         if cuda_unavailable(proc.stdout + proc.stderr):
             sys.stderr.write("CUDA is not available to this binary; skipping (77)\n")
@@ -123,6 +186,21 @@ def main() -> int:
         return 1
 
     return 0
+
+
+def main() -> int:
+    """Run the CUDA parity gate under the GPU lock and return its exit code, or 77 to skip."""
+    try:
+        binary = find_binary()
+    except vmaftest.InvalidVmafBinary as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 1
+    reason = skip_reason(binary)
+    if reason is not None or binary is None:
+        sys.stderr.write(f"{reason}; skipping (77)\n")
+        return 77
+
+    return gate_verdict(run_gate(gate_command(binary)))
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ import itertools
 import multiprocessing
 import os
 import re
-import subprocess
+import subprocess  # nosec B404 -- bounded argv existence check with closed stdin, no shell.
 import sys
 import tempfile
 import unittest
@@ -25,6 +25,9 @@ from vmaf.tools.scanf import FormatError, IncompleteCaptureError, sscanf
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
+# Bound = max(60, 10x the slowest measured run): check_program_exist("ls") took
+# 0.002 s. The check only needs the program to start.
+SUBPROCESS_TIMEOUT_S = 60
 
 
 def get_stdout_logger():
@@ -411,7 +414,7 @@ def _parallel_map_serialized(func, list_args, serialization_keys, processes=None
 
 
 def check_program_exist(program):
-    """
+    """Return whether the program starts, closing stdin and bounding the wait.
 
     >>> check_program_exist("xxxafasd34df")
     False
@@ -427,7 +430,15 @@ def check_program_exist(program):
     """
     try:
         with open(os.devnull, "wb") as devnull_fd:
-            subprocess.call(program.split(), stdout=devnull_fd)
+            subprocess.call(  # noqa: S603  # nosec B603 -- split argv without a shell; existence check only.
+                program.split(),
+                stdin=subprocess.DEVNULL,
+                stdout=devnull_fd,
+                timeout=SUBPROCESS_TIMEOUT_S,
+            )
+        return True
+    except subprocess.TimeoutExpired:
+        # The program started, so it exists; the timeout only stopped a long run.
         return True
     except OSError as e:
         if e.errno == errno.ENOENT:
