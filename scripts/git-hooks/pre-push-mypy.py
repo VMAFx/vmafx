@@ -302,6 +302,7 @@ def report(introduced: set[str], inherited: int) -> int:
 
 
 def main() -> int:
+    """Check owned Python changes against the outgoing commit and inherited findings."""
     try:
         root = Path(git("rev-parse", "--show-toplevel").strip()).resolve()
         head = git("rev-parse", "--verify", "HEAD^{commit}").strip()

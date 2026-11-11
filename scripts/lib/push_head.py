@@ -12,7 +12,7 @@ from scripts.lib.safe_subprocess import run as run_command
 
 
 def outgoing_head(head: str, root: Path) -> None:
-    """Normal pushes expose TO_REF; an all-files first push exposes LOCAL_BRANCH."""
+    """Require push framework refs to resolve to the checkout being validated."""
     outgoing = os.environ.get("PRE_COMMIT_TO_REF", os.environ.get("PRE_COMMIT_LOCAL_BRANCH"))
     if outgoing is None:
         return

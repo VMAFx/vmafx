@@ -282,6 +282,7 @@ class MypyScope(unittest.TestCase):
         self.assertFalse(self.receipt.exists())
 
     def test_rebase_rechecks_unchanged_owned_file_through_real_pre_commit(self) -> None:
+        """Preserve owned-file coverage when rebasing changes only its dependency."""
         self.write("scripts/owned.py", "from api import value\nowned: int = value()  # BAD\n")
         # Use the shipped hook configuration so missing always_run or restored
         # filename intersection is caught by the framework, not just unit calls.

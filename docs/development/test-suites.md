@@ -216,26 +216,44 @@ mutually exclusive with `--base`, `--head` and `--files`. During a push, the
 runner refuses an outgoing ref that differs from the checked-out `HEAD`, so
 it cannot validate the wrong branch.
 
-Within each affected suite, `--focused` selects changed test files and tests
-whose text names a changed file through its repository-relative path, its
-basename if unique among tracked files, or its dotted Python module path.
-A Python stem in an import also counts if unique among tracked Python stems;
-imports can span lines. Path and module matches require complete tokens:
-`xinstall-rocm-from-image.sh.bak` does not name `install-rocm-from-image.sh`.
-A path may follow a `/`, so `f"{ROOT}/scripts/ci/install-rocm-from-image.sh"`
-and `./scripts/ci/install-rocm-from-image.sh` name the script, and a sentence
-may end right after it. The rule leans towards selecting a test too many,
-which costs run time, over missing one, which lets a red test through.
-Unqualified `__init__.py` and `meson.build` names cannot select tests when
-those basenames occur more than once. This is a textual selection rule,
-not a dependency graph; a test that constructs a path from pieces may be missed.
-`--focused --list` shows the selection without running tests or building venvs.
-
-Each unmatched changed non-test file under an affected suite prints
-`NOT RUN <path>: no test names this file`. An empty selection prints
-`<suite>: NOT RUN (no test names a changed file)` and never counts as passed.
-These lines leave the exit status at 0 unless `--strict` makes an unrun suite
-fail. Test failures still exit 1; usage and I/O errors exit 2.
+- `--focused`: changed test files; tests naming changed repository-relative
+  paths, unique tracked basenames, dotted Python module paths; unique Python
+  stems in imports, multiline imports included. Literal first arguments:
+  `importlib.import_module`, from-import `import_module`, `__import__`;
+  dotted names -> final leaf. Non-literal arguments excluded.
+- Package `__init__.py`: dotted module = parent directory; short import =
+  parent directory leaf, unique over package directories. Compat `vmaf` alias:
+  `python/vmaf/__init__.py` loads `compat/vmaf` -> `compat/python-vmaf`.
+- Uniqueness tree: current index + comparison base's tracked paths
+  (`git ls-tree -r`); deleted modules retain import identities and collisions.
+- Complete tokens only: `xinstall-rocm-from-image.sh.bak` !=
+  `install-rocm-from-image.sh`. Root-prefixed paths accepted:
+  `f"{ROOT}/scripts/ci/install-rocm-from-image.sh"`,
+  `./scripts/ci/install-rocm-from-image.sh`; sentence-final period accepted.
+  Duplicate `__init__.py` / `meson.build` basenames insufficient.
+- Paths outside every registry trigger: candidate tests from every locally
+  runnable suite searched; matches add suite + matching tests. Registry
+  triggers unchanged; CI routing unchanged.
+- Every unmatched changed non-test path, including paths outside triggers:
+  `NOT RUN <path>: no test names this file; alternate coverage: pull request CI jobs: ...`.
+  Empty selection: `<suite>: NOT RUN (no test names a changed file)`;
+  alternate coverage line; zero passed tests. Unavailable local suite:
+  `not_local` reason + alternate coverage line. Coverage names from registry
+  `checks`; e.g. Tooling Tests runs `suite_registry.py run tooling` in
+  `.github/workflows/tests-and-quality-gates.yml`.
+- Recorded gaps: default exit 0; `--strict` -> exit 1 for unrun suite or
+  unmatched path. Test failure = 1; usage/I/O/dirty checkout = 2.
+- Before execution: every changed path + selected test matches HEAD in index
+  AND worktree. Difference -> exit 2, paths named. Unrelated tracked edits
+  and untracked files outside those paths irrelevant. Pre-commit ordinary
+  pre-push stashes unstaged edits only; first-push `all_files=True` bypasses
+  stash; staged edits remain visible.
+- `--focused --list`: selection only; no tests, venv builds, or checkout
+  cleanliness validation.
+- Known gap: basename assembled from pieces, e.g.
+  `ROOT / "scripts" / "ci" / ("check-codeql-" + "unused-static.py")`;
+  no complete path/module token -> NOT selected. Textual selector, no
+  dependency graph. Full CI suites retain alternate coverage.
 
 The `affected-tests` pre-push hook runs focused mode against `origin/master`
 on every push. Its first run builds the affected suites' cached environments;

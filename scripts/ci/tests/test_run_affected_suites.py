@@ -109,7 +109,112 @@ class MappingTests(unittest.TestCase):
 
 
 class FocusedSelectionTests(unittest.TestCase):
+    def test_package_initializer_selects_imports_of_package(self) -> None:
+        """Package imports cover their initializer despite shared initializer basenames."""
+        path = "src/widget/__init__.py"
+        tracked = [path, "other/__init__.py"]
+        for text in ("import widget", "from widget import value", "import src.widget"):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    runner.focused_selection([path], tracked, {"test.py": text}),
+                    (["test.py"], []),
+                )
+
+    def test_ambiguous_package_leaf_requires_qualified_reference(self) -> None:
+        """Duplicate package leaves cannot claim a short import."""
+        path = "widget/__init__.py"
+        tracked = [path, "other/widget/__init__.py"]
+        for text in ("import widget", "import widget_extra", "# widget"):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    runner.focused_selection([path], tracked, {"test.py": text}), ([], [path])
+                )
+        self.assertEqual(
+            runner.focused_selection([path], tracked, {"test.py": repr(path)}),
+            (["test.py"], []),
+        )
+
+    def test_package_import_boundaries_and_qualified_duplicate(self) -> None:
+        """Qualified packages distinguish duplicate leaves and reject longer names."""
+        path = "src/widget/__init__.py"
+        tracked = [path, "other/widget/__init__.py"]
+        self.assertEqual(
+            runner.focused_selection([path], tracked, {"test.py": "import src.widget"}),
+            (["test.py"], []),
+        )
+        for text in ("import widget_extra", "import src.widget_extra", "import other.widget"):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    runner.focused_selection([path], tracked, {"test.py": text}), ([], [path])
+                )
+
+    def test_vmaf_named_package_outside_alias_roots_keeps_ambiguity(self) -> None:
+        """The compatibility alias cannot exempt an unrelated package with the same name."""
+        path = "vmaf/__init__.py"
+        self.assertEqual(
+            runner.focused_selection(
+                [path], [path, "other/vmaf/__init__.py"], {"test.py": "import vmaf"}
+            ),
+            ([], [path]),
+        )
+
+    def test_compat_package_alias_selects_vmaf_imports(self) -> None:
+        """Legacy vmaf imports cover the compatibility package and its shim."""
+        for path in (
+            "compat/python-vmaf/__init__.py",
+            "python/vmaf/__init__.py",
+            "compat/python-vmaf/core/__init__.py",
+            "compat/python-vmaf/core/result.py",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(
+                    runner.focused_selection(
+                        [path], [path], {"test.py": "from vmaf.core.result import Result"}
+                    ),
+                    (["test.py"], []),
+                )
+
+    def test_literal_dynamic_import_selects_unique_hyphenated_stem(self) -> None:
+        """Literal dynamic imports cover scripts without a Python identifier stem."""
+        path = "scripts/ci/check-codeql-unused-static.py"
+        for call in ("importlib.import_module", "import_module", "__import__"):
+            for module in ("check-codeql-unused-static", "checks.check-codeql-unused-static"):
+                with self.subTest(call=call, module=module):
+                    self.assertEqual(
+                        runner.focused_selection(
+                            [path], [path], {"test.py": f'{call}("{module}")'}
+                        ),
+                        (["test.py"], []),
+                    )
+
+    def test_dynamic_import_nonliteral_argument_does_not_select(self) -> None:
+        """Computed module names remain outside literal import discovery."""
+        path = "scripts/ci/check-codeql-unused-static.py"
+        text = 'name = "check-codeql-" + "unused-static"\nimportlib.import_module(name)'
+        self.assertEqual(runner.focused_selection([path], [path], {"test.py": text}), ([], [path]))
+
+    def test_literal_loader_paths_select_hyphenated_script(self) -> None:
+        """Loader APIs need no special parsing when their literal paths name the script."""
+        path = "scripts/ci/check-codeql-unused-static.py"
+        for call in (
+            f'importlib.util.spec_from_file_location("checker", ROOT / "{path}")',
+            f'SourceFileLoader("checker", "{Path(path).name}")',
+            f'runpy.run_path(str(ROOT / "{path}"))',
+        ):
+            with self.subTest(call=call):
+                self.assertEqual(
+                    runner.focused_selection([path], [path], {"test.py": call}),
+                    (["test.py"], []),
+                )
+
+    def test_known_gap_split_basename_is_not_selected(self) -> None:
+        """Known gap: separate basename pieces leave no complete path token."""
+        path = "scripts/ci/check-codeql-unused-static.py"
+        text = 'SCRIPT = ROOT / "scripts" / "ci" / ("check-codeql-" + "unused-static.py")'
+        self.assertEqual(runner.focused_selection([path], [path], {"test.py": text}), ([], [path]))
+
     def test_live_rocm_script_selects_exactly_its_two_tests(self) -> None:
+        """Keep the live script-to-test mapping precise across selector changes."""
         registry = registry_lib.load_registry(ROOT)
         tracked = registry_lib.tracked_files(ROOT)
         texts = {
@@ -127,10 +232,12 @@ class FocusedSelectionTests(unittest.TestCase):
         self.assertEqual(unnamed, [])
 
     def test_a_changed_test_selects_itself(self) -> None:
+        """Always exercise a changed test even without source references."""
         test = "pkg/tests/test_changed.py"
         self.assertEqual(runner.focused_selection([test], [test], {test: ""}), ([test], []))
 
     def test_repo_relative_path_selects_with_ambiguous_basename(self) -> None:
+        """Preserve full-path coverage when a short name is ambiguous."""
         path = "pkg/meson.build"
         selected, unnamed = runner.focused_selection(
             [path], [path, "other/meson.build"], {"test.py": repr(path)}
@@ -138,6 +245,7 @@ class FocusedSelectionTests(unittest.TestCase):
         self.assertEqual((selected, unnamed), (["test.py"], []))
 
     def test_unique_basename_selects(self) -> None:
+        """Allow a globally unique short filename to identify its tests."""
         path = ROCM_SCRIPT
         selected, unnamed = runner.focused_selection(
             [path], [path], {"test.py": repr(Path(ROCM_SCRIPT).name)}
@@ -145,6 +253,7 @@ class FocusedSelectionTests(unittest.TestCase):
         self.assertEqual((selected, unnamed), (["test.py"], []))
 
     def test_dotted_module_selects(self) -> None:
+        """Recognize fully qualified Python references."""
         path = "scripts/ci/check_dco.py"
         selected, unnamed = runner.focused_selection(
             [path], [path], {"test.py": "from scripts.ci.check_dco import main"}
@@ -152,6 +261,7 @@ class FocusedSelectionTests(unittest.TestCase):
         self.assertEqual((selected, unnamed), (["test.py"], []))
 
     def test_unique_stem_in_import_selects(self) -> None:
+        """Cover short imports while retaining multiline syntax support."""
         path = "scripts/ci/check_dco.py"
         for text in ("import check_dco", "from scripts.ci import (\n    check_dco,\n)"):
             with self.subTest(text=text):
@@ -161,6 +271,7 @@ class FocusedSelectionTests(unittest.TestCase):
                 )
 
     def test_nonunique_basename_selects_nothing(self) -> None:
+        """Prevent generic filenames from claiming unrelated tests."""
         for name in ("__init__.py", "meson.build"):
             with self.subTest(name=name):
                 path = f"pkg/{name}"
@@ -172,6 +283,7 @@ class FocusedSelectionTests(unittest.TestCase):
                 )
 
     def test_longer_path_token_does_not_select(self) -> None:
+        """Reject suffixes and longer filenames that merely contain a path."""
         path = ROCM_SCRIPT
         for text in (
             "'xinstall-rocm-from-image.sh.bak'",
@@ -185,6 +297,7 @@ class FocusedSelectionTests(unittest.TestCase):
                 )
 
     def test_path_after_a_root_prefix_selects(self) -> None:
+        """Support repository paths joined to a root or used in prose."""
         path = ROCM_SCRIPT
         tracked = [path, "other/" + ROCM_NAME]
         for text in (
@@ -199,6 +312,7 @@ class FocusedSelectionTests(unittest.TestCase):
                 )
 
     def test_unique_basename_after_a_directory_selects(self) -> None:
+        """Recognize a unique basename in a relative path."""
         path = ROCM_SCRIPT
         text = "HERE / '../" + ROCM_NAME + "'"
         self.assertEqual(
@@ -206,6 +320,7 @@ class FocusedSelectionTests(unittest.TestCase):
         )
 
     def test_dotted_module_attribute_selects(self) -> None:
+        """Retain coverage through references to module attributes."""
         path = "scripts/ci/check_dco.py"
         text = "mock.patch('scripts.ci.check_dco.run')"
         self.assertEqual(
@@ -213,6 +328,7 @@ class FocusedSelectionTests(unittest.TestCase):
         )
 
     def test_stem_in_prose_or_alias_does_not_select(self) -> None:
+        """Require import identity rather than incidental short-name text."""
         path = "scripts/ci/check_dco.py"
         for text in ("# check_dco", "import other as check_dco", "# invalid Python\n!check_dco"):
             with self.subTest(text=text):
@@ -221,6 +337,7 @@ class FocusedSelectionTests(unittest.TestCase):
                 )
 
     def test_nonunique_stem_in_import_does_not_select(self) -> None:
+        """Refuse short imports shared by multiple source modules."""
         path = "pkg/common.py"
         self.assertEqual(
             runner.focused_selection(
@@ -230,6 +347,7 @@ class FocusedSelectionTests(unittest.TestCase):
         )
 
     def test_longer_module_does_not_select(self) -> None:
+        """Keep module token boundaries precise."""
         path = "pkg/mod.py"
         self.assertEqual(
             runner.focused_selection([path], [path], {"test.py": "# pkg.mod_extra"}),
@@ -239,21 +357,32 @@ class FocusedSelectionTests(unittest.TestCase):
 
 class PushHeadTests(unittest.TestCase):
     def test_equal_outgoing_ref_passes_for_both_framework_variables(self) -> None:
+        """Accept each supported framework ref without leaking Git overrides."""
         for variable in ("PRE_COMMIT_TO_REF", "PRE_COMMIT_LOCAL_BRANCH"):
             with (
                 self.subTest(variable=variable),
-                patch.object(os, "environ", {variable: "pushed", "GIT_DIR": "/unrelated"}),
+                patch.object(
+                    os,
+                    "environ",
+                    {variable: "pushed", "GIT_DIR": "/unrelated", "PATH": os.environ["PATH"]},
+                ),
                 patch.object(push_head, "run_command") as command,
             ):
                 command.return_value.returncode = 0
                 command.return_value.stdout = "same\n"
                 push_head.outgoing_head("same", ROOT)
-                self.assertEqual(command.call_args.kwargs["env"], {variable: "pushed"})
+                self.assertEqual(
+                    command.call_args.kwargs["env"],
+                    {variable: "pushed", "PATH": os.environ["PATH"]},
+                )
                 self.assertEqual(command.call_args.args[0][-1], "pushed^{commit}")
 
     def test_differing_ref_raises(self) -> None:
+        """Refuse validation of a branch other than the one being pushed."""
         with (
-            patch.object(os, "environ", {"PRE_COMMIT_TO_REF": "pushed"}),
+            patch.object(
+                os, "environ", {"PRE_COMMIT_TO_REF": "pushed", "PATH": os.environ["PATH"]}
+            ),
             patch.object(push_head, "run_command") as command,
         ):
             command.return_value.returncode = 0
@@ -262,6 +391,7 @@ class PushHeadTests(unittest.TestCase):
                 push_head.outgoing_head("head", ROOT)
 
     def test_unset_outgoing_ref_passes_without_git(self) -> None:
+        """Allow direct diagnostic runs without push framework metadata."""
         with (
             patch.object(os, "environ", {}),
             patch.object(push_head, "run_command") as command,
@@ -270,8 +400,11 @@ class PushHeadTests(unittest.TestCase):
             command.assert_not_called()
 
     def test_missing_outgoing_ref_fails_closed(self) -> None:
+        """Refuse unresolved outgoing refs before test execution."""
         with (
-            patch.object(os, "environ", {"PRE_COMMIT_TO_REF": "missing"}),
+            patch.object(
+                os, "environ", {"PRE_COMMIT_TO_REF": "missing", "PATH": os.environ["PATH"]}
+            ),
             patch.object(push_head, "run_command") as command,
         ):
             command.return_value.returncode = 128
@@ -282,6 +415,7 @@ class PushHeadTests(unittest.TestCase):
 
 class VenvKeyTests(unittest.TestCase):
     def setUp(self) -> None:
+        """Build a temporary root holding a suite manifest for venv key cases."""
         self._tmp = tempfile.TemporaryDirectory(prefix="affected-key-")
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
@@ -347,17 +481,20 @@ class SkipPolicyTests(unittest.TestCase):
         self.assertEqual(len(runner.skip_violations(self.suite(None), skips)), 1)
 
     def test_declared_input_skip_is_a_violation(self) -> None:
+        """A skip naming a declared suite input is refused only when the suite declares it."""
         skips = [("t::a", "vmaf binary not found")]
         self.assertEqual(runner.skip_violations(self.suite(None), skips), [])
         self.assertEqual(len(runner.skip_violations(self.suite("vmaf binary"), skips)), 1)
 
     def test_an_unrelated_skip_is_not_a_violation(self) -> None:
+        """A skip unrelated to packages or declared inputs is no violation."""
         self.assertEqual(runner.skip_violations(self.suite(None), [("t::a", "needs a GPU")]), [])
 
 
 @unittest.skipIf(GIT is None, "git is required to build the fixture repositories")
 class RunTests(unittest.TestCase):
     def setUp(self) -> None:
+        """Isolate subprocess integration fixtures from the caller checkout."""
         self._tmp = tempfile.TemporaryDirectory(prefix="affected-run-")
         self.addCleanup(self._tmp.cleanup)
         self.repo = Path(self._tmp.name)
@@ -366,6 +503,7 @@ class RunTests(unittest.TestCase):
         self.parent: str | None = None
 
     def git(self, *args: str, input_data: str | None = None) -> str:
+        """Bound fixture Git operations and propagate their failures."""
         result = run_command(
             [str(GIT), "-C", str(self.repo), *args],
             allowed_executables=(str(GIT),),
@@ -392,6 +530,7 @@ class RunTests(unittest.TestCase):
         self.git("update-ref", "HEAD", self.parent)
 
     def build(self, tests: dict[str, str]) -> None:
+        """Provide committed fixture inputs for checkout identity checks."""
         files = {
             ".github/test-suites.json": json.dumps(manifest()),
             LOCK: "# lock\n",
@@ -404,8 +543,10 @@ class RunTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
         self.git("add", "-A")
+        self.commit()
 
     def run_script(self, *args: str) -> TextCommandResult:
+        """Exercise the CLI with a local interpreter and no installer."""
         return run_command(
             [
                 sys.executable,
@@ -472,14 +613,18 @@ class RunTests(unittest.TestCase):
         self.assertIn("time cap", result.stderr)
 
     def test_suite_that_cannot_run_locally_is_reported_not_passed(self) -> None:
+        """Expose unavailable local coverage and enforce strict skip policy."""
         self.build({"pkg/tests/test_ok.py": "def test_ok():\n    assert True\n"})
         lenient = self.run_script("--files", "cmd/x.go")
         self.assertEqual(lenient.returncode, 0, lenient.stderr)
         self.assertIn("go: NOT RUN", lenient.stdout)
+        self.assertIn("needs the Go build", lenient.stdout)
+        self.assertIn("alternate coverage: pull request CI jobs: Go", lenient.stdout)
         strict = self.run_script("--strict", "--files", "cmd/x.go")
         self.assertEqual(strict.returncode, 1)
 
     def test_base_and_head_select_the_files_that_differ(self) -> None:
+        """Derive affected suites from a real committed change range."""
         self.build({"pkg/tests/test_ok.py": "def test_ok():\n    assert True\n"})
         self.commit()
         (self.repo / "pkg" / "tests" / "test_ok.py").write_text("def test_ok():\n    assert 1\n")
@@ -489,16 +634,23 @@ class RunTests(unittest.TestCase):
         self.assertIn("pkg: 1 changed file(s), e.g. pkg/tests/test_ok.py", result.stdout)
 
     def test_focused_unnamed_file_is_not_run_or_counted_passed(self) -> None:
+        """Keep uncovered changes visible with their alternate CI coverage."""
         self.build({"pkg/tests/test_bad.py": "def test_bad():\n    assert False\n"})
         result = self.run_script("--focused", "--files", LOCK)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(f"NOT RUN {LOCK}: no test names this file", result.stdout)
         self.assertIn("pkg: NOT RUN (no test names a changed file)", result.stdout)
+        self.assertIn(
+            f"NOT RUN {LOCK}: no test names this file; alternate coverage: pull request CI jobs: Pkg",
+            result.stdout,
+        )
+        self.assertIn("    alternate coverage: pull request CI jobs: Pkg", result.stdout)
         self.assertNotIn("passed", result.stdout)
         strict = self.run_script("--strict", "--focused", "--files", LOCK)
         self.assertEqual(strict.returncode, 1, strict.stdout + strict.stderr)
 
     def test_focused_changed_test_runs_only_itself(self) -> None:
+        """Avoid executing unrelated tests in focused mode."""
         self.build(
             {
                 "pkg/tests/test_ok.py": "def test_ok():\n    assert True\n",
@@ -511,18 +663,128 @@ class RunTests(unittest.TestCase):
         self.assertIn("pkg: passed: 1 passed", result.stdout)
 
     def test_focused_named_and_unnamed_files_report_separately(self) -> None:
+        """Preserve uncovered-path reporting alongside successful test execution."""
         self.build({"pkg/tests/test_ok.py": "def test_ok():\n    assert True\n"})
         result = self.run_script("--focused", "--files", f"{LOCK},pkg/tests/test_ok.py")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(f"NOT RUN {LOCK}: no test names this file", result.stdout)
         self.assertIn("pkg: passed: 1 passed", result.stdout)
 
+    def test_dirty_selected_test_fails_closed(self) -> None:
+        """Unstaged and staged test edits cannot validate a different pushed test."""
+        test = "pkg/tests/test_ok.py"
+        body = f"# {LOCK}\ndef test_ok():\n    assert True\n"
+        self.build({test: body})
+        (self.repo / test).write_text(body.replace("True", "False"), encoding="utf-8")
+        for staged in (False, True):
+            with self.subTest(staged=staged):
+                if staged:
+                    self.git("add", test)
+                result = self.run_script("--focused", "--files", LOCK)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn(test, result.stderr)
+                self.assertIn("differs from HEAD", result.stderr)
+                self.assertNotIn("pkg: FAILED", result.stdout)
+
+    def test_dirty_changed_path_fails_closed_even_without_selected_tests(self) -> None:
+        """Changed source paths must match HEAD even when no test names them."""
+        self.build({"pkg/tests/test_ok.py": "def test_ok():\n    assert True\n"})
+        (self.repo / LOCK).write_text("# dirty lock\n", encoding="utf-8")
+        result = self.run_script("--focused", "--files", LOCK)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn(LOCK, result.stderr)
+
+    def test_dirty_index_fails_when_worktree_matches_head(self) -> None:
+        """A restored worktree cannot conceal staged edits to the selected test."""
+        test = "pkg/tests/test_ok.py"
+        body = "def test_ok():\n    assert True\n"
+        self.build({test: body})
+        (self.repo / test).write_text(body.replace("True", "False"), encoding="utf-8")
+        self.git("add", test)
+        (self.repo / test).write_text(body, encoding="utf-8")
+        result = self.run_script("--focused", "--files", test)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn(test, result.stderr)
+
+    def test_dirty_unrelated_tracked_and_untracked_files_do_not_block(self) -> None:
+        """Unrelated local edits do not invalidate a clean selected test."""
+        test = "pkg/tests/test_ok.py"
+        self.build({test: "def test_ok():\n    assert True\n", "notes.txt": "clean\n"})
+        (self.repo / "notes.txt").write_text("dirty\n", encoding="utf-8")
+        (self.repo / "untracked.txt").write_text("untracked\n", encoding="utf-8")
+        result = self.run_script("--focused", "--files", test)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("pkg: passed: 1 passed", result.stdout)
+
+    def test_untracked_changed_path_fails_closed(self) -> None:
+        """An explicitly selected untracked source cannot stand in for absent HEAD content."""
+        self.build({"pkg/tests/test_ok.py": "# new.cfg\ndef test_ok():\n    assert True\n"})
+        (self.repo / "new.cfg").write_text("local only\n", encoding="utf-8")
+        result = self.run_script("--focused", "--files", "new.cfg")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("new.cfg", result.stderr)
+
+    def test_untriggered_root_config_names_a_test_in_local_suite(self) -> None:
+        """Unmapped root files can discover their tests without changing CI triggers."""
+        self.build(
+            {"pkg/tests/test_ok.py": "# .pre-commit-config.yaml\ndef test_ok():\n    assert True\n"}
+        )
+        result = self.run_script("--focused", "--files", ".pre-commit-config.yaml")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("pkg: passed: 1 passed", result.stdout)
+        self.assertNotIn("NOT RUN .pre-commit-config.yaml", result.stdout)
+
+    def test_unnamed_untriggered_path_reports_reason_and_coverage(self) -> None:
+        """Unmapped and unnamed files remain visible with discovered CI coverage."""
+        self.build({"pkg/tests/test_ok.py": "def test_ok():\n    assert True\n"})
+        result = self.run_script("--focused", "--files", "unnamed.cfg")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("NOT RUN unnamed.cfg: no test names this file", result.stdout)
+        self.assertIn("alternate coverage: pull request CI jobs:", result.stdout)
+        self.assertIn("Pkg", result.stdout)
+        strict = self.run_script("--strict", "--focused", "--files", "unnamed.cfg")
+        self.assertEqual(strict.returncode, 1, strict.stdout + strict.stderr)
+
+    def test_untriggered_path_cannot_discover_tests_in_nonlocal_suite(self) -> None:
+        """Fallback discovery only searches locally runnable suites, even alongside triggers."""
+        self.build({"cmd/test_config.py": "# unnamed.cfg\n"})
+        result = self.run_script("--list", "--focused", "--files", "cmd/new.go,unnamed.cfg")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("NOT RUN unnamed.cfg: no test names this file", result.stdout)
+        self.assertNotIn("go: cmd/test_config.py", result.stdout)
+
+    def test_deleted_unique_stem_import_uses_base_tree(self) -> None:
+        """A deleted module retains its base-tree import identity."""
+        path = "ai/src/vanished.py"
+        test = "ai/tests/test_removed.py"
+        self.build({path: "VALUE = 1\n", test: "from vanished import VALUE\n"})
+        self.git("rm", path)
+        self.commit()
+        result = self.run_script("--list", "--focused", "--base", "HEAD~1", "--head", "HEAD")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f"ai: {test}", result.stdout)
+        self.assertNotIn(f"NOT RUN {path}", result.stdout)
+
+    def test_deleted_ambiguous_stem_does_not_become_unique(self) -> None:
+        """Base-tree collisions survive deletion and still require a full path."""
+        path = "ai/src/common.py"
+        test = "ai/tests/test_removed.py"
+        self.build({path: "", "other/common.py": "", test: "import common\n"})
+        self.git("rm", path)
+        self.commit()
+        result = self.run_script("--list", "--focused", "--base", "HEAD~1", "--head", "HEAD")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f"NOT RUN {path}: no test names this file", result.stdout)
+        self.assertNotIn(f"ai: {test}", result.stdout)
+
     def test_merge_base_conflicting_modes_are_usage_errors(self) -> None:
+        """Reject competing sources of changed-file scope."""
         for args in (("--files", "x"), ("--base", "x", "--head", "y"), ("--head", "x")):
             with self.subTest(args=args):
                 self.assertEqual(self.run_script("--merge-base", "HEAD", *args).returncode, 2)
 
     def test_merge_base_uses_head_and_checks_outgoing_ref(self) -> None:
+        """Validate merge-base changes only for the outgoing checkout."""
         self.build({"pkg/tests/test_ok.py": "def test_ok():\n    assert True\n"})
         self.commit()
         path = self.repo / "pkg/tests/test_ok.py"

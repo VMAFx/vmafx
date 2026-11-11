@@ -20,7 +20,7 @@ file of this directory. `Touching` paths: relative to this directory, leading
 | Touching | Read first | Invariant |
 | --- | --- | --- |
 | `*source-adr-citations*`, `tests/test_check_source_adr_citations.py` | [adr-citations](AGENTS.d/adr-citations.md) | Plain `ADR-NNNN` in source binds to exact file, derived each run; registry: `retired` + `fixtures` only. |
-| `run_affected_suites.py`, `tests/test_run_affected_suites.py`, `/scripts/lib/push_head.py`, `/.pre-commit-config.yaml` | [affected-tests](AGENTS.d/affected-tests.md) | Focused push tests reuse suite registry; exact names only, unique short names, unmatched paths NOT RUN. |
+| `run_affected_suites.py`, `tests/test_run_affected_suites.py`, `/scripts/lib/push_head.py`, `/.pre-commit-config.yaml` | [affected-tests](AGENTS.d/affected-tests.md) | Focused push tests reuse registry; clean selected HEAD paths, unmapped-file discovery, NOT RUN reasons + CI coverage. |
 | `agent-eligibility-precheck.py`, `/scripts/lib/backlog_tracker.py`, `tests/test_agent_eligibility_precheck.py` | [agent-dispatch](AGENTS.d/agent-dispatch.md) | Exit codes 0 / 1 / 2 and `::error title=...::` stderr format are dispatcher contract. |
 | `plan-ci-impact.py`, `/.github/ci-impact.json`, `tests/test_ci_*.py`, `/.github/ci-tier.json`, `/.github/workflows/ci-*.yml`, `ci_*.py` | [ci-impact](AGENTS.d/ci-impact.md) | Planner fails closed to `mode=full`; planner/work/gate; one tier file. |
 | `/.codex/hooks.json`, `/.codex/hooks/*`, `tests/test_codex_hook_config.py` | [codex-hooks](AGENTS.d/codex-hooks.md) | Every Codex hook command resolves through active worktree root after clearing `GIT_DIR` / `GIT_WORK_TREE`. |
