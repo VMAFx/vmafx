@@ -16,6 +16,7 @@ and each unit is checked against its own language's compiler.
 
 from __future__ import annotations
 
+import functools
 import importlib.util
 import json
 import os
@@ -39,12 +40,17 @@ from scripts.lib.safe_subprocess import run as run_command
 
 # One deadline for this Meson test process, shared by all matrix and compiler calls.
 TEST_TIMEOUT_S = 80
-TEST_DEADLINE = time.monotonic() + TEST_TIMEOUT_S
+
+
+@functools.cache
+def _test_deadline() -> float:
+    """Start the shared deadline when its first caller needs a command budget."""
+    return time.monotonic() + TEST_TIMEOUT_S
 
 
 def remaining_timeout(bound: float) -> float:
     """Limit a command to the shared test deadline, refusing work after it expires."""
-    remaining = TEST_DEADLINE - time.monotonic()
+    remaining = _test_deadline() - time.monotonic()
     if remaining <= 0:
         raise AssertionError(f"strict-FP test deadline exhausted after {TEST_TIMEOUT_S}s")
     return min(bound, remaining)
@@ -475,14 +481,16 @@ class StrictFpDeadlineTest(unittest.TestCase):
 
     def test_remaining_budget_caps_the_call_bound(self) -> None:
         """Use the smaller of the call bound and time remaining in the test."""
-        with mock.patch.object(time, "monotonic", return_value=TEST_DEADLINE - 3):
+        deadline = _test_deadline()
+        with mock.patch.object(time, "monotonic", return_value=deadline - 3):
             self.assertEqual(remaining_timeout(60), 3)
             self.assertEqual(remaining_timeout(1), 1)
 
     def test_exhausted_deadline_names_the_bound(self) -> None:
         """Refuse subprocess calls at or beyond the shared deadline."""
+        deadline = _test_deadline()
         for offset in (0, 1):
-            with mock.patch.object(time, "monotonic", return_value=TEST_DEADLINE + offset):
+            with mock.patch.object(time, "monotonic", return_value=deadline + offset):
                 with self.assertRaisesRegex(AssertionError, f"deadline.*{TEST_TIMEOUT_S}s"):
                     remaining_timeout(60)
 

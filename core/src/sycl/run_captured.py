@@ -11,6 +11,8 @@ which is the probe working, not a defect, and which a build that treats warnings
 kept for a failed build and dropped for a successful one.
 
 Usage: run_captured.py -- COMMAND [ARGS...]
+Exit status: 0 for success; the command's status on ordinary failure; 2 for usage;
+124 for timeout; 125 for captured-output limit; 126 for validation or launch failure.
 """
 
 from __future__ import annotations
@@ -20,7 +22,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-from scripts.lib.safe_subprocess import CommandTimedOut
+from scripts.lib.safe_subprocess import (
+    CommandOutputLimitExceeded,
+    CommandTimedOut,
+    CommandValidationError,
+)
 from scripts.lib.safe_subprocess import run as run_command
 
 # Bound = 10x the slowest measured run, rounded up: the scratch_check.cpp AOT
@@ -29,6 +35,12 @@ CC_TIMEOUT_S = 120
 # Budget: 1 MiB of diagnostics per AOT target plus 1 MiB for the driver (19 targets).
 # This 20 MiB ceiling allows verbose failures without retaining an unbounded compiler log.
 MAX_COMPILE_OUTPUT_BYTES = 20 * 1_048_576
+
+
+def _print_retained_stdout(output: str | bytes | None) -> None:
+    """Print diagnostic output retained before a timeout or output overflow."""
+    if output:
+        sys.stdout.write(output if isinstance(output, str) else output.decode("utf-8", "replace"))
 
 
 def main(argv: list[str]) -> int:
@@ -52,11 +64,19 @@ def main(argv: list[str]) -> int:
         sys.stderr.write(
             f"run_captured: command timed out after {CC_TIMEOUT_S}s (CC_TIMEOUT_S): {argv[1:]}\n"
         )
-        if exc.stdout:
-            sys.stdout.write(
-                exc.stdout if isinstance(exc.stdout, str) else exc.stdout.decode("utf-8", "replace")
-            )
+        _print_retained_stdout(exc.stdout)
         return 124
+    except CommandOutputLimitExceeded as exc:
+        sys.stderr.write(
+            "run_captured: command exceeded "
+            f"{MAX_COMPILE_OUTPUT_BYTES} captured bytes (MAX_COMPILE_OUTPUT_BYTES): {argv[1:]}\n"
+        )
+        _print_retained_stdout(exc.stdout)
+        return 125
+    except (CommandValidationError, OSError) as exc:
+        reason = str(exc).replace("\r", "\\r").replace("\n", "\\n")
+        sys.stderr.write(f"run_captured: {reason}\n")
+        return 126
     if result.returncode != 0:
         sys.stdout.write(result.stdout)
     return result.returncode

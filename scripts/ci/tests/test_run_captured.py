@@ -42,6 +42,15 @@ def run(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 class RunCapturedTests(unittest.TestCase):
+    def assert_run_options(self, mock_run: mock.Mock, mod: ModuleType, cmd: list[str]) -> None:
+        """Check the bounded compile options passed by every in-process path."""
+        options = mock_run.call_args.kwargs
+        self.assertEqual(mock_run.call_args.args, (cmd,))
+        self.assertEqual(options["allowed_executables"], [cmd[0]])
+        self.assertIs(options["stderr_to_stdout"], True)
+        self.assertEqual(options["max_output_bytes"], mod.MAX_COMPILE_OUTPUT_BYTES)
+        self.assertEqual(options["timeout_seconds"], mod.CC_TIMEOUT_S)
+
     def test_success_prints_nothing(self) -> None:
         noisy = "import sys; print('warning: spilled'); print('more', file=sys.stderr)"
         result = run("--", PYTHON, "-c", noisy)
@@ -69,14 +78,14 @@ class RunCapturedTests(unittest.TestCase):
             with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
                 rc = mod.main(["--", "fake", "cmd"])
             self.assertEqual(rc, 0)
-            self.assertEqual(mock_run.call_args.kwargs.get("timeout_seconds"), mod.CC_TIMEOUT_S)
+            self.assert_run_options(mock_run, mod, ["fake", "cmd"])
 
     def test_in_process_timeout_str_boundary(self) -> None:
         """Verify string timeout output returns code 124 and echoes stdout and stderr."""
         mod = load_run_captured_module()
         cmd = ["fake", "cmd"]
         timeout_exc = mod.CommandTimedOut(tuple(cmd), mod.CC_TIMEOUT_S, "partial", None)
-        with mock.patch.object(mod, "run_command", side_effect=timeout_exc):
+        with mock.patch.object(mod, "run_command", side_effect=timeout_exc) as mock_run:
             stdout_buf = io.StringIO()
             stderr_buf = io.StringIO()
             with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
@@ -86,32 +95,87 @@ class RunCapturedTests(unittest.TestCase):
             self.assertIn(str(mod.CC_TIMEOUT_S), stderr_buf.getvalue())
             self.assertIn("CC_TIMEOUT_S", stderr_buf.getvalue())
             self.assertIn("partial", stdout_buf.getvalue())
+            self.assert_run_options(mock_run, mod, cmd)
 
     def test_in_process_timeout_bytes_boundary(self) -> None:
         """Verify byte timeout output decodes without error and returns code 124."""
         mod = load_run_captured_module()
         cmd = ["fake", "cmd"]
         timeout_exc = mod.CommandTimedOut(tuple(cmd), mod.CC_TIMEOUT_S, b"partial\xff", None)
-        with mock.patch.object(mod, "run_command", side_effect=timeout_exc):
+        with mock.patch.object(mod, "run_command", side_effect=timeout_exc) as mock_run:
             stdout_buf = io.StringIO()
             stderr_buf = io.StringIO()
             with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
                 rc = mod.main(["--", *cmd])
             self.assertEqual(rc, 124)
             self.assertIn("partial", stdout_buf.getvalue())
+            self.assert_run_options(mock_run, mod, cmd)
 
     def test_in_process_timeout_negative_empty_output(self) -> None:
         """Verify timeout with None output returns code 124 and empty stdout."""
         mod = load_run_captured_module()
         cmd = ["fake", "cmd"]
         timeout_exc = mod.CommandTimedOut(tuple(cmd), mod.CC_TIMEOUT_S, None, None)
-        with mock.patch.object(mod, "run_command", side_effect=timeout_exc):
+        with mock.patch.object(mod, "run_command", side_effect=timeout_exc) as mock_run:
             stdout_buf = io.StringIO()
             stderr_buf = io.StringIO()
             with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
                 rc = mod.main(["--", *cmd])
             self.assertEqual(rc, 124)
             self.assertEqual(stdout_buf.getvalue(), "")
+            self.assert_run_options(mock_run, mod, cmd)
+
+    def test_in_process_output_limit_keeps_retained_stdout(self) -> None:
+        """Report the compile limit and retain diagnostics before returning code 125."""
+        mod = load_run_captured_module()
+        cmd = ["fake", "cmd"]
+        limit_exc = mod.CommandOutputLimitExceeded(
+            tuple(cmd), mod.MAX_COMPILE_OUTPUT_BYTES, b"partial\xff", None
+        )
+        with mock.patch.object(mod, "run_command", side_effect=limit_exc) as mock_run:
+            stdout_buf = io.StringIO()
+            stderr_buf = io.StringIO()
+            with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
+                rc = mod.main(["--", *cmd])
+            self.assertEqual(rc, 125)
+            self.assertEqual(stdout_buf.getvalue(), "partial\ufffd")
+            self.assertEqual(
+                stderr_buf.getvalue(),
+                "run_captured: command exceeded "
+                f"{mod.MAX_COMPILE_OUTPUT_BYTES} captured bytes (MAX_COMPILE_OUTPUT_BYTES): {cmd}\n",
+            )
+            self.assert_run_options(mock_run, mod, cmd)
+
+    def test_in_process_validation_failure_has_no_traceback(self) -> None:
+        """Show a missing executable as one diagnostic line and return code 126."""
+        mod = load_run_captured_module()
+        cmd = ["missing", "cmd"]
+        reason = "executable is unavailable: missing"
+        with mock.patch.object(
+            mod, "run_command", side_effect=mod.CommandValidationError(reason)
+        ) as mock_run:
+            stdout_buf = io.StringIO()
+            stderr_buf = io.StringIO()
+            with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
+                rc = mod.main(["--", *cmd])
+            self.assertEqual(rc, 126)
+            self.assertEqual(stdout_buf.getvalue(), "")
+            self.assertEqual(stderr_buf.getvalue(), f"run_captured: {reason}\n")
+            self.assert_run_options(mock_run, mod, cmd)
+
+    def test_in_process_launch_failure_has_no_traceback(self) -> None:
+        """Show an operating-system launch failure as one diagnostic line."""
+        mod = load_run_captured_module()
+        reason = "launch failed"
+        with mock.patch.object(mod, "run_command", side_effect=OSError(reason)) as mock_run:
+            stdout_buf = io.StringIO()
+            stderr_buf = io.StringIO()
+            with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
+                rc = mod.main(["--", "fake"])
+            self.assertEqual(rc, 126)
+            self.assertEqual(stdout_buf.getvalue(), "")
+            self.assertEqual(stderr_buf.getvalue(), f"run_captured: {reason}\n")
+            self.assert_run_options(mock_run, mod, ["fake"])
 
 
 if __name__ == "__main__":
