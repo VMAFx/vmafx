@@ -110,7 +110,7 @@ class CheckBanditNew(unittest.TestCase):
         self.assertEqual(self.run_check("harness.py", BASE + "assert exe\n")[0], 0)
 
     def test_missing_bandit_is_error(self) -> None:
-        with mock.patch.object(check, "tool", side_effect=check.ToolError("bandit missing")):
+        with mock.patch.object(check, "tool", side_effect=shared.ToolError("bandit missing")):
             status, _, err = self.run_check("harness.py", BASE)
         self.assertEqual(status, 2)
         self.assertIn("bandit missing", err)
