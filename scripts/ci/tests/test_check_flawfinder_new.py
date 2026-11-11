@@ -105,6 +105,7 @@ class CheckFlawfinderNew(unittest.TestCase):
         return status, out.getvalue()
 
     def test_push_scans_outgoing_blob(self) -> None:
+        """A new outgoing fopen finding returns 1 even when the working copy lacks it."""
         (self.root / "harness.c").write_text(ADDED)
         self.git("add", ".")
         self.git("commit", "-q", "-m", "outgoing")
@@ -116,11 +117,13 @@ class CheckFlawfinderNew(unittest.TestCase):
         self.assertIn("harness.c:6: flawfinder fopen", out)
 
     def test_push_ignores_dirty_worktree(self) -> None:
+        """An unchanged outgoing blob returns 0 despite a new finding in the working copy."""
         self.git("branch", "outgoing")
         with mock.patch.dict(os.environ, {"PRE_COMMIT_TO_REF": "outgoing"}):
             self.assertEqual(self.run_check("harness.c", ADDED), (0, ""))
 
     def test_literal_base_path(self) -> None:
+        """A bracketed filename retains its base finding when source lines move and returns 0."""
         self.git("mv", "harness.c", "module[1].c")
         self.git("commit", "-q", "-m", "brackets")
         self.git("branch", "-f", "master", "HEAD")

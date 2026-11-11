@@ -208,6 +208,7 @@ class CheckBanditNew(unittest.TestCase):
             self.assertEqual(self.invoke("renamed.py")[0], 0)
 
     def test_symlink_source_is_not_followed(self) -> None:
+        """A source identified as a symlink is skipped and returns 0."""
         (self.root / "harness.py").write_text(BASE + UNSAFE)
         # Model lstat without requiring Windows symlink creation privileges.
         with mock.patch.object(
@@ -216,6 +217,7 @@ class CheckBanditNew(unittest.TestCase):
             self.assertEqual(self.invoke("harness.py")[0], 0)
 
     def test_symlink_parent_outside_repository_is_error(self) -> None:
+        """A source resolving outside the repository returns 2."""
         original = Path.resolve
         source = self.root / "harness.py"
         source.write_text(BASE + UNSAFE)
@@ -230,14 +232,17 @@ class CheckBanditNew(unittest.TestCase):
             self.assertEqual(self.invoke("harness.py")[0], 2)
 
     def test_source_path_escape_is_error(self) -> None:
+        """A source path containing a parent traversal returns 2."""
         self.assertEqual(self.invoke("../outside.py")[0], 2)
 
     def test_unchanged_config_does_not_scan_unselected_file(self) -> None:
+        """Unchanged configuration leaves an unselected unsafe file unscanned and returns 0."""
         (self.root / "unselected.py").write_text(BASE + UNSAFE)
         self.git("add", "unselected.py")
         self.assertEqual(self.invoke("harness.py")[0], 0)
 
     def test_push_config_uses_outgoing_blob_and_tracked_files(self) -> None:
+        """An outgoing rule change exposes a tracked assertion and returns 1."""
         (self.root / "harness.py").write_text("assert True\n")
         self.commit_base()
         (self.root / "bandit.yml").write_text("tests: [B101]\n")
@@ -249,6 +254,7 @@ class CheckBanditNew(unittest.TestCase):
             self.assertEqual(self.invoke("bandit.yml")[0], 1)
 
     def test_python_hook_types_and_shebang_are_scanned(self) -> None:
+        """Selected suffixes and shebangs expose B603; plain text and missing files pass."""
         self.assertIn("python", tags_from_filename("x.pyw"))
         self.assertIn("pyi", tags_from_filename("x.pyi"))
         for name in ("fresh.pyw", "fresh.pyi", "fresh.pyt", "fresh.wsgi", "executable"):
@@ -264,6 +270,7 @@ class CheckBanditNew(unittest.TestCase):
         self.assertEqual(self.invoke("missing.py")[0], 0)
 
     def test_pep263_current_and_base(self) -> None:
+        """Encoded source reports a new finding, then passes when the finding exists at base."""
         source = "# coding: latin-1\n# café\n" + BASE + UNSAFE
         path = self.root / "harness.py"
         path.write_bytes(source.encode("latin-1"))
@@ -273,6 +280,7 @@ class CheckBanditNew(unittest.TestCase):
         self.assertEqual(self.invoke("harness.py")[0], 0)
 
     def test_utf8_bom_and_invalid_encoding(self) -> None:
+        """A UTF-8 BOM preserves finding detection; an unknown encoding returns 2."""
         path = self.root / "harness.py"
         path.write_bytes((BASE + UNSAFE).encode("utf-8-sig"))
         self.assertEqual(self.invoke("harness.py")[0], 1)
@@ -280,6 +288,7 @@ class CheckBanditNew(unittest.TestCase):
         self.assertEqual(self.invoke("harness.py")[0], 2)
 
     def test_literal_metacharacter_base_path(self) -> None:
+        """Bracketed filenames retain their base findings when source lines move."""
         for name in ("module[1].py", "module[2].py"):
             (self.root / name).write_text(BASE + UNSAFE)
         self.commit_base()
@@ -289,6 +298,7 @@ class CheckBanditNew(unittest.TestCase):
 
     def test_literal_pathspec_magic_blob(self) -> None:
         # Build the tree directly: ':' and '*' filenames need no filesystem support.
+        """A pathspec-like filename returns its literal blob; an absent path returns no bytes."""
         blob = self.git("hash-object", "-w", "--stdin", input_text=BASE + UNSAFE).strip()
         name = ":(glob)module*.py"
         tree = self.git("mktree", "-z", input_text=f"100644 blob {blob}\t{name}\0").strip()
@@ -298,6 +308,7 @@ class CheckBanditNew(unittest.TestCase):
         self.assertEqual(shared.base_text(git, self.root, tree, "absent.py"), b"")
 
     def test_low_similarity_rename_fails_closed(self) -> None:
+        """An unrecognized rename reports its retained B603 finding as new and returns 1."""
         (self.root / "harness.py").write_text(BASE + UNSAFE)
         self.commit_base()
         self.git("mv", "harness.py", "renamed.py")
@@ -306,6 +317,7 @@ class CheckBanditNew(unittest.TestCase):
         self.assertIn("B603", out)
 
     def test_hook_selects_configuration_and_stub_files(self) -> None:
+        """The serial hook selects configuration, stubs, extensionless scripts and sources."""
         hooks = yaml.safe_load((check.CONFIG.parent / ".pre-commit-config.yaml").read_text())
         hook = next(h for r in hooks["repos"] for h in r["hooks"] if h["id"] == "bandit-new")
         self.assertEqual(hook.get("types", ["file"]), ["file"])
@@ -319,6 +331,7 @@ class CheckBanditNew(unittest.TestCase):
                 self.assertTrue(re.search(files, path) and not re.search(exclude, path))
 
     def test_tooling_suite_installs_hook_scanner_pin(self) -> None:
+        """Both tooling dependency files contain the hook's single Bandit version pin."""
         root = check.CONFIG.parent
         config = yaml.safe_load((root / ".pre-commit-config.yaml").read_text())
         hook = next(h for r in config["repos"] for h in r["hooks"] if h["id"] == "bandit-new")
@@ -333,6 +346,7 @@ class CheckBanditNew(unittest.TestCase):
         )
 
     def test_noqa_s603_is_new(self) -> None:
+        """A noqa suppression leaves a new B603 finding active and returns 1 with guidance."""
         status, out, err = self.run_check("harness.py", BASE + UNSAFE)
         self.assertEqual(status, 1, err)
         self.assertIn("harness.py:6: B603:", out)
@@ -341,6 +355,7 @@ class CheckBanditNew(unittest.TestCase):
         self.assertIn("# noqa does not silence Bandit", err)
 
     def test_moved_base_finding_is_old(self) -> None:
+        """Moving an existing base finding to another line returns 0."""
         (self.root / "harness.py").write_text(BASE + UNSAFE, encoding="utf-8")
         self.git("add", "harness.py")
         self.git("commit", "-q", "-m", "unsafe base")
@@ -350,6 +365,7 @@ class CheckBanditNew(unittest.TestCase):
         self.assertEqual(self.run_check("harness.py", "\n" + BASE + UNSAFE)[0], 0)
 
     def test_renamed_base_finding_is_old(self) -> None:
+        """A detected file rename preserves its base finding and returns 0."""
         (self.root / "harness.py").write_text(BASE + UNSAFE, encoding="utf-8")
         self.git("add", "harness.py")
         self.git("commit", "-q", "-m", "unsafe base")
@@ -360,18 +376,22 @@ class CheckBanditNew(unittest.TestCase):
         self.assertEqual(self.run_check("renamed.py", BASE + UNSAFE)[0], 0)
 
     def test_safe_subprocess_passes(self) -> None:
+        """An allowlisted process call through the shared wrapper returns 0."""
         self.assertEqual(self.run_check("harness.py", BASE + SAFE)[0], 0)
 
     def test_disabled_b101_passes(self) -> None:
+        """An assertion produces no finding while B101 is disabled and returns 0."""
         self.assertEqual(self.run_check("harness.py", BASE + "assert exe\n")[0], 0)
 
     def test_missing_bandit_is_error(self) -> None:
+        """An unavailable Bandit executable returns 2 and reports the missing scanner."""
         with mock.patch.object(check, "tool", side_effect=shared.ToolError("bandit missing")):
             status, _, err = self.run_check("harness.py", BASE)
         self.assertEqual(status, 2)
         self.assertIn("bandit missing", err)
 
     def test_bandit_json_errors_are_error(self) -> None:
+        """A successful scanner exit with reported scan errors returns 2."""
         result = mock.Mock(returncode=0, stdout=json.dumps({"results": [], "errors": ["bad"]}))
         with mock.patch.object(check, "run_command", return_value=result):
             status, _, err = self.run_check("harness.py", BASE + "# changed\n")
@@ -379,6 +399,7 @@ class CheckBanditNew(unittest.TestCase):
         self.assertIn("scan errors", err)
 
     def test_invalid_json_is_error(self) -> None:
+        """Malformed scanner JSON returns 2 and reports the Bandit failure."""
         result = mock.Mock(returncode=0, stdout="not JSON")
         with mock.patch.object(check, "run_command", return_value=result):
             status, _, err = self.run_check("harness.py", BASE + "# changed\n")
@@ -386,6 +407,7 @@ class CheckBanditNew(unittest.TestCase):
         self.assertIn("Bandit failed", err)
 
     def test_unexpected_bandit_exit_is_error(self) -> None:
+        """An unexpected scanner exit returns 2 and includes its exit status."""
         result = mock.Mock(returncode=3, stdout="", stderr="scan failed")
         with mock.patch.object(check, "run_command", return_value=result):
             status, _, err = self.run_check("harness.py", BASE + "# changed\n")
@@ -395,6 +417,7 @@ class CheckBanditNew(unittest.TestCase):
 
 class CheckSharedScannerFindings(unittest.TestCase):
     def test_git_output_drops_injected_git_configuration(self) -> None:
+        """Repository overrides are removed from the child environment; unrelated values remain."""
         injected = {
             "GIT_INDEX_FILE": "/wrong/index",
             "GIT_DIR": "/wrong/repository",
@@ -412,6 +435,7 @@ class CheckSharedScannerFindings(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["env"], {"SAFE_ENV": "kept"})
 
     def test_identical_text_skips_both_scans(self) -> None:
+        """Identical current and base bytes return no findings without invoking the scanner."""
         with tempfile.TemporaryDirectory(prefix="vmafx-scanner-") as temp:
             current = Path(temp) / "same.py"
             current.write_text("one line\n", encoding="utf-8")
@@ -420,6 +444,7 @@ class CheckSharedScannerFindings(unittest.TestCase):
         scan.assert_not_called()
 
     def test_one_changed_byte_scans_both_copies(self) -> None:
+        """A one-byte source change invokes the scanner for both current and base copies."""
         with tempfile.TemporaryDirectory(prefix="vmafx-scanner-") as temp:
             current = Path(temp) / "changed.py"
             current.write_text("one line!\n", encoding="utf-8")
@@ -428,6 +453,7 @@ class CheckSharedScannerFindings(unittest.TestCase):
         self.assertEqual(scan.call_count, 2)
 
     def test_non_utf8_file_scans_both_copies(self) -> None:
+        """Non-UTF-8 source bytes reach both scans without requiring text decoding."""
         with tempfile.TemporaryDirectory(prefix="vmafx-scanner-") as temp:
             current = Path(temp) / "latin1.c"
             current.write_bytes(b"/* caf\xe9 */\n")

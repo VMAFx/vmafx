@@ -107,6 +107,7 @@ def scan_changes(bandit: str, comparison: Comparison, paths: list[Path]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Return 0 for no new Bandit findings, 1 for new findings, or 2 for scan errors."""
     parser = argparse.ArgumentParser(description=(__doc__ or "").strip())
     parser.add_argument("--base-branch")
     parser.add_argument("files", nargs="*", type=Path)

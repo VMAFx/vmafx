@@ -109,6 +109,7 @@ def scan_changes(flawfinder: str, comparison: Comparison, paths: list[Path]) -> 
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Return 0 for no new flawfinder findings, 1 for new findings, or 2 for scan errors."""
     parser = argparse.ArgumentParser(description=(__doc__ or "").partition("\n")[0])
     parser.add_argument("--base-branch")
     parser.add_argument("files", nargs="*", type=Path)

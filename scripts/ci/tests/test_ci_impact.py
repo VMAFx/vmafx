@@ -184,6 +184,7 @@ class ConfigContract(unittest.TestCase):
             )
 
     def test_bandit_configuration_matches_codacy_routing(self) -> None:
+        """Bandit and Codacy configuration changes select the same CI mode and jobs."""
         bandit, codacy = _plan_for(["bandit.yml"]), _plan_for([".codacy.yml"])
         self.assertEqual(bandit.mode, codacy.mode)
         self.assertEqual(bandit.selectors, codacy.selectors)

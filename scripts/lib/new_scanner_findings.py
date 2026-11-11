@@ -120,6 +120,7 @@ class Comparison:
     ref: str = field(init=False)
 
     def __post_init__(self) -> None:
+        """Resolve the outgoing revision, merge base and detected rename mapping."""
         self.ref = os.environ.get("PRE_COMMIT_TO_REF") or ""
         self.base = merge_base(
             self.git, self.root, self.branch or default_branch(self.git, self.root)
@@ -127,6 +128,7 @@ class Comparison:
         self.moved = renames(self.git, self.root, self.base)
 
     def current_bytes(self, relative: str) -> bytes | None:
+        """Return outgoing or local file bytes, skipping local symlinks and rejecting escapes."""
         if self.ref:
             return revision_bytes(self.git, self.root, self.ref, relative)
         path = self.root / relative
@@ -137,9 +139,11 @@ class Comparison:
         return path.read_bytes() if path.is_file() else None
 
     def old_bytes(self, relative: str) -> bytes:
+        """Return merge-base bytes under the original path, or empty bytes if absent."""
         return base_text(self.git, self.root, self.base, self.moved.get(relative, relative))
 
     def tracked_paths(self) -> list[Path]:
+        """Return tracked paths from the outgoing revision or local index; raise on failure."""
         args = ["ls-tree", "-r", "-z", "--name-only", self.ref] if self.ref else ["ls-files", "-z"]
         status, output = git_output(self.git, args, self.root)
         if status != 0:
@@ -147,6 +151,7 @@ class Comparison:
         return [Path(name) for name in output.split("\0") if name]
 
     def copy(self, path: Path, directory: Path) -> tuple[str, Path] | None:
+        """Copy available source bytes for scanning and return the relative path and copy path."""
         if ".." in path.parts:
             raise ToolError(f"source path escapes repository: {path}")
         relative = path.absolute().relative_to(self.root.resolve()).as_posix()
