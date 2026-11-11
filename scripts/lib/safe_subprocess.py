@@ -225,13 +225,21 @@ def _resolve_absolute_executable(
     return resolved
 
 
-def _resolve_allowed_executable(
+def _checked_executable(
     executable: str, allowed_values: Collection[Arg], search_path: str
-) -> str:
+) -> tuple[str, Path]:
+    """Return the absolute path to launch and the file it resolves to.
+
+    The allowlist and the runnable-file check apply to the resolved file. The
+    launch path keeps every symbolic link the caller named: a venv interpreter
+    is a link to the base interpreter, and on macOS CPython finds its venv from
+    the path it was executed as, so launching the resolved file loses the venv.
+    """
     allowed = _parse_allowed_executables(allowed_values)
 
     requested = Path(executable).expanduser()
     if requested.is_absolute():
+        launch = str(requested)
         resolved = _resolve_absolute_executable(executable, requested, allowed, search_path)
     elif len(requested.parts) == 1:
         if executable not in allowed.names:
@@ -239,13 +247,21 @@ def _resolve_allowed_executable(
         found = shutil.which(executable, path=search_path)
         if found is None:
             raise CommandValidationError(f"executable is unavailable: {executable}")
+        # absolute(), not resolve(): the launch path keeps the links on PATH.
+        launch = str(Path(found).absolute())
         resolved = Path(found).resolve(strict=True)
     else:
         raise CommandValidationError(f"executable path must be absolute or bare: {executable}")
 
     if not resolved.is_file() or not os.access(resolved, os.X_OK):
         raise CommandValidationError(f"executable is not a runnable file: {resolved}")
-    return str(resolved)
+    return launch, resolved
+
+
+def _resolve_allowed_executable(
+    executable: str, allowed_values: Collection[Arg], search_path: str
+) -> str:
+    return str(_checked_executable(executable, allowed_values, search_path)[1])
 
 
 def executable_argument(executable: Arg, root: Arg) -> str:
@@ -297,7 +313,7 @@ def _validated_argv(
     values = tuple(_stringify(value, label=f"argv[{index}]") for index, value in enumerate(argv))
     if sum(len(os.fsencode(value)) + 1 for value in values) > MAX_ARGV_BYTES:
         raise CommandValidationError(f"argv exceeds {MAX_ARGV_BYTES} encoded bytes")
-    executable = _resolve_allowed_executable(values[0], allowed_executables, search_path)
+    executable = _checked_executable(values[0], allowed_executables, search_path)[0]
     return (executable, *values[1:])
 
 
@@ -763,8 +779,9 @@ async def run_async(
         settings=settings,
         encoding=encoding,
     )
-    # Run the validated file, but keep the caller's argv[0]: a multi-call
-    # program (the `vmafx` link to `vmaf`) selects its mode from that name.
+    # Launch the validated absolute path with its links intact, and keep the
+    # caller's argv[0]: a multi-call program (the `vmafx` link to `vmaf`)
+    # selects its mode from that name.
     process = await asyncio.create_subprocess_exec(
         _stringify(argv[0], label="argv[0]"),
         *command[1:],

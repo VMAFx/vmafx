@@ -104,6 +104,50 @@ class SafeSubprocessTests(unittest.TestCase):
             )
         self.assertEqual(result.stdout.strip(), str(link))
 
+    @unittest.skipIf(os.name == "nt", "symbolic links need privileges on Windows")
+    def test_launch_path_keeps_the_links_the_caller_named(self) -> None:
+        """The file is launched by the named path, not its resolution, absolute or on PATH."""
+        with tempfile.TemporaryDirectory() as temporary:
+            real, links = Path(temporary) / "real", Path(temporary) / "links"
+            real.mkdir()
+            links.mkdir()
+            script = real / "tool"
+            # A script's interpreter receives the path the kernel executed as $0.
+            script.write_text("#!/bin/sh\nprintf '%s' \"$0\"\n", encoding="utf-8")
+            script.chmod(0o755)
+            link = links / "tool"
+            link.symlink_to(script)
+            absolute = run([str(link)], allowed_executables=(str(link),), capture_output=True)
+            bare = run(
+                ["tool"],
+                allowed_executables=("tool",),
+                env={"PATH": str(links)},
+                capture_output=True,
+            )
+        self.assertEqual(absolute.stdout, os.fsencode(link))
+        self.assertEqual(bare.stdout, os.fsencode(link))
+        self.assertEqual(absolute.argv[0], str(link))
+
+    @unittest.skipIf(os.name == "nt", "a Windows venv copies its interpreter, it does not link it")
+    def test_venv_interpreter_link_keeps_its_venv(self) -> None:
+        """A venv's python link runs with the venv's prefix (macOS lost it in #3386)."""
+        with tempfile.TemporaryDirectory() as temporary:
+            venv = Path(temporary) / "venv"
+            (venv / "bin").mkdir(parents=True)
+            (venv / "pyvenv.cfg").write_text(
+                f"home = {Path(PYTHON).parent}\ninclude-system-site-packages = false\n",
+                encoding="utf-8",
+            )
+            interpreter = venv / "bin" / "python"
+            interpreter.symlink_to(PYTHON)
+            result = run(
+                [str(interpreter), "-I", "-c", "import sys; print(sys.prefix)"],
+                allowed_executables=(str(interpreter),),
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(Path(result.stdout.strip()).resolve(), venv.resolve())
+
     def test_argv_is_read_once(self) -> None:
         class Flipping(Sequence[str]):
             """argv whose first entry changes after it has been read once."""
