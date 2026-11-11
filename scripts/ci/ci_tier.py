@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Decide which tier of the CI suite an event owes (ADR-2169).
+"""Decide which tier of the CI suite an event owes (ADR-2169, ADR-3536).
 
 The definition lives in ``.github/ci-tier.json``; this script is the one
 reader of it that decides a tier, and ``.github/workflows/ci-tier.yml`` hands
@@ -10,15 +10,19 @@ the answer to every workflow. Three tiers:
 ``full``
     Every event that is not a pull request from this repository (a master
     push, a dispatch, a schedule), every fork pull request, an own pull
-    request carrying the ``full`` label, and a release pull request carrying
-    the ``cut`` label.
+    request carrying the ``full`` label, an own pull request whose changed
+    paths match ``full_paths`` (or whose changed paths are unavailable), and a
+    release pull request carrying the ``cut`` label.
 ``light``
     A pull request whose head repository is this repository, Renovate
-    included.
+    included, when none of its changed paths matches ``full_paths``.
 ``release-light``
     The machine-generated release pull request without the cut label. The
     release head ref alone is not trusted: ``release-pr-exempt.sh`` (ADR-1151,
     ADR-1388) verifies the author and, for the maintainer's token, the diff.
+
+``--check-full-paths`` verifies against ``git ls-files`` that every pattern in
+``full_paths`` matches at least one tracked file.
 
 Outputs (``--github-output``, one ``name=value`` per line)::
 
@@ -36,6 +40,7 @@ after a label changed.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import http.client
 import json
 import os
@@ -61,9 +66,14 @@ API_TIMEOUT_S = 30
 API_MAX_BYTES = 32 << 20  # a 100-entry API page is well under 1 MiB
 PAGE_SIZE = 100
 MAX_PAGES = 30
+MAX_FULL_PATHS = 256
+MAX_CHANGED_PATHS = PAGE_SIZE * MAX_PAGES
+MAX_TRACKED_FILES = 200_000
 PULL_REQUEST_EVENTS = frozenset({"pull_request", "pull_request_target"})
 _BASH_PATH = shutil.which("bash")
 BASH = str(Path(_BASH_PATH).resolve(strict=True)) if _BASH_PATH is not None else None
+_GIT_PATH = shutil.which("git")
+GIT = str(Path(_GIT_PATH).resolve(strict=True)) if _GIT_PATH is not None else None
 
 
 def _https_opener() -> urllib.request.OpenerDirector:
@@ -120,6 +130,7 @@ class Decision:
     reason: str
 
     def outputs(self) -> dict[str, str]:
+        """Workflow output dictionary for ``--github-output``."""
         return {
             "tier": self.tier,
             "light": "true" if self.tier in (LIGHT, FULL) else "false",
@@ -131,7 +142,7 @@ class Decision:
 def load_config(path: Path = DEFAULT_CONFIG) -> dict[str, Any]:
     """Read the tier definition and refuse a malformed one."""
     config: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
-    for key in ("labels", "release_ref_prefix", "always", "full_only"):
+    for key in ("labels", "release_ref_prefix", "always", "full_only", "full_paths"):
         if key not in config:
             raise TierError(f"{path}: missing key {key!r}")
     for label in ("full", "cut"):
@@ -140,8 +151,26 @@ def load_config(path: Path = DEFAULT_CONFIG) -> dict[str, Any]:
     overlap = set(config["always"]) & set(config["full_only"])
     if overlap:
         raise TierError(f"{path}: names in both always and full_only: {sorted(overlap)}")
+    check_full_paths_config(path, config)
     check_own_input_lanes(path, config)
     return config
+
+
+def check_full_paths_config(path: Path, config: Mapping[str, Any]) -> None:
+    """Refuse a malformed ``full_paths`` list (ADR-3536)."""
+    globs = config["full_paths"]
+    if not isinstance(globs, list):
+        raise TierError(f"{path}: full_paths must be a list")
+    if len(globs) > MAX_FULL_PATHS:
+        raise TierError(f"{path}: full_paths exceeds {MAX_FULL_PATHS} entries")
+    seen: set[str] = set()
+    for index in range(len(globs)):
+        entry = globs[index]
+        if not isinstance(entry, str) or not entry.strip() or "\n" in entry:
+            raise TierError(f"{path}: full_paths entries must be non-empty single-line strings")
+        if entry in seen:
+            raise TierError(f"{path}: duplicate full_paths entry {entry!r}")
+        seen.add(entry)
 
 
 def check_own_input_lanes(path: Path, config: Mapping[str, Any]) -> None:
@@ -169,13 +198,47 @@ def check_own_input_lanes(path: Path, config: Mapping[str, Any]) -> None:
             raise TierError(f"{path}: own_input_lanes context {lane['context']!r} is not full_only")
 
 
+def _matching_full_path(paths: Sequence[str], globs: Sequence[str]) -> tuple[str, str] | None:
+    """Return the first ``(changed_path, glob)`` pair matched under ``fnmatchcase``."""
+    if len(paths) > MAX_CHANGED_PATHS:
+        raise TierError(f"more than {MAX_CHANGED_PATHS} changed paths")
+    if len(globs) > MAX_FULL_PATHS:
+        raise TierError(f"more than {MAX_FULL_PATHS} full_paths entries")
+    for path_idx in range(len(paths)):
+        candidate = paths[path_idx]
+        for glob_idx in range(len(globs)):
+            pattern = globs[glob_idx]
+            if fnmatch.fnmatchcase(candidate, pattern):
+                return candidate, pattern
+    return None
+
+
+def _decide_own_pull_request(
+    config: Mapping[str, Any],
+    changed_paths: Callable[[], Sequence[str] | None],
+) -> Decision:
+    """Decide between ``full`` and ``light`` for a non-exempt own pull request."""
+    full_paths: Sequence[str] = config.get("full_paths", ())
+    if not full_paths:
+        return Decision(LIGHT, "pull request from this repository")
+    paths = changed_paths()
+    if paths is None:
+        return Decision(FULL, "changed paths unavailable")
+    matched = _matching_full_path(paths, full_paths)
+    if matched is not None:
+        path, glob = matched
+        return Decision(FULL, f"changed path {path!r} matches full_paths {glob!r}")
+    return Decision(LIGHT, "pull request from this repository")
+
+
 def decide(
     event: Event,
     config: Mapping[str, Any],
     *,
     release_exempt: Callable[[], bool],
+    changed_paths: Callable[[], Sequence[str] | None] = lambda: None,
 ) -> Decision:
-    """Return the tier an event owes. ``release_exempt`` is called only for a release head ref."""
+    """Return the tier an event owes; callables run only for branches that need them."""
     if event.name not in PULL_REQUEST_EVENTS:
         return Decision(FULL, f"event {event.name} is not a pull request")
     if not event.head_repository or event.head_repository != event.repository:
@@ -187,7 +250,7 @@ def decide(
         if labels["cut"] in event.labels:
             return Decision(FULL, f"release pull request with label {labels['cut']!r}")
         return Decision(RELEASE_LIGHT, "release pull request without the cut label")
-    return Decision(LIGHT, "pull request from this repository")
+    return _decide_own_pull_request(config, changed_paths)
 
 
 def api_request(method: str, url: str, token: str, payload: object | None = None) -> object:
@@ -241,6 +304,7 @@ def https_json(
 
 
 def _paged(fetch: Fetcher, path: str) -> list[object]:
+    """Read every page of a paginated API collection up to ``MAX_PAGES``."""
     items: list[object] = []
     for page in range(1, MAX_PAGES + 1):
         chunk = fetch(f"{path}?per_page={PAGE_SIZE}&page={page}")
@@ -259,7 +323,7 @@ def live_labels(fetch: Fetcher, repository: str, number: str) -> tuple[str, ...]
 
 
 def changed_paths(fetch: Fetcher, repository: str, number: str) -> list[str]:
-    """Paths a pull request changes, for the release-PR diff check."""
+    """Paths a pull request changes, for release-PR and ``full_paths`` checks."""
     rows = _paged(fetch, f"/repos/{repository}/pulls/{number}/files")
     return [str(row["filename"]) for row in rows if isinstance(row, dict) and "filename" in row]
 
@@ -318,6 +382,7 @@ def event_from_environment(env: Mapping[str, str], fetch: Fetcher | None) -> Eve
 
 
 def write_outputs(path: Path, outputs: Mapping[str, str]) -> None:
+    """Append ``name=value`` lines to ``path``, refusing multi-line values."""
     with path.open("a", encoding="utf-8") as handle:
         for name, value in outputs.items():
             if "\n" in value:
@@ -325,37 +390,127 @@ def write_outputs(path: Path, outputs: Mapping[str, str]) -> None:
             handle.write(f"{name}={value}\n")
 
 
+def _tracked_files(root: Path) -> tuple[str, ...]:
+    """Return every path ``git ls-files`` reports under ``root``."""
+    if GIT is None:
+        raise TierError("required executable not found: git")
+    resolved_root = root.resolve()
+    git_env = (
+        None
+        if resolved_root == REPO_ROOT.resolve()
+        else {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    )
+    try:
+        result = run_command(
+            [GIT, "-C", str(resolved_root), "ls-files", "-z"],
+            allowed_executables=(GIT,),
+            env=git_env,
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout_seconds=API_TIMEOUT_S,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise TierError(f"{resolved_root}: git ls-files failed ({exc})") from exc
+    raw = str(result.stdout).split("\0")
+    if len(raw) > MAX_TRACKED_FILES:
+        raise TierError(f"{resolved_root}: more than {MAX_TRACKED_FILES} tracked files")
+    return tuple(raw[idx] for idx in range(len(raw)) if raw[idx])
+
+
+def unmatched_full_paths(config_path: Path = DEFAULT_CONFIG, root: Path = REPO_ROOT) -> list[str]:
+    """Return every ``full_paths`` glob that matches no tracked file under ``root``."""
+    config = load_config(config_path)
+    tracked = _tracked_files(root)
+    globs: list[str] = list(config["full_paths"])
+    missing: list[str] = []
+    for glob_idx in range(len(globs)):
+        pattern = globs[glob_idx]
+        if not any(
+            fnmatch.fnmatchcase(tracked[file_idx], pattern) for file_idx in range(len(tracked))
+        ):
+            missing.append(pattern)
+    return missing
+
+
+def check_full_paths(config_path: Path = DEFAULT_CONFIG, root: Path = REPO_ROOT) -> int:
+    """Verify every ``full_paths`` glob matches at least one tracked file."""
+    try:
+        missing = unmatched_full_paths(config_path, root)
+    except (TierError, OSError, ValueError) as exc:
+        print(f"ci-tier: {exc}", file=sys.stderr)
+        return 1
+    if missing:
+        for idx in range(len(missing)):
+            print(
+                f"ci-tier: full_paths glob {missing[idx]!r} matches no tracked file in {root}",
+                file=sys.stderr,
+            )
+        return 1
+    return 0
+
+
 def run(env: Mapping[str, str], config_path: Path, fetch: Fetcher | None) -> Decision:
+    """Decide the tier for one workflow environment, fetching PR files at most once."""
     config = load_config(config_path)
     event = event_from_environment(env, fetch)
+    number = env.get("PR_NUMBER", "")
+    cached_paths: list[str] | None = None
+    fetched = False
+
+    def paths_or_none() -> Sequence[str] | None:
+        """Fetch and cache pull-request changed paths, or ``None`` on failure."""
+        nonlocal cached_paths, fetched
+        if fetched:
+            return cached_paths
+        fetched = True
+        if fetch is None or not number or not event.repository:
+            return None
+        try:
+            cached_paths = changed_paths(fetch, event.repository, number)
+        except (TierError, OSError, ValueError, urllib.error.URLError) as exc:
+            print(f"ci-tier: changed paths unavailable ({exc})", file=sys.stderr)
+            cached_paths = None
+        return cached_paths
 
     def exempt() -> bool:
-        number = env.get("PR_NUMBER", "")
-        paths = changed_paths(fetch, event.repository, number) if fetch and number else []
-        return release_exempt_from_script(event, paths)
+        """Evaluate ``release-pr-exempt.sh`` using the shared changed-paths cache."""
+        return release_exempt_from_script(event, paths_or_none() or ())
 
-    return decide(event, config, release_exempt=exempt)
+    return decide(event, config, release_exempt=exempt, changed_paths=paths_or_none)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """CLI entry point for workflow tier decisions and ``--check-full-paths``."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--github-output", type=Path, help="append name=value lines here")
+    parser.add_argument(
+        "--check-full-paths",
+        action="store_true",
+        help="verify every full_paths glob matches at least one tracked file",
+    )
+    parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
     args = parser.parse_args(argv)
+    config_path = args.config or (
+        args.repo_root / ".github" / "ci-tier.json" if args.check_full_paths else DEFAULT_CONFIG
+    )
+    if args.check_full_paths:
+        return check_full_paths(config_path, args.repo_root)
     token = os.environ.get("GH_TOKEN", "")
     api_url = os.environ.get("GITHUB_API_URL", "https://api.github.com")
     fetch: Fetcher | None = (
         (lambda path: api_request("GET", api_url + path, token)) if token else None
     )
     try:
-        decision = run(os.environ, args.config, fetch)
+        decision = run(os.environ, config_path, fetch)
     except (TierError, OSError, ValueError, urllib.error.URLError) as exc:
         # Fail closed: a tier that cannot be decided must not quietly shrink the suite.
         print(f"ci-tier: {exc}; running the full suite", file=sys.stderr)
         decision = Decision(FULL, f"tier could not be decided ({exc})")
     outputs = decision.outputs()
     # The aggregator reads the contexts a tier does not owe from the same file.
-    config = load_config(args.config)
+    config = load_config(config_path)
     outputs["always_json"] = json.dumps(config["always"])
     outputs["full_only_json"] = json.dumps(config["full_only"])
     print(f"ci-tier: tier={outputs['tier']} ({decision.reason})")

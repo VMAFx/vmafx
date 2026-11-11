@@ -1,16 +1,24 @@
 {
   "schema_version": 1,
-  "description": "CI tier definition (ADR-2169). The one place that says which pull requests run which part of the suite. scripts/ci/ci_tier.py decides the tier of an event, .github/workflows/ci-tier.yml hands the decision to every workflow, and the Required Checks Aggregator reads this file to know which required contexts a tier does not owe.",
+  "description": "CI tier definition (ADR-2169, ADR-3536). The one place that says which pull requests run which part of the suite. scripts/ci/ci_tier.py decides the tier of an event, .github/workflows/ci-tier.yml hands the decision to every workflow, and the Required Checks Aggregator reads this file to know which required contexts a tier does not owe. Patterns in full_paths use Python fnmatch.fnmatchcase glob semantics (* crosses /, case-sensitive, full-string match).",
   "labels": {
     "full": "ci: full",
     "cut": "autorelease: cut"
   },
   "release_ref_prefix": "release-please--",
   "tiers": {
-    "full": "Every event that is not a pull request from this repository (master push, dispatch, schedule), every fork pull request, an own pull request labelled `ci: full`, and a release pull request labelled `autorelease: cut`. Runs the whole suite.",
-    "light": "A pull request whose head repository is this repository (Renovate included). Runs lint, format, the fast suite and the governance gates; the contexts in `full_only` are not run.",
+    "full": "Every event that is not a pull request from this repository (master push, dispatch, schedule), every fork pull request, an own pull request labelled `ci: full`, an own pull request whose changed files match `full_paths` (or whose changed files cannot be read), and a release pull request labelled `autorelease: cut`. Runs the whole suite.",
+    "light": "A pull request whose head repository is this repository (Renovate included) and whose changed files match no `full_paths` pattern. Runs lint, format, the fast suite and the governance gates; the contexts in `full_only` are not run.",
     "release-light": "The machine-generated release pull request without the cut label. Runs the contexts in `always` only."
   },
+  "full_paths": [
+    "scripts/lib/safe_subprocess.py",
+    "scripts/lib/test_safe_subprocess.py",
+    "tools/rc1-tester/src/vmaf_rc1_tester/_safe_subprocess.py",
+    "tools/rc1-tester/tests/test_safe_subprocess_copy.py",
+    "tools/rc1-tester/src/vmaf_rc1_tester/hw_facts.py",
+    "tools/rc1-tester/src/vmaf_rc1_tester/probe.py"
+  ],
   "always": [
     "Release Script Contract",
     "Go API Compatibility",

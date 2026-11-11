@@ -820,7 +820,15 @@ repos:
         name: README badge renderer and design check keep positive, negative and boundary cases (ADR-3519)
         entry: bash -c 'python3 -B scripts/ci/tests/test_readme_badges.py && python3 -B scripts/ci/tests/test_ci_tier.py'
         language: system
-        files: '^(README\.md|scripts/ci/(readme_badges|ci_tier|tests/test_readme_badges|tests/test_ci_tier)\.py|tools/badges/.*|\.github/workflows/.*\.yml|\.pre-commit-config\.yaml)$'
+        files: '^(README\.md|scripts/ci/(readme_badges|ci_tier|tests/test_readme_badges|tests/test_ci_tier)\.py|tools/badges/.*|\.github/(ci-tier\.json|workflows/.*\.yml)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: check-ci-tier-full-paths
+        name: Every full_paths glob in .github/ci-tier.json matches tracked files (ADR-3536)
+        entry: python3 -B scripts/ci/ci_tier.py --check-full-paths
+        language: system
+        always_run: true
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

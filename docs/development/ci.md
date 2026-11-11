@@ -181,6 +181,17 @@ integration, tester and release dry-run lanes, and the self-hosted hardware lane
 Those run on the master push, so a break in them is found there, after the merge
 train landed the change. To see one on a pull request, add the label `ci: full`.
 
+An own pull request also escalates to the `full` tier automatically when any
+changed file matches `full_paths` in `.github/ci-tier.json` (or when changed
+paths cannot be read from the API;
+[ADR-3536](../adr/3536-ci-tier-full-paths.md)). Patterns use Python
+`fnmatch.fnmatchcase` (`*` crosses `/`, case-sensitive, full-string match), and
+`scripts/ci/ci_tier.py --check-full-paths` verifies in pre-commit and pre-push
+that every entry matches at least one tracked file. To add a path, append the
+explicit repository-relative path to `full_paths` in `.github/ci-tier.json` and
+verify with `python3 -B scripts/ci/ci_tier.py --check-full-paths` and
+`python3 -B scripts/ci/tests/test_ci_tier.py`.
+
 What a contributor sees:
 
 - Every workflow shows a job `CI tier (<workflow>) / Decide the CI tier` first;

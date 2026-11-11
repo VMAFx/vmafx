@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Positive, negative and boundary cases for scripts/ci/ci_tier.py (ADR-2169)."""
+"""Positive, negative and boundary cases for scripts/ci/ci_tier.py (ADR-2169, ADR-3536)."""
 
 from __future__ import annotations
 
@@ -9,11 +9,13 @@ import http.client
 import io
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
 import urllib.error
 import urllib.request
+from collections.abc import Sequence
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from typing import Any
@@ -26,6 +28,16 @@ from scripts.ci import ci_tier
 CONFIG = ci_tier.load_config()
 REPO = "VMAFx/vmafx"
 RELEASE_REF = "release-please--branches--master--components--vmafx"
+PR_3401_PATHS = (
+    ".github/workflows/libvmaf-build-matrix.yml",
+    "core/test/test_cuda_parity_gate_skip.py",
+    "docs/adr/3532-trusted-executable-launch-links.md",
+    "docs/adr/_index_fragments/3532-trusted-executable-launch-links.md",
+    "scripts/lib/AGENTS.md",
+    "scripts/lib/safe_subprocess.py",
+    "scripts/lib/test_safe_subprocess.py",
+    "tools/rc1-tester/src/vmaf_rc1_tester/_safe_subprocess.py",
+)
 
 
 def event(**changes: object) -> ci_tier.Event:
@@ -41,27 +53,84 @@ def event(**changes: object) -> ci_tier.Event:
     return ci_tier.Event(**{**base, **changes})  # type: ignore[arg-type]
 
 
-def decide(facts: ci_tier.Event, *, exempt: bool = False) -> ci_tier.Decision:
-    return ci_tier.decide(facts, CONFIG, release_exempt=lambda: exempt)
+def decide(
+    facts: ci_tier.Event,
+    *,
+    exempt: bool = False,
+    paths: Sequence[str] | None = ("docs/usage/cli.md",),
+) -> ci_tier.Decision:
+    """Decide with ``CONFIG`` and deterministic callables."""
+    return ci_tier.decide(
+        facts,
+        CONFIG,
+        release_exempt=lambda: exempt,
+        changed_paths=lambda: paths,
+    )
 
 
 class Decide(unittest.TestCase):
     def test_not_a_pull_request_is_full(self) -> None:
+        def refuse_paths() -> Sequence[str]:
+            raise AssertionError("changed_paths asked for a non-pull-request event")
+
         for name in ("push", "schedule", "workflow_dispatch", "release"):
-            self.assertEqual(decide(event(name=name)).tier, ci_tier.FULL, name)
+            decision = ci_tier.decide(
+                event(name=name),
+                CONFIG,
+                release_exempt=lambda: False,
+                changed_paths=refuse_paths,
+            )
+            self.assertEqual(decision.tier, ci_tier.FULL, name)
+            self.assertEqual(decision.reason, f"event {name} is not a pull request")
 
     def test_own_pull_request_is_light(self) -> None:
-        self.assertEqual(decide(event()).tier, ci_tier.LIGHT)
+        self.assertEqual(decide(event(), paths=("docs/usage/cli.md",)).tier, ci_tier.LIGHT)
+
+    def test_planted_pr_3401_paths_escalate_own_pull_request_to_full(self) -> None:
+        decision = decide(event(), paths=PR_3401_PATHS)
+        self.assertEqual(decision.tier, ci_tier.FULL)
+        self.assertEqual(
+            decision.reason,
+            "changed path 'scripts/lib/safe_subprocess.py' matches full_paths "
+            "'scripts/lib/safe_subprocess.py'",
+        )
+
+    def test_each_seeded_full_path_alone_escalates_own_pull_request_to_full(self) -> None:
+        for listed in CONFIG["full_paths"]:
+            with self.subTest(path=listed):
+                decision = decide(event(), paths=(listed,))
+                self.assertEqual(decision.tier, ci_tier.FULL)
+                self.assertIn(listed, decision.reason)
 
     def test_fork_pull_request_is_full(self) -> None:
-        self.assertEqual(decide(event(head_repository="x/vmafx")).tier, ci_tier.FULL)
+        def refuse_paths() -> Sequence[str]:
+            raise AssertionError("changed_paths asked for a fork pull request")
+
+        decision = ci_tier.decide(
+            event(head_repository="x/vmafx"),
+            CONFIG,
+            release_exempt=lambda: False,
+            changed_paths=refuse_paths,
+        )
+        self.assertEqual(decision.tier, ci_tier.FULL)
+        self.assertEqual(decision.reason, "fork pull request (head repository 'x/vmafx')")
 
     def test_missing_head_repository_is_full(self) -> None:
         """A payload without a head repository (a deleted fork) is not trusted as own."""
         self.assertEqual(decide(event(head_repository="")).tier, ci_tier.FULL)
 
     def test_full_label_is_full(self) -> None:
-        self.assertEqual(decide(event(labels=("ci: full",))).tier, ci_tier.FULL)
+        def refuse_paths() -> Sequence[str]:
+            raise AssertionError("changed_paths asked when ci: full label is set")
+
+        decision = ci_tier.decide(
+            event(labels=("ci: full",)),
+            CONFIG,
+            release_exempt=lambda: False,
+            changed_paths=refuse_paths,
+        )
+        self.assertEqual(decision.tier, ci_tier.FULL)
+        self.assertEqual(decision.reason, "label 'ci: full'")
 
     def test_release_branch_needs_the_exemption_to_be_light(self) -> None:
         facts = event(head_ref=RELEASE_REF)
@@ -79,7 +148,50 @@ class Decide(unittest.TestCase):
         def refuse() -> bool:
             raise AssertionError("asked for an ordinary pull request")
 
-        self.assertEqual(ci_tier.decide(event(), CONFIG, release_exempt=refuse).tier, "light")
+        decision = ci_tier.decide(
+            event(),
+            CONFIG,
+            release_exempt=refuse,
+            changed_paths=lambda: ("docs/usage/cli.md",),
+        )
+        self.assertEqual(decision.tier, "light")
+
+    def test_glob_boundaries_respect_fnmatchcase_semantics(self) -> None:
+        for non_match in (
+            "scripts/lib/safe_subprocess.py.orig",
+            "scripts/lib/Safe_Subprocess.py",
+            "other/scripts/lib/safe_subprocess.py",
+        ):
+            with self.subTest(path=non_match):
+                self.assertEqual(decide(event(), paths=(non_match,)).tier, ci_tier.LIGHT)
+        wildcard_cfg = {**CONFIG, "full_paths": ["scripts/*/safe_subprocess.py"]}
+        decision = ci_tier.decide(
+            event(),
+            wildcard_cfg,
+            release_exempt=lambda: False,
+            changed_paths=lambda: ("scripts/lib/safe_subprocess.py",),
+        )
+        self.assertEqual(decision.tier, ci_tier.FULL)
+        self.assertIn("scripts/lib/safe_subprocess.py", decision.reason)
+        self.assertIn("scripts/*/safe_subprocess.py", decision.reason)
+
+    def test_empty_full_paths_stays_light_without_fetching_paths(self) -> None:
+        def refuse_paths() -> Sequence[str]:
+            raise AssertionError("changed_paths called when full_paths is empty")
+
+        empty_cfg = {**CONFIG, "full_paths": []}
+        decision = ci_tier.decide(
+            event(),
+            empty_cfg,
+            release_exempt=lambda: False,
+            changed_paths=refuse_paths,
+        )
+        self.assertEqual(decision.tier, ci_tier.LIGHT)
+
+    def test_unavailable_changed_paths_fail_closed_to_full(self) -> None:
+        decision = decide(event(), paths=None)
+        self.assertEqual(decision.tier, ci_tier.FULL)
+        self.assertEqual(decision.reason, "changed paths unavailable")
 
     def test_outputs_are_derived_from_the_tier(self) -> None:
         light = decide(event()).outputs()
@@ -378,6 +490,176 @@ class Config(unittest.TestCase):
         loaded = ci_tier.load_config(ci_tier.DEFAULT_CONFIG)
         self.assertTrue(loaded["own_input_lanes"])
 
+    def test_malformed_full_paths_entries_are_refused(self) -> None:
+        missing = {k: v for k, v in CONFIG.items() if k != "full_paths"}
+        with self.assertRaises(ci_tier.TierError):
+            ci_tier.load_config(self.write(json.dumps(missing)))
+        for invalid in (
+            "scripts/lib/safe_subprocess.py",
+            123,
+            {},
+            [""],
+            ["   "],
+            [123],
+            ["scripts/lib/safe_subprocess.py", "scripts/lib/safe_subprocess.py"],
+        ):
+            with self.subTest(full_paths=invalid):
+                config = {**CONFIG, "full_paths": invalid}
+                with self.assertRaises(ci_tier.TierError):
+                    ci_tier.load_config(self.write(json.dumps(config)))
+
+
+class RunFullPaths(unittest.TestCase):
+    """End-to-end ``run()`` coverage for lazy path fetching and fail-closed errors."""
+
+    def base_env(self, **extra: str) -> dict[str, str]:
+        env = {
+            "EVENT_NAME": "pull_request",
+            "GITHUB_REPOSITORY": REPO,
+            "HEAD_REPOSITORY": REPO,
+            "HEAD_REF": "fix/example",
+            "PR_NUMBER": "3401",
+            "PR_LABELS": "[]",
+        }
+        env.update(extra)
+        return env
+
+    def test_run_escalates_planted_pr_3401_and_keeps_docs_only_light(self) -> None:
+        def fetch_3401(path: str) -> object:
+            return [{"filename": p} for p in PR_3401_PATHS] if "/files" in path else []
+
+        def fetch_docs(path: str) -> object:
+            return [{"filename": "docs/usage/cli.md"}] if "/files" in path else []
+
+        with redirect_stderr(io.StringIO()):
+            full = ci_tier.run(self.base_env(), ci_tier.DEFAULT_CONFIG, fetch_3401)
+            light = ci_tier.run(self.base_env(), ci_tier.DEFAULT_CONFIG, fetch_docs)
+        self.assertEqual(full.tier, ci_tier.FULL)
+        self.assertIn("scripts/lib/safe_subprocess.py", full.reason)
+        self.assertEqual(light.tier, ci_tier.LIGHT)
+
+    def test_run_fails_closed_when_paths_cannot_be_obtained(self) -> None:
+        def broken_files(path: str) -> object:
+            if "/files" in path:
+                raise ci_tier.TierError("files endpoint down")
+            return []
+
+        with redirect_stderr(io.StringIO()):
+            no_token = ci_tier.run(self.base_env(), ci_tier.DEFAULT_CONFIG, None)
+            no_number = ci_tier.run(
+                self.base_env(PR_NUMBER=""),
+                ci_tier.DEFAULT_CONFIG,
+                lambda path: [],
+            )
+            api_error = ci_tier.run(self.base_env(), ci_tier.DEFAULT_CONFIG, broken_files)
+        for label, decision in (
+            ("no_token", no_token),
+            ("no_number", no_number),
+            ("api_error", api_error),
+        ):
+            with self.subTest(case=label):
+                self.assertEqual(decision.tier, ci_tier.FULL)
+                self.assertEqual(decision.reason, "changed paths unavailable")
+
+    def test_run_fetches_pull_request_files_at_most_once_across_release_and_full_paths(
+        self,
+    ) -> None:
+        file_fetches = 0
+
+        def fetch(path: str) -> object:
+            nonlocal file_fetches
+            if "/files" in path:
+                file_fetches += 1
+                return [{"filename": "scripts/lib/safe_subprocess.py"}]
+            return []
+
+        env = self.base_env(HEAD_REF=RELEASE_REF, PR_AUTHOR="lusoris", PR_AUTHOR_TYPE="User")
+        with redirect_stderr(io.StringIO()):
+            decision = ci_tier.run(env, ci_tier.DEFAULT_CONFIG, fetch)
+        self.assertEqual(file_fetches, 1)
+        self.assertEqual(decision.tier, ci_tier.FULL)
+        self.assertIn("scripts/lib/safe_subprocess.py", decision.reason)
+
+
+class FullPathsDrift(unittest.TestCase):
+    """Drift check ``--check-full-paths`` against tracked files in git."""
+
+    @staticmethod
+    def _git_env() -> dict[str, str]:
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env["GIT_CONFIG_GLOBAL"] = os.devnull
+        env["GIT_CONFIG_NOSYSTEM"] = "1"
+        return env
+
+    def _run_git(self, root: Path, *args: str) -> None:
+        git = ci_tier.GIT
+        if git is None:
+            self.fail("git executable not found")
+        ci_tier.run_command(
+            [git, "-C", str(root), *args],
+            allowed_executables=(git,),
+            env=self._git_env(),
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout_seconds=ci_tier.API_TIMEOUT_S,
+        )
+
+    def test_current_tree_passes_full_paths_drift_check(self) -> None:
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = ci_tier.main(["--check-full-paths"])
+        self.assertEqual(rc, 0, err.getvalue())
+
+    def test_renamed_listed_file_fails_drift_check_and_restored_file_passes(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, True)
+        self._run_git(root, "init", "-q")
+        cfg_dir = root / ".github"
+        cfg_dir.mkdir(parents=True, exist_ok=True)
+        (cfg_dir / "ci-tier.json").write_text(
+            ci_tier.DEFAULT_CONFIG.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        for rel in CONFIG["full_paths"]:
+            target = root / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("# stub\n", encoding="utf-8")
+        self._run_git(root, "add", ".")
+
+        err_ok = io.StringIO()
+        with redirect_stderr(err_ok):
+            self.assertEqual(
+                ci_tier.main(["--check-full-paths", "--repo-root", str(root)]),
+                0,
+                err_ok.getvalue(),
+            )
+
+        self._run_git(
+            root,
+            "mv",
+            "scripts/lib/safe_subprocess.py",
+            "scripts/lib/safe_subprocess_renamed.py",
+        )
+        err_fail = io.StringIO()
+        with redirect_stderr(err_fail):
+            self.assertEqual(ci_tier.main(["--check-full-paths", "--repo-root", str(root)]), 1)
+        self.assertIn("scripts/lib/safe_subprocess.py", err_fail.getvalue())
+
+        self._run_git(
+            root,
+            "mv",
+            "scripts/lib/safe_subprocess_renamed.py",
+            "scripts/lib/safe_subprocess.py",
+        )
+        err_restored = io.StringIO()
+        with redirect_stderr(err_restored):
+            self.assertEqual(
+                ci_tier.main(["--check-full-paths", "--repo-root", str(root)]),
+                0,
+                err_restored.getvalue(),
+            )
+
 
 class Main(unittest.TestCase):
     def test_a_broken_definition_fails_the_job_loudly(self) -> None:
@@ -395,6 +677,34 @@ class Main(unittest.TestCase):
         output = Path(directory) / "out"
         env = {
             "EVENT_NAME": "pull_request",
+            "GH_TOKEN": "t",
+            "PR_NUMBER": "7",
+            "GITHUB_REPOSITORY": REPO,
+            "HEAD_REPOSITORY": REPO,
+            "HEAD_REF": "fix/example",
+            "PR_LABELS": "[]",
+        }
+
+        def fake_api(method: str, url: str, token: str, payload: object | None = None) -> object:
+            return [{"filename": "docs/usage/cli.md"}] if "/files" in url else []
+
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch.object(ci_tier, "api_request", side_effect=fake_api),
+            redirect_stdout(io.StringIO()),
+            redirect_stderr(io.StringIO()),
+        ):
+            self.assertEqual(ci_tier.main(["--github-output", str(output)]), 0)
+        written = dict(line.split("=", 1) for line in output.read_text().splitlines())
+        self.assertEqual(written["tier"], "light")
+        self.assertEqual(json.loads(written["always_json"]), CONFIG["always"])
+        self.assertEqual(json.loads(written["full_only_json"]), CONFIG["full_only"])
+
+    def test_main_without_token_fails_closed_to_full(self) -> None:
+        directory = tempfile.mkdtemp()
+        output = Path(directory) / "out"
+        env = {
+            "EVENT_NAME": "pull_request",
             "GITHUB_REPOSITORY": REPO,
             "HEAD_REPOSITORY": REPO,
             "HEAD_REF": "fix/example",
@@ -403,9 +713,8 @@ class Main(unittest.TestCase):
         with mock.patch.dict(os.environ, env, clear=True), redirect_stdout(io.StringIO()):
             self.assertEqual(ci_tier.main(["--github-output", str(output)]), 0)
         written = dict(line.split("=", 1) for line in output.read_text().splitlines())
-        self.assertEqual(written["tier"], "light")
-        self.assertEqual(json.loads(written["always_json"]), CONFIG["always"])
-        self.assertEqual(json.loads(written["full_only_json"]), CONFIG["full_only"])
+        self.assertEqual(written["tier"], "full")
+        self.assertEqual(written["reason"], "changed paths unavailable")
 
     def test_a_failing_decision_falls_back_to_the_full_tier(self) -> None:
         directory = tempfile.mkdtemp()
