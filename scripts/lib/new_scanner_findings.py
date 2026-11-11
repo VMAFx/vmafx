@@ -24,6 +24,7 @@ class ToolError(RuntimeError):
 
 
 def tool(name: str) -> str:
+    """Return the executable path or raise ToolError when it is unavailable."""
     path = shutil.which(name)
     if path is None:
         raise ToolError(f"{name} is not on PATH")
@@ -49,16 +50,19 @@ def git_bytes(git: str, args: list[str], cwd: Path) -> tuple[int, bytes]:
 
 
 def git_output(git: str, args: list[str], cwd: Path) -> tuple[int, str]:
+    """Return the command exit status and filesystem-decoded standard output."""
     status, output = git_bytes(git, args, cwd)
     return status, os.fsdecode(output)
 
 
 def default_branch(git: str, root: Path) -> str:
+    """Return the origin HEAD target, falling back to origin/master if unresolved."""
     status, output = git_output(git, ["symbolic-ref", "refs/remotes/origin/HEAD"], root)
     return output.strip() if status == 0 else "origin/master"
 
 
 def merge_base(git: str, root: Path, branch: str) -> str:
+    """Return the common ancestor of branch and the outgoing ref or HEAD; raise if absent."""
     ref = os.environ.get("PRE_COMMIT_TO_REF") or "HEAD"
     status, output = git_output(git, ["merge-base", ref, branch], root)
     if status != 0 or not output.strip():
@@ -94,6 +98,7 @@ def revision_bytes(git: str, root: Path, ref: str, relative: str) -> bytes | Non
 
 
 def base_text(git: str, root: Path, base: str, relative: str) -> bytes:
+    """Return the base revision's file bytes, or empty bytes when the file is absent."""
     return revision_bytes(git, root, base, relative) or b""
 
 

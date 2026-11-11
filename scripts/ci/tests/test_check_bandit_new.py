@@ -33,6 +33,7 @@ SAFE = "from scripts.lib.safe_subprocess import run\n\nrun([exe], allowed_execut
 
 class CheckBanditNew(unittest.TestCase):
     def setUp(self) -> None:
+        """Require Bandit and create an isolated repository with a baseline and change branch."""
         self.assertIsNotNone(shutil.which("bandit"), "bandit is not on PATH")
         temp = tempfile.TemporaryDirectory(prefix="vmafx-bandit-")
         self.addCleanup(temp.cleanup)
@@ -45,6 +46,7 @@ class CheckBanditNew(unittest.TestCase):
         self.git("switch", "-q", "-c", "change")
 
     def git(self, *args: str, input_text: str | None = None) -> str:
+        """Run a fixture repository command, assert success, and return standard output."""
         git = shutil.which("git")
         assert git is not None
         # Drop the caller's repository variables (a hook runs with GIT_DIR and
@@ -72,6 +74,7 @@ class CheckBanditNew(unittest.TestCase):
         return proc.stdout
 
     def run_check(self, name: str, source: str) -> tuple[int, str, str]:
+        """Write fixture source and return the check's status, standard output, and errors."""
         (self.root / name).write_text(source, encoding="utf-8")
         out, err = io.StringIO(), io.StringIO()
         cwd = Path.cwd()
@@ -84,6 +87,7 @@ class CheckBanditNew(unittest.TestCase):
         return status, out.getvalue(), err.getvalue()
 
     def invoke(self, *names: str, base: str | None = "master") -> tuple[int, str, str]:
+        """Check selected fixture paths and return status, standard output, and errors."""
         argv = [*(["--base-branch", base] if base else []), *names]
         out, err = io.StringIO(), io.StringIO()
         with (
@@ -95,11 +99,13 @@ class CheckBanditNew(unittest.TestCase):
         return status, out.getvalue(), err.getvalue()
 
     def commit_base(self) -> None:
+        """Commit fixture changes and make that revision the comparison baseline."""
         self.git("add", ".")
         self.git("commit", "-q", "-m", "baseline")
         self.git("branch", "-f", "master", "HEAD")
 
     def test_push_scans_outgoing_blob_with_clean_worktree(self) -> None:
+        """A new outgoing finding exits 1 even when the checked-out baseline is clean."""
         (self.root / "harness.py").write_text(BASE + UNSAFE)
         self.git("add", ".")
         self.git("commit", "-q", "-m", "outgoing")
@@ -111,6 +117,7 @@ class CheckBanditNew(unittest.TestCase):
         self.assertIn("B603", out)
 
     def test_push_ignores_dirty_worktree_and_deleted_worktree_file(self) -> None:
+        """A clean outgoing blob exits 0 despite local unsafe edits or deletion."""
         self.git("branch", "outgoing")
         with mock.patch.dict(os.environ, {"PRE_COMMIT_TO_REF": "outgoing"}):
             self.assertEqual(self.run_check("harness.py", BASE + UNSAFE)[0], 0)
@@ -118,6 +125,7 @@ class CheckBanditNew(unittest.TestCase):
             self.assertEqual(self.invoke("harness.py")[0], 0)
 
     def test_push_uses_outgoing_merge_base(self) -> None:
+        """An outgoing baseline finding exits 0 even with an older revision checked out."""
         (self.root / "harness.py").write_text(BASE + UNSAFE)
         self.commit_base()
         self.git("branch", "outgoing")
@@ -126,17 +134,20 @@ class CheckBanditNew(unittest.TestCase):
             self.assertEqual(self.invoke("harness.py")[0], 0)
 
     def test_default_branch_symbolic_ref_and_override(self) -> None:
+        """The origin HEAD target succeeds; an explicit missing base overrides it and exits 2."""
         self.git("branch", "origin/main", "master")
         self.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/heads/origin/main")
         self.assertEqual(self.invoke("harness.py", base=None)[0], 0)
         self.assertEqual(self.invoke("harness.py", base="missing")[0], 2)
 
     def test_default_branch_fallback_and_missing_merge_base(self) -> None:
+        """Without origin HEAD, a missing origin/master exits 2; creating it allows exit 0."""
         self.assertEqual(self.invoke("harness.py", base=None)[0], 2)
         self.git("branch", "origin/master", "master")
         self.assertEqual(self.invoke("harness.py", base=None)[0], 0)
 
     def test_config_enables_rule_on_unchanged_file(self) -> None:
+        """Enabling B101 reports the unchanged source's assertion and exits 1."""
         (self.root / "harness.py").write_text("assert True\n")
         self.commit_base()
         (self.root / "bandit.yml").write_text("tests: [B101]\n")
@@ -145,6 +156,7 @@ class CheckBanditNew(unittest.TestCase):
         self.assertIn("harness.py:1: B101", out)
 
     def test_base_config_is_used_on_changed_file(self) -> None:
+        """A moved assertion newly enabled by B101 is absent from base findings and exits 1."""
         (self.root / "harness.py").write_text("assert True\n")
         self.commit_base()
         (self.root / "bandit.yml").write_text("tests: [B101]\n")
@@ -153,6 +165,7 @@ class CheckBanditNew(unittest.TestCase):
         self.assertIn("B101", out)
 
     def test_missing_base_config_falls_back_to_current(self) -> None:
+        """A missing base configuration uses current rules, leaving an old finding at exit 0."""
         self.git("rm", "bandit.yml")
         (self.root / "harness.py").write_text(BASE + UNSAFE)
         self.commit_base()
@@ -160,6 +173,7 @@ class CheckBanditNew(unittest.TestCase):
         self.assertEqual(self.invoke("bandit.yml")[0], 0)
 
     def test_disabled_rule_does_not_report_old_finding(self) -> None:
+        """Disabling B101 suppresses the baseline assertion finding and exits 0."""
         (self.root / "bandit.yml").write_text("tests: [B101]\n")
         (self.root / "harness.py").write_text("assert True\n")
         self.commit_base()
@@ -167,6 +181,7 @@ class CheckBanditNew(unittest.TestCase):
         self.assertEqual(self.invoke("bandit.yml")[0], 0)
 
     def test_config_change_retains_existing_rules(self) -> None:
+        """A configuration comment leaves existing findings classified as old and exits 0."""
         (self.root / "harness.py").write_text(BASE + UNSAFE)
         self.commit_base()
         with (self.root / "bandit.yml").open("a") as config:
@@ -174,6 +189,7 @@ class CheckBanditNew(unittest.TestCase):
         self.assertEqual(self.invoke("bandit.yml")[0], 0)
 
     def test_push_deleted_blob_is_not_scanned_from_worktree(self) -> None:
+        """An outgoing deletion exits 0 even if unsafe source exists at the local path."""
         self.git("rm", "harness.py")
         self.git("commit", "-q", "-m", "delete")
         self.git("branch", "outgoing")
@@ -181,6 +197,7 @@ class CheckBanditNew(unittest.TestCase):
             self.assertEqual(self.run_check("harness.py", BASE + UNSAFE)[0], 0)
 
     def test_push_rename_uses_outgoing_pairing(self) -> None:
+        """An outgoing rename preserves the baseline finding match and exits 0."""
         (self.root / "harness.py").write_text(BASE + UNSAFE)
         self.commit_base()
         self.git("mv", "harness.py", "renamed.py")

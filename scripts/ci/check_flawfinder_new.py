@@ -88,6 +88,7 @@ def findings(flawfinder: str, source: Path) -> list[tuple[int, str, str]]:
 
 
 def scan_changes(flawfinder: str, comparison: Comparison, paths: list[Path]) -> int:
+    """Print and count flawfinder findings absent from the corresponding base sources."""
     failed = 0
     with tempfile.TemporaryDirectory(prefix="flawfinder-comparison-") as temp:
         for path in paths:

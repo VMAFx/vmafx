@@ -69,6 +69,7 @@ def findings(bandit: str, source: Path, config: Path = CONFIG) -> list[tuple[int
 
 
 def scan_changes(bandit: str, comparison: Comparison, paths: list[Path]) -> int:
+    """Print and count new Bandit findings, including those enabled by configuration changes."""
     current_config = comparison.current_bytes("bandit.yml")
     if current_config is None:
         raise ToolError("Bandit configuration missing: bandit.yml")
