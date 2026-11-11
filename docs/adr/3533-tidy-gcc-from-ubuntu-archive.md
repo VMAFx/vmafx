@@ -52,8 +52,9 @@ recording and diagnostic reports remain as specified in decisions 2 and 3.
 - Comments, output strings, heredoc data and variable assignments count as
   matches. No YAML or shell parsing occurs. Use ADR-3533 wording without
   banned text when an example or comment needs to describe this restriction.
-  Listed non-regular paths are skipped with an explicit diagnostic; source
-  reads replace invalid UTF-8 bytes. Failed Git listings raise errors.
+  Listed non-regular paths, symbolic links included, are skipped with an
+  explicit diagnostic and never followed; source reads replace invalid UTF-8
+  bytes. Failed Git listings raise errors.
 - Positive, negative and boundary cases cover nested shell commands, aliases,
   merge keys, relocated actions, tracked-file scope and exact source locations.
 

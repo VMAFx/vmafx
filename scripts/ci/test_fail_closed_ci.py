@@ -22,6 +22,13 @@ from unittest import mock
 import yaml  # type: ignore[import-untyped]  # no PyYAML stubs in the hook environment, as in scripts/ci/check_composite_actions.py
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
+# Hook runs keep the staged index for this checkout; fixtures drop caller GIT_* (issue #3324).
+from scripts.ci.check_agent_copyright_rule import git_environment  # noqa: E402
+from scripts.lib.safe_subprocess import CommandFailed, TextCommandResult  # noqa: E402
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+
 WORKFLOWS = ROOT / ".github" / "workflows"
 SCRIPT_TIMEOUT_S = 60
 # 466 tracked source files at introduction; allow fourfold growth.
@@ -118,12 +125,14 @@ def ppa_text_problems(path: Path, text: str) -> list[str]:
 
 def ci_text_paths(root: Path) -> list[Path]:
     """List tracked YAML, shell and container source paths throughout the repository."""
-    result = subprocess.run(  # noqa: S603 - fixed Git command, repository path as one argument
-        ["git", "-C", str(root), "ls-files", "-z"],  # noqa: S607 - Git supplied by CI
+    result = run_command(
+        ["git", "-C", str(root), "ls-files", "-z"],
+        allowed_executables=("git",),
+        env=git_environment(root),
         capture_output=True,
         text=True,
         check=True,
-        timeout=SCRIPT_TIMEOUT_S,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
     )
     paths = [
         root / name
@@ -144,7 +153,7 @@ def launchpad_ppa_problems(root: Path) -> list[str]:
     problems: list[str] = []
     for path in ci_text_paths(root):
         relative = path.relative_to(root)
-        if not path.is_file():
+        if not path.is_file(follow_symlinks=False):
             print(f"{relative}: skipped tracked non-regular file", file=sys.stderr)
             continue
         problems.extend(
@@ -277,17 +286,23 @@ class LaunchpadPPAContract(unittest.TestCase):
     def test_file_count_boundary(self) -> None:
         """Accept exactly the tracked-file bound; reject one additional source path."""
         names = [f"setup-{number}.sh" for number in range(MAX_CI_TEXT_FILES + 1)]
-        result = subprocess.CompletedProcess([], 0, stdout="\0".join(names[:-1]) + "\0")
-        with mock.patch.object(subprocess, "run", return_value=result) as run:
+        listing = "\0".join(names[:-1]) + "\0"
+        result = TextCommandResult(argv=("git",), returncode=0, stdout=listing, stderr="")
+        module = sys.modules[__name__]
+        with mock.patch.object(module, "run_command", return_value=result) as run:
             self.assertEqual(len(ci_text_paths(self.root)), MAX_CI_TEXT_FILES)
             run.assert_called_once_with(
                 ["git", "-C", str(self.root), "ls-files", "-z"],
+                allowed_executables=("git",),
+                env=git_environment(self.root),
                 capture_output=True,
                 text=True,
                 check=True,
-                timeout=SCRIPT_TIMEOUT_S,
+                timeout_seconds=SCRIPT_TIMEOUT_S,
             )
-            result.stdout += names[-1] + "\0"
+            run.return_value = TextCommandResult(
+                argv=("git",), returncode=0, stdout=listing + names[-1] + "\0", stderr=""
+            )
             with self.assertRaisesRegex(AssertionError, f"{MAX_CI_TEXT_FILES} files"):
                 ci_text_paths(self.root)
 
@@ -307,9 +322,10 @@ class LaunchpadPPAContract(unittest.TestCase):
         }
         with mock.patch.dict(os.environ, poison):
             self.setUp()
-        self.track({"setup.sh": "add-apt-repository ppa:x/y\n"})
+            self.track({"setup.sh": "add-apt-repository ppa:x/y\n"})
+            problems = launchpad_ppa_problems(self.root)
         self.assertEqual(
-            launchpad_ppa_problems(self.root),
+            problems,
             [
                 "setup.sh:1: add-apt-repository registers a Launchpad PPA source; "
                 "install from the Ubuntu archive (ADR-3533)"
@@ -318,7 +334,7 @@ class LaunchpadPPAContract(unittest.TestCase):
 
     def test_git_listing_failure_propagates(self) -> None:
         """A failed tracked-path lookup cannot silently pass the contract."""
-        with self.assertRaises(subprocess.CalledProcessError):
+        with self.assertRaises(CommandFailed):
             launchpad_ppa_problems(self.root / "missing")
 
     def test_non_regular_tracked_path_is_reported(self) -> None:
@@ -329,6 +345,23 @@ class LaunchpadPPAContract(unittest.TestCase):
             self.assertEqual(launchpad_ppa_problems(self.root), [])
         self.assertIn(
             "missing.sh: skipped tracked non-regular file", str(stderr.write.call_args_list)
+        )
+
+    def test_tracked_symlink_is_skipped_not_followed(self) -> None:
+        """A tracked link is non-regular: report the skip, never scan the target text."""
+        target = self.root / "target.txt"
+        target.write_text("add-apt-repository ppa:x/y\n", encoding="utf-8")
+        try:
+            (self.root / "linked.sh").symlink_to(target.name)
+        except OSError as error:
+            self.skipTest(f"symbolic links unavailable: {error}")
+        self.git_run(
+            self.git_argv("add", "--", "linked.sh"), check=True, capture_output=True, timeout=10
+        )
+        with mock.patch("sys.stderr") as stderr:
+            self.assertEqual(launchpad_ppa_problems(self.root), [])
+        self.assertIn(
+            "linked.sh: skipped tracked non-regular file", str(stderr.write.call_args_list)
         )
 
     def test_replacement_decoding_preserves_registration_check(self) -> None:
