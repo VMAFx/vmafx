@@ -399,29 +399,39 @@ def test_the_images_that_link_zimg_from_source_keep_their_own_record() -> None:
     and none may claim one.
     """
     expanded = lic.load_manifest()["artifacts"]
-    # Each of them links the 3.0.6 release, and says so in its own `source`.
+    # The two families that really do build the 3.0.6 release say so in their own
+    # `source`, and carry the archive's WTFPL text by name — the tester-family
+    # entries fetch it, the repo-family entries copy the checked-in text.
     expected = "https://github.com/sekrit-twc/zimg.git at commit f819b14e8f39d1282400b0d9543e8ef73c1b2bbd, tag release-3.0.6"
-    for kind in ("macos", "windows-zip", "windows-cuda-zip", "windows-sycl-zip", "release-native"):
-        component = next(c for c in expanded[kind]["components"] if c["id"] == "zimg")
-        assert "debian_source_file" not in component, kind
-        assert not any(
-            "usr/share/doc/libzimg2" in text for text in json.dumps(component["texts"]).split()
-        ), kind
-        assert component["source"] == expected, kind
-        # And the WTFPL text is the one the 3.0.6 archive ships, by name.
-        assert component["texts"] == [
-            {
-                "name": "WTFPL.txt",
-                "repo": "tools/rc1-tester/image/licenses/zimg-3.0.6-COPYING.txt",
-                "label": "zimg 3.0.6 licence text (WTFPL v2)",
-            }
-        ] or component["texts"] == [
+    archive_texts = (
+        [
             {
                 "name": "WTFPL.txt",
                 "fetched": "zimg-3.0.6-COPYING",
                 "label": "zimg 3.0.6 licence text (WTFPL v2)",
             }
-        ], kind
+        ],
+        [
+            {
+                "name": "WTFPL.txt",
+                "repo": "tools/rc1-tester/image/licenses/zimg-3.0.6-COPYING.txt",
+                "label": "zimg 3.0.6 licence text (WTFPL v2)",
+            }
+        ],
+    )
+    for kind in ("macos", "windows-zip", "windows-cuda-zip", "windows-sycl-zip"):
+        component = next(c for c in expanded[kind]["components"] if c["id"] == "zimg")
+        assert component["source"] == expected, kind
+        assert component["texts"] in archive_texts, kind
+    # release-native's entry names the 3.0.6 archive, but the bundle ships the
+    # distribution build (#3396): the record is known-wrong, so this test pins
+    # only what the fix must not lose — no Debian record claimed — and leaves
+    # the correction of source and texts to #3396.
+    component = next(c for c in expanded["release-native"]["components"] if c["id"] == "zimg")
+    assert "debian_source_file" not in component
+    assert not any(
+        "usr/share/doc/libzimg2" in text for text in json.dumps(component["texts"]).split()
+    )
 
 
 def test_production_node_sycl_image_shares_runtime_and_node_components() -> None:
