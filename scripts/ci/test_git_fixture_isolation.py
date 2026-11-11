@@ -24,12 +24,14 @@ from __future__ import annotations
 
 import concurrent.futures
 import datetime
+import io
 import json
 import os
 import re
 import shutil
 import sys
 import tempfile
+import tokenize
 import unittest
 from collections.abc import Callable
 from functools import partial
@@ -114,6 +116,22 @@ ISOLATION_MARKER = re.compile(
     r"""|startswith\(\s*\(?\s*["']GIT_|startsWith\(\s*["']GIT_|HasPrefix\([^)\n]*"GIT_"""
     r"""|clean_git_environment\(|\bgit_environment\("""
 )
+PYTHON_MARKER = re.compile(r"""startswith\(\s*\(?\s*["']GIT_""")
+ENVIRONMENT_FILTER = re.compile(
+    r"for\s+(?P<key>\w+)(?:\s*,\s*\w+)?\s+in\s+os\s*\.\s*environ"
+    r"(?:\s*\.\s*(?:items|keys)\s*\(\s*\))?"
+)
+GIT_PREFIX_LITERAL = re.compile(r"""["']GIT_[^"']*["']""")
+CANONICAL_CONDITION = re.compile(
+    r"not\s+(?P<key>\w+)\s*\.\s*startswith\s*\(\s*"
+    r"""(?:["']GIT_["']|\(\s*["']GIT_["'](?:\s*,\s*["'][^"']*["'])*\s*,?\s*\))\s*\)"""
+)
+CONFIG_KEY_LOOKUP = re.compile(
+    r"(?P<key>\w+)\s*\.\s*startswith\s*\(\s*"
+    r"""["']GIT_CONFIG_KEY_["']\s*\)\s+and\s+\w+\s*==\s*["'][^"']*["']"""
+)
+LAMBDA_HEADER_TOKENS = 5
+CONFIG_KEY_SUFFIX_TOKENS = 8
 # One file, one reason, one expiry: a file whose git runs isolated in a way the marker cannot
 # see, with the place that does it. The sentinel run covers every test script among them.
 ISOLATION_EXCEPTION_EXPIRY = "2026-12-31"
@@ -144,13 +162,174 @@ ISOLATION_EXCEPTIONS = {
 }
 
 
+def condition_end(tokens: list[tokenize.TokenInfo], start: int) -> int:
+    """Locate the enclosing comprehension delimiter without parsing an expression AST."""
+    depth = 0
+    for index in range(start, len(tokens)):
+        token = tokens[index]
+        if token.type != tokenize.OP:
+            continue
+        if token.string == "," and depth == 0:
+            return index
+        if token.string in ("}", ")", "]"):
+            if depth == 0:
+                return index
+            depth -= 1
+        elif token.string in ("{", "(", "["):
+            depth += 1
+    return len(tokens)
+
+
+def comprehension_condition(
+    tokens: list[tokenize.TokenInfo], index: int
+) -> tuple[str, int, int] | None:
+    """Find a direct os.environ comprehension filter within its bounded header."""
+    stop = next(
+        (i for i in range(index + 1, min(index + 20, len(tokens))) if tokens[i].string == "if"),
+        None,
+    )
+    if stop is None:
+        return None
+    header = ENVIRONMENT_FILTER.fullmatch(" ".join(t.string for t in tokens[index:stop]))
+    if header is None:
+        return None
+    return header["key"], stop + 1, condition_end(tokens, stop + 1)
+
+
+def lambda_filter_condition(
+    tokens: list[tokenize.TokenInfo], index: int
+) -> tuple[str, int, int] | None:
+    """Find filter(lambda name: condition, os.environ) without evaluating source."""
+    header = [t.string for t in tokens[index : index + LAMBDA_HEADER_TOKENS]]
+    if (
+        len(header) != LAMBDA_HEADER_TOKENS
+        or header[:3] != ["filter", "(", "lambda"]
+        or header[4] != ":"
+    ):
+        return None
+    start = index + LAMBDA_HEADER_TOKENS
+    stop = condition_end(tokens, start)
+    end = condition_end(tokens, stop + 1)
+    source = " ".join(t.string for t in tokens[stop + 1 : end])
+    if not ENVIRONMENT_FILTER.fullmatch("for " + header[3] + " in " + source):
+        return None
+    return header[3], start, stop
+
+
+def condition_text(text: str, tokens: list[tokenize.TokenInfo]) -> str:
+    """Preserve the original condition spelling for actionable diagnostics."""
+    lines = text.splitlines(keepends=True)
+    first_line, first_column = tokens[0].start
+    last_line, last_column = tokens[-1].end
+    if first_line == last_line:
+        return lines[first_line - 1][first_column:last_column]
+    return (
+        lines[first_line - 1][first_column:]
+        + "".join(lines[first_line : last_line - 1])
+        + lines[last_line - 1][:last_column]
+    )
+
+
+def allowed_python_condition(
+    tokens: list[tokenize.TokenInfo], index: int, key: str, spelling: str
+) -> bool:
+    """Allow canonical exclusion or a single planted-config key-suffix lookup."""
+    canonical = CANONICAL_CONDITION.fullmatch(spelling)
+    if canonical is not None:
+        return canonical["key"] == key
+    lookup = CONFIG_KEY_LOOKUP.fullmatch(spelling)
+    if lookup is None or lookup["key"] != key or tokens[index].string != "for":
+        return False
+    # This expression returns one config-key suffix, not an environment mapping.
+    output = [t.string for t in tokens[max(0, index - CONFIG_KEY_SUFFIX_TOKENS) : index]]
+    return output in (
+        [key, "[", "len", "(", '"GIT_CONFIG_KEY_"', ")", ":", "]"],
+        [key, "[", "len", "(", "'GIT_CONFIG_KEY_'", ")", ":", "]"],
+    )
+
+
+def python_filter_violation(name: str, text: str) -> str:
+    """Allow only complete canonical GIT_* exclusion conditions over os.environ."""
+    ignored = {tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.COMMENT}
+    try:
+        tokens = [
+            t for t in tokenize.generate_tokens(io.StringIO(text).readline) if t.type not in ignored
+        ]
+    except (tokenize.TokenError, IndentationError) as error:
+        return f"{name}: cannot inspect environment filters: {error}"
+    readers = {"for": comprehension_condition, "filter": lambda_filter_condition}
+    for index, token in enumerate(tokens):
+        if token.type != tokenize.NAME or token.string not in readers:
+            continue
+        candidate = readers[token.string](tokens, index)
+        if candidate is None:
+            continue
+        key, start, stop = candidate
+        condition = tokens[start:stop]
+        if not condition:
+            continue
+        spelling = condition_text(text, condition)
+        if not GIT_PREFIX_LITERAL.search(spelling):
+            continue
+        if not allowed_python_condition(tokens, index, key, spelling):
+            return f"{name}:{condition[0].start[0]}: noncanonical environment condition: {spelling}"
+    return ""
+
+
+def fixture_config_violation(name: str, text: str) -> str:
+    """Require explicit global and system config isolation in Python fixture files."""
+    path = Path(name)
+    fixture = TEST_SCRIPT.search(name) or "tests" in path.parts or "fixture" in path.name
+    if not fixture:
+        return ""
+    null = r"""(?:os\.devnull|["']/dev/null["'])"""
+    values = {
+        "GIT_CONFIG_GLOBAL": null,
+        "GIT_CONFIG_SYSTEM": null,
+        "GIT_CONFIG_NOSYSTEM": r"[\"']1[\"']",
+    }
+    assigned = set()
+    for key, value in values.items():
+        assignment = rf"""(?:["']{key}["']\s*:|\b{key}\s*=|\[\s*["']{key}["']\s*\]\s*=)\s*{value}"""
+        if re.search(assignment, text):
+            assigned.add(key)
+    if "GIT_CONFIG_GLOBAL" not in assigned:
+        return f"{name}: missing GIT_CONFIG_GLOBAL assignment to os.devnull"
+    if not assigned.intersection(("GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM")):
+        return f"{name}: missing GIT_CONFIG_SYSTEM=os.devnull or GIT_CONFIG_NOSYSTEM=1 assignment"
+    return ""
+
+
 def unisolated_git(name: str, text: str) -> str:
-    """The first repository-creating or config-writing git call of an unisolated script, or ""."""
+    """Return the first unsafe Git write, filter condition or missing fixture config key."""
     shell = name.endswith(SHELL_SUFFIXES)
     found = (SHELL_GIT_WRITE if shell else CODE_GIT_WRITE).search(text)
-    if found is None or ISOLATION_MARKER.search(text):
+    if found is None:
+        return ""
+    if ISOLATION_MARKER.search(text):
+        if name.endswith(".py"):
+            if PYTHON_MARKER.search(text):
+                violation = python_filter_violation(name, text)
+                if violation:
+                    return violation
+            return fixture_config_violation(name, text)
         return ""
     return found.group(0).strip()[:100]
+
+
+def unisolated_offenders(root: Path, names: list[str], today: str) -> list[str]:
+    """Diagnostics for every listed script under root that writes Git state unisolated."""
+    offenders = []
+    for name in names:
+        if not name.endswith(SUFFIXES) or name == "scripts/ci/test_git_fixture_isolation.py":
+            continue
+        path = root / name
+        if not path.is_file():
+            continue
+        sample = unisolated_git(name, path.read_text(encoding="utf-8", errors="replace"))
+        if sample and (name not in ISOLATION_EXCEPTIONS or today > ISOLATION_EXCEPTION_EXPIRY):
+            offenders.append(sample if sample.startswith(name + ":") else f"{name}: {sample}")
+    return offenders
 
 
 # The sentinel run is split into shards, one test method each: the tooling suite stops a
@@ -617,17 +796,9 @@ class GitFixtureIsolation(unittest.TestCase):
             self.assertEqual(sentinel_damage(str(script), root), [])
 
     def test_no_script_creates_or_configures_a_repository_unisolated(self) -> None:
+        self.check_python_isolation_controls()
         today = datetime.date.today().isoformat()
-        offenders = []
-        for name in tracked_files():
-            if not name.endswith(SUFFIXES) or name == "scripts/ci/test_git_fixture_isolation.py":
-                continue
-            path = ROOT / name
-            if not path.is_file():
-                continue
-            sample = unisolated_git(name, path.read_text(encoding="utf-8", errors="replace"))
-            if sample and (name not in ISOLATION_EXCEPTIONS or today > ISOLATION_EXCEPTION_EXPIRY):
-                offenders.append(f"{name}: {sample}")
+        offenders = unisolated_offenders(ROOT, tracked_files(), today)
         self.assertEqual(
             offenders,
             [],
@@ -635,6 +806,95 @@ class GitFixtureIsolation(unittest.TestCase):
             "scripts/lib/clean-git-env.sh (or drop-git-env.sh), or build the environment "
             'without keys that start with "GIT_":\n' + "\n".join(offenders),
         )
+
+    def check_python_isolation_controls(self) -> None:
+        """Replay rejected filters, required config keys and accepted fixture forms."""
+        name = "tests/test_fixture.py"
+        create = 'git("init", "-q")\n'
+        canonical = '{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}'
+        config = 'env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")\n'
+        for condition in (
+            'not k.startswith("GIT_") or k.startswith("GIT_CONFIG_")',
+            'not k.startswith("GIT_") and not k.startswith("GIT_CONFIG")',
+            'k.startswith("GIT_CONFIG_")',
+            'not k.startswith("GIT_CONFIG_")',
+        ):
+            for expression in (
+                canonical.replace('not k.startswith("GIT_")', condition),
+                f"filter(lambda k: {condition}, os.environ)",
+                f"[k for k in os.environ if {condition}]",
+                f"(k for k in os.environ if {condition})",
+            ):
+                text = "env = " + expression + "\n"
+                with self.subTest(condition=condition, expression=expression):
+                    diagnostic = unisolated_git(name, text + config + create)
+                    self.assertIn(f"{name}:1", diagnostic)
+                    self.assertIn(condition, diagnostic)
+                    self.assertIn(
+                        f"{name}:2", unisolated_git(name, canonical + "\n" + text + create)
+                    )
+        for config_text, missing in (
+            ('env.update(GIT_CONFIG_NOSYSTEM="1")\n', "GIT_CONFIG_GLOBAL"),
+            ("env.update(GIT_CONFIG_GLOBAL=os.devnull)\n", "GIT_CONFIG_SYSTEM"),
+        ):
+            with self.subTest(missing=missing):
+                diagnostic = unisolated_git(
+                    name, "env = " + canonical + "\n" + config_text + create
+                )
+                self.assertIn(name, diagnostic)
+                self.assertIn(missing, diagnostic)
+        self.check_accepted_python_isolation(canonical, create)
+        self.check_planted_python_isolation()
+
+    def check_accepted_python_isolation(self, canonical: str, create: str) -> None:
+        """Accept config assignment styles, tuple prefixes and caller-poison selection."""
+        for config in (
+            'env = {**env, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": "/dev/null"}\n',
+            'env = dict(env, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1")\n',
+            'env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")\n',
+            'env["GIT_CONFIG_GLOBAL"] = os.devnull\nenv["GIT_CONFIG_NOSYSTEM"] = "1"\n',
+        ):
+            for expression in (
+                canonical,
+                canonical.replace('"GIT_"', '("GIT_", "X_")'),
+                'filter(lambda k: not k.startswith("GIT_"), os.environ)',
+            ):
+                with self.subTest(config=config, expression=expression):
+                    text = "env = " + expression + "\n" + config + create
+                    self.assertEqual(unisolated_git("tests/test_fixture.py", text), "")
+        poison = (
+            'caller = dict(env, GIT_CONFIG_PARAMETERS="poison")\n'
+            'index = next(key[len("GIT_CONFIG_KEY_"):] for key, value in os.environ.items()\n'
+            '    if key.startswith("GIT_CONFIG_KEY_") and value == "gpg.ssh.allowedSignersFile")\n'
+        )
+        config = 'env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")\n'
+        self.assertEqual(
+            unisolated_git(
+                "tests/test_poison.py", "env = " + canonical + "\n" + config + poison + create
+            ),
+            "",
+        )
+        self.assertEqual(unisolated_git("tools/product.py", canonical + "\n" + create), "")
+
+    def check_planted_python_isolation(self) -> None:
+        """A temporary fixture copy fails the static check after re-admission; restore passes."""
+        name = "scripts/ci/tests/test_ci_impact.py"
+        original = (ROOT / name).read_text(encoding="utf-8")
+        old = 'if not k.startswith("GIT_")'
+        planted = original.replace(old, old + ' or k.startswith("GIT_CONFIG_")', 1)
+        self.assertNotEqual(original, planted)
+        today = datetime.date.today().isoformat()
+        with tempfile.TemporaryDirectory(prefix="git-filter-planted-") as directory:
+            root = Path(directory)
+            path = root / name
+            path.parent.mkdir(parents=True)
+            path.write_text(planted, encoding="utf-8")
+            rejected = unisolated_offenders(root, [name], today)
+            self.assertEqual(len(rejected), 1, rejected)
+            self.assertTrue(rejected[0].startswith(name + ":"), rejected)
+            self.assertIn('k.startswith("GIT_CONFIG_")', rejected[0])
+            path.write_text(original, encoding="utf-8")
+            self.assertEqual(unisolated_offenders(root, [name], today), [])
 
     def test_isolation_exceptions_are_live_and_needed(self) -> None:
         self.assertGreaterEqual(

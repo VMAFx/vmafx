@@ -38,6 +38,7 @@ class HookEnvironmentIsolationTest(unittest.TestCase):
             git_bin = shutil.which("git")
             assert git_bin is not None
             clean = fixture_environment(root)
+            clean.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
             run_command(
                 [git_bin, "init", "--quiet", str(root / "sentinel")],
                 allowed_executables=(git_bin,),

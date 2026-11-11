@@ -249,6 +249,8 @@ class RustCIWorkflowContractTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as repo_dir, tempfile.TemporaryDirectory() as out_dir:
             env = {
                 **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_CONFIG_NOSYSTEM": "1",
                 "GIT_AUTHOR_NAME": "t",
                 "GIT_AUTHOR_EMAIL": "t@t",
                 "GIT_COMMITTER_NAME": "t",

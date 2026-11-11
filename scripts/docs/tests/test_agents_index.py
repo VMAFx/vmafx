@@ -417,6 +417,7 @@ class DiscoveryTests(Fixture):
 
     def git(self, *arguments: str) -> None:
         environment = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        environment.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
         run_command(
             ("git", "-C", str(self.root), *arguments),
             allowed_executables=("git",),
@@ -578,6 +579,7 @@ class MigrationTests(Fixture):
     def test_old_text_can_come_from_a_git_revision(self) -> None:
         home = {"HOME": str(self.root), "XDG_CONFIG_HOME": str(self.root / ".config")}
         environment = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        environment.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
         environment.update(home)
         identity = ("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid")
         safety = ("-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null")

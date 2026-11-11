@@ -73,8 +73,9 @@ class InstallHooksEnvTests(unittest.TestCase):
         self.env = {
             key: value
             for key, value in os.environ.items()
-            if not key.startswith(("GIT_", "PRE_COMMIT_")) and key != "SKIP"
+            if not key.startswith(("GIT_", "PRE_COMMIT_"))
         }
+        self.env.pop("SKIP", None)
         self.env.update(
             GIT_CONFIG_NOSYSTEM="1",
             GIT_CONFIG_GLOBAL=os.devnull,
