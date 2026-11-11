@@ -117,10 +117,16 @@ class CheckBanditNew(unittest.TestCase):
         self.git("commit", "-q", "-m", "baseline")
         self.git("branch", "-f", "master", "HEAD")
 
-    def outgoing_entry(self, **kwargs) -> tuple[int, str, str]:
+    def outgoing_entry(
+        self,
+        *,
+        from_ref: str | None = None,
+        to_ref: str | None = None,
+        extra: tuple[str, ...] = (),
+    ) -> tuple[int, str, str]:
         """Invoke the parsed push entry using the fixture's default comparison branch."""
         self.git("branch", "-f", "origin/master", "master")
-        return run_push_entry(self.root, "bandit", **kwargs)
+        return run_push_entry(self.root, "bandit", from_ref=from_ref, to_ref=to_ref, extra=extra)
 
     def commit_outgoing(self, name: str, source: str) -> None:
         """Commit one source fixture without staging the copied hook implementation."""

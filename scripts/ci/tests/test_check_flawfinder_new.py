@@ -118,10 +118,18 @@ class CheckFlawfinderNew(unittest.TestCase):
             os.chdir(cwd)
         return status, out.getvalue()
 
-    def outgoing_entry(self, **kwargs) -> tuple[int, str, str]:
+    def outgoing_entry(
+        self,
+        *,
+        from_ref: str | None = None,
+        to_ref: str | None = None,
+        extra: tuple[str, ...] = (),
+    ) -> tuple[int, str, str]:
         """Invoke the parsed push entry using the fixture's default comparison branch."""
         self.git("branch", "-f", "origin/master", "master")
-        return run_push_entry(self.root, "flawfinder", **kwargs)
+        return run_push_entry(
+            self.root, "flawfinder", from_ref=from_ref, to_ref=to_ref, extra=extra
+        )
 
     def commit_outgoing(self, name: str, source: str) -> None:
         """Commit one source fixture without staging the copied hook implementation."""

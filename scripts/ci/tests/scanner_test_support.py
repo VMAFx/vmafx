@@ -11,6 +11,7 @@ import shutil
 import sys
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 import yaml  # type: ignore[import-untyped]  # hook environments omit PyYAML stubs
@@ -28,7 +29,7 @@ def isolate_pre_commit_environment(test_case: unittest.TestCase) -> None:
             del os.environ[key]
 
 
-def scanner_hooks(scanner: str) -> tuple[dict, dict]:
+def scanner_hooks(scanner: str) -> tuple[dict[str, Any], dict[str, Any]]:
     """Read the actual commit and push hook definitions used by pre-commit."""
     config = yaml.safe_load((ROOT / ".pre-commit-config.yaml").read_text())
     hooks = {hook["id"]: hook for repo in config["repos"] for hook in repo["hooks"]}
