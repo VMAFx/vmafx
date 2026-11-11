@@ -1,0 +1,1 @@
+| [ADR-3534](3534-same-directory-launch-link-trust.md) | Preserve owned executable links in the resolved file's directory by filesystem identity; exempt their directory mode and macOS ACL checks while retaining ownership checks on every link. | Accepted | python, security, testing |

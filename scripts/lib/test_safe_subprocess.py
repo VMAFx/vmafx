@@ -769,22 +769,194 @@ class ExecutableLinkTrustTests(unittest.TestCase):
         self.root.chmod(0o755)
         self.link = self.root / "python-link"
         self.link.symlink_to(PYTHON)
+        self.shell_target: Path | None = None
 
-    def assert_resolved_launch(self, launch: Path) -> None:
-        """Require resolved-file execution while preserving the caller's argument name."""
+    def assert_resolved_launch(self, launch: Path, resolved: Path = Path(PYTHON)) -> None:
+        """Require the allowlisted resolved file while preserving the caller's argument name."""
+        allowed = (str(resolved),)
         self.assertEqual(
-            safe_subprocess._checked_executable(str(launch), ALLOW_PYTHON, ""),
-            (PYTHON, Path(PYTHON)),
+            safe_subprocess._checked_executable(str(launch), allowed, ""),
+            (str(resolved), resolved),
         )
         result = run(
             [str(launch), "-c", "import sys; print(sys.orig_argv[0])"],
-            allowed_executables=ALLOW_PYTHON,
+            allowed_executables=allowed,
             capture_output=True,
             text=True,
         )
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.argv[0], PYTHON)
+        self.assertEqual(result.argv[0], str(resolved))
+        expected = resolved if resolved == self.shell_target else launch
+        self.assertEqual(result.stdout.strip(), str(expected))
+
+    def same_directory_target(self, directory: Path) -> Path:
+        """Copy an interpreter beside its link; use a shell fixture if it cannot relocate."""
+        target = directory / "python-file"
+        target.write_bytes(Path(PYTHON).read_bytes())
+        target.chmod(0o755)
+        result = run(
+            [str(target), "-c", "pass"],
+            allowed_executables=(str(target),),
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            target.write_text('#!/bin/sh\nprintf "%s\\n" "$0"\n', encoding="utf-8")
+            self.shell_target = target
+        return target
+
+    def assert_named_launch(self, launch: Path, resolved: Path) -> None:
+        """Require named-path selection and observe that path in the launched process."""
+        allowed = (str(resolved),)
+        self.assertEqual(
+            safe_subprocess._checked_executable(str(launch), allowed, ""),
+            (str(launch), resolved),
+        )
+        result = run(
+            [str(launch), "-c", "import sys; print(sys.orig_argv[0])"],
+            allowed_executables=allowed,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.argv[0], str(launch))
         self.assertEqual(result.stdout.strip(), str(launch))
+
+    def test_same_directory_writable_modes_keep_named_launch(self) -> None:
+        """A writable link directory adds no exposure when it also contains the file."""
+        target = self.same_directory_target(self.root)
+        self.link.unlink()
+        self.link.symlink_to(target.name)
+        for mode in (0o775, 0o770, 0o2775, 0o777):
+            with self.subTest(mode=oct(mode)):
+                self.root.chmod(mode)
+                self.assert_named_launch(self.link, target)
+
+    def test_two_hop_same_directory_target_keeps_named_launch(self) -> None:
+        """An owned protected first hop can reach a group-writable final directory."""
+        nested = self.root / "framework-bin"
+        nested.mkdir()
+        nested.chmod(0o775)
+        target = self.same_directory_target(nested)
+        second = nested / "python"
+        second.symlink_to(target.name)
+        self.link.unlink()
+        self.link.symlink_to(second)
+        self.assert_named_launch(self.link, target)
+
+    def test_untrusted_first_hop_with_same_directory_target_launches_resolved_file(self) -> None:
+        """The final link's exemption cannot excuse an unprotected earlier hop."""
+        nested = self.root / "framework-bin"
+        nested.mkdir()
+        target = self.same_directory_target(nested)
+        second = nested / "python"
+        second.symlink_to(target.name)
+        self.link.unlink()
+        self.link.symlink_to(second)
+        self.root.chmod(0o777)
+        self.assert_resolved_launch(self.link, target)
+
+    def test_same_directory_foreign_link_owner_launches_resolved_file(self) -> None:
+        """The directory exemption never exempts link ownership."""
+        target = self.same_directory_target(self.root)
+        self.link.unlink()
+        self.link.symlink_to(target.name)
+        original = Path.lstat
+
+        def foreign_owner(path: Path) -> os.stat_result:
+            """Plant foreign ownership only on the same-directory link."""
+            metadata = original(path)
+            if path == self.link:
+                fields = list(metadata)
+                fields[4] = os.getuid() + 1
+                return os.stat_result(fields)
+            return metadata
+
+        with mock.patch.object(Path, "lstat", foreign_owner):
+            self.assert_resolved_launch(self.link, target)
+
+    def test_same_directory_foreign_directory_owner_launches_resolved_file(self) -> None:
+        """The directory exemption never exempts directory ownership."""
+        target = self.same_directory_target(self.root)
+        self.link.unlink()
+        self.link.symlink_to(target.name)
+        original = Path.stat
+
+        def foreign_owner(path: Path, **kwargs: Any) -> os.stat_result:
+            """Plant foreign ownership on the shared containing directory."""
+            metadata = original(path, **kwargs)
+            if path == self.root:
+                fields = list(metadata)
+                fields[4] = os.getuid() + 1
+                return os.stat_result(fields)
+            return metadata
+
+        with mock.patch.object(Path, "stat", foreign_owner):
+            self.assert_resolved_launch(self.link, target)
+
+    def test_darwin_same_directory_skips_acl_inspection(self) -> None:
+        """ACL grants on the resolved file's directory add no link-specific exposure."""
+        target = self.same_directory_target(self.root)
+        self.link.unlink()
+        self.link.symlink_to(target.name)
+        with (
+            mock.patch.object(sys, "platform", "darwin"),
+            mock.patch.object(
+                safe_subprocess, "_darwin_acl_allows_entries", return_value=True
+            ) as acl,
+        ):
+            self.assert_named_launch(self.link, target)
+        acl.assert_not_called()
+
+    def test_resolved_parent_stat_failure_launches_resolved_file(self) -> None:
+        """Unreadable resolved-parent metadata cannot authorize the exemption."""
+        original = Path.stat
+
+        def unreadable_parent(path: Path, **kwargs: Any) -> os.stat_result:
+            """Fail only the resolved file's parent, leaving file validation intact."""
+            if path == Path(PYTHON).parent:
+                raise PermissionError("planted resolved-parent stat failure")
+            return original(path, **kwargs)
+
+        with mock.patch.object(Path, "stat", unreadable_parent):
+            self.assert_resolved_launch(self.link)
+
+    def test_same_inode_on_another_device_launches_resolved_file(self) -> None:
+        """Matching inode numbers on different devices do not identify one directory."""
+        self.root.chmod(0o775)
+        resolved_directory = Path(PYTHON).parent.stat()
+        original = Path.stat
+
+        def another_device(path: Path, **kwargs: Any) -> os.stat_result:
+            """Give the link directory the target inode number on a different device."""
+            metadata = original(path, **kwargs)
+            if path == self.root:
+                fields = list(metadata)
+                fields[1] = resolved_directory.st_ino
+                fields[2] = resolved_directory.st_dev + 1
+                return os.stat_result(fields)
+            return metadata
+
+        with mock.patch.object(Path, "stat", another_device):
+            self.assert_resolved_launch(self.link)
+
+    def test_directory_identity_ignores_path_spelling(self) -> None:
+        """Different path spellings can still identify the resolved file's directory."""
+        self.root.chmod(0o775)
+        resolved_directory = Path(PYTHON).parent.stat()
+        original = Path.stat
+
+        def same_identity(path: Path, **kwargs: Any) -> os.stat_result:
+            """Model an alias by giving the link directory the resolved directory identity."""
+            metadata = original(path, **kwargs)
+            if path == self.root:
+                fields = list(metadata)
+                fields[1] = resolved_directory.st_ino
+                fields[2] = resolved_directory.st_dev
+                return os.stat_result(fields)
+            return metadata
+
+        with mock.patch.object(Path, "stat", same_identity):
+            self.assert_named_launch(self.link, Path(PYTHON))
 
     def test_sticky_world_writable_link_directory_is_accepted(self) -> None:
         """Sticky directories protect an owned link despite world write permission."""
@@ -925,7 +1097,9 @@ class ExecutableLinkTrustTests(unittest.TestCase):
         for method in ("lstat", "stat"):
             with self.subTest(method=method):
                 with mock.patch.object(Path, method, side_effect=PermissionError("planted")):
-                    self.assertFalse(safe_subprocess._executable_links_trusted((self.link,)))
+                    self.assertFalse(
+                        safe_subprocess._executable_links_trusted((self.link,), Path(PYTHON))
+                    )
 
     def test_link_walk_follows_targets_before_dotdot(self) -> None:
         """Directory links, absolute targets, dots and dotdots retain kernel order."""

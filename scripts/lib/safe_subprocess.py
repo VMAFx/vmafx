@@ -313,30 +313,41 @@ def _directory_allows_link_retargeting(directory: os.stat_result, path: Path) ->
     return not directory.st_mode & stat.S_ISVTX and bool(directory.st_mode & 0o022)
 
 
-def _executable_links_trusted(links: tuple[Path, ...]) -> bool:
-    """Preserve links only with trusted owners and inspected Linux/macOS directory rights."""
+def _executable_link_trusted(
+    link: Path, resolved_directory: os.stat_result, trusted_owners: tuple[int, int]
+) -> bool:
+    """Check owners; inspect rights only outside the resolved file's own directory."""
+    try:
+        owner = link.lstat().st_uid
+        directory = link.parent.stat()
+    except OSError:
+        return False
+    if owner not in trusted_owners or directory.st_uid not in trusted_owners:
+        return False
+    same_directory = (directory.st_dev, directory.st_ino) == (
+        resolved_directory.st_dev,
+        resolved_directory.st_ino,
+    )
+    return same_directory or not _directory_allows_link_retargeting(directory, link.parent)
+
+
+def _executable_links_trusted(links: tuple[Path, ...], resolved: Path) -> bool:
+    """Preserve owned Linux/macOS links without adding resolved-launch exposure."""
     if not (sys.platform.startswith("linux") or sys.platform == "darwin"):
         return False
+    try:
+        resolved_directory = resolved.parent.stat()
+    except OSError:
+        return False
     trusted_owners = (0, os.getuid())
-    for link in links:
-        try:
-            owner = link.lstat().st_uid
-            directory = link.parent.stat()
-        except OSError:
-            return False
-        if (
-            owner not in trusted_owners
-            or directory.st_uid not in trusted_owners
-            or _directory_allows_link_retargeting(directory, link.parent)
-        ):
-            return False
-    return True
+    return all(_executable_link_trusted(link, resolved_directory, trusted_owners) for link in links)
 
 
 def _resolve_launch_file(launch: Path) -> tuple[Path, Path]:
-    """Select named launch only for trusted POSIX links, then resolve the checked file."""
-    trusted = hasattr(os, "getuid") and _executable_links_trusted(_executable_links(launch))
+    """Walk before strict resolution, then evaluate link trust against the resolved file."""
+    links = _executable_links(launch) if hasattr(os, "getuid") else ()
     resolved = launch.resolve(strict=True)
+    trusted = hasattr(os, "getuid") and _executable_links_trusted(links, resolved)
     return (launch if trusted else resolved), resolved
 
 
