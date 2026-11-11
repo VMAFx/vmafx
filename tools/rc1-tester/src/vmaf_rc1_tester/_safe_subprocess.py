@@ -336,9 +336,10 @@ def _directory_allows_link_retargeting(directory: os.stat_result, path: Path) ->
 def _darwin_entry_protected(entry: Path) -> bool | None:
     """Read the entry's own unlink/rename protections; unreadable flags stay unknown."""
     try:
-        return bool(os.lstat(entry).st_flags & _DARWIN_REPLACEMENT_PROTECTION)
+        flags = getattr(os.lstat(entry), "st_flags", None)  # BSD-only stat field
     except (OSError, AttributeError):
         return None
+    return None if flags is None else bool(flags & _DARWIN_REPLACEMENT_PROTECTION)
 
 
 def _linux_file_protected(entry: Path) -> bool | None:

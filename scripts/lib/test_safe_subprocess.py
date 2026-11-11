@@ -856,9 +856,9 @@ class ExecutableLinkTrustTests(unittest.TestCase):
         failure = OSError(error, "planted flag-read error") if error is not None else None
         with (
             mock.patch.object(sys, "platform", "linux"),
-            mock.patch.object(safe_subprocess.platform, "machine", return_value=machine),
-            mock.patch.object(
-                safe_subprocess.fcntl, "ioctl", return_value=reply, side_effect=failure
+            mock.patch("scripts.lib.safe_subprocess.platform.machine", return_value=machine),
+            mock.patch(
+                "scripts.lib.safe_subprocess.fcntl.ioctl", return_value=reply, side_effect=failure
             ) as reader,
         ):
             yield reader
