@@ -933,6 +933,24 @@ class RunTests(unittest.TestCase):
         self.assertEqual(bad.returncode, 2, bad.stdout + bad.stderr)
         self.assertIn("outgoing ref differs from HEAD", bad.stderr)
 
+    def test_focused_head_must_be_the_checkout(self) -> None:
+        """Focused selection reads tests from HEAD, so another --head is refused."""
+        self.build({"pkg/tests/test_ok.py": "def test_ok():\n    assert True\n"})
+        self.commit()
+        (self.repo / "pkg/widget.py").write_text("VALUE = 1\n", encoding="utf-8")
+        self.git("add", "-A")
+        self.commit()
+        head = self.git("rev-parse", "HEAD").strip()
+        for args in (("HEAD~1", "HEAD"), ("HEAD~1", head)):
+            with self.subTest(head=args[1]):
+                good = self.run_script("--list", "--focused", "--base", args[0], "--head", args[1])
+                self.assertEqual(good.returncode, 0, good.stdout + good.stderr)
+        bad = self.run_script("--list", "--focused", "--base", "HEAD~2", "--head", "HEAD~1")
+        self.assertEqual(bad.returncode, 2, bad.stdout + bad.stderr)
+        self.assertIn("--focused reads tests from HEAD", bad.stderr)
+        ranged = self.run_script("--list", "--base", "HEAD~2", "--head", "HEAD~1")
+        self.assertEqual(ranged.returncode, 0, ranged.stdout + ranged.stderr)
+
     def test_base_without_head_is_a_usage_error(self) -> None:
         self.build({})
         self.assertEqual(self.run_script("--base", "HEAD").returncode, 2)

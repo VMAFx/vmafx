@@ -215,6 +215,9 @@ python3 scripts/ci/run_affected_suites.py --focused --files scripts/ci/install-r
 mutually exclusive with `--base`, `--head` and `--files`. During a push, the
 runner refuses an outgoing ref that differs from the checked-out `HEAD`, so
 it cannot validate the wrong branch.
+With `--base A --head B`, focused mode requires `B` to resolve to `HEAD`,
+because it reads candidate tests from `HEAD`; another commit exits 2.
+Non-focused runs accept any `--base`/`--head` pair.
 
 - `--focused`: changed test files; tests naming changed repository-relative
   paths, unique tracked basenames, dotted Python module paths; unique Python

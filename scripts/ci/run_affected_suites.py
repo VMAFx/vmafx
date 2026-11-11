@@ -777,7 +777,22 @@ def collect_changed(options: argparse.Namespace) -> tuple[list[str], str | None]
         outgoing_head(head, options.root)
         base = _git(options.root, "merge-base", options.merge_base, "HEAD").strip()
         return changed_files(options.root, base, head), base
+    if options.focused:
+        _require_head_is_checkout(options.root, options.head)
     return changed_files(options.root, options.base, options.head), options.base
+
+
+def _require_head_is_checkout(root: Path, head: str) -> None:
+    """Focused mode reads candidate tests from HEAD, so the range must end there."""
+    checkout = _git(root, "rev-parse", "--verify", "HEAD^{commit}").strip()
+    requested = _git(
+        root, "rev-parse", "--verify", "--end-of-options", f"{head}^{{commit}}"
+    ).strip()
+    if requested != checkout:
+        raise RunnerError(
+            f"--focused reads tests from HEAD {checkout}; --head {head} resolves to "
+            f"{requested}; check out the head commit or drop --focused"
+        )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
