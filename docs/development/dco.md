@@ -35,14 +35,19 @@ python3 scripts/ci/check-dco.py --base origin/master --head HEAD
 python3 scripts/ci/check-dco.py --base origin/master --head HEAD --pr-body-file path/to/pr-body.md
 ```
 
-For the pull request body, pass `--pr-body-file PATH` or set `PR_BODY` in the
-environment. The file takes precedence when both are present; an empty or
-absent body has no lines to scan. CI supplies `PR_BODY` from the pull request
-event and reruns this check after body edits.
+For the pull request body, pass `--pr-body-file PATH` (alias `--pr-body PATH`).
+The file takes precedence over the local `PR_BODY` environment fallback; an
+empty or absent body has no lines to scan. In CI, `--pr-body-from-event` reads
+`pull_request.body` from the JSON file at `GITHUB_EVENT_PATH`. A null body is
+empty; an unreadable file, malformed JSON, or non-string body is an error.
+The file and event flags are mutually exclusive. Body edits rerun the check.
+The DCO workflow job passes the body through files to both the attribution
+check and the squash-message check, avoiding process environment size limits.
 
 Exit status: `0` all applicable checks pass, `1` an attribution or sign-off
-check fails, `2` the range or body file could not be read. Commit failures
-list the commit subject; body failures give the line number.
+check fails (including an input bound), `2` the range or body file could not be
+read. Commit failures list the commit subject; body failures give the line
+number.
 
 ## Attribution rules
 
@@ -53,6 +58,34 @@ The `[bot]` trailer token is excluded from identity checks, so legitimate bot
 authors remain valid. The same message-line rules reject `Co-authored-by:`
 lines with a banned token, generated or created attribution footers, and the
 robot emoji. Pull request mode applies those line rules to the body as well.
+
+Before the line rules run, text is normalized with Unicode NFKC and leading
+whitespace and format characters (category `Cf`) are removed. This includes
+U+FEFF, U+200B through U+200D, and U+2060. The normalization applies to both
+commit-message and PR-body lines. Ordinary human co-authors remain permitted.
+Identity token matching remains case-insensitive substring matching.
+
+The checker refuses inputs above a named bound with exit `1` and the bound
+name; it never silently truncates. Limits apply to UTF-8 bytes and Unicode
+`splitlines()` line counts, with exact-limit input accepted:
+
+| Input | Byte limit | Line limit |
+| --- | ---: | ---: |
+| Commit message | `MAX_COMMIT_MESSAGE_BYTES` = 281,876 | `MAX_COMMIT_MESSAGE_LINES` = 5,836 |
+| PR body | `MAX_PR_BODY_BYTES` = 235,864 | `MAX_PR_BODY_LINES` = 2,176 |
+
+Commit limits use four times the measured maxima of the 6,290-commit master
+snapshot. PR limits use four times the measured maxima of the 300 PR bodies
+numbered 2906-3395; see the
+[research digest](../research/dco-attribution-scan-2026-11-11.md) for the
+corpus fingerprints and the reproduction command. File reads consume at most
+the byte limit plus one byte. Event JSON has an additional
+`MAX_PR_EVENT_BYTES` envelope: six times the body-byte limit plus 1 MiB for
+metadata and JSON escapes. Commit output is captured one commit at a time
+with `MAX_COMMIT_LOG_BYTES` (twice the message-byte limit plus 65,536 bytes
+for metadata); exceeding this capture bound also refuses the input. Git
+fields and records are NUL-delimited so embedded legacy separators cannot
+move identity text into another field.
 
 For a refused commit, remove attribution trailers or footers and re-author
 the commit with your own identity. For a refused pull request body, edit its

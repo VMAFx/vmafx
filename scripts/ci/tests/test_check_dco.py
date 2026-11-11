@@ -16,18 +16,32 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shlex
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+
+from scripts.lib.safe_subprocess import TextCommandResult, run  # noqa: E402
+
 GATE = ROOT / "scripts" / "ci" / "check-dco.py"
 GIT = shutil.which("git") or "/usr/bin/git"
 GIT_TIMEOUT_S = 60
 SCRIPT_TIMEOUT_S = 60
+# Repository-path variables the gate subprocess must not inherit (see clean_env).
+REPO_ENV = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+)
 HUMAN = ("Ada Example", "ada@example.org")
 BOT_LOGIN = "renovate[bot]"
 BOT_IDENT = (BOT_LOGIN, "29139614+renovate[bot]@users.noreply.github.com")
@@ -50,7 +64,7 @@ Co-authored-by: Lusoris <lusoris@proton.me>
 
 def git_env(ident: tuple[str, str], committer: tuple[str, str] | None = None) -> dict[str, str]:
     committer = committer or ident
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     env.update(
         GIT_AUTHOR_NAME=ident[0],
         GIT_AUTHOR_EMAIL=ident[1],
@@ -65,6 +79,7 @@ def git_env(ident: tuple[str, str], committer: tuple[str, str] | None = None) ->
 def clean_env() -> dict[str, str]:
     """The environment without the variables the gate reads, so a CI run cannot leak into a case."""
     drop = (
+        *REPO_ENV,
         "BASE_SHA",
         "HEAD_SHA",
         "PR_AUTHOR",
@@ -91,19 +106,22 @@ class Repo:
         args: list[str],
         ident: tuple[str, str] = HUMAN,
         committer: tuple[str, str] | None = None,
+        stdin: str | None = None,
     ) -> str:
         """Run fixture Git commands for scripts/ci/check-dco.py.
 
         Sets up commits and git state in an isolated test repo.
         """
-        done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
-            [GIT, *args],
+        done = run(
+            [GIT, "-c", "commit.gpgsign=false", *args],
+            allowed_executables=(GIT,),
             cwd=self.path,
             env=git_env(ident, committer),
+            input_data=stdin,
             capture_output=True,
             text=True,
             check=True,
-            timeout=GIT_TIMEOUT_S,
+            timeout_seconds=GIT_TIMEOUT_S,
         )
         return done.stdout
 
@@ -118,10 +136,12 @@ class Repo:
         (self.path / f"f{n}.txt").write_text(f"{n}\n")
         self.git(["add", "-A"], ident)
         flags = ["-s"] if signoff else []
-        self.git(["commit", "-q", *flags, "-m", message], ident, committer)
+        self.git(["commit", "-q", *flags, "-F", "-"], ident, committer, stdin=message)
         return self.git(["rev-parse", "HEAD"], ident).strip()
 
-    def gate(self, *extra: str, pr_body: str | None = None) -> subprocess.CompletedProcess[str]:
+    def gate(
+        self, *extra: str, pr_body: str | None = None, event: object | None = None
+    ) -> TextCommandResult:
         """Run scripts/ci/check-dco.py against commits in the test repo.
 
         Runs the DCO gate against commits between base and head in the test repo.
@@ -130,15 +150,85 @@ class Repo:
         env = clean_env()
         if pr_body is not None:
             env["PR_BODY"] = pr_body
-        return subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
+        if event is not None:
+            event_file = self.path / "event.json"
+            event_file.write_text(json.dumps(event), encoding="utf-8")
+            env["GITHUB_EVENT_PATH"] = str(event_file)
+        return run(
             [sys.executable, "-I", str(GATE), "--base", self.base, "--head", head, *extra],
+            allowed_executables=(sys.executable,),
             cwd=self.path,
             env=env,
             capture_output=True,
             text=True,
             check=False,
-            timeout=SCRIPT_TIMEOUT_S,
+            timeout_seconds=SCRIPT_TIMEOUT_S,
         )
+
+
+class DcoBoundsTest(unittest.TestCase):
+    def setUp(self) -> None:
+        spec = importlib.util.spec_from_file_location("check_dco_bounds", GATE)
+        assert spec is not None and spec.loader is not None
+        self.mod = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = self.mod
+        self.addCleanup(sys.modules.pop, spec.name, None)
+        spec.loader.exec_module(self.mod)
+
+    def test_commit_message_bytes_at_bound_and_plus_one(self) -> None:
+        bound = self.mod.MAX_COMMIT_MESSAGE_BYTES
+        for extra in (0, 1):
+            with self.subTest(extra=extra):
+                text = "é" * (bound // 2) + "a" * (bound % 2 + extra)
+                commit = self.mod.Commit("a" * 40, *HUMAN, *HUMAN, "subject", text)
+                reason = self.mod.commit_attribution_reason(commit)
+                if extra:
+                    self.assertIn("MAX_COMMIT_MESSAGE_BYTES", reason or "")
+                else:
+                    self.assertIsNone(reason)
+
+    def test_commit_message_lines_at_bound_and_plus_one(self) -> None:
+        for extra in (0, 1):
+            with self.subTest(extra=extra):
+                text = "x\n" * (self.mod.MAX_COMMIT_MESSAGE_LINES + extra)
+                commit = self.mod.Commit("a" * 40, *HUMAN, *HUMAN, "subject", text)
+                reason = self.mod.commit_attribution_reason(commit)
+                if extra:
+                    self.assertIn("MAX_COMMIT_MESSAGE_LINES", reason or "")
+                else:
+                    self.assertIsNone(reason)
+
+    def test_pr_body_bytes_at_bound_and_plus_one(self) -> None:
+        bound = self.mod.MAX_PR_BODY_BYTES
+        for extra in (0, 1):
+            with self.subTest(extra=extra):
+                text = "é" * (bound // 2) + "a" * (bound % 2 + extra)
+                findings = self.mod.pr_body_attribution(text)
+                if extra:
+                    self.assertIn("MAX_PR_BODY_BYTES", findings[0][1])
+                else:
+                    self.assertEqual(findings, [])
+
+    def test_pr_body_lines_at_bound_and_plus_one(self) -> None:
+        for extra in (0, 1):
+            with self.subTest(extra=extra):
+                text = "x\n" * (self.mod.MAX_PR_BODY_LINES + extra)
+                findings = self.mod.pr_body_attribution(text)
+                if extra:
+                    self.assertIn("MAX_PR_BODY_LINES", findings[0][1])
+                else:
+                    self.assertEqual(findings, [])
+
+    def test_nul_records_preserve_old_separators_and_reject_malformed(self) -> None:
+        fields = ["a" * 40, "Ada\x1fExample", HUMAN[1], *HUMAN, "s", "s\x1etext"]
+        valid = "\0".join(fields) + "\0"
+        parsed = self.mod.parse_commits(valid)
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(parsed[0].author_name, fields[1])
+        for malformed in (valid[:-1], valid + "extra\0", "\0"):
+            with self.subTest(record=repr(malformed)):
+                with self.assertRaises(self.mod.UsageError):
+                    self.mod.parse_commits(malformed)
 
 
 class DcoGateTest(unittest.TestCase):
@@ -152,6 +242,153 @@ class DcoGateTest(unittest.TestCase):
         res = self.repo.gate()
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertIn("PASS", res.stdout)
+
+    def test_old_separator_identity_cannot_hide_tool(self) -> None:
+        ident = ("Ada\x1fada@example.org\x1fOther\x1fother@example.org\x1fClaude", HUMAN[1])
+        self.repo.commit("feat: delimiter", ident, True, HUMAN)
+        res = self.repo.gate()
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("author identity", res.stdout)
+        self.assertIn("claude", res.stdout)
+
+    def test_old_separators_in_human_identity_and_message_pass(self) -> None:
+        self.repo.commit(
+            "feat: delimiter\n\nHuman\x1ftext\x1emore", ("Ada\x1fOther", HUMAN[1]), True
+        )
+        res = self.repo.gate()
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+    def test_unicode_prefixed_attribution_refused_in_messages_and_bodies(self) -> None:
+        self.repo.commit("feat: signed", HUMAN, signoff=True)
+        for prefix in ("\ufeff", "\u200b", "\u200c", "\u200d", "\u2060", " \ufeff "):
+            for line in ("Generated by assistant", "Co-authored-by: Codex <pair@example.org>"):
+                with self.subTest(prefix=repr(prefix), line=line):
+                    res = self.repo.gate(pr_body=prefix + line)
+                    self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.repo.commit("feat: hidden\n\n\ufeffGenerated by assistant", HUMAN, True)
+        res = self.repo.gate()
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("message contains machine-generated attribution", res.stdout)
+
+    def test_nfkc_attribution_refused_and_human_text_passes(self) -> None:
+        for line in (
+            "\uff27\uff45\uff4e\uff45\uff52\uff41\uff54\uff45\uff44 \uff42\uff59 assistant",
+            "\uff23\uff4f-\uff41\uff55\uff54\uff48\uff4f\uff52\uff45\uff44-\uff42\uff59: \uff23\uff4f\uff44\uff45\uff58 <pair@example.org>",
+        ):
+            with self.subTest(line=line):
+                res = self.repo.gate(pr_body=line)
+                self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        res = self.repo.gate(
+            pr_body="\ufeffHuman contribution\nCo-authored-by: Alice <a@example.org>"
+        )
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+    def test_event_body_refuses_attribution(self) -> None:
+        event = {"pull_request": {"body": "Summary\n\ufeffGenerated by assistant"}}
+        res = self.repo.gate("--pr-body-from-event", event=event)
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("line 2:", res.stdout)
+
+    def test_event_clean_empty_and_null_bodies_pass(self) -> None:
+        for body in ("Human contribution", "", None):
+            with self.subTest(body=body):
+                res = self.repo.gate("--pr-body-from-event", event={"pull_request": {"body": body}})
+                self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+    def test_squash_workflow_body_file_preserves_event_text(self) -> None:
+        workflow = (ROOT / ".github/workflows/rule-enforcement.yml").read_text()
+        extraction = next(
+            line.strip()
+            for line in workflow.splitlines()
+            if "jq -r" in line and "squash-pr-body" in line
+        )
+        self.assertIn('--body-file "$RUNNER_TEMP/squash-pr-body.md"', workflow)
+        event = self.repo.path / "event.json"
+        body = "Summary\nMigration: preserve boundary\n" + "é" * 70_000
+        event.write_text(json.dumps({"pull_request": {"body": body}}), encoding="utf-8")
+        command = shlex.split(extraction)
+        result = run(
+            [*command[:3], str(event)],
+            allowed_executables=("jq",),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(result.stdout, body + "\n")
+
+    def test_event_invalid_shape_refused(self) -> None:
+        events: tuple[object, ...] = ({}, [], {"pull_request": {"body": 42}})
+        for event in events:
+            with self.subTest(event=event):
+                res = self.repo.gate("--pr-body-from-event", event=event)
+                self.assertEqual(res.returncode, 2, res.stdout + res.stderr)
+                self.assertIn("event", res.stderr)
+
+    def test_event_envelope_bytes_at_bound_and_plus_one(self) -> None:
+        mod = DcoBoundsTest()
+        mod.setUp()
+        self.addCleanup(mod.doCleanups)
+        event = {"pull_request": {"body": ""}, "padding": ""}
+        size = len(json.dumps(event).encode("utf-8"))
+        for extra in (0, 1):
+            with self.subTest(extra=extra):
+                event["padding"] = "a" * (mod.mod.MAX_PR_EVENT_BYTES - size + extra)
+                res = self.repo.gate("--pr-body-from-event", event=event)
+                self.assertEqual(res.returncode, extra, res.stdout + res.stderr)
+                if extra:
+                    self.assertIn("MAX_PR_EVENT_BYTES", res.stderr)
+
+    def test_pr_body_file_bytes_at_bound_and_plus_one(self) -> None:
+        mod = DcoBoundsTest()
+        mod.setUp()
+        self.addCleanup(mod.doCleanups)
+        body = self.repo.path / "body.md"
+        for extra in (0, 1):
+            with self.subTest(extra=extra):
+                body.write_bytes(b"a" * (mod.mod.MAX_PR_BODY_BYTES + extra))
+                res = self.repo.gate("--pr-body", str(body))
+                self.assertEqual(res.returncode, extra, res.stdout + res.stderr)
+                if extra:
+                    self.assertIn("MAX_PR_BODY_BYTES", res.stderr)
+
+    def test_event_body_byte_bound_and_large_multibyte_body(self) -> None:
+        mod = DcoBoundsTest()
+        mod.setUp()
+        self.addCleanup(mod.doCleanups)
+        bound = mod.mod.MAX_PR_BODY_BYTES
+        for extra in (0, 1):
+            with self.subTest(extra=extra):
+                body = "é" * (bound // 2) + "a" * (bound % 2 + extra)
+                res = self.repo.gate("--pr-body-from-event", event={"pull_request": {"body": body}})
+                self.assertEqual(res.returncode, extra, res.stdout + res.stderr)
+                if extra:
+                    self.assertIn("MAX_PR_BODY_BYTES", res.stdout)
+
+    def test_commit_message_byte_bound_through_git(self) -> None:
+        mod = DcoBoundsTest()
+        mod.setUp()
+        self.addCleanup(mod.doCleanups)
+        prefix = "feat: bounded\n\n"
+        suffix = "\n\nSigned-off-by: Ada Example <ada@example.org>\n"
+        for extra in (0, 1):
+            with self.subTest(extra=extra):
+                size = mod.mod.MAX_COMMIT_MESSAGE_BYTES + extra
+                message = prefix + "a" * (size - len(prefix + suffix)) + suffix
+                self.repo.commit(message, HUMAN)
+                res = self.repo.gate()
+                self.assertEqual(res.returncode, extra, res.stdout + res.stderr)
+                if extra:
+                    self.assertIn("MAX_COMMIT_MESSAGE_BYTES", res.stdout)
+
+    def test_oversized_git_output_refused_before_parse(self) -> None:
+        mod = DcoBoundsTest()
+        mod.setUp()
+        self.addCleanup(mod.doCleanups)
+        self.repo.commit("feat: enormous\n\n" + "x" * mod.mod.MAX_COMMIT_LOG_BYTES, HUMAN, True)
+        res = self.repo.gate()
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("MAX_COMMIT_LOG_BYTES", res.stderr)
+        self.assertIn("MAX_COMMIT_MESSAGE_BYTES", res.stderr)
 
     def test_planted_full_attribution_gap_fails(self) -> None:
         msg = "feat: planted gap\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
@@ -300,13 +537,14 @@ class DcoGateTest(unittest.TestCase):
 
         Verifies that an unresolvable base/head revision range exits 2 instead of passing.
         """
-        res = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
+        res = run(
             [sys.executable, "-I", str(GATE), "--base", "0" * 40, "--head", "HEAD"],
+            allowed_executables=(sys.executable,),
             cwd=self.repo.path,
             capture_output=True,
             text=True,
             check=False,
-            timeout=SCRIPT_TIMEOUT_S,
+            timeout_seconds=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(res.returncode, 2)
 
@@ -316,13 +554,14 @@ class DcoGateTest(unittest.TestCase):
         Omitting both CLI revision flags and environment fallbacks must exit 2.
         """
         env = {k: v for k, v in os.environ.items() if k not in ("BASE_SHA", "HEAD_SHA")}
-        res = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
+        res = run(
             [sys.executable, "-I", str(GATE)],
+            allowed_executables=(sys.executable,),
             env=env,
             capture_output=True,
             text=True,
             check=False,
-            timeout=SCRIPT_TIMEOUT_S,
+            timeout_seconds=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(res.returncode, 2)
 
@@ -408,7 +647,7 @@ class DcoCutoffTest(unittest.TestCase):
         self.cutoff.write_text("# comment\n2026-10-09T00:00:00Z\n")
         self.repo.commit("feat: unsigned", HUMAN)
 
-    def gate(self, created_at: str | None) -> subprocess.CompletedProcess[str]:
+    def gate(self, created_at: str | None) -> TextCommandResult:
         extra = ["--cutoff-file", str(self.cutoff)]
         if created_at is not None:
             extra += ["--created-at", created_at]
@@ -534,12 +773,13 @@ class DcoLandedGateTest(unittest.TestCase):
             GIT_COMMITTER_EMAIL="noreply@github.com",
         )
         msg = "chore(deps): update\n\nSigned-off-by: GitHub <noreply@github.com>"
-        subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
-            [GIT, "commit", "-q", "-m", msg],
+        run(
+            [GIT, "-c", "commit.gpgsign=false", "commit", "-q", "-m", msg],
+            allowed_executables=(GIT,),
             cwd=self.repo.path,
             env=env,
             check=True,
-            timeout=GIT_TIMEOUT_S,
+            timeout_seconds=GIT_TIMEOUT_S,
         )
         res = self.repo.gate("--landed", "--landing-identity", LANDING_ID)
         self.assertEqual(res.returncode, 1)
@@ -559,7 +799,7 @@ class DcoLandedGateTest(unittest.TestCase):
         # Bad head: unsigned commit -> rc 1
         self.repo.commit("feat: bad head unsigned", HUMAN)
         head_bad = self.repo.git(["rev-parse", "HEAD"]).strip()
-        res_bad = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
+        res_bad = run(
             [
                 sys.executable,
                 "-I",
@@ -572,12 +812,13 @@ class DcoLandedGateTest(unittest.TestCase):
                 "--head",
                 head_bad,
             ],
+            allowed_executables=(sys.executable,),
             cwd=self.repo.path,
             env=clean_env(),
             capture_output=True,
             text=True,
             check=False,
-            timeout=SCRIPT_TIMEOUT_S,
+            timeout_seconds=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(res_bad.returncode, 1)
         self.assertIn("Signed-off-by", res_bad.stdout)
@@ -586,7 +827,7 @@ class DcoLandedGateTest(unittest.TestCase):
         # Good head: signed commit -> rc 0
         self.repo.commit("feat: good head signed", HUMAN, signoff=True)
         head_good = self.repo.git(["rev-parse", "HEAD"]).strip()
-        res_good = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
+        res_good = run(
             [
                 sys.executable,
                 "-I",
@@ -599,12 +840,13 @@ class DcoLandedGateTest(unittest.TestCase):
                 "--head",
                 head_good,
             ],
+            allowed_executables=(sys.executable,),
             cwd=self.repo.path,
             env=clean_env(),
             capture_output=True,
             text=True,
             check=False,
-            timeout=SCRIPT_TIMEOUT_S,
+            timeout_seconds=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(res_good.returncode, 0, res_good.stdout + res_good.stderr)
         self.assertIn("PASS", res_good.stdout)
@@ -634,9 +876,11 @@ class DcoWiringTest(unittest.TestCase):
             "HEAD_SHA",
             "DCO_RELEASE_PR",
             "PR_CREATED_AT",
-            "PR_BODY",
         ):
             self.assertIn(var, job)
+        self.assertIn("--pr-body-from-event", job)
+        self.assertNotIn("PR_BODY:", job)
+        self.assertNotIn("${{ github.event.pull_request.body }}", job)
 
     def test_job_is_a_required_context(self) -> None:
         text = self.read(".github/workflows/required-aggregator.yml")

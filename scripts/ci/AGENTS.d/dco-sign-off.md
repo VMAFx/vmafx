@@ -3,7 +3,7 @@ paths:
   - scripts/ci/check-dco.py
   - scripts/ci/dco-cutoff.txt
   - scripts/ci/tests/test_check_dco.py
-invariant: PR and landed commits refuse model/tool attribution; PR bodies scanned; sign-off and bot rules remain.
+invariant: DCO attribution: NUL fields, bounded Unicode-normalized messages/bodies, event-file CI input; sign-off rules retained.
 area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
@@ -26,8 +26,16 @@ Gate: `Signed-off-by:` trailer on each non-merge PR commit; model/tool attributi
    `CONTRIBUTING.md`.
 7. **Attribution.** Commit author/committer name/email scanned before bot sign-off exemption;
    `[bot]` ignored for identities. Message lines and PR body lines share trailer/footer checks.
-   `--pr-body-file` overrides `PR_BODY`; unreadable body file exits 2. Landed mode scans commits.
-8. **Token sync.** `BANNED_COAUTHOR_TOKENS` = praetor `BANNED_COAUTHORS` + engine
+   NFKC first; leading Unicode `Cf`/whitespace removed before shared line rules.
+   `--pr-body-file` (`--pr-body`) overrides local `PR_BODY`; CI `--pr-body-from-event` reads
+   `GITHUB_EVENT_PATH` JSON. Unreadable/malformed file exits 2; null event body = empty.
+   Named byte/line bounds: excess -> exit 1 with bound name, never truncated.
+   Commit fields/records: NUL via `%x00` + `git log -z`; old separators preserved.
+   One commit per bounded Git read; landed mode scans commits.
+8. **Bounds.** `MAX_COMMIT_MESSAGE_BYTES/LINES` = measured master maxima ×4;
+   `MAX_PR_BODY_BYTES/LINES` = PRs 2906-3395 (300 bodies) maxima ×4. JSON event envelope =
+   body bytes ×6 + 1 MiB metadata. Boundary/+1 tests mandatory for every input bound.
+9. **Token sync.** `BANNED_COAUTHOR_TOKENS` = praetor `BANNED_COAUTHORS` + engine
    `bannedCoauthorsRegex`; change all three together.
 
 Required context `DCO Sign-off` = job `dco-sign-off` in `rule-enforcement.yml`; one entry in
