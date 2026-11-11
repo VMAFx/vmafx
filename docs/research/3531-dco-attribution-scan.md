@@ -34,9 +34,10 @@ Export the 300-body input as a JSON array of objects containing `number` and
 `body`. The corpus spans PR numbers 2906–3395. The `gh pr list` search has no
 number-range qualifier (a `number:2906..3395` search returns nothing), so export
 recent PRs with a configured forge login and keep the range in Python; the
-second command writes the file the fingerprint above was taken from:
+last command writes the file the fingerprint above was taken from:
 
 ```bash
+mkdir -p .workingdir/evidence
 gh pr list --repo VMAFx/vmafx --state all --limit 1000 --json number,body > .workingdir/evidence/dco-pr-bodies-all.json
 python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); json.dump(sorted((p for p in d if 2906 <= p["number"] <= 3395), key=lambda p: p["number"]), open(sys.argv[2], "w"))' .workingdir/evidence/dco-pr-bodies-all.json .workingdir/evidence/dco-pr-bodies.json
 ```

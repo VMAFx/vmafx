@@ -107,7 +107,11 @@ identity configuration; explicit author/committer settings or environment
 variables override `user.name` and `user.email`. For a series,
 `git rebase --force-rebase <base>` forces every rebased commit to be replayed,
 including unchanged commits, as documented in the [`git-rebase(1)`
-manual](https://git-scm.com/docs/git-rebase).
+manual](https://git-scm.com/docs/git-rebase). Plain rebase drops merge commits
+and makes the series linear. For a series containing merges, use
+`git rebase --force-rebase --rebase-merges <base>` to recreate them. Conflict
+resolutions and manual amendments inside those merge commits are not replayed
+and must be redone manually.
 For a refused pull request body, edit its text. Bot commit
 sign-off exemptions do not exempt attribution. Machine-generated release pull
 requests and pull requests grandfathered by the cutoff keep their existing
