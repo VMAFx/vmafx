@@ -7,6 +7,7 @@ from __future__ import annotations
 import collections
 import io
 import os
+import re
 import shutil
 import tempfile
 import tokenize
@@ -82,14 +83,34 @@ def renames(git: str, root: Path, base: str) -> dict[str, str]:
     return {fields[index + 2]: fields[index + 1] for index in range(0, len(fields) - 2, 3)}
 
 
-def revision_bytes(git: str, root: Path, ref: str, relative: str) -> bytes | None:
-    """Read one literal blob; absence differs from an empty file."""
-    status, names = git_output(
-        git, ["--literal-pathspecs", "ls-tree", "-z", "--name-only", ref, "--", relative], root
-    )
+def revision_modes(git: str, root: Path, ref: str) -> dict[str, str]:
+    """Read bounded tree output, accepting only well-formed supported mode/type pairs."""
+    status, output = git_output(git, ["ls-tree", "-r", "-z", ref], root)
     if status != 0:
         raise ToolError(f"git ls-tree against {ref} failed")
-    if relative not in names.split("\0"):
+    if output and not output.endswith("\0"):
+        raise ToolError(f"unterminated git ls-tree record against {ref}")
+    modes = {}
+    pattern = (
+        r"(100644 blob|100755 blob|120000 blob|160000 commit) [0-9a-f]{40}(?:[0-9a-f]{24})?\t(.+)"
+    )
+    for record in output.split("\0")[:-1]:
+        match = re.fullmatch(pattern, record, flags=re.DOTALL)
+        if match is None:
+            raise ToolError(f"malformed git ls-tree record against {ref}")
+        mode_type, name = match.groups()
+        if name in modes:
+            raise ToolError(f"duplicate git ls-tree path against {ref}: {name}")
+        modes[name] = mode_type.split(" ", 1)[0]
+    return modes
+
+
+def revision_bytes(
+    git: str, root: Path, ref: str, relative: str, *, modes: dict[str, str] | None = None
+) -> bytes | None:
+    """Read a literal regular blob; absent paths, symlinks and gitlinks return None."""
+    entries = revision_modes(git, root, ref) if modes is None else modes
+    if entries.get(relative) not in {"100644", "100755"}:
         return None
     status, output = git_bytes(git, ["--literal-pathspecs", "show", f"{ref}:{relative}"], root)
     if status != 0:
@@ -97,9 +118,11 @@ def revision_bytes(git: str, root: Path, ref: str, relative: str) -> bytes | Non
     return output
 
 
-def base_text(git: str, root: Path, base: str, relative: str) -> bytes:
-    """Return the base revision's file bytes, or empty bytes when the file is absent."""
-    return revision_bytes(git, root, base, relative) or b""
+def base_text(
+    git: str, root: Path, base: str, relative: str, *, modes: dict[str, str] | None = None
+) -> bytes:
+    """Return regular base bytes; absent paths, symlinks and gitlinks count as empty."""
+    return revision_bytes(git, root, base, relative, modes=modes) or b""
 
 
 def python_text(content: bytes) -> str:
@@ -118,6 +141,7 @@ class Comparison:
     base: str = field(init=False)
     moved: dict[str, str] = field(init=False)
     ref: str = field(init=False)
+    _modes: dict[str, dict[str, str]] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         """Resolve the outgoing revision, merge base and detected rename mapping."""
@@ -128,9 +152,11 @@ class Comparison:
         self.moved = renames(self.git, self.root, self.base)
 
     def current_bytes(self, relative: str) -> bytes | None:
-        """Return outgoing or local file bytes, skipping local symlinks and rejecting escapes."""
+        """Return regular outgoing or local bytes, skipping links and rejecting local escapes."""
         if self.ref:
-            return revision_bytes(self.git, self.root, self.ref, relative)
+            return revision_bytes(
+                self.git, self.root, self.ref, relative, modes=self.modes(self.ref)
+            )
         path = self.root / relative
         if path.is_symlink():
             return None
@@ -139,13 +165,26 @@ class Comparison:
         return path.read_bytes() if path.is_file() else None
 
     def old_bytes(self, relative: str) -> bytes:
-        """Return merge-base bytes under the original path, or empty bytes if absent."""
-        return base_text(self.git, self.root, self.base, self.moved.get(relative, relative))
+        """Return original regular base bytes; missing paths and links count as empty."""
+        return base_text(
+            self.git,
+            self.root,
+            self.base,
+            self.moved.get(relative, relative),
+            modes=self.modes(self.base),
+        )
+
+    def modes(self, ref: str) -> dict[str, str]:
+        """Cache one validated mode listing per selected revision."""
+        if ref not in self._modes:
+            self._modes[ref] = revision_modes(self.git, self.root, ref)
+        return self._modes[ref]
 
     def tracked_paths(self) -> list[Path]:
-        """Return tracked paths from the outgoing revision or local index; raise on failure."""
-        args = ["ls-tree", "-r", "-z", "--name-only", self.ref] if self.ref else ["ls-files", "-z"]
-        status, output = git_output(self.git, args, self.root)
+        """List tracked outgoing paths with cached modes, or retain local index selection."""
+        if self.ref:
+            return [Path(name) for name in self.modes(self.ref)]
+        status, output = git_output(self.git, ["ls-files", "-z"], self.root)
         if status != 0:
             raise ToolError("cannot list tracked source files")
         return [Path(name) for name in output.split("\0") if name]

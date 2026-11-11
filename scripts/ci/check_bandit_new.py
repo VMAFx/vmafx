@@ -69,11 +69,17 @@ def findings(bandit: str, source: Path, config: Path = CONFIG) -> list[tuple[int
 
 
 def scan_changes(bandit: str, comparison: Comparison, paths: list[Path]) -> int:
-    """Print and count new Bandit findings, including those enabled by configuration changes."""
+    """Count new findings using cached revision modes, including configuration changes."""
     current_config = comparison.current_bytes("bandit.yml")
     if current_config is None:
         raise ToolError("Bandit configuration missing: bandit.yml")
-    base_config = revision_bytes(comparison.git, comparison.root, comparison.base, "bandit.yml")
+    base_config = revision_bytes(
+        comparison.git,
+        comparison.root,
+        comparison.base,
+        "bandit.yml",
+        modes=comparison.modes(comparison.base),
+    )
     changed_config = base_config != current_config
     if changed_config:
         paths = sorted(set(paths + comparison.tracked_paths()))

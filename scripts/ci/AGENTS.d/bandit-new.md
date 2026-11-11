@@ -25,6 +25,7 @@ Config diff: every tracked Python source scanned; unchanged source still compare
 Hook: `require_serial: true`; parallel partitions each repeat config-diff full scan.
 Selection: identify Python + pyi tags; shebang files included; PEP 263 decoding; literal Git paths.
 Shared revision selection: Bandit + flawfinder; outgoing files independent of working tree.
+Outgoing + local scans: symlinks + gitlinks skipped; base links count absent.
 IDs: 56 enabled defaults from codacy-bandit `docs/patterns.json`, version 1.9.4; checked 2026-11-11.
 Research: `docs/research/3530-bandit-codacy-pattern-list.md`; decision: ADR-3530.
 Fixtures: shared hook-variable isolation; caller `PRE_COMMIT_*` removed until test cleanup; explicit per-test refs retained.

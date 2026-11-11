@@ -218,6 +218,92 @@ class CheckBanditNew(unittest.TestCase):
         ):
             self.assertEqual(self.invoke("harness.py")[0], 0)
 
+    def test_push_config_skips_tracked_symlink(self) -> None:
+        """A config change skips an outgoing Python symlink instead of parsing its target."""
+        blob = self.git("hash-object", "-w", "--stdin", input_text="../module.py").strip()
+        self.git("update-index", "--add", "--cacheinfo", f"120000,{blob},linked.py")
+        with (self.root / "bandit.yml").open("a") as config:
+            config.write("# outgoing config\n")
+        self.git("add", "bandit.yml")
+        self.git("commit", "-q", "-m", "outgoing symlink")
+        with mock.patch.dict(os.environ, {"PRE_COMMIT_TO_REF": "HEAD"}):
+            status, out, err = self.invoke("bandit.yml")
+        self.assertEqual(status, 0, err)
+        self.assertEqual(out, "")
+
+    def test_push_regular_and_executable_sources_report_findings(self) -> None:
+        """Both regular blob modes retain new outgoing Bandit findings."""
+        for executable in (False, True):
+            with self.subTest(executable=executable):
+                (self.root / "harness.py").write_text(BASE + UNSAFE)
+                self.git("add", "harness.py")
+                self.git("update-index", "--chmod=+x" if executable else "--chmod=-x", "harness.py")
+                self.git("commit", "-q", "-m", "outgoing source")
+                with mock.patch.dict(os.environ, {"PRE_COMMIT_TO_REF": "HEAD"}):
+                    status, out, err = self.invoke("harness.py")
+                self.assertEqual(status, 1, err)
+                self.assertIn("harness.py:6: B603", out)
+
+    def test_base_symlink_replaced_by_source_counts_as_absent(self) -> None:
+        """Replacing a base symlink scans the new regular file against empty source."""
+        blob = self.git("hash-object", "-w", "--stdin", input_text="../module.py").strip()
+        self.git("update-index", "--cacheinfo", f"120000,{blob},harness.py")
+        self.git("commit", "-q", "-m", "symlink baseline")
+        self.git("branch", "-f", "master", "HEAD")
+        (self.root / "harness.py").write_text(BASE + UNSAFE)
+        self.git("add", "harness.py")
+        self.git("commit", "-q", "-m", "replace symlink")
+        with mock.patch.dict(os.environ, {"PRE_COMMIT_TO_REF": "HEAD"}):
+            status, out, err = self.invoke("harness.py")
+        self.assertEqual(status, 1, err)
+        self.assertIn("harness.py:6: B603", out)
+
+    def test_push_config_skips_gitlink(self) -> None:
+        """A config change skips an outgoing gitlink with a Python filename."""
+        commit = self.git("rev-parse", "HEAD").strip()
+        self.git("update-index", "--add", "--cacheinfo", f"160000,{commit},linked.py")
+        with (self.root / "bandit.yml").open("a") as config:
+            config.write("# outgoing config\n")
+        self.git("add", "bandit.yml")
+        self.git("commit", "-q", "-m", "outgoing gitlink")
+        with mock.patch.dict(os.environ, {"PRE_COMMIT_TO_REF": "HEAD"}):
+            status, out, err = self.invoke("bandit.yml")
+        self.assertEqual(status, 0, err)
+        self.assertEqual(out, "")
+
+    def test_base_gitlink_replaced_by_source_counts_as_absent(self) -> None:
+        """Replacing a base gitlink reports the regular file's finding without a scan error."""
+        commit = self.git("rev-parse", "HEAD").strip()
+        self.git("update-index", "--cacheinfo", f"160000,{commit},harness.py")
+        self.git("commit", "-q", "-m", "gitlink baseline")
+        self.git("branch", "-f", "master", "HEAD")
+        (self.root / "harness.py").write_text(BASE + UNSAFE)
+        self.git("add", "harness.py")
+        self.git("commit", "-q", "-m", "replace gitlink")
+        with mock.patch.dict(os.environ, {"PRE_COMMIT_TO_REF": "HEAD"}):
+            status, out, err = self.invoke("harness.py")
+        self.assertEqual(status, 1, err)
+        self.assertIn("B603", out)
+
+    def test_revision_modes_loaded_once_per_revision(self) -> None:
+        """Repeated path and byte lookups share one full mode listing per revision."""
+        git = shutil.which("git")
+        assert git is not None
+        with (
+            mock.patch.dict(os.environ, {"PRE_COMMIT_TO_REF": "HEAD"}),
+            mock.patch.object(shared, "git_output", wraps=shared.git_output) as output,
+        ):
+            comparison = shared.Comparison(git, self.root, "master")
+            for _ in range(2):
+                self.assertEqual(comparison.current_bytes("harness.py"), BASE.encode())
+                self.assertIn(Path("harness.py"), comparison.tracked_paths())
+                self.assertEqual(comparison.old_bytes("harness.py"), BASE.encode())
+            listings = [call.args[1] for call in output.call_args_list if "ls-tree" in call.args[1]]
+        self.assertCountEqual(
+            listings,
+            [["ls-tree", "-r", "-z", "HEAD"], ["ls-tree", "-r", "-z", comparison.base]],
+        )
+
     def test_symlink_parent_outside_repository_is_error(self) -> None:
         """A source resolving outside the repository returns 2."""
         original = Path.resolve
@@ -454,6 +540,72 @@ class CheckBanditHookEnvironment(unittest.TestCase):
 
 
 class CheckSharedScannerFindings(unittest.TestCase):
+    def test_revision_bytes_skips_links_and_missing_paths(self) -> None:
+        """Links and absent entries never reach git show, even with a source suffix."""
+        modes = {"link.py": "120000", "gitlink.py": "160000"}
+        with mock.patch.object(
+            shared, "git_bytes", side_effect=AssertionError("link must not reach git show")
+        ) as read:
+            for name in ("link.py", "gitlink.py", "missing.py"):
+                with self.subTest(name=name):
+                    self.assertIsNone(
+                        shared.revision_bytes("git", Path.cwd(), "outgoing", name, modes=modes)
+                    )
+                    self.assertEqual(
+                        shared.base_text("git", Path.cwd(), "base", name, modes=modes), b""
+                    )
+        read.assert_not_called()
+
+    def test_revision_modes_reject_malformed_records(self) -> None:
+        """Invalid modes, types, object IDs, paths and framing fail closed."""
+        oid = "a" * 40
+        valid = f"100644 blob {oid}\tsource.py\0"
+        malformed = (
+            "broken\0",
+            valid.replace("100644", "100600"),
+            valid.replace("blob", "tree"),
+            valid.replace(oid, "invalid"),
+            valid.replace("source.py", ""),
+            valid.rstrip("\0"),
+            valid + "\0",
+            valid + valid,
+        )
+        for output in malformed:
+            with (
+                self.subTest(output=output),
+                mock.patch.object(shared, "git_output", return_value=(0, output)),
+                self.assertRaises(shared.ToolError),
+            ):
+                shared.revision_modes("git", Path.cwd(), "outgoing")
+
+    def test_revision_modes_accept_allowed_entries_and_literal_paths(self) -> None:
+        """The mode allow-list retains regular files, links and literal tab/newline paths."""
+        entries = {
+            "regular.py": ("100644", "blob"),
+            "executable.py": ("100755", "blob"),
+            "link.py": ("120000", "blob"),
+            "gitlink.py": ("160000", "commit"),
+            "literal\tline\n.py": ("100644", "blob"),
+        }
+        output = "".join(
+            f"{mode} {kind} {'a' * 40}\t{name}\0" for name, (mode, kind) in entries.items()
+        )
+        with mock.patch.object(shared, "git_output", return_value=(0, output)):
+            self.assertEqual(
+                shared.revision_modes("git", Path.cwd(), "outgoing"),
+                {name: mode for name, (mode, _) in entries.items()},
+            )
+
+    def test_revision_modes_empty_tree_and_git_failure(self) -> None:
+        """An empty tree has no entries; a failed tree listing raises ToolError."""
+        with mock.patch.object(shared, "git_output", return_value=(0, "")):
+            self.assertEqual(shared.revision_modes("git", Path.cwd(), "outgoing"), {})
+        with (
+            mock.patch.object(shared, "git_output", return_value=(1, "")),
+            self.assertRaises(shared.ToolError),
+        ):
+            shared.revision_modes("git", Path.cwd(), "outgoing")
+
     def test_git_output_drops_injected_git_configuration(self) -> None:
         """Repository overrides are removed from the child environment; unrelated values remain."""
         injected = {
