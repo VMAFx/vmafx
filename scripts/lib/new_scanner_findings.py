@@ -19,6 +19,9 @@ from pathlib import Path
 from scripts.lib.safe_subprocess import run as run_command
 
 Finding = tuple[int, str, str]
+# Covers tracked .py (<= 220,626 B), C/C++ (<= 841,275 B), and untagged blobs
+# copied before shebang inspection (<= 30,810,303 B); git_bytes shares it.
+MAX_SOURCE_BYTES = 64 * 1_048_576
 
 
 class ToolError(RuntimeError):
@@ -46,7 +49,7 @@ def git_bytes(git: str, args: list[str], cwd: Path) -> tuple[int, bytes]:
         capture_output=True,
         text=False,
         timeout_seconds=60,
-        max_output_bytes=64 * 1_048_576,
+        max_output_bytes=MAX_SOURCE_BYTES,
     )
     return proc.returncode, proc.stdout
 
@@ -152,7 +155,7 @@ class Comparison:
         self.moved = renames(self.git, self.root, self.base, self.ref)
 
     def current_bytes(self, relative: str) -> bytes | None:
-        """Return regular outgoing or local bytes, skipping links and rejecting local escapes."""
+        """Return bounded regular outgoing or local bytes, skipping links and local escapes."""
         if self.ref:
             return revision_bytes(
                 self.git, self.root, self.ref, relative, modes=self.modes(self.ref)
@@ -162,7 +165,15 @@ class Comparison:
             return None
         if not path.resolve().is_relative_to(self.root.resolve()):
             raise ToolError(f"source path escapes repository: {relative}")
-        return path.read_bytes() if path.is_file() else None
+        if not path.is_file():
+            return None
+        if path.stat().st_size > MAX_SOURCE_BYTES:
+            raise ToolError(f"{path} exceeds {MAX_SOURCE_BYTES} bytes")
+        with path.open("rb") as handle:
+            content = handle.read(MAX_SOURCE_BYTES + 1)
+        if len(content) > MAX_SOURCE_BYTES:
+            raise ToolError(f"{path} exceeds {MAX_SOURCE_BYTES} bytes")
+        return content
 
     def old_bytes(self, relative: str) -> bytes:
         """Return original regular base bytes; missing paths and links count as empty."""

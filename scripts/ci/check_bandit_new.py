@@ -37,7 +37,7 @@ def is_python_source(source: Path) -> bool:
     if tags:
         return bool(PYTHON_TAGS & tags)
     with source.open("rb") as handle:
-        shebang = parse_shebang(io.BytesIO(handle.readline(MAX_SHEBANG_BYTES)))
+        shebang = parse_shebang(io.BytesIO(handle.read(MAX_SHEBANG_BYTES)))
     return bool(shebang and PYTHON_TAGS & tags_from_interpreter(shebang[0]))
 
 
