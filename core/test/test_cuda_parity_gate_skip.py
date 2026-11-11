@@ -103,8 +103,11 @@ def build_dir_with(options: str | None) -> tempfile.TemporaryDirectory[str]:
 
 
 def make_cli(build: Path) -> Path:
-    """Create an empty executable `tools/vmaf` under `build` and return its path."""
-    binary = build / "tools" / "vmaf"
+    """Create an empty executable CLI under `build/tools` and return its path.
+
+    The name is the one vmaftest.find() looks for: `vmaf.exe` on Windows.
+    """
+    binary = build / "tools" / load_default_run().vmaftest.executable_name()
     binary.parent.mkdir(parents=True)
     binary.write_text("", encoding="utf-8")
     binary.chmod(0o755)
@@ -132,6 +135,17 @@ class FindBinaryTest(unittest.TestCase):
         """Without a variable, the CLI under the repository's `build/` is used."""
         with tempfile.TemporaryDirectory() as root:
             binary = make_cli(Path(root) / "build")
+            self.assertEqual(self.run_with(Path(root), {})[1], binary)
+
+    def test_build_fallback_uses_the_platform_cli_name(self) -> None:
+        """The fallback finds `vmaf.exe` where that is the CLI's name, as on Windows."""
+        vmaftest = load_default_run().vmaftest
+        with (
+            tempfile.TemporaryDirectory() as root,
+            mock.patch.object(vmaftest, "executable_name", return_value="vmaf.exe"),
+        ):
+            binary = make_cli(Path(root) / "build")
+            self.assertEqual(binary.name, "vmaf.exe")
             self.assertEqual(self.run_with(Path(root), {})[1], binary)
 
     def test_no_cli_is_a_skip(self) -> None:
