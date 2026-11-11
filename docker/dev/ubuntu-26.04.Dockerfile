@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8
 
 COPY scripts/setup/ubuntu.sh /tmp/ubuntu.sh
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
         ca-certificates curl git sudo \
     && bash /tmp/ubuntu.sh \
     && rm -rf /var/lib/apt/lists/* /tmp/ubuntu.sh

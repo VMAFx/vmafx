@@ -163,7 +163,7 @@ def ci_text_paths(root: Path) -> list[Path]:
         for name in result.stdout.split("\0")
         if name
         and (
-            Path(name).suffix in (".yml", ".yaml", ".sh", ".bash")
+            Path(name).suffix in (".yml", ".yaml", ".sh", ".bash", ".Dockerfile", ".Containerfile")
             or Path(name).name.startswith(("Dockerfile", "Containerfile"))
         )
     ]
@@ -290,6 +290,8 @@ class LaunchpadPPAContract(DisposableRepoTestCase):
             "docs/example.yaml",
             "Dockerfile",
             "docker/Containerfile.ci",
+            "docker/dev/x.Dockerfile",
+            "docker/dev/x.Containerfile",
         )
         self.track(dict.fromkeys(paths, "# setup\nsudo add-apt-repository -y ppa:x/y\n"))
         expected = [
@@ -350,6 +352,7 @@ class LaunchpadPPAContract(DisposableRepoTestCase):
                 "empty.yaml": "",
                 "example.py": "add-apt-repository ppa:x/y\n",
                 "example.md": "add-apt-repository ppa:x/y\n",
+                "docker/OtherDockerfile": "add-apt-repository ppa:x/y\n",
             }
         )
         (self.root / "untracked.yml").write_text("ppa:x/y\n", encoding="utf-8")
@@ -508,6 +511,8 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
         """Reject missing flags, bare apt, mixed case and comment mentions with exact path:line."""
         cases = (
             ("Dockerfile", "FROM ubuntu:26.04\nRUN apt-get update && apt-get install -y x\n", 2),
+            ("docker/dev/x.Dockerfile", "FROM ubuntu:26.04\nRUN apt-get update\n", 2),
+            ("docker/dev/x.Containerfile", "FROM ubuntu:26.04\nRUN apt-get update\n", 2),
             ("scripts/ci/setup.sh", "#!/usr/bin/env bash\n$SUDO apt-get update -qq\n", 2),
             (".github/workflows/ci.yml", "steps:\n  - run: sudo apt-get update\n", 2),
             ("scripts/no-retries.sh", "apt-get update --error-on=any\n", 1),
@@ -565,6 +570,7 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
                 "empty.yaml": "",
                 "docs/guide.md": "apt-get update\n",
                 "scripts/helper.py": "cmd = 'apt-get update'\n",
+                "docker/OtherDockerfile": "RUN apt-get update\n",
             }
         )
         (self.root / "untracked.sh").write_text("apt-get update\n", encoding="utf-8")
@@ -588,6 +594,11 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
             "&& apt-get update --error-on=any -o Acquire::Retries=3\n"
         )
         self.track({"boundary.sh": both_compliant})
+        self.assertEqual(apt_update_contract_problems(self.root), [])
+
+    def test_known_gap_update_split_across_continuation(self) -> None:
+        """Known gap, not a pass: single-line matching misses update split onto the next line."""
+        self.track({"split.sh": "apt-get -qq \\\n  update\n"})
         self.assertEqual(apt_update_contract_problems(self.root), [])
 
     def test_planted_cuda_installer_without_error_on_fails_contract(self) -> None:
@@ -640,6 +651,8 @@ class FailClosedCIContract(unittest.TestCase):
             "docker/Dockerfile.ci",
             "Containerfile",
             "docker/Containerfile.ci",
+            "docker/dev/x.Dockerfile",
+            "docker/dev/x.Containerfile",
             "scripts/ci/test_fail_closed_ci.py",
             "python/tox.ini",
             ".pre-commit-config.yaml",

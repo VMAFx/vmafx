@@ -4,6 +4,7 @@ paths:
   - scripts/ci/apt-install-cached.sh
   - scripts/ci/install-*.sh
   - scripts/dev/tidy-lane.sh
+  - docker/dev/ubuntu-*.Dockerfile
   - .pre-commit-config.yaml
 invariant: ADR-3537 requires --error-on=any and -o Acquire::Retries=3 on every tracked apt-get update physical line.
 area: gates
@@ -15,9 +16,11 @@ area: gates
 `apt_update_problems(path, text)` and `apt_update_contract_problems(root)`.
 
 Scope = `ci_text_paths(root)` (`git ls-files -z`: `.yml`, `.yaml`, `.sh`,
-`.bash` suffixes; `Dockerfile*` and `Containerfile*` basenames; 1,864-file
-bound). Reuses `fail-closed-ci-contract` hook in `.pre-commit-config.yaml` and
-`DisposableRepoTestCase` fixture isolation; no second path lister.
+`.bash` suffixes; `*.Dockerfile`, `*.Containerfile` suffixes; `Dockerfile*`
+and `Containerfile*` basenames; `docker/OtherDockerfile` excluded; 1,864-file
+bound; shared with ADR-3533). Reuses `fail-closed-ci-contract` hook in
+`.pre-commit-config.yaml` and `DisposableRepoTestCase` fixture isolation; no
+second path lister.
 
 Allow-list text rule, zero shell or YAML parsing:
 
@@ -28,14 +31,20 @@ Allow-list text rule, zero shell or YAML parsing:
 - Bare `apt update`, mixed-case `APT-GET UPDATE`, trailing-comment flags and
   comment mentions fail closed; reword comments to `apt index refresh` or `apt
   list refresh`.
+- Known gap: single-physical-line check; `apt-get -qq \` then next-line
+  `update` undetected (`test_known_gap_update_split_across_continuation`); 0
+  split forms in tracked tree. Keep `apt-get` and `update` on one physical
+  line.
 - Diagnostic format:
 
 ```text
 <path>:<line>: apt-get update must fail on index errors: add --error-on=any -o Acquire::Retries=3 (ADR-3537)
 ```
 
-Fixtures: positive (Dockerfile, `.sh`, workflow `run:`, missing retries,
-missing `--error-on=any`, bare `apt`, mixed case, comments), negative (flags
-before or after `update`, `apt-get install`, `.py`/`.md`, untracked, empty),
-boundary (two `update` calls on one line), planted
-(`scripts/ci/install-cuda-toolkit.sh` missing `--error-on=any`).
+Fixtures: positive (`Dockerfile`, `docker/dev/x.Dockerfile`,
+`docker/dev/x.Containerfile`, `.sh`, workflow `run:`, missing retries, missing
+`--error-on=any`, bare `apt`, mixed case, comments), negative (flags before or
+after `update`, `apt-get install`, `.py`/`.md`, `docker/OtherDockerfile`,
+untracked, empty), boundary (two `update` calls on one line), known gap
+(two-line continuation split), planted (`scripts/ci/install-cuda-toolkit.sh`
+missing `--error-on=any`).

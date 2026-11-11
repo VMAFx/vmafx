@@ -59,7 +59,8 @@ environment assignments and line continuations.
 Enforce the invariant through `AptUpdateFailClosedContract`
 (`apt_update_problems` and `apt_update_contract_problems`) in
 `scripts/ci/test_fail_closed_ci.py`, reusing `ci_text_paths` and the existing
-`fail-closed-ci-contract` pre-commit hook without YAML or shell parsing.
+`fail-closed-ci-contract` pre-commit hook without YAML or shell parsing, and
+widening both to include `.Dockerfile` and `.Containerfile` suffixes.
 
 ## Alternatives considered
 
@@ -76,11 +77,16 @@ Enforce the invariant through `AptUpdateFailClosedContract`
   immediately at `apt-get update` with exit `100` and the resolver or HTTP
   diagnostic, never proceeding to `apt-get install` with missing index lists.
 - `AptUpdateFailClosedContract` scans `ci_text_paths(ROOT)` (tracked `.yml`,
-  `.yaml`, `.sh` and `.bash` suffixes plus basenames starting with `Dockerfile`
-  or `Containerfile`). Any physical line matching
-  `\bapt(?:-get)?\b[^\n]*\bupdate\b` case-insensitively fails unless it is a
-  non-comment lowercase `apt-get` call in which every `update` clause on the
-  line carries both `--error-on=any` and `-o Acquire::Retries=<N>` (`N >= 1`).
+  `.yaml`, `.sh`, `.bash`, `.Dockerfile` and `.Containerfile` suffixes plus
+  basenames starting with `Dockerfile` or `Containerfile`, keeping paths
+  without a dot suffix such as `docker/OtherDockerfile` excluded). Adding
+  `.Dockerfile` and `.Containerfile` widens the shared `ci_text_paths` listing
+  and `fail-closed-ci-contract` hook trigger, so the [ADR-3533][adr-3533]
+  Launchpad PPA ban covers them too while retaining the 1,864-file bound. Any
+  physical line matching `\bapt(?:-get)?\b[^\n]*\bupdate\b` case-insensitively
+  fails unless it is a non-comment lowercase `apt-get` call in which every
+  `update` clause on the line carries both `--error-on=any` and
+  `-o Acquire::Retries=<N>` (`N >= 1`).
 - Bare `apt update`, mixed-case `APT-GET UPDATE`, and comments that write
   literal `apt-get ... update` text fail closed. Comments describing index
   refreshes avoid matching `\bapt(?:-get)?\b[^\n]*\bupdate\b`.
@@ -90,7 +96,12 @@ Enforce the invariant through `AptUpdateFailClosedContract`
   <path>:<line>: apt-get update must fail on index errors: add --error-on=any -o Acquire::Retries=3 (ADR-3537)
   ```
 
-- Positive, negative, boundary and planted-defect tests in
+- Known gap: `apt_update_problems` inspects one physical line at a time without
+  shell continuation folding, so `apt-get -qq \` followed by `update` on the
+  next line is not detected (`test_known_gap_update_split_across_continuation`
+  in `scripts/ci/test_fail_closed_ci.py`). The tracked tree contains zero such
+  split forms; keep `apt-get` and `update` on the same physical line.
+- Positive, negative, boundary, known-gap and planted-defect tests in
   `scripts/ci/test_fail_closed_ci.py` share isolated disposable Git repository
   setup with `LaunchpadPPAContract`.
 
