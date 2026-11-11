@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Require a Developer Certificate of Origin sign-off on every pull request commit (ADR-2462)
-and on every squash commit landed on master (ADR-3389).
+"""Require DCO sign-offs and refuse model/tool attribution in PRs and landed commits.
+
+ADR-2462 covers pull request sign-offs; ADR-3389 covers landed squash commits.
 
 Every non-merge commit in ``BASE..HEAD`` must end with a ``Signed-off-by: Name
 <email>`` trailer (what ``git commit -s`` writes), and the e-mail address of
@@ -12,8 +13,9 @@ the middle of the message, or one for somebody else, does not count.
 On master (``--landed``), all exemptions are disabled.  Every commit must have
 a sign-off matching the commit author or the designated landing identity
 (``--landing-identity``).  Committer address is not accepted because GitHub is
-committer on every squash.  Messages must not contain bot/tool Co-authored-by
-trailers or machine-generated attribution.
+committer on every squash. Commit author/committer identities must not name a
+model or coding tool. Commit messages and pull request bodies must not carry
+banned Co-authored-by lines or machine-generated attribution.
 
 Exemptions for pull requests:
 
@@ -32,14 +34,15 @@ Usage::
 
     python3 scripts/ci/check-dco.py --base <sha> --head <sha> \\
         [--author <login> --author-type <User|Bot>] [--release-pr] \\
-        [--created-at <ISO 8601>] [--cutoff-file <path>]
+        [--created-at <ISO 8601>] [--cutoff-file <path>] [--pr-body-file <path>]
 
     python3 scripts/ci/check-dco.py --landed --landing-identity "Name <email>" \\
         --base <sha> --head <sha>
 
 ``BASE_SHA``, ``HEAD_SHA``, ``PR_AUTHOR``, ``PR_AUTHOR_TYPE``,
 ``DCO_RELEASE_PR``, ``PR_CREATED_AT`` and ``LANDING_IDENTITY`` are read when the flags
-are absent.  Exit status: 0 every commit passes, 1 at least one does not, 2 usage or git error.
+are absent. ``PR_BODY`` supplies the pull request body unless ``--pr-body-file`` is set.
+Exit status: 0 all checks pass, 1 attribution or sign-off fails, 2 usage or git error.
 """
 
 from __future__ import annotations
@@ -63,10 +66,9 @@ MAX_COMMITS = 5000
 # list in docs/development/dco.md in step with this one.
 BOT_LOGINS = ("renovate[bot]", "dependabot[bot]", "github-actions[bot]")
 
-# Praetor (from Latin praetor, magistrate: the fleet's standards engine) enforces
-# the fleet-wide commit message invariants.  This list matches the fleet-level check
-# in praetor tools/planning/commit_msg_check.py for disallowed tool and bot identities
-# in Co-authored-by trailers.
+# Keep tokens synchronized with praetor tools/planning/commit_msg_check.py
+# BANNED_COAUTHORS and engine internal/forge/commit_message.go bannedCoauthorsRegex;
+# a token change lands in all three.
 # On GitHub squash merges, GitHub (noreply@github.com) is the committer on every
 # landed commit, so committer identity cannot authorize a commit sign-off; only
 # the commit author or the designated landing identity is accepted.
@@ -93,8 +95,8 @@ GENERATED_LINE_RE = re.compile(
 SIGNOFF_RE = re.compile(r"^signed-off-by:\s+(.+?)\s+<([^<>\s]+@[^<>\s]+)>\s*$", re.IGNORECASE)
 FIELD_SEP = "\x1f"
 RECORD_SEP = "\x1e"
-LOG_FIELDS = 5  # sha, author e-mail, committer e-mail, subject, body
-LOG_FORMAT = FIELD_SEP.join(["%H", "%ae", "%ce", "%s", "%B"]) + RECORD_SEP
+LOG_FIELDS = 7  # sha, author name/e-mail, committer name/e-mail, subject, body
+LOG_FORMAT = FIELD_SEP.join(["%H", "%an", "%ae", "%cn", "%ce", "%s", "%B"]) + RECORD_SEP
 
 
 class UsageError(Exception):
@@ -104,7 +106,9 @@ class UsageError(Exception):
 @dataclass(frozen=True)
 class Commit:
     sha: str
+    author_name: str
     author_email: str
+    committer_name: str
     committer_email: str
     subject: str
     message: str
@@ -137,7 +141,7 @@ def parse_commits(out: str) -> list[Commit]:
         fields = record.lstrip("\n").split(FIELD_SEP, LOG_FIELDS - 1)
         if len(fields) != LOG_FIELDS:
             raise UsageError(f"unparseable git log record: {record[:80]!r}")
-        commits.append(Commit(fields[0], fields[1], fields[2], fields[3], fields[4]))
+        commits.append(Commit(*fields))
     if len(commits) > MAX_COMMITS:
         raise UsageError(f"{len(commits)} commits exceed the bound of {MAX_COMMITS}")
     return commits
@@ -203,6 +207,9 @@ def is_exempt_bot_commit(commit: Commit, author: str, author_type: str) -> bool:
 
 def judge(commit: Commit, author: str, author_type: str) -> str | None:
     """Return None when the commit passes, else the reason it does not."""
+    reason = commit_attribution_reason(commit)
+    if reason:
+        return reason
     if is_exempt_bot_commit(commit, author, author_type):
         return None
     emails = signoff_emails(commit.message)
@@ -232,14 +239,38 @@ def check_machine_attribution(line: str) -> bool:
     return bool(GENERATED_LINE_RE.match(line.strip()) or "\U0001f916" in line)
 
 
+def line_attribution_reason(line: str, source: str) -> str | None:
+    """Apply the same message and PR body attribution rules to one line."""
+    token = check_banned_coauthor(line)
+    if token:
+        return f"disallowed Co-authored-by trailer ({token})"
+    if check_machine_attribution(line):
+        return f"{source} contains machine-generated attribution"
+    return None
+
+
+def commit_attribution_reason(commit: Commit) -> str | None:
+    """Return the first forbidden identity or message attribution for a commit."""
+    for role, name, email in (
+        ("author", commit.author_name, commit.author_email),
+        ("committer", commit.committer_name, commit.committer_email),
+    ):
+        identity = f"{name} <{email}>".lower()
+        for candidate in BANNED_COAUTHOR_TOKENS:
+            if candidate != "[bot]" and candidate in identity:
+                return f"{role} identity names a model or coding tool ({candidate})"
+    for line in commit.message.splitlines():
+        reason = line_attribution_reason(line, "message")
+        if reason:
+            return reason
+    return None
+
+
 def judge_landed(commit: Commit, landing_email: str) -> str | None:
     """Judge a commit on master: refuse bot co-authors, generated trailers, and bad sign-offs."""
-    for line in commit.message.splitlines():
-        token = check_banned_coauthor(line)
-        if token:
-            return f"disallowed Co-authored-by trailer ({token})"
-        if check_machine_attribution(line):
-            return "message contains machine-generated attribution"
+    reason = commit_attribution_reason(commit)
+    if reason:
+        return reason
     emails = signoff_emails(commit.message)
     if not emails:
         return "no 'Signed-off-by: Name <email>' trailer"
@@ -257,23 +288,38 @@ def extract_email(identity: str) -> str:
     return identity.strip().lower()
 
 
+def is_signoff_reason(reason: str) -> bool:
+    """Distinguish sign-off failures from attribution failures for repair advice."""
+    return reason.startswith(("no 'Signed-off-by:", "sign-off ("))
+
+
 def report(failures: list[tuple[Commit, str]], landed: bool = False) -> None:
     for commit, reason in failures:
-        print(f"::error title=DCO sign-off::{commit.sha[:10]} {commit.subject}: {reason}")
+        title = "DCO sign-off" if is_signoff_reason(reason) else "DCO attribution"
+        print(f"::error title={title}::{commit.sha[:10]} {commit.subject}: {reason}")
     print("")
+    signoff_failed = any(is_signoff_reason(reason) for _, reason in failures)
+    attribution_failed = any(not is_signoff_reason(reason) for _, reason in failures)
     if landed:
         print(f"dco: {len(failures)} landed commit(s) refused.")
-        print("  Landed commit check (ADR-3389): squash merge requires an explicit body file")
-        print(
-            "  (--body-file / -F) containing commit body and sign-off, without bot Co-authored-by."
-        )
+        if signoff_failed:
+            print("  Landed commit check (ADR-3389): squash merge requires an explicit body file")
+            print("  (--body-file / -F) containing commit body and sign-off.")
         print("  Alarm: commit already on master; published history is not rewritten.")
     else:
-        print(f"dco: {len(failures)} commit(s) without a valid sign-off.")
-        print("  Add the sign-off to each commit of the branch, then push again:")
-        print("    git rebase --signoff $(git merge-base origin/master HEAD)")
-        print("  New commits: git commit -s   (keep the trailers when squashing)")
-    print("  What the sign-off certifies: CONTRIBUTING.md#developer-certificate-of-origin")
+        print(f"dco: {len(failures)} commit(s) refused.")
+        if signoff_failed:
+            print("  Add the sign-off to each affected commit, then push again:")
+            print("    git rebase --signoff $(git merge-base origin/master HEAD)")
+            print("  New commits: git commit -s   (keep the trailers when squashing)")
+    if attribution_failed and landed:
+        print("  The squash body or author identity carried model/tool attribution;")
+        print("  fix the landing tool's body file and author before the next merge.")
+    elif attribution_failed:
+        print("  Remove model/tool trailers or generated footers; re-author affected commits")
+        print("  as yourself, and edit the pull request body to remove attribution.")
+    if signoff_failed:
+        print("  What the sign-off certifies: CONTRIBUTING.md#developer-certificate-of-origin")
 
 
 def parse_time(text: str, what: str) -> datetime:
@@ -302,6 +348,26 @@ def grandfathered(created_at: str, cutoff_file: Path) -> bool:
     if not created_at:
         return False
     return parse_time(created_at, "created-at") < read_cutoff(cutoff_file)
+
+
+def read_pr_body(args: argparse.Namespace) -> str:
+    """Read the optional PR body, giving an explicit file priority over the environment."""
+    if not args.pr_body_file:
+        return str(args.pr_body)
+    try:
+        return Path(args.pr_body_file).read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise UsageError(f"PR body file {args.pr_body_file}: {exc}") from exc
+
+
+def pr_body_attribution(body: str) -> list[tuple[int, str]]:
+    """Return forbidden PR body lines with one-based line numbers."""
+    findings = []
+    for number, line in enumerate(body.splitlines(), start=1):
+        reason = line_attribution_reason(line, "PR body")
+        if reason:
+            findings.append((number, reason))
+    return findings
 
 
 def check_landed(args: argparse.Namespace) -> int:
@@ -335,6 +401,7 @@ def check_pr(args: argparse.Namespace) -> int:
     if grandfathered(args.created_at, Path(args.cutoff_file)):
         print(f"dco: pull request created {args.created_at}, before the cutoff; grandfathered.")
         return 0
+    body_findings = pr_body_attribution(read_pr_body(args))
     commits = list_commits(args.base, args.head)
     failures = []
     for commit in commits:
@@ -342,7 +409,12 @@ def check_pr(args: argparse.Namespace) -> int:
         if reason is not None:
             failures.append((commit, reason))
     if failures:
-        report(failures, landed=False)
+        report(failures)
+    for number, reason in body_findings:
+        print(f"::error title=PR body attribution::line {number}: {reason}")
+    if body_findings:
+        print("  Edit the pull request body to remove model/tool attribution.")
+    if failures or body_findings:
         return 1
     print(f"dco: PASS - {len(commits)} commit(s), every one signed off or exempt.")
     return 0
@@ -363,6 +435,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--author-type", default=env("PR_AUTHOR_TYPE", ""))
     parser.add_argument("--created-at", default=env("PR_CREATED_AT", ""))
     parser.add_argument("--cutoff-file", default=str(DEFAULT_CUTOFF_FILE))
+    parser.add_argument("--pr-body-file", default="")
+    parser.set_defaults(pr_body=env("PR_BODY", ""))
     parser.add_argument(
         "--release-pr", action="store_true", default=env("DCO_RELEASE_PR", "") == "true"
     )

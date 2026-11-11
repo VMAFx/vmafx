@@ -486,6 +486,8 @@ jobs:
           # ADR-2462 rollout: older pull requests are grandfathered by the
           # cutoff in scripts/ci/dco-cutoff.txt.
           PR_CREATED_AT: ${{ github.event.pull_request.created_at }}
+          # Body edits rerun this gate; pass text as data, never shell code.
+          PR_BODY: ${{ github.event.pull_request.body }}
         # Single source of truth lives in scripts/ci/check-dco.py so a
         # developer can run the identical gate before `gh pr create`:
         # `python3 scripts/ci/check-dco.py --base origin/master --head HEAD`.
