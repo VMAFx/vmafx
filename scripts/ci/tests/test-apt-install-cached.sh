@@ -79,7 +79,7 @@ mkdir -p "$tmp/runner/apt-archives"
 : >"$tmp/runner/apt-archives/cached.deb"
 run "install with warm cache" 0 install "$tmp/list.txt" --no-install-recommends
 check "retry config written" 'Acquire::Retries "3"'
-check "apt-get update ran" '^sudo apt-get update$'
+check "apt index refresh ran" '^sudo apt-get --error-on=any -o Acquire::Retries=3 update$'
 check "packages and args reach apt" '^sudo apt-get install -y --no-install-recommends pkg-a pkg-b$'
 refute "comment line not installed" 'install.*# comment'
 check "cache restored before install" "^sudo cp -f $tmp/runner/apt-archives/cached.deb $tmp/archives/$"

@@ -91,13 +91,13 @@ jobs:
         run: |
           # Drop the hosted runner's pre-provisioned Microsoft/Azure apt
           # sources before updating; they intermittently 403 and fail
-          # `apt-get update` with exit 100. See T-CI-APT-MS-REPO-FLAKE.
+          # apt index refreshes with exit 100. See T-CI-APT-MS-REPO-FLAKE.
           # rm -f succeeds when a pattern matches nothing.
           sudo rm -f /etc/apt/sources.list.d/*microsoft* \
                      /etc/apt/sources.list.d/*azure*
           printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
             | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
-          sudo apt-get update
+          sudo apt-get --error-on=any -o Acquire::Retries=3 update
           mkdir -p "${RUNNER_TEMP}/apt-archives"
           if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
             sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/

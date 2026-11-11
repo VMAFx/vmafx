@@ -218,7 +218,7 @@ ensure_clang_tidy() {
     die "apt.llvm.org key does not match the pinned SHA-256; refusing to install"
   printf 'deb [signed-by=%s] https://apt.llvm.org/%s/ llvm-toolchain-%s-%s main\n' \
     "$key" "$codename" "$codename" "$CLANG_TIDY_MAJOR" >/etc/apt/sources.list.d/llvm-tidy.list
-  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get --error-on=any -o Acquire::Retries=3 update -qq
   DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
     "clang-tidy-${CLANG_TIDY_MAJOR}" >/dev/null
   "$CLANG_TIDY_BIN_PATH" --version | grep -qF "LLVM version ${CLANG_TIDY_MAJOR}." ||
@@ -234,7 +234,7 @@ ensure_clang_compiler() {
     ls /usr/lib/llvm-${CLANG_TIDY_MAJOR}/lib/clang/*/lib/linux/libclang_rt.fuzzer-*.a >/dev/null 2>&1; then
     return 0
   fi
-  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get --error-on=any -o Acquire::Retries=3 update -qq
   DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
     "clang-${CLANG_TIDY_MAJOR}" "libclang-rt-${CLANG_TIDY_MAJOR}-dev" >/dev/null
   command -v "clang-${CLANG_TIDY_MAJOR}" >/dev/null ||
@@ -249,7 +249,7 @@ have_cross_toolchain() {
 # skips the download.
 ensure_cross_toolchain() {
   have_cross_toolchain && return 0
-  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get --error-on=any -o Acquire::Retries=3 update -qq
   # shellcheck disable=SC2086  # a fixed list of package names
   DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
     $CROSS_PACKAGES >/dev/null
@@ -266,7 +266,7 @@ have_gstreamer_dev() {
 # image that carries them skips the download.
 ensure_gstreamer_dev() {
   have_gstreamer_dev && return 0
-  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get --error-on=any -o Acquire::Retries=3 update -qq
   # shellcheck disable=SC2086  # a fixed list of package names
   DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
     $GSTREAMER_PACKAGES >/dev/null
@@ -278,7 +278,7 @@ ensure_gstreamer_dev() {
 # its cross sysroot has no arm64 zimg.
 ensure_zimg_dev() {
   pkg-config --exists 'zimg >= 2.7' && return 0
-  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get --error-on=any -o Acquire::Retries=3 update -qq
   # shellcheck disable=SC2086  # a fixed list of package names
   DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
     $ZIMG_PACKAGES >/dev/null
@@ -308,7 +308,7 @@ ensure_rust_toolchain() {
   export PATH="$CARGO_HOME/bin:$PATH" RUSTUP_TOOLCHAIN="$version"
   have_rust_toolchain "$version" && return 0
   if ! command -v rustup >/dev/null; then
-    DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get --error-on=any -o Acquire::Retries=3 update -qq
     DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
       rustup >/dev/null
   fi

@@ -9,7 +9,7 @@
 #       write the retry/timeout apt config only (for steps that add a repo
 #       before installing)
 #   apt-install-cached.sh install LIST [APT_ARGS...]
-#       configure, apt-get update, restore the archive cache, install every
+#       configure, refresh apt lists, restore the archive cache, install every
 #       non-comment line of LIST, and copy the archives back for the save step
 set -euo pipefail
 
@@ -33,7 +33,7 @@ install_list() {
   local cache="${RUNNER_TEMP:?RUNNER_TEMP is not set}/apt-archives"
   local archives="${APT_ARCHIVE_DIR:-/var/cache/apt/archives}"
   write_apt_config
-  sudo apt-get update
+  sudo apt-get --error-on=any -o Acquire::Retries=3 update
   mkdir -p "$cache"
   if compgen -G "$cache/*.deb" >/dev/null; then
     sudo cp -f "$cache"/*.deb "$archives/"

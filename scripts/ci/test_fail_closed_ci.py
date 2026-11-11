@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
 from unittest import mock
@@ -36,6 +37,16 @@ MAX_CI_TEXT_FILES = 1_864
 PPA_SOURCE_TEXT = re.compile(
     r"add-apt-repository|apt-add-repository|\bppa:|ppa\.launchpad(?:content)?\.net",
     re.IGNORECASE,
+)
+APT_UPDATE_LINE = re.compile(r"\bapt(?:-get)?\b[^\n]*\bupdate\b", re.IGNORECASE)
+APT_COMMAND_TOKEN = re.compile(r"\bapt(?:-get)?\b", re.IGNORECASE)
+APT_GET_PREFIX = re.compile(r"apt-get\s")
+APT_WORD_UPDATE = re.compile(r"\bupdate\b", re.IGNORECASE)
+APT_EXACT_UPDATE = re.compile(r"(?:^|\s)update(?=$|\s|[\\'\"$])")
+APT_ERROR_ON_ANY = re.compile(r"\s--error-on=any(?=$|\s|[\\'\"$])")
+APT_ACQUIRE_RETRIES = re.compile(r"\s-o\s*['\"]?Acquire::Retries=[1-9]\d*(?=$|\s|[\\'\"$])")
+APT_UPDATE_MESSAGE = (
+    "apt-get update must fail on index errors: add --error-on=any -o Acquire::Retries=3 (ADR-3537)"
 )
 
 
@@ -161,22 +172,68 @@ def ci_text_paths(root: Path) -> list[Path]:
     return sorted(paths)
 
 
-def launchpad_ppa_problems(root: Path) -> list[str]:
-    """Ban registration text in tracked sources; report skipped non-regular paths."""
+def _is_compliant_apt_update_clause(clause: str) -> bool:
+    """Return True when one apt-get clause refreshes indices with error-on and retries."""
+    return (
+        APT_GET_PREFIX.match(clause) is not None
+        and APT_EXACT_UPDATE.search(clause) is not None
+        and APT_ERROR_ON_ANY.search(clause) is not None
+        and APT_ACQUIRE_RETRIES.search(clause) is not None
+    )
+
+
+def _is_compliant_apt_update_line(line: str) -> bool:
+    """Return True only when every apt update mention on a physical line is compliant."""
+    if line.lstrip().startswith("#"):
+        return False
+    starts = [match.start() for match in APT_COMMAND_TOKEN.finditer(line)]
+    if not starts or "#" in line[: starts[0]]:
+        return False
+    saw_update = False
+    for index, start in enumerate(starts):
+        end = starts[index + 1] if index + 1 < len(starts) else len(line)
+        clause = re.split(r"[;&|#]", line[start:end], maxsplit=1)[0]
+        if APT_WORD_UPDATE.search(clause) is None:
+            continue
+        if not _is_compliant_apt_update_clause(clause):
+            return False
+        saw_update = True
+    return saw_update
+
+
+def apt_update_problems(path: Path, text: str) -> list[str]:
+    """Reject apt index refresh lines lacking --error-on=any and Acquire::Retries."""
+    problems: list[str] = []
+    for number, line in enumerate(text.splitlines(), 1):
+        if APT_UPDATE_LINE.search(line) is not None and not _is_compliant_apt_update_line(line):
+            problems.append(f"{path.as_posix()}:{number}: {APT_UPDATE_MESSAGE}")
+    return problems
+
+
+def _scan_ci_text(root: Path, check: Callable[[Path, str], list[str]]) -> list[str]:
+    """Run one pure line check across tracked CI text files, reporting non-regular skips."""
     problems: list[str] = []
     for path in ci_text_paths(root):
         relative = path.relative_to(root)
         if not path.is_file(follow_symlinks=False):
             print(f"{relative}: skipped tracked non-regular file", file=sys.stderr)
             continue
-        problems.extend(
-            ppa_text_problems(relative, path.read_text(encoding="utf-8", errors="replace"))
-        )
+        problems.extend(check(relative, path.read_text(encoding="utf-8", errors="replace")))
     return problems
 
 
-class LaunchpadPPAContract(unittest.TestCase):
-    """Keep tracked installation sources independent of live Launchpad registration."""
+def launchpad_ppa_problems(root: Path) -> list[str]:
+    """Ban registration text in tracked sources; report skipped non-regular paths."""
+    return _scan_ci_text(root, ppa_text_problems)
+
+
+def apt_update_contract_problems(root: Path) -> list[str]:
+    """Require fail-closed flags on apt index refreshes across tracked CI text files."""
+    return _scan_ci_text(root, apt_update_problems)
+
+
+class DisposableRepoTestCase(unittest.TestCase):
+    """Provide an isolated temporary Git repository for tracked-path contract tests."""
 
     def setUp(self) -> None:
         """Create disposable Git state isolated from caller repository and configuration."""
@@ -210,6 +267,10 @@ class LaunchpadPPAContract(unittest.TestCase):
         self.git_run(
             self.git_argv("add", "--", *files), check=True, capture_output=True, timeout=10
         )
+
+
+class LaunchpadPPAContract(DisposableRepoTestCase):
+    """Keep tracked installation sources independent of live Launchpad registration."""
 
     def test_current_tree_has_no_registration_text(self) -> None:
         """Every tracked installation source must satisfy ADR-3533."""
@@ -433,6 +494,120 @@ class LaunchpadPPAContract(unittest.TestCase):
         )
         with self.assertRaisesRegex(AssertionError, rf"lint-and-format\.yml:{line}:"):
             self.assertEqual(problems, [], "\n".join(problems))
+
+
+class AptUpdateFailClosedContract(DisposableRepoTestCase):
+    """Require fail-closed index refresh flags on tracked apt-get update invocations."""
+
+    def test_current_tree_apt_updates_fail_closed(self) -> None:
+        """Every tracked apt index refresh must satisfy ADR-3537."""
+        problems = apt_update_contract_problems(ROOT)
+        self.assertEqual(problems, [], "\n".join(problems))
+
+    def test_positive_non_compliant_update_forms(self) -> None:
+        """Reject missing flags, bare apt, mixed case and comment mentions with exact path:line."""
+        cases = (
+            ("Dockerfile", "FROM ubuntu:26.04\nRUN apt-get update && apt-get install -y x\n", 2),
+            ("scripts/ci/setup.sh", "#!/usr/bin/env bash\n$SUDO apt-get update -qq\n", 2),
+            (".github/workflows/ci.yml", "steps:\n  - run: sudo apt-get update\n", 2),
+            ("scripts/no-retries.sh", "apt-get update --error-on=any\n", 1),
+            ("scripts/no-error-on.sh", "apt-get -o Acquire::Retries=3 update\n", 1),
+            ("scripts/bare-apt.sh", "apt update\n", 1),
+            ("scripts/bare-apt-flags.sh", "apt --error-on=any -o Acquire::Retries=3 update\n", 1),
+            ("scripts/mixed-case.sh", "APT-GET UPDATE\n", 1),
+            (
+                "scripts/mixed-case-flags.sh",
+                "APT-GET --error-on=any -o Acquire::Retries=3 UPDATE\n",
+                1,
+            ),
+            ("scripts/comment.sh", "# run apt-get update before installing\n", 1),
+            (
+                "scripts/commented-flags.sh",
+                "# apt-get --error-on=any -o Acquire::Retries=3 update\n",
+                1,
+            ),
+            (
+                "scripts/trailing-comment.sh",
+                "apt-get update # --error-on=any -o Acquire::Retries=3\n",
+                1,
+            ),
+        )
+        for relative, content, line in cases:
+            with self.subTest(path=relative):
+                expected = [f"{relative}:{line}: {APT_UPDATE_MESSAGE}"]
+                self.assertEqual(apt_update_problems(Path(relative), content), expected)
+        self.track({relative: content for relative, content, _ in cases})
+        expected_all = [
+            f"{relative}:{line}: {APT_UPDATE_MESSAGE}"
+            for relative, _, line in sorted(cases, key=lambda item: item[0])
+        ]
+        self.assertEqual(apt_update_contract_problems(self.root), expected_all)
+
+    def test_negative_compliant_forms_and_out_of_scope_files(self) -> None:
+        """Allow options before or after update, installs, empty files and out-of-scope paths."""
+        self.track(
+            {
+                "Dockerfile": (
+                    "FROM ubuntu:26.04\n"
+                    "RUN apt-get --error-on=any -o Acquire::Retries=3 update \\\n"
+                    "    && apt-get install -y --no-install-recommends curl\n"
+                    "RUN apt-get update --error-on=any -o Acquire::Retries=3 && apt-get install -y git\n"
+                ),
+                "scripts/ci/setup.sh": (
+                    "$SUDO apt-get -o Acquire::Retries=3 --error-on=any update -qq\n"
+                    "$SUDO apt-get update -qq --error-on=any -o Acquire::Retries=3\n"
+                    "DEBIAN_FRONTEND=noninteractive apt-get --error-on=any -o Acquire::Retries=3 update -qq\n"
+                    "apt-get install -y --no-install-recommends ca-certificates\n"
+                ),
+                ".github/workflows/ci.yml": (
+                    "steps:\n" "  - run: sudo apt-get --error-on=any -o Acquire::Retries=3 update\n"
+                ),
+                "empty.yaml": "",
+                "docs/guide.md": "apt-get update\n",
+                "scripts/helper.py": "cmd = 'apt-get update'\n",
+            }
+        )
+        (self.root / "untracked.sh").write_text("apt-get update\n", encoding="utf-8")
+        self.assertEqual(apt_update_contract_problems(self.root), [])
+
+    def test_boundary_two_updates_on_one_line(self) -> None:
+        """Reject a line holding two update calls unless both carry fail-closed flags."""
+        for text in (
+            "apt-get update && apt-get --error-on=any -o Acquire::Retries=3 update\n",
+            "apt-get --error-on=any -o Acquire::Retries=3 update && apt-get update\n",
+            "apt-get --error-on=any -o Acquire::Retries=3 update; apt update\n",
+        ):
+            with self.subTest(text=text):
+                self.track({"boundary.sh": text})
+                self.assertEqual(
+                    apt_update_contract_problems(self.root),
+                    [f"boundary.sh:1: {APT_UPDATE_MESSAGE}"],
+                )
+        both_compliant = (
+            "apt-get --error-on=any -o Acquire::Retries=3 update "
+            "&& apt-get update --error-on=any -o Acquire::Retries=3\n"
+        )
+        self.track({"boundary.sh": both_compliant})
+        self.assertEqual(apt_update_contract_problems(self.root), [])
+
+    def test_planted_cuda_installer_without_error_on_fails_contract(self) -> None:
+        """Removing --error-on=any from install-cuda-toolkit.sh fails at that file and line."""
+        relative = "scripts/ci/install-cuda-toolkit.sh"
+        content = (ROOT / relative).read_text(encoding="utf-8")
+        self.assertIn(" --error-on=any", content)
+        mutated = content.replace(" --error-on=any", "", 1)
+        line = next(
+            number
+            for number, (before, after) in enumerate(
+                zip(content.splitlines(), mutated.splitlines(), strict=True), 1
+            )
+            if before != after
+        )
+        self.track({relative: mutated})
+        self.assertEqual(
+            apt_update_contract_problems(self.root),
+            [f"{relative}:{line}: {APT_UPDATE_MESSAGE}"],
+        )
 
 
 class FailClosedCIContract(unittest.TestCase):

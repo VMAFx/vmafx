@@ -239,7 +239,7 @@ jobs:
         run: |
           printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
             | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
-          sudo apt-get update
+          sudo apt-get --error-on=any -o Acquire::Retries=3 update
           mkdir -p "${RUNNER_TEMP}/apt-archives"
           if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
             sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/

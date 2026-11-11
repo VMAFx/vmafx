@@ -16,10 +16,10 @@ runs:
       shell: bash
       run: |
         # The hosted runner ships pre-provisioned Microsoft/Azure apt sources
-        # that intermittently fail `apt-get update`; the build needs none.
+        # that intermittently fail apt index refreshes; the build needs none.
         sudo rm -f /etc/apt/sources.list.d/*microsoft* \
                    /etc/apt/sources.list.d/*azure*
-        sudo apt-get update -qq
+        sudo apt-get --error-on=any -o Acquire::Retries=3 update -qq
         sudo apt-get install -y --no-install-recommends clang-19 llvm-19 libbpf-dev
     - name: Generate the object (pinned clang)
       shell: bash
