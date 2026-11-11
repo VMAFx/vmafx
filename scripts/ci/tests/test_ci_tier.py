@@ -24,6 +24,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import ci_tier
+from scripts.lib.safe_subprocess import run as run_command
 
 CONFIG = ci_tier.load_config()
 REPO = "VMAFx/vmafx"
@@ -494,6 +495,7 @@ class Config(unittest.TestCase):
         missing = {k: v for k, v in CONFIG.items() if k != "full_paths"}
         with self.assertRaises(ci_tier.TierError):
             ci_tier.load_config(self.write(json.dumps(missing)))
+        invalid: object
         for invalid in (
             "scripts/lib/safe_subprocess.py",
             123,
@@ -595,7 +597,7 @@ class FullPathsDrift(unittest.TestCase):
         git = ci_tier.GIT
         if git is None:
             self.fail("git executable not found")
-        ci_tier.run_command(
+        run_command(
             [git, "-C", str(root), *args],
             allowed_executables=(git,),
             env=self._git_env(),
