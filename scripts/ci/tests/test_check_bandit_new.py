@@ -17,7 +17,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import yaml
+import yaml  # type: ignore[import-untyped]  # no PyYAML stubs in the hook environment
 from identify.identify import tags_from_filename
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
