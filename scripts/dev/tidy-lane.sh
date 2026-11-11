@@ -213,13 +213,13 @@ ensure_clang_tidy() {
   local key=/etc/apt/trusted.gpg.d/apt.llvm.org.asc codename
   # shellcheck disable=SC1091  # the image's own os-release
   codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
-  curl -fsSL --retry 3 --max-time 60 "$LLVM_APT_SIGNER_URL" -o "$key"
+  curl -fsSL --retry 3 --retry-all-errors --max-time 60 "$LLVM_APT_SIGNER_URL" -o "$key"
   printf '%s  %s\n' "$LLVM_APT_SIGNER_SHA256" "$key" | sha256sum --check --status ||
     die "apt.llvm.org key does not match the pinned SHA-256; refusing to install"
   printf 'deb [signed-by=%s] https://apt.llvm.org/%s/ llvm-toolchain-%s-%s main\n' \
     "$key" "$codename" "$codename" "$CLANG_TIDY_MAJOR" >/etc/apt/sources.list.d/llvm-tidy.list
-  DEBIAN_FRONTEND=noninteractive apt-get update -qq
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
     "clang-tidy-${CLANG_TIDY_MAJOR}" >/dev/null
   "$CLANG_TIDY_BIN_PATH" --version | grep -qF "LLVM version ${CLANG_TIDY_MAJOR}." ||
     die "clang-tidy ${CLANG_TIDY_MAJOR} did not install"
@@ -234,8 +234,8 @@ ensure_clang_compiler() {
     ls /usr/lib/llvm-${CLANG_TIDY_MAJOR}/lib/clang/*/lib/linux/libclang_rt.fuzzer-*.a >/dev/null 2>&1; then
     return 0
   fi
-  DEBIAN_FRONTEND=noninteractive apt-get update -qq
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
     "clang-${CLANG_TIDY_MAJOR}" "libclang-rt-${CLANG_TIDY_MAJOR}-dev" >/dev/null
   command -v "clang-${CLANG_TIDY_MAJOR}" >/dev/null ||
     die "clang-${CLANG_TIDY_MAJOR} did not install"
@@ -249,9 +249,9 @@ have_cross_toolchain() {
 # skips the download.
 ensure_cross_toolchain() {
   have_cross_toolchain && return 0
-  DEBIAN_FRONTEND=noninteractive apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -qq
   # shellcheck disable=SC2086  # a fixed list of package names
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
     $CROSS_PACKAGES >/dev/null
   have_cross_toolchain || die "the aarch64 cross toolchain did not install"
 }
@@ -266,9 +266,9 @@ have_gstreamer_dev() {
 # image that carries them skips the download.
 ensure_gstreamer_dev() {
   have_gstreamer_dev && return 0
-  DEBIAN_FRONTEND=noninteractive apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -qq
   # shellcheck disable=SC2086  # a fixed list of package names
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
     $GSTREAMER_PACKAGES >/dev/null
   have_gstreamer_dev || die "the GStreamer development files did not install"
 }
@@ -278,9 +278,9 @@ ensure_gstreamer_dev() {
 # its cross sysroot has no arm64 zimg.
 ensure_zimg_dev() {
   pkg-config --exists 'zimg >= 2.7' && return 0
-  DEBIAN_FRONTEND=noninteractive apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -qq
   # shellcheck disable=SC2086  # a fixed list of package names
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
     $ZIMG_PACKAGES >/dev/null
   pkg-config --exists 'zimg >= 2.7' || die "zimg's development files did not install"
 }
@@ -308,8 +308,8 @@ ensure_rust_toolchain() {
   export PATH="$CARGO_HOME/bin:$PATH" RUSTUP_TOOLCHAIN="$version"
   have_rust_toolchain "$version" && return 0
   if ! command -v rustup >/dev/null; then
-    DEBIAN_FRONTEND=noninteractive apt-get update -qq
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+    DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
       rustup >/dev/null
   fi
   rustup toolchain install "$version" --profile minimal >/dev/null
