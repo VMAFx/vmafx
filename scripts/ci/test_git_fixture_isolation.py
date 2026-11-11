@@ -1256,6 +1256,7 @@ class GitFixtureIsolation(unittest.TestCase):
                 self.assertTrue(unisolated_git(name, text), "no longer needed: remove it")
 
     def test_isolation_rule_refuses_planted_unisolated_fixtures(self) -> None:
+        """Verify unisolated_git flags unisolated code and passes isolated or harmless snippets."""
         planted = {
             "t.sh": (
                 'cd "$tmp"\ngit init -q\n',

@@ -64,6 +64,7 @@ def framework_block(stage: str) -> str:
 
 class InstallHooksEnvTests(unittest.TestCase):
     def setUp(self) -> None:
+        """Prepare an isolated test environment with clean Git config and a probe hook fixture."""
         missing = [tool for tool in TOOLS if shutil.which(tool) is None]
         if missing:
             self.skipTest(f"needs {', '.join(missing)} on PATH; the contract is not exercised")
