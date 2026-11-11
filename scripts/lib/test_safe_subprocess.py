@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 import unittest
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any, cast
 from unittest import mock
@@ -821,6 +821,215 @@ class ExecutableLinkTrustTests(unittest.TestCase):
         self.assertEqual(result.argv[0], str(launch))
         self.assertEqual(result.stdout.strip(), str(launch))
 
+    def same_directory_link(self, mode: int = 0o775) -> Path:
+        """Place a runnable file beside the owned link in the requested directory mode."""
+        target = self.same_directory_target(self.root)
+        self.link.unlink()
+        self.link.symlink_to(target.name)
+        self.root.chmod(mode)
+        return target
+
+    @contextlib.contextmanager
+    def darwin_flags(self, target: Path, flags: int, link_flags: int = 0) -> Iterator[None]:
+        """Inject entry flags through the real macOS reader without changing host flags."""
+        reader = safe_subprocess._darwin_entry_protected
+
+        def read_flags(entry: Path) -> bool | None:
+            """Supply only the flag reader's lstat result; retain real ownership metadata."""
+            value = flags if entry == target else link_flags
+            with mock.patch.object(os, "lstat", return_value=mock.Mock(st_flags=value)):
+                return reader(entry)
+
+        with (
+            mock.patch.object(sys, "platform", "darwin"),
+            mock.patch.object(safe_subprocess, "_darwin_entry_protected", side_effect=read_flags),
+            mock.patch.object(safe_subprocess, "_darwin_acl_allows_entries", return_value=False),
+        ):
+            yield
+
+    @contextlib.contextmanager
+    def linux_flags(
+        self, flags: int = 0, error: int | None = None, machine: str = "x86_64"
+    ) -> Iterator[mock.MagicMock]:
+        """Inject Linux ioctl replies or errors on a selected architecture, offline."""
+        reply = flags.to_bytes(ctypes.sizeof(ctypes.c_long), sys.byteorder)
+        failure = OSError(error, "planted flag-read error") if error is not None else None
+        with (
+            mock.patch.object(sys, "platform", "linux"),
+            mock.patch.object(safe_subprocess.platform, "machine", return_value=machine),
+            mock.patch.object(
+                safe_subprocess.fcntl, "ioctl", return_value=reply, side_effect=failure
+            ) as reader,
+        ):
+            yield reader
+
+    def test_darwin_protected_file_unprotected_link_launches_resolved_file(self) -> None:
+        """Each unlink/rename protection bit defeats the writable-directory exemption."""
+        target = self.same_directory_link()
+        for flag in (0x2, 0x4, 0x20000, 0x40000, 0x100000, 0x80000):
+            with self.subTest(flag=hex(flag)), self.darwin_flags(target, flag):
+                self.assert_resolved_launch(self.link, target)
+
+    def test_darwin_matching_protection_keeps_named_launch(self) -> None:
+        """Unprotected pairs and pairs protected by each flag have matching exposure."""
+        target = self.same_directory_link()
+        for flag in (0, 0x2, 0x4, 0x20000, 0x40000, 0x100000, 0x80000):
+            with self.subTest(flag=hex(flag)), self.darwin_flags(target, flag, flag):
+                self.assert_named_launch(self.link, target)
+
+    def test_darwin_protected_file_in_owned_directory_keeps_named_launch(self) -> None:
+        """Owned mode 0755 directories still protect links to immutable files."""
+        target = self.same_directory_link(0o755)
+        with self.darwin_flags(target, 0x2):
+            self.assert_named_launch(self.link, target)
+
+    def test_darwin_unreadable_flags_use_directory_trust(self) -> None:
+        """Missing or unreadable macOS flags deny only the directory exemption."""
+        target = self.same_directory_link()
+        reader = safe_subprocess._darwin_entry_protected
+        for failure in (AttributeError("st_flags"), OSError(errno.EIO, "planted flags")):
+            with (
+                self.subTest(failure=type(failure).__name__),
+                mock.patch.object(sys, "platform", "darwin"),
+                mock.patch.object(
+                    safe_subprocess, "_darwin_acl_allows_entries", return_value=False
+                ),
+                mock.patch.object(safe_subprocess, "_darwin_entry_protected", return_value=None),
+            ):
+                with mock.patch.object(os, "lstat", side_effect=failure):
+                    # Exercise the actual reader separately from link ownership lookups.
+                    self.assertIsNone(reader(self.link))
+                self.root.chmod(0o775)
+                self.assert_resolved_launch(self.link, target)
+                self.root.chmod(0o755)
+                self.assert_named_launch(self.link, target)
+
+    def test_darwin_unknown_entry_protection_denies_exemption(self) -> None:
+        """A protected peer cannot compensate for unknown resolved-file or link flags."""
+        target = self.same_directory_link()
+        for file_flags, link_flags in ((None, True), (True, None)):
+            with (
+                self.subTest(file_flags=file_flags, link_flags=link_flags),
+                mock.patch.object(sys, "platform", "darwin"),
+                mock.patch.object(
+                    safe_subprocess,
+                    "_darwin_entry_protected",
+                    side_effect=lambda entry, resolved=file_flags, link=link_flags: (
+                        resolved if entry == target else link
+                    ),
+                ),
+            ):
+                self.assert_resolved_launch(self.link, target)
+
+    def test_darwin_protected_file_checks_directory_acl(self) -> None:
+        """When the exemption is denied, ACL grants can defeat owned mode 0755."""
+        target = self.same_directory_link(0o755)
+        with (
+            self.darwin_flags(target, 0x2),
+            mock.patch.object(safe_subprocess, "_darwin_acl_allows_entries", return_value=True),
+        ):
+            self.assert_resolved_launch(self.link, target)
+
+    def test_linux_protected_file_launches_resolved_file(self) -> None:
+        """Immutable and append-only inode flags make Linux symlinks less protected."""
+        target = self.same_directory_link()
+        for flag in (0x10, 0x20):
+            with self.subTest(flag=hex(flag)), self.linux_flags(flag):
+                self.assert_resolved_launch(self.link, target)
+        self.root.chmod(0o755)
+        with self.linux_flags(0x10):
+            self.assert_named_launch(self.link, target)
+
+    def test_linux_unsupported_flags_keep_named_launch(self) -> None:
+        """Filesystems without inode flags give the file and link matching exposure."""
+        target = self.same_directory_link()
+        for error in (errno.ENOTTY, errno.EOPNOTSUPP, errno.ENOSYS, errno.EINVAL):
+            with self.subTest(error=error), self.linux_flags(error=error):
+                self.assert_named_launch(self.link, target)
+
+    def test_linux_unreadable_flags_launch_resolved_file(self) -> None:
+        """I/O and permission failures cannot authorize a writable-directory exemption."""
+        target = self.same_directory_link()
+        for error in (errno.EIO, errno.EACCES):
+            with self.subTest(error=error), self.linux_flags(error=error):
+                self.assert_resolved_launch(self.link, target)
+
+    def test_linux_unknown_ioctl_architecture_uses_directory_trust(self) -> None:
+        """Unknown ioctl layouts deny the exemption, retaining owned-directory trust."""
+        target = self.same_directory_link()
+        for machine in ("mips64", "arm", "armv7b"):
+            with self.subTest(machine=machine), self.linux_flags(machine=machine) as reader:
+                self.root.chmod(0o775)
+                self.assert_resolved_launch(self.link, target)
+                self.root.chmod(0o755)
+                self.assert_named_launch(self.link, target)
+            reader.assert_not_called()
+
+    def test_linux_flag_request_and_descriptor_are_bounded(self) -> None:
+        """Use the native-long generic request and a no-follow, nonblocking descriptor."""
+        target = self.same_directory_link()
+        original = os.open
+        for machine in ("x86_64", "aarch64", "riscv64", "armv6l", "armv7l", "armv8l", "i686"):
+            with (
+                self.subTest(machine=machine),
+                self.linux_flags(machine=machine) as reader,
+                mock.patch.object(os, "open", wraps=original) as opened,
+            ):
+                self.assertFalse(safe_subprocess._linux_file_protected(target))
+                opened.assert_called_once_with(
+                    target, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+                )
+                size = ctypes.sizeof(ctypes.c_long)
+                request = (2 << 30) | (size << 16) | (ord("f") << 8) | 1
+                reader.assert_called_once_with(mock.ANY, request, bytes(size))
+                with self.assertRaises(OSError):
+                    os.fstat(reader.call_args.args[0])
+
+    def test_linux_unreadable_descriptor_uses_directory_trust(self) -> None:
+        """Even unsupported-ioctl errnos during open leave protection unknown."""
+        target = self.same_directory_link()
+        original = os.open
+
+        def unreadable(path: Any, *args: Any, **kwargs: Any) -> int:
+            """Refuse only the protected-file descriptor, preserving child stream setup."""
+            if path == target:
+                raise OSError(errno.ENOTTY, "planted open")
+            return original(path, *args, **kwargs)
+
+        with (
+            self.linux_flags() as reader,
+            mock.patch.object(os, "open", side_effect=unreadable),
+        ):
+            self.assert_resolved_launch(self.link, target)
+            self.root.chmod(0o755)
+            self.assert_named_launch(self.link, target)
+        reader.assert_not_called()
+
+    def test_linux_malformed_flag_reply_uses_directory_trust(self) -> None:
+        """Truncated or non-byte replies cannot authorize the directory exemption."""
+        target = self.same_directory_link()
+        for reply in (b"", b"\x00", None, 0):
+            with self.subTest(reply=reply), self.linux_flags() as reader:
+                reader.return_value = reply
+                self.root.chmod(0o775)
+                self.assert_resolved_launch(self.link, target)
+                self.root.chmod(0o755)
+                self.assert_named_launch(self.link, target)
+
+    def test_two_hop_chain_reads_resolved_flags_once(self) -> None:
+        """A launch reads the resolved inode once even when two links need trust checks."""
+        target = self.same_directory_link()
+        second = self.root / "second"
+        second.symlink_to(target.name)
+        self.link.unlink()
+        self.link.symlink_to(second.name)
+        with self.linux_flags() as reader:
+            self.assertEqual(
+                safe_subprocess._checked_executable(str(self.link), (str(target),), ""),
+                (str(self.link), target),
+            )
+        reader.assert_called_once()
+
     def test_same_directory_writable_modes_keep_named_launch(self) -> None:
         """A writable link directory adds no exposure when it also contains the file."""
         target = self.same_directory_target(self.root)
@@ -900,6 +1109,7 @@ class ExecutableLinkTrustTests(unittest.TestCase):
         self.link.symlink_to(target.name)
         with (
             mock.patch.object(sys, "platform", "darwin"),
+            mock.patch.object(safe_subprocess, "_darwin_entry_protected", return_value=False),
             mock.patch.object(
                 safe_subprocess, "_darwin_acl_allows_entries", return_value=True
             ) as acl,
