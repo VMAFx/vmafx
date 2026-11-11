@@ -88,14 +88,20 @@ fields and records are NUL-delimited so embedded legacy separators cannot
 move identity text into another field.
 
 For a commit refused only because of an attribution trailer or footer, edit the
-message and keep the original author: an amend or reword preserves the author by
-default. The [`git-commit(1)`
-manual](https://git-scm.com/docs/git-commit) documents that `--amend` keeps
-the author and `--reset-author` assigns authorship to the committer. Change
-authorship with `--reset-author` or `--author` only when the refusal names an
-author or committer identity, correcting the refused field. If only the
-committer identity is refused, correct that identity while retaining the
-original author. For a refused pull request body, edit its text. Bot commit
+message with `git commit --amend`, which keeps the original author. If the
+author identity is refused, use `--author="Name <email>"` on the refused commit
+to correct that author, or `--reset-author` to assign authorship to the current
+committer. If only the committer identity is refused, correct `user.name` and
+`user.email`, then use `git commit --amend --no-edit -S` for the last commit:
+amend retains the author and message while recording the current committer
+identity and signing the replacement commit. The [`git-commit(1)`
+manual](https://git-scm.com/docs/git-commit) documents these options and the
+identity configuration; explicit author/committer settings or environment
+variables override `user.name` and `user.email`. For a series,
+`git rebase --force-rebase <base>` forces every rebased commit to be replayed,
+including unchanged commits, as documented in the [`git-rebase(1)`
+manual](https://git-scm.com/docs/git-rebase).
+For a refused pull request body, edit its text. Bot commit
 sign-off exemptions do not exempt attribution. Machine-generated release pull
 requests and pull requests grandfathered by the cutoff keep their existing
 exemptions.

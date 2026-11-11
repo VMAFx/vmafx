@@ -228,6 +228,84 @@ class DcoBoundsTest(unittest.TestCase):
         self.mod = load_gate("check_dco_bounds")
         self.addCleanup(sys.modules.pop, "check_dco_bounds", None)
 
+    def test_prefixed_coauthor_pr_body_refused(self) -> None:
+        """Quotes, bullets, comments, and headings cannot hide banned PR coauthors."""
+        for line in (
+            "> Co-authored-by: Codex <pair@example.org>",
+            "- Co-authored-by: Codex <pair@example.org>",
+            "<!-- Co-authored-by: Codex <pair@example.org> -->",
+            "## Co-authored-by: Codex <pair@example.org>",
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(
+                    self.mod.pr_body_attribution(line),
+                    [(1, "disallowed Co-authored-by trailer (codex)")],
+                )
+
+    def test_quoted_coauthor_commit_message_refused(self) -> None:
+        """A quoted banned coauthor is refused in a human-authored commit message."""
+        text = "subject\n\n> Co-authored-by: Codex <pair@example.org>"
+        commit = self.mod.Commit("a" * 40, *HUMAN, *HUMAN, "subject", text)
+        self.assertEqual(
+            self.mod.commit_attribution_reason(commit),
+            "disallowed Co-authored-by trailer (codex)",
+        )
+
+    def test_human_quoted_coauthor_prose_and_empty_prefixes_pass(self) -> None:
+        """Human coauthors, prose about co-authored work, and bare prefixes pass."""
+        for text in (
+            "> Co-authored-by: Jane Doe <jane@example.org>",
+            'The phrase "co-authored" describes shared work.',
+            "> > -",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(self.mod.pr_body_attribution(text), [])
+                commit = self.mod.Commit("a" * 40, *HUMAN, *HUMAN, "subject", text)
+                self.assertIsNone(self.mod.commit_attribution_reason(commit))
+
+    def test_prefixed_coauthor_at_byte_bounds_refused(self) -> None:
+        """A single maximum-length line still exposes a banned trailer after prefixes."""
+        trailer = "Co-authored-by: Codex <pair@example.org>"
+        for source, bound in (
+            ("PR_BODY", self.mod.MAX_PR_BODY_BYTES),
+            ("COMMIT_MESSAGE", self.mod.MAX_COMMIT_MESSAGE_BYTES),
+        ):
+            with self.subTest(source=source):
+                text = "> " + " " * (bound - len(trailer) - 2) + trailer
+                self.assertEqual(len(text.encode("utf-8")), bound)
+                if source == "PR_BODY":
+                    self.assertEqual(
+                        self.mod.pr_body_attribution(text),
+                        [(1, "disallowed Co-authored-by trailer (codex)")],
+                    )
+                else:
+                    commit = self.mod.Commit("a" * 40, *HUMAN, *HUMAN, "subject", text)
+                    self.assertEqual(
+                        self.mod.commit_attribution_reason(commit),
+                        "disallowed Co-authored-by trailer (codex)",
+                    )
+
+    def test_prefixed_coauthor_at_line_bounds_refused(self) -> None:
+        """The last permitted line still receives coauthor attribution checks."""
+        for source, bound in (
+            ("PR_BODY", self.mod.MAX_PR_BODY_LINES),
+            ("COMMIT_MESSAGE", self.mod.MAX_COMMIT_MESSAGE_LINES),
+        ):
+            with self.subTest(source=source):
+                text = "\n" * (bound - 1) + "> Co-authored-by: Codex <pair@example.org>"
+                self.assertEqual(len(text.splitlines()), bound)
+                if source == "PR_BODY":
+                    self.assertEqual(
+                        self.mod.pr_body_attribution(text),
+                        [(bound, "disallowed Co-authored-by trailer (codex)")],
+                    )
+                else:
+                    commit = self.mod.Commit("a" * 40, *HUMAN, *HUMAN, "subject", text)
+                    self.assertEqual(
+                        self.mod.commit_attribution_reason(commit),
+                        "disallowed Co-authored-by trailer (codex)",
+                    )
+
     def test_machine_attribution_prefixes_and_non_attribution(self) -> None:
         """Prefix removal preserves generated phrases, word boundaries, and robot emoji."""
         for line, expected in (

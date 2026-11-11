@@ -326,9 +326,9 @@ def input_bound_reason(text: str, source: str, max_bytes: int, max_lines: int) -
 
 
 def line_attribution_reason(line: str, source: str) -> str | None:
-    """Apply the same message and PR body attribution rules to one line."""
+    """Apply shared message and PR body rules without exempting Markdown prefixes."""
     line = normalize_attribution_line(line)
-    token = check_banned_coauthor(line)
+    token = check_banned_coauthor(strip_attribution_prefix(line))
     if token:
         return f"disallowed Co-authored-by trailer ({token})"
     if check_machine_attribution(line):
