@@ -311,10 +311,14 @@ jobs:
             ccache-v2-${{ matrix.os }}-
 
       - name: Setup python
-        if: steps.impact.outputs.c_core == 'true'
+        if: steps.impact.outputs.c_core == 'true' || matrix.os == 'macos-latest'
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: 3.14.10
+
+      - name: Test macOS executable link ACLs
+        if: matrix.os == 'macos-latest'
+        run: python -m unittest -v scripts.lib.test_safe_subprocess.DarwinAclLinkTests
 
       - name: Install meson and ninja
         if: steps.impact.outputs.c_core == 'true'
