@@ -25,8 +25,6 @@ import unittest
 from pathlib import Path
 from types import ModuleType
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
@@ -188,26 +186,40 @@ def assert_no_machine_attribution(line: str) -> None:
     assert mod.check_machine_attribution(line) is False
 
 
-@pytest.mark.parametrize(
-    "line",
-    ["#" * 64 + "x", " " * 5000 + "x", "- " * 5000 + "x", "<!-- " * 2000 + "x"],
-    ids=["hashes", "whitespace", "bullets", "comments"],
+ADVERSARIAL_PREFIXES = (
+    ("hashes", "#" * 64 + "x"),
+    ("whitespace", " " * 5000 + "x"),
+    ("bullets", "- " * 5000 + "x"),
+    ("comments", "<!-- " * 2000 + "x"),
 )
-def test_machine_attribution_prefix_scan_finishes(line: str) -> None:
-    """Adversarial prefixes return False within two seconds, even on a broken scanner."""
+
+
+def run_prefix_scan_child(line: str) -> str | None:
+    """Scan one line in a spawned child; return the failure, or None when it passes in time."""
     child = multiprocessing.get_context("spawn").Process(
         target=assert_no_machine_attribution, args=(line,)
     )
     child.start()
     try:
         child.join(timeout=2)
-        assert not child.is_alive(), "attribution scan exceeded two seconds"
-        assert child.exitcode == 0, "non-attribution line was refused or child failed"
+        if child.is_alive():
+            return "attribution scan exceeded two seconds"
+        if child.exitcode != 0:
+            return "non-attribution line was refused or child failed"
+        return None
     finally:
         if child.is_alive():
             child.kill()
             child.join(timeout=2)
         child.close()
+
+
+class DcoPrefixScanTimeTest(unittest.TestCase):
+    def test_machine_attribution_prefix_scan_finishes(self) -> None:
+        """Adversarial prefixes return False within two seconds, even on a broken scanner."""
+        for name, line in ADVERSARIAL_PREFIXES:
+            with self.subTest(prefix=name):
+                self.assertIsNone(run_prefix_scan_child(line))
 
 
 class DcoBoundsTest(unittest.TestCase):
