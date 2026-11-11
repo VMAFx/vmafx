@@ -2,7 +2,10 @@
 paths:
   - scripts/ci/check-dco.py
   - scripts/ci/dco-cutoff.txt
+  - scripts/ci/tests/check_dco_fixture.py
   - scripts/ci/tests/test_check_dco.py
+  - scripts/ci/tests/test_check_dco_attribution.py
+  - scripts/ci/tests/test_check_dco_landed.py
 invariant: DCO attribution: NUL fields, bounded Unicode-normalized messages/bodies, event-file CI input; sign-off rules retained.
 area: gates
 ---
@@ -20,11 +23,11 @@ Gate: `Signed-off-by:` trailer on each non-merge PR commit; model/tool attributi
 3. **Unreadable range -> exit 2.** Never print PASS for range git failed to answer.
 4. **Range = live target tip..head** in workflow (as `Silent-Revert Guard`), never
    `base.sha`.
-5. **Release PR** exempt only through `release-pr-exempt.sh` (`DCO_RELEASE_PR`).
-6. **Cutoff timestamp (`dco-cutoff.txt`)** grandfathers PRs created before rollout;
+5. **Release PR** sign-off exempt only through `release-pr-exempt.sh` (`DCO_RELEASE_PR`); commit + body attribution still checked.
+6. **Cutoff timestamp (`dco-cutoff.txt`)** grandfathers sign-off on PRs created before rollout; commit + body attribution still checked;
    missing creation time enforced; unreadable cutoff exits 2. Keep date in step with
    `CONTRIBUTING.md`.
-7. **Attribution.** Commit author/committer name/email scanned before bot sign-off exemption;
+7. **Attribution.** Commit author/committer name/email + message + PR body scanned on every PR (bot, release, cutoff sign-off exemptions included);
    `[bot]` ignored for identities. Message lines and PR body lines share trailer/footer checks.
    Lines + identities: shared NFKC normalization + `Cf` removal helper. Identities: every `Cf` removed, then lowercase substring tokens.
    Markdown quote/bullet (`-`, `*`, `+`)/comment/heading/ordered-list prefixes: shared linear stripper before co-author/footer checks; no exemption.
@@ -44,4 +47,4 @@ Gate: `Signed-off-by:` trailer on each non-merge PR commit; model/tool attributi
 
 Required context `DCO Sign-off` = job `dco-sign-off` in `rule-enforcement.yml`; one entry in
 `required-aggregator.yml` list (`check-aggregator-names.sh`).
-Regression: `python3 -B -m pytest -q -p no:cacheprovider -rs scripts/ci/tests/test_check_dco.py`.
+Regression: `python3 -B -m pytest -q -p no:cacheprovider -rs scripts/ci/tests/test_check_dco.py scripts/ci/tests/test_check_dco_attribution.py scripts/ci/tests/test_check_dco_landed.py`.

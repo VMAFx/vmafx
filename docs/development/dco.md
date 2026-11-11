@@ -112,21 +112,23 @@ and makes the series linear. For a series containing merges, use
 `git rebase --force-rebase --rebase-merges <base>` to recreate them. Conflict
 resolutions and manual amendments inside those merge commits are not replayed
 and must be redone manually.
-For a refused pull request body, edit its text. Bot commit
-sign-off exemptions do not exempt attribution. Machine-generated release pull
-requests and pull requests grandfathered by the cutoff keep their existing
-exemptions.
+For a refused pull request body, edit its text. None of the sign-off exemptions
+below waive attribution checks: bot, release, and pre-cutoff pull requests are
+all checked for commit and pull request body attribution.
 
 ## Exemptions
 
-Three, all narrow:
+Three narrow exemptions waive only the `Signed-off-by:` requirement; commit and
+pull request body attribution checks run on every pull request, release and
+pre-cutoff ones included:
 
 - A pull request created before the rollout cutoff, the UTC timestamp in
   `scripts/ci/dco-cutoff.txt` (the date is also in
-  [CONTRIBUTING.md](../../CONTRIBUTING.md)). It is grandfathered: its commits
-  are not judged, however often it is updated. A pull request created at or
-  after the cutoff is judged, and one for which GitHub gives no creation time
-  is judged too.
+  [CONTRIBUTING.md](../../CONTRIBUTING.md)). It is grandfathered for sign-off:
+  its commits need no `Signed-off-by:` trailer, however often it is updated,
+  while commit and body attribution are still checked. A pull request created
+  at or after the cutoff requires sign-offs, and one for which GitHub gives no
+  creation time requires them too.
 - A commit written by a listed bot, in a pull request that GitHub reports as
   opened by that bot. The list is `BOT_LOGINS` in
   `scripts/ci/check-dco.py`: `renovate[bot]`, `dependabot[bot]` and

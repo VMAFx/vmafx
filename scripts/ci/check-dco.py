@@ -17,7 +17,7 @@ committer on every squash. Commit author/committer identities must not name a
 model or coding tool. Commit messages and pull request bodies must not carry
 banned Co-authored-by lines or machine-generated attribution.
 
-Exemptions for pull requests:
+Sign-off exemptions for pull requests (attribution checks still run):
 
 * a commit written by an allow-listed bot (``BOT_LOGINS``), in a pull request
   that GitHub itself reports as opened by that bot (``--author`` and
@@ -27,8 +27,8 @@ Exemptions for pull requests:
 * the machine-generated release pull request, which the caller detects with
   ``scripts/ci/release-pr-exempt.sh`` and passes as ``--release-pr``;
 * a pull request created before the cutoff in ``scripts/ci/dco-cutoff.txt``
-  (``--created-at``, the rollout of ADR-2462).  Without ``--created-at`` the
-  gate always enforces.
+  (``--created-at``, the rollout of ADR-2462).  Without ``--created-at``
+  sign-offs are always enforced.
 
 Usage::
 
@@ -51,12 +51,14 @@ Exit status: 0 all checks pass, 1 attribution or sign-off fails, 2 usage or git 
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import re
 import shutil
 import sys
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -538,21 +540,30 @@ def check_landed(args: argparse.Namespace) -> int:
     return 0
 
 
-def check_pr(args: argparse.Namespace) -> int:
-    """Enforce commit sign-offs and body attribution rules after applying PR exemptions."""
+def pr_signoff_exemption(args: argparse.Namespace) -> str | None:
+    """Return the sign-off exemption notice when release or cutoff rules apply."""
     if args.release_pr:
-        print("dco: machine-generated release pull request, exempt.")
-        return 0
+        return "dco: machine-generated release pull request, exempt."
     if grandfathered(args.created_at, Path(args.cutoff_file)):
-        print(f"dco: pull request created {args.created_at}, before the cutoff; grandfathered.")
-        return 0
+        return f"dco: pull request created {args.created_at}, before the cutoff; grandfathered."
+    return None
+
+
+def check_pr(args: argparse.Namespace) -> int:
+    """Enforce commit and body attribution on every PR, and commit sign-offs unless exempt."""
+    exemption = pr_signoff_exemption(args)
+    judge_commit: Callable[[Commit], str | None]
+    if exemption is not None:
+        print(exemption)
+        judge_commit = commit_attribution_reason
+        kind = "release pull request" if args.release_pr else "grandfathered"
+        summary = f" free of attribution; sign-off exempt ({kind})"
+    else:
+        judge_commit = functools.partial(judge, author=args.author, author_type=args.author_type)
+        summary = ", every one signed off or exempt"
     body_findings = pr_body_attribution(read_pr_body(args))
     commits = list_commits(args.base, args.head)
-    failures = []
-    for commit in commits:
-        reason = judge(commit, args.author, args.author_type)
-        if reason is not None:
-            failures.append((commit, reason))
+    failures = [(c, reason) for c in commits if (reason := judge_commit(c)) is not None]
     if failures:
         report(failures)
     for number, reason in body_findings:
@@ -561,7 +572,7 @@ def check_pr(args: argparse.Namespace) -> int:
         print("  Edit the pull request body to remove model/tool attribution.")
     if failures or body_findings:
         return 1
-    print(f"dco: PASS - {len(commits)} commit(s), every one signed off or exempt.")
+    print(f"dco: PASS - {len(commits)} commit(s){summary}.")
     return 0
 
 
