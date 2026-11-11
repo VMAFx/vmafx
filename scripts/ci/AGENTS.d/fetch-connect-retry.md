@@ -2,6 +2,7 @@
 paths:
   - scripts/ci/tests/test_fetch_connect_retry.py
   - scripts/ci/install-rocm-from-image.sh
+  - scripts/dev/tidy-lane.sh
   - docs/development/ci.md
 invariant: Curl/wget retries consume options correctly; retried bodies saved before use; tidy-lane APT retries positive.
 area: gates
@@ -9,7 +10,8 @@ area: gates
 # Fetch connection retry contract
 
 - Curl: positive `--retry` + enabled `--retry-all-errors`.
-- Wget: positive `--tries` + enabled `--retry-connrefused` + `--retry-on-host-error`.
+- Wget: `--tries=N`, literal N >= 2 (total attempts) + enabled
+  `--retry-connrefused` + `--retry-on-host-error`.
 - Retried body -> fetch-owned file; consumer after success; cleanup after use.
 - Stdout body forbidden through pipe, capture, shell file redirection;
   `/dev/null` disposal allowed.

@@ -1164,8 +1164,8 @@ Every curl and wget HTTP(S) fetch in a shell script, workflow or container
 recipe retries connection failures:
 
 - **curl:** `--retry N --retry-all-errors`, with N positive.
-- **wget:** `--tries=N --retry-connrefused --retry-on-host-error`, with N
-  positive.
+- **wget:** `--tries=N --retry-connrefused --retry-on-host-error`, with N at
+  least 2 because Wget counts total attempts, including the first.
 - **APT in `scripts/dev/tidy-lane.sh`:** `-o Acquire::Retries=N`, with N a
   literal positive integer, on every `update` and `install` command.
 

@@ -179,6 +179,8 @@ WGET_OPTIONS = (
     ("spider", None, False, True),
 )
 APT_RETRY_PATHS = ("scripts/dev/tidy-lane.sh",)
+# GNU Wget --tries counts total attempts, so one attempt never retries.
+WGET_MIN_TRIES = 2
 
 
 @dataclass
@@ -356,21 +358,24 @@ def fetch_commands(text: str) -> list[tuple[int, ParsedFetch]]:
     return commands
 
 
-def positive_count(parsed: ParsedFetch, option: str) -> bool:
-    """Accept only literal positive integer retry counts from consumed values."""
-    return bool(re.fullmatch(r"[1-9][0-9]*", parsed.values.get(option, "")))
+def positive_count(parsed: ParsedFetch, option: str, minimum: int = 1) -> bool:
+    """Accept only literal integer retry counts of at least ``minimum`` from consumed values."""
+    value = parsed.values.get(option, "")
+    return bool(re.fullmatch(r"[1-9][0-9]*", value)) and int(value) >= minimum
 
 
 def retry_errors(parsed: ParsedFetch) -> list[str]:
-    """Require positive retries and the fetch tool's connection error switches."""
+    """Require retry counts that retry and the fetch tool's connection error switches."""
     if parsed.tool == "wget":
         if (
-            positive_count(parsed, "tries")
+            positive_count(parsed, "tries", WGET_MIN_TRIES)
             and parsed.flags.get("retry-connrefused")
             and parsed.flags.get("retry-on-host-error")
         ):
             return []
-        return ["wget needs positive --tries, --retry-connrefused and --retry-on-host-error"]
+        return [
+            "wget needs --tries=N with N at least 2, --retry-connrefused and --retry-on-host-error"
+        ]
     errors: list[str] = []
     if not positive_count(parsed, "retry"):
         errors.append("curl needs positive --retry")
@@ -488,6 +493,29 @@ class FetchConnectRetryTests(unittest.TestCase):
             self.check_script(
                 "wget --retry-connrefused --retry-on-host-error https://example.invalid/x\n"
             )
+        )
+
+    def test_wget_one_attempt_has_no_retry(self) -> None:
+        """Reject one total attempt even when both connection switches are enabled."""
+        self.assertEqual(
+            self.check_script(
+                "wget --tries=1 --retry-connrefused --retry-on-host-error "
+                "https://example.invalid/x\n"
+            ),
+            [
+                "fetch.sh:1: wget needs --tries=N with N at least 2, "
+                "--retry-connrefused and --retry-on-host-error"
+            ],
+        )
+
+    def test_wget_two_attempts_is_boundary(self) -> None:
+        """Accept two total attempts as the smallest retrying wget count."""
+        self.assertEqual(
+            self.check_script(
+                "wget --tries=2 --retry-connrefused --retry-on-host-error "
+                "https://example.invalid/x\n"
+            ),
+            [],
         )
 
     def test_wget_without_retry_connrefused_fails(self) -> None:
