@@ -1,0 +1,1 @@
+| [ADR-3532](3532-trusted-executable-launch-links.md) | Preserve trusted POSIX executable launch links for virtual environments; check every followed link's ownership and directory permissions, bound traversal, and launch the resolved file on Windows. | Accepted | python, security, testing |

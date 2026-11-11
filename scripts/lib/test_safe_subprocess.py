@@ -111,6 +111,7 @@ class SafeSubprocessTests(unittest.TestCase):
             real, links = Path(temporary) / "real", Path(temporary) / "links"
             real.mkdir()
             links.mkdir()
+            links.chmod(0o755)
             script = real / "tool"
             # A script's interpreter receives the path the kernel executed as $0.
             script.write_text("#!/bin/sh\nprintf '%s' \"$0\"\n", encoding="utf-8")
@@ -562,6 +563,172 @@ class WindowsTreeTerminationTests(unittest.TestCase):
         tree_idx = fake.call_order.index("tree_terminate")
         term_idx = fake.call_order.index("terminate")
         self.assertLess(tree_idx, term_idx)
+
+
+@unittest.skipUnless(hasattr(os, "getuid"), "POSIX link ownership requires os.getuid")
+class ExecutableLinkTrustTests(unittest.TestCase):
+    """Exercise trusted launch paths and bounded traversal without elevated privileges."""
+
+    def setUp(self) -> None:
+        """Create an owned link without inherited temporary-directory links."""
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.root.chmod(0o755)
+        self.link = self.root / "python-link"
+        self.link.symlink_to(PYTHON)
+
+    def assert_refused(self, launch: Path, offending: Path) -> None:
+        """Require a diagnostic identifying the link that another user could replace."""
+        with self.assertRaises(CommandValidationError) as raised:
+            run([str(launch), "-V"], allowed_executables=ALLOW_PYTHON)
+        self.assertEqual(
+            str(raised.exception),
+            f"executable link can be retargeted by another user: {offending}",
+        )
+
+    def test_sticky_world_writable_link_directory_is_accepted(self) -> None:
+        """Sticky directories protect an owned link despite world write permission."""
+        self.root.chmod(0o1777)
+        result = run([str(self.link), "-V"], allowed_executables=ALLOW_PYTHON)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.argv[0], str(self.link))
+
+    def test_nonsticky_world_writable_link_directory_is_refused(self) -> None:
+        """World write permission without sticky protection permits link replacement."""
+        self.root.chmod(0o777)
+        self.assert_refused(self.link, self.link)
+
+    def test_group_writable_link_directory_is_refused(self) -> None:
+        """Group write permission alone also permits link replacement."""
+        self.root.chmod(0o775)
+        self.assert_refused(self.link, self.link)
+
+    def test_second_link_in_untrusted_directory_is_refused(self) -> None:
+        """Every hop needs protection, including a relative target in another directory."""
+        unsafe = self.root / "unsafe"
+        unsafe.mkdir()
+        unsafe.chmod(0o777)
+        second = unsafe / "second"
+        second.symlink_to(PYTHON)
+        self.link.unlink()
+        self.link.symlink_to("unsafe/second")
+        self.assert_refused(self.link, second)
+
+    def test_foreign_link_owner_is_refused(self) -> None:
+        """A link owned by a third user fails even inside an owned directory."""
+        original = Path.lstat
+
+        def foreign_owner(path: Path) -> os.stat_result:
+            """Plant foreign ownership only on the fixture link."""
+            metadata = original(path)
+            if path == self.link:
+                fields = list(metadata)
+                fields[4] = os.getuid() + 1
+                return os.stat_result(fields)
+            return metadata
+
+        with mock.patch.object(Path, "lstat", foreign_owner):
+            self.assert_refused(self.link, self.link)
+
+    def test_foreign_directory_owner_is_refused(self) -> None:
+        """A third-user directory owner can replace links even in sticky directories."""
+        self.root.chmod(0o1777)
+        original = Path.stat
+
+        def foreign_owner(path: Path, **kwargs: Any) -> os.stat_result:
+            """Plant foreign ownership only on the fixture directory."""
+            metadata = original(path, **kwargs)
+            if path == self.root:
+                fields = list(metadata)
+                fields[4] = os.getuid() + 1
+                return os.stat_result(fields)
+            return metadata
+
+        with mock.patch.object(Path, "stat", foreign_owner):
+            self.assert_refused(self.link, self.link)
+
+    def test_link_metadata_lookup_failure_is_refused(self) -> None:
+        """Ownership lookup errors fail closed with the offending link's name."""
+        with mock.patch.object(Path, "lstat", side_effect=PermissionError("planted")):
+            with self.assertRaisesRegex(CommandValidationError, str(self.link)):
+                safe_subprocess._validate_executable_links((self.link,))
+
+    def test_link_walk_follows_targets_before_dotdot(self) -> None:
+        """Directory links, absolute targets, dots and dotdots retain kernel order."""
+        nested = self.root / "nested"
+        nested.mkdir()
+        directory = self.root / "directory"
+        directory.symlink_to(nested, target_is_directory=True)
+        self.link.unlink()
+        self.link.symlink_to("./directory/../last")
+        last = self.root / "last"
+        last.symlink_to(PYTHON)
+        self.assertEqual(safe_subprocess._executable_links(self.link), (self.link, directory, last))
+        self.assertEqual(
+            run([str(self.link), "-V"], allowed_executables=ALLOW_PYTHON).returncode, 0
+        )
+
+    def test_link_chain_40_accepted_and_41_refused(self) -> None:
+        """The named hop bound admits forty links and rejects the forty-first."""
+        for number in range(1, safe_subprocess.MAX_EXECUTABLE_LINK_HOPS):
+            link = self.root / f"hop-{number}"
+            link.symlink_to(self.link.name)
+            self.link = link
+        self.assertEqual(len(safe_subprocess._executable_links(self.link)), 40)
+        # Some POSIX kernels permit fewer hops; validation must still accept forty.
+        launch, resolved = safe_subprocess._checked_executable(str(self.link), ALLOW_PYTHON, "")
+        self.assertEqual(launch, str(self.link))
+        self.assertEqual(str(resolved), PYTHON)
+        if os.access(self.link, os.X_OK):
+            self.assertEqual(
+                run([str(self.link), "-V"], allowed_executables=ALLOW_PYTHON).returncode, 0
+            )
+        extra = self.root / "hop-40"
+        extra.symlink_to(self.link.name)
+        with self.assertRaisesRegex(CommandValidationError, "MAX_EXECUTABLE_LINK_HOPS=40"):
+            run([str(extra), "-V"], allowed_executables=ALLOW_PYTHON)
+
+    def test_link_cycle_reaches_named_hop_bound(self) -> None:
+        """A cycle stops at the hop bound instead of looping forever."""
+        self.link.unlink()
+        self.link.symlink_to(self.link.name)
+        with self.assertRaisesRegex(CommandValidationError, "MAX_EXECUTABLE_LINK_HOPS=40"):
+            run([str(self.link)], allowed_executables=ALLOW_PYTHON)
+
+    def test_walk_step_bound_is_enforced(self) -> None:
+        """The total step limit fails closed independently of the link limit."""
+        with mock.patch.object(safe_subprocess, "MAX_EXECUTABLE_WALK_STEPS", 1):
+            with self.assertRaisesRegex(CommandValidationError, "MAX_EXECUTABLE_WALK_STEPS=1"):
+                run([str(self.link), "-V"], allowed_executables=ALLOW_PYTHON)
+
+    def test_walk_exact_step_bound_is_accepted(self) -> None:
+        """Finishing on the last permitted component is accepted."""
+        with mock.patch.object(
+            safe_subprocess, "MAX_EXECUTABLE_WALK_STEPS", len(Path(PYTHON).parts)
+        ):
+            self.assertEqual(safe_subprocess._executable_links(Path(PYTHON)), ())
+
+    def test_link_chain_does_not_bypass_allowlist(self) -> None:
+        """Trusted ownership grants no permission to execute an unallowlisted file."""
+        other = self.root / "other"
+        other.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        other.chmod(0o755)
+        self.link.unlink()
+        self.link.symlink_to(other.name)
+        chain = self.root / "chain"
+        chain.symlink_to(self.link.name)
+        with self.assertRaisesRegex(CommandValidationError, "executable is not allowlisted"):
+            run([str(chain)], allowed_executables=ALLOW_PYTHON)
+
+    def test_without_getuid_launches_resolved_file(self) -> None:
+        """The Windows ownership fallback launches the checked file, not a link."""
+        with mock.patch.object(safe_subprocess.os, "getuid", create=True):
+            del safe_subprocess.os.getuid
+            self.assertEqual(
+                safe_subprocess._checked_executable(str(self.link), ALLOW_PYTHON, ""),
+                (PYTHON, Path(PYTHON)),
+            )
 
 
 if __name__ == "__main__":

@@ -21,6 +21,8 @@ import locale
 import os
 import shutil
 import signal
+import stat
+from collections import deque
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +31,8 @@ from typing import IO, Any, Literal, overload
 MAX_ARG_COUNT = 4096
 MAX_ARG_BYTES = 65_536
 MAX_ARGV_BYTES = 1_048_576
+MAX_EXECUTABLE_LINK_HOPS = 40
+MAX_EXECUTABLE_WALK_STEPS = 4096
 DEFAULT_TIMEOUT_SECONDS = 120.0
 DEFAULT_MAX_OUTPUT_BYTES = 4 * 1_048_576
 TERMINATION_GRACE_SECONDS = 2.0
@@ -205,14 +209,79 @@ def _parse_allowed_executables(allowed: Collection[Arg]) -> _AllowedExecutables:
     return _AllowedExecutables(frozenset(allowed_names), frozenset(allowed_paths))
 
 
+def _executable_links(launch: Path) -> tuple[Path, ...]:
+    """Collect links in kernel traversal order, including links in target directories.
+
+    POSIX callers preserve trusted links; platforms without getuid launch the resolved file.
+    """
+    pending = deque(launch.parts)
+    directory = Path(launch.anchor)
+    links: list[Path] = []
+    for _ in range(MAX_EXECUTABLE_WALK_STEPS):
+        if not pending:
+            return tuple(links)
+        component = pending.popleft()
+        if component == launch.anchor:
+            directory = Path(launch.anchor)
+            continue
+        if component == "..":
+            directory = directory.parent
+            continue
+        candidate = directory / component
+        try:
+            metadata = candidate.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                links.append(candidate)
+                if len(links) > MAX_EXECUTABLE_LINK_HOPS:
+                    raise CommandValidationError(
+                        f"executable exceeds MAX_EXECUTABLE_LINK_HOPS={MAX_EXECUTABLE_LINK_HOPS}"
+                    )
+                pending.extendleft(reversed(candidate.readlink().parts))
+            else:
+                directory = candidate
+        except OSError as exc:
+            raise CommandValidationError(f"executable is unavailable: {candidate}") from exc
+    if pending:
+        raise CommandValidationError(
+            f"executable exceeds MAX_EXECUTABLE_WALK_STEPS={MAX_EXECUTABLE_WALK_STEPS}"
+        )
+    return tuple(links)
+
+
+def _validate_executable_links(links: tuple[Path, ...]) -> None:
+    """Refuse links whose owner or containing directory permits another user to retarget them."""
+    trusted_owners = (0, os.getuid())
+    for link in links:
+        message = f"executable link can be retargeted by another user: {link}"
+        try:
+            owner = link.lstat().st_uid
+            directory = link.parent.stat()
+        except OSError as exc:
+            raise CommandValidationError(message) from exc
+        if (
+            owner not in trusted_owners
+            or directory.st_uid not in trusted_owners
+            or (directory.st_mode & 0o022 and not directory.st_mode & stat.S_ISVTX)
+        ):
+            raise CommandValidationError(message)
+
+
+def _resolve_launch_file(launch: Path) -> Path:
+    """Resolve an executable only after checking the trust of its POSIX link chain."""
+    if hasattr(os, "getuid"):
+        _validate_executable_links(_executable_links(launch))
+    return launch.resolve(strict=True)
+
+
 def _resolve_absolute_executable(
     executable: str,
     requested: Path,
     allowed: _AllowedExecutables,
     search_path: str,
 ) -> Path:
+    """Require an absolute executable's resolved file to match the allowlist."""
     try:
-        resolved = requested.resolve(strict=True)
+        resolved = _resolve_launch_file(requested)
     except OSError as exc:
         raise CommandValidationError(f"executable is unavailable: {executable}") from exc
     name_matches: set[Path] = set()
@@ -228,12 +297,9 @@ def _resolve_absolute_executable(
 def _checked_executable(
     executable: str, allowed_values: Collection[Arg], search_path: str
 ) -> tuple[str, Path]:
-    """Return the absolute path to launch and the file it resolves to.
+    """Validate the resolved file and preserve trusted POSIX links for venv discovery.
 
-    The allowlist and the runnable-file check apply to the resolved file. The
-    launch path keeps every symbolic link the caller named: a venv interpreter
-    is a link to the base interpreter, and on macOS CPython finds its venv from
-    the path it was executed as, so launching the resolved file loses the venv.
+    Platforms without os.getuid (Windows) launch the resolved file instead.
     """
     allowed = _parse_allowed_executables(allowed_values)
 
@@ -249,18 +315,21 @@ def _checked_executable(
             raise CommandValidationError(f"executable is unavailable: {executable}")
         # absolute(), not resolve(): the launch path keeps the links on PATH.
         launch = str(Path(found).absolute())
-        resolved = Path(found).resolve(strict=True)
+        resolved = _resolve_launch_file(Path(launch))
     else:
         raise CommandValidationError(f"executable path must be absolute or bare: {executable}")
 
     if not resolved.is_file() or not os.access(resolved, os.X_OK):
         raise CommandValidationError(f"executable is not a runnable file: {resolved}")
+    if not hasattr(os, "getuid"):
+        launch = str(resolved)
     return launch, resolved
 
 
 def _resolve_allowed_executable(
     executable: str, allowed_values: Collection[Arg], search_path: str
 ) -> str:
+    """Return the allowlisted executable file for callers that need its canonical path."""
     return str(_checked_executable(executable, allowed_values, search_path)[1])
 
 
@@ -306,6 +375,7 @@ def resolve_executable(executable: Arg, root: Arg | None = None) -> str:
 def _validated_argv(
     argv: Sequence[Arg], allowed_executables: Collection[Arg], search_path: str
 ) -> tuple[str, ...]:
+    """Validate bounded arguments and select the trusted absolute launch path."""
     if not argv:
         raise CommandValidationError("argv must contain an executable")
     if len(argv) > MAX_ARG_COUNT:
