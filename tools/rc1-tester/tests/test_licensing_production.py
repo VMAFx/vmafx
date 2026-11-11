@@ -388,11 +388,15 @@ def test_the_debian_record_is_the_text_the_gate_demands() -> None:
 
 
 def test_the_images_that_link_zimg_from_source_keep_their_own_record() -> None:
-    """macOS, the Windows zips and the native release build zimg themselves.
+    """macOS and the Windows zips build zimg from source; release-native does not.
 
-    Issue #3242 leaves them alone: each links zimg from upstream's source archive
-    (Homebrew, vcpkg, the release container's zimg-devel), so none of them has a
-    Debian SOURCE file to point at and none may claim one.
+    Issue #3242 left the three alone. The macOS bundle links Homebrew's
+    `libzimg.a` and the Windows zips vcpkg's, so each keeps its 3.0.6 archive
+    entry. `release-native` is different: `stage_zimg` copies the loader-resolved
+    `libzimg.so*` from the release container's unpinned `dnf` `zimg-devel`
+    (dev/Containerfile), so its entry names the wrong source — tracked in
+    #3396, not fixed here. None of them has a Debian SOURCE file to point at
+    and none may claim one.
     """
     expanded = lic.load_manifest()["artifacts"]
     # Each of them links the 3.0.6 release, and says so in its own `source`.
