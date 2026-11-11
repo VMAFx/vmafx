@@ -333,8 +333,10 @@ jobs:
           bash scripts/ci/install-intel-ocloc.sh
           sudo apt-get update
           sudo -E apt-get -yq install gpg-agent cmake
-          wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
-            | sudo gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg
+          wget --tries=3 --retry-connrefused --retry-on-host-error -qO "$RUNNER_TEMP/oneapi-key.asc" \
+            https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+          sudo gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg "$RUNNER_TEMP/oneapi-key.asc"
+          rm -f "$RUNNER_TEMP/oneapi-key.asc"
           echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
           sudo apt-get update
