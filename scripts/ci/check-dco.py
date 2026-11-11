@@ -331,6 +331,11 @@ def normalize_attribution_text(text: str) -> str:
     return unicodedata.normalize("NFKC", text)
 
 
+def drop_format_characters(text: str) -> str:
+    """Remove every Unicode format character for both line and identity matching."""
+    return "".join(character for character in text if unicodedata.category(character) != "Cf")
+
+
 def input_bound_reason(text: str, source: str, max_bytes: int, max_lines: int) -> str | None:
     """Reject UTF-8 byte/Unicode splitlines bounds before attribution scanning."""
     if len(text.encode("utf-8")) > max_bytes:
@@ -342,8 +347,9 @@ def input_bound_reason(text: str, source: str, max_bytes: int, max_lines: int) -
 
 def line_attribution_reason(line: str, source: str) -> str | None:
     """Apply shared message and PR body rules without exempting Markdown prefixes."""
-    line = normalize_attribution_text(line)
-    token = check_banned_coauthor(strip_attribution_prefix(line))
+    line = strip_attribution_prefix(normalize_attribution_text(line))
+    line = drop_format_characters(line)
+    token = check_banned_coauthor(line)
     if token:
         return f"disallowed Co-authored-by trailer ({token})"
     if check_machine_attribution(line):
@@ -362,11 +368,7 @@ def commit_attribution_reason(commit: Commit) -> str | None:
         ("author", commit.author_name, commit.author_email),
         ("committer", commit.committer_name, commit.committer_email),
     ):
-        identity = "".join(
-            character
-            for character in normalize_attribution_text(f"{name} <{email}>")
-            if unicodedata.category(character) != "Cf"
-        ).lower()
+        identity = drop_format_characters(normalize_attribution_text(f"{name} <{email}>")).lower()
         for candidate in BANNED_COAUTHOR_TOKENS:
             if candidate != "[bot]" and candidate in identity:
                 return f"{role} identity names a model or coding tool ({candidate})"

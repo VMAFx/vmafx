@@ -62,8 +62,9 @@ robot emoji. Pull request mode applies those line rules to the body as well.
 Before the line rules run, text is normalized with Unicode NFKC. The shared
 prefix scanner removes leading whitespace, format characters (category `Cf`),
 and Markdown quote, heading, comment, and list prefixes, including `+` and
-ordered-list markers. Format characters interleaved among prefixes are also
-removed; examples include U+FEFF, U+200B through U+200D, and U+2060. Ordered
+ordered-list markers. After prefix stripping, every remaining `Cf` character
+anywhere in the checked line is removed before both co-author and footer checks;
+examples include U+FEFF, U+200B through U+200D, and U+2060. Ordered
 markers use one to nine ASCII digits followed by `.` or `)`, then whitespace,
 a format character, or end of line. A ten-digit marker remains intact and its
 line is treated as prose. These rules apply to both commit-message and PR-body

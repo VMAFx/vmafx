@@ -128,8 +128,10 @@ identity fields. Attribution-looking quoted or fenced lines have no exemption.
 ## Unicode, parsing, and bounded input
 
 For both commit messages and PR bodies, each line is normalized with NFKC before
-matching. Leading whitespace and all Unicode format characters (category `Cf`)
-are removed, including U+FEFF, U+200B through U+200D, and U+2060. Fullwidth
+matching. The shared prefix scanner runs first, preserving the ordered-marker
+termination rule; every remaining Unicode format character (category `Cf`)
+anywhere in the checked line is then removed before co-author and footer checks,
+including U+FEFF, U+200B through U+200D, and U+2060. Fullwidth
 attribution words therefore receive the same checks as their ASCII forms. This
 does not attempt unrestricted homoglyph detection or change identity substring
 semantics.
