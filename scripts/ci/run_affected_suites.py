@@ -43,7 +43,7 @@ from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO
+from typing import IO, overload
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -57,6 +57,7 @@ DEFAULT_CACHE = Path.home() / ".cache" / "vmafx-suite-venvs"
 DEFAULT_TIME_CAP_SECONDS = 900.0
 DEFAULT_INSTALL_CAP_SECONDS = 1800.0
 GIT_TIMEOUT_SECONDS = 60.0
+HEAD_BLOB_HEADER_FIELDS = 3
 MAX_OUTPUT_BYTES = 256 * 1_048_576
 LOCK_POLL_SECONDS = 2.0
 READY_MARKER = ".vmafx-ready"
@@ -89,7 +90,18 @@ def _env_without_git() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if not k.startswith("GIT_") and k not in drop}
 
 
-def _git(root: Path, *args: str) -> str:
+@overload
+def _git(root: Path, *args: str, input_data: bytes) -> bytes:
+    """Return raw Git output for a binary batch request."""
+
+
+@overload
+def _git(root: Path, *args: str, input_data: None = None) -> str:
+    """Return decoded Git output for ordinary queries."""
+
+
+def _git(root: Path, *args: str, input_data: bytes | None = None) -> str | bytes:
+    """Run bounded Git queries with isolated repository variables and optional binary input."""
     git = shutil.which("git")
     if git is None:
         raise RunnerError("git is not on PATH")
@@ -98,12 +110,17 @@ def _git(root: Path, *args: str) -> str:
         allowed_executables=(git,),
         env=_env_without_git(),
         capture_output=True,
-        text=True,
+        input_data=input_data,
+        text=input_data is None,
         check=False,
         timeout_seconds=GIT_TIMEOUT_SECONDS,
+        max_output_bytes=MAX_OUTPUT_BYTES,
     )
     if result.returncode != 0:
-        raise RunnerError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
+        stderr = result.stderr
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        raise RunnerError(f"git {' '.join(args)} failed: {stderr.strip()}")
     return result.stdout
 
 
@@ -530,6 +547,46 @@ def _selection_tracked(root: Path, base: str | None) -> list[str]:
     return sorted(tracked - {""})
 
 
+def _head_test_texts(root: Path, paths: Sequence[str]) -> dict[str, str]:
+    """Read candidate HEAD blobs in one batch, omitting paths absent from HEAD.
+
+    Requests and headers are newline-framed because ``cat-file -Z`` needs Git 2.42;
+    a path containing a newline cannot be framed and is refused.
+    """
+    if not paths:
+        return {}
+    unframed = [path for path in paths if "\n" in path]
+    if unframed:
+        raise RunnerError(f"test path contains a newline: {unframed[0]!r}")
+    requests = b"".join(b"HEAD:" + os.fsencode(path) + b"\n" for path in paths)
+    output = _git(root, "cat-file", "--batch", input_data=requests)
+    texts: dict[str, str] = {}
+    offset = 0
+    for path in paths:
+        header_end = output.find(b"\n", offset)
+        if header_end < 0:
+            raise RunnerError(f"incomplete HEAD blob header: {path}")
+        header = output[offset:header_end]
+        offset = header_end + 1
+        if header == b"HEAD:" + os.fsencode(path) + b" missing":
+            continue
+        fields = header.split()
+        if (
+            len(fields) != HEAD_BLOB_HEADER_FIELDS
+            or fields[1] != b"blob"
+            or not fields[2].isdigit()
+        ):
+            raise RunnerError(f"invalid HEAD blob header: {path}")
+        end = offset + int(fields[2])
+        if output[end : end + 1] != b"\n":
+            raise RunnerError(f"incomplete HEAD blob content: {path}")
+        texts[path] = output[offset:end].decode("utf-8", errors="replace")
+        offset = end + 1
+    if offset != len(output):
+        raise RunnerError("unexpected trailing HEAD blob output")
+    return texts
+
+
 def _focused_suite_files(
     root: Path,
     registry: registry_lib.Registry,
@@ -539,6 +596,13 @@ def _focused_suite_files(
 ) -> tuple[dict[str, list[str]], list[str]]:
     """Discover tests for triggered and unmapped changes; explain every uncovered path."""
     tracked = _selection_tracked(root, base)
+    suite_files = {
+        suite.name: registry_lib.suite_files(registry, tracked, suite.name)
+        for suite in registry.suites
+    }
+    texts = _head_test_texts(
+        root, sorted({path for files in suite_files.values() for path in files})
+    )
     triggered = {path for hits in affected.values() for path in hits}
     untriggered = sorted(set(changed) - triggered)
     selected: dict[str, list[str]] = {}
@@ -550,14 +614,11 @@ def _focused_suite_files(
             candidates += untriggered
         if not candidates:
             continue
-        files = registry_lib.suite_files(registry, tracked, suite.name)
+        files = suite_files[suite.name]
         tests.update(files)
-        texts = {
-            path: (root / path).read_text(encoding="utf-8", errors="replace")
-            for path in files
-            if (root / path).is_file()
-        }
-        matches, unnamed = focused_selection(candidates, tracked, texts)
+        matches, unnamed = focused_selection(
+            candidates, tracked, {path: texts[path] for path in files if path in texts}
+        )
         named.update(set(candidates) - set(unnamed))
         if suite.name in affected or matches:
             selected[suite.name] = matches
@@ -650,6 +711,7 @@ def _run_in(
     options: argparse.Namespace,
     env: dict[str, str],
 ) -> tuple[SuiteResult, list[str]]:
+    """Run one suite's Python and shell test files in a resolved interpreter and merge results."""
     py_files = [f for f in files if f.endswith(".py")]
     sh_files = [f for f in files if f.endswith(".sh")]
     result, details = run_pytest(root, suite, python, py_files, options.time_cap, env)
@@ -722,6 +784,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Select affected tests, validate checkout identity and report execution outcomes."""
     options = parse_args(argv)
     try:
+        if not options.list:
+            verify_clean_paths(options.root, [registry_lib.MANIFEST.as_posix()])
         registry = registry_lib.load_registry(options.root)
         changed, base = collect_changed(options)
         affected = affected_suites(registry, changed)

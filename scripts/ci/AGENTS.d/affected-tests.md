@@ -13,7 +13,8 @@ area: gates
 - `--focused`: changed tests; exact path/module tokens; unique tracked basenames;
   unique Python stems in static/literal dynamic imports; package imports ->
   `__init__.py`, uniqueness over package directories. Base tree + index paths
-  for deleted-name uniqueness. Pure selector; no second mapping.
+  for deleted-name uniqueness. Candidate test text: HEAD blobs, one Git batch;
+  absent HEAD path -> no text. Pure selector; no second mapping.
 - Compat alias: `/python/vmaf/__init__.py` -> `/compat/vmaf` symlink ->
   `/compat/python-vmaf`; `vmaf` imports cover package + shim.
 - Outside every suite trigger: search every locally runnable suite's tests;
@@ -28,7 +29,9 @@ area: gates
   Test failure = 1; usage error, unreadable file, dirty checkout = 2.
 - After selection, before execution: changed paths + selected tests = HEAD
   in index AND worktree; else dirty paths named, exit 2. Unrelated tracked
-  edits/untracked files outside selected paths irrelevant. `--list`: selection only.
+  edits/untracked files outside selected paths irrelevant. Registry
+  `.github/test-suites.json` = HEAD before load, all modes except `--list`.
+  `--list`: selection only, worktree registry allowed.
 - Installed pre-commit: ordinary pre-push stashes unstaged changes only;
   first-push `all_files=True` bypasses stash; staged edits remain visible.
 - Known gap: assembled basename, e.g. `"check-codeql-" + "unused-static.py"`,

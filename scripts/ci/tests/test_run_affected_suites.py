@@ -213,7 +213,7 @@ class FocusedSelectionTests(unittest.TestCase):
         text = 'SCRIPT = ROOT / "scripts" / "ci" / ("check-codeql-" + "unused-static.py")'
         self.assertEqual(runner.focused_selection([path], [path], {"test.py": text}), ([], [path]))
 
-    def test_live_rocm_script_selects_exactly_its_two_tests(self) -> None:
+    def test_live_rocm_script_selects_exactly_its_three_tests(self) -> None:
         """Keep the live script-to-test mapping precise across selector changes."""
         registry = registry_lib.load_registry(ROOT)
         tracked = registry_lib.tracked_files(ROOT)
@@ -225,6 +225,7 @@ class FocusedSelectionTests(unittest.TestCase):
         self.assertEqual(
             selected,
             [
+                "scripts/ci/tests/test_fetch_connect_retry.py",
                 "scripts/ci/tests/test_install_rocm_from_image.py",
                 "scripts/ci/tests/test_required_release_legs.py",
             ],
@@ -685,6 +686,138 @@ class RunTests(unittest.TestCase):
                 self.assertIn(test, result.stderr)
                 self.assertIn("differs from HEAD", result.stderr)
                 self.assertNotIn("pkg: FAILED", result.stdout)
+
+    def test_dirty_registry_fails_closed(self) -> None:
+        """Registry edits cannot hide suites in focused or full-suite execution."""
+        test = "pkg/tests/test_ok.py"
+        self.build({test: "def test_ok():\n    assert True\n"})
+        registry = registry_lib.MANIFEST.as_posix()
+        data = manifest()
+        data["suites"] = [
+            {
+                "name": "other",
+                "paths": ["other/"],
+                "checks": ["Other"],
+                "not_local": "needs another build",
+            }
+        ]
+        (self.repo / registry).write_text(json.dumps(data), encoding="utf-8")
+        for staged in (False, True):
+            if staged:
+                self.git("add", registry)
+            for mode in ((), ("--focused",)):
+                with self.subTest(staged=staged, mode=mode):
+                    result = self.run_script(*mode, "--files", test)
+                    self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                    self.assertIn(registry, result.stderr)
+                    self.assertIn("differs from HEAD", result.stderr)
+                    self.assertNotIn("passed:", result.stdout)
+
+    def test_dirty_registry_list_reads_worktree(self) -> None:
+        """Listing may inspect local registry changes without executing tests."""
+        test = "pkg/tests/test_ok.py"
+        self.build({test: "def test_ok():\n    assert True\n"})
+        data = manifest()
+        data["suites"] = [
+            {
+                "name": "other",
+                "paths": ["other/"],
+                "checks": ["Other"],
+                "not_local": "needs another build",
+            }
+        ]
+        (self.repo / registry_lib.MANIFEST).write_text(json.dumps(data), encoding="utf-8")
+        for mode in ((), ("--focused",)):
+            with self.subTest(mode=mode):
+                result = self.run_script(*mode, "--list", "--files", test)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(result.stderr, "")
+                self.assertNotIn("pkg:", result.stdout)
+                self.assertNotIn("passed:", result.stdout)
+
+    def test_dirty_candidate_cannot_hide_head_reference(self) -> None:
+        """Removing a HEAD reference still selects and refuses the dirty candidate."""
+        test = "pkg/tests/test_ok.py"
+        body = "def test_ok():\n    assert True\n"
+        self.build({test: f"# {LOCK}\n{body}"})
+        (self.repo / test).write_text(body, encoding="utf-8")
+        for staged in (False, True):
+            with self.subTest(staged=staged):
+                if staged:
+                    self.git("add", test)
+                result = self.run_script("--focused", "--files", LOCK)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn("pkg: selected 1 test file(s)", result.stdout)
+                self.assertIn(test, result.stderr)
+                self.assertIn("differs from HEAD", result.stderr)
+                self.assertNotIn("passed:", result.stdout)
+
+    def test_dirty_unrelated_candidate_does_not_block(self) -> None:
+        """Unselected candidates may differ from HEAD without invalidating coverage."""
+        test = "pkg/tests/test_ok.py"
+        unrelated = "pkg/tests/test_other.py"
+        self.build(
+            {
+                test: f"# {LOCK}\ndef test_ok():\n    assert True\n",
+                unrelated: "def test_other():\n    assert True\n",
+            }
+        )
+        (self.repo / unrelated).write_text(
+            "def test_other():\n    assert False\n", encoding="utf-8"
+        )
+        for staged in (False, True):
+            with self.subTest(staged=staged):
+                if staged:
+                    self.git("add", unrelated)
+                result = self.run_script("--focused", "--files", LOCK)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("pkg: selected 1 test file(s)", result.stdout)
+                self.assertIn("pkg: passed: 1 passed", result.stdout)
+
+    def test_index_only_candidate_is_not_selected(self) -> None:
+        """A staged new candidate cannot supply references absent from HEAD."""
+        self.build({"pkg/tests/test_ok.py": "def test_ok():\n    assert True\n"})
+        test = "pkg/tests/test_new.py"
+        (self.repo / test).write_text(f"# {LOCK}\ndef test_new():\n    assert False\n")
+        self.git("add", test)
+        result = self.run_script("--focused", "--files", LOCK)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("pkg: selected 0 test file(s)", result.stdout)
+        self.assertNotIn("passed:", result.stdout)
+
+    def test_head_candidates_use_one_binary_batch(self) -> None:
+        """Byte lengths preserve Unicode, invalid UTF-8 and delimiters across candidate blobs."""
+        first = "pkg/tests/test_first.py"
+        second = "pkg/tests/test_second.py"
+        absent = "pkg/tests/test_absent.py"
+        body = "# snowman: \u2603\r\n# embedded: \0\n"
+        self.build({first: body, second: "# initial\n"})
+        (self.repo / second).write_bytes(b"# invalid: \xff\n")
+        self.git("add", second)
+        self.commit()
+        with patch.object(runner, "_git", wraps=runner._git) as command:
+            texts = runner._head_test_texts(self.repo, [first, absent, second])
+        self.assertEqual(texts, {first: body, second: "# invalid: \ufffd\n"})
+        command.assert_called_once()
+        self.assertNotIn("-Z", command.call_args.args)
+
+    def test_head_candidate_with_newline_is_refused_before_git(self) -> None:
+        """A newline cannot be framed in the batch, so the path fails closed without Git."""
+        with patch.object(runner, "_git") as command:
+            with self.assertRaisesRegex(runner.RunnerError, "contains a newline"):
+                runner._head_test_texts(self.repo, ["pkg/tests/test_a\nb.py"])
+        command.assert_not_called()
+
+    def test_failed_binary_git_request_reports_decoded_stderr(self) -> None:
+        """Binary and text Git failures both name the command with readable stderr."""
+        for input_data in (b"HEAD:missing\n", None):
+            with self.subTest(binary=input_data is not None):
+                with self.assertRaises(runner.RunnerError) as caught:
+                    runner._git(self.repo, "cat-file", "--no-such-option", input_data=input_data)
+                message = str(caught.exception)
+                self.assertIn("git cat-file --no-such-option failed: ", message)
+                detail = message.split("failed: ", 1)[1]
+                self.assertFalse(detail.startswith(("b'", 'b"')), detail[:40])
 
     def test_dirty_changed_path_fails_closed_even_without_selected_tests(self) -> None:
         """Changed source paths must match HEAD even when no test names them."""

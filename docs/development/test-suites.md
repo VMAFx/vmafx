@@ -244,7 +244,11 @@ it cannot validate the wrong branch.
 - Recorded gaps: default exit 0; `--strict` -> exit 1 for unrun suite or
   unmatched path. Test failure = 1; usage/I/O/dirty checkout = 2.
 - Before execution: every changed path + selected test matches HEAD in index
-  AND worktree. Difference -> exit 2, paths named. Unrelated tracked edits
+  AND worktree. The registry `.github/test-suites.json` must also match HEAD
+  in both places before loading, except with `--list`.
+  Focused selection reads candidate test text from HEAD blobs, ignoring
+  candidate paths absent from HEAD.
+  Difference -> exit 2, paths named. Unrelated tracked edits
   and untracked files outside those paths irrelevant. Pre-commit ordinary
   pre-push stashes unstaged edits only; first-push `all_files=True` bypasses
   stash; staged edits remain visible.
