@@ -37,7 +37,7 @@ Bandit 1.9.4 (Apache-2.0, [upstream](https://github.com/PyCQA/bandit)) is a deve
 
 ## References
 
-- [Bandit/Codacy research digest](../research/bandit-codacy-pattern-list-2026-11-11.md): configuration semantics, published pattern list and measured stub behavior; accessed 2026-11-11.
+- [Bandit/Codacy research digest](../research/3530-bandit-codacy-pattern-list.md): configuration semantics, published pattern list and measured stub behavior; accessed 2026-11-11.
 - [Codacy configuration-file behavior](https://docs.codacy.com/repositories-configure/configuring-code-patterns/): branch-specific native tool configuration; accessed 2026-11-11.
 - [Bandit 1.9.4 configuration](https://bandit.readthedocs.io/en/1.9.4/config.html): native `tests` selection and suppression syntax; accessed 2026-11-11.
 - Reproducer: base `20fa27ac6`, introduced findings `a0bc69572`, corrected source `77ca97921`; PR #3387.

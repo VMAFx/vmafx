@@ -23,6 +23,7 @@ from identify.identify import tags_from_filename
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import check_bandit_new as check
+from scripts.ci.tests.scanner_test_support import isolate_pre_commit_environment
 from scripts.lib import new_scanner_findings as shared
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -34,6 +35,7 @@ SAFE = "from scripts.lib.safe_subprocess import run\n\nrun([exe], allowed_execut
 class CheckBanditNew(unittest.TestCase):
     def setUp(self) -> None:
         """Require Bandit and create an isolated repository with a baseline and change branch."""
+        isolate_pre_commit_environment(self)
         self.assertIsNotNone(shutil.which("bandit"), "bandit is not on PATH")
         temp = tempfile.TemporaryDirectory(prefix="vmafx-bandit-")
         self.addCleanup(temp.cleanup)
@@ -413,6 +415,42 @@ class CheckBanditNew(unittest.TestCase):
             status, _, err = self.run_check("harness.py", BASE + "# changed\n")
         self.assertEqual(status, 2)
         self.assertIn("exited 3", err)
+
+
+class CheckBanditHookEnvironment(unittest.TestCase):
+    def test_fixture_ignores_outer_hook_refs(self) -> None:
+        """An existing fixture test passes despite caller refs absent from its repository."""
+        injected = {
+            "PRE_COMMIT_TO_REF": "f" * 40,
+            "PRE_COMMIT_FROM_REF": "e" * 40,
+        }
+        output = io.StringIO()
+        with mock.patch.dict(os.environ, injected):
+            suite = unittest.TestSuite([CheckBanditNew("test_safe_subprocess_passes")])
+            result = unittest.TextTestRunner(stream=output).run(suite)
+            self.assertEqual(result.testsRun, 1)
+            self.assertTrue(result.wasSuccessful(), output.getvalue())
+            self.assertEqual({key: os.environ[key] for key in injected}, injected)
+
+    def test_prefix_boundary_and_cleanup(self) -> None:
+        """All hook keys disappear; near-prefix and unrelated keys survive, then keys return."""
+        for value in ("", "outer"):
+            with (
+                self.subTest(value=value),
+                mock.patch.dict(
+                    os.environ,
+                    {"PRE_COMMIT_CUSTOM": value, "PRE_COMMIT": "kept", "SCANNER_TEST": "kept"},
+                ),
+            ):
+                fixture = unittest.TestCase()
+                try:
+                    isolate_pre_commit_environment(fixture)
+                    self.assertFalse(any(key.startswith("PRE_COMMIT_") for key in os.environ))
+                    self.assertEqual(os.environ["PRE_COMMIT"], "kept")
+                    self.assertEqual(os.environ["SCANNER_TEST"], "kept")
+                finally:
+                    fixture.doCleanups()
+                self.assertEqual(os.environ["PRE_COMMIT_CUSTOM"], value)
 
 
 class CheckSharedScannerFindings(unittest.TestCase):

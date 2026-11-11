@@ -4,7 +4,7 @@
 # Codacy reads this root file from the analysed branch; editing it changes Codacy's patterns.
 # If the branch lacks this file, Codacy falls back to its UI patterns.
 # These 56 IDs match codacy-bandit docs/patterns.json enabled defaults (1.9.4, 2026-11-11).
-# Source and verification: docs/research/bandit-codacy-pattern-list-2026-11-11.md.
+# Source and verification: docs/research/3530-bandit-codacy-pattern-list.md.
 # Refresh: compare Codacy's enabled Bandit IDs, then edit this list; Codacy follows.
 tests:
   - B102

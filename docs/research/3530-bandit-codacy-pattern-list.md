@@ -1,5 +1,5 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
-# Bandit configuration and Codacy pattern selection
+# Research-3530: Bandit configuration and Codacy pattern selection
 
 Checked on 2026-11-11 for Bandit 1.9.4 and identify 2.6.20. The implementation is `scripts/ci/check_bandit_new.py`; the design decision is [ADR-3530](../adr/3530-bandit-new-merge-base-gate.md).
 
@@ -9,7 +9,7 @@ Checked on 2026-11-11 for Bandit 1.9.4 and identify 2.6.20. The implementation i
 
 This is distinct from `.codacy.yml`: [Codacy's general configuration documentation](https://docs.codacy.com/repositories-configure/codacy-configuration-file/) describes default-branch precedence for that file. Do not apply those precedence rules to Bandit's native configuration. Accessed 2026-11-11.
 
-The [Codacy Bandit wrapper](https://github.com/codacy/codacy-bandit/blob/master/src/main/scala/codacy/bandit/Bandit.scala), `nativeConfigFileNames` and `runTool`, locates `bandit.yml` and passes it through `-c` when no explicit pattern set is supplied. With explicit enabled patterns, the wrapper filters results instead of passing the native configuration. This supports the documented need to enable native configuration in Codacy; adding a file alone does not prove that the live repository option is enabled. The live UI option was not inspected in this lane. Accessed 2026-11-11.
+The [Codacy Bandit wrapper](https://github.com/codacy/codacy-bandit/blob/master/src/main/scala/codacy/bandit/Bandit.scala), `nativeConfigFileNames` and `runTool`, locates `bandit.yml` and passes it through `-c` when no explicit pattern set is supplied. With explicit enabled patterns, the wrapper filters results instead of passing the native configuration. This supports the documented need to enable native configuration in Codacy; adding a file alone does not prove that the live repository option is enabled. The live UI option was not inspected during this check. Accessed 2026-11-11.
 
 ## Source of the 56 IDs
 

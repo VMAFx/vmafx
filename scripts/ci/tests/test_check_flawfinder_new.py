@@ -31,6 +31,7 @@ from identify import extensions  # pre-commit's file classifier
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import check_flawfinder_new as check
+from scripts.ci.tests.scanner_test_support import isolate_pre_commit_environment
 from scripts.lib.safe_subprocess import run as run_command
 
 BASE = """\
@@ -55,6 +56,8 @@ FDOPEN = BASE.replace(
 
 class CheckFlawfinderNew(unittest.TestCase):
     def setUp(self) -> None:
+        """Isolate hook variables and create a repository with a baseline and change branch."""
+        isolate_pre_commit_environment(self)
         # No skip: the pre-commit hook installs flawfinder, and a missing one
         # fails here instead of passing silently.
         self.assertIsNotNone(shutil.which("flawfinder"), "flawfinder is not on PATH")
@@ -163,6 +166,22 @@ class CheckFlawfinderNew(unittest.TestCase):
         self.assertIn("fresh.c:5: flawfinder fopen", out)
 
 
+class CheckFlawfinderHookEnvironment(unittest.TestCase):
+    def test_fixture_ignores_outer_hook_refs(self) -> None:
+        """An existing fixture test passes despite caller refs absent from its repository."""
+        injected = {
+            "PRE_COMMIT_TO_REF": "f" * 40,
+            "PRE_COMMIT_FROM_REF": "e" * 40,
+        }
+        output = io.StringIO()
+        with mock.patch.dict(os.environ, injected):
+            suite = unittest.TestSuite([CheckFlawfinderNew("test_moved_base_finding_passes")])
+            result = unittest.TextTestRunner(stream=output).run(suite)
+            self.assertEqual(result.testsRun, 1)
+            self.assertTrue(result.wasSuccessful(), output.getvalue())
+            self.assertEqual({key: os.environ[key] for key in injected}, injected)
+
+
 class CheckFlawfinderSuffixes(unittest.TestCase):
     TYPES = frozenset({"c", "c++", "cuda", "objective-c++"})  # the hook's types_or
 
@@ -172,6 +191,10 @@ class CheckFlawfinderSuffixes(unittest.TestCase):
 
 
 class CheckFlawfinderMissing(unittest.TestCase):
+    def setUp(self) -> None:
+        """Keep the in-process missing-tool check independent of caller hook variables."""
+        isolate_pre_commit_environment(self)
+
     def test_missing_flawfinder_is_a_tool_error(self) -> None:
         with (
             mock.patch("shutil.which", return_value=None),
