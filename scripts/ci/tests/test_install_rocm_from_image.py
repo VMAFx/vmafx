@@ -10,9 +10,14 @@ import json
 import os
 import stat
 import subprocess
+import sys
 import tarfile
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import run as run_command
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SCRIPT = REPO_ROOT / "scripts" / "ci" / "install-rocm-from-image.sh"
@@ -239,15 +244,23 @@ def test_curl_stub_output_modes(tmp_path: Path) -> None:
     for index, option in enumerate(("-o", "--output", "--output=")):
         output = tmp_path / f"manifest-{index}.json"
         arguments = [f"{option}{output}"] if option.endswith("=") else [option, str(output)]
-        proc = subprocess.run(  # noqa: S603 - test-owned stub and arguments
-            [curl, *arguments, url], env=env, capture_output=True, check=False, timeout=60
+        proc = run_command(
+            [curl, *arguments, url],
+            allowed_executables=(curl,),
+            env=env,
+            capture_output=True,
+            timeout_seconds=60,
         )
         assert proc.returncode == 0
         assert proc.stdout == b""
         assert output.read_bytes() == manifest
 
-    proc = subprocess.run(  # noqa: S603 - test-owned stub and arguments
-        [curl, url], env=env, capture_output=True, check=False, timeout=60
+    proc = run_command(
+        [curl, url],
+        allowed_executables=(curl,),
+        env=env,
+        capture_output=True,
+        timeout_seconds=60,
     )
     assert proc.returncode == 0
     assert proc.stdout == manifest
@@ -255,12 +268,12 @@ def test_curl_stub_output_modes(tmp_path: Path) -> None:
     (state_dir / "mode.txt").write_text("always_fail", encoding="utf-8")
     blob = (state_dir / "rocm.tar.gz").read_bytes()
     output = tmp_path / "partial.tar.gz"
-    proc = subprocess.run(  # noqa: S603 - test-owned stub and arguments
+    proc = run_command(
         [curl, "--output", str(output), f"https://registry.example.invalid/blobs/{ROCM_DIGEST}"],
+        allowed_executables=(curl,),
         env=env,
         capture_output=True,
-        check=False,
-        timeout=60,
+        timeout_seconds=60,
     )
     assert proc.returncode == CURL_PARTIAL_EXIT
     assert proc.stdout == b""
