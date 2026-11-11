@@ -211,8 +211,6 @@ class Comparison:
         target = directory / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
-        # Preserve shebang classification even when outgoing files are absent locally.
-        target.chmod(0o700)
         return relative, target
 
 

@@ -69,7 +69,7 @@ class CheckFlawfinderNew(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
         self.git("init", "-q", "-b", "master")
-        (self.root / "harness.c").write_text(BASE, encoding="utf-8")
+        (self.root / "harness.c").write_text(BASE, encoding="utf-8", newline="\n")
         self.git("add", "harness.c")
         self.git("commit", "-q", "-m", "base")
         self.git("switch", "-q", "-c", "change")
@@ -107,7 +107,7 @@ class CheckFlawfinderNew(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
     def run_check(self, name: str, text: str) -> tuple[int, str]:
-        (self.root / name).write_text(text, encoding="utf-8")
+        (self.root / name).write_text(text, encoding="utf-8", newline="\n")
         out = io.StringIO()
         cwd = Path.cwd()
         os.chdir(self.root)
@@ -133,7 +133,7 @@ class CheckFlawfinderNew(unittest.TestCase):
 
     def commit_outgoing(self, name: str, source: str) -> None:
         """Commit one source fixture without staging the copied hook implementation."""
-        (self.root / name).write_text(source)
+        (self.root / name).write_text(source, encoding="utf-8", newline="\n")
         self.git("add", name)
         self.git("commit", "-q", "-m", "outgoing source")
 
@@ -194,7 +194,9 @@ class CheckFlawfinderNew(unittest.TestCase):
     def test_outgoing_manual_reads_head(self) -> None:
         """Manual outgoing mode reads HEAD even when the worktree removes its finding."""
         self.commit_outgoing("new.c", BASE)
-        (self.root / "new.c").write_text("int main(void) { return 0; }\n")
+        (self.root / "new.c").write_text(
+            "int main(void) { return 0; }\n", encoding="utf-8", newline="\n"
+        )
         status, out, err = self.outgoing_entry()
         self.assertEqual(status, 1, err)
         self.assertIn("new.c:", out)
@@ -212,7 +214,7 @@ class CheckFlawfinderNew(unittest.TestCase):
 
     def test_push_scans_outgoing_blob(self) -> None:
         """A new outgoing fopen finding returns 1 even when the working copy lacks it."""
-        (self.root / "harness.c").write_text(ADDED)
+        (self.root / "harness.c").write_text(ADDED, encoding="utf-8", newline="\n")
         self.git("add", ".")
         self.git("commit", "-q", "-m", "outgoing")
         self.git("branch", "outgoing")

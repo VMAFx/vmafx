@@ -6,12 +6,13 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import sys
 import tempfile
 from pathlib import Path
 
-from identify.identify import tags_from_filename, tags_from_path
+from identify.identify import parse_shebang, tags_from_filename, tags_from_interpreter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -26,6 +27,18 @@ from scripts.lib.new_scanner_findings import (
 from scripts.lib.safe_subprocess import run as run_command
 
 CONFIG = Path(__file__).resolve().parents[2] / "bandit.yml"
+PYTHON_TAGS = frozenset({"python", "pyi"})
+MAX_SHEBANG_BYTES = 4096
+
+
+def is_python_source(source: Path) -> bool:
+    """Classify named files from filename tags and extensionless copies from their shebang."""
+    tags = tags_from_filename(source.name)
+    if tags:
+        return bool(PYTHON_TAGS & tags)
+    with source.open("rb") as handle:
+        shebang = parse_shebang(io.BytesIO(handle.readline(MAX_SHEBANG_BYTES)))
+    return bool(shebang and PYTHON_TAGS & tags_from_interpreter(shebang[0]))
 
 
 def findings(bandit: str, source: Path, config: Path = CONFIG) -> list[tuple[int, str, str]]:
@@ -91,13 +104,13 @@ def scan_changes(bandit: str, comparison: Comparison, paths: list[Path]) -> int:
         old.write_bytes(base_config if base_config is not None else current_config)
         for path in paths:
             tags = tags_from_filename(str(path))
-            if tags and not {"python", "pyi"} & tags:
+            if tags and not PYTHON_TAGS & tags:
                 continue
             copied = comparison.copy(path, directory / "source")
             if copied is None:
                 continue
             relative, source = copied
-            if not {"python", "pyi"} & tags_from_path(str(source)):
+            if not is_python_source(source):
                 continue
             added = new_findings(
                 lambda source: findings(bandit, source, current),
