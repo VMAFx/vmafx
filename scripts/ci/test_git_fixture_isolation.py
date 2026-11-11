@@ -126,9 +126,6 @@ ISOLATION_EXCEPTIONS = {
     "scripts/ci/tests/test_research_digest_ids.py": (
         "git runs through check-research-digest-ids._git, which drops GIT_*"
     ),
-    "scripts/dev/tests/test_install_merge_train_guard.py": (
-        "git runs through install_merge_train_guard.git, which drops GIT_*"
-    ),
     "scripts/dev/tests/test_merge_train_guard.py": (
         "git runs through merge_train_guard.environment(), which drops GIT_*"
     ),
