@@ -68,7 +68,7 @@
 # stage it follows, so `FROM ${ROCM_BUILDER}` above would expand to nothing.
 ARG DEV_BASE="ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c"
 ARG NATIVE_RELEASE_BUILDER_BASE="quay.io/pypa/manylinux_2_28_x86_64@sha256:7e41b1c7fd64dfc69703a1124b43c404382973ee06ec5d764b85c34d2221fded"
-ARG DEV_GO_BASE="golang:1.27-trixie@sha256:af1bfc2614ebb1dbd31af514b78740fd678850e76498762b425ecee4c5c6ea80"
+ARG DEV_GO_BASE="golang:1.27-trixie@sha256:c47c3fda018d13d43a6bf5ebac3e5bba8a23a35782aa4faf531afaf47c64c39f"
 ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.1.0-full@sha256:4f5ed1bf6532a4b9920400401b0ad0f706af356dae61e40afefbfd6c8073f0ce"
 
 FROM ${ROCM_BUILDER} AS rocm-src
