@@ -1191,6 +1191,24 @@ need to fail fast. The ROCm layer download in
 tar pipeline up to `LAYER_ATTEMPTS` times; inner curl retries would append to the
 pipe, so this streaming fetch is exempt from both inner retries and file output.
 
+Older curl stages use a bounded shell loop around the fetch plus an exact
+`ALLOWLIST` exemption instead of `--retry-all-errors`. In `dev/Containerfile`,
+the `release-build` stage uses manylinux_2_28 / AlmaLinux 8 curl 7.61.1;
+`--retry-all-errors` requires 7.71.0. Its NASM download uses
+`--retry 3 --retry-connrefused` inside a three-attempt loop, with a five-second
+delay between attempts. Each attempt writes `/tmp/nasm.tar.xz` through curl's
+`--output`; checksum verification, extraction and compilation follow success.
+The outer loop repeats the whole fetch for unreachable hosts or networks too.
+
+`OLD_CURL_STAGES` in the same test module records `(path, stage name, reason)`
+for stages with older curl. The audit rejects `--retry-all-errors` on every
+parsed curl fetch from that stage's `FROM ... AS <stage>` to the next `FROM`,
+including exempt fetches. Missing files or stage names fail as stale entries.
+To cover another old-curl stage, add its exact path, stage name and measured
+curl version/unsupported flag to the table; give each loop-protected download
+an exact URL exemption with its retry bound. Keep the planted rejection,
+compatible-loop acceptance and next-stage boundary tests with this check.
+
 **Not covered:** `git clone` and APT calls outside the tidy lane. Follow-up
 issue #3392 tracks these gaps; the tests whose docstrings start
 `Known gap (#3392):` replay both forms so the scanner's limits stay explicit.

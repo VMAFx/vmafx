@@ -352,9 +352,17 @@ RUN for attempt in 1 2 3; do \
 
 # AlmaLinux 8's assembler predates the AVX-512 sources. Build the maintained
 # assembler from the upstream release tarball, verified before extraction.
-RUN curl --retry 3 --retry-all-errors --fail --location --show-error \
-        --output /tmp/nasm.tar.xz \
-        "https://www.nasm.us/pub/nasm/releasebuilds/${NATIVE_NASM_VERSION}/nasm-${NATIVE_NASM_VERSION}.tar.xz" \
+# AlmaLinux 8 curl 7.61 lacks --retry-all-errors (7.71); loop retries unreachable host/network.
+RUN for attempt in 1 2 3; do \
+        curl --retry 3 --retry-connrefused --fail --location --show-error \
+            --output /tmp/nasm.tar.xz \
+            "https://www.nasm.us/pub/nasm/releasebuilds/${NATIVE_NASM_VERSION}/nasm-${NATIVE_NASM_VERSION}.tar.xz" \
+        && break || { \
+            if [ "$attempt" -eq 3 ]; then exit 1; fi; \
+            echo "nasm download attempt $attempt failed; retrying..." >&2; \
+            sleep 5; \
+        }; \
+    done \
     && echo "${NATIVE_NASM_SHA256}  /tmp/nasm.tar.xz" | sha256sum --check --strict \
     && mkdir /tmp/nasm-src \
     && tar -xJf /tmp/nasm.tar.xz -C /tmp/nasm-src --strip-components=1 \

@@ -21,8 +21,15 @@ sys.path.insert(0, str(ROOT))
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 # Curl/wget fetches + tidy-lane APT only; git clone/other APT gap: #3392.
-# Exact path + parsed URL + reason; exempt commands skip every check.
+# Exact path + parsed URL + reason; exemptions never skip old-curl stage checks.
 ALLOWLIST = (
+    (
+        "dev/Containerfile",
+        "https://www.nasm.us/pub/nasm/releasebuilds/${NATIVE_NASM_VERSION}/"
+        "nasm-${NATIVE_NASM_VERSION}.tar.xz",
+        "AlmaLinux 8 curl 7.61 lacks --retry-all-errors; "
+        "RUN loop repeats the whole fetch 3 times",
+    ),
     (
         "scripts/ci/install-rocm-from-image.sh",
         "https://${REGISTRY}/v2/${REPO}/blobs/${digest}",
@@ -68,6 +75,13 @@ ALLOWLIST = (
         "test/e2e/score-smoke.sh",
         "http://127.0.0.1:${LOCAL_PORT}/v1/score",
         "single non-idempotent scoring POST through the local port-forward; fail fast",
+    ),
+)
+OLD_CURL_STAGES = (
+    (
+        "dev/Containerfile",
+        "release-build",
+        "manylinux_2_28 / AlmaLinux 8 curl 7.61.1; --retry-all-errors needs 7.71.0",
     ),
 )
 FETCH = re.compile(r"(?<![\w.-])(curl(?:\.exe)?|wget)\s+(?=[\"']?(?:-|https?://|\$|%))")
@@ -430,11 +444,47 @@ def apt_positive_retries(args: list[str]) -> bool:
     return bool(retries and re.fullmatch(r"Acquire::Retries=[1-9][0-9]*", retries[-1]))
 
 
+def stage_fetches(text: str, stage: str) -> tuple[bool, list[tuple[int, ParsedFetch]]]:
+    """Find a named stage and its parsed fetches, stopping at every subsequent FROM."""
+    found = False
+    active = False
+    commands: list[tuple[int, ParsedFetch]] = []
+    for line, source_line in logical_lines(text):
+        command = strip_comment(source_line).strip()
+        if re.match(r"FROM\s+", command, re.IGNORECASE):
+            alias = re.search(r"\s+AS\s+(\S+)\s*$", command, re.IGNORECASE)
+            active = alias is not None and alias[1].casefold() == stage.casefold()
+            found |= active
+        elif active:
+            commands.extend((line, parsed) for _, parsed in fetch_commands(command))
+    return found, commands
+
+
+def old_curl_errors(
+    sources: list[tuple[str, str]], stages: tuple[tuple[str, str, str], ...]
+) -> list[str]:
+    """Reject unsupported curl flags in declared stages, even on exempt fetches."""
+    errors: list[str] = []
+    by_path = dict(sources)
+    for path, stage, reason in stages:
+        found, commands = stage_fetches(by_path.get(path, ""), stage)
+        if not found:
+            errors.append(f"{path}: stale old-curl stage entry: {stage} ({reason})")
+        for line, parsed in commands:
+            if parsed.tool == "curl" and "retry-all-errors" in parsed.flags:
+                errors.append(
+                    f"{path}:{line}: stage {stage}: curl cannot use --retry-all-errors ({reason})"
+                )
+    return errors
+
+
 def audit_sources(
-    sources: list[tuple[str, str]], allowlist: tuple[tuple[str, str, str], ...] = ALLOWLIST
+    sources: list[tuple[str, str]],
+    allowlist: tuple[tuple[str, str, str], ...] = ALLOWLIST,
+    old_curl_stages: tuple[tuple[str, str, str], ...] = (),
 ) -> list[str]:
     """Audit parsed fetches and APT while rejecting stale or ambiguous exemptions."""
-    errors: list[str] = []
+    errors = old_curl_errors(sources, old_curl_stages)
     seen: Counter[tuple[str, str, str]] = Counter()
     for path, text in sources:
         errors.extend(apt_errors(path, text))
@@ -824,9 +874,86 @@ class FetchConnectRetryTests(unittest.TestCase):
             audit_sources([("fetch.sh", "curl --url=http://localhost:8080/other")], entry)
         )
 
+    def check_old_curl(self, text: str) -> list[str]:
+        """Audit an exempt fixture fetch with the live old-curl stage table enabled."""
+        entry = (("dev/Containerfile", "https://example.invalid/x", "bounded outer retry"),)
+        return audit_sources([("dev/Containerfile", text)], entry, OLD_CURL_STAGES)
+
+    def test_old_curl_stage_rejects_all_errors_on_exempt_fetch(self) -> None:
+        """Reject the planted 41b288ab0 fetch even when its URL is exempt."""
+        errors = self.check_old_curl(
+            "FROM x AS release-build\n"
+            "RUN curl --retry 3 --retry-all-errors -o out https://example.invalid/x\n"
+        )
+        self.assertEqual(
+            errors,
+            [
+                "dev/Containerfile:2: stage release-build: curl cannot use --retry-all-errors "
+                f"({OLD_CURL_STAGES[0][2]})"
+            ],
+        )
+
+    def test_old_curl_stage_accepts_whole_fetch_loop(self) -> None:
+        """Accept the bounded loop with curl 7.61-compatible retry options."""
+        self.assertEqual(
+            self.check_old_curl(
+                "FROM x AS release-build\n"
+                "RUN for attempt in 1 2 3; do \\\n"
+                "    curl --retry 3 --retry-connrefused --fail --location --show-error \\\n"
+                "        --output out https://example.invalid/x \\\n"
+                "    && break || { \\\n"
+                '        if [ "$attempt" -eq 3 ]; then exit 1; fi; \\\n'
+                '        echo "attempt $attempt failed; retrying..." >&2; sleep 5; \\\n'
+                "    }; \\\n"
+                "done\n"
+            ),
+            [],
+        )
+
+    def test_old_curl_stage_ends_at_next_from(self) -> None:
+        """Keep all-errors retries in later named or unnamed stages outside the check."""
+        for boundary in ("FROM y AS later", "FROM y", "from --platform=$BUILDPLATFORM y as later"):
+            with self.subTest(boundary=boundary):
+                self.assertEqual(
+                    self.check_old_curl(
+                        "FROM x AS release-build\n"
+                        f"{boundary}\n"
+                        "RUN curl --retry 3 --retry-all-errors -o out https://example.invalid/x\n"
+                    ),
+                    [],
+                )
+
+    def test_old_curl_stage_missing_file_or_stage_is_stale(self) -> None:
+        """Reject stale table rows for an absent source file or absent stage."""
+        for sources in ([], [("dev/Containerfile", "FROM x AS other\n")]):
+            with self.subTest(sources=sources):
+                self.assertEqual(
+                    audit_sources(sources, (), OLD_CURL_STAGES),
+                    [
+                        "dev/Containerfile: stale old-curl stage entry: release-build "
+                        f"({OLD_CURL_STAGES[0][2]})"
+                    ],
+                )
+
+    def test_old_curl_stage_uses_parsed_options(self) -> None:
+        """Ignore option-looking values while rejecting unsupported disabled flags too."""
+        self.assertEqual(
+            self.check_old_curl(
+                "FROM x AS release-build\n"
+                "RUN curl --output --retry-all-errors https://example.invalid/x\n"
+            ),
+            [],
+        )
+        self.assertTrue(
+            self.check_old_curl(
+                "FROM x AS release-build\n"
+                "RUN curl --no-retry-all-errors -o out https://example.invalid/x\n"
+            )
+        )
+
     def test_tracked_fetches_retry_connect_failures(self) -> None:
         """Enforce the retry contract across the live tracked site inventory."""
-        self.assertEqual(audit_sources(tracked_sources()), [])
+        self.assertEqual(audit_sources(tracked_sources(), old_curl_stages=OLD_CURL_STAGES), [])
 
 
 if __name__ == "__main__":
