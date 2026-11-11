@@ -176,18 +176,81 @@ class Decide(unittest.TestCase):
         self.assertIn("scripts/lib/safe_subprocess.py", decision.reason)
         self.assertIn("scripts/*/safe_subprocess.py", decision.reason)
 
-    def test_empty_full_paths_stays_light_without_fetching_paths(self) -> None:
-        def refuse_paths() -> Sequence[str]:
-            raise AssertionError("changed_paths called when full_paths is empty")
-
+    def test_empty_full_paths_keeps_an_unlisted_path_light(self) -> None:
+        """An empty glob list still checks paths before choosing the light tier."""
         empty_cfg = {**CONFIG, "full_paths": []}
         decision = ci_tier.decide(
             event(),
             empty_cfg,
             release_exempt=lambda: False,
-            changed_paths=refuse_paths,
+            changed_paths=lambda: ("docs/usage/cli.md",),
         )
         self.assertEqual(decision.tier, ci_tier.LIGHT)
+
+    def test_deleted_listed_path_and_removed_glob_still_owe_full(self) -> None:
+        """Deleting a file and its last glob cannot bypass tier escalation."""
+        deleted = CONFIG["full_paths"][0]
+        remaining: list[str]
+        for remaining in (CONFIG["full_paths"][1:], []):
+            with self.subTest(full_paths=remaining):
+                decision = ci_tier.decide(
+                    event(),
+                    {**CONFIG, "full_paths": remaining},
+                    release_exempt=lambda: False,
+                    changed_paths=lambda: (deleted, ci_tier.TIER_CONFIG_PATH),
+                )
+                self.assertEqual(decision.tier, ci_tier.FULL)
+                self.assertIn(ci_tier.TIER_CONFIG_PATH, decision.reason)
+
+    def test_tier_config_path_alone_owes_full_even_without_globs(self) -> None:
+        """The tier definition is protected independently of its own globs."""
+        globs: list[str]
+        for globs in (CONFIG["full_paths"], []):
+            with self.subTest(full_paths=globs):
+                decision = ci_tier.decide(
+                    event(),
+                    {**CONFIG, "full_paths": globs},
+                    release_exempt=lambda: False,
+                    changed_paths=lambda: (ci_tier.TIER_CONFIG_PATH,),
+                )
+                self.assertEqual(decision.tier, ci_tier.FULL)
+                self.assertIn(ci_tier.TIER_CONFIG_PATH, decision.reason)
+
+    def test_config_path_escalation_preserves_path_count_bounds(self) -> None:
+        """Both count limits apply before the config path can select full."""
+        for path_count, glob_count in (
+            (ci_tier.MAX_CHANGED_PATHS, ci_tier.MAX_FULL_PATHS),
+            (ci_tier.MAX_CHANGED_PATHS + 1, 0),
+            (1, ci_tier.MAX_FULL_PATHS + 1),
+        ):
+            with self.subTest(paths=path_count, globs=glob_count):
+                paths = [ci_tier.TIER_CONFIG_PATH] * path_count
+                config = {**CONFIG, "full_paths": ["unlisted"] * glob_count}
+                fetch_paths = mock.Mock(return_value=paths)
+                if path_count > ci_tier.MAX_CHANGED_PATHS or glob_count > ci_tier.MAX_FULL_PATHS:
+                    with self.assertRaises(ci_tier.TierError):
+                        ci_tier.decide(
+                            event(),
+                            config,
+                            release_exempt=lambda: False,
+                            changed_paths=fetch_paths,
+                        )
+                else:
+                    decision = ci_tier.decide(
+                        event(), config, release_exempt=lambda: False, changed_paths=fetch_paths
+                    )
+                    self.assertEqual(decision.tier, ci_tier.FULL)
+
+    def test_empty_full_paths_with_unknown_paths_owes_full(self) -> None:
+        """Removing all globs cannot make unavailable path metadata safe."""
+        decision = ci_tier.decide(
+            event(),
+            {**CONFIG, "full_paths": []},
+            release_exempt=lambda: False,
+            changed_paths=lambda: None,
+        )
+        self.assertEqual(decision.tier, ci_tier.FULL)
+        self.assertEqual(decision.reason, "changed paths unavailable")
 
     def test_unavailable_changed_paths_fail_closed_to_full(self) -> None:
         decision = decide(event(), paths=None)
@@ -562,6 +625,39 @@ class RunFullPaths(unittest.TestCase):
             with self.subTest(case=label):
                 self.assertEqual(decision.tier, ci_tier.FULL)
                 self.assertEqual(decision.reason, "changed paths unavailable")
+
+    def test_bot_release_with_failed_path_fetch_owes_full(self) -> None:
+        """A trusted release author cannot exempt an unreadable diff."""
+
+        def broken_files(path: str) -> object:
+            if "/files" in path:
+                raise ci_tier.TierError("files endpoint down")
+            return []
+
+        env = self.base_env(
+            HEAD_REF=RELEASE_REF, PR_AUTHOR="github-actions[bot]", PR_AUTHOR_TYPE="Bot"
+        )
+        with redirect_stderr(io.StringIO()):
+            decision = ci_tier.run(env, ci_tier.DEFAULT_CONFIG, broken_files)
+        self.assertEqual(decision.tier, ci_tier.FULL)
+        self.assertEqual(decision.reason, "changed paths unavailable")
+
+    def test_bot_release_with_fetched_release_paths_keeps_cut_boundary(self) -> None:
+        """Fetched release-only paths stay release-light until the cut label."""
+        for labels, expected in (([], ci_tier.RELEASE_LIGHT), (["autorelease: cut"], ci_tier.FULL)):
+            with self.subTest(labels=labels):
+
+                def fetch(path: str, labels: Sequence[str] = labels) -> object:
+                    if "/files" in path:
+                        return [{"filename": ".release-please-manifest.json"}]
+                    return [{"name": label} for label in labels]
+
+                env = self.base_env(
+                    HEAD_REF=RELEASE_REF, PR_AUTHOR="github-actions[bot]", PR_AUTHOR_TYPE="Bot"
+                )
+                with redirect_stderr(io.StringIO()):
+                    decision = ci_tier.run(env, ci_tier.DEFAULT_CONFIG, fetch)
+                self.assertEqual(decision.tier, expected)
 
     def test_run_fetches_pull_request_files_at_most_once_across_release_and_full_paths(
         self,

@@ -43,12 +43,18 @@ must run outside `ci-tier.yml`. Pull-request `Pre-Commit` runs diff-scoped via
    `changed_paths()` and shares that result across both the release-branch
    exemption check and `full_paths` matching. When any changed path matches a
    `full_paths` pattern, `decide()` returns `full` with a reason naming the
-   first matched path and pattern.
+   first matched path and pattern. Before matching globs, a change to
+   `.github/ci-tier.json` selects `full` with that filename in the reason,
+   including when the same change removes a listed file and its last glob.
+   `TIER_CONFIG_PATH` owns the relative filename for routing and config reads.
 
-3. **Fail-closed behaviour.** When `full_paths` is non-empty on an own pull
-   request and changed paths cannot be obtained (missing API token, missing
-   pull-request number, or API failure), `decide()` returns `full` with reason
-   `changed paths unavailable` rather than falling back to `light`.
+3. **Fail-closed behaviour.** When an own pull request's changed paths cannot
+   be obtained (missing API token, missing pull-request number, or API
+   failure), `decide()` returns `full` with reason
+   `changed paths unavailable`, including with an empty `full_paths` list.
+   `run.exempt()` refuses an unavailable diff before calling the release
+   exemption script, so a release bot cannot earn `release-light` on author
+   and branch alone after a failed fetch.
 
 4. **Tracked-file drift gate.** `scripts/ci/ci_tier.py --check-full-paths`
    runs `git ls-files` with an explicit timeout and bounded loops and verifies
@@ -62,35 +68,12 @@ must run outside `ci-tier.yml`. Pull-request `Pre-Commit` runs diff-scoped via
    `test-readme-badges` hook `files` pattern also includes
    `.github/ci-tier.json`.
 
-5. **Seeded paths from repository audit.** Auditing `sys.platform` and
-   `platform.system` across `scripts/lib/*.py` and
-   `tools/rc1-tester/src/vmaf_rc1_tester/*.py`, alongside the process-runner
-   modules and their tests, yields six kept files and two dropped files:
-
-   - **Kept** `scripts/lib/safe_subprocess.py`: seed process runner; inspects
-     macOS extended ACLs under `sys.platform == "darwin"` before starting
-     processes with `subprocess.Popen`.
-   - **Kept** `scripts/lib/test_safe_subprocess.py`: seed test suite; exercises
-     macOS `chmod` ACLs and `safe_subprocess.run` under
-     `sys.platform == "darwin"`.
-   - **Kept** `tools/rc1-tester/src/vmaf_rc1_tester/_safe_subprocess.py`: seed
-     tester copy of `safe_subprocess.py` carrying identical
-     `sys.platform == "darwin"` process-launch logic.
-   - **Kept** `tools/rc1-tester/tests/test_safe_subprocess_copy.py`: test
-     module verifying `_safe_subprocess.py` stays byte-identical to
-     `scripts/lib/safe_subprocess.py`.
-   - **Kept** `tools/rc1-tester/src/vmaf_rc1_tester/hw_facts.py`:
-     `platform.system() == "Darwin"` branch runs `/usr/sbin/sysctl` and
-     `/usr/sbin/system_profiler` through `run_bounded`.
-   - **Kept** `tools/rc1-tester/src/vmaf_rc1_tester/probe.py`:
-     `platform.system() == "Darwin"` branches run `sw_vers`, `sysctl`, and
-     `system_profiler` through `run_bounded`.
-   - **Dropped** `tools/rc1-tester/src/vmaf_rc1_tester/hw_cudaprobe.py`:
-     `sys.platform == "win32"` selects `nvcuda.dll` or `libcuda.so.1` for
-     in-process `ctypes.CDLL` loading and starts no process.
-   - **Dropped** `tools/rc1-tester/src/vmaf_rc1_tester/hw_l0probe.py`:
-     `sys.platform == "win32"` selects `ze_loader.dll` or `libze_loader.so.1`
-     for in-process `ctypes.CDLL` loading and starts no process.
+5. **Seeded paths from repository audit.** The
+   [research digest](../research/3536-ci-tier-full-paths.md) records the
+   reproducible `sys.platform`, `os.name`, and `platform.system()` search,
+   each listed path, and each excluded candidate. Its seven listed files
+   include the Windows-only packaged-loader launch in `hw_sycl.py`, found
+   when extending the original search to `os.name`.
 
 ## Alternatives considered
 
@@ -116,6 +99,13 @@ must run outside `ci-tier.yml`. Pull-request `Pre-Commit` runs diff-scoped via
 
 ## References
 
+- Source: `req` (controller answer `vmafx-tier-platform-paths`, 2026-11-11,
+  paraphrased): list the platform-guarded launch files as full-tier paths in
+  `.github/ci-tier.json`, amend ADR-2169, prove it with a planted case (the
+  pull request 3401 path list decides full, an unlisted path light, one
+  boundary glob), and check that every listed glob still matches a tracked
+  file so the list cannot drift silently.
+- [Research-3536](../research/3536-ci-tier-full-paths.md) (platform-path audit).
 - Pull request #3401 and [ADR-3532](3532-trusted-executable-launch-links.md).
 - [ADR-2169](2169-ci-fewer-runs.md) (CI tier routing).
 - Implementation and tests: `.github/ci-tier.json`, `scripts/ci/ci_tier.py`,

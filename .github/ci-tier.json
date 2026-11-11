@@ -7,7 +7,7 @@
   },
   "release_ref_prefix": "release-please--",
   "tiers": {
-    "full": "Every event that is not a pull request from this repository (master push, dispatch, schedule), every fork pull request, an own pull request labelled `ci: full`, an own pull request whose changed files match `full_paths` (or whose changed files cannot be read), and a release pull request labelled `autorelease: cut`. Runs the whole suite.",
+    "full": "Every event that is not a pull request from this repository (master push, dispatch, schedule), every fork pull request, an own pull request labelled `ci: full`, an own pull request changing this tier definition or whose changed files match `full_paths` (or whose changed files cannot be read), and a release pull request labelled `autorelease: cut`. Runs the whole suite.",
     "light": "A pull request whose head repository is this repository (Renovate included) and whose changed files match no `full_paths` pattern. Runs lint, format, the fast suite and the governance gates; the contexts in `full_only` are not run.",
     "release-light": "The machine-generated release pull request without the cut label. Runs the contexts in `always` only."
   },
@@ -17,7 +17,8 @@
     "tools/rc1-tester/src/vmaf_rc1_tester/_safe_subprocess.py",
     "tools/rc1-tester/tests/test_safe_subprocess_copy.py",
     "tools/rc1-tester/src/vmaf_rc1_tester/hw_facts.py",
-    "tools/rc1-tester/src/vmaf_rc1_tester/probe.py"
+    "tools/rc1-tester/src/vmaf_rc1_tester/probe.py",
+    "tools/rc1-tester/src/vmaf_rc1_tester/hw_sycl.py"
   ],
   "always": [
     "Release Script Contract",

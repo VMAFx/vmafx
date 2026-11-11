@@ -11,8 +11,8 @@ the answer to every workflow. Three tiers:
     Every event that is not a pull request from this repository (a master
     push, a dispatch, a schedule), every fork pull request, an own pull
     request carrying the ``full`` label, an own pull request whose changed
-    paths match ``full_paths`` (or whose changed paths are unavailable), and a
-    release pull request carrying the ``cut`` label.
+    paths match ``full_paths`` or change the tier definition (or whose changed
+    paths are unavailable), and a release pull request carrying the ``cut`` label.
 ``light``
     A pull request whose head repository is this repository, Renovate
     included, when none of its changed paths matches ``full_paths``.
@@ -60,7 +60,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.lib.safe_subprocess import run as run_command
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_CONFIG = REPO_ROOT / ".github" / "ci-tier.json"
+TIER_CONFIG_PATH = ".github/ci-tier.json"
+DEFAULT_CONFIG = REPO_ROOT / TIER_CONFIG_PATH
 EXEMPT_SCRIPT = REPO_ROOT / "scripts" / "ci" / "release-pr-exempt.sh"
 API_TIMEOUT_S = 30
 API_MAX_BYTES = 32 << 20  # a 100-entry API page is well under 1 MiB
@@ -198,12 +199,17 @@ def check_own_input_lanes(path: Path, config: Mapping[str, Any]) -> None:
             raise TierError(f"{path}: own_input_lanes context {lane['context']!r} is not full_only")
 
 
-def _matching_full_path(paths: Sequence[str], globs: Sequence[str]) -> tuple[str, str] | None:
-    """Return the first ``(changed_path, glob)`` pair matched under ``fnmatchcase``."""
+def _check_path_bounds(paths: Sequence[str], globs: Sequence[str]) -> None:
+    """Bound both inputs before config-path escalation or glob matching."""
     if len(paths) > MAX_CHANGED_PATHS:
         raise TierError(f"more than {MAX_CHANGED_PATHS} changed paths")
     if len(globs) > MAX_FULL_PATHS:
         raise TierError(f"more than {MAX_FULL_PATHS} full_paths entries")
+
+
+def _matching_full_path(paths: Sequence[str], globs: Sequence[str]) -> tuple[str, str] | None:
+    """Return the first ``(changed_path, glob)`` pair matched under ``fnmatchcase``."""
+    _check_path_bounds(paths, globs)
     for path_idx in range(len(paths)):
         candidate = paths[path_idx]
         for glob_idx in range(len(globs)):
@@ -219,11 +225,12 @@ def _decide_own_pull_request(
 ) -> Decision:
     """Decide between ``full`` and ``light`` for a non-exempt own pull request."""
     full_paths: Sequence[str] = config.get("full_paths", ())
-    if not full_paths:
-        return Decision(LIGHT, "pull request from this repository")
     paths = changed_paths()
     if paths is None:
         return Decision(FULL, "changed paths unavailable")
+    _check_path_bounds(paths, full_paths)
+    if TIER_CONFIG_PATH in paths:
+        return Decision(FULL, f"changed tier configuration {TIER_CONFIG_PATH!r}")
     matched = _matching_full_path(paths, full_paths)
     if matched is not None:
         path, glob = matched
@@ -475,7 +482,10 @@ def run(env: Mapping[str, str], config_path: Path, fetch: Fetcher | None) -> Dec
 
     def exempt() -> bool:
         """Evaluate ``release-pr-exempt.sh`` using the shared changed-paths cache."""
-        return release_exempt_from_script(event, paths_or_none() or ())
+        paths = paths_or_none()
+        if paths is None:
+            return False
+        return release_exempt_from_script(event, paths)
 
     return decide(event, config, release_exempt=exempt, changed_paths=paths_or_none)
 
@@ -493,7 +503,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
     args = parser.parse_args(argv)
     config_path = args.config or (
-        args.repo_root / ".github" / "ci-tier.json" if args.check_full_paths else DEFAULT_CONFIG
+        args.repo_root / TIER_CONFIG_PATH if args.check_full_paths else DEFAULT_CONFIG
     )
     if args.check_full_paths:
         return check_full_paths(config_path, args.repo_root)
