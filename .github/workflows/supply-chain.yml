@@ -976,7 +976,7 @@ jobs:
           for crate in vmafx-sys vmafx; do
             version="$(python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["package"]["version"])' \
               "bindings/rust/$crate/Cargo.toml")"
-            http_code="$(curl --silent --show-error --max-time 60 \
+            http_code="$(curl --retry 3 --retry-all-errors --silent --show-error --max-time 60 \
               --user-agent 'VMAFx/vmafx release publisher (https://github.com/VMAFx/vmafx)' \
               --output "$RUNNER_TEMP/$crate-version.json" --write-out '%{http_code}' \
               "https://crates.io/api/v1/crates/$crate/$version")"
@@ -1071,7 +1071,7 @@ jobs:
           fi
           local_files=("${wheels[0]}" "${sdists[0]}")
           response="$RUNNER_TEMP/pypi-release.json"
-          http_code="$(curl --retry 3 --max-time 60 --silent --show-error \
+          http_code="$(curl --retry 3 --retry-all-errors --max-time 60 --silent --show-error \
             --output "$response" --write-out '%{http_code}' \
             "https://pypi.org/pypi/vmaf-mcp/$VMAFX_PEP440_VERSION/json")"
           publish=false
@@ -1165,7 +1165,7 @@ jobs:
           response="$RUNNER_TEMP/pypi-release-after.json"
           http_code=000
           for attempt in {1..12}; do
-            http_code="$(curl --retry 3 --max-time 60 --silent --show-error --output "$response" \
+            http_code="$(curl --retry 3 --retry-all-errors --max-time 60 --silent --show-error --output "$response" \
               --write-out '%{http_code}' \
               "https://pypi.org/pypi/vmaf-mcp/$VMAFX_PEP440_VERSION/json")"
             if [[ "$http_code" == "200" &&
@@ -1373,7 +1373,7 @@ jobs:
         run: |
           set -euo pipefail
           url="$(python3 scripts/release/distribution.py source-url --version "$VMAFX_VERSION")"
-          curl --fail --location --silent --show-error --retry 3 --max-time 120 \
+          curl --fail --location --silent --show-error --retry 3 --retry-all-errors --max-time 120 \
             --output "$RUNNER_TEMP/source.tar.gz" "$url"
           digest="$(sha256sum "$RUNNER_TEMP/source.tar.gz" | cut -d' ' -f1)"
           python3 scripts/release/distribution.py homebrew --version "$VMAFX_VERSION" \

@@ -275,7 +275,7 @@ RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 \
 # ClangBuildAnalyzer (Unlicense, ADR-3336) build-time analysis
 ARG CLANGBUILDANALYZER_VERSION=1.6.0
 ARG CLANGBUILDANALYZER_SHA256=868a8d34ecb9b65da4e5874342062a12c081ce4385c7ddd6ce7d557a0c5c292d
-RUN curl -fsSL \
+RUN curl --retry 3 --retry-all-errors -fsSL \
         "https://github.com/aras-p/ClangBuildAnalyzer/archive/refs/tags/v${CLANGBUILDANALYZER_VERSION}.tar.gz" \
         -o /tmp/cba.tar.gz \
     && echo "${CLANGBUILDANALYZER_SHA256}  /tmp/cba.tar.gz" | sha256sum -c - \
@@ -352,9 +352,17 @@ RUN for attempt in 1 2 3; do \
 
 # AlmaLinux 8's assembler predates the AVX-512 sources. Build the maintained
 # assembler from the upstream release tarball, verified before extraction.
-RUN curl --fail --location --show-error \
-        --output /tmp/nasm.tar.xz \
-        "https://www.nasm.us/pub/nasm/releasebuilds/${NATIVE_NASM_VERSION}/nasm-${NATIVE_NASM_VERSION}.tar.xz" \
+# AlmaLinux 8 curl 7.61 lacks --retry-all-errors (7.71); loop retries unreachable host/network.
+RUN for attempt in 1 2 3; do \
+        curl --retry 3 --retry-connrefused --fail --location --show-error \
+            --output /tmp/nasm.tar.xz \
+            "https://www.nasm.us/pub/nasm/releasebuilds/${NATIVE_NASM_VERSION}/nasm-${NATIVE_NASM_VERSION}.tar.xz" \
+        && break || { \
+            if [ "$attempt" -eq 3 ]; then exit 1; fi; \
+            echo "nasm download attempt $attempt failed; retrying..." >&2; \
+            sleep 5; \
+        }; \
+    done \
     && echo "${NATIVE_NASM_SHA256}  /tmp/nasm.tar.xz" | sha256sum --check --strict \
     && mkdir /tmp/nasm-src \
     && tar -xJf /tmp/nasm.tar.xz -C /tmp/nasm-src --strip-components=1 \
@@ -415,9 +423,10 @@ ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64
 # does not publish year-quarter-versioned meta-packages (e.g.,
 # `intel-basekit-2025.3` does not exist in the apt repo); the versioning is
 # tracked internally by the component packages the meta-package pulls in.
-RUN curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
-        | gpg --dearmor \
-        | tee /usr/share/keyrings/intel-sw-products.gpg > /dev/null \
+RUN key="$(mktemp)" \
+    && curl --retry 3 --retry-all-errors -fsSL -o "$key" https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+    && gpg --dearmor < "$key" | tee /usr/share/keyrings/intel-sw-products.gpg > /dev/null \
+    && rm -f "$key" \
     && printf 'deb [signed-by=/usr/share/keyrings/intel-sw-products.gpg] https://apt.repos.intel.com/oneapi all main\n' \
         > /etc/apt/sources.list.d/intel-oneapi.list
 
@@ -498,8 +507,8 @@ RUN . /opt/vmafx/build-config.env \
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     . /opt/vmafx/build-config.env \
-    && curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze1_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze1.deb \
-    && curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze-dev_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze-dev.deb \
+    && curl --retry 3 --retry-all-errors -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze1_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze1.deb \
+    && curl --retry 3 --retry-all-errors -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze-dev_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze-dev.deb \
     && apt-get update \
     && apt-get install -y --no-install-recommends /tmp/libze1.deb /tmp/libze-dev.deb \
     && find /tmp -maxdepth 1 -name 'libze*.deb' -delete
@@ -516,7 +525,7 @@ ARG RUSTUP_INIT_SHA256=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35
 ENV RUSTUP_HOME=/opt/rust/rustup \
     CARGO_HOME=/opt/rust/cargo
 RUN . /opt/vmafx/build-config.env \
-    && curl -fsSL "https://static.rust-lang.org/rustup/archive/${RUSTUP_INIT_VERSION}/x86_64-unknown-linux-gnu/rustup-init" -o /tmp/rustup-init \
+    && curl --retry 3 --retry-all-errors -fsSL "https://static.rust-lang.org/rustup/archive/${RUSTUP_INIT_VERSION}/x86_64-unknown-linux-gnu/rustup-init" -o /tmp/rustup-init \
     && echo "${RUSTUP_INIT_SHA256}  /tmp/rustup-init" | sha256sum -c - \
     && chmod +x /tmp/rustup-init \
     && /tmp/rustup-init -y --no-modify-path --profile minimal \
@@ -739,7 +748,7 @@ RUN chown vmaf:vmaf /build /build/vmaf
 # by ai/pyproject.toml.
 ARG ORT_VERSION=1.30.0
 ARG ORT_SHA256=a5ed5a3cac51fbb2e90da632ae43d19212faaa20e76484e62bcb7c23ddb3b3fd
-RUN curl -fsSL \
+RUN curl --retry 3 --retry-all-errors -fsSL \
         "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
         -o /tmp/ort.tgz \
     && echo "${ORT_SHA256}  /tmp/ort.tgz" | sha256sum --check --strict - \
@@ -786,11 +795,11 @@ USER root
 # (`nv-codec-headers` from code.ffmpeg.org, `nv-codec-headers-<tag>` from
 # GitHub), so make targets the extracted directory rather than a fixed name.
 ARG NV_CODEC_HEADERS_REF=n13.1.15.0
-RUN { curl -fsSL --retry 1 --retry-delay 2 --connect-timeout 10 --max-time 60 \
+RUN { curl -fsSL --retry 1 --retry-all-errors --retry-delay 2 --connect-timeout 10 --max-time 60 \
            "https://code.ffmpeg.org/FFmpeg/nv-codec-headers/archive/${NV_CODEC_HEADERS_REF}.tar.gz" \
            -o /tmp/nv-codec-headers.tgz \
          || { echo "nv-codec-headers: code.ffmpeg.org unreachable, falling back to the GitHub mirror" >&2; \
-              curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 120 \
+              curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 120 \
                 "https://github.com/FFmpeg/nv-codec-headers/archive/refs/tags/${NV_CODEC_HEADERS_REF}.tar.gz" \
                 -o /tmp/nv-codec-headers.tgz; }; } \
     && tar xzf /tmp/nv-codec-headers.tgz -C /tmp \

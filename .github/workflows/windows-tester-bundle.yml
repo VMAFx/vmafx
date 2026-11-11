@@ -312,7 +312,7 @@ jobs:
             $pins[$name] = $line.Matches[0].Groups[1].Value
           }
           $exe = Join-Path $env:RUNNER_TEMP 'oneapi-basekit.exe'
-          curl.exe --fail --location --retry 5 --retry-delay 5 --output $exe --url $pins['INTEL_BASEKIT_WINDOWS_URL']
+          curl.exe --fail --location --retry 5 --retry-all-errors --retry-delay 5 --output $exe --url $pins['INTEL_BASEKIT_WINDOWS_URL']
           if ($LASTEXITCODE -ne 0) { throw "download failed ($LASTEXITCODE)" }
           $size = (Get-Item $exe).Length
           if ($size -ne [int64]$pins['INTEL_BASEKIT_WINDOWS_SIZE']) { throw "installer is $size bytes, not $($pins['INTEL_BASEKIT_WINDOWS_SIZE'])" }
