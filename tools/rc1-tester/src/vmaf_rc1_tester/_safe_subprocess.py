@@ -28,11 +28,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, Literal, overload
 
+if hasattr(os, "getuid"):
+    import grp
+    import pwd
+
 MAX_ARG_COUNT = 4096
 MAX_ARG_BYTES = 65_536
 MAX_ARGV_BYTES = 1_048_576
 MAX_EXECUTABLE_LINK_HOPS = 40
 MAX_EXECUTABLE_WALK_STEPS = 4096
+MAX_GROUP_ACCOUNTS = 65_536
 DEFAULT_TIMEOUT_SECONDS = 120.0
 DEFAULT_MAX_OUTPUT_BYTES = 4 * 1_048_576
 TERMINATION_GRACE_SECONDS = 2.0
@@ -248,9 +253,42 @@ def _executable_links(launch: Path) -> tuple[Path, ...]:
     return tuple(links)
 
 
+def _group_accounts_trusted(gid: int, trusted_owners: tuple[int, ...]) -> bool:
+    """Authorize group write only for bounded, resolvable root/current-user membership."""
+    try:
+        members = grp.getgrgid(gid).gr_mem
+        accounts = pwd.getpwall()
+        if len(members) > MAX_GROUP_ACCOUNTS or len(accounts) > MAX_GROUP_ACCOUNTS:
+            return False
+        names = set(members)
+        names.update(account.pw_name for account in accounts if account.pw_gid == gid)
+        return all(pwd.getpwnam(name).pw_uid in trusted_owners for name in names)
+    except (KeyError, OSError):
+        return False
+
+
+def _directory_allows_link_retargeting(
+    directory: os.stat_result,
+    trusted_owners: tuple[int, ...],
+    group_verdicts: dict[int, bool],
+) -> bool:
+    """Refuse unprotected directory writes by other users, caching each group's verdict."""
+    if directory.st_mode & stat.S_ISVTX:
+        return False
+    if directory.st_mode & 0o002:
+        return True
+    if not directory.st_mode & 0o020:
+        return False
+    gid = directory.st_gid
+    if gid not in group_verdicts:
+        group_verdicts[gid] = _group_accounts_trusted(gid, trusted_owners)
+    return not group_verdicts[gid]
+
+
 def _validate_executable_links(links: tuple[Path, ...]) -> None:
-    """Refuse links whose owner or containing directory permits another user to retarget them."""
+    """Require trusted link owners and directory writers, with group verdicts per call."""
     trusted_owners = (0, os.getuid())
+    group_verdicts: dict[int, bool] = {}
     for link in links:
         message = f"executable link can be retargeted by another user: {link}"
         try:
@@ -261,7 +299,7 @@ def _validate_executable_links(links: tuple[Path, ...]) -> None:
         if (
             owner not in trusted_owners
             or directory.st_uid not in trusted_owners
-            or (directory.st_mode & 0o022 and not directory.st_mode & stat.S_ISVTX)
+            or _directory_allows_link_retargeting(directory, trusted_owners, group_verdicts)
         ):
             raise CommandValidationError(message)
 

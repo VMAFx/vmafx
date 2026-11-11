@@ -15,6 +15,7 @@ import time
 import unittest
 from collections.abc import Sequence
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest import mock
 
@@ -600,9 +601,128 @@ class ExecutableLinkTrustTests(unittest.TestCase):
         self.assert_refused(self.link, self.link)
 
     def test_group_writable_link_directory_is_refused(self) -> None:
-        """Group write permission alone also permits link replacement."""
+        """A supplementary group member with another uid can replace the link."""
+        self.mock_group_accounts(members=["other"])
         self.root.chmod(0o775)
         self.assert_refused(self.link, self.link)
+
+    def mock_group_accounts(
+        self, members: list[str] | None = None, accounts: list[Any] | None = None
+    ) -> tuple[Any, Any, Any]:
+        """Supply account records without consulting or changing host group membership."""
+        gid = self.root.stat().st_gid
+        records = {
+            "current": SimpleNamespace(pw_name="current", pw_uid=os.getuid(), pw_gid=gid),
+            "root": SimpleNamespace(pw_name="root", pw_uid=0, pw_gid=gid),
+            "other": SimpleNamespace(pw_name="other", pw_uid=os.getuid() + 1, pw_gid=gid),
+        }
+        group = self.enterContext(
+            mock.patch(
+                "grp.getgrgid",
+                return_value=SimpleNamespace(
+                    gr_mem=["current", "root"] if members is None else members
+                ),
+            )
+        )
+        passwd = self.enterContext(
+            mock.patch("pwd.getpwall", return_value=[] if accounts is None else accounts)
+        )
+        names = self.enterContext(mock.patch("pwd.getpwnam", side_effect=records.__getitem__))
+        return group, passwd, names
+
+    def test_group_writable_trusted_members_keep_launch_link(self) -> None:
+        """Root and the current user may share write access without losing launch identity."""
+        self.mock_group_accounts()
+        self.root.chmod(0o775)
+        result = run([str(self.link), "-V"], allowed_executables=ALLOW_PYTHON)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.argv[0], str(self.link))
+
+    def test_group_writable_foreign_primary_member_is_refused(self) -> None:
+        """Primary group membership counts even when gr_mem omits the account."""
+        self.mock_group_accounts(
+            accounts=[SimpleNamespace(pw_name="other", pw_gid=self.root.stat().st_gid)]
+        )
+        self.root.chmod(0o775)
+        self.assert_refused(self.link, self.link)
+
+    def test_group_writable_unknown_gid_is_refused(self) -> None:
+        """An unavailable group record cannot authorize a writable directory."""
+        group, _, _ = self.mock_group_accounts()
+        group.side_effect = KeyError("unknown gid")
+        self.root.chmod(0o775)
+        self.assert_refused(self.link, self.link)
+
+    def test_group_writable_unknown_name_is_refused(self) -> None:
+        """An unresolved member name fails closed rather than disappearing from the group."""
+        self.mock_group_accounts(members=["unknown"])
+        self.root.chmod(0o775)
+        self.assert_refused(self.link, self.link)
+
+    def test_group_writable_lookup_oserrors_are_refused(self) -> None:
+        """Every account lookup fails closed on operating-system errors."""
+        lookups = self.mock_group_accounts()
+        self.root.chmod(0o775)
+        for lookup in lookups:
+            with self.subTest(lookup=lookup):
+                lookup.side_effect = OSError("planted lookup failure")
+                self.assert_refused(self.link, self.link)
+                lookup.side_effect = None
+
+    def test_group_writable_passwd_over_bound_is_refused(self) -> None:
+        """A passwd database exceeding the named account bound cannot authorize a group."""
+        self.mock_group_accounts(accounts=[None] * (65_536 + 1))
+        self.root.chmod(0o775)
+        self.assertEqual(safe_subprocess.MAX_GROUP_ACCOUNTS, 65_536)
+        self.assert_refused(self.link, self.link)
+
+    def test_group_writable_member_list_over_bound_is_refused(self) -> None:
+        """Supplementary member enumeration also stays within the named account bound."""
+        self.mock_group_accounts(members=["current"] * (65_536 + 1))
+        self.root.chmod(0o775)
+        self.assert_refused(self.link, self.link)
+
+    def test_group_writable_passwd_exact_bound_is_evaluated(self) -> None:
+        """Exactly the named account bound is accepted after evaluating trusted members."""
+        account = SimpleNamespace(pw_name="current", pw_gid=self.root.stat().st_gid)
+        _, _, names = self.mock_group_accounts(members=[], accounts=[account] * 65_536)
+        self.root.chmod(0o775)
+        result = run([str(self.link), "-V"], allowed_executables=ALLOW_PYTHON)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.argv[0], str(self.link))
+        names.assert_called_once_with("current")
+
+    def test_group_writable_exact_bound_foreign_primary_member_is_refused(self) -> None:
+        """The final passwd entry at the bound is checked for foreign primary membership."""
+        gid = self.root.stat().st_gid
+        accounts = [SimpleNamespace(pw_name="current", pw_gid=gid)] * (65_536 - 1)
+        accounts.append(SimpleNamespace(pw_name="other", pw_gid=gid))
+        self.mock_group_accounts(members=[], accounts=accounts)
+        self.root.chmod(0o775)
+        self.assert_refused(self.link, self.link)
+
+    def test_world_writable_directory_refused_with_trusted_group(self) -> None:
+        """Trusted group membership grants no exception for nonsticky other-write access."""
+        self.mock_group_accounts()
+        self.root.chmod(0o777)
+        self.assert_refused(self.link, self.link)
+
+    def test_group_verdict_is_cached_only_within_each_validation(self) -> None:
+        """Repeated gids share one verdict, but subsequent validation rechecks membership."""
+        group, passwd, names = self.mock_group_accounts()
+        self.root.chmod(0o775)
+        second = self.root / "second"
+        second.symlink_to(PYTHON)
+        self.link.unlink()
+        self.link.symlink_to(second.name)
+        result = run([str(self.link), "-V"], allowed_executables=ALLOW_PYTHON)
+        self.assertEqual(result.argv[0], str(self.link))
+        group.assert_called_once_with(self.root.stat().st_gid)
+        passwd.assert_called_once_with()
+        names.side_effect = None
+        names.return_value = SimpleNamespace(pw_uid=os.getuid() + 1)
+        self.assert_refused(self.link, self.link)
+        self.assertEqual(group.call_count, 2)
 
     def test_second_link_in_untrusted_directory_is_refused(self) -> None:
         """Every hop needs protection, including a relative target in another directory."""
