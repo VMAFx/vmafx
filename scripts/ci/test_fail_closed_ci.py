@@ -22,6 +22,8 @@ import yaml  # type: ignore[import-untyped]  # no PyYAML stubs in the hook envir
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 SCRIPT_TIMEOUT_S = 60
+MAX_CI_NODES = 200_000
+MAX_CI_YAML_FILES = 512
 
 
 def workflow_step(text: str, name: str) -> str:
@@ -95,8 +97,161 @@ def python_lint_job_problems(job: str) -> list[str]:
     return problems
 
 
+def workflow_run_scripts(text: str) -> list[yaml.ScalarNode]:
+    """Collect workflow and composite-action run scalars with source marks, boundedly."""
+    stack = [(yaml.compose(text, Loader=yaml.SafeLoader), False)]
+    visited: set[tuple[int, bool]] = set()
+    scripts: list[yaml.ScalarNode] = []
+    for _ in range(MAX_CI_NODES):
+        if not stack:
+            return scripts
+        node, in_step = stack.pop()
+        identity = (id(node), in_step)
+        if identity in visited:
+            continue
+        visited.add(identity)
+        if isinstance(node, yaml.MappingNode):
+            for key, value in node.value:
+                if in_step and key.value == "run" and isinstance(value, yaml.ScalarNode):
+                    scripts.append(value)
+                else:
+                    stack.append((value, key.value == "steps"))
+        elif isinstance(node, yaml.SequenceNode):
+            stack.extend((value, in_step) for value in node.value)
+    raise AssertionError(f"CI YAML exceeds {MAX_CI_NODES} nodes")
+
+
+def registers_ppa(command: str) -> bool:
+    """Recognize a literal PPA argument after add-apt-repository, ignoring shell comments."""
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()")
+    lexer.whitespace_split = True
+    registration = False
+    for _ in range(len(command) + 1):
+        token = lexer.get_token()
+        if token is None:
+            return False
+        if token and token[0] in ";&|()":
+            registration = False
+        elif Path(token).name == "add-apt-repository":
+            registration = True
+        elif registration and token.startswith("ppa:"):
+            return True
+    raise AssertionError("shell token count exceeds command length")
+
+
+def ppa_script_lines(script: str) -> list[int]:
+    """Find registration command lines, joining shell backslash continuations."""
+    found: list[int] = []
+    command = ""
+    start = 1
+    for number, line in enumerate(script.splitlines(), 1):
+        if not command:
+            start = number
+        command += line
+        if line.endswith("\\"):
+            command = command[:-1]
+            continue
+        if registers_ppa(command):
+            found.append(start)
+        command = ""
+    return found
+
+
+def ppa_run_problems(path: Path, text: str) -> list[str]:
+    """Reject run-step PPA registrations with YAML source locations, ignoring non-run text."""
+    problems: list[str] = []
+    for node in workflow_run_scripts(text):
+        if "add-apt-repository" not in node.value:
+            continue
+        for number in ppa_script_lines(node.value):
+            line = node.start_mark.line + (number + 1 if node.style in ("|", ">") else 1)
+            problems.append(
+                f"{path}:{line}: add-apt-repository with ppa: depends on the Launchpad API"
+            )
+    return problems
+
+
+def workflow_ppa_problems(root: Path) -> list[str]:
+    """Scan every workflow and composite-action YAML file for live PPA registration."""
+    paths = sorted(
+        path
+        for directory in (root / ".github/workflows", root / ".github/actions")
+        for path in directory.rglob("*")
+        if path.is_file() and path.suffix in (".yml", ".yaml")
+    )
+    if len(paths) > MAX_CI_YAML_FILES:
+        raise AssertionError(f"CI YAML exceeds {MAX_CI_YAML_FILES} files")
+    return [
+        problem
+        for path in paths
+        for problem in ppa_run_problems(path.relative_to(root), path.read_text(encoding="utf-8"))
+    ]
+
+
+class LaunchpadPPAContract(unittest.TestCase):
+    """Keep workflow toolchain installs independent of live Launchpad API calls."""
+
+    def test_workflows_and_actions_do_not_register_ppas(self) -> None:
+        """Current workflow and action run steps must contain no PPA registrations."""
+        problems = workflow_ppa_problems(ROOT)
+        self.assertEqual(problems, [], "\n".join(problems))
+
+    def test_planted_registration_names_each_yaml_file_and_line(self) -> None:
+        """Reject planted registrations in both CI roots, YAML suffixes and nested paths."""
+        for relative in (
+            ".github/workflows/planted.yml",
+            ".github/workflows/nested/planted.yaml",
+            ".github/actions/planted/action.yml",
+            ".github/actions/nested/action.yaml",
+        ):
+            with self.subTest(path=relative), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path = root / relative
+                path.parent.mkdir(parents=True)
+                path.write_text(
+                    "runs:\n  using: composite\n  steps:\n    - run: |\n"
+                    "        sudo add-apt-repository -y ppa:x/y\n",
+                    encoding="utf-8",
+                )
+                problems = workflow_ppa_problems(root)
+                self.assertEqual(len(problems), 1)
+                self.assertIn(f"{relative}:5:", problems[0])
+
+    def test_registration_forms_and_source_lines(self) -> None:
+        """Reject inline, quoted, continued and folded PPA registrations."""
+        for run, line in (
+            ("add-apt-repository -y ppa:x/y", 2),
+            ("sudo add-apt-repository --yes 'ppa:x/y'", 2),
+            ("|\n      true\n      sudo add-apt-repository -y ppa:x/y", 4),
+            ("|\n      sudo add-apt-repository \\\n        -y ppa:x/y", 3),
+            (">\n      sudo add-apt-repository -y\n      ppa:x/y", 3),
+        ):
+            with self.subTest(run=run):
+                problems = ppa_run_problems(Path("fixture.yml"), f"steps:\n  - run: {run}\n")
+                self.assertEqual(len(problems), 1)
+                self.assertIn(f"fixture.yml:{line}:", problems[0])
+
+    def test_comments_and_non_run_values_are_not_commands(self) -> None:
+        """Allow YAML/shell comments, non-run values, quoted output and non-PPA sources."""
+        command = "sudo add-apt-repository -y ppa:x/y"
+        for text in (
+            f"# {command}\nsteps: []\n",
+            f"steps:\n  - name: {command}\n    run: true\n",
+            f"steps:\n  - run: |\n      # {command}\n      true\n",
+            f"steps:\n  - run: true # {command}\n",
+            f"steps:\n  - run: echo '{command}'\n",
+            f"env:\n  run: {command}\nsteps: []\n",
+            "steps:\n  - run: sudo add-apt-repository universe\n",
+            "steps:\n  - run: add-apt-repository universe; echo ppa:x/y\n",
+            "",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(ppa_run_problems(Path("fixture.yml"), text), [])
+
+
 class FailClosedCIContract(unittest.TestCase):
     def test_contract_is_wired_into_required_ci_and_local_hooks(self) -> None:
+        """Keep the CI contract in Tooling Tests and local hooks for every CI YAML path."""
         rules = (WORKFLOWS / "rule-enforcement.yml").read_text(encoding="utf-8")
         hooks = (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
         # A test runs once in CI (ADR-1568): Tooling Tests runs this file.
@@ -110,7 +265,15 @@ class FailClosedCIContract(unittest.TestCase):
         hook = hooks.split("      - id: fail-closed-ci-contract\n", maxsplit=1)[1].split(
             "      - id:", maxsplit=1
         )[0]
-        self.assertIn("lint-and-format", hook)
+        pattern = yaml.safe_load(hook)["files"]
+        for path in (
+            ".github/workflows/lint-and-format.yml",
+            ".github/workflows/new-workflow.yaml",
+            ".github/actions/nested/example/action.yml",
+            ".github/actions/new-action/action.yaml",
+        ):
+            with self.subTest(path=path):
+                self.assertIsNotNone(re.search(pattern, path))
 
     def test_python_tox_warnings_and_coverage_fail_closed(self) -> None:
         tox = (ROOT / "python" / "tox.ini").read_text(encoding="utf-8")
@@ -206,9 +369,10 @@ class FailClosedCIContract(unittest.TestCase):
         )
 
     def test_nightly_clang_tidy_configuration_and_toolchain(self) -> None:
+        """Keep the archive GCC and existing LLVM installer aligned with the CPU baseline."""
         workflow = (WORKFLOWS / "nightly.yml").read_text(encoding="utf-8")
         tidy_job = workflow_job(workflow, "clang-tidy-full")
-        self.assertIn("ppa:ubuntu-toolchain-r/test", tidy_job)
+        self.assertNotIn("ppa:ubuntu-toolchain-r/test", tidy_job)
         self.assertIn("sudo bash scripts/ci/install-llvm.sh 22", tidy_job)
         # The packages come from the job's apt list (apt archive cache).
         self.assertIn(

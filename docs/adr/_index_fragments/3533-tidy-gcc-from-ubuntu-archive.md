@@ -1,0 +1,1 @@
+| [ADR-3533](3533-tidy-gcc-from-ubuntu-archive.md) | Install gcc-15 and g++-15 from the Ubuntu 26.04 archive, matching both tidy baselines; remove live PPA registration and reject its return in workflow and composite-action run steps. Supersedes ADR-1230 decision 1 only. | Accepted | ci, build, tooling, clang-tidy |
