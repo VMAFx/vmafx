@@ -9,6 +9,7 @@ No third-party dependencies (the CI runners have only the stdlib).
 
 from __future__ import annotations
 
+import ast
 import copy
 import importlib.util
 import json
@@ -158,6 +159,56 @@ OWN_PATHS_ONLY = (
     | GSTREAMER_SELECTORS
     | DEV_CONTAINER_LANE_SELECTORS
 )
+
+
+# Bound on scripts modules followed from the Python test trees; the tree holds 4.
+MAX_SCRIPTS_IMPORT_MODULES = 256
+
+
+def _scripts_imports(path: Path) -> set[str]:
+    """Return the absolute `scripts.*` module names one file imports, with imported names."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            if node.module.split(".")[0] == "scripts":
+                found.add(node.module)
+                found.update(f"{node.module}.{alias.name}" for alias in node.names)
+        elif isinstance(node, ast.Import):
+            found.update(a.name for a in node.names if a.name.split(".")[0] == "scripts")
+    return found
+
+
+def _module_file(module: str) -> Path | None:
+    """Map a module name to its tracked source file, or None for a name that is no module."""
+    base = REPO_ROOT.joinpath(*module.split("."))
+    for candidate in (base.with_suffix(".py"), base / "__init__.py"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _scripts_modules_imported_from(roots: tuple[str, ...]) -> list[str]:
+    """Follow `scripts.*` imports from the test trees, transitively, to repo-relative files."""
+    pending: set[str] = set()
+    for root in roots:
+        for source in (REPO_ROOT / root).rglob("*.py"):
+            if ".tox" not in source.parts:
+                pending |= _scripts_imports(source)
+    seen: set[str] = set()
+    files: set[Path] = set()
+    for _ in range(MAX_SCRIPTS_IMPORT_MODULES):
+        if not pending:
+            return sorted(f.relative_to(REPO_ROOT).as_posix() for f in files)
+        module = pending.pop()
+        seen.add(module)
+        source_file = _module_file(module)
+        if source_file is not None and source_file not in files:
+            files.add(source_file)
+            pending |= _scripts_imports(source_file) - seen
+    raise AssertionError(
+        f"scripts imports exceed MAX_SCRIPTS_IMPORT_MODULES={MAX_SCRIPTS_IMPORT_MODULES}"
+    )
 
 
 def _plan_for(paths: list[str], statuses: list[str] | None = None) -> ImpactPlan:
@@ -841,6 +892,24 @@ class BuildWorkRouting(unittest.TestCase):
         for lock in locks:
             with self.subTest(lock=lock):
                 self.assertTrue(_plan_for([lock]).selectors[self.SELECTOR])
+
+    def test_every_scripts_module_the_python_tests_import_selects_it(self) -> None:
+        """tox and the compat tests import `scripts.lib`; a change there must run them."""
+        modules = _scripts_modules_imported_from(("python", "compat"))
+        self.assertIn("scripts/lib/safe_subprocess.py", modules)
+        for path in modules:
+            with self.subTest(path=path):
+                self.assertTrue(_plan_for([path]).selectors[self.SELECTOR])
+
+    def test_planted_selector_without_scripts_lib_misses_the_runner(self) -> None:
+        config = copy.deepcopy(planner.load_config(CONFIG))
+        patterns = config["selectors"][self.SELECTOR]["patterns"]
+        config["selectors"][self.SELECTOR]["patterns"] = [
+            pattern for pattern in patterns if not pattern.startswith("scripts/lib/")
+        ]
+        changes = (planner.Change(status="M", paths=("scripts/lib/safe_subprocess.py",)),)
+        plan = cast(ImpactPlan, planner.build_plan(config, changes, None, "b" * 40, "h" * 40))
+        self.assertFalse(plan.selectors[self.SELECTOR])
 
     def test_planted_c_core_only_selector_misses_python_changes(self) -> None:
         config = copy.deepcopy(planner.load_config(CONFIG))
