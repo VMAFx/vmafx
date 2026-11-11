@@ -40,12 +40,22 @@ recording and diagnostic reports remain as specified in decisions 2 and 3.
 - Dependency installation no longer calls the Launchpad API to register a PPA.
 - The recorded compiler version stays unchanged; this change does not
   regenerate baselines.
-- The existing fail-closed CI contract scans workflow and composite-action
-  YAML run steps for `add-apt-repository` with a `ppa:` argument, reporting
-  the file and line. Local hook triggers cover all workflow and action
-  YAML files.
-- Positive, planted-negative and boundary cases distinguish commands from
-  comments and non-run values.
+- The fail-closed CI contract bans source-registration text, case-insensitively:
+  `add-apt-repository`, `apt-add-repository`, a word boundary followed by
+  `ppa:`, and the `ppa.launchpad.net` and `ppa.launchpadcontent.net` hosts.
+  Each matching line reports its file, line number and matched text.
+- Scope includes every tracked `.yml`, `.yaml`, `.sh` and `.bash` file, plus
+  every basename beginning with `Dockerfile` or `Containerfile`, throughout
+  the repository, including documentation examples. Local hook triggers cover
+  the same paths. The 1,864-file bound allows fourfold growth from 466 tracked
+  source files measured on 2026-11-11; exceeding it fails the contract.
+- Comments, output strings, heredoc data and variable assignments count as
+  matches. No YAML or shell parsing occurs. Use ADR-3533 wording without
+  banned text when an example or comment needs to describe this restriction.
+  Listed non-regular paths are skipped with an explicit diagnostic; source
+  reads replace invalid UTF-8 bytes. Failed Git listings raise errors.
+- Positive, negative and boundary cases cover nested shell commands, aliases,
+  merge keys, relocated actions, tracked-file scope and exact source locations.
 
 ## References
 
@@ -60,8 +70,9 @@ recording and diagnostic reports remain as specified in decisions 2 and 3.
 - Baseline evidence: `scripts/ci/tidy-baseline-cpu.json` and
   `scripts/ci/tidy-baseline-cuda.json`, field `cc_version`, inspected at
   commit `6f42cb9fa`.
-- Source: requested archive compiler installation and PPA regression check
-  (paraphrased, 2026-11-11, CI dependency reliability).
+- Source: `req` (operator order `finding-repo-health-999f71af7d-20261111-0601`,
+  2026-11-11, paraphrased): repair the red default branch, whose Tidy Ratchet
+  failed while registering the toolchain PPA through Launchpad.
 
 [gcc15]: https://packages.ubuntu.com/resolute/gcc-15
 [ci-run]: https://github.com/VMAFx/vmafx/actions/runs/43017193022

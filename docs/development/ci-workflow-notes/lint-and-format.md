@@ -69,9 +69,12 @@ gcc-15 and g++-15 come from the Ubuntu 26.04 archive. Both tidy
 baselines record gcc-15 (Ubuntu 15.2.0-16ubuntu1) 15.2.0, so the
 existing apt package lists supply the measured compiler without
 registering a PPA or calling the Launchpad API (ADR-3533).
-The fail-closed CI contract rejects add-apt-repository with a ppa:
-argument in workflow and composite-action run steps; YAML and shell
-comments and non-run values are ignored. A compiler newer than the
+The fail-closed CI contract bans source-registration text case-insensitively
+in every tracked `.yml`, `.yaml`, `.sh` and `.bash` file, plus every basename
+starting with `Dockerfile` or `Containerfile`, throughout the repository.
+Comments, output strings, heredocs and variables count; each
+matching line reports its path, line number and matched text. Local hook
+triggers cover the same source paths (ADR-3533). A compiler newer than the
 archive requires a pinned source, never a live API lookup.
 clang-tidy from apt.llvm.org: the ubuntu-24.04 image tops out at
 clang 18, whose libstdc++ has no std::expected, so it cannot even

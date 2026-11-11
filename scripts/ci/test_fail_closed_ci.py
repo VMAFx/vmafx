@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import os
 import re
 import shlex
 import shutil
@@ -14,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from functools import partial
 from pathlib import Path
 from unittest import mock
 
@@ -22,8 +24,12 @@ import yaml  # type: ignore[import-untyped]  # no PyYAML stubs in the hook envir
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 SCRIPT_TIMEOUT_S = 60
-MAX_CI_NODES = 200_000
-MAX_CI_YAML_FILES = 512
+# 466 tracked source files at introduction; allow fourfold growth.
+MAX_CI_TEXT_FILES = 1_864
+PPA_SOURCE_TEXT = re.compile(
+    r"add-apt-repository|apt-add-repository|\bppa:|ppa\.launchpad(?:content)?\.net",
+    re.IGNORECASE,
+)
 
 
 def workflow_step(text: str, name: str) -> str:
@@ -97,161 +103,272 @@ def python_lint_job_problems(job: str) -> list[str]:
     return problems
 
 
-def workflow_run_scripts(text: str) -> list[yaml.ScalarNode]:
-    """Collect workflow and composite-action run scalars with source marks, boundedly."""
-    stack = [(yaml.compose(text, Loader=yaml.SafeLoader), False)]
-    visited: set[tuple[int, bool]] = set()
-    scripts: list[yaml.ScalarNode] = []
-    for _ in range(MAX_CI_NODES):
-        if not stack:
-            return scripts
-        node, in_step = stack.pop()
-        identity = (id(node), in_step)
-        if identity in visited:
-            continue
-        visited.add(identity)
-        if isinstance(node, yaml.MappingNode):
-            for key, value in node.value:
-                if in_step and key.value == "run" and isinstance(value, yaml.ScalarNode):
-                    scripts.append(value)
-                else:
-                    stack.append((value, key.value == "steps"))
-        elif isinstance(node, yaml.SequenceNode):
-            stack.extend((value, in_step) for value in node.value)
-    raise AssertionError(f"CI YAML exceeds {MAX_CI_NODES} nodes")
-
-
-def registers_ppa(command: str) -> bool:
-    """Recognize a literal PPA argument after add-apt-repository, ignoring shell comments."""
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()")
-    lexer.whitespace_split = True
-    registration = False
-    for _ in range(len(command) + 1):
-        token = lexer.get_token()
-        if token is None:
-            return False
-        if token and token[0] in ";&|()":
-            registration = False
-        elif Path(token).name == "add-apt-repository":
-            registration = True
-        elif registration and token.startswith("ppa:"):
-            return True
-    raise AssertionError("shell token count exceeds command length")
-
-
-def ppa_script_lines(script: str) -> list[int]:
-    """Find registration command lines, joining shell backslash continuations."""
-    found: list[int] = []
-    command = ""
-    start = 1
-    for number, line in enumerate(script.splitlines(), 1):
-        if not command:
-            start = number
-        command += line
-        if line.endswith("\\"):
-            command = command[:-1]
-            continue
-        if registers_ppa(command):
-            found.append(start)
-        command = ""
-    return found
-
-
-def ppa_run_problems(path: Path, text: str) -> list[str]:
-    """Reject run-step PPA registrations with YAML source locations, ignoring non-run text."""
+def ppa_text_problems(path: Path, text: str) -> list[str]:
+    """Reject source-registration text once per matching physical line, including data."""
     problems: list[str] = []
-    for node in workflow_run_scripts(text):
-        if "add-apt-repository" not in node.value:
-            continue
-        for number in ppa_script_lines(node.value):
-            line = node.start_mark.line + (number + 1 if node.style in ("|", ">") else 1)
+    for number, line in enumerate(text.splitlines(), 1):
+        match = PPA_SOURCE_TEXT.search(line)
+        if match is not None:
             problems.append(
-                f"{path}:{line}: add-apt-repository with ppa: depends on the Launchpad API"
+                f"{path.as_posix()}:{number}: {match.group(0)} registers a Launchpad PPA source; "
+                "install from the Ubuntu archive (ADR-3533)"
             )
     return problems
 
 
-def workflow_ppa_problems(root: Path) -> list[str]:
-    """Scan every workflow and composite-action YAML file for live PPA registration."""
-    paths = sorted(
-        path
-        for directory in (root / ".github/workflows", root / ".github/actions")
-        for path in directory.rglob("*")
-        if path.is_file() and path.suffix in (".yml", ".yaml")
+def ci_text_paths(root: Path) -> list[Path]:
+    """List tracked YAML, shell and container source paths throughout the repository."""
+    result = subprocess.run(  # noqa: S603 - fixed Git command, repository path as one argument
+        ["git", "-C", str(root), "ls-files", "-z"],  # noqa: S607 - Git supplied by CI
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=SCRIPT_TIMEOUT_S,
     )
-    if len(paths) > MAX_CI_YAML_FILES:
-        raise AssertionError(f"CI YAML exceeds {MAX_CI_YAML_FILES} files")
-    return [
-        problem
-        for path in paths
-        for problem in ppa_run_problems(path.relative_to(root), path.read_text(encoding="utf-8"))
+    paths = [
+        root / name
+        for name in result.stdout.split("\0")
+        if name
+        and (
+            Path(name).suffix in (".yml", ".yaml", ".sh", ".bash")
+            or Path(name).name.startswith(("Dockerfile", "Containerfile"))
+        )
     ]
+    if len(paths) > MAX_CI_TEXT_FILES:
+        raise AssertionError(f"CI text exceeds {MAX_CI_TEXT_FILES} files")
+    return sorted(paths)
+
+
+def launchpad_ppa_problems(root: Path) -> list[str]:
+    """Ban registration text in tracked sources; report skipped non-regular paths."""
+    problems: list[str] = []
+    for path in ci_text_paths(root):
+        relative = path.relative_to(root)
+        if not path.is_file():
+            print(f"{relative}: skipped tracked non-regular file", file=sys.stderr)
+            continue
+        problems.extend(
+            ppa_text_problems(relative, path.read_text(encoding="utf-8", errors="replace"))
+        )
+    return problems
 
 
 class LaunchpadPPAContract(unittest.TestCase):
-    """Keep workflow toolchain installs independent of live Launchpad API calls."""
+    """Keep tracked installation sources independent of live Launchpad registration."""
 
-    def test_workflows_and_actions_do_not_register_ppas(self) -> None:
-        """Current workflow and action run steps must contain no PPA registrations."""
-        problems = workflow_ppa_problems(ROOT)
+    def setUp(self) -> None:
+        """Create disposable Git state isolated from caller repository and configuration."""
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        # Strip every inherited GIT_* variable and disable caller system/global configuration.
+        git_env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        git_env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
+        self.git_run = partial(subprocess.run, env=git_env)
+        self.git_run(self.git_argv("init", "-q"), check=True, capture_output=True, timeout=10)
+        self.enterContext(mock.patch.object(subprocess, "run", side_effect=self.git_run))
+
+    def git_argv(self, *args: str) -> list[str]:
+        """Return Git arguments confined to disposable state, hooks and signing disabled."""
+        return [
+            "git",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "commit.gpgsign=false",
+            "-C",
+            str(self.root),
+            *args,
+        ]
+
+    def track(self, files: dict[str, str]) -> None:
+        """Write and index only explicitly supplied disposable files."""
+        for relative, content in files.items():
+            path = self.root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        self.git_run(
+            self.git_argv("add", "--", *files), check=True, capture_output=True, timeout=10
+        )
+
+    def test_current_tree_has_no_registration_text(self) -> None:
+        """Every tracked installation source must satisfy ADR-3533."""
+        problems = launchpad_ppa_problems(ROOT)
         self.assertEqual(problems, [], "\n".join(problems))
 
-    def test_planted_registration_names_each_yaml_file_and_line(self) -> None:
-        """Reject planted registrations in both CI roots, YAML suffixes and nested paths."""
-        for relative in (
-            ".github/workflows/planted.yml",
-            ".github/workflows/nested/planted.yaml",
-            ".github/actions/planted/action.yml",
-            ".github/actions/nested/action.yaml",
-        ):
-            with self.subTest(path=relative), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                path = root / relative
-                path.parent.mkdir(parents=True)
-                path.write_text(
-                    "runs:\n  using: composite\n  steps:\n    - run: |\n"
-                    "        sudo add-apt-repository -y ppa:x/y\n",
-                    encoding="utf-8",
-                )
-                problems = workflow_ppa_problems(root)
-                self.assertEqual(len(problems), 1)
-                self.assertIn(f"{relative}:5:", problems[0])
+    def test_tracked_sources_name_each_path_and_line(self) -> None:
+        """Reject registration text across repository paths, suffixes and container names."""
+        paths = (
+            ".github/workflows/x.yml",
+            ".github/actions/a/action.yaml",
+            "tools/elsewhere/action.yml",
+            "scripts/ci/setup.sh",
+            "scripts/setup.bash",
+            "docker/Dockerfile.ci",
+            "Containerfile",
+            "docs/example.yaml",
+            "Dockerfile",
+            "docker/Containerfile.ci",
+        )
+        self.track(dict.fromkeys(paths, "# setup\nsudo add-apt-repository -y ppa:x/y\n"))
+        expected = [
+            f"{path}:2: add-apt-repository registers a Launchpad PPA source; "
+            "install from the Ubuntu archive (ADR-3533)"
+            for path in sorted(paths)
+        ]
+        self.assertEqual(launchpad_ppa_problems(self.root), expected)
 
     def test_registration_forms_and_source_lines(self) -> None:
-        """Reject inline, quoted, continued and folded PPA registrations."""
-        for run, line in (
-            ("add-apt-repository -y ppa:x/y", 2),
-            ("sudo add-apt-repository --yes 'ppa:x/y'", 2),
-            ("|\n      true\n      sudo add-apt-repository -y ppa:x/y", 4),
-            ("|\n      sudo add-apt-repository \\\n        -y ppa:x/y", 3),
-            (">\n      sudo add-apt-repository -y\n      ppa:x/y", 3),
-        ):
-            with self.subTest(run=run):
-                problems = ppa_run_problems(Path("fixture.yml"), f"steps:\n  - run: {run}\n")
-                self.assertEqual(len(problems), 1)
-                self.assertIn(f"fixture.yml:{line}:", problems[0])
-
-    def test_comments_and_non_run_values_are_not_commands(self) -> None:
-        """Allow YAML/shell comments, non-run values, quoted output and non-PPA sources."""
-        command = "sudo add-apt-repository -y ppa:x/y"
-        for text in (
-            f"# {command}\nsteps: []\n",
-            f"steps:\n  - name: {command}\n    run: true\n",
-            f"steps:\n  - run: |\n      # {command}\n      true\n",
-            f"steps:\n  - run: true # {command}\n",
-            f"steps:\n  - run: echo '{command}'\n",
-            f"env:\n  run: {command}\nsteps: []\n",
-            "steps:\n  - run: sudo add-apt-repository universe\n",
-            "steps:\n  - run: add-apt-repository universe; echo ppa:x/y\n",
-            "",
+        """Reject nested commands, aliases, variables, merges, heredocs and comments."""
+        for text, matches in (
+            ("run: add-apt-repository -y ppa:x/y\n", ((1, "add-apt-repository"),)),
+            ("run: bash -c 'add-apt-repository -y ppa:x/y'\n", ((1, "add-apt-repository"),)),
+            ('src=ppa:x/y\nadd-apt-repository "$src"\n', ((1, "ppa:"), (2, "add-apt-repository"))),
+            (
+                "step: &step\n  run: add-apt-repository ppa:x/y\nsteps:\n  - <<: *step\n",
+                ((2, "add-apt-repository"),),
+            ),
+            ("cat <<'EOF'\nadd-apt-repository ppa:x/y\nEOF\n", ((2, "add-apt-repository"),)),
+            ("apt-add-repository -y ppa:x/y\n", ((1, "apt-add-repository"),)),
+            (
+                "deb https://ppa.launchpadcontent.net/x/y/ubuntu noble main\n",
+                ((1, "ppa.launchpadcontent.net"),),
+            ),
+            ("deb https://ppa.launchpad.net/x/y/ubuntu noble main\n", ((1, "ppa.launchpad.net"),)),
+            ("PPA:x/y\n", ((1, "PPA:"),)),
+            ("ADD-APT-REPOSITORY ppa:x/y\n", ((1, "ADD-APT-REPOSITORY"),)),
+            ("# add-apt-repository ppa:x/y\n", ((1, "add-apt-repository"),)),
+            ('echo "a\nppa:x/y"\n', ((2, "ppa:"),)),
         ):
             with self.subTest(text=text):
-                self.assertEqual(ppa_run_problems(Path("fixture.yml"), text), [])
+                self.track({"fixture.yml": text})
+                expected = [
+                    f"fixture.yml:{line}: {match} registers a Launchpad PPA source; "
+                    "install from the Ubuntu archive (ADR-3533)"
+                    for line, match in matches
+                ]
+                self.assertEqual(ppa_text_problems(Path("fixture.yml"), text), expected)
+                self.assertEqual(launchpad_ppa_problems(self.root), expected)
+
+    def test_unquoted_output_is_banned(self) -> None:
+        """Fail closed: unquoted echo data counts, with one finding per matching line."""
+        problems = ppa_text_problems(Path("fixture.sh"), "echo add-apt-repository ppa:x/y\n")
+        self.assertEqual(
+            problems,
+            [
+                "fixture.sh:1: add-apt-repository registers a Launchpad PPA source; "
+                "install from the Ubuntu archive (ADR-3533)"
+            ],
+        )
+
+    def test_allowed_text_and_untracked_or_other_files(self) -> None:
+        """Allow archive installs, empty or malformed text, and files outside tracked scope."""
+        self.track(
+            {
+                "setup.sh": 'Launchpad\napt-get install -y gcc-15\necho "a\nb"\n',
+                "empty.yaml": "",
+                "example.py": "add-apt-repository ppa:x/y\n",
+                "example.md": "add-apt-repository ppa:x/y\n",
+            }
+        )
+        (self.root / "untracked.yml").write_text("ppa:x/y\n", encoding="utf-8")
+        self.assertEqual(launchpad_ppa_problems(self.root), [])
+
+    def test_file_count_boundary(self) -> None:
+        """Accept exactly the tracked-file bound; reject one additional source path."""
+        names = [f"setup-{number}.sh" for number in range(MAX_CI_TEXT_FILES + 1)]
+        result = subprocess.CompletedProcess([], 0, stdout="\0".join(names[:-1]) + "\0")
+        with mock.patch.object(subprocess, "run", return_value=result) as run:
+            self.assertEqual(len(ci_text_paths(self.root)), MAX_CI_TEXT_FILES)
+            run.assert_called_once_with(
+                ["git", "-C", str(self.root), "ls-files", "-z"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=SCRIPT_TIMEOUT_S,
+            )
+            result.stdout += names[-1] + "\0"
+            with self.assertRaisesRegex(AssertionError, f"{MAX_CI_TEXT_FILES} files"):
+                ci_text_paths(self.root)
+
+    def test_inherited_git_state_cannot_reach_disposable_repository(self) -> None:
+        """Poisoned caller repository, index and configuration variables stay outside fixtures."""
+        bad_config = self.root.parent / f"{self.root.name}-bad.gitconfig"
+        bad_config.write_text("[broken\n", encoding="utf-8")
+        self.addCleanup(bad_config.unlink)
+        poison = {
+            "GIT_DIR": str(self.root / "missing.git"),
+            "GIT_WORK_TREE": str(self.root / "missing"),
+            "GIT_INDEX_FILE": str(self.root / "missing.index"),
+            "GIT_PREFIX": "missing/",
+            "GIT_CONFIG_GLOBAL": str(bad_config),
+            "GIT_CONFIG_SYSTEM": str(bad_config),
+            "GIT_CONFIG_COUNT": "bogus",
+        }
+        with mock.patch.dict(os.environ, poison):
+            self.setUp()
+        self.track({"setup.sh": "add-apt-repository ppa:x/y\n"})
+        self.assertEqual(
+            launchpad_ppa_problems(self.root),
+            [
+                "setup.sh:1: add-apt-repository registers a Launchpad PPA source; "
+                "install from the Ubuntu archive (ADR-3533)"
+            ],
+        )
+
+    def test_git_listing_failure_propagates(self) -> None:
+        """A failed tracked-path lookup cannot silently pass the contract."""
+        with self.assertRaises(subprocess.CalledProcessError):
+            launchpad_ppa_problems(self.root / "missing")
+
+    def test_non_regular_tracked_path_is_reported(self) -> None:
+        """Only listed non-regular paths may be skipped, with an explicit diagnostic."""
+        self.track({"missing.sh": ""})
+        (self.root / "missing.sh").unlink()
+        with mock.patch("sys.stderr") as stderr:
+            self.assertEqual(launchpad_ppa_problems(self.root), [])
+        self.assertIn(
+            "missing.sh: skipped tracked non-regular file", str(stderr.write.call_args_list)
+        )
+
+    def test_replacement_decoding_preserves_registration_check(self) -> None:
+        """Undecodable source bytes cannot hide registration text or crash scanning."""
+        self.track({"setup.sh": ""})
+        (self.root / "setup.sh").write_bytes(b"# \xff\nppa:x/y\n")
+        self.assertEqual(
+            launchpad_ppa_problems(self.root),
+            [
+                "setup.sh:2: ppa: registers a Launchpad PPA source; "
+                "install from the Ubuntu archive (ADR-3533)"
+            ],
+        )
+
+    def test_planted_tidy_registration_fails_contract(self) -> None:
+        """Restoring the removed tidy registration fails with its precise source location."""
+        relative = ".github/workflows/lint-and-format.yml"
+        content = (ROOT / relative).read_text(encoding="utf-8")
+        self.track(
+            {
+                relative: content
+                + "\n        sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test\n"
+            }
+        )
+        problems = launchpad_ppa_problems(self.root)
+        line = len(content.splitlines()) + 2
+        self.assertEqual(
+            problems,
+            [
+                f"{relative}:{line}: add-apt-repository registers a Launchpad PPA source; "
+                "install from the Ubuntu archive (ADR-3533)"
+            ],
+        )
+        with self.assertRaisesRegex(AssertionError, rf"lint-and-format\.yml:{line}:"):
+            self.assertEqual(problems, [], "\n".join(problems))
 
 
 class FailClosedCIContract(unittest.TestCase):
     def test_contract_is_wired_into_required_ci_and_local_hooks(self) -> None:
-        """Keep the CI contract in Tooling Tests and local hooks for every CI YAML path."""
+        """Keep the CI contract in Tooling Tests and local hooks for every tracked installation source."""
         rules = (WORKFLOWS / "rule-enforcement.yml").read_text(encoding="utf-8")
         hooks = (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
         # A test runs once in CI (ADR-1568): Tooling Tests runs this file.
@@ -271,9 +388,23 @@ class FailClosedCIContract(unittest.TestCase):
             ".github/workflows/new-workflow.yaml",
             ".github/actions/nested/example/action.yml",
             ".github/actions/new-action/action.yaml",
+            "tools/elsewhere/action.yml",
+            "scripts/ci/setup.sh",
+            "scripts/setup.bash",
+            "docs/example.yaml",
+            "Dockerfile",
+            "docker/Dockerfile.ci",
+            "Containerfile",
+            "docker/Containerfile.ci",
+            "scripts/ci/test_fail_closed_ci.py",
+            "python/tox.ini",
+            ".pre-commit-config.yaml",
         ):
             with self.subTest(path=path):
                 self.assertIsNotNone(re.search(pattern, path))
+        for path in ("docs/example.md", "scripts/example.py", "docker/OtherDockerfile"):
+            with self.subTest(path=path):
+                self.assertIsNone(re.search(pattern, path))
 
     def test_python_tox_warnings_and_coverage_fail_closed(self) -> None:
         tox = (ROOT / "python" / "tox.ini").read_text(encoding="utf-8")
