@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import os
 import re
 import sys
 import tempfile
@@ -52,6 +53,12 @@ PROVENANCE = _load_provenance()
 
 class ResearchDigestIdTests(unittest.TestCase):
     def setUp(self) -> None:
+        environment = mock.patch.dict(
+            os.environ,
+            {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"},
+        )
+        environment.start()
+        self.addCleanup(environment.stop)
         self.tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tempdir.cleanup)
         self.root = Path(self.tempdir.name)

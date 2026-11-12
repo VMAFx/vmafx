@@ -77,7 +77,7 @@ ARG VMAF_BUILD_JOBS=4
 ARG NV_CODEC_HEADERS_COMMIT=0a6fba9a2820628b8103464f4c8753ee05838baa
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
@@ -160,7 +160,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # The lines up to the stream of /opt/rocm are those of hip-build in
 # docker/Dockerfile.tester, so both builds share its 5.8 GB layer.
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl gcc g++ jq meson nasm ninja-build pkg-config python3 xxd zstd \
         libzimg-dev \
@@ -210,7 +210,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update \
+    apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         ccache \
@@ -358,7 +358,7 @@ FROM ${RELEASE_PYTHON_BASE} AS cuda13-source-fetch
 RUN --mount=type=bind,from=cuda13-with-notices,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
     && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact production-cuda-image \
         --root /rootfs --repo /repo --out /sources.list \
     && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \
@@ -468,7 +468,7 @@ FROM ${RELEASE_PYTHON_BASE} AS rocm10-source-fetch
 RUN --mount=type=bind,from=rocm10-with-notices,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends git \
     && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact production-rocm-image \
         --root /rootfs --repo /repo --out /sources.list \
@@ -515,7 +515,7 @@ COPY dev/scripts/fetch-intel-neo.py /tmp/vmafx/dev/scripts/fetch-intel-neo.py
 # working directory.
 # hadolint ignore=DL3003,DL3008
 RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
-    apt-get update \
+    apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends ca-certificates python3 \
     && cd /tmp/vmafx \
     && bash /tmp/vmafx/scripts/ci/install-intel-ocloc.sh --components runtime /tmp/vmafx \
@@ -613,7 +613,7 @@ FROM ${RELEASE_PYTHON_BASE} AS oneapi2026-source-fetch
 RUN --mount=type=bind,from=oneapi2026-with-notices,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
     && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact production-oneapi-image \
         --root /rootfs --repo /repo --out /sources.list \
     && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \

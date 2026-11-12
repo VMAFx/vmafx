@@ -177,7 +177,7 @@ base="https://developer.download.nvidia.com/compute/cuda/repos/${distro}/x86_64"
 
 # Ensure prerequisites for fetching and verifying keyrings exist.
 if ! command -v curl >/dev/null 2>&1 || ! dpkg -s ca-certificates >/dev/null 2>&1; then
-  $SUDO apt-get update -qq
+  $SUDO apt-get --error-on=any -o Acquire::Retries=3 update -qq
   $SUDO apt-get install -y -qq --no-install-recommends curl ca-certificates
 fi
 
@@ -191,7 +191,7 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 curl --retry 3 --retry-all-errors -fsSL --connect-timeout 20 --max-time 300 -o "$tmp/cuda-keyring.deb" "${base}/cuda-keyring_1.1-1_all.deb"
 $SUDO dpkg -i "$tmp/cuda-keyring.deb"
-$SUDO apt-get update -qq
+$SUDO apt-get --error-on=any -o Acquire::Retries=3 update -qq
 
 cuda_home="${cuda_prefix}/cuda-${dotted}"
 cuda_current="${cuda_prefix}/cuda"

@@ -107,7 +107,7 @@ FROM ${RELEASE_BUILDER_BASE} AS fuse-tools
 ARG DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends fuse3 mount \
     && rm -rf /var/lib/apt/lists/*
 COPY --chmod=0755 scripts/ci/record-copied-debian-libs.sh /usr/local/bin/record-copied-debian-libs
@@ -143,7 +143,7 @@ LABEL org.opencontainers.image.description="Build stage: libvmaf + vmaf CLI (rel
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends \
         gcc \
         g++ \
@@ -218,7 +218,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends \
         gcc \
         g++ \
@@ -397,7 +397,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 # gen-node-bpf.sh --require-pin below fails unless clang is BPF_CLANG_VERSION of
 # build-config.env and the object's sha256 is BPF_OBJECT_SHA256.
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends \
         clang-19 \
         gcc \
@@ -448,7 +448,7 @@ COPY --from=vmaf-builder /licence-inputs/vmafx-sources.json /tmp/vmaf-sources.js
 # go-builder is the base of go-licences-sycl; neither stage ships, so the apt
 # lists stay (DL3009).
 # hadolint ignore=DL3008,DL3009
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends python3 \
     && apt-get clean \
     && mkdir /licence-inputs \
@@ -567,7 +567,7 @@ FROM ${RELEASE_PYTHON_BASE} AS node-source-fetch
 RUN --mount=type=bind,from=node-with-notices,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
     && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact production-node-image \
         --root /rootfs --repo /repo --out /sources.list \
     && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \
@@ -694,7 +694,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update \
+    apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         ccache \
@@ -763,7 +763,7 @@ COPY dev/scripts/fetch-intel-neo.py /tmp/vmafx/dev/scripts/fetch-intel-neo.py
 # working directory. Only /out leaves this stage.
 # hadolint ignore=DL3003,DL3008,DL3009
 RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
-    apt-get update \
+    apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends ca-certificates python3 \
     && cd /tmp/vmafx \
     && bash /tmp/vmafx/scripts/ci/install-intel-ocloc.sh --components runtime /tmp/vmafx \
@@ -876,7 +876,7 @@ FROM ${RELEASE_PYTHON_BASE} AS node-sycl-source-fetch
 RUN --mount=type=bind,from=node-sycl-with-notices,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
     && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact production-node-sycl-image \
         --root /rootfs --repo /repo --out /sources.list \
     && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \

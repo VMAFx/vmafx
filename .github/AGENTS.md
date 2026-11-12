@@ -25,6 +25,7 @@ broken `.c` file).
 | Touching | Read first | Invariant |
 | --- | --- | --- |
 | `workflows/*.yml` | [action-sha-pins](AGENTS.d/action-sha-pins.md) | Every uses directive in workflows must reference 40-character commit SHA with version comment; no floating tags. |
+| `workflows/*.yml`, `actions/*/action.yml` | [apt-refresh](AGENTS.d/apt-refresh.md) | Hosted-runner apt refresh runs only through scripts/ci/apt-install-cached.sh refresh\|install. |
 | `workflows/tests-and-quality-gates.yml`, `workflows/lint-and-format.yml`, `/scripts/ci/test_self_hosted_runner_workflow_contract.py` | [arc-fork-guard](AGENTS.d/arc-fork-guard.md) | Every runs-on naming arc-runners carries the head-repo guard before the label; fork PRs stay hosted. |
 | `workflows/libvmaf-build-matrix.yml`, `workflows/build.yml` | [build-matrix-record](AGENTS.d/build-matrix-record.md) | Matrix lanes governed by ADR-1259; experimental lanes advisory; pass -Db_lto=false on hosted icpx/SYCL builds. |
 | `workflows/docker-publish-production.yml`, `workflows/docker-publish-operator-node.yml`, `workflows/supply-chain.yml` | [container-signing](AGENTS.d/container-signing.md) | Every container image dual-signed with cosign and attest-build-provenance; SBOM attached; smoke verifies cosign. |

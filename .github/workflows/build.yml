@@ -226,9 +226,7 @@ jobs:
         # Measured max 20.4m (2026-10-23); 26 min is at least 1.25x the slowest healthy run.
         timeout-minutes: 26
         run: |
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           mkdir -p "${RUNNER_TEMP}/apt-archives"
           if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
             sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
@@ -331,7 +329,7 @@ jobs:
           # ocloc compiles the SYCL ahead-of-time images; the Linux compiler
           # does not ship it and meson setup refuses without it (ADR-1360).
           bash scripts/ci/install-intel-ocloc.sh
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           sudo -E apt-get -yq install gpg-agent cmake
           wget --tries=3 --retry-connrefused --retry-on-host-error -qO "$RUNNER_TEMP/oneapi-key.asc" \
             https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
@@ -339,7 +337,7 @@ jobs:
           rm -f "$RUNNER_TEMP/oneapi-key.asc"
           echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           set -a; . ./build-config.env; set +a
           sudo -E apt-get -yq install "${ONEAPI_APT_PACKAGE}"
           git clone --depth=1 --branch "v${LEVEL_ZERO_VERSION}" \
@@ -397,7 +395,7 @@ jobs:
         # Measured max 1.5m (2026-10-23); 5 min is at least 1.25x the slowest healthy run.
         timeout-minutes: 5
         run: |
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           sudo -E apt-get -yq install --no-install-recommends jq
           # The ROCm image is defined once in build-config.env (ADR-1231),
           # never pinned again here. It was previously a digest literal in
