@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import os
 import posixpath
 import re
@@ -48,6 +49,8 @@ APT_UPDATE_LINE = re.compile(
 )
 POSITIVE_INTEGER_RE = re.compile(r"[1-9]\d*")
 ENV_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+CONTAINER_EXEC_RUN_RE = re.compile(r"\s*run(?=\s)", re.IGNORECASE)
+CONTAINER_RUN_FLAG_RE = re.compile(r"--[A-Za-z0-9][A-Za-z0-9_-]*(?:=\S*)?\Z")
 SHELL_OPERATOR_CHARS = frozenset(";&|()")
 SHELL_BASENAMES = frozenset({"bash", "sh", "dash", "zsh", "ksh"})
 SUDO_ARG_FLAGS = frozenset({"-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-T"})
@@ -200,6 +203,13 @@ def listing_git_environment(root: Path) -> dict[str, str]:
     return env
 
 
+def _is_containerfile_path(path: Path) -> bool:
+    """Return True when `path` selects a Dockerfile or Containerfile source."""
+    return path.suffix in (".Dockerfile", ".Containerfile") or path.name.startswith(
+        ("Dockerfile", "Containerfile")
+    )
+
+
 def ci_text_paths(root: Path) -> list[Path]:
     """List tracked YAML, shell and container source paths throughout the repository."""
     result = run_command(
@@ -216,8 +226,8 @@ def ci_text_paths(root: Path) -> list[Path]:
         for name in result.stdout.split("\0")
         if name
         and (
-            Path(name).suffix in (".yml", ".yaml", ".sh", ".bash", ".Dockerfile", ".Containerfile")
-            or Path(name).name.startswith(("Dockerfile", "Containerfile"))
+            Path(name).suffix in (".yml", ".yaml", ".sh", ".bash")
+            or _is_containerfile_path(Path(name))
         )
     ]
     if len(paths) > MAX_CI_TEXT_FILES:
@@ -561,7 +571,53 @@ def _evaluate_shell_clause(
     return _clause_apt_problem(clause, hosted_surface, inherited_sudo)
 
 
-def _logical_line_apt_problem(line_text: str, hosted_surface: bool) -> str | None:
+def _consume_container_run_flags(rest: str) -> str | None:
+    """Strip leading `--flag[=value]` words from a containerfile `RUN` payload."""
+    for _ in range(MAX_CONTINUATION_LINES):
+        if not rest.startswith("--"):
+            return rest
+        flag, *tail = rest.split(None, 1)
+        if not tail or CONTAINER_RUN_FLAG_RE.fullmatch(flag) is None:
+            return None
+        rest = tail[0].lstrip()
+    return None
+
+
+def _json_string_list(raw: str) -> list[str] | None:
+    """Decode `raw` when it is a JSON array whose entries are all strings."""
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    except RecursionError:
+        return None
+    if not isinstance(parsed, list):
+        return None
+    argv = [entry for entry in parsed if isinstance(entry, str)]
+    return argv if len(argv) == len(parsed) else None
+
+
+def _parse_exec_run_argv(line_text: str) -> list[str] | None:
+    """Parse a containerfile exec-form `RUN` instruction into a string argument vector."""
+    prefix = CONTAINER_EXEC_RUN_RE.match(line_text)
+    if prefix is None:
+        return None
+    rest = _consume_container_run_flags(line_text[prefix.end() :].lstrip())
+    if rest is None or not rest.startswith("["):
+        return None
+    return _json_string_list(rest)
+
+
+def _work_item_clauses(item: str, index: int, exec_argv: list[str] | None) -> list[list[str]]:
+    """Return command clauses for one work-list entry without splitting top-level exec argv."""
+    if index == 0 and exec_argv is not None:
+        return [exec_argv]
+    return _split_shell_clauses(_tokenise_shell_item(item))
+
+
+def _logical_line_apt_problem(
+    line_text: str, hosted_surface: bool, exec_argv: list[str] | None = None
+) -> str | None:
     """Evaluate one prefiltered logical command with a bounded nested-command work list."""
     work: list[tuple[str, bool]] = [(line_text, False)]
     saw_apt = False
@@ -570,10 +626,10 @@ def _logical_line_apt_problem(line_text: str, hosted_surface: bool) -> str | Non
             break
         item, inherited_sudo = work[index]
         try:
-            tokens = _tokenise_shell_item(item)
+            clauses = _work_item_clauses(item, index, exec_argv)
         except ValueError:
             return APT_UNBALANCED_QUOTE_MESSAGE
-        for raw_clause in _split_shell_clauses(tokens):
+        for raw_clause in clauses:
             clause_has_apt, problem = _evaluate_shell_clause(
                 item, raw_clause, hosted_surface, inherited_sudo, work
             )
@@ -584,6 +640,18 @@ def _logical_line_apt_problem(line_text: str, hosted_surface: bool) -> str | Non
     if not saw_apt:
         return APT_UPDATE_MESSAGE
     return None
+
+
+def _line_apt_problem(logical_line: str, hosted_surface: bool, container_file: bool) -> str | None:
+    """Evaluate one logical CI line, parsing exec-form `RUN` arrays in containerfiles."""
+    exec_argv = _parse_exec_run_argv(logical_line) if container_file else None
+    if exec_argv is not None:
+        if APT_UPDATE_LINE.search(" ".join(exec_argv)) is None:
+            return None
+        return _logical_line_apt_problem(logical_line, hosted_surface, exec_argv)
+    if APT_UPDATE_LINE.search(logical_line) is None:
+        return None
+    return _logical_line_apt_problem(logical_line, hosted_surface)
 
 
 def _yaml_error_line(error: yaml.YAMLError) -> int:
@@ -679,15 +747,14 @@ def apt_update_problems(path: Path, text: str) -> list[str]:
     """Reject unsafe apt refreshes, folded hosted `run` blocks, and hosted sudo refreshes."""
     problems: list[str] = []
     hosted_surface = _is_hosted_workflow_or_action(path)
+    container_file = _is_containerfile_path(path)
     if hosted_surface:
         problems.extend(_hosted_yaml_run_problems(path, text))
     for line_number, logical_line, overflowed in _logical_ci_lines(text):
         if overflowed:
             problems.append(f"{path.as_posix()}:{line_number}: {APT_CONTINUATION_MESSAGE}")
             continue
-        if APT_UPDATE_LINE.search(logical_line) is None:
-            continue
-        problem = _logical_line_apt_problem(logical_line, hosted_surface)
+        problem = _line_apt_problem(logical_line, hosted_surface, container_file)
         if problem is not None:
             problems.append(f"{path.as_posix()}:{line_number}: {problem}")
     return problems
@@ -996,6 +1063,12 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
             ("Dockerfile", "FROM ubuntu:26.04\nRUN apt-get update && apt-get install -y x\n", 2),
             ("docker/dev/x.Dockerfile", "FROM ubuntu:26.04\nRUN apt-get update\n", 2),
             ("docker/dev/x.Containerfile", "FROM ubuntu:26.04\nRUN apt-get update\n", 2),
+            ("docker/Dockerfile.exec", 'FROM ubuntu:26.04\nRUN ["apt-get", "update"]\n', 2),
+            (
+                "docker/Containerfile.exec",
+                'FROM ubuntu:26.04\nRUN ["sh", "-c", "apt-get update"]\n',
+                2,
+            ),
             ("scripts/ci/setup.sh", "#!/usr/bin/env bash\n$SUDO apt-get update -qq\n", 2),
             (".github/workflows/ci.yml", "steps:\n  - run: sudo apt-get update\n", 2),
             ("scripts/no-retries.sh", "apt-get update --error-on=any\n", 1),
@@ -1047,6 +1120,9 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
                     "RUN apt-get --error-on=any -o Acquire::Retries=3 update \\\n"
                     "    && apt-get install -y --no-install-recommends curl\n"
                     "RUN apt-get update --error-on=any -o Acquire::Retries=3 && apt-get install -y git\n"
+                    'RUN ["apt-get", "--error-on=any", "-o", "Acquire::Retries=3", "update"]\n'
+                    "RUN --mount=type=cache,target=/var/cache/apt "
+                    '["apt-get", "--error-on=any", "-o", "Acquire::Retries=3", "update"]\n'
                 ),
                 "scripts/ci/setup.sh": (
                     "$SUDO apt-get -o Acquire::Retries=3 --error-on=any update -qq\n"
@@ -1069,6 +1145,75 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
         )
         (self.root / "untracked.sh").write_text("apt-get update\n", encoding="utf-8")
         self.assertEqual(apt_update_contract_problems(self.root), [])
+
+    def test_containerfile_exec_run_contract(self) -> None:
+        """Evaluate compliant, non-compliant, wrapped and single-argv exec-form `RUN` arrays."""
+        refresh = "apt-get --error-on=any -o Acquire::Retries=3 update"
+        exec_ok = 'RUN ["apt-get", "--error-on=any", "-o", "Acquire::Retries=3", "update"]\n'
+        for container_path in (
+            "Dockerfile",
+            "Containerfile",
+            "docker/dev/x.Dockerfile",
+            "docker/dev/x.Containerfile",
+        ):
+            with self.subTest(container_path=container_path):
+                self.assertEqual(apt_update_problems(Path(container_path), exec_ok), [])
+        for compliant in (
+            'run ["apt-get", "--error-on=any", "-o", "Acquire::Retries=3", "update"]\n',
+            f'RUN ["sh", "-c", "{refresh}"]\n',
+            'RUN ["sudo", "apt-get", "--error-on=any", "-o", "Acquire::Retries=3", "update"]\n',
+            f'RUN ["env", "-S", "{refresh}"]\n',
+        ):
+            with self.subTest(compliant=compliant):
+                self.assertEqual(apt_update_problems(Path("Dockerfile"), compliant), [])
+        for non_compliant in (
+            'RUN ["apt-get", "update"]\n',
+            'RUN ["sh", "-c", "apt-get update"]\n',
+            'RUN ["sudo", "apt-get", "update"]\n',
+            'RUN ["env", "-S", "apt-get update"]\n',
+            'RUN ["apt-get", "--error-on=any", "-o", "Acquire::Retries=3", "update", '
+            '"&&", "-o", "Acquire::Retries=0"]\n',
+        ):
+            with self.subTest(non_compliant=non_compliant):
+                self.assertEqual(
+                    apt_update_problems(Path("Dockerfile"), non_compliant),
+                    [f"Dockerfile:1: {APT_UPDATE_MESSAGE}"],
+                )
+
+    def test_containerfile_exec_run_boundaries_and_yaml(self) -> None:
+        """Accept `--flag` prefixes, fall back on invalid JSON, and leave YAML unchanged."""
+        exec_args = '["apt-get", "--error-on=any", "-o", "Acquire::Retries=3", "update"]'
+        for compliant in (
+            f"RUN --mount=type=cache,target=/var/cache/apt {exec_args}\n",
+            f"RUN --mount=type=cache,target=/var/cache/apt --network=default {exec_args}\n",
+            'RUN --mount=type=cache,target=/var/cache/apt ["python3", "scripts/update.py"]\n',
+        ):
+            with self.subTest(compliant=compliant):
+                self.assertEqual(apt_update_problems(Path("Dockerfile"), compliant), [])
+        self.assertEqual(
+            apt_update_problems(
+                Path("Dockerfile"),
+                'RUN --mount=type=cache,target=/var/cache/apt ["apt-get", "update"]\n',
+            ),
+            [f"Dockerfile:1: {APT_UPDATE_MESSAGE}"],
+        )
+        for invalid_json, expected_message in (
+            ('RUN ["apt-get", update]\n', APT_UPDATE_MESSAGE),
+            ('RUN ["apt-get", "update]\n', APT_UNBALANCED_QUOTE_MESSAGE),
+            ('RUN [1, "apt-get", "update"]\n', APT_UPDATE_MESSAGE),
+        ):
+            with self.subTest(invalid_json=invalid_json):
+                shell_verdict = _logical_line_apt_problem(invalid_json.rstrip("\n"), False)
+                self.assertEqual(shell_verdict, expected_message)
+                self.assertEqual(
+                    apt_update_problems(Path("Dockerfile"), invalid_json),
+                    [f"Dockerfile:1: {shell_verdict}"],
+                )
+        yaml_exec = f"steps:\n  - run: |\n      RUN {exec_args}\n"
+        self.assertEqual(
+            apt_update_problems(Path(".github/workflows/ci.yml"), yaml_exec),
+            [f".github/workflows/ci.yml:3: {APT_UPDATE_MESSAGE}"],
+        )
 
     def test_boundary_two_updates_on_one_line(self) -> None:
         """Reject a line holding two update calls unless both carry fail-closed flags."""
