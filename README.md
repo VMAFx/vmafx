@@ -11,17 +11,17 @@
   <!-- 1 release/version -->
   [![Release](https://img.shields.io/static/v1?label=release&message=v1.0.0-rc.3&style=for-the-badge&color=3b82f6&labelColor=111a35)](https://github.com/VMAFx/vmafx/releases) <!-- x-release-please-version -->
   <!-- 2 CI/build -->
-  [![Tests](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
-  [![Builds](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml)
-  [![Lint](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml)
-  [![FFmpeg](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml)
-  [![Go](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml)
-  [![Rust](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml)
+  [![Tests](https://raw.githubusercontent.com/VMAFx/vmafx/badges/tests.svg)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
+  [![Builds](https://raw.githubusercontent.com/VMAFx/vmafx/badges/builds.svg)](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml)
+  [![Lint](https://raw.githubusercontent.com/VMAFx/vmafx/badges/lint.svg)](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml)
+  [![FFmpeg](https://raw.githubusercontent.com/VMAFx/vmafx/badges/ffmpeg.svg)](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml)
+  [![Go](https://raw.githubusercontent.com/VMAFx/vmafx/badges/go.svg)](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml)
+  [![Rust](https://raw.githubusercontent.com/VMAFx/vmafx/badges/rust.svg)](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml)
   <!-- 3 security/scorecard -->
-  [![Security](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml)
-  [![OpenSSF Scorecard](https://img.shields.io/badge/OpenSSF-Scorecard-06b6d4?style=for-the-badge&labelColor=111a35)](https://scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx)
-  [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14549/badge)](https://www.bestpractices.dev/projects/14549)
-  [![Codacy](https://app.codacy.com/project/badge/Grade/ca74eb98b9b94cfc8d60d965b836b55d)](https://app.codacy.com/gh/VMAFx/vmafx/dashboard)
+  [![Security](https://raw.githubusercontent.com/VMAFx/vmafx/badges/security.svg)](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml)
+  [![OpenSSF Scorecard](https://raw.githubusercontent.com/VMAFx/vmafx/badges/scorecard.svg)](https://scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx)
+  [![OpenSSF Best Practices](https://raw.githubusercontent.com/VMAFx/vmafx/badges/best-practices.svg)](https://www.bestpractices.dev/projects/14549)
+  [![Codacy](https://raw.githubusercontent.com/VMAFx/vmafx/badges/codacy.svg)](https://app.codacy.com/gh/VMAFx/vmafx/dashboard)
   [![CodeRabbit](https://img.shields.io/badge/Reviews-CodeRabbit-8b5cf6?style=for-the-badge&logo=coderabbit&logoColor=white&labelColor=111a35)](https://coderabbit.ai)
   <!-- 4 standards -->
   [![HISS-21](https://img.shields.io/badge/Standards-HISS--21-06b6d4?style=for-the-badge&logo=nasa&labelColor=111a35)](AGENTS.md)
@@ -105,16 +105,16 @@ and output options. For compressed inputs such as MP4, use
 
 ## 🧩 Backends at a glance
 
-[![C23](https://img.shields.io/badge/C-23-3b82f6?style=flat-square&labelColor=111a35)](docs/principles.md)
-[![C++23](https://img.shields.io/badge/C%2B%2B-23-3b82f6?style=flat-square&labelColor=111a35)](docs/principles.md)
-[![Go](https://img.shields.io/badge/Go-1.27-06b6d4?style=flat-square&labelColor=111a35)](go.mod)
-[![Rust](https://img.shields.io/badge/Rust-2024-8b5cf6?style=flat-square&labelColor=111a35)](bindings/rust/vmafx-sys/Cargo.toml)
-[![Python](https://img.shields.io/badge/Python-3.14%2B-3b82f6?style=flat-square&labelColor=111a35)](pyproject.toml)
-[![CUDA](https://img.shields.io/badge/CUDA-13.4-06b6d4?style=flat-square&labelColor=111a35)](docs/backends/cuda/overview.md)
-[![ROCm](https://img.shields.io/badge/ROCm-10.1-06b6d4?style=flat-square&labelColor=111a35)](docs/backends/hip/overview.md)
-[![SYCL](https://img.shields.io/badge/SYCL-oneAPI-06b6d4?style=flat-square&labelColor=111a35)](docs/backends/sycl/overview.md)
-[![Metal](https://img.shields.io/badge/Metal-Apple_Silicon-06b6d4?style=flat-square&labelColor=111a35)](docs/backends/metal/index.md)
-[![FFmpeg](https://img.shields.io/badge/FFmpeg-n9.0.2-8b5cf6?style=flat-square&labelColor=111a35)](docs/usage/ffmpeg.md)
+[![C23](https://img.shields.io/badge/C-23-3b82f6?style=for-the-badge&labelColor=111a35)](docs/principles.md)
+[![C++23](https://img.shields.io/badge/C%2B%2B-23-3b82f6?style=for-the-badge&labelColor=111a35)](docs/principles.md)
+[![Go](https://img.shields.io/badge/Go-1.27-06b6d4?style=for-the-badge&labelColor=111a35)](go.mod)
+[![Rust](https://img.shields.io/badge/Rust-2024-8b5cf6?style=for-the-badge&labelColor=111a35)](bindings/rust/vmafx-sys/Cargo.toml)
+[![Python](https://img.shields.io/badge/Python-3.14%2B-3b82f6?style=for-the-badge&labelColor=111a35)](pyproject.toml)
+[![CUDA](https://img.shields.io/badge/CUDA-13.4-06b6d4?style=for-the-badge&labelColor=111a35)](docs/backends/cuda/overview.md)
+[![ROCm](https://img.shields.io/badge/ROCm-10.1-06b6d4?style=for-the-badge&labelColor=111a35)](docs/backends/hip/overview.md)
+[![SYCL](https://img.shields.io/badge/SYCL-oneAPI-06b6d4?style=for-the-badge&labelColor=111a35)](docs/backends/sycl/overview.md)
+[![Metal](https://img.shields.io/badge/Metal-Apple_Silicon-06b6d4?style=for-the-badge&labelColor=111a35)](docs/backends/metal/index.md)
+[![FFmpeg](https://img.shields.io/badge/FFmpeg-n9.0.2-8b5cf6?style=for-the-badge&labelColor=111a35)](docs/usage/ffmpeg.md)
 
 Every GPU-backed feature extractor has at least one device twin, and each twin
 is held to the CPU reference by the cross-backend parity gate. The coverage
