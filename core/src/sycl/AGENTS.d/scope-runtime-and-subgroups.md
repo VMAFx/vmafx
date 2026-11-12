@@ -24,10 +24,6 @@ sycl/
 
 ## Ground rules
 
-- **Parent rules** apply in full: see [../../AGENTS.md](../../../AGENTS.md).
-- **Compiler = `icpx` (Intel oneAPI) or AdaptiveCpp `acpp` / `syclcc`
-  (ADR-0335).** `clang++ -fsycl` accepted in spirit, not CI-tested. Do
-  not assume MSVC-style extensions.
 - **Intel-specific kernel attributes go through
   `core/src/feature/sycl/sycl_compat.h`** (ADR-0335).
   `VMAF_SYCL_REQD_SG_SIZE(N)` macro expands to
@@ -88,12 +84,5 @@ sycl/
   default list -> measure its sizes
   (`core/test/sycl_aot_targets.py::ocloc_accepts`) and add its family.
   Narrow shape wanted (row kernels: one work-item per row) -> 16.
-- **Experimental flags enabled**: `-fsycl-unnamed-lambda`,
-  `-fsycl-allow-func-ptr`, `-fsycl-device-code-split=per_kernel`. See
-  [ADR-0027](../../../../docs/adr/0027-non-conservative-image-pins.md).
-- **USM allocations**: prefer device USM for kernel-resident data,
-  shared USM for cross-side communication. Host USM only when adjacent
-  API requires pointer host can dereference directly.
 - **dmabuf import** = Linux-only, gated at build time; no callers
   assume FD path exists on other OSes.
-- **Numerical snapshots**: same rule as CUDA — see CLAUDE.md §9.

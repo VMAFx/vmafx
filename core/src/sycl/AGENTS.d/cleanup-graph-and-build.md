@@ -78,7 +78,7 @@ invariant: Goto-free shared-frame cleanup, sticky graph_wait error handling, gra
 ## Build
 
 ```bash
-meson setup build -Denable_cuda=false -Denable_sycl=true
+meson setup build core -Denable_cuda=false -Denable_sycl=true
 ninja -C build
 ```
 
@@ -88,7 +88,7 @@ DPC++ toolchain with `icpx` on PATH.
 Alternative: AdaptiveCpp (open-source, ADR-0335).
 
 ```bash
-meson setup build-acpp -Denable_cuda=false -Denable_sycl=true \
+meson setup build-acpp core -Denable_cuda=false -Denable_sycl=true \
     -Dsycl_compiler=acpp -Dsycl_acpp_targets=generic
 ninja -C build-acpp
 ```

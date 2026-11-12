@@ -1,9 +1,11 @@
 <!-- GENERATED (`make docs-fragments-write`); do not hand-edit. -->
 # VMAFx API, frames, and provenance: `core/src/` agent invariants
 
-vmafx/*, compat/libvmaf/*, core/api/vmafx.toml, core/include/vmafx/*,
-vmafx*.map, vmafx.def, libvmaf_symbols.txt, device frame import, live windows,
-and provenance records.
+vmafx/*, compat/libvmaf/*, libvmaf.c, predict.c, model.c, model.h, output.cpp,
+log.cpp, log.h, conversion_context.c, feature/feature_collector.*,
+feature/feature_extractor.cpp, core/api/vmafx.toml, core/include/vmafx/*,
+vmafx*.map, vmafx.def, libvmaf_symbols.txt; device frame import, live windows,
+provenance records.
 
 Parent index: [AGENTS.md](AGENTS.md).
 

@@ -11,7 +11,7 @@ invariant: New NEON/SVE2 TU scaffolding, arm64-only clang-tidy ratchet measureme
 
 Use [`/add-simd-path`](../../../../../.claude/skills/add-simd-path/SKILL.md).
 Skill scaffolds TU + header + dispatch entry + bit-exact regression test using
-shared [`simd_bitexact_test.h`](../../../test/simd_bitexact_test.h) harness
+shared [`simd_bitexact_test.h`](../../../../test/simd_bitexact_test.h) harness
 (ADR-0245).
 
 ## Lint: this directory has exactly one lane (ADR-1283)

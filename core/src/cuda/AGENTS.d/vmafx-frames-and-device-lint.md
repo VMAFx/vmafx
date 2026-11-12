@@ -1,9 +1,11 @@
 ---
 paths:
   - core/src/cuda/import_*.c
-  - core/src/cuda/import_convert.cu
+  - core/src/cuda/*.cu
+  - core/src/cuda/*.cuh
+  - core/src/feature/cuda/*/*.cu
+  - core/src/feature/cuda/*/*.cuh
   - core/src/cuda/vmafx_cuda*.h
-  - core/src/cuda/cuda_device_ptr.cuh
   - core/src/cuda/common.c
   - core/src/cuda/picture_cuda.c
 invariant: VMAFx CUDA frame import/fences/pools, goto-free teardown helpers, VMAF_CUDA_DPTR macro, and .cu/.cuh lint rules.

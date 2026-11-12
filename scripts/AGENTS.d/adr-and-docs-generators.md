@@ -2,6 +2,8 @@
 paths:
   - scripts/docs/*adr*
   - scripts/docs/agents_*.py
+  - scripts/docs/tests/test_agents_index.py
+  - scripts/docs/tests/test_generators.py
   - scripts/adr/**
   - mkdocs.yml
 invariant: Generated ADR index, tag pages, AGENTS.md never hand-edited; next-free lock cwd-safe.

@@ -1,6 +1,7 @@
 ---
 paths:
   - scripts/docs/*credits*.py
+  - scripts/docs/tests/test_credits.py
   - docs/credits.yaml
   - docs/credits.md
 invariant: docs/credits.yaml = curated source; tables rendered between markers; never hand-edit.

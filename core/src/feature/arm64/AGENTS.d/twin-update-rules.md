@@ -2,6 +2,21 @@
 paths:
   - core/src/feature/arm64/*.c
   - core/src/feature/x86/*.c
+  - core/src/feature/iqa/convolve.c
+  - core/src/feature/iqa/ssim_tools.c
+  - core/src/feature/iqa/ssim_accumulate_lane.h
+  - core/src/feature/ms_ssim_decimate.c
+  - core/src/feature/third_party/xiph/psnr_hvs.c
+  - core/src/feature/ssimulacra2.c
+  - core/src/feature/cambi.c
+  - core/src/feature/cambi_c_values_frame.h
+  - core/src/feature/moment.c
+  - core/test/test_psnr_hvs_dispatch_invariance.c
+  - core/test/test_cambi_stage_simd.c
+  - core/test/test_cambi_spatial_mask_simd.c
+  - core/test/test_cambi_dispatch_invariance.c
+  - core/test/test_cambi_simd.c
+  - core/test/test_moment_simd.c
 invariant: Lockstep twin-bundle updates across ARM64 NEON/SVE2, x86 AVX2/AVX-512, and scalar references.
 ---
 # ARM64 SIMD twin-update bundles

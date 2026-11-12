@@ -1,5 +1,6 @@
 ---
 paths:
+  - core/src/sycl/common.cpp
   - core/src/sycl/import_*.c
   - core/src/sycl/vmafx_sycl*
   - core/src/sycl/detile.h

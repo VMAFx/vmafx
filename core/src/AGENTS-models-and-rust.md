@@ -1,9 +1,10 @@
 <!-- GENERATED (`make docs-fragments-write`); do not hand-edit. -->
 # Models, prediction, pooling, and Rust: `core/src/` agent invariants
 
-predict*, model*, read_json_model*, svm*, percentile.h, bootstrap_names.h,
-interop/pelorus_interop.c, rust/**, and feature/ciede* upstream-product
-parity.
+libvmaf.c, meson.build, predict*, model*, read_json_model*, svm*,
+percentile.h, bootstrap_names.h, interop/pelorus_interop.c, rust/**,
+feature/feature_extractor.*, feature/tad_rust.c, and feature/ciede* upstream-
+product parity.
 
 Parent index: [AGENTS.md](AGENTS.md).
 

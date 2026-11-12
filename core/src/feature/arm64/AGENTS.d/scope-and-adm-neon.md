@@ -2,7 +2,7 @@
 paths:
   - core/src/feature/arm64/*adm*neon*
   - core/src/feature/arm64/*.h
-invariant: Self-contained SIMD headers, scalar bit-exactness, and integer/float ADM NEON non-contracting kernels.
+invariant: Self-contained SIMD headers and integer/float ADM NEON non-contracting kernels.
 ---
 <!-- markdownlint-disable MD013 -->
 # ARM64 scope, self-contained headers, and ADM NEON rules
@@ -30,14 +30,6 @@ feature/arm64/
   `<stddef.h>` directly. Standalone-include failures on Apple Clang and Ubuntu
   ARM Clang = CI regressions (see PR #914 for cambi family; fixed for motion
   family in accompanying PR).
-- **Parent rules** apply in full (see [../AGENTS.md](../../AGENTS.md) +
-  [../../AGENTS.md](../../../AGENTS.md)).
-- **Bit-exactness with scalar reference is non-negotiable.** Same rule as AVX2 /
-  AVX-512 sibling: every NEON kernel mirrors scalar TU byte-for-byte under
-  `FLT_EVAL_METHOD == 0`. Bit-exact regression tests in
-  [`../../../test/`](../../../test/) (`test_*_simd.c`, migrated through
-  [`simd_bitexact_test.h`](../../../test/simd_bitexact_test.h) harness per
-  ADR-0245) catch ULP drift.
 - **Integer-ADM DWT2: one NEON path on every AArch64 platform
   ([ADR-1257](../../../../../docs/adr/1257-retire-darwin-adm-dwt2-legacy-dispatch.md),
   supersedes ADR-1057 Apple wrapper).** `integer_adm.c` dispatches

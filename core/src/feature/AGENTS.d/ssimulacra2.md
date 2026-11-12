@@ -140,3 +140,7 @@ survivors. Measured, one ULP in linear RGB became **2.62e-03** score delta.
 **private** scalar reference, not against shipped function, so it will not
 catch shipped copy that drifts. Change shipped copies and that reference
 together.
+
+- **Geometry-sized workspace stays hoisted to `init_fex` / `close_fex`**
+  (ADR-0452; no per-frame `malloc` / `aligned_malloc`): see
+  [allocation-limits](allocation-limits.md).

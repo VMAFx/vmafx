@@ -2,6 +2,9 @@
 paths:
   - pkg/predictor/*.go
   - cmd/vmafx-ort-runner/*.go
+  - cmd/vmafx-tune/main*.go
+  - cmd/vmafx-tune/cmd/root*.go
+  - cmd/vmafx-tune/cmd/compare*.go
   - cmd/vmafx-tune/cmd/predict*.go
   - cmd/vmafx-tune/cmd/recommend*.go
   - cmd/vmafx-tune/cmd/saliency*.go

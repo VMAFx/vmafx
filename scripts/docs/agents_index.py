@@ -605,6 +605,30 @@ def _process(directory: str, root: Path, write: bool, sizes: dict[str, int]) -> 
     return status
 
 
+def _canonical_directory(name: str, root: Path = ROOT) -> str:
+    """Normalize a CLI directory argument relative to ``root``, rejecting escapes."""
+
+    raw = name.replace("\\", "/")
+    if not raw or raw.startswith("/"):
+        raise AgentsIndexError(f"{name!r}: directory argument must be relative to --root")
+    normalized = posixpath.normpath(raw)
+    if normalized == ".." or normalized.startswith("../"):
+        raise AgentsIndexError(f"{name!r}: directory argument escapes --root")
+    canonical = "" if normalized == "." else normalized
+    resolved_root = root.resolve()
+    if not (resolved_root / canonical).resolve().is_relative_to(resolved_root):
+        raise AgentsIndexError(f"{name!r}: directory argument escapes --root")
+    return canonical
+
+
+def _restricted_directories(names: Sequence[str], root: Path) -> set[str] | None:
+    """Return canonicalized CLI directory arguments, or ``None`` when unrestricted."""
+
+    if not names:
+        return None
+    return {_canonical_directory(name, root) for name in names}
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point for checking or rendering ``AGENTS.d/`` indexes and load chains."""
 
@@ -616,11 +640,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("directories", nargs="*")
     args = parser.parse_args(argv)
     root = args.root.resolve()
-    restricted = {name.strip("/") for name in args.directories} if args.directories else None
-    directories = sorted(restricted) if restricted is not None else discover(root)
     status = 0
     sizes: dict[str, int] = {}
     try:
+        restricted = _restricted_directories(args.directories, root)
+        directories = sorted(restricted) if restricted is not None else discover(root)
         for directory in directories:
             status = max(status, _process(directory, root, args.write, sizes))
         violations = check_chains(root, restricted, sizes)

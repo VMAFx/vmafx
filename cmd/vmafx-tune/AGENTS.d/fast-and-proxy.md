@@ -1,6 +1,7 @@
 ---
 paths:
   - cmd/vmafx-tune/cmd/fast*.go
+  - cmd/vmafx-tune/cmd/root.go
   - pkg/fast/*.go
 invariant: Fast exit codes 0/2/3; sorted RecommendResult + pythonFloatRepr; 1-port ORT guard; sequential TPE.
 ---

@@ -2,8 +2,11 @@
 # Collector, registry, and shared rules: `core/src/feature/` agent invariants
 
 feature_extractor*, feature_collector*, feature_name.cpp, picture_copy*,
-perceptual_weight.c, pelorus_udu_wrap.h, M_PI/M_E constants, close_fex naming,
-allocation bans, fmaf ban, min-dim guards, and unwind helpers.
+perceptual_weight.c, pelorus_udu_wrap.h, float_*.c, integer_adm*, adm_*,
+barten_csf_tools.h, integer_vif.c, vif_tools.c, integer_ssim.c, brisque*,
+cambi.c, ciede.c, delta_e_itp.c, niqe.c, pu21.c, speed*.c, ssimulacra2.c,
+y_funque_plus.c, sycl/*adm*; M_PI/M_E, close_fex, alloc/fmaf bans, min-dim,
+unwind.
 
 Parent index: [AGENTS.md](AGENTS.md).
 
@@ -16,7 +19,7 @@ relative; leading `/` = repo root. New invariant -> `AGENTS.d/` page
 
 | Touching | Read first | Invariant |
 | --- | --- | --- |
-| `feature_extractor.h` | [allocation-limits](AGENTS.d/allocation-limits.md) | Per-frame malloc or aligned_malloc for geometry-sized buffers is strictly prohibited. |
+| `feature_extractor.h`, `float_vif.c`, `ssimulacra2.c` | [allocation-limits](AGENTS.d/allocation-limits.md) | Per-frame malloc or aligned_malloc for geometry-sized buffers is strictly prohibited. |
 | `feature_extractor.cpp`, `feature_collector.cpp` | [ansnr-removal](AGENTS.d/ansnr-removal.md) | ANSNR and float_ansnr extractors remain removed per ADR-0865. |
 | `integer_adm.c`, `integer_vif.c`, `cambi.c` | [codeql-renames](AGENTS.d/codeql-renames.md) | CodeQL declaration-hides-variable renames preserve bit-exact behavior across extractors. |
 | `feature_extractor.h`, `feature_collector.cpp` | [context-pool-lifetime](AGENTS.d/context-pool-lifetime.md) | VmafFeatureExtractorContextPool fex_list growable pointer table lifecycle rules. |

@@ -39,7 +39,9 @@ release reviewer; read-only validation stays outside them. Provenance jobs
 write, `contents: read`, so they sit in `release-publish` too; they upload
 bundle only as workflow artifact. Environment-gated attachment job is sole
 release-asset writer. Never give provenance jobs `contents: write` or
-release-upload step.
+release-upload step. Server-side environment preflight, deployment-branch
+policy, and reviewer binding rules live in
+[publication-environment-binding](../../scripts/release/AGENTS.d/publication-environment-binding.md).
 
 `supply-chain.yml` runs `scripts/release/verify-release-version.sh` before any
 write or OIDC job. It keeps native and `vmaf-mcp` hashes in distinct provenance

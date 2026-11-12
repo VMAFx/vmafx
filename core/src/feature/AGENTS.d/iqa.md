@@ -62,3 +62,6 @@ area: simd-and-gpu
   bridge. On rebase, keep all these brackets verbatim. See
   [ADR-0148](../../../../docs/adr/0148-iqa-rename-and-cleanup.md)
   and [rebase-notes 0041](../../../../docs/rebase-notes.md).
+- **Lockstep SIMD twin updates**: changes to `iqa/convolve.c`, `iqa/ssim_tools.c`,
+  or `iqa/ssim_accumulate_lane.h` ship in lockstep with x86 and ARM64 SIMD twins
+  in same PR; see [twin-update-rules](../arm64/AGENTS.d/twin-update-rules.md).

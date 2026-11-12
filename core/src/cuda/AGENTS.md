@@ -1,4 +1,5 @@
 <!-- GENERATED (`make docs-fragments-write`); do not hand-edit. -->
+<!-- markdownlint-disable MD013 -->
 # AGENTS.md — core/src/cuda
 
 Generated index. Match touched paths against `Touching`; read each matching
@@ -6,8 +7,12 @@ page first (none -> skip). Text above table binds every file. `Touching`
 relative; leading `/` = repo root. New invariant -> `AGENTS.d/` page
 ([how](../../../docs/development/agents-index.md)).
 
-Orientation for agents working on CUDA backend runtime. Parent:
-[../../AGENTS.md](../../AGENTS.md).
+Orientation for agents working on CUDA backend runtime. Parent rules apply in full: [../../AGENTS.md](../../AGENTS.md).
+
+- Every CUDA call checks errors via `cuda_helper.cuh` macros; never invent silent wrappers.
+- `cudaMemcpyAsync` requires pinned host memory (pageable buffers serialize); picture pools allocate pinned.
+- Experimental flags (`--expt-relaxed-constexpr`, `--extended-lambda`, `--expt-extended-lambda`, `sm_120` gencode; [ADR-0027](../../../docs/adr/0027-non-conservative-image-pins.md)) target stable CUDA >= 13.2, not preview branches.
+- Numerical snapshots: kernels unable to bit-match CPU reference regenerate `testdata/scores_cpu_cuda.json` via [`/regen-snapshots`](../../../.claude/skills/regen-snapshots/SKILL.md) with commit justification ([AGENTS.md §5](../../../AGENTS.md)).
 
 ## Topic pages
 
@@ -17,4 +22,4 @@ Orientation for agents working on CUDA backend runtime. Parent:
 | `cuda_helper.cuh`, `kernel_template.h`, `drain_batch.h`, `/core/src/feature/cuda/integer_psnr_hvs_cuda.c`, `/core/src/feature/cuda/integer_ms_ssim_cuda.c`, `/core/src/feature/cuda/integer_psnr_cuda.c` | [extractor-and-template-invariants](AGENTS.d/extractor-and-template-invariants.md) | Graceful CHECK_CUDA macros, persistent PSNR-HVS staging, MS-SSIM partials, chroma PSNR, and kernel_template.h. |
 | `/core/src/meson.build`, `common.c`, `picture_cuda.c`, `drain_batch.c`, `kernel_template.h` | [nvcc-flags-and-lifecycle](AGENTS.d/nvcc-flags-and-lifecycle.md) | Shared strict-FP fatbin flags (--fmad=false), context-current resource teardown, drain_batch owner, and unwinds. |
 | `common.c`, `common.h`, `picture_cuda.c`, `dispatch_strategy.c`, `/core/src/gpu_picture_pool.cpp`, `/core/src/meson.build`, `/core/include/libvmaf/libvmaf_cuda.h` | [scope-ground-rules-and-runtime](AGENTS.d/scope-ground-rules-and-runtime.md) | CUDA runtime scope, sm_80 floor, non-blocking upload streams, synchronous cuMemFree, and state_free ownership. |
-| `import_*.c`, `import_convert.cu`, `vmafx_cuda*.h`, `cuda_device_ptr.cuh`, `common.c`, `picture_cuda.c` | [vmafx-frames-and-device-lint](AGENTS.d/vmafx-frames-and-device-lint.md) | VMAFx CUDA frame import/fences/pools, goto-free teardown helpers, VMAF_CUDA_DPTR macro, and .cu/.cuh lint rules. |
+| `import_*.c`, `*.cu`, `*.cuh`, `/core/src/feature/cuda/*/*.cu`, `/core/src/feature/cuda/*/*.cuh`, `vmafx_cuda*.h`, `common.c`, `picture_cuda.c` | [vmafx-frames-and-device-lint](AGENTS.d/vmafx-frames-and-device-lint.md) | VMAFx CUDA frame import/fences/pools, goto-free teardown helpers, VMAF_CUDA_DPTR macro, and .cu/.cuh lint rules. |

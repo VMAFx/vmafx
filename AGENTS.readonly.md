@@ -168,4 +168,4 @@ make format-check  # dry-run
 
 - Checked-in `.vscode/` tasks + settings = canonical workspace defaults; `clangd` = only C/C++ language server, no second IntelliSense provider; Meson sources in `core/` -> `meson setup <build-dir> core`.
 - Keep every project agent integration available, never on ignore, disabled or unwanted list: Codex, Gemini, Antigravity, opencode, Claude Code, Ollama/local agents, Paperclip, Hindsight, repository MCP servers.
-- Before hand-off: run smallest applicable checked-in task; generated build output never in tracked files.
+- Before hand-off: run smallest applicable checked-in task (none applicable or task cannot run -> record command tried, skip reason, alternate check run; never report unrun task as passing); generated build output never in tracked files.

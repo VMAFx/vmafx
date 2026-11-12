@@ -39,7 +39,7 @@ finding here with an exclusion.
 ## Smoke test
 
 ```text
-build/test/test_mcp_smoke   # expects "17 tests run, 17 passed"
+build/test/test_mcp_smoke   # expects 18 tests run, 18 passed
 ```
 
 v3 sub-test `test_sse_event_stream` spawns SSE server on

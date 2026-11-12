@@ -10,14 +10,14 @@ paths:
 invariant: CUDA runtime scope, sm_80 floor, non-blocking upload streams, synchronous cuMemFree, and state_free ownership.
 ---
 <!-- markdownlint-disable MD013 -->
-# CUDA scope, ground rules, and picture/state runtime
+# CUDA scope and picture/state runtime
 
 ## Scope
 
 CUDA-side runtime (picture lifecycle, buffer pools, launch helpers).
 CUDA **feature kernels** live one level deeper in
 [../feature/cuda/](../../feature/cuda/). CUDA execution-provider wiring for
-ONNX Runtime lives in [../dnn/](../dnn/AGENTS.md).
+ONNX Runtime lives in [../dnn/](../../dnn/AGENTS.md).
 
 ```text
 cuda/
@@ -28,26 +28,6 @@ cuda/
   # picture-pool round-robin lives in core/src/gpu_picture_pool.{h,c}
   # (ADR-0239 — backend-agnostic; CUDA was the original consumer)
 ```
-
-## Ground rules
-
-- **Parent rules** apply in full: see [../../AGENTS.md](../../../AGENTS.md).
-- **Every CUDA call has its error checked.** Use `cuda_helper.cuh`
-  macros; don't invent new wrappers silently.
-- **`cudaMemcpyAsync` requires pinned host memory** for true async;
-  using pageable host buffers silently serialises. Picture pools
-  allocate pinned.
-- **Experimental toolchain flags enabled**
-  (`--expt-relaxed-constexpr`, `--extended-lambda`,
-  `--expt-extended-lambda`; Blackwell `sm_120` gencode). See
-  [ADR-0027](../../../../docs/adr/0027-non-conservative-image-pins.md).
-  "Experimental" means *feature flags on stable CUDA ≥13.2*, not
-  preview branches.
-- **Numerical snapshots**: kernels that cannot bit-match CPU
-  reference regenerate `testdata/scores_cpu_cuda.json` via
-  [`/regen-snapshots`](../../../../.claude/skills/regen-snapshots/SKILL.md)
-  with justification in commit message. See
-  [CLAUDE.md §9](../../../../CLAUDE.md).
 
 ## Rebase-sensitive invariants
 

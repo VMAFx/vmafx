@@ -485,6 +485,76 @@ class ChainBudgetTests(Fixture):
         self.assertEqual(status, agents_index.EXIT_INVALID, err)
         self.assertIn("tools/gate/AGENTS.md: load path", err)
 
+    def check_arg(self, arg: str) -> tuple[int, str]:
+        """Run ``agents_index.py --check`` restricted to ``arg`` and return (status, stderr)."""
+
+        status, _, err = quiet(agents_index.main, ["--check", "--root", str(self.root), arg])
+        return status, err
+
+    def test_normalized_directory_arguments_select_matching_chains(self) -> None:
+        """Dot, leading ./, and trailing / directory spellings select matching load paths."""
+
+        leaf_size = len(agents_index.render(DIRECTORY, self.root).encode("utf-8"))
+        root_exact = agents_index.CHAIN_MAX_BYTES - 10_000 - leaf_size
+        self.write_hand("", root_exact)
+        self.write_hand("tools", 10_000)
+        self.assertEqual(self.run_index("--write")[0], 0)
+        spellings = (
+            ".",
+            "./",
+            "./tools",
+            "tools/",
+            "./tools/gate",
+            "tools/gate/",
+            "./tools/gate/",
+        )
+        for arg in spellings:
+            with self.subTest(arg=arg, phase="within-cap"):
+                status, err = self.check_arg(arg)
+                self.assertEqual(status, 0, err)
+
+        self.write_hand("", root_exact + 1)
+        for arg in spellings:
+            with self.subTest(arg=arg, phase="over-cap"):
+                status, err = self.check_arg(arg)
+                self.assertEqual(status, agents_index.EXIT_INVALID, err)
+                self.assertIn("tools/gate/AGENTS.md: load path 32769 bytes", err)
+
+    def test_dot_and_collapsed_parent_boundary_exact_32768_passes_and_32769_fails(self) -> None:
+        """Root boundary spellings (. and tools/..) pass at 32768 bytes and fail at 32769."""
+
+        leaf_size = len(agents_index.render(DIRECTORY, self.root).encode("utf-8"))
+        root_exact = agents_index.CHAIN_MAX_BYTES - leaf_size
+        self.write_hand("", root_exact)
+        self.assertEqual(self.run_index("--write")[0], 0)
+        for arg in (".", "tools/.."):
+            with self.subTest(arg=arg, boundary=agents_index.CHAIN_MAX_BYTES):
+                status, err = self.check_arg(arg)
+                self.assertEqual(status, 0, err)
+
+        self.write_hand("", root_exact + 1)
+        for arg in (".", "tools/.."):
+            with self.subTest(arg=arg, boundary=agents_index.CHAIN_MAX_BYTES + 1):
+                status, err = self.check_arg(arg)
+                self.assertEqual(status, agents_index.EXIT_INVALID, err)
+                self.assertIn("tools/gate/AGENTS.md: load path 32769 bytes", err)
+
+    def test_rejects_directory_arguments_escaping_root_or_absolute(self) -> None:
+        """Lexical escapes, symlink escapes, empty strings, and absolute paths exit 65."""
+
+        invalid_args = ("", "..", "./..", "../outside", "tools/../../outside", "/abs/path")
+        for arg in invalid_args:
+            with self.subTest(arg=arg):
+                status, err = self.check_arg(arg)
+                self.assertEqual(status, agents_index.EXIT_INVALID, err)
+                self.assertIn("directory argument", err)
+
+        with tempfile.TemporaryDirectory(prefix="vmafx-agents-outside-") as outside:
+            (self.root / "escaped-link").symlink_to(Path(outside))
+            status, err = self.check_arg("escaped-link")
+            self.assertEqual(status, agents_index.EXIT_INVALID, err)
+            self.assertIn("escapes --root", err)
+
 
 class DiscoveryTests(Fixture):
     def test_directories_from_names_only_owners_of_a_pages_directory(self) -> None:

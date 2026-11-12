@@ -2,9 +2,10 @@
 paths:
   - core/src/metal/common.h
   - core/src/metal/common.mm
+  - core/src/metal/state_priv.h
   - core/src/metal/picture_metal.mm
   - core/src/metal/kernel_template.mm
-invariant: Filtered Apple7+ device numbering, private VmafMetalContext layout, and ARC bridge-cast ownership.
+invariant: Filtered Apple7+ device numbering, state_priv.h VmafMetalContext layout, and ARC bridge-cast ownership.
 ---
 # Device numbering, private context, and ARC bridge casts
 
@@ -23,14 +24,17 @@ invariant: Filtered Apple7+ device numbering, private VmafMetalContext layout, a
   raises floor to Apple8) or enumeration order, move all three
   functions together so index space stays consistent.
 
-- **`struct VmafMetalContext` layout is private to `common.mm`**
-  (fork-local, ADR-0420). Struct definition lives in `common.mm`,
-  not in `common.h`. Consumer TUs (`picture_metal.mm`,
-  `kernel_template.mm`) reach handles only through
-  `vmaf_metal_context_device_handle()` /
-  `vmaf_metal_context_queue_handle()` accessor pair. **On rebase**:
-  reject any diff that re-introduces local struct-layout replica in
-  consumer or header.
+- **`struct VmafMetalContext` layout lives in private `state_priv.h`, never `common.h`**
+  (fork-local, ADR-0420, ADR-2091). `core/src/metal/state_priv.h` defines
+  `struct VmafMetalContext` (`device_index`, `void *device`,
+  `void *command_queue`) and `struct VmafMetalState` with plain C types (no
+  Objective-C headers), included only by `common.mm` and `picture_import.mm`.
+  `common.h` keeps opaque `typedef struct VmafMetalContext VmafMetalContext;`;
+  consumer TUs (`picture_metal.mm`, `kernel_template.mm`, `feature/metal/*.mm`)
+  reach handles only through `vmaf_metal_context_device_handle()` /
+  `vmaf_metal_context_queue_handle()` accessor pair. **On rebase**: keep
+  `common.h` opaque, keep `state_priv.h` free of Objective-C types, and reject
+  duplicate struct-layout definitions in `common.mm` or consumer TUs.
 
 - **Bridge-cast ownership discipline** (fork-local, ADR-0420). All
   `.mm` TUs use `-fobjc-arc`. Metal object handles stashed into C
@@ -38,8 +42,9 @@ invariant: Filtered Apple7+ device numbering, private VmafMetalContext layout, a
   released back with `(__bridge_transfer id<...>)void *` (-1
   release). Borrows within TU use `(__bridge id<...>)void *` (no
   refcount change), valid only while C slot holds +1. **On
-  rebase**: audit every bridge cast against this pattern; missing
-  `_retained` leaks, missing `_transfer` double-frees.
+  rebase**: audit every bridge cast against this pattern; omitting
+  `_retained` lets ARC release object while C slot still references it,
+  and omitting `_transfer` leaks retained object.
 
 - **Kernel-template lifecycle mirrors HIP twin** (fork-local,
   ADR-0420). `kernel_template.mm` follows `hip/kernel_template.c`

@@ -3,9 +3,9 @@ paths:
   - core/src/feature/arm64/speed_neon.c
   - core/src/feature/arm64/psnr_hvs_neon.c
   - core/src/meson.build
-invariant: arm64_v8_fp strict-FP library placement, pointer accumulators, SpEED covariance, and MSVC ARM64 portability.
+invariant: arm64_v8_fp strict-FP library placement, pointer accumulators, and SpEED covariance.
 ---
-# FP library placement, SpEED covariance, and MSVC ARM64
+# FP library placement, pointer accumulators, and SpEED covariance
 
 ## Ground rules
 
@@ -33,17 +33,3 @@ invariant: arm64_v8_fp strict-FP library placement, pointer accumulators, SpEED 
   `compute_cov_kernel_scalar` carries function-scoped no-contraction guard
   (ADR-1057 pattern): without it clang fused its loop remainder and no kernel
   could match at every width.
-
-- **MSVC compiles this directory (ADR-1260, `Windows ARM64 MSVC` lane).**
-  `cl.exe` ARM64: no GCC vector extensions on NEON types (`v[0]`, `a + b`,
-  brace-initialised or compound-literal vectors), no `_x2`/`_x3`/`_x4`
-  multi-register loads, `__attribute__` / `#pragma GCC` / `#pragma clang`
-  only under `#if defined(__GNUC__)` or `defined(__clang__)` guards as
-  today. `<arm_neon.h>` is include on every compiler. Strict FP comes from
-  shared `vmaf_strict_fp_args` in `core/src/meson.build`: `/fp:precise` on
-  MSVC, `/fp:precise /clang:-fno-fast-math /clang:-fcomplex-arithmetic=full
-  /clang:-ffp-contract=off` on `intel-llvm-cl`,
-  `/clang:-ffp-contract=off` on clang-cl, and `-ffp-contract=off` on GCC/clang.
-  Never restore literal strict-FP option in arm64 `c_args`. SVE2 TUs
-  never build under MSVC (no `<arm_sve.h>`; probe skipped). Local MSVC check
-  is impossible; QEMU cross build covers GCC/clang side only.

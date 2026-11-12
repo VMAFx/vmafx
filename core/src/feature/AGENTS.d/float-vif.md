@@ -52,6 +52,10 @@ largest `((filter_width_s / 2) + 1) << s` over four-scale ladder, 16 at
 default kernelscale — not from scale-0 filter alone. Do not replace it with
 constant.
 
+- **Geometry-sized scratch stays hoisted to `init()` / `close_fex()`**
+  (`VifState::vif_buf`, ADR-0452; no per-frame `malloc` / `aligned_malloc`):
+  see [allocation-limits](allocation-limits.md).
+
 ## Prescaled planes stay inside the int index of `vif_tools.c` (T-PRESCALED-PLANE-INT-INDEX-2026-10-05)
 
 `vif_tools.c` indexes plane as `y * stride + x` in `int`. `init()` refuses

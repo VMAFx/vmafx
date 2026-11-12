@@ -2,6 +2,7 @@
 paths:
   - release-please-config.json
   - .release-please-manifest.json
+  - scripts/release/rollover-changelog-fragments.sh
   - scripts/release/check-one-shot-fields.sh
   - scripts/release/tests/test-check-one-shot-fields.sh
   - .github/workflows/release-please.yml
