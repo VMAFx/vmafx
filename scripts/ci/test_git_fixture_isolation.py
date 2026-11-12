@@ -103,8 +103,9 @@ SHELL_GIT_WRITE = re.compile(
     r"|config\s+(?!--" + _READ_ONLY + r"\b)"
     r"(?:--(?:local|global|worktree|system|add|replace-all|file\s+\S+)\s+)*[\w.-]+\.[\w.-]+[ \t]+\S)"
 )
+# Match git at a word boundary or after an underscore (e.g. run_git), never inside digit.
 CODE_GIT_WRITE = re.compile(
-    r"""(?im)^(?!\s*(?:#|//))[^\n]*\bgit\w*[^\n]{0,80}?["'](?:init|clone)["']\s*[,)\]]"""
+    r"""(?im)^(?!\s*(?:#|//))[^\n]*(?:\b|_)git\w*[^\n]{0,80}?["'](?:init|clone)["']\s*[,)\]]"""
     r"""|["']config["']\s*,\s*(?:["']--(?:local|global|worktree|system|add|replace-all)["']\s*,\s*)*"""
     r"""["'][\w.-]+\.[\w.-]+["']\s*,\s*\S"""
 )
@@ -126,6 +127,10 @@ ISOLATION_EXCEPTIONS = {
     ".config/lefthook/scripts/common.py": "clean_env() removes the repository variables by name",
     "scripts/ci/tests/test_research_digest_ids.py": (
         "git runs through check-research-digest-ids._git, which drops GIT_*"
+    ),
+    "scripts/ci/tests/test_pr_time_verify_workflows.py": (
+        "run_validate() builds env_base from a fixed allow-list, never caller GIT_* "
+        "(scripts/ci/tests/test_pr_time_verify_workflows.py:95)"
     ),
     "scripts/dev/tests/test_merge_train_guard.py": (
         "git runs through merge_train_guard.environment(), which drops GIT_*"
@@ -1174,6 +1179,8 @@ class GitFixtureIsolation(unittest.TestCase):
 
     def check_python_isolation_controls(self) -> None:
         """Replay rejected filters, required config keys and accepted fixture forms."""
+        self.test_isolation_rule_refuses_underscore_git_helpers()
+        self.test_isolation_rule_ignores_read_only_and_unrelated_helpers()
         name = "tests/test_fixture.py"
         create = 'git("init", "-q")\n'
         canonical = '{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}'
@@ -1498,6 +1505,29 @@ class GitFixtureIsolation(unittest.TestCase):
                 self.assertTrue(reason)
                 text = (ROOT / name).read_text(encoding="utf-8", errors="replace")
                 self.assertTrue(unisolated_git(name, text), "no longer needed: remove it")
+
+    def test_isolation_rule_refuses_underscore_git_helpers(self) -> None:
+        """Underscore-prefixed Git helpers must trigger the isolation check."""
+        for text in (
+            'self._git("init")\n',
+            'self.run_git("init", "-q")\n',
+            'run_git(["clone", url])\n',
+        ):
+            with self.subTest(text=text):
+                self.assertIsNotNone(CODE_GIT_WRITE.search(text))
+                self.assertTrue(unisolated_git("tests/test_fixture.py", text))
+
+    def test_isolation_rule_ignores_read_only_and_unrelated_helpers(self) -> None:
+        """Require a word boundary or underscore before git; digit is unrelated."""
+        for text in (
+            'self._git("status")\n',
+            'self.run_git("status", "--short")\n',
+            'digit("init")\n',
+            'self.digit("clone", url)\n',
+        ):
+            with self.subTest(text=text):
+                self.assertIsNone(CODE_GIT_WRITE.search(text))
+                self.assertEqual(unisolated_git("tests/test_fixture.py", text), "")
 
     def test_isolation_rule_refuses_planted_unisolated_fixtures(self) -> None:
         """Verify unisolated_git flags unisolated code and passes isolated or harmless snippets."""
