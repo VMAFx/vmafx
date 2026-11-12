@@ -9,6 +9,7 @@ import http.client
 import io
 import json
 import os
+import secrets
 import shutil
 import sys
 import tempfile
@@ -317,6 +318,23 @@ def _page_fetcher(rows: list[object], *, files_only: bool = False) -> ci_tier.Fe
     return fetch
 
 
+def _release_fetcher(
+    filenames: Sequence[str],
+    labels: Sequence[str],
+    seen: list[str] | None = None,
+) -> ci_tier.Fetcher:
+    """Return a fetcher answering ``filenames`` on ``/files`` and ``labels`` elsewhere."""
+
+    def fetch(path: str) -> object:
+        if "/files" in path:
+            if seen is not None:
+                seen.append(path)
+            return [{"filename": filename} for filename in filenames]
+        return [{"name": label} for label in labels]
+
+    return fetch
+
+
 class LiveLabels(unittest.TestCase):
     def test_labels_are_read_from_the_api_with_paging(self) -> None:
         pages = {
@@ -376,7 +394,7 @@ class LiveLabels(unittest.TestCase):
                 output = directory / f"out-{idx}"
                 env = {
                     "EVENT_NAME": "pull_request",
-                    "GH_TOKEN": "t",
+                    "GH_TOKEN": secrets.token_urlsafe(8),
                     "PR_NUMBER": "7",
                     "GITHUB_REPOSITORY": REPO,
                     "HEAD_REPOSITORY": REPO,
@@ -464,7 +482,9 @@ class ChangedPaths(unittest.TestCase):
                     return page if "/files" in url else []
 
                 with (
-                    mock.patch.dict(os.environ, {**base_env, "GH_TOKEN": "t"}, clear=True),
+                    mock.patch.dict(
+                        os.environ, {**base_env, "GH_TOKEN": secrets.token_urlsafe(8)}, clear=True
+                    ),
                     mock.patch.object(ci_tier, "api_request", side_effect=fake_api),
                     redirect_stdout(io.StringIO()),
                     redirect_stderr(io.StringIO()),
@@ -794,12 +814,7 @@ class RunFullPaths(unittest.TestCase):
         """Fetched release-only paths stay release-light until the cut label."""
         for labels, expected in (([], ci_tier.RELEASE_LIGHT), (["autorelease: cut"], ci_tier.FULL)):
             with self.subTest(labels=labels):
-
-                def fetch(path: str, labels: Sequence[str] = labels) -> object:
-                    if "/files" in path:
-                        return [{"filename": ".release-please-manifest.json"}]
-                    return [{"name": label} for label in labels]
-
+                fetch = _release_fetcher((".release-please-manifest.json",), labels)
                 env = self.base_env(
                     HEAD_REF=RELEASE_REF, PR_AUTHOR="github-actions[bot]", PR_AUTHOR_TYPE="Bot"
                 )
@@ -812,20 +827,11 @@ class RunFullPaths(unittest.TestCase):
         for labels in ([], ["autorelease: cut"]):
             with self.subTest(labels=labels):
                 file_calls: list[str] = []
-
-                def fetch(
-                    path: str,
-                    labels: Sequence[str] = labels,
-                    seen: list[str] = file_calls,
-                ) -> object:
-                    if "/files" in path:
-                        seen.append(path)
-                        return [
-                            {"filename": ".release-please-manifest.json"},
-                            {"filename": ci_tier.TIER_CONFIG_PATH},
-                        ]
-                    return [{"name": label} for label in labels]
-
+                fetch = _release_fetcher(
+                    (".release-please-manifest.json", ci_tier.TIER_CONFIG_PATH),
+                    labels,
+                    seen=file_calls,
+                )
                 env = self.base_env(
                     HEAD_REF=RELEASE_REF, PR_AUTHOR="github-actions[bot]", PR_AUTHOR_TYPE="Bot"
                 )
@@ -1014,7 +1020,7 @@ class Main(unittest.TestCase):
         output = Path(directory) / "out"
         env = {
             "EVENT_NAME": "pull_request",
-            "GH_TOKEN": "t",
+            "GH_TOKEN": secrets.token_urlsafe(8),
             "PR_NUMBER": "7",
             "GITHUB_REPOSITORY": REPO,
             "HEAD_REPOSITORY": REPO,
@@ -1058,7 +1064,7 @@ class Main(unittest.TestCase):
         output = Path(directory) / "out"
         env = {
             "EVENT_NAME": "pull_request",
-            "GH_TOKEN": "t",
+            "GH_TOKEN": secrets.token_urlsafe(8),
             "PR_NUMBER": "7",
             "GITHUB_REPOSITORY": REPO,
         }
