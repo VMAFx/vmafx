@@ -13,7 +13,7 @@ invariant: Generated ADR index, tag pages, AGENTS.md never hand-edited; next-fre
 
 ## Rebase-sensitive invariants
 
-### `docs/concat-adr-index.sh` is the source of truth for `docs/adr/README.md`
+### `scripts/docs/concat-adr-index.sh` is the source of truth for `docs/adr/README.md`
 
 Per [ADR-0221](../../docs/adr/0221-changelog-adr-fragment-pattern.md),
 `docs/adr/README.md` **rendered** from per-ADR fragments under
@@ -37,17 +37,17 @@ downstream.
 Per [ADR-1510](../../docs/adr/1510-adr-nav-collapse-behind-index.md), the
 `ADRs` entry of `mkdocs.yml` `nav:` lists `adr/README.md`,
 `adr/0000-template.md` and `adr/by-tag/index.md` and nothing else; the
-per-hundred generator of ADR-0937 (`docs/generate-adr-nav.sh`) is gone.
+per-hundred generator of ADR-0937 (`scripts/docs/generate-adr-nav.sh`) is gone.
 Readers reach an ADR through the index, a tag page, a link or search.
 
 **On rebase**: do not bring back `generate-adr-nav.sh`, its `--check` /
 `--write` lines in `make docs-fragments-check` / `docs-fragments-write`, or an
 `ADR-NAV-GENERATED` block; an ADR merge does not edit `mkdocs.yml`.
-`docs/tests/test_generators.py::test_adr_navigation_is_collapsed` holds the
+`scripts/docs/tests/test_generators.py::test_adr_navigation_is_collapsed` holds the
 three entries. ADR coverage comes from the index check
-(`docs/check-adr-index.py`) and the tag pages.
+(`scripts/docs/check-adr-index.py`) and the tag pages.
 
-### `docs/generate-adr-by-tag.sh` owns the `docs/adr/by-tag/` tree
+### `scripts/docs/generate-adr-by-tag.sh` owns the `docs/adr/by-tag/` tree
 
 Script scans every ADR's `Tags:` front-matter field, rewrites
 `docs/adr/by-tag/<tag>.md` (one Markdown table per tag) plus
@@ -63,10 +63,10 @@ in place when adapting regex. Validate output basenames before writing,
 deduplicate equivalent tags within one ADR, preserve generator-owned
 lint header. Title escaping and meaningful code-span spaces = renderer
 responsibilities; do not rewrite accepted ADRs to satisfy generated lint.
-`docs/check-adr-index.py` also verifies fragment/source coverage and mutable
+`scripts/docs/check-adr-index.py` also verifies fragment/source coverage and mutable
 fragment ADR references before concatenation.
 
-### `docs/agents_index.py` owns every `AGENTS.md` next to an `AGENTS.d/` (ADR-1454)
+### `scripts/docs/agents_index.py` owns every `AGENTS.md` next to an `AGENTS.d/` (ADR-1454)
 
 `<dir>/AGENTS.md` = rendered from `<dir>/AGENTS.d/_index.md` (title + rules for
 every file) and `<dir>/AGENTS.d/<slug>.md` pages (front matter `paths:` list +
@@ -81,13 +81,13 @@ a budget = new ADR superseding that part of ADR-1454.
 
 **On rebase**: conflict in a generated `AGENTS.md` -> master's side, then
 `make docs-fragments-write`. Conflict in a page -> resolve by hand like any
-source. `docs/agents_migration_check.py` = one-off proof for a migration PR
+source. `scripts/docs/agents_migration_check.py` = one-off proof for a migration PR
 (old file vs pages: units, headings, tokens); `agents_index.py` imports nothing
 from it, it imports `map_links` / `render` from the generator. Both tested in
-`docs/tests/test_agents_index.py` (hook `test-agents-index`). Guide:
+`scripts/docs/tests/test_agents_index.py` (hook `test-agents-index`). Guide:
 [agents index](../../docs/development/agents-index.md).
 
-### `adr/next-free.sh --claim` lock + claim file independent of cwd
+### `scripts/adr/next-free.sh --claim` lock + claim file independent of cwd
 
 - Lock name = resolved absolute common git dir
   (`cd "$(git rev-parse --git-common-dir)" && pwd -P`). Relative `.git`
@@ -96,13 +96,13 @@ from it, it imports `map_links` / `render` from the generator. Both tested in
 - Lock holds owner token; release only own lock.
 - Exclusive claim file `.git/adr-claims/NNNN` (`noclobber`) decides number;
   taken -> N+1, max 100 tries.
-- Test cleanups (`adr/test-next-free.sh`,
-  `adr/tests/test-next-free-remote-aware.sh`) compute same name.
+- Test cleanups (`scripts/adr/test-next-free.sh`,
+  `scripts/adr/tests/test-next-free-remote-aware.sh`) compute same name.
 - Lock = owner file, created `noclobber` (O_EXCL) in lock dir; dir without
   owner file = free. Owner pid dead -> under `<lock>.takeover` mutex: pid
   re-checked, owner line re-compared, file removed with WARNING. Live holder
   never taken over. No grace takeover (raced fresh mkdir, soak 2). Exit trap
   set before mkdir. Wait = `VMAF_ADR_LOCK_WAIT_S`
   (default 60, was fixed 10) (#2784).
-- Guards: `adr/tests/test-next-free-concurrent.sh`,
-  `adr/tests/test-next-free-stale-lock.sh`.
+- Guards: `scripts/adr/tests/test-next-free-concurrent.sh`,
+  `scripts/adr/tests/test-next-free-stale-lock.sh`.

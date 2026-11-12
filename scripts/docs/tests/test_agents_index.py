@@ -101,7 +101,7 @@ class Fixture(unittest.TestCase):
 
     def write(self, name: str, text: str) -> Path:
         path = self.pages / name
-        path.write_text(text, encoding="utf-8")
+        path.write_text(text, encoding="utf-8", newline="\n")
         return path
 
     def index(self) -> Path:
@@ -429,7 +429,11 @@ class ChainBudgetTests(Fixture):
         )
         target.parent.mkdir(parents=True, exist_ok=True)
         head = "# Hand notes\n\n"
-        target.write_text(head + "x" * (size - len(head) - 1) + "\n", encoding="utf-8")
+        target.write_text(
+            head + "x" * (size - len(head) - 1) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
         self.assertEqual(len(target.read_bytes()), size)
         return target
 
@@ -586,6 +590,40 @@ class DiscoveryTests(Fixture):
             status, _, err = quiet(agents_index.main, ["--write", "--root", str(self.root)])
             self.assertEqual(status, 0, err)
             self.assertTrue(self.index().is_file())
+
+    def test_fallback_walk_skips_directory_symlinks_to_owner(self) -> None:
+        """Positive: non-git discovery skips directory symlinks so owners keep canonical paths."""
+        (self.root / "z-link").symlink_to(self.root / DIRECTORY, target_is_directory=True)
+        self.assertEqual(agents_index.discover(self.root), [DIRECTORY])
+        write_status, _, write_err = quiet(agents_index.main, ["--write", "--root", str(self.root)])
+        self.assertEqual(write_status, 0, write_err)
+        check_status, _, check_err = quiet(agents_index.main, ["--check", "--root", str(self.root)])
+        self.assertEqual(check_status, 0, check_err)
+
+    def test_fallback_walk_discovers_regular_nested_owner_directories(self) -> None:
+        """Negative: non-git discovery still traverses ordinary nested owner directories."""
+        nested = self.root / "nested/sub"
+        (nested / "AGENTS.d").mkdir(parents=True)
+        (nested / "item.py").write_text("fixture\n", encoding="utf-8", newline="\n")
+        (nested / "AGENTS.d/_index.md").write_text(
+            "# `nested/sub/` notes\n", encoding="utf-8", newline="\n"
+        )
+        (nested / "AGENTS.d/item.md").write_text(
+            "---\npaths:\n  - nested/sub/item.py\ninvariant: Item stays tested.\n---\n# Item\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        self.assertEqual(agents_index.discover(self.root), ["nested/sub", DIRECTORY])
+        self.assertEqual(quiet(agents_index.main, ["--write", "--root", str(self.root)])[0], 0)
+        self.assertEqual(quiet(agents_index.main, ["--check", "--root", str(self.root)])[0], 0)
+
+    def test_fallback_walk_lists_file_symlinks_and_skips_broken_ones(self) -> None:
+        """Boundary: file symlinks to regular files list like git ls-files; broken ones skip."""
+        (self.root / DIRECTORY / "alias.py").symlink_to(self.root / DIRECTORY / "alpha.py")
+        (self.root / DIRECTORY / "broken.py").symlink_to(self.root / DIRECTORY / "missing.py")
+        files = agents_index.list_files(self.root)
+        self.assertIn("tools/gate/alias.py", files)
+        self.assertNotIn("tools/gate/broken.py", files)
 
 
 class UnitSplitTests(unittest.TestCase):

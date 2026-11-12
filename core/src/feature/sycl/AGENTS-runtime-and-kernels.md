@@ -25,7 +25,7 @@ relative; leading `/` = repo root. New invariant -> `AGENTS.d/` page
 | `integer_*.cpp`, `float_*.cpp` | [kernel-identities](AGENTS.d/kernel-identities.md) | Kernel identities and output captures have explicit boundary. |
 | `sycl_compat.h`, `integer_ssim_sycl.cpp` | [local-accessor](AGENTS.d/local-accessor.md) | Stencil/convolution SYCL kernels MUST use local_accessor for tap access. |
 | `integer_*.cpp`, `/core/src/feature/cuda/integer_*.c` | [option-table-sync](AGENTS.d/option-table-sync.md) | Adding feature knob to any one backend must sync option tables across backends. |
-| `integer_*.cpp`, `float_*.cpp` | [queue-sync](AGENTS.d/queue-sync.md) | Per-step q.wait() in feature extractors forbidden — use in-order queues, barriers, or graph wait. |
+| `*.cpp` | [queue-sync](AGENTS.d/queue-sync.md) | Per-step q.wait() in feature extractors forbidden — use in-order queues, barriers, or graph wait. |
 | `sycl_compat.h`, `integer_adm_sycl.cpp`, `integer_vif_sycl.cpp`, `integer_ssim_sycl.cpp`, `integer_motion_pipeline_sycl.cpp`, `ssimulacra2_sycl.cpp` | [scratch-memory](AGENTS.d/scratch-memory.md) | No scratch memory in kernels; zero private_mem_size and spill_memory_size on xe. |
 | `sycl_compat.h`, `float_motion_sycl.cpp`, `float_adm_sycl.cpp` | [sub-group-size](AGENTS.d/sub-group-size.md) | Kernel sub-group size: 16 or 32 only (ADR-1468); Xe2 AOT targets reject 8. |
 | `sycl_tile_index.h`, `integer_vif_sycl.cpp` | [tile-index](AGENTS.d/tile-index.md) | Tile loaders clamp after reflecting (sycl_tile_index.h) around borders. |

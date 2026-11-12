@@ -3,6 +3,7 @@ paths:
   - core/src/metal/common.h
   - core/src/metal/common.mm
   - core/src/metal/state_priv.h
+  - core/src/metal/picture_import.mm
   - core/src/metal/picture_metal.mm
   - core/src/metal/kernel_template.mm
 invariant: Filtered Apple7+ device numbering, state_priv.h VmafMetalContext layout, and ARC bridge-cast ownership.

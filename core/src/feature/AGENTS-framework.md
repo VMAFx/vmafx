@@ -1,12 +1,11 @@
 <!-- GENERATED (`make docs-fragments-write`); do not hand-edit. -->
 # Collector, registry, and shared rules: `core/src/feature/` agent invariants
 
-feature_extractor*, feature_collector*, feature_name.cpp, picture_copy*,
-perceptual_weight.c, pelorus_udu_wrap.h, float_*.c, integer_adm*, adm_*,
-barten_csf_tools.h, integer_vif.c, vif_tools.c, integer_ssim.c, brisque*,
-cambi.c, ciede.c, delta_e_itp.c, niqe.c, pu21.c, speed*.c, ssimulacra2.c,
-y_funque_plus.c, sycl/*adm*; M_PI/M_E, close_fex, alloc/fmaf bans, min-dim,
-unwind.
+feature_extractor*, feature_collector*, feature_name.cpp, picture_copy*, *.c,
+common/convolution.c, common/fmaf_exact.h, iqa/*.c,
+third_party/xiph/psnr_hvs.c, pelorus_udu_wrap.h, adm_*.h, integer_adm.h,
+barten_csf_tools.h, brisque_math.h, sycl/*adm*; M_PI/M_E, close_fex,
+alloc/fmaf bans, min-dim, unwind.
 
 Parent index: [AGENTS.md](AGENTS.md).
 
@@ -26,7 +25,7 @@ relative; leading `/` = repo root. New invariant -> `AGENTS.d/` page
 | `feature_collector.cpp`, `feature_collector.h` | [feature-collector](AGENTS.d/feature-collector.md) | feature_collector.cpp mount/unmount traversal and single-authority lifecycle contracts. |
 | `feature_extractor.cpp`, `feature_extractor.h` | [feature-registration](AGENTS.d/feature-registration.md) | feature_extractor_list[] is exactly-once and all extractors register in feature_extractor.cpp. |
 | `feature_name.cpp`, `brisque_math.h` | [float-equality](AGENTS.d/float-equality.md) | Explicit floating-point comparison contracts replace direct equality tests. |
-| `feature_extractor.h` | [fmaf-ban](AGENTS.d/fmaf-ban.md) | Scalar references never call libm fmaf to prevent contraction divergence across hosts. |
+| `*.c`, `common/convolution.c`, `common/fmaf_exact.h`, `iqa/*.c`, `third_party/xiph/psnr_hvs.c`, `feature_extractor.h` | [fmaf-ban](AGENTS.d/fmaf-ban.md) | Scalar references never call libm fmaf to prevent contraction divergence across hosts. |
 | `feature_extractor.cpp`, `feature_collector.cpp` | [governing-adrs](AGENTS.d/governing-adrs.md) | Governing ADR index and compliance contracts for feature extractors. |
 | `brisque.c`, `ciede.c`, `delta_e_itp.c`, `float_adm.c`, `float_moment.c`, `float_motion.c`, `float_ms_ssim.c`, `float_psnr.c`, `float_ssim.c`, `float_vif.c`, `integer_adm.c`, `integer_ssim.c`, `integer_vif.c`, `niqe.c`, `pu21.c`, `speed.c`, `ssimulacra2.c`, `/core/test/test_libc_named_internal_functions.py` | [libc-named-statics](AGENTS.d/libc-named-statics.md) | no static C function named after C library function; extractor close callback is close_fex. |
 | `/core/meson.build`, `/core/src/meson.build`, `adm_csf_tools.h`, `adm_tools.c`, `adm_tools.h`, `barten_csf_tools.h`, `ciede.c`, `integer_adm.h`, `integer_ssim.c`, `speed.c`, `speed_internal.c`, `speed_qa.c`, `vif_tools.c`, `y_funque_plus.c`, `sycl/float_adm_sycl.cpp`, `sycl/integer_adm_sycl.cpp` | [math-constants](AGENTS.d/math-constants.md) | No TU defines M_PI / M_E; <math.h> provides them, Windows via meson's -D_USE_MATH_DEFINES. |

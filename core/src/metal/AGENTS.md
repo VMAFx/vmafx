@@ -19,7 +19,7 @@ refactor contracts on this side track HIP scaffold's.
 | Touching | Read first | Invariant |
 | --- | --- | --- |
 | `meson.build`, `/core/meson_options.txt` | [adrs-and-build](AGENTS.d/adrs-and-build.md) | Governing Metal backend ADRs and macOS versus non-macOS Meson build commands. |
-| `common.h`, `common.mm`, `state_priv.h`, `picture_metal.mm`, `kernel_template.mm` | [context-and-ownership](AGENTS.d/context-and-ownership.md) | Filtered Apple7+ device numbering, state_priv.h VmafMetalContext layout, and ARC bridge-cast ownership. |
+| `common.h`, `common.mm`, `state_priv.h`, `picture_import.mm`, `picture_metal.mm`, `kernel_template.mm` | [context-and-ownership](AGENTS.d/context-and-ownership.md) | Filtered Apple7+ device numbering, state_priv.h VmafMetalContext layout, and ARC bridge-cast ownership. |
 | `**` | [ground-rules](AGENTS.d/ground-rules.md) | Apple7+ device gate, Metal/Foundation probes, uintptr_t header boundary, and unified-memory template shape. |
 | `iosurface_layout.h`, `picture_import.mm`, `dispatch_strategy.c`, `kernel_template.h`, `/core/src/feature/metal/**` | [iosurface-and-dispatch](AGENTS.d/iosurface-and-dispatch.md) | IOSurface bi-planar layout planning, exact dispatch feature-key allowlist, and HIP/Metal template symmetry. |
 | `common.h`, `common.mm`, `picture_metal.h`, `picture_metal.mm`, `dispatch_strategy.c`, `kernel_template.mm`, `stubs.c`, `meson.build` | [scope-and-status](AGENTS.d/scope-and-status.md) | Metal runtime scope, Apple7+ context/picture/template status, and landed kernel dispatch coverage. |

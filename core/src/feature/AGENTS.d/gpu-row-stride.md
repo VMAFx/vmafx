@@ -1,9 +1,9 @@
 ---
 paths:
-  - core/src/feature/cuda/*
-  - core/src/feature/hip/*
-  - core/src/feature/sycl/*
-  - core/src/feature/metal/*
+  - core/src/feature/cuda/**
+  - core/src/feature/hip/**
+  - core/src/feature/sycl/**
+  - core/src/feature/metal/**
 invariant: GPU code never advances a pointer to samples wider than a byte by a byte stride.
 area: simd-and-gpu
 ---

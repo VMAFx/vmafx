@@ -145,9 +145,8 @@ make format-check  # dry-run
 
 ## 7. Release
 
-- `release-please` triggers on pushes to `master`. 0.x line restarted at `0.1.0` ([ADR-3292](docs/adr/3292-release-line-restart-0x.md)); pre-1.0 breaking = minor bump; release candidates only for 1.0.0.
-- [Milestone map](docs/development/release.md#release-map).
-- [Stage definitions + gate rules](docs/development/agent-reference.md#release-stages).
+- `release-please` (`master`): 0.x from `0.1.0` ([ADR-3292](docs/adr/3292-release-line-restart-0x.md)); pre-1.0 `!` = minor; RCs 1.0.0 only. `release-please-config.json`, `.release-please-manifest.json` -> [release-line-invariants](scripts/release/AGENTS.d/release-line-invariants.md).
+- [Milestone map](docs/development/release.md#release-map); [stages + gates](docs/development/agent-reference.md#release-stages).
 
 ## 8. Hard rules and invariants
 

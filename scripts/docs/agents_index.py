@@ -455,7 +455,7 @@ def _walk_files(root: Path) -> list[str]:
             visited += 1
             if visited > MAX_TREE_ENTRIES:
                 raise AgentsIndexError(f"{root}: tree exceeds {MAX_TREE_ENTRIES} entries")
-            if entry.is_dir():
+            if not entry.is_symlink() and entry.is_dir():
                 pending.append(entry)
             elif entry.is_file():
                 found.append(entry.relative_to(root).as_posix())
