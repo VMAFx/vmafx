@@ -80,10 +80,11 @@ class LocalImageExceptionPathSpelling(unittest.TestCase):
 
 class BaseImageGate(unittest.TestCase):
     def setUp(self) -> None:
+        """Set up an isolated test repository with scrubbed Git environment and copied gate files."""
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.repo = Path(self.temporary.name)
-        self.env = git_env.drop()
+        self.env = git_env.hermetic()
         for name in (
             "build-config.env",
             ".node-version",

@@ -19,7 +19,7 @@ def git_init(root: Path) -> None:
         (git, "init", "-q", str(root)),
         allowed_executables=(git,),
         # Without the hook's GIT_DIR: the fixture, not the caller's repository.
-        env=git_env.drop(),
+        env=git_env.hermetic(),
         capture_output=True,
         check=True,
         timeout_seconds=60,

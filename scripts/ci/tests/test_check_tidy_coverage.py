@@ -31,7 +31,7 @@ LIST = ".config/lint-exceptions.d/clang-tidy-coverage.toml"
 # A commit hook runs with GIT_INDEX_FILE and GIT_DIR set: a throwaway repository must not inherit
 # them, or `git add -A` below rewrites the index of the repository being committed.
 GIT = shutil.which("git") or "git"
-CLEAN_ENV = git_env.drop()
+CLEAN_ENV = git_env.hermetic()
 
 
 def entry(

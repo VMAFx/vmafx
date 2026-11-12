@@ -417,7 +417,8 @@ class DiscoveryTests(Fixture):
         self.assertEqual(agents_index.directories_from(names), ["", "a"])
 
     def git(self, *arguments: str) -> None:
-        environment = git_env.drop()
+        """Run a Git command against the fixture repository with an isolated Git environment."""
+        environment = git_env.hermetic()
         run_command(
             ("git", "-C", str(self.root), *arguments),
             allowed_executables=("git",),
@@ -577,8 +578,9 @@ class MigrationTests(Fixture):
         self.assertIn("front-matter", err)
 
     def test_old_text_can_come_from_a_git_revision(self) -> None:
+        """Verify migration can read baseline AGENTS.md content directly from a Git revision."""
         home = {"HOME": str(self.root), "XDG_CONFIG_HOME": str(self.root / ".config")}
-        environment = git_env.drop()
+        environment = git_env.hermetic()
         environment.update(home)
         identity = ("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid")
         safety = ("-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null")

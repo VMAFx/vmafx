@@ -27,7 +27,7 @@ from scripts.lib import git_env
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts/ci/praetor_tidy_coverage.py"
 GIT = shutil.which("git") or "git"
-CLEAN_ENV = git_env.drop()
+CLEAN_ENV = git_env.hermetic()
 TOML = (
     '[[exception]]\npath = "src/win32.c"\ncategory = "A"\nentered = 2026-11-02\n'
     'reason = "Windows only"\nexpires = 2027-06-30\n'

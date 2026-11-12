@@ -52,7 +52,7 @@ ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64
 # ---------- system dependencies ----------
 # DL3008: we install tracked security-updated versions from the Ubuntu
 # 26.04 archive; pinning every patch version would break on every
-# upstream security update. apt-get update + install happens in one
+# upstream security update. Refreshing apt lists + install happens in one
 # layer so the cache stays consistent (DL3009).
 # BuildKit cache mounts (`type=cache,target=/var/cache/apt` + `/var/lib/apt`)
 # preserve the apt package + index caches across builds so subsequent rebuilds
@@ -62,7 +62,7 @@ ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
     build-essential \
     ccache \
     ninja-build \
@@ -86,12 +86,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     if [ "$ENABLE_SYCL" = "true" ]; then \
-        apt-get update && apt-get install -y --no-install-recommends gnupg2 ca-certificates && \
-        wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
-            | gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg && \
+        apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends gnupg2 ca-certificates && \
+        key="$(mktemp)" && \
+        wget --tries=3 --retry-connrefused --retry-on-host-error -qO "$key" https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB && \
+        gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg "$key" && \
+        rm -f "$key" && \
         echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
             > /etc/apt/sources.list.d/oneapi.list && \
-        apt-get update && apt-get install -y --no-install-recommends \
+        apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
             intel-oneapi-compiler-dpcpp-cpp-2025.3 \
             intel-oneapi-runtime-libs-2025.3 \
             libva-dev \
@@ -101,7 +103,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 # ---------- nv-codec-headers ----------
 WORKDIR /tmp/nv-codec
-RUN wget -q "https://github.com/FFmpeg/nv-codec-headers/archive/${NV_CODEC_TAG}.zip" && \
+RUN wget --tries=3 --retry-connrefused --retry-on-host-error -q "https://github.com/FFmpeg/nv-codec-headers/archive/${NV_CODEC_TAG}.zip" && \
     unzip -q "${NV_CODEC_TAG}.zip"
 WORKDIR /tmp/nv-codec/nv-codec-headers-${NV_CODEC_TAG}
 RUN make && make install
@@ -129,7 +131,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked \
 RUN echo /usr/local/lib/x86_64-linux-gnu > /etc/ld.so.conf.d/vmaf-local.conf && ldconfig
 
 # ---------- build FFmpeg ----------
-RUN wget -q "${FFMPEG_REMOTE%.git}/archive/${FFMPEG_TAG}.zip" && \
+RUN wget --tries=3 --retry-connrefused --retry-on-host-error -q "${FFMPEG_REMOTE%.git}/archive/${FFMPEG_TAG}.zip" && \
     unzip -q "${FFMPEG_TAG}.zip" && rm "${FFMPEG_TAG}.zip"
 
 COPY ffmpeg-patches /tmp/ffmpeg-patches

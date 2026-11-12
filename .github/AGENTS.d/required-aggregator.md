@@ -13,10 +13,14 @@ invariant: Aggregator runs on drafts; gates route in-job without paths filters; 
 branch-protection status. It must run on draft PRs, fail them explicitly
 instead of being skipped. Skipped required context is considered successful
 by GitHub branch protection, so job-level draft skips can let auto-merge merge
-PR before ready-for-review CI run registers. Aggregator also ignores
-check runs older than its current workflow run when selecting sibling
-outcomes; otherwise stale draft-era skipped check runs on same commit can
-mask real queued or failed ready-for-review checks.
+PR before ready-for-review CI run registers. `newestByName` pins `CodeQL`,
+`Semgrep OSS`, `gitleaks` (`expectedAppByCheck`) to
+`github-advanced-security` at any age; every other name expects
+`github-actions` inside `minCreatedMs` (missing `app.slug` admitted inside
+window on `github-actions` names only; foreign producers ignored, logged
+once). Polling waits via `delayedRegistrationStillExpected` while mapped
+`externalCheckUploadJobs` run or sit within `registrationPropagationMs`
+(ADR-3539).
 
 ## Required contexts route work in-job (BUG-098)
 

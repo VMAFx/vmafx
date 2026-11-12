@@ -63,7 +63,7 @@ def run_hook(usage: str, workflows: dict[str, str]) -> tuple[int, str, str]:
         repo = root / "repo"
         # A git hook exports GIT_DIR and GIT_INDEX_FILE; with them `git init` and the
         # script under test would act on the caller's repository, not on `repo`.
-        env = git_env.drop()
+        env = git_env.hermetic()
         subprocess.run(  # noqa: S603 -- resolved git path, fixed arguments, no shell
             [str(GIT), "init", "-q", str(repo)], check=True, timeout=TIMEOUT_S, env=env
         )

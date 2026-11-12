@@ -683,7 +683,8 @@ other than the caller's (a scratch repository, a clone into a temporary director
 - Shell: `source` `scripts/lib/clean-git-env.sh` after `set -euo pipefail`. It drops every `GIT_*`
   variable, ignores global and system configuration and sets `GIT_AUTHOR_*` /
   `GIT_COMMITTER_*`. Python and Node fixtures build the same environment (no `GIT_*`
-  from the caller, `GIT_CONFIG_GLOBAL=/dev/null`).
+  from the caller, `GIT_CONFIG_GLOBAL=/dev/null`, plus
+  `GIT_CONFIG_SYSTEM=/dev/null` or `GIT_CONFIG_NOSYSTEM=1`).
 - A script that is not a fixture but clones or initialises a repository elsewhere
   sources `scripts/lib/drop-git-env.sh`: it unsets every `GIT_*` variable and changes
   nothing else, so the user's proxy and credential configuration still apply.
@@ -700,14 +701,40 @@ other than the caller's (a scratch repository, a clone into a temporary director
     file: one of the two shell helpers, or an environment built without keys that
     start with `GIT_`. This is the check for a pytest-only test and for a script that
     is not a test. A file isolated in a way the check cannot see is named in
-    `ISOLATION_EXCEPTIONS` with its reason; the list expires.
+    `ISOLATION_EXCEPTIONS` with its reason (excusing only the `GIT_*` drop
+    marker, never Python fixture configuration barriers); the list expires.
+    Python files are parsed with `ast.parse()`: markers must be executable
+    calls (`startswith` on a `GIT_` prefix or `clean_git_environment` /
+    `git_environment`), and every comprehension or `filter(...)` call over
+    `os.environ`, `os.environ.copy()` or `dict(os.environ)` (plus `.items()` /
+    `.keys()`) must use a single generator and single `if` clause (or
+    single-argument `lambda`) with only `not name.startswith("GIT_")` or a
+    tuple starting with `GIT_`. Callback predicates, extra generators or
+    clauses, and non-literal prefixes fail closed with the path, line and
+    source segment, even when another filter in the file is correct. Selection
+    of planted `GIT_CONFIG_KEY_*` values remains valid.
+    Python fixture files must explicitly assign the global and system
+    configuration keys above via executable AST forms (`dict` literals,
+    `dict(...)` / `.update(...)` positional mapping or keyword arguments, or
+    subscript assignments), and `**os.environ` (or a copy) unpacked after a
+    barrier key in the same mapping display or call (including positional
+    mapping arguments) is refused: existing test-script names, files beneath
+    `tests/`, and Python basenames containing `fixture` are covered. Comments,
+    docstrings, string literals and `setdefault` do not count. Product files
+    remain outside this configuration check. Shell, Node and Go retain regex
+    marker checks; separate-statement Python imperative mutation (including
+    after copying `os.environ`) and Node/Go filter re-admission stay documented
+    known gaps with `Known gap:` replay tests.
   - **Sentinel run.** Every scratch-repository test script that runs on its own is
     executed under a sentinel `GIT_DIR` and fails when the sentinel's config, index,
     refs or objects change. Planted scripts that write an identity, `core.bare` or
     `uploadpack.*`, or that clone, prove the sentinel sees each of them.
 
   The whole gate takes about four minutes. The hook `git-fixture-isolation-static`
-  runs the two static rules alone, in under a second, on every changed script.
+  runs the identity and isolation checks alone on every changed script. The
+  existing isolation test also replays the Python filter and configuration
+  checks, including a temporary fixture copy that fails after re-admission
+  is planted and passes after restoration ([ADR-3535](../adr/3535-fixture-git-config-isolation.md)).
 
   The sentinel run is four tests (`test_sentinel_shard_*`), because the tooling
   suite stops any single test after 300 s and a hosted runner needed more than

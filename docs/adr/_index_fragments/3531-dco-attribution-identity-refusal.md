@@ -1,0 +1,1 @@
+| [ADR-3531](3531-dco-attribution-identity-refusal.md) | Refuse model/tool identities, tool co-author trailers and generated footers in PR commits and bodies through the DCO check | Accepted | ci, git, dco, agents, fork-local |

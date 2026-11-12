@@ -34,7 +34,7 @@ def clean_environment() -> dict[str, str]:
     """The environment without GIT_* variables. A git hook exports GIT_INDEX_FILE
     (absolute in a linked worktree) and GIT_DIR; inherited, they would make the
     fixture's `git add -A` rewrite the index of the repository running the hook."""
-    return git_env.drop()
+    return git_env.hermetic()
 
 
 FILES = {

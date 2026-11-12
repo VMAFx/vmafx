@@ -47,8 +47,9 @@ validation:
 
 
 def _run(cmd: list[str], cwd: Path, timeout: int) -> subprocess.CompletedProcess[str]:
+    """Run a subprocess command isolated from caller Git variables and hook environment."""
     # No GIT_DIR / GIT_INDEX_FILE from a hook: they would point git at the caller's repository.
-    env = git_env.drop()
+    env = git_env.hermetic()
     env.pop("SKIP", None)
     env.pop("PRE_COMMIT_REMOTE_NAME", None)
     return subprocess.run(  # noqa: S603 -- fixed argv, no shell, disposable fixture repo

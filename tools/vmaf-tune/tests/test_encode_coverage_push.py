@@ -23,15 +23,21 @@ Covers branches not exercised by the existing encode test suite:
 
 from __future__ import annotations
 
+import functools
+import json
+import shutil
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-_HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(_HERE.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from _vmaf_cli import ffmpeg_reports_encoder, run_absolute_tool
+
+# isort: split
 from vmaftune.encode import (
     _PROBE_CACHE,
     EncodeRequest,
@@ -41,16 +47,192 @@ from vmaftune.encode import (
     bitrate_kbps,
     build_ffmpeg_command,
     build_pass1_stats_command,
+    color_tag_args,
     iter_grid,
     parse_versions,
     run_encode,
     run_encode_with_stats,
     run_two_pass_encode,
 )
+from vmaftune.hdr import HdrInfo, hdr_codec_args
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _absolute_tool_path(name: str) -> str | None:
+    """Return the absolute path of ``name`` found on PATH, or None when absent or relative."""
+    path = shutil.which(name)
+    if path is None or not Path(path).is_absolute():
+        return None
+    return path
+
+
+FFMPEG_TIMEOUT_S = 60
+FFMPEG_BIN = _absolute_tool_path("ffmpeg")
+FFPROBE_BIN = _absolute_tool_path("ffprobe")
+
+
+def _write_raw_10bit(path: Path) -> None:
+    """Generate a 10-frame 320x240 yuv420p10le raw clip via FFmpeg testsrc2."""
+    if FFMPEG_BIN is None:
+        pytest.skip("ffmpeg not found on PATH as an absolute path")
+    gen = run_absolute_tool(
+        [
+            FFMPEG_BIN,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x240:rate=24",
+            "-frames:v",
+            "10",
+            "-pix_fmt",
+            "yuv420p10le",
+            "-f",
+            "rawvideo",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=FFMPEG_TIMEOUT_S,
+    )
+    assert gen.returncode == 0
+
+
+def _probe_color_tags(path: Path) -> dict[str, str]:
+    """Return stream 0 color tags dictionary via ffprobe JSON output."""
+    if FFPROBE_BIN is None:
+        pytest.skip("ffprobe not found on PATH as an absolute path")
+    probe = run_absolute_tool(
+        [
+            FFPROBE_BIN,
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=color_transfer,color_primaries",
+            "-of",
+            "json",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=FFMPEG_TIMEOUT_S,
+    )
+    data = json.loads(str(probe.stdout))
+    stream: dict[str, str] = data["streams"][0]
+    return stream
+
+
+def _raw_hdr10_x265_tags(
+    tmp_path: Path, extra_params: Sequence[str], source_color_params: Sequence[str]
+) -> dict[str, str]:
+    """Encode a raw 10-bit clip with libx265 through run_encode; return the output colour tags."""
+    if FFMPEG_BIN is None:
+        pytest.skip("ffmpeg not found on PATH as an absolute path")
+    if not ffmpeg_reports_encoder("libx265"):
+        pytest.skip("libx265 unavailable in local ffmpeg build")
+    raw = tmp_path / "src.yuv"
+    _write_raw_10bit(raw)
+    out = tmp_path / "out.mkv"
+    req = EncodeRequest(
+        source=raw,
+        width=320,
+        height=240,
+        pix_fmt="yuv420p10le",
+        framerate=24.0,
+        encoder="libx265",
+        preset="ultrafast",
+        crf=28,
+        output=out,
+        extra_params=tuple(extra_params),
+        source_color_params=tuple(source_color_params),
+        source_is_container=False,
+    )
+    res = run_encode(
+        req,
+        ffmpeg_bin=FFMPEG_BIN,
+        encoder_runner=functools.partial(run_absolute_tool, timeout=FFMPEG_TIMEOUT_S),
+    )
+    assert res.exit_status == 0, f"encode failed: {res}"
+    return _probe_color_tags(out)
+
+
+_PQ_BT2020 = HdrInfo(
+    transfer="pq",
+    primaries="bt2020",
+    matrix="bt2020nc",
+    color_range="tv",
+    pix_fmt="yuv420p10le",
+)
+
+
+def test_absolute_tool_path_returns_absolute_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Return the absolute path when shutil.which finds an absolute path."""
+    expected = str(tmp_path / "ffmpeg")
+    monkeypatch.setattr(shutil, "which", lambda _name: expected)
+    assert _absolute_tool_path("ffmpeg") == expected
+
+
+def test_absolute_tool_path_returns_none_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Return None when shutil.which returns None for a missing binary."""
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    assert _absolute_tool_path("ffmpeg") is None
+
+
+def test_absolute_tool_path_rejects_relative_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Return None when shutil.which returns a relative path."""
+    monkeypatch.setattr(shutil, "which", lambda _name: "bin/ffmpeg")
+    assert _absolute_tool_path("ffmpeg") is None
+
+
+def test_run_absolute_tool_runs_absolute_executable() -> None:
+    """An absolute interpreter path runs and its captured stdout comes back as text."""
+    res = run_absolute_tool(
+        [sys.executable, "-c", "print('ok')"], capture_output=True, text=True, timeout=30
+    )
+    assert res.returncode == 0
+    assert str(res.stdout).strip() == "ok"
+
+
+def test_run_absolute_tool_rejects_relative_executable() -> None:
+    """A bare tool name is refused before anything runs."""
+    with pytest.raises(ValueError, match="absolute"):
+        run_absolute_tool(["python3", "-c", "pass"], timeout=30)
+
+
+def test_run_absolute_tool_enforces_timeout() -> None:
+    """A child that outlives ``timeout`` is terminated and raises a TimeoutError."""
+    with pytest.raises(TimeoutError):
+        run_absolute_tool([sys.executable, "-c", "import time; time.sleep(30)"], timeout=0.5)
+
+
+def test_ffmpeg_reports_encoder_false_without_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No ffmpeg on PATH means no encoder is reported."""
+    monkeypatch.setattr("_vmaf_cli.shutil.which", lambda _name: None)
+    assert ffmpeg_reports_encoder("rawvideo") is False
+
+
+@pytest.mark.skipif(FFMPEG_BIN is None, reason="ffmpeg not found on PATH as an absolute path")
+def test_ffmpeg_reports_encoder_finds_builtin_encoder() -> None:
+    """The ``rawvideo`` encoder is built into every FFmpeg, so the listing reports it."""
+    assert ffmpeg_reports_encoder("rawvideo") is True
+
+
+@pytest.mark.skipif(FFMPEG_BIN is None, reason="ffmpeg not found on PATH as an absolute path")
+def test_ffmpeg_reports_encoder_rejects_unknown_encoder() -> None:
+    """A name FFmpeg does not list is not reported."""
+    assert ffmpeg_reports_encoder("no_such_encoder_vmafx") is False
 
 
 def _make_req(
@@ -63,16 +245,20 @@ def _make_req(
     sample_clip_start_s: float = 0.0,
     duration_s: float = 0.0,
     source_is_container: bool = False,
+    source_color_params: Sequence[str] = (),
     pass_number: int = 0,
     stats_path: Path | None = None,
+    extra_params: Sequence[str] = (),
+    pix_fmt: str = "yuv420p",
     tmp_path: Path | None = None,
 ) -> EncodeRequest:
+    """Build an EncodeRequest with test defaults, overriding only the named fields."""
     base = tmp_path or Path("/tmp")
     return EncodeRequest(
         source=base / "ref.yuv",
         width=320,
         height=240,
-        pix_fmt="yuv420p",
+        pix_fmt=pix_fmt,
         framerate=24.0,
         encoder=encoder,
         preset=preset,
@@ -82,8 +268,10 @@ def _make_req(
         sample_clip_start_s=sample_clip_start_s,
         duration_s=duration_s,
         source_is_container=source_is_container,
+        source_color_params=tuple(source_color_params),
         pass_number=pass_number,
         stats_path=stats_path,
+        extra_params=tuple(extra_params),
     )
 
 
@@ -179,6 +367,208 @@ class TestBuildFfmpegCommandSampleClip:
         cmd = build_ffmpeg_command(req)
         assert "-t" in cmd
         assert cmd[cmd.index("-t") + 1] == "7.5"
+
+
+class TestBuildFfmpegCommandRawHdrInputColorTags:
+    """Raw HDR input color options before ``-i`` (#3345)."""
+
+    def test_raw_source_pq_hdr_copies_color_to_input_and_keeps_output(self, tmp_path: Path) -> None:
+        """Prove raw PQ input gets the four colour tags before -i and keeps them on the output."""
+        info = HdrInfo(
+            transfer="pq",
+            primaries="bt2020",
+            matrix="bt2020nc",
+            color_range="tv",
+            pix_fmt="yuv420p10le",
+        )
+        extra = list(hdr_codec_args("libx265", info))
+        req = _make_req(
+            pix_fmt="yuv420p10le",
+            encoder="libx265",
+            extra_params=extra,
+            source_color_params=tuple(color_tag_args(extra)),
+            source_is_container=False,
+            tmp_path=tmp_path,
+        )
+        cmd = build_ffmpeg_command(req)
+        i_idx = cmd.index("-i")
+        input_slice = cmd[:i_idx]
+        output_slice = cmd[i_idx + 2 :]
+        assert input_slice[-8:] == [
+            "-color_primaries",
+            "bt2020",
+            "-color_trc",
+            "smpte2084",
+            "-colorspace",
+            "bt2020nc",
+            "-color_range",
+            "tv",
+        ]
+        for flag, val in [
+            ("-color_primaries", "bt2020"),
+            ("-color_trc", "smpte2084"),
+            ("-colorspace", "bt2020nc"),
+            ("-color_range", "tv"),
+        ]:
+            assert flag in output_slice
+            assert output_slice[output_slice.index(flag) + 1] == val
+
+    def test_raw_source_hlg_hdr_sets_input_arib_std_b67(self, tmp_path: Path) -> None:
+        """Prove raw HLG input carries -color_trc arib-std-b67 before -i."""
+        info = HdrInfo(
+            transfer="hlg",
+            primaries="bt2020",
+            matrix="bt2020nc",
+            color_range="tv",
+            pix_fmt="yuv420p10le",
+        )
+        extra = list(hdr_codec_args("libx265", info))
+        req = _make_req(
+            pix_fmt="yuv420p10le",
+            encoder="libx265",
+            extra_params=extra,
+            source_color_params=tuple(color_tag_args(extra)),
+            source_is_container=False,
+            tmp_path=tmp_path,
+        )
+        cmd = build_ffmpeg_command(req)
+        i_idx = cmd.index("-i")
+        input_slice = cmd[:i_idx]
+        assert "-color_trc" in input_slice
+        assert input_slice[input_slice.index("-color_trc") + 1] == "arib-std-b67"
+
+    def test_container_source_with_hdr_params_omits_input_color_tags(self, tmp_path: Path) -> None:
+        """Prove a container source gets no input colour tags; ffmpeg auto-detects those."""
+        info = HdrInfo(
+            transfer="pq",
+            primaries="bt2020",
+            matrix="bt2020nc",
+            color_range="tv",
+            pix_fmt="yuv420p10le",
+        )
+        extra = list(hdr_codec_args("libx265", info))
+        req = _make_req(
+            source_is_container=True,
+            encoder="libx265",
+            extra_params=extra,
+            source_color_params=tuple(color_tag_args(extra)),
+            tmp_path=tmp_path,
+        )
+        cmd = build_ffmpeg_command(req)
+        i_idx = cmd.index("-i")
+        input_slice = cmd[:i_idx]
+        for flag in ("-color_primaries", "-color_trc", "-colorspace", "-color_range"):
+            assert flag not in input_slice
+
+    def test_raw_sdr_without_color_options_matches_master_argv(self, tmp_path: Path) -> None:
+        """Prove raw SDR input without colour options keeps the argv the code built before."""
+        req = EncodeRequest(
+            source=Path("/src/ref.yuv"),
+            width=1920,
+            height=1080,
+            pix_fmt="yuv420p",
+            framerate=24.0,
+            encoder="libx264",
+            preset="medium",
+            crf=23,
+            output=Path("/out/enc.mp4"),
+        )
+        cmd = build_ffmpeg_command(req)
+        assert cmd == [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "info",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "yuv420p",
+            "-s",
+            "1920x1080",
+            "-r",
+            "24.0",
+            "-i",
+            "/src/ref.yuv",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "23",
+            "/out/enc.mp4",
+        ]
+
+    def test_boundary_duplicate_flags_and_partial_color_tags(self, tmp_path: Path) -> None:
+        """Prove repeated source_color_params flag keeps last value and adds no untagged flags."""
+        tags = [
+            "-color_trc",
+            "smpte2084",
+            "-color_primaries",
+            "bt2020",
+            "-color_trc",
+            "arib-std-b67",
+        ]
+        req = _make_req(
+            source_color_params=tags,
+            source_is_container=False,
+            tmp_path=tmp_path,
+        )
+        cmd = build_ffmpeg_command(req)
+        i_idx = cmd.index("-i")
+        input_slice = cmd[:i_idx]
+        assert input_slice.count("-color_trc") == 1
+        assert input_slice[input_slice.index("-color_trc") + 1] == "arib-std-b67"
+        assert input_slice.count("-color_primaries") == 1
+        assert input_slice[input_slice.index("-color_primaries") + 1] == "bt2020"
+        assert "-colorspace" not in input_slice
+        assert "-color_range" not in input_slice
+
+    def test_negative_user_extra_params_color_option_stays_output_only(
+        self, tmp_path: Path
+    ) -> None:
+        """Prove user -color_trc in extra_params stays output-only without source_color_params."""
+        req = _make_req(
+            extra_params=["-color_trc", "smpte2084"],
+            source_color_params=(),
+            source_is_container=False,
+            tmp_path=tmp_path,
+        )
+        cmd = build_ffmpeg_command(req)
+        i_idx = cmd.index("-i")
+        input_slice = cmd[:i_idx]
+        output_slice = cmd[i_idx + 2 :]
+        assert "-color_trc" not in input_slice
+        assert "-color_trc" in output_slice
+        assert output_slice[output_slice.index("-color_trc") + 1] == "smpte2084"
+
+    @pytest.mark.skipif(FFMPEG_BIN is None, reason="ffmpeg not found on PATH as an absolute path")
+    @pytest.mark.skipif(FFPROBE_BIN is None, reason="ffprobe not found on PATH as an absolute path")
+    def test_real_encode_raw_hdr10_x265_tags_transfer_and_primaries(self, tmp_path: Path) -> None:
+        """Verify real libx265 encode from raw HDR10 source preserves color tags (#3345)."""
+        extra = list(hdr_codec_args("libx265", _PQ_BT2020))
+        stream = _raw_hdr10_x265_tags(tmp_path, extra, color_tag_args(extra))
+        assert stream.get("color_transfer") == "smpte2084"
+        assert stream.get("color_primaries") == "bt2020"
+
+    @pytest.mark.skipif(FFMPEG_BIN is None, reason="ffmpeg not found on PATH as an absolute path")
+    @pytest.mark.skipif(FFPROBE_BIN is None, reason="ffprobe not found on PATH as an absolute path")
+    def test_real_encode_raw_source_color_params_alone_tag_output(self, tmp_path: Path) -> None:
+        """Prove the input-side colour tags alone reach the libx265 output, no output params."""
+        extra = list(hdr_codec_args("libx265", _PQ_BT2020))
+        stream = _raw_hdr10_x265_tags(tmp_path, (), color_tag_args(extra))
+        assert stream.get("color_transfer") == "smpte2084"
+        assert stream.get("color_primaries") == "bt2020"
+
+    @pytest.mark.skipif(FFMPEG_BIN is None, reason="ffmpeg not found on PATH as an absolute path")
+    @pytest.mark.skipif(FFPROBE_BIN is None, reason="ffprobe not found on PATH as an absolute path")
+    def test_real_encode_raw_without_color_params_leaves_output_untagged(
+        self, tmp_path: Path
+    ) -> None:
+        """Control: with no colour params at all the raw encode carries no PQ or BT.2020 tag."""
+        stream = _raw_hdr10_x265_tags(tmp_path, (), ())
+        assert stream.get("color_transfer") != "smpte2084"
+        assert stream.get("color_primaries") != "bt2020"
 
 
 class TestBuildFfmpegCommandTwoPass:
