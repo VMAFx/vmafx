@@ -911,6 +911,23 @@ def ubuntu_apt_snapshot_problems(text: str) -> list[str]:
     return problems
 
 
+BUILD_CONFIG_SNAPSHOT = re.compile(r'UBUNTU_APT_SNAPSHOT="[0-9]{8}T[0-9]{6}Z"')
+
+
+def build_config_snapshot_problems(text: str) -> list[str]:
+    """Allow one UBUNTU_APT_SNAPSHOT line, in the only shape the Renovate manager updates."""
+    named = [
+        line
+        for line in text.splitlines()
+        if "UBUNTU_APT_SNAPSHOT" in line and not line.lstrip().startswith("#")
+    ]
+    if len(named) != 1:
+        return [f"name UBUNTU_APT_SNAPSHOT on exactly one line, found {len(named)}"]
+    if BUILD_CONFIG_SNAPSHOT.fullmatch(named[0]) is None:
+        return [f'write the snapshot as UBUNTU_APT_SNAPSHOT="YYYYMMDDTHHMMSSZ": {named[0]!r}']
+    return []
+
+
 class DisposableRepoTestCase(unittest.TestCase):
     """Provide an isolated temporary Git repository for tracked-path contract tests."""
 
@@ -1195,12 +1212,29 @@ class UbuntuAptSnapshotContract(unittest.TestCase):
                 )
 
     def test_snapshot_is_one_timestamp_in_build_config(self) -> None:
-        values = re.findall(
-            r'^UBUNTU_APT_SNAPSHOT="([0-9]{8}T[0-9]{6}Z)"$',
-            (ROOT / "build-config.env").read_text(encoding="utf-8"),
-            re.MULTILINE,
-        )
-        self.assertEqual(len(values), 1)
+        text = (ROOT / "build-config.env").read_text(encoding="utf-8")
+        self.assertEqual(build_config_snapshot_problems(text), [])
+
+    def test_build_config_rejects_a_second_or_reshaped_snapshot(self) -> None:
+        """Sourcing takes the last assignment; Renovate updates only the managed shape."""
+        managed = 'UBUNTU_APT_SNAPSHOT="20261101T000000Z"'
+        others = {
+            "export": "export UBUNTU_APT_SNAPSHOT=20261201T000000Z",
+            "single quotes": "UBUNTU_APT_SNAPSHOT='20261201T000000Z'",
+            "trailing comment": 'UBUNTU_APT_SNAPSHOT="20261201T000000Z"  # newer',
+            "indented": '  UBUNTU_APT_SNAPSHOT="20261201T000000Z"',
+            "readonly": 'readonly UBUNTU_APT_SNAPSHOT="20261201T000000Z"',
+            "default expansion": ': "${UBUNTU_APT_SNAPSHOT:=20261201T000000Z}"',
+            "same line": f"{managed}; UBUNTU_APT_SNAPSHOT=20261201T000000Z",
+        }
+        for name, line in others.items():
+            with self.subTest(f"after the managed line: {name}"):
+                self.assertNotEqual(build_config_snapshot_problems(f"{managed}\n{line}\n"), [])
+            with self.subTest(f"alone: {name}"):
+                self.assertNotEqual(build_config_snapshot_problems(f"{line}\n"), [])
+        self.assertNotEqual(build_config_snapshot_problems("OTHER=1\n"), [])
+        commented = f"# UBUNTU_APT_SNAPSHOT advances weekly\n{managed}\n"
+        self.assertEqual(build_config_snapshot_problems(commented), [])
 
     def test_unpinned_install_is_rejected(self) -> None:
         planted = self.image().replace("RUN apt-get", "RUN apt-get install -y curl && apt-get", 1)

@@ -394,6 +394,9 @@ Mondays, using the repository's `Europe/Vienna` timezone. Updates require
 manual review and an image rebuild. To move the pin manually, edit only
 `UBUNTU_APT_SNAPSHOT` in `build-config.env` to a `YYYYMMDDTHHMMSSZ` timestamp;
 the Dockerfiles read it directly and need no regenerated timestamp mirrors.
+Keep it as one `UBUNTU_APT_SNAPSHOT="..."` line with no `export` prefix or
+trailing comment: sourcing takes the last assignment and Renovate updates only
+that shape, so the contract test rejects a second or reshaped line.
 
 ```bash
 docker build -f docker/dev/ubuntu-26.04.Dockerfile -t vmafx-ubuntu-dev .
