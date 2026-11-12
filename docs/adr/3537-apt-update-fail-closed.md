@@ -104,6 +104,9 @@ Enforce these invariants through `AptUpdateFailClosedContract`
 
 ## Consequences
 
+- The LLVM signing-key download retries eight times with constant 15-second
+  delays (~2 min), because a runner can refuse connections beyond the old 7 s
+  window; exhausted retries still fail closed (`scripts/dev/tidy-lane.sh`).
 - Transient APT index download failures retry up to three times and fail
   immediately at `apt-get update` with exit `100` and the resolver or HTTP
   diagnostic, while hosted-runner workflows drop pre-installed Microsoft and

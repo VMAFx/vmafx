@@ -37,6 +37,8 @@ WORKFLOW = ROOT / ".github/workflows/lint-and-format.yml"
 NIGHTLY = ROOT / ".github/workflows/nightly.yml"
 CONTAINERFILE = ROOT / "dev/Containerfile"
 CONTAINER_LANES = ("cpu", "clang", "cuda", "hip", "sycl", "arm64", "integrations", "rust")
+LLVM_KEY_MIN_RETRIES = 6
+LLVM_KEY_MIN_RETRY_DELAY_S = 10
 
 # The entry point is a bash script that drives docker and GNU tar: it runs on
 # the Linux workstation that has the dev image. Elsewhere its cases are skipped
@@ -262,6 +264,7 @@ class HostSide(unittest.TestCase):
 
     def _git(self, *args: str) -> None:
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
         git = shutil.which("git")
         self.assertIsNotNone(git, "git is needed to build the fixture checkout")
         assert git is not None
@@ -272,6 +275,8 @@ class HostSide(unittest.TestCase):
     def _run(self, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
         environ = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         environ.update(
+            GIT_CONFIG_GLOBAL=os.devnull,
+            GIT_CONFIG_NOSYSTEM="1",
             PATH=f"{self.docker_dir / 'bin'}{os.pathsep}{environ['PATH']}",
             FAKE_DOCKER_DIR=str(self.docker_dir),
             **env,
@@ -615,6 +620,75 @@ def _extract_shell_function(script_text: str, name: str) -> str:
     if match is None:
         raise AssertionError(f"shell function {name} not found in scripts/dev/tidy-lane.sh")
     return match.group(0)
+
+
+def _llvm_key_download_has_retry_window(script_text: str) -> bool:
+    """Require a delayed retry window and fail-closed guard on the LLVM key fetch."""
+    body = _extract_shell_function(script_text, "ensure_clang_tidy").replace("\\\n", " ")
+    download = re.search(
+        r'(?m)^\s*curl (?P<flags>[^\n]+) "\$LLVM_APT_SIGNER_URL" -o "\$key" \|\|\s*\n'
+        r'\s*die "apt\.llvm\.org key download failed; refusing to install"$',
+        body,
+    )
+    if download is None:
+        return False
+    flags = download.group("flags")
+    options = dict(re.findall(r"(?<!\S)--(retry|retry-delay)\s+([0-9]+)(?!\S)", flags))
+    return (
+        int(options.get("retry", "0")) >= LLVM_KEY_MIN_RETRIES
+        and int(options.get("retry-delay", "0")) >= LLVM_KEY_MIN_RETRY_DELAY_S
+        and "--retry-all-errors" in flags.split()
+    )
+
+
+class LlvmKeyDownloadRetry(unittest.TestCase):
+    """Keep apt.llvm.org connection refusals retrying beyond the old seven seconds."""
+
+    @staticmethod
+    def _script(flags: str) -> str:
+        return (
+            "ensure_clang_tidy() {\n"
+            f'  curl -fsSL {flags} --max-time 60 "$LLVM_APT_SIGNER_URL" -o "$key" ||\n'
+            '    die "apt.llvm.org key download failed; refusing to install"\n'
+            "}\n"
+        )
+
+    def test_key_download_has_delayed_retries_and_dies_on_failure(self) -> None:
+        self.assertTrue(_llvm_key_download_has_retry_window(SCRIPT.read_text(encoding="utf-8")))
+
+    def test_planted_old_retry_window_is_rejected(self) -> None:
+        self.assertFalse(
+            _llvm_key_download_has_retry_window(self._script("--retry 3 --retry-all-errors"))
+        )
+
+    def test_retry_delay_boundary(self) -> None:
+        for delay, accepted in ((9, False), (10, True)):
+            with self.subTest(delay=delay):
+                self.assertEqual(
+                    _llvm_key_download_has_retry_window(
+                        self._script(f"--retry 6 --retry-delay {delay} --retry-all-errors")
+                    ),
+                    accepted,
+                )
+
+    def test_retry_count_boundary(self) -> None:
+        for retries, accepted in ((5, False), (6, True)):
+            with self.subTest(retries=retries):
+                self.assertEqual(
+                    _llvm_key_download_has_retry_window(
+                        self._script(f"--retry {retries} --retry-delay 10 --retry-all-errors")
+                    ),
+                    accepted,
+                )
+
+    def test_planted_missing_all_errors_is_rejected(self) -> None:
+        self.assertFalse(
+            _llvm_key_download_has_retry_window(self._script("--retry 8 --retry-delay 15"))
+        )
+
+    def test_planted_missing_failure_guard_is_rejected(self) -> None:
+        script = self._script("--retry 8 --retry-delay 15 --retry-all-errors")
+        self.assertFalse(_llvm_key_download_has_retry_window(script.replace(" ||\n", "\n")))
 
 
 @POSIX_ONLY

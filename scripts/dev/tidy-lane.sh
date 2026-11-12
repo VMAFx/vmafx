@@ -213,7 +213,10 @@ ensure_clang_tidy() {
   local key=/etc/apt/trusted.gpg.d/apt.llvm.org.asc codename
   # shellcheck disable=SC1091  # the image's own os-release
   codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
-  curl -fsSL --retry 3 --retry-all-errors --max-time 60 "$LLVM_APT_SIGNER_URL" -o "$key" ||
+  # A GitHub runner's measured connection refusal outlasted the old 7 s window.
+  # Constant 15 s delays spread eight retries over ~2 min; exhaustion still dies.
+  curl -fsSL --retry 8 --retry-delay 15 --retry-all-errors --connect-timeout 20 --max-time 60 \
+    "$LLVM_APT_SIGNER_URL" -o "$key" ||
     die "apt.llvm.org key download failed; refusing to install"
   printf '%s  %s\n' "$LLVM_APT_SIGNER_SHA256" "$key" | sha256sum --check --status ||
     die "apt.llvm.org key does not match the pinned SHA-256; refusing to install"
