@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 luoye-cpu
+# Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 
 # scripts/dev/toolchain-probe.sh — probe host build and vendor compiler toolchains.
@@ -332,7 +332,10 @@ probe_metal() {
 # prints CRLF.
 mingw_thread_model() {
   local driver="$1" out="" rc=0 line=""
-  out="$("$driver" -v 2>&1)" || rc=$?
+  # The C locale pins the "Thread model:" literal: a localized driver
+  # (LANG=de_DE.UTF-8) prints "Thread-Modell:" and the entry would refuse a
+  # healthy stage with thread-model unknown (PR #3317 review).
+  out="$(LC_ALL=C "$driver" -v 2>&1)" || rc=$?
   if [ "$rc" -ne 0 ]; then
     echo "toolchain-probe: note ${driver} -v exited ${rc}" >&2
   fi
@@ -364,6 +367,21 @@ mingw_resolve_runtime() {
     /* | [A-Za-z]:/*)
       if [ -f "${p}" ]; then
         printf '%s\n' "${p}"
+        return 0
+      fi
+      ;;
+  esac
+  # Arch's mingw-w64-gcc 16.2.0 keeps the runtime DLLs in the target bin
+  # directory, which is not in the driver's library search dirs, so
+  # -print-file-name echoes the bare name. The driver still answers without a
+  # version string: -print-prog-name=ld names the driver-side ld and both DLLs
+  # sit next to it (PR #3317 review).
+  local ld=""
+  ld="$(LC_ALL=C "$driver" -print-prog-name=ld 2>/dev/null)" || return 1
+  case "${ld}" in
+    /*)
+      if [ -f "$(dirname "${ld}")/${lib}" ]; then
+        printf '%s\n' "$(cd "$(dirname "${ld}")" && pwd -P)/${lib}"
         return 0
       fi
       ;;
