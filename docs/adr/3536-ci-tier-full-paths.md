@@ -57,12 +57,18 @@ must run outside `ci-tier.yml`. Pull-request `Pre-Commit` runs diff-scoped via
    `changed paths unavailable`, including with an empty `full_paths` list.
    `run.exempt()` refuses an unavailable diff before calling the release
    exemption script, so a release bot cannot earn `release-light` on author
-   and branch alone after a failed fetch.
+   and branch alone after a failed fetch. `changed_paths()` and
+   `live_labels()` raise `TierError` naming the REST endpoint whenever any
+   paginated entry is not an object or lacks its string `filename` or `name`,
+   so malformed rows fail closed to `full` instead of being silently omitted.
 
 4. **Tracked-file drift gate.** `scripts/ci/ci_tier.py --check-full-paths`
    runs `git ls-files` with an explicit timeout and bounded loops and verifies
    that every `full_paths` pattern matches at least one tracked file, exiting
-   non-zero and naming each unmatched pattern on drift. Local pre-commit hook
+   non-zero and naming each unmatched pattern on drift. `_tracked_files()`
+   always drops repository-locating `GIT_*` environment variables, keeping an
+   absolute `GIT_INDEX_FILE` only when listing this checkout's staged index and
+   stripping every `GIT_*` variable for any other root. Local pre-commit hook
    `check-ci-tier-full-paths` runs with `always_run: true`,
    `pass_filenames: false`, and stages `pre-commit` and `pre-push`.
    `suite_registry.py precommit-skip` lists only hooks whose entry runs tests

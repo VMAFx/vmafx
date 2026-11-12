@@ -310,6 +310,13 @@ class ReleaseExemption(unittest.TestCase):
         self.assertFalse(ci_tier.release_exempt_from_script(facts, ["core/src/feature/ssim.c"]))
 
 
+def _page_fetcher(rows: list[object], *, files_only: bool = False) -> ci_tier.Fetcher:
+    def fetch(path: str) -> object:
+        return rows if (not files_only or "/files" in path) else []
+
+    return fetch
+
+
 class LiveLabels(unittest.TestCase):
     def test_labels_are_read_from_the_api_with_paging(self) -> None:
         pages = {
@@ -351,6 +358,124 @@ class LiveLabels(unittest.TestCase):
     def test_a_null_payload_means_no_labels(self) -> None:
         facts = ci_tier.event_from_environment({"EVENT_NAME": "push", "PR_LABELS": "null"}, None)
         self.assertEqual(facts.labels, ())
+
+    def test_malformed_label_rows_raise_tier_error_and_main_fails_closed(self) -> None:
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, directory, True)
+        endpoint = f"/repos/{REPO}/issues/7/labels"
+        bad_pages: tuple[list[object], ...] = (
+            [{"name": "dependencies"}, {"id": 1}],
+            [{"name": "dependencies"}, "ci: full"],
+            [{"name": None}],
+        )
+        for idx in range(len(bad_pages)):
+            rows = bad_pages[idx]
+            with self.subTest(rows=rows):
+                with self.assertRaisesRegex(ci_tier.TierError, endpoint):
+                    ci_tier.live_labels(_page_fetcher(rows), REPO, "7")
+                output = directory / f"out-{idx}"
+                env = {
+                    "EVENT_NAME": "pull_request",
+                    "GH_TOKEN": "t",
+                    "PR_NUMBER": "7",
+                    "GITHUB_REPOSITORY": REPO,
+                    "HEAD_REPOSITORY": REPO,
+                    "HEAD_REF": "fix/example",
+                    "PR_LABELS": "[]",
+                }
+
+                def fake_api(
+                    _method: str,
+                    url: str,
+                    _token: str,
+                    _payload: object | None = None,
+                    page: list[object] = rows,
+                ) -> object:
+                    return [{"filename": "docs/usage/cli.md"}] if "/files" in url else page
+
+                with (
+                    mock.patch.dict(os.environ, env, clear=True),
+                    mock.patch.object(ci_tier, "api_request", side_effect=fake_api),
+                    redirect_stdout(io.StringIO()),
+                    redirect_stderr(io.StringIO()),
+                ):
+                    self.assertEqual(ci_tier.main(["--github-output", str(output)]), 0)
+                written = dict(line.split("=", 1) for line in output.read_text().splitlines())
+                self.assertEqual(written["tier"], ci_tier.FULL)
+                self.assertIn(endpoint, written["reason"])
+
+
+class ChangedPaths(unittest.TestCase):
+    """Positive, negative and boundary cases for ``changed_paths()``."""
+
+    def test_all_rows_with_filename_return_same_path_list(self) -> None:
+        pages = {
+            1: [{"filename": f"docs/p{i}.md"} for i in range(ci_tier.PAGE_SIZE)],
+            2: [{"filename": "scripts/ci/ci_tier.py"}],
+        }
+
+        def fetch(path: str) -> object:
+            return pages[int(path.rsplit("page=", 1)[1])]
+
+        paths = ci_tier.changed_paths(fetch, REPO, "7")
+        self.assertEqual(len(paths), ci_tier.PAGE_SIZE + 1)
+        self.assertEqual(paths[0], "docs/p0.md")
+        self.assertEqual(paths[-1], "scripts/ci/ci_tier.py")
+
+    def test_malformed_file_rows_raise_tier_error_and_select_full(self) -> None:
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, directory, True)
+        endpoint = f"/repos/{REPO}/pulls/7/files"
+        bad_pages: tuple[list[object], ...] = (
+            [{"filename": "docs/usage/cli.md"}, {"status": "modified"}],
+            [{"filename": "docs/usage/cli.md"}, "scripts/lib/safe_subprocess.py"],
+            [{"filename": None}],
+        )
+        base_env = {
+            "EVENT_NAME": "pull_request",
+            "GITHUB_REPOSITORY": REPO,
+            "HEAD_REPOSITORY": REPO,
+            "HEAD_REF": "fix/example",
+            "PR_NUMBER": "7",
+            "PR_LABELS": "[]",
+        }
+        for idx in range(len(bad_pages)):
+            rows = bad_pages[idx]
+            with self.subTest(rows=rows):
+                with self.assertRaisesRegex(ci_tier.TierError, endpoint):
+                    ci_tier.changed_paths(_page_fetcher(rows), REPO, "7")
+                with redirect_stderr(io.StringIO()):
+                    decision = ci_tier.run(
+                        base_env,
+                        ci_tier.DEFAULT_CONFIG,
+                        _page_fetcher(rows, files_only=True),
+                    )
+                self.assertEqual(decision.tier, ci_tier.FULL)
+                self.assertEqual(decision.reason, "changed paths unavailable")
+                output = directory / f"out-{idx}"
+
+                def fake_api(
+                    _method: str,
+                    url: str,
+                    _token: str,
+                    _payload: object | None = None,
+                    page: list[object] = rows,
+                ) -> object:
+                    return page if "/files" in url else []
+
+                with (
+                    mock.patch.dict(os.environ, {**base_env, "GH_TOKEN": "t"}, clear=True),
+                    mock.patch.object(ci_tier, "api_request", side_effect=fake_api),
+                    redirect_stdout(io.StringIO()),
+                    redirect_stderr(io.StringIO()),
+                ):
+                    self.assertEqual(ci_tier.main(["--github-output", str(output)]), 0)
+                written = dict(line.split("=", 1) for line in output.read_text().splitlines())
+                self.assertEqual(written["tier"], ci_tier.FULL)
+                self.assertEqual(written["reason"], "changed paths unavailable")
+
+    def test_empty_file_list_page_returns_empty_list(self) -> None:
+        self.assertEqual(ci_tier.changed_paths(lambda _path: [], REPO, "7"), [])
 
 
 class Api(unittest.TestCase):
@@ -740,14 +865,17 @@ class FullPathsDrift(unittest.TestCase):
         env["GIT_CONFIG_NOSYSTEM"] = "1"
         return env
 
-    def _run_git(self, root: Path, *args: str) -> None:
+    def _run_git(self, root: Path, *args: str, extra_env: dict[str, str] | None = None) -> None:
         git = ci_tier.GIT
         if git is None:
             self.fail("git executable not found")
+        env = self._git_env()
+        if extra_env is not None:
+            env.update(extra_env)
         run_command(
             [git, "-C", str(root), *args],
             allowed_executables=(git,),
-            env=self._git_env(),
+            env=env,
             text=True,
             capture_output=True,
             check=True,
@@ -808,6 +936,66 @@ class FullPathsDrift(unittest.TestCase):
                 0,
                 err_restored.getvalue(),
             )
+
+    def test_foreign_git_dir_does_not_redirect_repo_root_tracked_files(self) -> None:
+        foreign = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, foreign, True)
+        self._run_git(foreign, "init", "-q")
+        (foreign / "only_in_foreign_repo.txt").write_text("stub\n", encoding="utf-8")
+        self._run_git(foreign, "add", "only_in_foreign_repo.txt")
+
+        poisoned = {
+            **self._git_env(),
+            "GIT_DIR": str(foreign / ".git"),
+            "GIT_WORK_TREE": str(foreign),
+            "GIT_COMMON_DIR": str(foreign / ".git"),
+            "GIT_OBJECT_DIRECTORY": str(foreign / ".git" / "objects"),
+            "GIT_INDEX_FILE": "relative/foreign.index",
+        }
+        with mock.patch.dict(os.environ, poisoned, clear=True):
+            tracked = ci_tier._tracked_files(ci_tier.REPO_ROOT)
+            self.assertIn("scripts/ci/ci_tier.py", tracked)
+            self.assertNotIn("only_in_foreign_repo.txt", tracked)
+            self.assertEqual(ci_tier.check_full_paths(root=ci_tier.REPO_ROOT), 0)
+
+    def test_absolute_git_index_file_honoured_for_repo_root_and_dropped_for_fixture(self) -> None:
+        scratch = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, scratch, True)
+        temp_index = (scratch / "staged.index").resolve()
+        self.assertTrue(temp_index.is_absolute())
+        self._run_git(
+            ci_tier.REPO_ROOT,
+            "read-tree",
+            "HEAD",
+            extra_env={"GIT_INDEX_FILE": str(temp_index)},
+        )
+
+        fixture = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, fixture, True)
+        self._run_git(fixture, "init", "-q")
+        (fixture / "fixture_only.txt").write_text("stub\n", encoding="utf-8")
+        self._run_git(fixture, "add", "fixture_only.txt")
+
+        hook_env = {**self._git_env(), "GIT_INDEX_FILE": str(temp_index)}
+        with mock.patch.dict(os.environ, hook_env, clear=True):
+            head_tracked = ci_tier._tracked_files(ci_tier.REPO_ROOT)
+            self.assertIn("scripts/ci/ci_tier.py", head_tracked)
+            self.assertIn("README.md", head_tracked)
+            self.assertEqual(ci_tier.check_full_paths(root=ci_tier.REPO_ROOT), 0)
+            self.assertEqual(ci_tier._tracked_files(fixture), ("fixture_only.txt",))
+
+        self._run_git(
+            ci_tier.REPO_ROOT,
+            "update-index",
+            "--force-remove",
+            "README.md",
+            extra_env={"GIT_INDEX_FILE": str(temp_index)},
+        )
+        with mock.patch.dict(os.environ, hook_env, clear=True):
+            staged_tracked = ci_tier._tracked_files(ci_tier.REPO_ROOT)
+            self.assertIn("scripts/ci/ci_tier.py", staged_tracked)
+            self.assertNotIn("README.md", staged_tracked)
+            self.assertEqual(ci_tier._tracked_files(fixture), ("fixture_only.txt",))
 
 
 class Main(unittest.TestCase):

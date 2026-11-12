@@ -73,6 +73,24 @@ MAX_FULL_PATHS = 256
 MAX_CHANGED_PATHS = PAGE_SIZE * MAX_PAGES
 MAX_TRACKED_FILES = 200_000
 PULL_REQUEST_EVENTS = frozenset({"pull_request", "pull_request_target"})
+# Repository-locating variables (from the plan-ci-impact.py reference blocklist,
+# leaving GIT_CONFIG_* barriers intact and handling GIT_INDEX_FILE per root).
+_GIT_REPO_LOCATION_VARS = frozenset(
+    {
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_CEILING_DIRECTORIES",
+        "GIT_COMMON_DIR",
+        "GIT_DIR",
+        "GIT_GRAFT_FILE",
+        "GIT_IMPLICIT_WORK_TREE",
+        "GIT_NO_REPLACE_OBJECTS",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_PREFIX",
+        "GIT_REPLACE_REF_BASE",
+        "GIT_SHALLOW_FILE",
+        "GIT_WORK_TREE",
+    }
+)
 _BASH_PATH = shutil.which("bash")
 BASH = str(Path(_BASH_PATH).resolve(strict=True)) if _BASH_PATH is not None else None
 _GIT_PATH = shutil.which("git")
@@ -341,16 +359,29 @@ def _paged(fetch: Fetcher, path: str) -> list[object]:
     raise TierError(f"{path}: more than {MAX_PAGES * PAGE_SIZE} entries")
 
 
+def _paged_strings(fetch: Fetcher, path: str, field: str) -> list[str]:
+    """Read string ``field`` from every object in paginated ``path``."""
+    rows = _paged(fetch, path)
+    values: list[str] = []
+    for idx in range(len(rows)):
+        row = rows[idx]
+        if not isinstance(row, dict):
+            raise TierError(f"{path}: entry {idx} must be an object, got {type(row).__name__}")
+        value = row.get(field)
+        if not isinstance(value, str):
+            raise TierError(f"{path}: entry {idx} missing string {field!r}")
+        values.append(value)
+    return values
+
+
 def live_labels(fetch: Fetcher, repository: str, number: str) -> tuple[str, ...]:
     """Current label names of a pull request (an issue, to the API)."""
-    rows = _paged(fetch, f"/repos/{repository}/issues/{number}/labels")
-    return tuple(str(row["name"]) for row in rows if isinstance(row, dict) and "name" in row)
+    return tuple(_paged_strings(fetch, f"/repos/{repository}/issues/{number}/labels", "name"))
 
 
 def changed_paths(fetch: Fetcher, repository: str, number: str) -> list[str]:
     """Paths a pull request changes, for release-PR and ``full_paths`` checks."""
-    rows = _paged(fetch, f"/repos/{repository}/pulls/{number}/files")
-    return [str(row["filename"]) for row in rows if isinstance(row, dict) and "filename" in row]
+    return _paged_strings(fetch, f"/repos/{repository}/pulls/{number}/files", "filename")
 
 
 def release_exempt_from_script(event: Event, paths: Sequence[str]) -> bool:
@@ -415,21 +446,34 @@ def write_outputs(path: Path, outputs: Mapping[str, str]) -> None:
             handle.write(f"{name}={value}\n")
 
 
+def _keep_repo_git_var(key: str, value: str) -> bool:
+    """Keep non-location variables and an absolute ``GIT_INDEX_FILE`` for this checkout."""
+    return key not in _GIT_REPO_LOCATION_VARS and (
+        key != "GIT_INDEX_FILE" or Path(value).is_absolute()
+    )
+
+
+def _git_ls_files_env(resolved_root: Path) -> dict[str, str]:
+    """Drop repository-locating ``GIT_*`` variables while keeping an absolute
+    ``GIT_INDEX_FILE`` only for this checkout and stripping every ``GIT_*`` variable for
+    any other root."""
+    if resolved_root != REPO_ROOT.resolve():
+        return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    return {k: v for k, v in os.environ.items() if _keep_repo_git_var(k, v)}
+
+
 def _tracked_files(root: Path) -> tuple[str, ...]:
-    """Return every path ``git ls-files`` reports under ``root``."""
+    """Return ``git ls-files`` paths under ``root``, dropping repository-locating ``GIT_*``
+    variables while keeping an absolute ``GIT_INDEX_FILE`` only for this checkout and
+    stripping every ``GIT_*`` variable for any other root."""
     if GIT is None:
         raise TierError("required executable not found: git")
     resolved_root = root.resolve()
-    git_env = (
-        None
-        if resolved_root == REPO_ROOT.resolve()
-        else {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-    )
     try:
         result = run_command(
             [GIT, "-C", str(resolved_root), "ls-files", "-z"],
             allowed_executables=(GIT,),
-            env=git_env,
+            env=_git_ls_files_env(resolved_root),
             text=True,
             capture_output=True,
             check=True,

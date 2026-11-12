@@ -17,6 +17,8 @@ area: gates
   `full` before glob matching, including deleted listed file + removed glob,
   or empty `full_paths`. Preserve `MAX_CHANGED_PATHS`, `MAX_FULL_PATHS`.
 - Unknown changed paths -> `full`, reason `changed paths unavailable`.
+  `changed_paths` / `live_labels`: non-dict row or missing string `filename` /
+  `name` -> `TierError` naming endpoint -> fail closed `full`.
   Release exemption: unknown paths -> false; never replace unknown with empty
   sequence. Fetched release-only paths -> `release-light`; cut label -> full.
   File fetch cache shared between release exemption and path matching.
@@ -25,10 +27,13 @@ area: gates
 - Every glob matches tracked file. Drift hook `check-ci-tier-full-paths`:
   `.pre-commit-config.yaml`; always run at pre-commit and pre-push.
   `ci_tier.py --check-full-paths`: unmatched glob -> non-zero + named pattern.
-- Proof: `tests/test_ci_tier.py`, classes `Decide`, `RunFullPaths`,
-  `FullPathsDrift`. Cases: deleted listed path + removed glob; config alone;
-  release config change; unlisted path; glob boundary; unknown release diff;
-  release-only diff; cut label; tracked rename + restoration; path-count
-  boundaries.
+  `_tracked_files`: drop repo-location `GIT_*` vars; keep absolute
+  `GIT_INDEX_FILE` only for `REPO_ROOT`; other roots strip all `GIT_*`.
+- Proof: `tests/test_ci_tier.py`, classes `Decide`, `LiveLabels`,
+  `ChangedPaths`, `RunFullPaths`, `FullPathsDrift`, `Main`. Cases: deleted
+  listed path + removed glob; config alone; release config change; unlisted
+  path; glob boundary; unknown release diff; release-only diff; cut label;
+  malformed file/label API rows; foreign `GIT_DIR` + staged `GIT_INDEX_FILE`;
+  tracked rename + restoration; path-count boundaries.
 - Audit: [Research-3536](../../../docs/research/3536-ci-tier-full-paths.md).
   Decision: [ADR-3536](../../../docs/adr/3536-ci-tier-full-paths.md).
