@@ -5,14 +5,14 @@
 - Machine: Windows 10.0.26300 x64. Two NVIDIA GPUs: device 0 = NVIDIA GeForce
   RTX 4060 Laptop GPU, device 1 = **NVIDIA GeForce RTX 5080** (the device under
   test; CUDA runs pinned via `CUDA_VISIBLE_DEVICES=1`).
-- Exe provenance: `C:\PLAN\VMAF\verify\vmafx-install\bin\vmafx.exe` — **rc.3**
-  (static default model), 291,737 bytes, dated Nov 3 15:21.
-- Input: `C:\PLAN\VMAF\baseline\t1_frames\ref_1080p8_{N}.yuv` /
+- Exe provenance: **rc.3** `vmafx.exe` (static default model), 291,737 bytes,
+  dated Nov 3 15:21.
+- Input: the t1_frames fixture pair `ref_1080p8_{N}.yuv` /
   `dis_1080p8_{N}.yuv` — 1920x1080 yuv420p 8-bit raw, N in {10, 30, 60, 120}.
 - Method: {cpu, cuda} x N, 4 runs per cell; run 0 cold discarded, min over
   runs 1-3; full-process wall time via `time.perf_counter`; per-run JSON kept
-  in this directory. Harness: `C:\PLAN\VMAF\verify\tmp\t0_idle_matrix.py`,
-  console log `C:\PLAN\VMAF\verify\tmp\t0_idle_matrix_run.log`.
+  in this directory. Harness: `measure.py` (committed in this directory);
+  the console log stayed local and is not committed.
 
 ### Utilization situation (nvidia-smi `-i 1`, 1 s apart, 4 samples per gate)
 
@@ -125,7 +125,7 @@ backends alike.
 
 ## Artifacts
 
-- `C:\PLAN\VMAF\verify\tmp\t0-idle-matrix\summary.json`
-- Per-run JSON reports: `C:\PLAN\VMAF\verify\tmp\t0-idle-matrix\n{N}-{backend}-{run}.json` (24 files)
-- Harness log: `C:\PLAN\VMAF\verify\tmp\t0_idle_matrix_run.log`
-- Harness: `C:\PLAN\VMAF\verify\tmp\t0_idle_matrix.py`
+- `summary.json` — per-cell min-of-3 walls, matched-run `fps`/`wall_fps`,
+  utilization gates, and the OLS fits
+- Per-run JSON reports: `n{N}-{backend}-{run}.json` (24 files)
+- Harness: `measure.py` in this directory

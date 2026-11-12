@@ -1,9 +1,8 @@
 # Idle-window T0 calibration (issue #3294)
 
-The per-run wall-clock reports behind the 2026-11-07 idle-window rerun on
-issue #3294, committed at the maintainer's request as the calibration data
-for the benchmark baseline ("please do commit the 24 per-run JSON reports —
-they are the calibration data for the benchmark baseline").
+The per-run wall-clock reports behind the 2026-11-07 idle-window rerun,
+committed at the maintainer's request as the calibration data for the
+benchmark baseline (paraphrased, issue #3294).
 
 - 24 runs: `{cpu, cuda}` x N in {10, 30, 60, 120} x 4 runs per cell; run 0
   is the cold run, discarded from the minimum per the maintainer's
