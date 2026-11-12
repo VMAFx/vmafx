@@ -20,6 +20,7 @@ import unittest
 from collections.abc import Collection, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import MappingProxyType
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
@@ -61,7 +62,7 @@ SCHEDULED_SKIP = {
 # Compatibility` while praetor's workflow pushed on every branch; that gate is strict now.
 API_GATE = "Semgrep OSS"
 
-CODE_SCANNING_APP: dict[str, str] = {"slug": "github-advanced-security"}
+CODE_SCANNING_APP: Mapping[str, str] = MappingProxyType({"slug": "github-advanced-security"})
 ACTIONS_APP: dict[str, str] = {"slug": "github-actions"}
 FOREIGN_APP: dict[str, str] = {"slug": "sourcery-ai"}
 EMPTY_APP: dict[str, str] = {}
