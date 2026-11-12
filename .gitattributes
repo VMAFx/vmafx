@@ -74,7 +74,8 @@ pkg/benchmark/testdata/*.csv -text
 # scripts/ci/tests/test_praetor_hashed_files_lf.py keeps every such file LF.
 # The six compiled targets and AGENTS.readonly.md are generated from AGENTS.md
 # by `praetorctl compile-context` and refused on drift by
-# `compile-context --verify`.
+# `compile-context --verify`; they carry linguist-generated below, and
+# scripts/ci/tests/test_codacy_config.py fails when one lacks it.
 AGENTS.md text eol=lf
 AGENTS.readonly.md text eol=lf
 CLAUDE.md text eol=lf
