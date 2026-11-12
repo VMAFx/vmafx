@@ -1,0 +1,1 @@
+- **Tidy CI dependency installation:** use gcc-15 and g++-15 from the Ubuntu 26.04 archive, matching the committed baselines, and remove three unnecessary PPA registrations that could fail through the Launchpad API. The existing CI contract now rejects PPA registration in workflow and composite-action run steps.
