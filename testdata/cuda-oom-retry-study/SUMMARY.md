@@ -21,6 +21,10 @@ timeline.log with nvidia-smi brackets, armD/sampler.log 5 s cadence).
 
 - **A**: 5080 12/12 and 4060 12/12 fail at "device memory not yet returned after
   the hog was freed" (`memory back 0`); retry assertion never fired. Slow window.
+- **B**: 5080 (dev0) 12/12 retries fail (`rc=1`, retry rc -12: with no probe to
+  refuse, the retry itself OOMs at "the same index does not score once memory is
+  back"); 4060 (dev1) 12/12 pass (`rc=0`). The same slow/fast split as A, seen
+  without the probe.
 - **ilv**: 5080 6/6 pairs both arms fail (as-landed @not-yet-returned, no-probe
   @retry); 4060 12 pairs: as-landed 11/12 pass + 1 transient refusal, no-probe
   12/12 pass. **No systematic probe perturbation.**
