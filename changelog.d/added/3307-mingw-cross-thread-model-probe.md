@@ -5,3 +5,4 @@
   `objdump -p`-asserts the runtime's import table against the detected model — a win32-model driver next to a
   `libwinpthread`-importing runtime refuses instead of pasting green evidence. The probe reports tool absence as
   exit 0; only a found driver whose runtime cannot be resolved or whose flavour contradicts the model fails.
+Contributed by luoye-cpu.
