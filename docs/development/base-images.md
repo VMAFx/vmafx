@@ -366,6 +366,44 @@ versions in workflows and verifies that the container downloads use the copied
 configuration. The Windows SYCL leg runs under `cmd` and mirrors the value by
 hand; the same check keeps that mirror aligned.
 
+## Ubuntu development package snapshot
+
+The plain, CUDA and SYCL compatibility images under `docker/dev/` read
+`UBUNTU_APT_SNAPSHOT` from `build-config.env`. This UTC timestamp fixes Ubuntu
+package resolution as well as the base-image digest. They write
+`APT::Snapshot` to `/etc/apt/apt.conf.d/50ubuntu-snapshot`, so package operations
+in `scripts/setup/ubuntu.sh` inherit the same date.
+
+The snapshot service requires HTTPS. Before activating the pin, each image
+refreshes the live archive once and installs only `ca-certificates` and its
+required dependencies. This named certificate bootstrap is unpinned; the
+complete image is therefore not bit-for-bit reproducible. All later Ubuntu
+package operations use the snapshot, with fail-closed refreshes and retries.
+Those refreshes still download the live `archive.ubuntu.com` and
+`security.ubuntu.com` indexes as shadowed entries that APT does not resolve
+from, so a build needs both those hosts and `snapshot.ubuntu.com` reachable.
+A snapshot outage fails the refresh instead of falling back. CUDA's exact vendor-package lock remains separate; oneAPI repository pinning
+is tracked by issue 3190.
+
+Renovate proposes a seven-day-old UTC midnight timestamp before 06:00 on
+Mondays, using the repository's `Europe/Vienna` timezone. Updates require
+manual review and an image rebuild. To move the pin manually, edit only
+`UBUNTU_APT_SNAPSHOT` in `build-config.env` to a `YYYYMMDDTHHMMSSZ` timestamp;
+the Dockerfiles read it directly and need no regenerated timestamp mirrors.
+
+```bash
+docker build -f docker/dev/ubuntu-26.04.Dockerfile -t vmafx-ubuntu-dev .
+docker run --rm vmafx-ubuntu-dev apt-config dump
+docker run --rm vmafx-ubuntu-dev dpkg-query -W
+```
+
+Review `APT::Snapshot`, the resolved package versions and the build's
+`https://snapshot.ubuntu.com/ubuntu/<timestamp>/` download URIs before merging.
+Rebuild each GPU variant before publishing it. A timestamp bump brings Ubuntu
+security fixes into the next build; leaving the timestamp unchanged leaves
+those packages unchanged. See [ADR-3541](../adr/3541-dev-image-apt-snapshot.md)
+for the bootstrap exception and update design.
+
 ## Renovate
 
 Renovate's built-in `dockerfile` manager understands `ARG X=image` + `FROM $X`,

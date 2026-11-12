@@ -9,11 +9,17 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8 \
     LANG=C.UTF-8
 
-COPY scripts/setup/ubuntu.sh /tmp/ubuntu.sh
-RUN apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
-        ca-certificates curl git sudo \
+COPY build-config.env scripts/setup/ubuntu.sh /tmp/
+# UBUNTU_APT_CERTIFICATE_BOOTSTRAP: HTTPS-only snapshots need the live archive's CA bundle.
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && . /tmp/build-config.env \
+    && printf 'APT::Snapshot "%s";\n' "$UBUNTU_APT_SNAPSHOT" > /etc/apt/apt.conf.d/50ubuntu-snapshot \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
+    && apt-get install -y --no-install-recommends curl git sudo \
     && bash /tmp/ubuntu.sh \
-    && rm -rf /var/lib/apt/lists/* /tmp/ubuntu.sh
+    && rm -rf /var/lib/apt/lists/* /tmp/ubuntu.sh /tmp/build-config.env
 
 SHELL ["/bin/bash", "-c"]
 WORKDIR /src
