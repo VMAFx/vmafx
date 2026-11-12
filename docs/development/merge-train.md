@@ -182,12 +182,17 @@ gateway. A changed or missing library refuses with
 `refused: installed library hash changed: scripts/lib/MODULE.py`. Launchers
 remove the caller's working directory and adapter directory from Python's import
 path, put the release first, and bind the `scripts` package to that release only.
-Every adapter runs Python in `-I` isolated mode, which Python 3.10 supports: the
-shell adapters pass `-I`, and the operator adapter re-executes itself with `-I`
-before it imports anything else. Isolated mode also ignores `PYTHONPATH`, other
-`PYTHON*` variables and user site packages. Adapters therefore work outside a
-checkout and ignore a planted `scripts` package or standard-library module in the
-caller's directory, the state directory or `PYTHONPATH`. The gateway's repository
+Every adapter starts Python in `-I` isolated mode, which Python 3.10 supports:
+the shell adapters run `python3 -I`, and the operator adapter's shebang is
+`#!/usr/bin/env -S python3 -I`. The flag has to be there at start-up, because
+Python imports site hooks such as `sitecustomize.py` while it initialises, before
+the first line of the script runs. When someone runs the operator as
+`python3 merge_train_operator.py`, it re-executes itself with `-I` before it
+imports anything else, but site hooks have already run by then; run it directly.
+Isolated mode also ignores `PYTHONPATH`, other `PYTHON*` variables and user site
+packages. Adapters therefore work outside a checkout and ignore a planted
+`scripts` package, standard-library module or `sitecustomize.py` in the caller's
+directory, the state directory or `PYTHONPATH`. The gateway's repository
 copy continues to import from the repository root; composer loading still uses
 the file beside the installed gateway.
 

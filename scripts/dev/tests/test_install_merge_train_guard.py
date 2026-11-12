@@ -133,8 +133,12 @@ class MigrationContract(unittest.TestCase):
         installer.git(self.source, "add", ".")
         installer.git(self.source, "commit", "-m", "real gateway and runtime dependencies")
 
-    def run_adapter(self, name: str, cwd: Path) -> Any:
-        """Run installed entry points with offline gh and isolated fixture Git configuration."""
+    def run_adapter(self, name: str, cwd: Path, *, direct: bool = False) -> Any:
+        """Run installed entry points with offline gh and isolated fixture Git configuration.
+
+        ``direct`` executes the Python operator through its own shebang, as the
+        shell adapters always are, instead of through an explicit interpreter.
+        """
         binaries = self.directory / "bin"
         binaries.mkdir(exist_ok=True)
         gh = binaries / "gh"
@@ -148,7 +152,8 @@ class MigrationContract(unittest.TestCase):
             CUDA_VISIBLE_DEVICES="",
         )
         adapter = self.state / name
-        argv = [sys.executable, str(adapter)] if name.endswith(".py") else [str(adapter)]
+        explicit = name.endswith(".py") and not direct
+        argv = [sys.executable, str(adapter)] if explicit else [str(adapter)]
         return installer.run_command(
             argv,
             allowed_executables=(argv[0],),
@@ -213,6 +218,30 @@ class MigrationContract(unittest.TestCase):
             with self.subTest(adapter=name), patch.dict(os.environ, {"PYTHONPATH": str(ambient)}):
                 result = self.run_adapter(name, caller)
                 self.assertNotIn("PLANTED_STDLIB_LOADED", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertEqual(
+                    result.returncode, 1 if name == "rebase-clean.sh" else 0, result.stderr
+                )
+
+    def test_executed_adapters_start_isolated_before_site_hooks(self) -> None:
+        """A planted sitecustomize.py runs at interpreter start, before any re-execution."""
+        self.real_gateway()
+        value, committed = self.plan()
+        installer.install(value, committed, installer.plan_hash(value))
+        caller = self.directory / "planted caller"
+        ambient = self.directory / "planted import path"
+        marker = self.directory / "SITE_HOOK_RAN"
+        caller.mkdir()
+        ambient.mkdir()
+        hook = f"open({str(marker)!r}, 'a').write('ran\\n')\n"
+        for root in (caller, self.state, ambient):
+            (root / "sitecustomize.py").write_text(hook)
+        operator = (self.state / "merge_train_operator.py").read_text().splitlines()[0]
+        self.assertEqual(operator, "#!/usr/bin/env -S python3 -I")
+        for name in ("rebase-clean.sh", "train.sh", "merge_train_operator.py"):
+            with self.subTest(adapter=name), patch.dict(os.environ, {"PYTHONPATH": str(ambient)}):
+                result = self.run_adapter(name, caller, direct=True)
+                self.assertFalse(marker.exists(), f"{name} ran a planted sitecustomize.py")
                 self.assertNotIn("Traceback", result.stderr)
                 self.assertEqual(
                     result.returncode, 1 if name == "rebase-clean.sh" else 0, result.stderr
