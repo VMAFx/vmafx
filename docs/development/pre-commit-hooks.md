@@ -715,13 +715,16 @@ other than the caller's (a scratch repository, a clone into a temporary director
     of planted `GIT_CONFIG_KEY_*` values remains valid.
     Python fixture files must explicitly assign the global and system
     configuration keys above via executable AST forms (`dict` literals,
-    `dict(...)` / `.update(...)` keyword arguments, or subscript assignments):
-    existing test-script names, files beneath `tests/`, and Python basenames
-    containing `fixture` are covered. Comments, docstrings and string literals
-    do not count. Product files remain outside this configuration check. Shell,
-    Node and Go retain regex marker checks; Python imperative mutation after
-    copying `os.environ` and Node/Go filter re-admission stay documented known
-    gaps with `Known gap:` replay tests.
+    `dict(...)` / `.update(...)` positional mapping or keyword arguments, or
+    subscript assignments), and `**os.environ` (or a copy) unpacked after a
+    barrier key in the same mapping display or call (including positional
+    mapping arguments) is refused: existing test-script names, files beneath
+    `tests/`, and Python basenames containing `fixture` are covered. Comments,
+    docstrings, string literals and `setdefault` do not count. Product files
+    remain outside this configuration check. Shell, Node and Go retain regex
+    marker checks; separate-statement Python imperative mutation (including
+    after copying `os.environ`) and Node/Go filter re-admission stay documented
+    known gaps with `Known gap:` replay tests.
   - **Sentinel run.** Every scratch-repository test script that runs on its own is
     executed under a sentinel `GIT_DIR` and fails when the sentinel's config, index,
     refs or objects change. Planted scripts that write an identity, `core.bare` or

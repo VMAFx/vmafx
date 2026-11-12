@@ -24,10 +24,11 @@ entry point.
   basename containing `fixture`) -> executable AST assignment of
   `GIT_CONFIG_GLOBAL` (`os.devnull` or `"/dev/null"`) + `GIT_CONFIG_SYSTEM`
   (`os.devnull` / `"/dev/null"`) or `GIT_CONFIG_NOSYSTEM="1"` via `dict`
-  literal, `dict(...)` / `.update(...)` keyword, or subscript assignment.
-  `ISOLATION_EXCEPTIONS` excuses missing `GIT_*` marker only; fixture barriers
-  still enforced.
-- `**os.environ` / copy after `GIT_CONFIG_*` in `dict` / `.update` -> refused.
+  literal, `dict(...)` / `.update(...)` positional mapping or keyword, or
+  subscript assignment. `ISOLATION_EXCEPTIONS` excuses missing `GIT_*` marker
+  only; fixture barriers still enforced.
+- `**os.environ` / copy after `GIT_CONFIG_*` in `dict` literal or
+  `dict(...)` / `.update(...)` (positional mapping + keyword order) -> refused.
 - Caller-poison `GIT_CONFIG_KEY_*` suffix lookup allowed; no complete-prefix
   exclusion claimed. Product files outside fixture configuration scope.
 - Rejected filters/markers/barriers, missing keys, accepted forms, tuple
@@ -35,7 +36,7 @@ entry point.
   poison lookup, product scope + planted temporary copies: replayed inside
   `test_no_script_creates_or_configures_a_repository_unisolated` through
   `unisolated_offenders()`.
-- Known gaps (`Known gap:` tests): Python imperative mutation after copying
-  `os.environ`, alias/interprocedural data flow, and Node/Go filter
-  re-admission. Shell/Node/Go retain regex markers; sentinel run stays
-  behavioural coverage.
+- Known gaps (`Known gap:` tests): Python separate-statement imperative mutation
+  (including after copying `os.environ`), alias/interprocedural data flow, and
+  Node/Go filter re-admission. Shell/Node/Go retain regex markers; sentinel run
+  stays behavioural coverage.
