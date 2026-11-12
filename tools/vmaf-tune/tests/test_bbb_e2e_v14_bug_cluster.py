@@ -34,9 +34,11 @@ from pathlib import Path
 
 import pytest
 
-_HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(_HERE.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from _vmaf_cli import ffmpeg_reports_encoder
+
+# isort: split
 from vmaftune.codec_adapters._qsv_common import BaseQsvAdapter
 from vmaftune.compare import (
     _DEFAULT_VAAPI_DEVICE,
@@ -310,31 +312,6 @@ def test_v14_c_amf_probe_no_init_hw_device():
 # ---------------------------------------------------------------------------
 
 
-def _ffmpeg_reports_encoder(encoder: str) -> bool:
-    """Return True iff the local ffmpeg binary advertises ``encoder``."""
-    import shutil
-    import subprocess
-
-    if shutil.which("ffmpeg") is None:
-        return False
-    try:
-        result = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-encoders"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            timeout=10,
-            check=False,
-        )
-        out = result.stdout.decode("utf-8", errors="replace")
-        for line in out.splitlines():
-            parts = line.split()
-            if len(parts) >= 2 and parts[1] == encoder:
-                return True
-    except Exception:
-        pass
-    return False
-
-
 def _nvidia_gpu_present() -> bool:
     """Return True iff the host exposes an NVIDIA GPU to user space.
 
@@ -390,7 +367,7 @@ def test_nvidia_gpu_detection_follows_nvidia_smi_listing(monkeypatch):
 
 @pytest.mark.slow
 @pytest.mark.skipif(
-    not (_ffmpeg_reports_encoder("h264_nvenc") and _nvidia_gpu_present()),
+    not (ffmpeg_reports_encoder("h264_nvenc") and _nvidia_gpu_present()),
     reason="h264_nvenc not compiled into local ffmpeg or no NVIDIA GPU visible to the driver",
 )
 def test_v14_a_nvenc_probe_succeeds_on_gpu_host():
@@ -406,7 +383,7 @@ def _qsv_device_init_works() -> bool:
     VA-API driver at /dev/dri/renderD128 supports the minimum VA-API
     version required by the QSV bridge.
     """
-    if not _ffmpeg_reports_encoder("h264_qsv"):
+    if not ffmpeg_reports_encoder("h264_qsv"):
         return False
     ok, _ = probe_encoder_available("h264_qsv")
     return ok

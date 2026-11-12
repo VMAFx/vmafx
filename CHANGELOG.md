@@ -522,7 +522,7 @@
   ([FFmpeg with MSVC](docs/getting-started/building-on-windows.md#ffmpeg-with-msvc)).
 
 
-- **Local check for retired FFmpeg filter names.** A commit or push that touches documentation, the FFmpeg patch series, its tests or a fork build config now runs `scripts/ci/ffmpeg-patches-surface-check.sh --surface-only` (hook `ffmpeg-patches-surface-docs`), so a retired filter or option named outside the migration guide and the dated records the check skips (ADRs, research digests, rebase notes, changelogs, the state ledger, backlog audits, SYCL history) fails locally instead of first in CI. The new `--surface-only` mode runs only the tree checks and needs no PR body or `origin/master`.
+- **Local check for retired FFmpeg filter names.** A commit or push that touches `README.md` or a Markdown page under `docs/`, the FFmpeg patch series, its tests or a fork build config now runs `scripts/ci/ffmpeg-patches-surface-check.sh --surface-only` (hook `ffmpeg-patches-surface-docs`), so a retired filter or option named outside the migration guide and the dated records the check skips (ADRs, research digests, rebase notes, changelogs, the state ledger, backlog audits, SYCL history) fails locally instead of first in CI. The new `--surface-only` mode runs only the tree checks and needs no PR body or `origin/master`.
 
 
 - **CI builds and checks the `vmafx` FFmpeg filter (#2475).** The required
@@ -2119,6 +2119,9 @@
   issue instead of the placeholders `#1` to `#4`.
 
 
+- **Pre-push runs focused tests for changed paths.** The `affected-tests` hook reuses the suite registry and cached locked environments to run changed tests and tests naming changed files. Unmatched paths print `NOT RUN`; the first run builds the affected suite venv (`ai` needs about 6 GB). See [test-suite documentation](docs/development/test-suites.md#run-the-affected-suites-locally).
+
+
 - **The `Pre-Commit` CI job checks a pull request on its own diff
   (HISS-18).** `scripts/ci/precommit_scope.py` runs
   `pre-commit run --from-ref <base sha> --to-ref HEAD` on pull requests and
@@ -2166,6 +2169,13 @@
   shipped in the wheel instead of its own second implementation;
   `tools/rc1-tester/tests/test_safe_subprocess_copy.py` fails when the copy
   and the source differ.
+
+
+- **Every README badge but the Praetor-managed governance badge now has the same `for-the-badge` design, and the status badges come from this project's own render.**
+  `.github/workflows/readme-badges.yml` draws the seven workflow badges and the OpenSSF Scorecard,
+  OpenSSF Best Practices and Codacy badges every 15 minutes onto the `badges` branch: a workflow badge
+  shows the newest finished master push run, so a run in progress never hides a red one, and the
+  Scorecard badge now shows the score. See `docs/development/readme-badges.md` (ADR-3519).
 
 
 - README opens with a one-paragraph statement, badges moved to a Project status
@@ -2603,6 +2613,9 @@
   keep it.
 
 
+- **Tag raw HDR inputs with colour transfer and primaries:** copy `-color_primaries`, `-color_trc`, `-colorspace`, and `-color_range` from encode options to input options for raw sources so FFmpeg passes colour properties to the encoder (issue 3345). User `--extra-ffmpeg-arg` colour options stay output-only.
+
+
 - **Run active SYCL combined-graph extractors on subsampled frames (#3356).**
   `vmaf_sycl_graph_submit()` now counts and enqueues only the registered graph extractors that run
   on the current frame under `--subsample N` (`N > 1`), using direct per-extractor submission on
@@ -2928,6 +2941,9 @@
   anything a program writes there and ignored the log level. They are now
   `ERROR` log lines: on stderr at the configured level for `libvmaf.h` and
   the CLI, and in the context's log callback for the VMAFx API.
+
+
+- **CI:** a refused or unreachable connection no longer ends a CI download on the first attempt: curl and wget fetches in shell scripts, workflows and container recipes retry connection and host-resolution failures, the tidy lane's APT downloads retry, and a contract test checks curl and wget fetches for the retry flags and requires retried downloads to write to a file before use.
 
 
 - **The shared FFmpeg fix series fetches a failed github.com release download via the forge API.**
@@ -3704,6 +3720,9 @@
   identifiers (`scripts/ci/tidy_changed_route.py`).
 
 
+- **Tidy CI dependency installation:** use gcc-15 and g++-15 from the Ubuntu 26.04 archive, matching the committed baselines, and remove three unnecessary PPA registrations that could fail through the Launchpad API. The existing CI contract now rejects PPA registration in workflow and composite-action run steps.
+
+
 - **Tests: the `timing` suite exists only in a plain optimised build.**
   Coverage counters, a sanitizer or a build without optimisation slow the
   code down, so the live window harness's 33 ms budget there measured the
@@ -3886,6 +3905,12 @@
   `crypto/x509.Verify` under Go 1.27.2; it now reports no reachable vulnerable symbol.
 
 
+- **The Go toolchain moves from 1.27.3 to 1.27.4** for GO-2026-6859 (`net/http`). `go.mod`
+  declares `go 1.27.4`, and the release, development and observability images build on the
+  `golang:1.27-trixie` digest that carries Go 1.27.4. `govulncheck ./...` reached
+  `net/http.Write` under Go 1.27.3; it now reports no reachable vulnerable symbol.
+
+
 - **`github.com/andybalholm/brotli` moves from v1.2.6 to v1.2.7** for GO-2026-6888
   (CVE-2026-111497, GHSA-c9gr-gmg4-2vqv). The two reports describe different denial-of-service
   paths: the Go vulnerability report names unbounded Huffman-table and block-type-tree
@@ -3909,6 +3934,9 @@
   check every ancestor namespace transition). `scripts/ci/govulncheck-gate.py` failed on both
   advisories, which have no `not_affected` statement; with v0.62.0 it reports no finding for
   `golang.org/x/net`.
+
+
+- **The `cpp/large-parameter` exception names code-scanning alert 1602.** Regenerating the compatibility conformance table moved the by-value `vmaf_picture_wrap()` thunk, so CodeQL reopened alert 1547 as 1602 on the same file and rule. The declared exception in `.config/lint-exceptions.d/codeql-large-parameter.toml` already covers that file; its header now lists 1602, which is dismissed as "won't fix" with the same expiry.
 
 
 - **Open advisory GHSA-84m7-p3x7-pcfv (`mcp` 1.29.0) is declared, not dismissed.** `mcp` reaches
