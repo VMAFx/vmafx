@@ -1,9 +1,9 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-3538: Run-result timeline schema closes objects and bumps the version per change
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-12
-- **Deciders**: luoye-cpu (author, pending review)
+- **Deciders**: luoye-cpu (author), lusoris (review)
 - **Tags**: api, schema, versioning, interop
 
 ## Context
