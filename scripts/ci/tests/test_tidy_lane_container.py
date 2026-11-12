@@ -669,7 +669,7 @@ class LaneEnvironmentFailure(unittest.TestCase):
             "FAKE_PKG_STATE": str(self.state),
             "FAKE_APT_LOG": str(self.apt_log),
         }
-        return subprocess.run(  # noqa: S603 -- fixed bash harness over extracted script text
+        return subprocess.run(  # noqa: S603  # nosec B603 -- fixed bash harness, no shell
             [bash, "-c", harness],
             capture_output=True,
             text=True,
