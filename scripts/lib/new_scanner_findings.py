@@ -244,6 +244,19 @@ def comparison_arguments(
     return executable, comparison, paths
 
 
+def added_findings(current: list[Finding], old: list[Finding]) -> list[Finding]:
+    """Return findings in `current` absent from the `(rule, line)` multiset of `old`."""
+    old_keys = collections.Counter((rule, line) for _, rule, line in old)
+    added: list[Finding] = []
+    for found in current:
+        key = (found[1], found[2])
+        if old_keys[key] > 0:
+            old_keys[key] -= 1
+        else:
+            added.append(found)
+    return added
+
+
 def new_findings(
     scan: Callable[[Path], list[Finding]],
     current: Path,
@@ -262,12 +275,5 @@ def new_findings(
     with tempfile.TemporaryDirectory(prefix="scanner-base-") as temp:
         old = Path(temp) / current.name
         old.write_bytes(old_bytes)
-        old_keys = collections.Counter((rule, line) for _, rule, line in (old_scan or scan)(old))
-    added = []
-    for found in scan(current):
-        key = (found[1], found[2])
-        if old_keys[key] > 0:
-            old_keys[key] -= 1
-        else:
-            added.append(found)
-    return added
+        old_found = (old_scan or scan)(old)
+    return added_findings(scan(current), old_found)

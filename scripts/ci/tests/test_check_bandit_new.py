@@ -135,6 +135,20 @@ class CheckBanditNew(unittest.TestCase):
         self.git("add", name)
         self.git("commit", "-q", "-m", "outgoing source")
 
+    @contextlib.contextmanager
+    def count_bandit_runs(self) -> Any:
+        """Wrap the real `run_command` in `check_bandit_new` and record `(cwd, argv)` per call."""
+        calls: list[tuple[Path, tuple[str, ...]]] = []
+
+        def wrapped(argv: Any, *args: Any, **kwargs: Any) -> Any:
+            """Record the working directory and argument vector before delegating."""
+            cwd = Path(kwargs["cwd"]) if kwargs.get("cwd") is not None else Path.cwd()
+            calls.append((cwd, tuple(str(part) for part in argv)))
+            return run_command(argv, *args, **kwargs)
+
+        with mock.patch.object(check, "run_command", side_effect=wrapped):
+            yield calls
+
     def test_push_hook_contract(self) -> None:
         """Only the push hook runs unconditionally without positional filenames."""
         assert_push_contract(self, "bandit")
@@ -804,6 +818,173 @@ class CheckBanditNew(unittest.TestCase):
         self.assertEqual(status, 2)
         self.assertIn("exited 3", err)
 
+    def test_config_change_batches_thirty_tracked_files(self) -> None:
+        """A rule-enabling config change over 30 tracked files reports only the 2 hits in <=2 runs."""
+        self.git("rm", "-q", "harness.py")
+        (self.root / "pkg").mkdir()
+        flagged = {4, 21}
+        for index in range(30):
+            body = "assert True\n" if index in flagged else BASE
+            (self.root / f"pkg/mod_{index:02d}.py").write_text(body, encoding="utf-8", newline="\n")
+        self.commit_base()
+        (self.root / "bandit.yml").write_text("tests: [B101]\n", encoding="utf-8", newline="\n")
+        with self.count_bandit_runs() as calls:
+            status, out, err = self.invoke("bandit.yml")
+        self.assertEqual(status, 1, err)
+        self.assertEqual(
+            out.splitlines(),
+            [
+                "pkg/mod_04.py:1: B101: assert True",
+                "pkg/mod_21.py:1: B101: assert True",
+            ],
+        )
+        self.assertLessEqual(len(calls), 2)
+        self.assertEqual({cwd.name for cwd, _ in calls}, {"current", "base"})
+        self.git("add", "bandit.yml")
+        self.git("commit", "-q", "-m", "enable b101")
+        push_status, push_out, push_err = self.outgoing_entry(to_ref="change")
+        self.assertEqual(push_status, 1, push_err)
+        self.assertEqual(push_out.splitlines(), out.splitlines())
+
+    def test_unchanged_config_and_identical_files_start_zero_processes(self) -> None:
+        """Unchanged configuration and base-identical files invoke Bandit zero times."""
+        (self.root / "pkg").mkdir()
+        for name in ("pkg/a.py", "pkg/b.py"):
+            (self.root / name).write_text(BASE, encoding="utf-8", newline="\n")
+        self.commit_base()
+        with self.count_bandit_runs() as calls:
+            status, out, err = self.invoke("harness.py", "pkg/a.py", "pkg/b.py")
+        self.assertEqual((status, out, err), (0, "", ""))
+        self.assertEqual(calls, [])
+
+    def test_batch_file_count_boundary(self) -> None:
+        """MAX_BATCH_FILES runs one process per side; MAX_BATCH_FILES + 1 runs two per side."""
+        self.git("rm", "-q", "harness.py")
+        (self.root / "batch").mkdir()
+        base_cfg = (self.root / "bandit.yml").read_bytes()
+        for index in range(check.MAX_BATCH_FILES):
+            (self.root / f"batch/f_{index:03d}.py").write_text(
+                "value = 1\n", encoding="utf-8", newline="\n"
+            )
+        self.commit_base()
+        (self.root / "bandit.yml").write_bytes(base_cfg + b"# boundary 200\n")
+        with self.count_bandit_runs() as at_limit:
+            status, out, err = self.invoke("bandit.yml")
+        self.assertEqual((status, out), (0, ""), err)
+        self.assertEqual([cwd.name for cwd, _ in at_limit], ["current", "base"])
+
+        (self.root / "bandit.yml").write_bytes(base_cfg)
+        (self.root / f"batch/f_{check.MAX_BATCH_FILES:03d}.py").write_text(
+            "value = 1\n", encoding="utf-8", newline="\n"
+        )
+        self.commit_base()
+        (self.root / "bandit.yml").write_bytes(base_cfg + b"# boundary 201\n")
+        with self.count_bandit_runs() as over_limit:
+            status, out, err = self.invoke("bandit.yml")
+        self.assertEqual((status, out), (0, ""), err)
+        self.assertEqual(
+            [cwd.name for cwd, _ in over_limit], ["current", "current", "base", "base"]
+        )
+
+    def test_long_paths_split_at_arg_char_limit_before_file_limit(self) -> None:
+        """Long relative paths split at MAX_BATCH_ARG_CHARS before reaching MAX_BATCH_FILES."""
+        self.git("rm", "-q", "harness.py")
+        prefix = self.root / ("d" * 60) / ("e" * 60) / ("f" * 60)
+        prefix.mkdir(parents=True)
+        for index in range(130):
+            (prefix / f"m_{index:03d}.py").write_text("value = 1\n", encoding="utf-8", newline="\n")
+        self.commit_base()
+        with (self.root / "bandit.yml").open("a", encoding="utf-8", newline="\n") as config:
+            config.write("# arg char boundary\n")
+        with self.count_bandit_runs() as calls:
+            status, out, err = self.invoke("bandit.yml")
+        self.assertEqual((status, out), (0, ""), err)
+        self.assertEqual([cwd.name for cwd, _ in calls], ["current", "current", "base", "base"])
+        for _, argv in calls:
+            targets = argv[argv.index("--") + 1 :]
+            self.assertLess(len(targets), check.MAX_BATCH_FILES)
+            self.assertLessEqual(len(" ".join(targets)), check.MAX_BATCH_ARG_CHARS)
+
+    def test_extensionless_shebang_inside_batch_is_scanned(self) -> None:
+        """An extensionless Python shebang script inside a multi-file batch still reports B603."""
+        (self.root / "pkg").mkdir()
+        (self.root / "bin").mkdir()
+        (self.root / "pkg/a.py").write_text(BASE, encoding="utf-8", newline="\n")
+        (self.root / "pkg/b.py").write_text(BASE, encoding="utf-8", newline="\n")
+        (self.root / "bin/py_tool").write_text(
+            "#!/usr/bin/env python3\n" + BASE + UNSAFE, encoding="utf-8", newline="\n"
+        )
+        (self.root / "bin/sh_tool").write_text(
+            "#!/bin/sh\n" + BASE + UNSAFE, encoding="utf-8", newline="\n"
+        )
+        with self.count_bandit_runs() as calls:
+            status, out, err = self.invoke("pkg/a.py", "pkg/b.py", "bin/py_tool", "bin/sh_tool")
+        self.assertEqual(status, 1, err)
+        self.assertEqual(
+            out.splitlines(),
+            [
+                "bin/py_tool:5: B404: import subprocess",
+                f"bin/py_tool:7: B603: {UNSAFE.splitlines()[-1]}",
+            ],
+        )
+        self.assertEqual(len(calls), 1)
+
+    def test_missing_staged_file_in_metrics_is_error(self) -> None:
+        """A Bandit JSON report omitting a staged file from metrics fails closed with exit 2."""
+        for name in ("a.py", "b.py"):
+            (self.root / name).write_text(BASE + "# changed\n", encoding="utf-8", newline="\n")
+        payload = {"results": [], "errors": [], "metrics": {"_totals": {}, "./a.py": {"loc": 3}}}
+        result = mock.Mock(returncode=0, stdout=json.dumps(payload))
+        with mock.patch.object(check, "run_command", return_value=result):
+            status, _, err = self.invoke("a.py", "b.py")
+        self.assertEqual(status, 2)
+        self.assertIn("b.py", err)
+        self.assertIn("metrics", err)
+
+    def test_batch_non_empty_errors_names_relative_path(self) -> None:
+        """Non-empty Bandit JSON errors in a batch return 2 and name the failing relative path."""
+        for name in ("a.py", "b.py"):
+            (self.root / name).write_text(BASE + "# changed\n", encoding="utf-8", newline="\n")
+        payload = {
+            "results": [],
+            "errors": [{"filename": "./b.py", "reason": "syntax error"}],
+            "metrics": {"_totals": {}, "./a.py": {"loc": 3}, "./b.py": {"loc": 0}},
+        }
+        result = mock.Mock(returncode=0, stdout=json.dumps(payload))
+        with mock.patch.object(check, "run_command", return_value=result):
+            status, _, err = self.invoke("a.py", "b.py")
+        self.assertEqual(status, 2)
+        self.assertIn("scan errors", err)
+        self.assertIn("b.py", err)
+
+    def test_unknown_result_filename_is_error(self) -> None:
+        """A Bandit JSON finding naming a file outside the batch returns 2."""
+        (self.root / "a.py").write_text(BASE + "# changed\n", encoding="utf-8", newline="\n")
+        payload = {
+            "results": [{"filename": "./rogue.py", "line_number": 1, "test_id": "B101"}],
+            "errors": [],
+            "metrics": {"_totals": {}, "./a.py": {"loc": 3}},
+        }
+        result = mock.Mock(returncode=1, stdout=json.dumps(payload))
+        with mock.patch.object(check, "run_command", return_value=result):
+            status, _, err = self.invoke("a.py")
+        self.assertEqual(status, 2)
+        self.assertIn("rogue.py", err)
+
+    def test_out_of_range_line_number_in_batch_is_error(self) -> None:
+        """A Bandit JSON finding with a line number outside the staged file returns 2."""
+        (self.root / "a.py").write_text("value = 1\n", encoding="utf-8", newline="\n")
+        payload = {
+            "results": [{"filename": "./a.py", "line_number": 9, "test_id": "B101"}],
+            "errors": [],
+            "metrics": {"_totals": {}, "./a.py": {"loc": 1}},
+        }
+        result = mock.Mock(returncode=1, stdout=json.dumps(payload))
+        with mock.patch.object(check, "run_command", return_value=result):
+            status, _, err = self.invoke("a.py")
+        self.assertEqual(status, 2)
+        self.assertIn("a.py", err)
+
 
 class CheckBanditHookEnvironment(unittest.TestCase):
     def test_fixture_ignores_outer_hook_refs(self) -> None:
@@ -952,6 +1133,16 @@ class CheckSharedScannerFindings(unittest.TestCase):
             scan = mock.Mock(return_value=[])
             self.assertEqual(shared.new_findings(scan, current, ""), [])
         self.assertEqual(scan.call_count, 2)
+
+    def test_added_findings_preserves_multiset_counts(self) -> None:
+        """Shared multiset diff drops matched base findings and retains excess occurrences."""
+        old = [(2, "B603", "subprocess.run(cmd)"), (8, "B101", "assert ok")]
+        current = [
+            (5, "B603", "subprocess.run(cmd)"),
+            (9, "B603", "subprocess.run(cmd)"),
+            (12, "B101", "assert ok"),
+        ]
+        self.assertEqual(shared.added_findings(current, old), [(9, "B603", "subprocess.run(cmd)")])
 
 
 if __name__ == "__main__":

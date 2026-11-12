@@ -25,6 +25,7 @@ Low-similarity rename: no pairing -> retained findings reported as new; fail clo
 Bandit list: root `bandit.yml`; Codacy reads analysed branch after configuration-file toggle enabled.
 Comparison: current config versus merge-base config; absent base config -> current config.
 Config diff: every tracked Python source scanned; unchanged source still compared under both configs.
+Batches: Bandit scans staged current + base trees in bounded chunks (`MAX_BATCH_FILES = 200`, `MAX_BATCH_ARG_CHARS = 24_000`); staged file absent from `metrics` -> exit 2.
 Hook: `require_serial: true`; parallel partitions each repeat config-diff full scan.
 Selection: identify Python + pyi tags; shebang files included; PEP 263 decoding; literal Git paths.
 Shared revision selection: Bandit + flawfinder; outgoing files independent of working tree.
