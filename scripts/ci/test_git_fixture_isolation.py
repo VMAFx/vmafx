@@ -117,6 +117,7 @@ PYTHON_HELPERS = ("clean_git_environment", "git_environment")
 COMPREHENSION_NODES = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
 FILTER_NODES = (*COMPREHENSION_NODES, ast.Call)
 BARRIER_NULL_KEYS = ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM")
+BARRIER_KEYS = (*BARRIER_NULL_KEYS, "GIT_CONFIG_NOSYSTEM")
 PAIR_LENGTH = 2
 # One file, one reason, one expiry: a file whose git runs isolated in a way the marker cannot
 # see, with the place that does it. The sentinel run covers every test script among them.
@@ -471,28 +472,41 @@ def subscript_str_key(target: ast.AST) -> str | None:
     return None
 
 
-def dict_display_entries(node: ast.Dict) -> list[tuple[str | None, ast.expr]]:
-    """Ordered (key, value) entries for a dict display; None marks **unpack."""
-    entries: list[tuple[str | None, ast.expr]] = []
-    for key, val in zip(node.keys, node.values, strict=True):
-        if key is None:
-            entries.append((None, val))
-        elif isinstance(key, ast.Constant) and isinstance(key.value, str):
-            entries.append((key.value, val))
-    return entries
+def unpack_mapping_item(
+    value: ast.expr,
+) -> ast.Dict | ast.Call | tuple[str | None, ast.expr]:
+    """Expand nested dict displays or mapping calls; keep environ or opaque unpacks."""
+    if isinstance(value, ast.Dict):
+        return value
+    if is_mapping_call(value):
+        return (None, value) if not value.keywords and is_environ_mapping(value) else value
+    return (None, value)
 
 
 def positional_mapping_item(
     arg: ast.expr,
 ) -> ast.Dict | ast.Call | tuple[str | None, ast.expr] | None:
     """Classify a positional mapping-call argument for ordered entry extraction."""
-    if isinstance(arg, ast.Dict):
-        return arg
-    if is_mapping_call(arg):
-        return (None, arg) if not arg.keywords and is_environ_mapping(arg) else arg
-    if is_environ_mapping(arg):
-        return (None, arg)
+    if (
+        isinstance(arg, ast.Dict)
+        or is_mapping_call(arg)
+        or is_environ_mapping(arg)
+        or is_environ_dict_arg(arg)
+    ):
+        return unpack_mapping_item(arg)
     return None
+
+
+def push_dict_display_children(
+    node: ast.Dict,
+    stack: list[ast.Dict | ast.Call | tuple[str | None, ast.expr]],
+) -> None:
+    """Push dict display pairs and nested **unpacks onto stack in reverse evaluation order."""
+    for key, val in zip(reversed(node.keys), reversed(node.values), strict=True):
+        if key is None:
+            stack.append(unpack_mapping_item(val))
+        elif isinstance(key, ast.Constant) and isinstance(key.value, str):
+            stack.append((key.value, val))
 
 
 def push_mapping_call_children(
@@ -501,7 +515,7 @@ def push_mapping_call_children(
 ) -> None:
     """Push call's positional and keyword entries onto stack in reverse evaluation order."""
     for kw in reversed(call.keywords):
-        stack.append((kw.arg, kw.value))
+        stack.append(unpack_mapping_item(kw.value) if kw.arg is None else (kw.arg, kw.value))
     for arg in reversed(call.args):
         item = positional_mapping_item(arg)
         if item is not None:
@@ -510,9 +524,7 @@ def push_mapping_call_children(
 
 def node_mapping_entries(node: ast.AST) -> list[tuple[str | None, ast.expr]]:
     """Ordered (key, value) entries for a dict display or dict/update call; None marks **unpack."""
-    if isinstance(node, ast.Dict):
-        return dict_display_entries(node)
-    if not is_mapping_call(node):
+    if not (isinstance(node, ast.Dict) or is_mapping_call(node)):
         return []
     entries: list[tuple[str | None, ast.expr]] = []
     stack: list[ast.Dict | ast.Call | tuple[str | None, ast.expr]] = [node]
@@ -523,7 +535,7 @@ def node_mapping_entries(node: ast.AST) -> list[tuple[str | None, ast.expr]]:
         if isinstance(current, tuple):
             entries.append(current)
         elif isinstance(current, ast.Dict):
-            entries.extend(dict_display_entries(current))
+            push_dict_display_children(current, stack)
         else:
             push_mapping_call_children(current, stack)
     return entries
@@ -545,24 +557,47 @@ def node_barrier_pairs(node: ast.AST) -> list[tuple[str, ast.expr]]:
     return []
 
 
+def mapping_expression_nodes(tree: ast.AST) -> list[ast.Dict | ast.Call]:
+    """Return dict displays and dict/update calls in tree ordered by source position."""
+    return sorted(
+        (node for node in ast.walk(tree) if isinstance(node, ast.Dict) or is_mapping_call(node)),
+        key=lambda node: (node.lineno, node.col_offset),
+    )
+
+
 def post_barrier_unpack_line(node: ast.AST) -> int | None:
     """Line of the first **os.environ unpack placed after a barrier key in node, else None."""
     seen_barrier = False
     for key, value in node_mapping_entries(node):
         if key is not None and is_barrier_value(key, value):
             seen_barrier = True
-        elif key is None and seen_barrier and is_environ_mapping(value):
+        elif (
+            key is None
+            and seen_barrier
+            and (is_environ_mapping(value) or is_environ_dict_arg(value))
+        ):
             return value.lineno
     return None
 
 
+def overridden_barrier_entry(node: ast.AST) -> tuple[str, int] | None:
+    """First barrier key set and later overridden by a non-barrier in node, with line."""
+    seen_barrier: set[str] = set()
+    overridden: dict[str, int] = {}
+    for key, value in node_mapping_entries(node):
+        if key is None or key not in BARRIER_KEYS:
+            continue
+        if is_barrier_value(key, value):
+            seen_barrier.add(key)
+            overridden.pop(key, None)
+        elif key in seen_barrier:
+            overridden[key] = value.lineno
+    return next(iter(overridden.items()), None)
+
+
 def barrier_order_violation(name: str, tree: ast.AST) -> str:
     """Refuse **os.environ unpacking placed after GIT_CONFIG_* barrier keys."""
-    candidates = sorted(
-        (node for node in ast.walk(tree) if isinstance(node, ast.Dict) or is_mapping_call(node)),
-        key=lambda node: (node.lineno, node.col_offset),
-    )
-    for node in candidates:
+    for node in mapping_expression_nodes(tree):
         lineno = post_barrier_unpack_line(node)
         if lineno is not None:
             return (
@@ -572,15 +607,33 @@ def barrier_order_violation(name: str, tree: ast.AST) -> str:
     return ""
 
 
+def barrier_override_violation(name: str, tree: ast.AST) -> str:
+    """Refuse barrier keys set and then overridden by a non-barrier in one expression."""
+    for node in mapping_expression_nodes(tree):
+        overridden = overridden_barrier_entry(node)
+        if overridden is not None:
+            key, lineno = overridden
+            return (
+                f"{name}:{lineno}: {key} is set to a barrier and then overridden "
+                "in the same expression; keep the barrier value last"
+            )
+    return ""
+
+
+def barrier_expression_violation(name: str, tree: ast.AST) -> str:
+    """First barrier order or same-expression override violation in tree, else empty."""
+    return barrier_order_violation(name, tree) or barrier_override_violation(name, tree)
+
+
 def fixture_config_violation(name: str, tree: ast.AST) -> str:
     """Require explicit global and system config isolation in Python fixture files."""
     path = Path(name)
     fixture = TEST_SCRIPT.search(name) or "tests" in path.parts or "fixture" in path.name
     if not fixture:
         return ""
-    order_violation = barrier_order_violation(name, tree)
-    if order_violation:
-        return order_violation
+    barrier_violation = barrier_expression_violation(name, tree)
+    if barrier_violation:
+        return barrier_violation
     assigned = {
         key
         for node in ast.walk(tree)
@@ -1157,6 +1210,7 @@ class GitFixtureIsolation(unittest.TestCase):
                 self.assertIn(missing, diagnostic)
         self.test_python_ast_barrier_refuses_non_executable_forms()
         self.test_python_ast_barrier_refuses_post_barrier_environ_unpack()
+        self.test_python_ast_barrier_refuses_same_expression_override()
         self.test_python_ast_marker_refuses_comments_and_strings()
         self.test_python_ast_comprehension_and_filter_allowlist()
         self.check_accepted_python_isolation(canonical, create)
@@ -1190,6 +1244,8 @@ class GitFixtureIsolation(unittest.TestCase):
             f"dict(**os.environ, {kw_barriers})",
             f"dict(os.environ, {kw_barriers})",
             f"dict({{**os.environ}}, {kw_barriers})",
+            f"{{**os.environ, **{{{barriers}}}}}",
+            f"dict(**os.environ, **{{{barriers}}})",
         ):
             with self.subTest(accepted=accepted):
                 self.assertEqual(
@@ -1210,6 +1266,10 @@ class GitFixtureIsolation(unittest.TestCase):
             f"dict({{{barriers}}}, **os.environ)",
             f"env.update({{{barriers}}}, **os.environ.copy())",
             f"dict(dict({kw_barriers}), **os.environ)",
+            f"{{**{{{barriers}}}, **os.environ}}",
+            f"dict(**{{{barriers}}}, **os.environ)",
+            f"{{**dict({kw_barriers}), **os.environ}}",
+            f"{{**{{**{{{barriers}}}}}, **os.environ}}",
         ):
             with self.subTest(rejected=rejected):
                 self.assertEqual(
@@ -1224,18 +1284,55 @@ class GitFixtureIsolation(unittest.TestCase):
         self.assertEqual(unisolated_git(name, two_displays), expected)
         create_env = 'git("init", "-q", env=out)\n'
         with self.subTest(call=create_env):
-            self.assertEqual(
-                unisolated_git(
-                    name, canonical + f"out = dict({{{barriers}}}, **os.environ)\n" + create_env
-                ),
-                expected,
-            )
-            self.assertEqual(
-                unisolated_git(
-                    name, canonical + f"out = dict(os.environ, {kw_barriers})\n" + create_env
-                ),
-                "",
-            )
+            bad_call = f"out = dict({{{barriers}}}, **os.environ)\n"
+            good_call = f"out = dict(os.environ, {kw_barriers})\n"
+            self.assertEqual(unisolated_git(name, canonical + bad_call + create_env), expected)
+            self.assertEqual(unisolated_git(name, canonical + good_call + create_env), "")
+
+    def test_python_ast_barrier_refuses_same_expression_override(self) -> None:
+        """Refuse barrier keys overridden later in the same expression unless by a barrier."""
+        prefix = 'env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}\n'
+        suffix = '\ngit("init", "-q")\n'
+        barriers = '{"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}'
+        fallback = 'os.environ.get("GIT_CONFIG_GLOBAL", os.devnull)'
+        for key, expr in (
+            ("GIT_CONFIG_GLOBAL", f"dict({barriers}, GIT_CONFIG_GLOBAL={fallback})"),
+            (
+                "GIT_CONFIG_GLOBAL",
+                '{"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", '
+                '"GIT_CONFIG_GLOBAL": os.environ["X"]}',
+            ),
+            ("GIT_CONFIG_GLOBAL", f'{{**{barriers}, "GIT_CONFIG_GLOBAL": os.environ["X"]}}'),
+            ("GIT_CONFIG_NOSYSTEM", f'dict({barriers}, GIT_CONFIG_NOSYSTEM="0")'),
+            (
+                "GIT_CONFIG_SYSTEM",
+                'env.update({"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull}, '
+                'GIT_CONFIG_SYSTEM=os.environ["X"])',
+            ),
+        ):
+            with self.subTest(rejected=expr):
+                expected = (
+                    f"tests/test_override.py:2: {key} is set to a barrier and then overridden "
+                    "in the same expression; keep the barrier value last"
+                )
+                self.assertEqual(
+                    unisolated_git("tests/test_override.py", f"{prefix}out = {expr}{suffix}"),
+                    expected,
+                )
+        for valid in (
+            f'dict({barriers}, GIT_CONFIG_GLOBAL="/dev/null")',
+            '{"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", '
+            '"GIT_CONFIG_GLOBAL": "/dev/null"}',
+            '{"GIT_CONFIG_GLOBAL": os.environ["X"], "GIT_CONFIG_GLOBAL": os.devnull, '
+            '"GIT_CONFIG_NOSYSTEM": "1"}',
+            '{"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_GLOBAL": os.environ["X"], '
+            '"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}',
+        ):
+            with self.subTest(accepted=valid):
+                self.assertEqual(
+                    unisolated_git("tests/test_override.py", f"{prefix}out = {valid}{suffix}"),
+                    "",
+                )
 
     def test_python_ast_marker_refuses_comments_and_strings(self) -> None:
         """Require AST call markers, check helper-marked fixtures, and report syntax lines."""
