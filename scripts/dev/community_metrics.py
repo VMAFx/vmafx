@@ -280,13 +280,6 @@ def days_between(iso_then: str, now: datetime.datetime) -> float:
     return (now - datetime.datetime.fromisoformat(iso_then)).total_seconds() / 86400.0
 
 
-def _label_names(item: dict[str, Any]) -> set[str]:
-    return {
-        str(label.get("name", "")) if isinstance(label, dict) else str(label)
-        for label in item.get("labels", [])
-    }
-
-
 def first_time_contributors(
     merged: list[dict[str, Any]],
     window_start: datetime.datetime,
