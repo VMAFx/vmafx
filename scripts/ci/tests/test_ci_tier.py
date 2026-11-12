@@ -138,6 +138,29 @@ class Decide(unittest.TestCase):
         self.assertEqual(decide(facts, exempt=True).tier, ci_tier.RELEASE_LIGHT)
         self.assertEqual(decide(facts, exempt=False).tier, ci_tier.LIGHT)
 
+    def test_exempt_release_branch_changing_tier_config_owes_full(self) -> None:
+        """An exempt release pull request changing ci-tier.json owes full before cut-label check."""
+        for labels in ((), ("autorelease: cut",)):
+            with self.subTest(labels=labels):
+                decision = decide(
+                    event(head_ref=RELEASE_REF, labels=labels),
+                    exempt=True,
+                    paths=[".github/ci-tier.json", ".release-please-manifest.json"],
+                )
+                self.assertEqual(decision.tier, ci_tier.FULL)
+                self.assertEqual(
+                    decision.reason,
+                    f"release pull request changes tier configuration {ci_tier.TIER_CONFIG_PATH!r}",
+                )
+
+    def test_exempt_release_branch_without_tier_config_stays_release_light(self) -> None:
+        """Release-only or omitted changed_paths keep an exempt release PR release-light."""
+        facts = event(head_ref=RELEASE_REF)
+        manifest_only = decide(facts, exempt=True, paths=[".release-please-manifest.json"])
+        self.assertEqual(manifest_only.tier, ci_tier.RELEASE_LIGHT)
+        default_paths = ci_tier.decide(facts, CONFIG, release_exempt=lambda: True)
+        self.assertEqual(default_paths.tier, ci_tier.RELEASE_LIGHT)
+
     def test_cut_label_makes_the_release_pull_request_full(self) -> None:
         facts = event(head_ref=RELEASE_REF, labels=("autorelease: cut",))
         self.assertEqual(decide(facts, exempt=True).tier, ci_tier.FULL)
@@ -658,6 +681,34 @@ class RunFullPaths(unittest.TestCase):
                 with redirect_stderr(io.StringIO()):
                     decision = ci_tier.run(env, ci_tier.DEFAULT_CONFIG, fetch)
                 self.assertEqual(decision.tier, expected)
+
+    def test_bot_release_changing_tier_config_owes_full_with_single_fetch(self) -> None:
+        """A bot release PR touching ci-tier.json owes full once-fetched, cut label or not."""
+        for labels in ([], ["autorelease: cut"]):
+            with self.subTest(labels=labels):
+                file_calls: list[str] = []
+
+                def fetch(
+                    path: str,
+                    labels: Sequence[str] = labels,
+                    seen: list[str] = file_calls,
+                ) -> object:
+                    if "/files" in path:
+                        seen.append(path)
+                        return [
+                            {"filename": ".release-please-manifest.json"},
+                            {"filename": ci_tier.TIER_CONFIG_PATH},
+                        ]
+                    return [{"name": label} for label in labels]
+
+                env = self.base_env(
+                    HEAD_REF=RELEASE_REF, PR_AUTHOR="github-actions[bot]", PR_AUTHOR_TYPE="Bot"
+                )
+                with redirect_stderr(io.StringIO()):
+                    decision = ci_tier.run(env, ci_tier.DEFAULT_CONFIG, fetch)
+                self.assertEqual(len(file_calls), 1)
+                self.assertEqual(decision.tier, ci_tier.FULL)
+                self.assertIn(ci_tier.TIER_CONFIG_PATH, decision.reason)
 
     def test_run_fetches_pull_request_files_at_most_once_across_release_and_full_paths(
         self,

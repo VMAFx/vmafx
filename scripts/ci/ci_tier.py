@@ -12,14 +12,16 @@ the answer to every workflow. Three tiers:
     push, a dispatch, a schedule), every fork pull request, an own pull
     request carrying the ``full`` label, an own pull request whose changed
     paths match ``full_paths`` or change the tier definition (or whose changed
-    paths are unavailable), and a release pull request carrying the ``cut`` label.
+    paths are unavailable), and a release pull request carrying the ``cut``
+    label or changing the tier definition.
 ``light``
     A pull request whose head repository is this repository, Renovate
     included, when none of its changed paths matches ``full_paths``.
 ``release-light``
-    The machine-generated release pull request without the cut label. The
-    release head ref alone is not trusted: ``release-pr-exempt.sh`` (ADR-1151,
-    ADR-1388) verifies the author and, for the maintainer's token, the diff.
+    The machine-generated release pull request without the cut label when it
+    does not change the tier definition. The release head ref alone is not
+    trusted: ``release-pr-exempt.sh`` (ADR-1151, ADR-1388) verifies the author
+    and, for the maintainer's token, the diff.
 
 ``--check-full-paths`` verifies against ``git ls-files`` that every pattern in
 ``full_paths`` matches at least one tracked file.
@@ -207,6 +209,16 @@ def _check_path_bounds(paths: Sequence[str], globs: Sequence[str]) -> None:
         raise TierError(f"more than {MAX_FULL_PATHS} full_paths entries")
 
 
+def _tier_config_decision(paths: Sequence[str] | None, prefix: str) -> Decision | None:
+    """Return ``full`` when known ``paths`` change ``TIER_CONFIG_PATH``."""
+    if paths is None:
+        return None
+    _check_path_bounds(paths, ())
+    if TIER_CONFIG_PATH in paths:
+        return Decision(FULL, f"{prefix} tier configuration {TIER_CONFIG_PATH!r}")
+    return None
+
+
 def _matching_full_path(paths: Sequence[str], globs: Sequence[str]) -> tuple[str, str] | None:
     """Return the first ``(changed_path, glob)`` pair matched under ``fnmatchcase``."""
     _check_path_bounds(paths, globs)
@@ -229,8 +241,9 @@ def _decide_own_pull_request(
     if paths is None:
         return Decision(FULL, "changed paths unavailable")
     _check_path_bounds(paths, full_paths)
-    if TIER_CONFIG_PATH in paths:
-        return Decision(FULL, f"changed tier configuration {TIER_CONFIG_PATH!r}")
+    config_decision = _tier_config_decision(paths, "changed")
+    if config_decision is not None:
+        return config_decision
     matched = _matching_full_path(paths, full_paths)
     if matched is not None:
         path, glob = matched
@@ -254,9 +267,14 @@ def decide(
     if labels["full"] in event.labels:
         return Decision(FULL, f"label {labels['full']!r}")
     if event.head_ref.startswith(str(config["release_ref_prefix"])) and release_exempt():
-        if labels["cut"] in event.labels:
-            return Decision(FULL, f"release pull request with label {labels['cut']!r}")
-        return Decision(RELEASE_LIGHT, "release pull request without the cut label")
+        config_decision = _tier_config_decision(changed_paths(), "release pull request changes")
+        if config_decision is not None:
+            return config_decision
+        return (
+            Decision(FULL, f"release pull request with label {labels['cut']!r}")
+            if labels["cut"] in event.labels
+            else Decision(RELEASE_LIGHT, "release pull request without the cut label")
+        )
     return _decide_own_pull_request(config, changed_paths)
 
 

@@ -20,12 +20,15 @@ area: gates
   Release exemption: unknown paths -> false; never replace unknown with empty
   sequence. Fetched release-only paths -> `release-light`; cut label -> full.
   File fetch cache shared between release exemption and path matching.
+- Release exemption + config change -> `full` before cut-label check; shared
+  helper `_tier_config_decision`.
 - Every glob matches tracked file. Drift hook `check-ci-tier-full-paths`:
   `.pre-commit-config.yaml`; always run at pre-commit and pre-push.
   `ci_tier.py --check-full-paths`: unmatched glob -> non-zero + named pattern.
 - Proof: `tests/test_ci_tier.py`, classes `Decide`, `RunFullPaths`,
   `FullPathsDrift`. Cases: deleted listed path + removed glob; config alone;
-  unlisted path; glob boundary; unknown release diff; release-only diff;
-  cut label; tracked rename + restoration; path-count boundaries.
+  release config change; unlisted path; glob boundary; unknown release diff;
+  release-only diff; cut label; tracked rename + restoration; path-count
+  boundaries.
 - Audit: [Research-3536](../../../docs/research/3536-ci-tier-full-paths.md).
   Decision: [ADR-3536](../../../docs/adr/3536-ci-tier-full-paths.md).

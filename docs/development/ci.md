@@ -194,7 +194,9 @@ verify with `python3 -B scripts/ci/ci_tier.py --check-full-paths` and
 `python3 -B scripts/ci/tests/test_ci_tier.py`.
 
 Changing the tier definition owes full CI even when the change removes the
-last pattern. Release branches also owe full CI when their changed paths
+last pattern, and that rule holds for exempt release pull requests too: a
+release branch touching `.github/ci-tier.json` runs the full tier even without
+`autorelease: cut`. Release branches also owe full CI when their changed paths
 cannot be fetched; an unavailable diff never earns the release exemption.
 
 What a contributor sees:

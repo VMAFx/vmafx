@@ -46,7 +46,10 @@ must run outside `ci-tier.yml`. Pull-request `Pre-Commit` runs diff-scoped via
    first matched path and pattern. Before matching globs, a change to
    `.github/ci-tier.json` selects `full` with that filename in the reason,
    including when the same change removes a listed file and its last glob.
-   `TIER_CONFIG_PATH` owns the relative filename for routing and config reads.
+   That tier-configuration check also runs for an exempt release pull request
+   before the `autorelease: cut` label check, so a release bot cannot earn
+   `release-light` while changing the tier definition. `TIER_CONFIG_PATH` owns
+   the relative filename for routing and config reads.
 
 3. **Fail-closed behaviour.** When an own pull request's changed paths cannot
    be obtained (missing API token, missing pull-request number, or API
