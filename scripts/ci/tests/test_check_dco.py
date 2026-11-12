@@ -12,7 +12,6 @@ statuses, and narrow sign-off exemptions (which never waive attribution).
 from __future__ import annotations
 
 import json
-import os
 import shlex
 import sys
 import tempfile
@@ -293,7 +292,7 @@ class DcoGateTest(unittest.TestCase):
 
         Omitting both CLI revision flags and environment fallbacks must exit 2.
         """
-        env = {k: v for k, v in os.environ.items() if k not in ("BASE_SHA", "HEAD_SHA")}
+        env = fx.clean_env()
         res = run(
             [sys.executable, "-I", str(fx.GATE)],
             allowed_executables=(sys.executable,),
