@@ -472,9 +472,12 @@ class GitIntegration(unittest.TestCase):
     """Drive the real CLI against a throwaway repository."""
 
     def _repo(self) -> tuple[str, GitCommand]:
+        """Create an isolated temporary Git repository and return its path and command runner."""
         tmp = tempfile.mkdtemp()
         env = {
             **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_AUTHOR_NAME": "t",
             "GIT_AUTHOR_EMAIL": "t@t",
             "GIT_COMMITTER_NAME": "t",
