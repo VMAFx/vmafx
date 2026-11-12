@@ -103,9 +103,19 @@ SHELL_GIT_WRITE = re.compile(
     r"|config\s+(?!--" + _READ_ONLY + r"\b)"
     r"(?:--(?:local|global|worktree|system|add|replace-all|file\s+\S+)\s+)*[\w.-]+\.[\w.-]+[ \t]+\S)"
 )
-# Before the subcommand, a Git call may hold code and option literals ("-q", or "-C"/"-c" and
-# their value), never another string: in git("commit", "-m", "init") the subcommand is commit.
-_CODE_GIT_PREFIX = r"""(?:[^"'\n]|["']-[cC]["']\s*,\s*["'][^"'\n]*["']|["']-[^"'\n]*["'])"""
+# Before the subcommand, a Git call may hold code, option literals ("-q", or "-C"/"-c" and
+# their value) and strings inside an expression (root / "repo", "repo-%d" % n, Path("repo"),
+# f"{root}/repo"), never a standalone string: in git("commit", "-m", "init") the subcommand is
+# commit.
+_QUOTED = r"""["'][^"'\n]*["']"""
+_CODE_GIT_PREFIX = (
+    r"""(?:[^"'\n]"""
+    + rf"""|["']-[cC]["']\s*,\s*{_QUOTED}"""
+    + r"""|["']-[^"'\n]*["']"""
+    + rf"""|[/+%]\s*{_QUOTED}|{_QUOTED}\s*[/+%]"""
+    + rf"""|\w\(\s*{_QUOTED}\s*\)"""
+    + rf"""|\b[rRbB]?[fF][rR]?{_QUOTED})"""
+)
 # Match git at a word boundary or after an underscore (e.g. run_git), never inside digit.
 CODE_GIT_WRITE = re.compile(
     r"""(?im)^(?!\s*(?:#|//))[^\n]*(?:\b|_)git\w*["']?"""
@@ -1519,6 +1529,11 @@ class GitFixtureIsolation(unittest.TestCase):
             'run_git(["clone", url])\n',
             'subprocess.run(["git", "-C", str(path), "init"])\n',
             'git("-c", "init.defaultBranch=main", "init")\n',
+            'run_git(root / "scratch", "init", environment=os.environ.copy())\n',
+            'git(root / "scratch", "init")\n',
+            'self._git("repo-%d" % index, "init")\n',
+            'self._git(Path("scratch"), "init")\n',
+            'run_git(f"{root}/scratch", "clone", url)\n',
         ):
             with self.subTest(text=text):
                 self.assertIsNotNone(CODE_GIT_WRITE.search(text))
@@ -1531,6 +1546,8 @@ class GitFixtureIsolation(unittest.TestCase):
             'self.run_git("status", "--short")\n',
             'self._git("status", "init")\n',
             '_git(temp_dir, "commit", "-q", "-m", "init")\n',
+            '_git(root / "scratch", "commit", "-m", "init")\n',
+            'run_git(Path("scratch"), "status", "init")\n',
             'digit("init")\n',
             'self.digit("clone", url)\n',
         ):
