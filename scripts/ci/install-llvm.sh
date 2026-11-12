@@ -59,7 +59,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 installer=$(mktemp)
 tmp_files+=("$installer")
-wget -qO "$installer" --tries=5 --retry-connrefused --waitretry=5 --timeout=30 \
+wget -qO "$installer" --tries=5 --retry-connrefused --retry-on-host-error --waitretry=5 --timeout=30 \
   https://apt.llvm.org/llvm.sh
 if ! printf '%s  %s\n' "$LLVM_INSTALLER_SHA256" "$installer" | sha256sum --check --status; then
   echo "install-llvm: llvm.sh SHA-256 mismatch; refusing to execute" >&2
