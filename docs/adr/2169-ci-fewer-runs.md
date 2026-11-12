@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-2169: CI runs the tier a pull request owes, not the whole suite on every push
 
-- **Status**: Accepted
+- **Status**: Accepted (own-PR tier amended by [ADR-3536](3536-ci-tier-full-paths.md))
 - **Date**: 2026-10-07
 - **Deciders**: lusoris
 - **Tags**: `ci`, `renovate`, `release`, `agents`
