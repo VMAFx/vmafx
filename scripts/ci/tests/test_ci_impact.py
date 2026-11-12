@@ -160,8 +160,15 @@ OWN_PATHS_ONLY = (
 )
 
 
-def _plan_for(paths: list[str], statuses: list[str] | None = None) -> ImpactPlan:
-    config = planner.load_config(CONFIG)
+def _plan_for(
+    paths: list[str],
+    statuses: list[str] | None = None,
+    *,
+    config: dict[str, object] | None = None,
+) -> ImpactPlan:
+    """Plan selected paths against the live configuration or an injected fixture."""
+    if config is None:
+        config = planner.load_config(CONFIG)
     statuses = statuses or ["M"] * len(paths)
     changes = tuple(
         planner.Change(status=s, paths=(p,)) for s, p in zip(statuses, paths, strict=True)
@@ -795,6 +802,7 @@ class BuildWorkRouting(unittest.TestCase):
     )
 
     def test_the_python_steps_inputs_select_it(self) -> None:
+        """Select build legs for every input read by their Python steps."""
         for path in self.PYTHON_STEP_INPUTS:
             with self.subTest(path=path):
                 plan = _plan_for([path])
@@ -803,9 +811,11 @@ class BuildWorkRouting(unittest.TestCase):
                     self.assertFalse(plan.selectors["c_core"])
 
     def test_core_changes_still_select_it(self) -> None:
+        """Preserve build selection for core source changes."""
         self.assertTrue(_plan_for(["core/src/libvmaf.c"]).selectors[self.SELECTOR])
 
     def test_files_build_yml_does_not_read_leave_it_off(self) -> None:
+        """Keep unrelated changes out of the build selector."""
         for path in (
             "docs/index.md",
             "go.mod",
@@ -817,6 +827,7 @@ class BuildWorkRouting(unittest.TestCase):
                 self.assertFalse(_plan_for([path]).selectors[self.SELECTOR])
 
     def test_every_pytest_target_of_build_yml_selects_it(self) -> None:
+        """Select build legs for each pytest target declared by the workflow."""
         text = (CONFIG.parent / "workflows" / "build.yml").read_text(encoding="utf-8")
         targets = re.findall(r"python -m pytest (\S+\.py)", text)
         self.assertNotEqual(targets, [], "build.yml must run a pytest target")
@@ -827,6 +838,7 @@ class BuildWorkRouting(unittest.TestCase):
                 self.assertTrue(_plan_for([tracked]).selectors[self.SELECTOR])
 
     def test_every_tox_config_build_yml_runs_selects_it(self) -> None:
+        """Select build legs for every tox configuration the workflow runs."""
         text = (CONFIG.parent / "workflows" / "build.yml").read_text(encoding="utf-8")
         configs = re.findall(r"tox -c (\S+)", text)
         self.assertNotEqual(configs, [], "build.yml must run tox")
@@ -835,6 +847,7 @@ class BuildWorkRouting(unittest.TestCase):
                 self.assertTrue(_plan_for([f"{directory}/tox.ini"]).selectors[self.SELECTOR])
 
     def test_every_lock_build_yml_installs_selects_it(self) -> None:
+        """Select build legs when an installed dependency lock changes."""
         text = (CONFIG.parent / "workflows" / "build.yml").read_text(encoding="utf-8")
         locks = sorted(set(re.findall(r"-r (requirements/\S+\.txt)", text)))
         self.assertNotEqual(locks, [], "build.yml must install from a lock")
@@ -843,6 +856,7 @@ class BuildWorkRouting(unittest.TestCase):
                 self.assertTrue(_plan_for([lock]).selectors[self.SELECTOR])
 
     def test_planted_c_core_only_selector_misses_python_changes(self) -> None:
+        """Reject the old selector that omitted Python test inputs."""
         config = copy.deepcopy(planner.load_config(CONFIG))
         config["selectors"][self.SELECTOR]["patterns"] = []
         for path in ("compat/python-vmaf/tools/decorator.py", "python/test/result_test.py"):
