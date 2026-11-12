@@ -155,21 +155,38 @@ python3 scripts/dev/install_merge_train_guard.py \
 ```
 
 After reviewing the JSON plan, repeat the same command with
-`--apply --expect-plan THE_PRINTED_SHA256`. Any changed runtime target or gateway
-source requires a new preview. The helper backs up originals/modes into a fresh
-`migration-*/` directory with `plan.json` and `receipt.json`, copies the committed
-gateway and composer to `releases/RELEASE_NAME/`, and leaves `PAUSED` present.
-`RELEASE_NAME` is the SHA-256 of `GATEWAY_SHA256:COMPOSER_SHA256`, so a change
-to either script installs into a new directory and leaves the old one intact.
+`--apply --expect-plan THE_PRINTED_SHA256`. Any changed runtime target, gateway,
+composer or library source requires a new preview. The helper backs up originals
+and modes into a fresh `migration-*/` directory with `plan.json` and `receipt.json`,
+copies the committed runtime files to `releases/RELEASE_NAME/`, and leaves `PAUSED` present.
+The preview records `gateway_sha256`, `composer_sha256` and a sorted
+`library_sha256` map from repository-relative library paths to SHA-256 digests.
+`RELEASE_NAME` hashes the canonical JSON of those three fields (sorted keys,
+compact separators), so a library-only change also installs into a new directory
+and leaves the old release intact. Installation rechecks library bytes against
+the preview before changing runtime state.
 It preserves existing hold text and unions new protected owners into the
-existing policy.
-Every generated entry point verifies the gateway's hash before execution. A
-failure preserves the backups and pause; do not start an incomplete migration.
+existing policy. A failure preserves the backups and pause; do not start an
+incomplete migration.
 
-The release directory holds both the gateway (`merge_train_guard.py`) and the
-squash message composer (`squash_message.py`), installed read-only (`0o444`).
-Every generated entry point verifies both the gateway's hash and the composer's
-hash before execution; tampering with either file causes the launcher to refuse.
+The release directory contains the gateway (`merge_train_guard.py`), the squash
+message composer (`squash_message.py`), and its imported libraries under
+`scripts/lib/`, all installed read-only (`0o444`). The installer walks the
+committed gateway's Python AST for absolute `scripts.lib` imports, follows their
+library dependencies, and includes package initializers; `scripts/lib/__init__.py`
+ships even when the gateway imports no library. Every source must match its
+committed blob at the preview's `source_commit`.
+
+Every generated launcher verifies all runtime hashes before executing the
+gateway. A changed or missing library refuses with
+`refused: installed library hash changed: scripts/lib/MODULE.py`. Launchers
+remove the caller's working directory and adapter directory from Python's import
+path, put the release first, and bind the `scripts` package to that release only.
+Shell adapters use Python's `-P` safe-path option; the operator adapter removes
+its script directory before importing launcher dependencies. Adapters therefore
+work outside a checkout and ignore a caller's or state directory's planted
+`scripts` package. The gateway's repository copy continues to import from the
+repository root; composer loading still uses the file beside the installed gateway.
 
 The helper never kills or launches a process. It installs this mapping:
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shutil
 import stat
 import sys
 import tempfile
@@ -84,6 +85,9 @@ class MigrationContract(unittest.TestCase):
         composer = self.source / installer.COMPOSER_PATH
         composer.parent.mkdir(parents=True, exist_ok=True)
         composer.write_text("TEST_COMPOSER = True\n")
+        library = self.source / "scripts/lib"
+        library.mkdir()
+        (library / "__init__.py").write_text("# Fixture library package.\n")
         installer.git(self.source, "add", ".")
         installer.git(self.source, "commit", "-m", "fixture gateway and composer")
         self.state = self.directory / "state with spaces"
@@ -106,6 +110,240 @@ class MigrationContract(unittest.TestCase):
             self.state,
             ["active-root"],
             [str(self.directory / "agent-active")],
+        )
+
+    def real_gateway(self) -> None:
+        """Commit real runtime sources; adapters still target only the disposable repository."""
+        checkout = Path(__file__).resolve().parents[3]
+        for relative in (
+            installer.SOURCE_PATH,
+            installer.COMPOSER_PATH,
+            "scripts/lib/__init__.py",
+            "scripts/lib/safe_subprocess.py",
+        ):
+            shutil.copyfile(checkout / relative, self.source / relative)
+        installer.git(self.source, "add", ".")
+        installer.git(self.source, "commit", "-m", "real gateway and runtime dependencies")
+
+    def run_adapter(self, name: str, cwd: Path) -> Any:
+        """Run installed entry points with offline gh and isolated fixture Git configuration."""
+        binaries = self.directory / "bin"
+        binaries.mkdir(exist_ok=True)
+        gh = binaries / "gh"
+        gh.write_text("#!/bin/sh\nprintf '[]\\n'\n")
+        gh.chmod(0o755)
+        env = dict(
+            guard.environment(),
+            PATH=str(binaries) + os.pathsep + os.environ.get("PATH", ""),
+            GIT_CONFIG_GLOBAL=os.devnull,
+            GIT_CONFIG_NOSYSTEM="1",
+            CUDA_VISIBLE_DEVICES="",
+        )
+        adapter = self.state / name
+        argv = [sys.executable, str(adapter)] if name.endswith(".py") else [str(adapter)]
+        return installer.run_command(
+            argv,
+            allowed_executables=(argv[0],),
+            cwd=cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout_seconds=30,
+        )
+
+    def test_real_gateway_adapters_start_outside_checkout(self) -> None:
+        self.real_gateway()
+        value, committed = self.plan()
+        installer.install(value, committed, installer.plan_hash(value))
+        outside = self.directory / "empty caller"
+        outside.mkdir()
+        for name in ("rebase-clean.sh", "train.sh", "merge_train_operator.py"):
+            with self.subTest(adapter=name):
+                result = self.run_adapter(name, outside)
+                self.assertNotIn("ModuleNotFoundError", result.stderr)
+                self.assertNotIn("ImportError", result.stderr)
+                if name == "rebase-clean.sh":
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn("an explicit positive PR number is required", result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_real_gateway_ignores_planted_caller_and_adapter_libraries(self) -> None:
+        self.real_gateway()
+        value, committed = self.plan()
+        installer.install(value, committed, installer.plan_hash(value))
+        caller = self.directory / "planted caller"
+        caller.mkdir()
+        ambient = self.directory / "planted import path"
+        for root in (caller, self.state, ambient):
+            library = root / "scripts/lib"
+            library.mkdir(parents=True)
+            for relative in (
+                "scripts/__init__.py",
+                "scripts/lib/__init__.py",
+                "scripts/lib/safe_subprocess.py",
+            ):
+                (root / relative).write_text("raise RuntimeError('PLANTED_LIBRARY_LOADED')\n")
+        for name in ("rebase-clean.sh", "train.sh", "merge_train_operator.py"):
+            with self.subTest(adapter=name), patch.dict(os.environ, {"PYTHONPATH": str(ambient)}):
+                result = self.run_adapter(name, caller)
+                self.assertNotIn("PLANTED_LIBRARY_LOADED", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertIn(result.returncode, (0, 1), result.stderr)
+
+    def test_library_manifest_includes_transitive_imports_and_package_initializers(self) -> None:
+        sources = {
+            installer.SOURCE_PATH: (
+                "import scripts.lib.first as first\nfrom scripts.lib.second import value\n"
+                "from scripts.lib import third\nfrom scripts.lib.pkg import leaf\n"
+            ),
+            "scripts/lib/__init__.py": "import scripts.lib.bootstrap\n",
+            "scripts/lib/bootstrap.py": "# Package initialization dependency.\n",
+            "scripts/lib/first.py": "from scripts.lib.second import value\n",
+            "scripts/lib/second.py": "import scripts.lib.first\nvalue = 1\n",
+            "scripts/lib/third.py": "value = 3\n",
+            "scripts/lib/pkg.py": "raise RuntimeError('package takes precedence')\n",
+            "scripts/lib/pkg/__init__.py": "import scripts.lib.third\n",
+            "scripts/lib/pkg/leaf.py": "value = 4\n",
+        }
+        for relative, content in sources.items():
+            target = self.source / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+        installer.git(self.source, "add", ".")
+        installer.git(self.source, "commit", "-m", "transitive library fixture")
+        value, committed = self.plan()
+        expected = {
+            relative: installer.sha256(content.encode())
+            for relative, content in sorted(sources.items())
+            if relative.startswith("scripts/lib/") and relative != "scripts/lib/pkg.py"
+        }
+        self.assertEqual(value["library_sha256"], expected)
+        self.assertEqual(list(value["library_sha256"]), sorted(expected))
+        installer.install(value, committed, installer.plan_hash(value))
+        release = self.state / "releases" / installer.release_name(value)
+        for relative, digest in expected.items():
+            target = release / relative
+            self.assertEqual(installer.sha256(target.read_bytes()), digest)
+            self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o444)
+
+    def test_no_library_imports_ships_only_package_initializer(self) -> None:
+        (self.source / "scripts/lib/unused.py").write_text("raise RuntimeError('unused')\n")
+        installer.git(self.source, "add", ".")
+        installer.git(self.source, "commit", "-m", "unreferenced library module")
+        value, committed = self.plan()
+        relative = "scripts/lib/__init__.py"
+        self.assertEqual(
+            value["library_sha256"],
+            {relative: installer.sha256((self.source / relative).read_bytes())},
+        )
+        installer.install(value, committed, installer.plan_hash(value))
+        release = self.state / "releases" / installer.release_name(value)
+        self.assertTrue((release / relative).is_file())
+        self.assertFalse((release / "scripts/lib/unused.py").exists())
+
+    def test_library_source_must_match_committed_blob(self) -> None:
+        self.real_gateway()
+        for relative in ("scripts/lib/__init__.py", "scripts/lib/safe_subprocess.py"):
+            with self.subTest(module=relative):
+                original = (self.source / relative).read_bytes()
+                (self.source / relative).write_bytes(original + b"# Uncommitted.\n")
+                with self.assertRaisesRegex(ValueError, "library.*committed Git blob"):
+                    self.plan()
+                (self.source / relative).write_bytes(original)
+
+    def test_missing_committed_import_and_invalid_syntax_refuse_preview(self) -> None:
+        for content, message in (
+            ("import scripts.lib.missing\n", "missing committed library module"),
+            ("from scripts.lib import (\n", "cannot parse imports"),
+        ):
+            with self.subTest(source=content):
+                (self.source / installer.SOURCE_PATH).write_text(content)
+                installer.git(self.source, "commit", "-am", "invalid import fixture")
+                with self.assertRaisesRegex(ValueError, message):
+                    self.plan()
+
+    def test_library_bytes_rechecked_against_preview_before_install(self) -> None:
+        self.real_gateway()
+        value, committed = self.plan()
+        original = installer.load_committed_blob
+
+        def changed(source: Path, head: str, relative: str, label: str) -> bytes:
+            data = original(source, head, relative, label)
+            return data + b"# Changed.\n" if relative.startswith("scripts/lib/") else data
+
+        with patch.object(installer, "load_committed_blob", side_effect=changed):
+            with self.assertRaisesRegex(ValueError, "library bytes do not match the preview"):
+                installer.install(value, committed, installer.plan_hash(value))
+        self.assertFalse((self.state / "PAUSED").exists())
+        self.assertFalse((self.state / "releases").exists())
+
+    def test_each_installed_library_hash_is_checked(self) -> None:
+        self.real_gateway()
+        value, committed = self.plan()
+        installer.install(value, committed, installer.plan_hash(value))
+        release = self.state / "releases" / installer.release_name(value)
+        for relative in value["library_sha256"]:
+            with self.subTest(module=relative):
+                target = release / relative
+                original = target.read_bytes()
+                target.chmod(0o644)
+                target.write_text("raise RuntimeError('tampered library executed')\n")
+                for condition in ("tampered", "missing"):
+                    if condition == "missing":
+                        target.unlink()
+                    for name in ("rebase-clean.sh", "train.sh", "merge_train_operator.py"):
+                        with self.subTest(adapter=name, condition=condition):
+                            result = self.run_adapter(name, self.directory)
+                            self.assertEqual(result.returncode, 1, result.stderr)
+                            self.assertIn(
+                                f"refused: installed library hash changed: {relative}",
+                                result.stderr,
+                            )
+                            self.assertNotIn("Traceback", result.stderr)
+                target.write_bytes(original)
+                target.chmod(0o444)
+
+    def test_existing_different_library_refuses_overwrite(self) -> None:
+        value, committed = self.plan()
+        release = self.state / "releases" / installer.release_name(value)
+        target = release / "scripts/lib/__init__.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("# Foreign evidence.\n")
+        with self.assertRaisesRegex(ValueError, "unexpected library evidence"):
+            installer.install(value, committed, installer.plan_hash(value))
+        self.assertEqual(target.read_text(), "# Foreign evidence.\n")
+
+    def test_library_directory_symlink_refuses_without_following(self) -> None:
+        value, committed = self.plan()
+        release = self.state / "releases" / installer.release_name(value)
+        release.mkdir(parents=True)
+        outside = self.directory / "foreign libraries"
+        outside.mkdir()
+        (release / "scripts").symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "symlink release directory"):
+            installer.install(value, committed, installer.plan_hash(value))
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_library_only_change_creates_new_release_and_preserves_old(self) -> None:
+        self.real_gateway()
+        value, committed = self.plan()
+        installer.install(value, committed, installer.plan_hash(value))
+        old = self.state / "releases" / installer.release_name(value)
+        before = {str(p.relative_to(old)): p.read_bytes() for p in old.rglob("*.py")}
+        relative = "scripts/lib/safe_subprocess.py"
+        original = (self.source / relative).read_bytes()
+        (self.source / relative).write_bytes(original + b"# Library-only revision.\n")
+        installer.git(self.source, "commit", "-am", "library only")
+        fresh, fresh_committed = self.plan()
+        self.assertEqual(fresh["gateway_sha256"], value["gateway_sha256"])
+        self.assertEqual(fresh["composer_sha256"], value["composer_sha256"])
+        installer.install(fresh, fresh_committed, installer.plan_hash(fresh))
+        new = self.state / "releases" / installer.release_name(fresh)
+        self.assertNotEqual(new, old)
+        self.assertEqual((new / relative).read_bytes(), original + b"# Library-only revision.\n")
+        self.assertEqual(
+            {str(p.relative_to(old)): p.read_bytes() for p in old.rglob("*.py")}, before
         )
 
     def test_preview_is_read_only_and_apply_preserves_exact_originals_holds_and_policy(

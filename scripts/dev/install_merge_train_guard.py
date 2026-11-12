@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import fcntl
 import hashlib
 import json
@@ -67,6 +68,80 @@ def load_committed_blob(source: Path, head: str, relative_path: str, label: str)
     return committed
 
 
+def import_names(node: ast.AST) -> tuple[set[str], set[str]]:
+    """Separate explicit module names from possible submodules of absolute from-imports."""
+    if isinstance(node, ast.Import):
+        return {alias.name for alias in node.names}, set()
+    if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+        return {node.module}, {f"{node.module}.{alias.name}" for alias in node.names}
+    return set(), set()
+
+
+def is_library_module(name: str) -> bool:
+    return name == "scripts.lib" or name.startswith("scripts.lib.")
+
+
+def library_imports(data: bytes, relative_path: str) -> tuple[set[str], set[str]]:
+    """Collect absolute library imports and possible from-import submodules without execution."""
+    try:
+        tree = ast.parse(data, filename=relative_path)
+    except SyntaxError as exc:
+        raise ValueError(f"cannot parse imports in {relative_path}: {exc}") from exc
+    required: set[str] = set()
+    optional: set[str] = set()
+    for node in ast.walk(tree):
+        modules, submodules = import_names(node)
+        required.update(filter(is_library_module, modules))
+        optional.update(filter(is_library_module, submodules))
+    return required, optional
+
+
+def library_module_paths(module: str, available: set[str]) -> set[str]:
+    """Resolve a committed module and every package initializer along its import path."""
+    stem = module.replace(".", "/")
+    candidates = (f"{stem}/__init__.py", f"{stem}.py")
+    relative = next((path for path in candidates if path in available), None)
+    if relative is None:
+        raise ValueError(f"missing committed library module: {module}")
+    parents = {f"{parent}/__init__.py" for parent in Path(relative).parents}
+    return {relative} | (parents & available)
+
+
+def committed_libraries(source: Path, head: str, gateway: bytes) -> dict[str, bytes]:
+    """Close gateway/package imports over committed library blobs, including cycles once."""
+    available = set(
+        git(source, "ls-tree", "-r", "--name-only", head, "--", "scripts/lib").splitlines()
+    )
+    pending = {SOURCE_PATH, "scripts/lib/__init__.py"}
+    visited: set[str] = set()
+    libraries: dict[str, bytes] = {}
+    for _ in range(len(available) + 1):
+        if not pending:
+            return dict(sorted(libraries.items()))
+        relative = min(pending)
+        pending.remove(relative)
+        visited.add(relative)
+        data = (
+            gateway
+            if relative == SOURCE_PATH
+            else load_committed_blob(source, head, relative, f"library {relative}")
+        )
+        if relative != SOURCE_PATH:
+            libraries[relative] = data
+        required, optional = library_imports(data, relative)
+        optional = {
+            module
+            for module in optional
+            if f"{module.replace('.', '/')}.py" in available
+            or f"{module.replace('.', '/')}/__init__.py" in available
+        }
+        for module in sorted(required | optional):
+            pending.update(library_module_paths(module, available) - visited)
+    if pending:
+        raise ValueError("committed library import closure exceeded its module bound")
+    return dict(sorted(libraries.items()))
+
+
 def plan(
     source: Path, root: Path, state: Path, branches: list[str], worktrees: list[str]
 ) -> tuple[dict[str, Any], bytes]:
@@ -78,6 +153,7 @@ def plan(
     head = git(source, "rev-parse", "HEAD").strip()
     committed = load_committed_blob(source, head, SOURCE_PATH, "gateway")
     committed_composer = load_committed_blob(source, head, COMPOSER_PATH, "composer")
+    libraries = committed_libraries(source, head, committed)
     old = {name: snapshot(state / name) for name in CONTROL_FILES}
     policy: dict[str, Any] = {"schema": 1, "protected_branches": [], "protected_worktrees": []}
     if old["policy.json"] is not None:
@@ -101,6 +177,7 @@ def plan(
         "state": str(state),
         "gateway_sha256": sha256(committed),
         "composer_sha256": sha256(committed_composer),
+        "library_sha256": {path: sha256(data) for path, data in libraries.items()},
         "before": old,
         "policy": policy,
         "installer_sha256": sha256(Path(__file__).read_bytes()),
@@ -118,19 +195,42 @@ def launch_code(
     composer_expected: str,
     root: Path,
     state: Path,
+    library_sha256: dict[str, str],
 ) -> str:
-    composer = gateway.parent / "squash_message.py"
-    return (
-        "import hashlib,runpy,sys; from pathlib import Path; "
-        f"p=Path({str(gateway)!r}); "
-        f"actual=hashlib.sha256(p.read_bytes()).hexdigest(); expected={expected!r}; "
-        "actual==expected or sys.exit('refused: installed gateway hash changed'); "
-        f"cp=Path({str(composer)!r}); "
-        f"cactual=hashlib.sha256(cp.read_bytes()).hexdigest(); cexpected={composer_expected!r}; "
-        "cactual==cexpected or sys.exit('refused: installed composer hash changed'); "
-        f"sys.argv=[str(p),*sys.argv[1:],'--repo-root',{str(root)!r},'--state-dir',{str(state)!r}]; "
-        "runpy.run_path(str(p),run_name='__main__')"
-    )
+    """Verify runtime bytes and bind scripts to the release before entering the real gateway."""
+    checks = {
+        "merge_train_guard.py": (expected, "gateway hash changed"),
+        "squash_message.py": (composer_expected, "composer hash changed"),
+        **{
+            path: (digest, f"library hash changed: {path}")
+            for path, digest in sorted(library_sha256.items())
+        },
+    }
+    return f"""import sys
+sys.path[:] = [entry for entry in sys.path if entry and entry != {str(state)!r}]
+import hashlib, runpy, types
+from pathlib import Path
+p = Path({str(gateway)!r})
+for relative, (expected, label) in {checks!r}.items():
+    message = 'refused: installed ' + label
+    try:
+        actual = hashlib.sha256((p.parent / relative).read_bytes()).hexdigest()
+    except OSError:
+        sys.exit(message)
+    if actual != expected:
+        sys.exit(message)
+sys.path[:] = [str(p.parent), *(entry for entry in sys.path
+    if entry and Path(entry).resolve() not in (Path.cwd(), Path({str(state)!r})))]
+for name in tuple(sys.modules):
+    if name == 'scripts' or name.startswith('scripts.'):
+        del sys.modules[name]
+scripts = types.ModuleType('scripts')
+scripts.__path__ = [str(p.parent / 'scripts')]
+sys.modules['scripts'] = scripts
+sys.dont_write_bytecode = True
+sys.argv = [str(p), *sys.argv[1:], '--repo-root', {str(root)!r}, '--state-dir', {str(state)!r}]
+runpy.run_path(str(p), run_name='__main__')
+"""
 
 
 def adapters(
@@ -139,15 +239,17 @@ def adapters(
     composer_expected: str,
     root: Path,
     state: Path,
+    library_sha256: dict[str, str],
 ) -> dict[str, bytes]:
-    """Generate runtime adapter script contents bound to gateway and composer hashes.
+    """Generate runtime adapters bound to every release hash, with an isolated scripts package.
 
     Args:
         expected: Expected SHA-256 digest of the gateway script.
         composer_expected: Expected SHA-256 digest of the composer script.
+        library_sha256: Committed library paths and expected SHA-256 digests.
     """
-    code = launch_code(gateway, expected, composer_expected, root, state)
-    launcher = f"exec python3 -c {shlex.quote(code)}"
+    code = launch_code(gateway, expected, composer_expected, root, state, library_sha256)
+    launcher = f"exec python3 -P -c {shlex.quote(code)}"
     train = f'#!/bin/sh\n# Generated by install_merge_train_guard.py; default read-only.\nset -eu\n{launcher} cycle "$@"\n'
     rebase = f'#!/bin/sh\n# Explicit PR and --apply required by the gateway.\nset -eu\n{launcher} rebase "$@"\n'
     operator = (
@@ -191,7 +293,7 @@ def install(
 ) -> Path:
     """Apply the previewed plan under the mutation lock.
 
-    Raises ValueError when the plan, gateway or composer bytes differ from the preview, and
+    Raises ValueError when the plan or runtime bytes differ from the preview, and
     BlockingIOError when another holder has the mutation lock.
 
     Args:
@@ -210,11 +312,48 @@ def install(
         composer_committed = git(source, "show", f"{head}:{COMPOSER_PATH}").encode()
     if sha256(composer_committed) != value["composer_sha256"]:
         raise ValueError("composer bytes do not match the preview")
+    libraries = previewed_libraries(value)
     state = Path(value["state"])
     state.mkdir(parents=True, exist_ok=True)
     with (state / "mutation.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return install_locked(value, committed, expected, state, composer_committed)
+        return install_locked(value, committed, expected, state, composer_committed, libraries)
+
+
+def previewed_libraries(value: dict[str, Any]) -> dict[str, bytes]:
+    """Re-read committed library bytes and check every digest before touching runtime state."""
+    libraries: dict[str, bytes] = {}
+    for relative, expected in sorted(value["library_sha256"].items()):
+        data = load_committed_blob(
+            Path(value["source"]), str(value["source_commit"]), relative, f"library {relative}"
+        )
+        if sha256(data) != expected:
+            raise ValueError(f"library bytes do not match the preview: {relative}")
+        libraries[relative] = data
+    return libraries
+
+
+def release_directory(directory: Path) -> None:
+    """Create a release directory without following an existing symlink."""
+    if directory.is_symlink():
+        raise ValueError(f"refusing symlink release directory: {directory}")
+    directory.mkdir(exist_ok=True)
+
+
+def prepare_release_file(
+    release: Path, relative: str, data: bytes, expected: str, label: str
+) -> None:
+    """Write a read-only release file, refusing symlink parents and differing evidence."""
+    directory = release
+    for component in Path(relative).parts[:-1]:
+        directory = directory / component
+        release_directory(directory)
+    target = release / relative
+    existing = snapshot(target)
+    if existing is not None and existing["sha256"] != expected:
+        raise ValueError(f"release path contains unexpected {label}evidence; refusing overwrite")
+    if existing is None:
+        atomic_write(target, data, 0o444)
 
 
 def prepare_release(
@@ -223,8 +362,10 @@ def prepare_release(
     gateway_sha: str,
     composer_bytes: bytes,
     composer_sha: str,
+    libraries: dict[str, bytes],
+    library_sha256: dict[str, str],
 ) -> Path:
-    """Write the read-only gateway and composer release files, keeping matching ones.
+    """Write the read-only runtime scripts and libraries, keeping matching release files.
 
     Raises ValueError when a release directory is a symlink or an existing release file has a
     different hash.
@@ -233,50 +374,31 @@ def prepare_release(
         Path to the installed gateway script.
     """
     for directory in (release.parent, release):
-        if directory.is_symlink():
-            raise ValueError(f"refusing symlink release directory: {directory}")
-        directory.mkdir(exist_ok=True)
+        release_directory(directory)
     gateway = release / "merge_train_guard.py"
-    existing = snapshot(gateway)
-    if existing is not None and existing["sha256"] != gateway_sha:
-        raise ValueError("release path contains unexpected evidence; refusing overwrite")
-    if existing is None:
-        atomic_write(gateway, gateway_bytes, 0o444)
-    composer = release / "squash_message.py"
-    existing_composer = snapshot(composer)
-    if existing_composer is not None and existing_composer["sha256"] != composer_sha:
-        raise ValueError("release path contains unexpected composer evidence; refusing overwrite")
-    if existing_composer is None:
-        atomic_write(composer, composer_bytes, 0o444)
+    prepare_release_file(release, gateway.name, gateway_bytes, gateway_sha, "")
+    prepare_release_file(release, "squash_message.py", composer_bytes, composer_sha, "composer ")
+    for relative, data in libraries.items():
+        prepare_release_file(release, relative, data, library_sha256[relative], "library ")
     return gateway
 
 
 def release_name(value: dict[str, Any]) -> str:
-    """Name the release directory after both the gateway and the composer hash.
+    """Name the release directory after all committed runtime hashes.
 
-    A change to either script then installs into a new immutable directory instead of
+    A change to any runtime file installs into a new immutable directory instead of
     meeting an older file there that prepare_release refuses to overwrite.
 
     Returns:
-        SHA-256 hex digest of the two script hashes.
+        SHA-256 hex digest of the canonical JSON runtime hash manifest.
     """
-    return sha256(f"{value['gateway_sha256']}:{value['composer_sha256']}".encode())
+    return plan_hash(
+        {key: value[key] for key in ("gateway_sha256", "composer_sha256", "library_sha256")}
+    )
 
 
-def install_locked(
-    value: dict[str, Any],
-    committed: bytes,
-    expected: str,
-    state: Path,
-    composer_committed: bytes,
-) -> Path:
-    """Back up the runtime targets, pause the train, then install release files and adapters.
-
-    Raises ValueError when a runtime target changed since the preview.
-
-    Returns:
-        Path to the migration backup directory.
-    """
+def migration_backup(value: dict[str, Any], state: Path) -> Path:
+    """Preserve previewed runtime files and their modes before pausing or replacing them."""
     backup = Path(tempfile.mkdtemp(prefix="migration-", dir=state))
     atomic_write(backup / "plan.json", (json.dumps(value, indent=2) + "\n").encode(), 0o644)
     for name, previous in value["before"].items():
@@ -285,6 +407,25 @@ def install_locked(
             raise ValueError(f"runtime target changed during installation: {path}")
         if previous is not None:
             shutil.copy2(path, backup / name)
+    return backup
+
+
+def install_locked(
+    value: dict[str, Any],
+    committed: bytes,
+    expected: str,
+    state: Path,
+    composer_committed: bytes,
+    libraries: dict[str, bytes],
+) -> Path:
+    """Back up the runtime targets, pause the train, then install release files and adapters.
+
+    Raises ValueError when a runtime target changed since the preview.
+
+    Returns:
+        Path to the migration backup directory.
+    """
+    backup = migration_backup(value, state)
     # Install no live bypass: leave paused even if a later step fails.
     if not (state / "PAUSED").exists():
         atomic_write(
@@ -297,6 +438,8 @@ def install_locked(
         value["gateway_sha256"],
         composer_committed,
         value["composer_sha256"],
+        libraries,
+        value["library_sha256"],
     )
     targets = adapters(
         gateway,
@@ -304,6 +447,7 @@ def install_locked(
         value["composer_sha256"],
         Path(value["repository_root"]),
         state,
+        value["library_sha256"],
     )
     targets["policy.json"] = (json.dumps(value["policy"], indent=2) + "\n").encode()
     if value["before"]["hold.txt"] is None:

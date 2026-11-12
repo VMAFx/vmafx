@@ -1,0 +1,1 @@
+- **Installed merge-train adapters work outside a checkout.** Releases include the gateway's derived `scripts.lib` dependencies and bind every library hash at launch. Caller and state-directory packages cannot replace release imports; library-only updates create a new release without changing the old one.
