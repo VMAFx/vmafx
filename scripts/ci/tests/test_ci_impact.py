@@ -190,6 +190,12 @@ class ConfigContract(unittest.TestCase):
                 f"selector {name} selects nothing",
             )
 
+    def test_bandit_configuration_matches_codacy_routing(self) -> None:
+        """Bandit and Codacy configuration changes select the same CI mode and jobs."""
+        bandit, codacy = _plan_for(["bandit.yml"]), _plan_for([".codacy.yml"])
+        self.assertEqual(bandit.mode, codacy.mode)
+        self.assertEqual(bandit.selectors, codacy.selectors)
+
     def test_every_top_level_repo_entry_is_known(self) -> None:
         """A path the planner cannot classify forces mode=full (fail-closed).
         Keep the map in step with the tree so routing actually happens."""
