@@ -43,7 +43,7 @@ PPA_SOURCE_TEXT = re.compile(
     re.IGNORECASE,
 )
 APT_UPDATE_LINE = re.compile(
-    r"(?:^|[\s;|&()'\"=/`])apt(?:-get)?(?=$|[\s;|&()'\"#\\])[\s\S]*\bupdate\b",
+    r"(?:^|[\s;|&()'\"=/`])(?-i:-[A-Za-z]*S)?apt(?:-get)?(?=$|[\s;|&()'\"#\\])[\s\S]*\bupdate\b",
     re.IGNORECASE,
 )
 POSITIVE_INTEGER_RE = re.compile(r"[1-9]\d*")
@@ -65,8 +65,8 @@ SUDO_LONG_ARG_FLAGS = frozenset(
         "--command-timeout",
     }
 )
-ENV_SHORT_ARG_FLAGS = frozenset({"-u", "-C"})
-ENV_LONG_ARG_FLAGS = frozenset({"--unset", "--chdir"})
+ENV_SHORT_ARG_FLAGS = frozenset({"-u", "-C", "-a"})
+ENV_LONG_ARG_FLAGS = frozenset({"--unset", "--chdir", "--argv0", "--env0-from"})
 APT_UPDATE_MESSAGE = (
     "apt-get update must fail on index errors: add --error-on=any -o Acquire::Retries=3 (ADR-3537)"
 )
@@ -91,6 +91,9 @@ FOLDED_RUN_APT_MESSAGE = (
 HOSTED_YAML_PARSE_MESSAGE = (
     "hosted workflow or action YAML does not parse; "
     "the apt refresh contract cannot read its run blocks (ADR-3537)"
+)
+HOSTED_YAML_DUPLICATE_KEY_MESSAGE = (
+    "hosted workflow or action YAML contains a duplicate mapping key (ADR-3537)"
 )
 HOSTED_YAML_NODE_BOUND_MESSAGE = (
     f"hosted workflow or action YAML exceeds {MAX_YAML_NODES} nodes (ADR-3537)"
@@ -295,30 +298,27 @@ def _split_shell_clauses(tokens: list[str]) -> list[list[str]]:
     return clauses
 
 
-def _record_retry_option(option: str, retries: list[str]) -> None:
-    """Append the value of an Acquire::Retries option setting, or empty if malformed."""
-    lowered = option.lower()
-    if lowered == "acquire::retries":
-        retries.append("")
-    elif lowered.startswith("acquire::retries="):
-        retries.append(option.split("=", 1)[1])
+def _parse_apt_option(raw: str) -> tuple[str, str]:
+    """Split one `-o` / `--option` payload into a lowercase key and raw value."""
+    key, sep, value = raw.partition("=")
+    return key.strip().lower(), value if sep else ""
 
 
-def _extract_acquire_retries(args: list[str]) -> list[str]:
-    """Collect Acquire::Retries values in command order before `--`."""
-    retries: list[str] = []
+def _extract_apt_options(args: list[str]) -> list[tuple[str, str]]:
+    """Collect `(lowercase_key, value)` `-o` / `--option` pairs in order before `--`."""
+    pairs: list[tuple[str, str]] = []
     expect_option = False
     for arg in args:
         if expect_option:
-            _record_retry_option(arg, retries)
+            pairs.append(_parse_apt_option(arg))
             expect_option = False
         elif arg in ("-o", "--option"):
             expect_option = True
         elif arg.startswith("-o"):
-            _record_retry_option(arg[2:], retries)
+            pairs.append(_parse_apt_option(arg[2:]))
         elif arg.startswith("--option="):
-            _record_retry_option(arg[9:], retries)
-    return retries
+            pairs.append(_parse_apt_option(arg[9:]))
+    return pairs
 
 
 def _args_before_terminator(command: list[str]) -> list[str]:
@@ -328,13 +328,17 @@ def _args_before_terminator(command: list[str]) -> list[str]:
 
 
 def _is_compliant_refresh_command(command: list[str]) -> bool:
-    """Return True when one apt-get refresh command sets --error-on=any and retries > 0."""
+    """Return True when an apt-get refresh sets --error-on=any, retries > 0, no Error-Mode."""
     if posixpath.basename(command[0]) != "apt-get" or "update" not in command[1:]:
         return False
     options = _args_before_terminator(command)
-    if "--error-on=any" not in options:
+    error_on = [arg for arg in options if arg == "--error-on" or arg.startswith("--error-on=")]
+    if not error_on or any(arg != "--error-on=any" for arg in error_on):
         return False
-    retries = _extract_acquire_retries(options)
+    option_pairs = _extract_apt_options(options)
+    if any(key == "apt::update::error-mode" for key, _ in option_pairs):
+        return False
+    retries = [value for key, value in option_pairs if key == "acquire::retries"]
     return bool(retries) and POSITIVE_INTEGER_RE.fullmatch(retries[-1]) is not None
 
 
@@ -435,6 +439,128 @@ def _enqueue_nested_apt_tokens(
     return True
 
 
+def _is_env_option_boundary(token: str) -> bool:
+    """Return True when `token` ends `env` option parsing (`-`, `--`, `K=V`, or command)."""
+    return (
+        token in ("-", "--")
+        or not token.startswith("-")
+        or ENV_ASSIGNMENT_RE.match(token) is not None
+    )
+
+
+def _short_env_split_option(arg: str, next_arg: str | None) -> tuple[list[str], str | None, int]:
+    """Extract `(prefix_tokens, split_text, consumed_count)` from a short `env` flag cluster."""
+    for offset, char in enumerate(arg[1:], 1):
+        if char == "S":
+            prefix = [f"-{arg[1:offset]}"] if offset > 1 else []
+            if offset < len(arg) - 1:
+                return prefix, arg[offset + 1 :], 1
+            if next_arg is None:
+                return [], None, 1
+            return prefix, next_arg, 2
+        if f"-{char}" in ENV_SHORT_ARG_FLAGS:
+            return [], None, 1
+    return [], None, 1
+
+
+def _env_split_option(arg: str, next_arg: str | None) -> tuple[list[str], str | None, int]:
+    """Extract `(prefix_tokens, split_text, consumed_count)` from one `env` option token."""
+    if arg == "--split-string":
+        return ([], next_arg, 2) if next_arg is not None else ([], None, 1)
+    if arg.startswith("--split-string="):
+        return [], arg.split("=", 1)[1], 1
+    if arg.startswith("--"):
+        return [], None, 1
+    return _short_env_split_option(arg, next_arg)
+
+
+def _env_tokens_option_state(tokens: list[str]) -> tuple[bool, bool]:
+    """Return `(ended_options, takes_following_arg)` after scanning expanded `env -S` tokens."""
+    skip_next = False
+    for token in tokens:
+        if skip_next:
+            skip_next = False
+            continue
+        if _is_env_option_boundary(token):
+            return True, False
+        skip_next = _flag_takes_next_arg(token, ENV_SHORT_ARG_FLAGS, ENV_LONG_ARG_FLAGS)
+    return False, skip_next
+
+
+def _expand_one_env_token(clause: list[str], env_index: int) -> tuple[list[str], bool]:
+    """Expand split-string options belonging to `clause[env_index]` in one forward pass."""
+    args = clause[env_index + 1 :]
+    rebuilt = list(clause[: env_index + 1])
+    skip_count = 0
+    changed = False
+    for index, arg in enumerate(args):
+        if skip_count > 0:
+            skip_count -= 1
+            continue
+        if _is_env_option_boundary(arg):
+            rebuilt.extend(args[index:])
+            break
+        next_arg = args[index + 1] if index + 1 < len(args) else None
+        prefix, split_text, step = _env_split_option(arg, next_arg)
+        if split_text is not None:
+            split_tokens = _tokenise_shell_item(split_text)
+            rebuilt.extend([*prefix, *split_tokens])
+            changed = True
+            ended, dangling_arg = _env_tokens_option_state(split_tokens)
+            if ended:
+                rebuilt.extend(args[index + step :])
+                break
+            extra = int(dangling_arg)
+            rebuilt.extend(args[index + step : index + step + extra])
+            skip_count = (step - 1) + extra
+            continue
+        width = 1 + int(_flag_takes_next_arg(arg, ENV_SHORT_ARG_FLAGS, ENV_LONG_ARG_FLAGS))
+        rebuilt.extend(args[index : index + width])
+        skip_count = width - 1
+    return rebuilt, changed
+
+
+def _next_expanded_env_clause(clause: list[str], search_from: int) -> tuple[list[str], int | None]:
+    """Expand the first `env` split-string at or after `search_from`, if any."""
+    for index in range(search_from, len(clause)):
+        if posixpath.basename(clause[index]) != "env":
+            continue
+        candidate, changed = _expand_one_env_token(clause, index)
+        if changed:
+            return candidate, index
+    return clause, None
+
+
+def _expand_clause_env_splits(clause: list[str]) -> tuple[list[str], bool]:
+    """Expand `env` split-string arguments once per `env` token up to MAX_APT_WORK_ITEMS."""
+    current = clause
+    search_from = 0
+    for _ in range(MAX_APT_WORK_ITEMS):
+        current, expanded_at = _next_expanded_env_clause(current, search_from)
+        if expanded_at is None:
+            return current, True
+        search_from = expanded_at + 1
+    _, remaining = _next_expanded_env_clause(current, search_from)
+    return current, remaining is None
+
+
+def _evaluate_shell_clause(
+    item: str,
+    raw_clause: list[str],
+    hosted_surface: bool,
+    inherited_sudo: bool,
+    work: list[tuple[str, bool]],
+) -> tuple[bool, str | None]:
+    """Expand `env -S` splits, enqueue nested `-c` strings, and check one shell clause."""
+    try:
+        clause, within_bound = _expand_clause_env_splits(raw_clause)
+    except ValueError:
+        return True, APT_UNBALANCED_QUOTE_MESSAGE
+    if not within_bound or not _enqueue_nested_apt_tokens(item, clause, inherited_sudo, work):
+        return True, APT_NESTING_MESSAGE
+    return _clause_apt_problem(clause, hosted_surface, inherited_sudo)
+
+
 def _logical_line_apt_problem(line_text: str, hosted_surface: bool) -> str | None:
     """Evaluate one prefiltered logical command with a bounded nested-command work list."""
     work: list[tuple[str, bool]] = [(line_text, False)]
@@ -447,10 +573,10 @@ def _logical_line_apt_problem(line_text: str, hosted_surface: bool) -> str | Non
             tokens = _tokenise_shell_item(item)
         except ValueError:
             return APT_UNBALANCED_QUOTE_MESSAGE
-        for clause in _split_shell_clauses(tokens):
-            if not _enqueue_nested_apt_tokens(item, clause, inherited_sudo, work):
-                return APT_NESTING_MESSAGE
-            clause_has_apt, problem = _clause_apt_problem(clause, hosted_surface, inherited_sudo)
+        for raw_clause in _split_shell_clauses(tokens):
+            clause_has_apt, problem = _evaluate_shell_clause(
+                item, raw_clause, hosted_surface, inherited_sudo, work
+            )
             if clause_has_apt:
                 saw_apt = True
             if problem is not None:
@@ -479,6 +605,21 @@ def _is_multiline_run_scalar(node: yaml.ScalarNode, lines: list[str]) -> bool:
         body = lines[int(node.start_mark.line) + 1 : end_line]
         return sum(1 for line in body if line.strip()) > 1
     return int(node.end_mark.line) > int(node.start_mark.line)
+
+
+def _mapping_duplicate_key_problems(mapping: yaml.MappingNode, path: Path) -> list[str]:
+    """Return findings for repeated scalar keys within one YAML mapping node."""
+    problems: list[str] = []
+    seen_keys: set[str] = set()
+    for key_node, _ in mapping.value:
+        if not isinstance(key_node, yaml.ScalarNode):
+            continue
+        if key_node.value in seen_keys:
+            line = int(key_node.start_mark.line) + 1
+            problems.append(f"{path.as_posix()}:{line}: {HOSTED_YAML_DUPLICATE_KEY_MESSAGE}")
+        else:
+            seen_keys.add(key_node.value)
+    return problems
 
 
 def _mapping_run_problems(mapping: yaml.MappingNode, path: Path, lines: list[str]) -> list[str]:
@@ -512,7 +653,7 @@ def _push_child_collections(node: yaml.Node, stack: list[yaml.Node], seen: set[i
 
 
 def _hosted_yaml_run_problems(path: Path, text: str) -> list[str]:
-    """Validate YAML parseability and reject folded multi-line `run` apt refreshes."""
+    """Validate YAML parseability, duplicate keys, and folded multi-line `run` apt refreshes."""
     try:
         root = yaml.compose(text, Loader=yaml.SafeLoader)
     except yaml.YAMLError as error:
@@ -528,6 +669,7 @@ def _hosted_yaml_run_problems(path: Path, text: str) -> list[str]:
             return problems
         current = stack.pop()
         if isinstance(current, yaml.MappingNode):
+            problems.extend(_mapping_duplicate_key_problems(current, path))
             problems.extend(_mapping_run_problems(current, path, lines))
         _push_child_collections(current, stack, seen)
     return [*problems, f"{path.as_posix()}:1: {HOSTED_YAML_NODE_BOUND_MESSAGE}"]
@@ -977,7 +1119,7 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
         )
 
     def test_effective_acquire_retries_and_option_spellings(self) -> None:
-        """Require the last Acquire::Retries option before `--` to be a positive integer."""
+        """Require positive final Acquire::Retries and forbid APT::Update::Error-Mode overrides."""
         for compliant in (
             "apt-get --error-on=any -o Acquire::Retries=0 -o Acquire::Retries=3 update\n",
             "apt-get --error-on=any -oAcquire::Retries=3 update\n",
@@ -993,6 +1135,12 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
             "apt-get --error-on=any -o Acquire::Retries= update\n",
             "apt-get --error-on=any -o Acquire::Retries update\n",
             "apt-get update -- --error-on=any -o Acquire::Retries=3\n",
+            "apt-get --error-on=any -o Acquire::Retries=3 -o APT::Update::Error-Mode=persistent update\n",
+            "apt-get --error-on=any -o Acquire::Retries=3 -oAPT::Update::Error-Mode=any update\n",
+            "apt-get --error-on=any -o Acquire::Retries=3 --option APT::Update::Error-Mode=persistent update\n",
+            "apt-get --error-on=any -o Acquire::Retries=3 --option=apt::update::error-mode=persistent update\n",
+            "apt-get -o APT::Update::Error-Mode=persistent --error-on=any -o Acquire::Retries=3 update\n",
+            "apt-get --error-on=any -o Acquire::Retries=3 --error-on=persistent update\n",
         ):
             with self.subTest(non_compliant=non_compliant):
                 self.assertEqual(
@@ -1107,6 +1255,69 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
         non_hosted = "steps:\n  - run: >-\n      sudo apt-get\n      update\n"
         self.assertEqual(apt_update_problems(Path("tools/elsewhere/action.yml"), non_hosted), [])
 
+    def test_env_split_string_expansion_contract(self) -> None:
+        """Expand `env` split-string flags before apt detection and hosted sudo inheritance."""
+        workflow = Path(".github/workflows/ci.yml")
+        script = Path("s.sh")
+        refresh = "apt-get --error-on=any -o Acquire::Retries=3 update"
+        self.assertEqual(
+            apt_update_problems(workflow, "run: sudo env -S 'bash -c \"apt-get update\"'\n"),
+            [f".github/workflows/ci.yml:1: {APT_UPDATE_MESSAGE}"],
+        )
+        for hosted_sudo in (
+            f"run: sudo env -S 'bash -c \"{refresh}\"'\n",
+            f"run: sudo env -S '{refresh}'\n",
+            f"run: sudo env --split-string='bash -c \"{refresh}\"'\n",
+            f"run: sudo env -iS 'bash -c \"{refresh}\"'\n",
+        ):
+            with self.subTest(hosted_sudo=hosted_sudo):
+                self.assertEqual(
+                    apt_update_problems(workflow, hosted_sudo),
+                    [f".github/workflows/ci.yml:1: {HOSTED_APT_UPDATE_MESSAGE}"],
+                )
+        for non_compliant in (
+            "env -S 'apt-get update'\n",
+            "env -S'apt-get update'\n",
+            "env -Sapt-get\\ update\n",
+            "env --split-string='apt-get update'\n",
+            "env --split-string 'apt-get update'\n",
+            "env -iS 'apt-get update'\n",
+            "env -iS'apt-get update'\n",
+        ):
+            with self.subTest(non_compliant=non_compliant):
+                self.assertEqual(
+                    apt_update_problems(script, non_compliant), [f"s.sh:1: {APT_UPDATE_MESSAGE}"]
+                )
+        for compliant in (
+            f"sudo env -S '{refresh}'\n",
+            f"sudo env -S'{refresh}'\n",
+            f"sudo env --split-string='{refresh}'\n",
+            f"sudo env --split-string '{refresh}'\n",
+            f"sudo env -iS '{refresh}'\n",
+            f"env -S '-C' /tmp -S '{refresh}'\n",
+        ):
+            with self.subTest(compliant=compliant):
+                self.assertEqual(apt_update_problems(script, compliant), [])
+
+    def test_env_split_string_quotes_and_bounds(self) -> None:
+        """Report unbalanced quotes inside `env -S` strings and cap chained `-S` passes."""
+        script = Path("s.sh")
+        refresh = "apt-get --error-on=any -o Acquire::Retries=3 update"
+        for unbalanced in ("env -S 'apt-get update\n", "env -S 'apt-get \"update'\n"):
+            with self.subTest(unbalanced=unbalanced):
+                self.assertEqual(
+                    apt_update_problems(script, unbalanced),
+                    [f"s.sh:1: {APT_UNBALANCED_QUOTE_MESSAGE}"],
+                )
+        chained = refresh
+        for _ in range(MAX_APT_WORK_ITEMS):
+            chained = f"env -S {shlex.quote(chained)}"
+        self.assertEqual(apt_update_problems(script, chained + "\n"), [])
+        self.assertEqual(
+            apt_update_problems(script, f"env -S {shlex.quote(chained)}\n"),
+            [f"s.sh:1: {APT_NESTING_MESSAGE}"],
+        )
+
     def test_hosted_yaml_parse_failure_contract(self) -> None:
         """Fail closed when hosted workflow or composite action YAML cannot be parsed."""
         workflow = Path(".github/workflows/ci.yml")
@@ -1123,6 +1334,42 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
             apt_update_problems(Path("tools/elsewhere/action.yml"), "steps:\n  - run: [\n"),
             [],
         )
+
+    def test_hosted_yaml_duplicate_key_contract(self) -> None:
+        """Reject duplicate scalar keys inside one hosted YAML mapping while allowing distinct steps."""
+        workflow = Path(".github/workflows/ci.yml")
+        action = Path(".github/actions/setup/action.yml")
+        duplicate_run = (
+            "steps:\n"
+            "  - name: refresh\n"
+            "    run: bash scripts/ci/apt-install-cached.sh refresh\n"
+            "    run: echo override\n"
+        )
+        self.assertEqual(
+            apt_update_problems(workflow, duplicate_run),
+            [f".github/workflows/ci.yml:4: {HOSTED_YAML_DUPLICATE_KEY_MESSAGE}"],
+        )
+        duplicate_steps = (
+            "runs:\n"
+            "  using: composite\n"
+            "  steps:\n"
+            "    - run: echo first\n"
+            "  steps:\n"
+            "    - run: echo second\n"
+        )
+        self.assertEqual(
+            apt_update_problems(action, duplicate_steps),
+            [f".github/actions/setup/action.yml:5: {HOSTED_YAML_DUPLICATE_KEY_MESSAGE}"],
+        )
+        separate_steps = (
+            "steps:\n"
+            "  - name: first\n"
+            "    run: bash scripts/ci/apt-install-cached.sh refresh\n"
+            "  - name: second\n"
+            "    run: echo ok\n"
+        )
+        self.assertEqual(apt_update_problems(workflow, separate_steps), [])
+        self.assertEqual(apt_update_problems(Path("tools/elsewhere/action.yml"), duplicate_run), [])
 
     def test_planted_cuda_installer_without_error_on_fails_contract(self) -> None:
         """Removing --error-on=any from install-cuda-toolkit.sh fails at that file and line."""

@@ -59,7 +59,9 @@ shell and container sources (`ci_text_paths` in
 Standardize on lowercase `apt-get` (never bare `apt`) in scripts, workflows and
 container files while preserving existing options (`-qq`, `-q`,
 `-o Acquire::http::Timeout=30`), privilege prefixes (`sudo`, `$SUDO`),
-environment assignments and `\` line continuations.
+environment assignments and `\` line continuations. Refuse any `-o` or
+`--option` assignment to `APT::Update::Error-Mode` on refresh commands so a
+trailing option cannot replace `--error-on=any`.
 
 On GitHub-hosted runners (`.github/workflows/*.yml` and
 `.github/actions/*/action.yml`), run every host APT refresh through
@@ -75,10 +77,15 @@ across nested shell command strings (`bash`, `sh`, `dash`, `zsh` and `ksh`
 invoked via `sudo`, including `sudo` options and `env` prefixes) so hosted
 workflows and composite actions cannot bypass the helper with `sudo sh -c` or
 `sudo bash -c`, while container wrappers such as `sudo docker run ... bash -c`
-remain permitted. Require hosted workflow and composite action YAML files to
-parse cleanly and to write any multi-line `run` scalar containing an APT
-refresh as a literal block (`run: |`) rather than a folded, plain or quoted
-multi-line scalar.
+remain permitted. Expand `env` split-string arguments (`-S`, clustered `-S`
+such as `-iS`, and `--split-string`) in each shell clause with the same `shlex`
+tokeniser before evaluating `apt` refreshes or `sudo` shell inheritance,
+bounded to one pass per `env` token up to 8 expansions. Require hosted workflow
+and composite action YAML files to parse cleanly and to write any multi-line
+`run` scalar containing an APT refresh as a literal block (`run: |`) rather
+than a folded, plain or quoted multi-line scalar. Reject duplicate scalar keys
+within any YAML mapping in hosted workflows and composite actions so a later
+`jobs`, `steps` or `run` key cannot overwrite an earlier entry.
 
 Enforce these invariants through `AptUpdateFailClosedContract`
 (`apt_update_problems` and `apt_update_contract_problems`) in
