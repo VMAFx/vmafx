@@ -349,11 +349,19 @@ class HissReplayContractTests(unittest.TestCase):
         self.assertIn("never reported (strict required context)", aggregator)
 
     def test_strict_contexts_rerun_when_a_draft_becomes_ready(self) -> None:
-        # The aggregator ignores check runs older than its own run, so a strict
-        # context must report again on `ready_for_review`. Otherwise a PR opened
-        # as a draft (every Renovate PR) fails with "never reported".
+        # The aggregator ignores GitHub Actions check runs older than its own run
+        # (ADR-3539 keeps check runs of other apps), and every strict context is
+        # a workflow job, so it must report again on `ready_for_review`.
+        # Otherwise a PR opened as a draft (every Renovate PR) fails with
+        # "never reported".
         aggregator = read(".github/workflows/required-aggregator.yml")
-        self.assertIn("if (runTimestampMs(run) < minCreatedMs) continue;", aggregator)
+        self.assertIn(
+            "const isActionsRun = !run.app || !run.app.slug || run.app.slug === 'github-actions';",
+            aggregator,
+        )
+        self.assertIn(
+            "if (isActionsRun && runTimestampMs(run) < minCreatedMs) continue;", aggregator
+        )
         strict = javascript_array(aggregator, "strictMustReport")
         for name, workflows in sorted(strict_context_producers(strict).items()):
             with self.subTest(context=name):

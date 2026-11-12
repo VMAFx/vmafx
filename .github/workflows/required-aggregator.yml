@@ -683,10 +683,23 @@ jobs:
               throw new Error('more than 1000 workflow runs reported for one SHA');
             }
 
+            // ADR-3539 — converting a pull request to draft and marking it
+            // ready again on an unchanged head re-runs every pull-request
+            // workflow on the same SHA, while other apps (such as
+            // github-advanced-security for CodeQL, Semgrep OSS and gitleaks)
+            // report once per SHA and do not post again when the same analysis
+            // is uploaded on a later event: on pull request 3047
+            // (80595f3baaa80bdb423550eee237b1d6d279e746), aggregator run
+            // 43085402627 dropped those three succeeded check runs as older
+            // than minCreatedMs and failed them as never reported. Keep the
+            // window for GitHub Actions check runs (and runs without an app
+            // slug, failing closed); check runs of other apps count at any age,
+            // and the newest per name still wins.
             function newestByName(checkRuns, excludedSuites) {
               const byName = {};
               for (const run of checkRuns) {
-                if (runTimestampMs(run) < minCreatedMs) continue;
+                const isActionsRun = !run.app || !run.app.slug || run.app.slug === 'github-actions';
+                if (isActionsRun && runTimestampMs(run) < minCreatedMs) continue;
                 if (run.check_suite && excludedSuites.has(run.check_suite.id)) continue;
                 const previous = byName[run.name];
                 if (!previous || runTimestampMs(run) > runTimestampMs(previous)) {

@@ -13,12 +13,17 @@ embedded script of .github/workflows/required-aggregator.yml.
 
 from __future__ import annotations
 
+import contextlib
+import os
 import sys
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.ci import required_aggregator_harness as harness
 from scripts.ci.required_aggregator_harness import run_required_aggregator
 
 PR_ONLY_GATE = "Deliverables Checklist"
@@ -159,6 +164,145 @@ class AggregatorEventScope(unittest.TestCase):
         )
         self.assertEqual(len(failures), 1)
         self.assertIn(f"{SCHEDULED_GATE}: skipped", failures[0])
+
+
+CODE_SCANNING_APP = {"slug": "github-advanced-security"}
+ACTIONS_APP = {"slug": "github-actions"}
+CODE_SCANNING_CHECKS = ("CodeQL", "Semgrep OSS", "gitleaks")
+ACTIONS_CHECK = "Pre-Commit"
+_OVERRIDE = contextlib.ExitStack()
+
+
+def setUpModule() -> None:
+    override = os.environ.get("AGGREGATOR_UNDER_TEST")
+    if override:
+        _OVERRIDE.enter_context(mock.patch.object(harness, "AGGREGATOR_PATH", Path(override)))
+
+
+def tearDownModule() -> None:
+    _OVERRIDE.close()
+
+
+def _minutes_ago(minutes: int) -> str:
+    return (datetime.now(UTC) - timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _other_required_checks_succeed(excluded: str) -> list[dict[str, object]]:
+    script = harness._embedded_script(harness.AGGREGATOR_PATH.read_text(encoding="utf-8"))
+    return [
+        {"name": name, "conclusion": "success", "check_suite": {"id": PUSH_SUITE}}
+        for name in harness._required_names(script)
+        if name != excluded
+    ]
+
+
+class AggregatorAppCheckWindow(unittest.TestCase):
+    """Non-Actions app checks count outside the aggregator run window (ADR-3539)."""
+
+    def test_pull_request_accepts_older_code_scanning_app_checks(self) -> None:
+        started_at = _minutes_ago(10)
+        for name in CODE_SCANNING_CHECKS:
+            with self.subTest(name=name):
+                old_app_pass = {
+                    "name": name,
+                    "conclusion": "success",
+                    "app": CODE_SCANNING_APP,
+                    "check_suite": {"id": CODE_SCANNING_SUITE},
+                    "started_at": started_at,
+                }
+                failures = run_required_aggregator(
+                    name,
+                    None,
+                    event="pull_request",
+                    extra_checks=[old_app_pass],
+                )
+                self.assertEqual(failures, [])
+
+    def test_pull_request_fails_older_failed_code_scanning_app_check(self) -> None:
+        old_app_failure = {
+            "name": "CodeQL",
+            "conclusion": "failure",
+            "app": CODE_SCANNING_APP,
+            "check_suite": {"id": CODE_SCANNING_SUITE},
+            "started_at": _minutes_ago(10),
+        }
+        failures = run_required_aggregator(
+            "CodeQL",
+            None,
+            event="pull_request",
+            extra_checks=[old_app_failure],
+        )
+        self.assertEqual(len(failures), 1)
+        self.assertIn("CodeQL: failure", failures[0])
+
+    def test_pull_request_ignores_older_github_actions_check_run(self) -> None:
+        old_actions_pass = {
+            "name": ACTIONS_CHECK,
+            "conclusion": "success",
+            "app": ACTIONS_APP,
+            "check_suite": {"id": PUSH_SUITE},
+            "started_at": _minutes_ago(10),
+        }
+        failures = run_required_aggregator(
+            ACTIONS_CHECK,
+            None,
+            event="pull_request",
+            extra_checks=[old_actions_pass],
+        )
+        self.assertEqual(len(failures), 1)
+        self.assertIn(f"{ACTIONS_CHECK}: never reported", failures[0])
+
+    def test_pull_request_ignores_older_check_run_with_missing_app(self) -> None:
+        old_unattributed_pass = {
+            "name": ACTIONS_CHECK,
+            "conclusion": "success",
+            "check_suite": {"id": PUSH_SUITE},
+            "started_at": _minutes_ago(10),
+        }
+        failures = run_required_aggregator(
+            ACTIONS_CHECK,
+            None,
+            event="pull_request",
+            extra_checks=[old_unattributed_pass],
+        )
+        self.assertEqual(len(failures), 1)
+        self.assertIn(f"{ACTIONS_CHECK}: never reported", failures[0])
+
+    def test_newer_in_progress_app_check_beats_older_success_and_waits(self) -> None:
+        old_success = {
+            "name": "CodeQL",
+            "status": "completed",
+            "conclusion": "success",
+            "app": CODE_SCANNING_APP,
+            "check_suite": {"id": CODE_SCANNING_SUITE},
+            "started_at": _minutes_ago(10),
+        }
+        newer_active = {
+            "name": "CodeQL",
+            "status": "in_progress",
+            "conclusion": None,
+            "app": CODE_SCANNING_APP,
+            "check_suite": {"id": CODE_SCANNING_SUITE},
+            "started_at": _minutes_ago(5),
+        }
+        uncompleted = run_required_aggregator(
+            "CodeQL",
+            None,
+            event="pull_request",
+            extra_checks=[old_success, newer_active],
+        )
+        self.assertEqual(len(uncompleted), 1)
+        self.assertIn("CodeQL: in_progress", uncompleted[0])
+
+        newer_done = {**newer_active, "status": "completed", "conclusion": "success"}
+        completed = run_required_aggregator(
+            "CodeQL",
+            None,
+            event="pull_request",
+            extra_checks=[old_success, newer_active],
+            later_checks=[*_other_required_checks_succeed("CodeQL"), old_success, newer_done],
+        )
+        self.assertEqual(completed, [])
 
 
 if __name__ == "__main__":

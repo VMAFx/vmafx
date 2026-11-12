@@ -1,0 +1,1 @@
+- **CI:** `Required Checks Aggregator` applies its `minCreatedMs` age window only to GitHub Actions check runs (and runs without an app slug), so per-SHA checks from other apps such as `CodeQL`, `Semgrep OSS` and `gitleaks` remain visible when a pull request is converted to draft and marked ready again on an unchanged head (pull request 3047, ADR-3539).

@@ -44,6 +44,7 @@ area: gates
 - `tests/test_aggregator_absent_fails.py` runs embedded script;
   `AGGREGATOR_UNDER_TEST=<copy>` runs same cases against another copy
   (planted proof: pre-ADR-3293 aggregator fails 9 subtests).
+- `newestByName` `minCreatedMs` window ignores older `github-actions` check runs (and missing `app` slug, fail closed); other apps count at any age, newest per name wins (ADR-3539, `tests/test_aggregator_event_scope.py`).
 
 ## Release legs (ADR-1687)
 

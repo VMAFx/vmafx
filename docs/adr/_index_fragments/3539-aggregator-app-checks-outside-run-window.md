@@ -1,0 +1,1 @@
+| [ADR-3539](3539-aggregator-app-checks-outside-run-window.md) | Restrict the `minCreatedMs` check-run age window in `Required Checks Aggregator` to `github-actions` (and missing `app` slugs, failing closed) so per-SHA app checks (`CodeQL`, `Semgrep OSS`, `gitleaks`) stay visible when a pull request returns from draft on an unchanged head, preserving ADR-3293. | Accepted | ci |
