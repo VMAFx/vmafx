@@ -9,7 +9,7 @@ JSON report is kept; per run we extract frames count (asserted == N), fps,
 wall_fps, backend_used, feature_backends. OLS fit T(N) = T0 + N*t_frame per
 backend on the min-of-3 wall times, primary fit over N>=30, secondary over all
 four points. Read-only wrt the repo; artifacts land next to this script.
-Usage: python -I t0_idle_matrix.py
+Usage: python -I measure.py
 """
 from __future__ import annotations
 
@@ -113,12 +113,24 @@ def main() -> int:
         "method": "4 runs/cell: run0 cold discarded, min over runs 1-3; "
                   "full-process wall via time.perf_counter",
     }}
-    for backend in ("cpu", "cuda"):
-        for n in NS:
-            gate = util_sample()
-            print(f"cell {backend} N={n} util gate: {gate}")
-            runs = run_cell(backend, n)
-            results["cells"][f"{backend}-n{n}"] = {"util_gate": gate, "runs": runs}
+    # Cells run in an interleaved order (cpu/cuda alternating within each N)
+    # so load, thermal and clock drift over the campaign hit both backends
+    # alike instead of confounding the backend comparison with position in the
+    # run matrix; the executed order is recorded with the raw timings.
+    cell_order = [f"{backend}-n{n}" for n in NS for backend in ("cpu", "cuda")]
+    results["cell_order"] = cell_order
+    results["notes"]["cell_order"] = (
+        "cpu and cuda alternate within each N, so campaign drift (load, "
+        "thermal, clocks) affects both backends alike; the recorded campaign "
+        "ran all cpu cells before any cuda cell (see REPORT.md caveats)"
+    )
+    for cell in cell_order:
+        backend, n = cell.split("-n")
+        n = int(n)
+        gate = util_sample()
+        print(f"cell {backend} N={n} util gate: {gate}")
+        runs = run_cell(backend, n)
+        results["cells"][cell] = {"util_gate": gate, "runs": runs}
     # fits on min-of-3 (runs 1..3)
     for backend in ("cpu", "cuda"):
         pts = []

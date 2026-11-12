@@ -68,7 +68,8 @@ Per-run detail (wall ms): cpu N=10: 266.0/245.6/252.5; cpu N=30:
 CPU is almost perfectly linear with a ~31 ms fixed cost and 21.3 ms/frame.
 CUDA has a large fixed cost (~350-400 ms: CUDA context/extractor setup) but a
 6.3-6.9 ms/frame slope — i.e. in-window ~145-159 fps vs CPU's ~47 fps. The
-crossover (fit) is at N ≈ 21: below it the CUDA cell is setup-dominated.
+crossover (primary fit) is at N ≈ 24.8, below the fitted range (N ≥ 30): below
+it the CUDA cell is setup-dominated.
 
 ## Discriminating analysis
 
@@ -80,8 +81,10 @@ The maintainer's two hypotheses for the earlier loaded-run result (CPU
 - (b) something shared (input read/convert) sits inside the loop and caps both
   backends at the same rate.
 
-On the now-quiet GPU the CUDA in-window rates are 126-153 fps across
-N in {30, 60, 120} (min-of-3 matched-run fps 131.0 / 126.85 / 137.46), i.e.
+On the now-quiet GPU the min-of-3 matched-run CUDA in-window rates are
+126.85-137.46 fps across N in {30, 60, 120} (131.0 / 126.85 / 137.46) — the
+recorded runs span 92.7-153 fps, and the quoted range covers the selected
+min-of-3 runs — i.e.
 **~2.7-2.9x the CPU's ~47 fps** — nowhere near equal. If hypothesis (b) were
 true, a shared per-frame serial cost would keep the CUDA in-window rate
 pinned at the CPU rate regardless of load; instead the CUDA slope
@@ -90,12 +93,16 @@ and the gap widens with N exactly as a GPU-vs-CPU compute-rate difference
 predicts. The N=10 CUDA cell (26.4 wall/s < CPU 40.7 wall/s) is explained by
 the ~400 ms fixed setup, not by a per-frame cap.
 
-**Verdict: hypothesis (a) is supported — strongly.** Under prior load the CUDA
-extractors were being crowded down to ~33 fps in-window; with that load gone
-they run at ~127-153 fps in-window while CPU stays at its usual ~47 fps
-(47.1-47.8 in this window vs 33.1 under the loaded run — the CPU number itself
-moved too, so part of the earlier equality was load on the host as well, but
-the decisive ~3x CUDA recovery only happens on the GPU side).
+**Verdict: hypothesis (a) is supported, with the load attribution qualified.**
+The quieter run rules out a *persistent* shared 33 fps cap: the CUDA in-window
+rate recovered to ~127-153 fps while the CPU also rose to its usual ~47 fps
+(47.1-47.8 in this window vs 33.1 under the loaded run). Because the CPU
+throughput moved too, this window does not isolate GPU load from host load —
+part of the earlier equality was load on the host as well, and a shared input
+or conversion bottleneck under the earlier host load is not excluded by these
+runs alone; isolating the two would need a campaign that varies GPU and host
+load independently. What the measurements do establish is the decisive ~3x
+CUDA recovery, which only happens on the GPU side.
 
 Honest caveats: the machine is *quieter*, not idle — the utilization gates
 above show a ~22-26 % compositor baseline with 44-58 % spikes (7 of 36
@@ -105,6 +112,16 @@ that residual load grazing the measurements. The R² of the CUDA fit (0.979)
 reflects the same noise. Even taking the *worst* timed run of every CUDA cell
 (92.74 fps at N=60), CUDA remains ~2x the CPU rate — the conclusion does not
 depend on cherry-picking.
+
+Cell-order confound: the recorded campaign ran all four cpu cells before any
+cuda cell (the harness of the time iterated the backends outermost, and the
+summary does not record an execution order), so campaign-level drift in load,
+thermal state and clocks is confounded with the backend identity. The per-cell
+min-of-3 numbers stand on their own, but the backend-to-backend comparison
+within this window carries that confound. The harness now runs the cells
+interleaved (cpu and cuda alternate within each N) and records the executed
+order as `cell_order` in the summary, so future campaigns let drift hit both
+backends alike.
 
 ## Artifacts
 
