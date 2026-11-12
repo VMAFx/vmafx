@@ -109,4 +109,4 @@ removed:
 
 - Upstream docs, RFCs, blog posts, prior ADRs.
 - Related issues / PRs: `#NNN`.
-- Source: `req` (direct user quote) or `Q<round>.<q>` (verbatim popup answer from `.workingdir2/decisions/questions-answered.md`).
+- Source: `req` (the maintainer's request, paraphrased in neutral English and marked `(paraphrased)`, never quoted verbatim) or `Q<round>.<q>` (popup answer, paraphrased the same way).
