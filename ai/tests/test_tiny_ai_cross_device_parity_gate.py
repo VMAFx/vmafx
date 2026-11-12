@@ -75,7 +75,13 @@ def mock_session(
     session = MagicMock()
     session.get_providers.return_value = list(providers)
     if input_meta is not None:
-        session.get_inputs.return_value = [MagicMock(**input_meta)]
+        # configure_mock, not the constructor: MagicMock reserves `name` for
+        # the mock's display name, so passing it there would leave the mocked
+        # input's .name at the auto-generated string instead of the ORT
+        # metadata the provider-gap probe keys its feed on.
+        mocked_input = MagicMock()
+        mocked_input.configure_mock(**input_meta)
+        session.get_inputs.return_value = [mocked_input]
     return session
 
 
