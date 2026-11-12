@@ -37,6 +37,7 @@ SCRIPT_TIMEOUT_S = 60
 MAX_CI_TEXT_FILES = 1_864
 MAX_CONTINUATION_LINES = 200
 MAX_APT_WORK_ITEMS = 8
+MAX_YAML_NODES = 16_384
 PPA_SOURCE_TEXT = re.compile(
     r"add-apt-repository|apt-add-repository|\bppa:|ppa\.launchpad(?:content)?\.net",
     re.IGNORECASE,
@@ -46,7 +47,26 @@ APT_UPDATE_LINE = re.compile(
     re.IGNORECASE,
 )
 POSITIVE_INTEGER_RE = re.compile(r"[1-9]\d*")
+ENV_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 SHELL_OPERATOR_CHARS = frozenset(";&|()")
+SHELL_BASENAMES = frozenset({"bash", "sh", "dash", "zsh", "ksh"})
+SUDO_ARG_FLAGS = frozenset({"-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-T"})
+SUDO_LONG_ARG_FLAGS = frozenset(
+    {
+        "--user",
+        "--group",
+        "--close-from",
+        "--chdir",
+        "--host",
+        "--prompt",
+        "--role",
+        "--type",
+        "--other-user",
+        "--command-timeout",
+    }
+)
+ENV_SHORT_ARG_FLAGS = frozenset({"-u", "-C"})
+ENV_LONG_ARG_FLAGS = frozenset({"--unset", "--chdir"})
 APT_UPDATE_MESSAGE = (
     "apt-get update must fail on index errors: add --error-on=any -o Acquire::Retries=3 (ADR-3537)"
 )
@@ -63,6 +83,17 @@ APT_NESTING_MESSAGE = (
 HOSTED_APT_UPDATE_MESSAGE = (
     "hosted-runner apt refresh must run through scripts/ci/apt-install-cached.sh refresh or "
     "install (it drops the runner's Microsoft/Azure sources first; ADR-3537)"
+)
+FOLDED_RUN_APT_MESSAGE = (
+    "multi-line run scalar holding an apt refresh must be a literal block (run: |) "
+    "so each command sits on its own line (ADR-3537)"
+)
+HOSTED_YAML_PARSE_MESSAGE = (
+    "hosted workflow or action YAML does not parse; "
+    "the apt refresh contract cannot read its run blocks (ADR-3537)"
+)
+HOSTED_YAML_NODE_BOUND_MESSAGE = (
+    f"hosted workflow or action YAML exceeds {MAX_YAML_NODES} nodes (ADR-3537)"
 )
 NON_REGULAR_CI_TEXT_MESSAGE = (
     "tracked CI text path is not a regular file; the contract cannot read it"
@@ -307,7 +338,66 @@ def _is_compliant_refresh_command(command: list[str]) -> bool:
     return bool(retries) and POSITIVE_INTEGER_RE.fullmatch(retries[-1]) is not None
 
 
-def _clause_apt_problem(clause: list[str], hosted_surface: bool) -> tuple[bool, str | None]:
+def _flag_takes_next_arg(arg: str, short_flags: frozenset[str], long_flags: frozenset[str]) -> bool:
+    """Return True when `arg` is an option whose argument occupies the following token."""
+    if arg.startswith("--"):
+        return arg in long_flags
+    for index, char in enumerate(arg[1:], 1):
+        if f"-{char}" in short_flags:
+            return index == len(arg) - 1
+    return False
+
+
+def _drop_env_assignments(args: list[str]) -> list[str]:
+    """Return `args` after dropping any leading `NAME=value` words."""
+    for index, arg in enumerate(args):
+        if ENV_ASSIGNMENT_RE.match(arg) is None:
+            return args[index:]
+    return []
+
+
+def _strip_wrapper_prefix(
+    args: list[str], short_flags: frozenset[str], long_flags: frozenset[str]
+) -> list[str]:
+    """Return `args` starting at the wrapped command after flags and `NAME=value` words."""
+    skip_next = False
+    for index, arg in enumerate(args):
+        if skip_next:
+            skip_next = False
+            continue
+        if ENV_ASSIGNMENT_RE.match(arg) is not None:
+            continue
+        if arg == "--":
+            return _drop_env_assignments(args[index + 1 :])
+        if arg.startswith("-") and len(arg) > 1:
+            skip_next = _flag_takes_next_arg(arg, short_flags, long_flags)
+            continue
+        return args[index:]
+    return []
+
+
+def _clause_starts_sudo_shell(clause: list[str]) -> bool:
+    """Return True when `clause` starts a shell (`bash`, `sh`, `dash`, `zsh`, `ksh`) via `sudo`."""
+    sudo_indices = [index for index, token in enumerate(clause) if _is_sudo_token(token)]
+    if not sudo_indices:
+        return False
+    rest = _strip_wrapper_prefix(clause[sudo_indices[0] + 1 :], SUDO_ARG_FLAGS, SUDO_LONG_ARG_FLAGS)
+    for _ in range(MAX_APT_WORK_ITEMS):
+        if not rest:
+            return False
+        head = posixpath.basename(rest[0])
+        if head == "env":
+            rest = _strip_wrapper_prefix(rest[1:], ENV_SHORT_ARG_FLAGS, ENV_LONG_ARG_FLAGS)
+        elif head == "sudo":
+            rest = _strip_wrapper_prefix(rest[1:], SUDO_ARG_FLAGS, SUDO_LONG_ARG_FLAGS)
+        else:
+            break
+    return bool(rest) and posixpath.basename(rest[0]) in SHELL_BASENAMES
+
+
+def _clause_apt_problem(
+    clause: list[str], hosted_surface: bool, inherited_sudo: bool = False
+) -> tuple[bool, str | None]:
     """Inspect one simple shell clause for apt refresh compliance and hosted sudo usage."""
     apt_indices = [index for index, token in enumerate(clause) if _is_apt_token(token)]
     if not apt_indices:
@@ -318,7 +408,8 @@ def _clause_apt_problem(clause: list[str], hosted_surface: bool) -> tuple[bool, 
         return True, None
     if not _is_compliant_refresh_command(command):
         return True, APT_UPDATE_MESSAGE
-    if hosted_surface and any(_is_sudo_token(token) for token in clause[:start]):
+    has_sudo = inherited_sudo or any(_is_sudo_token(token) for token in clause[:start])
+    if hosted_surface and has_sudo:
         return True, HOSTED_APT_UPDATE_MESSAGE
     return True, None
 
@@ -330,32 +421,36 @@ def _is_nested_apt_token(item: str, token: str) -> bool:
     return APT_UPDATE_LINE.search(token) is not None
 
 
-def _enqueue_nested_apt_tokens(item: str, tokens: list[str], work: list[str]) -> bool:
-    """Queue nested apt command tokens onto `work`; return False if the bound overflows."""
-    for token in tokens:
+def _enqueue_nested_apt_tokens(
+    item: str, clause: list[str], inherited_sudo: bool, work: list[tuple[str, bool]]
+) -> bool:
+    """Queue nested apt command tokens from `clause`; return False if the bound overflows."""
+    child_sudo = inherited_sudo or _clause_starts_sudo_shell(clause)
+    for token in clause:
         if not _is_nested_apt_token(item, token):
             continue
         if len(work) >= MAX_APT_WORK_ITEMS:
             return False
-        work.append(token)
+        work.append((token, child_sudo))
     return True
 
 
 def _logical_line_apt_problem(line_text: str, hosted_surface: bool) -> str | None:
     """Evaluate one prefiltered logical command with a bounded nested-command work list."""
-    work: list[str] = [line_text]
+    work: list[tuple[str, bool]] = [(line_text, False)]
     saw_apt = False
     for index in range(MAX_APT_WORK_ITEMS):
         if index >= len(work):
             break
+        item, inherited_sudo = work[index]
         try:
-            tokens = _tokenise_shell_item(work[index])
+            tokens = _tokenise_shell_item(item)
         except ValueError:
             return APT_UNBALANCED_QUOTE_MESSAGE
-        if not _enqueue_nested_apt_tokens(work[index], tokens, work):
-            return APT_NESTING_MESSAGE
         for clause in _split_shell_clauses(tokens):
-            clause_has_apt, problem = _clause_apt_problem(clause, hosted_surface)
+            if not _enqueue_nested_apt_tokens(item, clause, inherited_sudo, work):
+                return APT_NESTING_MESSAGE
+            clause_has_apt, problem = _clause_apt_problem(clause, hosted_surface, inherited_sudo)
             if clause_has_apt:
                 saw_apt = True
             if problem is not None:
@@ -365,10 +460,85 @@ def _logical_line_apt_problem(line_text: str, hosted_surface: bool) -> str | Non
     return None
 
 
+def _yaml_error_line(error: yaml.YAMLError) -> int:
+    """Return the 1-based line number from a PyYAML error mark, or 1 when unmarked."""
+    mark = getattr(error, "problem_mark", None) or getattr(error, "context_mark", None)
+    return int(mark.line) + 1 if mark is not None else 1
+
+
+def _is_multiline_run_scalar(node: yaml.ScalarNode, lines: list[str]) -> bool:
+    """Return True when a non-literal `run` scalar spans multiple physical content lines."""
+    if node.style == "|":
+        return False
+    if node.style == ">":
+        # PyYAML sets a block scalar's start_mark on the `>` header line and end_mark
+        # past the trailing newline, so count non-blank body lines directly.
+        end_line = int(node.end_mark.line)
+        if int(node.end_mark.column) > 0:
+            end_line += 1
+        body = lines[int(node.start_mark.line) + 1 : end_line]
+        return sum(1 for line in body if line.strip()) > 1
+    return int(node.end_mark.line) > int(node.start_mark.line)
+
+
+def _mapping_run_problems(mapping: yaml.MappingNode, path: Path, lines: list[str]) -> list[str]:
+    """Return folded-`run` findings for one YAML mapping node."""
+    problems: list[str] = []
+    for key_node, val_node in mapping.value:
+        if not (isinstance(key_node, yaml.ScalarNode) and key_node.value == "run"):
+            continue
+        if not isinstance(val_node, yaml.ScalarNode):
+            continue
+        if not _is_multiline_run_scalar(val_node, lines):
+            continue
+        if APT_UPDATE_LINE.search(val_node.value) is not None:
+            line = int(val_node.start_mark.line) + 1
+            problems.append(f"{path.as_posix()}:{line}: {FOLDED_RUN_APT_MESSAGE}")
+    return problems
+
+
+def _push_child_collections(node: yaml.Node, stack: list[yaml.Node], seen: set[int]) -> None:
+    """Push unvisited child collection nodes onto `stack` in reverse source order."""
+    children: list[yaml.Node] = []
+    if isinstance(node, yaml.SequenceNode):
+        children = list(node.value)
+    elif isinstance(node, yaml.MappingNode):
+        for key_node, val_node in node.value:
+            children.extend((key_node, val_node))
+    for child in reversed(children):
+        if isinstance(child, yaml.CollectionNode) and id(child) not in seen:
+            seen.add(id(child))
+            stack.append(child)
+
+
+def _hosted_yaml_run_problems(path: Path, text: str) -> list[str]:
+    """Validate YAML parseability and reject folded multi-line `run` apt refreshes."""
+    try:
+        root = yaml.compose(text, Loader=yaml.SafeLoader)
+    except yaml.YAMLError as error:
+        return [f"{path.as_posix()}:{_yaml_error_line(error)}: {HOSTED_YAML_PARSE_MESSAGE}"]
+    if root is None or not isinstance(root, yaml.CollectionNode):
+        return []
+    lines = text.splitlines()
+    problems: list[str] = []
+    stack: list[yaml.Node] = [root]
+    seen: set[int] = {id(root)}
+    for _ in range(MAX_YAML_NODES):
+        if not stack:
+            return problems
+        current = stack.pop()
+        if isinstance(current, yaml.MappingNode):
+            problems.extend(_mapping_run_problems(current, path, lines))
+        _push_child_collections(current, stack, seen)
+    return [*problems, f"{path.as_posix()}:1: {HOSTED_YAML_NODE_BOUND_MESSAGE}"]
+
+
 def apt_update_problems(path: Path, text: str) -> list[str]:
-    """Reject unsafe apt refreshes and raw hosted-runner sudo apt-get update calls."""
+    """Reject unsafe apt refreshes, folded hosted `run` blocks, and hosted sudo refreshes."""
     problems: list[str] = []
     hosted_surface = _is_hosted_workflow_or_action(path)
+    if hosted_surface:
+        problems.extend(_hosted_yaml_run_problems(path, text))
     for line_number, logical_line, overflowed in _logical_ci_lines(text):
         if overflowed:
             problems.append(f"{path.as_posix()}:{line_number}: {APT_CONTINUATION_MESSAGE}")
@@ -854,6 +1024,7 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
 
     def test_hosted_runner_sudo_refresh_contract(self) -> None:
         """Require hosted workflow and action refreshes to use apt-install-cached.sh."""
+        refresh = "apt-get --error-on=any -o Acquire::Retries=3 update"
         for hosted_path in (
             ".github/workflows/build.yml",
             ".github/workflows/extra.yaml",
@@ -861,46 +1032,97 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
             ".github/actions/nested/tool/action.yaml",
         ):
             with self.subTest(hosted_path=hosted_path):
-                text = "steps:\n  - run: sudo apt-get --error-on=any -o Acquire::Retries=3 update\n"
+                text = f"steps:\n  - run: sudo {refresh}\n"
                 self.assertEqual(
                     apt_update_problems(Path(hosted_path), text),
                     [f"{hosted_path}:2: {HOSTED_APT_UPDATE_MESSAGE}"],
                 )
-        nested_sudo = (
-            "run: bash -c 'sudo -E /usr/bin/apt-get --error-on=any -o Acquire::Retries=3 update'\n"
-        )
-        self.assertEqual(
-            apt_update_problems(Path(".github/workflows/build.yml"), nested_sudo),
-            [f".github/workflows/build.yml:1: {HOSTED_APT_UPDATE_MESSAGE}"],
-        )
-        boundary = (
-            "apt-get --error-on=any -o Acquire::Retries=3 update "
-            "&& sudo apt-get --error-on=any -o Acquire::Retries=3 update\n"
-        )
-        self.assertEqual(
-            apt_update_problems(Path(".github/workflows/build.yml"), boundary),
-            [f".github/workflows/build.yml:1: {HOSTED_APT_UPDATE_MESSAGE}"],
-        )
+        for nested_sudo in (
+            f"run: bash -c 'sudo -E /usr/bin/{refresh}'\n",
+            f"run: sudo bash -c '{refresh}'\n",
+            f"run: sudo sh -c '{refresh}'\n",
+            f"run: sudo -E bash -c '{refresh}'\n",
+            f"run: sudo -u root sh -c '{refresh}'\n",
+            f"run: sudo env A=1 bash -c '{refresh}'\n",
+            f"run: sudo -g adm -C 3 -D / -h x -p p -r r -t t -U u -T 9 zsh -c '{refresh}'\n",
+            f"run: sudo env -i A=1 dash -c 'ksh -c \"{refresh}\"'\n",
+            f"run: sudo bash -c \"sh -c '{refresh}'\"\n",
+            f"{refresh} && sudo {refresh}\n",
+        ):
+            with self.subTest(nested_sudo=nested_sudo):
+                self.assertEqual(
+                    apt_update_problems(Path(".github/workflows/build.yml"), nested_sudo),
+                    [f".github/workflows/build.yml:1: {HOSTED_APT_UPDATE_MESSAGE}"],
+                )
         for allowed_path, allowed_text in (
             (
                 ".github/workflows/published-rc-licence-companions.yml",
-                "docker run --rm debian bash -c 'apt-get --error-on=any -o Acquire::Retries=3 update -qq'\n",
+                f"docker run --rm debian bash -c '{refresh} -qq'\n",
             ),
-            (
-                ".github/workflows/build.yml",
-                "sudo echo ok && apt-get --error-on=any -o Acquire::Retries=3 update\n",
-            ),
-            (
-                "scripts/ci/apt-install-cached.sh",
-                "sudo apt-get --error-on=any -o Acquire::Retries=3 update\n",
-            ),
-            (
-                "tools/elsewhere/action.yml",
-                "sudo apt-get --error-on=any -o Acquire::Retries=3 update\n",
-            ),
+            (".github/workflows/build.yml", f"sudo echo ok && {refresh}\n"),
+            (".github/workflows/build.yml", f"sudo echo ok && bash -c '{refresh}'\n"),
+            (".github/workflows/build.yml", f"sudo docker run img bash -c '{refresh}'\n"),
+            ("scripts/ci/apt-install-cached.sh", f"sudo {refresh}\n"),
+            ("scripts/ci/apt-install-cached.sh", f"sudo bash -c '{refresh}'\n"),
+            ("tools/elsewhere/action.yml", f"sudo {refresh}\n"),
+            ("tools/elsewhere/action.yml", f"sudo bash -c '{refresh}'\n"),
         ):
             with self.subTest(allowed_path=allowed_path, allowed_text=allowed_text):
                 self.assertEqual(apt_update_problems(Path(allowed_path), allowed_text), [])
+
+    def test_hosted_yaml_folded_run_contract(self) -> None:
+        """Require hosted multi-line `run` refreshes to use literal `|` blocks."""
+        workflow = Path(".github/workflows/ci.yml")
+        refresh = "apt-get --error-on=any -o Acquire::Retries=3 update"
+        for refused in (
+            "steps:\n  - run: >-\n      sudo apt-get\n      update\n",
+            "steps:\n  - run: >\n      sudo apt-get\n      update\n",
+            "steps:\n  - run: sudo apt-get\n      update\n",
+            'steps:\n  - run: "sudo apt-get\n      update"\n',
+            "steps:\n  - run: 'sudo apt-get\n      update'\n",
+        ):
+            with self.subTest(refused=refused):
+                self.assertEqual(
+                    apt_update_problems(workflow, refused),
+                    [f".github/workflows/ci.yml:2: {FOLDED_RUN_APT_MESSAGE}"],
+                )
+        action = Path(".github/actions/setup/action.yml")
+        action_folded = "runs:\n  steps:\n    - run: >-\n        sudo apt-get\n        update\n"
+        self.assertEqual(
+            apt_update_problems(action, action_folded),
+            [f".github/actions/setup/action.yml:3: {FOLDED_RUN_APT_MESSAGE}"],
+        )
+        for accepted in (
+            "steps:\n  - run: |\n      bash scripts/ci/apt-install-cached.sh refresh\n",
+            "steps:\n  - run: >-\n      bash scripts/test/fetch-test-yuvs.sh\n      a b\n",
+            f"steps:\n  - run: >-\n      docker run --rm debian {refresh}\n",
+        ):
+            with self.subTest(accepted=accepted):
+                self.assertEqual(apt_update_problems(workflow, accepted), [])
+        sudo_single_folded = f"steps:\n  - run: >-\n      sudo {refresh}\n"
+        self.assertEqual(
+            apt_update_problems(workflow, sudo_single_folded),
+            [f".github/workflows/ci.yml:3: {HOSTED_APT_UPDATE_MESSAGE}"],
+        )
+        non_hosted = "steps:\n  - run: >-\n      sudo apt-get\n      update\n"
+        self.assertEqual(apt_update_problems(Path("tools/elsewhere/action.yml"), non_hosted), [])
+
+    def test_hosted_yaml_parse_failure_contract(self) -> None:
+        """Fail closed when hosted workflow or composite action YAML cannot be parsed."""
+        workflow = Path(".github/workflows/ci.yml")
+        action = Path(".github/actions/setup/action.yml")
+        self.assertEqual(
+            apt_update_problems(workflow, "steps:\n  - run: [\n"),
+            [f".github/workflows/ci.yml:3: {HOSTED_YAML_PARSE_MESSAGE}"],
+        )
+        self.assertEqual(
+            apt_update_problems(action, "runs: \x00\n"),
+            [f".github/actions/setup/action.yml:1: {HOSTED_YAML_PARSE_MESSAGE}"],
+        )
+        self.assertEqual(
+            apt_update_problems(Path("tools/elsewhere/action.yml"), "steps:\n  - run: [\n"),
+            [],
+        )
 
     def test_planted_cuda_installer_without_error_on_fails_contract(self) -> None:
         """Removing --error-on=any from install-cuda-toolkit.sh fails at that file and line."""

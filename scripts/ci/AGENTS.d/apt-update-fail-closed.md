@@ -44,10 +44,15 @@ fail closed too; reword comments to `apt index refresh`. Subcommand
 `*microsoft*` and `*azure*` source lists, and runs `sudo apt-get --error-on=any
 -o Acquire::Retries=3 update`.
 
+- `sudo` -> `bash`/`sh`/`dash`/`zsh`/`ksh` clause: nested `-c` inherits `sudo`.
+- Hosted YAML parse failure or non-`|` multi-line `run` apt refresh -> error.
+
 Diagnostics:
 
 ```text
 <path>:<line>: apt-get update must fail on index errors: add --error-on=any -o Acquire::Retries=3 (ADR-3537)
 <path>:<line>: hosted-runner apt refresh must run through scripts/ci/apt-install-cached.sh refresh or install (it drops the runner's Microsoft/Azure sources first; ADR-3537)
+<path>:<line>: multi-line run scalar holding an apt refresh must be a literal block (run: |) so each command sits on its own line (ADR-3537)
+<path>:<line>: hosted workflow or action YAML does not parse; the apt refresh contract cannot read its run blocks (ADR-3537)
 <path>: tracked CI text path is not a regular file; the contract cannot read it
 ```

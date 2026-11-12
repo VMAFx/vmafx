@@ -70,7 +70,15 @@ Before calling `sudo apt-get --error-on=any -o Acquire::Retries=3 update`,
 and removes `/etc/apt/sources.list.d/*microsoft*` and
 `/etc/apt/sources.list.d/*azure*` so `packages.microsoft.com` outages cannot
 break Ubuntu package refreshes. Container commands without `sudo` (such as
-`docker run ... bash -c`) pass the inline flags directly.
+`docker run ... bash -c`) pass the inline flags directly. Propagate `sudo`
+across nested shell command strings (`bash`, `sh`, `dash`, `zsh` and `ksh`
+invoked via `sudo`, including `sudo` options and `env` prefixes) so hosted
+workflows and composite actions cannot bypass the helper with `sudo sh -c` or
+`sudo bash -c`, while container wrappers such as `sudo docker run ... bash -c`
+remain permitted. Require hosted workflow and composite action YAML files to
+parse cleanly and to write any multi-line `run` scalar containing an APT
+refresh as a literal block (`run: |`) rather than a folded, plain or quoted
+multi-line scalar.
 
 Enforce these invariants through `AptUpdateFailClosedContract`
 (`apt_update_problems` and `apt_update_contract_problems`) in
