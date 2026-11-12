@@ -1,5 +1,0 @@
-test_out_of_memory_returns_an_error_and_keeps_the_pool: CUDA error at ../core/src/libvmaf.c:650: CUDA_ERROR_OUT_OF_MEMORY (2) in cuEventSynchronize(priv->cuda.ready)
-[hog 30720 MiB, luma probe under hog 0, first rc -12, memory back 0] [first frame with no memory left: -12] [31mfail[0m
-[31mdevice memory not yet returned after the hog was freed
-1 tests run, 1 failed[0m
-rc=1

@@ -1,5 +1,0 @@
-test_out_of_memory_returns_an_error_and_keeps_the_pool: CUDA error at ../core/src/cuda/picture_cuda.c:356: CUDA_ERROR_OUT_OF_MEMORY (2) in cuMemAllocPitch((CUdeviceptr *)&pic->data[i], (size_t *)&pic->stride[i], (size_t)pic->w[i] * ((pic->bpc + 7) / 8), pic->h[i], 8 << hbd)
-libvmaf ERROR problem during prepare_ring_buffer
-[hog 22954 MiB, luma probe under hog 0, first rc -12, memory back 1] [first frame with no memory left: -12] [retry rc 0] [32mpass[0m
-[32m1 tests run, 1 passed[0m
-rc=0
