@@ -4,6 +4,7 @@ paths:
   - core/src/feature/sycl/integer_motion_v2_sycl.cpp
   - core/test/test_sycl_motion_five_frame_window.c
 invariant: SYCL motion twins keep n-2 outside graph; CPU window function per frame (advance) and at flush; no new kernel.
+area: motion-psnr-and-moment
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # `motion_five_frame_window` on `motion_sycl` / `motion_v2_sycl` (ADR-1491)

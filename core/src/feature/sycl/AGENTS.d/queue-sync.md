@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/integer_*.cpp
   - core/src/feature/sycl/float_*.cpp
 invariant: Per-step q.wait() in feature extractors forbidden — use in-order queues, barriers, or graph wait.
+area: runtime-and-kernels
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Device queue synchronization policy

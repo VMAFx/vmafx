@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/sycl_tile_index.h
   - core/src/feature/sycl/integer_vif_sycl.cpp
 invariant: Tile loaders clamp after reflecting (sycl_tile_index.h) around borders.
+area: runtime-and-kernels
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Tile loader coordinates and boundary reflection

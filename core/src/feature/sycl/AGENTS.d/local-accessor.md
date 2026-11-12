@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/sycl_compat.h
   - core/src/feature/sycl/integer_ssim_sycl.cpp
 invariant: Stencil/convolution SYCL kernels MUST use local_accessor for tap access.
+area: runtime-and-kernels
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Local memory access for stencil kernels

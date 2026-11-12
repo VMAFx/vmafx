@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/integer_motion_sycl.cpp
   - core/test/test_sycl_init_unwind.cpp
 invariant: A failed extractor init owns its cleanup; calls NULL-safe local close callback.
+area: runtime-and-kernels
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Failed extractor init cleanup

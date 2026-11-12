@@ -749,6 +749,76 @@ class MigrationTests(Fixture):
         self.assertEqual(status, 0, out)
         self.assertIn("old AGENTS.md: ", out)
 
+    def _group_into_areas(self) -> None:
+        self.write("_area-first.md", "# First\n\nAlpha things.\n")
+        self.write("_area-second.md", "# Second\n\nBeta things.\n")
+        self.write("alpha.md", ALPHA.replace("---\n<!--", "area: first\n---\n<!--", 1))
+        self.write(
+            "beta.md",
+            BETA.replace(
+                "invariant: Beta exits 2 on bad usage.",
+                "invariant: Beta exits 2 on bad usage.\narea: second",
+            ),
+        )
+        self.assertEqual(self.run_index("--write")[0], 0)
+
+    def test_area_grouped_pages_pass_and_stale_sub_index_fails(self) -> None:
+        self._group_into_areas()
+        report = self.report()
+        self.assertEqual(report.failures, 0, "\n".join(report.lines))
+        self.assertIn("  pages: 2,", "\n".join(report.lines))
+        sub = self.root / DIRECTORY / "AGENTS-first.md"
+        sub.write_text(sub.read_text(encoding="utf-8") + "stale\n", encoding="utf-8")
+        self.assertIn("stale index: 1", self.findings())
+        self.write("_area-unused.md", "# Unused\n\nOrphan.\n")
+        old = self.root / "old.md"
+        old.write_text(OLD, encoding="utf-8")
+        status, _, err = quiet(
+            migration.main, ["--old-file", str(old), "--root", str(self.root), DIRECTORY]
+        )
+        self.assertEqual(status, agents_index.EXIT_INVALID, err)
+        self.assertIn("area unused has no page", err)
+
+    def test_old_ref_reads_already_split_tree_before_area_grouping(self) -> None:
+        home = {"HOME": str(self.root), "XDG_CONFIG_HOME": str(self.root / ".config")}
+        environment = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        environment.update(home)
+        identity = ("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid")
+        safety = ("-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null")
+        for arguments in (
+            ("init", "--quiet"),
+            ("add", "--", DIRECTORY),
+            (*identity, *safety, "commit", "--quiet", "-m", "split"),
+        ):
+            run_command(
+                ("git", "-C", str(self.root), *arguments),
+                allowed_executables=("git",),
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        self._group_into_areas()
+        with mock.patch.dict(os.environ, home):
+            status, out, err = quiet(
+                migration.main, ["--old-ref", "HEAD", "--root", str(self.root), DIRECTORY]
+            )
+            self.assertEqual(status, 0, out + err)
+            self.assertIn("content units: 5 old, 5 new", out)
+            self.assertIn("OK: nothing lost", out)
+            self.write(
+                "beta.md",
+                (self.pages / "beta.md")
+                .read_text(encoding="utf-8")
+                .replace("- Never `eval` its input.\n", ""),
+            )
+            self.assertEqual(self.run_index("--write")[0], 0)
+            status, out, _ = quiet(
+                migration.main, ["--old-ref", "HEAD", "--root", str(self.root), DIRECTORY]
+            )
+            self.assertEqual(status, 1, out)
+            self.assertIn("units dropped: 1", out)
+
 
 class ModernizationAuditScopeTests(unittest.TestCase):
     def test_topic_pages_are_skipped_like_the_index_they_came_from(self) -> None:

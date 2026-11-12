@@ -46,14 +46,14 @@ through rendered topic tables and areas as defined in
 (`scripts/docs/agents_migration_check.py`) when their load path still exceeds
 the working target after their parents shrink.
 
-Where a rendered parent index is mostly its topic table, group its pages
-into areas (`AGENTS.d/_area-<slug>.md` plus `area:` on each page) so the
-parent lists areas and each area gets its own sub-index; `core/AGENTS.md`,
-`core/src/AGENTS.md` and `core/src/feature/AGENTS.md` take this route.
-Shorten the generated banner and usage paragraph every rendered index
-repeats to at most 350 bytes. `--write` runs the same load-path check as
-`--check` on the rendered bytes, so a render that crosses the cap exits
-65 and names every file on the path.
+Where a rendered index is mostly its topic table, group its pages into areas
+(`AGENTS.d/_area-<slug>.md` plus `area:` on each page) so the index lists
+areas and each area gets its own sub-index; `core/AGENTS.md`,
+`core/src/AGENTS.md`, `core/src/feature/AGENTS.md` and
+`core/src/feature/sycl/AGENTS.md` take this route. Shorten the generated
+banner and usage paragraph every rendered index repeats to at most 350 bytes.
+`--write` runs the same load-path check as `--check` on the rendered bytes, so
+a render that crosses the cap exits 65 and names every file on the path.
 
 Move the three workspace rules from `.cursor/rules/vmafx-workspace.mdc` into
 root `AGENTS.md` (`## 11. Workspace`) and remove
@@ -72,17 +72,17 @@ the Cursor projection from the single canonical root file.
 ## Consequences
 
 - Every `AGENTS.md` load path loads without truncation under the 32,768-byte
-  cap: all 73 paths measure at most 30,241 bytes (`core/src/feature/sycl`),
-  below the 30,720-byte working target.
+  cap: all 76 paths measure at most 29,958 bytes (`ai/sidecar`), below the
+  30,720-byte working target.
 - `scripts/docs/agents_index.py --check` (`make docs-fragments-check`) fails
   closed when an edit to root `AGENTS.md`, an intermediate parent or a leaf
   pushes any load path past `CHAIN_MAX_BYTES`.
-- Shrinking `scripts/AGENTS.md` (25,444 to 2,668 bytes) and `cmd/AGENTS.md`
-  (4,904 to 1,700 bytes) brings smaller children (`scripts/lib`, `scripts/dev`,
+- Shrinking `scripts/AGENTS.md` (25,444 to 2,501 bytes) and `cmd/AGENTS.md`
+  (4,904 to 1,435 bytes) brings smaller children (`scripts/lib`, `scripts/dev`,
   `scripts/ci`, `scripts/ci/lint-stubs`, `cmd/vmafx-node`) within budget
   without modifying their leaf files, while larger leaves (`scripts/release`,
   `cmd/vmafx-controller`, `cmd/vmafx-tune`, `cmd/vmafx-mcp` and the `core/`
-  leaves) become ADR-1454 topic indexes verified lossless by
+  leaves) become ADR-1454 topic or area indexes verified lossless by
   `scripts/docs/agents_migration_check.py`.
 - Root `AGENTS.md` holds all workspace and agent-integration rules (`## 11.
   Workspace`), and `.cursor/rules/vmafx-workspace.mdc` is deleted so

@@ -4,6 +4,7 @@ paths:
   - core/src/feature/sycl/sycl_integer_ssim_math.h
   - core/test/test_sycl_ssim_parity.c
 invariant: integer_ssim_sycl = CPU ssim, bit for bit (ADR-1443); SSIM twins take CPU options.
+area: ssim-cambi-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Integer SSIM extractor and kernels

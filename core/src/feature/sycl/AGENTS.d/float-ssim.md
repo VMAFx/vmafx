@@ -4,6 +4,7 @@ paths:
   - core/src/feature/sycl/sycl_ssim_terms.h
   - core/test/test_sycl_ssim_parity.c
 invariant: float_ssim_sycl terms = CPU doubles, frame sums = CPU raster order; decimation is bit-exact with CPU.
+area: ssim-cambi-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Float SSIM terms, sums, and decimation

@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/integer_motion_pipeline_sycl.*
   - core/test/test_sycl_motion*
 invariant: Motion SAD = one shared kernel, difference first; sum |blur(prev - cur)|.
+area: motion-psnr-and-moment
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Motion SAD pipeline shared kernel

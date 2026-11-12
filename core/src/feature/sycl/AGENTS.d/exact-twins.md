@@ -4,6 +4,7 @@ paths:
   - scripts/ci/cross_backend_calibration.py
   - core/test/test_sycl_exact_twins.c
 invariant: Twins declared exact as group; bit-identical with CPU reference, measured at --precision max.
+area: build-and-parity
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Exact GPU twins declaration
