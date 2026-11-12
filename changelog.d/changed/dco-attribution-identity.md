@@ -1,0 +1,1 @@
+- **DCO attribution check covers commit identities and pull request bodies.** Pull requests and landed commits now refuse model or coding tool tokens in author and committer identities, plus banned co-author lines and generated attribution in commit messages. Pull request bodies follow the same line rules; local checks accept `--pr-body-file PATH` or `PR_BODY`.
