@@ -326,6 +326,68 @@ class CheckDocsFragmentImportsTests(unittest.TestCase):
         self.assertIn("imports 'flask'", joined, problems)
         self.assertIn("imports 'httpx'", joined, problems)
 
+    def test_an_env_prefix_does_not_hide_the_script(self) -> None:
+        """`env LC_ALL=C python3 x.py` runs x.py and is scanned."""
+        problems = self.findings(
+            {
+                "Makefile": makefile(CHECKER_LINE + "\n\t@env LC_ALL=C python3 scripts/docs/env.py"),
+                "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+                "scripts/docs/env.py": "import flask\n",
+                "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+            }
+        )
+        self.assertIn("imports 'flask'", "\n".join(problems), problems)
+
+    def test_a_make_variable_interpreter_names_the_script(self) -> None:
+        """`$(PYTHON) x.py` holds an interpreter and still names x.py."""
+        problems = self.findings(
+            {
+                "Makefile": makefile(CHECKER_LINE + "\n\t@$(PYTHON) scripts/docs/makevar.py"),
+                "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+                "scripts/docs/makevar.py": "import flask\n",
+                "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+            }
+        )
+        self.assertIn("imports 'flask'", "\n".join(problems), problems)
+
+    def test_an_absolute_interpreter_path_names_the_script(self) -> None:
+        """`/usr/bin/python3 x.py` runs x.py, not nothing."""
+        problems = self.findings(
+            {
+                "Makefile": makefile(
+                    CHECKER_LINE + "\n\t@/usr/bin/python3 scripts/docs/absolute.py"
+                ),
+                "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+                "scripts/docs/absolute.py": "import flask\n",
+                "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+            }
+        )
+        self.assertIn("imports 'flask'", "\n".join(problems), problems)
+
+    def test_a_versioned_interpreter_name_names_the_script(self) -> None:
+        """`python3.14 x.py` runs x.py, not nothing."""
+        problems = self.findings(
+            {
+                "Makefile": makefile(CHECKER_LINE + "\n\t@python3.14 scripts/docs/versioned.py"),
+                "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+                "scripts/docs/versioned.py": "import flask\n",
+                "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+            }
+        )
+        self.assertIn("imports 'flask'", "\n".join(problems), problems)
+
+    def test_a_module_run_is_a_finding(self) -> None:
+        """`python3 -m pkg.mod` names no script the scan can read; it must fail
+        loudly rather than drop the module from the scan."""
+        problems = self.findings(
+            {
+                "Makefile": makefile(CHECKER_LINE + "\n\t@python3 -m scripts.docs.tool"),
+                "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+                "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+            }
+        )
+        self.assertTrue(any("python -m" in problem for problem in problems), problems)
+
 
 if __name__ == "__main__":
     unittest.main()

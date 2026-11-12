@@ -29,7 +29,11 @@ The gate fails closed on its own blind spots: an import closure cut short by
 the file bound, a file that cannot be read or parsed, and a recipe line
 `shlex` cannot tokenize are each findings, never a silent pass. Recipe lines
 joined with a trailing backslash are joined before tokenizing, and
-interpreter options (`python3 -B x.py`) do not hide the script.
+interpreter options (`python3 -B x.py`) do not hide the script. A Python
+interpreter spelled with an `env` prefix (`env LC_ALL=C python3 x.py`), a make
+variable (`$(PYTHON) x.py`), a path (`/usr/bin/python3 x.py`) or a versioned
+name (`python3.14 x.py`) is scanned the same way; a `-m` module run names no
+script and is itself a finding.
 
 Usage: check-docs-fragment-imports.py [--root REPO_ROOT]
 Exit: 0 clean; 1 a finding; 2 the gate cannot run (missing inputs).
@@ -87,32 +91,79 @@ def _recipe_tokens(line: str, issues: list[str]) -> list[str]:
 
 
 # Interpreter options that consume a separate value; the value never names the
-# script, so both tokens are skipped together.
+# script, so both tokens are skipped together. `-m` names a module rather than a
+# script and is handled separately: it must be a finding, never a silent skip.
 _VALUE_OPTS = {"-c", "-m", "-W", "-x", "--check-hash-based-pycs"}
+# `python3`, `python3.14`, `python`, and `env`'s `VAR=value` words, which carry
+# no script either.
+_INTERPRETER = re.compile(r"python[0-9.]*")
+_MAKE_VARIABLE = re.compile(r"\$(?:\([^)]*\)|\{[^}]*\})")
+_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 
 
-def _python_script(tokens: list[str]) -> str | None:
+def _python_interpreter(word: str) -> bool:
+    """A Python interpreter however the recipe spells it: bare (`python3`), a
+    path (`/usr/bin/python3`), a versioned name (`python3.14`), or a make
+    variable that holds one (`$(PYTHON)`)."""
+    return bool(_INTERPRETER.fullmatch(word.rsplit("/", 1)[-1])) or bool(
+        _MAKE_VARIABLE.fullmatch(word)
+    )
+
+
+def _without_env_prefix(tokens: list[str]) -> list[str]:
+    """The words after a leading `env` and its assignments: `env LC_ALL=C python3
+    x.py` runs `python3 x.py`."""
+    words = list(tokens)
+    if words and words[0].rsplit("/", 1)[-1] == "env":
+        words = words[1:]
+        while words and (words[0].startswith("-") or _ASSIGNMENT.match(words[0])):
+            words = words[1:]
+    return words
+
+
+def _python_script(tokens: list[str]) -> tuple[str | None, bool]:
     """The .py file a `python3 ...` invocation runs, interpreter options and
-    their values skipped (`python3 -W ignore -B x.py` names x.py)."""
+    their values skipped (`python3 -W ignore -B x.py` names x.py), and whether
+    the invocation is a `-m` module run (`python3 -m pkg.mod`), which names no
+    file."""
     rest = tokens[1:]
+    module_run = False
     while rest:
-        if rest[0] in _VALUE_OPTS:
+        if rest[0] == "-m":
+            module_run = True
+            rest = rest[2:]
+        elif rest[0] in _VALUE_OPTS:
             rest = rest[2:]
         elif rest[0].startswith("-"):
             rest = rest[1:]
         else:
             break
-    return rest[0] if rest and rest[0].endswith(".py") else None
+    return (rest[0] if rest and rest[0].endswith(".py") else None), module_run
 
 
-def _split_recipe_scripts(tokens: list[str], python: list[Path], shell: list[Path]) -> None:
-    """Sort one recipe line's words into the python and bash scripts it runs."""
-    if tokens and tokens[0] in {"python3", "python"}:
-        script = _python_script(tokens)
+def _split_recipe_scripts(
+    tokens: list[str], python: list[Path], shell: list[Path], issues: list[str]
+) -> None:
+    """Sort one recipe line's words into the python and bash scripts it runs.
+
+    A Python interpreter spelled any way the recipe can spell it — an `env`
+    prefix, a make variable, an absolute path or a versioned name — is scanned
+    like `python3`. A `-m` module run names no script and is a finding, so a
+    later recipe edit cannot drop one from the scan without a word."""
+    words = _without_env_prefix(tokens)
+    if not words:
+        return
+    if _python_interpreter(words[0]):
+        script, module_run = _python_script(words)
         if script:
             python.append(Path(script))
-    elif len(tokens) > 1 and tokens[1].endswith(".sh") and tokens[0] in {"bash", "sh"}:
-        shell.append(Path(tokens[1]))
+        elif module_run:
+            issues.append(
+                "recipe line runs a `python -m` module, which names no script the "
+                f"scan can read: {' '.join(tokens)[:100]}"
+            )
+    elif len(words) > 1 and words[1].endswith(".sh") and words[0] in {"bash", "sh"}:
+        shell.append(Path(words[1]))
 
 
 def _scripts_from_helper(helper: Path, makefile_dir: Path) -> list[Path]:
@@ -175,11 +226,11 @@ def recipe_scripts(makefile: Path) -> tuple[list[Path], list[str]]:
         pending = ""
         tokens = _recipe_tokens(candidate, issues)
         if tokens:
-            _split_recipe_scripts(tokens, python, shell)
+            _split_recipe_scripts(tokens, python, shell, issues)
     if pending:
         tokens = _recipe_tokens(pending, issues)
         if tokens:
-            _split_recipe_scripts(tokens, python, shell)
+            _split_recipe_scripts(tokens, python, shell, issues)
     for helper in shell:
         python.extend(_scripts_from_helper(helper, makefile.parent))
     return python, issues
