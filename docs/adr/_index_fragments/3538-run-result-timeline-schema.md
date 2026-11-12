@@ -1,0 +1,1 @@
+| [ADR-3538](3538-run-result-timeline-schema.md) | Run-result timeline schema closes objects and bumps the version per change; scoring_configuration stays optional; non-finite results spell null | Proposed | api, schema, versioning, interop |

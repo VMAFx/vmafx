@@ -10,8 +10,8 @@ SPDX-FileCopyrightText = "2026 Lusoris"
 SPDX-License-Identifier = "EUPL-1.2"
 
 # The run-result timeline schema, its fixtures, its test and its docs page are
-# contributor-authored (PR #2452): the fork-local EUPL-1.2 default applies,
-# credited to their author.
+# contributor-authored (PR #3385, issue #2452): the fork-local EUPL-1.2 default
+# applies, credited to their author.
 [[annotations]]
 path = [
     "api/run-result-timeline.schema.json",

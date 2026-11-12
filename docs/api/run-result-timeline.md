@@ -35,12 +35,15 @@ SMPTE-style timecode when the run has one.
 
 ## Versioning
 
-The document evolves additively under the project's
-[Append-Only ABI](../principles.md) invariant (HISS-14): after a release, the
-schema gains members, and never removes, renames or retypes one. `schema_version`
-is the integer a document was written against; a reader that meets a version it
-does not know refuses the document by name rather than guessing. The acceptance
-fixtures that pin today's shape live in
+The schema closes every object (`additionalProperties: false`) and fixes the
+event vocabulary and `schema_version` to the version it defines, so every added
+member or event type is a new schema version rather than an older reader's
+transparent extension (the model of
+[`docs/hardware-reports/report.schema.json`](https://github.com/VMAFx/vmafx/blob/master/docs/hardware-reports/report.schema.json);
+[ADR-3538](../adr/3538-run-result-timeline-schema.md) records the choice).
+`schema_version` is the integer a document was written against; a reader that
+meets a version it does not know refuses the document by name rather than
+guessing. The acceptance fixtures that pin today's shape live in
 [`api/testdata/run-result-timeline/`](https://github.com/VMAFx/vmafx/tree/master/api/testdata/run-result-timeline)
 and run in
 [`scripts/ci/tests/test_run_result_timeline_schema.py`](https://github.com/VMAFx/vmafx/blob/master/scripts/ci/tests/test_run_result_timeline_schema.py)

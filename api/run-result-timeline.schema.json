@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/VMAFx/vmafx/api/run-result-timeline.schema.json",
   "title": "VMAFx run-result timeline, schema version 1",
-  "description": "One versioned report format for a scoring run's provenance, per-frame scores, per-window statistics and events (VMAFx/vmafx#2452, RC5). It evolves additively under HISS-14: after a release, members are added, never removed, renamed or retyped; schema_version is the integer the document was written against, and a reader refuses a version it does not know by name. docs/api/run-result-timeline.md is the human reference. The skeleton pins the four sections' identities, not yet their full field contracts: provenance is the record of vmafx_context_provenance_json() (RC4 WP5, #2288; the authoritative field contract is the OpenAPI Provenance schema in api/openapi/vmafx-server-v1.yaml and the VmafxProvenance definition in core/api/vmafx.toml), and scoring_configuration is the option surface of #2258 (the scoring component group of the same OpenAPI document). The C ABI writer/reader and the byte-equal write-read-write identity check land in the follow-up PRs of the same issue.",
+  "description": "One versioned report format for a scoring run's provenance, per-frame scores, per-window statistics and events (VMAFx/vmafx#2452, RC5). Every object is closed (additionalProperties false) and the event vocabulary is fixed, so a change that adds a member or an event type takes a new schema version and a version-1 reader refuses a document it does not know by name; newer versions are additive supersets (never removed, renamed or retyped). The versioning model is ADR-3538. docs/api/run-result-timeline.md is the human reference. The skeleton pins the four sections' identities, not yet their full field contracts: provenance is the record of vmafx_context_provenance_json() (RC4 WP5, #2288; the authoritative field contract is the OpenAPI Provenance schema in api/openapi/vmafx-server-v1.yaml and the VmafxProvenance definition in core/api/vmafx.toml), and scoring_configuration is the option surface of #2258 (the ScoreOptions component of the same OpenAPI document). The C ABI writer/reader and the byte-equal write-read-write identity check land in the follow-up PRs of the same issue.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -68,8 +68,8 @@
         },
         "timecode": {
           "type": "string",
-          "pattern": "^[0-9]{2}:[0-9]{2}:[0-9]{2}(:[0-9]{2})?$",
-          "description": "SMPTE-style HH:MM:SS or HH:MM:SS:FF timecode."
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]([:;][0-9]{2})?$",
+          "description": "SMPTE-style HH:MM:SS or HH:MM:SS:FF timecode, optionally drop-frame with a semicolon before the frames. Hours, minutes and seconds are bounded; the frames field depends on the frame rate, so the reader checks it."
         }
       }
     },
@@ -86,7 +86,7 @@
       }
     },
     "scoring_configuration": {
-      "description": "The scoring-option surface in effect for the run (#2258, WP8): the scoring component group of api/openapi/vmafx-server-v1.yaml. The skeleton leaves the members to that single source.",
+      "description": "The scoring-option surface in effect for the run (#2258, WP8): the ScoreOptions component of the scoring group in api/openapi/vmafx-server-v1.yaml. The skeleton leaves the members to that single source.",
       "type": "object"
     },
     "frame_score": {
@@ -100,9 +100,9 @@
         },
         "scores": {
           "type": "object",
-          "description": "Keys are feature names as the mounted models name them (for example vmaf, integer_adm2); values are that frame's numbers for the feature. A frame without scores is an empty object.",
+          "description": "Keys are feature names as the mounted models name them (for example vmaf, integer_adm2); values are that frame's numbers for the feature, null for a non-finite result as the CLI's JSON output writes it (core/src/output.cpp, json_write_frame_metric). A frame without scores is an empty object.",
           "additionalProperties": {
-            "type": "number"
+            "type": ["number", "null"]
           }
         }
       }
@@ -130,8 +130,8 @@
           "description": "The feature the statistic belongs to; omitted for a run-level statistic."
         },
         "value": {
-          "type": ["number", "string"],
-          "description": "The computed value as a JSON number; a writer spells a non-finite result as the string NaN, +Inf or -Inf, and a reader matches that spelling."
+          "type": ["number", "null"],
+          "description": "The computed value as a JSON number; null for a non-finite result, as the CLI's JSON output writes it (core/src/output.cpp, json_write_frame_metric)."
         }
       }
     },
