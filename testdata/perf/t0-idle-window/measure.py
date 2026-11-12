@@ -157,16 +157,21 @@ def main() -> int:
             "full-process wall via time.perf_counter",
         },
     }
-    # Cells run in an interleaved order (cpu/cuda alternating within each N)
-    # so load, thermal and clock drift over the campaign hit both backends
-    # alike instead of confounding the backend comparison with position in the
-    # run matrix; the executed order is recorded with the raw timings.
-    cell_order = [f"{backend}-n{n}" for n in NS for backend in ("cpu", "cuda")]
+    # Cells run in an interleaved order (cpu/cuda alternating within each N,
+    # the first backend alternating across N) so load, thermal and clock drift
+    # over the campaign hit both backends alike instead of confounding the
+    # backend comparison with position in the run matrix; the executed order
+    # is recorded with the raw timings.
+    cell_order = []
+    for i, n in enumerate(NS):
+        backends = ("cpu", "cuda") if i % 2 == 0 else ("cuda", "cpu")
+        cell_order.extend(f"{backend}-n{n}" for backend in backends)
     results["cell_order"] = cell_order
     results["notes"]["cell_order"] = (
-        "cpu and cuda alternate within each N, so campaign drift (load, "
-        "thermal, clocks) affects both backends alike; the recorded campaign "
-        "ran all cpu cells before any cuda cell (see REPORT.md caveats)"
+        "cpu and cuda alternate within each N and the first backend "
+        "alternates across N, so campaign drift (load, thermal, clocks) "
+        "affects both backends alike; the recorded campaign ran all cpu "
+        "cells before any cuda cell (see REPORT.md caveats)"
     )
     for cell in cell_order:
         backend, n = cell.split("-n")

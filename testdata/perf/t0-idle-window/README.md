@@ -4,7 +4,7 @@ The per-run wall-clock reports behind the 2026-11-07 idle-window rerun,
 committed at the maintainer's request as the calibration data for the
 benchmark baseline (paraphrased, issue #3294).
 
-- 24 runs: `{cpu, cuda}` x N in {10, 30, 60, 120} x 4 runs per cell; run 0
+- 32 runs: `{cpu, cuda}` x N in {10, 30, 60, 120} x 4 runs per cell; run 0
   is the cold run, discarded from the minimum per the maintainer's
   2026-11-04 guidance; the minimum is taken over runs 1-3.
 - `summary.json` — per-cell min-of-3 walls, the matched run's `fps` and
@@ -19,8 +19,9 @@ benchmark baseline (paraphrased, issue #3294).
 Headline (RTX 5080, `CUDA_VISIBLE_DEVICES=1`): CPU T0 = 31.1 ms at
 21.305 ms/frame (R^2 = 1.0000); CUDA T0 = 403.1 ms at 6.300 ms/frame
 (R^2 = 0.9788), crossing near N = 24.8 (the primary fit's range starts at
-N = 30). On the quiet GPU the scoring window
-runs at 127-153 fps for CUDA against ~47 for CPU — the loaded-run parity
+N = 30). On the quiet GPU the scoring window runs at 126.85-137.46 fps
+across the min-of-3 matched runs for CUDA (recorded runs span 92.7-153 fps)
+against ~47 for CPU — the loaded-run parity
 (33.4 vs 33.1 fps) is consistent with external-load throttling (GPU and
 host load were not isolated; see the qualified verdict in REPORT.md), not
 evidence of a shared in-loop cost.

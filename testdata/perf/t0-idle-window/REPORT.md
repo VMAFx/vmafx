@@ -95,10 +95,12 @@ the ~400 ms fixed setup, not by a per-frame cap.
 
 **Verdict: hypothesis (a) is supported, with the load attribution qualified.**
 The quieter run rules out a *persistent* shared 33 fps cap: the CUDA in-window
-rate recovered to ~127-153 fps while the CPU also rose to its usual ~47 fps
+rate recovered to 126.85-137.46 fps across the min-of-3 matched runs (the
+recorded runs span 92.7-153 fps) while the CPU also rose to its usual ~47 fps
 (47.1-47.8 in this window vs 33.1 under the loaded run). Because the CPU
 throughput moved too, this window does not isolate GPU load from host load —
-part of the earlier equality was load on the host as well, and a shared input
+the CPU change is consistent with load on the host as well, though these runs
+alone do not establish the split, and a shared input
 or conversion bottleneck under the earlier host load is not excluded by these
 runs alone; isolating the two would need a campaign that varies GPU and host
 load independently. What the measurements do establish is the decisive ~3x
@@ -119,7 +121,8 @@ summary does not record an execution order), so campaign-level drift in load,
 thermal state and clocks is confounded with the backend identity. The per-cell
 min-of-3 numbers stand on their own, but the backend-to-backend comparison
 within this window carries that confound. The harness now runs the cells
-interleaved (cpu and cuda alternate within each N) and records the executed
+interleaved (cpu and cuda alternate within each N, and the first backend
+alternates across N) and records the executed
 order as `cell_order` in the summary, so future campaigns let drift hit both
 backends alike.
 
@@ -127,5 +130,5 @@ backends alike.
 
 - `summary.json` — per-cell min-of-3 walls, matched-run `fps`/`wall_fps`,
   utilization gates, and the OLS fits
-- Per-run JSON reports: `n{N}-{backend}-{run}.json` (24 files)
+- Per-run JSON reports: `n{N}-{backend}-{run}.json` (32 files, run 0 included)
 - Harness: `measure.py` in this directory
