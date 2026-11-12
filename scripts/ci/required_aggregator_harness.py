@@ -9,7 +9,7 @@ import json
 import re
 import shutil
 import textwrap
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 
 from scripts.lib.safe_subprocess import run as run_command
@@ -24,9 +24,11 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 const now = Date.now();
 let clock = now;
 class VirtualDate extends Date { static now() { clock += 180000; return clock; } }
+const expectedApps = input.expectedApps || {};
 const withDefaults = c => ({
   status: 'completed',
   started_at: new Date(now).toISOString(),
+  app: {slug: Object.hasOwn(expectedApps, c.name) ? expectedApps[c.name] : 'github-actions'},
   ...c,
 });
 const checks = input.checks.map(withDefaults);
@@ -104,10 +106,26 @@ def _required_names(script: str) -> list[str]:
     return re.findall(r"'([^']+)'", body)
 
 
+def _expected_apps(script: str) -> dict[str, str]:
+    """Return check-name to expected app-slug mappings declared by the aggregator script."""
+    block = re.search(r"const expectedAppByCheck = (\{.*?\});", script, re.DOTALL)
+    if block is None:
+        raise AssertionError("required aggregator must declare expectedAppByCheck")
+    parsed: object = json.loads(block.group(1))
+    if not isinstance(parsed, dict):
+        raise AssertionError("expectedAppByCheck must be a JSON object")
+    return {str(key): str(value) for key, value in parsed.items()}
+
+
 def _synthetic_checks(
-    names: list[str], check_name: str, conclusion: str | None, selected_suite: int
+    names: list[str],
+    check_name: str,
+    conclusion: str | None,
+    selected_suite: int,
+    absent_checks: Collection[str] = (),
 ) -> list[dict[str, object]]:
     """Every required check succeeds in suite 1; the selected one reports as asked."""
+    omitted = set(absent_checks)
     return [
         {
             "name": name,
@@ -115,7 +133,7 @@ def _synthetic_checks(
             "check_suite": {"id": selected_suite if name == check_name else 1},
         }
         for name in names
-        if name != check_name or conclusion is not None
+        if name not in omitted and (name != check_name or conclusion is not None)
     ]
 
 
@@ -158,6 +176,7 @@ def run_required_aggregator(
     selected_suite: int = 1,
     workflow_runs: Sequence[Mapping[str, object]] = (),
     head_ref: str = "fix/example",
+    absent_checks: Collection[str] = (),
     extra_checks: Sequence[Mapping[str, object]] = (),
     later_checks: Sequence[Mapping[str, object]] = (),
     api_errors: Mapping[str, Sequence[int]] | None = None,
@@ -170,8 +189,9 @@ def run_required_aggregator(
     the selected one reports from ``selected_suite``. ``workflow_runs`` are the
     workflow runs on the commit (``event``, ``head_branch`` and ``check_suite_id``
     each), as the Actions API lists them. ``head_ref`` is the pull request's head branch
-    (a ``release-please--`` ref arms the release must-report list). ``extra_checks`` are
-    further check runs on the commit (``name``, ``conclusion``, ``check_suite``, and
+    (a ``release-please--`` ref arms the release must-report list). ``absent_checks``
+    omits the named required contexts from the baseline synthetic checks. ``extra_checks``
+    are further check runs on the commit (``name``, ``conclusion``, ``check_suite``, and
     optionally ``status``). ``later_checks``, when given, replace every check run from the
     second listing on, as the Actions API shows a commit later. ``api_errors`` maps API
     stub names ("getWorkflowRun", "listForRef", "listWorkflowRunsForRepo") to sequences
@@ -185,12 +205,17 @@ def run_required_aggregator(
     if check_name not in names:
         raise AssertionError(f"required aggregator must declare {check_name!r}")
 
-    checks = _synthetic_checks(names, check_name, conclusion, selected_suite)
+    for omitted_name in absent_checks:
+        if omitted_name not in names:
+            raise AssertionError(f"required aggregator must declare {omitted_name!r}")
+
+    checks = _synthetic_checks(names, check_name, conclusion, selected_suite, absent_checks)
     checks.extend(dict(check) for check in extra_checks)
     return _run_driver(
         {
             "script": script,
             "checks": checks,
+            "expectedApps": _expected_apps(script),
             "env": dict(env or {}),
             "event": event,
             "workflowRuns": [dict(run) for run in workflow_runs],
