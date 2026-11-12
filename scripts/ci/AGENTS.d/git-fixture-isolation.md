@@ -27,6 +27,7 @@ entry point.
   literal, `dict(...)` / `.update(...)` keyword, or subscript assignment.
   `ISOLATION_EXCEPTIONS` excuses missing `GIT_*` marker only; fixture barriers
   still enforced.
+- `**os.environ` / copy after `GIT_CONFIG_*` in `dict` / `.update` -> refused.
 - Caller-poison `GIT_CONFIG_KEY_*` suffix lookup allowed; no complete-prefix
   exclusion claimed. Product files outside fixture configuration scope.
 - Rejected filters/markers/barriers, missing keys, accepted forms, tuple

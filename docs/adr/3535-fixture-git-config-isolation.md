@@ -49,13 +49,14 @@ For Python fixtures that create or configure repositories, require executable
 AST assignments setting `GIT_CONFIG_GLOBAL` to `os.devnull` or `"/dev/null"` and
 either `GIT_CONFIG_SYSTEM` to `os.devnull` / `"/dev/null"` or
 `GIT_CONFIG_NOSYSTEM` to `"1"`. Accept dictionary literals, keyword arguments on
-`dict(...)` or `<mapping>.update(...)`, and subscript assignments; ignore
-comments, docstrings, string literals and `setdefault`. Fixture scope includes
-existing test-script names, files under a `tests/` directory and Python
-basenames containing `fixture`. Run the barrier check on every isolated Python
-fixture (both `startswith`-marked and helper-marked) as well as Python fixtures
-listed in `ISOLATION_EXCEPTIONS`, where exceptions excuse only the missing
-`GIT_*` drop marker.
+`dict(...)` or `<mapping>.update(...)`, and subscript assignments, refusing
+`**os.environ` (or a copy) unpacked after a barrier key in the same mapping
+display or call; ignore comments, docstrings, string literals and `setdefault`.
+Fixture scope includes existing test-script names, files under a `tests/`
+directory and Python basenames containing `fixture`. Run the barrier check on
+every isolated Python fixture (both `startswith`-marked and helper-marked) as
+well as Python fixtures listed in `ISOLATION_EXCEPTIONS`, where exceptions
+excuse only the missing `GIT_*` drop marker.
 
 Apply the missing barriers and canonical `os.environ` filters across the
 affected fixture files and fixture helpers while preserving additional dropped
@@ -63,12 +64,14 @@ variables. Keep production licensing behavior unchanged: its temporary
 archive-fetch repositories remain outside the fixture configuration rule.
 
 Shell, Node and Go retain the regex isolation-marker path. Python callback
-predicates on `filter(...)` are refused by the AST allow-list; imperative
-environment mutation after copying `os.environ`, alias/interprocedural data flow
-and Node/Go filter re-admission remain outside the static check and are pinned
-with `Known gap:` replay tests in `scripts/ci/test_git_fixture_isolation.py`.
-The agent invariant page `scripts/ci/AGENTS.d/git-fixture-isolation.md` records
-these rules and limits.
+predicates on `filter(...)` and post-barrier `**os.environ` (or copied
+`os.environ`) expansions in dictionary displays and `dict(...)` / `.update(...)`
+calls are refused by the AST check; imperative environment mutation after
+copying `os.environ`, alias/interprocedural data flow and Node/Go filter
+re-admission remain outside the static check and are pinned with `Known gap:`
+replay tests in `scripts/ci/test_git_fixture_isolation.py`. The agent invariant
+page `scripts/ci/AGENTS.d/git-fixture-isolation.md` records these rules and
+limits.
 
 ## Alternatives considered
 
@@ -87,17 +90,18 @@ these rules and limits.
   `os.environ.copy()` / `dict(os.environ)`; separate `.pop()` operations
   preserve additional removals.
 - The existing static test replays rejected filters, non-executable markers and
-  barriers, missing keys, accepted assignment styles, tuple prefixes, copied
-  `os.environ` sources, helper-marked and excepted fixtures, caller-poison
-  selection and a product-file exemption. Temporary copies of
-  `test_ci_impact.py` and excepted `test_merge_train_guard.py` fail
-  `unisolated_offenders()` when a bypass or missing barrier is planted and pass
-  after restoration.
-- Configuration assignments and markers are checked via AST within each Python
-  file. Imperative mutation after copying `os.environ`, alias handling,
-  interprocedural data flow, assignment-to-subprocess association and Node/Go
-  filter re-admission remain outside this check and are replayed by `Known gap:`
-  tests.
+  barriers, post-barrier `**os.environ` expansions, missing keys, accepted
+  assignment styles, tuple prefixes, copied `os.environ` sources, helper-marked
+  and excepted fixtures, caller-poison selection and a product-file exemption.
+  Temporary copies of `test_ci_impact.py` and excepted `test_merge_train_guard.py`
+  fail `unisolated_offenders()` when a bypass or missing barrier is planted and
+  pass after restoration.
+- Configuration assignments, barrier-before-unpack ordering in mapping displays
+  and `dict(...)` / `.update(...)` calls, and markers are checked via AST within
+  each Python file. Imperative mutation after copying `os.environ`, alias
+  handling, interprocedural data flow, assignment-to-subprocess association and
+  Node/Go filter re-admission remain outside this check and are replayed by
+  `Known gap:` tests.
 
 ## References
 

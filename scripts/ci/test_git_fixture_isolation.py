@@ -35,7 +35,7 @@ import unittest
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 try:  # the hooks run this file with plain `python3`; only the tooling suite brings pytest
     import pytest
@@ -453,36 +453,80 @@ def is_barrier_value(key: str, value: ast.expr) -> bool:
     return False
 
 
+def is_mapping_call(node: ast.AST) -> TypeGuard[ast.Call]:
+    """True when node is a dict(...) or <mapping>.update(...) call."""
+    if not isinstance(node, ast.Call):
+        return False
+    return (isinstance(node.func, ast.Name) and node.func.id == "dict") or (
+        isinstance(node.func, ast.Attribute) and node.func.attr == "update"
+    )
+
+
+def subscript_str_key(target: ast.AST) -> str | None:
+    """Return the string constant slice of target['KEY'], else None."""
+    if not isinstance(target, ast.Subscript):
+        return None
+    if isinstance(target.slice, ast.Constant) and isinstance(target.slice.value, str):
+        return target.slice.value
+    return None
+
+
+def node_mapping_entries(node: ast.AST) -> list[tuple[str | None, ast.expr]]:
+    """Ordered (key, value) entries for a dict display or dict/update call; None marks **unpack."""
+    if isinstance(node, ast.Dict):
+        entries: list[tuple[str | None, ast.expr]] = []
+        for key, val in zip(node.keys, node.values, strict=True):
+            if key is None:
+                entries.append((None, val))
+            elif isinstance(key, ast.Constant) and isinstance(key.value, str):
+                entries.append((key.value, val))
+        return entries
+    if is_mapping_call(node):
+        return [(kw.arg, kw.value) for kw in node.keywords]
+    return []
+
+
 def node_barrier_pairs(node: ast.AST) -> list[tuple[str, ast.expr]]:
     """Extract executable (key, value) candidate assignments from one AST node."""
-    if isinstance(node, ast.Dict):
-        return [
-            (key.value, val)
-            for key, val in zip(node.keys, node.values, strict=True)
-            if isinstance(key, ast.Constant) and isinstance(key.value, str)
-        ]
-    if isinstance(node, ast.Call) and (
-        (isinstance(node.func, ast.Name) and node.func.id == "dict")
-        or (isinstance(node.func, ast.Attribute) and node.func.attr == "update")
-    ):
-        return [(kw.arg, kw.value) for kw in node.keywords if kw.arg is not None]
+    if isinstance(node, ast.Dict) or is_mapping_call(node):
+        return [(key, val) for key, val in node_mapping_entries(node) if key is not None]
     if isinstance(node, ast.Assign):
         return [
-            (target.slice.value, node.value)
+            (key, node.value)
             for target in node.targets
-            if isinstance(target, ast.Subscript)
-            and isinstance(target.slice, ast.Constant)
-            and isinstance(target.slice.value, str)
+            if (key := subscript_str_key(target)) is not None
         ]
-    if (
-        isinstance(node, ast.AnnAssign)
-        and node.value is not None
-        and isinstance(node.target, ast.Subscript)
-        and isinstance(node.target.slice, ast.Constant)
-        and isinstance(node.target.slice.value, str)
-    ):
-        return [(node.target.slice.value, node.value)]
+    if isinstance(node, ast.AnnAssign) and node.value is not None:
+        key = subscript_str_key(node.target)
+        return [(key, node.value)] if key is not None else []
     return []
+
+
+def post_barrier_unpack_line(node: ast.AST) -> int | None:
+    """Line of the first **os.environ unpack placed after a barrier key in node, else None."""
+    seen_barrier = False
+    for key, value in node_mapping_entries(node):
+        if key is not None and is_barrier_value(key, value):
+            seen_barrier = True
+        elif key is None and seen_barrier and is_environ_mapping(value):
+            return value.lineno
+    return None
+
+
+def barrier_order_violation(name: str, tree: ast.AST) -> str:
+    """Refuse **os.environ unpacking placed after GIT_CONFIG_* barrier keys."""
+    candidates = sorted(
+        (node for node in ast.walk(tree) if isinstance(node, ast.Dict) or is_mapping_call(node)),
+        key=lambda node: (node.lineno, node.col_offset),
+    )
+    for node in candidates:
+        lineno = post_barrier_unpack_line(node)
+        if lineno is not None:
+            return (
+                f"{name}:{lineno}: **os.environ after GIT_CONFIG_* barrier keys "
+                "lets the caller override them; place the expansion first"
+            )
+    return ""
 
 
 def fixture_config_violation(name: str, tree: ast.AST) -> str:
@@ -491,6 +535,9 @@ def fixture_config_violation(name: str, tree: ast.AST) -> str:
     fixture = TEST_SCRIPT.search(name) or "tests" in path.parts or "fixture" in path.name
     if not fixture:
         return ""
+    order_violation = barrier_order_violation(name, tree)
+    if order_violation:
+        return order_violation
     assigned = {
         key
         for node in ast.walk(tree)
@@ -1066,6 +1113,7 @@ class GitFixtureIsolation(unittest.TestCase):
                 self.assertIn(name, diagnostic)
                 self.assertIn(missing, diagnostic)
         self.test_python_ast_barrier_refuses_non_executable_forms()
+        self.test_python_ast_barrier_refuses_post_barrier_environ_unpack()
         self.test_python_ast_marker_refuses_comments_and_strings()
         self.test_python_ast_comprehension_and_filter_allowlist()
         self.check_accepted_python_isolation(canonical, create)
@@ -1086,6 +1134,44 @@ class GitFixtureIsolation(unittest.TestCase):
             with self.subTest(header=header):
                 diagnostic = unisolated_git(name, header + canonical + create)
                 self.assertIn("missing GIT_CONFIG_GLOBAL", diagnostic)
+
+    def test_python_ast_barrier_refuses_post_barrier_environ_unpack(self) -> None:
+        """Accept pre-barrier **os.environ and refuse post-barrier or mid-barrier unpacks."""
+        name = "tests/test_fixture.py"
+        canonical = 'env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}\n'
+        create = 'git("init", "-q")\n'
+        for accepted in (
+            '{**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}',
+            'dict(**os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")',
+        ):
+            with self.subTest(accepted=accepted):
+                self.assertEqual(
+                    unisolated_git(name, canonical + f"out = {accepted}\n" + create), ""
+                )
+        expected = (
+            f"{name}:2: **os.environ after GIT_CONFIG_* barrier keys "
+            "lets the caller override them; place the expansion first"
+        )
+        for rejected in (
+            '{"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", **os.environ}',
+            '{"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", **dict(os.environ)}',
+            '{"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", **os.environ.copy()}',
+            '{"GIT_CONFIG_GLOBAL": os.devnull, **os.environ, "GIT_CONFIG_NOSYSTEM": "1"}',
+            '{"GIT_CONFIG_NOSYSTEM": "1", **os.environ, "GIT_CONFIG_GLOBAL": os.devnull}',
+            'dict(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1", **os.environ)',
+            'env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1", **os.environ.copy())',
+        ):
+            with self.subTest(rejected=rejected):
+                self.assertEqual(
+                    unisolated_git(name, canonical + f"out = {rejected}\n" + create), expected
+                )
+        two_displays = (
+            canonical
+            + 'first = {"GIT_CONFIG_GLOBAL": os.devnull, **os.environ}\n'
+            + 'second = {"GIT_CONFIG_NOSYSTEM": "1", **os.environ}\n'
+            + create
+        )
+        self.assertEqual(unisolated_git(name, two_displays), expected)
 
     def test_python_ast_marker_refuses_comments_and_strings(self) -> None:
         """Require AST call markers, check helper-marked fixtures, and report syntax lines."""
