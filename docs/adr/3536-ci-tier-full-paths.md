@@ -108,12 +108,12 @@ must run outside `ci-tier.yml`. Pull-request `Pre-Commit` runs diff-scoped via
 
 ## References
 
-- Source: `req` (controller answer `vmafx-tier-platform-paths`, 2026-11-11,
-  paraphrased): list the platform-guarded launch files as full-tier paths in
-  `.github/ci-tier.json`, amend ADR-2169, prove it with a planted case (the
-  pull request 3401 path list decides full, an unlisted path light, one
-  boundary glob), and check that every listed glob still matches a tracked
-  file so the list cannot drift silently.
+- Source: `req` (the maintainer's request, 2026-11-11, paraphrased): list the
+  platform-guarded launch files as full-tier paths in `.github/ci-tier.json`,
+  amend ADR-2169, prove it with a planted case (the pull request 3401 path
+  list decides full, an unlisted path light, one boundary glob), and check
+  that every listed glob still matches a tracked file so the list cannot drift
+  silently.
 - [Research-3536](../research/3536-ci-tier-full-paths.md) (platform-path audit).
 - Pull request #3401 and [ADR-3532](3532-trusted-executable-launch-links.md).
 - [ADR-2169](2169-ci-fewer-runs.md) (CI tier routing).
