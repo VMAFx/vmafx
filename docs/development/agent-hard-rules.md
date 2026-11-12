@@ -56,8 +56,10 @@ line budget. Changing a rule here changes it for every agent.
    [ADR-3295](../adr/3295-render-only-pull-request.md).
    Non-trivial = another engineer could reasonably have chosen differently.
    Bug fixes and implementation details do not need an ADR. Cite `req`
-   (direct user quote) or `Q<round>.<q>` (popup answer) in the ADR's
-   `## References` section. **Invariant (ADR-0532): always run
+   (the maintainer's request, paraphrased in neutral English and marked
+   `(paraphrased)`, never quoted verbatim) or `Q<round>.<q>` (popup
+   answer, paraphrased the same way) in the ADR's `## References`
+   section. **Invariant (ADR-0532): always run
    `scripts/adr/next-free.sh --claim <slug>` to atomically reserve the next
    ADR number before creating the file.** Do not hand-pick a number or use
    the read-only form without `--claim`. The command creates a stub file
