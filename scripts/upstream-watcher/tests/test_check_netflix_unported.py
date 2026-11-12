@@ -45,8 +45,9 @@ SAVED_GIT_ENVIRONMENT: dict[str, str] = {}
 def setup_module() -> None:
     """Keep a hook's GIT_* away from the script's own git calls."""
     clean = git_env.drop()
-    for key in [key for key in os.environ if key not in clean]:
-        SAVED_GIT_ENVIRONMENT[key] = os.environ.pop(key)
+    for key in tuple(os.environ):
+        if key not in clean:
+            SAVED_GIT_ENVIRONMENT[key] = os.environ.pop(key)
 
 
 def teardown_module() -> None:

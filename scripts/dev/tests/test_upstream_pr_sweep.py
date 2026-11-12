@@ -517,11 +517,10 @@ class UpstreamPrSweepTest(SweepFixtureCase):
     def test_negative_unsigned_commit_rejected(self) -> None:
         empty_signers = self.root / "empty_signers"
         empty_signers.write_text("", encoding="utf-8")
-        key_prefix = "GIT_CONFIG_KEY_"
         index = next(
-            key[len(key_prefix) :]
+            key[len("GIT_CONFIG_KEY_") :]
             for key, value in os.environ.items()
-            if key.startswith(key_prefix) and value == "gpg.ssh.allowedSignersFile"
+            if key.startswith("GIT_CONFIG_KEY_") and value == "gpg.ssh.allowedSignersFile"
         )
         os.environ[f"GIT_CONFIG_VALUE_{index}"] = str(empty_signers)
 

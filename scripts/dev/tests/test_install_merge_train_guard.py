@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import install_merge_train_guard as installer
 import merge_train_guard as guard
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import CommandFailed
 
 
@@ -41,7 +42,7 @@ class MigrationContract(unittest.TestCase):
                 (
                     passed_env
                     if passed_env is not None
-                    else {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+                    else git_env.hermetic()
                 ),
                 GIT_CONFIG_GLOBAL=os.devnull,
                 GIT_CONFIG_NOSYSTEM="1",

@@ -128,6 +128,10 @@ INLINE_FILTER_ALLOWED = frozenset(
     {
         "scripts/lib/git_env.py",
         "scripts/ci/test_git_fixture_isolation.py",
+        # GIT_CONFIG_KEY_N indexing of the caller's allowedSignersFile config, not
+        # a GIT_* scrub; the master checker recognizes the literal form (poison
+        # control) while this regex cannot tell it apart from a filter.
+        "scripts/dev/tests/test_upstream_pr_sweep.py",
     }
 )
 # The literal spellings of the inline scrub the one-implementation rule refuses. The
@@ -453,6 +457,7 @@ def is_marker_prefix(arg: ast.expr) -> bool:
 
 def has_python_marker(tree: ast.AST) -> bool:
     """True when tree calls an environment helper or startswith('GIT_*')."""
+    aliases = git_env_alias_names(tree)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -466,13 +471,45 @@ def has_python_marker(tree: ast.AST) -> bool:
             isinstance(node.func, ast.Attribute)
             and node.func.attr in ("drop", "drop_except", "hermetic")
             and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "git_env"
+            and node.func.value.id in aliases
         ):
             return True
         prefix = startswith_prefix_arg(node)
         if prefix is not None and is_marker_prefix(prefix):
             return True
     return False
+
+
+def git_env_alias_names(tree: ast.AST) -> set[str]:
+    """Local names bound to scripts.lib.git_env, including aliased imports."""
+    names = {"git_env"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(
+                alias.asname
+                for alias in node.names
+                if alias.name == "git_env" and alias.asname
+            )
+        elif isinstance(node, ast.ImportFrom) and node.module == "scripts.lib":
+            names.update(
+                alias.asname or alias.name
+                for alias in node.names
+                if alias.name == "git_env"
+            )
+    return names
+
+
+def has_hermetic_call(tree: ast.AST) -> bool:
+    """True when tree calls git_env.hermetic() — the whole barrier lives in the helper."""
+    aliases = git_env_alias_names(tree)
+    return any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "hermetic"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id in aliases
+        for node in ast.walk(tree)
+    )
 
 
 def is_barrier_value(key: str, value: ast.expr) -> bool:
@@ -670,6 +707,10 @@ def fixture_config_violation(name: str, tree: ast.AST) -> str:
         for key, value in node_barrier_pairs(node)
         if is_barrier_value(key, value)
     }
+    if not assigned and has_hermetic_call(tree):
+        # git_env.hermetic() performs the whole barrier inside the helper module
+        # (issue #3324 one-implementation gate), so no literal assignment is left.
+        return ""
     if "GIT_CONFIG_GLOBAL" not in assigned:
         return f"{name}: missing GIT_CONFIG_GLOBAL assignment to os.devnull"
     if not assigned.intersection(("GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM")):
@@ -1483,8 +1524,14 @@ class GitFixtureIsolation(unittest.TestCase):
 
     def check_planted_python_isolation(self) -> None:
         """A temporary fixture copy fails the static check after re-admission; restore passes."""
-        name = "scripts/ci/tests/test_ci_impact.py"
-        original = (ROOT / name).read_text(encoding="utf-8")
+        name = "tests/test_fixture.py"
+        # Every real fixture file now calls git_env (issue #3324 one-implementation
+        # gate), so the planted copy is built from the canonical synthetic form the
+        # replay checks above use instead of reading a live tree file.
+        canonical = '{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}'
+        config = 'env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")\n'
+        create = 'git("init", "-q")\n'
+        original = "env = " + canonical + "\n" + config + create
         old = 'if not k.startswith("GIT_")'
         planted = original.replace(old, old + ' or k.startswith("GIT_CONFIG_")', 1)
         self.assertNotEqual(original, planted)

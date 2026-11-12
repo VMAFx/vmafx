@@ -111,8 +111,9 @@ class RenderOnlyGateTest(unittest.TestCase):
 
         ADR-3295: runs the gate to verify render-only PR qualification.
         """
-        env = {k: v for k, v in os.environ.items() if k not in ("PR_BODY", "BASE_SHA", "HEAD_SHA")}
-        env = git_env.hermetic(env)
+        env = git_env.hermetic()
+        for key in ("PR_BODY", "BASE_SHA", "HEAD_SHA"):
+            env.pop(key, None)
         env.update(PR_BODY=body, BASE_SHA=self.base, HEAD_SHA=self.git("rev-parse", "HEAD").strip())
         return run_command(
             [BASH, str(GATE)],
