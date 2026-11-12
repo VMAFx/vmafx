@@ -23,6 +23,14 @@ import merge_train_guard as guard
 from scripts.lib.safe_subprocess import CommandFailed
 
 
+def library_digests(value: dict[str, object]) -> dict[str, str]:
+    """Return the preview's library digest map; a non-mapping fails the test."""
+    digests = value["library_sha256"]
+    if not isinstance(digests, dict):
+        raise AssertionError(f"library_sha256 is {type(digests).__name__}, not a mapping")
+    return digests
+
+
 class MigrationContract(unittest.TestCase):
     def isolate_git_config(self) -> None:
         """Both Git paths run without the caller's global and system config."""
@@ -219,7 +227,7 @@ class MigrationContract(unittest.TestCase):
             if relative.startswith("scripts/lib/") and relative != "scripts/lib/pkg.py"
         }
         self.assertEqual(value["library_sha256"], expected)
-        self.assertEqual(list(value["library_sha256"]), sorted(expected))
+        self.assertEqual(list(library_digests(value)), sorted(expected))
         installer.install(value, committed, installer.plan_hash(value))
         release = self.state / "releases" / installer.release_name(value)
         for relative, digest in expected.items():
@@ -269,7 +277,7 @@ class MigrationContract(unittest.TestCase):
         original = installer.load_committed_blob
 
         def changed(source: Path, head: str, relative: str, label: str) -> bytes:
-            data = original(source, head, relative, label)
+            data: bytes = original(source, head, relative, label)
             return data + b"# Changed.\n" if relative.startswith("scripts/lib/") else data
 
         with patch.object(installer, "load_committed_blob", side_effect=changed):
@@ -283,7 +291,7 @@ class MigrationContract(unittest.TestCase):
         value, committed = self.plan()
         installer.install(value, committed, installer.plan_hash(value))
         release = self.state / "releases" / installer.release_name(value)
-        for relative in value["library_sha256"]:
+        for relative in library_digests(value):
             with self.subTest(module=relative):
                 target = release / relative
                 original = target.read_bytes()
