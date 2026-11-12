@@ -390,19 +390,23 @@ def test_the_debian_record_is_the_text_the_gate_demands() -> None:
 def test_the_images_that_link_zimg_from_source_keep_their_own_record() -> None:
     """macOS and the Windows zips build zimg from source; release-native does not.
 
-    Issue #3242 left the three alone. The macOS bundle links Homebrew's
-    `libzimg.a` and the Windows zips vcpkg's, so each keeps its 3.0.6 archive
-    entry. `release-native` is different: `stage_zimg` copies the loader-resolved
-    `libzimg.so*` from the release container's unpinned `dnf` `zimg-devel`
-    (dev/Containerfile), so its entry names the wrong source — tracked in
-    #3396, not fixed here. None of them has a Debian SOURCE file to point at
-    and none may claim one.
+    Issue #3242 left the two source-built families alone. The macOS bundle links
+    Homebrew's `libzimg.a` and the Windows zips vcpkg's, so each keeps its 3.0.6
+    archive entry. `release-native` is different: `stage_zimg` copies the
+    loader-resolved `libzimg.so*` from the release container's unpinned `dnf`
+    `zimg-devel` (dev/Containerfile), so since #3396 its entry names the
+    installed package that was measured — the EPEL 8 source package `zimg
+    3.0.6-1.el8` — instead of the upstream tag. None of them has a Debian SOURCE
+    file to point at and none may claim one.
     """
     expanded = lic.load_manifest()["artifacts"]
     # The two families that really do build the 3.0.6 release say so in their own
     # `source`, and carry the archive's WTFPL text by name — the tester-family
     # entries fetch it, the repo-family entries copy the checked-in text.
     expected = "https://github.com/sekrit-twc/zimg.git at commit f819b14e8f39d1282400b0d9543e8ef73c1b2bbd, tag release-3.0.6"
+    # The dnf package the release-build container resolves today (issue #3396):
+    # measured against the EPEL 8 repo metadata the manylinux_2_28 base installs from.
+    distributed = "the EPEL 8 source package zimg 3.0.6-1.el8 that dnf zimg-devel pulls into the release-build container, whose library stage_zimg copies as the loader resolves it for libvmafx"
     archive_texts = (
         [
             {
@@ -419,9 +423,9 @@ def test_the_images_that_link_zimg_from_source_keep_their_own_record() -> None:
             }
         ],
     )
-    # release-native's entry names the 3.0.6 archive, but the bundle ships the
-    # distribution build (#3396): there the test pins only what the fix must not
-    # lose, no Debian record claimed, and leaves source and texts to #3396.
+    # release-native ships the distribution build, so it names the measured dnf
+    # package (#3396) while claiming no Debian record; the source-built families
+    # keep their exact 3.0.6 archive source and text.
     for kind in ("macos", "windows-zip", "windows-cuda-zip", "windows-sycl-zip", "release-native"):
         component = next(c for c in expanded[kind]["components"] if c["id"] == "zimg")
         assert "debian_source_file" not in component, kind
@@ -429,6 +433,8 @@ def test_the_images_that_link_zimg_from_source_keep_their_own_record() -> None:
             "usr/share/doc/libzimg2" in text for text in json.dumps(component["texts"]).split()
         ), kind
         if kind == "release-native":
+            assert component["source"] == distributed, kind
+            assert component["texts"] in archive_texts, kind
             continue
         assert component["source"] == expected, kind
         assert component["texts"] in archive_texts, kind
