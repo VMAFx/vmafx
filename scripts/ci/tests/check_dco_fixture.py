@@ -75,7 +75,7 @@ def git_env(ident: tuple[str, str], committer: tuple[str, str] | None = None) ->
 
 
 def clean_env() -> dict[str, str]:
-    """The environment without the variables the gate reads, so a CI run cannot leak into a case."""
+    """The environment without caller Git state or the variables the gate reads."""
     drop = (
         *REPO_ENV,
         "BASE_SHA",
@@ -87,7 +87,11 @@ def clean_env() -> dict[str, str]:
         "LANDING_IDENTITY",
         "PR_BODY",
     )
-    return {k: v for k, v in os.environ.items() if k not in drop}
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    for key in drop:
+        env.pop(key, None)
+    env.update(GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null")
+    return env
 
 
 class Repo:
