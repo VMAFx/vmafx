@@ -254,7 +254,10 @@ def adapters(
     rebase = f'#!/bin/sh\n# Explicit PR and --apply required by the gateway.\nset -eu\n{launcher} rebase "$@"\n'
     operator = (
         "#!/usr/bin/env python3\n# Retired unrestricted operator; inspection only.\n"
-        "import sys\n"
+        "import posix, sys\n"
+        "if not sys.flags.isolated:\n"
+        "    if not sys.executable:\n        raise SystemExit('refused: interpreter path unknown')\n"
+        "    posix.execv(sys.executable, [sys.executable, '-I', __file__, *sys.argv[1:]])\n"
         "if len(sys.argv) != 1:\n    raise SystemExit('operator is inspection-only; no arguments accepted')\n"
         "sys.argv = [sys.argv[0], 'cycle']\n" + code + "\n"
     )

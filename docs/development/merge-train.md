@@ -177,23 +177,19 @@ library dependencies, and includes package initializers; `scripts/lib/__init__.p
 ships even when the gateway imports no library. Every source must match its
 committed blob at the preview's `source_commit`.
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:9b98f6ed44e875197323ddce9cf432c85ee2b15d6c55d2e8f403dfc70bc0fdf7 -->
-
 Every generated launcher verifies all runtime hashes before executing the
 gateway. A changed or missing library refuses with
 `refused: installed library hash changed: scripts/lib/MODULE.py`. Launchers
 remove the caller's working directory and adapter directory from Python's import
 path, put the release first, and bind the `scripts` package to that release only.
-Shell adapters use Python's `-I` isolated mode (available on Python 3.10), which
-also ignores `PYTHONPATH` and user site packages; the operator adapter removes
-its script directory before importing launcher dependencies. Adapters therefore
-work outside a checkout and ignore a caller's or state directory's planted
-`scripts` package. The gateway's repository copy continues to import from the
-repository root; composer loading still uses the file beside the installed gateway.
-
-<!-- /coderabbit-ai-generated:v1 -->
+Every adapter runs Python in `-I` isolated mode, which Python 3.10 supports: the
+shell adapters pass `-I`, and the operator adapter re-executes itself with `-I`
+before it imports anything else. Isolated mode also ignores `PYTHONPATH`, other
+`PYTHON*` variables and user site packages. Adapters therefore work outside a
+checkout and ignore a planted `scripts` package or standard-library module in the
+caller's directory, the state directory or `PYTHONPATH`. The gateway's repository
+copy continues to import from the repository root; composer loading still uses
+the file beside the installed gateway.
 
 The helper never kills or launches a process. It installs this mapping:
 

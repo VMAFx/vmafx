@@ -199,7 +199,7 @@ class MigrationContract(unittest.TestCase):
                 self.assertNotIn("Traceback", result.stderr)
                 self.assertIn(result.returncode, (0, 1), result.stderr)
 
-    def test_shell_adapters_ignore_planted_standard_library_modules(self) -> None:
+    def test_adapters_ignore_planted_standard_library_modules(self) -> None:
         self.real_gateway()
         value, committed = self.plan()
         installer.install(value, committed, installer.plan_hash(value))
@@ -209,12 +209,14 @@ class MigrationContract(unittest.TestCase):
         ambient.mkdir()
         for root in (caller, self.state, ambient):
             (root / "hashlib.py").write_text("raise RuntimeError('PLANTED_STDLIB_LOADED')\n")
-        for name in ("rebase-clean.sh", "train.sh"):
+        for name in ("rebase-clean.sh", "train.sh", "merge_train_operator.py"):
             with self.subTest(adapter=name), patch.dict(os.environ, {"PYTHONPATH": str(ambient)}):
                 result = self.run_adapter(name, caller)
                 self.assertNotIn("PLANTED_STDLIB_LOADED", result.stderr)
                 self.assertNotIn("Traceback", result.stderr)
-                self.assertEqual(result.returncode, 1 if name == "rebase-clean.sh" else 0, result.stderr)
+                self.assertEqual(
+                    result.returncode, 1 if name == "rebase-clean.sh" else 0, result.stderr
+                )
 
     def test_library_manifest_includes_transitive_imports_and_package_initializers(self) -> None:
         sources = {
