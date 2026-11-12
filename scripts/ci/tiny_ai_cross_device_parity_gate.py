@@ -74,10 +74,11 @@ CUDA_TF32_PROVIDER_OPTIONS: dict[str, int] = {"use_tf32": 0}
 # failure as the model's expected provider gap, and fails on every other
 # transnet_v2 failure (issue #2947, comment 6696661349).
 TRANSNET_V2_MODEL_ID = "transnet_v2"
-# The measured ORT 1.31.1 CUDA message, byte for byte as the node raises it
-# (testdata sweep, both GPUs): dropping the "(int32) " segment made the named
-# gap unmatchable against the error it names.
-TRANSNET_V2_SCATTERND_GAP = "element_type 6 (int32) not implemented for ScatterND operator"
+# The exact status text the ORT 1.31.1 CUDA EP builds in scatter_nd_impl.cu:323
+# (v1.31.1); it carries no type name. Element type 6 is ONNX int32 (issue
+# #2947, comment 6696661349); putting it inside the needle would never match
+# the error the CUDA EP raises.
+TRANSNET_V2_SCATTERND_GAP = "element_type 6 not implemented for ScatterND operator"
 
 
 @dataclass

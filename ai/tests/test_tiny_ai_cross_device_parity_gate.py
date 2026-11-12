@@ -52,11 +52,12 @@ FP32_MODEL = REPO_ROOT / "model" / "tiny" / "vmaf_tiny_v2.onnx"
 FP16_MODEL = REPO_ROOT / "model" / "tiny" / "smoke_fp16_v0.onnx"
 TRANSNET_MODEL = REPO_ROOT / "model" / "tiny" / "transnet_v2.onnx"
 FEATURES_PARQUET = REPO_ROOT / "ai" / "testdata" / "bisect" / "features.parquet"
-# The measured ORT 1.31.1 CUDA failure, wrapped in the node context ORT prints.
+# The real ORT 1.31.1 CUDA failure: the scatter_nd_impl.cu:323 status wrapped
+# in the node context ORT prints, kept independent of the gate's needle constant.
 SCATTERND_ERROR = (
     "[ONNXRuntimeError] : 1 : FAIL : Non-zero status code returned while running "
     "ScatterND node. Name:'fork_segmentsum_scatter' Status Message: element_type 6 "
-    "(int32) not implemented for ScatterND operator."
+    "not implemented for ScatterND operator."
 )
 
 
