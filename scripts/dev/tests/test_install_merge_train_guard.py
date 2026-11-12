@@ -133,6 +133,10 @@ class MigrationContract(unittest.TestCase):
         installer.git(self.source, "add", ".")
         installer.git(self.source, "commit", "-m", "real gateway and runtime dependencies")
 
+    def assert_adapter_status(self, name: str, result: Any) -> None:
+        """Without a PR number rebase-clean.sh refuses with 1; the other adapters exit 0."""
+        self.assertEqual(result.returncode, 1 if name == "rebase-clean.sh" else 0, result.stderr)
+
     def run_adapter(self, name: str, cwd: Path, *, direct: bool = False) -> Any:
         """Run installed entry points with offline gh and isolated fixture Git configuration.
 
@@ -202,7 +206,7 @@ class MigrationContract(unittest.TestCase):
                 result = self.run_adapter(name, caller)
                 self.assertNotIn("PLANTED_LIBRARY_LOADED", result.stderr)
                 self.assertNotIn("Traceback", result.stderr)
-                self.assertIn(result.returncode, (0, 1), result.stderr)
+                self.assert_adapter_status(name, result)
 
     def test_adapters_ignore_planted_standard_library_modules(self) -> None:
         self.real_gateway()
@@ -219,9 +223,7 @@ class MigrationContract(unittest.TestCase):
                 result = self.run_adapter(name, caller)
                 self.assertNotIn("PLANTED_STDLIB_LOADED", result.stderr)
                 self.assertNotIn("Traceback", result.stderr)
-                self.assertEqual(
-                    result.returncode, 1 if name == "rebase-clean.sh" else 0, result.stderr
-                )
+                self.assert_adapter_status(name, result)
 
     def test_executed_adapters_start_isolated_before_site_hooks(self) -> None:
         """A planted sitecustomize.py runs at interpreter start, before any re-execution."""
@@ -243,9 +245,7 @@ class MigrationContract(unittest.TestCase):
                 result = self.run_adapter(name, caller, direct=True)
                 self.assertFalse(marker.exists(), f"{name} ran a planted sitecustomize.py")
                 self.assertNotIn("Traceback", result.stderr)
-                self.assertEqual(
-                    result.returncode, 1 if name == "rebase-clean.sh" else 0, result.stderr
-                )
+                self.assert_adapter_status(name, result)
 
     def test_library_manifest_includes_transitive_imports_and_package_initializers(self) -> None:
         sources = {
