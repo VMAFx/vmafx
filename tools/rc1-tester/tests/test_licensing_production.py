@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,12 @@ lic = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(lic)
 
 REPO = Path(__file__).resolve().parents[3]
+
+_spec_zimg = importlib.util.spec_from_file_location(
+    "zimg_source_package", REPO / "scripts" / "release" / "zimg_source_package.py"
+)
+zimg = importlib.util.module_from_spec(_spec_zimg)
+_spec_zimg.loader.exec_module(zimg)
 
 
 def write(path: Path, text: str) -> Path:
@@ -438,6 +445,60 @@ def test_the_images_that_link_zimg_from_source_keep_their_own_record() -> None:
             continue
         assert component["source"] == expected, kind
         assert component["texts"] in archive_texts, kind
+
+
+def test_the_recorded_zimg_source_package_is_the_one_the_record_names() -> None:
+    """Issue #3396: one file holds the expected source RPM and the manifest cites it."""
+    recorded = zimg.recorded_source_rpm(_IMAGE / "zimg-source-rpm.txt")
+    assert recorded == "zimg-3.0.6-1.el8.src.rpm"
+    component = next(
+        c
+        for c in lic.load_manifest()["artifacts"]["release-native"]["components"]
+        if c["id"] == "zimg"
+    )
+    assert "zimg 3.0.6-1.el8" in component["source"]
+
+
+def test_a_mismatched_zimg_source_package_is_refused(tmp_path: Path) -> None:
+    """An EPEL rebuild must fail the release, not silently keep the old notice."""
+    record = tmp_path / "zimg-source-rpm.txt"
+    record.write_text("zimg-3.0.6-1.el8.src.rpm\n")
+    library = tmp_path / "libzimg.so.2"
+    library.write_text("elf")
+
+    def runner(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command, 0, stdout="zimg-3.0.6-2.el8.src.rpm\n", stderr=""
+        )
+
+    with pytest.raises(ValueError, match="zimg-3.0.6-2.el8.src.rpm"):
+        zimg.check_source_package(library, record, runner=runner)
+
+
+def test_a_measured_zimg_source_package_passes(tmp_path: Path) -> None:
+    """The measured package the record names is staged unchanged."""
+    record = tmp_path / "zimg-source-rpm.txt"
+    record.write_text("zimg-3.0.6-1.el8.src.rpm\n")
+    library = tmp_path / "libzimg.so.2"
+    library.write_text("elf")
+
+    def runner(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command, 0, stdout="zimg-3.0.6-1.el8.src.rpm\n", stderr=""
+        )
+
+    assert (
+        zimg.check_source_package(library, record, runner=runner) == "zimg-3.0.6-1.el8.src.rpm"
+    )
+
+
+def test_the_build_stages_zimg_only_from_the_recorded_package() -> None:
+    """`stage_zimg` runs the same check before it copies the library."""
+    script = (REPO / "scripts" / "release" / "build-native-release-artifacts.sh").read_text()
+    assert 'python3 "$ZIMG_SOURCE_PACKAGE" --library "$resolved_path"' in script
+    assert script.index('--library "$resolved_path"') < script.index(
+        'cp -L -- "$resolved_path" "artifacts/$zimg_soname"'
+    )
 
 
 def test_production_node_sycl_image_shares_runtime_and_node_components() -> None:

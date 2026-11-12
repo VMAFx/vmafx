@@ -525,7 +525,7 @@
     {
      "id": "zimg",
      "kind": "fixed",
-     "name": "zimg image scaling and colours-pace conversion library libzimg.so.2 (Debian libzimg2)",
+     "name": "zimg image scaling and colour-space conversion library libzimg.so.2 (Debian libzimg2)",
      "paths": [
       "opt/vmafx/lib/libzimg.so*",
       "usr/share/doc/libzimg2/**"
@@ -723,7 +723,7 @@
     {
      "id": "zimg",
      "kind": "fixed",
-     "name": "zimg image scaling and colours-pace conversion library (statically linked)",
+     "name": "zimg image scaling and colour-space conversion library (statically linked)",
      "licence": "WTFPL",
      "copyright": [
       "Copyright (c) 2014-2024, sekrit-twc"
@@ -961,7 +961,7 @@
     {
      "id": "zimg",
      "kind": "fixed",
-     "name": "zimg image scaling and colours-pace conversion library (statically linked)",
+     "name": "zimg image scaling and colour-space conversion library (statically linked)",
      "licence": "WTFPL",
      "copyright": [
       "Copyright (c) 2014-2024, sekrit-twc"
@@ -2748,7 +2748,7 @@
     {
      "id": "zimg",
      "kind": "fixed",
-     "name": "zimg image scaling and colours-pace conversion library (Debian libzimg2)",
+     "name": "zimg image scaling and colour-space conversion library (Debian libzimg2)",
      "paths": [
       "usr/local/lib/libzimg.so*",
       "usr/share/doc/libzimg2/**"
@@ -3975,26 +3975,26 @@
       "Copyright 2026 Lusoris"
      ]
     },
-     {
-      "id": "zimg",
-      "kind": "fixed",
-      "name": "zimg image scaling and colours-pace conversion library libzimg.so.2 (the release-build container's dnf zimg package)",
-      "paths": [
-       "libzimg.so*"
-      ],
-      "licence": "WTFPL",
-      "copyright": [
-       "Copyright (c) 2014-2024, sekrit-twc"
-      ],
-      "source": "the EPEL 8 source package zimg 3.0.6-1.el8 that dnf zimg-devel pulls into the release-build container, whose library stage_zimg copies as the loader resolves it for libvmafx",
-      "texts": [
-       {
-        "name": "WTFPL.txt",
-        "repo": "tools/rc1-tester/image/licenses/zimg-3.0.6-COPYING.txt",
-        "label": "zimg 3.0.6 licence text (WTFPL v2)"
-       }
-      ]
-     },
+    {
+     "id": "zimg",
+     "kind": "fixed",
+     "name": "zimg image scaling and colour-space conversion library libzimg.so.2 (the release-build container's dnf zimg package)",
+     "paths": [
+      "libzimg.so*"
+     ],
+     "licence": "WTFPL",
+     "copyright": [
+      "Copyright (c) 2014-2024, sekrit-twc"
+     ],
+     "source": "the EPEL 8 source package zimg 3.0.6-1.el8 that dnf zimg-devel pulls into the release-build container, whose library stage_zimg copies as the loader resolves it for libvmafx",
+     "texts": [
+      {
+       "name": "WTFPL.txt",
+       "repo": "tools/rc1-tester/image/licenses/zimg-3.0.6-COPYING.txt",
+       "label": "zimg 3.0.6 licence text (WTFPL v2)"
+      }
+     ]
+    },
     {
      "id": "notices",
      "kind": "notices",
