@@ -12,7 +12,6 @@ statuses, and narrow sign-off exemptions (which never waive attribution).
 from __future__ import annotations
 
 import json
-import os
 import shlex
 import sys
 import tempfile
