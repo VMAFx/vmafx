@@ -5,7 +5,8 @@
   commit rather than local edits. Separate `bandit-new-push` and `flawfinder-new-push` hooks use
   `--outgoing` to scan the full pre-push merge-base delta without framework filenames, including
   docs-only follow-up pushes and files absent from the worktree. Configuration changes scan all
-  tracked Python files with each revision's pattern list; Python stubs, Python executables and PEP
-  263 encodings are supported. The default comparison follows `origin/HEAD`, falling back to
-  `origin/master`. A `# noqa` comment does not silence it. The flawfinder gate shares the same
-  merge-base comparison (`scripts/lib/new_scanner_findings.py`).
+  tracked Python files with each revision's pattern list only in the invocation that selects
+  `bandit.yml`, avoiding repeated full scans across partitioned file lists; Python stubs, Python
+  executables and PEP 263 encodings are supported. The default comparison follows `origin/HEAD`,
+  falling back to `origin/master`. A `# noqa` comment does not silence it. The flawfinder gate
+  shares the same merge-base comparison (`scripts/lib/new_scanner_findings.py`).

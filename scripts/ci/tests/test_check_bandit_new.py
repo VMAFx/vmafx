@@ -846,6 +846,83 @@ class CheckBanditNew(unittest.TestCase):
         self.assertEqual(push_status, 1, push_err)
         self.assertEqual(push_out.splitlines(), out.splitlines())
 
+    def test_config_change_without_config_selected_skips_unchanged_file(self) -> None:
+        """A config change with only an unrelated unchanged file selected starts zero scans."""
+        (self.root / "harness.py").write_text("assert True\n", encoding="utf-8", newline="\n")
+        (self.root / "unrelated.py").write_text(BASE, encoding="utf-8", newline="\n")
+        self.commit_base()
+        (self.root / "bandit.yml").write_text("tests: [B101]\n", encoding="utf-8", newline="\n")
+        with self.count_bandit_runs() as calls:
+            status, out, err = self.invoke("unrelated.py")
+        self.assertEqual((status, out, err), (0, "", ""))
+        self.assertEqual(calls, [])
+
+    def test_config_change_disjoint_partitions_scan_tree_once(self) -> None:
+        """Disjoint partitions with bandit.yml in one partition run one full scan total."""
+        self.git("rm", "-q", "harness.py")
+        (self.root / "pkg").mkdir()
+        flagged = {2, 9}
+        for index in range(12):
+            body = "assert True\n" if index in flagged else BASE
+            (self.root / f"pkg/mod_{index:02d}.py").write_text(body, encoding="utf-8", newline="\n")
+        self.commit_base()
+        (self.root / "bandit.yml").write_text("tests: [B101]\n", encoding="utf-8", newline="\n")
+        with self.count_bandit_runs() as single_calls:
+            single_status, _, single_err = self.invoke("bandit.yml")
+        self.assertEqual(single_status, 1, single_err)
+        self.assertLessEqual(len(single_calls), 2)
+        partitions = (
+            tuple(f"pkg/mod_{index:02d}.py" for index in range(4)),
+            ("bandit.yml", *(f"pkg/mod_{index:02d}.py" for index in range(4, 8))),
+            tuple(f"pkg/mod_{index:02d}.py" for index in range(8, 12)),
+        )
+        statuses: list[int] = []
+        printed: list[str] = []
+        with self.count_bandit_runs() as partition_calls:
+            for part in partitions:
+                status, out, err = self.invoke(*part)
+                self.assertTrue(status == 0 or "new Bandit finding" in err, err)
+                statuses.append(status)
+                printed.extend(out.splitlines())
+        self.assertEqual(statuses, [0, 1, 0])
+        self.assertEqual(len(partition_calls), len(single_calls))
+        self.assertLessEqual(len(partition_calls), 2)
+        self.assertEqual(
+            printed,
+            [
+                "pkg/mod_02.py:1: B101: assert True",
+                "pkg/mod_09.py:1: B101: assert True",
+            ],
+        )
+
+    def test_config_change_with_changed_file_selected_prints_once(self) -> None:
+        """Selecting bandit.yml alongside a changed file reports that file's finding once."""
+        (self.root / "bandit.yml").write_text(
+            "tests: [B101, B603]\n", encoding="utf-8", newline="\n"
+        )
+        (self.root / "harness.py").write_text(
+            "# changed\nassert True\n", encoding="utf-8", newline="\n"
+        )
+        for config_arg in ("bandit.yml", "./bandit.yml", str(self.root / "bandit.yml")):
+            with self.subTest(config_arg=config_arg), self.count_bandit_runs() as calls:
+                status, out, err = self.invoke(config_arg, "harness.py")
+                self.assertEqual(status, 1, err)
+                self.assertEqual(out.splitlines(), ["harness.py:2: B101: assert True"])
+                self.assertLessEqual(len(calls), 2)
+
+    def test_selected_path_outside_repository_is_refused(self) -> None:
+        """A parent-relative or outside absolute path fails as a scan error with no Bandit run."""
+        outside = self.root.parent / "outside.py"
+        for arg, pattern in (
+            ("../outside.py", "escapes repository"),
+            (str(outside), "outside repository"),
+        ):
+            with self.subTest(arg=arg), self.count_bandit_runs() as calls:
+                status, out, err = self.invoke(arg)
+                self.assertEqual((status, out), (2, ""))
+                self.assertIn(pattern, err)
+                self.assertEqual(calls, [])
+
     def test_unchanged_config_and_identical_files_start_zero_processes(self) -> None:
         """Unchanged configuration and base-identical files invoke Bandit zero times."""
         (self.root / "pkg").mkdir()

@@ -29,6 +29,7 @@ from scripts.lib.new_scanner_findings import (
 from scripts.lib.safe_subprocess import run as run_command
 
 CONFIG = Path(__file__).resolve().parents[2] / "bandit.yml"
+CONFIG_REL = Path(CONFIG.name)
 PYTHON_TAGS = frozenset({"python", "pyi"})
 MAX_SHEBANG_BYTES = 4096
 MAX_BATCH_FILES = 200
@@ -242,11 +243,30 @@ def _stage_sources(
     return current_paths, base_paths
 
 
+def _normalise_paths(root: Path, paths: list[Path]) -> list[Path]:
+    """Normalise selected paths to unique repository-relative paths, rejecting escapes."""
+    resolved_root = root.resolve()
+    normalised: list[Path] = []
+    for path in paths:
+        if ".." in path.parts:
+            raise ToolError(f"source path escapes repository: {path}")
+        if not path.is_absolute():
+            normalised.append(Path(path.as_posix()))
+            continue
+        candidate = path if path.is_relative_to(root) else path.parent.resolve() / path.name
+        base = root if candidate.is_relative_to(root) else resolved_root
+        if not candidate.is_relative_to(base):
+            raise ToolError(f"source path outside repository: {path}")
+        normalised.append(Path(candidate.relative_to(base).as_posix()))
+    return list(dict.fromkeys(normalised))
+
+
 def scan_changes(bandit: str, comparison: Comparison, paths: list[Path]) -> int:
-    """Count new findings using cached revision modes, including configuration changes."""
+    """Count new findings using cached revision modes, escalating when bandit.yml is selected."""
     current_config = comparison.current_bytes("bandit.yml")
     if current_config is None:
         raise ToolError("Bandit configuration missing: bandit.yml")
+    selected = _normalise_paths(comparison.root, paths)
     base_config = revision_bytes(
         comparison.git,
         comparison.root,
@@ -254,9 +274,9 @@ def scan_changes(bandit: str, comparison: Comparison, paths: list[Path]) -> int:
         "bandit.yml",
         modes=comparison.modes(comparison.base),
     )
-    changed_config = base_config != current_config
-    if changed_config:
-        paths = sorted(set(paths + comparison.tracked_paths()))
+    escalate = base_config != current_config and CONFIG_REL in selected
+    if escalate:
+        selected = sorted({*selected, *comparison.tracked_paths()})
     failed = 0
     with tempfile.TemporaryDirectory(prefix="bandit-comparison-") as temp:
         directory = Path(temp).resolve()
@@ -265,7 +285,7 @@ def scan_changes(bandit: str, comparison: Comparison, paths: list[Path]) -> int:
         old.write_bytes(base_config if base_config is not None else current_config)
         current_root, base_root = directory / "current", directory / "base"
         current_paths, base_paths = _stage_sources(
-            comparison, paths, current_root, base_root, force=changed_config
+            comparison, selected, current_root, base_root, force=escalate
         )
         current_found = (
             findings(bandit, current_root, current_paths, current) if current_paths else {}

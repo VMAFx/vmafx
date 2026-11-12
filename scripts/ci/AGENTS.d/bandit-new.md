@@ -8,7 +8,7 @@ paths:
   - scripts/lib/new_scanner_findings.py
   - bandit.yml
   - .pre-commit-config.yaml
-invariant: Outgoing blobs versus merge base; config changes scan all Python; Git-detected renames retain findings.
+invariant: Outgoing blobs versus merge base; selected bandit.yml diff scans all Python; Git-detected renames retain findings.
 area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
@@ -24,9 +24,9 @@ Identity: old rule plus stripped source line; multiplicity preserved; moved line
 Low-similarity rename: no pairing -> retained findings reported as new; fail closed.
 Bandit list: root `bandit.yml`; Codacy reads analysed branch after configuration-file toggle enabled.
 Comparison: current config versus merge-base config; absent base config -> current config.
-Config diff: every tracked Python source scanned; unchanged source still compared under both configs.
+Config diff: `bandit.yml` in selected paths -> every tracked Python source scanned under both configs; `bandit.yml` absent -> only selected changed sources compared under current versus base config.
 Batches: Bandit scans staged current + base trees in bounded chunks (`MAX_BATCH_FILES = 200`, `MAX_BATCH_ARG_CHARS = 24_000`); staged file absent from `metrics` -> exit 2.
-Hook: `require_serial: true`; parallel partitions each repeat config-diff full scan.
+Hook: `types: [file]`, `require_serial: true`; pre-commit partitions large file lists by argument length -> only partition holding `bandit.yml` runs config-diff full scan; `require_serial` bounds CPU, not partition count.
 Selection: identify Python + pyi tags; shebang files included; PEP 263 decoding; literal Git paths.
 Shared revision selection: Bandit + flawfinder; outgoing files independent of working tree.
 Outgoing + local scans: symlinks + gitlinks skipped; base links count absent.

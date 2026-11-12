@@ -1297,8 +1297,9 @@ repos:
         # Classify Python (including pyi and shebangs) inside the gate so
         # a config-only change also selects every tracked Python source.
         types: [file]
-        # One process: a bandit.yml change scans every tracked source, and
-        # parallel partitions would each repeat that scan and its output.
+        # pre-commit still splits large file lists into partitions by argument
+        # length; only the partition handed bandit.yml runs the config-diff full
+        # scan, and require_serial bounds CPU rather than partition count.
         require_serial: true
         stages: [pre-commit]
       # Push filenames cover only the previous remote tip and omit paths
