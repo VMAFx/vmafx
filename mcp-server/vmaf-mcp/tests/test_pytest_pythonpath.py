@@ -9,12 +9,14 @@ BUG-048 item A12.
 from __future__ import annotations
 
 import os
-import subprocess
+import subprocess  # nosec B404 -- fixed isolated interpreter import checks.
 import sys
 import tomllib
 from pathlib import Path
 
 _MCP_ROOT = Path(__file__).resolve().parents[1]
+# Bound = max(60, 10x the slowest measured run): each call took 0.58 s or less.
+SCRIPT_TIMEOUT_S = 60
 
 
 def test_vmaf_mcp_importable_without_editable_install() -> None:
@@ -55,7 +57,13 @@ def test_pythonpath_red_demonstration(tmp_path: Path) -> None:
         "-c",
         "import vmaf_mcp",
     ]
-    proc_fail = subprocess.run(cmd_fail, env=child_env, capture_output=True, text=True)
+    proc_fail = subprocess.run(  # noqa: S603, RUF100  # nosec B603 -- fixed sys.executable argv checks local package imports.
+        cmd_fail,
+        env=child_env,
+        capture_output=True,
+        text=True,
+        timeout=SCRIPT_TIMEOUT_S,
+    )
     assert proc_fail.returncode != 0
     assert "ModuleNotFoundError" in proc_fail.stderr
     assert "vmaf_mcp" in proc_fail.stderr
@@ -76,5 +84,11 @@ def test_pythonpath_red_demonstration(tmp_path: Path) -> None:
             "assert bool(vmaf_mcp.__version__)"
         ),
     ]
-    proc_pass = subprocess.run(cmd_pass, env=child_env, capture_output=True, text=True)
+    proc_pass = subprocess.run(  # noqa: S603, RUF100  # nosec B603 -- fixed sys.executable argv checks local package imports.
+        cmd_pass,
+        env=child_env,
+        capture_output=True,
+        text=True,
+        timeout=SCRIPT_TIMEOUT_S,
+    )
     assert proc_pass.returncode == 0, proc_pass.stderr
