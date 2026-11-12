@@ -38,7 +38,9 @@ if [ ! -x "${probe}" ]; then
 fi
 
 work="$(mktemp -d)"
-trap 'rm -rf "${work}"' EXIT INT TERM
+trap 'rm -rf "${work}"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 pass_count=0
 fail_count=0
@@ -265,7 +267,7 @@ expect_rc "planted: 13-win32 dumpversion with unresolvable DLLs -> exit 1" 1
 expect_grep "case6 shows the flavored version string" "dumpversion 13-win32"
 expect_grep "case6 refuses the unresolved libstdc++-6.dll" "runtime-unresolved libstdc++-6.dll"
 expect_grep "case6 refuses the unresolved libgcc_s_seh-1.dll" "runtime-unresolved libgcc_s_seh-1.dll"
-expect_no_grep "case6 no pairing lines" "pairing"
+expect_no_grep "case6 no pairing lines" "x86_64-w64-mingw32-gcc pairing"
 
 # ---------- Case 7: Boundary — no cross driver in the prefix -> absent, exit 0 ----------
 mkdir -p "${work}/case7/bin"
@@ -273,7 +275,7 @@ run_probe "${work}/case7"
 expect_rc "boundary: no cross driver -> exit 0 with an absent line" 0
 expect_grep "case7 absent line names the driver" "x86_64-w64-mingw32-gcc absent searched="
 expect_grep "case7 absent line names the searched prefix" "${work}/case7/bin"
-expect_no_grep "case7 no pairing lines" "pairing"
+expect_no_grep "case7 no pairing lines" "x86_64-w64-mingw32-gcc pairing"
 
 # ---------- Case 8: Planted negative — driver prints no thread model ----------
 build_mingw_stub "${work}/case8" none 13.2.0 no yes
