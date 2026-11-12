@@ -103,8 +103,24 @@ SHELL_GIT_WRITE = re.compile(
     r"|config\s+(?!--" + _READ_ONLY + r"\b)"
     r"(?:--(?:local|global|worktree|system|add|replace-all|file\s+\S+)\s+)*[\w.-]+\.[\w.-]+[ \t]+\S)"
 )
+# Before the subcommand, a Git call may hold code, option literals ("-q", or "-C"/"-c" and
+# their value) and strings inside an expression (root / "repo", "repo-%d" % n, Path("repo"),
+# f"{root}/repo"), never a standalone string: in git("commit", "-m", "init") the subcommand is
+# commit.
+_QUOTED = r"""["'][^"'\n]*["']"""
+_CODE_GIT_PREFIX = (
+    r"""(?:[^"'\n]"""
+    + rf"""|["']-[cC]["']\s*,\s*{_QUOTED}"""
+    + r"""|["']-[^"'\n]*["']"""
+    + rf"""|[/+%]\s*{_QUOTED}|{_QUOTED}\s*[/+%]"""
+    + rf"""|\w\(\s*{_QUOTED}\s*\)"""
+    + rf"""|\b[rRbB]?[fF][rR]?{_QUOTED})"""
+)
+# Match git at a word boundary or after an underscore (e.g. run_git), never inside digit.
 CODE_GIT_WRITE = re.compile(
-    r"""(?im)^(?!\s*(?:#|//))[^\n]*\bgit\w*[^\n]{0,80}?["'](?:init|clone)["']\s*[,)\]]"""
+    r"""(?im)^(?!\s*(?:#|//))[^\n]*(?:\b|_)git\w*["']?"""
+    + _CODE_GIT_PREFIX
+    + r"""{0,80}?["'](?:init|clone)["']\s*[,)\]]"""
     r"""|["']config["']\s*,\s*(?:["']--(?:local|global|worktree|system|add|replace-all)["']\s*,\s*)*"""
     r"""["'][\w.-]+\.[\w.-]+["']\s*,\s*\S"""
 )
@@ -126,6 +142,10 @@ ISOLATION_EXCEPTIONS = {
     ".config/lefthook/scripts/common.py": "clean_env() removes the repository variables by name",
     "scripts/ci/tests/test_research_digest_ids.py": (
         "git runs through check-research-digest-ids._git, which drops GIT_*"
+    ),
+    "scripts/ci/tests/test_pr_time_verify_workflows.py": (
+        "run_validate() builds env_base from a fixed allow-list, never caller GIT_* "
+        "(scripts/ci/tests/test_pr_time_verify_workflows.py:95)"
     ),
     "scripts/dev/tests/test_merge_train_guard.py": (
         "git runs through merge_train_guard.environment(), which drops GIT_*"
@@ -1174,6 +1194,8 @@ class GitFixtureIsolation(unittest.TestCase):
 
     def check_python_isolation_controls(self) -> None:
         """Replay rejected filters, required config keys and accepted fixture forms."""
+        self.test_isolation_rule_refuses_underscore_git_helpers()
+        self.test_isolation_rule_ignores_read_only_and_unrelated_helpers()
         name = "tests/test_fixture.py"
         create = 'git("init", "-q")\n'
         canonical = '{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}'
@@ -1498,6 +1520,40 @@ class GitFixtureIsolation(unittest.TestCase):
                 self.assertTrue(reason)
                 text = (ROOT / name).read_text(encoding="utf-8", errors="replace")
                 self.assertTrue(unisolated_git(name, text), "no longer needed: remove it")
+
+    def test_isolation_rule_refuses_underscore_git_helpers(self) -> None:
+        """Underscore-prefixed Git helpers must trigger the isolation check."""
+        for text in (
+            'self._git("init")\n',
+            'self.run_git("init", "-q")\n',
+            'run_git(["clone", url])\n',
+            'subprocess.run(["git", "-C", str(path), "init"])\n',
+            'git("-c", "init.defaultBranch=main", "init")\n',
+            'run_git(root / "scratch", "init", environment=os.environ.copy())\n',
+            'git(root / "scratch", "init")\n',
+            'self._git("repo-%d" % index, "init")\n',
+            'self._git(Path("scratch"), "init")\n',
+            'run_git(f"{root}/scratch", "clone", url)\n',
+        ):
+            with self.subTest(text=text):
+                self.assertIsNotNone(CODE_GIT_WRITE.search(text))
+                self.assertTrue(unisolated_git("tests/test_fixture.py", text))
+
+    def test_isolation_rule_ignores_read_only_and_unrelated_helpers(self) -> None:
+        """Only init or clone as the subcommand counts; digit is unrelated to git."""
+        for text in (
+            'self._git("status")\n',
+            'self.run_git("status", "--short")\n',
+            'self._git("status", "init")\n',
+            '_git(temp_dir, "commit", "-q", "-m", "init")\n',
+            '_git(root / "scratch", "commit", "-m", "init")\n',
+            'run_git(Path("scratch"), "status", "init")\n',
+            'digit("init")\n',
+            'self.digit("clone", url)\n',
+        ):
+            with self.subTest(text=text):
+                self.assertIsNone(CODE_GIT_WRITE.search(text))
+                self.assertEqual(unisolated_git("tests/test_fixture.py", text), "")
 
     def test_isolation_rule_refuses_planted_unisolated_fixtures(self) -> None:
         """Verify unisolated_git flags unisolated code and passes isolated or harmless snippets."""
