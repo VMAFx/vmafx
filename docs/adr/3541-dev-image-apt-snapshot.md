@@ -38,14 +38,18 @@ does not list those entries.
 All three images copy and source that file, then write
 `/etc/apt/apt.conf.d/50ubuntu-snapshot`. Its `APT::Snapshot` setting applies to
 every subsequent package refresh and installation, including those made by
-the setup script and CUDA installer. The existing fail-closed refresh flags
-`--error-on=any -o Acquire::Retries=3` remain required.
+the setup script and CUDA installer. The next clause checks the written file
+against the `YYYYMMDDTHHMMSSZ` format, so an unset or malformed value fails the
+build before any package operation reads it. The existing fail-closed refresh
+flags `--error-on=any -o Acquire::Retries=3` remain required.
 
 The named `UBUNTU_APT_CERTIFICATE_BOOTSTRAP` is the only installation from the
-live archive: refresh indexes and install only `ca-certificates` and its
-required dependencies before enabling the snapshot. Discard these live indexes
-before the pinned refresh. TLS verification and Ubuntu archive signature checks
-remain enabled.
+live archive: refresh indexes and run no package command except installing
+`ca-certificates` and its required dependencies before enabling the snapshot.
+Discard these live indexes before the pinned refresh. TLS verification and
+Ubuntu archive signature checks remain enabled. Hadolint's DL3008 asks for
+`package=version` arguments; each image's RUN carries a scoped
+`# hadolint ignore=DL3008` because its versions come from the snapshot.
 This exception means the complete image is not bit-for-bit reproducible.
 
 Renovate owns timestamp proposals through a regex custom manager and a custom
@@ -73,8 +77,9 @@ No separate bot workflow is introduced.
   the Release file or `Acquire::Snapshots::URI` configuration, and leaves other
   repositories, such as NVIDIA's, on their own URL.
 - `UbuntuAptSnapshotContract` in `scripts/ci/test_fail_closed_ci.py` checks the
-  copy, source, persistent setting, installer ordering and exact bootstrap
-  boundary. Planted unpinned installs and snapshot overrides must fail it.
+  copy, source, persistent setting, timestamp check, installer ordering and
+  exact bootstrap boundary. Planted unpinned installs, any other package
+  command before the pin and snapshot overrides must fail it.
 - Maintainers may advance the timestamp manually using the same review and
   build process described in [the image guide](../development/base-images.md#ubuntu-development-package-snapshot).
 

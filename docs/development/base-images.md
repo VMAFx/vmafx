@@ -372,11 +372,15 @@ The plain, CUDA and SYCL compatibility images under `docker/dev/` read
 `UBUNTU_APT_SNAPSHOT` from `build-config.env`. This UTC timestamp fixes Ubuntu
 package resolution as well as the base-image digest. They write
 `APT::Snapshot` to `/etc/apt/apt.conf.d/50ubuntu-snapshot`, so package operations
-in `scripts/setup/ubuntu.sh` inherit the same date.
+in `scripts/setup/ubuntu.sh` inherit the same date. The next command checks that
+file against the `YYYYMMDDTHHMMSSZ` format; a missing or malformed timestamp
+fails the build before any package operation reads it.
 
 The snapshot service requires HTTPS. Before activating the pin, each image
 refreshes the live archive once and installs only `ca-certificates` and its
-required dependencies. This named certificate bootstrap is unpinned; the
+required dependencies; no other package command may run before the pin. This
+named certificate bootstrap is unpinned, and the RUN that holds it carries a
+scoped `# hadolint ignore=DL3008` for the snapshot-pinned installs; the
 complete image is therefore not bit-for-bit reproducible. All later Ubuntu
 package operations use the snapshot, with fail-closed refreshes and retries.
 Those refreshes still download the live `archive.ubuntu.com` and

@@ -799,6 +799,7 @@ APT_SNAPSHOT_WRITE = [
     ">",
     APT_SNAPSHOT_FILE,
 ]
+APT_SNAPSHOT_CHECK = ["grep", "-Eqx", 'APT::Snapshot "[0-9]{8}T[0-9]{6}Z";', APT_SNAPSHOT_FILE]
 APT_CERTIFICATE_BOOTSTRAP = [
     ["apt-get", "--error-on=any", "-o", "Acquire::Retries=3", "update"],
     ["apt-get", "install", "-y", "--no-install-recommends", "ca-certificates"],
@@ -870,7 +871,8 @@ def _snapshot_script_problems(cmd: list[str], position: int) -> list[str]:
     )
     if position < 0 and runs_installer:
         problems.append("configure the snapshot before calling package installer scripts")
-    if position > 0 and any("/etc/apt/apt.conf" in token for token in cmd):
+    rewrites = cmd != APT_SNAPSHOT_CHECK and any("/etc/apt/apt.conf" in token for token in cmd)
+    if position > 0 and rewrites:
         problems.append("do not change or remove the persistent snapshot after configuration")
     return problems
 
@@ -882,11 +884,10 @@ def _snapshot_operation_problems(commands: list[tuple[int, list[str]]], pin: int
     for index, (_, cmd) in enumerate(commands):
         if any(re.search(r"\bapt(?:-get)?\s", token) for token in cmd):
             problems.append("package commands must be direct Dockerfile shell clauses")
-        if any(_is_apt_token(token) for token in cmd) and any(
-            action in cmd for action in ("update", "install")
-        ):
-            if index < pin:
-                live.append(cmd)
+        package = any(_is_apt_token(token) for token in cmd)
+        if index < pin and package:
+            live.append(cmd)
+        if package and any(action in cmd for action in ("update", "install")):
             if _snapshot_apt_override(cmd):
                 problems.append("package operation must inherit the persistent snapshot")
         problems.extend(_snapshot_script_problems(cmd, index - pin))
@@ -903,6 +904,8 @@ def ubuntu_apt_snapshot_problems(text: str) -> list[str]:
         return [*problems, "write UBUNTU_APT_SNAPSHOT to persistent APT::Snapshot exactly once"]
     problems.extend(_snapshot_input_problems(commands, writes[0]))
     problems.extend(_snapshot_operation_problems(commands, writes[0]))
+    if [cmd for _, cmd in commands[writes[0] + 1 : writes[0] + 2]] != [APT_SNAPSHOT_CHECK]:
+        problems.append("check the written APT::Snapshot timestamp before any package operation")
     if "# UBUNTU_APT_CERTIFICATE_BOOTSTRAP:" not in text:
         problems.append("name the live archive certificate bootstrap explicitly")
     return problems
@@ -1247,6 +1250,68 @@ class UbuntuAptSnapshotContract(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertTrue(ubuntu_apt_snapshot_problems(self.image() + f"\nRUN {command}\n"))
+
+    def test_every_package_command_before_pin_is_live(self) -> None:
+        """Any apt operation before the pin reads the live archive, not only installs."""
+        for command in (
+            "apt-get upgrade -y",
+            "apt-get dist-upgrade -y",
+            "apt-get full-upgrade -y",
+            "apt-get remove -y ca-certificates",
+            "apt-get build-dep -y curl",
+            "apt upgrade -y",
+        ):
+            with self.subTest(command=command):
+                planted = self.image().replace(
+                    "&& . /tmp/build-config.env", f"&& {command} && . /tmp/build-config.env", 1
+                )
+                self.assertNotEqual(planted, self.image())
+                self.assertIn(
+                    "only the named ca-certificates bootstrap may use the live archive",
+                    ubuntu_apt_snapshot_problems(planted),
+                )
+        after_pin = self.image() + "\nRUN apt-get upgrade -y\n"
+        self.assertEqual(ubuntu_apt_snapshot_problems(after_pin), [])
+
+    def test_written_timestamp_is_checked_before_use(self) -> None:
+        """The clause after the write checks the file APT reads; it cannot move or go."""
+        check = shlex.join(APT_SNAPSHOT_CHECK)
+        self.assertIn(f"&& {check} \\\n", self.image())
+        moved = self.image().replace(f"&& {check} \\\n", "", 1) + f"\nRUN {check}\n"
+        for planted in (self.image().replace(f"&& {check} \\\n", "", 1), moved):
+            with self.subTest(planted=planted.count(check)):
+                self.assertIn(
+                    "check the written APT::Snapshot timestamp before any package operation",
+                    ubuntu_apt_snapshot_problems(planted),
+                )
+
+    def test_timestamp_check_rejects_missing_and_malformed_values(self) -> None:
+        """Run the image's check on what its printf writes for each build-config value."""
+        grep = shutil.which("grep")
+        if grep is None:
+            self.skipTest("grep not on PATH; the check runs inside the Ubuntu image")
+        template = APT_SNAPSHOT_WRITE[1].replace("\\n", "\n")
+        with tempfile.TemporaryDirectory() as scratch:
+            written = Path(scratch) / "50ubuntu-snapshot"
+            for value, expected in (
+                ("20261101T000000Z", 0),
+                ("", 1),
+                ("20261101", 1),
+                ("latest", 1),
+                ("20261101T000000Z0", 1),
+                ("2026-11-01T00:00:00Z", 1),
+            ):
+                with self.subTest(value=value):
+                    written.write_text(template % value, encoding="utf-8")
+                    result = run_command(
+                        [grep, *APT_SNAPSHOT_CHECK[1:-1], str(written)],
+                        allowed_executables=(grep,),
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        timeout_seconds=SCRIPT_TIMEOUT_S,
+                    )
+                    self.assertEqual(result.returncode, expected, result.stderr)
 
     def test_installer_cannot_run_before_pin(self) -> None:
         planted = self.image().replace("RUN apt-get", "RUN bash /tmp/ubuntu.sh && apt-get", 1)
