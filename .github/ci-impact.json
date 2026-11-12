@@ -108,6 +108,7 @@
     "SECURITY.md",
     "SPONSORS.md",
     "SUPPORT.md",
+    "bandit.yml",
     "buf.gen.yaml",
     "buf.yaml",
     "clippy.toml",
@@ -313,6 +314,7 @@
         "LICENSES/**",
         ".markdownlint.json",
         ".codacy.yml",
+        "bandit.yml",
         ".codespellrc"
       ]
     },
