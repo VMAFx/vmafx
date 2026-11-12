@@ -36,6 +36,9 @@ entry point.
   poison lookup, product scope + planted temporary copies: replayed inside
   `test_no_script_creates_or_configures_a_repository_unisolated` through
   `unisolated_offenders()`.
+- Code write scan: `git` at word boundary or right after `_` -> `self._git("init")`,
+  `run_git(["clone", url])` flagged; `self._git("status")`, `digit("init")` not.
+  Planted cases replayed in same static test.
 - Known gaps (`Known gap:` tests): Python separate-statement imperative mutation
   (including after copying `os.environ`), alias/interprocedural data flow, and
   Node/Go filter re-admission. Shell/Node/Go retain regex markers; sentinel run
