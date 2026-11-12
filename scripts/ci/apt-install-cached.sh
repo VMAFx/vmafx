@@ -8,19 +8,34 @@
 #   apt-install-cached.sh configure
 #       write the retry/timeout apt config only (for steps that add a repo
 #       before installing)
+#   apt-install-cached.sh refresh
+#       configure retry/timeout settings, drop pre-provisioned Microsoft/Azure
+#       apt sources, and refresh apt package lists
 #   apt-install-cached.sh install LIST [APT_ARGS...]
-#       configure, refresh apt lists, restore the archive cache, install every
-#       non-comment line of LIST, and copy the archives back for the save step
+#       configure, drop Microsoft/Azure apt sources, refresh apt lists, restore
+#       the archive cache, install every non-comment line of LIST, and copy the
+#       archives back for the save step
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 configure | install LIST [APT_ARGS...]" >&2
+  echo "usage: $0 configure | refresh | install LIST [APT_ARGS...]" >&2
   exit 64
 }
 
 write_apt_config() {
   printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' |
     sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
+}
+
+refresh_apt_lists() {
+  write_apt_config
+  # The hosted runner ships pre-provisioned Microsoft/Azure apt
+  # sources (packages.microsoft.com) that intermittently 403 /
+  # "no longer signed", failing apt index refreshes with exit 100.
+  # vmaf needs none of them — drop them first. See
+  # T-CI-APT-MS-REPO-FLAKE (same fix as the Coverage Gate).
+  sudo rm -f /etc/apt/sources.list.d/*microsoft* /etc/apt/sources.list.d/*azure*
+  sudo apt-get --error-on=any -o Acquire::Retries=3 update
 }
 
 install_list() {
@@ -32,8 +47,7 @@ install_list() {
   fi
   local cache="${RUNNER_TEMP:?RUNNER_TEMP is not set}/apt-archives"
   local archives="${APT_ARCHIVE_DIR:-/var/cache/apt/archives}"
-  write_apt_config
-  sudo apt-get --error-on=any -o Acquire::Retries=3 update
+  refresh_apt_lists
   mkdir -p "$cache"
   if compgen -G "$cache/*.deb" >/dev/null; then
     sudo cp -f "$cache"/*.deb "$archives/"
@@ -52,6 +66,10 @@ case "$1" in
   configure)
     [ $# -eq 1 ] || usage
     write_apt_config
+    ;;
+  refresh)
+    [ $# -eq 1 ] || usage
+    refresh_apt_lists
     ;;
   install)
     [ $# -ge 2 ] || usage

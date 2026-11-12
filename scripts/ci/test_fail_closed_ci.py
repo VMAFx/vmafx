@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import os
+import posixpath
 import re
 import shlex
 import shutil
@@ -34,19 +35,37 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 SCRIPT_TIMEOUT_S = 60
 # 466 tracked source files at introduction; allow fourfold growth.
 MAX_CI_TEXT_FILES = 1_864
+MAX_CONTINUATION_LINES = 200
+MAX_APT_WORK_ITEMS = 8
 PPA_SOURCE_TEXT = re.compile(
     r"add-apt-repository|apt-add-repository|\bppa:|ppa\.launchpad(?:content)?\.net",
     re.IGNORECASE,
 )
-APT_UPDATE_LINE = re.compile(r"\bapt(?:-get)?\b[^\n]*\bupdate\b", re.IGNORECASE)
-APT_COMMAND_TOKEN = re.compile(r"\bapt(?:-get)?\b", re.IGNORECASE)
-APT_GET_PREFIX = re.compile(r"apt-get\s")
-APT_WORD_UPDATE = re.compile(r"\bupdate\b", re.IGNORECASE)
-APT_EXACT_UPDATE = re.compile(r"(?:^|\s)update(?=$|\s|[\\'\"$])")
-APT_ERROR_ON_ANY = re.compile(r"\s--error-on=any(?=$|\s|[\\'\"$])")
-APT_ACQUIRE_RETRIES = re.compile(r"\s-o\s*['\"]?Acquire::Retries=[1-9]\d*(?=$|\s|[\\'\"$])")
+APT_UPDATE_LINE = re.compile(
+    r"(?:^|[\s;|&()'\"=/`])apt(?:-get)?(?=$|[\s;|&()'\"#\\])[\s\S]*\bupdate\b",
+    re.IGNORECASE,
+)
+POSITIVE_INTEGER_RE = re.compile(r"[1-9]\d*")
+SHELL_OPERATOR_CHARS = frozenset(";&|()")
 APT_UPDATE_MESSAGE = (
     "apt-get update must fail on index errors: add --error-on=any -o Acquire::Retries=3 (ADR-3537)"
+)
+APT_UNBALANCED_QUOTE_MESSAGE = (
+    "apt refresh must sit on one logical line with balanced quotes (ADR-3537)"
+)
+APT_CONTINUATION_MESSAGE = (
+    f"continuation exceeds {MAX_CONTINUATION_LINES} physical lines; "
+    "keep each command bounded (ADR-3537)"
+)
+APT_NESTING_MESSAGE = (
+    f"nested shell command exceeds {MAX_APT_WORK_ITEMS} items on one logical line (ADR-3537)"
+)
+HOSTED_APT_UPDATE_MESSAGE = (
+    "hosted-runner apt refresh must run through scripts/ci/apt-install-cached.sh refresh or "
+    "install (it drops the runner's Microsoft/Azure sources first; ADR-3537)"
+)
+NON_REGULAR_CI_TEXT_MESSAGE = (
+    "tracked CI text path is not a regular file; the contract cannot read it"
 )
 
 
@@ -172,63 +191,215 @@ def ci_text_paths(root: Path) -> list[Path]:
     return sorted(paths)
 
 
-def _is_compliant_apt_update_clause(clause: str) -> bool:
-    """Return True when one apt-get clause refreshes indices with error-on and retries."""
-    return (
-        APT_GET_PREFIX.match(clause) is not None
-        and APT_EXACT_UPDATE.search(clause) is not None
-        and APT_ERROR_ON_ANY.search(clause) is not None
-        and APT_ACQUIRE_RETRIES.search(clause) is not None
-    )
+def _logical_ci_lines(text: str) -> list[tuple[int, str, bool]]:
+    """Join backslash-continued physical lines up to MAX_CONTINUATION_LINES."""
+    logical: list[tuple[int, str, bool]] = []
+    parts: list[str] = []
+    start_line = 1
+    count = 0
+    for number, raw in enumerate(text.splitlines(), 1):
+        if count == 0:
+            start_line = number
+        count += 1
+        stripped = raw.rstrip()
+        continues = stripped.endswith("\\")
+        if count <= MAX_CONTINUATION_LINES:
+            parts.append(stripped[:-1] if continues else raw)
+        if not continues:
+            logical.append((start_line, "\n".join(parts), count > MAX_CONTINUATION_LINES))
+            parts = []
+            count = 0
+    if count > 0:
+        logical.append((start_line, "\n".join(parts), count > MAX_CONTINUATION_LINES))
+    return logical
 
 
-def _is_compliant_apt_update_line(line: str) -> bool:
-    """Return True only when every apt update mention on a physical line is compliant."""
-    if line.lstrip().startswith("#"):
-        return False
-    starts = [match.start() for match in APT_COMMAND_TOKEN.finditer(line)]
-    if not starts or "#" in line[: starts[0]]:
-        return False
-    saw_update = False
-    for index, start in enumerate(starts):
-        end = starts[index + 1] if index + 1 < len(starts) else len(line)
-        clause = re.split(r"[;&|#]", line[start:end], maxsplit=1)[0]
-        if APT_WORD_UPDATE.search(clause) is None:
-            continue
-        if not _is_compliant_apt_update_clause(clause):
+def _is_hosted_workflow_or_action(path: Path) -> bool:
+    """Return True for GitHub workflow files and composite action definitions."""
+    match path.parts:
+        case (".github", "workflows", _):
+            return path.suffix in (".yml", ".yaml")
+        case (".github", "actions", *middle, "action.yml" | "action.yaml"):
+            return bool(middle)
+        case _:
             return False
-        saw_update = True
-    return saw_update
+
+
+def _is_apt_token(token: str) -> bool:
+    """Return True when `token` names apt or apt-get by basename."""
+    return posixpath.basename(token).lower() in ("apt", "apt-get")
+
+
+def _is_sudo_token(token: str) -> bool:
+    """Return True when `token` names sudo by basename."""
+    return posixpath.basename(token) == "sudo"
+
+
+def _is_operator_token(token: str) -> bool:
+    """Return True when `token` consists solely of shell control operators."""
+    return bool(token) and set(token) <= SHELL_OPERATOR_CHARS
+
+
+def _tokenise_shell_item(text: str) -> list[str]:
+    """Tokenise one logical shell line or nested command string with shlex."""
+    lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    lexer.commenters = "#"
+    return list(lexer)
+
+
+def _split_shell_clauses(tokens: list[str]) -> list[list[str]]:
+    """Split shell tokens on operator boundaries into non-empty command clauses."""
+    clauses: list[list[str]] = []
+    current: list[str] = []
+    for token in tokens:
+        if _is_operator_token(token):
+            if current:
+                clauses.append(current)
+                current = []
+        else:
+            current.append(token)
+    if current:
+        clauses.append(current)
+    return clauses
+
+
+def _record_retry_option(option: str, retries: list[str]) -> None:
+    """Append the value of an Acquire::Retries option setting, or empty if malformed."""
+    lowered = option.lower()
+    if lowered == "acquire::retries":
+        retries.append("")
+    elif lowered.startswith("acquire::retries="):
+        retries.append(option.split("=", 1)[1])
+
+
+def _extract_acquire_retries(args: list[str]) -> list[str]:
+    """Collect Acquire::Retries values in command order before `--`."""
+    retries: list[str] = []
+    expect_option = False
+    for arg in args:
+        if expect_option:
+            _record_retry_option(arg, retries)
+            expect_option = False
+        elif arg in ("-o", "--option"):
+            expect_option = True
+        elif arg.startswith("-o"):
+            _record_retry_option(arg[2:], retries)
+        elif arg.startswith("--option="):
+            _record_retry_option(arg[9:], retries)
+    return retries
+
+
+def _args_before_terminator(command: list[str]) -> list[str]:
+    """Return command arguments appearing before a `--` option terminator."""
+    args = command[1:]
+    return args[: args.index("--")] if "--" in args else args
+
+
+def _is_compliant_refresh_command(command: list[str]) -> bool:
+    """Return True when one apt-get refresh command sets --error-on=any and retries > 0."""
+    if posixpath.basename(command[0]) != "apt-get" or "update" not in command[1:]:
+        return False
+    options = _args_before_terminator(command)
+    if "--error-on=any" not in options:
+        return False
+    retries = _extract_acquire_retries(options)
+    return bool(retries) and POSITIVE_INTEGER_RE.fullmatch(retries[-1]) is not None
+
+
+def _clause_apt_problem(clause: list[str], hosted_surface: bool) -> tuple[bool, str | None]:
+    """Inspect one simple shell clause for apt refresh compliance and hosted sudo usage."""
+    apt_indices = [index for index, token in enumerate(clause) if _is_apt_token(token)]
+    if not apt_indices:
+        return False, None
+    start = apt_indices[0]
+    command = clause[start:]
+    if not any(token.lower() == "update" for token in command[1:]):
+        return True, None
+    if not _is_compliant_refresh_command(command):
+        return True, APT_UPDATE_MESSAGE
+    if hosted_surface and any(_is_sudo_token(token) for token in clause[:start]):
+        return True, HOSTED_APT_UPDATE_MESSAGE
+    return True, None
+
+
+def _is_nested_apt_token(item: str, token: str) -> bool:
+    """Return True when `token` is a nested command string mentioning an apt refresh."""
+    if token == item or _is_apt_token(token):
+        return False
+    return APT_UPDATE_LINE.search(token) is not None
+
+
+def _enqueue_nested_apt_tokens(item: str, tokens: list[str], work: list[str]) -> bool:
+    """Queue nested apt command tokens onto `work`; return False if the bound overflows."""
+    for token in tokens:
+        if not _is_nested_apt_token(item, token):
+            continue
+        if len(work) >= MAX_APT_WORK_ITEMS:
+            return False
+        work.append(token)
+    return True
+
+
+def _logical_line_apt_problem(line_text: str, hosted_surface: bool) -> str | None:
+    """Evaluate one prefiltered logical command with a bounded nested-command work list."""
+    work: list[str] = [line_text]
+    saw_apt = False
+    for index in range(MAX_APT_WORK_ITEMS):
+        if index >= len(work):
+            break
+        try:
+            tokens = _tokenise_shell_item(work[index])
+        except ValueError:
+            return APT_UNBALANCED_QUOTE_MESSAGE
+        if not _enqueue_nested_apt_tokens(work[index], tokens, work):
+            return APT_NESTING_MESSAGE
+        for clause in _split_shell_clauses(tokens):
+            clause_has_apt, problem = _clause_apt_problem(clause, hosted_surface)
+            if clause_has_apt:
+                saw_apt = True
+            if problem is not None:
+                return problem
+    if not saw_apt:
+        return APT_UPDATE_MESSAGE
+    return None
 
 
 def apt_update_problems(path: Path, text: str) -> list[str]:
-    """Reject apt index refresh lines lacking --error-on=any and Acquire::Retries."""
+    """Reject unsafe apt refreshes and raw hosted-runner sudo apt-get update calls."""
     problems: list[str] = []
-    for number, line in enumerate(text.splitlines(), 1):
-        if APT_UPDATE_LINE.search(line) is not None and not _is_compliant_apt_update_line(line):
-            problems.append(f"{path.as_posix()}:{number}: {APT_UPDATE_MESSAGE}")
+    hosted_surface = _is_hosted_workflow_or_action(path)
+    for line_number, logical_line, overflowed in _logical_ci_lines(text):
+        if overflowed:
+            problems.append(f"{path.as_posix()}:{line_number}: {APT_CONTINUATION_MESSAGE}")
+            continue
+        if APT_UPDATE_LINE.search(logical_line) is None:
+            continue
+        problem = _logical_line_apt_problem(logical_line, hosted_surface)
+        if problem is not None:
+            problems.append(f"{path.as_posix()}:{line_number}: {problem}")
     return problems
 
 
 def _scan_ci_text(root: Path, check: Callable[[Path, str], list[str]]) -> list[str]:
-    """Run one pure line check across tracked CI text files, reporting non-regular skips."""
+    """Run one pure text check across tracked CI files; fail closed on non-regular paths."""
     problems: list[str] = []
     for path in ci_text_paths(root):
         relative = path.relative_to(root)
         if not path.is_file(follow_symlinks=False):
-            print(f"{relative}: skipped tracked non-regular file", file=sys.stderr)
+            problems.append(f"{relative.as_posix()}: {NON_REGULAR_CI_TEXT_MESSAGE}")
             continue
         problems.extend(check(relative, path.read_text(encoding="utf-8", errors="replace")))
     return problems
 
 
 def launchpad_ppa_problems(root: Path) -> list[str]:
-    """Ban registration text in tracked sources; report skipped non-regular paths."""
+    """Ban registration text in tracked sources; fail closed on non-regular paths."""
     return _scan_ci_text(root, ppa_text_problems)
 
 
 def apt_update_contract_problems(root: Path) -> list[str]:
-    """Require fail-closed flags on apt index refreshes across tracked CI text files."""
+    """Require fail-closed flags and shared refresh helper across tracked CI text files."""
     return _scan_ci_text(root, apt_update_problems)
 
 
@@ -438,19 +609,19 @@ class LaunchpadPPAContract(DisposableRepoTestCase):
             launchpad_ppa_problems(self.root / "missing")
 
     def test_non_regular_tracked_path_is_reported(self) -> None:
-        """Only listed non-regular paths may be skipped, with an explicit diagnostic."""
+        """A listed non-regular tracked path fails closed without printing to stderr."""
         self.track({"missing.sh": ""})
         (self.root / "missing.sh").unlink()
+        expected = [f"missing.sh: {NON_REGULAR_CI_TEXT_MESSAGE}"]
         with mock.patch("sys.stderr") as stderr:
-            self.assertEqual(launchpad_ppa_problems(self.root), [])
-        self.assertIn(
-            "missing.sh: skipped tracked non-regular file", str(stderr.write.call_args_list)
-        )
+            self.assertEqual(launchpad_ppa_problems(self.root), expected)
+            self.assertEqual(apt_update_contract_problems(self.root), expected)
+        stderr.write.assert_not_called()
 
-    def test_tracked_symlink_is_skipped_not_followed(self) -> None:
-        """A tracked link is non-regular: report the skip, never scan the target text."""
+    def test_tracked_symlink_fails_without_reading_the_target(self) -> None:
+        """A tracked link fails closed as non-regular without reading the target text."""
         target = self.root / "target.txt"
-        target.write_text("add-apt-repository ppa:x/y\n", encoding="utf-8")
+        target.write_text("add-apt-repository ppa:x/y\napt-get update\n", encoding="utf-8")
         try:
             (self.root / "linked.sh").symlink_to(target.name)
         except OSError as error:
@@ -458,11 +629,11 @@ class LaunchpadPPAContract(DisposableRepoTestCase):
         self.git_run(
             self.git_argv("add", "--", "linked.sh"), check=True, capture_output=True, timeout=10
         )
+        expected = [f"linked.sh: {NON_REGULAR_CI_TEXT_MESSAGE}"]
         with mock.patch("sys.stderr") as stderr:
-            self.assertEqual(launchpad_ppa_problems(self.root), [])
-        self.assertIn(
-            "linked.sh: skipped tracked non-regular file", str(stderr.write.call_args_list)
-        )
+            self.assertEqual(launchpad_ppa_problems(self.root), expected)
+            self.assertEqual(apt_update_contract_problems(self.root), expected)
+        stderr.write.assert_not_called()
 
     def test_replacement_decoding_preserves_registration_check(self) -> None:
         """Undecodable source bytes cannot hide registration text or crash scanning."""
@@ -508,7 +679,7 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
         self.assertEqual(problems, [], "\n".join(problems))
 
     def test_positive_non_compliant_update_forms(self) -> None:
-        """Reject missing flags, bare apt, mixed case and comment mentions with exact path:line."""
+        """Reject missing flags, bare apt, mixed case, nested bash -c and comments."""
         cases = (
             ("Dockerfile", "FROM ubuntu:26.04\nRUN apt-get update && apt-get install -y x\n", 2),
             ("docker/dev/x.Dockerfile", "FROM ubuntu:26.04\nRUN apt-get update\n", 2),
@@ -536,6 +707,13 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
                 "apt-get update # --error-on=any -o Acquire::Retries=3\n",
                 1,
             ),
+            (
+                "scripts/bash-c-trailing.sh",
+                "bash -c 'apt-get update' --error-on=any -o Acquire::Retries=3\n",
+                1,
+            ),
+            ("scripts/usr-bin.sh", "/usr/bin/apt-get update\n", 1),
+            ("scripts/subshell.sh", "(apt-get update)\n", 1),
         )
         for relative, content, line in cases:
             with self.subTest(path=relative):
@@ -549,7 +727,7 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
         self.assertEqual(apt_update_contract_problems(self.root), expected_all)
 
     def test_negative_compliant_forms_and_out_of_scope_files(self) -> None:
-        """Allow options before or after update, installs, empty files and out-of-scope paths."""
+        """Allow compliant options, non-update package tokens, empty files and out-of-scope paths."""
         self.track(
             {
                 "Dockerfile": (
@@ -561,11 +739,15 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
                 "scripts/ci/setup.sh": (
                     "$SUDO apt-get -o Acquire::Retries=3 --error-on=any update -qq\n"
                     "$SUDO apt-get update -qq --error-on=any -o Acquire::Retries=3\n"
-                    "DEBIAN_FRONTEND=noninteractive apt-get --error-on=any -o Acquire::Retries=3 update -qq\n"
+                    "DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get --error-on=any -o Acquire::Retries=3 update -qq\n"
                     "apt-get install -y --no-install-recommends ca-certificates\n"
+                    "apt-get install -y update-notifier-common\n"
+                    "apt-get install -y ./update.sh update+x updates\n"
                 ),
                 ".github/workflows/ci.yml": (
-                    "steps:\n" "  - run: sudo apt-get --error-on=any -o Acquire::Retries=3 update\n"
+                    "steps:\n"
+                    "  - run: bash scripts/ci/apt-install-cached.sh refresh\n"
+                    "  - run: docker run --rm ubuntu:26.04 apt-get --error-on=any -o Acquire::Retries=3 update\n"
                 ),
                 "empty.yaml": "",
                 "docs/guide.md": "apt-get update\n",
@@ -582,6 +764,8 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
             "apt-get update && apt-get --error-on=any -o Acquire::Retries=3 update\n",
             "apt-get --error-on=any -o Acquire::Retries=3 update && apt-get update\n",
             "apt-get --error-on=any -o Acquire::Retries=3 update; apt update\n",
+            "apt-get --error-on=any -o Acquire::Retries=3 update || apt-get update\n",
+            "(apt-get --error-on=any -o Acquire::Retries=3 update) & (apt-get update)\n",
         ):
             with self.subTest(text=text):
                 self.track({"boundary.sh": text})
@@ -596,10 +780,127 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
         self.track({"boundary.sh": both_compliant})
         self.assertEqual(apt_update_contract_problems(self.root), [])
 
-    def test_known_gap_update_split_across_continuation(self) -> None:
-        """Known gap, not a pass: single-line matching misses update split onto the next line."""
-        self.track({"split.sh": "apt-get -qq \\\n  update\n"})
+    def test_update_split_across_continuation(self) -> None:
+        """Join backslash continuations with first-line reporting and bounded physical length."""
+        self.track({"split.sh": "apt-get -qq \\   \n  update\n"})
+        self.assertEqual(
+            apt_update_contract_problems(self.root),
+            [f"split.sh:1: {APT_UPDATE_MESSAGE}"],
+        )
+        compliant_split = (
+            "#!/usr/bin/env bash\n"
+            "apt-get \\\n"
+            "  --error-on=any \\\n"
+            "  -o Acquire::Retries=3 \\\n"
+            "  update\n"
+        )
+        self.track({"split.sh": compliant_split})
         self.assertEqual(apt_update_contract_problems(self.root), [])
+        at_bound = "echo \\\n" * (MAX_CONTINUATION_LINES - 1) + "ok\n"
+        self.track({"split.sh": at_bound})
+        self.assertEqual(apt_update_contract_problems(self.root), [])
+        over_bound = "echo \\\n" * MAX_CONTINUATION_LINES + "ok\n"
+        self.track({"split.sh": over_bound})
+        self.assertEqual(
+            apt_update_contract_problems(self.root),
+            [f"split.sh:1: {APT_CONTINUATION_MESSAGE}"],
+        )
+
+    def test_effective_acquire_retries_and_option_spellings(self) -> None:
+        """Require the last Acquire::Retries option before `--` to be a positive integer."""
+        for compliant in (
+            "apt-get --error-on=any -o Acquire::Retries=0 -o Acquire::Retries=3 update\n",
+            "apt-get --error-on=any -oAcquire::Retries=3 update\n",
+            "apt-get --error-on=any --option Acquire::Retries=3 update\n",
+            "apt-get --error-on=any --option=Acquire::Retries=3 update\n",
+        ):
+            with self.subTest(compliant=compliant):
+                self.assertEqual(apt_update_problems(Path("s.sh"), compliant), [])
+        for non_compliant in (
+            "apt-get --error-on=any -o Acquire::Retries=3 -o Acquire::Retries=0 update\n",
+            "apt-get --error-on=any -o Acquire::Retries=3 --option=Acquire::Retries=0 update\n",
+            "apt-get --error-on=any -o Acquire::Retries=3 -o acquire::retries=0 update\n",
+            "apt-get --error-on=any -o Acquire::Retries= update\n",
+            "apt-get --error-on=any -o Acquire::Retries update\n",
+            "apt-get update -- --error-on=any -o Acquire::Retries=3\n",
+        ):
+            with self.subTest(non_compliant=non_compliant):
+                self.assertEqual(
+                    apt_update_problems(Path("s.sh"), non_compliant),
+                    [f"s.sh:1: {APT_UPDATE_MESSAGE}"],
+                )
+
+    def test_nested_shell_work_list_and_unbalanced_quotes(self) -> None:
+        """Inspect nested sh/bash -c command strings up to 8 work items and reject bad quotes."""
+        nested = "apt-get --error-on=any -o Acquire::Retries=3 update"
+        for _ in range(MAX_APT_WORK_ITEMS - 1):
+            nested = f"sh -c {shlex.quote(nested)}"
+        self.assertEqual(apt_update_problems(Path("s.sh"), nested + "\n"), [])
+        too_deep = f"sh -c {shlex.quote(nested)}\n"
+        self.assertEqual(
+            apt_update_problems(Path("s.sh"), too_deep),
+            [f"s.sh:1: {APT_NESTING_MESSAGE}"],
+        )
+        for unbalanced in (
+            "bash -c 'apt-get --error-on=any -o Acquire::Retries=3 update\n",
+            'bash -c "apt-get \'update"\n',
+        ):
+            with self.subTest(unbalanced=unbalanced):
+                self.assertEqual(
+                    apt_update_problems(Path("s.sh"), unbalanced),
+                    [f"s.sh:1: {APT_UNBALANCED_QUOTE_MESSAGE}"],
+                )
+        self.assertEqual(apt_update_problems(Path("s.sh"), "echo 'no apt here\n"), [])
+
+    def test_hosted_runner_sudo_refresh_contract(self) -> None:
+        """Require hosted workflow and action refreshes to use apt-install-cached.sh."""
+        for hosted_path in (
+            ".github/workflows/build.yml",
+            ".github/workflows/extra.yaml",
+            ".github/actions/gen-node-bpf/action.yml",
+            ".github/actions/nested/tool/action.yaml",
+        ):
+            with self.subTest(hosted_path=hosted_path):
+                text = "steps:\n  - run: sudo apt-get --error-on=any -o Acquire::Retries=3 update\n"
+                self.assertEqual(
+                    apt_update_problems(Path(hosted_path), text),
+                    [f"{hosted_path}:2: {HOSTED_APT_UPDATE_MESSAGE}"],
+                )
+        nested_sudo = (
+            "run: bash -c 'sudo -E /usr/bin/apt-get --error-on=any -o Acquire::Retries=3 update'\n"
+        )
+        self.assertEqual(
+            apt_update_problems(Path(".github/workflows/build.yml"), nested_sudo),
+            [f".github/workflows/build.yml:1: {HOSTED_APT_UPDATE_MESSAGE}"],
+        )
+        boundary = (
+            "apt-get --error-on=any -o Acquire::Retries=3 update "
+            "&& sudo apt-get --error-on=any -o Acquire::Retries=3 update\n"
+        )
+        self.assertEqual(
+            apt_update_problems(Path(".github/workflows/build.yml"), boundary),
+            [f".github/workflows/build.yml:1: {HOSTED_APT_UPDATE_MESSAGE}"],
+        )
+        for allowed_path, allowed_text in (
+            (
+                ".github/workflows/published-rc-licence-companions.yml",
+                "docker run --rm debian bash -c 'apt-get --error-on=any -o Acquire::Retries=3 update -qq'\n",
+            ),
+            (
+                ".github/workflows/build.yml",
+                "sudo echo ok && apt-get --error-on=any -o Acquire::Retries=3 update\n",
+            ),
+            (
+                "scripts/ci/apt-install-cached.sh",
+                "sudo apt-get --error-on=any -o Acquire::Retries=3 update\n",
+            ),
+            (
+                "tools/elsewhere/action.yml",
+                "sudo apt-get --error-on=any -o Acquire::Retries=3 update\n",
+            ),
+        ):
+            with self.subTest(allowed_path=allowed_path, allowed_text=allowed_text):
+                self.assertEqual(apt_update_problems(Path(allowed_path), allowed_text), [])
 
     def test_planted_cuda_installer_without_error_on_fails_contract(self) -> None:
         """Removing --error-on=any from install-cuda-toolkit.sh fails at that file and line."""

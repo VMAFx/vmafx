@@ -33,10 +33,14 @@ Two CI failures demonstrated both failure modes:
   `E: Unable to satisfy dependencies` on `python3-yaml` (exit `100`). Bounded
   retries alone do not surface the index failure when every retry attempt fails.
 
-Workflow runner steps write `Acquire::Retries "3"` to
-`/etc/apt/apt.conf.d/80ci-retries` (such as `.github/workflows/build.yml:229`
-and `scripts/ci/apt-install-cached.sh:22`), whereas container builds do not
-inherit host runner APT configuration.
+GitHub-hosted Ubuntu runner images pre-provision
+`/etc/apt/sources.list.d/*microsoft*` and `/etc/apt/sources.list.d/*azure*`
+(`packages.microsoft.com`), which intermittently answer `403` or report that
+the repository is no longer signed (the runner note now kept in
+`scripts/ci/apt-install-cached.sh`) even when Ubuntu mirrors succeed; once
+`--error-on=any` is active, those unremoved third-party lists abort the
+refresh. Container builds also do not inherit host runner
+`/etc/apt/apt.conf.d/80ci-retries` files.
 
 An offline probe in `ubuntu:26.04@sha256:6a06111c3b0a` with `--network none` and
 `apt 3.2.0` confirmed the exit behavior:
@@ -47,61 +51,78 @@ An offline probe in `ubuntu:26.04@sha256:6a06111c3b0a` with `--network none` and
 
 ## Decision
 
-Pass `--error-on=any` and `-o Acquire::Retries=3` on the same physical line as
-every `apt-get` and `update` invocation across tracked CI, shell and container
-sources (`ci_text_paths` in `scripts/ci/test_fail_closed_ci.py`), including
+Pass `--error-on=any` and a positive `Acquire::Retries` option
+(`-o Acquire::Retries=3`) on every `apt-get update` command across tracked CI,
+shell and container sources (`ci_text_paths` in
+`scripts/ci/test_fail_closed_ci.py`), including
 `scripts/ci/apt-install-cached.sh` alongside its `apt.conf.d` configuration.
 Standardize on lowercase `apt-get` (never bare `apt`) in scripts, workflows and
 container files while preserving existing options (`-qq`, `-q`,
 `-o Acquire::http::Timeout=30`), privilege prefixes (`sudo`, `$SUDO`),
-environment assignments and line continuations.
+environment assignments and `\` line continuations.
 
-Enforce the invariant through `AptUpdateFailClosedContract`
+On GitHub-hosted runners (`.github/workflows/*.yml` and
+`.github/actions/*/action.yml`), run every host APT refresh through
+`scripts/ci/apt-install-cached.sh refresh` (when a step adds repositories or
+runs its own `apt-get install`) or `scripts/ci/apt-install-cached.sh install`.
+Before calling `sudo apt-get --error-on=any -o Acquire::Retries=3 update`,
+`scripts/ci/apt-install-cached.sh` writes `/etc/apt/apt.conf.d/80ci-retries`
+and removes `/etc/apt/sources.list.d/*microsoft*` and
+`/etc/apt/sources.list.d/*azure*` so `packages.microsoft.com` outages cannot
+break Ubuntu package refreshes. Container commands without `sudo` (such as
+`docker run ... bash -c`) pass the inline flags directly.
+
+Enforce these invariants through `AptUpdateFailClosedContract`
 (`apt_update_problems` and `apt_update_contract_problems`) in
 `scripts/ci/test_fail_closed_ci.py`, reusing `ci_text_paths` and the existing
-`fail-closed-ci-contract` pre-commit hook without YAML or shell parsing, and
-widening both to include `.Dockerfile` and `.Containerfile` suffixes.
+`fail-closed-ci-contract` pre-commit hook, and widening both to include
+`.Dockerfile` and `.Containerfile` suffixes.
 
 ## Alternatives considered
 
 | Option | Benefit | Cost | Outcome |
 | --- | --- | --- | --- |
-| Inline `--error-on=any -o Acquire::Retries=3` on every `apt-get update` line with a text contract | Self-contained at every call site across workflows, multi-stage container builds and scripts; verifiable line-by-line with zero parsing | Repeats two flags on each `apt-get update` line and requires comments to avoid literal `apt-get ... update` phrasing | Chosen |
-| Per-image `apt.conf.d` snippet | Centralizes configuration inside one container stage | Must be copied or written in every stage of every multi-stage `Dockerfile` and `Containerfile` plus host/VM scripts; cannot be proven by a stateless single-line check | Rejected |
+| Inline `--error-on=any -o Acquire::Retries=3` on container and script `apt-get update` commands, `apt-install-cached.sh refresh` on hosted runners, and a shell-tokenised CI text contract | Self-contained in every container stage and script, centralizes runner Microsoft/Azure source removal on hosted workflows, and verifies shell command boundaries statically | Repeats two flags on container and script `apt-get update` commands and requires comments to avoid literal `apt-get ... update` phrasing | Chosen |
+| Per-image `apt.conf.d` snippet | Centralizes configuration inside one container stage | Must be copied or written in every stage of every multi-stage `Dockerfile` and `Containerfile` plus host/VM scripts; cannot be proven by a stateless command check | Rejected |
 | Outer shell retry loop | Wraps the command externally | Plain `apt-get update` exits `0` on fetch errors unless `--error-on=any` is already passed, and APT's built-in `Acquire::Retries=3` already retries per-URI transport failures without shell boilerplate | Rejected |
-| Keep status quo | Zero edits to workflows, scripts or container files | Transient DNS or mirror failures continue exiting `0` during index refresh and surface as misleading install-time missing-package errors | Rejected |
+| Keep status quo | Zero edits to workflows, scripts or container files | Transient DNS, mirror or third-party runner source failures continue breaking refreshes or surfacing as misleading install-time missing-package errors | Rejected |
 
 ## Consequences
 
 - Transient APT index download failures retry up to three times and fail
   immediately at `apt-get update` with exit `100` and the resolver or HTTP
-  diagnostic, never proceeding to `apt-get install` with missing index lists.
+  diagnostic, while hosted-runner workflows drop pre-installed Microsoft and
+  Azure APT sources before refreshing.
 - `AptUpdateFailClosedContract` scans `ci_text_paths(ROOT)` (tracked `.yml`,
   `.yaml`, `.sh`, `.bash`, `.Dockerfile` and `.Containerfile` suffixes plus
   basenames starting with `Dockerfile` or `Containerfile`, keeping paths
   without a dot suffix such as `docker/OtherDockerfile` excluded). Adding
   `.Dockerfile` and `.Containerfile` widens the shared `ci_text_paths` listing
   and `fail-closed-ci-contract` hook trigger, so the [ADR-3533][adr-3533]
-  Launchpad PPA ban covers them too while retaining the 1,864-file bound. Any
-  physical line matching `\bapt(?:-get)?\b[^\n]*\bupdate\b` case-insensitively
-  fails unless it is a non-comment lowercase `apt-get` call in which every
-  `update` clause on the line carries both `--error-on=any` and
-  `-o Acquire::Retries=<N>` (`N >= 1`).
+  Launchpad PPA ban covers them too while retaining the 1,864-file bound.
+  `_scan_ci_text` fails on any tracked in-scope path that is not a regular file
+  (such as a symlink) without following or reading its target.
+- `apt_update_problems` joins `\` line continuations (bounded to 200 physical
+  lines), follows shell argument and operator boundaries (`;`, `&&`, `||`, `|`,
+  `&`, `(`, `)`) via `shlex` tokenisation plus a bounded 8-item work list for
+  nested `-c` command strings, fails closed on unbalanced quotes, matches exact
+  `update` tokens (ignoring package or file names such as
+  `update-notifier-common` or `update.sh`), requires `--error-on=any` and a
+  positive final `Acquire::Retries` value across `-o` and `--option` flags, and
+  rejects raw `sudo apt-get ... update` commands in `.github/workflows/*.yml`
+  and `.github/actions/*/action.yml`.
 - Bare `apt update`, mixed-case `APT-GET UPDATE`, and comments that write
   literal `apt-get ... update` text fail closed. Comments describing index
   refreshes avoid matching `\bapt(?:-get)?\b[^\n]*\bupdate\b`.
-- Each violation reports:
+- Violations report `<path>:<line>: <message>` at the first physical line of
+  the logical command (`<path>: <message>` for non-regular tracked paths),
+  including:
 
   ```text
   <path>:<line>: apt-get update must fail on index errors: add --error-on=any -o Acquire::Retries=3 (ADR-3537)
   ```
 
-- Known gap: `apt_update_problems` inspects one physical line at a time without
-  shell continuation folding, so `apt-get -qq \` followed by `update` on the
-  next line is not detected (`test_known_gap_update_split_across_continuation`
-  in `scripts/ci/test_fail_closed_ci.py`). The tracked tree contains zero such
-  split forms; keep `apt-get` and `update` on the same physical line.
-- Positive, negative, boundary, known-gap and planted-defect tests in
+- Positive, negative, boundary and planted-defect tests in
   `scripts/ci/test_fail_closed_ci.py` share isolated disposable Git repository
   setup with `LaunchpadPPAContract`.
 

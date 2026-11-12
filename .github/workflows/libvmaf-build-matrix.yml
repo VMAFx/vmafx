@@ -327,7 +327,7 @@ jobs:
       - name: Install dependencies (ubuntu)
         if: ${{ (startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
         run: |
-          sudo apt-get --error-on=any -o Acquire::Retries=3 update
+          bash scripts/ci/apt-install-cached.sh refresh
           sudo -E apt-get -yq install ccache ninja-build nasm libomp-dev pkg-config
           # ADR-0692 (design notes)
           case "$CC" in
@@ -414,7 +414,7 @@ jobs:
           CXX: g++
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          sudo apt-get --error-on=any -o Acquire::Retries=3 update
+          bash scripts/ci/apt-install-cached.sh refresh
           sudo -E apt-get -yq install ccache ninja-build nasm gcc g++ gpg-agent pkg-config libzimg-dev
           # ADR-1360 (design notes)
           bash scripts/ci/install-intel-ocloc.sh
@@ -424,7 +424,7 @@ jobs:
           rm -f "$RUNNER_TEMP/oneapi-key.asc"
           echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
-          sudo apt-get --error-on=any -o Acquire::Retries=3 update
+          bash scripts/ci/apt-install-cached.sh refresh
           set -a; . ./build-config.env; set +a
           sudo -E apt-get -yq install "${ONEAPI_APT_PACKAGE}" cmake
           # ADR-1231 (design notes)
@@ -454,14 +454,14 @@ jobs:
       - name: Install base deps for CUDA-only builds
         if: ${{ (matrix.cuda && !matrix.sycl) && steps.impact.outputs.c_core == 'true' }}
         run: |
-          sudo apt-get --error-on=any -o Acquire::Retries=3 update
+          bash scripts/ci/apt-install-cached.sh refresh
           sudo -E apt-get -yq install ccache ninja-build nasm gcc g++ pkg-config libzimg-dev
 
       # ADR-1225 (design notes)
       - name: Install ROCm / HIP toolchain
         if: ${{ (matrix.hip) && steps.impact.outputs.c_core == 'true' }}
         run: |
-          sudo apt-get --error-on=any -o Acquire::Retries=3 update
+          bash scripts/ci/apt-install-cached.sh refresh
           sudo -E apt-get -yq install --no-install-recommends \
             ccache ninja-build nasm libomp-dev pkg-config gcc g++ jq libzimg-dev
           # ADR-1231 (design notes)

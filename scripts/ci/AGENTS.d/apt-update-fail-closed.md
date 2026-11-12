@@ -2,49 +2,52 @@
 paths:
   - scripts/ci/test_fail_closed_ci.py
   - scripts/ci/apt-install-cached.sh
+  - scripts/ci/tests/test-apt-install-cached.sh
   - scripts/ci/install-*.sh
   - scripts/dev/tidy-lane.sh
+  - scripts/release/tests/test-docker-image-runtime-contract.sh
+  - scripts/setup/*.sh
+  - test/e2e/incus-kind-vm.sh
+  - .github/workflows/*.yml
+  - .github/actions/*/action.yml
+  - Dockerfile*
+  - Containerfile.vmafx
+  - dev/Containerfile
+  - docker/Dockerfile.*
   - docker/dev/ubuntu-*.Dockerfile
+  - mcp-server/vmaf-mcp/Dockerfile
   - .pre-commit-config.yaml
-invariant: ADR-3537 requires --error-on=any and -o Acquire::Retries=3 on every tracked apt-get update physical line.
+invariant: ADR-3537 enforces fail-closed flags on every tracked apt refresh command (continuation lines joined).
 area: gates
 ---
 # APT index refresh fail-closed contract (ADR-3537)
 
 `AptUpdateFailClosedContract` in `scripts/ci/test_fail_closed_ci.py` enforces
-[ADR-3537](../../../docs/adr/3537-apt-update-fail-closed.md) via
+[ADR-3537](../../../docs/adr/3537-apt-update-fail-closed.md) across every
+tracked apt refresh command (continuation lines joined) via
 `apt_update_problems(path, text)` and `apt_update_contract_problems(root)`.
 
 Scope = `ci_text_paths(root)` (`git ls-files -z`: `.yml`, `.yaml`, `.sh`,
-`.bash` suffixes; `*.Dockerfile`, `*.Containerfile` suffixes; `Dockerfile*`
-and `Containerfile*` basenames; `docker/OtherDockerfile` excluded; 1,864-file
+`.bash`, `*.Dockerfile`, `*.Containerfile` suffixes; `Dockerfile*` and
+`Containerfile*` basenames; `docker/OtherDockerfile` excluded; 1,864-file
 bound; shared with ADR-3533). Reuses `fail-closed-ci-contract` hook in
-`.pre-commit-config.yaml` and `DisposableRepoTestCase` fixture isolation; no
-second path lister.
+`.pre-commit-config.yaml` and `DisposableRepoTestCase` fixture isolation.
 
-Allow-list text rule, zero shell or YAML parsing:
+Checker folds `\` continuations (200-line bound), tokenises with `shlex` across
+operators (`;`, `&&`, `||`, `|`, `&`, `(`, `)`) and 8-item nested `-c` queue
+(unbalanced quotes fail), and matches exact token `update`. Every refresh
+requires lowercase `apt-get`, `--error-on=any`, and positive last
+`Acquire::Retries`; non-regular tracked paths and workflow or action `sudo
+apt-get ... update` calls fail closed. Comment mentions of `apt-get ... update`
+fail closed too; reword comments to `apt index refresh`. Subcommand
+`scripts/ci/apt-install-cached.sh refresh` writes `80ci-retries`, deletes runner
+`*microsoft*` and `*azure*` source lists, and runs `sudo apt-get --error-on=any
+-o Acquire::Retries=3 update`.
 
-- Physical line matching `\bapt(?:-get)?\b[^\n]*\bupdate\b` (case-insensitive)
-  passes only when non-comment lowercase `apt-get` call carries both
-  `--error-on=any` and `-o Acquire::Retries=<N>` (`N >= 1`) on every `update`
-  clause on line.
-- Bare `apt update`, mixed-case `APT-GET UPDATE`, trailing-comment flags and
-  comment mentions fail closed; reword comments to `apt index refresh` or `apt
-  list refresh`.
-- Known gap: single-physical-line check; `apt-get -qq \` then next-line
-  `update` undetected (`test_known_gap_update_split_across_continuation`); 0
-  split forms in tracked tree. Keep `apt-get` and `update` on one physical
-  line.
-- Diagnostic format:
+Diagnostics:
 
 ```text
 <path>:<line>: apt-get update must fail on index errors: add --error-on=any -o Acquire::Retries=3 (ADR-3537)
+<path>:<line>: hosted-runner apt refresh must run through scripts/ci/apt-install-cached.sh refresh or install (it drops the runner's Microsoft/Azure sources first; ADR-3537)
+<path>: tracked CI text path is not a regular file; the contract cannot read it
 ```
-
-Fixtures: positive (`Dockerfile`, `docker/dev/x.Dockerfile`,
-`docker/dev/x.Containerfile`, `.sh`, workflow `run:`, missing retries, missing
-`--error-on=any`, bare `apt`, mixed case, comments), negative (flags before or
-after `update`, `apt-get install`, `.py`/`.md`, `docker/OtherDockerfile`,
-untracked, empty), boundary (two `update` calls on one line), known gap
-(two-line continuation split), planted (`scripts/ci/install-cuda-toolkit.sh`
-missing `--error-on=any`).

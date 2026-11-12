@@ -609,5 +609,99 @@ class HipWrapper(unittest.TestCase):
         self.assertRegex(result.stderr, r"^error: clang-tidy binary '.*absent' not found")
 
 
+def _extract_shell_function(script_text: str, name: str) -> str:
+    """Extract one top-level shell function definition from scripts/dev/tidy-lane.sh."""
+    match = re.search(rf"(?ms)^{re.escape(name)}\(\) \{{\n.*?\n\}}", script_text)
+    if match is None:
+        raise AssertionError(f"shell function {name} not found in scripts/dev/tidy-lane.sh")
+    return match.group(0)
+
+
+@POSIX_ONLY
+class LaneEnvironmentFailure(unittest.TestCase):
+    """Propagate apt refresh and setup failures in scripts/dev/tidy-lane.sh under !/||."""
+
+    def setUp(self) -> None:
+        """Create isolated stub binaries for apt-get and pkg-config."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+        self.bin_dir = self.tmp / "bin"
+        self.bin_dir.mkdir()
+        self.state = self.tmp / "pkg-config-called"
+        self.apt_log = self.tmp / "apt.log"
+        apt_stub = self.bin_dir / "apt-get"
+        apt_stub.write_text(
+            '#!/bin/sh\nprintf "%s\\n" "$*" >>"$FAKE_APT_LOG"\n'
+            'case " $* " in *" update "*) exit 100 ;; esac\nexit 0\n',
+            encoding="utf-8",
+        )
+        apt_stub.chmod(0o755)
+        pkg_stub = self.bin_dir / "pkg-config"
+        pkg_stub.write_text(
+            '#!/bin/sh\nif [ ! -e "$FAKE_PKG_STATE" ]; then\n'
+            '  : >"$FAKE_PKG_STATE"\n  exit 1\nfi\nexit 0\n',
+            encoding="utf-8",
+        )
+        pkg_stub.chmod(0o755)
+
+    def _run_extracted_harness(self, script_text: str) -> subprocess.CompletedProcess[str]:
+        """Run extracted die, ensure_zimg_dev and lane_environment under `if ! (...)`."""
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("bash is required to test extracted tidy-lane functions")
+        if self.state.exists():
+            self.state.unlink()
+        if self.apt_log.exists():
+            self.apt_log.unlink()
+        extracted = "\n\n".join(
+            _extract_shell_function(script_text, fn)
+            for fn in ("die", "ensure_zimg_dev", "lane_environment")
+        )
+        harness = (
+            "set -euo pipefail\n"
+            'ZIMG_PACKAGES="libzimg-dev"\n'
+            f"{extracted}\n"
+            "if ! (lane_environment cpu); then exit 7; fi\n"
+        )
+        env = {
+            "PATH": f"{self.bin_dir}{os.pathsep}/usr/bin{os.pathsep}/bin",
+            "FAKE_PKG_STATE": str(self.state),
+            "FAKE_APT_LOG": str(self.apt_log),
+        }
+        return subprocess.run(  # noqa: S603 -- fixed bash harness over extracted script text
+            [bash, "-c", harness],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+            timeout=30,
+        )
+
+    def test_apt_update_failure_stops_lane_environment_under_negated_subshell(self) -> None:
+        """Refuse stale-index installs even when `if ! (...)` disables errexit."""
+        script_text = SCRIPT.read_text(encoding="utf-8")
+        result = self._run_extracted_harness(script_text)
+        self.assertEqual(result.returncode, 7, result.stderr)
+        self.assertIn("refusing to install from stale package lists", result.stderr)
+        logged = self.apt_log.read_text(encoding="utf-8")
+        self.assertNotIn("install", logged)
+
+    def test_planted_unguarded_refresh_swallows_failure_under_negated_subshell(self) -> None:
+        """Prove the harness exits 0 when apt-get update and ensure_zimg_dev lack guards."""
+        script_text = SCRIPT.read_text(encoding="utf-8")
+        unguarded = re.sub(
+            r"(apt-get --error-on=any -o Acquire::Retries=3 update -qq)\s*\|\|\n\s*die [^\n]+",
+            r"\1",
+            script_text,
+        ).replace(
+            'if [ "$1" != arm64 ]; then ensure_zimg_dev || return 1; fi',
+            '[ "$1" = arm64 ] || ensure_zimg_dev',
+        )
+        self.assertNotEqual(unguarded, script_text)
+        result = self._run_extracted_harness(unguarded)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
