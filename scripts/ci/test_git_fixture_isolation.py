@@ -103,9 +103,14 @@ SHELL_GIT_WRITE = re.compile(
     r"|config\s+(?!--" + _READ_ONLY + r"\b)"
     r"(?:--(?:local|global|worktree|system|add|replace-all|file\s+\S+)\s+)*[\w.-]+\.[\w.-]+[ \t]+\S)"
 )
+# Before the subcommand, a Git call may hold code and option literals ("-q", or "-C"/"-c" and
+# their value), never another string: in git("commit", "-m", "init") the subcommand is commit.
+_CODE_GIT_PREFIX = r"""(?:[^"'\n]|["']-[cC]["']\s*,\s*["'][^"'\n]*["']|["']-[^"'\n]*["'])"""
 # Match git at a word boundary or after an underscore (e.g. run_git), never inside digit.
 CODE_GIT_WRITE = re.compile(
-    r"""(?im)^(?!\s*(?:#|//))[^\n]*(?:\b|_)git\w*[^\n]{0,80}?["'](?:init|clone)["']\s*[,)\]]"""
+    r"""(?im)^(?!\s*(?:#|//))[^\n]*(?:\b|_)git\w*["']?"""
+    + _CODE_GIT_PREFIX
+    + r"""{0,80}?["'](?:init|clone)["']\s*[,)\]]"""
     r"""|["']config["']\s*,\s*(?:["']--(?:local|global|worktree|system|add|replace-all)["']\s*,\s*)*"""
     r"""["'][\w.-]+\.[\w.-]+["']\s*,\s*\S"""
 )
@@ -1512,16 +1517,20 @@ class GitFixtureIsolation(unittest.TestCase):
             'self._git("init")\n',
             'self.run_git("init", "-q")\n',
             'run_git(["clone", url])\n',
+            'subprocess.run(["git", "-C", str(path), "init"])\n',
+            'git("-c", "init.defaultBranch=main", "init")\n',
         ):
             with self.subTest(text=text):
                 self.assertIsNotNone(CODE_GIT_WRITE.search(text))
                 self.assertTrue(unisolated_git("tests/test_fixture.py", text))
 
     def test_isolation_rule_ignores_read_only_and_unrelated_helpers(self) -> None:
-        """Require a word boundary or underscore before git; digit is unrelated."""
+        """Only init or clone as the subcommand counts; digit is unrelated to git."""
         for text in (
             'self._git("status")\n',
             'self.run_git("status", "--short")\n',
+            'self._git("status", "init")\n',
+            '_git(temp_dir, "commit", "-q", "-m", "init")\n',
             'digit("init")\n',
             'self.digit("clone", url)\n',
         ):
