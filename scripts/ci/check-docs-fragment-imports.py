@@ -168,10 +168,7 @@ def recipe_scripts(makefile: Path) -> tuple[list[Path], list[str]]:
     for line in lines[start:]:
         if not line.startswith("\t"):
             break  # a non-recipe line ends the recipe (flush first below)
-        if pending:
-            candidate = pending + " " + line.strip()
-        else:
-            candidate = line.rstrip("\n")
+        candidate = pending + " " + line.strip() if pending else line.rstrip("\n")
         if candidate.rstrip().endswith("\\"):
             pending = candidate.rstrip()[:-1].rstrip() + " "
             continue
