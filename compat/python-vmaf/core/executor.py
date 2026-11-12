@@ -32,6 +32,10 @@ _FIFO_OPEN_TIMEOUT_SECONDS = 60.0
 _FIFO_OPEN_POLL_SECONDS = 0.05
 _FIFO_OPEN_MAX_POLLS = int(_FIFO_OPEN_TIMEOUT_SECONDS / _FIFO_OPEN_POLL_SECONDS) + 1
 _FIFO_PROCESS_JOIN_SECONDS = 1.0
+# A failed child still prints its traceback and runs finalizers after reporting it;
+# on a loaded runner that took over 1 s. Wait up to 3 s for its exit code, then
+# report it as unavailable so a hung child cannot stall the failure report.
+_FIFO_FAILED_CHILD_EXIT_SECONDS = 3.0
 
 
 def _safe_close_channel(channel):
@@ -108,15 +112,20 @@ def _fifo_worker_failure(worker):
             child_traceback = f"<unavailable from child error channel ({diagnostic}); inspect the inherited child stderr>"
     if child_traceback is None and process.exitcode is None:
         return None
-    process.join(timeout=_FIFO_PROCESS_JOIN_SECONDS)
+    process.join(timeout=_FIFO_FAILED_CHILD_EXIT_SECONDS)
     exit_code = process.exitcode
+    exit_status = (
+        f"exit code unavailable after {_FIFO_FAILED_CHILD_EXIT_SECONDS:g}s"
+        if exit_code is None
+        else f"exit code {exit_code}"
+    )
     if child_traceback is None:
         child_traceback = (
             "<unavailable from child error channel; inspect the inherited child stderr>"
         )
     return RuntimeError(
         f"FIFO {label} child exited before signaling readiness "
-        f"(exit code {exit_code}). Child traceback (also emitted on stderr):\n"
+        f"({exit_status}). Child traceback (also emitted on stderr):\n"
         f"{child_traceback}"
     )
 

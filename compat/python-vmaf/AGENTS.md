@@ -105,6 +105,7 @@ python/vmaf/
   attaches context via `_safe_add_exception_note` (bypasses overridden `add_note`,
   suppresses `BaseException`-derived control failures, `_run_fifo_worker`);
   `_fifo_worker_failure` treats EOF as failure, not `None`.
+  Failed-child exit wait: separate 3 s bound; expired -> exit code unavailable.
   `RegressorMixin._get_scatter_arrays` uses `is None` not `== None`. 5PL curve in
   `core/train_test_model.py` keeps `b1` as sigmoid amplitude via `scipy.special.expit`;
   additive `b1` redundant with `b5`, raw exp overflows.
