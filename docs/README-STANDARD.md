@@ -39,10 +39,11 @@ the VMAFx banner and documentation site.
 | `text` | `#e2e8f0` | light text on dark fills |
 | `muted` | `#94a3b8` | secondary text in the banner |
 
-The static badge messages use the three accent colours and set
-`labelColor=111a35` so the block reads as one band. Workflow-status badges are
-GitHub's own and keep its green, red or grey colour, because that colour is the
-status.
+Every badge uses `style=for-the-badge` and `labelColor=111a35`, so the page
+shows one badge design. Static badges take their message colour from the three
+accents. Status badges (workflow, Scorecard, Best Practices, Codacy) keep a
+status colour, because that colour is the status: green `#1f883d`, amber
+`#9a6700`, red `#cf222e`, grey `#6e7781` for unknown or stale.
 
 ## Hero banner
 
@@ -58,15 +59,15 @@ status.
 ## Badge block
 
 All badges at the top sit in one block directly under the banner, inside the
-centred header; static badges use `style=for-the-badge`. The groups always
+centred header; every badge uses `style=for-the-badge`. The groups always
 come in this order; a repository leaves out a group it has nothing for, but
 never reorders them:
 
 1. **Release / version**: the current release as a static badge that
    release-please keeps up to date (see "Badge sources").
-2. **CI / build**: one workflow-status badge per main workflow, with
-   `branch=<default>&event=push`. The badge label is the workflow name, so a
-   red badge points at the workflow of the same name.
+2. **CI / build**: one status badge per main workflow, showing its latest
+   decisive push run on the default branch. The badge label is the workflow
+   name, so a red badge points at the workflow of the same name.
 3. **Security / scorecard**: the security workflow, the OpenSSF Scorecard, the
    OpenSSF Best Practices level and the review bots that check every pull
    request (Codacy, CodeRabbit), where the project has them.
@@ -86,9 +87,16 @@ HTML comment on a line, so a note placed after it would hide the label.
 
 Version badges for languages, toolchains, backends and integrations (C, Go,
 Rust, Python, CUDA, ROCm and the like) are not part of the top block. Where
-they help, they go in one compact row (`style=flat-square`) inside the section
-they describe; for VMAFx that is "Backends at a glance". No `for-the-badge`
-badge appears below the header.
+they help, they go in one row inside the section they describe, in the same
+`for-the-badge` style as the header; for VMAFx that is "Backends at a glance".
+
+One badge keeps another design: the governance badge inside the
+`praetor:readme-governance` block, which the Praetor tool writes and checks.
+That block is not edited by hand.
+
+`python3 scripts/ci/readme_badges.py check-readme` enforces the one design on
+every commit that touches `README.md`; see
+[README status badges](development/readme-badges.md#checks).
 
 A static badge is built from shields.io's path form,
 `https://img.shields.io/badge/<label>-<message>-<colour>`, where `-` inside a
@@ -107,11 +115,8 @@ that answers well inside that limit:
 
 | Badge | Source |
 | --- | --- |
-| Workflow status | GitHub's own `https://github.com/<owner>/<repo>/actions/workflows/<file>/badge.svg?branch=<default>&event=push`; GitHub serves it directly, not through the proxy. |
+| Workflow status, OpenSSF Scorecard, OpenSSF Best Practices, Codacy | An SVG on the `badges` branch, `https://raw.githubusercontent.com/<owner>/<repo>/badges/<slug>.svg`, linked to the workflow, the Scorecard viewer, the Best Practices project and the Codacy dashboard. The README Badges workflow reads the values and draws the SVGs with the pinned shields.io renderer; see [README status badges](development/readme-badges.md). GitHub's own workflow badge and the badges Best Practices and Codacy serve each have a design of their own, so they are not used. |
 | Release | A static shields.io badge in query form, `https://img.shields.io/static/v1?label=release&message=v<version>&...`, on a line that ends with `<!-- x-release-please-version -->`. `README.md` is a generic extra file in `release-please-config.json`, so each release PR rewrites the version, and `scripts/release/verify-release-version.sh` checks the marker against the tag. |
-| OpenSSF Best Practices | `https://www.bestpractices.dev/projects/<id>/badge`, served by the project itself. |
-| OpenSSF Scorecard | A static link badge to the Scorecard viewer. The score badge (`api.scorecard.dev/.../badge`) redirects to a computed shields.io badge and is too slow for the proxy. |
-| Codacy | The grade badge Codacy serves itself, `https://app.codacy.com/project/badge/Grade/<project token>`, linked to the repository dashboard; the token is `badges.grade` of `GET https://app.codacy.com/api/v3/organizations/gh/<owner>/repositories/<repo>`. |
 | CodeRabbit | A static link badge. shields.io's computed `coderabbit/prs` badge counts only part of the reviews (it showed 13 for VMAFx on 2026-11-01) and is not served from a cache. |
 
 Measure a new badge source before adding it: `curl -o /dev/null -w '%{time_total}'`

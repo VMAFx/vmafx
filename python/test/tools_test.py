@@ -1,13 +1,22 @@
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 import os
-import subprocess
 import sys
 import unittest
+from pathlib import Path
 from test.testutil import set_default_576_324_videos_for_testing
 
 from vmaf.config import VmafConfig
 from vmaf.core.quality_runner import PsnrQualityRunner
 from vmaf.tools.misc import MyTestCase, QualityRunnerTestMixin, import_python_file
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+
+# Bound = max(60, 10x the slowest measured run): the script took 0.95 s.
+SCRIPT_TIMEOUT_S = 60
 
 
 class QualityRunnerTestMixinTest(MyTestCase, QualityRunnerTestMixin):
@@ -37,19 +46,22 @@ class MiscTest(unittest.TestCase):
 
     @staticmethod
     def _run_python_with_warnings_as_errors(source):
+        """Execute Python source code in a subprocess with warnings treated as errors."""
         env = os.environ.copy()
         python_path = VmafConfig.root_path("python")
         if env.get("PYTHONPATH"):
             python_path = os.pathsep.join((python_path, env["PYTHONPATH"]))
         env["PYTHONPATH"] = python_path
 
-        return subprocess.run(
+        return run_command(
             [sys.executable, "-W", "error", "-c", source],
+            allowed_executables=[sys.executable],
             cwd=VmafConfig.root_path(),
             env=env,
             capture_output=True,
             text=True,
             check=False,
+            timeout_seconds=SCRIPT_TIMEOUT_S,
         )
 
     def test_sigproc_import_is_warning_free(self):

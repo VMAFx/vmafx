@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1439), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1442), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5767,3 +5767,15 @@ Every ADR, one heading each (1439), so the site search finds an ADR by its title
 ## ADR-3403: Shared FFmpeg fix series forge API download fallback
 
 [3403-ffmpeg-series-forge-api-fallback](3403-ffmpeg-series-forge-api-fallback.md)
+
+## ADR-3519: Render the README status badges in one style onto a `badges` branch
+
+[3519-readme-badges-rendered-branch](3519-readme-badges-rendered-branch.md)
+
+## ADR-3532: Preserve trusted executable launch links
+
+[3532-trusted-executable-launch-links](3532-trusted-executable-launch-links.md)
+
+## ADR-3533: Install the tidy compiler from the Ubuntu archive
+
+[3533-tidy-gcc-from-ubuntu-archive](3533-tidy-gcc-from-ubuntu-archive.md)

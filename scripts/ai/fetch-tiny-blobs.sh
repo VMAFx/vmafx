@@ -111,7 +111,7 @@ fetch_one() {
   tmp="$(mktemp "$dest.XXXXXX")"
   _TINY_STAGING_FILES+=("$tmp")
   if ! curl --fail --silent --show-error --location \
-    --max-time 600 --retry 3 --retry-connrefused \
+    --max-time 600 --retry 3 --retry-all-errors \
     --output "$tmp" "$url"; then
     rm -f "$tmp"
     # Pop the just-cleaned path so the EXIT trap doesn't double-rm.
