@@ -36,6 +36,7 @@ after a label changed.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import shutil
@@ -57,11 +58,37 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = REPO_ROOT / ".github" / "ci-tier.json"
 EXEMPT_SCRIPT = REPO_ROOT / "scripts" / "ci" / "release-pr-exempt.sh"
 API_TIMEOUT_S = 30
+API_MAX_BYTES = 32 << 20  # a 100-entry API page is well under 1 MiB
 PAGE_SIZE = 100
 MAX_PAGES = 30
 PULL_REQUEST_EVENTS = frozenset({"pull_request", "pull_request_target"})
 _BASH_PATH = shutil.which("bash")
 BASH = str(Path(_BASH_PATH).resolve(strict=True)) if _BASH_PATH is not None else None
+
+
+def _https_opener() -> urllib.request.OpenerDirector:
+    """An opener that speaks https only and follows no redirect.
+
+    ``urlopen`` also opens ``file:``, ``ftp:``, ``data:`` and plain ``http:``
+    addresses. This opener has no handler for them, so a caller cannot reach
+    one: the address fails as an unknown URL type. It has no redirect handler
+    either, so a 3xx answer is an ``HTTPError``: urllib's redirect handler
+    would resend the ``Authorization`` header to whichever host the
+    ``Location`` names, and every API these scripts call answers 200 directly.
+    """
+    opener = urllib.request.OpenerDirector()
+    for handler in (
+        urllib.request.ProxyHandler(),
+        urllib.request.UnknownHandler(),
+        urllib.request.HTTPSHandler(),
+        urllib.request.HTTPDefaultErrorHandler(),
+        urllib.request.HTTPErrorProcessor(),
+    ):
+        opener.add_handler(handler)
+    return opener
+
+
+HTTPS_OPENER = _https_opener()
 
 FULL = "full"
 LIGHT = "light"
@@ -163,23 +190,54 @@ def decide(
     return Decision(LIGHT, "pull request from this repository")
 
 
-def api_request(method: str, url: str, token: str) -> object:
-    """One bounded GitHub API call; the only network access of the tier scripts."""
+def api_request(method: str, url: str, token: str, payload: object | None = None) -> object:
+    """One bounded GitHub API call; the only network access of the tier scripts.
+
+    ``payload`` goes out as the JSON request body; without one a POST sends
+    an empty body.
+    """
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    data = b"" if method == "POST" else None
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    return https_json(method, url, headers, data, API_TIMEOUT_S, API_MAX_BYTES)
+
+
+def https_json(
+    method: str,
+    url: str,
+    headers: Mapping[str, str],
+    data: bytes | None,
+    timeout_s: float,
+    limit: int,
+) -> object:
+    """One https request whose answer is JSON, bounded in time and in size.
+
+    The scheme check and the size cap live here so every caller gets them; an
+    empty answer reads as an empty object. A broken answer (cut off, a bad
+    status line, an overlong header) raises ``http.client.HTTPException``,
+    which is no ``OSError``; it becomes a ``TierError`` here so every caller
+    treats it as the failed request it is. An error status stays an
+    ``HTTPError`` for the caller to read its code.
+    """
     if urllib.parse.urlsplit(url).scheme != "https":
         raise TierError(f"refusing a non-https API URL: {url}")
     request = urllib.request.Request(  # noqa: S310 - the scheme is checked above
-        url,
-        method=method,
-        data=b"" if method == "POST" else None,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+        url, method=method, data=data, headers=dict(headers)
     )
-    with urllib.request.urlopen(request, timeout=API_TIMEOUT_S) as response:  # noqa: S310
-        body = response.read().decode("utf-8")
-    return json.loads(body) if body else {}
+    try:
+        with HTTPS_OPENER.open(request, timeout=timeout_s) as response:
+            body = response.read(limit + 1)
+    except http.client.HTTPException as exc:
+        raise TierError(f"{url}: broken answer ({type(exc).__name__}: {exc})") from exc
+    if len(body) > limit:
+        raise TierError(f"{url}: answer larger than {limit} bytes")
+    return json.loads(body.decode("utf-8")) if body else {}
 
 
 def _paged(fetch: Fetcher, path: str) -> list[object]:

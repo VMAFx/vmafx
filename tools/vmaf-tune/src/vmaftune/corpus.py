@@ -46,6 +46,7 @@ from .codec_adapters import get_adapter
 from .encode import (
     EncodeRequest,
     bitrate_kbps,
+    color_tag_args,
     run_encode,
     run_encode_with_stats,
     run_two_pass_encode,
@@ -945,6 +946,7 @@ def _cell_params(sweep: _Sweep, preset: str, crf: int) -> dict[str, Any]:
     """
     job, opts = sweep.job, sweep.opts
     two_pass = opts.two_pass and getattr(sweep.adapter, "supports_two_pass", False)
+    _, _, source_is_container, scale_extra = _encode_source_geometry(job)
     settings = {
         "width": int(job.width),
         "height": int(job.height),
@@ -953,10 +955,14 @@ def _cell_params(sweep: _Sweep, preset: str, crf: int) -> dict[str, Any]:
         "pix_fmt": job.pix_fmt,
         "framerate": float(job.framerate),
         "duration_s": float(job.duration_s),
-        "extra_params": list(sweep.hdr_extra_params) + list(_encode_source_geometry(job)[3]),
+        "extra_params": list(sweep.hdr_extra_params) + list(scale_extra),
         "vmaf_model": sweep.score_model,
         "score_backend": opts.score_backend or "",
     }
+    if not source_is_container:
+        source_colors = color_tag_args(sweep.hdr_extra_params)
+        if source_colors:
+            settings["source_color_params"] = list(source_colors)
     if opts.encoder.endswith("_qsv"):
         from .codec_adapters._qsv_common import qsv_rate_control
         from .hw_devices import resolve_vaapi_device
@@ -1229,6 +1235,7 @@ def _cell_encode_request(sweep: _Sweep, preset: str, crf: int, out: Path) -> Enc
         crf=crf,
         output=out,
         extra_params=tuple(sweep.hdr_extra_params) + scale_extra,
+        source_color_params=tuple(color_tag_args(sweep.hdr_extra_params)),
         sample_clip_seconds=sweep.clip_seconds,
         sample_clip_start_s=sweep.start_s,
         source_is_container=source_is_container,

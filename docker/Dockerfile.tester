@@ -43,7 +43,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY tools/rc1-tester/image/fixtures.sha256 /fixtures.sha256
 WORKDIR /out
-RUN awk '{print $2}' /fixtures.sha256 | xargs -P4 -I{} curl -fsSL --retry 3 --create-dirs \
+RUN awk '{print $2}' /fixtures.sha256 | xargs -P4 -I{} curl -fsSL --retry 3 --retry-all-errors --create-dirs \
         -o {} "https://raw.githubusercontent.com/Netflix/vmaf_resource/${VMAF_RESOURCE_COMMIT}/python/test/resource/{}" \
     && sha256sum --check --strict /fixtures.sha256 \
     && chmod -R a+rX /out

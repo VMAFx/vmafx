@@ -29,6 +29,8 @@ import vmafx as package
 from vmafx import _api as vmafx
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+# Bound = max(60, 10x the slowest measured run): the vmaf call took 0.17 s cold.
+VMAF_TIMEOUT_S = 60
 WRAPPED_CLASSES = (
     vmafx.Library,
     vmafx.Context,
@@ -620,6 +622,7 @@ class NetflixBitExactTest(unittest.TestCase):
                 self._require_inputs(absent)
 
     def test_netflix_576x324_matches_c_api_float_hex(self) -> None:
+        """The Python binding pooled float hex matches the C API contract output."""
         lib_path = Path(os.environ["VMAFX_LIBRARY"]).resolve()
         contract_bin = lib_path.parent.parent / "test" / "vmafx_score_contract"
         self._require_inputs((self.REF_YUV, self.DIST_YUV, self.MODEL_JSON, contract_bin))
@@ -638,6 +641,7 @@ class NetflixBitExactTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=True,
+            timeout=VMAF_TIMEOUT_S,
         )
         c_payload = json.loads(proc.stdout)
         w, h = 576, 324
