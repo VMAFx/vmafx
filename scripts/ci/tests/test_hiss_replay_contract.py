@@ -234,18 +234,14 @@ def javascript_json_object(source: str, name: str) -> object:
     return json.loads(match.group(1))
 
 
-def run_aggregator_scenario(mode: str) -> list[str]:
-    workflow = read(".github/workflows/required-aggregator.yml")
-    script = textwrap.dedent(workflow.split("          script: |\n", 1)[1])
-    required = sorted(javascript_array(script, "required"))
-    node = shutil.which("node")
-    if node is None:
-        raise AssertionError("Node.js is needed to exercise the Actions JavaScript")
-    driver = r"""
+# Node driver for run_aggregator_scenario: a virtual clock, a 100-row first page,
+# and a delayed-gate mode whose dependency runs for six polls.
+_SCENARIO_DRIVER = r"""
 const input = JSON.parse(require('fs').readFileSync(0, 'utf8'));
 const origin = Date.now(); let clock = origin; let poll = 0;
 class VirtualDate extends Date { static now() { return clock; } }
 const completed = name => ({name, status: 'completed', conclusion: 'success',
+  app: {slug: input.expectedApps[name] || 'github-actions'},
   started_at: new Date(origin).toISOString(), completed_at: new Date(origin).toISOString()});
 const target = 'Dev Container Build';
 const baseline = input.required.filter(name => name !== target).map(completed);
@@ -280,10 +276,27 @@ new AsyncFunction('github', 'context', 'core', 'process', 'Date', 'setTimeout', 
 ).then(() => process.stdout.write(JSON.stringify(failures)))
  .catch(error => { console.error(error); process.exitCode = 1; });
 """
+
+
+def run_aggregator_scenario(mode: str) -> list[str]:
+    workflow = read(".github/workflows/required-aggregator.yml")
+    script = textwrap.dedent(workflow.split("          script: |\n", 1)[1])
+    required = sorted(javascript_array(script, "required"))
+    expected_apps = javascript_json_object(script, "expectedAppByCheck")
+    node = shutil.which("node")
+    if node is None:
+        raise AssertionError("Node.js is needed to exercise the Actions JavaScript")
     result = run_command(
-        [node, "-e", driver],
+        [node, "-e", _SCENARIO_DRIVER],
         allowed_executables=(node,),
-        input_data=json.dumps({"script": script, "required": required, "mode": mode}),
+        input_data=json.dumps(
+            {
+                "script": script,
+                "required": required,
+                "expectedApps": expected_apps,
+                "mode": mode,
+            }
+        ),
         text=True,
         capture_output=True,
         check=True,
@@ -356,13 +369,17 @@ class HissReplayContractTests(unittest.TestCase):
         # "never reported".
         aggregator = read(".github/workflows/required-aggregator.yml")
         self.assertIn(
-            "const isActionsRun = !run.app || !run.app.slug || run.app.slug === 'github-actions';",
+            "const isActionsRun = !Object.hasOwn(expectedAppByCheck, run.name);",
             aggregator,
         )
         self.assertIn(
             "if (isActionsRun && runTimestampMs(run) < minCreatedMs) continue;", aggregator
         )
+        expected_apps = javascript_json_object(aggregator, "expectedAppByCheck")
+        if not isinstance(expected_apps, dict):
+            self.fail(f"expectedAppByCheck must be a dict, got {type(expected_apps)!r}")
         strict = javascript_array(aggregator, "strictMustReport")
+        self.assertTrue(strict.isdisjoint(expected_apps))
         for name, workflows in sorted(strict_context_producers(strict).items()):
             with self.subTest(context=name):
                 self.assertEqual(len(workflows), 1, f"{name} producers: {workflows}")

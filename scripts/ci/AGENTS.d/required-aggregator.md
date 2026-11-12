@@ -6,6 +6,7 @@ paths:
   - scripts/ci/test_go_workflow_contract.py
   - scripts/ci/tests/test_required_release_legs.py
   - scripts/ci/tests/test_aggregator_absent_fails.py
+  - scripts/ci/tests/test_aggregator_event_scope.py
 invariant: `required` list = `# required-aggregator` markers; one reporter per required name; contract suites share one harness.
 area: gates
 ---
@@ -44,7 +45,7 @@ area: gates
 - `tests/test_aggregator_absent_fails.py` runs embedded script;
   `AGGREGATOR_UNDER_TEST=<copy>` runs same cases against another copy
   (planted proof: pre-ADR-3293 aggregator fails 9 subtests).
-- `newestByName` `minCreatedMs` window ignores older `github-actions` check runs (and missing `app` slug, fail closed); other apps count at any age, newest per name wins (ADR-3539, `tests/test_aggregator_event_scope.py`).
+- `tests/test_aggregator_event_scope.py` exercises event/suite scoping and ADR-3539 checks (`.github/AGENTS.d/required-aggregator.md`) via `required_aggregator_harness.py`.
 
 ## Release legs (ADR-1687)
 
