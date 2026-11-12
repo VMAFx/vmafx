@@ -134,9 +134,7 @@ class TestCallMutation:
         """
         mod = _load_module()
         title = 'chore(deps): update "lock" `pin` $(echo pwned) \\ end\n'
-        signoff = (
-            "Signed-off-by: renovate[bot] " "<29139614+renovate[bot]@users.noreply.github.com>"
-        )
+        signoff = "Signed-off-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>"
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = self._make_response(signoff)
