@@ -30,6 +30,30 @@ last block of the message, as git writes it.
 
 ## Check before you push
 
+The `dco-sign-off` pre-push hook in `.pre-commit-config.yaml` runs the check on
+every push, so a push that would turn the DCO job red stops locally:
+
+```bash
+python3 scripts/ci/check-dco.py --merge-base origin/master
+```
+
+`--merge-base REF` checks the commits the push adds on top of `REF`: those
+reachable from the pushed commit but not from `REF`, so commits a branch took
+in by merging `master` are not checked again. The pushed commit is `--head`,
+else the `PRE_COMMIT_TO_REF` that pre-commit sets during a push, else `HEAD`.
+It cannot be combined with `--base` or `--landed`, and an unknown `REF` or
+pushed commit exits `2`. Refresh `origin/master` with `git fetch` when it is
+stale; a stale ref only widens the range.
+
+The hook matters because the commit-msg hook sees only commits made in your
+checkout. A commit that arrives another way, such as a review bot's suggestion
+applied on the pull request branch and then pulled, has never been checked; pull
+request #3426 reached CI that way without a sign-off. Fix such a branch with
+`git rebase --signoff origin/master`, which re-commits every commit under your
+name with your sign-off, then push with `--force-with-lease`.
+
+Check a range or the pull request body by hand:
+
 ```bash
 python3 scripts/ci/check-dco.py --base origin/master --head HEAD
 python3 scripts/ci/check-dco.py --base origin/master --head HEAD --pr-body-file path/to/pr-body.md
