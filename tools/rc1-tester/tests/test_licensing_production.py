@@ -419,19 +419,19 @@ def test_the_images_that_link_zimg_from_source_keep_their_own_record() -> None:
             }
         ],
     )
-    for kind in ("macos", "windows-zip", "windows-cuda-zip", "windows-sycl-zip"):
+    # release-native's entry names the 3.0.6 archive, but the bundle ships the
+    # distribution build (#3396): there the test pins only what the fix must not
+    # lose, no Debian record claimed, and leaves source and texts to #3396.
+    for kind in ("macos", "windows-zip", "windows-cuda-zip", "windows-sycl-zip", "release-native"):
         component = next(c for c in expanded[kind]["components"] if c["id"] == "zimg")
+        assert "debian_source_file" not in component, kind
+        assert not any(
+            "usr/share/doc/libzimg2" in text for text in json.dumps(component["texts"]).split()
+        ), kind
+        if kind == "release-native":
+            continue
         assert component["source"] == expected, kind
         assert component["texts"] in archive_texts, kind
-    # release-native's entry names the 3.0.6 archive, but the bundle ships the
-    # distribution build (#3396): the record is known-wrong, so this test pins
-    # only what the fix must not lose — no Debian record claimed — and leaves
-    # the correction of source and texts to #3396.
-    component = next(c for c in expanded["release-native"]["components"] if c["id"] == "zimg")
-    assert "debian_source_file" not in component
-    assert not any(
-        "usr/share/doc/libzimg2" in text for text in json.dumps(component["texts"]).split()
-    )
 
 
 def test_production_node_sycl_image_shares_runtime_and_node_components() -> None:
