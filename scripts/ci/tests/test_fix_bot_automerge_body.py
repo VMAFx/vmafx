@@ -159,7 +159,9 @@ class TestCallMutation:
         argv = run.call_args.args[0]
         assert isinstance(argv, list), "gh must run from an argv list, not a shell string"
         assert not run.call_args.kwargs.get("shell", False)
-        assert f"headline={title} (#3047)" in argv
+        field = f"headline={title} (#3047)"
+        assert field in argv
+        assert argv[argv.index(field) - 1] == "-f"
 
     def test_gh_nonzero_exit(self) -> None:
         mod = _load_module()
