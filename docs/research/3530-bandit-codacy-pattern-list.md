@@ -15,7 +15,7 @@ The [Codacy Bandit wrapper](https://github.com/codacy/codacy-bandit/blob/master/
 
 The list in [`bandit.yml`](../../bandit.yml) matches every `patternId` whose `enabled` value is true in the public [`codacy-bandit/docs/patterns.json`](https://raw.githubusercontent.com/codacy/codacy-bandit/master/docs/patterns.json), version 1.9.4. A download on 2026-11-11 produced SHA-256 `1dc1275ac5c2a6aa9690f27b83d6af49bd19a91244d46ea457e6d1ce10d30f89`: 56 enabled IDs, 56 local IDs, no differences. This is the published engine default list, not a separately authenticated export of this repository's UI settings. B101 is disabled there; B603 is enabled. Accessed 2026-11-11.
 
-For a refresh, compare the enabled IDs in that source with the local YAML, review each difference, then regenerate the pinned tooling lock and run `scripts/ci/tests/test_check_bandit_new.py`. Bandit's [1.9.4 configuration documentation](https://bandit.readthedocs.io/en/1.9.4/config.html) specifies that `tests` selects the listed IDs and that `# nosec` controls Bandit suppression; Ruff's `# noqa: S603` does not suppress Bandit. Accessed 2026-11-11.
+For a refresh, compare the enabled IDs in that source with the local YAML, review each difference, then regenerate the pinned tooling lock and run `scripts/ci/tests/test_check_bandit_new_*.py`. Bandit's [1.9.4 configuration documentation](https://bandit.readthedocs.io/en/1.9.4/config.html) specifies that `tests` selects the listed IDs and that `# nosec` controls Bandit suppression; Ruff's `# noqa: S603` does not suppress Bandit. Accessed 2026-11-11.
 
 ## Python stubs and file selection
 

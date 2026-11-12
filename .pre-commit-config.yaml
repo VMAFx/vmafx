@@ -1315,10 +1315,10 @@ repos:
         always_run: true
       - id: test-bandit-new
         name: bandit-new gate (planted-defect recall)
-        entry: python3 -m unittest discover -s scripts/ci/tests -p test_check_bandit_new.py
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_check_bandit_new_*.py
         language: python
         additional_dependencies: ["bandit==1.9.4", "identify==2.6.20"]
-        files: '^(\.pre-commit-config\.yaml|bandit\.yml|scripts/(lib/new_scanner_findings\.py|ci/(check_bandit_new|tests/(test_check_bandit_new|scanner_test_support))\.py))$'
+        files: '^(\.pre-commit-config\.yaml|bandit\.yml|scripts/(lib/new_scanner_findings\.py|ci/(check_bandit_new|tests/(test_check_bandit_new_[a-z_]+|bandit_new_test_support|scanner_test_support))\.py))$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

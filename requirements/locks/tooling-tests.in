@@ -6,7 +6,7 @@
 # clang-format is the pre-commit hook's pin (.pre-commit-config.yaml): the
 # API generator's format test compares against that version only.
 # bandit is the bandit-new hook's pin: scripts/ci/tests/
-# test_check_bandit_new.py fails when it is not on PATH.
+# test_check_bandit_new_*.py fail when it is not on PATH.
 # flawfinder is the flawfinder-new hook's pin: scripts/ci/tests/
 # test_check_flawfinder_new.py fails when it is not on PATH.
 # jsonschema validates the winget manifests in scripts/release/tests.

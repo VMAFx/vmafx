@@ -296,8 +296,8 @@ dependencies).
   reads that list on each analysed branch after its configuration-file option
   is enabled. Editing that file changes Codacy's patterns;
   without it, Codacy uses its UI patterns. Refresh the list from Codacy's
-  enabled Bandit IDs, then run the planted recall test in
-  `scripts/ci/tests/test_check_bandit_new.py`.
+  enabled Bandit IDs, then run the planted recall tests in
+  `scripts/ci/tests/test_check_bandit_new_*.py`.
 - ✅ CodeQL — zero security-and-quality issues at `security-extended` suite
 - ✅ Conventional commit messages (enforced by commit-msg hook)
 - ✅ CI matrix green on Linux/macOS/Windows
