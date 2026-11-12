@@ -72,6 +72,9 @@ pkg/benchmark/testdata/*.csv -text
 # core.autocrlf=false and both checks fail on files nobody edited
 # (T-WINDOWS-CRLF-PRAETOR-HASHED-FILES-2026-10-06).
 # scripts/ci/tests/test_praetor_hashed_files_lf.py keeps every such file LF.
+# The six compiled targets and AGENTS.readonly.md are generated from AGENTS.md
+# by `praetorctl compile-context` and refused on drift by
+# `compile-context --verify`.
 AGENTS.md text eol=lf
 AGENTS.readonly.md text eol=lf
 CLAUDE.md text eol=lf
@@ -89,6 +92,13 @@ CLAUDE.md text eol=lf
 .standards.yaml text eol=lf
 .standards.lock text eol=lf
 .standards-baseline.json text eol=lf
+AGENTS.readonly.md linguist-generated
+CLAUDE.md linguist-generated
+.windsurfrules linguist-generated
+.cursor/rules/*.mdc linguist-generated
+.github/copilot-instructions.md linguist-generated
+.gemini/GEMINI.md linguist-generated
+.codex/rules.md linguist-generated
 
 # Fixtures a test pins by bytes or checksum keep their checked-in bytes on every platform (HISS-21).
 ai/testdata/bisect/features.parquet -text

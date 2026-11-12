@@ -132,8 +132,8 @@ make format        # writes
 make format-check  # dry-run
 ```
 
-- Build guide: [docs/getting-started/index.md#build-from-source-any-platform](../docs/getting-started/index.md#build-from-source-any-platform)
-- Backend guides: [docs/backends/index.md](../docs/backends/index.md)
+- [Build guide](../docs/getting-started/index.md#build-from-source-any-platform)
+- [Backend guides](../docs/backends/index.md)
 
 ## 3. Coding standards
 
@@ -158,8 +158,8 @@ make format-check  # dry-run
 ## 7. Release
 
 - `release-please` triggers on pushes to `master`. 0.x line restarted at `0.1.0` ([ADR-3292](../docs/adr/3292-release-line-restart-0x.md)); pre-1.0 breaking = minor bump; release candidates only for 1.0.0.
-- Milestone map: [docs/development/release.md#release-map](../docs/development/release.md#release-map).
-- Stage definitions and gate rules: [docs/development/agent-reference.md#release-stages](../docs/development/agent-reference.md#release-stages).
+- [Milestone map](../docs/development/release.md#release-map).
+- [Stage definitions + gate rules](../docs/development/agent-reference.md#release-stages).
 
 ## 8. Hard rules and invariants
 
@@ -170,7 +170,7 @@ make format-check  # dry-run
 
 ## 9. Reference documentation
 
-- Full reference material: [docs/development/agent-reference.md](../docs/development/agent-reference.md) (repository layout, skills table, golden detail, release stages).
+- [Full reference material](../docs/development/agent-reference.md) (repository layout, skills table, golden detail, release stages).
 
 ## 10. Interaction style
 
@@ -179,5 +179,5 @@ make format-check  # dry-run
 ## 11. Workspace
 
 - Checked-in `.vscode/` tasks + settings = canonical workspace defaults; `clangd` = only C/C++ language server, no second IntelliSense provider; Meson sources in `core/` -> `meson setup <build-dir> core`.
-- Keep every project agent integration available, never on ignore, disabled or unwanted list: Codex, Gemini, Antigravity, opencode, Claude Code, Ollama/local agents, Paperclip, Hindsight, repository MCP servers.
+- Keep every project agent integration available, never on ignore, disabled or unwanted list: Codex, Gemini, Antigravity, opencode, Claude Code, Ollama/local agents, Paperclip, Hindsight, repository MCP servers. Exception: `.config/lint-exceptions.d/agent-integration.toml` (`path` = integration config file, `reason`, `expires`; `scripts/ci/lint_exceptions.py`) + maintainer ADR.
 - Before hand-off: run smallest applicable checked-in task (none applicable or task cannot run -> record command tried, skip reason, alternate check run; never report unrun task as passing); generated build output never in tracked files.
