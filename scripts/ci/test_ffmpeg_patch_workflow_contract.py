@@ -69,9 +69,6 @@ WARNING_GATE = (
 )
 # Only grep exit 1 (no match) passes; exit 2 must fail the step, not read as clean.
 GREP_STATUS_GUARD = "|| [[ $? -eq 1 ]]"
-# The Dockerfile gates hard-code this scratch prefix; the sample-log replay
-# redirects it into the test's own temporary directory.
-DOCKERFILE_TMP = "/tmp/"  # noqa: S108 -- a path inside the container, not a host temp file
 
 
 def _filter_job_findings(workflow: str, aggregator: str) -> list[str]:
@@ -228,6 +225,20 @@ class FFmpegWorkflowContract(unittest.TestCase):
                     source,
                     "a broken scan would read as clean",
                 )
+                # The filter is fail-closed in its own right: grep -Ff exit 2
+                # (a missing patched-file list) must abort the build, not read
+                # as "no patched file warned" through the old combined
+                # `[ -s … ] && grep -Ff …` condition.
+                self.assertNotIn(
+                    "] && grep -Ff /tmp/ffmpeg-patched-files.txt",
+                    source,
+                    "the filter is not its own guarded if",
+                )
+                self.assertIn(
+                    "if grep -Ff /tmp/ffmpeg-patched-files.txt /tmp/ffmpeg-warnings.txt; then",
+                    source,
+                )
+                self.assertIn("FATAL: the patched-file filter failed to run", source)
                 self.assertIn(
                     "rm /tmp/ffmpeg-build.log /tmp/ffmpeg-warnings.txt",
                     source,
@@ -265,7 +276,13 @@ class FFmpegWorkflowContract(unittest.TestCase):
                     if log is not None:
                         Path(temporary, "ffmpeg-build.log").write_text(log, encoding="utf-8")
                     script = block.replace("\\\n", "\n")
-                    script = script.replace(DOCKERFILE_TMP, temporary.replace("\\", "/") + "/")
+                    # The gates hard-code the container scratch prefix; read it
+                    # from the block instead of a hard-coded host constant
+                    # (Bandit B108) and redirect it into the temporary directory.
+                    log_dir = re.search(r"(\S+)/ffmpeg-build\.log", block)
+                    if log_dir is None:
+                        self.fail("gate reads no ffmpeg-build.log")
+                    script = script.replace(log_dir.group(1), temporary.replace("\\", "/") + "/")
                     result = run_command(
                         [BASH, "-c", "set -e\n" + script + "\n"],
                         allowed_executables=(BASH,),
@@ -279,6 +296,82 @@ class FFmpegWorkflowContract(unittest.TestCase):
                     self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
                     fatal = "FATAL: FFmpeg emitted compiler warnings" in result.stderr
                     self.assertEqual(fatal, expected == 1 and log is not None, result.stderr)
+
+    def test_filtered_warning_gate_on_sample_logs(self) -> None:
+        """Run the root Dockerfile's filtered gate on sample logs.
+
+        A matched patched file, a broken scan and a broken filter fail the
+        build; a warning on an unpatched file and a clean build pass it.
+        """
+        dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        block = re.search(
+            r"(?ms)^    \{ grep -Ei '[^\n]*/tmp/ffmpeg-build\.log > /tmp/ffmpeg-warnings\.txt"
+            r" \|\| \[ \$\? -eq 1 \]; \} && \\\n"
+            r"    if \[ -s /tmp/ffmpeg-warnings\.txt \]; then \\\n"
+            r".*?^    fi && \\$",
+            dockerfile,
+        )
+        self.assertIsNotNone(block, "root Dockerfile has no filtered warning gate")
+        assert block is not None
+        body = block.group(0).removesuffix(" && \\").replace("\\\n", "\n")
+        log_dir = re.search(r"(\S+)/ffmpeg-build\.log", body)
+        if log_dir is None:
+            self.fail("filtered gate reads no ffmpeg-build.log")
+        prefix = log_dir.group(1)
+        cases = {
+            "matched patched file": (
+                "libavfilter/vf_libvmaf.c:211:13: warning: unused variable 'n' "
+                "[-Wunused-variable]\n",
+                True,
+                1,
+                "FATAL: a file this fork patches emitted compiler warnings",
+            ),
+            "unpatched file warns": (
+                "libavfilter/vf_unpatched.c:88:5: warning: implicit conversion loses "
+                "integer precision\n",
+                True,
+                0,
+                None,
+            ),
+            "clean build": ("CC\tlibavfilter/vf_libvmaf.o\nLD\tffmpeg_g\n", True, 0, None),
+            "missing build log": (None, True, 1, None),
+            "missing patched-file list": (
+                "libavfilter/vf_libvmaf.c:211:13: warning: unused variable 'n' "
+                "[-Wunused-variable]\n",
+                False,
+                1,
+                "FATAL: the patched-file filter failed to run",
+            ),
+        }
+        for case, (log, with_list, expected, fatal) in cases.items():
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                if log is not None:
+                    (directory / "ffmpeg-build.log").write_text(log, encoding="utf-8")
+                if with_list:
+                    (directory / "ffmpeg-patched-files.txt").write_text(
+                        "libavfilter/vf_libvmaf.c\n", encoding="utf-8"
+                    )
+                # The gate hard-codes the container scratch prefix; read it from
+                # the block instead of a hard-coded host constant (Bandit B108)
+                # and redirect it into the temporary directory.
+                script = body.replace(prefix, temporary.replace("\\", "/") + "/")
+                result = run_command(
+                    [BASH, "-c", "set -e\n" + script],
+                    allowed_executables=(BASH,),
+                    cwd=temporary,
+                    env={**os.environ, "LC_ALL": "C"},
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout_seconds=60,
+                )
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                self.assertEqual(
+                    fatal is not None and fatal in result.stderr,
+                    fatal is not None,
+                    result.stderr,
+                )
 
     def test_msvc_leg_builds_the_series_against_the_static_msvc_install(self) -> None:
         # ADR-2783: the configured release with the whole series, cl.exe through

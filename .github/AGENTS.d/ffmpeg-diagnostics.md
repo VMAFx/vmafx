@@ -42,5 +42,8 @@ The two `ffmpeg-integration.yml` gates, the `Dockerfile.ffmpeg` gate and the
 `Dockerfile`, `dev/Containerfile`, `docker/Dockerfile.node`) write the scan to
 `/tmp/ffmpeg-warnings.txt` behind `|| [ $? -eq 1 ]` and filter that file, so a
 missing build log aborts the build instead of feeding the filter an empty
-match list. `test_ffmpeg_patch_workflow_contract.py` holds the guarded forms
-statically and replays the unfiltered gates on sample logs.
+match list. The filter takes its own `elif [ $? -gt 1 ]` arm, so a missing
+patched-file list aborts the build instead of reading as no match.
+`test_ffmpeg_patch_workflow_contract.py` holds the guarded forms statically and
+replays the unfiltered gates plus the root Dockerfile's filtered gate on sample
+logs.
