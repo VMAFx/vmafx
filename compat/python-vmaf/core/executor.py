@@ -94,8 +94,8 @@ def _start_fifo_worker(target, asset, label):
     return label, process, ready_sem, error_receiver
 
 
-def _fifo_worker_failure(worker):
-    label, process, _ready_sem, error_receiver = worker
+def _observe_fifo_worker_failure(worker):
+    _label, process, _ready_sem, error_receiver = worker
     child_traceback = None
     if error_receiver.poll():
         try:
@@ -112,6 +112,15 @@ def _fifo_worker_failure(worker):
             child_traceback = f"<unavailable from child error channel ({diagnostic}); inspect the inherited child stderr>"
     if child_traceback is None and process.exitcode is None:
         return None
+    if child_traceback is None:
+        child_traceback = (
+            "<unavailable from child error channel; inspect the inherited child stderr>"
+        )
+    return child_traceback
+
+
+def _report_fifo_worker_failure(worker, child_traceback):
+    label, process, _ready_sem, _error_receiver = worker
     process.join(timeout=_FIFO_FAILED_CHILD_EXIT_SECONDS)
     exit_code = process.exitcode
     exit_status = (
@@ -119,15 +128,18 @@ def _fifo_worker_failure(worker):
         if exit_code is None
         else f"exit code {exit_code}"
     )
-    if child_traceback is None:
-        child_traceback = (
-            "<unavailable from child error channel; inspect the inherited child stderr>"
-        )
     return RuntimeError(
         f"FIFO {label} child exited before signaling readiness "
         f"({exit_status}). Child traceback (also emitted on stderr):\n"
         f"{child_traceback}"
     )
+
+
+def _fifo_worker_failure(worker):
+    child_traceback = _observe_fifo_worker_failure(worker)
+    if child_traceback is None:
+        return None
+    return _report_fifo_worker_failure(worker, child_traceback)
 
 
 def _stop_fifo_workers(workers):
@@ -166,13 +178,13 @@ def _wait_for_fifo_workers(workers, logger, warning_message):
         # and returns at once (AssetExtractor opens no file) is seen as ready here;
         # trying the permit first left a window in which that worker looked like
         # a child that exited without signaling.
-        failures = [_fifo_worker_failure(worker) for worker in pending]
+        failures = [_observe_fifo_worker_failure(worker) for worker in pending]
         still_pending = []
         for worker, failure in zip(pending, failures):
             if worker[2].acquire(block=False):
                 continue
             if failure is not None:
-                raise failure
+                raise _report_fifo_worker_failure(worker, failure)
             still_pending.append(worker)
         pending = still_pending
         if not pending:

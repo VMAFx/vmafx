@@ -575,6 +575,39 @@ class ExecutorTest(unittest.TestCase):
         )
         self.assertIn("exit code 0", str(cm.exception))
 
+    @staticmethod
+    def _failed_fifo_worker(signals_before_failure):
+        class Permit:
+            available = signals_before_failure
+
+            def acquire(self, block=True, timeout=None):
+                taken, self.available = self.available, False
+                return taken
+
+        process = SimpleNamespace(exitcode=None, join=MagicMock())
+        receiver = MagicMock()
+        receiver.poll.return_value = True
+        receiver.recv.return_value = "RuntimeError: reference workfile child failed"
+        return ("reference workfile", process, Permit(), receiver)
+
+    def test_wait_for_fifo_workers_does_not_join_child_that_signaled_then_failed(self):
+        worker = self._failed_fifo_worker(signals_before_failure=True)
+        self.assertIsNone(executor_module._wait_for_fifo_workers([worker], None, "unused warning"))
+        worker[1].join.assert_not_called()
+
+    def test_wait_for_fifo_workers_joins_failed_child_without_readiness(self):
+        worker = self._failed_fifo_worker(signals_before_failure=False)
+        with self.assertRaises(RuntimeError) as cm:
+            executor_module._wait_for_fifo_workers([worker], None, "unused warning")
+        self.assertIn(
+            "reference workfile child exited before signaling readiness", str(cm.exception)
+        )
+        self.assertIn("exit code unavailable after 3s", str(cm.exception))
+        self.assertIn("RuntimeError: reference workfile child failed", str(cm.exception))
+        worker[1].join.assert_called_once_with(
+            timeout=executor_module._FIFO_FAILED_CHILD_EXIT_SECONDS
+        )
+
     def _check_default_and_reference_types(self):
         asset = Asset(
             dataset="test",
