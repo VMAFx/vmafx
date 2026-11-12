@@ -5,10 +5,10 @@
      wraps at 80. -->
 <div align="center">
 
-  <img src="docs/assets/vmafx-readme-banner.svg" alt="VMAFx — perceptual video quality assessment, GPU-accelerated and SIMD-tuned" height="120" /> <!-- README-STANDARD badge block: one band, fixed group order (docs/README-STANDARD.md) --> <!-- 1 release/version -->
+  <img src="docs/assets/vmafx-readme-banner.svg" alt="VMAFx — perceptual video quality assessment, GPU-accelerated and SIMD-tuned" height="120" /> <!-- 1 release/version --> <!-- README-STANDARD badge block: one band, fixed group order (docs/README-STANDARD.md) -->
 
-  [![Release](https://img.shields.io/static/v1?label=release&message=v1.0.0-rc.3&style=for-the-badge&color=3b82f6&labelColor=111a35)](https://github.com/VMAFx/vmafx/releases) <!-- x-release-please-version --> <!-- 2 CI/build -->
-  [![Tests](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
+  [![Release](https://img.shields.io/static/v1?label=release&message=v1.0.0-rc.3&style=for-the-badge&color=3b82f6&labelColor=111a35)](https://github.com/VMAFx/vmafx/releases) <!-- x-release-please-version -->
+  [![Tests](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml) <!-- 2 CI/build -->
   [![Builds](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml)
   [![Lint](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml)
   [![FFmpeg](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml/badge.svg?branch=master&event=push)](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml)
