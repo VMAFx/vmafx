@@ -6,7 +6,7 @@
 # every container base in this repository. These defaults are mirrors kept in
 # sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
 # these lines, then run that script with --write.
-ARG CUDA_BUILDER="ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944"
+ARG CUDA_BUILDER="ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c"
 
 FROM ${CUDA_BUILDER}
 
@@ -87,8 +87,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     if [ "$ENABLE_SYCL" = "true" ]; then \
         apt-get update && apt-get install -y --no-install-recommends gnupg2 ca-certificates && \
-        wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
-            | gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg && \
+        key="$(mktemp)" && \
+        wget --tries=3 --retry-connrefused --retry-on-host-error -qO "$key" https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB && \
+        gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg "$key" && \
+        rm -f "$key" && \
         echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
             > /etc/apt/sources.list.d/oneapi.list && \
         apt-get update && apt-get install -y --no-install-recommends \
@@ -101,7 +103,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 # ---------- nv-codec-headers ----------
 WORKDIR /tmp/nv-codec
-RUN wget -q "https://github.com/FFmpeg/nv-codec-headers/archive/${NV_CODEC_TAG}.zip" && \
+RUN wget --tries=3 --retry-connrefused --retry-on-host-error -q "https://github.com/FFmpeg/nv-codec-headers/archive/${NV_CODEC_TAG}.zip" && \
     unzip -q "${NV_CODEC_TAG}.zip"
 WORKDIR /tmp/nv-codec/nv-codec-headers-${NV_CODEC_TAG}
 RUN make && make install
@@ -129,7 +131,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked \
 RUN echo /usr/local/lib/x86_64-linux-gnu > /etc/ld.so.conf.d/vmaf-local.conf && ldconfig
 
 # ---------- build FFmpeg ----------
-RUN wget -q "${FFMPEG_REMOTE%.git}/archive/${FFMPEG_TAG}.zip" && \
+RUN wget --tries=3 --retry-connrefused --retry-on-host-error -q "${FFMPEG_REMOTE%.git}/archive/${FFMPEG_TAG}.zip" && \
     unzip -q "${FFMPEG_TAG}.zip" && rm "${FFMPEG_TAG}.zip"
 
 COPY ffmpeg-patches /tmp/ffmpeg-patches
@@ -138,8 +140,8 @@ WORKDIR /vmaf/FFmpeg-${FFMPEG_TAG}
 # tarball pinned in build-config.env; the release archive is not a checkout.
 RUN FFMPEG_FIX_SERIES_CACHE=none \
     bash /vmaf/scripts/ci/ffmpeg-shared-series.sh apply --method apply .
-# Apply the patch series in series.txt order. Patch 0003 depends on
-# fields added by 0001, so applying out of order breaks the build.
+# Apply the patch series in series.txt order; later patches build on
+# earlier ones, so applying out of order breaks the build.
 RUN set -e; \
     while IFS= read -r line; do \
         case "$line" in ''|\#*) continue ;; esac; \

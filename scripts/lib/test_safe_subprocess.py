@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ctypes
+import errno
 import os
 import signal
 import sys
@@ -18,6 +20,7 @@ from pathlib import Path
 from typing import Any, cast
 from unittest import mock
 
+from scripts.lib import safe_subprocess
 from scripts.lib.safe_subprocess import (
     MAX_ARG_BYTES,
     CommandFailed,
@@ -26,9 +29,11 @@ from scripts.lib.safe_subprocess import (
     CommandTimedOut,
     CommandValidationError,
     executable_argument,
+    resolve_executable,
     run,
     run_async,
     signal_process_group,
+    terminate_windows_process_tree,
 )
 
 PYTHON = str(Path(sys.executable).resolve(strict=True))
@@ -101,6 +106,51 @@ class SafeSubprocessTests(unittest.TestCase):
             )
         self.assertEqual(result.stdout.strip(), str(link))
 
+    @unittest.skipIf(os.name == "nt", "symbolic links need privileges on Windows")
+    def test_launch_path_keeps_the_links_the_caller_named(self) -> None:
+        """The file is launched by the named path, not its resolution, absolute or on PATH."""
+        with tempfile.TemporaryDirectory() as temporary:
+            real, links = Path(temporary) / "real", Path(temporary) / "links"
+            real.mkdir()
+            links.mkdir()
+            links.chmod(0o755)
+            script = real / "tool"
+            # A script's interpreter receives the path the kernel executed as $0.
+            script.write_text("#!/bin/sh\nprintf '%s' \"$0\"\n", encoding="utf-8")
+            script.chmod(0o755)
+            link = links / "tool"
+            link.symlink_to(script)
+            absolute = run([str(link)], allowed_executables=(str(link),), capture_output=True)
+            bare = run(
+                ["tool"],
+                allowed_executables=("tool",),
+                env={"PATH": str(links)},
+                capture_output=True,
+            )
+        self.assertEqual(absolute.stdout, os.fsencode(link))
+        self.assertEqual(bare.stdout, os.fsencode(link))
+        self.assertEqual(absolute.argv[0], str(link))
+
+    @unittest.skipIf(os.name == "nt", "a Windows venv copies its interpreter, it does not link it")
+    def test_venv_interpreter_link_keeps_its_venv(self) -> None:
+        """A venv's python link runs with the venv's prefix (macOS lost it in #3386)."""
+        with tempfile.TemporaryDirectory() as temporary:
+            venv = Path(temporary) / "venv"
+            (venv / "bin").mkdir(parents=True)
+            (venv / "pyvenv.cfg").write_text(
+                f"home = {Path(PYTHON).parent}\ninclude-system-site-packages = false\n",
+                encoding="utf-8",
+            )
+            interpreter = venv / "bin" / "python"
+            interpreter.symlink_to(PYTHON)
+            result = run(
+                [str(interpreter), "-I", "-c", "import sys; print(sys.prefix)"],
+                allowed_executables=(str(interpreter),),
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(Path(result.stdout.strip()).resolve(), venv.resolve())
+
     def test_argv_is_read_once(self) -> None:
         class Flipping(Sequence[str]):
             """argv whose first entry changes after it has been read once."""
@@ -168,6 +218,50 @@ class SafeSubprocessTests(unittest.TestCase):
             (Path(tmp) / "vmafx").symlink_to("vmaf")
             # The CLI picks vmafx mode from argv0, so the alias must survive.
             self.assertEqual(executable_argument("./vmafx", root=tmp), str(Path(tmp) / "vmafx"))
+
+    def test_resolve_executable_bare_name_and_relative_path(self) -> None:
+        """Bare names on PATH and relative paths against root resolve to absolute files."""
+        # Bare name on PATH -> absolute path that exists; PATH holds only the running interpreter
+        python = Path(PYTHON)
+        with mock.patch.dict(os.environ, {"PATH": str(python.parent)}):
+            resolved_python = resolve_executable(python.name)
+        self.assertEqual(resolved_python, PYTHON)
+        self.assertTrue(Path(resolved_python).is_absolute())
+        self.assertTrue(Path(resolved_python).is_file())
+        self.assertTrue(os.access(resolved_python, os.X_OK))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            tool = bin_dir / "runner"
+            tool.touch()
+            tool.chmod(0o755)
+
+            # Relative path with a directory part -> resolved against root
+            rel_path = Path("bin") / "runner"
+            resolved_rel = resolve_executable(rel_path, root=root)
+            self.assertEqual(resolved_rel, str(tool.resolve()))
+
+            # Bare name in custom PATH
+            with mock.patch.dict(os.environ, {"PATH": str(bin_dir)}):
+                resolved_bare = resolve_executable("runner")
+                self.assertEqual(resolved_bare, str(tool.resolve()))
+
+    def test_resolve_executable_missing_name_raises(self) -> None:
+        """Missing executable name raises CommandValidationError."""
+        with self.assertRaises(CommandValidationError):
+            resolve_executable("nonexistent-tool-binary-xyz")
+
+    @unittest.skipIf(os.name == "nt", "POSIX execute permissions are not enforced on Windows")
+    def test_resolve_executable_non_executable_file_raises(self) -> None:
+        """Existing file without execute permission raises CommandValidationError."""
+        with tempfile.TemporaryDirectory() as tmp:
+            unexecutable = Path(tmp) / "plain_file.txt"
+            unexecutable.touch()
+            unexecutable.chmod(0o644)
+            with self.assertRaises(CommandValidationError):
+                resolve_executable(unexecutable)
 
     def test_capture_limit_terminates_a_flooding_child(self) -> None:
         with self.assertRaises(CommandOutputLimitExceeded) as raised:
@@ -331,6 +425,583 @@ class SafeSubprocessAsyncTests(unittest.IsolatedAsyncioTestCase):
                     task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await task
+
+
+class _StubTaskkillProcess:
+    def __init__(self, returncode: int = 0) -> None:
+        """Record the stub returncode for taskkill simulation."""
+        self.returncode = returncode
+
+    async def wait(self) -> int:
+        """Return the recorded taskkill exit status."""
+        return self.returncode
+
+    def kill(self) -> None:
+        """Stub kill invocation on the taskkill process."""
+
+
+class _StubProcessGroupChild:
+    def __init__(self, pid: int = 4242) -> None:
+        """Record the child PID and initialize call order tracking."""
+        self.pid = pid
+        self.returncode: int | None = None
+        self.call_order: list[str] = []
+
+    def terminate(self) -> None:
+        """Record terminate invocation in call order."""
+        self.call_order.append("terminate")
+
+    def kill(self) -> None:
+        """Record kill invocation in call order."""
+        self.call_order.append("kill")
+
+    async def wait(self) -> int:
+        """Record wait invocation and set returncode."""
+        self.returncode = 1
+        self.call_order.append("wait")
+        return 1
+
+
+class WindowsTreeTerminationTests(unittest.TestCase):
+    def test_windows_tree_termination_invokes_taskkill_with_exact_argv(self) -> None:
+        """Assert that taskkill is invoked with exact PID and flags."""
+        stub_proc = _StubTaskkillProcess(returncode=0)
+        exec_stub = mock.AsyncMock(return_value=stub_proc)
+        with (
+            mock.patch(
+                "scripts.lib.safe_subprocess.resolve_executable",
+                return_value="C:/Windows/System32/taskkill.exe",
+            ),
+            mock.patch("scripts.lib.safe_subprocess.asyncio.create_subprocess_exec", exec_stub),
+        ):
+            result = terminate_windows_process_tree(4242)
+
+        self.assertTrue(result)
+        exec_stub.assert_called_once()
+        self.assertEqual(
+            exec_stub.call_args[0],
+            ("C:/Windows/System32/taskkill.exe", "/PID", "4242", "/T", "/F"),
+        )
+
+    def test_windows_tree_termination_nonzero_exit_status_returns_false(self) -> None:
+        """Assert that a non-zero taskkill exit status returns False."""
+        stub_proc = _StubTaskkillProcess(returncode=128)
+        exec_stub = mock.AsyncMock(return_value=stub_proc)
+        with (
+            mock.patch(
+                "scripts.lib.safe_subprocess.resolve_executable",
+                return_value="C:/Windows/System32/taskkill.exe",
+            ),
+            mock.patch("scripts.lib.safe_subprocess.asyncio.create_subprocess_exec", exec_stub),
+        ):
+            result = terminate_windows_process_tree(4242)
+
+        self.assertFalse(result)
+
+    def test_windows_tree_termination_missing_taskkill_returns_false_and_starts_nothing(
+        self,
+    ) -> None:
+        """Assert that missing taskkill returns False and starts nothing."""
+        exec_stub = mock.AsyncMock()
+        with (
+            mock.patch(
+                "scripts.lib.safe_subprocess.resolve_executable",
+                side_effect=CommandValidationError("taskkill is unavailable"),
+            ),
+            mock.patch("scripts.lib.safe_subprocess.asyncio.create_subprocess_exec", exec_stub),
+        ):
+            result = terminate_windows_process_tree(4242)
+
+        self.assertFalse(result)
+        exec_stub.assert_not_called()
+
+    def test_terminate_windows_process_tree_boundary_validation(self) -> None:
+        """Assert that invalid process IDs are rejected and positive PID succeeds."""
+        invalid_targets: list[Any] = [0, -1, True, "12"]
+        for target in invalid_targets:
+            with self.subTest(target=repr(target)), self.assertRaises(CommandValidationError):
+                terminate_windows_process_tree(target)
+
+        stub_proc = _StubTaskkillProcess(returncode=0)
+        exec_stub = mock.AsyncMock(return_value=stub_proc)
+        with (
+            mock.patch(
+                "scripts.lib.safe_subprocess.resolve_executable",
+                return_value="C:/Windows/System32/taskkill.exe",
+            ),
+            mock.patch("scripts.lib.safe_subprocess.asyncio.create_subprocess_exec", exec_stub),
+        ):
+            result = terminate_windows_process_tree(1)
+
+        self.assertTrue(result)
+        exec_stub.assert_called_once()
+        self.assertEqual(
+            exec_stub.call_args[0],
+            ("C:/Windows/System32/taskkill.exe", "/PID", "1", "/T", "/F"),
+        )
+
+    def test_terminate_process_group_windows_terminates_tree_before_direct_child(self) -> None:
+        """Assert that process tree is terminated before the direct child."""
+        fake = _StubProcessGroupChild(pid=4242)
+        recorded_pids: list[int] = []
+
+        async def record_tree_terminate(pid: int) -> bool:
+            """Record the tree termination PID and call order."""
+            recorded_pids.append(pid)
+            fake.call_order.append("tree_terminate")
+            return True
+
+        with (
+            mock.patch("scripts.lib.safe_subprocess.os.name", "nt"),
+            mock.patch(
+                "scripts.lib.safe_subprocess._terminate_windows_process_tree",
+                side_effect=record_tree_terminate,
+            ),
+        ):
+            asyncio.run(safe_subprocess._terminate_process_group(cast(Any, fake)))
+
+        self.assertEqual(recorded_pids, [4242])
+        self.assertIn("terminate", fake.call_order)
+        tree_idx = fake.call_order.index("tree_terminate")
+        term_idx = fake.call_order.index("terminate")
+        self.assertLess(tree_idx, term_idx)
+
+
+class DarwinAclTests(unittest.TestCase):
+    """Replay native ACL return conventions without requiring a macOS host."""
+
+    def fake_libc(self, tags: Sequence[int]) -> mock.Mock:
+        """Supply native-shaped ACL functions and bounded synthetic entry enumeration."""
+        libc = mock.Mock()
+        position = 0
+
+        def get_entry(_acl: int, _selector: int, entry: Any) -> int:
+            """Return entries in order, then the native EINVAL end marker."""
+            nonlocal position
+            if position == len(tags):
+                ctypes.set_errno(errno.EINVAL)
+                return -1
+            position += 1
+            ctypes.cast(entry, ctypes.POINTER(ctypes.c_void_p))[0] = position
+            return 0
+
+        def get_tag(_entry: Any, tag: Any) -> int:
+            """Write the enumerated tag through the native output pointer."""
+            ctypes.cast(tag, ctypes.POINTER(ctypes.c_int))[0] = tags[position - 1]
+            return 0
+
+        libc.acl_get_link_np.return_value = 42
+        libc.acl_get_entry.side_effect = get_entry
+        libc.acl_get_tag_type.side_effect = get_tag
+        libc.acl_free.return_value = 0
+        self.factory = self.enterContext(mock.patch.object(ctypes, "CDLL", return_value=libc))
+        return libc
+
+    def test_missing_acl_is_not_a_grant(self) -> None:
+        """ENOENT with a NULL ACL is the native representation of no extended ACL."""
+        libc = self.fake_libc([])
+        libc.acl_get_link_np.side_effect = lambda *_: ctypes.set_errno(errno.ENOENT)
+        self.assertFalse(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+        libc.acl_free.assert_not_called()
+
+    def test_null_acl_errors_fail_closed(self) -> None:
+        """Unreadable or unspecified NULL results cannot authorize a directory."""
+        libc = self.fake_libc([])
+        for error in (errno.EACCES, 0):
+            with self.subTest(error=error):
+                libc.acl_get_link_np.side_effect = lambda *_, error=error: ctypes.set_errno(error)
+                self.assertTrue(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+        libc.acl_free.assert_not_called()
+
+    def test_library_or_symbol_unavailable_fails_closed(self) -> None:
+        """Library and symbol lookup errors cannot silently bypass ACL inspection."""
+        for error in (OSError("planted load error"), AttributeError("acl_get_link_np")):
+            with (
+                self.subTest(error=error),
+                mock.patch.object(ctypes, "CDLL", side_effect=error),
+            ):
+                self.assertTrue(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+
+    def test_missing_symbol_fails_closed_before_allocating_acl(self) -> None:
+        """An incomplete native ACL interface cannot leave a live allocation behind."""
+        libc = self.fake_libc([])
+        del libc.acl_get_entry
+        self.assertTrue(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+        libc.acl_get_link_np.assert_not_called()
+        libc.acl_free.assert_not_called()
+
+    def test_empty_and_deny_only_acls_are_not_grants(self) -> None:
+        """Zero through exactly the native entry bound of deny entries remain trusted."""
+        self.assertEqual(safe_subprocess.MAX_DARWIN_ACL_ENTRIES, 128)
+        for count in (0, 1, 128):
+            with self.subTest(count=count):
+                libc = self.fake_libc([2] * count)
+                self.assertFalse(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+                libc.acl_free.assert_called_once_with(42)
+                selectors = [call.args[1] for call in libc.acl_get_entry.call_args_list]
+                self.assertEqual(selectors, [0] + [-1] * count)
+
+    def test_allow_or_unknown_tag_fails_closed(self) -> None:
+        """Any allow entry or unrecognized tag prevents named-path authorization."""
+        for tags in ([1], [2, 1], [99]):
+            with self.subTest(tags=tags):
+                libc = self.fake_libc(tags)
+                self.assertTrue(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+                libc.acl_free.assert_called_once_with(42)
+
+    def test_tag_read_failure_fails_closed_and_frees_acl(self) -> None:
+        """Unreadable tags do not hide permissions or leak the native ACL allocation."""
+        libc = self.fake_libc([2])
+        libc.acl_get_tag_type.side_effect = None
+        libc.acl_get_tag_type.return_value = -1
+        self.assertTrue(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+        libc.acl_free.assert_called_once_with(42)
+
+    def test_entry_read_failure_fails_closed_and_frees_acl(self) -> None:
+        """Only the native EINVAL end marker terminates a successful enumeration."""
+        libc = self.fake_libc([2])
+
+        def denied_entry(*_args: Any) -> int:
+            """Plant an entry read error distinct from the end marker."""
+            ctypes.set_errno(errno.EACCES)
+            return -1
+
+        libc.acl_get_entry.side_effect = denied_entry
+        self.assertTrue(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+        libc.acl_free.assert_called_once_with(42)
+
+    def test_acl_over_bound_fails_closed_and_frees_acl(self) -> None:
+        """The first extra entry rejects the ACL without reading beyond the bound."""
+        libc = self.fake_libc([2] * 129)
+        self.assertTrue(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+        self.assertEqual(libc.acl_get_entry.call_count, 129)
+        self.assertEqual(libc.acl_get_tag_type.call_count, 128)
+        libc.acl_free.assert_called_once_with(42)
+
+    def test_acl_free_failure_fails_closed(self) -> None:
+        """An unsuccessful native cleanup cannot report complete ACL inspection."""
+        libc = self.fake_libc([2])
+        libc.acl_free.return_value = -1
+        self.assertTrue(safe_subprocess._darwin_acl_allows_entries(Path("/directory")))
+        libc.acl_free.assert_called_once_with(42)
+
+    def test_native_signatures_and_encoded_path(self) -> None:
+        """Native pointers retain their width and paths use filesystem encoding."""
+        libc = self.fake_libc([])
+        directory = Path("/directory-ä")
+        self.assertFalse(safe_subprocess._darwin_acl_allows_entries(directory))
+        self.factory.assert_called_once_with(None, use_errno=True)
+        libc.acl_get_link_np.assert_called_once_with(os.fsencode(directory), 0x100)
+        self.assertEqual(libc.acl_get_link_np.argtypes, [ctypes.c_char_p, ctypes.c_int])
+        self.assertIs(libc.acl_get_link_np.restype, ctypes.c_void_p)
+        self.assertEqual(
+            libc.acl_get_entry.argtypes,
+            [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)],
+        )
+        self.assertIs(libc.acl_get_entry.restype, ctypes.c_int)
+        self.assertEqual(
+            libc.acl_get_tag_type.argtypes, [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
+        )
+        self.assertIs(libc.acl_get_tag_type.restype, ctypes.c_int)
+        self.assertEqual(libc.acl_free.argtypes, [ctypes.c_void_p])
+        self.assertIs(libc.acl_free.restype, ctypes.c_int)
+        libc.acl_free.assert_called_once_with(42)
+
+
+@unittest.skipUnless(sys.platform == "darwin", "native extended ACLs require macOS")
+class DarwinAclLinkTests(unittest.TestCase):
+    """Validate real directory ACLs through the executable launch selector on macOS."""
+
+    def setUp(self) -> None:
+        """Create a mode-protected link directory with no inherited ACL entries."""
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.root.chmod(0o755)
+        self.link = self.root / "python-link"
+        self.link.symlink_to(PYTHON)
+        run(["/bin/chmod", "-N", str(self.root)], allowed_executables=("/bin/chmod",), check=True)
+        self.addCleanup(
+            run,
+            ["/bin/chmod", "-N", str(self.root)],
+            allowed_executables=("/bin/chmod",),
+            check=True,
+        )
+
+    def assert_launch(self, expected: str) -> None:
+        """Require the actual launch path chosen for the real directory permissions."""
+        result = run([str(self.link), "-V"], allowed_executables=ALLOW_PYTHON, check=True)
+        self.assertEqual(result.argv[0], expected)
+
+    def test_no_acl_keeps_named_launch(self) -> None:
+        """A trusted mode without an extended ACL preserves the interpreter link."""
+        self.assert_launch(str(self.link))
+
+    def test_allow_entries_launch_resolved_file(self) -> None:
+        """Real add/delete-child grants force resolved launch despite mode 0755."""
+        run(
+            ["/bin/chmod", "+a", "everyone allow add_file,delete_child", str(self.root)],
+            allowed_executables=("/bin/chmod",),
+            check=True,
+        )
+        self.assertEqual(self.root.stat().st_mode & 0o777, 0o755)
+        self.assert_launch(PYTHON)
+
+    def test_deny_only_acl_keeps_named_launch(self) -> None:
+        """A real deny entry grants no right to replace the interpreter link."""
+        run(
+            ["/bin/chmod", "+a", "everyone deny delete", str(self.root)],
+            allowed_executables=("/bin/chmod",),
+            check=True,
+        )
+        self.assert_launch(str(self.link))
+
+
+@unittest.skipUnless(hasattr(os, "getuid"), "POSIX link ownership requires os.getuid")
+class ExecutableLinkTrustTests(unittest.TestCase):
+    """Exercise trusted launch paths and bounded traversal without elevated privileges."""
+
+    def setUp(self) -> None:
+        """Create an owned link without inherited temporary-directory links."""
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.root.chmod(0o755)
+        self.link = self.root / "python-link"
+        self.link.symlink_to(PYTHON)
+
+    def assert_resolved_launch(self, launch: Path) -> None:
+        """Require resolved-file execution while preserving the caller's argument name."""
+        self.assertEqual(
+            safe_subprocess._checked_executable(str(launch), ALLOW_PYTHON, ""),
+            (PYTHON, Path(PYTHON)),
+        )
+        result = run(
+            [str(launch), "-c", "import sys; print(sys.orig_argv[0])"],
+            allowed_executables=ALLOW_PYTHON,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.argv[0], PYTHON)
+        self.assertEqual(result.stdout.strip(), str(launch))
+
+    def test_sticky_world_writable_link_directory_is_accepted(self) -> None:
+        """Sticky directories protect an owned link despite world write permission."""
+        self.root.chmod(0o1777)
+        result = run([str(self.link), "-V"], allowed_executables=ALLOW_PYTHON)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.argv[0], str(self.link))
+
+    def test_nonsticky_world_writable_link_directory_launches_resolved_file(self) -> None:
+        """Hosted tool-cache permissions select resolved launch and retain caller argv[0]."""
+        self.root.chmod(0o777)
+        self.assert_resolved_launch(self.link)
+
+    def test_nonsticky_world_writable_path_link_launches_resolved_file(self) -> None:
+        """Bare-name lookup also avoids writable links while retaining the bare argv[0]."""
+        self.root.chmod(0o777)
+        self.assertEqual(
+            safe_subprocess._checked_executable(self.link.name, (self.link.name,), str(self.root)),
+            (PYTHON, Path(PYTHON)),
+        )
+        result = run(
+            [self.link.name, "-c", "import sys; print(sys.orig_argv[0])"],
+            allowed_executables=(self.link.name,),
+            env={"PATH": str(self.root)},
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.argv[0], PYTHON)
+        self.assertEqual(result.stdout.strip(), self.link.name)
+
+    def test_group_writable_link_directory_launches_resolved_file(self) -> None:
+        """Group write is untrusted regardless of membership, including setgid directories."""
+        self.assertFalse(hasattr(safe_subprocess, "grp"))
+        self.assertFalse(hasattr(safe_subprocess, "pwd"))
+        for mode in (0o775, 0o770, 0o2775):
+            with self.subTest(mode=oct(mode)):
+                self.root.chmod(mode)
+                self.assert_resolved_launch(self.link)
+
+    def test_other_posix_platform_launches_resolved_file(self) -> None:
+        """Uninspected ACL models cannot authorize a named launch through trusted modes."""
+        with mock.patch.object(sys, "platform", "freebsd14"):
+            self.assert_resolved_launch(self.link)
+
+    def test_linux_does_not_inspect_darwin_acls(self) -> None:
+        """Linux mode bits cover the POSIX ACL mask without loading the macOS interface."""
+        with (
+            mock.patch.object(sys, "platform", "linux"),
+            mock.patch.object(safe_subprocess, "_darwin_acl_allows_entries") as acl,
+        ):
+            self.assertEqual(
+                safe_subprocess._checked_executable(str(self.link), ALLOW_PYTHON, ""),
+                (str(self.link), Path(PYTHON)),
+            )
+        acl.assert_not_called()
+
+    def test_darwin_checks_each_link_directory(self) -> None:
+        """Each followed link's parent receives one ACL check per validation."""
+        nested = self.root / "nested"
+        nested.mkdir(mode=0o755)
+        second = nested / "second"
+        second.symlink_to(PYTHON)
+        self.link.unlink()
+        self.link.symlink_to("nested/second")
+        with (
+            mock.patch.object(sys, "platform", "darwin"),
+            mock.patch.object(
+                safe_subprocess, "_darwin_acl_allows_entries", return_value=False
+            ) as acl,
+        ):
+            self.assertEqual(
+                safe_subprocess._checked_executable(str(self.link), ALLOW_PYTHON, ""),
+                (str(self.link), Path(PYTHON)),
+            )
+        self.assertEqual(acl.call_args_list, [mock.call(self.root), mock.call(nested)])
+
+    def test_darwin_acl_grant_launches_resolved_file(self) -> None:
+        """An ACL grant overrides trusted modes and sticky directory protection."""
+        for mode in (0o755, 0o1777):
+            with self.subTest(mode=oct(mode)):
+                self.root.chmod(mode)
+                with (
+                    mock.patch.object(sys, "platform", "darwin"),
+                    mock.patch.object(
+                        safe_subprocess, "_darwin_acl_allows_entries", return_value=True
+                    ) as acl,
+                ):
+                    self.assert_resolved_launch(self.link)
+                self.assertEqual(acl.call_args_list, [mock.call(self.root)] * 2)
+
+    def test_second_link_in_untrusted_directory_launches_resolved_file(self) -> None:
+        """Every hop needs protection, including a relative target in another directory."""
+        unsafe = self.root / "unsafe"
+        unsafe.mkdir()
+        unsafe.chmod(0o777)
+        second = unsafe / "second"
+        second.symlink_to(PYTHON)
+        self.link.unlink()
+        self.link.symlink_to("unsafe/second")
+        self.assert_resolved_launch(self.link)
+
+    def test_foreign_link_owner_launches_resolved_file(self) -> None:
+        """A foreign-owned link selects the resolved file even inside an owned directory."""
+        original = Path.lstat
+
+        def foreign_owner(path: Path) -> os.stat_result:
+            """Plant foreign ownership only on the fixture link."""
+            metadata = original(path)
+            if path == self.link:
+                fields = list(metadata)
+                fields[4] = os.getuid() + 1
+                return os.stat_result(fields)
+            return metadata
+
+        with mock.patch.object(Path, "lstat", foreign_owner):
+            self.assert_resolved_launch(self.link)
+
+    def test_foreign_directory_owner_launches_resolved_file(self) -> None:
+        """A third-user directory owner can replace links even in sticky directories."""
+        self.root.chmod(0o1777)
+        original = Path.stat
+
+        def foreign_owner(path: Path, **kwargs: Any) -> os.stat_result:
+            """Plant foreign ownership only on the fixture directory."""
+            metadata = original(path, **kwargs)
+            if path == self.root:
+                fields = list(metadata)
+                fields[4] = os.getuid() + 1
+                return os.stat_result(fields)
+            return metadata
+
+        with mock.patch.object(Path, "stat", foreign_owner):
+            self.assert_resolved_launch(self.link)
+
+    def test_link_metadata_lookup_failure_is_untrusted(self) -> None:
+        """Link and directory metadata errors cannot authorize named-path execution."""
+        for method in ("lstat", "stat"):
+            with self.subTest(method=method):
+                with mock.patch.object(Path, method, side_effect=PermissionError("planted")):
+                    self.assertFalse(safe_subprocess._executable_links_trusted((self.link,)))
+
+    def test_link_walk_follows_targets_before_dotdot(self) -> None:
+        """Directory links, absolute targets, dots and dotdots retain kernel order."""
+        nested = self.root / "nested"
+        nested.mkdir()
+        directory = self.root / "directory"
+        directory.symlink_to(nested, target_is_directory=True)
+        self.link.unlink()
+        self.link.symlink_to("./directory/../last")
+        last = self.root / "last"
+        last.symlink_to(PYTHON)
+        self.assertEqual(safe_subprocess._executable_links(self.link), (self.link, directory, last))
+        self.assertEqual(
+            run([str(self.link), "-V"], allowed_executables=ALLOW_PYTHON).returncode, 0
+        )
+
+    def test_link_chain_40_accepted_and_41_refused(self) -> None:
+        """The named hop bound admits forty links and rejects the forty-first."""
+        for number in range(1, safe_subprocess.MAX_EXECUTABLE_LINK_HOPS):
+            link = self.root / f"hop-{number}"
+            link.symlink_to(self.link.name)
+            self.link = link
+        self.assertEqual(len(safe_subprocess._executable_links(self.link)), 40)
+        # Some POSIX kernels permit fewer hops; validation must still accept forty.
+        launch, resolved = safe_subprocess._checked_executable(str(self.link), ALLOW_PYTHON, "")
+        self.assertEqual(launch, str(self.link))
+        self.assertEqual(str(resolved), PYTHON)
+        if os.access(self.link, os.X_OK):
+            self.assertEqual(
+                run([str(self.link), "-V"], allowed_executables=ALLOW_PYTHON).returncode, 0
+            )
+        extra = self.root / "hop-40"
+        extra.symlink_to(self.link.name)
+        with self.assertRaisesRegex(CommandValidationError, "MAX_EXECUTABLE_LINK_HOPS=40"):
+            run([str(extra), "-V"], allowed_executables=ALLOW_PYTHON)
+
+    def test_link_cycle_reaches_named_hop_bound(self) -> None:
+        """A cycle stops at the hop bound instead of looping forever."""
+        self.link.unlink()
+        self.link.symlink_to(self.link.name)
+        with self.assertRaisesRegex(CommandValidationError, "MAX_EXECUTABLE_LINK_HOPS=40"):
+            run([str(self.link)], allowed_executables=ALLOW_PYTHON)
+
+    def test_walk_step_bound_is_enforced(self) -> None:
+        """The total step limit fails closed independently of the link limit."""
+        with mock.patch.object(safe_subprocess, "MAX_EXECUTABLE_WALK_STEPS", 1):
+            with self.assertRaisesRegex(CommandValidationError, "MAX_EXECUTABLE_WALK_STEPS=1"):
+                run([str(self.link), "-V"], allowed_executables=ALLOW_PYTHON)
+
+    def test_walk_exact_step_bound_is_accepted(self) -> None:
+        """Finishing on the last permitted component is accepted."""
+        with mock.patch.object(
+            safe_subprocess, "MAX_EXECUTABLE_WALK_STEPS", len(Path(PYTHON).parts)
+        ):
+            self.assertEqual(safe_subprocess._executable_links(Path(PYTHON)), ())
+
+    def test_link_chain_does_not_bypass_allowlist(self) -> None:
+        """Trusted ownership grants no permission to execute an unallowlisted file."""
+        other = self.root / "other"
+        other.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        other.chmod(0o755)
+        self.link.unlink()
+        self.link.symlink_to(other.name)
+        chain = self.root / "chain"
+        chain.symlink_to(self.link.name)
+        with self.assertRaisesRegex(CommandValidationError, "executable is not allowlisted"):
+            run([str(chain)], allowed_executables=ALLOW_PYTHON)
+
+    def test_without_getuid_launches_resolved_file(self) -> None:
+        """The Windows ownership fallback launches the checked file, not a link."""
+        with mock.patch.object(os, "getuid", create=True):
+            del os.getuid
+            self.assertEqual(
+                safe_subprocess._checked_executable(str(self.link), ALLOW_PYTHON, ""),
+                (PYTHON, Path(PYTHON)),
+            )
 
 
 if __name__ == "__main__":

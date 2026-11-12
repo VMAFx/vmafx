@@ -8,6 +8,40 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## CI downloads retry connection failures and write to a file first (2026-11-10)
+
+- Netflix-derived `Dockerfile`: keep wget connection and host-resolution retry flags when updating the optional oneAPI key setup from upstream.
+- Preserve the temporary-file key download, successful-fetch-before-gpg ordering and cleanup; an inner retry into a pipe can duplicate partial bytes.
+- `scripts/ci/tests/test_fetch_connect_retry.py::FetchConnectRetryTests::test_tracked_fetches_retry_connect_failures` guards the live download inventory, retry flags and file-first body contract.
+
+## GPU test sources parse under Semgrep (2026-11-08)
+
+no rebase impact: the change touches fork-added GPU test sources,
+`core/test/test_sycl_sub_group_size_contract.py` and the fork-only
+`core/src/feature/sycl/sycl_compat.h`; no file shared with Netflix/vmaf
+changes. Keep the parser-readable spellings listed in
+`docs/research/3402-semgrep-gpu-test-parse.md` when editing these
+files, or the float-identity rule stops reading them.
+
+## nvcc host-compiler flags keyed on the build machine (2026-11-05)
+
+- `core/src/meson.build`: the CUDA host-compiler strict-FP spelling and the
+  win32 pthread shim include path now test `build_machine.system()`, as the
+  `-ccbin` selection does since #3293. Fork-only: upstream's nvcc section has
+  no host-compiler discovery, so keep both gates on an upstream sync.
+  `core/test/test_strict_fp_compiler_args.py` substitutes the build and
+  host machines into the fixture INDEPENDENTLY and adds a build=linux /
+  host=windows cross row that asserts the Unix spelling, plus a static check
+  that pins both machine gates: a later rebase that reverts either hunk to
+  `host_machine.system()` fails its own test instead of silently reddening the
+  CUDA lanes.
+
+## FFmpeg qpfile and loopback patches move to the shared series (issue #2435)
+
+- `ffmpeg-patches/0001-codec-qpfile-unified.patch`, `0006-fftools-loopback-decoder-hwaccel.patch` and `ffmpeg-patches/src/ffmpeg_dec_hwaccel.c` are deleted; the shared fix series carries them as `0043` and `0044`. The remaining four patches are renamed `0001`-`0004` (`pass-autotune-cli-glue`, `add-vmafx-profile-cli-glue`, `add-vmafx-filter`, `add-vmafx-pre-filter`), and `series.txt`, `REUSE.toml` and the tidy lane lists follow.
+- On a conflict with a branch that still edits the old `0002`-`0005` names, move its change to the new name, never restore the old file. A change to `libavfilter/vf_vmafx.c`, `vf_vmafx_options.h` or `vf_vmafx_pre.c` goes into the matching file under `ffmpeg-patches/src/` instead: replay and `--refresh` take those files from there (`SOURCES` in `scripts/ci/ffmpeg_patch_stack.py`), so an edit made only in the patch is lost. A branch that edits the dropped `0001` or `0006` belongs in `VMAFx/ffmpeg-patches` instead. Then run `python3 scripts/ci/ffmpeg_patch_stack.py --refresh`, then `--check`.
+- `build-config.env`: `FFMPEG_FIX_SERIES_TAG` and `FFMPEG_FIX_SERIES_SHA256` move to `VMAFx/ffmpeg-patches` `v0.7.0` (commit `c84de852da`), the first release that carries `0043` and `0044`. The release's `base.env` still names FFmpeg `n9.0.2` / `946fcce0`, so `FFMPEG_TAG` and `FFMPEG_COMMIT` stay. On a conflict take the newer series pin of the two, never `v0.6.0` with the patches dropped, then run `python3 scripts/ci/ffmpeg_patch_stack.py --refresh`, then `--check`.
+
 ## FFmpeg shared fix series v0.6.0 (2026-11-06)
 
 - `build-config.env`: `FFMPEG_FIX_SERIES_TAG` and `FFMPEG_FIX_SERIES_SHA256` move to `VMAFx/ffmpeg-patches` `v0.6.0` (commit `8f88544085`). The release's `base.env` still names FFmpeg `n9.0.2` / `946fcce0`, so `FFMPEG_TAG` and `FFMPEG_COMMIT` stay. On a conflict take the newer series pin of the two and run `python3 scripts/ci/ffmpeg_patch_stack.py --refresh`, then `--check`.
@@ -251,6 +285,9 @@ Invariants a rebase keeps:
 - The job stays required and keeps all four checks; a renamed subcommand of
   `vmafx_filter_check.py` changes the loop in the same PR.
 - Exit 77 (missing fixture) fails the job; the fetch step brings the pair.
+- The build step keeps `--fatal-warnings` and the build-log warning check,
+  because this is the only gcc build of the series' own C code. The check
+  passes only on grep exit 1 (no match); a grep error fails the step.
 - `scripts/ci/test_ffmpeg_patch_workflow_contract.py`
   (`test_vmafx_filter_job_*`) guards the job, with planted gaps.
 

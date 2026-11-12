@@ -12,6 +12,8 @@ if [[ -z "$cmd" ]] && command -v jq >/dev/null 2>&1; then
   [[ -n "$input" ]] && cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
 fi
 
+nl=$'\n'
+
 # Patterns that are always blocked. Kept narrow so legitimate work is not impeded.
 blocked_patterns=(
   # Force-push to protected branches
@@ -28,12 +30,22 @@ blocked_patterns=(
   '--no-gpg-sign\b'
   # Modifying Netflix golden assertions (paths per D24)
   "sed[[:space:]]+-i[[:space:]]+.*python/test/(quality_runner_test|vmafexec_test|vmafexec_feature_extractor_test|feature_extractor_test|result_test)\\.py"
+  # Direct Meson or ninja test-runner calls skip the credential-stripping
+  # wrapper (docs/development/meson-test-runner.md). POSIX classes only, no \b,
+  # so the match holds with any regex library; a newline ends a command as
+  # ; | and & do.
+  "(^|[^[:alnum:]_])meson[[:blank:]]+test([^[:alnum:]_]|\$)"
+  "(^|[^[:alnum:]_])ninja([[:blank:]][^;|&${nl}]*)?[[:blank:]\"'(]test([^/[:alnum:]_]|\$)"
+  "(^|[^[:alnum:]_])meson[[:blank:]]+compile([[:blank:]][^;|&${nl}]*)?[[:blank:]\"'(]test([^/[:alnum:]_]|\$)"
 )
 
 for pat in "${blocked_patterns[@]}"; do
   if [[ "$cmd" =~ $pat ]]; then
     echo "BLOCKED: matched unsafe pattern: $pat" >&2
     echo "Command: $cmd" >&2
+    if [[ "$pat" == *'meson'* || "$pat" == *'ninja'* ]]; then
+      echo "use python3 scripts/ci/run_meson_test.py -- <meson test args> (strips credential names; docs/development/meson-test-runner.md)" >&2
+    fi
     echo "If this is intentional, run it manually outside the agent session." >&2
     exit 2
   fi

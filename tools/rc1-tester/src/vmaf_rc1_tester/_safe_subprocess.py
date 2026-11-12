@@ -16,10 +16,16 @@ operator-owned log, not an allocation controlled by child output.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import ctypes
+import errno
 import locale
 import os
 import shutil
 import signal
+import stat
+import sys
+from collections import deque
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,9 +34,15 @@ from typing import IO, Any, Literal, overload
 MAX_ARG_COUNT = 4096
 MAX_ARG_BYTES = 65_536
 MAX_ARGV_BYTES = 1_048_576
+MAX_EXECUTABLE_LINK_HOPS = 40
+MAX_EXECUTABLE_WALK_STEPS = 4096
+MAX_DARWIN_ACL_ENTRIES = 128
+_DARWIN_ACL_EXTENDED_DENY = 2
+_DARWIN_ACL_TYPE_EXTENDED = 0x100
 DEFAULT_TIMEOUT_SECONDS = 120.0
 DEFAULT_MAX_OUTPUT_BYTES = 4 * 1_048_576
 TERMINATION_GRACE_SECONDS = 2.0
+WINDOWS_TREE_KILL_TIMEOUT_SECONDS = 30.0
 READ_CHUNK_BYTES = 65_536
 _WINDOWS_CREATE_NEW_PROCESS_GROUP = 0x00000200
 
@@ -203,14 +215,140 @@ def _parse_allowed_executables(allowed: Collection[Arg]) -> _AllowedExecutables:
     return _AllowedExecutables(frozenset(allowed_names), frozenset(allowed_paths))
 
 
+def _executable_links(launch: Path) -> tuple[Path, ...]:
+    """Collect links in kernel traversal order, including links in target directories.
+
+    POSIX callers preserve trusted links; platforms without getuid launch the resolved file.
+    """
+    pending = deque(launch.parts)
+    directory = Path(launch.anchor)
+    links: list[Path] = []
+    for _ in range(MAX_EXECUTABLE_WALK_STEPS):
+        if not pending:
+            return tuple(links)
+        component = pending.popleft()
+        if component == launch.anchor:
+            directory = Path(launch.anchor)
+            continue
+        if component == "..":
+            directory = directory.parent
+            continue
+        candidate = directory / component
+        try:
+            metadata = candidate.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                links.append(candidate)
+                if len(links) > MAX_EXECUTABLE_LINK_HOPS:
+                    raise CommandValidationError(
+                        f"executable exceeds MAX_EXECUTABLE_LINK_HOPS={MAX_EXECUTABLE_LINK_HOPS}"
+                    )
+                pending.extendleft(reversed(candidate.readlink().parts))
+            else:
+                directory = candidate
+        except OSError as exc:
+            raise CommandValidationError(f"executable is unavailable: {candidate}") from exc
+    if pending:
+        raise CommandValidationError(
+            f"executable exceeds MAX_EXECUTABLE_WALK_STEPS={MAX_EXECUTABLE_WALK_STEPS}"
+        )
+    return tuple(links)
+
+
+def _darwin_acl_library() -> ctypes.CDLL:
+    """Declare the native extended-ACL interface before inspecting directory entries."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.acl_get_link_np.argtypes = [ctypes.c_char_p, ctypes.c_int]
+    libc.acl_get_link_np.restype = ctypes.c_void_p
+    libc.acl_get_entry.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)]
+    libc.acl_get_entry.restype = ctypes.c_int
+    libc.acl_get_tag_type.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
+    libc.acl_get_tag_type.restype = ctypes.c_int
+    libc.acl_free.argtypes = [ctypes.c_void_p]
+    libc.acl_free.restype = ctypes.c_int
+    return libc
+
+
+def _darwin_acl_entries_allow(libc: ctypes.CDLL, acl: int) -> bool:
+    """Reject allow entries, unreadable tags and ACLs exceeding the native entry bound."""
+    entry = ctypes.c_void_p()
+    tag = ctypes.c_int()
+    for index in range(MAX_DARWIN_ACL_ENTRIES + 1):
+        ctypes.set_errno(0)
+        status = libc.acl_get_entry(acl, 0 if index == 0 else -1, ctypes.byref(entry))
+        if status != 0:
+            return status != -1 or ctypes.get_errno() != errno.EINVAL
+        if index == MAX_DARWIN_ACL_ENTRIES:
+            return True
+        if (
+            libc.acl_get_tag_type(entry, ctypes.byref(tag)) != 0
+            or tag.value != _DARWIN_ACL_EXTENDED_DENY
+        ):
+            return True
+    return True
+
+
+def _darwin_acl_allows_entries(path: Path) -> bool:
+    """Fail closed unless a directory has no extended ACL or only readable deny entries."""
+    try:
+        libc = _darwin_acl_library()
+    except (OSError, AttributeError):
+        return True
+    ctypes.set_errno(0)
+    acl = libc.acl_get_link_np(os.fsencode(path), _DARWIN_ACL_TYPE_EXTENDED)
+    if not acl:
+        return ctypes.get_errno() != errno.ENOENT
+    verdict = True
+    try:
+        verdict = _darwin_acl_entries_allow(libc, acl)
+    finally:
+        if libc.acl_free(acl) != 0:
+            verdict = True
+    return verdict
+
+
+def _directory_allows_link_retargeting(directory: os.stat_result, path: Path) -> bool:
+    """Reject macOS ACL grants and nonsticky group/other directory write permission."""
+    if sys.platform == "darwin" and _darwin_acl_allows_entries(path):
+        return True
+    return not directory.st_mode & stat.S_ISVTX and bool(directory.st_mode & 0o022)
+
+
+def _executable_links_trusted(links: tuple[Path, ...]) -> bool:
+    """Preserve links only with trusted owners and inspected Linux/macOS directory rights."""
+    if not (sys.platform.startswith("linux") or sys.platform == "darwin"):
+        return False
+    trusted_owners = (0, os.getuid())
+    for link in links:
+        try:
+            owner = link.lstat().st_uid
+            directory = link.parent.stat()
+        except OSError:
+            return False
+        if (
+            owner not in trusted_owners
+            or directory.st_uid not in trusted_owners
+            or _directory_allows_link_retargeting(directory, link.parent)
+        ):
+            return False
+    return True
+
+
+def _resolve_launch_file(launch: Path) -> tuple[Path, Path]:
+    """Select named launch only for trusted POSIX links, then resolve the checked file."""
+    trusted = hasattr(os, "getuid") and _executable_links_trusted(_executable_links(launch))
+    resolved = launch.resolve(strict=True)
+    return (launch if trusted else resolved), resolved
+
+
 def _resolve_absolute_executable(
     executable: str,
     requested: Path,
     allowed: _AllowedExecutables,
     search_path: str,
-) -> Path:
+) -> tuple[Path, Path]:
+    """Select a launch path and require its resolved file to match the allowlist."""
     try:
-        resolved = requested.resolve(strict=True)
+        launch, resolved = _resolve_launch_file(requested)
     except OSError as exc:
         raise CommandValidationError(f"executable is unavailable: {executable}") from exc
     name_matches: set[Path] = set()
@@ -220,30 +358,42 @@ def _resolve_absolute_executable(
             name_matches.add(Path(found).resolve(strict=True))
     if resolved not in allowed.paths and resolved not in name_matches:
         raise CommandValidationError(f"executable is not allowlisted: {resolved}")
-    return resolved
+    return launch, resolved
 
 
-def _resolve_allowed_executable(
+def _checked_executable(
     executable: str, allowed_values: Collection[Arg], search_path: str
-) -> str:
+) -> tuple[str, Path]:
+    """Validate the resolved file and preserve trusted POSIX links for venv discovery.
+
+    Untrusted chains and platforms without os.getuid launch the resolved file instead.
+    """
     allowed = _parse_allowed_executables(allowed_values)
 
     requested = Path(executable).expanduser()
     if requested.is_absolute():
-        resolved = _resolve_absolute_executable(executable, requested, allowed, search_path)
+        launch, resolved = _resolve_absolute_executable(executable, requested, allowed, search_path)
     elif len(requested.parts) == 1:
         if executable not in allowed.names:
             raise CommandValidationError(f"executable name is not allowlisted: {executable}")
         found = shutil.which(executable, path=search_path)
         if found is None:
             raise CommandValidationError(f"executable is unavailable: {executable}")
-        resolved = Path(found).resolve(strict=True)
+        # Keep PATH links for trust validation before selecting the launch path.
+        launch, resolved = _resolve_launch_file(Path(found).absolute())
     else:
         raise CommandValidationError(f"executable path must be absolute or bare: {executable}")
 
     if not resolved.is_file() or not os.access(resolved, os.X_OK):
         raise CommandValidationError(f"executable is not a runnable file: {resolved}")
-    return str(resolved)
+    return str(launch), resolved
+
+
+def _resolve_allowed_executable(
+    executable: str, allowed_values: Collection[Arg], search_path: str
+) -> str:
+    """Return the allowlisted executable file for callers that need its canonical path."""
+    return str(_checked_executable(executable, allowed_values, search_path)[1])
 
 
 def executable_argument(executable: Arg, root: Arg) -> str:
@@ -268,9 +418,27 @@ def executable_argument(executable: Arg, root: Arg) -> str:
     return os.path.normpath((Path(root) / path).absolute())
 
 
+def resolve_executable(executable: Arg, root: Arg | None = None) -> str:
+    """Return the absolute, runnable path `run()` would execute for `executable`.
+
+    Resolves a bare name on PATH or a relative path against `root` (defaulting
+    to the current working directory).
+
+    Returns:
+        The validated, absolute path to the runnable executable file.
+
+    Raises:
+        CommandValidationError: If the executable is missing, not a regular file,
+            or not executable.
+    """
+    value = executable_argument(executable, root if root is not None else Path.cwd())
+    return _resolve_allowed_executable(value, (value,), os.environ.get("PATH", os.defpath))
+
+
 def _validated_argv(
     argv: Sequence[Arg], allowed_executables: Collection[Arg], search_path: str
 ) -> tuple[str, ...]:
+    """Validate bounded arguments and select the trusted absolute launch path."""
     if not argv:
         raise CommandValidationError("argv must contain an executable")
     if len(argv) > MAX_ARG_COUNT:
@@ -278,7 +446,7 @@ def _validated_argv(
     values = tuple(_stringify(value, label=f"argv[{index}]") for index, value in enumerate(argv))
     if sum(len(os.fsencode(value)) + 1 for value in values) > MAX_ARGV_BYTES:
         raise CommandValidationError(f"argv exceeds {MAX_ARGV_BYTES} encoded bytes")
-    executable = _resolve_allowed_executable(values[0], allowed_executables, search_path)
+    executable = _checked_executable(values[0], allowed_executables, search_path)[0]
     return (executable, *values[1:])
 
 
@@ -403,6 +571,7 @@ async def _read_bounded(
 
 
 async def _write_input(writer: asyncio.StreamWriter, data: bytes) -> None:
+    """Close child input after writing, tolerating a child that closes its pipe early."""
     try:
         writer.write(data)
         await writer.drain()
@@ -412,12 +581,68 @@ async def _write_input(writer: asyncio.StreamWriter, data: bytes) -> None:
         writer.close()
 
 
+async def _terminate_windows_process_tree(pid: int) -> bool:
+    """Terminate the process tree rooted at `pid` on Windows using taskkill.
+
+    Returns:
+        True when taskkill exits with status 0; False when taskkill fails,
+        times out, or is unavailable.
+    """
+    try:
+        taskkill = resolve_executable("taskkill")
+    except CommandValidationError:
+        return False
+    try:
+        process = await asyncio.create_subprocess_exec(
+            taskkill,
+            "/PID",
+            str(pid),
+            "/T",
+            "/F",
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except OSError:
+        return False
+    try:
+        await asyncio.wait_for(process.wait(), timeout=WINDOWS_TREE_KILL_TIMEOUT_SECONDS)
+    except TimeoutError:
+        with contextlib.suppress(OSError):
+            process.kill()
+        with contextlib.suppress(TimeoutError, OSError):
+            await asyncio.wait_for(process.wait(), timeout=TERMINATION_GRACE_SECONDS)
+        return False
+    except OSError:
+        return False
+    return process.returncode == 0
+
+
+def terminate_windows_process_tree(pid: int) -> bool:
+    """Terminate the process tree rooted at `pid` on Windows using taskkill.
+
+    Returns:
+        True when taskkill exits with status 0; False when taskkill fails,
+        times out, or is unavailable.
+
+    Raises:
+        CommandValidationError: When `pid` is not a positive integer.
+    """
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        raise CommandValidationError(f"invalid process id: {pid!r}")
+    return asyncio.run(_terminate_windows_process_tree(pid))
+
+
 async def _terminate_process_group(process: asyncio.subprocess.Process) -> None:
+    """End the child's process group on POSIX, and on Windows end the process tree first, then
+    terminate, kill and reap the direct child.
+    """
     if os.name == "posix":
         await _terminate_posix_process_group(process)
         return
     if process.returncode is not None:
         return
+    await _terminate_windows_process_tree(process.pid)
     try:
         process.terminate()
     except ProcessLookupError:
@@ -688,8 +913,9 @@ async def run_async(
         settings=settings,
         encoding=encoding,
     )
-    # Run the validated file, but keep the caller's argv[0]: a multi-call
-    # program (the `vmafx` link to `vmaf`) selects its mode from that name.
+    # Keep trusted launch links intact; untrusted chains launch the resolved file.
+    # Preserve the caller's argv[0]: a multi-call program (the `vmafx` link to `vmaf`)
+    # selects its mode from that name.
     process = await asyncio.create_subprocess_exec(
         _stringify(argv[0], label="argv[0]"),
         *command[1:],

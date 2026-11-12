@@ -66,9 +66,9 @@
 #
 # They must precede the FIRST FROM: an ARG declared after one is scoped to the
 # stage it follows, so `FROM ${ROCM_BUILDER}` above would expand to nothing.
-ARG DEV_BASE="ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944"
+ARG DEV_BASE="ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c"
 ARG NATIVE_RELEASE_BUILDER_BASE="quay.io/pypa/manylinux_2_28_x86_64@sha256:7e41b1c7fd64dfc69703a1124b43c404382973ee06ec5d764b85c34d2221fded"
-ARG DEV_GO_BASE="golang:1.27-trixie@sha256:604106102d33b1084e37ca08adf98ac0813624ae8595bd0d7f3965ecebded09c"
+ARG DEV_GO_BASE="golang:1.27-trixie@sha256:c47c3fda018d13d43a6bf5ebac3e5bba8a23a35782aa4faf531afaf47c64c39f"
 ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.1.0-full@sha256:4f5ed1bf6532a4b9920400401b0ad0f706af356dae61e40afefbfd6c8073f0ce"
 
 FROM ${ROCM_BUILDER} AS rocm-src
@@ -275,7 +275,7 @@ RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 \
 # ClangBuildAnalyzer (Unlicense, ADR-3336) build-time analysis
 ARG CLANGBUILDANALYZER_VERSION=1.6.0
 ARG CLANGBUILDANALYZER_SHA256=868a8d34ecb9b65da4e5874342062a12c081ce4385c7ddd6ce7d557a0c5c292d
-RUN curl -fsSL \
+RUN curl --retry 3 --retry-all-errors -fsSL \
         "https://github.com/aras-p/ClangBuildAnalyzer/archive/refs/tags/v${CLANGBUILDANALYZER_VERSION}.tar.gz" \
         -o /tmp/cba.tar.gz \
     && echo "${CLANGBUILDANALYZER_SHA256}  /tmp/cba.tar.gz" | sha256sum -c - \
@@ -352,9 +352,17 @@ RUN for attempt in 1 2 3; do \
 
 # AlmaLinux 8's assembler predates the AVX-512 sources. Build the maintained
 # assembler from the upstream release tarball, verified before extraction.
-RUN curl --fail --location --show-error \
-        --output /tmp/nasm.tar.xz \
-        "https://www.nasm.us/pub/nasm/releasebuilds/${NATIVE_NASM_VERSION}/nasm-${NATIVE_NASM_VERSION}.tar.xz" \
+# AlmaLinux 8 curl 7.61 lacks --retry-all-errors (7.71); loop retries unreachable host/network.
+RUN for attempt in 1 2 3; do \
+        curl --retry 3 --retry-connrefused --fail --location --show-error \
+            --output /tmp/nasm.tar.xz \
+            "https://www.nasm.us/pub/nasm/releasebuilds/${NATIVE_NASM_VERSION}/nasm-${NATIVE_NASM_VERSION}.tar.xz" \
+        && break || { \
+            if [ "$attempt" -eq 3 ]; then exit 1; fi; \
+            echo "nasm download attempt $attempt failed; retrying..." >&2; \
+            sleep 5; \
+        }; \
+    done \
     && echo "${NATIVE_NASM_SHA256}  /tmp/nasm.tar.xz" | sha256sum --check --strict \
     && mkdir /tmp/nasm-src \
     && tar -xJf /tmp/nasm.tar.xz -C /tmp/nasm-src --strip-components=1 \
@@ -415,9 +423,10 @@ ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64
 # does not publish year-quarter-versioned meta-packages (e.g.,
 # `intel-basekit-2025.3` does not exist in the apt repo); the versioning is
 # tracked internally by the component packages the meta-package pulls in.
-RUN curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
-        | gpg --dearmor \
-        | tee /usr/share/keyrings/intel-sw-products.gpg > /dev/null \
+RUN key="$(mktemp)" \
+    && curl --retry 3 --retry-all-errors -fsSL -o "$key" https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+    && gpg --dearmor < "$key" | tee /usr/share/keyrings/intel-sw-products.gpg > /dev/null \
+    && rm -f "$key" \
     && printf 'deb [signed-by=/usr/share/keyrings/intel-sw-products.gpg] https://apt.repos.intel.com/oneapi all main\n' \
         > /etc/apt/sources.list.d/intel-oneapi.list
 
@@ -498,8 +507,8 @@ RUN . /opt/vmafx/build-config.env \
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     . /opt/vmafx/build-config.env \
-    && curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze1_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze1.deb \
-    && curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze-dev_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze-dev.deb \
+    && curl --retry 3 --retry-all-errors -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze1_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze1.deb \
+    && curl --retry 3 --retry-all-errors -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze-dev_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze-dev.deb \
     && apt-get update \
     && apt-get install -y --no-install-recommends /tmp/libze1.deb /tmp/libze-dev.deb \
     && find /tmp -maxdepth 1 -name 'libze*.deb' -delete
@@ -516,7 +525,7 @@ ARG RUSTUP_INIT_SHA256=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35
 ENV RUSTUP_HOME=/opt/rust/rustup \
     CARGO_HOME=/opt/rust/cargo
 RUN . /opt/vmafx/build-config.env \
-    && curl -fsSL "https://static.rust-lang.org/rustup/archive/${RUSTUP_INIT_VERSION}/x86_64-unknown-linux-gnu/rustup-init" -o /tmp/rustup-init \
+    && curl --retry 3 --retry-all-errors -fsSL "https://static.rust-lang.org/rustup/archive/${RUSTUP_INIT_VERSION}/x86_64-unknown-linux-gnu/rustup-init" -o /tmp/rustup-init \
     && echo "${RUSTUP_INIT_SHA256}  /tmp/rustup-init" | sha256sum -c - \
     && chmod +x /tmp/rustup-init \
     && /tmp/rustup-init -y --no-modify-path --profile minimal \
@@ -739,7 +748,7 @@ RUN chown vmaf:vmaf /build /build/vmaf
 # by ai/pyproject.toml.
 ARG ORT_VERSION=1.30.0
 ARG ORT_SHA256=a5ed5a3cac51fbb2e90da632ae43d19212faaa20e76484e62bcb7c23ddb3b3fd
-RUN curl -fsSL \
+RUN curl --retry 3 --retry-all-errors -fsSL \
         "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
         -o /tmp/ort.tgz \
     && echo "${ORT_SHA256}  /tmp/ort.tgz" | sha256sum --check --strict - \
@@ -786,11 +795,11 @@ USER root
 # (`nv-codec-headers` from code.ffmpeg.org, `nv-codec-headers-<tag>` from
 # GitHub), so make targets the extracted directory rather than a fixed name.
 ARG NV_CODEC_HEADERS_REF=n13.1.15.0
-RUN { curl -fsSL --retry 1 --retry-delay 2 --connect-timeout 10 --max-time 60 \
+RUN { curl -fsSL --retry 1 --retry-all-errors --retry-delay 2 --connect-timeout 10 --max-time 60 \
            "https://code.ffmpeg.org/FFmpeg/nv-codec-headers/archive/${NV_CODEC_HEADERS_REF}.tar.gz" \
            -o /tmp/nv-codec-headers.tgz \
          || { echo "nv-codec-headers: code.ffmpeg.org unreachable, falling back to the GitHub mirror" >&2; \
-              curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 120 \
+              curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 120 \
                 "https://github.com/FFmpeg/nv-codec-headers/archive/refs/tags/${NV_CODEC_HEADERS_REF}.tar.gz" \
                 -o /tmp/nv-codec-headers.tgz; }; } \
     && tar xzf /tmp/nv-codec-headers.tgz -C /tmp \
@@ -964,16 +973,16 @@ USER root
 #     probe therefore fails with `ERROR: SvtAv1Enc >= 0.9.0 not found
 #     using pkg-config` even when the library is present on disk.
 #
-#   * libaom-dev (Ubuntu 24.04 → 3.8.2) is too old for the patched FFmpeg build:
-#     `libavcodec/libaomenc.c` uses `aom_roi_map_t` fields (`enabled`,
-#     `skip`, `ref_frame`, `delta_qp_enabled`) added in libaom 3.10+,
-#     so the in-image FFmpeg build fails with
-#     `'aom_roi_map_t' has no member named 'enabled'` etc. against
-#     Ubuntu's older struct layout.
+#   * libaom-dev: patch 0043's ROI helper in `libavcodec/libaomenc.c`
+#     sets `aom_roi_map_t` fields (`enabled`, `skip`, `ref_frame`,
+#     `delta_qp_enabled`) that first shipped in libaom 3.13.0, so a
+#     build against an older libaom fails with
+#     `'aom_roi_map_t' has no member named 'enabled'` etc. libaom is
+#     not enabled at all for now; see the libaom note below.
 #
-# Both libraries are built from source in dedicated layers below
-# (analogous to libvvenc and AMF), which install pinned upstream
-# releases under `/usr/local/` with the correct headers + .pc files.
+# SVT-AV1 is built from source in a dedicated layer below (analogous
+# to libvvenc and AMF), which installs a pinned upstream release under
+# `/usr/local/` with the correct headers + .pc file.
 #
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -987,29 +996,23 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # NOTE: libaom (Alliance for Open Media reference AV1 encoder) is
 # intentionally NOT built or enabled.
 #
-# The fork's `ffmpeg-patches/0001-codec-qpfile-unified.patch`
+# The shared fix series patch `0043-libavcodec-unified-qpfile-across-libx264-libsvtav1-l.patch`
 # adds a `qpfile_aom_apply_roi` helper to `libavcodec/libaomenc.c`
 # that references `aom_roi_map_t` fields (`enabled`, `skip`,
-# `ref_frame`, `delta_qp_enabled`) that DO NOT EXIST in any released
-# libaom version including v3.11.0 (verified 2026-05-18 against
-# upstream `aom/aomcx.h:1609` — the public struct only has
-# `roi_map`, `rows`, `cols`, `delta_q`, `delta_lf`,
-# `static_threshold`). The patch was likely written against a
-# libaom development branch whose ROI API never shipped. Enabling
-# `--enable-libaom` therefore hard-errors at FFmpeg compile time
-# regardless of the libaom version installed.
+# `ref_frame`, `delta_qp_enabled`). These fields require libaom >= 3.13.0
+# (first release with those fields; v3.12.1 and older lack them).
+# The dev container base (Ubuntu 26.04) ships 3.13.1 (has the fields);
+# libaom remains omitted until a separate build change adds `libaom-dev`
+# and `--enable-libaom` and a patch-stack build proves it.
+# The node builder base (Debian 13) ships 3.12.1 (lacks the fields);
+# enabling there needs libaom >= 3.13.0.
 #
 # Disposition: SVT-AV1 (built above) is the production AV1 lane
 # anyway (Intel / Netflix maintain it as the fast software encoder);
 # libaom-av1 is the slow reference rarely used in production
 # pipelines. Dropping it from the in-image FFmpeg costs `libaom-av1`
 # in the compare-sweep matrix but keeps the fork's patch stack
-# rebase-stable. Re-enabling libaom requires first fixing
-# `ffmpeg-patches/0001-codec-qpfile-unified.patch` to either
-# (a) target a libaom version that actually ships the assumed ROI
-# fields, or (b) make the ROI bridge libaom-version-gated (mirror
-# the SVT-AV1 `>= 1.6.0` log-and-continue pattern already in the
-# patch). Tracked as a follow-up; out of ADR-0541's scope.
+# rebase-stable.
 
 # ---- SVT-AV1 (Scalable Video Tech for AV1) source build ---------------------
 # Built from upstream because Ubuntu's `libsvtav1-dev` package omits
@@ -1139,12 +1142,13 @@ RUN git config user.email "vmaf-dev-mcp@localhost" && git config user.name "vmaf
 #   Software AV1:
 #     --enable-libsvtav1   SVT-AV1 (Intel/Netflix, the production
 #                          software AV1 encoder).
-#     `--enable-libaom` is intentionally NOT passed — the fork's
-#     ffmpeg-patches/0007 carries a libaom-ROI helper that references
-#     `aom_roi_map_t` fields not present in any released libaom (the
-#     patch was written against an unreleased dev branch). Enabling
-#     libaom hard-errors at compile time. See the comment block on
-#     the libaom skip above for the follow-up plan.
+#     `--enable-libaom` is intentionally NOT passed — shared fix series
+#     patch 0043 needs libaom >= 3.13.0 for its ROI fields (v3.12.1 and older
+#     lack them). The dev container base ships 3.13.1 (has the fields), but
+#     libaom is omitted until a separate build change adds libaom-dev and
+#     `--enable-libaom` and a patch-stack build proves it. The node builder base
+#     (Debian 13) ships 3.12.1 (lacks the fields). SVT-AV1 covers the AV1
+#     production lane. See the comment block on the libaom skip above.
 #
 #   Software VVC (H.266):
 #     --enable-libvvenc    Fraunhofer reference VVC encoder

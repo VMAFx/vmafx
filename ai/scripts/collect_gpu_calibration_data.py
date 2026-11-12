@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 import tempfile
 from collections.abc import Iterable, Sequence
@@ -41,12 +40,27 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-if str(REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from aiutils.run_manifest import write_run_manifest  # noqa: E402
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    CommandTimedOut,
+    executable_argument,
+)
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    run as run_command,
+)
+
+# Bound = 10x the slowest measured run, rounded up: CPU ciede on a 1080p
+# 300-frame pair took 168.31 s. The GPU legs are not measured.
+VMAF_TIMEOUT_S = 1800
 
 # Reuse the parity gate's authoritative feature ↔ metric-name table and
 # backend ↔ extractor-suffix table. Importing from a sibling top-level
@@ -181,8 +195,19 @@ def build_command(
 
 def run_one(cmd: list[str]) -> tuple[int, str]:
     """Run one ``vmaf`` invocation. Returns ``(returncode, stderr_or_stdout)``."""
-
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    vmaf_bin = executable_argument(cmd[0], Path.cwd())
+    argv = [vmaf_bin, *cmd[1:]]
+    try:
+        proc = run_command(
+            argv,
+            allowed_executables=(vmaf_bin,),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=VMAF_TIMEOUT_S,
+        )
+    except CommandTimedOut:
+        return 124, f"vmaf timed out after {VMAF_TIMEOUT_S}s (VMAF_TIMEOUT_S)"
     if proc.returncode != 0:
         return proc.returncode, (proc.stderr or proc.stdout)
     return 0, ""
@@ -344,8 +369,7 @@ def write_parquet(rows: Iterable[Row], path: Path) -> int:
         import pandas as pd
     except ImportError as exc:
         raise ParquetSupportError(
-            f"pandas required for parquet output ({exc}); "
-            "install via `pip install pandas pyarrow`"
+            f"pandas required for parquet output ({exc}); install via `pip install pandas pyarrow`"
         ) from exc
 
     df = pd.DataFrame(

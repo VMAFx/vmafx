@@ -808,6 +808,22 @@ repos:
         files: '^(scripts/ci/(check-workflow-size\.py|tests/test_check_workflow_size\.py)|\.pre-commit-config\.yaml)$'
         pass_filenames: false
 
+      - id: readme-badge-design
+        name: Every README image keeps the one badge design (ADR-3519)
+        entry: python3 -B scripts/ci/readme_badges.py check-readme --readme README.md
+        language: system
+        files: '^(README\.md|scripts/ci/readme_badges\.py)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: test-readme-badges
+        name: README badge renderer and design check keep positive, negative and boundary cases (ADR-3519)
+        entry: bash -c 'python3 -B scripts/ci/tests/test_readme_badges.py && python3 -B scripts/ci/tests/test_ci_tier.py'
+        language: system
+        files: '^(README\.md|scripts/ci/(readme_badges|ci_tier|tests/test_readme_badges|tests/test_ci_tier)\.py|tools/badges/.*|\.github/workflows/.*\.yml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: check-hosted-runner-labels
         name: Workflow jobs name an explicit hosted Ubuntu image, an older one only with a dated fallback
         entry: python3 scripts/ci/check_hosted_runner_labels.py
@@ -834,6 +850,15 @@ repos:
         entry: python3 scripts/ci/tests/test_pr_workflow_budget.py
         language: system
         files: '^(\.github/workflows/|scripts/ci/(pr_workflow_budget\.py|tests/test_pr_workflow_budget\.py)|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+
+      - id: test-fetch-connect-retry
+        name: HTTP fetches retry connection and host errors
+        entry: python3 -B scripts/ci/tests/test_fetch_connect_retry.py
+        language: system
+        files: '\.(sh|bash|ksh|zsh|fish|ps1|cmd|bat)$|(^|/)([^/]*\.)?(Dockerfile|Containerfile)(\.[^/]+)?$|^\.github/workflows/[^/]+\.ya?ml$|^scripts/ci/tests/test_fetch_connect_retry\.py$|^\.pre-commit-config\.yaml$'
+        # Shebangs can also identify shell scripts with arbitrary filenames.
+        always_run: true
         pass_filenames: false
 
       - id: check-api-doc-coverage
@@ -1030,6 +1055,18 @@ repos:
         # paths would only narrow the scan and hide dead twins.
         pass_filenames: false
 
+      # Defence: every push runs tests that name changed paths.
+      # First run builds the suite venv; ai needs about 6 GB.
+      - id: affected-tests
+        name: tests naming changed files
+        entry: python3 scripts/ci/run_affected_suites.py --focused --merge-base origin/master
+        language: system
+        always_run: true
+        pass_filenames: false
+        require_serial: true
+        verbose: true
+        stages: [pre-push]
+
       - id: mypy-local
         name: mypy (ai/ + scripts/, fork-added Python)
         entry: python3 scripts/git-hooks/pre-push-mypy.py
@@ -1117,7 +1154,7 @@ repos:
         name: Test and scan failures remain observable in CI
         entry: python3 -B scripts/ci/test_fail_closed_ci.py
         language: system
-        files: '^(scripts/ci/test_fail_closed_ci\.py|python/tox\.ini|\.github/workflows/(lint-and-format|nightly|required-aggregator|rule-enforcement|sanitizers|security-scans|tests-and-quality-gates)\.yml|\.pre-commit-config\.yaml)$'
+        files: '^(scripts/ci/test_fail_closed_ci\.py|python/tox\.ini|.*\.(yml|yaml|sh|bash)|(.*/)?(Dockerfile|Containerfile)[^/]*)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
@@ -1311,7 +1348,7 @@ repos:
         entry: bash -c 'bash ffmpeg-patches/test/check-sycl-feature-routing.sh && python -m pytest -p no:cacheprovider -q scripts/test/test_zerocopy_e2e_compare.py'
         language: python
         additional_dependencies: [pytest==9.2.0]
-        files: '^(ffmpeg-patches/(0004-[^/]*\.patch|src/vf_vmafx\.c|test/check-sycl-feature-routing\.sh)|scripts/test/(zerocopy[-_]e2e[^/]*|test_zerocopy_e2e_compare\.py)|scripts/ci/cross_backend_parity_gate\.py|Makefile$|\.github/workflows/ffmpeg-patch-stack\.yml$|\.pre-commit-config\.yaml$)'
+        files: '^(ffmpeg-patches/(0003-[^/]*\.patch|src/vf_vmafx\.c|test/check-sycl-feature-routing\.sh)|scripts/test/(zerocopy[-_]e2e[^/]*|test_zerocopy_e2e_compare\.py)|scripts/ci/cross_backend_parity_gate\.py|Makefile$|\.github/workflows/ffmpeg-patch-stack\.yml$|\.pre-commit-config\.yaml$)'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
@@ -1364,6 +1401,24 @@ repos:
         entry: bash scripts/ci/tests/test-pr-body-input-selection.sh
         language: system
         files: '^(scripts/ci/(?:deliverables-check|validate-pr-body|pr-body-input|ffmpeg-patches-surface-check|state-md-touch-check)\.sh|scripts/ci/tests/test-pr-body-input-selection\.sh|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: ffmpeg-patches-surface-docs
+        name: Documentation names retired FFmpeg filters only in the migration guide
+        # The CI job ffmpeg-patches-surface-check (rule-enforcement.yml)
+        # runs this script on every pull request, but no local hook ran it,
+        # so a docs note naming a retired filter outside "Migrating from the
+        # libvmaf filters" first failed in CI (pull request 3359).
+        # --surface-only runs the tree checks alone. The pull request gate
+        # needs a PR body for its opt-out line and a merge base to diff
+        # from, which a local commit does not have, so it stays in CI.
+        # `files` names every path the tree checks read;
+        # scripts/ci/tests/test_ffmpeg_patches_surface_check.py pins it to
+        # the script's build-config list.
+        entry: bash scripts/ci/ffmpeg-patches-surface-check.sh --surface-only
+        language: system
+        files: '^(docs/.*\.md|README\.md|ffmpeg-patches/.*|Containerfile\.vmafx|Dockerfile|Dockerfile\.ffmpeg|dev/Containerfile|docker/Dockerfile\.node|scripts/test/sycl-dev-container\.sh|\.github/workflows/ffmpeg-patch-stack\.yml|scripts/ci/tidy-integrations-build\.sh|scripts/ci/ffmpeg-patches-surface-check\.sh)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

@@ -191,13 +191,14 @@ static VmafFeatureDictionary *model_opts(void)
 }
 
 #define MODEL_SUFFIX "_csf_2_dlmw_0.7_egl_1_min_0.5_nw_0.02"
+#define WITH_MODEL_SUFFIX(name) name MODEL_SUFFIX
 /* The first two keys are the AIM pass's (ADR-1362): the default model reads
  * adm3, so the SYCL twin answers it under the CPU twin's key. */
 static const char *const MODEL_KEYS[] = {
-    "integer_adm3" MODEL_SUFFIX,       "integer_aim" MODEL_SUFFIX,
-    "integer_adm2" MODEL_SUFFIX,       "integer_adm_scale0" MODEL_SUFFIX,
-    "integer_adm_scale1" MODEL_SUFFIX, "integer_adm_scale2" MODEL_SUFFIX,
-    "integer_adm_scale3" MODEL_SUFFIX,
+    WITH_MODEL_SUFFIX("integer_adm3"),       WITH_MODEL_SUFFIX("integer_aim"),
+    WITH_MODEL_SUFFIX("integer_adm2"),       WITH_MODEL_SUFFIX("integer_adm_scale0"),
+    WITH_MODEL_SUFFIX("integer_adm_scale1"), WITH_MODEL_SUFFIX("integer_adm_scale2"),
+    WITH_MODEL_SUFFIX("integer_adm_scale3"),
 };
 #define NUM_MODEL_KEYS (sizeof(MODEL_KEYS) / sizeof(MODEL_KEYS[0]))
 
