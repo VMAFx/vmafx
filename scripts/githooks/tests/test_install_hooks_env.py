@@ -64,6 +64,7 @@ def framework_block(stage: str) -> str:
 
 class InstallHooksEnvTests(unittest.TestCase):
     def setUp(self) -> None:
+        """Prepare an isolated test environment with clean Git config and a probe hook fixture."""
         missing = [tool for tool in TOOLS if shutil.which(tool) is None]
         if missing:
             self.skipTest(f"needs {', '.join(missing)} on PATH; the contract is not exercised")
@@ -73,8 +74,9 @@ class InstallHooksEnvTests(unittest.TestCase):
         self.env = {
             key: value
             for key, value in os.environ.items()
-            if not key.startswith(("GIT_", "PRE_COMMIT_")) and key != "SKIP"
+            if not key.startswith(("GIT_", "PRE_COMMIT_"))
         }
+        self.env.pop("SKIP", None)
         self.env.update(
             GIT_CONFIG_NOSYSTEM="1",
             GIT_CONFIG_GLOBAL=os.devnull,

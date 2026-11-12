@@ -61,8 +61,19 @@ ENGINE_FIXTURE_FILES = (".config/lefthook/engine.sh", ".github/workflows/standar
 
 
 class TrainContract(unittest.TestCase):
+    def isolate_git_config(self) -> None:
+        base = guard.environment
+        isolated = patch.object(
+            guard,
+            "environment",
+            side_effect=lambda: dict(base(), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1"),
+        )
+        isolated.start()
+        self.addCleanup(isolated.stop)
+
     def setUp(self) -> None:
         """Build temporary Git repo with base/topic commits and initial state directory files."""
+        self.isolate_git_config()
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.directory = Path(temporary.name)
