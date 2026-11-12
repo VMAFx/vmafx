@@ -1,13 +1,21 @@
 # -*- coding: utf-8 -*-
+# Copyright 2026 luoye-cpu
+# SPDX-License-Identifier: EUPL-1.2
 """Apply the Arm B edit to test_cuda_oom_pictures_released.c (probe-removed arm).
 
 Local experiment edit, not committed. Run AFTER the Arm A campaign finishes.
-Reversible with: git -C /c/PLAN/VMAF/worktrees/_oom-master checkout -- core/test/test_cuda_oom_pictures_released.c
+The target source path is a required argument and must point at
+core/test/test_cuda_oom_pictures_released.c inside the build worktree.
+Reversible with:
+    git -C <build-worktree> checkout -- core/test/test_cuda_oom_pictures_released.c
 """
+
+import argparse
 import io
+import os
 import sys
 
-PATH = r"C:\PLAN\VMAF\worktrees\_oom-master\core\test\test_cuda_oom_pictures_released.c"
+EXPECTED_SUFFIX = os.path.join("core", "test", "test_cuda_oom_pictures_released.c")
 
 OLD = """    hog_release(state, hog);
     const int probe_back = probe_alloc(state, PROBE_BYTES);
@@ -32,14 +40,31 @@ NEW = """    hog_release(state, hog);
     return NULL;"""
 
 
-def main() -> int:
-    with io.open(PATH, "r", encoding="utf-8", newline="") as f:
+def parse_args(argv=None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Apply the arm B probe-removed edit to the CUDA OOM test source."
+    )
+    parser.add_argument(
+        "source",
+        help="path to core/test/test_cuda_oom_pictures_released.c " "in the build worktree",
+    )
+    args = parser.parse_args(argv)
+    source = os.path.abspath(args.source)
+    if not source.endswith(EXPECTED_SUFFIX):
+        parser.error("source must point at %s, got %s" % (EXPECTED_SUFFIX, args.source))
+    args.source = source
+    return args
+
+
+def main(argv=None) -> int:
+    args = parse_args(argv)
+    with io.open(args.source, "r", encoding="utf-8", newline="") as f:
         text = f.read()
     if OLD not in text:
         print("PATTERN-NOT-FOUND (already applied or upstream changed)")
         return 1
     text = text.replace(OLD, NEW, 1)
-    with io.open(PATH, "w", encoding="utf-8", newline="") as f:
+    with io.open(args.source, "w", encoding="utf-8", newline="") as f:
         f.write(text)
     print("ARM-B-EDIT-APPLIED")
     return 0

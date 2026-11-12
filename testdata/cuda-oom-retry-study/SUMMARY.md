@@ -33,19 +33,34 @@ timeline.log with nvidia-smi brackets, armD/sampler.log 5 s cadence).
   window flip.
 - **D**: 4060 6/6 probe OK at the 1 s checkpoint, retry rc 0; 5080 6/6 refused at
   every checkpoint (1/5/15/45/105 s), retry rc -12.
-- **armD/sampler.log** (5 s): during 5080 slow-window waits, used ~15.8 GiB /
-  free ~150 MiB stays flat -> the driver holds the freed hog until process exit.
-  Fresh processes re-take the same 30.8 GiB hog immediately (every run, all arms).
+- **armD/sampler.log** (5 s), device-wide observation only: during 5080
+  slow-window waits, used ~15.8 GiB / free ~150 MiB stays flat, and fresh
+  processes re-take the same 30.8 GiB hog immediately (every run, all arms).
+  The sampler does not attribute memory to the hog, and the 2 MiB probe cannot
+  time the hog itself (`hog_release` discards the cuMemFree results), so these
+  data alone do not establish what holds the memory; the retention mechanism
+  stays a hypothesis (see Conclusion).
 
 ## Conclusion
 
-Windows slow window = the driver holds the released hog's memory for the
-lifetime of the freeing process (>= 105 s observed, returned at exit); fast
-window = instant return. The in-process one-shot probe is not a perturbation
-source; a bounded wait + skip-with-reason is the only design that maps to the
-observed behavior. Hog sizes 30.8/22.9 GiB (WDDM oversubscription) vs 710 MiB
-on the maintainer's Linux 4090.
+Observed: a slow window, where the freed hog's memory is not back within the
+105 s the arm D ladder waits (the as-landed assertion fails 24/24), and a fast
+window, where it is back at once. Hypothesis, not established by the sampler
+or the 2 MiB probe: the driver holds the released hog's memory for the
+lifetime of the freeing process (>= 105 s observed, returned at exit). The
+probe A/B found no systematic perturbation in this sample — a finding, not a
+rule-out: the 5080 as-landed runs stop before the retry, so those pairs do
+not compare retry outcomes with and without the probe, and the 4060 results
+include one as-landed refusal. A bounded wait + skip-with-reason is the
+design that maps to the observed behavior. Hog sizes 30.8/22.9 GiB (WDDM
+oversubscription) vs 710 MiB on the maintainer's Linux 4090.
 
-Arm edits used (local-only, reverted after): armB/C/D variants of
-`check_oom_and_memory_return()` in core/test/test_cuda_oom_pictures_released.c;
-binaries saved as build/test/{aslanded,noprobe}.exe.
+Arm edits: all three variants of `check_oom_and_memory_return()` in
+core/test/test_cuda_oom_pictures_released.c are kept beside the scripts
+instead of being reverted after the campaign. Arm B ships as `armB_edit.py`
+(target path as an argument); arms C and D ship as `armC_edit.patch` and
+`armD_edit.patch`, generated against the as-landed source at the build base
+(master `b38635f63`). To rerun an arm: apply the edit to the build worktree,
+rebuild, run the matching `run_arm*.sh <build-worktree> <results-root>`, then
+revert the source. Arms A and B can also run the saved binaries
+build/test/{aslanded,noprobe}.exe without a rebuild.
