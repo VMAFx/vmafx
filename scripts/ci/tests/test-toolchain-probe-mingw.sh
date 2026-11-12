@@ -26,6 +26,12 @@
 #     must pass. The old printf|grep -q form died of SIGPIPE (pipeline
 #     status 141) on an early match and misreported the imports as "none";
 #     the here-string read does not.
+#   - Pin (PR #3317 review): a stub driver printing the localized
+#     "Thread-Modell:" line unless LC_ALL=C is set — the probe's LC_ALL=C
+#     read still finds the model. And the Arch mingw-w64-gcc 16.2.0 layout
+#     (-print-file-name echoes the bare name, the runtime DLLs sit next to
+#     the driver-side ld that -print-prog-name=ld names) — the
+#     mingw_resolve_runtime fallback resolves both DLLs.
 
 set -euo pipefail
 
@@ -204,6 +210,103 @@ EOF
   chmod +x "${dir}/bin/x86_64-w64-mingw32-objdump"
 }
 
+# expect_cmd <name> <command...>: asserts the command exits 0. Precondition
+# pin, like expect_large_stub above: proves the planted stub really carries
+# the shape the case pins, independent of the probe run.
+expect_cmd() {
+  local name="$1"
+  shift
+  if "$@" >/dev/null 2>&1; then
+    echo "PASS: ${name}"
+    pass_count=$((pass_count + 1))
+  else
+    echo "FAIL: ${name} (command failed: $*)"
+    fail_count=$((fail_count + 1))
+  fi
+}
+
+# write_stub_gcc_localized <dir>
+# Plants the stub cross driver that prints the localized "Thread-Modell:"
+# line unless LC_ALL=C is set — the de_DE.UTF-8 shape the PR #3317 review
+# measured on the real host — pinning the LC_ALL=C prefix of the probe's
+# driver -v read.
+write_stub_gcc_localized() {
+  local dir="$1"
+  cat >"${dir}/bin/x86_64-w64-mingw32-gcc" <<EOF
+#!/bin/sh
+# Stub cross driver planted by test-toolchain-probe-mingw.sh (case 14): the
+# localized thread-model line unless LC_ALL=C is set (PR #3317 review).
+STUB_STAGE="${dir}"
+case "\$1" in
+  --version)
+    echo "x86_64-w64-mingw32-gcc (GCC) 13.2.0 (stub)"
+    ;;
+  -dumpversion)
+    echo "13.2.0"
+    ;;
+  -v)
+    if [ "\${LC_ALL-}" = C ]; then
+      printf 'Using built-in specs.\nTarget: x86_64-w64-mingw32\nThread model: posix\ngcc version 13.2.0 (GCC)\n'
+    else
+      printf 'Using built-in specs.\nTarget: x86_64-w64-mingw32\nThread-Modell: posix\ngcc version 13.2.0 (GCC)\n'
+    fi
+    ;;
+  -print-file-name=*)
+    echo "\${STUB_STAGE}/runtime/\${1#-print-file-name=}"
+    ;;
+  *)
+    echo "stub gcc: unsupported argument: \$1" >&2
+    exit 1
+    ;;
+esac
+EOF
+  chmod +x "${dir}/bin/x86_64-w64-mingw32-gcc"
+}
+
+# write_stub_gcc_arch_layout <dir>
+# Plants the stub cross driver of the Arch mingw-w64-gcc 16.2.0 layout:
+# -print-file-name echoes the bare name (the runtime DLLs live in the target
+# bin directory, outside the driver's library search dirs) and
+# -print-prog-name=ld names the driver-side ld whose directory holds both
+# DLLs — pinning the mingw_resolve_runtime -print-prog-name=ld fallback
+# (PR #3317 review).
+write_stub_gcc_arch_layout() {
+  local dir="$1"
+  mkdir -p "${dir}/target-bin"
+  for f in libstdc++-6.dll libgcc_s_seh-1.dll; do
+    printf 'planted payload, not a PE: the stub objdump owns the import table\n' >"${dir}/target-bin/${f}"
+  done
+  cat >"${dir}/bin/x86_64-w64-mingw32-gcc" <<EOF
+#!/bin/sh
+# Stub cross driver planted by test-toolchain-probe-mingw.sh (case 15): the
+# Arch mingw-w64-gcc 16.2.0 layout, runtime DLLs next to the driver-side ld
+# (PR #3317 review).
+STUB_STAGE="${dir}"
+case "\$1" in
+  --version)
+    echo "x86_64-w64-mingw32-gcc (GCC) 16.2.0 (stub)"
+    ;;
+  -dumpversion)
+    echo "16.2.0"
+    ;;
+  -v)
+    printf 'Using built-in specs.\nTarget: x86_64-w64-mingw32\nThread model: posix\ngcc version 16.2.0 (GCC)\n'
+    ;;
+  -print-file-name=*)
+    echo "\${1#-print-file-name=}"
+    ;;
+  -print-prog-name=ld)
+    echo "\${STUB_STAGE}/target-bin/ld"
+    ;;
+  *)
+    echo "stub gcc: unsupported argument: \$1" >&2
+    exit 1
+    ;;
+esac
+EOF
+  chmod +x "${dir}/bin/x86_64-w64-mingw32-gcc"
+}
+
 build_mingw_stub() {
   local dir="$1" model="$2" dumpversion="$3" winpthread="$4" resolve="$5"
   local large="${6:-none}"
@@ -326,6 +429,31 @@ run_probe "${work}/case13"
 expect_rc "large late: posix driver + posix runtime -> exit 0" 0
 expect_grep "case13 pairing asserted over a multi-MB table" "pairing ok thread-model posix"
 expect_no_grep "case13 no refusal lines" "pairing-mismatch"
+
+# ---------- Case 14: Pin — localized driver output unless LC_ALL=C (PR #3317 review) ----------
+build_mingw_stub "${work}/case14" posix 13.2.0 yes yes
+write_stub_gcc_localized "${work}/case14"
+expect_cmd "case14 stub prints the localized line unless LC_ALL=C" \
+  sh -c "LC_ALL=de_DE.UTF-8 '${work}/case14/bin/x86_64-w64-mingw32-gcc' -v | grep -q 'Thread-Modell'"
+run_probe "${work}/case14"
+expect_rc "pin: localized driver output still matches under LC_ALL=C -> exit 0" 0
+expect_grep "case14 block shows the thread model" "thread-model posix"
+expect_grep "case14 pairing asserted" "pairing ok thread-model posix"
+expect_no_grep "case14 no unknown-model refusal" "pairing-unverified"
+
+# ---------- Case 15: Pin — Arch mingw-w64-gcc 16.2.0 runtime layout (PR #3317 review) ----------
+build_mingw_stub "${work}/case15" posix 16.2.0 yes no
+write_stub_gcc_arch_layout "${work}/case15"
+expect_cmd "case15 stub answers -print-prog-name=ld inside the stub tree" \
+  sh -c "test \"\$('${work}/case15/bin/x86_64-w64-mingw32-gcc' -print-prog-name=ld)\" = '${work}/case15/target-bin/ld'"
+expect_cmd "case15 stub plants the runtime DLLs next to ld" \
+  test -f "${work}/case15/target-bin/libstdc++-6.dll"
+run_probe "${work}/case15"
+expect_rc "pin: arch runtime layout resolves via the ld fallback -> exit 0" 0
+expect_grep "case15 block shows the thread model" "thread-model posix"
+expect_grep "case15 resolves libstdc++-6.dll via the ld fallback" "runtime libstdc++-6.dll="
+expect_grep "case15 pairing asserted" "pairing ok thread-model posix"
+expect_no_grep "case15 no unresolved lines" "runtime-unresolved"
 
 echo ""
 echo "test-toolchain-probe-mingw: ${pass_count} passed, ${fail_count} failed"
