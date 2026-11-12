@@ -3,6 +3,7 @@ paths:
   - core/src/feature/feature_collector.cpp
   - core/src/feature/feature_extractor.h
 invariant: Non-finite values follow NaN and infinity cross-backend publication semantics.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Cross-Backend Non-Finite Publication Semantics

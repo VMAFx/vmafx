@@ -4,6 +4,7 @@ paths:
   - core/src/feature/feature_collector.cpp
   - core/src/feature/feature_name.cpp
 invariant: Scope, ground rules, discoverability, option tables, and feature extractor workflows.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Feature Extractors Scope, Ground Rules, and Workflows

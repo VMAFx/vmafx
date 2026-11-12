@@ -7,6 +7,7 @@ paths:
   - core/test/test_integer_adm_quant_step.c
   - core/test/test_integer_adm_quant_step_contract.py
 invariant: dwt_quant_step() exponent = float product of k, temp, temp, as upstream; CPU and SYCL copies change together.
+area: adm
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Integer ADM quantisation step (ADR-1475)

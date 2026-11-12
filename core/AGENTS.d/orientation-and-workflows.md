@@ -3,6 +3,7 @@ paths:
   - core/meson.build
   - core/tools/meson.build
 invariant: Orientation for core C engine workflows, governing ADRs, backend subtree orientation, and build targets.
+area: build-and-toolchains
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Workflows routed here

@@ -3,6 +3,7 @@ paths:
   - core/src/predict.c
   - core/src/interop/pelorus_interop.c
 invariant: Piecewise linear mapping rejects non-finite scores; Pelorus interop validates framing and QP bounds.
+area: models-and-rust
 ---
 <!-- markdownlint-disable MD013 -->
 # Scoring arithmetic and Pelorus interop

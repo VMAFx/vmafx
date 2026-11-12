@@ -163,3 +163,9 @@ make format-check  # dry-run
 ## 10. Interaction style
 
 - Prefer structured UI questions (AskUserQuestion etc.) with 2-4 options, `(Recommended)` marked when obvious; answers and reporting in prose fine.
+
+## 11. Workspace
+
+- Checked-in `.vscode/` tasks + settings = canonical workspace defaults; `clangd` = only C/C++ language server, no second IntelliSense provider; Meson sources in `core/` -> `meson setup <build-dir> core`.
+- Keep every project agent integration available, never on ignore, disabled or unwanted list: Codex, Gemini, Antigravity, opencode, Claude Code, Ollama/local agents, Paperclip, Hindsight, repository MCP servers.
+- Before hand-off: run smallest applicable checked-in task; generated build output never in tracked files.

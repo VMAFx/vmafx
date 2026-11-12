@@ -122,7 +122,7 @@ class RenderTests(Fixture):
         text = agents_index.render(DIRECTORY, self.root)
         self.assertTrue(text.startswith(agents_index.BANNER + "<!-- markdownlint-disable"))
         title = text.index("# `tools/gate/` notes")
-        instruction = text.index("Generated index. Before editing")
+        instruction = text.index("Generated index. Match touched paths")
         rules = text.index("Every script here is called by a workflow.")
         table = text.index("## Topic pages")
         self.assertLess(title, instruction)
@@ -408,6 +408,82 @@ class BudgetTests(Fixture):
         self.assertEqual(self.run_index("--write")[0], 0)
         self.write("beta.md", page(agents_index.MAX_PATHS_PER_PAGE + 1))
         self.assert_invalid("`paths:` needs 1 to 24 entries")
+
+    def test_generated_preamble_fits_within_350_bytes(self) -> None:
+        for areas in (False, True):
+            with self.subTest(areas=areas):
+                preamble = agents_index.BANNER + agents_index._instruction("a/b/c/d", areas)
+                self.assertLessEqual(len(preamble.encode("utf-8")), 350)
+                for line in preamble.splitlines():
+                    self.assertLessEqual(len(line), 80, line)
+
+
+class ChainBudgetTests(Fixture):
+    """Load-path budget tests across rendered and hand-written ``AGENTS.md`` chains."""
+
+    def write_hand(self, relative_dir: str, size: int) -> Path:
+        target = (
+            (self.root / relative_dir / agents_index.INDEX_NAME)
+            if relative_dir
+            else (self.root / agents_index.INDEX_NAME)
+        )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        head = "# Hand notes\n\n"
+        target.write_text(head + "x" * (size - len(head) - 1) + "\n", encoding="utf-8")
+        self.assertEqual(len(target.read_bytes()), size)
+        return target
+
+    def test_load_path_exact_32768_passes_and_32769_fails_naming_every_file(self) -> None:
+        leaf_size = len(agents_index.render(DIRECTORY, self.root).encode("utf-8"))
+        parent_size = 10_000
+        root_exact = agents_index.CHAIN_MAX_BYTES - parent_size - leaf_size
+        self.write_hand("", root_exact)
+        self.write_hand("tools", parent_size)
+        self.assertEqual(self.run_index("--write")[0], 0)
+        self.assertEqual(self.run_index("--check")[0], 0)
+
+        self.write_hand("", root_exact + 1)
+        status, err = self.run_index("--check")
+        self.assertEqual(status, agents_index.EXIT_INVALID, err)
+        self.assertIn("tools/gate/AGENTS.md: load path 32769 bytes, chain budget 32768", err)
+        self.assertIn(f"AGENTS.md {root_exact + 1}", err)
+        self.assertIn(f"tools/AGENTS.md {parent_size}", err)
+        self.assertIn(f"tools/gate/AGENTS.md {leaf_size}", err)
+
+    def test_deep_chain_where_only_one_leaf_crosses_fails_that_leaf_only(self) -> None:
+        leaf_size = len(agents_index.render(DIRECTORY, self.root).encode("utf-8"))
+        self.write_hand("", 12_000)
+        self.write_hand("tools", 12_000)
+        self.assertEqual(self.run_index("--write")[0], 0)
+        self.write_hand("tools/gate/under", agents_index.CHAIN_MAX_BYTES - 24_000 - leaf_size)
+        self.write_hand("tools/gate/over", agents_index.CHAIN_MAX_BYTES - 24_000 - leaf_size + 1)
+        status, _, err = quiet(agents_index.main, ["--check", "--root", str(self.root)])
+        self.assertEqual(status, agents_index.EXIT_INVALID, err)
+        self.assertIn("tools/gate/over/AGENTS.md: load path 32769 bytes", err)
+        self.assertNotIn("tools/gate/under/AGENTS.md: load path", err)
+        self.assertNotIn("\nagents index: tools/gate/AGENTS.md: load path", "\n" + err)
+
+    def test_restricted_run_ignores_unrelated_over_cap_hand_written_path(self) -> None:
+        self.write_hand("", 10_000)
+        self.write_hand("other/deep", 25_000)
+        self.assertEqual(self.run_index("--write")[0], 0)
+        status, err = self.run_index("--check")
+        self.assertEqual(status, 0, err)
+        self.assertEqual(err, "")
+
+        full_status, _, full_err = quiet(agents_index.main, ["--check", "--root", str(self.root)])
+        self.assertEqual(full_status, agents_index.EXIT_INVALID, full_err)
+        self.assertIn("other/deep/AGENTS.md: load path 35000 bytes", full_err)
+
+    def test_parent_argument_checks_descendant_rendered_bytes_before_write(self) -> None:
+        leaf_size = len(agents_index.render(DIRECTORY, self.root).encode("utf-8"))
+        self.assertEqual(self.run_index("--write")[0], 0)
+        self.write_hand("", agents_index.CHAIN_MAX_BYTES - 10_000 - leaf_size - 50)
+        self.write_hand("tools", 10_000)
+        self.write("_index.md", HEAD + "\n" + "y" * 100 + "\n")
+        status, _, err = quiet(agents_index.main, ["--check", "--root", str(self.root), "tools"])
+        self.assertEqual(status, agents_index.EXIT_INVALID, err)
+        self.assertIn("tools/gate/AGENTS.md: load path", err)
 
 
 class DiscoveryTests(Fixture):

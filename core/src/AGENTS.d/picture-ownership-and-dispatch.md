@@ -3,6 +3,7 @@ paths:
   - core/src/libvmaf.c
   - core/src/feature/feature_extractor.cpp
 invariant: PREV_REF counted refs, n-2 kept only for reader; vmaf_read_pictures owns both pictures; advance per frame.
+area: engine
 ---
 <!-- markdownlint-disable MD013 -->
 # Picture ownership, batch dispatch, and SYCL upload synchronization

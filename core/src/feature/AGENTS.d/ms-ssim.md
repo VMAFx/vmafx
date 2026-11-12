@@ -4,6 +4,7 @@ paths:
   - core/src/feature/ms_ssim.h
   - core/src/feature/float_ms_ssim.c
 invariant: MS-SSIM decimate LPF coefficients, mirror bounds, -ENOMEM handling, and SIMD parity.
+area: ssim-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # MS-SSIM Decimate Coefficients, Bounds, and SIMD Parity

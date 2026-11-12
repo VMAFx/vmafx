@@ -6,6 +6,7 @@ paths:
   - core/src/feature/integer_psnr.c
   - core/src/feature/psnr_score.h
 invariant: PSNR bucket lint shape, cross-backend enable_chroma parity, and uncapped options.
+area: vif-motion-psnr
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # PSNR Bucket Lint, Chroma Parity, and Uncapped Options

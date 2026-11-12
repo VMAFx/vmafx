@@ -3,6 +3,7 @@ paths:
   - core/src/feature/feature_extractor.cpp
   - core/src/feature/feature_extractor.h
 invariant: feature_extractor_list[] is exactly-once and all extractors register in feature_extractor.cpp.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Feature Extractor Exactly-Once Registration

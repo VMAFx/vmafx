@@ -3,6 +3,7 @@ paths:
   - core/src/feature/float_vif.c
   - core/src/feature/vif_tools.h
 invariant: float_vif lint decomposition, run-time Gaussian filter construction, and minimum dimension checks.
+area: vif-motion-psnr
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Float VIF Lint Decomposition and Run-Time Gaussians

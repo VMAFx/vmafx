@@ -3,6 +3,7 @@ paths:
   - core/src/feature/common/convolution_internal.h
   - core/src/feature/common/convolution.c
 invariant: Reflect-101 mirror padding loops, short circuits, and border clamping contracts.
+area: simd-and-gpu
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Reflect-101 Mirror Padding and Border Clamping

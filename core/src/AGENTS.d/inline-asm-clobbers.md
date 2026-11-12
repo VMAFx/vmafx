@@ -5,6 +5,7 @@ paths:
   - core/test/test_cpu.c
   - core/test/test_inline_asm_clobber_contract.py
 invariant: Inline asm that clobbers ymmN / zmmN also names xmmN; clang drops wide clobber without target feature.
+area: build-and-platform
 ---
 <!-- markdownlint-disable MD013 -->
 # Inline assembly clobber lists

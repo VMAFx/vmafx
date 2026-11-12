@@ -4,6 +4,7 @@ paths:
   - core/src/feature/transnet_v2_score.h
   - core/test/dnn/test_transnet_v2_run.c
 invariant: TransNet V2 runs upstream predict_frames() windows on 0..255 thumbnails and binds its one output by position.
+area: ssim-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # TransNet V2 100-Frame Window Contract

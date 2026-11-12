@@ -3,6 +3,7 @@ paths:
   - core/src/feature/integer_motion_v2.c
   - core/src/feature/motion_tools.h
 invariant: Motion v2 option-surface parity, five-frame window on prev_prev_ref, and NEON shift semantics.
+area: vif-motion-psnr
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Motion v2 Option Surface and NEON Shift Semantics

@@ -4,6 +4,7 @@ paths:
   - core/src/feature/integer_vif.c
   - core/src/feature/cambi.c
 invariant: CodeQL declaration-hides-variable renames preserve bit-exact behavior across extractors.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # CodeQL Declaration Hides Variable Renames Invariant

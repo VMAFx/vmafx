@@ -3,6 +3,7 @@ paths:
   - core/src/svm.cpp
   - core/src/svm.h
 invariant: Vendored libsvm preserves thread-locale isolation, JSON in-memory parser, malloc checks, and RAII Solver.
+area: models-and-rust
 ---
 <!-- markdownlint-disable MD013 -->
 # Vendored libsvm patches, test files, and memory hardening

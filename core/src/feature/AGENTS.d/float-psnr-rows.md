@@ -2,6 +2,7 @@
 paths:
   - core/src/feature/float_psnr_rows.h
 invariant: float_psnr twins add each row's exact sum into double in CPU's row order.
+area: vif-motion-psnr
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # float_psnr's sum of rows (ADR-1499)

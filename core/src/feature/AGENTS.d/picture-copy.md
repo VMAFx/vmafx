@@ -3,6 +3,7 @@ paths:
   - core/src/feature/picture_copy.cpp
   - core/src/feature/picture_copy.h
 invariant: picture_copy channel selection and high-bit-depth sample normalization contracts.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # picture_copy Channel Parameter and Normalization

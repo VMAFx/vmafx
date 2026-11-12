@@ -2,6 +2,7 @@
 paths:
   - core/src/feature/delta_e_itp.c
 invariant: Delta E ITP PQ-only transfer characteristics and color space invariants.
+area: ssim-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Delta E ITP PQ-Only Transfer Characteristics

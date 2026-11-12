@@ -3,6 +3,7 @@ paths:
   - core/src/feature/iqa/convolve.c
   - core/src/feature/iqa/ssim_tools.c
 invariant: IQA/VIF SIMD helper decomposition and reserved-identifier cleanup invariants.
+area: simd-and-gpu
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # IQA SIMD Helper Decomposition and Renames

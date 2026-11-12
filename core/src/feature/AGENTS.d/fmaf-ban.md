@@ -2,6 +2,7 @@
 paths:
   - core/src/feature/feature_extractor.h
 invariant: Scalar references never call libm fmaf to prevent contraction divergence across hosts.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Scalar Reference libm fmaf Prohibition

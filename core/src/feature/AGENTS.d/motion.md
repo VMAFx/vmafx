@@ -4,6 +4,7 @@ paths:
   - core/src/feature/float_motion.c
   - core/src/feature/integer_motion.c
 invariant: Motion plane structures, upstream options, mirror implementations, and chroma min dims.
+area: vif-motion-psnr
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Motion Plane Layouts, Mirror Bodies, and Min Dims

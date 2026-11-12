@@ -3,6 +3,7 @@ paths:
   - core/src/feature/speed_internal.c
   - core/src/feature/speed_internal.h
 invariant: speed_internal shared helper TU wiring, matrix multiplication dispatch, and CUDA dependencies.
+area: ssim-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # speed_internal Helper TU and Matrix Multiplication

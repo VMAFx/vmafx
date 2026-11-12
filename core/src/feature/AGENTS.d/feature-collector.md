@@ -3,6 +3,7 @@ paths:
   - core/src/feature/feature_collector.cpp
   - core/src/feature/feature_collector.h
 invariant: feature_collector.cpp mount/unmount traversal and single-authority lifecycle contracts.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # feature_collector.cpp Mount Traversal and Authority

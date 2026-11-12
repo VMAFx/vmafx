@@ -2,6 +2,7 @@
 paths:
   - core/src/feature/compat_builtin.h
 invariant: MSVC builtin clz shim must use _BitScanReverse, never __lzcnt.
+area: simd-and-gpu
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # MSVC Builtin Bit Scan Shim Compatibility

@@ -3,6 +3,7 @@ paths:
   - core/src/feature/ciede.c
   - core/src/feature/feature_collector.cpp
 invariant: Error exits use unwind helpers instead of goto labels; cleanup order is invariant.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Error Exits Unwind Helpers and Cleanup Order

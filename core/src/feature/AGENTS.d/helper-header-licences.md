@@ -10,6 +10,7 @@ paths:
   - core/src/feature/sycl/sycl_ssim_terms.h
   - core/src/feature/sycl/sycl_ssimulacra2_math.h
 invariant: Helper header = EUPL-1.2 AND licences of exactly code reproduced, notices added; no reference code = EUPL-1.2.
+area: simd-and-gpu
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Helper Header Licence Invariant
