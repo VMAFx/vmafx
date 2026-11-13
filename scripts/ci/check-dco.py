@@ -40,9 +40,19 @@ Usage::
     python3 scripts/ci/check-dco.py --landed --landing-identity "Name <email>" \\
         --base <sha> --head <sha>
 
+    python3 scripts/ci/check-dco.py --merge-base origin/master [--head <rev>]
+
+``--merge-base REF`` is the pre-push mode, named like the other pre-push hooks'
+option: it checks the commits the push adds on top of ``REF``, those reachable
+from the outgoing commit but not from ``REF``. The outgoing commit is
+``--head``, else the ``PRE_COMMIT_TO_REF`` that pre-commit exports during a
+push, else ``HEAD``. It catches commits that never passed the local commit-msg
+hook, such as a review bot's commit pulled from the pull request branch.
+
 ``BASE_SHA``, ``HEAD_SHA``, ``PR_AUTHOR``, ``PR_AUTHOR_TYPE``,
 ``DCO_RELEASE_PR``, ``PR_CREATED_AT`` and ``LANDING_IDENTITY`` are read when the flags
-are absent. ``--pr-body-from-event`` reads ``GITHUB_EVENT_PATH`` JSON in CI.
+are absent. ``--merge-base`` does not read ``HEAD_SHA``, so an inherited value
+cannot replace the pushed commit. ``--pr-body-from-event`` reads ``GITHUB_EVENT_PATH`` JSON in CI.
 Locally, ``--pr-body-file`` (alias ``--pr-body``) reads a UTF-8 file; otherwise
 ``PR_BODY`` supplies the body. Inputs exceeding named byte/line bounds are refused.
 Exit status: 0 all checks pass, 1 attribution or sign-off fails, 2 usage or git error.
@@ -576,7 +586,27 @@ def check_pr(args: argparse.Namespace) -> int:
     return 0
 
 
+def resolve_push_range(args: argparse.Namespace) -> None:
+    """Point ``--base`` at REF and ``--head`` at the outgoing commit.
+
+    ``REF..head`` is the merge-base range without its criss-cross caveat: it
+    leaves out every commit reachable from REF, including those a branch took
+    in by merging REF.
+    """
+    if args.base:
+        raise UsageError("--merge-base and --base (or BASE_SHA) are mutually exclusive")
+    if args.landed:
+        raise UsageError("--merge-base checks a branch before push; it cannot take --landed")
+    head = args.head or os.environ.get("PRE_COMMIT_TO_REF", "") or "HEAD"
+    args.head = run_git(["rev-parse", "--verify", "--end-of-options", f"{head}^{{commit}}"])
+    args.head = args.head.strip()
+    base = run_git(["rev-parse", "--verify", "--end-of-options", f"{args.merge_base}^{{commit}}"])
+    args.base = base.strip()
+
+
 def check(args: argparse.Namespace) -> int:
+    if args.merge_base:
+        resolve_push_range(args)
     if args.landed:
         return check_landed(args)
     return check_pr(args)
@@ -587,7 +617,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     env = os.environ.get
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--base", default=env("BASE_SHA", ""))
-    parser.add_argument("--head", default=env("HEAD_SHA", ""))
+    parser.add_argument("--head", default=None)
     parser.add_argument("--author", default=env("PR_AUTHOR", ""))
     parser.add_argument("--author-type", default=env("PR_AUTHOR_TYPE", ""))
     parser.add_argument("--created-at", default=env("PR_CREATED_AT", ""))
@@ -600,16 +630,23 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--release-pr", action="store_true", default=env("DCO_RELEASE_PR", "") == "true"
     )
     parser.add_argument("--landed", action="store_true")
+    parser.add_argument("--merge-base", default="", metavar="REF")
     parser.add_argument("--landing-identity", default=env("LANDING_IDENTITY", ""))
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.head is None:
+        # --merge-base names the pushed commit itself; HEAD_SHA must not replace it.
+        args.head = "" if args.merge_base else env("HEAD_SHA", "")
+    return args
 
 
 def main(argv: list[str]) -> int:
     """Validate required inputs and return distinct statuses for policy and usage failures."""
     args = parse_args(argv)
-    if not args.base or not args.head:
+    if not args.merge_base and (not args.base or not args.head):
         print(
-            "check-dco: --base and --head (or BASE_SHA and HEAD_SHA) are required", file=sys.stderr
+            "check-dco: --base and --head (or BASE_SHA and HEAD_SHA), or --merge-base,"
+            " are required",
+            file=sys.stderr,
         )
         return 2
     if args.landed and not args.landing_identity:
