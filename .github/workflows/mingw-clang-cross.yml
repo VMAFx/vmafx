@@ -1,0 +1,148 @@
+# Copyright 2026 luoye-cpu
+# SPDX-License-Identifier: EUPL-1.2
+# Linux -> Windows cross build with clang/lld targeting x86_64-w64-windows-gnu.
+#
+# This lane is deliberately separate from the Windows UCRT64 job: that job runs
+# natively on Windows with GCC, while this job proves the cross toolchain on a
+# Linux runner. It builds a shared DLL pair, checks ADR-3397's import-library
+# thunks, and runs the resulting vmafx.exe on a Windows runner.
+#
+# The first revision uses llvm-mingw (clang + lld + libc++). A distro
+# clang + mingw-w64 libstdc++ lane is the follow-up; ADR-3397's LTO workaround
+# is currently gated on cc.get_id() == 'gcc', so every clang/lld DLL build here
+# passes -Db_lto=false explicitly.
+name: MinGW clang cross
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'core/**'
+      - 'build-aux/**'
+      - 'scripts/ci/build-mingw-clang-cross.sh'
+      - 'scripts/ci/check_mingw_import_thunks.py'
+      - '.github/workflows/mingw-clang-cross.yml'
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mingw-clang-cross-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+  LLVM_MINGW_VERSION: 20261104
+
+jobs:
+  tier:
+    name: CI tier (MinGW clang cross)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci-tier.yml
+
+  cross:
+    name: Linux clang -> MinGW cross
+    needs: tier
+    if: needs.tier.outputs.full == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xz-utils meson ninja-build xxd
+
+      - name: Install llvm-mingw
+        run: |
+          root="$RUNNER_TEMP/llvm-mingw"
+          mkdir -p "$root"
+          curl -fsSL \
+            "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-22.04-x86_64.tar.xz" \
+            -o "$RUNNER_TEMP/llvm-mingw.tar.xz"
+          tar -xJf "$RUNNER_TEMP/llvm-mingw.tar.xz" -C "$root" --strip-components=1
+          echo "LLVM_MINGW_ROOT=$root" >> "$GITHUB_ENV"
+          echo "$root/bin" >> "$GITHUB_PATH"
+          "$root/bin/x86_64-w64-mingw32-clang" --version
+
+      - name: Build VMAFx (shared, CPU-only)
+        run: |
+          bash scripts/ci/build-mingw-clang-cross.sh \
+            build-mingw-clang "$PWD/install-mingw-clang"
+
+      - name: Check the DLL import surface
+        run: |
+          for dll in artifact-mingw-clang/libvmafx-1.dll artifact-mingw-clang/libvmaf-3.dll; do
+            test -f "$dll"
+            x86_64-w64-mingw32-objdump -p "$dll" | grep -q 'DLL Name: libc++.dll'
+            x86_64-w64-mingw32-objdump -p "$dll" | grep -q 'DLL Name: libunwind.dll'
+            x86_64-w64-mingw32-objdump -p "$dll" | grep -q 'DLL Name: libwinpthread-1.dll'
+          done
+          x86_64-w64-mingw32-objdump -p artifact-mingw-clang/libvmafx-1.dll \
+            | grep 'DLL Name' | sort -u
+          find artifact-mingw-clang -maxdepth 1 -type f -printf '%f %s\n' | sort
+
+      - name: Upload the Windows artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: mingw-clang-cross
+          path: artifact-mingw-clang
+          if-no-files-found: error
+
+  smoke:
+    name: Windows smoke (clang cross artifact)
+    needs: [tier, cross]
+    if: needs.tier.outputs.full == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: mingw-clang-cross
+          path: artifact-mingw-clang
+
+      - name: Run the clang-built vmafx.exe
+        shell: pwsh
+        run: |
+          $artifact = Join-Path $PWD 'artifact-mingw-clang'
+          $env:PATH = "$artifact;$env:PATH"
+
+          & (Join-Path $artifact 'vmafx.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw "vmafx.exe --version failed: $LASTEXITCODE" }
+
+          $backends = & (Join-Path $artifact 'vmafx.exe') --list-backends | ConvertFrom-Json
+          $cpu = $backends.backends | Where-Object { $_.name -eq 'cpu' }
+          if (-not $cpu.compiled -or -not $cpu.usable) {
+            throw 'CPU backend is not compiled and usable in the clang-built binary'
+          }
+
+          $report = Join-Path $artifact 'clang-cpu.json'
+          & (Join-Path $artifact 'vmafx.exe') `
+            -r testdata/ref_576x324_48f.yuv `
+            -d testdata/dis_576x324_48f.yuv `
+            -w 576 -h 324 -p 420 -b 8 `
+            --precision max --json -o $report -q
+          if ($LASTEXITCODE -ne 0) { throw "vmafx.exe score failed: $LASTEXITCODE" }
+
+          $data = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+          $mean = [double]$data.pooled_metrics.vmaf.mean
+          $expected = [double]95.93823067720962
+          if ([math]::Abs($mean - $expected) -gt 0.000001) {
+            throw "VMAF mean $mean is outside the expected $expected +/- 0.000001"
+          }
+          Write-Output "VMAF mean: $mean"

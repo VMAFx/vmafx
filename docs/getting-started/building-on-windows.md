@@ -9,6 +9,7 @@ setup script for MSVC.
 | [MSYS2 / MinGW-w64](#msys2-and-mingw-w64) | GCC (UCRT64) | none | `Windows UCRT64`: builds and runs the tests |
 | [Native MSVC, x64](#native-msvc-and-cuda) | `cl.exe` | CUDA; SYCL with `icx-cl` | `Windows MSVC+CUDA`, `Windows MSVC+SYCL`: build and install, no GPU tests |
 | [Native MSVC, ARM64](#native-msvc-on-windows-arm64) | `cl.exe` for ARM64 | none | `Windows ARM64 MSVC`: builds and runs the fast tests |
+| [Linux → Windows cross with clang](#linux-to-windows-cross-with-clang) | clang + lld (llvm-mingw) | none | `MinGW clang cross`: builds, checks thunks, runs `vmafx.exe` on Windows |
 
 The Python harness is the same on every platform: create a virtual environment
 and run `pip install python/` from the repository root.
@@ -75,6 +76,49 @@ would fail with `multiple definition of '_Unwind_Resume'`. Shared and `both`
 builds linked with GNU `ld` therefore pass `-Wl,--exclude-libs,libgcc_eh.a`.
 In CI, `check_mingw_import_thunks.py --runtime-archive` fails when a DLL
 exports any symbol that `libgcc_eh.a`, `libgcc.a` or `libwinpthread.a` defines.
+
+## Linux to Windows cross with clang
+
+Linux can produce a Windows DLL and `.exe` with clang, but this route is
+**experimental and CPU-only** in the current tree. It uses
+[llvm-mingw](https://github.com/mstorsjo/llvm-mingw) (clang + lld + libc++) and
+targets `x86_64-w64-windows-gnu`. It is separate from the MSYS2 route above,
+which builds natively on Windows with GCC.
+
+Download an llvm-mingw release and put its wrappers on `PATH`:
+
+```bash
+curl -LO https://github.com/mstorsjo/llvm-mingw/releases/download/20261104/llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64.tar.xz
+tar -xJf llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64.tar.xz
+export PATH="$PWD/llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64/bin:$PATH"
+```
+
+Build a shared, CPU-only DLL pair with the in-tree cross file:
+
+```bash
+bash scripts/ci/build-mingw-clang-cross.sh \
+  build-mingw-clang "$PWD/install-mingw-clang"
+```
+
+The script passes `-Db_lto=false` explicitly. ADR-3397 turns LTO off
+automatically only when `cc.get_id()` or `cxx.get_id()` is `gcc`; a clang/lld
+shared DLL with LTO can still emit an import library without `T <fn>` thunks.
+It then runs `scripts/ci/check_mingw_import_thunks.py` and stages
+`libc++.dll`, `libunwind.dll` and `libwinpthread-1.dll` beside the executables.
+
+The build is intentionally limited to the CPU backend, no zimg, no tests and
+no CUDA/SYCL. The resulting `vmafx.exe` runs on Windows; the 48-frame
+`testdata/ref_576x324_48f.yuv` score is `95.938231` at six decimals. The
+clang/libc++ stack is not bit-identical to the GCC/libstdc++ stack: three of
+the 48 per-frame model outputs differ in the last ~1e-12, while the pooled
+`min`, `max` and `mean` are equal. CI therefore compares with `1e-6`, not with
+a hash. The `MinGW clang cross` workflow builds the artifact on Linux and runs
+this score on a Windows runner.
+
+A distro clang + mingw-w64 **libstdc++** route is the intended follow-up: it
+keeps the GCC runtime pairing already measured for the GCC cross build, and
+avoids the libc++ runtime DLLs. It is not measured yet, so this page does not
+recommend it as the default.
 
 ## Native MSVC and CUDA
 
