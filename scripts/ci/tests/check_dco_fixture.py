@@ -86,6 +86,7 @@ def clean_env() -> dict[str, str]:
         "DCO_RELEASE_PR",
         "LANDING_IDENTITY",
         "PR_BODY",
+        "PRE_COMMIT_TO_REF",
     )
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     for key in drop:
