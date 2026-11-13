@@ -42,7 +42,7 @@ fi
 "${BIN}" --help >/dev/null
 
 # 1a. Pin per_shot_print_usage() against the golden transcript
-# (issue #3214 row C15-11; ADR-3402): --help serves it on stdout with exit 0,
+# (issue #3214 row C15-11; ADR-3543): --help serves it on stdout with exit 0,
 # no-args serves the same text on stderr with exit 1. Before this pin the
 # hand-written usage block could change with no test noticing — only its exit
 # code was checked.

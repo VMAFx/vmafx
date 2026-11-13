@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 
 # test_vmaf_cli_text_golden.sh — pin the user-facing text of the `vmaf` CLI
-# (issue #3214 rows C15-01, C15-02, C15-03, C15-07, C15-09, C15-10; ADR-3402).
+# (issue #3214 rows C15-01, C15-02, C15-03, C15-07, C15-09, C15-10; ADR-3543).
 #
 # Help text, version format, option-error transcripts and the yuv geometry
 # refusals are what a user actually reads; before this test any of them could
@@ -38,14 +38,14 @@ fail() {
 # (help/alias stdout).
 norm_help() {
   sed -e 's/\r$//' \
-      -e '1s/^Usage: .* \[options\]$/Usage: <app> [options]/' "$1"
+    -e '1s/^Usage: .* \[options\]$/Usage: <app> [options]/' "$1"
 }
 
 # Error transcripts: keep the reason line, blank the argv[0] of the usage
 # head on line 3.
 norm_err() {
   sed -e 's/\r$//' \
-      -e '3s/^Usage: .* \[options\]$/Usage: <app> [options]/' "$1"
+    -e '3s/^Usage: .* \[options\]$/Usage: <app> [options]/' "$1"
 }
 
 # --help must print the golden transcript on stdout, exit 0, and write
@@ -74,9 +74,11 @@ if ! diff -u "${WORK}/golden.norm" "${WORK}/alias.norm" >"${WORK}/alias.diff"; t
   fail "vmafx alias help differs from the vmaf golden transcript"
 fi
 
-# --version is a format contract, not a value: v<major>.<minor>.<patch>
-# optionally followed by the -<N>-g<sha> describe suffix. (C15-03)
-VER_RE='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+-g[0-9a-f]+)?$'
+# --version is a format contract, not a value: v<major>.<minor>.<patch>,
+# an optional semver prerelease (-rc.3), then the optional -<N>-g<sha>
+# describe suffix. (C15-03)
+VER_CORE='v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?(-[0-9]+-g[0-9a-f]+)?'
+VER_RE="^${VER_CORE}\$"
 "$BIN" --version >"${WORK}/ver.out" 2>"${WORK}/ver.err" ||
   fail "vmaf --version exited non-zero"
 if [ -s "${WORK}/ver.out" ]; then
@@ -96,7 +98,7 @@ if [ -s "${WORK}/aver.out" ]; then
   fail "vmafx --version wrote to stdout"
 fi
 sed -e 's/\r$//' "${WORK}/aver.err" >"${WORK}/aver.norm"
-if ! grep -Eq '^VMAFX v[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+-g[0-9a-f]+)? \(auto-backend, precision=max\)$' \
+if ! grep -Eq "^VMAFX ${VER_CORE} \\(auto-backend, precision=max\\)\$" \
   "${WORK}/aver.norm"; then
   cat "${WORK}/aver.norm" >&2
   fail "vmafx --version does not match the VMAFX version format"
@@ -117,7 +119,10 @@ err_case() {
   shift 5
   sed -e 's/\r$//' "$GOLDEN" >"${WORK}/golden.norm"
   if [ "$usage_tail" = usage ]; then
-    { printf '%s\n\n' "$reason"; cat "${WORK}/golden.norm"; } >"${WORK}/expected.err"
+    {
+      printf '%s\n\n' "$reason"
+      cat "${WORK}/golden.norm"
+    } >"${WORK}/expected.err"
   else
     printf '%s\n' "$reason" >"${WORK}/expected.err"
   fi
@@ -134,9 +139,9 @@ err_case() {
   fi
   if [ "$argv0_prefix" = argv0 ]; then
     sed -E -e 's/\r$//' \
-        -e '1s|.*vmaf(\.exe)?: |<app>: |' \
-        -e '3s/^Usage: .* \[options\]$/Usage: <app> [options]/' \
-        "${WORK}/case.err" >"${WORK}/case.norm"
+      -e '1s|.*vmaf(\.exe)?: |<app>: |' \
+      -e '3s/^Usage: .* \[options\]$/Usage: <app> [options]/' \
+      "${WORK}/case.err" >"${WORK}/case.norm"
   else
     norm_err "${WORK}/case.err" >"${WORK}/case.norm"
   fi
@@ -184,8 +189,8 @@ raw_case() {
   printf '%s\n' "$reason" >"${WORK}/expected.err"
   rc=0
   "$BIN" --reference "$file" --distorted "$file" \
-      --width 24 --height 24 --pixel_format 420 --bitdepth 8 \
-      >"${WORK}/case.out" 2>"${WORK}/case.err" || rc=$?
+    --width 24 --height 24 --pixel_format 420 --bitdepth 8 \
+    >"${WORK}/case.out" 2>"${WORK}/case.err" || rc=$?
   if [ "$rc" -eq 0 ]; then
     fail "$desc exited 0, expected $want_rc"
   fi

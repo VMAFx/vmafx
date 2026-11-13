@@ -1,6 +1,6 @@
 <!-- markdownlint-disable MD013 MD060 -->
 
-# ADR-3402: User-facing CLI text is pinned against golden transcripts
+# ADR-3543: User-facing CLI text is pinned against golden transcripts
 
 - **Status**: Accepted
 - **Date**: 2026-11-08

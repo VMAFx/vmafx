@@ -318,7 +318,7 @@ test('test_vmaf_raw_layouts', test_vmaf_raw_layouts,
          'MESON_SOURCE_ROOT=' + meson.project_source_root(),
      ])
 
-# ADR-3402 — the user-facing text of the vmaf CLI is a contract: help, the
+# ADR-3543 — the user-facing text of the vmaf CLI is a contract: help, the
 # --version format, option-error transcripts and the yuv geometry refusals
 # are diffed against golden transcripts served by the real binary
 # (issue #3214 rows C15-01..C15-10). The vmafx alias is asserted to serve
@@ -334,7 +334,7 @@ test('test_vmaf_cli_text_golden', test_vmaf_cli_text_golden,
      ],
      timeout : 120)
 
-# ADR-3402 — the hand-written usage texts of the vmaf_roi / vmaf_vpl
+# ADR-3543 — the hand-written usage texts of the vmaf_roi / vmaf_vpl
 # sidecars are pinned the same way (issue #3214 rows C15-12/C15-13), as two
 # separate tests so the roi golden is a real PASS in every build; the vpl
 # test skips (exit 77) outside Linux SYCL builds, where its golden is

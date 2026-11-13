@@ -9,7 +9,7 @@ precedence = "closest"
 SPDX-FileCopyrightText = "2026 Lusoris"
 SPDX-License-Identifier = "EUPL-1.2"
 
-# The CLI golden transcripts (ADR-3402) are diff targets: no inline SPDX
+# The CLI golden transcripts (ADR-3543) are diff targets: no inline SPDX
 # header may precede the pinned bytes, so their terms are annotated here
 # (ADR-3401: outside contributors name themselves as holders).
 [[annotations]]

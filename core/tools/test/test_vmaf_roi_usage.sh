@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 
 # test_vmaf_roi_usage.sh — pin the usage text of the vmaf_roi sidecar
-# (issue #3214 row C15-12; ADR-3402).
+# (issue #3214 row C15-12; ADR-3543).
 #
 # print_usage() is a hand-written fprintf block, so nothing else guards it: a
 # wording or flag change would reach users with no test noticing. The roi

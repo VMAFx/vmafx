@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 
 # test_vmaf_vpl_usage.sh — pin the usage text of the vmaf_vpl sidecar
-# (issue #3214 row C15-13; ADR-3402).
+# (issue #3214 row C15-13; ADR-3543).
 #
 # print_usage() is a hand-written fprintf block, so nothing else guards it: a
 # wording or flag change would reach users with no test noticing. vmaf_vpl
@@ -42,8 +42,8 @@ if [ -s "${WORK}/vpl.out" ]; then
   fail "vmaf_vpl --help wrote to stdout"
 fi
 sed -e 's/\r$//' \
-    -e '1s/^Usage: .* --ref <file> --dis <file> \[options\]$/Usage: <app> --ref <file> --dis <file> [options]/' \
-    "${WORK}/vpl.err" >"${WORK}/vpl.norm"
+  -e '1s/^Usage: .* --ref <file> --dis <file> \[options\]$/Usage: <app> --ref <file> --dis <file> [options]/' \
+  "${WORK}/vpl.err" >"${WORK}/vpl.norm"
 sed -e 's/\r$//' "$SCRIPT_DIR/golden/vmaf_vpl_help.txt" >"${WORK}/vpl_golden.norm"
 if ! diff -u "${WORK}/vpl_golden.norm" "${WORK}/vpl.norm" >"${WORK}/vpl.diff"; then
   head -20 "${WORK}/vpl.diff" >&2
@@ -52,8 +52,10 @@ fi
 
 # Without --ref/--dis the refusal is the specific first line followed by the
 # same golden usage, exiting 1.
-{ printf '%s\n' 'Error: --ref and --dis are required'; \
-  sed -e 's/\r$//' "$SCRIPT_DIR/golden/vmaf_vpl_help.txt"; } \
+{
+  printf '%s\n' 'Error: --ref and --dis are required'
+  sed -e 's/\r$//' "$SCRIPT_DIR/golden/vmaf_vpl_help.txt"
+} \
   >"${WORK}/vpl_expected.err"
 rc=0
 "$VPL" >"${WORK}/vpl2.out" 2>"${WORK}/vpl2.err" || rc=$?
@@ -64,8 +66,8 @@ if [ "$rc" -ne 1 ]; then
   fail "vmaf_vpl without --ref/--dis exited $rc, expected 1"
 fi
 sed -e 's/\r$//' \
-    -e '2s/^Usage: .* --ref <file> --dis <file> \[options\]$/Usage: <app> --ref <file> --dis <file> [options]/' \
-    "${WORK}/vpl2.err" >"${WORK}/vpl2.norm"
+  -e '2s/^Usage: .* --ref <file> --dis <file> \[options\]$/Usage: <app> --ref <file> --dis <file> [options]/' \
+  "${WORK}/vpl2.err" >"${WORK}/vpl2.norm"
 if ! diff -u "${WORK}/vpl_expected.err" "${WORK}/vpl2.norm" >"${WORK}/vpl2.diff"; then
   head -10 "${WORK}/vpl2.diff" >&2
   fail "vmaf_vpl missing-required transcript drifted"
