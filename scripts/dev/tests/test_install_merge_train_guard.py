@@ -7,6 +7,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import shutil
 import stat
 import sys
@@ -297,6 +298,78 @@ class MigrationContract(unittest.TestCase):
         release = self.state / "releases" / installer.release_name(value)
         self.assertTrue((release / relative).is_file())
         self.assertFalse((release / "scripts/lib/unused.py").exists())
+
+    def commit_sources(self, sources: dict[str, str], message: str) -> None:
+        for relative, content in sources.items():
+            target = self.source / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+        installer.git(self.source, "add", ".")
+        installer.git(self.source, "commit", "-m", message)
+
+    def test_relative_library_import_refuses_preview(self) -> None:
+        self.commit_sources(
+            {
+                "scripts/lib/helper.py": "value = 1\n",
+                "scripts/lib/pkg/__init__.py": "",
+                "scripts/lib/pkg/sibling.py": "value = 2\n",
+            },
+            "relative import targets",
+        )
+        cases = (
+            ("scripts/lib/user.py", "from . import helper\n"),
+            ("scripts/lib/user.py", "from .helper import value\n"),
+            ("scripts/lib/pkg/user.py", "from ..helper import value\n"),
+            ("scripts/lib/pkg/user.py", "from .sibling import value\n"),
+        )
+        for relative, content in cases:
+            with self.subTest(module=relative, source=content):
+                module = relative.removesuffix(".py").replace("/", ".")
+                self.commit_sources(
+                    {installer.SOURCE_PATH: f"import {module}\n", relative: content},
+                    "relative import fixture",
+                )
+                with self.assertRaisesRegex(
+                    ValueError, re.escape(f"relative import in {relative}:1")
+                ):
+                    self.plan()
+
+    def test_scripts_import_outside_library_refuses_preview(self) -> None:
+        self.commit_sources(
+            {"scripts/ci/helper.py": "value = 1\n", "scripts/dev/tool.py": "value = 2\n"},
+            "checkout-only modules",
+        )
+        cases = (
+            ("scripts/lib/user.py", "import scripts.dev.tool\n", "scripts.dev.tool"),
+            ("scripts/lib/user.py", "from scripts.ci import helper\n", "scripts.ci"),
+            ("scripts/lib/user.py", "from scripts.ci.helper import value\n", "scripts.ci.helper"),
+            (installer.SOURCE_PATH, "from scripts.dev import tool\n", "scripts.dev"),
+        )
+        for relative, content, name in cases:
+            with self.subTest(module=relative, source=content):
+                sources = {relative: content}
+                if relative != installer.SOURCE_PATH:
+                    sources[installer.SOURCE_PATH] = "import scripts.lib.user\n"
+                self.commit_sources(sources, "outside-library import fixture")
+                with self.assertRaisesRegex(
+                    ValueError, re.escape(f"{relative} imports {name} outside scripts.lib")
+                ):
+                    self.plan()
+
+    def test_scripts_package_and_library_names_still_resolve(self) -> None:
+        self.commit_sources(
+            {
+                installer.SOURCE_PATH: (
+                    "import scripts\nfrom scripts import lib\nfrom scripts.lib.user import value\n"
+                ),
+                "scripts/lib/user.py": "value = 1\n",
+            },
+            "boundary library imports",
+        )
+        value, _ = self.plan()
+        self.assertEqual(
+            sorted(library_digests(value)), ["scripts/lib/__init__.py", "scripts/lib/user.py"]
+        )
 
     def test_library_source_must_match_committed_blob(self) -> None:
         self.real_gateway()

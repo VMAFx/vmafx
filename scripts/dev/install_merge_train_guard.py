@@ -68,17 +68,39 @@ def load_committed_blob(source: Path, head: str, relative_path: str, label: str)
     return committed
 
 
-def import_names(node: ast.AST) -> tuple[set[str], set[str]]:
-    """Separate explicit module names from possible submodules of absolute from-imports."""
+def import_names(node: ast.AST, relative_path: str) -> tuple[set[str], set[str]]:
+    """Separate explicit module names from possible submodules of absolute from-imports.
+
+    Raises ValueError on a relative import: the closure resolves absolute names only, so
+    a relative one would ship a release whose import fails only when the train runs.
+    """
     if isinstance(node, ast.Import):
         return {alias.name for alias in node.names}, set()
-    if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-        return {node.module}, {f"{node.module}.{alias.name}" for alias in node.names}
-    return set(), set()
+    if not isinstance(node, ast.ImportFrom):
+        return set(), set()
+    if node.level != 0:
+        raise ValueError(
+            f"relative import in {relative_path}:{node.lineno}; use an absolute scripts.lib import"
+        )
+    if node.module is None:
+        return set(), set()
+    return {node.module}, {f"{node.module}.{alias.name}" for alias in node.names}
 
 
 def is_library_module(name: str) -> bool:
     return name == "scripts.lib" or name.startswith("scripts.lib.")
+
+
+def refuse_outside_library(names: set[str], relative_path: str) -> None:
+    """Refuse `scripts.*` imports outside `scripts.lib`; the release ships no other part."""
+    outside = sorted(
+        name for name in names if name.startswith("scripts.") and not is_library_module(name)
+    )
+    if outside:
+        raise ValueError(
+            f"{relative_path} imports {outside[0]} outside scripts.lib; "
+            "the release ships only scripts.lib"
+        )
 
 
 def library_imports(data: bytes, relative_path: str) -> tuple[set[str], set[str]]:
@@ -90,7 +112,8 @@ def library_imports(data: bytes, relative_path: str) -> tuple[set[str], set[str]
     required: set[str] = set()
     optional: set[str] = set()
     for node in ast.walk(tree):
-        modules, submodules = import_names(node)
+        modules, submodules = import_names(node, relative_path)
+        refuse_outside_library(modules | submodules, relative_path)
         required.update(filter(is_library_module, modules))
         optional.update(filter(is_library_module, submodules))
     return required, optional
