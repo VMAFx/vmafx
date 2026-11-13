@@ -93,7 +93,7 @@ def fetch_merged_pull_requests(repo: str, limit: int = FETCH_LIMIT) -> list[dict
     Fails when the fetched count reaches ``limit`` — a silently truncated
     history would misreport first-time contributors (issue #2554).
     """
-    done = run_gh(
+    done: list[dict[str, Any]] = run_gh(
         [
             "pr",
             "list",
@@ -117,7 +117,7 @@ def fetch_merged_pull_requests(repo: str, limit: int = FETCH_LIMIT) -> list[dict
 
 def _list(repo: str, kind: str, search: str) -> list[dict[str, Any]]:
     """One search-backed window listing; fails at the cap instead of undercounting."""
-    rows = run_gh(
+    rows: list[dict[str, Any]] = run_gh(
         [
             kind,
             "list",
@@ -217,7 +217,7 @@ def fetch_open_pull_requests(repo: str) -> list[dict[str, Any]]:
     the aging section exists to surface, so the list comes from its own query
     instead of the window listings.
     """
-    rows = run_gh(
+    rows: list[dict[str, Any]] = run_gh(
         [
             "pr",
             "list",
@@ -305,6 +305,71 @@ def first_time_contributors(
     )
 
 
+def _bots_seen(window_items: list[dict[str, Any]], merged: list[dict[str, Any]]) -> list[str]:
+    """Every login the bot rule matched, listed so the rule is auditable."""
+    logins = {str(row["author"]["login"]) for row in (*window_items, *merged)}
+    return sorted(login for login in logins if is_bot(login))
+
+
+def _window_counts(window_items: list[dict[str, Any]], flag: str) -> dict[str, int]:
+    """Issues and pull requests whose ``opened_in_window``/``closed_in_window`` flag is set."""
+    return {
+        "issues": sum(1 for i in window_items if i[flag] and not i["is_pr"]),
+        "pull_requests": sum(1 for i in window_items if i[flag] and i["is_pr"]),
+    }
+
+
+def _response_rows(
+    window_items: list[dict[str, Any]], responses: dict[int, dict[str, Any] | None]
+) -> list[dict[str, Any]]:
+    """One detail row per item opened inside the window, answered or not."""
+    return [
+        {
+            "number": int(item["number"]),
+            "title": str(item["title"]),
+            "kind": "pull request" if item["is_pr"] else "issue",
+            "state": "closed" if item.get("closedAt") else "open",
+            "response": responses.get(int(item["number"])),
+        }
+        for item in window_items
+        if item["opened_in_window"]
+    ]
+
+
+def _first_response_summary(response_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Counts, median and p90 days of the first responses; the rows ride along."""
+    answered = [
+        row["response"]["responder_seconds"] / 86400.0 for row in response_rows if row["response"]
+    ]
+    p90 = percentile(answered, 90)
+    return {
+        "population": len(response_rows),
+        "answered": len(answered),
+        "no_response_yet": sum(1 for row in response_rows if row["response"] is None),
+        "median_days": round(statistics.median(answered), 2) if answered else None,
+        "p90_days": round(p90, 2) if p90 is not None else None,
+        "post_close": sum(
+            1 for row in response_rows if row["response"] and row["response"]["post_close"]
+        ),
+        "items": response_rows,
+    }
+
+
+def _aging_pull_requests(
+    open_pull_requests: list[dict[str, Any]], now: datetime.datetime
+) -> list[dict[str, Any]]:
+    """Open pull requests older than ``AGING_DAYS``, with their age in days."""
+    return [
+        {
+            "number": int(item["number"]),
+            "title": str(item["title"]),
+            "age_days": round(days_between(str(item["createdAt"]), now), 1),
+        }
+        for item in open_pull_requests
+        if days_between(str(item["createdAt"]), now) > AGING_DAYS
+    ]
+
+
 def compute_report(
     *,
     repo: str,
@@ -319,37 +384,6 @@ def compute_report(
     open_labels: dict[str, int],
 ) -> dict[str, Any]:
     """The pure core: every number of the report from the fetched shapes."""
-    bots_seen = sorted(
-        {str(row["author"]["login"]) for row in window_items if is_bot(str(row["author"]["login"]))}
-        | {str(row["author"]["login"]) for row in merged if is_bot(str(row["author"]["login"]))}
-    )
-    maintainers_set = set(maintainers)
-    response_rows = []
-    for item in window_items:
-        if not item["opened_in_window"]:
-            continue
-        answer = responses.get(int(item["number"]))
-        response_rows.append(
-            {
-                "number": int(item["number"]),
-                "title": str(item["title"]),
-                "kind": "pull request" if item["is_pr"] else "issue",
-                "state": "closed" if item.get("closedAt") else "open",
-                "response": answer,
-            }
-        )
-    answered = [
-        row["response"]["responder_seconds"] / 86400.0 for row in response_rows if row["response"]
-    ]
-    aging = [
-        {
-            "number": int(item["number"]),
-            "title": str(item["title"]),
-            "age_days": round(days_between(str(item["createdAt"]), now), 1),
-        }
-        for item in open_pull_requests
-        if days_between(str(item["createdAt"]), now) > AGING_DAYS
-    ]
     window_start = datetime.datetime.fromisoformat(f"{since}T00:00:00+00:00")
     window_end = datetime.datetime.fromisoformat(f"{until}T23:59:59+00:00")
     return {
@@ -357,30 +391,14 @@ def compute_report(
         "window": {"since": since, "until": until},
         "generated_at": now.date().isoformat(),
         "maintainers": maintainers,
-        "bots_seen": bots_seen,
-        "opened": {
-            "issues": sum(1 for i in window_items if i["opened_in_window"] and not i["is_pr"]),
-            "pull_requests": sum(1 for i in window_items if i["opened_in_window"] and i["is_pr"]),
-        },
-        "closed": {
-            "issues": sum(1 for i in window_items if i["closed_in_window"] and not i["is_pr"]),
-            "pull_requests": sum(1 for i in window_items if i["closed_in_window"] and i["is_pr"]),
-        },
-        "first_response": {
-            "population": len(response_rows),
-            "answered": len(answered),
-            "no_response_yet": sum(1 for row in response_rows if row["response"] is None),
-            "median_days": round(statistics.median(answered), 2) if answered else None,
-            "p90_days": round(percentile(answered, 90), 2) if answered else None,
-            "post_close": sum(
-                1 for row in response_rows if row["response"] and row["response"]["post_close"]
-            ),
-            "items": response_rows,
-        },
+        "bots_seen": _bots_seen(window_items, merged),
+        "opened": _window_counts(window_items, "opened_in_window"),
+        "closed": _window_counts(window_items, "closed_in_window"),
+        "first_response": _first_response_summary(_response_rows(window_items, responses)),
         "open_by_label": open_labels,
-        "aging_pull_requests": aging,
+        "aging_pull_requests": _aging_pull_requests(open_pull_requests, now),
         "first_time_contributors": first_time_contributors(
-            merged, window_start, window_end, maintainers_set
+            merged, window_start, window_end, set(maintainers)
         ),
     }
 
