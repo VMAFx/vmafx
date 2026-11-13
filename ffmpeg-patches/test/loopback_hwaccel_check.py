@@ -41,34 +41,15 @@ with the software-path evidence above.
 from __future__ import annotations
 
 import argparse
-import os
-import re
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
+
+from check_runner import frame_count, run
 
 ROOT = Path(__file__).resolve().parents[2]
 WIDTH, HEIGHT, FRAMES = 576, 324, 6
 NEEDLE_HWACCEL = "Unrecognized hwaccel for a loopback decoder"
 NEEDLE_HWFMT = "Unrecognised hwaccel output format"
-
-
-def run(args: argparse.Namespace, cmd: list[str]) -> subprocess.CompletedProcess[str]:
-    env = dict(os.environ)
-    if args.libdir:
-        env["LD_LIBRARY_PATH"] = args.libdir + ":" + env.get("LD_LIBRARY_PATH", "")
-    return subprocess.run(  # noqa: S603 -- binary under test, argument list, no shell
-        cmd, env=env, capture_output=True, text=True, timeout=600, check=False
-    )
-
-
-def frame_count(text: str) -> int:
-    """Last ``frame= N`` progress count FFmpeg printed (its stats go to stderr)."""
-    count = 0
-    for match in re.finditer(r"frame=\s*(\d+)", text):
-        count = int(match.group(1))
-    return count
 
 
 def loopback_cmd(ffmpeg: str, enc: Path, hw: list[str], filtergraph: str) -> list[str]:
@@ -93,7 +74,6 @@ def loopback_cmd(ffmpeg: str, enc: Path, hw: list[str], filtergraph: str) -> lis
 
 
 def finish(args: argparse.Namespace, rows: list[tuple[str, str, str]], gpu_state: str) -> int:
-    hw = args.hwaccel
     for status, label, detail in rows:
         print(f"{status:<4} {label}")
         if detail:
@@ -101,19 +81,11 @@ def finish(args: argparse.Namespace, rows: list[tuple[str, str, str]], gpu_state
     n_ok = sum(1 for status, _, _ in rows if status == "ok")
     n_fail = sum(1 for status, _, _ in rows if status == "FAIL")
     n_skip = sum(1 for status, _, _ in rows if status == "SKIP")
-    evidence = (
-        "loopback refuses unknown -hwaccel (patch stderr string), "
-        "loopback refuses unknown -hwaccel_output_format (patch stderr string), "
-        "hwdownload rejects software frames as the software baseline, "
-        "software round trip decodes 6 frames"
-    )
-    if gpu_state == "ok":
-        evidence += "; gpu round trip ran and matched the software frame count"
-    elif gpu_state == "unavailable":
-        evidence += "; gpu branch SKIPPED (no device on this runner), not passed"
+    evidence_labels = [label for status, label, _ in rows if status == "ok"]
+    evidence = "; ".join(evidence_labels) if evidence_labels else "none"
     summary = (
         f"summary: {n_ok} ok, {n_fail} fail, {n_skip} skip; "
-        f"gpu={hw} {gpu_state}; evidence={evidence}"
+        f"gpu={args.hwaccel} {gpu_state}; evidence={evidence}"
     )
     print(summary)
     if args.summary_out:
@@ -121,6 +93,183 @@ def finish(args: argparse.Namespace, rows: list[tuple[str, str, str]], gpu_state
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(summary + "\n", encoding="utf-8")
     return 1 if any(status == "FAIL" for status, _, _ in rows) else 0
+
+
+def check_version(args: argparse.Namespace, rows: list[tuple[str, str, str]]) -> bool:
+    version = run(args, [args.ffmpeg, "-hide_banner", "-version"])
+    if version.returncode != 0:
+        rows.append(("FAIL", "ffmpeg binary runs (-version)", version.stderr[-300:]))
+        return False
+    return True
+
+
+def prepare_clip(
+    args: argparse.Namespace, clip: Path, tmp: Path, rows: list[tuple[str, str, str]]
+) -> Path | None:
+    source = tmp / "clip.yuv"
+    source.write_bytes(clip.read_bytes()[: WIDTH * HEIGHT * 3 // 2 * FRAMES])
+    enc = tmp / "clip.h264"
+    enc_run = run(
+        args,
+        [
+            args.ffmpeg,
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "yuv420p",
+            "-s",
+            f"{WIDTH}x{HEIGHT}",
+            "-r",
+            "25",
+            "-i",
+            str(source),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-g",
+            str(FRAMES),
+            "-bf",
+            "0",
+            "-f",
+            "h264",
+            str(enc),
+        ],
+    )
+    if enc_run.returncode != 0:
+        rows.append(("FAIL", "fixture encodes through libx264", enc_run.stderr[-300:]))
+        return None
+    return enc
+
+
+def check_refused_option(
+    args: argparse.Namespace,
+    enc: Path,
+    rows: list[tuple[str, str, str]],
+    hw: list[str],
+    label: str,
+    needle: str,
+) -> None:
+    result = run(args, loopback_cmd(args.ffmpeg, enc, hw, "[dec:0]copy[f]"))
+    rows.append(
+        (
+            "ok" if result.returncode != 0 and needle in result.stderr else "FAIL",
+            label,
+            result.stderr[-300:],
+        )
+    )
+
+
+def check_hwdownload(args: argparse.Namespace, enc: Path, rows: list[tuple[str, str, str]]) -> None:
+    hwdown = run(args, loopback_cmd(args.ffmpeg, enc, [], "[dec:0]hwdownload[f]"))
+    rows.append(
+        (
+            "ok" if hwdown.returncode != 0 else "FAIL",
+            "software loopback frames are refused by hwdownload",
+            hwdown.stderr[-300:],
+        )
+    )
+
+
+def check_software_round_trip(
+    args: argparse.Namespace, enc: Path, rows: list[tuple[str, str, str]]
+) -> int:
+    sw = run(args, loopback_cmd(args.ffmpeg, enc, [], "[dec:0]copy[f]"))
+    sw_frames = frame_count(sw.stderr + sw.stdout)
+    rows.append(
+        (
+            "ok" if sw.returncode == 0 and sw_frames == FRAMES else "FAIL",
+            f"software loopback round trip decodes {FRAMES} frames",
+            f"returncode={sw.returncode}, frames={sw_frames}",
+        )
+    )
+    return sw_frames
+
+
+def check_gpu_branch(
+    args: argparse.Namespace, enc: Path, rows: list[tuple[str, str, str]], sw_frames: int
+) -> str:
+    probe = run(
+        args,
+        [
+            args.ffmpeg,
+            "-hide_banner",
+            "-nostdin",
+            "-init_hw_device",
+            f"{args.hwaccel}=probe:0",
+            "-f",
+            "lavfi",
+            "-i",
+            "nullsrc=s=64x64:d=1",
+            "-f",
+            "null",
+            "-",
+        ],
+    )
+    if probe.returncode != 0:
+        if args.require_gpu:
+            rows.append(
+                (
+                    "FAIL",
+                    f"gpu device of type {args.hwaccel} usable (--require-gpu)",
+                    probe.stderr[-300:],
+                )
+            )
+        else:
+            rows.append(
+                (
+                    "SKIP",
+                    f"gpu branch (hwaccel={args.hwaccel}): no {args.hwaccel} device on this runner",
+                    "gpu rows not run; the software-path rows above are the evidence, "
+                    "and a FAIL above still fails the check",
+                )
+            )
+        return "unavailable"
+
+    gpu = run(
+        args,
+        loopback_cmd(
+            args.ffmpeg,
+            enc,
+            ["-hwaccel", args.hwaccel, "-hwaccel_output_format", args.hwaccel],
+            "[dec:0]copy[f]",
+        ),
+    )
+    gpu_frames = frame_count(gpu.stderr + gpu.stdout)
+    rows.append(
+        (
+            "ok" if gpu.returncode == 0 and gpu_frames == sw_frames and sw_frames > 0 else "FAIL",
+            f"gpu round trip (-hwaccel {args.hwaccel}) matches the software frame count",
+            f"returncode={gpu.returncode}, frames={gpu_frames}, want={sw_frames}",
+        )
+    )
+    bad_dev = run(
+        args,
+        loopback_cmd(
+            args.ffmpeg,
+            enc,
+            [
+                "-hwaccel",
+                args.hwaccel,
+                "-hwaccel_output_format",
+                args.hwaccel,
+                "-hwaccel_device",
+                "/no/such/hwaccel/device-3351",
+            ],
+            "[dec:0]copy[f]",
+        ),
+    )
+    rows.append(
+        (
+            "ok" if bad_dev.returncode != 0 else "FAIL",
+            "loopback refuses a bogus -hwaccel_device",
+            bad_dev.stderr[-300:],
+        )
+    )
+    return "ok"
 
 
 def main() -> int:
@@ -140,185 +289,47 @@ def main() -> int:
     args = parser.parse_args()
 
     rows: list[tuple[str, str, str]] = []
-
-    def add(status: str, label: str, detail: str = "") -> None:
-        rows.append((status, label, detail))
-
-    version = run(args, [args.ffmpeg, "-hide_banner", "-version"])
-    if version.returncode != 0:
-        add("FAIL", "ffmpeg binary runs (-version)", version.stderr[-300:])
+    if not check_version(args, rows):
         return finish(args, rows, "unknown")
 
     clip = Path(args.yuv) / "src01_hrc01_576x324.yuv"
     if not clip.is_file():
-        add("FAIL", f"fixture present: {clip}", "missing file; expected 576x324 yuv420p source")
+        rows.append(
+            (
+                "FAIL",
+                f"fixture present: {clip}",
+                "missing file; expected 576x324 yuv420p source",
+            )
+        )
         return finish(args, rows, "unknown")
 
     with tempfile.TemporaryDirectory() as tmp_name:
         tmp = Path(tmp_name)
-        source = tmp / "clip.yuv"
-        source.write_bytes(clip.read_bytes()[: WIDTH * HEIGHT * 3 // 2 * FRAMES])
-        enc = tmp / "clip.h264"
-        enc_run = run(
-            args,
-            [
-                args.ffmpeg,
-                "-hide_banner",
-                "-nostdin",
-                "-y",
-                "-f",
-                "rawvideo",
-                "-pix_fmt",
-                "yuv420p",
-                "-s",
-                f"{WIDTH}x{HEIGHT}",
-                "-r",
-                "25",
-                "-i",
-                str(source),
-                "-c:v",
-                "libx264",
-                "-preset",
-                "veryfast",
-                "-g",
-                str(FRAMES),
-                "-bf",
-                "0",
-                "-f",
-                "h264",
-                str(enc),
-            ],
-        )
-        if enc_run.returncode != 0:
-            add("FAIL", "fixture encodes through libx264", enc_run.stderr[-300:])
+        enc = prepare_clip(args, clip, tmp, rows)
+        if enc is None:
             return finish(args, rows, "unknown")
-
-        # Assertion 1: the loopback decoder itself reads -hwaccel. A stock
-        # FFmpeg silently ignores the option here; the patched one dies with
-        # its own stderr string, so the string is the evidence, not the exit.
-        bad_hw = run(
+        check_refused_option(
             args,
-            loopback_cmd(
-                args.ffmpeg, enc, ["-hwaccel", "no-such-loopback-hwaccel-3351"], "[dec:0]copy[f]"
-            ),
-        )
-        add(
-            "ok" if bad_hw.returncode != 0 and NEEDLE_HWACCEL in bad_hw.stderr else "FAIL",
+            enc,
+            rows,
+            ["-hwaccel", "no-such-loopback-hwaccel-3351"],
             "loopback refuses an unrecognised -hwaccel name",
-            bad_hw.stderr[-300:],
+            NEEDLE_HWACCEL,
         )
-
-        # Assertion 2: the loopback decoder reads -hwaccel_output_format too.
-        bad_fmt = run(
+        check_refused_option(
             args,
-            loopback_cmd(
-                args.ffmpeg,
-                enc,
-                ["-hwaccel_output_format", "no-such-pixfmt-3351"],
-                "[dec:0]copy[f]",
-            ),
-        )
-        add(
-            "ok" if bad_fmt.returncode != 0 and NEEDLE_HWFMT in bad_fmt.stderr else "FAIL",
+            enc,
+            rows,
+            ["-hwaccel_output_format", "no-such-pixfmt-3351"],
             "loopback refuses an unrecognised -hwaccel_output_format",
-            bad_fmt.stderr[-300:],
+            NEEDLE_HWFMT,
         )
-
-        # Assertion 3: with no -hwaccel* the loopback decoder returns system
-        # memory frames, and hwdownload must reject those frames on its own.
-        hwdown = run(args, loopback_cmd(args.ffmpeg, enc, [], "[dec:0]hwdownload[f]"))
-        add(
-            "ok" if hwdown.returncode != 0 else "FAIL",
-            "software loopback frames are refused by hwdownload",
-            hwdown.stderr[-300:],
-        )
-
-        # Assertion 4: the plain loopback round trip works and decodes frames.
-        sw = run(args, loopback_cmd(args.ffmpeg, enc, [], "[dec:0]copy[f]"))
-        sw_frames = frame_count(sw.stderr + sw.stdout)
-        add(
-            "ok" if sw.returncode == 0 and sw_frames == FRAMES else "FAIL",
-            "software loopback round trip decodes the clipped frames",
-            f"returncode={sw.returncode}, frames={sw_frames}",
-        )
-
-        # Assertion 5, GPU branch: probe the device first; hosted runners have
-        # none, so this becomes an explicit SKIP paired with the evidence above.
-        probe = run(
-            args,
-            [
-                args.ffmpeg,
-                "-hide_banner",
-                "-nostdin",
-                "-init_hw_device",
-                f"{args.hwaccel}=probe:0",
-                "-f",
-                "lavfi",
-                "-i",
-                "nullsrc=s=64x64:d=1",
-                "-f",
-                "null",
-                "-",
-            ],
-        )
-        if probe.returncode == 0:
-            gpu_state = "ok"
-            gpu = run(
-                args,
-                loopback_cmd(
-                    args.ffmpeg,
-                    enc,
-                    ["-hwaccel", args.hwaccel, "-hwaccel_output_format", args.hwaccel],
-                    "[dec:0]copy[f]",
-                ),
-            )
-            gpu_frames = frame_count(gpu.stderr + gpu.stdout)
-            add(
-                "ok"
-                if gpu.returncode == 0 and gpu_frames == sw_frames and sw_frames > 0
-                else "FAIL",
-                f"gpu round trip (-hwaccel {args.hwaccel}) matches the software frame count",
-                f"returncode={gpu.returncode}, frames={gpu_frames}, want={sw_frames}",
-            )
-            bad_dev = run(
-                args,
-                loopback_cmd(
-                    args.ffmpeg,
-                    enc,
-                    [
-                        "-hwaccel",
-                        args.hwaccel,
-                        "-hwaccel_output_format",
-                        args.hwaccel,
-                        "-hwaccel_device",
-                        "/no/such/hwaccel/device-3351",
-                    ],
-                    "[dec:0]copy[f]",
-                ),
-            )
-            add(
-                "ok" if bad_dev.returncode != 0 else "FAIL",
-                "loopback refuses a bogus -hwaccel_device",
-                bad_dev.stderr[-300:],
-            )
-        else:
-            gpu_state = "unavailable"
-            if args.require_gpu:
-                add(
-                    "FAIL",
-                    f"gpu device of type {args.hwaccel} usable (--require-gpu)",
-                    probe.stderr[-300:],
-                )
-            else:
-                add(
-                    "SKIP",
-                    f"gpu branch (hwaccel={args.hwaccel}): no {args.hwaccel} device on this runner",
-                    "replaced by software-path evidence: round trip, hwdownload rejection, "
-                    "and the two patch-option refusal strings above",
-                )
+        check_hwdownload(args, enc, rows)
+        sw_frames = check_software_round_trip(args, enc, rows)
+        gpu_state = check_gpu_branch(args, enc, rows, sw_frames)
 
     return finish(args, rows, gpu_state)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

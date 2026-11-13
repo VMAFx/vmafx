@@ -24,13 +24,16 @@
 # which clears that floor.
 set -euo pipefail
 
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+set -a
+. "$repo_root/build-config.env"
+set +a
+: "${SVTAV1_VERSION:?SVTAV1_VERSION is missing from build-config.env}"
+: "${SVTAV1_COMMIT:?SVTAV1_COMMIT is missing from build-config.env}"
+
 # SVT-AV1's CMake install may choose lib/ or lib64/ for its .pc file; make both
 # visible to FFmpeg's configure probe and to the fail-closed checks below.
 export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/local/lib64/pkgconfig:${PKG_CONFIG_PATH:-}"
-
-# Pinned SVT-AV1 release; the container image pins the same. CI may override
-# this for a deliberate bump (e.g. SVTAV1_VERSION=4.3.0).
-: "${SVTAV1_VERSION:=4.2.0}"
 
 # Reuse the runner's cached apt archives / retry config, same as every other
 # Ubuntu step in this workflow.
@@ -46,8 +49,14 @@ svt_build="${RUNNER_TEMP:?RUNNER_TEMP is not set}/svt-av1-build"
 svt_src="$svt_build/SVT-AV1"
 trap 'rm -rf "$svt_build"' EXIT
 
-git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
+timeout 300 git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
   https://gitlab.com/AOMediaCodec/SVT-AV1.git "$svt_src"
+svt_head="$(git -C "$svt_src" rev-parse HEAD)"
+if [ "$svt_head" != "$SVTAV1_COMMIT" ]; then
+  echo "SVT-AV1 v${SVTAV1_VERSION} resolved to $svt_head, expected $SVTAV1_COMMIT" >&2
+  echo "the tag moved; update SVTAV1_COMMIT only after re-verifying the source" >&2
+  exit 1
+fi
 cmake -S "$svt_src" -B "$svt_build/build" \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX=/usr/local \

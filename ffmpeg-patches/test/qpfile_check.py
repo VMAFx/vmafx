@@ -33,29 +33,30 @@ case runs, and the per-encoder "skipped: encoder missing" rows are never emitted
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+from check_runner import run
 
 ROOT = Path(__file__).resolve().parents[2]
 SKIP = 77
 WIDTH, HEIGHT, FRAMES = 576, 324, 6
 
 
-def run(args: argparse.Namespace, cmd: list[str]) -> subprocess.CompletedProcess[str]:
-    env = dict(os.environ)
-    if args.libdir:
-        env["LD_LIBRARY_PATH"] = args.libdir + ":" + env.get("LD_LIBRARY_PATH", "")
-    return subprocess.run(  # noqa: S603 -- binary under test, argument list, no shell
-        cmd, env=env, capture_output=True, text=True, timeout=600, check=False
-    )
+def parse_encoder_names(output: str) -> set[str]:
+    return {
+        parts[1]
+        for line in output.splitlines()
+        if line.startswith(" V")
+        for parts in [line.split()]
+        if len(parts) > 1
+    }
 
 
-def has_encoder(args: argparse.Namespace, name: str) -> bool:
-    out = run(args, [args.ffmpeg, "-hide_banner", "-encoders"]).stdout
-    return any(line.split()[1:2] == [name] for line in out.splitlines() if line.startswith(" V"))
+def encoder_names(args: argparse.Namespace) -> set[str]:
+    return parse_encoder_names(run(args, [args.ffmpeg, "-hide_banner", "-encoders"]).stdout)
 
 
 def write_qpfile(path: Path, cols: int, rows: int, offset: int) -> None:
@@ -133,9 +134,15 @@ def x264_checks(args: argparse.Namespace, tmp: Path, source: Path) -> list[tuple
     return results
 
 
-def libaom_checks(args: argparse.Namespace, tmp: Path, source: Path) -> list[tuple[str, bool, str]]:
+def libaom_checks(
+    args: argparse.Namespace,
+    tmp: Path,
+    source: Path,
+    encoders: set[str] | None = None,
+) -> list[tuple[str, bool, str]]:
     """Run the libaom-av1 qpfile cases and return (label, passed, stderr tail) rows."""
-    if not has_encoder(args, "libaom-av1"):
+    names = encoders if encoders is not None else encoder_names(args)
+    if "libaom-av1" not in names:
         return [
             ("libaom-av1 accepts a qpfile (skipped: encoder missing)", True, ""),
             ("libaom-av1 accepts cpu-used 7 (skipped: encoder missing)", True, ""),
@@ -186,11 +193,17 @@ def libaom_checks(args: argparse.Namespace, tmp: Path, source: Path) -> list[tup
     return results
 
 
-def other_checks(args: argparse.Namespace, tmp: Path, source: Path) -> list[tuple[str, bool, str]]:
+def other_checks(
+    args: argparse.Namespace,
+    tmp: Path,
+    source: Path,
+    encoders: set[str] | None = None,
+) -> list[tuple[str, bool, str]]:
     """Run the libsvtav1 qpfile case, then the libaom-av1 cases; return the result rows."""
     results: list[tuple[str, bool, str]] = []
+    names = encoders if encoders is not None else encoder_names(args)
     qp = tmp / "plus.qp"
-    if not has_encoder(args, "libsvtav1"):
+    if "libsvtav1" not in names:
         results.append(("libsvtav1 accepts a qpfile (skipped: encoder missing)", True, ""))
     else:
         run_, size = encode(
@@ -204,7 +217,7 @@ def other_checks(args: argparse.Namespace, tmp: Path, source: Path) -> list[tupl
                 run_.stderr[-300:],
             )
         )
-    results.extend(libaom_checks(args, tmp, source))
+    results.extend(libaom_checks(args, tmp, source, names))
     return results
 
 
@@ -221,26 +234,26 @@ def main() -> int:
     )
     args = parser.parse_args()
     clip = Path(args.yuv) / "src01_hrc01_576x324.yuv"
+    encoders: set[str] | None = None
     if args.require_encoders:
         if not clip.is_file():
             print(f"FAIL required fixture missing: {clip}")
             return 1
-        try:
-            encoders = run(args, [args.ffmpeg, "-hide_banner", "-encoders"]).stdout
-        except OSError as exc:
-            print(f"FAIL ffmpeg is not executable: {args.ffmpeg} ({exc.strerror or exc})")
+        probe = run(args, [args.ffmpeg, "-hide_banner", "-encoders"])
+        if probe.returncode != 0:
+            print(
+                f"FAIL ffmpeg is not runnable: {args.ffmpeg} "
+                f"(exit {probe.returncode}): {probe.stderr[-300:]}"
+            )
             return 1
-        present = {
-            line.split()[1]
-            for line in encoders.splitlines()
-            if line.startswith(" V") and len(line.split()) > 1
-        }
-        missing = [n for n in ("libx264", "libaom-av1", "libsvtav1") if n not in present]
+        encoders = parse_encoder_names(probe.stdout)
+        missing = [n for n in ("libx264", "libaom-av1", "libsvtav1") if n not in encoders]
         for name in missing:
             print(f"FAIL required encoder missing: {name}")
         if missing:
             return 1
-    if not clip.is_file() or not has_encoder(args, "libx264"):
+    names = encoders if encoders is not None else encoder_names(args)
+    if not clip.is_file() or "libx264" not in names:
         print("skip: the fixture or libx264 is missing")
         return SKIP
     failed = False
@@ -250,7 +263,7 @@ def main() -> int:
         source.write_bytes(clip.read_bytes()[: WIDTH * HEIGHT * 3 // 2 * FRAMES])
         for name, passed, detail in [
             *x264_checks(args, tmp, source),
-            *other_checks(args, tmp, source),
+            *other_checks(args, tmp, source, encoders),
         ]:
             print(f"{'ok  ' if passed else 'FAIL'} {name}")
             failed |= not passed
