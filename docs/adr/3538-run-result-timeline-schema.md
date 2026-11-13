@@ -34,13 +34,16 @@ the model, and with it whether `scoring_configuration` is a required section.
 
 ## Decision
 
-1. **The timeline schema follows the closed-object model**: every object
-   refuses unknown members, the event vocabulary is closed, and a change that
-   adds a member or an event type takes a new schema version. A version-1
-   reader refuses a version-2 document by name; it never silently drops
-   unknown members. The schema evolves as additive supersets at version
-   granularity: a newer version adds members and never removes, renames or
-   retypes one (the HISS-14 discipline continues, one level up).
+1. **The timeline schema follows the closed-object model**: every object this
+   schema owns refuses unknown members, the event vocabulary is closed, and a
+   change that adds a member or an event type takes a new schema version. The
+   three pass-through members - `provenance`, `scoring_configuration` and an
+   event's `detail` - stay open because their field contracts live with their
+   single sources, so a field added there does not take a timeline-schema
+   version. A version-1 reader refuses a version-2 document by name; it never
+   silently drops unknown members. The schema evolves as additive supersets at
+   version granularity: a newer version adds members and never removes, renames
+   or retypes one (the HISS-14 discipline continues, one level up).
 2. **`scoring_configuration` stays optional** in version 1 (not in the
    top-level `required`): a timeline can come from a CLI run that has no
    server-side scoring surface to record. `schema_version`, `provenance`,

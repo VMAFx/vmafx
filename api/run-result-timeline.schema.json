@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/VMAFx/vmafx/api/run-result-timeline.schema.json",
   "title": "VMAFx run-result timeline, schema version 1",
-  "description": "One versioned report format for a scoring run's provenance, per-frame scores, per-window statistics and events (VMAFx/vmafx#2452, RC5). Every object is closed (additionalProperties false) and the event vocabulary is fixed, so a change that adds a member or an event type takes a new schema version and a version-1 reader refuses a document it does not know by name; newer versions are additive supersets (never removed, renamed or retyped). The versioning model is ADR-3538. docs/api/run-result-timeline.md is the human reference. The skeleton pins the four sections' identities, not yet their full field contracts: provenance is the record of vmafx_context_provenance_json() (RC4 WP5, #2288; the authoritative field contract is the OpenAPI Provenance schema in api/openapi/vmafx-server-v1.yaml and the VmafxProvenance definition in core/api/vmafx.toml), and scoring_configuration is the option surface of #2258 (the ScoreOptions component of the same OpenAPI document). The C ABI writer/reader and the byte-equal write-read-write identity check land in the follow-up PRs of the same issue.",
+  "description": "One versioned report format for a scoring run's provenance, per-frame scores, per-window statistics and events (VMAFx/vmafx#2452, RC5). Every object this schema owns is closed (additionalProperties false), with three pass-through exceptions whose field contracts live elsewhere: provenance is the record of vmafx_context_provenance_json() (RC4 WP5, #2288; the authoritative field contract is the OpenAPI Provenance schema in api/openapi/vmafx-server-v1.yaml and the VmafxProvenance definition in core/api/vmafx.toml), scoring_configuration is the option surface of #2258 (the ScoreOptions component of the same OpenAPI document), and an event's detail object is writer-defined. Those three stay open, so a field added by their single source does not take a timeline-schema version. The event vocabulary is fixed, so a change that adds an event type takes a new schema version and a version-1 reader refuses a document it does not know by name; newer versions are additive supersets (never removed, renamed or retyped). The versioning model is ADR-3538. docs/api/run-result-timeline.md is the human reference. The skeleton pins the four sections' identities, not yet their full field contracts. A window's start and end must use the same time-key kind and start must strictly precede end; JSON Schema cannot compare time keys, so the writer and reader enforce that rule. A time key carrying more than one coordinate kind must have all of them describe the same instant. The C ABI writer/reader and the byte-equal write-read-write identity check land in the follow-up PRs of the same issue.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -47,7 +47,7 @@
   },
   "$defs": {
     "time_key": {
-      "description": "Where an entry sits on the timeline: at least one of the 0-based frame index, the presentation timestamp in nanoseconds from the run's zero, or the SMPTE-style timecode. A writer carries what the run knows - a frame score carries the frame index, a wall-clock event carries the timestamp - and an empty time key is refused.",
+      "description": "Where an entry sits on the timeline: at least one of the 0-based frame index, the presentation timestamp in nanoseconds from the run's zero, or the SMPTE-style timecode. A writer carries what the run knows - a frame score carries the frame index, a wall-clock event carries the timestamp - and an empty time key is refused. When more than one coordinate is present, all of them must describe the same instant.",
       "type": "object",
       "additionalProperties": false,
       "anyOf": [
@@ -108,7 +108,7 @@
       }
     },
     "window_statistic": {
-      "description": "One statistic computed over a window of the timeline; the range is the half-open interval the writer knows (start inclusive, end exclusive when both ends are frame indices).",
+      "description": "One statistic computed over a window of the timeline. The start and end must use the same time-key kind and start must strictly precede end; JSON Schema cannot compare time keys, so the writer and reader enforce that rule. When both ends are frame indices the interval is half-open (start inclusive, end exclusive).",
       "type": "object",
       "additionalProperties": false,
       "required": ["start", "end", "statistic", "value"],
