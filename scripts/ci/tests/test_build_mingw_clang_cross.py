@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -15,6 +14,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
 
+from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 SCRIPT = REPO / "scripts/ci/build-mingw-clang-cross.sh"
@@ -37,9 +37,7 @@ class BuildMingwClangCrossRefusalTest(unittest.TestCase):
         self.prefix = self.root / "prefix"
         self.stage = self.root / "artifact"
 
-    def run_script(
-        self, *, compiler: bool = True, runtime_dlls: bool = True
-    ) -> subprocess.CompletedProcess[str]:
+    def run_script(self, *, compiler: bool = True, runtime_dlls: bool = True) -> TextCommandResult:
         if compiler:
             _write_executable(self.bin / "x86_64-w64-mingw32-clang", "#!/bin/sh\nexit 0\n")
         if runtime_dlls:

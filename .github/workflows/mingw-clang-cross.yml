@@ -64,7 +64,7 @@ jobs:
       - name: Install build dependencies
         timeout-minutes: 10
         run: |
-          sudo apt-get --error-on=any -o Acquire::Retries=3 update
+          bash scripts/ci/apt-install-cached.sh refresh
           sudo apt-get install -y --no-install-recommends xz-utils xxd
 
       - name: Install Meson and Ninja
