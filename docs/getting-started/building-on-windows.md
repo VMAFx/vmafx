@@ -53,9 +53,9 @@ in CLANG64 or MINGW64, open the matching MSYS2 shell and replace `ucrt-x86_64`
 in the package names above with `clang-x86_64` or `x86_64`; CLANG64 supplies
 `clang`/`clang++` instead of `gcc`/`g++`. The CLANG64 lane checks the same DLL
 exports, but skips the GCC runtime-archive half of the thunk check because it
-has no `libgcc_eh.a`/`libgcc.a`/`libwinpthread.a` in the GCC layout. The
-deprecated MINGW64 (MSVCRT) lane is a compatibility build and does not gate on
-warnings.
+has no `libgcc_eh.a`/`libgcc.a`/`libwinpthread.a` in the GCC layout. All three
+MSYS2 lanes build with `-Dwerror=true`; the deprecated MINGW64 (MSVCRT) lane is
+a compatibility build, not a warnings-free exception.
 
 The 32-bit MINGW32 environment is not supported: its scores do not match. The
 CI job also runs `scripts/ci/check-win64-stack-alignment.py`, because GCC's

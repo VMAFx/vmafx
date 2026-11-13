@@ -765,11 +765,7 @@ jobs:
             compiler_package: gcc
             runtime_archives: true
             ldflags: -pipe -static -static-libgcc -static-libstdc++
-            # MINGW64 is the deprecated MSVCRT environment. Its GCC 16 reports
-            # -Wtype-limits in core/src/model.c where the UCRT64 GCC does not;
-            # keep the compatibility lane buildable until that gap is closed,
-            # and leave the werror gate on the supported UCRT64/CLANG64 lanes.
-            werror: false
+            werror: true
     env:
       CC: ccache ${{ matrix.cc }}
       CXX: ccache ${{ matrix.cxx }}
