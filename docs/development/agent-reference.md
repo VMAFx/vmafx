@@ -80,6 +80,11 @@ Key requirements and operational details:
 - **IDE configuration**: Both clangd and the VS Code C/C++ extension read `${workspaceFolder}/build/` ([`.vscode/c_cpp_properties.json`](../../.vscode/c_cpp_properties.json)). Configure the build directory with every backend toolchain present; otherwise `compile_commands.json` will lack CUDA and SYCL include paths, producing "undeclared identifier" diagnostics across backend files. For detailed setup steps, see [ide-setup.md](ide-setup.md).
 - **Vulkan removal**: Vulkan was removed in [ADR-0726](../adr/0726-drop-vulkan-backend.md). As a result, `volk.h` and `vk_mem_alloc.h` are no longer needed.
 
+## Agent integration contract
+
+- Keep every project agent integration enabled unless repository, organization, or user security settings disable it — Claude, Codex, Gemini, Antigravity, Ollama/local agents, Paperclip, Hindsight, and repository MCP servers. MCP servers are enabled only after explicit approval; do not add an approved integration to an ignore, disabled, or unwanted list.
+- Before handing off a change, run the smallest applicable checked-in task and keep generated build output out of the source tree's tracked files. Workspace defaults (`.vscode/` tasks, clangd, `meson setup <build-dir> core`) are documented in [ide-setup.md](ide-setup.md).
+
 ## Release stages
 
 The version each stage ships in follows the release map in [release.md](release.md#release-map), which wins over any version named here.

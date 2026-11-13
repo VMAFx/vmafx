@@ -6,6 +6,11 @@ use clangd as the C/C++ language server (VS Code disables Microsoft
 IntelliSense explicitly), and clangd needs a Meson build directory that
 contains `compile_commands.json`.
 
+Treat the checked-in `.vscode/` tasks and settings as the canonical workspace
+defaults: run the repository tasks rather than a local task list, and keep
+clangd as the only C/C++ language server. Do not enable a second IntelliSense
+provider.
+
 ## Quick start
 
 1. Configure one build directory with every backend your host has a toolchain
