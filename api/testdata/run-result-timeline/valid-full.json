@@ -51,18 +51,18 @@
   "events": [
     {
       "type": "alignment_decision",
-      "time": { "timecode": "00:00:00:00" },
+      "time": { "frame_index": 0, "timecode": "00:00:00:00" },
       "detail": { "offset_frames": 0, "method": "first-frame anchor" }
+    },
+    {
+      "type": "masked_area",
+      "time": { "frame_index": 0, "timecode": "00:00:00:00" },
+      "detail": { "region": "bottom-bar", "reason": "burned-in caption" }
     },
     {
       "type": "drop",
       "time": { "frame_index": 1, "timestamp_ns": 41708333 },
       "detail": { "reason": "duplicate pts" }
-    },
-    {
-      "type": "masked_area",
-      "time": { "frame_index": 0 },
-      "detail": { "region": "bottom-bar", "reason": "burned-in caption" }
     }
   ]
 }
