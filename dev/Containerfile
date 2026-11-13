@@ -1254,6 +1254,7 @@ RUN --mount=type=cache,target=/home/vmaf/.cache/ccache,sharing=locked,uid=2000,g
         exit 1; \
     fi \
     && echo "warning gate covers $(wc -l < /tmp/ffmpeg-patched-files.txt) fork-patched file(s)" \
+    && : > /tmp/ffmpeg-warnings.txt \
     && { grep -Ei '(^|[[:space:]])warning([[:space:]#:])' /tmp/ffmpeg-build.log > /tmp/ffmpeg-warnings.txt || [ $? -eq 1 ]; } \
     && if [ -s /tmp/ffmpeg-warnings.txt ]; then \
         if grep -Ff /tmp/ffmpeg-patched-files.txt /tmp/ffmpeg-warnings.txt; then \
