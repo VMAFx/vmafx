@@ -31,9 +31,12 @@ index c9f8031..c5998ae 100644
  #include "mu_table.h"
  #include "test.h"
  
-@@ -51,6 +58,9 @@
+@@ -51,6 +58,11 @@
  #define PROBE_BYTES ((size_t)FRAME_W * FRAME_H)
- #define WATCHDOG_SECONDS 60u
+-#define WATCHDOG_SECONDS 60u
++/* Arm C adds a poll of up to ARM_C_BOUND_MS after the watched work; the POSIX
++ * watchdog keeps its 60 s for that work and adds the bound. */
++#define WATCHDOG_SECONDS (60u + ARM_C_BOUND_MS / 1000u)
  #define MAX_CHUNKS 4096u
 +/* #3277 probe-perturbation A/B, arm C: bounded memory-return poll. */
 +#define ARM_C_POLL_MS 20u
@@ -41,7 +44,7 @@ index c9f8031..c5998ae 100644
  /* Chunk sizes, largest first; the driver keeps less than the smallest free. */
  static const size_t CHUNK_BYTES[] = {(size_t)1 << 30, (size_t)64 << 20, (size_t)4 << 20,
                                       (size_t)256 << 10};
-@@ -61,6 +71,30 @@ typedef struct {
+@@ -61,6 +73,30 @@ typedef struct {
      size_t bytes;
  } Hog;
  
@@ -72,7 +75,7 @@ index c9f8031..c5998ae 100644
  static int probe_alloc(const VmafCudaState *state, size_t bytes)
  {
      if (state->f->cuCtxPushCurrent(state->ctx) != CUDA_SUCCESS) {
-@@ -155,16 +189,29 @@ static char *check_oom_and_memory_return(VmafCudaState *state, Hog *hog, int oom
+@@ -155,16 +191,29 @@ static char *check_oom_and_memory_return(VmafCudaState *state, Hog *hog, int oom
                                           int probe_hogged)
  {
      hog_release(state, hog);
