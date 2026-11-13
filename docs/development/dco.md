@@ -40,7 +40,8 @@ python3 scripts/ci/check-dco.py --merge-base origin/master
 `--merge-base REF` checks the commits the push adds on top of `REF`: those
 reachable from the pushed commit but not from `REF`, so commits a branch took
 in by merging `master` are not checked again. The pushed commit is `--head`,
-else the `PRE_COMMIT_TO_REF` that pre-commit sets during a push, else `HEAD`.
+else the `PRE_COMMIT_TO_REF` that pre-commit sets during a push, else `HEAD`;
+an exported `HEAD_SHA` is ignored in this mode.
 It cannot be combined with `--base` or `--landed`, and an unknown `REF` or
 pushed commit exits `2`. Refresh `origin/master` with `git fetch` when it is
 stale; a stale ref only widens the range.

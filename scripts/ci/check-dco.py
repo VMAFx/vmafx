@@ -51,7 +51,8 @@ hook, such as a review bot's commit pulled from the pull request branch.
 
 ``BASE_SHA``, ``HEAD_SHA``, ``PR_AUTHOR``, ``PR_AUTHOR_TYPE``,
 ``DCO_RELEASE_PR``, ``PR_CREATED_AT`` and ``LANDING_IDENTITY`` are read when the flags
-are absent. ``--pr-body-from-event`` reads ``GITHUB_EVENT_PATH`` JSON in CI.
+are absent. ``--merge-base`` does not read ``HEAD_SHA``, so an inherited value
+cannot replace the pushed commit. ``--pr-body-from-event`` reads ``GITHUB_EVENT_PATH`` JSON in CI.
 Locally, ``--pr-body-file`` (alias ``--pr-body``) reads a UTF-8 file; otherwise
 ``PR_BODY`` supplies the body. Inputs exceeding named byte/line bounds are refused.
 Exit status: 0 all checks pass, 1 attribution or sign-off fails, 2 usage or git error.
@@ -616,7 +617,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     env = os.environ.get
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--base", default=env("BASE_SHA", ""))
-    parser.add_argument("--head", default=env("HEAD_SHA", ""))
+    parser.add_argument("--head", default=None)
     parser.add_argument("--author", default=env("PR_AUTHOR", ""))
     parser.add_argument("--author-type", default=env("PR_AUTHOR_TYPE", ""))
     parser.add_argument("--created-at", default=env("PR_CREATED_AT", ""))
@@ -631,7 +632,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--landed", action="store_true")
     parser.add_argument("--merge-base", default="", metavar="REF")
     parser.add_argument("--landing-identity", default=env("LANDING_IDENTITY", ""))
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.head is None:
+        # --merge-base names the pushed commit itself; HEAD_SHA must not replace it.
+        args.head = "" if args.merge_base else env("HEAD_SHA", "")
+    return args
 
 
 def main(argv: list[str]) -> int:

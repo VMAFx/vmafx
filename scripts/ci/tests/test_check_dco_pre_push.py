@@ -30,11 +30,15 @@ REVIEW_BOT = ("coderabbitai[bot]", "136622811+coderabbitai[bot]@users.noreply.gi
 HOOK_ENTRY = ["python3", "scripts/ci/check-dco.py", "--merge-base", "origin/master"]
 
 
-def push_gate(repo: fx.Repo, *args: str, to_ref: str | None = None) -> TextCommandResult:
+def push_gate(
+    repo: fx.Repo, *args: str, to_ref: str | None = None, head_sha: str | None = None
+) -> TextCommandResult:
     """Run the gate as the pre-push hook does: no ``--base``/``--head``."""
     env = fx.clean_env()
     if to_ref is not None:
         env["PRE_COMMIT_TO_REF"] = to_ref
+    if head_sha is not None:
+        env["HEAD_SHA"] = head_sha
     return run(
         [sys.executable, "-I", str(fx.GATE), *args],
         allowed_executables=(sys.executable,),
@@ -100,6 +104,16 @@ class DcoPrePushTest(unittest.TestCase):
         done = push_gate(self.repo, "--merge-base", "main", "--head", unsigned, to_ref=signed)
         self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
         self.assertIn(unsigned[:10], done.stdout)
+
+    def test_negative_inherited_head_sha_does_not_replace_the_pushed_commit(self) -> None:
+        """An exported ``HEAD_SHA`` naming a signed ancestor must not hide the pushed tip."""
+        signed = self.repo.commit("fix: one", fx.HUMAN, signoff=True)
+        unsigned = self.repo.commit("fix: two", fx.HUMAN)
+        for name, to_ref in (("hook run", unsigned), ("no hook variable", None)):
+            with self.subTest(name):
+                done = push_gate(self.repo, "--merge-base", "main", to_ref=to_ref, head_sha=signed)
+                self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+                self.assertIn(unsigned[:10], done.stdout)
 
     def test_boundary_commits_already_on_ref_are_not_checked(self) -> None:
         """After merging REF in, only the branch's own commits are outgoing."""
