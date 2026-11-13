@@ -5,6 +5,7 @@
 
 #include "picture_sample_range.h"
 
+#include <assert.h>
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -50,6 +51,7 @@ int vmaf_picture_check_sample_range(const VmafPicture *pic, const char *which)
     if (pic->bpc <= 8u || pic->bpc >= 16u) {
         return 0;
     }
+    assert(pic->bpc > 8u && pic->bpc < 16u);
     if (!vmaf_picture_host_readable(pic)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
                  "vmaf_read_pictures: the sample range check reads the %s picture on the "
@@ -59,6 +61,7 @@ int vmaf_picture_check_sample_range(const VmafPicture *pic, const char *which)
     }
     const unsigned limit = (1u << pic->bpc) - 1u;
     const unsigned planes = (pic->pix_fmt == VMAF_PIX_FMT_YUV400P) ? 1u : 3u;
+    assert(planes == 1u || planes == 3u);
     for (unsigned p = 0u; p < planes; p++) {
         const uint8_t *base = (const uint8_t *)pic->data[p];
         for (unsigned y = 0u; y < pic->h[p]; y++) {
