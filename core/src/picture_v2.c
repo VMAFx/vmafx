@@ -102,7 +102,13 @@ int vmaf_picture2_unref(VmafPicture2 *pic)
         return 0; /* NULL is a documented no-op. */
     if (!pic->ref)
         return -EINVAL;
-    assert(pic->ref != NULL);
+    /* vmaf_picture_unref() below, once the refcount hits 1, dereferences
+     * pic->priv->release_picture(pic, priv->cookie) and frees pic->priv (see
+     * picture.c).  A picture that owns a reference count therefore must carry
+     * a priv; the guard above only rejects !pic->ref, so re-asserting
+     * pic->ref != NULL would merely repeat it.  A refcounted picture without
+     * priv would crash in the release callback, which this assert catches. */
+    assert(pic->priv != NULL);
 
     /* Construct a transient v1 view for the unref call.  The v1 view
      * shares the same plane-pointer and ref values as the v2 struct; the

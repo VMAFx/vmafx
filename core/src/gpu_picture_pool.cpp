@@ -133,8 +133,18 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
         gpu_pool_destruct(p, pool);
         return -ENOMEM;
     }
-    assert(p->pic != nullptr);
     p->released = reinterpret_cast<bool *>(p->pic + p->cfg.pic_cnt);
+    /* Allocation-layout invariant: p->released carves the flag region out of
+     * the SAME malloc block that backs p->pic.  slot_bytes reserves one bool
+     * per slot immediately after the picture array, so the memset below must
+     * stay inside that block.  Keep the byte spans in size_t so a large
+     * pic_cnt cannot flip the multiplication the other way around. */
+    const size_t block_bytes = slot_bytes * p->cfg.pic_cnt;
+    const size_t used_bytes =
+        static_cast<size_t>(reinterpret_cast<char *>(p->released) -
+                            reinterpret_cast<char *>(p->pic)) +
+        sizeof(*p->released) * static_cast<size_t>(p->cfg.pic_cnt);
+    assert(used_bytes <= block_bytes);
     memset(p->released, 0, sizeof(*p->released) * p->cfg.pic_cnt);
 
     err = pthread_mutex_init(&p->busy, nullptr);
