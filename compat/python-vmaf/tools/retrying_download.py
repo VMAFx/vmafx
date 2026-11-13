@@ -43,6 +43,8 @@ TRANSIENT_HTTP_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504, 522, 524})
 READ_TIMEOUT_S = 60
 TRANSFER_TIMEOUT_S = 300
 READ_CHUNK = 1 << 20
+# Upper bound on body reads (HISS-02); the deadline ends a slow transfer first.
+MAX_READS = 1 << 22
 USAGE = "usage: retrying_download.py URL PATH"
 
 
@@ -67,7 +69,7 @@ def _copy_body(response: object, path: str, deadline: float) -> None:
     expected = response.headers.get("Content-Length")  # type: ignore[attr-defined]
     received = 0
     with open(path, "wb") as output:
-        while True:
+        for _ in range(MAX_READS):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError(f"transfer exceeded {TRANSFER_TIMEOUT_S} s")
@@ -79,6 +81,8 @@ def _copy_body(response: object, path: str, deadline: float) -> None:
                 break
             output.write(chunk)
             received += len(chunk)
+        else:
+            raise TimeoutError(f"transfer exceeded {MAX_READS} reads")
     if expected is not None:
         try:
             declared = int(expected)

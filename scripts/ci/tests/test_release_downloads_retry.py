@@ -61,11 +61,7 @@ def tracked(pathspec: str) -> list[str]:
     git = shutil.which("git")
     if git is None:
         raise AssertionError("git is required to enumerate tracked files")
-    env = {
-        name: value
-        for name, value in os.environ.items()
-        if name not in GIT_LOCATION_VARIABLES
-    }
+    env = {name: value for name, value in os.environ.items() if name not in GIT_LOCATION_VARIABLES}
     result = run_command(
         [git, "ls-files", pathspec],
         allowed_executables=[git],
@@ -81,11 +77,7 @@ def tracked(pathspec: str) -> list[str]:
 
 def release_variables(text: str) -> set[str]:
     """Names declared anywhere in the workflow with a release-asset URL."""
-    return {
-        name
-        for name, url in ENV_URL.findall(text)
-        if RELEASE in url
-    }
+    return {name for name, url in ENV_URL.findall(text) if RELEASE in url}
 
 
 def blocks(text: str) -> list[tuple[int, str]]:
@@ -141,7 +133,9 @@ class ReleaseDownloadRetryTest(unittest.TestCase):
             "          curl -fsSL -o /tmp/tool \\\n"
             "            https://github.com/owner/repo/releases/download/v1/tool\n"
         )
-        self.assertEqual([(4, "fetch a release asset through " + WRAPPER)], findings("fixture.yml", step))
+        self.assertEqual(
+            [(4, "fetch a release asset through " + WRAPPER)], findings("fixture.yml", step)
+        )
 
     def test_wrapper_call_with_a_url_variable_passes(self) -> None:
         step = (
@@ -149,7 +143,7 @@ class ReleaseDownloadRetryTest(unittest.TestCase):
             "        env:\n"
             "          TOOL_URL: https://github.com/owner/repo/releases/download/v1/tool\n"
             "        run: |\n"
-            "          bash scripts/ci/download-release.sh \"${TOOL_URL}\" /tmp/tool\n"
+            '          bash scripts/ci/download-release.sh "${TOOL_URL}" /tmp/tool\n'
         )
         self.assertEqual([], findings("fixture.yml", step))
 
@@ -162,17 +156,14 @@ class ReleaseDownloadRetryTest(unittest.TestCase):
             "    steps:\n"
             "      - name: Install tool\n"
             "        run: |\n"
-            "          curl -fsSL -o /tmp/tool \"${TOOL_URL}\"\n"
+            '          curl -fsSL -o /tmp/tool "${TOOL_URL}"\n'
         )
         found = findings("fixture.yml", workflow)
         self.assertEqual(1, len(found))
         self.assertEqual("fetch a release asset through " + WRAPPER, found[0][1])
 
     def test_a_url_declaration_without_a_fetch_is_permitted(self) -> None:
-        workflow = (
-            "env:\n"
-            "  TOOL_URL: https://github.com/owner/repo/releases/download/v1/tool\n"
-        )
+        workflow = "env:\n" "  TOOL_URL: https://github.com/owner/repo/releases/download/v1/tool\n"
         self.assertEqual([], findings("fixture.yml", workflow))
 
     def test_allowlist_names_a_reason(self) -> None:
@@ -205,4 +196,4 @@ class ReleaseDownloadRetryTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    sys.exit(unittest.main())
+    unittest.main()

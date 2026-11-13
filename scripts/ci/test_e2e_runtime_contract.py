@@ -596,12 +596,17 @@ class E2ERuntimeContractTest(unittest.TestCase):
         )
 
     def test_tools_are_runner_local_and_results_need_no_write_token(self) -> None:
-        for tool in ("kind", "kubectl", "kuttl"):
+        fetchers = {
+            "kind": "--retry 5 --retry-all-errors",
+            "kubectl": "--retry 5 --retry-all-errors",
+            "kuttl": "bash scripts/ci/download-release.sh",
+        }
+        for tool, fetcher in fetchers.items():
             with self.subTest(tool=tool):
                 name = f"Install {tool} ${{{{ env.{tool.upper()}_VERSION }}}}"
                 step = _workflow_step(self.workflow, name)
                 self.assertIn("${RUNNER_TEMP}/vmafx-e2e-tools/bin", step)
-                self.assertIn("--retry 5 --retry-all-errors", step)
+                self.assertIn(fetcher, step)
                 self.assertIn('>> "${GITHUB_PATH}"', step)
                 self.assertNotIn("/usr/local/bin", step)
 
