@@ -3,6 +3,7 @@ paths:
   - core/src/feature/feature_extractor.cpp
   - core/src/feature/feature_collector.cpp
 invariant: Governing ADR index and compliance contracts for feature extractors.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Governing ADR Index for Feature Subsystem

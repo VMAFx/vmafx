@@ -16,6 +16,10 @@ top-level `exclude_paths` glob. The check finds the outputs by their compile mar
 not by a list. The exclude does not stop Codacy's Agentlinter from reading them: its
 wrapper scans the whole checkout and only filters results, so a duplicate between a
 compiled file and `AGENTS.md` is still reported on `AGENTS.md`.
+
+The same outputs, plus the read-only projection `AGENTS.readonly.md`, carry
+`linguist-generated` in `.gitattributes`, so forge diffs collapse them and reviewers
+read `AGENTS.md`; the canonical file itself stays unmarked.
 """
 
 from __future__ import annotations
@@ -98,6 +102,9 @@ def drift(codacy_text: str, precommit_text: str, paths: list[str]) -> list[str]:
 
 
 COMPILED_MARKER = b"Compiled automatically by praetorctl compile-context"
+READONLY_PROJECTION = "AGENTS.readonly.md"
+ATTR_FIELDS = 3  # git check-attr -z: path, attribute, value
+ATTR_VALUE = 2
 
 
 def codacy_global_excludes(text: str) -> list[str]:
@@ -127,6 +134,19 @@ def compiled_context_files() -> list[str]:
             if COMPILED_MARKER in handle.read(512):
                 out.append(path)
     return out
+
+
+def linguist_generated(paths: list[str]) -> dict[str, str]:
+    """Each path's linguist-generated state, as `git check-attr` reports it."""
+    fields = run_command(
+        [GIT, "-C", str(ROOT), "check-attr", "-z", "linguist-generated", "--", *paths],
+        allowed_executables=(GIT,),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout_seconds=60,
+    ).stdout.split("\0")
+    return {fields[idx]: fields[idx + ATTR_VALUE] for idx in range(0, len(fields) - 2, ATTR_FIELDS)}
 
 
 def unexcluded_compiled(codacy_text: str, paths: list[str]) -> list[str]:
@@ -216,6 +236,24 @@ class CodacyConfig(unittest.TestCase):
             unexcluded_compiled("---\nengines: {}\n", [".gemini/GEMINI.md", "CLAUDE.md"]),
             [".gemini/GEMINI.md", "CLAUDE.md"],
         )
+
+    def test_compiled_context_files_are_linguist_generated(self) -> None:
+        """Positive: forge diffs collapse every compiled projection and the read-only one."""
+        generated = sorted({*compiled_context_files(), READONLY_PROJECTION})
+        self.assertIn("CLAUDE.md", generated)
+        states = linguist_generated(generated)
+        self.assertEqual([path for path in generated if states.get(path) != "set"], [])
+
+    def test_canonical_agents_file_is_not_linguist_generated(self) -> None:
+        """Negative: AGENTS.md is the reviewed source, so its diff stays expanded."""
+        self.assertEqual(linguist_generated(["AGENTS.md"]), {"AGENTS.md": "unspecified"})
+
+    def test_marker_quoted_past_the_header_is_no_projection(self) -> None:
+        """Boundary: this file quotes the marker past its first 512 bytes and stays unmarked."""
+        this = "scripts/ci/tests/test_codacy_config.py"
+        self.assertIn(COMPILED_MARKER, (ROOT / this).read_bytes())
+        self.assertNotIn(this, compiled_context_files())
+        self.assertEqual(linguist_generated([this]), {this: "unspecified"})
 
     def test_glob_boundaries(self) -> None:
         """Boundary: * stays in one directory, ** crosses them, **/ needs one directory."""

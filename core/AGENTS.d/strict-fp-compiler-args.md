@@ -3,6 +3,7 @@ paths:
   - core/src/meson.build
   - core/test/test_strict_fp_compiler_args.py
 invariant: Strict FP is project argument; every C and C++ translation unit builds without contraction.
+area: build-and-toolchains
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Strict FP compiler-argument policy (ADR-1461)

@@ -4,6 +4,7 @@ paths:
   - core/src/feature/sycl/sycl_ssimulacra2_math.h
   - core/test/test_sycl_ssimulacra2_parity.c
 invariant: ssimulacra2_sycl = CPU ssimulacra2, bit for bit; device-resident; IIR recurrence has no running accumulator.
+area: ssim-cambi-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # SSIMULACRA2 perceptual metric

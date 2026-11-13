@@ -3,6 +3,7 @@ paths:
   - core/src/feature/niqe.c
   - core/src/feature/niqe_math.h
 invariant: NIQE fork-pkl parity, sharpness calculation, and model coefficient loading.
+area: ssim-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # NIQE Fork-pkl Parity and Sharpness Invariants

@@ -4,6 +4,7 @@ paths:
   - core/src/log.h
   - core/src/log.cpp
 invariant: Fork diagnostics route through vmaf_log with BUG-048 format lock; log.c respects C23 va_start.
+area: engine
 ---
 <!-- markdownlint-disable MD013 -->
 # Logging callbacks, fork diagnostic routing, and C23 va_start

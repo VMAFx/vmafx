@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/integer_adm_sycl.cpp
   - core/test/test_sycl_adm_parity.c
 invariant: Integer ADM AIM pass; adm_sycl provides aim_score; 2 kernels per scale decouple CSF; adm_skip_aim mirrors CPU.
+area: adm-and-vif
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Integer ADM AIM pass (ADR-1362, T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05)

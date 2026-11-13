@@ -3,6 +3,7 @@ paths:
   - core/src/read_json_model.c
   - core/src/read_json_model.h
 invariant: Model feature arrays sync capacity before access and free previous names before strdup.
+area: models-and-rust
 ---
 <!-- markdownlint-disable MD013 -->
 # JSON model parser feature array capacity and name lifecycle

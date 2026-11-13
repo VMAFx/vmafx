@@ -10,6 +10,7 @@ paths:
   - core/test/test_vmafx_live_pacing.c
   - core/test/test_timing_suite_plain_builds.py
 invariant: Window values = sync pooled bits (vmafx_pool_engine); completion thread per context, engine lock, no fence.
+area: vmafx
 ---
 <!-- markdownlint-disable MD013 -->
 # VMAFx window scores (ADR-2074)

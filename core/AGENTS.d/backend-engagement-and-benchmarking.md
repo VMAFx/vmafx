@@ -3,6 +3,7 @@ paths:
   - testdata/bench_all.sh
   - testdata/perf_multi_resolution.json
 invariant: Backend selection flags verify engagement per run; benchmark harness maintains thread and stderr hygiene.
+area: backends-metrics-and-tests
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Backend engagement verification, bench flags, and perf baselines

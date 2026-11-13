@@ -4,6 +4,7 @@ paths:
   - core/test/test_sycl_float_motion_parity.c
   - core/test/test_sycl_twin_option_parity.c
 invariant: float_motion_sycl.cpp SAD = CPU order, bit for bit; emits through motion_clip() / motion_blend_clip(), motion3 included.
+area: motion-psnr-and-moment
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Float motion extractor and kernels

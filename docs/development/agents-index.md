@@ -108,6 +108,7 @@ The script exits 65 for a source it rejects. It rejects:
 
 | Finding | Limit or rule |
 | --- | --- |
+| Load path too large | 32,768 bytes across every `AGENTS.md` from the repository root to the directory: move text into `AGENTS.d/` pages, parents first |
 | Index too large | 16,000 bytes: shorten `invariant:` lines or merge pages |
 | Page too large | 12,000 bytes: split the page by topic |
 | `invariant:` too long | 120 characters |
@@ -138,6 +139,51 @@ An agent reads `AGENTS.md`, picks the area whose summary covers the paths it
 will touch (both areas when unsure), matches the paths in that sub-index and
 reads the matching pages. Page paths, links and the `invariant:` rule do not
 change. `_area-<slug>.md` is not a page: it has no front matter and no row.
+
+## Load-path budget
+
+Codex reads one `AGENTS.md` per directory from the repository root down to the
+working directory and truncates the deepest file once the byte sum passes
+`project_doc_max_bytes` = 32,768 bytes (`codex-rs/core/src/agents_md.rs`;
+[ADR-3540](../adr/3540-agents-chain-budget.md)). Codex, Gemini, Antigravity,
+opencode, Claude Code and editors each bound always-loaded instructions, so
+every load path (the sum of every tracked `AGENTS.md` from the repository root
+to a directory, inclusive) must fit within the cap.
+
+- **32,768 bytes enforced (`CHAIN_MAX_BYTES`)**: `scripts/docs/agents_index.py`
+  (`make docs-fragments-check`) refuses any load path above 32,768 bytes with
+  exit code 65.
+- **30,720 bytes working target**: keep new and migrated load paths at or below
+  30,720 bytes (30 KiB) so later topic rows have 2,048 bytes of headroom before
+  tripping the gate.
+- **Parents first**: shrink shared parent directories (`AGENTS.md`,
+  `scripts/AGENTS.md`, `cmd/AGENTS.md`, `core/AGENTS.md`) before touching
+  leaves. Every byte in a parent is paid by every directory below it; once a
+  parent becomes a short `_index.md` head plus a rendered table or areas,
+  smaller leaves stay under 30,720 bytes untouched, and only leaves whose path
+  still passes 30,720 bytes migrate into `AGENTS.d/`.
+
+When a chain exceeds the cap, `--check` prints the total, the cap and each file
+contributing to the sum:
+
+```text
+agents index: scripts/release/AGENTS.md: load path 55484 bytes, chain budget 32768 (AGENTS.md 11158 + scripts/AGENTS.md 25444 + scripts/release/AGENTS.md 18882)
+```
+
+Read the parenthetic chain from left to right: split the largest unmigrated
+parent first (`python3 scripts/docs/agents_index.py --write <dir>`), then split
+the leaf if the chain still passes 30,720 bytes.
+
+Measure every tracked load path in the tree with:
+
+```bash
+git ls-files -co --exclude-standard | grep -E '(^|/)AGENTS\.md$' | python3 -c 'import sys,os
+fs=[l.strip() for l in sys.stdin]; sz={f:os.path.getsize(f) for f in fs}
+for f in sorted(fs):
+    d=os.path.dirname(f); parts=d.split("/") if d else []
+    chain=["AGENTS.md"]+["/".join(parts[:i])+"/AGENTS.md" for i in range(1,len(parts)+1)]
+    chain=[c for c in chain if c in sz]; print(sum(sz[c] for c in chain), d or ".", len(chain))' | sort -rn
+```
 
 ## What the index contains
 

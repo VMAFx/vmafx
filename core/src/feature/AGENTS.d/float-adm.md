@@ -3,6 +3,7 @@ paths:
   - core/src/feature/float_adm.c
   - core/src/feature/adm_tools.h
 invariant: Float ADM GPU exports, strict division (no reciprocal estimate), min dim 17x17, and signature stability.
+area: adm
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Float ADM GPU Exports, Strict Divides, and Bounds

@@ -3,6 +3,7 @@ paths:
   - core/src/feature/adm_tools.c
   - core/src/feature/adm_tools.h
 invariant: ADM contrast-masking edge policy is asymmetric across CPU and GPU twins.
+area: adm
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # ADM Contrast-Masking Edge Policy Asymmetry

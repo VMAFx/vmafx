@@ -10,6 +10,7 @@ paths:
   - core/src/feature/barten_csf_tools.h
   - core/src/rust/feature/adm/**
 invariant: Integer ADM arithmetic change in C = same change in core/src/rust/feature/adm; rust_twin_diff.py adm shows 0 diffs.
+area: adm
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Integer ADM Rust twin (`adm_rust`, ADR-1713)

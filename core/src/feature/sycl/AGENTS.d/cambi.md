@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/integer_cambi_sycl.cpp
   - core/test/test_sycl_cambi_parity.c
 invariant: integer_cambi_sycl.cpp — fully device-resident, graph-registered; options_cambi_sycl sync.
+area: ssim-cambi-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # CAMBI banding extractor and kernels

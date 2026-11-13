@@ -7,6 +7,7 @@ paths:
   - core/tools/cli_parse.cpp
   - core/tools/vmaf.cpp
 invariant: Samples above 2^bpc - 1 are invalid input; only opt-in read_pictures check scans for them.
+area: engine-and-runtime
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Sample range contract and the opt-in check (ADR-1918)

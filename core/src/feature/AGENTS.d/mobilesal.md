@@ -4,6 +4,7 @@ paths:
   - core/test/test_mobilesal.c
   - core/test/dnn/test_mobilesal_run.c
 invariant: MobileSal extractor pads sides to multiple of 8 for students and averages only frame's own area.
+area: ssim-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # MobileSal Saliency Extractor Smoke-Only Gating

@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/integer_ms_ssim_sycl.cpp
   - core/test/test_sycl_ms_ssim_parity.c
 invariant: integer_ms_ssim_sycl.cpp = CPU arithmetic, type for type; honours enable_chroma, enable_lcs, enable_db.
+area: ssim-cambi-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Multi-Scale SSIM extractor and kernels

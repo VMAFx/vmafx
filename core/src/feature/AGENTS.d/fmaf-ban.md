@@ -1,7 +1,13 @@
 ---
 paths:
+  - core/src/feature/*.c
+  - core/src/feature/common/convolution.c
+  - core/src/feature/common/fmaf_exact.h
+  - core/src/feature/iqa/*.c
+  - core/src/feature/third_party/xiph/psnr_hvs.c
   - core/src/feature/feature_extractor.h
 invariant: Scalar references never call libm fmaf to prevent contraction divergence across hosts.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Scalar Reference libm fmaf Prohibition

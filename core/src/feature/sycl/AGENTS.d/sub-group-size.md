@@ -4,6 +4,7 @@ paths:
   - core/src/feature/sycl/float_motion_sycl.cpp
   - core/src/feature/sycl/float_adm_sycl.cpp
 invariant: Kernel sub-group size: 16 or 32 only (ADR-1468); Xe2 AOT targets reject 8.
+area: runtime-and-kernels
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Kernel sub-group size policy

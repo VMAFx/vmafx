@@ -3,6 +3,7 @@ paths:
   - core/src/metadata_handler.cpp
   - core/src/metadata_handler.h
 invariant: C++20 metadata handler preserves extern "C" symbols and unique_ptr lifecycle.
+area: engine
 ---
 <!-- markdownlint-disable MD013 -->
 # Metadata handler C++20 pilot and C ABI symbols

@@ -13,6 +13,7 @@ paths:
   - core/test/test_vmafx_import_*
   - core/test/vmafx_import_test_util.h
 invariant: Import never host-copies; release fence at last picture ref; D8 wait per context, 10 s default.
+area: vmafx
 ---
 <!-- markdownlint-disable MD013 -->
 # VMAFx device frames, fences, pools (ADR-1929)

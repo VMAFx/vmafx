@@ -13,6 +13,7 @@ paths:
   - core/src/rust/shim/rust_twins.cpp
   - core/src/rust/feature/adm/**
 invariant: Second ADM distance = one context; transform once per scale, weigh per distance; scores equal separate contexts.
+area: adm
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # ADM second viewing distance (ADR-2795)

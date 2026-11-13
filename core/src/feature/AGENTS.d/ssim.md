@@ -4,6 +4,7 @@ paths:
   - core/src/feature/ssim.h
   - core/src/feature/float_ssim.c
 invariant: Integer SSIM samplemax² widening, fork-side registration, and pthread_once dispatch.
+area: ssim-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Integer SSIM Widening, Registration, and Dispatch

@@ -168,7 +168,9 @@ call** (ADR-0517). `setvars.sh` references variables (`SETVARS_ARGS`,
   `--metal_device`, `output_fmt`, `subsample`, tiny-AI flags) and identical
   `vmaf` CLI argv. Additions update both servers in lockstep. Pinned by
   `tests/test_parity_argv.py` and `TestGoAndPythonArgvParity`. Both include
-  `python/test/resource/yuv` in allowed roots.
+  `python/test/resource/yuv` in allowed roots. Generated `options.gen.json`,
+  `%.6f` default, 64x64 probe, and `backend_used` parity: read
+  [scoring-and-probe-parity](../cmd/vmafx-mcp/AGENTS.d/scoring-and-probe-parity.md).
 - **`tool-contract.json` = this server's tool list for Go parity.**
   `python3 -m vmaf_mcp.tool_contract --write` derives it from
   `_list_tools()` (names, property JSON types, required sets);

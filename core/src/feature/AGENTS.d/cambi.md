@@ -5,6 +5,7 @@ paths:
   - core/test/test_cambi_full_ref_wide_source.c
   - core/test/test_cambi_heatmap_writers.c
 invariant: CAMBI bounded searches, c-values window boundaries, row-by-row 10-bit copies, and UTF-8 heatmap paths.
+area: ssim-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # CAMBI Searches, Window Boundaries, and Heatmap Paths

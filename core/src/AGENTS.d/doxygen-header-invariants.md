@@ -3,6 +3,7 @@ paths:
   - core/src/picture.h
   - core/src/picture_pool.h
 invariant: Internal core/src headers carry Doxygen file briefs and parameter comments.
+area: engine
 ---
 <!-- markdownlint-disable MD013 -->
 # Doxygen internal header briefs and parameter documentation

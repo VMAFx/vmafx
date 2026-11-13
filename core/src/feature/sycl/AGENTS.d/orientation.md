@@ -3,6 +3,7 @@ paths:
   - core/src/meson.build
   - core/src/feature/sycl/sycl_compat.h
 invariant: Orientation for agents on per-feature SYCL kernels and governing ADRs.
+area: build-and-parity
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Governing ADRs

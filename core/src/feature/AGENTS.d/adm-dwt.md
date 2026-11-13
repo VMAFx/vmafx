@@ -3,6 +3,7 @@ paths:
   - core/src/feature/integer_adm.c
   - core/src/feature/integer_adm.h
 invariant: Integer ADM DWT mirror table for tiny extents and 16-bit vertical int64 sums.
+area: adm
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Integer ADM DWT Mirroring and 16-Bit Vertical Sums

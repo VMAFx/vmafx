@@ -7,6 +7,7 @@ paths:
   - core/src/libvmaf.c
   - core/src/meson.build
 invariant: One Rust archive, engine library only; registry reaches Rust via shim accessor; twins inherit C descriptor.
+area: models-and-rust
 ---
 <!-- markdownlint-disable MD013 -->
 # Rust extractor framework (ADR-1713)

@@ -2,6 +2,7 @@
 paths:
   - core/src/feature/fastdvdnet_pre.c
 invariant: FastDVDnet 5-frame-window buffering and temporal pre-filter lifecycle contracts.
+area: ssim-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # FastDVDnet 5-Frame Window Contract and Prefilter

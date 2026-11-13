@@ -4,6 +4,7 @@ paths:
   - scripts/ci/gen-sycl-compile-commands.py
   - .clang-tidy
 invariant: icpx-aware clang-tidy; stock LLVM clang-tidy cannot resolve <sycl/sycl.hpp>.
+area: build-and-parity
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # icpx-aware clang-tidy

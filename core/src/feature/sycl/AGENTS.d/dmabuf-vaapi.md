@@ -3,6 +3,7 @@ paths:
   - core/src/sycl/dmabuf_import.cpp
   - core/src/feature/sycl/integer_motion_sycl.cpp
 invariant: VAAPI / dmabuf zero-copy import — FFmpeg libvmaf_sycl pipeline.
+area: runtime-and-kernels
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # VAAPI and dmabuf zero-copy import

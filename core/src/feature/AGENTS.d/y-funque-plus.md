@@ -2,6 +2,7 @@
 paths:
   - core/src/feature/y_funque_plus.c
 invariant: Y-FUNQUE+ atoms-only feature calculation and decomposition invariants.
+area: ssim-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Y-FUNQUE+ Atoms-Only Feature Calculation

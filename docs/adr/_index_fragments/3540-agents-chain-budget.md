@@ -1,0 +1,1 @@
+| [ADR-3540](3540-agents-chain-budget.md) | Cap every AGENTS.md load path from the repository root to a directory at 32,768 bytes (30,720-byte working target), split oversized parent and leaf files into ADR-1454 AGENTS.d/ topic pages, and fold .cursor/rules/vmafx-workspace.mdc into root AGENTS.md. | Accepted | docs, agents |

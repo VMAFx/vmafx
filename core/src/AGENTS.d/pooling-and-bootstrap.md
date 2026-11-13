@@ -4,6 +4,7 @@ paths:
   - core/src/percentile.h
   - core/src/bootstrap_names.h
 invariant: Pooling accumulators remain O(1) float-exact; bootstrap score names stay centralized.
+area: models-and-rust
 ---
 <!-- markdownlint-disable MD013 -->
 # Pooling accumulators, percentile statistics, and bootstrap names

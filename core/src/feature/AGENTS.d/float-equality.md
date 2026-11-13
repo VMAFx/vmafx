@@ -3,6 +3,7 @@ paths:
   - core/src/feature/feature_name.cpp
   - core/src/feature/brisque_math.h
 invariant: Explicit floating-point comparison contracts replace direct equality tests.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Floating-Point Equality and Comparison Contracts

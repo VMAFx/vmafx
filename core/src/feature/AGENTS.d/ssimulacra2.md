@@ -3,6 +3,7 @@ paths:
   - core/src/feature/ssimulacra2.c
   - core/test/test_ssimulacra2_simd.c
 invariant: SSIMULACRA 2 regression gates, linear RGB conversion, blur, and SIMD bit-exactness.
+area: ssim-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # SSIMULACRA 2 Regression Gates and SIMD Exactness
@@ -139,3 +140,7 @@ survivors. Measured, one ULP in linear RGB became **2.62e-03** score delta.
 **private** scalar reference, not against shipped function, so it will not
 catch shipped copy that drifts. Change shipped copies and that reference
 together.
+
+- **Geometry-sized workspace stays hoisted to `init_fex` / `close_fex`**
+  (ADR-0452; no per-frame `malloc` / `aligned_malloc`): see
+  [allocation-limits](allocation-limits.md).

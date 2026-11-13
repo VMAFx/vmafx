@@ -4,6 +4,7 @@ paths:
   - core/src/feature/sycl/sycl_float_adm_math.h
   - core/test/test_sycl_float_adm_parity.c
 invariant: float_adm_sycl.cpp = CPU float_adm, bit for bit; options must be captured, not hardcoded.
+area: adm-and-vif
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Float ADM extractor and kernels

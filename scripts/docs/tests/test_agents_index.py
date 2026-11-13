@@ -101,7 +101,7 @@ class Fixture(unittest.TestCase):
 
     def write(self, name: str, text: str) -> Path:
         path = self.pages / name
-        path.write_text(text, encoding="utf-8")
+        path.write_text(text, encoding="utf-8", newline="\n")
         return path
 
     def index(self) -> Path:
@@ -122,7 +122,7 @@ class RenderTests(Fixture):
         text = agents_index.render(DIRECTORY, self.root)
         self.assertTrue(text.startswith(agents_index.BANNER + "<!-- markdownlint-disable"))
         title = text.index("# `tools/gate/` notes")
-        instruction = text.index("Generated index. Before editing")
+        instruction = text.index("Generated index. Match touched paths")
         rules = text.index("Every script here is called by a workflow.")
         table = text.index("## Topic pages")
         self.assertLess(title, instruction)
@@ -409,6 +409,156 @@ class BudgetTests(Fixture):
         self.write("beta.md", page(agents_index.MAX_PATHS_PER_PAGE + 1))
         self.assert_invalid("`paths:` needs 1 to 24 entries")
 
+    def test_generated_preamble_fits_within_350_bytes(self) -> None:
+        for areas in (False, True):
+            with self.subTest(areas=areas):
+                preamble = agents_index.BANNER + agents_index._instruction("a/b/c/d", areas)
+                self.assertLessEqual(len(preamble.encode("utf-8")), 350)
+                for line in preamble.splitlines():
+                    self.assertLessEqual(len(line), 80, line)
+
+
+class ChainBudgetTests(Fixture):
+    """Load-path budget tests across rendered and hand-written ``AGENTS.md`` chains."""
+
+    def write_hand(self, relative_dir: str, size: int) -> Path:
+        target = (
+            (self.root / relative_dir / agents_index.INDEX_NAME)
+            if relative_dir
+            else (self.root / agents_index.INDEX_NAME)
+        )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        head = "# Hand notes\n\n"
+        target.write_text(
+            head + "x" * (size - len(head) - 1) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        self.assertEqual(len(target.read_bytes()), size)
+        return target
+
+    def test_load_path_exact_32768_passes_and_32769_fails_naming_every_file(self) -> None:
+        leaf_size = len(agents_index.render(DIRECTORY, self.root).encode("utf-8"))
+        parent_size = 10_000
+        root_exact = agents_index.CHAIN_MAX_BYTES - parent_size - leaf_size
+        self.write_hand("", root_exact)
+        self.write_hand("tools", parent_size)
+        self.assertEqual(self.run_index("--write")[0], 0)
+        self.assertEqual(self.run_index("--check")[0], 0)
+
+        self.write_hand("", root_exact + 1)
+        status, err = self.run_index("--check")
+        self.assertEqual(status, agents_index.EXIT_INVALID, err)
+        self.assertIn("tools/gate/AGENTS.md: load path 32769 bytes, chain budget 32768", err)
+        self.assertIn(f"AGENTS.md {root_exact + 1}", err)
+        self.assertIn(f"tools/AGENTS.md {parent_size}", err)
+        self.assertIn(f"tools/gate/AGENTS.md {leaf_size}", err)
+
+    def test_deep_chain_where_only_one_leaf_crosses_fails_that_leaf_only(self) -> None:
+        leaf_size = len(agents_index.render(DIRECTORY, self.root).encode("utf-8"))
+        self.write_hand("", 12_000)
+        self.write_hand("tools", 12_000)
+        self.assertEqual(self.run_index("--write")[0], 0)
+        self.write_hand("tools/gate/under", agents_index.CHAIN_MAX_BYTES - 24_000 - leaf_size)
+        self.write_hand("tools/gate/over", agents_index.CHAIN_MAX_BYTES - 24_000 - leaf_size + 1)
+        status, _, err = quiet(agents_index.main, ["--check", "--root", str(self.root)])
+        self.assertEqual(status, agents_index.EXIT_INVALID, err)
+        self.assertIn("tools/gate/over/AGENTS.md: load path 32769 bytes", err)
+        self.assertNotIn("tools/gate/under/AGENTS.md: load path", err)
+        self.assertNotIn("\nagents index: tools/gate/AGENTS.md: load path", "\n" + err)
+
+    def test_restricted_run_ignores_unrelated_over_cap_hand_written_path(self) -> None:
+        self.write_hand("", 10_000)
+        self.write_hand("other/deep", 25_000)
+        self.assertEqual(self.run_index("--write")[0], 0)
+        status, err = self.run_index("--check")
+        self.assertEqual(status, 0, err)
+        self.assertEqual(err, "")
+
+        full_status, _, full_err = quiet(agents_index.main, ["--check", "--root", str(self.root)])
+        self.assertEqual(full_status, agents_index.EXIT_INVALID, full_err)
+        self.assertIn("other/deep/AGENTS.md: load path 35000 bytes", full_err)
+
+    def test_parent_argument_checks_descendant_rendered_bytes_before_write(self) -> None:
+        leaf_size = len(agents_index.render(DIRECTORY, self.root).encode("utf-8"))
+        self.assertEqual(self.run_index("--write")[0], 0)
+        self.write_hand("", agents_index.CHAIN_MAX_BYTES - 10_000 - leaf_size - 50)
+        self.write_hand("tools", 10_000)
+        self.write("_index.md", HEAD + "\n" + "y" * 100 + "\n")
+        status, _, err = quiet(agents_index.main, ["--check", "--root", str(self.root), "tools"])
+        self.assertEqual(status, agents_index.EXIT_INVALID, err)
+        self.assertIn("tools/gate/AGENTS.md: load path", err)
+
+    def check_arg(self, arg: str) -> tuple[int, str]:
+        """Run ``agents_index.py --check`` restricted to ``arg`` and return (status, stderr)."""
+
+        status, _, err = quiet(agents_index.main, ["--check", "--root", str(self.root), arg])
+        return status, err
+
+    def test_normalized_directory_arguments_select_matching_chains(self) -> None:
+        """Dot, leading ./, and trailing / directory spellings select matching load paths."""
+
+        leaf_size = len(agents_index.render(DIRECTORY, self.root).encode("utf-8"))
+        root_exact = agents_index.CHAIN_MAX_BYTES - 10_000 - leaf_size
+        self.write_hand("", root_exact)
+        self.write_hand("tools", 10_000)
+        self.assertEqual(self.run_index("--write")[0], 0)
+        spellings = (
+            ".",
+            "./",
+            "./tools",
+            "tools/",
+            "./tools/gate",
+            "tools/gate/",
+            "./tools/gate/",
+        )
+        for arg in spellings:
+            with self.subTest(arg=arg, phase="within-cap"):
+                status, err = self.check_arg(arg)
+                self.assertEqual(status, 0, err)
+
+        self.write_hand("", root_exact + 1)
+        for arg in spellings:
+            with self.subTest(arg=arg, phase="over-cap"):
+                status, err = self.check_arg(arg)
+                self.assertEqual(status, agents_index.EXIT_INVALID, err)
+                self.assertIn("tools/gate/AGENTS.md: load path 32769 bytes", err)
+
+    def test_dot_and_collapsed_parent_boundary_exact_32768_passes_and_32769_fails(self) -> None:
+        """Root boundary spellings (. and tools/..) pass at 32768 bytes and fail at 32769."""
+
+        leaf_size = len(agents_index.render(DIRECTORY, self.root).encode("utf-8"))
+        root_exact = agents_index.CHAIN_MAX_BYTES - leaf_size
+        self.write_hand("", root_exact)
+        self.assertEqual(self.run_index("--write")[0], 0)
+        for arg in (".", "tools/.."):
+            with self.subTest(arg=arg, boundary=agents_index.CHAIN_MAX_BYTES):
+                status, err = self.check_arg(arg)
+                self.assertEqual(status, 0, err)
+
+        self.write_hand("", root_exact + 1)
+        for arg in (".", "tools/.."):
+            with self.subTest(arg=arg, boundary=agents_index.CHAIN_MAX_BYTES + 1):
+                status, err = self.check_arg(arg)
+                self.assertEqual(status, agents_index.EXIT_INVALID, err)
+                self.assertIn("tools/gate/AGENTS.md: load path 32769 bytes", err)
+
+    def test_rejects_directory_arguments_escaping_root_or_absolute(self) -> None:
+        """Lexical escapes, symlink escapes, empty strings, and absolute paths exit 65."""
+
+        invalid_args = ("", "..", "./..", "../outside", "tools/../../outside", "/abs/path")
+        for arg in invalid_args:
+            with self.subTest(arg=arg):
+                status, err = self.check_arg(arg)
+                self.assertEqual(status, agents_index.EXIT_INVALID, err)
+                self.assertIn("directory argument", err)
+
+        with tempfile.TemporaryDirectory(prefix="vmafx-agents-outside-") as outside:
+            (self.root / "escaped-link").symlink_to(Path(outside))
+            status, err = self.check_arg("escaped-link")
+            self.assertEqual(status, agents_index.EXIT_INVALID, err)
+            self.assertIn("escapes --root", err)
+
 
 class DiscoveryTests(Fixture):
     def test_directories_from_names_only_owners_of_a_pages_directory(self) -> None:
@@ -440,6 +590,40 @@ class DiscoveryTests(Fixture):
             status, _, err = quiet(agents_index.main, ["--write", "--root", str(self.root)])
             self.assertEqual(status, 0, err)
             self.assertTrue(self.index().is_file())
+
+    def test_fallback_walk_skips_directory_symlinks_to_owner(self) -> None:
+        """Positive: non-git discovery skips directory symlinks so owners keep canonical paths."""
+        (self.root / "z-link").symlink_to(self.root / DIRECTORY, target_is_directory=True)
+        self.assertEqual(agents_index.discover(self.root), [DIRECTORY])
+        write_status, _, write_err = quiet(agents_index.main, ["--write", "--root", str(self.root)])
+        self.assertEqual(write_status, 0, write_err)
+        check_status, _, check_err = quiet(agents_index.main, ["--check", "--root", str(self.root)])
+        self.assertEqual(check_status, 0, check_err)
+
+    def test_fallback_walk_discovers_regular_nested_owner_directories(self) -> None:
+        """Negative: non-git discovery still traverses ordinary nested owner directories."""
+        nested = self.root / "nested/sub"
+        (nested / "AGENTS.d").mkdir(parents=True)
+        (nested / "item.py").write_text("fixture\n", encoding="utf-8", newline="\n")
+        (nested / "AGENTS.d/_index.md").write_text(
+            "# `nested/sub/` notes\n", encoding="utf-8", newline="\n"
+        )
+        (nested / "AGENTS.d/item.md").write_text(
+            "---\npaths:\n  - nested/sub/item.py\ninvariant: Item stays tested.\n---\n# Item\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        self.assertEqual(agents_index.discover(self.root), ["nested/sub", DIRECTORY])
+        self.assertEqual(quiet(agents_index.main, ["--write", "--root", str(self.root)])[0], 0)
+        self.assertEqual(quiet(agents_index.main, ["--check", "--root", str(self.root)])[0], 0)
+
+    def test_fallback_walk_lists_file_symlinks_and_skips_broken_ones(self) -> None:
+        """Boundary: file symlinks to regular files list like git ls-files; broken ones skip."""
+        (self.root / DIRECTORY / "alias.py").symlink_to(self.root / DIRECTORY / "alpha.py")
+        (self.root / DIRECTORY / "broken.py").symlink_to(self.root / DIRECTORY / "missing.py")
+        files = agents_index.list_files(self.root)
+        self.assertIn("tools/gate/alias.py", files)
+        self.assertNotIn("tools/gate/broken.py", files)
 
 
 class UnitSplitTests(unittest.TestCase):
@@ -606,6 +790,76 @@ class MigrationTests(Fixture):
             )
         self.assertEqual(status, 0, out)
         self.assertIn("old AGENTS.md: ", out)
+
+    def _group_into_areas(self) -> None:
+        self.write("_area-first.md", "# First\n\nAlpha things.\n")
+        self.write("_area-second.md", "# Second\n\nBeta things.\n")
+        self.write("alpha.md", ALPHA.replace("---\n<!--", "area: first\n---\n<!--", 1))
+        self.write(
+            "beta.md",
+            BETA.replace(
+                "invariant: Beta exits 2 on bad usage.",
+                "invariant: Beta exits 2 on bad usage.\narea: second",
+            ),
+        )
+        self.assertEqual(self.run_index("--write")[0], 0)
+
+    def test_area_grouped_pages_pass_and_stale_sub_index_fails(self) -> None:
+        self._group_into_areas()
+        report = self.report()
+        self.assertEqual(report.failures, 0, "\n".join(report.lines))
+        self.assertIn("  pages: 2,", "\n".join(report.lines))
+        sub = self.root / DIRECTORY / "AGENTS-first.md"
+        sub.write_text(sub.read_text(encoding="utf-8") + "stale\n", encoding="utf-8")
+        self.assertIn("stale index: 1", self.findings())
+        self.write("_area-unused.md", "# Unused\n\nOrphan.\n")
+        old = self.root / "old.md"
+        old.write_text(OLD, encoding="utf-8")
+        status, _, err = quiet(
+            migration.main, ["--old-file", str(old), "--root", str(self.root), DIRECTORY]
+        )
+        self.assertEqual(status, agents_index.EXIT_INVALID, err)
+        self.assertIn("area unused has no page", err)
+
+    def test_old_ref_reads_already_split_tree_before_area_grouping(self) -> None:
+        home = {"HOME": str(self.root), "XDG_CONFIG_HOME": str(self.root / ".config")}
+        environment = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        environment.update(home)
+        identity = ("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid")
+        safety = ("-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null")
+        for arguments in (
+            ("init", "--quiet"),
+            ("add", "--", DIRECTORY),
+            (*identity, *safety, "commit", "--quiet", "-m", "split"),
+        ):
+            run_command(
+                ("git", "-C", str(self.root), *arguments),
+                allowed_executables=("git",),
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        self._group_into_areas()
+        with mock.patch.dict(os.environ, home):
+            status, out, err = quiet(
+                migration.main, ["--old-ref", "HEAD", "--root", str(self.root), DIRECTORY]
+            )
+            self.assertEqual(status, 0, out + err)
+            self.assertIn("content units: 5 old, 5 new", out)
+            self.assertIn("OK: nothing lost", out)
+            self.write(
+                "beta.md",
+                (self.pages / "beta.md")
+                .read_text(encoding="utf-8")
+                .replace("- Never `eval` its input.\n", ""),
+            )
+            self.assertEqual(self.run_index("--write")[0], 0)
+            status, out, _ = quiet(
+                migration.main, ["--old-ref", "HEAD", "--root", str(self.root), DIRECTORY]
+            )
+            self.assertEqual(status, 1, out)
+            self.assertIn("units dropped: 1", out)
 
 
 class ModernizationAuditScopeTests(unittest.TestCase):

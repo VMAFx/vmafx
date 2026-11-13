@@ -3,6 +3,7 @@ paths:
   - core/src/feature/brisque.c
   - core/src/feature/brisque_math.h
 invariant: BRISQUE MATLAB pipeline parity and numerical stability assertions.
+area: ssim-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # BRISQUE MATLAB-Pipeline Parity Invariants

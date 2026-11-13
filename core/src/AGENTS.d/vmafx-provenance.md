@@ -15,6 +15,7 @@ paths:
   - core/tools/test/test_vmaf_provenance_report.py
   - core/tools/test/test_vmaf_verify_provenance.py
 invariant: Record JSON = proto JSON mapping in RFC 8785 form; digest skips digest + elapsed_ns only; field tables match vmafx.toml.
+area: vmafx
 ---
 <!-- markdownlint-disable MD013 -->
 # Provenance record and reports (RC4 WP5, ADR-2073, #2142)

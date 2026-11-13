@@ -60,3 +60,7 @@ load-bearing for
   Docker workflows and both `supply-chain.yml` jobs must move together.
   Mixed-version chain produces signature-format mismatches, surfacing
   only at consumer-verify time.
+- Server-side `release-publish` / `pypi-publish` environment preflight,
+  deployment-branch policy, and reviewer binding rules for `supply-chain.yml`
+  and `docker-publish-*.yml` live in
+  [publication-environment-binding](../../scripts/release/AGENTS.d/publication-environment-binding.md).

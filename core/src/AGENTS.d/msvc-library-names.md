@@ -3,6 +3,7 @@ paths:
   - core/src/meson.build
   - scripts/ci/check_msvc_library_names.py
 invariant: Static MSVC-like builds install vmaf.lib / vmafx.lib via vmaf_static_name_kwargs; other builds keep Meson names.
+area: build-and-platform
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Installed library names of MSVC builds (ADR-2752)

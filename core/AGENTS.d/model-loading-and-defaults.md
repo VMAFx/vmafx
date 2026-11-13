@@ -4,6 +4,7 @@ paths:
   - core/src/model.c
   - core/src/predict.c
 invariant: Default model version defined solely by VMAF_DEFAULT_MODEL_VERSION; model loading scales without ceiling.
+area: engine-and-runtime
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Model loading, default model definition, and prediction scores

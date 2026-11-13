@@ -3,6 +3,7 @@ paths:
   - core/src/feature/adm_tools.c
   - core/src/feature/adm_tools.h
 invariant: adm_angle_flag has exactly one definition across floating-point and integer paths.
+area: adm
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # adm_angle_flag Unified Definition Invariant

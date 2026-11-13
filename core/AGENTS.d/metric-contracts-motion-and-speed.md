@@ -4,6 +4,7 @@ paths:
   - core/src/feature/ms_ssim.c
   - core/src/feature/speed.c
 invariant: MS-SSIM honors enable_lcs; float_motion surfaces extra options; SpEED singular is non-fatal.
+area: backends-metrics-and-tests
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Motion, MS-SSIM, and SpEED-chroma GPU metric contracts

@@ -5,6 +5,7 @@ paths:
   - core/src/picture_pool.cpp
   - core/src/gpu_picture_pool.cpp
 invariant: Out-parameter init clears handles on failure; teardown owners replace partial cleanup ladders.
+area: engine
 ---
 <!-- markdownlint-disable MD013 -->
 # Out-parameter initialization and teardown ladders
