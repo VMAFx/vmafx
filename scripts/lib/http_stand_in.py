@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import http.server
 import threading
+import time
 from collections.abc import Iterable, Mapping
 from types import TracebackType
 
@@ -30,10 +31,12 @@ class StandIn:
         statuses: Iterable[int] = (),
         body: bytes = b"",
         bodies: Mapping[str, bytes] | None = None,
+        trickle_s: float = 0.0,
     ) -> None:
         self.statuses = list(statuses)
         self.body = body
         self.bodies = dict(bodies or {})
+        self.trickle_s = trickle_s
         self.requests: list[str] = []
         self._server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
@@ -50,7 +53,13 @@ class StandIn:
                 self.send_response(status)
                 self.send_header("Content-Length", str(len(content)))
                 self.end_headers()
-                self.wfile.write(content)
+                if stand_in.trickle_s > 0 and status == OK:
+                    for offset in range(0, len(content), 256):
+                        self.wfile.write(content[offset : offset + 256])
+                        self.wfile.flush()
+                        time.sleep(stand_in.trickle_s)
+                else:
+                    self.wfile.write(content)
 
             def log_message(self, format: str, *args: object) -> None:
                 return

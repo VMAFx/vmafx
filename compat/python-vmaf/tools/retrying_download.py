@@ -54,15 +54,26 @@ def transient(error: BaseException) -> bool:
     return isinstance(error, (TimeoutError, ConnectionError, http.client.HTTPException))
 
 
+def _set_read_timeout(response: object, seconds: float) -> None:
+    """Cap the next blocking socket read at SECONDS, when the socket is reachable."""
+    sock = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
+    if sock is not None:
+        sock.settimeout(max(0.001, seconds))
+
+
 def _copy_body(response: object, path: str, deadline: float) -> None:
     """Stream a response to PATH, failing on a total deadline or a short body."""
     expected = response.headers.get("Content-Length")  # type: ignore[attr-defined]
     received = 0
     with open(path, "wb") as output:
         while True:
-            if time.monotonic() > deadline:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 raise TimeoutError(f"transfer exceeded {TRANSFER_TIMEOUT_S} s")
-            chunk = response.read(READ_CHUNK)  # type: ignore[attr-defined]
+            _set_read_timeout(response, min(READ_TIMEOUT_S, remaining))
+            # read1 performs at most one socket read, so a trickling server
+            # cannot hold the loop for a whole chunk between deadline checks.
+            chunk = response.read1(READ_CHUNK)  # type: ignore[attr-defined]
             if not chunk:
                 break
             output.write(chunk)

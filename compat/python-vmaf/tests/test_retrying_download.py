@@ -88,6 +88,22 @@ def test_an_outage_longer_than_the_policy_raises_the_last_error(tmp_path: Path) 
     assert waits == list(retrying_download.RETRY_DELAYS_S)
 
 
+def test_a_slow_trickle_hits_the_total_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 4 KiB in 256-byte pieces, one piece every 100 ms: the whole body would
+    # take 1.6 s, but the deadline is 0.3 s. read1() must return between pieces
+    # so the deadline check can run; a buffered read() would hide the trickle.
+    monkeypatch.setattr(retrying_download, "TRANSFER_TIMEOUT_S", 0.3)
+    monkeypatch.setattr(retrying_download, "READ_TIMEOUT_S", 0.2)
+    body = b"x" * 4096
+    with StandIn([], body, trickle_s=0.1) as server:
+        with pytest.raises(TimeoutError):
+            retrying_download.retrieve(
+                server.url(FIXTURE), str(tmp_path / "f"), delays=(), sleep=lambda _: None
+            )
+
+
 def test_a_refused_connection_is_retried(tmp_path: Path) -> None:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
