@@ -36,7 +36,6 @@ concurrency:
 
 env:
   DEBIAN_FRONTEND: noninteractive
-  LLVM_MINGW_VERSION: 20261104
 
 jobs:
   tier:
@@ -63,21 +62,33 @@ jobs:
           python-version: '3.14.10'
 
       - name: Install build dependencies
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
+          sudo apt-get --error-on=any -o Acquire::Retries=3 update
           sudo apt-get install -y --no-install-recommends xz-utils xxd
 
       - name: Install Meson and Ninja
+        timeout-minutes: 5
         run: python -m pip install --require-hashes -r requirements/locks/build.txt
 
       - name: Install llvm-mingw
+        timeout-minutes: 15
         run: |
+          set -a
+          . ./build-config.env
+          set +a
           root="$RUNNER_TEMP/llvm-mingw"
           mkdir -p "$root"
+          archive="$RUNNER_TEMP/llvm-mingw.tar.xz"
           curl -fsSL \
+            --retry 3 --retry-all-errors --max-time 600 \
             "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-22.04-x86_64.tar.xz" \
-            -o "$RUNNER_TEMP/llvm-mingw.tar.xz"
-          tar -xJf "$RUNNER_TEMP/llvm-mingw.tar.xz" -C "$root" --strip-components=1
+            -o "$archive"
+          if ! printf '%s  %s\n' "$LLVM_MINGW_SHA256" "$archive" | sha256sum --check --strict; then
+            echo "::error::llvm-mingw ${LLVM_MINGW_VERSION} does not match LLVM_MINGW_SHA256" >&2
+            exit 1
+          fi
+          timeout 180 tar -xJf "$archive" -C "$root" --strip-components=1
           echo "LLVM_MINGW_ROOT=$root" >> "$GITHUB_ENV"
           echo "$root/bin" >> "$GITHUB_PATH"
           "$root/bin/x86_64-w64-mingw32-clang" --version

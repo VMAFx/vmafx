@@ -89,6 +89,10 @@ Download an llvm-mingw release and put its wrappers on `PATH`:
 
 ```bash
 curl -LO https://github.com/mstorsjo/llvm-mingw/releases/download/20261104/llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64.tar.xz
+printf '%s  %s\n' \
+  919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926 \
+  llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64.tar.xz \
+  | sha256sum --check --strict
 tar -xJf llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64.tar.xz
 export PATH="$PWD/llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64/bin:$PATH"
 ```

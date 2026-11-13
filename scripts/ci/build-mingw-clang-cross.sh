@@ -52,9 +52,11 @@ cp "$prefix"/bin/*.exe "$prefix"/bin/*.dll "$staged"/
 toolchain_root="${LLVM_MINGW_ROOT:-$(cd "$(dirname "$(command -v x86_64-w64-mingw32-clang)")/.." && pwd)}"
 runtime_dir="$toolchain_root/x86_64-w64-mingw32/bin"
 for dll in libc++.dll libunwind.dll libwinpthread-1.dll; do
-    if [ -f "$runtime_dir/$dll" ]; then
-        cp "$runtime_dir/$dll" "$staged/"
+    if [ ! -f "$runtime_dir/$dll" ]; then
+        echo "$dll not found in $runtime_dir; the staged executable could not start" >&2
+        exit 1
     fi
+    cp "$runtime_dir/$dll" "$staged/"
 done
 
 echo "staged $staged"
