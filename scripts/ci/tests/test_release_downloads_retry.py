@@ -124,6 +124,29 @@ class ReleaseDownloadRetryTest(unittest.TestCase):
             self.assertTrue(path.endswith(".sh"))
             self.assertTrue(reason)
 
+    def test_wrapper_rejects_malformed_release_urls(self) -> None:
+        if sys.platform == "win32":
+            self.skipTest("the CI shell test runs on POSIX; Windows has no guaranteed bash")
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("bash is required to exercise download-release.sh")
+        for url in (
+            "https://github.com//releases/download/v1/tool",
+            "https://github.com/owner//releases/download/v1/tool",
+            "https://github.com/owner/repo/releases/download//tool",
+            "https://github.com/owner/repo/releases/download/v1/",
+        ):
+            with self.subTest(url=url):
+                result = run_command(
+                    [bash, "scripts/ci/download-release.sh", url, "unused"],
+                    allowed_executables=[bash],
+                    cwd=ROOT,
+                    capture_output=True,
+                    check=False,
+                    timeout_seconds=30,
+                )
+                self.assertEqual(2, result.returncode)
+
 
 if __name__ == "__main__":
     sys.exit(unittest.main())

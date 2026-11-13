@@ -22,13 +22,10 @@ fi
 
 url=$1
 destination=$2
-case "$url" in
-  https://github.com/*/releases/download/*) ;;
-  *)
-    echo "download-release: not a GitHub release asset: $url" >&2
-    exit 2
-    ;;
-esac
+if [[ ! "$url" =~ ^https://github\.com/[^/]+/[^/]+/releases/download/[^/]+/[^/]+$ ]]; then
+  echo "download-release: not a GitHub release asset: $url" >&2
+  exit 2
+fi
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 python=${PYTHON:-}
