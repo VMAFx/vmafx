@@ -21,9 +21,11 @@ from vmaftune.codec_adapters import get_adapter, known_codecs
 from vmaftune.corpus import (
     CorpusJob,
     CorpusOptions,
+    _cache_put,
     _cell_cache_key,
     _cell_encode_request,
     _cell_params,
+    _verify_near_dup_spot,
     coarse_grid_crfs,
     coarse_to_fine_search,
     color_tag_args,
@@ -42,6 +44,115 @@ from vmaftune.score import (
     build_vmaf_command,
     parse_vmaf_json,
 )
+
+
+def _near_dup_fixture(tmp_path: Path, *, cached_spot: float | None = 88.0):
+    source = tmp_path / "source.yuv"
+    artifact = tmp_path / "cached.mp4"
+    source.write_bytes(b"source")
+    artifact.write_bytes(b"encode")
+    job = CorpusJob(
+        source=source,
+        width=64,
+        height=64,
+        pix_fmt="yuv420p",
+        framerate=24.0,
+        duration_s=4.0,
+        cells=(("medium", 23),),
+    )
+    result = SimpleNamespace(
+        encode_size_bytes=100,
+        encode_time_ms=10.0,
+        encoder_version="test",
+        ffmpeg_version="test",
+        vmaf_score=50.0,
+        vmaf_model="test",
+        score_time_ms=5.0,
+        vmaf_binary_version="test",
+        artifact_path=artifact,
+        near_dup_spot_score=cached_spot,
+    )
+    return SimpleNamespace(job=job, opts=CorpusOptions()), result
+
+
+@pytest.mark.parametrize(
+    ("query_score", "cached_score", "accepted"),
+    [(88.0, 88.0, True), (89.5, 88.0, True), (89.5001, 88.0, False)],
+)
+def test_near_dup_spot_compares_the_same_first_second(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    query_score: float,
+    cached_score: float,
+    accepted: bool,
+) -> None:
+    """An aggregate whole-clip score cannot move the first-second delta."""
+    sweep, cached = _near_dup_fixture(tmp_path, cached_spot=cached_score)
+    requests = []
+
+    def run_score(request, **_kwargs):
+        requests.append(request)
+        return SimpleNamespace(vmaf_score=query_score)
+
+    monkeypatch.setattr("vmaftune.score.run_score", run_score)
+    assert _verify_near_dup_spot(sweep, cached) is accepted
+    assert len(requests) == 1
+    assert requests[0].reference == sweep.job.source
+    assert requests[0].distorted == cached.artifact_path
+    assert requests[0].frame_skip_ref == 0
+    assert requests[0].frame_cnt == 24
+    assert requests[0].duration_s == 1.0
+
+
+def test_near_dup_spot_fails_closed_for_legacy_cache_entry(tmp_path: Path) -> None:
+    """Old entries have no same-window baseline and must not be reused."""
+    sweep, cached = _near_dup_fixture(tmp_path, cached_spot=None)
+    assert not _verify_near_dup_spot(sweep, cached)
+
+
+def test_cache_put_records_same_window_near_dup_baseline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out = tmp_path / "out.mp4"
+    out.write_bytes(b"encoded")
+    sweep, _ = _near_dup_fixture(tmp_path)
+    sweep.opts = CorpusOptions(near_dup_verify=True)
+    saved = {}
+    requests = []
+
+    def run_score(request, **_kwargs):
+        requests.append(request)
+        return SimpleNamespace(vmaf_score=87.25)
+
+    class Cache:
+        def put(self, key, result, artifact_path, **_kwargs):
+            saved["result"] = result
+
+    sweep.tune_cache = Cache()
+    sweep.src_hash = "a" * 64
+    sweep.fingerprint = None
+    monkeypatch.setattr("vmaftune.score.run_score", run_score)
+    monkeypatch.setattr("vmaftune.corpus._cell_cache_key", lambda *_args: "cache-key")
+    _cache_put(
+        sweep,
+        "medium",
+        23,
+        out,
+        SimpleNamespace(
+            exit_status=0,
+            encode_size_bytes=7,
+            encode_time_ms=2.0,
+            encoder_version="test",
+            ffmpeg_version="test",
+        ),
+        SimpleNamespace(vmaf_score=90.0, score_time_ms=1.0, vmaf_binary_version="test"),
+        {"vmaf_model": "test"},
+    )
+    assert saved["result"].near_dup_spot_score == 87.25
+    assert len(requests) == 1
+    assert requests[0].reference == sweep.job.source
+    assert requests[0].distorted == out
+    assert requests[0].duration_s == 1.0
 
 
 class _FakeCompleted:

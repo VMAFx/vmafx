@@ -997,23 +997,17 @@ def _cell_params_key(sweep: _Sweep, preset: str, crf: int) -> str:
     return params_key(**_cell_params(sweep, preset, crf))
 
 
-def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
-    """Spot-check 1 second of query source against cached encode (ADR-3372).
-
-    Refuses near-duplicate reuse if |vmaf_spot - vmaf_cached| > NEAR_DUP_SPOT_MAX_DELTA.
-    """
-    if not (cached.artifact_path and cached.artifact_path.exists()):
-        return False
+def _first_second_score(
+    job: CorpusJob, opts: CorpusOptions, distorted: Path
+) -> float | None:
+    """Score one source second against an encode, or fail closed on error."""
     from .score import ScoreRequest, run_score
 
-    job = sweep.job
-    opts = sweep.opts
     fps = float(job.framerate) if float(job.framerate) > 0.0 else 24.0
     frame_cnt = max(1, int(fps))
-
     score_req = ScoreRequest(
         reference=job.source,
-        distorted=cached.artifact_path,
+        distorted=distorted,
         width=int(job.width),
         height=int(job.height),
         pix_fmt=job.pix_fmt,
@@ -1027,11 +1021,26 @@ def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
             vmaf_bin=opts.vmaf_bin,
             backend=opts.score_backend,
         )
-        delta = abs(float(spot_res.vmaf_score) - float(cached.vmaf_score))
-        return delta <= NEAR_DUP_SPOT_MAX_DELTA
+        score = float(spot_res.vmaf_score)
+        return score if math.isfinite(score) else None
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
         _LOG.warning("vmaf-tune: near-dup spot verify failed: %s", exc)
+        return None
+
+
+def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
+    """Compare query and cached-source scores on the same first second."""
+    if not (cached.artifact_path and cached.artifact_path.exists()):
         return False
+    if cached.near_dup_spot_score is None:
+        return False
+    job = sweep.job
+    opts = sweep.opts
+    spot_score = _first_second_score(job, opts, cached.artifact_path)
+    if spot_score is None:
+        return False
+    delta = abs(spot_score - cached.near_dup_spot_score)
+    return delta <= NEAR_DUP_SPOT_MAX_DELTA
 
 
 def _cached_row(sweep: _Sweep, preset: str, crf: int) -> dict[str, Any] | None:
@@ -1344,6 +1353,11 @@ def _cache_put(
     try:
         fp = sweep.fingerprint if sweep.opts.near_dup_reuse else None
         pkey = _cell_params_key(sweep, preset, crf) if sweep.opts.near_dup_reuse else None
+        spot_score = (
+            _first_second_score(sweep.job, sweep.opts, out)
+            if sweep.opts.near_dup_verify
+            else None
+        )
         sweep.tune_cache.put(
             _cell_cache_key(sweep, preset, crf),
             CachedResult(
@@ -1357,6 +1371,7 @@ def _cache_put(
                 vmaf_binary_version=score_res.vmaf_binary_version,
                 artifact_path=out,  # placeholder; put() overwrites it
                 row=stored_row,
+                near_dup_spot_score=spot_score,
             ),
             artifact_path=out,
             fingerprint=fp,

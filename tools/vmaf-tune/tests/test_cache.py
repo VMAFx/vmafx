@@ -175,7 +175,7 @@ def test_cache_key_rejects_empty_src_hash():
 # ---------------------------------------------------------- get / put
 
 
-def _result(score=92.5, size=4096) -> CachedResult:
+def _result(score=92.5, size=4096, spot_score=None) -> CachedResult:
     return CachedResult(
         encode_size_bytes=size,
         encode_time_ms=10.0,
@@ -186,6 +186,7 @@ def _result(score=92.5, size=4096) -> CachedResult:
         score_time_ms=5.0,
         vmaf_binary_version="3.0.0-lusoris",
         artifact_path=Path("placeholder"),
+        near_dup_spot_score=spot_score,
     )
 
 
@@ -205,7 +206,11 @@ def test_put_then_get_round_trip(tmp_path):
     assert hit.encode_size_bytes == 4096
     assert hit.artifact_path.exists()
     assert hit.artifact_path == stored.artifact_path
-
+    assert hit.near_dup_spot_score is None
+    c.put("verified", _result(spot_score=88.25), blob)
+    verified = c.get("verified")
+    assert verified is not None
+    assert verified.near_dup_spot_score == 88.25
 
 def test_cache_meta_is_strict_json_and_nonfinite_score_is_miss(tmp_path):
     c = TuneCache(tmp_path / "cache")
