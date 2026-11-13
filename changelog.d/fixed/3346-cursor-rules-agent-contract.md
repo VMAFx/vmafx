@@ -4,3 +4,5 @@
   hand-off rules move to a new "Agent integration contract" section of `docs/development/agent-reference.md`,
   which section 9 of `AGENTS.md` already links. `AGENTS.md` gains one pointer line and the hand-written
   `.mdc` is deleted, so Cursor reads the generated projection instead.
+  `scripts/ci/tests/test_cursor_rules_migration.py` checks the deletion, the canonical sentences,
+  the `AGENTS.md` pointer and the generated projection line without needing `praetorctl`.

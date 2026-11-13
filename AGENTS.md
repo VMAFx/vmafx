@@ -168,7 +168,7 @@ make format-check  # dry-run
 ## 9. Reference documentation
 
 - Full reference material: [docs/development/agent-reference.md](docs/development/agent-reference.md) (repository layout, skills table, golden detail, release stages).
-- Workspace defaults and the agent-integration contract: [docs/development/ide-setup.md](docs/development/ide-setup.md), [docs/development/agent-reference.md#agent-integration-contract](docs/development/agent-reference.md#agent-integration-contract).
+- Read before changing workspace setup or handing off a change: [docs/development/ide-setup.md](docs/development/ide-setup.md) (workspace defaults) and [docs/development/agent-reference.md#agent-integration-contract](docs/development/agent-reference.md#agent-integration-contract) (agent integrations and hand-off).
 
 ## 10. Interaction style
 

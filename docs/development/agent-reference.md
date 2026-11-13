@@ -82,7 +82,7 @@ Key requirements and operational details:
 
 ## Agent integration contract
 
-- Keep every project agent integration enabled — Claude, Codex, Gemini, Antigravity, Ollama/local agents, Paperclip, Hindsight, and any repository MCP servers. Do not add these integrations to an ignore, disabled, or unwanted list.
+- Keep every project agent integration enabled unless repository, organization, or user security settings disable it — Claude, Codex, Gemini, Antigravity, Ollama/local agents, Paperclip, Hindsight, and repository MCP servers. MCP servers are enabled only after explicit approval; do not add an approved integration to an ignore, disabled, or unwanted list.
 - Before handing off a change, run the smallest applicable checked-in task and keep generated build output out of the source tree's tracked files. Workspace defaults (`.vscode/` tasks, clangd, `meson setup <build-dir> core`) are documented in [ide-setup.md](ide-setup.md).
 
 ## Release stages
