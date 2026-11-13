@@ -181,6 +181,10 @@ jobs:
               // to remove is invisible in the PR diff, so the gate has to be
               // required rather than advisory.
               'Silent-Revert Guard',
+              // Issue #2750 — the title becomes the squashed commit's subject
+              // and release-please reads it; the gate reruns on `edited` in
+              // rule-enforcement.yml, so an edited title re-runs the check.
+              'PR Title Gate',
               // ADR-2462 — pull-request only, like the gates above: absent on a
               // master push, where there is no pull request to sign off.
               'DCO Sign-off',

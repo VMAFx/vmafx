@@ -33,6 +33,13 @@ jobs:
     # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
     timeout-minutes: 5
     steps:
+      # Issue #2750: the label comes from the shared Conventional-Commit
+      # definition in scripts/lib/conventional_commits.py, so the job checks
+      # the repository out instead of re-implementing the list in shell.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Apply type label
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -50,34 +57,16 @@ jobs:
             exit 0
           fi
 
-          # `type(scope)!: subject` -> type, and note the breaking-change bang.
-          type="${PR_TITLE%%(*}"
-          type="${type%%:*}"
-          type="${type%!}"
-          type="$(printf '%s' "$type" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
-
-          case "$type" in
-            feat)     label="type:feature" ;;
-            fix)      label="type:bug" ;;
-            perf)     label="type:perf" ;;
-            refactor) label="type:refactor" ;;
-            docs)     label="type:docs" ;;
-            test)     label="type:test" ;;
-            build)    label="type:build" ;;
-            ci)       label="type:ci" ;;
-            chore)    label="type:chore" ;;
-            revert)   label="type:revert" ;;
-            security) label="type:security" ;;
-            style)    label="type:style" ;;
-            port)     label="type:port" ;;
-            sycl)     label="type:sycl" ;;
-            cuda)     label="type:cuda" ;;
-            simd)     label="type:simd" ;;
-            *)
-              echo "::notice::'$type' is not a known Conventional-Commit type; no type label applied."
-              exit 0
-              ;;
-          esac
+          # `type(scope)!: subject` -> label, from the one shared
+          # Conventional-Commit definition (issue #2750): the same list the
+          # commit-msg hook enforces and the PR Title Gate refuses on, pinned
+          # by scripts/ci/tests/test_conventional_commits_shared.py. The
+          # workflow checks the repository out above so the script is present.
+          if ! label="$(python3 scripts/ci/check-pr-title.py --emit-label "$PR_TITLE")"; then
+            echo "::notice::the title has no known Conventional-Commit type prefix; no type label applied."
+            exit 0
+          fi
+          type="${label#type:}"
 
           # Replace any previously-derived type label: the title can be edited,
           # and a PR carrying two type labels would appear twice in the release
