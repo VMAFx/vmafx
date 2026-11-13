@@ -35,7 +35,7 @@ MIN_LINES="${MIN_LINES:-20}"
 # substitution below, so a failing `git ls-files` or mirror filter fails the
 # gate. Inside `<(...)` its exit status was lost and the gate reported "no
 # fork-added files" and passed.
-if ! CANDIDATES="$(git ls-files 'core/src/**/*.c' 'core/src/**/*.cpp' 'core/tools/*.c' |
+if ! CANDIDATES="$(git ls-files ':(glob)core/src/**/*.c' ':(glob)core/src/**/*.cpp' ':(glob)core/tools/**/*.c' |
   python3 scripts/ci/pelorus_mirror.py filter)"; then
   echo "assertion-density: error: listing the fork's C sources failed" \
     "(git ls-files or scripts/ci/pelorus_mirror.py filter)" >&2

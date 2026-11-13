@@ -17,6 +17,7 @@
  * the source and the destination picture must be independently unref'd.
  */
 
+#include <assert.h>
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -101,6 +102,13 @@ int vmaf_picture2_unref(VmafPicture2 *pic)
         return 0; /* NULL is a documented no-op. */
     if (!pic->ref)
         return -EINVAL;
+    /* vmaf_picture_unref() below, once the refcount hits 1, dereferences
+     * pic->priv->release_picture(pic, priv->cookie) and frees pic->priv (see
+     * picture.c).  A picture that owns a reference count therefore must carry
+     * a priv; the guard above only rejects !pic->ref, so re-asserting
+     * pic->ref != NULL would merely repeat it.  A refcounted picture without
+     * priv would crash in the release callback, which this assert catches. */
+    assert(pic->priv != NULL);
 
     /* Construct a transient v1 view for the unref call.  The v1 view
      * shares the same plane-pointer and ref values as the v2 struct; the
@@ -150,6 +158,7 @@ int vmaf_picture_v1_to_v2(const VmafPicture *src, VmafPicture2 *dst)
         dst->data[i] = src->data[i];
     }
     dst->ref = src->ref;
+    assert(dst->ref == src->ref);
     dst->priv = src->priv;
 
     /* Increment refcount so the v2 picture is a true independent reference. */
@@ -187,6 +196,7 @@ int vmaf_picture_v2_to_v1(const VmafPicture2 *src, VmafPicture *dst)
         dst->data[i] = src->data[i];
     }
     dst->ref = src->ref;
+    assert(dst->ref == src->ref);
     dst->priv = src->priv;
 
     /* Increment refcount so the v1 picture is a true independent reference. */
