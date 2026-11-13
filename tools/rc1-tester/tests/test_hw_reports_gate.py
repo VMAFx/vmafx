@@ -152,10 +152,86 @@ def test_index_lists_reports_and_is_empty_without(tmp_path: Path) -> None:
     assert "No reports" in index.render(tmp_path)
     write(tmp_path, GOOD_NAME, good_report())
     text = index.render(tmp_path)
-    assert "| 2026-10-03 | implementer 0x61, part 0x32 | aarch64 | neon | - | pass |" in text
-    assert f"[{GOOD_NAME}]({GOOD_NAME})" in text
+    assert '<td>2026-10-03</td>' in text
+    assert '<td>implementer 0x61, part 0x32</td>' in text
+    assert '<td>cpu identical</td>' in text
+    assert 'data-backend="cpu"' in text
+    assert f'href="{GOOD_NAME}"' in text
     write(tmp_path, GOOD_NAME, good_gpu_report())
-    assert "| neon | Intel(R) UHD Graphics 770 (xe-lp) | pass |" in index.render(tmp_path)
+    text = index.render(tmp_path)
+    assert '<td>Intel(R) UHD Graphics 770</td>' in text
+    assert '<td>sycl pass</td>' in text
+    assert 'data-backend="sycl"' in text
+
+
+def test_index_is_filterable_and_keeps_exactness_per_backend(tmp_path: Path) -> None:
+    write(tmp_path, GOOD_NAME, good_gpu_report())
+    text = index.render(tmp_path)
+    for marker in (
+        "data-hardware-filter",
+        "data-hardware-search",
+        "data-hardware-backend",
+        "data-hardware-exactness",
+        "data-hardware-result",
+        "data-hardware-platform",
+        "data-hardware-count",
+    ):
+        assert marker in text
+    assert '<td>cpu identical</td>' in text
+    assert '<td>sycl pass</td>' in text
+    assert 'data-exactness="pass"' in text
+
+
+def test_failed_twin_shows_failure_for_that_backend(tmp_path: Path) -> None:
+    report = good_gpu_report()
+    report["gpu"]["devices"][0]["status"] = "fail"
+    report["gpu"]["status"] = "fail"
+    report["verdict"], report["failed_checks"] = "fail", ["gpu"]
+    write(tmp_path, GOOD_NAME, report)
+    text = index.render(tmp_path)
+    assert '<td>sycl fail</td>' in text
+    assert '<td>cpu identical</td>' in text
+    assert '<td>sycl pass</td>' not in text
+
+
+def test_newest_duplicate_device_wins_and_links_the_older_report(tmp_path: Path) -> None:
+    older = good_gpu_report()
+    older["generated_utc"] = "2026-10-01T10:00:00Z"
+    newer = good_gpu_report()
+    newer["generated_utc"] = "2026-10-05T10:00:00Z"
+    write(tmp_path, "2026-10-01-old.json", older)
+    write(tmp_path, "2026-10-05-new.json", newer)
+    text = index.render(tmp_path)
+    assert text.count("data-hardware-row") == 2  # one CPU row, one GPU row
+    assert '<td>2026-10-05</td>' in text
+    assert 'older: <a href="2026-10-01-old.json">2026-10-01</a>' in text
+    assert '<td>2026-10-01</td>' not in text
+
+
+def test_cpu_only_and_a_device_without_a_driver_version(tmp_path: Path) -> None:
+    cpu = good_report()
+    write(tmp_path, GOOD_NAME, cpu)
+    text = index.render(tmp_path)
+    assert '<td>cpu identical</td>' in text
+    assert '<td>-</td>' not in text  # every field is named, even when absent
+    gpu = good_gpu_report()
+    assert "driver_version" not in gpu["gpu"]["devices"][0]["facts"]
+    write(tmp_path, "2026-10-04-gpu.json", gpu)
+    text = index.render(tmp_path)
+    assert "<td>not reported</td>" in text
+
+
+def test_metal_exactness_is_its_own_backend_row(tmp_path: Path) -> None:
+    mac = good_report()
+    mac["host"]["platform"] = "darwin"
+    mac["host"]["machine"] = "arm64"
+    mac["host"]["cpu_model"] = "Apple M4 Pro"
+    mac["metal_equivalence"] = {"status": "error", "fixtures": []}
+    write(tmp_path, "2026-10-06-apple-m4-pro.json", mac)
+    text = index.render(tmp_path)
+    assert "Apple M4 Pro (Metal)" in text
+    assert '<td>metal error</td>' in text
+    assert 'data-backend="metal"' in text
 
 
 def v2_report(**sections) -> dict:
