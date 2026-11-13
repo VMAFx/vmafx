@@ -143,7 +143,7 @@ var libaomCPUUsedMap = map[string]int{
 	"faster":    6,
 	"veryfast":  7,
 	"superfast": 8,
-	"ultrafast": 9,
+	"ultrafast": 8,
 }
 
 // amfQualityMap collapses the ten mnemonic preset names onto AMF's three
