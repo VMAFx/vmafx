@@ -10,6 +10,13 @@
 # line a heading) and MD013 (80 columns) cannot hold for them.
 # scripts/ci/tests/test_codacy_config.py fails when the two lists drift apart.
 #
+# Ruff skips the trees that carry their own Ruff configuration. Codacy's Ruff
+# reads only the root pyproject.toml, while the ruff-check hook in
+# .pre-commit-config.yaml lints each of these trees with its own nested config
+# (other rule selections and per-file ignores, such as PLR2004 in tests). Codacy
+# would report findings there that the repository's own Ruff gate has ruled out.
+# The same test fails when this list and the nested-config directories drift apart.
+#
 # The top-level list holds the files praetorctl compile-context renders from
 # AGENTS.md; a finding there cannot be fixed in place. Agentlinter still reads
 # them (its wrapper scans the whole checkout and only filters results by file).
@@ -43,3 +50,11 @@ engines:
       - "docs/rebase-notes.d/**"
       - "changelog.d/**"
       - "tools/figures/**"
+  ruff:
+    exclude_paths:
+      - "ai/**"
+      - "dev-llm/**"
+      - "mcp-server/vmaf-mcp/**"
+      - "tools/rc1-tester/**"
+      - "tools/vmaf-roi-score/**"
+      - "tools/vmaf-tune/**"
