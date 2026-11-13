@@ -103,6 +103,23 @@ def refuse_outside_library(names: set[str], relative_path: str) -> None:
         )
 
 
+def refuse_dynamic_import(node: ast.AST, relative_path: str) -> None:
+    """Refuse dynamic import calls whose dependencies the static closure cannot resolve."""
+    if not isinstance(node, ast.Call):
+        return
+    if isinstance(node.func, ast.Name):
+        name = node.func.id
+    elif isinstance(node.func, ast.Attribute):
+        name = node.func.attr
+    else:
+        return
+    if name in {"__import__", "import_module"}:
+        raise ValueError(
+            f"dynamic import in {relative_path}:{node.lineno}; "
+            "the release ships static scripts.lib imports only"
+        )
+
+
 def library_imports(data: bytes, relative_path: str) -> tuple[set[str], set[str]]:
     """Collect absolute library imports and possible from-import submodules without execution."""
     try:
@@ -112,6 +129,7 @@ def library_imports(data: bytes, relative_path: str) -> tuple[set[str], set[str]
     required: set[str] = set()
     optional: set[str] = set()
     for node in ast.walk(tree):
+        refuse_dynamic_import(node, relative_path)
         modules, submodules = import_names(node, relative_path)
         refuse_outside_library(modules | submodules, relative_path)
         required.update(filter(is_library_module, modules))

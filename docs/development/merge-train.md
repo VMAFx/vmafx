@@ -177,20 +177,26 @@ library dependencies, and includes package initializers; `scripts/lib/__init__.p
 ships even when the gateway imports no library. Every source must match its
 committed blob at the preview's `source_commit`.
 
-The preview refuses two import forms that the release could not satisfy, so
+The preview refuses three import forms that the release could not satisfy, so
 they fail at plan time instead of as an `ImportError` once the train runs:
 
 - a relative import (`from . import helper`, `from .module import name`) in the
   gateway or any library it reaches;
 - a `scripts.*` import outside `scripts.lib`, such as `scripts.ci` or
-  `scripts.dev`.
+  `scripts.dev`;
+- a dynamic `__import__` or `import_module` call, bare or attribute-qualified,
+  in the gateway or any library it reaches.
 
 The refusals read:
 
 ```text
 relative import in scripts/lib/MODULE.py:LINE; use an absolute scripts.lib import
 scripts/lib/MODULE.py imports scripts.ci outside scripts.lib; the release ships only scripts.lib
+dynamic import in scripts/lib/MODULE.py:LINE; the release ships static scripts.lib imports only
 ```
+
+The gateway's `importlib.util.spec_from_file_location` path loader remains
+accepted: it loads the separately shipped, hash-checked squash message composer.
 
 Every generated launcher verifies all runtime hashes before executing the
 gateway. A changed or missing library refuses with

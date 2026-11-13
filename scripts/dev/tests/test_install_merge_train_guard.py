@@ -356,6 +356,51 @@ class MigrationContract(unittest.TestCase):
                 ):
                     self.plan()
 
+    def test_dynamic_import_refuses_preview(self) -> None:
+        cases = (
+            ('__import__("scripts.ci.helper")\n', 1),
+            ('import importlib\nimportlib.import_module("scripts.lib.extra")\n', 2),
+            (
+                'from importlib import import_module\nname = "scripts.lib.extra"\n'
+                "import_module(name)\n",
+                3,
+            ),
+            ('import builtins\nbuiltins.__import__("x")\n', 2),
+        )
+        for relative in (installer.SOURCE_PATH, "scripts/lib/user.py"):
+            for content, line in cases:
+                with self.subTest(module=relative, source=content):
+                    sources = {relative: content}
+                    if relative != installer.SOURCE_PATH:
+                        sources[installer.SOURCE_PATH] = "import scripts.lib.user\n"
+                    self.commit_sources(sources, "dynamic import fixture")
+                    message = (
+                        f"dynamic import in {relative}:{line}; "
+                        "the release ships static scripts.lib imports only"
+                    )
+                    with self.assertRaisesRegex(ValueError, f"^{re.escape(message)}$"):
+                        self.plan()
+
+    def test_path_loader_and_similarly_named_calls_allow_preview(self) -> None:
+        cases = (
+            "import importlib.util\n"
+            "spec = importlib.util.spec_from_file_location('extra', 'extra.py')\n"
+            "module = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(module)\n",
+            "obj.import_modules()\n",
+        )
+        for relative in (installer.SOURCE_PATH, "scripts/lib/user.py"):
+            for content in cases:
+                with self.subTest(module=relative, source=content):
+                    sources = {relative: content}
+                    expected = ["scripts/lib/__init__.py"]
+                    if relative != installer.SOURCE_PATH:
+                        sources[installer.SOURCE_PATH] = "import scripts.lib.user\n"
+                        expected.append(relative)
+                    self.commit_sources(sources, "allowed call fixture")
+                    value, _ = self.plan()
+                    self.assertEqual(sorted(library_digests(value)), expected)
+
     def test_scripts_package_and_library_names_still_resolve(self) -> None:
         self.commit_sources(
             {
