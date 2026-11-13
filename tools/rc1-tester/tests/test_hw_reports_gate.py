@@ -152,15 +152,15 @@ def test_index_lists_reports_and_is_empty_without(tmp_path: Path) -> None:
     assert "No reports" in index.render(tmp_path)
     write(tmp_path, GOOD_NAME, good_report())
     text = index.render(tmp_path)
-    assert '<td>2026-10-03</td>' in text
-    assert '<td>implementer 0x61, part 0x32</td>' in text
-    assert '<td>cpu identical</td>' in text
+    assert "<td>2026-10-03</td>" in text
+    assert "<td>implementer 0x61, part 0x32</td>" in text
+    assert "<td>cpu identical</td>" in text
     assert 'data-backend="cpu"' in text
     assert f'href="{GOOD_NAME}"' in text
     write(tmp_path, GOOD_NAME, good_gpu_report())
     text = index.render(tmp_path)
-    assert '<td>Intel(R) UHD Graphics 770</td>' in text
-    assert '<td>sycl pass</td>' in text
+    assert "<td>Intel(R) UHD Graphics 770</td>" in text
+    assert "<td>sycl pass</td>" in text
     assert 'data-backend="sycl"' in text
 
 
@@ -177,8 +177,8 @@ def test_index_is_filterable_and_keeps_exactness_per_backend(tmp_path: Path) -> 
         "data-hardware-count",
     ):
         assert marker in text
-    assert '<td>cpu identical</td>' in text
-    assert '<td>sycl pass</td>' in text
+    assert "<td>cpu identical</td>" in text
+    assert "<td>sycl pass</td>" in text
     assert 'data-exactness="pass"' in text
 
 
@@ -189,9 +189,9 @@ def test_failed_twin_shows_failure_for_that_backend(tmp_path: Path) -> None:
     report["verdict"], report["failed_checks"] = "fail", ["gpu"]
     write(tmp_path, GOOD_NAME, report)
     text = index.render(tmp_path)
-    assert '<td>sycl fail</td>' in text
-    assert '<td>cpu identical</td>' in text
-    assert '<td>sycl pass</td>' not in text
+    assert "<td>sycl fail</td>" in text
+    assert "<td>cpu identical</td>" in text
+    assert "<td>sycl pass</td>" not in text
 
 
 def test_newest_duplicate_device_wins_and_links_the_older_report(tmp_path: Path) -> None:
@@ -203,17 +203,17 @@ def test_newest_duplicate_device_wins_and_links_the_older_report(tmp_path: Path)
     write(tmp_path, "2026-10-05-new.json", newer)
     text = index.render(tmp_path)
     assert text.count("data-hardware-row") == 2  # one CPU row, one GPU row
-    assert '<td>2026-10-05</td>' in text
+    assert "<td>2026-10-05</td>" in text
     assert 'older: <a href="2026-10-01-old.json">2026-10-01</a>' in text
-    assert '<td>2026-10-01</td>' not in text
+    assert "<td>2026-10-01</td>" not in text
 
 
 def test_cpu_only_and_a_device_without_a_driver_version(tmp_path: Path) -> None:
     cpu = good_report()
     write(tmp_path, GOOD_NAME, cpu)
     text = index.render(tmp_path)
-    assert '<td>cpu identical</td>' in text
-    assert '<td>-</td>' not in text  # every field is named, even when absent
+    assert "<td>cpu identical</td>" in text
+    assert "<td>-</td>" not in text  # every field is named, even when absent
     gpu = good_gpu_report()
     assert "driver_version" not in gpu["gpu"]["devices"][0]["facts"]
     write(tmp_path, "2026-10-04-gpu.json", gpu)
@@ -230,7 +230,7 @@ def test_metal_exactness_is_its_own_backend_row(tmp_path: Path) -> None:
     write(tmp_path, "2026-10-06-apple-m4-pro.json", mac)
     text = index.render(tmp_path)
     assert "Apple M4 Pro (Metal)" in text
-    assert '<td>metal error</td>' in text
+    assert "<td>metal error</td>" in text
     assert 'data-backend="metal"' in text
 
 

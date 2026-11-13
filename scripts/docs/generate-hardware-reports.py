@@ -232,7 +232,7 @@ def _collect_rows(directory: Path) -> list[dict[str, Any]]:
         if current is None:
             kept[row["key"]] = row
             continue
-        row["older"] = list(current.get("older", [])) + [(current["date"], current["report"])]
+        row["older"] = [*list(current.get("older", [])), (current["date"], current["report"])]
         if (row["stamp"], row["report"]) > (current["stamp"], current["report"]):
             kept[row["key"]] = row
         else:
@@ -258,7 +258,7 @@ def _options(values: list[str], label: Any = str) -> str:
 
 
 def _filter(rows: list[dict[str, Any]]) -> str:
-    backends = sorted({row["backend"] for row in rows}, key=lambda value: _backend_label(value))
+    backends = sorted({row["backend"] for row in rows}, key=_backend_label)
     statuses = sorted({row["exactness_status"] for row in rows})
     results = sorted({row["result"] for row in rows})
     platforms = sorted({row["platform"] for row in rows})
@@ -285,16 +285,24 @@ def _device_cell(row: dict[str, Any]) -> str:
     if not older:
         return text
     links = ", ".join(
-        f'<a href="{html.escape(name, quote=True)}">{html.escape(date)}</a>'
-        for date, name in older
+        f'<a href="{html.escape(name, quote=True)}">{html.escape(date)}</a>' for date, name in older
     )
     return f'{text}<br><span class="vx-hardware-older">older: {links}</span>'
 
 
 def _row_html(row: dict[str, Any]) -> str:
     search = " ".join(
-        [row["date"], row["device"], row["backend"], row["driver"], row["platform"],
-         row["host"], row["exactness"], row["result"], row["report"]]
+        [
+            row["date"],
+            row["device"],
+            row["backend"],
+            row["driver"],
+            row["platform"],
+            row["host"],
+            row["exactness"],
+            row["result"],
+            row["report"],
+        ]
         + [date for date, _ in row.get("older", [])]
     ).casefold()
     attributes = (
