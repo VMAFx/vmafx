@@ -154,7 +154,7 @@ jobs:
             -v "$GITHUB_WORKSPACE/tools/rc1-tester/image:/tool:ro" \
             "$base" bash -euo pipefail -c '
               sed -i "s/^Types: deb$/Types: deb deb-src/" /etc/apt/sources.list.d/debian.sources
-              apt-get update -qq
+              apt-get --error-on=any -o Acquire::Retries=3 update -qq
               apt-get install -y -qq --no-install-recommends python3 ca-certificates >/dev/null
               python3 /tool/licensing.py fetch-sources --list /work/sources.list \
                 --out /work/source-image/sources'

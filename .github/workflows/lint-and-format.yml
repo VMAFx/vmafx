@@ -167,11 +167,9 @@ jobs:
         if: steps.cpp-changes.outputs.any == 'true'
         timeout-minutes: 10
         run: |
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           # ADR-0692 (design notes)
           sudo bash scripts/ci/install-llvm.sh 22
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           mkdir -p "${RUNNER_TEMP}/apt-archives"
           if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
             sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
@@ -342,10 +340,8 @@ jobs:
         if: steps.impact.outputs.c_core == 'true'
         timeout-minutes: 10
         run: |
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           sudo bash scripts/ci/install-llvm.sh 22 --source=apt.llvm.org
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           mkdir -p "${RUNNER_TEMP}/apt-archives"
           if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
             sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
@@ -510,7 +506,7 @@ jobs:
       - name: Install system dependencies
         if: steps.impact.outputs.gstreamer_element == 'true'
         run: |
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           sudo -E apt-get -yq install --no-install-recommends \
             nasm xxd pkg-config libglib2.0-dev libzimg-dev locales \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
@@ -656,8 +652,6 @@ jobs:
         if: steps.detect.outputs.files != ''
         timeout-minutes: 10
         run: |
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           wget --tries=3 --retry-connrefused --retry-on-host-error -qO "$RUNNER_TEMP/oneapi-key.asc" \
             https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
           sudo gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg "$RUNNER_TEMP/oneapi-key.asc"
@@ -666,7 +660,7 @@ jobs:
             https://apt.repos.intel.com/oneapi all main" \
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
           sudo bash scripts/ci/install-llvm.sh 22
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           mkdir -p "${RUNNER_TEMP}/apt-archives"
           if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
             sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
@@ -776,9 +770,7 @@ jobs:
         if: steps.impact.outputs.c_core == 'true'
         timeout-minutes: 5
         run: |
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           mkdir -p "${RUNNER_TEMP}/apt-archives"
           if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
             sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/

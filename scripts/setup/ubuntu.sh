@@ -19,7 +19,7 @@ need_sudo() {
 SUDO="$(need_sudo)"
 
 echo "=== Ubuntu/Debian setup for vmaf fork ==="
-$SUDO apt-get update
+$SUDO apt-get --error-on=any -o Acquire::Retries=3 update
 # `$SUDO VAR=value cmd` breaks when $SUDO is empty (running as root): bash
 # picks out assignments before expanding $SUDO, so VAR=value becomes the
 # command name. Pass the variable through `env` instead.
@@ -69,7 +69,7 @@ if [[ "$ENABLE_SYCL" == "true" ]]; then
   rm -f "$key"
   echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" |
     $SUDO tee /etc/apt/sources.list.d/oneapi.list >/dev/null
-  $SUDO apt-get update
+  $SUDO apt-get --error-on=any -o Acquire::Retries=3 update
   $SUDO apt-get install -y --no-install-recommends \
     intel-oneapi-compiler-dpcpp-cpp intel-oneapi-runtime-libs \
     libva-dev libva-drm2 level-zero-dev

@@ -177,13 +177,13 @@ Not enforced as PR-blocking; informational in review.
 
 - **C:** Existing libvmaf conventions preserved (K&R braces, 4-space indent,
   100-char
-  columns). Codified in [.clang-format](../.clang-format).
+  columns). Codified in [.clang-format](https://github.com/VMAFx/vmafx/blob/master/.clang-format).
 - **C++ (SYCL code):** same as C where applicable; RAII encouraged for
   queue/context
   wrappers; no exceptions in hot paths.
 - **Python:** PEP 8 + black (line-length 100) + ruff (import sorting via ruff's
   `I` ruleset — ADR-1126). Codified in
-  [pyproject.toml](../pyproject.toml).
+  [pyproject.toml](https://github.com/VMAFx/vmafx/blob/master/pyproject.toml).
 - **CUDA (`.cu`):** follows C style; kernel names `kernel_*`; device helpers
   `device_*`.
 - **Shell:** shfmt + shellcheck; `#!/usr/bin/env bash`; `set -euo pipefail`.
@@ -219,7 +219,7 @@ file under `core/` includes.
 
 ## 2. Security
 
-See [SECURITY.md](../SECURITY.md) for reporting policy.
+See [SECURITY.md](https://github.com/VMAFx/vmafx/blob/master/SECURITY.md) for reporting policy.
 
 ### 2.1 Input validation at boundaries
 
@@ -280,8 +280,24 @@ dependencies).
   the
   `p/cwe-top-25` and `p/cert-c-strict` rule sets). Gitleaks runs as the
   `Gitleaks` CI
-  gate and as a pre-commit hook; bandit runs through the Python lint
-  configuration.
+  gate and as a pre-commit hook. `flawfinder-new` checks changed C/C++ files;
+  `bandit-new` compares Python files with their merge-base copies. Pre-commit
+  scans the working tree. The separate `flawfinder-new-push` and
+  `bandit-new-push` hooks use `--outgoing` to scan the complete pre-push
+  merge-base delta and outgoing configuration, even on docs-only follow-up
+  pushes or when outgoing files are absent from the working tree. Both run
+  unconditionally without pre-commit filenames. A manual `--outgoing` run
+  reads HEAD blobs; positional files cannot be combined with that flag. The
+  default comparison branch follows `origin/HEAD`, with
+  `origin/master` as fallback; `--base-branch` overrides it. Both reject only
+  new findings. The Python check uses each revision's [Bandit patterns](https://github.com/VMAFx/vmafx/blob/master/bandit.yml);
+  a missing base configuration uses the current configuration. A configuration
+  change scans all tracked Python files, including unchanged sources. Codacy
+  reads that list on each analysed branch after its configuration-file option
+  is enabled. Editing that file changes Codacy's patterns;
+  without it, Codacy uses its UI patterns. Refresh the list from Codacy's
+  enabled Bandit IDs, then run the planted recall tests in
+  `scripts/ci/tests/test_check_bandit_new_*.py`.
 - ✅ CodeQL — zero security-and-quality issues at `security-extended` suite
 - ✅ Conventional commit messages (enforced by commit-msg hook)
 - ✅ CI matrix green on Linux/macOS/Windows
@@ -425,7 +441,7 @@ including rules with only partial checks. The
 [HISS evidence catalog](../.config/hiss/coverage.yaml) limits what
 `praetorctl hiss coverage --verify` proves; replaying that catalog does not
 prove every rule in every language. Existing exceptions remain explicit in
-[the standards manifest](../.standards.yaml) and
+[the standards manifest](https://github.com/VMAFx/vmafx/blob/master/.standards.yaml) and
 [declared lint exceptions](../.config/lint-exceptions.d/ruff.toml).
 
 ### 8.1 C
@@ -436,13 +452,13 @@ prove every rule in every language. Existing exceptions remain explicit in
   1–7 retain the C rules. New fork C targets C23; the actual fallback list
   (`c23,c2x,c17,none`) and MSVC handling live in
   [core/meson.build](../core/meson.build).
-- **Gates:** [the hooks](../.pre-commit-config.yaml) run clang-format with
-  [.clang-format](../.clang-format). `make lint-c` uses
-  [lint-configured.py](../scripts/ci/lint-configured.py), [.clang-tidy](../.clang-tidy)
-  and [.cppcheck-suppressions.txt](../.cppcheck-suppressions.txt).
+- **Gates:** [the hooks](https://github.com/VMAFx/vmafx/blob/master/.pre-commit-config.yaml) run clang-format with
+  [.clang-format](https://github.com/VMAFx/vmafx/blob/master/.clang-format). `make lint-c` uses
+  [lint-configured.py](../scripts/ci/lint-configured.py), [.clang-tidy](https://github.com/VMAFx/vmafx/blob/master/.clang-tidy)
+  and [.cppcheck-suppressions.txt](https://github.com/VMAFx/vmafx/blob/master/.cppcheck-suppressions.txt).
   `python3 scripts/ci/run_meson_test.py -- -C build` runs
   [registered tests](../core/test/meson.build); `make test-netflix-golden`
-  is defined in [Makefile](../Makefile). Sanitizers use
+  is defined in [Makefile](https://github.com/VMAFx/vmafx/blob/master/Makefile). Sanitizers use
   [sanitizers.yml](../.github/workflows/sanitizers.yml).
 - **Safety / HISS:** bounded dimensions and loops, checked arithmetic and
   returns, initialization-only hot-path allocation, and justified pointer
@@ -477,7 +493,7 @@ prove every rule in every language. Existing exceptions remain explicit in
   `.cu` kernels use C++20 in [core/src/meson.build](../core/src/meson.build),
   while C host wrappers retain C rules.
 - **Gates:** clang-format hooks include CUDA. `make tidy-lane LANE=cuda`
-  ([Makefile](../Makefile)) measures the CUDA lint lane. The
+  ([Makefile](https://github.com/VMAFx/vmafx/blob/master/Makefile)) measures the CUDA lint lane. The
   [build matrix](../.github/workflows/libvmaf-build-matrix.yml) builds configured
   CUDA targets; the Meson test runner above runs CUDA tests registered in
   [core/test/meson.build](../core/test/meson.build) when enabled. Device
@@ -497,7 +513,7 @@ prove every rule in every language. Existing exceptions remain explicit in
   C++20 for `ciede_score`; there is **no gate yet** requiring one explicit
   language standard for every HIP kernel.
 - **Gates:** the `clang-format-hip-metal` hook selects `.hip` by extension;
-  `make tidy-lane LANE=hip` is defined in [Makefile](../Makefile).
+  `make tidy-lane LANE=hip` is defined in [Makefile](https://github.com/VMAFx/vmafx/blob/master/Makefile).
   [The build matrix](../.github/workflows/libvmaf-build-matrix.yml) and
   [Meson tests](../core/test/meson.build) cover enabled configurations.
   Custom HSACO targets add `-Werror` when `werror` is enabled.
@@ -513,7 +529,7 @@ prove every rule in every language. Existing exceptions remain explicit in
   device translation units use `-std=c++20` in
   [core/src/meson.build](../core/src/meson.build).
 - **Gates:** C++ clang-format, `make tidy-lane LANE=sycl`
-  ([Makefile](../Makefile)), configured builds and the Meson test runner.
+  ([Makefile](https://github.com/VMAFx/vmafx/blob/master/Makefile)), configured builds and the Meson test runner.
   [sycl-parity.yml](../.github/workflows/sycl-parity.yml) runs the selected
   hardware lane under its runner-enable condition; see
   [cross-backend coverage](development/cross-backend-gate.md).
@@ -534,7 +550,7 @@ prove every rule in every language. Existing exceptions remain explicit in
   language mode independently of the compiler default.
 - **Gates:** `.metal` has the `clang-format-hip-metal` hook; **no gate yet**
   for Objective-C++ formatting (`Language: ObjC` has `DisableFormat: true`
-  in [.clang-format](../.clang-format)).
+  in [.clang-format](https://github.com/VMAFx/vmafx/blob/master/.clang-format)).
   [tidy-metal.yml](../.github/workflows/tidy-metal.yml) measures host wrappers
   against the Metal baseline; it explicitly excludes shaders because
   clang-tidy has no Metal mode. Shader compilation and
@@ -550,13 +566,13 @@ prove every rule in every language. Existing exceptions remain explicit in
 
 - **C core:** Rules 1, 4, 6 and 10 apply. Rules 2, 3, 5 and 7–9 adapt to bounded services, garbage collection, explicit errors, build tags and unsafe/cgo boundaries.
 - **Role and standard:** `cmd/`, `pkg/`, `internal/`, `api/` and Go tools;
-  [go.mod](../go.mod) owns the toolchain version. Use idiomatic Go with
+  [go.mod](https://github.com/VMAFx/vmafx/blob/master/go.mod) owns the toolchain version. Use idiomatic Go with
   explicit errors, bounded goroutine lifetimes and request cancellation.
-- **Gates:** [lefthook.yml](../lefthook.yml) runs `gofmt -w {staged_files}`
+- **Gates:** [lefthook.yml](https://github.com/VMAFx/vmafx/blob/master/lefthook.yml) runs `gofmt -w {staged_files}`
   and `go vet ./...`. [go-ci.yml](../.github/workflows/go-ci.yml) runs
   `go fix -diff ./...`, `go vet ./...` and `go test ./...`.
   `make lint-go` runs gosec; `make go-test` selects the in-tree libraries
-  ([Makefile](../Makefile)). See the [setup guide](development/languages.md)
+  ([Makefile](https://github.com/VMAFx/vmafx/blob/master/Makefile)). See the [setup guide](development/languages.md)
   for the cgo and envtest prerequisites.
 - **Safety / HISS:** check and wrap errors, propagate `context.Context`
   timeouts, cap queues and workers, document `unsafe`/cgo ownership with
@@ -568,18 +584,18 @@ prove every rule in every language. Existing exceptions remain explicit in
 ### 8.8 Rust
 
 - **C core:** Rules 1, 2, 4, 6 and 10 apply. Rules 3, 5 and 7–9 adapt to ownership, Result, macros and unsafe/FFI contracts; borrowing does not permit allocation in metric loops.
-- **Role and standard:** [Cargo.toml](../Cargo.toml) owns the FFI binding
+- **Role and standard:** [Cargo.toml](https://github.com/VMAFx/vmafx/blob/master/Cargo.toml) owns the FFI binding
   workspace under `bindings/rust/`; [core/src/rust/Cargo.toml](../core/src/rust/Cargo.toml)
   owns the linked extractor/predictor workspace, including
   `core/src/feature/rust/tad/`. Both declare edition 2024 and follow
-  [rust-toolchain.toml](../rust-toolchain.toml), not an unpinned stable release.
+  [rust-toolchain.toml](https://github.com/VMAFx/vmafx/blob/master/rust-toolchain.toml), not an unpinned stable release.
 - **Gates:** [rust-ci.yml](../.github/workflows/rust-ci.yml) runs
   `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
   and `cargo test --workspace --all-features` at the root, plus
   `cargo fmt --manifest-path core/src/rust/Cargo.toml --all --check`,
   `cargo clippy --manifest-path core/src/rust/Cargo.toml --workspace --all-targets -- -D warnings`
   and `cargo test --manifest-path core/src/rust/Cargo.toml --workspace`.
-  It sets `RUSTFLAGS: -D warnings`. [clippy.toml](../clippy.toml) supplies
+  It sets `RUSTFLAGS: -D warnings`. [clippy.toml](https://github.com/VMAFx/vmafx/blob/master/clippy.toml) supplies
   length and cognitive-complexity thresholds for the core workspace lints.
 - **Safety / HISS:** `Result` propagation, no `unwrap`/`expect`,
   `SAFETY:` proofs and safety documentation at unsafe boundaries, no unwinding
@@ -595,11 +611,11 @@ prove every rule in every language. Existing exceptions remain explicit in
 - **Role and standard:** training in `ai/`, legacy harness in `python/`
   and `compat/python-vmaf/`, `mcp-server/vmaf-mcp/`, `scripts/`, `tools/`
   and generated `bindings/python/`. Package `pyproject.toml` files own
-  interpreter floors; [root pyproject.toml](../pyproject.toml) owns Black,
+  interpreter floors; [root pyproject.toml](https://github.com/VMAFx/vmafx/blob/master/pyproject.toml) owns Black,
   Ruff, mypy and pytest settings. Follow PEP 8 and typed boundaries; Python
   does not implement hot-path scoring (the role retained from ADR-0702).
-- **Gates:** Black and Ruff hooks in [.pre-commit-config.yaml](../.pre-commit-config.yaml),
-  `make lint-py` and `make format-check` in [Makefile](../Makefile).
+- **Gates:** Black and Ruff hooks in [.pre-commit-config.yaml](https://github.com/VMAFx/vmafx/blob/master/.pre-commit-config.yaml),
+  `make lint-py` and `make format-check` in [Makefile](https://github.com/VMAFx/vmafx/blob/master/Makefile).
   Mypy is strict by configuration but advisory in `make lint-py`; the
   [mypy delta hook](../scripts/git-hooks/pre-push-mypy.py) has its own scope.
   [The test workflow](../.github/workflows/tests-and-quality-gates.yml)
@@ -619,8 +635,8 @@ prove every rule in every language. Existing exceptions remain explicit in
   Follow each shebang's dialect; Bash scripts use `set -euo pipefail`
   (section 1.5), while `/bin/sh` scripts must stay POSIX-compatible.
 - **Gates:** shfmt (`-i 2 -ci`) and shellcheck hooks in
-  [.pre-commit-config.yaml](../.pre-commit-config.yaml);
-  `make format-check` and `make lint-sh` in [Makefile](../Makefile).
+  [.pre-commit-config.yaml](https://github.com/VMAFx/vmafx/blob/master/.pre-commit-config.yaml);
+  `make format-check` and `make lint-sh` in [Makefile](https://github.com/VMAFx/vmafx/blob/master/Makefile).
   The latter also invokes named shell/Python regression scripts. There is
   **no gate yet** that runs every shell script's behavior tests.
 - **Safety / HISS:** quote expansions, avoid `eval`, pass arguments without
@@ -653,9 +669,9 @@ prove every rule in every language. Existing exceptions remain explicit in
   actions in `.github/actions/`. Use each consumer's pinned schema;
   Helm templates are rendered before YAML validation, and multi-document
   Kubernetes manifests must retain document boundaries. Workflow schemas are selected by
-  [.pre-commit-config.yaml](../.pre-commit-config.yaml) and runner labels in
+  [.pre-commit-config.yaml](https://github.com/VMAFx/vmafx/blob/master/.pre-commit-config.yaml) and runner labels in
   [.github/actionlint.yaml](../.github/actionlint.yaml).
-- **Gates:** `make lint-actions` ([Makefile](../Makefile)) runs
+- **Gates:** `make lint-actions` ([Makefile](https://github.com/VMAFx/vmafx/blob/master/Makefile)) runs
   [run_actionlint.py](../scripts/ci/run_actionlint.py),
   [check_composite_actions.py](../scripts/ci/check_composite_actions.py) and
   the declared runner, workflow-budget and timeout checks.
@@ -683,7 +699,7 @@ prove every rule in every language. Existing exceptions remain explicit in
   [core/api/vmafx.toml](../core/api/vmafx.toml) is the
   API definition, not executable code; its `schema = 2` contract is checked
   by [validate.py](../scripts/codegen/vmafx_api/validate.py).
-- **Gates:** `check-toml` in [.pre-commit-config.yaml](../.pre-commit-config.yaml)
+- **Gates:** `check-toml` in [.pre-commit-config.yaml](https://github.com/VMAFx/vmafx/blob/master/.pre-commit-config.yaml)
   checks syntax. `python3 scripts/codegen/vmafx-api.py --check` validates
   generated outputs; `python3 scripts/codegen/vmafx-api.py --abi-check --against-ref origin/master`
   checks compatibility. [core/test/meson.build](../core/test/meson.build)
@@ -720,12 +736,12 @@ prove every rule in every language. Existing exceptions remain explicit in
   `Dockerfile*`, `docker/`, `.devcontainer/Dockerfile.praetor` and
   `mcp-server/vmaf-mcp/Dockerfile`; use each recipe's declared Dockerfile
   frontend (`# syntax=...`), including its version and digest where present.
-  [dev/Containerfile](../dev/Containerfile) and [Containerfile.vmafx](../Containerfile.vmafx)
+  [dev/Containerfile](../dev/Containerfile) and [Containerfile.vmafx](https://github.com/VMAFx/vmafx/blob/master/Containerfile.vmafx)
   declare their own frontend pins; the
   [container workflows](../.github/workflows/dev-container-build.yml) select builders.
 - **Gates:** [check-container-image-references.py](../scripts/ci/check-container-image-references.py)
   and [check-base-image-single-source.sh](../scripts/ci/check-base-image-single-source.sh)
-  check image inputs; their hooks live in [.pre-commit-config.yaml](../.pre-commit-config.yaml).
+  check image inputs; their hooks live in [.pre-commit-config.yaml](https://github.com/VMAFx/vmafx/blob/master/.pre-commit-config.yaml).
   Builds in [dev-container-build.yml](../.github/workflows/dev-container-build.yml)
   and [supply-chain.yml](../.github/workflows/supply-chain.yml) cover their
   selected recipes. **No gate yet** for Containerfile formatting, general
@@ -801,7 +817,7 @@ prove every rule in every language. Existing exceptions remain explicit in
   `python3 scripts/codegen/proto_generate.py --check --breaking-against origin/master`
   runs the pinned Buf lint, generation-drift and wire/JSON compatibility
   checks through [the wrapper](../scripts/codegen/proto_generate.py) and
-  [buf.yaml](../buf.yaml). Exit 77 means unavailable. Generated-code checks
+  [buf.yaml](https://github.com/VMAFx/vmafx/blob/master/buf.yaml). Exit 77 means unavailable. Generated-code checks
   do not prove runtime payload limits; **no gate yet** for every obligation.
 
 ### 8.20 PowerShell
@@ -838,7 +854,7 @@ prove every rule in every language. Existing exceptions remain explicit in
 - **C core:** rules 1, 4 and 10 apply; rules 2, 3 and 5–7 adapt to bounded
   editor work, managed memory, checked calls and local scope. Rules 8 and 9
   have no C preprocessor or raw pointers to govern.
-- **Additions:** [.nvim.lua](../.nvim.lua) and
+- **Additions:** [.nvim.lua](https://github.com/VMAFx/vmafx/blob/master/.nvim.lua) and
   [lua/standards.lua](../lua/standards.lua) configure editor integration.
   Keep module-loading and process-launch paths explicit, report failed
   protected calls and avoid evaluating untrusted Lua source.
@@ -852,7 +868,7 @@ prove every rule in every language. Existing exceptions remain explicit in
   bounded recipes, scoped settings, inspectable expansion and propagated
   failures. Kernel allocation, function-size and pointer rules belong to
   the programs each recipe builds or launches.
-- **Additions:** [Makefile](../Makefile) and included `.mk` files declare
+- **Additions:** [Makefile](https://github.com/VMAFx/vmafx/blob/master/Makefile) and included `.mk` files declare
   prerequisites and generated outputs. Share tool/version settings, quote
   paths and keep shell arguments intact. A leading `-`, `|| true` or a later
   successful command must not hide a required failure. Recipe shell follows
@@ -911,7 +927,7 @@ prove every rule in every language. Existing exceptions remain explicit in
   fuzz fixtures remain byte-exact; do not format model binaries as text.
 - **Gate command:** `python3 scripts/docs/check_vendored_assets.py` checks its
   declared asset manifest and schema files. The `check-json` hook in
-  [.pre-commit-config.yaml](../.pre-commit-config.yaml) adds syntax coverage
+  [.pre-commit-config.yaml](https://github.com/VMAFx/vmafx/blob/master/.pre-commit-config.yaml) adds syntax coverage
   with named exclusions. **No gate yet** for every JSON consumer schema,
   formatting rule or behavioral contract; syntax acceptance is insufficient.
 
@@ -926,7 +942,7 @@ prove every rule in every language. Existing exceptions remain explicit in
 - **Gate command:**
   `meson setup build-arm64 core --cross-file build-aux/aarch64-linux-gnu.ini`
   validates that cross profile during configuration, as documented in
-  [Makefile](../Makefile). Compilation and target execution remain separate
+  [Makefile](https://github.com/VMAFx/vmafx/blob/master/Makefile). Compilation and target execution remain separate
   evidence. **No gate yet** for all INI consumers, formatting or every cross profile.
 
 ### 8.29 Markdown / reStructuredText
@@ -1088,10 +1104,10 @@ Do not promote these partial mechanisms to complete gates:
   Go, Python and Rust matchers. It leaves method cycles, several discarded
   errors, dynamic imports, unsafe traits and native pointer proofs as gaps;
   it makes no complete per-language claim for GPU sources or recipes.
-- [.clang-tidy](../.clang-tidy) checks 60-line functions but sets
+- [.clang-tidy](https://github.com/VMAFx/vmafx/blob/master/.clang-tidy) checks 60-line functions but sets
   `StatementThreshold: 120` and `BranchThreshold: 15`; that is not the
   HISS-04 cap of 50 statements and McCabe complexity 10. Rust's
-  [cognitive-complexity threshold](../clippy.toml) is a different metric.
+  [cognitive-complexity threshold](https://github.com/VMAFx/vmafx/blob/master/clippy.toml) is a different metric.
 - `make assertion-density` ([assertion-density.sh](../scripts/ci/assertion-density.sh))
   checks selected fork-authored C/C++ functions for at least one assertion
   when at least 20 lines long; the two-assertion average is informational.

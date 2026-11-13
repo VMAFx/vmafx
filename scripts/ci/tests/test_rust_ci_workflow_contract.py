@@ -21,6 +21,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Mapping
+from unittest import mock
 
 import yaml  # type: ignore[import-untyped]
 
@@ -113,6 +114,50 @@ def _setup_stacked_repo(repo_dir: str, env: Mapping[str, str]) -> tuple[str, str
     docs_sha = git("rev-parse", "HEAD")
 
     return base_sha, rust_sha, docs_sha
+
+
+def _fixture_env(empty_home: Path) -> dict[str, str]:
+    """Build an isolated Git and planner environment with an empty config home."""
+    return {
+        **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "HOME": str(empty_home),
+        "XDG_CONFIG_HOME": str(empty_home),
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@t",
+    }
+
+
+def _run_planner(
+    repo_dir: str, base_sha: str, head_sha: str, out_path: Path, env: Mapping[str, str]
+) -> dict[str, str]:
+    """Run plan-ci-impact.py for a pull_request diff under the isolated fixture env."""
+    run_command(
+        [
+            sys.executable,
+            str(PLANNER),
+            "--event",
+            "pull_request",
+            "--base",
+            base_sha,
+            "--head",
+            head_sha,
+            "--repo-root",
+            repo_dir,
+            "--github-output",
+            str(out_path),
+        ],
+        allowed_executables=(sys.executable,),
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
+        timeout_seconds=60,
+    )
+    return dict(line.split("=", 1) for line in out_path.read_text(encoding="utf-8").splitlines())
 
 
 class RustCIWorkflowContractTest(unittest.TestCase):
@@ -246,14 +291,12 @@ class RustCIWorkflowContractTest(unittest.TestCase):
 
     def test_stacked_and_non_master_target_pr_semantics(self) -> None:
         """Validate merge-base aware impact planning for stacked/non-master PRs."""
-        with tempfile.TemporaryDirectory() as repo_dir, tempfile.TemporaryDirectory() as out_dir:
-            env = {
-                **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
-                "GIT_AUTHOR_NAME": "t",
-                "GIT_AUTHOR_EMAIL": "t@t",
-                "GIT_COMMITTER_NAME": "t",
-                "GIT_COMMITTER_EMAIL": "t@t",
-            }
+        with (
+            tempfile.TemporaryDirectory() as repo_dir,
+            tempfile.TemporaryDirectory() as out_dir,
+            tempfile.TemporaryDirectory() as empty_home,
+        ):
+            env = _fixture_env(Path(empty_home))
             base_sha, rust_sha, docs_sha = _setup_stacked_repo(repo_dir, env)
 
             cases = (
@@ -262,30 +305,33 @@ class RustCIWorkflowContractTest(unittest.TestCase):
             )
             for out_name, head_sha, expected_rust in cases:
                 out_path = Path(out_dir) / out_name
-                run_command(
-                    [
-                        sys.executable,
-                        str(PLANNER),
-                        "--event",
-                        "pull_request",
-                        "--base",
-                        base_sha,
-                        "--head",
-                        head_sha,
-                        "--repo-root",
-                        repo_dir,
-                        "--github-output",
-                        str(out_path),
-                    ],
-                    allowed_executables=(sys.executable,),
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                    timeout_seconds=60,
-                )
-                kv = dict(line.split("=", 1) for line in out_path.read_text().splitlines())
+                kv = _run_planner(repo_dir, base_sha, head_sha, out_path, env)
                 self.assertEqual(kv.get("mode"), "impact")
                 self.assertEqual(kv.get("rust"), expected_rust)
+
+    def test_planner_subprocess_ignores_caller_global_git_config(self) -> None:
+        """Planner subprocess must ignore caller HOME and XDG_CONFIG_HOME Git configs."""
+        bad_config = "[diff]\n\trenames = invalid\n"
+        for scope in ("home", "xdg"):
+            with self.subTest(scope=scope), tempfile.TemporaryDirectory() as tmp_dir:
+                root = Path(tmp_dir)
+                repo_dir, out_dir, empty_home = root / "repo", root / "out", root / "empty"
+                caller_home, caller_xdg = root / "caller-home", root / "caller-xdg"
+                for directory in (repo_dir, out_dir, empty_home, caller_home, caller_xdg / "git"):
+                    directory.mkdir(parents=True)
+                target = (
+                    caller_home / ".gitconfig" if scope == "home" else caller_xdg / "git" / "config"
+                )
+                target.write_text(bad_config, encoding="utf-8")
+                with mock.patch.dict(
+                    os.environ,
+                    {"HOME": str(caller_home), "XDG_CONFIG_HOME": str(caller_xdg)},
+                ):
+                    env = _fixture_env(empty_home)
+                    base_sha, _, docs_sha = _setup_stacked_repo(str(repo_dir), env)
+                    kv = _run_planner(str(repo_dir), base_sha, docs_sha, out_dir / "out_docs", env)
+                self.assertEqual(kv.get("mode"), "impact")
+                self.assertEqual(kv.get("rust"), "false")
 
 
 if __name__ == "__main__":

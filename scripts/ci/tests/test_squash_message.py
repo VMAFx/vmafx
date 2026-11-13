@@ -614,7 +614,13 @@ class TestWorkflowWiring(unittest.TestCase):
         self.assertIn("requirements/locks/build.txt", dco_section)
         self.assertIn("PR_TITLE: ${{ github.event.pull_request.title }}", dco_section)
         self.assertIn("PR_NUMBER: ${{ github.event.pull_request.number }}", dco_section)
-        self.assertIn("PR_BODY: ${{ github.event.pull_request.body }}", dco_section)
+        # The body is read from the event file, never interpolated into env.
+        self.assertNotIn("PR_BODY: ${{ github.event.pull_request.body }}", dco_section)
+        self.assertIn(
+            """jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH\"""",
+            dco_section,
+        )
+        self.assertIn('--body-file "$RUNNER_TEMP/squash-pr-body.md"', dco_section)
         self.assertIn('LANDING_IDENTITY: "lusoris <lusoris@proton.me>"', dco_section)
 
         # Injection safety: no github.event.pull_request.title or body inside run: blocks

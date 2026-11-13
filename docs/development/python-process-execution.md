@@ -21,7 +21,10 @@ semaphore and error channel. The parent retains the original five-second slow
 startup warning, checks the producer's exit status between bounded waits, and
 stops waiting after 60 seconds. A producer that exits before signaling
 readiness raises `RuntimeError` with the producer role, exit code, and Python
-traceback when its target started. A failure during spawn bootstrap is emitted
+traceback when its target started. The parent waits up to three seconds for a
+failed producer to finish exiting. If it is still running, the message says
+`exit code unavailable after 3s`. A producer that already signaled readiness is
+never waited on. A failure during spawn bootstrap is emitted
 on the inherited child stderr and the exception reports that the diagnostic
 channel was not reached. A producer that remains alive without signaling
 raises `TimeoutError` naming the pending role.
@@ -44,7 +47,11 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q -W error \
   python/test/tools_test.py::MiscTest::test_parallel_map_is_warning_free_with_live_thread_and_preserves_order \
   python/test/executor_test.py::ExecutorTest::test_parallel_run_serializes_duplicate_assets_and_preserves_order \
   python/test/executor_test.py::ExecutorTest::test_fifo_helpers_surface_child_failure \
-  python/test/executor_test.py::ExecutorTest::test_fifo_helpers_bound_live_child_wait
+  python/test/executor_test.py::ExecutorTest::test_fifo_helpers_bound_live_child_wait \
+  python/test/executor_test.py::ExecutorTest::test_fifo_helpers_report_delayed_child_exit_code \
+  python/test/executor_test.py::ExecutorTest::test_fifo_helpers_bound_failed_child_exit_wait \
+  python/test/executor_test.py::ExecutorTest::test_wait_for_fifo_workers_does_not_join_child_that_signaled_then_failed \
+  python/test/executor_test.py::ExecutorTest::test_wait_for_fifo_workers_joins_failed_child_without_readiness
 ```
 
 The FIFO failure regression uses real `spawn` children for the two-input

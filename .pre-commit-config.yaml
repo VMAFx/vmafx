@@ -820,7 +820,15 @@ repos:
         name: README badge renderer and design check keep positive, negative and boundary cases (ADR-3519)
         entry: bash -c 'python3 -B scripts/ci/tests/test_readme_badges.py && python3 -B scripts/ci/tests/test_ci_tier.py'
         language: system
-        files: '^(README\.md|scripts/ci/(readme_badges|ci_tier|tests/test_readme_badges|tests/test_ci_tier)\.py|tools/badges/.*|\.github/workflows/.*\.yml|\.pre-commit-config\.yaml)$'
+        files: '^(README\.md|scripts/ci/(readme_badges|ci_tier|tests/test_readme_badges|tests/test_ci_tier)\.py|tools/badges/.*|\.github/(ci-tier\.json|workflows/.*\.yml)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
+      - id: check-ci-tier-full-paths
+        name: Every full_paths glob in .github/ci-tier.json matches tracked files (ADR-3536)
+        entry: python3 -B scripts/ci/ci_tier.py --check-full-paths
+        language: system
+        always_run: true
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
@@ -1154,7 +1162,7 @@ repos:
         name: Test and scan failures remain observable in CI
         entry: python3 -B scripts/ci/test_fail_closed_ci.py
         language: system
-        files: '^(scripts/ci/test_fail_closed_ci\.py|python/tox\.ini|.*\.(yml|yaml|sh|bash)|(.*/)?(Dockerfile|Containerfile)[^/]*)$'
+        files: '^(scripts/ci/test_fail_closed_ci\.py|python/tox\.ini|.*\.(yml|yaml|sh|bash)|.*\.(Dockerfile|Containerfile)|(.*/)?(Dockerfile|Containerfile)[^/]*)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
@@ -1271,13 +1279,56 @@ repos:
         language: python
         additional_dependencies: ["flawfinder==2.0.20"]
         types_or: [c, c++, cuda, objective-c++]
+        stages: [pre-commit]
+      # Push filenames cover only the previous remote tip and omit paths
+      # absent from the worktree. Always scan the full outgoing merge-base delta.
+      - id: flawfinder-new-push
+        name: No new flawfinder findings in the outgoing merge-base delta
+        entry: python3 scripts/ci/check_flawfinder_new.py --outgoing
+        language: python
+        additional_dependencies: ["flawfinder==2.0.20"]
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
       - id: test-flawfinder-new
         name: flawfinder-new gate (planted-defect recall)
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_check_flawfinder_new.py
         language: python
-        additional_dependencies: ["flawfinder==2.0.20", "identify==2.6.20"]
-        files: '^(\.pre-commit-config\.yaml|scripts/ci/(check_flawfinder_new|tests/test_check_flawfinder_new)\.py)$'
+        additional_dependencies: ["flawfinder==2.0.20", "identify==2.6.20", "pyyaml==6.0.3"]
+        files: '^(\.pre-commit-config\.yaml|scripts/(lib/new_scanner_findings\.py|ci/(check_flawfinder_new|tests/(test_check_flawfinder_new|scanner_test_support))\.py))$'
         pass_filenames: false
+      - id: bandit-new
+        name: No new Codacy Bandit findings in changed Python files
+        entry: python3 scripts/ci/check_bandit_new.py
+        language: python
+        additional_dependencies: ["bandit==1.9.4", "identify==2.6.20"]
+        # Classify Python (including pyi and shebangs) inside the gate so
+        # a config-only change also selects every tracked Python source.
+        types: [file]
+        # pre-commit still splits large file lists into partitions by argument
+        # length; only the partition handed bandit.yml runs the config-diff full
+        # scan, and require_serial bounds CPU rather than partition count.
+        require_serial: true
+        stages: [pre-commit]
+      # Push filenames cover only the previous remote tip and omit paths
+      # absent from the worktree. Always scan the full outgoing merge-base delta.
+      - id: bandit-new-push
+        name: No new bandit findings in the outgoing merge-base delta
+        entry: python3 scripts/ci/check_bandit_new.py --outgoing
+        language: python
+        additional_dependencies: ["bandit==1.9.4", "identify==2.6.20"]
+        require_serial: true
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+      - id: test-bandit-new
+        name: bandit-new gate (planted-defect recall)
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_check_bandit_new_*.py
+        language: python
+        additional_dependencies: ["bandit==1.9.4", "identify==2.6.20"]
+        files: '^(\.pre-commit-config\.yaml|bandit\.yml|scripts/(lib/new_scanner_findings\.py|ci/(check_bandit_new|tests/(test_check_bandit_new_[a-z_]+|bandit_new_test_support|scanner_test_support))\.py))$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
 
       # Shell-injection regression tests. Both fixes below were reverted once
       # by a pull request that carried stale copies of the scripts (PR #414
