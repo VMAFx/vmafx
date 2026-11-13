@@ -20,11 +20,17 @@ import json
 import os
 import statistics
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE
+REPO_ROOT = HERE.parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402 - needs the repository root
 
 EXE = r"C:\PLAN\VMAF\verify\vmafx-install\bin\vmafx.exe"
 FRAMES_DIR = Path(r"C:\PLAN\VMAF\baseline\t1_frames")
@@ -90,7 +96,14 @@ def run_cell(backend: str, n: int) -> list[dict]:
             "--json",
         ]
         t0 = time.perf_counter()
-        proc = subprocess.run(cmd, capture_output=True, text=True, env=ENV_BASE, timeout=600)
+        proc = run_command(
+            cmd,
+            allowed_executables=[EXE],
+            capture_output=True,
+            text=True,
+            env=ENV_BASE,
+            timeout_seconds=600,
+        )
         wall_ms = (time.perf_counter() - t0) * 1000.0
         if proc.returncode != 0:
             raise RuntimeError(
