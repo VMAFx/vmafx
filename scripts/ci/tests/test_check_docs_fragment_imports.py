@@ -25,6 +25,16 @@ DOCS_CHECK_IN = (
     "pyyaml==6.0.3\n"
 )
 
+# The graceful fallback of scripts/docs/generate-charts.py.
+GUARDED_RENDERER = (
+    "import importlib\n"
+    "def load_renderer():\n"
+    "    try:\n"
+    "        return importlib.import_module('vl_convert')\n"
+    "    except ImportError:\n"
+    "        return None\n"
+)
+
 
 def plant(root: Path, files: dict[str, str]) -> Path:
     for name, text in files.items():
@@ -158,11 +168,7 @@ class CheckDocsFragmentImportsTests(unittest.TestCase):
                         CHECKER_LINE + "\n\t@python3 scripts/docs/generate-charts.py"
                     ),
                     "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
-                    "scripts/docs/generate-charts.py": (
-                        "import importlib\n"
-                        "def load_renderer():\n"
-                        "    return importlib.import_module('vl_convert')\n"
-                    ),
+                    "scripts/docs/generate-charts.py": GUARDED_RENDERER,
                     "requirements/locks/docs-check.in": DOCS_CHECK_IN,
                 }
             ),
@@ -330,7 +336,9 @@ class CheckDocsFragmentImportsTests(unittest.TestCase):
         """`env LC_ALL=C python3 x.py` runs x.py and is scanned."""
         problems = self.findings(
             {
-                "Makefile": makefile(CHECKER_LINE + "\n\t@env LC_ALL=C python3 scripts/docs/env.py"),
+                "Makefile": makefile(
+                    CHECKER_LINE + "\n\t@env LC_ALL=C python3 scripts/docs/env.py"
+                ),
                 "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
                 "scripts/docs/env.py": "import flask\n",
                 "requirements/locks/docs-check.in": DOCS_CHECK_IN,
@@ -387,6 +395,124 @@ class CheckDocsFragmentImportsTests(unittest.TestCase):
             }
         )
         self.assertTrue(any("python -m" in problem for problem in problems), problems)
+
+    def test_a_value_option_does_not_hide_the_script(self) -> None:
+        """`-X utf8` takes a value and `-x` does not (`python3 --help`): in a
+        recipe and in a bash helper, both still name the script."""
+        problems = self.findings(
+            {
+                "Makefile": makefile(
+                    CHECKER_LINE
+                    + "\n\t@python3 -X utf8 scripts/docs/xvalue.py"
+                    + "\n\t@python3 -x scripts/docs/xflag.py"
+                    + "\n\t@bash scripts/docs/x-helper.sh"
+                ),
+                "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+                "scripts/docs/xvalue.py": "import flask\n",
+                "scripts/docs/xflag.py": "import httpx\n",
+                "scripts/docs/x-helper.sh": (
+                    "#!/usr/bin/env bash\n" 'python3 -X utf8 "$SCRIPT_DIR/xhelper.py"\n'
+                ),
+                "scripts/docs/xhelper.py": "import requests\n",
+                "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+            }
+        )
+        joined = "\n".join(problems)
+        for name in ("flask", "httpx", "requests"):
+            self.assertIn(f"imports '{name}'", joined, problems)
+
+    def test_code_and_module_runs_are_findings_whatever_follows(self) -> None:
+        """`-c` and `-m` end the option list, so a later `.py` word is an
+        argument, not the script; each line is a finding."""
+        problems = self.findings(
+            {
+                "Makefile": makefile(
+                    CHECKER_LINE
+                    + "\n\t@python3 -m pytest scripts/docs/arg.py"
+                    + "\n\t@python3 -c 'import flask'"
+                    + "\n\t@python3 -Bc 'import flask'"
+                ),
+                "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+                "scripts/docs/arg.py": "import os\n",
+                "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+            }
+        )
+        self.assertEqual(sum("python -m" in p for p in problems), 3, problems)
+
+    def test_a_helper_reads_interpreters_like_the_recipe(self) -> None:
+        """A bash helper follows the recipe's rules: a versioned interpreter is
+        scanned, and a `-m` or `-c` run is a finding, not a skip, a scan of
+        the module's argument, or a missing file named after the code."""
+        problems = self.findings(
+            {
+                "Makefile": makefile(CHECKER_LINE + "\n\t@bash scripts/docs/forms.sh"),
+                "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+                "scripts/docs/forms.sh": (
+                    "#!/usr/bin/env bash\n"
+                    'python3.14 "$SCRIPT_DIR/versioned.py"\n'
+                    'python3 -m pytest "$SCRIPT_DIR/argument.py"\n'
+                    "python3 -c 'import flask'\n"
+                ),
+                "scripts/docs/versioned.py": "import httpx\n",
+                "scripts/docs/argument.py": "import requests\n",
+                "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+            }
+        )
+        joined = "\n".join(problems)
+        self.assertIn("imports 'httpx'", joined, problems)
+        self.assertNotIn("imports 'requests'", joined, problems)
+        self.assertNotIn("does not exist", joined, problems)
+        self.assertEqual(sum("python -m" in p for p in problems), 2, problems)
+
+    def test_a_space_indented_continuation_keeps_the_recipe(self) -> None:
+        """make joins a backslash continuation whatever its indentation; the
+        recipe lines after it are still scanned."""
+        problems = self.findings(
+            {
+                "Makefile": makefile(
+                    CHECKER_LINE
+                    + "\n\t@python3 scripts/docs/first.py \\\n  --flag"
+                    + "\n\t@python3 scripts/docs/after.py"
+                ),
+                "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+                "scripts/docs/first.py": "import os\n",
+                "scripts/docs/after.py": "import flask\n",
+                "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+            }
+        )
+        self.assertIn("imports 'flask'", "\n".join(problems), problems)
+
+    def test_a_relative_import_runs_the_intermediate_package_init(self) -> None:
+        """`from .pkg.helper import value` runs pkg/__init__.py too."""
+        problems = self.findings(
+            {
+                "Makefile": makefile(CHECKER_LINE + "\n\t@python3 scripts/docs/wrapper.py"),
+                "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+                "scripts/docs/wrapper.py": "from .pkg.helper import value\n",
+                "scripts/docs/pkg/__init__.py": "import flask\n",
+                "scripts/docs/pkg/helper.py": "value = 1\n",
+                "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+            }
+        )
+        self.assertIn("imports 'flask'", "\n".join(problems), problems)
+
+    def test_an_optional_import_without_its_fallback_is_a_finding(self) -> None:
+        """The vl_convert exemption holds only in generate-charts.py and only
+        behind its ImportError fallback."""
+        unguarded = "import vl_convert\n"
+        for name, script, body in (
+            ("fallback removed", "scripts/docs/generate-charts.py", unguarded),
+            ("another importer", "scripts/docs/other.py", GUARDED_RENDERER),
+        ):
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                planted = {
+                    "Makefile": makefile(CHECKER_LINE + f"\n\t@python3 {script}"),
+                    "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
+                    "requirements/locks/docs-check.in": DOCS_CHECK_IN,
+                    script: body,
+                }
+                problems = module.findings(plant(Path(tmp), planted))
+                self.assertIn("imports 'vl_convert'", "\n".join(problems), problems)
 
 
 if __name__ == "__main__":

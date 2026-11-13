@@ -61,19 +61,21 @@ EXTRA_SYS_PATH_BASES = ("tools/rc1-tester/src",)
 # Package distribution name -> the top-level module it provides. Everything not
 # listed here imports under its own lower-case name.
 PACKAGE_IMPORT_NAMES = {"pyyaml": "yaml"}
-# Third-party modules a script imports behind a graceful fallback: the target
+# Third-party modules one script imports behind a graceful fallback: the target
 # runs without them, so they stay out of docs-check.in by design. Each entry
-# carries the reason, and the gate refuses them the day the fallback goes away
-# (the import then fails the target in a declared-only environment like any
-# other undeclared module).
+# names its one importer and the reason. The exemption holds only while every
+# import of the module sits in that file inside a `try` that catches
+# ImportError; an import anywhere else, or without the fallback, is a finding
+# like any other undeclared module.
 OPTIONAL_IMPORTS = {
     "vl_convert": (
-        "optional renderer of scripts/docs/generate-charts.py: without "
-        "vl-convert-python the --check pass verifies the committed data and "
-        "skips the render comparison (declared for the render path in "
-        "docs/requirements-lock.txt)"
+        "scripts/docs/generate-charts.py",
+        "optional renderer: without vl-convert-python the --check pass verifies "
+        "the committed data and skips the render comparison (declared for the "
+        "render path in docs/requirements-lock.txt)",
     ),
 }
+_IMPORT_ERRORS = {"ImportError", "ModuleNotFoundError"}
 MAX_FILES = 500  # bound on the import-closure walk
 
 
@@ -90,15 +92,20 @@ def _recipe_tokens(line: str, issues: list[str]) -> list[str]:
     return [token for token in tokens if token]
 
 
-# Interpreter options that consume a separate value; the value never names the
-# script, so both tokens are skipped together. `-m` names a module rather than a
-# script and is handled separately: it must be a finding, never a silent skip.
-_VALUE_OPTS = {"-c", "-m", "-W", "-x", "--check-hash-based-pycs"}
+# Interpreter options that consume a separate value (`python3 --help`: `-W arg`,
+# `-X opt`, `--check-hash-based-pycs`); the value never names the script, so
+# both words are skipped together. `-c cmd` and `-m mod` end CPython's option
+# list and run inline code or a module instead of a file: the scan cannot read
+# either, so each is a finding, never a silent skip.
+_VALUE_OPTS = {"-W", "-X", "--check-hash-based-pycs"}
+_STOP_OPTS = "cm"
 # `python3`, `python3.14`, `python`, and `env`'s `VAR=value` words, which carry
 # no script either.
 _INTERPRETER = re.compile(r"python[0-9.]*")
 _MAKE_VARIABLE = re.compile(r"\$(?:\([^)]*\)|\{[^}]*\})")
 _ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+# A helper line that may start a Python interpreter, checked before tokenizing.
+_PYTHON_WORD = re.compile(r"(?<![\w.-])python[0-9.]*(?![\w-])")
 
 
 def _python_interpreter(word: str) -> bool:
@@ -121,24 +128,33 @@ def _without_env_prefix(tokens: list[str]) -> list[str]:
     return words
 
 
+def _option_words(word: str) -> int:
+    """How many words one interpreter option takes: 0 for `-c`/`-m` (the option
+    list ends there), 2 for an option whose value is the next word (`-W ignore`,
+    `-X utf8`), 1 otherwise. Short options group (`-Bc`, `-BX utf8`), and an
+    attached value (`-Xutf8`, `-Wignore`) ends the group."""
+    if word.startswith("--"):
+        return 2 if word in _VALUE_OPTS else 1
+    for index, letter in enumerate(word[1:], start=1):
+        if letter in _STOP_OPTS:
+            return 0
+        if f"-{letter}" in _VALUE_OPTS:
+            return 2 if index == len(word) - 1 else 1
+    return 1
+
+
 def _python_script(tokens: list[str]) -> tuple[str | None, bool]:
     """The .py file a `python3 ...` invocation runs, interpreter options and
-    their values skipped (`python3 -W ignore -B x.py` names x.py), and whether
-    the invocation is a `-m` module run (`python3 -m pkg.mod`), which names no
-    file."""
+    their values skipped (`python3 -W ignore -X utf8 -B x.py` names x.py), and
+    whether the invocation runs a `-m` module or `-c` code instead, which names
+    no file (any later word is that code's argument, not a script)."""
     rest = tokens[1:]
-    module_run = False
-    while rest:
-        if rest[0] == "-m":
-            module_run = True
-            rest = rest[2:]
-        elif rest[0] in _VALUE_OPTS:
-            rest = rest[2:]
-        elif rest[0].startswith("-"):
-            rest = rest[1:]
-        else:
-            break
-    return (rest[0] if rest and rest[0].endswith(".py") else None), module_run
+    while rest and rest[0].startswith("-") and rest[0] != "-":
+        taken = _option_words(rest[0])
+        if taken == 0:
+            return None, True
+        rest = rest[taken:]
+    return (rest[0] if rest and rest[0].endswith(".py") else None), False
 
 
 def _split_recipe_scripts(
@@ -148,48 +164,55 @@ def _split_recipe_scripts(
 
     A Python interpreter spelled any way the recipe can spell it — an `env`
     prefix, a make variable, an absolute path or a versioned name — is scanned
-    like `python3`. A `-m` module run names no script and is a finding, so a
-    later recipe edit cannot drop one from the scan without a word."""
+    like `python3`. A `-m` module or `-c` code run names no script and is a
+    finding, so a later recipe edit cannot drop one from the scan without a word."""
     words = _without_env_prefix(tokens)
     if not words:
         return
     if _python_interpreter(words[0]):
-        script, module_run = _python_script(words)
+        script, code_run = _python_script(words)
         if script:
             python.append(Path(script))
-        elif module_run:
+        elif code_run:
             issues.append(
-                "recipe line runs a `python -m` module, which names no script the "
-                f"scan can read: {' '.join(tokens)[:100]}"
+                "recipe line runs a `python -m` module or `python -c` code, which "
+                f"names no script the scan can read: {' '.join(tokens)[:100]}"
             )
     elif len(words) > 1 and words[1].endswith(".sh") and words[0] in {"bash", "sh"}:
         shell.append(Path(words[1]))
 
 
-def _scripts_from_helper(helper: Path, makefile_dir: Path) -> list[Path]:
-    """The python scripts one bash helper of the recipe invokes (its
-    `$SCRIPT_DIR` is the helper's directory). A missing helper is returned as
-    its would-be python script so findings() can name it."""
+def _scripts_from_helper(helper: Path, makefile_dir: Path, issues: list[str]) -> list[Path]:
+    """The python scripts one bash helper of the recipe invokes, read with the
+    recipe's own interpreter rules (`_python_interpreter`, `_python_script`) so a
+    `-m` or `-c` run, a versioned name or an `env` prefix reads the same in both
+    places (`$SCRIPT_DIR` is the helper's directory). A missing helper is
+    returned as its would-be python script so findings() can name it."""
     source = makefile_dir / helper
     if not source.is_file():
         return [source.with_suffix(".py")]
-    text = source.read_text(encoding="utf-8", errors="replace")
     scripts: list[Path] = []
-    # Interpreter options may sit between `python3` and the script. Only the
-    # value-consuming options (-c/-m/-W/-x/--check-hash-based-pycs) take a
-    # following token as their value; a bare flag never swallows the script.
-    pattern = re.compile(
-        r"python3(?:\s+-{1,2}(?:c|m|W|x|check-hash-based-pycs)\s+\S+|\s+-{1,2}[A-Za-z][\w-]*)*"
-        r"\s+(\"[^\"]+\"|\S+\.py)"
-    )
-    for match in pattern.finditer(text):
-        token = match.group(1).strip('"')
-        if "$" in token:
-            token = re.sub(r"\$\{?SCRIPT_DIR\}?", helper.parent.as_posix(), token)
-        if "/" in token and not token.startswith("/"):
-            scripts.append(Path(token))
-        else:
-            scripts.append(helper.parent / token)
+    for line in source.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not _PYTHON_WORD.search(line):
+            continue  # lines inside a multi-line awk or heredoc quote never split alone
+        try:
+            words = shlex.split(line, comments=True)
+        except ValueError as error:
+            issues.append(f"{helper.as_posix()} line cannot be tokenized ({error}): {line[:80]}")
+            continue
+        start = next((index for index, word in enumerate(words) if _python_interpreter(word)), None)
+        if start is None:
+            continue
+        script, code_run = _python_script(words[start:])
+        if code_run:
+            issues.append(
+                f"{helper.as_posix()} runs a `python -m` module or `python -c` code, which "
+                f"names no script the scan can read: {line.strip()[:100]}"
+            )
+        elif script:
+            token = re.sub(r"\$\{?SCRIPT_DIR\}?", helper.parent.as_posix(), script)
+            relative = "/" in token and not token.startswith("/")
+            scripts.append(Path(token) if relative else helper.parent / token)
     return scripts
 
 
@@ -217,8 +240,8 @@ def recipe_scripts(makefile: Path) -> tuple[list[Path], list[str]]:
     issues: list[str] = []
     pending = ""
     for line in lines[start:]:
-        if not line.startswith("\t"):
-            break  # a non-recipe line ends the recipe (flush first below)
+        if not pending and not line.startswith("\t"):
+            break  # a non-recipe line ends the recipe; a continuation never does
         candidate = pending + " " + line.strip() if pending else line.rstrip("\n")
         if candidate.rstrip().endswith("\\"):
             pending = candidate.rstrip()[:-1].rstrip() + " "
@@ -232,7 +255,7 @@ def recipe_scripts(makefile: Path) -> tuple[list[Path], list[str]]:
         if tokens:
             _split_recipe_scripts(tokens, python, shell, issues)
     for helper in shell:
-        python.extend(_scripts_from_helper(helper, makefile.parent))
+        python.extend(_scripts_from_helper(helper, makefile.parent, issues))
     return python, issues
 
 
@@ -278,8 +301,10 @@ def _relative_files(node: ast.ImportFrom, source: Path, root: Path) -> list[Path
     anchor = source.parents[node.level - 1]
     module = (node.module or "").split(".") if node.module else []
     candidates: list[Path] = []
-    if module:
-        stem = anchor.joinpath(*module)
+    # `from .a.b import c` runs a/__init__.py and a/b/__init__.py, as
+    # _module_files does for an absolute import.
+    for depth in range(1, len(module) + 1):
+        stem = anchor.joinpath(*module[:depth])
         candidates.extend((stem.with_suffix(".py"), stem / "__init__.py"))
     for alias in node.names:
         stem = anchor.joinpath(*module, alias.name)
@@ -398,6 +423,59 @@ def declared_modules(lock_input: Path) -> set[str]:
     return names
 
 
+def _guarded_nodes(tree: ast.AST) -> set[int]:
+    """ids of the nodes inside a `try` body whose handlers catch ImportError."""
+    guarded: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        caught = {
+            name.id
+            for handler in node.handlers
+            if handler.type is not None
+            for name in ast.walk(handler.type)
+            if isinstance(name, ast.Name)
+        }
+        if caught & _IMPORT_ERRORS:
+            guarded.update(id(inner) for stmt in node.body for inner in ast.walk(stmt))
+    return guarded
+
+
+def _imports_of(tree: ast.AST, module: str) -> list[ast.AST]:
+    """The nodes of `tree` that import top-level `module`, dynamic ones included."""
+    nodes: list[ast.AST] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and not node.level:
+            names = [node.module or ""]
+        elif isinstance(node, ast.Call):
+            names = _dynamic_import_names(ast.Expression(body=node))
+        else:
+            continue
+        if any(name.split(".", 1)[0] == module for name in names):
+            nodes.append(node)
+    return nodes
+
+
+def _fallback_holds(module: str, closure: list[Path], root: Path) -> bool:
+    """True while every import of the optional `module` in `closure` sits in its
+    one declared importer, inside a `try` that catches ImportError."""
+    importer = (root / OPTIONAL_IMPORTS[module][0]).resolve()
+    for source in closure:
+        try:
+            tree = ast.parse(source.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError, UnicodeDecodeError):
+            continue  # scan_imports already reports this file
+        nodes = _imports_of(tree, module)
+        if not nodes:
+            continue
+        guarded = _guarded_nodes(tree)
+        if source != importer or any(id(node) not in guarded for node in nodes):
+            return False
+    return True
+
+
 def findings(root: Path) -> list[str]:
     """The gate's findings against `root`; an empty list means clean."""
     problems: list[str] = []
@@ -422,10 +500,15 @@ def findings(root: Path) -> list[str]:
         if not entry.is_file():
             problems.append(f"the {TARGET} recipe runs {script.as_posix()}, which does not exist")
             continue
-        third_party, _closure, scan_issues = scan_imports(entry, root)
+        third_party, closure, scan_issues = scan_imports(entry, root)
         for issue in scan_issues:
             problems.append(f"{script.as_posix()}: {issue}")
-        for module in sorted(third_party - declared - set(OPTIONAL_IMPORTS)):
+        optional = {
+            name
+            for name in third_party & set(OPTIONAL_IMPORTS)
+            if _fallback_holds(name, closure, root)
+        }
+        for module in sorted(third_party - declared - optional):
             problems.append(
                 f"{script.as_posix()} imports '{module}': not declared in {LOCK_INPUT} "
                 "(the scripts the target runs cannot import it from a declared environment)"
