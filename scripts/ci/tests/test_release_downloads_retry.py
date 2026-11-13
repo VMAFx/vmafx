@@ -18,12 +18,15 @@ block is not a fetch.
 from __future__ import annotations
 
 import re
-import subprocess
+import shutil
 import sys
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 STEP = re.compile(r"(?m)^      - (?:name|uses|run):")
 FETCH = re.compile(r"(?<![\w.-])(curl(?:\.exe)?|wget)\s+(?=[\"']?(?:-|https?://|\$|%))")
@@ -42,12 +45,17 @@ ALLOWLIST = {
 
 
 def tracked(pathspec: str) -> list[str]:
-    result = subprocess.run(
-        ["git", "ls-files", pathspec],
+    git = shutil.which("git")
+    if git is None:
+        raise AssertionError("git is required to enumerate tracked files")
+    result = run_command(
+        [git, "ls-files", pathspec],
+        allowed_executables=[git],
         cwd=ROOT,
         capture_output=True,
         text=True,
         check=True,
+        timeout_seconds=30,
     )
     return [line for line in result.stdout.splitlines() if line]
 

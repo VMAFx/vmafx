@@ -67,9 +67,10 @@ override skips this unless it is set).
 
 With the default `FFMPEG_FIX_SERIES_VERIFY=auto` the signature is checked when
 cosign is installed; the script's one-line summary says whether it was. The
-`FFmpeg Patch Stack` gate installs cosign and requires it. `FFMPEG_FIX_SERIES_SUMS_SIGSTORE_URL`
-names the signature bundle when a mirror serves `SHA256SUMS` and its bundle
-together; the cosign identity still names the release repository and tag. The verified tarball
+`FFmpeg Patch Stack` gate installs cosign and requires it.
+`FFMPEG_FIX_SERIES_SUMS_SIGSTORE_URL` names the signature bundle when a mirror
+serves `SHA256SUMS` and its bundle together; the cosign identity still names
+the release repository and tag. The verified tarball
 is cached under `<cache root>/vmafx/ffmpeg-fix-series/` and unpacked afresh on
 every run; the container builds cache nothing (`FFMPEG_FIX_SERIES_CACHE=none`).
 
