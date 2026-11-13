@@ -128,13 +128,17 @@ Hamming distance at most 31, quality at least 50, the duration, aspect,
 and the optional `vmaf-tune[fingerprint]` extra. Both planted pairs of
 decision 5 are tests in `tools/vmaf-tune/tests/test_fingerprint.py`.
 
-The spot check is only partly applied. `_verify_near_dup_spot()` in
-`tools/vmaf-tune/src/vmaftune/corpus.py` scores the first second of the query
-source against the cached encode, then compares that score with the cached
-result's aggregate score over its whole clip. It does not compare it with a
-score for the same window of the cached source, and no test covers it. The
-option is off by default, so no default run is affected; #3343 tracks the fix
-and its tests.
+The spot-check gap tracked by #3343 is addressed in the pending change:
+`tools/vmaf-tune/src/vmaftune/corpus.py` compares the query's first-second score
+against the cached source's first-second score against its encode. Cache
+metadata stores that baseline only when verification is enabled; legacy
+entries without it fail closed as misses. Regression tests cover an exact
+duplicate with a first-second score unlike its whole-clip mean, a different
+first-second score, the 1.5-point boundary, baseline recording, and the
+optional metadata round trip. This stores one score in the existing cache
+metadata rather than retaining a source path and reopening the cached source:
+the cache owns the encoded artifact, not the original media, and the baseline
+keeps the comparison reproducible after the input file moves or is removed.
 
 Decision 5 keeps the feature off by default until a measured library run
 reports the hit rate, false matches and segment ratios; that run is the

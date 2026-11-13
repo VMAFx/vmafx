@@ -48,3 +48,10 @@ invariant: Cache key fields are load-bearing; cache content stays opaque and par
   `test_fingerprint.py` holds planted negative (same first MiB,
   different content -> refused) and planted positive (re-encode ->
   matched).
+- **Near-duplicate spot verification compares the same first second on both
+  sides.** When `--near-dup-verify` is enabled, cache metadata stores the
+  source-against-its-encode score for the first second. A candidate source is
+  scored against the cached encode on that same window and compared with this
+  baseline, never with the whole-clip `vmaf_score`. Older cache entries without
+  the baseline fail closed as a miss. `test_corpus.py` and `test_cache.py` pin
+  the comparison and optional metadata round trip.

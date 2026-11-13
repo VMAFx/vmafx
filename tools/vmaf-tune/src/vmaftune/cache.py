@@ -107,6 +107,9 @@ class CachedResult:
     row: Mapping[str, Any] | None = None
     # ADR-3372 near-duplicate match record when reused via perceptual fingerprint
     near_dup: NearDupRecord | None = None
+    # Score of the cached source against this encode over the first second.
+    # Older cache entries omit it and cannot be spot-verified safely.
+    near_dup_spot_score: float | None = None
 
 
 def _xdg_cache_home() -> Path:
@@ -357,6 +360,11 @@ class TuneCache:
                 vmaf_binary_version=str(payload.get("vmaf_binary_version", "")),
                 artifact_path=blob,
                 row=_row_from_meta(payload.get("row")),
+                near_dup_spot_score=(
+                    float(payload["near_dup_spot_score"])
+                    if payload.get("near_dup_spot_score") is not None
+                    else None
+                ),
             )
         except (KeyError, TypeError, ValueError):
             return None
@@ -406,6 +414,10 @@ class TuneCache:
             "score_time_ms": float(result.score_time_ms),
             "vmaf_binary_version": result.vmaf_binary_version,
         }
+        if result.near_dup_spot_score is not None:
+            if not math.isfinite(result.near_dup_spot_score):
+                raise ValueError("near-duplicate spot score must be finite")
+            payload["near_dup_spot_score"] = float(result.near_dup_spot_score)
         if result.row is not None:
             payload["row"] = _row_to_meta(result.row)
         write_json_strict(meta, payload, indent=None, trailing_newline=False)

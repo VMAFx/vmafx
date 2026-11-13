@@ -1,0 +1,1 @@
+- **Compare near-duplicate spot scores on the same one-second window** ([#3343](https://github.com/VMAFx/vmafx/issues/3343)). Cache the encoded source's first-second VMAF score and compare candidate sources against that baseline; legacy cache entries without it safely refuse near-duplicate reuse.
