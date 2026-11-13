@@ -43,13 +43,13 @@ timeline.log with nvidia-smi brackets, armD/sampler.log 5 s cadence).
 
 ## Conclusion
 
-Observed: a slow window, where the freed hog's memory is not back within the
-105 s the arm D ladder waits (the as-landed assertion fails 24/24), and a fast
-window, where it is back at once. Hypothesis, not established by the sampler
-or the 2 MiB probe: the driver holds the released hog's memory for the
-lifetime of the freeing process (>= 105 s observed, returned at exit). The
-probe A/B found no systematic perturbation in this sample — a finding, not a
-rule-out: the 5080 as-landed runs stop before the retry, so those pairs do
+Observed: in the slow window the 2 MiB probe is refused at every checkpoint
+through 105 s (the as-landed assertion fails 24/24); in the fast window it is
+granted at once. Hypothesis, not established by the sampler or the 2 MiB probe:
+the driver holds the released hog's memory for the lifetime of the freeing
+process, which bounds the hypothesis as the probe being refused for at least
+105 s. The probe A/B found no systematic perturbation in this sample — a
+finding, not a rule-out: the 5080 as-landed runs stop before the retry, so those pairs do
 not compare retry outcomes with and without the probe, and the 4060 results
 include one as-landed refusal. A bounded wait + skip-with-reason is the
 design that maps to the observed behavior. Hog sizes 30.8/22.9 GiB (WDDM
