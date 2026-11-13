@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-3532: Preserve trusted executable launch links
 
-- **Status**: Accepted
+- **Status**: Accepted (directory-mode and ACL rule for links in the resolved file's directory conditionally superseded by [ADR-3534](3534-same-directory-launch-link-trust.md) when the resolved file is known unprotected or both entries have replacement protection)
 - **Date**: 2026-11-11
 - **Deciders**: Repository maintainers
 - **Tags**: python, security, testing

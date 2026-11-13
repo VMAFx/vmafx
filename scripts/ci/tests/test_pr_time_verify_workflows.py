@@ -96,6 +96,7 @@ def run_validate(
             "PATH": os.environ["PATH"],
             "HOME": tmp,
             "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_AUTHOR_NAME": "t",
             "GIT_AUTHOR_EMAIL": "t@example.invalid",
             "GIT_COMMITTER_NAME": "t",

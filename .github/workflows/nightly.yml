@@ -82,10 +82,8 @@ jobs:
         # Tidy Ratchet run passed 5.2m); 10 min is at least 1.25x the slowest.
         timeout-minutes: 10
         run: |
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           sudo bash scripts/ci/install-llvm.sh 22 --source=apt.llvm.org
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           mkdir -p "${RUNNER_TEMP}/apt-archives"
           if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
             sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
