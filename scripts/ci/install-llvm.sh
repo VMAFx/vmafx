@@ -29,7 +29,7 @@ fi
 packages=("clang-$major" "lldb-$major" "lld-$major" "clangd-$major" "clang-tidy-$major")
 
 if [[ $source_mode == --source=archive-first ]]; then
-  apt-get update -q
+  apt-get --error-on=any -o Acquire::Retries=3 update -q
   archive_available=1
   for package in "${packages[@]}"; do
     if ! apt-cache show "$package" >/dev/null 2>&1; then
@@ -59,7 +59,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 installer=$(mktemp)
 tmp_files+=("$installer")
-wget -qO "$installer" --tries=5 --retry-connrefused --waitretry=5 --timeout=30 \
+wget -qO "$installer" --tries=5 --retry-connrefused --retry-on-host-error --waitretry=5 --timeout=30 \
   https://apt.llvm.org/llvm.sh
 if ! printf '%s  %s\n' "$LLVM_INSTALLER_SHA256" "$installer" | sha256sum --check --status; then
   echo "install-llvm: llvm.sh SHA-256 mismatch; refusing to execute" >&2

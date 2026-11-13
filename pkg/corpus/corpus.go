@@ -25,6 +25,7 @@ import (
 
 	"github.com/VMAFx/vmafx/pkg/cliopt"
 	"github.com/VMAFx/vmafx/pkg/codecadapter"
+	"github.com/VMAFx/vmafx/pkg/ffencode"
 	"github.com/VMAFx/vmafx/pkg/pyjson"
 )
 
@@ -656,6 +657,7 @@ func buildEncodeRequest(
 		CRF:               cell.CRF,
 		Output:            out,
 		ExtraParams:       extra,
+		SourceColorParams: ffencode.ColorTagArgs(hdrExtraParams),
 		SampleClipSeconds: clip.ClipSeconds,
 		SampleClipStartS:  clip.StartS,
 		SourceIsContainer: sourceIsContainer,

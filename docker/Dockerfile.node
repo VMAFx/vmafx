@@ -59,7 +59,7 @@ ARG VMAFX_VERSION=dev
 # sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
 # these lines, then run `make base-images-sync`.
 ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2"
-ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:af1bfc2614ebb1dbd31af514b78740fd678850e76498762b425ecee4c5c6ea80"
+ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:c47c3fda018d13d43a6bf5ebac3e5bba8a23a35782aa4faf531afaf47c64c39f"
 ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170"
 ARG RELEASE_RUNTIME_CC="gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2"
 ARG CUDA_RUNTIME="ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c"
@@ -107,7 +107,7 @@ FROM ${RELEASE_BUILDER_BASE} AS fuse-tools
 ARG DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends fuse3 mount \
     && rm -rf /var/lib/apt/lists/*
 COPY --chmod=0755 scripts/ci/record-copied-debian-libs.sh /usr/local/bin/record-copied-debian-libs
@@ -143,7 +143,7 @@ LABEL org.opencontainers.image.description="Build stage: libvmaf + vmaf CLI (rel
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends \
         gcc \
         g++ \
@@ -215,7 +215,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends \
         gcc \
         g++ \
@@ -394,7 +394,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 # gen-node-bpf.sh --require-pin below fails unless clang is BPF_CLANG_VERSION of
 # build-config.env and the object's sha256 is BPF_OBJECT_SHA256.
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends \
         clang-19 \
         gcc \
@@ -445,7 +445,7 @@ COPY --from=vmaf-builder /licence-inputs/vmafx-sources.json /tmp/vmaf-sources.js
 # go-builder is the base of go-licences-sycl; neither stage ships, so the apt
 # lists stay (DL3009).
 # hadolint ignore=DL3008,DL3009
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends python3 \
     && apt-get clean \
     && mkdir /licence-inputs \
@@ -562,7 +562,7 @@ FROM ${RELEASE_PYTHON_BASE} AS node-source-fetch
 RUN --mount=type=bind,from=node-with-notices,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
     && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact production-node-image \
         --root /rootfs --repo /repo --out /sources.list \
     && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \
@@ -689,7 +689,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update \
+    apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         ccache \
@@ -758,7 +758,7 @@ COPY dev/scripts/fetch-intel-neo.py /tmp/vmafx/dev/scripts/fetch-intel-neo.py
 # working directory. Only /out leaves this stage.
 # hadolint ignore=DL3003,DL3008,DL3009
 RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
-    apt-get update \
+    apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends ca-certificates python3 \
     && cd /tmp/vmafx \
     && bash /tmp/vmafx/scripts/ci/install-intel-ocloc.sh --components runtime /tmp/vmafx \
@@ -869,7 +869,7 @@ FROM ${RELEASE_PYTHON_BASE} AS node-sycl-source-fetch
 RUN --mount=type=bind,from=node-sycl-with-notices,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
     && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact production-node-sycl-image \
         --root /rootfs --repo /repo --out /sources.list \
     && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \

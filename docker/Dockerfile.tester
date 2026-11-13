@@ -38,12 +38,12 @@ FROM ${RELEASE_BUILDER_BASE} AS fixtures
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG VMAF_RESOURCE_COMMIT=c0ab6adbd7e41bb354f14686ed08500530622bc3
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 COPY tools/rc1-tester/image/fixtures.sha256 /fixtures.sha256
 WORKDIR /out
-RUN awk '{print $2}' /fixtures.sha256 | xargs -P4 -I{} curl -fsSL --retry 3 --create-dirs \
+RUN awk '{print $2}' /fixtures.sha256 | xargs -P4 -I{} curl -fsSL --retry 3 --retry-all-errors --create-dirs \
         -o {} "https://raw.githubusercontent.com/Netflix/vmaf_resource/${VMAF_RESOURCE_COMMIT}/python/test/resource/{}" \
     && sha256sum --check --strict /fixtures.sha256 \
     && chmod -R a+rX /out
@@ -53,7 +53,7 @@ RUN awk '{print $2}' /fixtures.sha256 | xargs -P4 -I{} curl -fsSL --retry 3 --cr
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_PYTHON_BASE} AS python-venv
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends gcc g++ libc6-dev libzimg2 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /
@@ -84,7 +84,7 @@ RUN python -m venv /venv \
 FROM ${RELEASE_BUILDER_BASE} AS vmaf-build
 ARG VMAF_BUILD_JOBS=4
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends \
         gcc g++ meson ninja-build nasm pkg-config xxd python3 libzimg-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -207,7 +207,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG VMAF_BUILD_JOBS=4
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl gcc g++ gpg meson nasm ninja-build pkg-config python3 xxd zstd \
         libzimg-dev \
@@ -313,7 +313,7 @@ COPY dev/scripts/fetch-intel-neo.py /tmp/vmafx/dev/scripts/fetch-intel-neo.py
 # a cache the report never writes again (PYTHONDONTWRITEBYTECODE).
 # hadolint ignore=DL3003,DL3008
 RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
-    apt-get update \
+    apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends ca-certificates python3 \
     && cd /tmp/vmafx \
     && bash scripts/ci/install-intel-ocloc.sh --components runtime /tmp/vmafx \
@@ -411,7 +411,7 @@ FROM ${RELEASE_PYTHON_BASE} AS sycl-source-fetch
 RUN --mount=type=bind,from=sycl-assembled,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
     && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact sycl-image \
         --root /rootfs --repo /repo --out /sources.list \
     && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \
@@ -455,7 +455,7 @@ ARG VMAF_BUILD_JOBS=4
 ARG NV_CODEC_HEADERS_COMMIT=0a6fba9a2820628b8103464f4c8753ee05838baa
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl gcc g++ git make meson nasm ninja-build pkg-config python3 xxd \
         libzimg-dev \
@@ -571,7 +571,7 @@ FROM ${RELEASE_BUILDER_BASE} AS cuda-runtime
 ARG DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends python3 \
     && apt-get clean \
     && find /usr/lib/python3* /usr/share/python3 -name __pycache__ -prune -exec rm -r {} + \
@@ -658,7 +658,7 @@ FROM ${RELEASE_PYTHON_BASE} AS cuda-source-fetch
 RUN --mount=type=bind,from=cuda-assembled,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
     && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact cuda-image \
         --root /rootfs --repo /repo --out /sources.list \
     && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \
@@ -702,7 +702,7 @@ ARG VMAF_BUILD_JOBS=4
 ARG ROCM_BUILDER
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl gcc g++ jq meson nasm ninja-build pkg-config python3 xxd zstd \
         libzimg-dev \
@@ -799,7 +799,7 @@ FROM ${RELEASE_BUILDER_BASE} AS hip-runtime
 ARG DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends python3 \
     && apt-get clean \
     && find /usr/lib/python3* /usr/share/python3 -name __pycache__ -prune -exec rm -r {} + \
@@ -884,7 +884,7 @@ FROM ${RELEASE_PYTHON_BASE} AS hip-source-fetch
 RUN --mount=type=bind,from=hip-assembled,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends git \
     && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact hip-image \
         --root /rootfs --repo /repo --out /sources.list \
@@ -944,7 +944,7 @@ FROM ${RELEASE_PYTHON_BASE} AS source-fetch
 RUN --mount=type=bind,from=assembled,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
     && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact image --root /rootfs \
         --repo /repo --out /sources.list \
     && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \

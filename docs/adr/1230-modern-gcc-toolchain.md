@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1230: The CI gcc moves forward with clang and meson, and the ratchet records it
 
-- **Status**: Accepted
+- **Status**: Accepted (decision 1 superseded by [ADR-3533](3533-tidy-gcc-from-ubuntu-archive.md))
 - **Date**: 2026-09-07
 - **Deciders**: Lusoris
 - **Tags**: ci, build, tooling, clang-tidy, fork-local

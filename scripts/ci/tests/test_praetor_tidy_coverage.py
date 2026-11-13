@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts/ci/praetor_tidy_coverage.py"
 GIT = shutil.which("git") or "git"
 CLEAN_ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+CLEAN_ENV.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
 TOML = (
     '[[exception]]\npath = "src/win32.c"\ncategory = "A"\nentered = 2026-11-02\n'
     'reason = "Windows only"\nexpires = 2027-06-30\n'

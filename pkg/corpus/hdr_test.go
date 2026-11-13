@@ -18,6 +18,9 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+
+	"github.com/VMAFx/vmafx/pkg/codecadapter"
+	"github.com/VMAFx/vmafx/pkg/ffencode"
 )
 
 // pqProbePayload is an ffprobe payload for a PQ HDR10 stream with full
@@ -436,4 +439,72 @@ func TestSyntheticHDRInfo(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildEncodeRequest_HDRColorParams(t *testing.T) {
+	t.Parallel()
+
+	adapter := &codecadapter.Adapter{Encoder: "libx265"}
+	hdrExtra := []string{
+		"-color_primaries", "bt2020",
+		"-color_trc", "smpte2084",
+		"-colorspace", "bt2020nc",
+		"-color_range", "tv",
+		"-x265-params",
+		"colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:range=limited:hdr10-opt=1",
+	}
+
+	t.Run("raw HDR cell carries source_color_params equal to colour options", func(t *testing.T) {
+		t.Parallel()
+		job := Job{
+			Source:    "/src/ref.yuv",
+			Width:     1920,
+			Height:    1080,
+			PixFmt:    "yuv420p10le",
+			Framerate: 24.0,
+		}
+		req := buildEncodeRequest(
+			job, Options{}, adapter, Cell{Preset: "medium", CRF: 28},
+			"/out/enc.mp4", sampleClipPlan{}, hdrExtra,
+		)
+		wantColors := []string{
+			"-color_primaries", "bt2020",
+			"-color_trc", "smpte2084",
+			"-colorspace", "bt2020nc",
+			"-color_range", "tv",
+		}
+		if !slices.Equal(req.SourceColorParams, wantColors) {
+			t.Errorf("SourceColorParams = %v, want %v", req.SourceColorParams, wantColors)
+		}
+		if req.SourceIsContainer {
+			t.Errorf("SourceIsContainer = true, want false")
+		}
+	})
+
+	t.Run("container cell gets an input argument list with no colour option before -i",
+		func(t *testing.T) {
+			t.Parallel()
+			job := Job{
+				Source:    "/src/ref.mp4",
+				Width:     1920,
+				Height:    1080,
+				PixFmt:    "yuv420p10le",
+				Framerate: 24.0,
+			}
+			req := buildEncodeRequest(
+				job, Options{}, adapter, Cell{Preset: "medium", CRF: 28},
+				"/out/enc.mp4", sampleClipPlan{}, hdrExtra,
+			)
+			if !req.SourceIsContainer {
+				t.Errorf("SourceIsContainer = false, want true")
+			}
+			inputArgs := ffencode.InputArgs(req)
+			for _, flag := range []string{
+				"-color_primaries", "-color_trc", "-colorspace", "-color_range",
+			} {
+				if slices.Contains(inputArgs, flag) {
+					t.Errorf("container InputArgs contains %q before -i: %v", flag, inputArgs)
+				}
+			}
+		})
 }

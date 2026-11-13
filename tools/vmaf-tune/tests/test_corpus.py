@@ -4,23 +4,29 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 # Make src/ importable without an editable install.
-_HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(_HERE.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from vmaftune import CORPUS_ROW_KEYS, SCHEMA_VERSION
+from vmaftune.cache import cache_key
 from vmaftune.codec_adapters import get_adapter, known_codecs
 from vmaftune.corpus import (
     CorpusJob,
     CorpusOptions,
+    _cell_cache_key,
+    _cell_encode_request,
+    _cell_params,
     coarse_grid_crfs,
     coarse_to_fine_search,
+    color_tag_args,
     fine_grid_crfs,
     iter_rows,
     write_jsonl,
@@ -50,6 +56,41 @@ class _FakeCompleted:
 def _make_yuv(path: Path, nbytes: int = 1024) -> Path:
     path.write_bytes(b"\x80" * nbytes)
     return path
+
+
+_PQ_COLOR_OPTIONS: tuple[str, ...] = (
+    "-color_primaries",
+    "bt2020",
+    "-color_trc",
+    "smpte2084",
+    "-colorspace",
+    "bt2020nc",
+    "-color_range",
+    "tv",
+)
+
+
+def _hdr_sweep(source: str, hdr_extra: tuple[str, ...]) -> SimpleNamespace:
+    """Build a synthetic CorpusJob sweep for HDR cell testing."""
+    return SimpleNamespace(
+        job=CorpusJob(
+            source=Path(source),
+            width=1920,
+            height=1080,
+            pix_fmt="yuv420p10le",
+            framerate=24.0,
+            duration_s=10.0,
+            cells=(("medium", 28),),
+        ),
+        opts=CorpusOptions(encoder="libx265"),
+        adapter=get_adapter("libx265"),
+        hdr_extra_params=hdr_extra,
+        clip_seconds=0.0,
+        start_s=0.0,
+        score_model="vmaf_v0.6.1",
+        ffmpeg_version="7.0.0",
+        src_hash="abcd" * 16,
+    )
 
 
 def test_known_codecs_includes_x264_and_multi_codec_adapters():
@@ -635,3 +676,52 @@ def test_coarse_to_fine_speedup_vs_full_grid_is_documented(tmp_path: Path):
     canonical_points = 15  # 5 coarse + 10 fine
     ratio = full_grid_points / canonical_points
     assert 3.4 < ratio < 3.5
+
+
+def test_cell_encode_request_raw_hdr_carries_source_color_params(tmp_path: Path):
+    """Prove raw HDR cell carries source_color_params on encode request."""
+    hdr_extra = (*_PQ_COLOR_OPTIONS, "-x265-params", "hdr10-opt=1")
+    sweep = _hdr_sweep("/src/ref.yuv", hdr_extra)
+    req = _cell_encode_request(sweep, "medium", 28, tmp_path / "out.mkv")
+    assert req.source_color_params == tuple(color_tag_args(hdr_extra))
+    assert req.source_is_container is False
+
+
+def test_cell_encode_request_container_hdr_has_no_input_color_tags(tmp_path: Path):
+    """Prove container HDR cell omits input color tags before -i."""
+    hdr_extra = (*_PQ_COLOR_OPTIONS, "-x265-params", "hdr10-opt=1")
+    sweep = _hdr_sweep("/src/ref.mp4", hdr_extra)
+    req = _cell_encode_request(sweep, "medium", 28, tmp_path / "out.mkv")
+    assert req.source_is_container is True
+    cmd = build_ffmpeg_command(req)
+    i_idx = cmd.index("-i")
+    input_slice = cmd[:i_idx]
+    for flag in ("-color_primaries", "-color_trc", "-colorspace", "-color_range"):
+        assert flag not in input_slice
+
+
+def test_cell_params_raw_hdr_key_includes_source_color_params():
+    """Prove raw HDR cell includes source_color_params in settings and changes cache key."""
+    sweep = _hdr_sweep("/src/ref.yuv", _PQ_COLOR_OPTIONS)
+    params = _cell_params(sweep, "medium", 28)
+    assert params["settings"]["source_color_params"] == list(color_tag_args(_PQ_COLOR_OPTIONS))
+
+    key = _cell_cache_key(sweep, "medium", 28)
+    params_without = copy.deepcopy(params)
+    del params_without["settings"]["source_color_params"]
+    key_without = cache_key(src_sha256=sweep.src_hash, **params_without)
+    assert key != key_without
+
+
+def test_cell_params_raw_sdr_omits_source_color_params():
+    """Prove raw SDR cell omits source_color_params from settings."""
+    sweep = _hdr_sweep("/src/ref.yuv", ())
+    params = _cell_params(sweep, "medium", 28)
+    assert "source_color_params" not in params["settings"]
+
+
+def test_cell_params_container_hdr_omits_source_color_params():
+    """Prove container HDR cell omits source_color_params from settings."""
+    sweep = _hdr_sweep("/src/ref.mp4", _PQ_COLOR_OPTIONS)
+    params = _cell_params(sweep, "medium", 28)
+    assert "source_color_params" not in params["settings"]

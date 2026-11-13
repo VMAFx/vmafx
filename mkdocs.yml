@@ -546,6 +546,7 @@ nav:
       - PR body validator: development/pr-body-validator.md
       - mkdocs strict pre-push hook: development/pre-push-mkdocs-strict.md
       - Documentation site design: development/docs-site-design.md
+      - README status badges: development/readme-badges.md
       - Dev MCP container: development/dev-mcp.md
       - Kubernetes deployment: development/k8s-deployment.md
       - Operator: development/operator.md
