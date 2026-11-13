@@ -79,11 +79,14 @@ never reorders them:
 Each group carries an HTML comment (`<!-- 2 CI/build -->`) so a reviewer can
 check the order without rendering the page. The comment trails the first badge
 line of its own group (the banner line for the first group) and never starts a
-line of its own: a line that begins with `<!--` opens a CommonMark HTML block
-that interrupts the badge paragraph, and the block then renders as one centred
-row per group instead of one band. The group label also comes before any other
-comment on its line: the README-01 order check in Praetor reads only the first
-HTML comment on a line, so a note placed after it would hide the label.
+line of its own: a line that begins with `<!--` opens an HTML block of type 2,
+and every HTML block type except type 7 may interrupt a paragraph
+([CommonMark 0.31.2, section 4.6](https://spec.commonmark.org/0.31.2/#html-blocks)).
+The comment line therefore ends the badge paragraph, and the block renders as
+one centred row per group instead of one band. The group label also comes
+before any other comment on its line: the README-01 order check in Praetor
+reads only the first HTML comment on a line, so a note placed before the label
+would hide it.
 
 Version badges for languages, toolchains, backends and integrations (C, Go,
 Rust, Python, CUDA, ROCm and the like) are not part of the top block. Where
