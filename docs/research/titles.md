@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # Research digest titles
 
-Every research digest, one heading each (814), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
+Every research digest, one heading each (819), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
 
 ## Research-0001: Cache shape for `bisect-model-quality` nightly
 
@@ -2747,6 +2747,26 @@ Every research digest, one heading each (814), so the site search finds a digest
 ## Research-3519: README status badges rendered in one style onto a `badges` branch
 
 [3519-readme-badges-rendered-branch](3519-readme-badges-rendered-branch.md)
+
+## Research-3530: Bandit configuration and Codacy pattern selection
+
+[3530-bandit-codacy-pattern-list](3530-bandit-codacy-pattern-list.md)
+
+## Research-3531: DCO attribution scan
+
+[3531-dco-attribution-scan](3531-dco-attribution-scan.md)
+
+## Research-3536: Platform launch paths that require full CI
+
+[3536-ci-tier-full-paths](3536-ci-tier-full-paths.md)
+
+## Research-3539: Producer pinning and upload-job wait for external checks in Required Checks Aggregator
+
+[3539-aggregator-app-checks-outside-run-window](3539-aggregator-app-checks-outside-run-window.md)
+
+## Research-3540: Human-vision mechanisms for extending VMAFx quality assessment
+
+[3540-hvs-biomimetic-survey](3540-hvs-biomimetic-survey.md)
 
 ## ADR-0108 Six-Deliverables Compliance Audit — 2026-05-29
 
