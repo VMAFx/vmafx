@@ -933,11 +933,13 @@ On CI, a throwaway branch carrying
 `int vmafx_planted_warning(void) { int unused; float narrowed = 0.1; ... }`
 in `core/src/libvmaf.c` (2026-10-09) failed on the plant in every leg that
 compiled it: every Linux and macOS row of the build matrix, Windows UCRT64,
-Windows CLANG64, Windows MINGW64 (MSVCRT), Windows MSVC+CUDA and Windows ARM64
-MSVC (C4101 and C4305 as C2220) and Windows MSVC+SYCL (icx-cl,
-`-Wunused-variable` as an error) in run 37856727687; Linux Intel LLVM and
-Windows MSVC+CUDA (full) in run 37856730893; Tidy Metal (Apple clang) in run
-37856734080; the DNN and MCP smoke builds in run 37856740709. The same run stopped the macOS Clang+Metal
+Windows MSVC+CUDA and Windows ARM64 MSVC (C4101 and C4305 as C2220) and
+Windows MSVC+SYCL (icx-cl, `-Wunused-variable` as an error) in run
+37856727687; Linux Intel LLVM and Windows MSVC+CUDA (full) in run
+37856730893; Tidy Metal (Apple clang) in run 37856734080; the DNN and MCP
+smoke builds in run 37856740709. Windows CLANG64 and Windows MINGW64
+(MSVCRT) joined the matrix later and have no planted-warning run yet. The
+planted run also stopped the macOS Clang+Metal
 leg at `meson setup`, which the ld64 switch above fixes; the static link smoke
 under `-Wall -Wextra -Werror` reported three `-Wmaybe-uninitialized` sites of
 the LTO archive (`float_vif.c`, `speed.c`, `iqa/convolve.c` through `ssim.c`),

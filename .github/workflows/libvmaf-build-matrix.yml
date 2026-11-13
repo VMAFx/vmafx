@@ -816,9 +816,7 @@ jobs:
 
       - name: Configure vmaf
         run: |
-          # ADR-2170: the supported UCRT64/CLANG64 legs print no warnings, so
-          # they are errors. MINGW64 (MSVCRT) is the deprecated compatibility
-          # lane and stays non-gating while its GCC reports -Wtype-limits.
+          # ADR-2170: the MSYS2 legs print no warnings, so they are errors.
           # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup core core/build --buildtype release \
             --default-library static --prefix "$MINGW_PREFIX" \
