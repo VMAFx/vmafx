@@ -298,20 +298,24 @@ def _tokenise_shell_item(text: str) -> list[str]:
     return list(lexer)
 
 
-def _split_shell_clauses(tokens: list[str]) -> list[list[str]]:
-    """Split shell tokens on operator boundaries into non-empty command clauses."""
-    clauses: list[list[str]] = []
+def _shell_clauses_with_operators(tokens: list[str]) -> list[tuple[list[str], str]]:
+    """Pair each non-empty command clause with the operator token that ends it ("" at the end)."""
+    pairs: list[tuple[list[str], str]] = []
     current: list[str] = []
     for token in tokens:
-        if _is_operator_token(token):
-            if current:
-                clauses.append(current)
-                current = []
-        else:
+        if not _is_operator_token(token):
             current.append(token)
+        elif current:
+            pairs.append((current, token))
+            current = []
     if current:
-        clauses.append(current)
-    return clauses
+        pairs.append((current, ""))
+    return pairs
+
+
+def _split_shell_clauses(tokens: list[str]) -> list[list[str]]:
+    """Split shell tokens on operator boundaries into non-empty command clauses."""
+    return [clause for clause, _ in _shell_clauses_with_operators(tokens)]
 
 
 def _parse_apt_option(raw: str) -> tuple[str, str]:
@@ -806,9 +810,12 @@ APT_CERTIFICATE_BOOTSTRAP = [
 ]
 
 
-def _snapshot_commands(text: str) -> tuple[list[tuple[int, list[str]]], list[str]]:
-    """Read bounded Dockerfile shell instructions with the existing CI tokeniser."""
+def _snapshot_commands(
+    text: str,
+) -> tuple[list[tuple[int, list[str]]], list[str], list[str]]:
+    """Read bounded Dockerfile shell instructions, the operator ending each, and problems."""
     commands: list[tuple[int, list[str]]] = []
+    ends: list[str] = []
     problems: list[str] = []
     for number, line, overflowed in _logical_ci_lines(text):
         if overflowed:
@@ -822,10 +829,13 @@ def _snapshot_commands(text: str) -> tuple[list[tuple[int, list[str]]], list[str
             problems.append(f"{number}: snapshot contract requires balanced shell quotes")
             continue
         if match[1].upper() == "RUN":
-            commands.extend((number, clause) for clause in _split_shell_clauses(tokens))
+            for clause, end in _shell_clauses_with_operators(tokens):
+                commands.append((number, clause))
+                ends.append(end)
         else:
             commands.append((number, [match[1].upper(), *tokens]))
-    return commands, problems
+            ends.append("")
+    return commands, ends, problems
 
 
 def _snapshot_staging_dir(commands: list[tuple[int, list[str]]], pin: int) -> str | None:
@@ -896,9 +906,18 @@ def _snapshot_operation_problems(commands: list[tuple[int, list[str]]], pin: int
     return problems
 
 
+def _snapshot_check_masked(
+    commands: list[tuple[int, list[str]]], ends: list[str], write: int
+) -> bool:
+    """Report an operator that lets the RUN skip the timestamp check or pass a failed one."""
+    line = commands[write + 1][0]
+    ops = [ends[i] for i in range(write + 1, len(commands)) if commands[i][0] == line]
+    return ends[write] not in {"&&", ""} or ops != ["&&"] * (len(ops) - 1) + [""]
+
+
 def ubuntu_apt_snapshot_problems(text: str) -> list[str]:
     """Require a persistent pin before every package operation except the named bootstrap."""
-    commands, problems = _snapshot_commands(text)
+    commands, ends, problems = _snapshot_commands(text)
     writes = [i for i, (_, cmd) in enumerate(commands) if cmd == APT_SNAPSHOT_WRITE]
     if len(writes) != 1:
         return [*problems, "write UBUNTU_APT_SNAPSHOT to persistent APT::Snapshot exactly once"]
@@ -906,6 +925,8 @@ def ubuntu_apt_snapshot_problems(text: str) -> list[str]:
     problems.extend(_snapshot_operation_problems(commands, writes[0]))
     if [cmd for _, cmd in commands[writes[0] + 1 : writes[0] + 2]] != [APT_SNAPSHOT_CHECK]:
         problems.append("check the written APT::Snapshot timestamp before any package operation")
+    elif _snapshot_check_masked(commands, ends, writes[0]):
+        problems.append("join the APT::Snapshot timestamp check and every later clause with &&")
     if "# UBUNTU_APT_CERTIFICATE_BOOTSTRAP:" not in text:
         problems.append("name the live archive certificate bootstrap explicitly")
     return problems
@@ -1318,6 +1339,29 @@ class UbuntuAptSnapshotContract(unittest.TestCase):
                     "check the written APT::Snapshot timestamp before any package operation",
                     ubuntu_apt_snapshot_problems(planted),
                 )
+
+    def test_failed_timestamp_check_cannot_be_masked(self) -> None:
+        """The check and every later clause join with ``&&``; ``||``, ``;`` or ``|`` mask it."""
+        check = shlex.join(APT_SNAPSHOT_CHECK)
+        line = f"&& {check} \\\n    && "
+        installer = "&& bash /tmp/ubuntu.sh \\\n"
+        self.assertIn(line, self.image())
+        self.assertIn(installer, self.image())
+        planted = {
+            "skipped": self.image().replace(line, f"|| {check} \\\n    && ", 1),
+            "or true": self.image().replace(line, f"&& {check} || true \\\n    && ", 1),
+            "semicolon": self.image().replace(line, f"&& {check} \\\n    ; ", 1),
+            "pipe": self.image().replace(line, f"&& {check} | cat \\\n    && ", 1),
+            "later or": self.image().replace(installer, "&& bash /tmp/ubuntu.sh || true \\\n", 1),
+        }
+        for name, text in planted.items():
+            with self.subTest(name):
+                self.assertNotEqual(text, self.image())
+                self.assertIn(
+                    "join the APT::Snapshot timestamp check and every later clause with &&",
+                    ubuntu_apt_snapshot_problems(text),
+                )
+        self.assertEqual(ubuntu_apt_snapshot_problems(self.image()), [])
 
     def test_timestamp_check_rejects_missing_and_malformed_values(self) -> None:
         """Run the image's check on what its printf writes for each build-config value."""

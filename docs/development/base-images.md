@@ -374,7 +374,10 @@ package resolution as well as the base-image digest. They write
 `APT::Snapshot` to `/etc/apt/apt.conf.d/50ubuntu-snapshot`, so package operations
 in `scripts/setup/ubuntu.sh` inherit the same date. The next command checks that
 file against the `YYYYMMDDTHHMMSSZ` format; a missing or malformed timestamp
-fails the build before any package operation reads it.
+fails the build before any package operation reads it. The write, the check
+and every later command of that RUN are joined with `&&`: an `||`, `;` or `|`
+there could skip the check or let the build continue past a failed one, and
+the image contract rejects it.
 
 The snapshot service requires HTTPS. Before activating the pin, each image
 refreshes the live archive once and installs only `ca-certificates` and its

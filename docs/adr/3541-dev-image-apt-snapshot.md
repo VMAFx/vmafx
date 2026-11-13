@@ -79,7 +79,8 @@ No separate bot workflow is introduced.
 - `UbuntuAptSnapshotContract` in `scripts/ci/test_fail_closed_ci.py` checks the
   copy, source, persistent setting, timestamp check, installer ordering and
   exact bootstrap boundary. Planted unpinned installs, any other package
-  command before the pin and snapshot overrides must fail it.
+  command before the pin, snapshot overrides and a timestamp check that its
+  RUN can skip or mask with `||`, `;` or `|` must fail it.
 - Maintainers may advance the timestamp manually using the same review and
   build process described in [the image guide](../development/base-images.md#ubuntu-development-package-snapshot).
 
