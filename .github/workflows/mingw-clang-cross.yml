@@ -89,14 +89,31 @@ jobs:
 
       - name: Check the DLL import surface
         run: |
-          for dll in artifact-mingw-clang/libvmafx-1.dll artifact-mingw-clang/libvmaf-3.dll; do
-            test -f "$dll"
-            x86_64-w64-mingw32-objdump -p "$dll" | grep -q 'DLL Name: libc++.dll'
-            x86_64-w64-mingw32-objdump -p "$dll" | grep -q 'DLL Name: libunwind.dll'
-            x86_64-w64-mingw32-objdump -p "$dll" | grep -q 'DLL Name: libwinpthread-1.dll'
+          test -f artifact-mingw-clang/libvmafx-1.dll
+          test -f artifact-mingw-clang/libvmaf-3.dll
+
+          # libvmafx is the C++ DLL and owns the libc++ runtime dependency.
+          for dll in libc++.dll libunwind.dll libwinpthread-1.dll; do
+            x86_64-w64-mingw32-objdump -p artifact-mingw-clang/libvmafx-1.dll \
+              | grep -q "DLL Name: $dll"
           done
-          x86_64-w64-mingw32-objdump -p artifact-mingw-clang/libvmafx-1.dll \
-            | grep 'DLL Name' | sort -u
+
+          # libvmaf is the C ABI DLL and must reach the C++ implementation
+          # through libvmafx, not by linking a second C++ runtime.
+          x86_64-w64-mingw32-objdump -p artifact-mingw-clang/libvmaf-3.dll \
+            | grep -q 'DLL Name: libvmafx-1.dll'
+
+          # Reject the GCC runtime pair that the llvm-mingw build must not use.
+          if x86_64-w64-mingw32-objdump -p artifact-mingw-clang/*.dll \
+            | grep -Eq 'DLL Name: (libstdc++-6|libgcc_s_seh-1)\.dll'; then
+            echo "unexpected GCC runtime import" >&2
+            exit 1
+          fi
+
+          for dll in artifact-mingw-clang/*.dll; do
+            echo "== $dll"
+            x86_64-w64-mingw32-objdump -p "$dll" | grep 'DLL Name' | sort -u
+          done
           find artifact-mingw-clang -maxdepth 1 -type f -printf '%f %s\n' | sort
 
       - name: Upload the Windows artifact
