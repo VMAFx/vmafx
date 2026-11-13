@@ -4,7 +4,7 @@ paths:
   - .pre-commit-config.yaml
   - .github/workflows/lint-and-format.yml
   - .github/workflows/nightly.yml
-invariant: ADR-3533 text ban covers tracked YAML, shell, Dockerfile*/Containerfile* sources; comments and data count.
+invariant: ADR-3533 ban: tracked YAML/shell, `Dockerfile*`/`Containerfile*`, `*.Dockerfile`/`*.Containerfile`; comments/data count.
 area: gates
 ---
 # Launchpad source text ban (ADR-3533)
@@ -14,11 +14,12 @@ regex: `add-apt-repository`, `apt-add-repository`, `\bppa:`,
 `ppa\.launchpad(?:content)?\.net`. One finding per matching physical line:
 path, line, matched text, archive-install guidance.
 
-Scope = `git ls-files -z`, repository-wide: `.yml`, `.yaml`, `.sh`, `.bash`
-suffixes; basenames starting `Dockerfile` or `Containerfile`. No directory
-exemptions. Tracked non-regular paths, symlinks included -> explicit skip
-diagnostic, target never read. UTF-8 reads -> replacement decoding. Git
-failure -> error, never empty success.
+Scope = `ci_text_paths(root)` (`git ls-files -z`, repository-wide): `.yml`,
+`.yaml`, `.sh`, `.bash` suffixes; `*.Dockerfile`, `*.Containerfile` suffixes;
+basenames starting `Dockerfile` or `Containerfile` (`docker/OtherDockerfile`
+excluded). No directory exemptions. Tracked non-regular paths, symlinks
+included -> explicit skip diagnostic, target never read. UTF-8 reads ->
+replacement decoding. Git failure -> error, never empty success.
 File bound = 1,864; measured 466 tracked source paths on 2026-11-11 x4.
 
 No YAML or shell parsing. Comments, echo output, heredoc data, variable

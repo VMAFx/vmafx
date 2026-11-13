@@ -64,6 +64,7 @@ PASSING_FILES = {
 
 class SuiteRegistryTests(unittest.TestCase):
     def setUp(self) -> None:
+        """Initialize an isolated temporary Git repository with scrubbed environment and config."""
         if GIT is None:
             self.skipTest("git is required to build the fixture repositories")
         self.git_bin: str = GIT
@@ -71,6 +72,7 @@ class SuiteRegistryTests(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.repo = Path(self._tmp.name)
         self.env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        self.env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
         self.git("init", "-q")
 
     def git(self, *args: str) -> None:

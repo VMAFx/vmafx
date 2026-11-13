@@ -6,20 +6,56 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import stat
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import install_merge_train_guard as installer
 import merge_train_guard as guard
 
+from scripts.lib.safe_subprocess import CommandFailed
+
 
 class MigrationContract(unittest.TestCase):
+    def isolate_git_config(self) -> None:
+        """Both Git paths run without the caller's global and system config."""
+        base = guard.environment
+        isolated = patch.object(
+            guard,
+            "environment",
+            side_effect=lambda: dict(base(), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1"),
+        )
+        isolated.start()
+        self.addCleanup(isolated.stop)
+        original_run_command = installer.run_command
+
+        def isolated_run_command(*args: Any, **kwargs: Any) -> Any:
+            passed_env = kwargs.get("env")
+            env = dict(
+                (
+                    passed_env
+                    if passed_env is not None
+                    else {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+                ),
+                GIT_CONFIG_GLOBAL=os.devnull,
+                GIT_CONFIG_NOSYSTEM="1",
+            )
+            kwargs["env"] = env
+            return original_run_command(*args, **kwargs)
+
+        isolated_run = patch.object(installer, "run_command", side_effect=isolated_run_command)
+        isolated_run.start()
+        self.addCleanup(isolated_run.stop)
+
     def setUp(self) -> None:
         """Build temporary Git repository with committed scripts and state directory fixtures."""
+        self.isolate_git_config()
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.directory = Path(temporary.name)
@@ -230,6 +266,15 @@ class MigrationContract(unittest.TestCase):
         self.assertNotEqual(new, old)
         self.assertEqual((new / "squash_message.py").read_text(), "TEST_COMPOSER = 2\n")
         self.assertEqual((old / "squash_message.py").read_text(), "TEST_COMPOSER = True\n")
+
+    def test_installer_git_ignores_the_callers_global_config(self) -> None:
+        """Prove installer.git ignores the caller's global Git configuration."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp = Path(tmp_dir)
+            (tmp / ".gitconfig").write_text("[planted]\n\tkey = leaked\n")
+            with patch.dict(os.environ, {"HOME": str(tmp), "XDG_CONFIG_HOME": str(tmp)}):
+                with self.assertRaises(CommandFailed):
+                    installer.git(self.source, "config", "--get", "planted.key")
 
 
 if __name__ == "__main__":

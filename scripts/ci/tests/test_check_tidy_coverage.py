@@ -29,6 +29,7 @@ LIST = ".config/lint-exceptions.d/clang-tidy-coverage.toml"
 # them, or `git add -A` below rewrites the index of the repository being committed.
 GIT = shutil.which("git") or "git"
 CLEAN_ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+CLEAN_ENV.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
 
 
 def entry(
