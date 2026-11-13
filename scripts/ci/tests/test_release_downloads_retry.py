@@ -31,6 +31,8 @@ from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 STEP = re.compile(r"(?m)^      - (?:name|uses|run):")
 FETCH = re.compile(r"(?<![\w.-])(curl(?:\.exe)?|wget)\s+(?=[\"']?(?:-|https?://|\$|%))")
 RELEASE = "releases/download"
+ENV_URL = re.compile(r'(?m)^\s*([A-Z][A-Z0-9_]*):\s*["\']?(https://github\.com/[^\s"\']+)')
+VAR_USE = re.compile(r"\$\{?([A-Z][A-Z0-9_]*)\}?")
 WRAPPER = "scripts/ci/download-release.sh"
 
 # Exact path + reason. The wrapper needs Python; this script also runs in a
@@ -60,6 +62,15 @@ def tracked(pathspec: str) -> list[str]:
     return [line for line in result.stdout.splitlines() if line]
 
 
+def release_variables(text: str) -> set[str]:
+    """Names declared anywhere in the workflow with a release-asset URL."""
+    return {
+        name
+        for name, url in ENV_URL.findall(text)
+        if RELEASE in url
+    }
+
+
 def blocks(text: str) -> list[tuple[int, str]]:
     """Workflow steps; a shell script is one block."""
     starts = [match.start() for match in STEP.finditer(text)]
@@ -75,10 +86,16 @@ def blocks(text: str) -> list[tuple[int, str]]:
 def findings(path: str, text: str) -> list[tuple[int, str]]:
     """(line, reason) for direct curl/wget fetches of a release asset."""
     out: list[tuple[int, str]] = []
+    declared = release_variables(text)
     for offset, block in blocks(text):
-        if RELEASE not in block or not FETCH.search(block):
+        if not FETCH.search(block):
             continue
-        line = offset + block[: block.index(RELEASE)].count("\n")
+        uses_declared = any(name in declared for name in VAR_USE.findall(block))
+        if RELEASE not in block and not uses_declared:
+            continue
+        line = offset
+        if RELEASE in block:
+            line += block[: block.index(RELEASE)].count("\n")
         out.append((line, "fetch a release asset through " + WRAPPER))
     return out
 
@@ -118,6 +135,28 @@ class ReleaseDownloadRetryTest(unittest.TestCase):
             "          bash scripts/ci/download-release.sh \"${TOOL_URL}\" /tmp/tool\n"
         )
         self.assertEqual([], findings("fixture.yml", step))
+
+    def test_workflow_level_url_variable_is_tracked(self) -> None:
+        workflow = (
+            "env:\n"
+            "  TOOL_URL: https://github.com/owner/repo/releases/download/v1/tool\n"
+            "jobs:\n"
+            "  test:\n"
+            "    steps:\n"
+            "      - name: Install tool\n"
+            "        run: |\n"
+            "          curl -fsSL -o /tmp/tool \"${TOOL_URL}\"\n"
+        )
+        found = findings("fixture.yml", workflow)
+        self.assertEqual(1, len(found))
+        self.assertEqual("fetch a release asset through " + WRAPPER, found[0][1])
+
+    def test_a_url_declaration_without_a_fetch_is_permitted(self) -> None:
+        workflow = (
+            "env:\n"
+            "  TOOL_URL: https://github.com/owner/repo/releases/download/v1/tool\n"
+        )
+        self.assertEqual([], findings("fixture.yml", workflow))
 
     def test_allowlist_names_a_reason(self) -> None:
         for path, reason in ALLOWLIST.items():
