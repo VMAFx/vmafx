@@ -344,7 +344,7 @@ def test_gpu_runtime_ships_the_libzimg2_record(kit: str) -> None:
 
 def _record_installs(body: str) -> list[tuple[str, str]]:
     """(source, builder) of every `COPY --from=<builder> <source> /usr/share/doc/libzimg2`."""
-    pattern = rf"^COPY --from=(\S+) (\S+) {re.escape(DOC_ROOT)}/libzimg2\b"
+    pattern = rf"^COPY --from=(\S+) (\S+) {re.escape(DOC_ROOT)}/libzimg2/?[ \t]*$"
     return [(source, builder) for builder, source in re.findall(pattern, body, re.MULTILINE)]
 
 
@@ -359,8 +359,13 @@ def _builder_writes_record(path: str, builder: str, source: str) -> bool:
     staged = _stages((REPO / path).read_text(encoding="utf-8")).get(builder)
     if staged is None:
         return False
-    body = staged[1]
-    if f"{source.rstrip('/')}/copyright" in body or f"{source.rstrip('/')}/" in body:
+    body = "\n".join(
+        line for line in staged[1].splitlines() if not line.lstrip().startswith("#")
+    )
+    root = re.escape(source.rstrip("/"))
+    writes_copyright = re.search(rf"\bcp\s+\S+/copyright\s+{root}/copyright(?=\s|$)", body)
+    writes_source = re.search(rf">\s*{root}/SOURCE(?=\s|$)", body)
+    if writes_copyright and writes_source:
         return True
     dist = SCRIPT_STAGED.get((path, builder))
     return bool(dist) and source.rstrip("/") == f"{dist}/doc/libzimg2"
@@ -400,6 +405,52 @@ def test_the_record_install_reader_refuses_a_comment_or_env() -> None:
     assert _record_installs("COPY --from=builder /dist/doc/libzimg2 /usr/share/doc/libzimg2\n") == [
         ("/dist/doc/libzimg2", "builder")
     ]
+    assert _record_installs(
+        "COPY --from=builder /dist/doc/libzimg2 /usr/share/doc/libzimg2/\n"
+    ) == [("/dist/doc/libzimg2", "builder")]
+
+
+def test_the_record_install_reader_refuses_a_neighbouring_target() -> None:
+    """Negative cases: a sibling or a child path is not the record directory."""
+    assert (
+        _record_installs("COPY --from=b /dist/doc/libzimg2 /usr/share/doc/libzimg2-backup\n") == []
+    )
+    assert (
+        _record_installs("COPY --from=b /dist/doc/libzimg2 /usr/share/doc/libzimg2/SOURCE\n") == []
+    )
+
+
+def test_the_record_writer_reader_needs_both_files(tmp_path: Path) -> None:
+    """Negative cases: creating the directory, or writing the files elsewhere, is no record."""
+    writes = (
+        "    && cp /usr/share/doc/libzimg2/copyright /dist/doc/libzimg2/copyright \\\n"
+        "    && dpkg-query -W -f='${source:Package}=${source:Version}\\n' libzimg2"
+        " > /dist/doc/libzimg2/SOURCE\n"
+    )
+    cases = {
+        "complete": (writes, True),
+        "mkdir-only": ("    && mkdir -p /dist/doc/libzimg2/\n", False),
+        "comment-only": (
+            "# cp x/copyright /dist/doc/libzimg2/copyright > /dist/doc/libzimg2/SOURCE\n",
+            False,
+        ),
+        "elsewhere": (writes.replace("/dist/doc/libzimg2/", "/tmp/"), False),
+        "copyright-only": (writes.splitlines()[0] + "\n", False),
+    }
+    for name, (body, expected) in cases.items():
+        dockerfile = tmp_path / f"Dockerfile.{name}"
+        dockerfile.write_text(f"FROM base AS b\nRUN true \\\n{body}", encoding="utf-8")
+        got = _builder_writes_record(str(dockerfile), "b", "/dist/doc/libzimg2")
+        assert got is expected, name
+
+
+def test_node_sycl_takes_the_record_with_its_libraries() -> None:
+    """node-sycl-assembled replaces libzimg.so* from builder-oneapi2026, so its record too."""
+    stage = _stage(
+        (REPO / "docker/Dockerfile.node").read_text(encoding="utf-8"), "node-sycl-assembled"
+    )
+    assert "COPY --from=builder-oneapi2026 /dist/lib/" in stage
+    assert _record_installs(stage) == [("/dist/doc/libzimg2", "builder-oneapi2026")]
 
 
 def test_the_inheritance_reader_sees_a_parent_stage() -> None:
