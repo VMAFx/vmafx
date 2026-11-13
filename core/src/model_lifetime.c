@@ -69,7 +69,7 @@ void vmaf_model_destroy(VmafModel *model)
      * Walking the tail is safe because ensure_feature_capacity() memsets every
      * newly grown slot to zero, so an untouched slot holds NULL and both
      * free(NULL) and vmaf_dictionary_free(&NULL) are no-ops. */
-    assert(model->feature_cap == 0 || model->feature != nullptr);
+    assert(model->feature_cap == 0 || model->feature != NULL);
     for (unsigned i = 0; i < model->feature_cap; i++) {
         free(model->feature[i].name);
         vmaf_dictionary_free(&model->feature[i].opts_dict);

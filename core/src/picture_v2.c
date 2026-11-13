@@ -102,7 +102,7 @@ int vmaf_picture2_unref(VmafPicture2 *pic)
         return 0; /* NULL is a documented no-op. */
     if (!pic->ref)
         return -EINVAL;
-    assert(pic->ref != nullptr);
+    assert(pic->ref != NULL);
 
     /* Construct a transient v1 view for the unref call.  The v1 view
      * shares the same plane-pointer and ref values as the v2 struct; the
