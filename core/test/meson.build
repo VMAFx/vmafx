@@ -8019,7 +8019,6 @@ if host_machine.system() == 'linux' and get_option('default_library') != 'shared
             '-Wl,--wrap=vmaf_dictionary_free',
             '-Wl,--wrap=vmaf_sycl_shared_frame_init',
             '-Wl,--wrap=vmaf_sycl_shared_chroma_init',
-            '-Wl,--wrap=vmaf_sycl_graph_register',
             '-Wl,--wrap=vmaf_sycl_graph_register_flags',
             '-Wl,--wrap=vmaf_sycl_graph_unregister',
         ],

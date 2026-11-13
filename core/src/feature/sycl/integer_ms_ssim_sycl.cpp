@@ -11,7 +11,7 @@
  *  PR's batch 2 part 2b).
  *
  *  Self-contained submit / collect — does *not* register with
- *  vmaf_sycl_graph_register because shared_frame is luma-only
+ *  vmaf_sycl_graph_register_flags because shared_frame is luma-only
  *  packed at uint width and MS-SSIM needs picture_copy-normalised
  *  float planes + a 5-level pyramid. Same pattern as ssim_sycl
  *  (PR #140).

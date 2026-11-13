@@ -522,25 +522,10 @@ typedef void (*VmafSyclGraphConfigFn)(void *priv, int slot);
 
 /**
  * Register an extractor's GPU work with the combined command graph.
- * Must be called during init_fex_sycl for each SYCL extractor.
- *
- * @param state       The SYCL state.
- * @param enqueue_fn  Kernel launches (recorded inside the command graph).
- * @param pre_fn      Pre-graph work: memset ops (may be NULL).
- * @param post_fn     Post-graph work: D2H memcpy ops (may be NULL).
- * @param config_fn   Per-slot configuration for graph recording (may be NULL).
- * @param priv        Extractor private state (passed to callbacks).
- *
- * @return 0 on success, negative errno on failure.
- */
-int vmaf_sycl_graph_register(VmafSyclState *state, VmafSyclGraphEnqueueFn enqueue_fn,
-                             VmafSyclGraphPreFn pre_fn, VmafSyclGraphPostFn post_fn,
-                             VmafSyclGraphConfigFn config_fn, void *priv, const char *name);
-
-/**
- * Register an extractor's GPU work with the combined command graph, with its
- * feature-extractor flags. Same contract as vmaf_sycl_graph_register(), which
- * forwards here with flags 0 (non-temporal).
+ * Must be called during init_fex_sycl for each SYCL extractor. This is the
+ * only registration entry point; the extractor passes its own flags so a
+ * temporal or previous-reference extractor cannot be registered as
+ * non-temporal by accident.
  *
  * An extractor whose flags carry VMAF_FEATURE_EXTRACTOR_TEMPORAL or
  * VMAF_FEATURE_EXTRACTOR_PREV_REF runs on every frame. Any other extractor

@@ -445,8 +445,8 @@ sycl/
   **On rebase**: keep assignment after wait, and every collector's
   `if (wait_err) return wait_err;`.
 
-- **`vmaf_sycl_graph_register` allocation order (ADR-0982 / BUG-048 Sec A3).**
-  In `vmaf_sycl_graph_register()` (`common.cpp`), ensure `state->combined_queue`
+- **`vmaf_sycl_graph_register_flags` allocation order (ADR-0982 / BUG-048 Sec A3).**
+  In `vmaf_sycl_graph_register_flags()` (`common.cpp`), ensure `state->combined_queue`
   is allocated (via `std::make_unique<sycl::queue>`) *before* incrementing
   `state->num_graph_extractors` or populating extractor entry. If queue
   creation throws or fails, `num_graph_extractors` must not be left dirty with

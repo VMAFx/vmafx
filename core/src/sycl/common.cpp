@@ -1287,16 +1287,6 @@ extern "C" int vmaf_sycl_graph_register_flags(VmafSyclState *state,
     return 0;
 }
 
-/* Compatibility entry point: registers as non-temporal (flags 0). */
-extern "C" int vmaf_sycl_graph_register(VmafSyclState *state, VmafSyclGraphEnqueueFn enqueue_fn,
-                                        VmafSyclGraphPreFn pre_fn, VmafSyclGraphPostFn post_fn,
-                                        VmafSyclGraphConfigFn config_fn, void *priv,
-                                        const char *name)
-{
-    return vmaf_sycl_graph_register_flags(state, enqueue_fn, pre_fn, post_fn, config_fn, priv, name,
-                                          0);
-}
-
 /* Record the frame about to be extracted and the subsample; see common.h. */
 extern "C" void vmaf_sycl_graph_set_frame(VmafSyclState *state, unsigned index,
                                           unsigned n_subsample)

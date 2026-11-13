@@ -178,15 +178,6 @@ __wrap_vmaf_sycl_shared_chroma_init(VmafSyclState *, unsigned, unsigned)
     return 0;
 }
 
-// cppcheck-suppress unusedFunction
-extern "C" __attribute__((visibility("default"))) int
-__wrap_vmaf_sycl_graph_register(VmafSyclState *, VmafSyclGraphEnqueueFn, VmafSyclGraphPreFn,
-                                VmafSyclGraphPostFn, VmafSyclGraphConfigFn, void *, const char *)
-{
-    graph_registration_calls++;
-    return fail_graph_registration ? -EIO : 0;
-}
-
 /* Link-time stub for vmaf_sycl_graph_register_flags: counts the call in
  * graph_registration_calls and returns -EIO when fail_graph_registration is set, else 0. */
 // cppcheck-suppress unusedFunction
