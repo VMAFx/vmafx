@@ -17,6 +17,7 @@ block is not a fetch.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import sys
@@ -34,6 +35,16 @@ RELEASE = "releases/download"
 ENV_URL = re.compile(r'(?m)^\s*([A-Z][A-Z0-9_]*):\s*["\']?(https://github\.com/[^\s"\']+)')
 VAR_USE = re.compile(r"\$\{?([A-Z][A-Z0-9_]*)\}?")
 WRAPPER = "scripts/ci/download-release.sh"
+GIT_LOCATION_VARIABLES = frozenset(
+    {
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_COMMON_DIR",
+        "GIT_NAMESPACE",
+    }
+)
 
 # Exact path + reason. The wrapper needs Python; this script also runs in a
 # macOS/MSYS2 builder stage and has its own bounded download with a forge-API
@@ -50,10 +61,16 @@ def tracked(pathspec: str) -> list[str]:
     git = shutil.which("git")
     if git is None:
         raise AssertionError("git is required to enumerate tracked files")
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if name not in GIT_LOCATION_VARIABLES
+    }
     result = run_command(
         [git, "ls-files", pathspec],
         allowed_executables=[git],
         cwd=ROOT,
+        env=env,
         capture_output=True,
         text=True,
         check=True,
