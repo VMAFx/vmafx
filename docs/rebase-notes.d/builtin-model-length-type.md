@@ -1,8 +1,10 @@
 ## Built-in model lengths are `unsigned int` (2026-11-13)
 
 - `core/src/model.c` declares every `src_*_json_len` as
-  `extern const unsigned int` and types `VmafBuiltInModel.data_len` as
-  `const unsigned int *`, matching the `unsigned int` that `xxd -i` emits.
+  `extern unsigned int`, the exact type `xxd -i` emits (no added `const`;
+  C11 6.2.7p2), and types `VmafBuiltInModel.data_len` as
+  `const unsigned int *` so reads stay read-only. Issue #3440 tracks the
+  other xxd declarations that still differ from the generated types.
   The two buffer readers take the length as `(int)*data_len`, the same cast
   `core/src/vmafx/model.c` already uses.
 - **On sync**: Netflix's `libvmaf/src/model.c` still declares these as

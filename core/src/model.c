@@ -42,9 +42,11 @@
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 /* The `src_*_json_len` symbols below come from `xxd -i` (core/src/meson.build),
- * which defines them as `unsigned int`. Their declarations here must use the
- * same type: MSVC 19.52 reports a mismatch under /LTCG as C4744, and /WX makes
- * that fatal. feature/brisque_model.h declares its xxd length the same way. */
+ * which defines them as plain `unsigned int`. Their declarations here use that
+ * exact type, without an added `const`: C11 6.2.7p2 makes declarations of one
+ * object with incompatible types undefined, and MSVC 19.52 reports an `int`
+ * mismatch under /LTCG as C4744, fatal under /WX. Reads go through the
+ * `const unsigned int *` table field, so the data stays read-only here. */
 typedef struct VmafBuiltInModel {
     const char *version;
     const char *data;
@@ -54,59 +56,59 @@ typedef struct VmafBuiltInModel {
 #if VMAF_BUILT_IN_MODELS
 #if VMAF_FLOAT_FEATURES
 extern const char src_vmaf_float_v0_6_1neg_json[];
-extern const unsigned int src_vmaf_float_v0_6_1neg_json_len;
+extern unsigned int src_vmaf_float_v0_6_1neg_json_len;
 extern const char src_vmaf_float_v0_6_1_json[];
-extern const unsigned int src_vmaf_float_v0_6_1_json_len;
+extern unsigned int src_vmaf_float_v0_6_1_json_len;
 extern const char src_vmaf_float_b_v0_6_3_json[];
-extern const unsigned int src_vmaf_float_b_v0_6_3_json_len;
+extern unsigned int src_vmaf_float_b_v0_6_3_json_len;
 extern const char src_vmaf_float_4k_v0_6_1_json[];
-extern const unsigned int src_vmaf_float_4k_v0_6_1_json_len;
+extern unsigned int src_vmaf_float_4k_v0_6_1_json_len;
 #endif
 extern const char src_vmaf_v0_6_1_json[];
-extern const unsigned int src_vmaf_v0_6_1_json_len;
+extern unsigned int src_vmaf_v0_6_1_json_len;
 extern const char src_vmaf_b_v0_6_3_json[];
-extern const unsigned int src_vmaf_b_v0_6_3_json_len;
+extern unsigned int src_vmaf_b_v0_6_3_json_len;
 extern const char src_vmaf_v0_6_1neg_json[];
-extern const unsigned int src_vmaf_v0_6_1neg_json_len;
+extern unsigned int src_vmaf_v0_6_1neg_json_len;
 extern const char src_vmaf_v0_6_1still_json[];
-extern const unsigned int src_vmaf_v0_6_1still_json_len;
+extern unsigned int src_vmaf_v0_6_1still_json_len;
 extern const char src_vmaf_4k_v0_6_1_json[];
-extern const unsigned int src_vmaf_4k_v0_6_1_json_len;
+extern unsigned int src_vmaf_4k_v0_6_1_json_len;
 extern const char src_vmaf_4k_v0_6_1neg_json[];
-extern const unsigned int src_vmaf_4k_v0_6_1neg_json_len;
+extern unsigned int src_vmaf_4k_v0_6_1neg_json_len;
 /* VMAF v1.0.16 SDR models (ported from Netflix upstream 4718b4f5f). */
 extern const char src_vmaf_v1_0_16_3d0h_json[];
-extern const unsigned int src_vmaf_v1_0_16_3d0h_json_len;
+extern unsigned int src_vmaf_v1_0_16_3d0h_json_len;
 extern const char src_vmaf_v1_0_16_3d0h_2160_json[];
-extern const unsigned int src_vmaf_v1_0_16_3d0h_2160_json_len;
+extern unsigned int src_vmaf_v1_0_16_3d0h_2160_json_len;
 extern const char src_vmaf_v1_0_16_5d0h_json[];
-extern const unsigned int src_vmaf_v1_0_16_5d0h_json_len;
+extern unsigned int src_vmaf_v1_0_16_5d0h_json_len;
 extern const char src_vmaf_v1_0_16_1d5h_2160_json[];
-extern const unsigned int src_vmaf_v1_0_16_1d5h_2160_json_len;
+extern unsigned int src_vmaf_v1_0_16_1d5h_2160_json_len;
 extern const char src_vmaf_v1_0_16_hfr_3d0h_json[];
-extern const unsigned int src_vmaf_v1_0_16_hfr_3d0h_json_len;
+extern unsigned int src_vmaf_v1_0_16_hfr_3d0h_json_len;
 extern const char src_vmaf_v1_0_16_hfr_3d0h_2160_json[];
-extern const unsigned int src_vmaf_v1_0_16_hfr_3d0h_2160_json_len;
+extern unsigned int src_vmaf_v1_0_16_hfr_3d0h_2160_json_len;
 extern const char src_vmaf_v1_0_16_hfr_5d0h_json[];
-extern const unsigned int src_vmaf_v1_0_16_hfr_5d0h_json_len;
+extern unsigned int src_vmaf_v1_0_16_hfr_5d0h_json_len;
 extern const char src_vmaf_v1_0_16_hfr_1d5h_2160_json[];
-extern const unsigned int src_vmaf_v1_0_16_hfr_1d5h_2160_json_len;
+extern unsigned int src_vmaf_v1_0_16_hfr_1d5h_2160_json_len;
 extern const char src_hdr_vmaf_v1_1_8_3d0h_json[];
-extern const unsigned int src_hdr_vmaf_v1_1_8_3d0h_json_len;
+extern unsigned int src_hdr_vmaf_v1_1_8_3d0h_json_len;
 extern const char src_hdr_vmaf_v1_1_8_3d0h_2160_json[];
-extern const unsigned int src_hdr_vmaf_v1_1_8_3d0h_2160_json_len;
+extern unsigned int src_hdr_vmaf_v1_1_8_3d0h_2160_json_len;
 extern const char src_hdr_vmaf_v1_1_8_5d0h_json[];
-extern const unsigned int src_hdr_vmaf_v1_1_8_5d0h_json_len;
+extern unsigned int src_hdr_vmaf_v1_1_8_5d0h_json_len;
 extern const char src_hdr_vmaf_v1_1_8_1d5h_2160_json[];
-extern const unsigned int src_hdr_vmaf_v1_1_8_1d5h_2160_json_len;
+extern unsigned int src_hdr_vmaf_v1_1_8_1d5h_2160_json_len;
 extern const char src_hdr_vmaf_v1_1_8_hfr_3d0h_json[];
-extern const unsigned int src_hdr_vmaf_v1_1_8_hfr_3d0h_json_len;
+extern unsigned int src_hdr_vmaf_v1_1_8_hfr_3d0h_json_len;
 extern const char src_hdr_vmaf_v1_1_8_hfr_3d0h_2160_json[];
-extern const unsigned int src_hdr_vmaf_v1_1_8_hfr_3d0h_2160_json_len;
+extern unsigned int src_hdr_vmaf_v1_1_8_hfr_3d0h_2160_json_len;
 extern const char src_hdr_vmaf_v1_1_8_hfr_5d0h_json[];
-extern const unsigned int src_hdr_vmaf_v1_1_8_hfr_5d0h_json_len;
+extern unsigned int src_hdr_vmaf_v1_1_8_hfr_5d0h_json_len;
 extern const char src_hdr_vmaf_v1_1_8_hfr_1d5h_2160_json[];
-extern const unsigned int src_hdr_vmaf_v1_1_8_hfr_1d5h_2160_json_len;
+extern unsigned int src_hdr_vmaf_v1_1_8_hfr_1d5h_2160_json_len;
 #endif
 
 static const VmafBuiltInModel built_in_models[] = {
