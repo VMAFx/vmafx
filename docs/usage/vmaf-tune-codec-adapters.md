@@ -113,7 +113,7 @@ scale:
 |---|---|---|
 | `libx264` | `ultrafast` ... `veryslow` (9 names) | same name |
 | `libx265` | `ultrafast` ... `veryslow`, `placebo` (10) | same name |
-| `libaom-av1` | all 10 | `-cpu-used` 0..9, `placebo`=0, `medium`=4, `ultrafast`=9 |
+| `libaom-av1` | all 10 | `-cpu-used` 0..8, `placebo`=0, `medium`=4, `ultrafast`=8 |
 | `libsvtav1` | `placebo` ... `veryfast` (8) | `-preset` 0, 1, 3, 5, 7, 9, 11, 13; `medium`=7 |
 | `libvpx-vp9` | all 10 | `-cpu-used` 0..5, `medium`=3, `ultrafast`=5 |
 | `libvvenc` | all 10 | five native presets, `medium` stays `medium` |

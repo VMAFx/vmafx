@@ -361,26 +361,6 @@ def test_saliency_aware_encode_libaom_preset_medium_raises(tmp_path, monkeypatch
     assert set(tmp_path.iterdir()) == before_files
 
 
-def test_saliency_aware_encode_libaom_preset_ultrafast_raises(tmp_path, monkeypatch):
-    """Negative: preset 'ultrafast' (cpu-used 9) raises ValueError."""
-    request, _ = _make_request(tmp_path, "libaom-av1", preset="ultrafast")
-    fake_model = tmp_path / "saliency_student_v1.onnx"
-    fake_model.write_bytes(b"\x00")
-    _, runner = _capture_runner(tmp_path)
-
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    before_files = set(tmp_path.iterdir())
-    with pytest.raises(ValueError, match=r"preset 'ultrafast' maps to cpu-used 9"):
-        saliency_aware_encode(
-            request,
-            duration_frames=1,
-            model_path=fake_model,
-            encode_runner=runner,
-            session_factory=_session_factory_for(128, 128),
-        )
-    assert set(tmp_path.iterdir()) == before_files
-
-
 def test_saliency_aware_encode_libaom_pass_flag_raises(tmp_path, monkeypatch):
     """Negative: -pass in extra_params raises ValueError."""
     request, _ = _make_request(tmp_path, "libaom-av1", preset="superfast")

@@ -108,7 +108,7 @@ func TestAdapter_CodecArgs(t *testing.T) {
 		{"libaom-av1", "medium", 35,
 			[]string{"-c:v", "libaom-av1", "-cpu-used", "4", "-crf", "35"}},
 		{"libaom-av1", "ultrafast", 45,
-			[]string{"-c:v", "libaom-av1", "-cpu-used", "9", "-crf", "45"}},
+			[]string{"-c:v", "libaom-av1", "-cpu-used", "8", "-crf", "45"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.codec+"/"+tc.preset, func(t *testing.T) {

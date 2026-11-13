@@ -38,7 +38,7 @@ var goldenArgv = map[string]map[string][]string{
 		"faster":    {"-c:v", "libaom-av1", "-cpu-used", "6", "-crf", "35"},
 		"veryfast":  {"-c:v", "libaom-av1", "-cpu-used", "7", "-crf", "35"},
 		"superfast": {"-c:v", "libaom-av1", "-cpu-used", "8", "-crf", "35"},
-		"ultrafast": {"-c:v", "libaom-av1", "-cpu-used", "9", "-crf", "35"},
+		"ultrafast": {"-c:v", "libaom-av1", "-cpu-used", "8", "-crf", "35"},
 	},
 	"libx265": {
 		"ultrafast": {"-c:v", "libx265", "-preset", "ultrafast", "-crf", "28"},
@@ -223,7 +223,7 @@ var goldenArgv = map[string]map[string][]string{
 // goldenProbeArgv mirrors the Python adapters' probe_args().
 var goldenProbeArgv = map[string][]string{
 	"libx264":             {"-c:v", "libx264", "-preset", "ultrafast", "-crf", "28"},
-	"libaom-av1":          {"-c:v", "libaom-av1", "-cpu-used", "9", "-crf", "35"},
+	"libaom-av1":          {"-c:v", "libaom-av1", "-cpu-used", "8", "-crf", "35"},
 	"libx265":             {"-c:v", "libx265", "-preset", "ultrafast", "-crf", "28"},
 	"h264_nvenc":          {"-c:v", "h264_nvenc", "-preset", "p1", "-cq", "28"},
 	"hevc_nvenc":          {"-c:v", "hevc_nvenc", "-preset", "p1", "-cq", "28"},

@@ -53,12 +53,21 @@ def test_libaom_preset_to_cpu_used_mapping_is_complete():
         "faster": 6,
         "veryfast": 7,
         "superfast": 8,
-        "ultrafast": 9,
+        "ultrafast": 8,
     }
     # Adapter's preset tuple covers every documented mapping key.
     assert set(a.presets) == set(expected.keys())
     for preset, cpu_used in expected.items():
         assert a.cpu_used(preset) == cpu_used
+
+
+def test_libaom_every_preset_fits_the_ffmpeg_cpu_used_range():
+    """FFmpeg's libaom-av1 wrapper accepts -cpu-used 0..8 only; a preset
+    outside that range makes every real encode fail at option parsing
+    (issue 3350)."""
+    a = LibaomAdapter()
+    for preset in a.presets:
+        assert 0 <= a.cpu_used(preset) <= 8
 
 
 def test_libaom_cpu_used_rejects_unknown_preset():
@@ -112,7 +121,7 @@ def test_libaom_ffmpeg_codec_args_slowest_preset():
 def test_libaom_ffmpeg_codec_args_fastest_preset():
     a = LibaomAdapter()
     args = a.ffmpeg_codec_args("ultrafast", 50)
-    assert args == ["-c:v", "libaom-av1", "-cpu-used", "9", "-crf", "50"]
+    assert args == ["-c:v", "libaom-av1", "-cpu-used", "8", "-crf", "50"]
 
 
 def test_libaom_ffmpeg_codec_args_unknown_preset_raises():
