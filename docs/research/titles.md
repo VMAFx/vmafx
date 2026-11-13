@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # Research digest titles
 
-Every research digest, one heading each (811), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
+Every research digest, one heading each (814), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
 
 ## Research-0001: Cache shape for `bisect-model-quality` nightly
 
@@ -2735,6 +2735,18 @@ Every research digest, one heading each (811), so the site search finds a digest
 ## Research-3397: MinGW GCC LTO DLL import-library thunks and per-function verification
 
 [3397-mingw-gcc-lto-import-thunks](3397-mingw-gcc-lto-import-thunks.md)
+
+## Research-3402: Semgrep parse limits in the GPU test sources
+
+[3402-semgrep-gpu-test-parse](3402-semgrep-gpu-test-parse.md)
+
+## Research-3403: Shared FFmpeg fix series forge API download fallback
+
+[3403-ffmpeg-series-forge-api-fallback](3403-ffmpeg-series-forge-api-fallback.md)
+
+## Research-3519: README status badges rendered in one style onto a `badges` branch
+
+[3519-readme-badges-rendered-branch](3519-readme-badges-rendered-branch.md)
 
 ## ADR-0108 Six-Deliverables Compliance Audit — 2026-05-29
 

@@ -138,7 +138,7 @@ create() {
   if ! incus exec "${VM}" -- sh -c 'command -v docker >/dev/null' 2>/dev/null; then
     log "Installing Docker in ${VM}"
     incus exec "${VM}" --env DEBIAN_FRONTEND=noninteractive -- sh -euc \
-      'apt-get update -q && apt-get install -y -q --no-install-recommends docker.io docker-cli ca-certificates'
+      'apt-get --error-on=any -o Acquire::Retries=3 update -q && apt-get install -y -q --no-install-recommends docker.io docker-cli ca-certificates'
   fi
   wait_for "${AGENT_POLLS}" "Docker in ${VM}" incus exec "${VM}" -- docker info --format '{{.ServerVersion}}'
   if ! incus exec "${VM}" -- sh -c "kind version | grep -q '^kind ${KIND_VERSION} '" 2>/dev/null; then

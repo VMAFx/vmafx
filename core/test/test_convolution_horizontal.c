@@ -113,6 +113,7 @@ static int check_plane(const ConvolutionFixture *f, const float *filter, int tap
     return 1;
 }
 
+/* Run and verify horizontal convolution for a single geometry and filter configuration. */
 static int check_case(int width, int height, int taps, int step, int mode)
 {
     ConvolutionFixture f = {0};
@@ -123,12 +124,15 @@ static int check_case(int width, int height, int taps, int step, int mode)
     }
     int ok = init_fixture(&f, width, height, step);
     if (ok) {
+#if HAVE_AVX512
         if (step == 8) {
             run_avx2(&f, filter, taps, mode);
-        }
-#if HAVE_AVX512
-        else {
+        } else {
             run_avx512(&f, filter, taps, mode);
+        }
+#else
+        if (step == 8) {
+            run_avx2(&f, filter, taps, mode);
         }
 #endif
         ok = check_plane(&f, filter, taps);

@@ -192,14 +192,11 @@ var callerRoles = []struct {
 func startAuthEnabledController(t *testing.T, iss *authtest.Issuer) *googlegrpc.ClientConn {
 	t.Helper()
 	writeControllerEnv(t)
-	addr := freeLocalAddr(t)
-	t.Setenv("VMAFX_GRPC_LISTEN", addr)
 	t.Setenv("VMAFX_AUTH_DISABLED", "false")
 	t.Setenv("VMAFX_JWKS_ENDPOINT", iss.URL())
 	t.Setenv("VMAFX_AUTH_ISSUER", iss.URL())
 
-	app := fxtest.New(t, productionGraph())
-	app.RequireStart()
+	app, addr := startController(t, "VMAFX_GRPC_LISTEN")
 	t.Cleanup(app.RequireStop)
 	return dialInsecure(t, addr)
 }

@@ -8,6 +8,7 @@ import argparse
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -15,10 +16,14 @@ from types import ModuleType
 
 import pytest
 
+from scripts.lib.safe_subprocess import run as run_command
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "ai" / "scripts"
 EXPECTED_BENCHMARK_CALLS = 9
 EXPECTED_FALLBACK_WARNINGS = 6
+# Bound = max(60, 10x the slowest measured run): each call took 0.6 s or less.
+SCRIPT_TIMEOUT_S = 60
 
 
 def _load_script(name: str) -> ModuleType:
@@ -98,6 +103,7 @@ def test_collect_gpu_calibration_rejects_malformed_frames(
 
 
 def test_benchmark_harness_uses_current_portable_contract() -> None:
+    """The benchmark script and documents satisfy the portable repo-root contract."""
     script = REPO_ROOT / "testdata" / "bench_all.sh"
     source = script.read_text(encoding="utf-8")
     backend_guidance = (
@@ -130,7 +136,16 @@ def test_benchmark_harness_uses_current_portable_contract() -> None:
     assert "| Vulkan |" not in backend_guidance
     assert 'SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"' in source
     assert 'REPO_ROOT="${VMAF_ROOT:-$(cd -- "${SCRIPT_DIR}/.." && pwd)}"' in source
-    subprocess.run(["bash", "-n", str(script)], check=True)
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("bash not on PATH")
+        return  # pytest is untyped for the mypy gate; the return narrows bash to str
+    run_command(
+        [bash, "-n", str(script)],
+        allowed_executables=(bash,),
+        check=True,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
+    )
 
 
 def test_benchmark_harness_resolves_root_from_script_path(tmp_path: Path) -> None:

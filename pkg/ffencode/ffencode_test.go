@@ -115,6 +115,142 @@ func TestBuildFFmpegCommand(t *testing.T) {
 			},
 		},
 		{
+			name: "raw source with PQ HDR color options copies to input and keeps output",
+			req: ffencode.Request{
+				Source: "/src/ref.yuv", Width: 1920, Height: 1080,
+				PixFmt: "yuv420p10le", Framerate: 24.0,
+				Encoder: "libx265", Preset: "medium", CRF: 28,
+				Output: "/out/enc.mp4",
+				ExtraParams: []string{
+					"-color_primaries", "bt2020",
+					"-color_trc", "smpte2084",
+					"-colorspace", "bt2020nc",
+					"-color_range", "tv",
+					"-x265-params", "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:range=limited:hdr10-opt=1",
+				},
+				SourceColorParams: []string{
+					"-color_primaries", "bt2020",
+					"-color_trc", "smpte2084",
+					"-colorspace", "bt2020nc",
+					"-color_range", "tv",
+				},
+			},
+			want: []string{
+				"ffmpeg", "-y", "-hide_banner", "-loglevel", "info",
+				"-f", "rawvideo", "-pix_fmt", "yuv420p10le", "-s", "1920x1080", "-r", "24.0",
+				"-color_primaries", "bt2020",
+				"-color_trc", "smpte2084",
+				"-colorspace", "bt2020nc",
+				"-color_range", "tv",
+				"-i", "/src/ref.yuv",
+				"-c:v", "libx265", "-preset", "medium", "-crf", "28",
+				"-color_primaries", "bt2020",
+				"-color_trc", "smpte2084",
+				"-colorspace", "bt2020nc",
+				"-color_range", "tv",
+				"-x265-params", "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:range=limited:hdr10-opt=1",
+				"/out/enc.mp4",
+			},
+		},
+		{
+			name: "raw source with HLG HDR sets input arib-std-b67",
+			req: ffencode.Request{
+				Source: "/src/ref.yuv", Width: 1920, Height: 1080,
+				PixFmt: "yuv420p10le", Framerate: 24.0,
+				Encoder: "libx265", Preset: "medium", CRF: 28,
+				Output: "/out/enc.mp4",
+				ExtraParams: []string{
+					"-color_primaries", "bt2020",
+					"-color_trc", "arib-std-b67",
+					"-colorspace", "bt2020nc",
+					"-color_range", "tv",
+				},
+				SourceColorParams: []string{
+					"-color_primaries", "bt2020",
+					"-color_trc", "arib-std-b67",
+					"-colorspace", "bt2020nc",
+					"-color_range", "tv",
+				},
+			},
+			want: []string{
+				"ffmpeg", "-y", "-hide_banner", "-loglevel", "info",
+				"-f", "rawvideo", "-pix_fmt", "yuv420p10le", "-s", "1920x1080", "-r", "24.0",
+				"-color_primaries", "bt2020", "-color_trc", "arib-std-b67", "-colorspace", "bt2020nc", "-color_range", "tv",
+				"-i", "/src/ref.yuv",
+				"-c:v", "libx265", "-preset", "medium", "-crf", "28",
+				"-color_primaries", "bt2020", "-color_trc", "arib-std-b67", "-colorspace", "bt2020nc", "-color_range", "tv",
+				"/out/enc.mp4",
+			},
+		},
+		{
+			name: "container source with HDR extra params omits input color options",
+			req: ffencode.Request{
+				Source: "/src/ref.mp4", Width: 1920, Height: 1080,
+				PixFmt: "yuv420p10le", Framerate: 24.0,
+				Encoder: "libx265", Preset: "medium", CRF: 28,
+				Output: "/out/enc.mp4", SourceIsContainer: true,
+				ExtraParams: []string{
+					"-color_primaries", "bt2020",
+					"-color_trc", "smpte2084",
+					"-colorspace", "bt2020nc",
+					"-color_range", "tv",
+				},
+				SourceColorParams: []string{
+					"-color_primaries", "bt2020",
+					"-color_trc", "smpte2084",
+					"-colorspace", "bt2020nc",
+					"-color_range", "tv",
+				},
+			},
+			want: []string{
+				"ffmpeg", "-y", "-hide_banner", "-loglevel", "info",
+				"-i", "/src/ref.mp4",
+				"-c:v", "libx265", "-preset", "medium", "-crf", "28",
+				"-color_primaries", "bt2020", "-color_trc", "smpte2084", "-colorspace", "bt2020nc", "-color_range", "tv",
+				"/out/enc.mp4",
+			},
+		},
+		{
+			name: "duplicate color options use last value and partial copies only present",
+			req: ffencode.Request{
+				Source: "/src/ref.yuv", Width: 1920, Height: 1080,
+				PixFmt: "yuv420p", Framerate: 24.0,
+				Encoder: "libx264", Preset: "medium", CRF: 23,
+				Output: "/out/enc.mp4",
+				SourceColorParams: []string{
+					"-color_trc", "smpte2084",
+					"-color_primaries", "bt2020",
+					"-color_trc", "arib-std-b67",
+				},
+			},
+			want: []string{
+				"ffmpeg", "-y", "-hide_banner", "-loglevel", "info",
+				"-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", "1920x1080", "-r", "24.0",
+				"-color_primaries", "bt2020", "-color_trc", "arib-std-b67",
+				"-i", "/src/ref.yuv",
+				"-c:v", "libx264", "-preset", "medium", "-crf", "23",
+				"/out/enc.mp4",
+			},
+		},
+		{
+			name: "raw source with user extra params color option stays output only",
+			req: ffencode.Request{
+				Source: "/src/ref.yuv", Width: 1920, Height: 1080,
+				PixFmt: "yuv420p", Framerate: 24.0,
+				Encoder: "libx264", Preset: "medium", CRF: 23,
+				Output:      "/out/enc.mp4",
+				ExtraParams: []string{"-color_trc", "smpte2084"},
+			},
+			want: []string{
+				"ffmpeg", "-y", "-hide_banner", "-loglevel", "info",
+				"-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", "1920x1080", "-r", "24.0",
+				"-i", "/src/ref.yuv",
+				"-c:v", "libx264", "-preset", "medium", "-crf", "23",
+				"-color_trc", "smpte2084",
+				"/out/enc.mp4",
+			},
+		},
+		{
 			name: "pass 1 discards the bitstream",
 			req: ffencode.Request{
 				Source: "/src/ref.yuv", Width: 1920, Height: 1080,
@@ -600,6 +736,154 @@ func TestBuildFFmpegCommandQSVOutputDepth(t *testing.T) {
 	}
 }
 
+// TestBuildFFmpegCommandQSVHDRDropsPixFmt checks that HDR10 hevc_qsv and av1_qsv argv carry no
+// output -pix_fmt after hwupload (#3344).
+func TestBuildFFmpegCommandQSVHDRDropsPixFmt(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		encoder string
+	}{
+		{"hevc_qsv", "hevc_qsv"},
+		{"av1_qsv", "av1_qsv"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			extra := hdr.CodecArgs(tc.encoder, &hdr.Info{Transfer: "pq"}, nil)
+			req := ffencode.Request{
+				Source: "ref.yuv", Width: 1920, Height: 1080, PixFmt: "yuv420p", Framerate: 24,
+				Encoder: tc.encoder, Preset: "medium", CRF: 23, Output: "out.mp4",
+				ExtraParams: extra, VAAPIDevice: "/dev/dri/renderD131",
+			}
+			argv, err := ffencode.BuildFFmpegCommand(req, "ffmpeg")
+			if err != nil {
+				t.Fatal(err)
+			}
+			idxI := slices.Index(argv, "-i")
+			if idxI < 0 {
+				t.Fatalf("-i missing in argv: %v", argv)
+			}
+			tail := argv[idxI:]
+			idxVF := slices.Index(tail, "-vf")
+			if idxVF < 0 || idxVF+1 >= len(tail) || tail[idxVF+1] != "format=p010le,hwupload=extra_hw_frames=64" {
+				t.Errorf("want upload filter format=p010le,hwupload=extra_hw_frames=64, got %v", tail)
+			}
+			if slices.Contains(tail, "-pix_fmt") || slices.Contains(tail, "-pix_fmt:v") {
+				t.Errorf("output tail carries -pix_fmt flag: %v", tail)
+			}
+		})
+	}
+}
+
+// TestBuildFFmpegCommandLibx265HDRKeepsPixFmt checks that a software encoder without an upload
+// filter keeps its output -pix_fmt.
+func TestBuildFFmpegCommandLibx265HDRKeepsPixFmt(t *testing.T) {
+	t.Parallel()
+	extra := append([]string{"-pix_fmt", "p010le"}, hdr.CodecArgs("libx265", &hdr.Info{Transfer: "pq"}, nil)...)
+	req := ffencode.Request{
+		Source: "ref.yuv", Width: 1920, Height: 1080, PixFmt: "yuv420p", Framerate: 24,
+		Encoder: "libx265", Preset: "medium", CRF: 28, Output: "out.mp4",
+		ExtraParams: extra,
+	}
+	argv, err := ffencode.BuildFFmpegCommand(req, "ffmpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idxI := slices.Index(argv, "-i")
+	if idxI < 0 {
+		t.Fatalf("-i missing in argv: %v", argv)
+	}
+	tail := argv[idxI:]
+	idxPix := slices.Index(tail, "-pix_fmt")
+	if idxPix < 0 || idxPix+1 >= len(tail) || tail[idxPix+1] != "p010le" {
+		t.Errorf("libx265 must keep -pix_fmt p010le in tail: %v", tail)
+	}
+}
+
+// TestBuildFFmpegCommandQSV8BitPinned pins the full 8-bit hevc_qsv argv so the upload change leaves
+// it unchanged.
+func TestBuildFFmpegCommandQSV8BitPinned(t *testing.T) {
+	t.Parallel()
+	req := ffencode.Request{
+		Source: "ref.yuv", Width: 1920, Height: 1080, PixFmt: "yuv420p", Framerate: 24,
+		Encoder: "hevc_qsv", Preset: "medium", CRF: 23, Output: "out.mp4",
+		VAAPIDevice: "/dev/dri/renderD131",
+	}
+	argv, err := ffencode.BuildFFmpegCommand(req, "ffmpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"ffmpeg", "-y", "-hide_banner", "-loglevel", "info",
+		"-init_hw_device", "vaapi=va:/dev/dri/renderD131",
+		"-init_hw_device", "qsv=qsv_dev@va",
+		"-filter_hw_device", "qsv_dev",
+		"-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", "1920x1080", "-r", "24.0",
+		"-i", "ref.yuv",
+		"-c:v", "hevc_qsv", "-preset", "medium", "-global_quality", "23",
+		"-vf", "format=nv12,hwupload=extra_hw_frames=64",
+		"out.mp4",
+	}
+	if !slices.Equal(argv, want) {
+		t.Errorf("8-bit hevc_qsv argv mismatch:\ngot:  %v\nwant: %v", argv, want)
+	}
+}
+
+// TestBuildFFmpegCommandQSVHDRWithScale checks that a caller -vf scale joins the upload chain and
+// the output -pix_fmt is dropped.
+func TestBuildFFmpegCommandQSVHDRWithScale(t *testing.T) {
+	t.Parallel()
+	extra := append([]string{"-vf", "scale=1280:720"}, hdr.CodecArgs("hevc_qsv", &hdr.Info{Transfer: "pq"}, nil)...)
+	req := ffencode.Request{
+		Source: "ref.yuv", Width: 1920, Height: 1080, PixFmt: "yuv420p", Framerate: 24,
+		Encoder: "hevc_qsv", Preset: "medium", CRF: 23, Output: "out.mp4",
+		ExtraParams: extra, VAAPIDevice: "/dev/dri/renderD131",
+	}
+	argv, err := ffencode.BuildFFmpegCommand(req, "ffmpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idxI := slices.Index(argv, "-i")
+	if idxI < 0 {
+		t.Fatalf("-i missing in argv: %v", argv)
+	}
+	tail := argv[idxI:]
+	idxVF := slices.Index(tail, "-vf")
+	if idxVF < 0 || idxVF+1 >= len(tail) || tail[idxVF+1] != "scale=1280:720,format=p010le,hwupload=extra_hw_frames=64" {
+		t.Errorf("want upload filter chained after scale, got %v", tail)
+	}
+	if slices.Contains(tail, "-pix_fmt") || slices.Contains(tail, "-pix_fmt:v") {
+		t.Errorf("output tail carries -pix_fmt flag: %v", tail)
+	}
+}
+
+// TestBuildFFmpegCommandQSVPixFmtVFormDropped checks that the stream-specifier form -pix_fmt:v is
+// dropped like -pix_fmt.
+func TestBuildFFmpegCommandQSVPixFmtVFormDropped(t *testing.T) {
+	t.Parallel()
+	extra := []string{"-pix_fmt:v", "p010le", "-profile:v", "main10"}
+	req := ffencode.Request{
+		Source: "ref.yuv", Width: 1920, Height: 1080, PixFmt: "yuv420p", Framerate: 24,
+		Encoder: "hevc_qsv", Preset: "medium", CRF: 23, Output: "out.mp4",
+		ExtraParams: extra, VAAPIDevice: "/dev/dri/renderD131",
+	}
+	argv, err := ffencode.BuildFFmpegCommand(req, "ffmpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idxI := slices.Index(argv, "-i")
+	if idxI < 0 {
+		t.Fatalf("-i missing in argv: %v", argv)
+	}
+	tail := argv[idxI:]
+	idxVF := slices.Index(tail, "-vf")
+	if idxVF < 0 || idxVF+1 >= len(tail) || tail[idxVF+1] != "format=p010le,hwupload=extra_hw_frames=64" {
+		t.Errorf("want format=p010le upload filter, got %v", tail)
+	}
+	if slices.Contains(tail, "-pix_fmt") || slices.Contains(tail, "-pix_fmt:v") {
+		t.Errorf("output tail carries -pix_fmt flag: %v", tail)
+	}
+}
+
 // TestBuildFFmpegCommandABRSwapsCRFForBitrate is ADR-1565's pass 2. Python:
 // tests/test_x265_two_pass_abr.py::test_abr_request_swaps_crf_for_bitrate.
 func TestBuildFFmpegCommandABRSwapsCRFForBitrate(t *testing.T) {
@@ -720,6 +1004,86 @@ func TestMergeCodecParams(t *testing.T) {
 			t.Parallel()
 			if got := ffencode.MergeCodecParams(tt.in); !slices.Equal(got, tt.want) {
 				t.Errorf("MergeCodecParams(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInputArgs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		req  ffencode.Request
+		want []string
+	}{
+		{
+			name: "negative user extra params color option stays output only",
+			req: ffencode.Request{
+				Source: "/src/ref.yuv", Width: 1920, Height: 1080,
+				PixFmt: "yuv420p", Framerate: 24.0,
+				ExtraParams: []string{"-color_trc", "smpte2084"},
+			},
+			want: []string{
+				"-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", "1920x1080", "-r", "24.0",
+			},
+		},
+		{
+			name: "raw source with SourceColorParams",
+			req: ffencode.Request{
+				Source: "/src/ref.yuv", Width: 1920, Height: 1080,
+				PixFmt: "yuv420p10le", Framerate: 24.0,
+				SourceColorParams: []string{
+					"-color_primaries", "bt2020",
+					"-color_trc", "smpte2084",
+					"-colorspace", "bt2020nc",
+					"-color_range", "tv",
+				},
+			},
+			want: []string{
+				"-f", "rawvideo", "-pix_fmt", "yuv420p10le", "-s", "1920x1080", "-r", "24.0",
+				"-color_primaries", "bt2020",
+				"-color_trc", "smpte2084",
+				"-colorspace", "bt2020nc",
+				"-color_range", "tv",
+			},
+		},
+		{
+			name: "container source with SourceColorParams omits color options",
+			req: ffencode.Request{
+				Source:            "/src/ref.mp4",
+				SourceIsContainer: true,
+				SourceColorParams: []string{
+					"-color_primaries", "bt2020",
+					"-color_trc", "smpte2084",
+				},
+			},
+			want: nil,
+		},
+		{
+			name: "boundary duplicate options keep last value and partial copies only present",
+			req: ffencode.Request{
+				Source: "/src/ref.yuv", Width: 1920, Height: 1080,
+				PixFmt: "yuv420p", Framerate: 24.0,
+				SourceColorParams: []string{
+					"-color_trc", "smpte2084",
+					"-color_primaries", "bt2020",
+					"-color_trc", "arib-std-b67",
+				},
+			},
+			want: []string{
+				"-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", "1920x1080", "-r", "24.0",
+				"-color_primaries", "bt2020", "-color_trc", "arib-std-b67",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := ffencode.InputArgs(tc.req)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("InputArgs(%+v) = %v, want %v", tc.req, got, tc.want)
 			}
 		})
 	}

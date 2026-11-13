@@ -437,7 +437,7 @@ jobs:
     # required-aggregator
     name: DCO Sign-off
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     # ADR-2462: every non-merge commit of the pull request carries a
     # `Signed-off-by:` trailer whose address is the commit's author or
     # committer (what `git commit -s` writes). Exempt: commits of an
@@ -486,10 +486,11 @@ jobs:
           # ADR-2462 rollout: older pull requests are grandfathered by the
           # cutoff in scripts/ci/dco-cutoff.txt.
           PR_CREATED_AT: ${{ github.event.pull_request.created_at }}
+          # Body edits rerun this gate; read body text from GITHUB_EVENT_PATH.
         # Single source of truth lives in scripts/ci/check-dco.py so a
         # developer can run the identical gate before `gh pr create`:
         # `python3 scripts/ci/check-dco.py --base origin/master --head HEAD`.
-        run: python3 scripts/ci/check-dco.py
+        run: python3 scripts/ci/check-dco.py --pr-body-from-event
 
       - name: Refuse bot PR with default squash body and non-bot commits
         env:
@@ -500,6 +501,29 @@ jobs:
           AUTO_MERGE_ARMED: ${{ github.event.pull_request.auto_merge != null }}
           AUTO_MERGE_BODY: ${{ github.event.pull_request.auto_merge.commit_message || '' }}
         run: python3 scripts/ci/check-bot-squash-body.py
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Engine install is bounded at 300 s by PRAETOR_ENGINE_INSTALL_TIMEOUT in
+      # .config/lefthook/engine.sh:43, plus 60 s for the check.
+      - name: Check the squash commit message
+        if: steps.release_pr.outputs.exempt != 'true'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          LANDING_IDENTITY: "lusoris <lusoris@proton.me>"
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/squash"
+          "$RUNNER_TEMP/squash/bin/pip" install --quiet --require-hashes \
+            -r requirements/locks/build.txt
+          jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" > "$RUNNER_TEMP/squash-pr-body.md"
+          "$RUNNER_TEMP/squash/bin/python" -B scripts/ci/squash_message.py check --timeout 360 \
+            --body-file "$RUNNER_TEMP/squash-pr-body.md"
 
   ffmpeg-patches-surface-check:
     needs: tier

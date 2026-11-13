@@ -54,7 +54,7 @@ ARG VMAFX_VERSION=dev
 # every container base in this repository. These defaults are mirrors kept in
 # sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
 # these lines, then run that script with --write.
-ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:604106102d33b1084e37ca08adf98ac0813624ae8595bd0d7f3965ecebded09c"
+ARG RELEASE_GO_BASE="golang:1.27-trixie@sha256:c47c3fda018d13d43a6bf5ebac3e5bba8a23a35782aa4faf531afaf47c64c39f"
 ARG RELEASE_RUNTIME_STATIC="gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3"
 ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170"
 
@@ -88,7 +88,7 @@ RUN CGO_ENABLED=${CGO_ENABLED} \
 # SPDX headers (`go list -deps`), and the licence and notice files of every
 # module the binary links, read from its build information.
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends python3 \
     && apt-get clean \
     && mkdir /licence-inputs \
@@ -160,7 +160,7 @@ FROM ${RELEASE_PYTHON_BASE} AS source-fetch
 RUN --mount=type=bind,from=operator-with-notices,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
     && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact production-operator-image \
         --root /rootfs --repo /repo --out /sources.list \
     && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \

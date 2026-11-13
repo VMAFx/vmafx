@@ -23,6 +23,8 @@ ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "ci" / "coverage-check.sh"
 MAKE = shutil.which("make")
 BASH = shutil.which("bash")
+SUBPROCESS_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 
 
 def _summary(overall: float, dnn: float) -> dict[str, Any]:
@@ -44,6 +46,7 @@ class CoverageRecipe(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
+        """Capture make coverage-check dry-run output across test cases in this class."""
         if MAKE is None:
             raise unittest.SkipTest("make not installed")
         cls.dry = subprocess.run(  # noqa: S603 -- fixed make argv, no shell
@@ -51,6 +54,7 @@ class CoverageRecipe(unittest.TestCase):
             capture_output=True,
             text=True,
             check=True,
+            timeout=SUBPROCESS_TIMEOUT_S,
         ).stdout
 
     def test_recipe_uses_gcovr_json_summary(self) -> None:
@@ -70,6 +74,7 @@ class CoverageRecipe(unittest.TestCase):
 
 class CoverageScript(unittest.TestCase):
     def _run(self, text: str, suffix: str) -> subprocess.CompletedProcess[str]:
+        """Run the coverage-check script against temporary coverage output file content."""
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / f"cov{suffix}"
             path.write_text(text, encoding="utf-8")
@@ -78,6 +83,7 @@ class CoverageScript(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=SCRIPT_TIMEOUT_S,
             )
 
     def test_passes_a_gcovr_summary_above_the_floors(self) -> None:
