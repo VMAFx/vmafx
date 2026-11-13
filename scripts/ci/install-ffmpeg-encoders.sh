@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 Lusoris
+# Copyright 2026 luoye-cpu
 # SPDX-License-Identifier: EUPL-1.2
 #
 # Install the encoder runtimes the shared fix series' `-qpfile` checks need on

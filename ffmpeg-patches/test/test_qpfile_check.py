@@ -1,4 +1,4 @@
-# Copyright 2026 Lusoris
+# Copyright 2026 luoye-cpu
 # SPDX-License-Identifier: EUPL-1.2
 """Behaviour tests for qpfile_check.py --require-encoders."""
 

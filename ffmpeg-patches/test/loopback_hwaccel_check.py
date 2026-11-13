@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
+# Copyright 2026 luoye-cpu
 # SPDX-License-Identifier: EUPL-1.2
 """CI coverage for the loopback decoder's ``-hwaccel`` family (shared patch 0044).
 
@@ -41,25 +41,48 @@ with the software-path evidence above.
 from __future__ import annotations
 
 import argparse
+import re
 import tempfile
 from pathlib import Path
 
-from check_runner import frame_count, run
+from check_runner import run
 
 ROOT = Path(__file__).resolve().parents[2]
 WIDTH, HEIGHT, FRAMES = 576, 324, 6
 NEEDLE_HWACCEL = "Unrecognized hwaccel for a loopback decoder"
 NEEDLE_HWFMT = "Unrecognised hwaccel output format"
+NEEDLE_HWDOWNLOAD = "Impossible to convert between the formats"
+# fftools/ffmpeg_hw.c and fftools/ffmpeg_dec.c print these when a device cannot be opened.
+NEEDLES_BAD_DEVICE = ("Device creation failed", "Hardware device setup failed")
+LOOPBACK_STATS = re.compile(r"Output stream #1:0 \(video\): (\d+) frames encoded")
 
 
 def loopback_cmd(ffmpeg: str, enc: Path, hw: list[str], filtergraph: str) -> list[str]:
+    """Encode the clip into output #0, then decode that encode through ``-dec 0:0`` into output #1.
+
+    ``-dec`` names an encoded output stream that must already exist, as in the FFmpeg
+    documentation's loopback example; pointing it at the output its own filtergraph feeds is
+    a cycle FFmpeg refuses ("Transcoding graph has a cycle"). The options in ``hw`` sit between
+    the two outputs, so they belong to the loopback decoder.
+    """
     return [
         ffmpeg,
         "-hide_banner",
         "-nostdin",
         "-y",
+        "-loglevel",
+        "verbose",
         "-i",
         str(enc),
+        "-map",
+        "0:v:0",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-f",
+        "null",
+        "-",
         *hw,
         "-dec",
         "0:0",
@@ -71,6 +94,16 @@ def loopback_cmd(ffmpeg: str, enc: Path, hw: list[str], filtergraph: str) -> lis
         "null",
         "-",
     ]
+
+
+def loopback_frames(stderr: str) -> int:
+    """Frames output #1 encoded, from FFmpeg's verbose end-of-run statistics.
+
+    The ``frame=`` progress line counts output #0, the encode, so it says nothing about the
+    loopback decoder.
+    """
+    match = LOOPBACK_STATS.search(stderr)
+    return int(match.group(1)) if match else 0
 
 
 def finish(args: argparse.Namespace, rows: list[tuple[str, str, str]], gpu_state: str) -> int:
@@ -167,7 +200,7 @@ def check_hwdownload(args: argparse.Namespace, enc: Path, rows: list[tuple[str, 
     hwdown = run(args, loopback_cmd(args.ffmpeg, enc, [], "[dec:0]hwdownload[f]"))
     rows.append(
         (
-            "ok" if hwdown.returncode != 0 else "FAIL",
+            "ok" if hwdown.returncode != 0 and NEEDLE_HWDOWNLOAD in hwdown.stderr else "FAIL",
             "software loopback frames are refused by hwdownload",
             hwdown.stderr[-300:],
         )
@@ -178,7 +211,7 @@ def check_software_round_trip(
     args: argparse.Namespace, enc: Path, rows: list[tuple[str, str, str]]
 ) -> int:
     sw = run(args, loopback_cmd(args.ffmpeg, enc, [], "[dec:0]copy[f]"))
-    sw_frames = frame_count(sw.stderr + sw.stdout)
+    sw_frames = loopback_frames(sw.stderr)
     rows.append(
         (
             "ok" if sw.returncode == 0 and sw_frames == FRAMES else "FAIL",
@@ -238,7 +271,7 @@ def check_gpu_branch(
             "[dec:0]copy[f]",
         ),
     )
-    gpu_frames = frame_count(gpu.stderr + gpu.stdout)
+    gpu_frames = loopback_frames(gpu.stderr)
     rows.append(
         (
             "ok" if gpu.returncode == 0 and gpu_frames == sw_frames and sw_frames > 0 else "FAIL",
@@ -264,7 +297,10 @@ def check_gpu_branch(
     )
     rows.append(
         (
-            "ok" if bad_dev.returncode != 0 else "FAIL",
+            "ok"
+            if bad_dev.returncode not in (0, 124, 127)
+            and any(needle in bad_dev.stderr for needle in NEEDLES_BAD_DEVICE)
+            else "FAIL",
             "loopback refuses a bogus -hwaccel_device",
             bad_dev.stderr[-300:],
         )

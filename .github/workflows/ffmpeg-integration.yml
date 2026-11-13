@@ -72,7 +72,8 @@ jobs:
             # Issue #3351: the `-qpfile` and loopback `-hwaccel` checks need
             # real encoders configured. Scoped to the Ubuntu row so the macOS
             # build surface does not change (no x264/aom/svtav1 there).
-            encoders: '--enable-libx264 --enable-libaom --enable-libsvtav1'
+            # libx264 is GPL, so configure refuses it without --enable-gpl.
+            encoders: '--enable-gpl --enable-libx264 --enable-libaom --enable-libsvtav1'
           - os: macos-latest
             CC: clang
             CXX: clang++

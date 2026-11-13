@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
+# Copyright 2026 luoye-cpu
 # SPDX-License-Identifier: EUPL-1.2
-"""Shared process and progress helpers for the FFmpeg functional checkers."""
+"""Shared process helper for the FFmpeg functional checkers."""
 
 from __future__ import annotations
 
 import argparse
 import os
-import re
 import subprocess
 from typing import Sequence
 
@@ -49,11 +48,3 @@ def run(args: argparse.Namespace, cmd: Sequence[str]) -> subprocess.CompletedPro
             stdout,
             f"{cmd[0]} timed out after {TIMEOUT_SECONDS}s\n",
         )
-
-
-def frame_count(text: str) -> int:
-    """Last ``frame= N`` progress count FFmpeg printed (its stats go to stderr)."""
-    count = 0
-    for match in re.finditer(r"frame=\s*(\d+)", text):
-        count = int(match.group(1))
-    return count

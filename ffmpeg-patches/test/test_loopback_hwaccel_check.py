@@ -1,4 +1,4 @@
-# Copyright 2026 Lusoris
+# Copyright 2026 luoye-cpu
 # SPDX-License-Identifier: EUPL-1.2
 """Behaviour tests for the loopback hwaccel checker, using a stub ffmpeg."""
 
@@ -43,13 +43,19 @@ if "-version" in args:
     print("ffmpeg version 9.0.2")
     raise SystemExit(0)
 
-if "-c:v" in args and value("-c:v") == "libx264":
+if "-dec" not in args and value("-c:v") == "libx264":
+    if os.environ.get("STUB_ENCODE_FAIL"):
+        fail("Unknown encoder 'libx264'")
     out = pathlib.Path(args[-1])
     out.write_bytes(b"h264")
     raise SystemExit(0)
 
 if "-init_hw_device" in args:
-    raise SystemExit(1)
+    raise SystemExit(0 if os.environ.get("STUB_GPU") else 1)
+
+if "-dec" in args and "-" not in args[: args.index("-dec")]:
+    # FFmpeg's scheduler refuses a loopback decoder fed by its own filtergraph's output.
+    fail("[SchFilterGraph] Transcoding graph has a cycle")
 
 if value("-hwaccel").startswith("no-such"):
     fail("Unrecognized hwaccel for a loopback decoder: " + value("-hwaccel"))
@@ -57,10 +63,15 @@ if value("-hwaccel").startswith("no-such"):
 if value("-hwaccel_output_format").startswith("no-such"):
     fail("Unrecognised hwaccel output format: " + value("-hwaccel_output_format"))
 
-if "hwdownload" in value("-filter_complex"):
-    fail("hwdownload: software frames are not hardware frames")
+if value("-hwaccel_device").startswith("/no/such"):
+    fail(os.environ.get("STUB_BAD_DEVICE_TEXT", "Device creation failed: -2."))
 
+if "hwdownload" in value("-filter_complex"):
+    fail(os.environ.get("STUB_HWDOWNLOAD_TEXT", "Impossible to convert between the formats"))
+
+frames = os.environ.get("STUB_LOOPBACK_FRAMES", "6")
 sys.stderr.write("frame=    6 fps=0.0 q=-1.0 size=N/A time=00:00:00.24 bitrate=N/A\\n")
+sys.stderr.write(f"Output stream #1:0 (video): {frames} frames encoded; {frames} packets muxed\\n")
 raise SystemExit(0)
 """
 
@@ -133,3 +144,40 @@ class LoopbackHwaccelCheckTest(unittest.TestCase):
         result = self.run_checker(None, "--require-gpu")
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("FAIL gpu device of type cuda usable", result.stdout)
+
+    def test_round_trip_counts_the_loopback_output_not_the_encode(self) -> None:
+        result = self.run_checker(env={"STUB_LOOPBACK_FRAMES": "0"})
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("FAIL software loopback round trip decodes 6 frames", result.stdout)
+        self.assertIn("frames=0", result.stdout)
+
+    def test_hwdownload_needs_its_own_diagnostic(self) -> None:
+        result = self.run_checker(env={"STUB_HWDOWNLOAD_TEXT": "Error opening output file"})
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("FAIL software loopback frames are refused by hwdownload", result.stdout)
+
+    def test_missing_fixture_is_a_fail_row(self) -> None:
+        (self.yuv / "src01_hrc01_576x324.yuv").unlink()
+        result = self.run_checker()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("FAIL fixture present", result.stdout)
+        self.assertIn("evidence=none", result.stdout)
+
+    def test_failed_encode_is_a_fail_row(self) -> None:
+        result = self.run_checker(env={"STUB_ENCODE_FAIL": "1"})
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("FAIL fixture encodes through libx264", result.stdout)
+        self.assertNotIn("loopback refuses an unrecognised", result.stdout)
+
+    def test_gpu_branch_runs_when_a_device_exists(self) -> None:
+        result = self.run_checker(None, "--require-gpu", env={"STUB_GPU": "1"})
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("ok   gpu round trip (-hwaccel cuda)", result.stdout)
+        self.assertIn("ok   loopback refuses a bogus -hwaccel_device", result.stdout)
+        self.assertIn("gpu=cuda ok", result.stdout)
+
+    def test_bogus_device_needs_the_device_diagnostic(self) -> None:
+        env = {"STUB_GPU": "1", "STUB_BAD_DEVICE_TEXT": "Error opening output file"}
+        result = self.run_checker(None, "--require-gpu", env=env)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("FAIL loopback refuses a bogus -hwaccel_device", result.stdout)
