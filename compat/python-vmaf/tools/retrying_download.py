@@ -26,6 +26,7 @@ import ssl
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 
@@ -105,11 +106,15 @@ def retrieve(
     """
     attempts = len(delays) + 1
     wait = time.sleep if sleep is None else sleep
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(f"retrying_download: only http(s) URLs are supported: {url}")
+    open_url = urllib.request.urlopen  # nosec B310 - the scheme is checked above
     for attempt, delay in enumerate((*delays, None), start=1):
         try:
-            # The URL is the caller's fixture address (http or https, checked
-            # by main() for the script form).
-            with urllib.request.urlopen(url, timeout=READ_TIMEOUT_S) as response:  # noqa: S310
+            # The URL is the caller's fixture address, checked above for this
+            # and the script form.
+            with open_url(url, timeout=READ_TIMEOUT_S) as response:
                 _copy_body(response, path, time.monotonic() + TRANSFER_TIMEOUT_S)
         except Exception as error:
             if delay is None or not transient(error):
