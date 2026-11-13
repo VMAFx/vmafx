@@ -998,11 +998,29 @@ def _cell_params_key(sweep: _Sweep, preset: str, crf: int) -> str:
 
 
 def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
-    """Spot-check 1 second of query source against cached encode (ADR-3372).
+    """Spot-check 1 second of both sources against the cached encode (ADR-3372).
 
-    Refuses near-duplicate reuse if |vmaf_spot - vmaf_cached| > NEAR_DUP_SPOT_MAX_DELTA.
+    Decision 3 step 4 asks for a score over one second of each source,
+    so both sides of the delta come from the same one-second window: the
+    query source scored against the cached encode, and the cached source
+    scored against that same encode over the window. Comparing the
+    window score with ``cached.vmaf_score`` would compare a one-second
+    score with the trial's whole-clip aggregate, which moves the delta
+    for an exact duplicate whose first second is easier or harder than
+    its average (issue #3343). Refuses reuse when the delta exceeds
+    ``NEAR_DUP_SPOT_MAX_DELTA``, and fail-closed (like a missing
+    artifact) when the cached entry has no usable source path.
     """
     if not (cached.artifact_path and cached.artifact_path.exists()):
+        return False
+    stored_row = dict(cached.row or {})
+    cached_src = stored_row.get("src")
+    cached_source = Path(cached_src) if cached_src else None
+    if cached_source is None or not cached_source.exists():
+        _LOG.info(
+            "vmaf-tune: near-dup spot verify fail-closed: cached entry has no readable source (%r)",
+            cached_src,
+        )
         return False
     from .score import ScoreRequest, run_score
 
@@ -1011,23 +1029,30 @@ def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
     fps = float(job.framerate) if float(job.framerate) > 0.0 else 24.0
     frame_cnt = max(1, int(fps))
 
-    score_req = ScoreRequest(
-        reference=job.source,
-        distorted=cached.artifact_path,
-        width=int(job.width),
-        height=int(job.height),
-        pix_fmt=job.pix_fmt,
-        frame_skip_ref=0,
-        frame_cnt=frame_cnt,
-        duration_s=1.0,
-    )
+    def spot_request(reference: Path) -> ScoreRequest:
+        return ScoreRequest(
+            reference=reference,
+            distorted=cached.artifact_path,
+            width=int(job.width),
+            height=int(job.height),
+            pix_fmt=job.pix_fmt,
+            frame_skip_ref=0,
+            frame_cnt=frame_cnt,
+            duration_s=1.0,
+        )
+
     try:
         spot_res = run_score(
-            score_req,
+            spot_request(job.source),
             vmaf_bin=opts.vmaf_bin,
             backend=opts.score_backend,
         )
-        delta = abs(float(spot_res.vmaf_score) - float(cached.vmaf_score))
+        cached_spot_res = run_score(
+            spot_request(cached_source),
+            vmaf_bin=opts.vmaf_bin,
+            backend=opts.score_backend,
+        )
+        delta = abs(float(spot_res.vmaf_score) - float(cached_spot_res.vmaf_score))
         return delta <= NEAR_DUP_SPOT_MAX_DELTA
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
         _LOG.warning("vmaf-tune: near-dup spot verify failed: %s", exc)

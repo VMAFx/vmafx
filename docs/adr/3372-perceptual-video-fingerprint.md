@@ -148,3 +148,19 @@ cd tools/vmaf-tune && python -m pytest -q tests/test_fingerprint.py
 ```
 
 Result on 2026-11-08: 11 passed.
+
+## Status update 2026-11-14: spot check applied (issue #3343)
+
+The remaining half of decision 3, step 4 is applied. `_verify_near_dup_spot()`
+now scores both sides of the 1.5-point comparison over the same one-second
+window: the query source against the cached encode, and the cached source
+(read from the cached row's `src` column) against that same encode over the
+window. The cached trial's whole-clip aggregate no longer enters the
+comparison, so an exact duplicate whose first second is easier or harder than
+its average is no longer refused; a cached entry without a readable source
+path fails closed, like a missing artifact. The positive, negative,
+exactly-1.5-boundary and two fail-closed cases are unit tests in
+`tools/vmaf-tune/tests/test_near_dup_verify.py` with `run_score` monkeypatched,
+so they need no vmaf binary. Decision 5 still holds: the option stays off by
+default until the measured library run reports the hit rate, false matches and
+segment ratios.
