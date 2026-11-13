@@ -306,8 +306,9 @@ jobs:
       - name: Install gitleaks
         run: |
           GITLEAKS_VERSION=8.24.3
-          curl --retry 3 --retry-all-errors -sSfL --max-time 300 -o "$RUNNER_TEMP/gitleaks.tar.gz" \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          bash scripts/ci/download-release.sh \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            "$RUNNER_TEMP/gitleaks.tar.gz"
           tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C /usr/local/bin gitleaks
           rm -f "$RUNNER_TEMP/gitleaks.tar.gz"
           gitleaks version
