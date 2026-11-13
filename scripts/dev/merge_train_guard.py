@@ -27,7 +27,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+# Installed releases carry their own scripts/lib; checkouts retain the repository root.
+sys.path.insert(
+    0,
+    str(
+        Path(__file__).resolve().parent
+        if (Path(__file__).resolve().parent / "scripts/lib").is_dir()
+        else Path(__file__).resolve().parents[2]
+    ),
+)
 
 from scripts.lib.safe_subprocess import run as run_command
 
