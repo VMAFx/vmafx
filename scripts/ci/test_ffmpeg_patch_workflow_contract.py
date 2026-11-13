@@ -373,6 +373,102 @@ class FFmpegWorkflowContract(unittest.TestCase):
                     result.stderr,
                 )
 
+    def test_filtered_warning_gate_on_sample_logs_for_every_builder(self) -> None:
+        """Run every filtered gate (three builders) on sample logs.
+
+        A matched patched file, a broken scan, a broken filter and a warnings
+        file the shell cannot open fail the build; a warning on an unpatched
+        file and a clean build pass it.
+        """
+        gate = re.compile(
+            r"(?ms)^    (?:&& )?((?:: > /tmp/ffmpeg-warnings\.txt (?:&& )?\\\n    (?:&& )?)?"
+            r"\{ grep -Ei '[^\n]*/tmp/ffmpeg-build\.log > /tmp/ffmpeg-warnings\.txt"
+            r" \|\| \[ \$\? -eq 1 \]; \} (?:&& )?\\\n"
+            r"    (?:&& )?if \[ -s /tmp/ffmpeg-warnings\.txt \]; then \\\n"
+            r".*?^    fi)(?= && \\$| \\$)"
+        )
+        warning = (
+            "libavfilter/vf_libvmaf.c:211:13: warning: unused variable 'n' " "[-Wunused-variable]\n"
+        )
+        cases = {
+            "matched patched file": (
+                warning,
+                True,
+                1,
+                "FATAL: a file this fork patches emitted compiler warnings",
+            ),
+            "unpatched file warns": (
+                "libavfilter/vf_unpatched.c:88:5: warning: implicit conversion loses "
+                "integer precision\n",
+                True,
+                0,
+                None,
+            ),
+            "clean build": ("CC\tlibavfilter/vf_libvmaf.o\nLD\tffmpeg_g\n", True, 0, None),
+            "missing build log": (None, True, 1, None),
+            "missing patched-file list": (
+                warning,
+                False,
+                1,
+                "FATAL: the patched-file filter failed to run",
+            ),
+            "warnings file cannot be opened": (warning, True, 1, None),
+        }
+        for name in ("Dockerfile", "dev/Containerfile", "docker/Dockerfile.node"):
+            blocks = gate.findall((ROOT / name).read_text(encoding="utf-8"))
+            self.assertEqual(len(blocks), 1, f"{name} has no single filtered warning gate")
+            # The capture runs from the gate's first command to its closing
+            # `fi`, so the chain's `&& ` (dev/Containerfile, Dockerfile.node)
+            # and `&& \` (Dockerfile) stay outside and bash joins the
+            # continuation lines into one command list.
+            body = blocks[0]
+            log_dir = re.search(r"(\S+)/ffmpeg-build\.log", body)
+            if log_dir is None:
+                self.fail(f"{name}: filtered gate reads no ffmpeg-build.log")
+            prefix = log_dir.group(1)
+            for case, (log, with_list, expected, fatal) in cases.items():
+                with (
+                    self.subTest(surface=name, case=case),
+                    tempfile.TemporaryDirectory() as temporary,
+                ):
+                    directory = Path(temporary)
+                    if log is not None:
+                        (directory / "ffmpeg-build.log").write_text(log, encoding="utf-8")
+                    if with_list:
+                        (directory / "ffmpeg-patched-files.txt").write_text(
+                            "libavfilter/vf_libvmaf.c\n", encoding="utf-8"
+                        )
+                    if case == "warnings file cannot be opened":
+                        # A dangling link makes every `>` redirect fail, also
+                        # for root, with status 1: the status grep uses for
+                        # "no match". The gate must not read that as clean.
+                        try:
+                            (directory / "ffmpeg-warnings.txt").symlink_to(
+                                directory / "missing" / "ffmpeg-warnings.txt"
+                            )
+                        except OSError as error:
+                            self.skipTest(f"cannot create a symbolic link here: {error}")
+                    # The gate hard-codes the container scratch prefix; read it
+                    # from the block instead of a hard-coded host constant
+                    # (Bandit B108) and redirect it into the temporary directory.
+                    script = body.replace(prefix, temporary.replace("\\", "/") + "/")
+                    result = run_command(
+                        [BASH, "-o", "pipefail", "-c", "set -e\n" + script],
+                        allowed_executables=(BASH,),
+                        cwd=temporary,
+                        env={**os.environ, "LC_ALL": "C"},
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout_seconds=60,
+                    )
+                    self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                    self.assertEqual(
+                        fatal is not None and fatal in result.stderr,
+                        fatal is not None,
+                        result.stderr,
+                    )
+
     def test_msvc_leg_builds_the_series_against_the_static_msvc_install(self) -> None:
         # ADR-2783: the configured release with the whole series, cl.exe through
         # FFmpeg's configure, linked against vmaf.lib / vmafx.lib (ADR-2752).
