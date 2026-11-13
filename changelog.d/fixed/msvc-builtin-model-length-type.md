@@ -1,0 +1,1 @@
+- **Build:** the Windows ARM64 MSVC build links again on MSVC 19.52. `core/src/model.c` declared the built-in models' `src_*_json_len` lengths as `int`, while `xxd -i` defines them as `unsigned int`; MSVC 19.52 reports that mismatch under `/LTCG` as warning C4744, and `/WX` made it fatal for `vmaf.exe`, `vmafx.exe` and four other binaries. The declarations now use `unsigned int`.

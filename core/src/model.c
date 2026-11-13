@@ -41,68 +41,72 @@
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
+/* The `src_*_json_len` symbols below come from `xxd -i` (core/src/meson.build),
+ * which defines them as `unsigned int`. Their declarations here must use the
+ * same type: MSVC 19.52 reports a mismatch under /LTCG as C4744, and /WX makes
+ * that fatal. feature/brisque_model.h declares its xxd length the same way. */
 typedef struct VmafBuiltInModel {
     const char *version;
     const char *data;
-    const int *data_len;
+    const unsigned int *data_len;
 } VmafBuiltInModel;
 
 #if VMAF_BUILT_IN_MODELS
 #if VMAF_FLOAT_FEATURES
 extern const char src_vmaf_float_v0_6_1neg_json[];
-extern const int src_vmaf_float_v0_6_1neg_json_len;
+extern const unsigned int src_vmaf_float_v0_6_1neg_json_len;
 extern const char src_vmaf_float_v0_6_1_json[];
-extern const int src_vmaf_float_v0_6_1_json_len;
+extern const unsigned int src_vmaf_float_v0_6_1_json_len;
 extern const char src_vmaf_float_b_v0_6_3_json[];
-extern const int src_vmaf_float_b_v0_6_3_json_len;
+extern const unsigned int src_vmaf_float_b_v0_6_3_json_len;
 extern const char src_vmaf_float_4k_v0_6_1_json[];
-extern const int src_vmaf_float_4k_v0_6_1_json_len;
+extern const unsigned int src_vmaf_float_4k_v0_6_1_json_len;
 #endif
 extern const char src_vmaf_v0_6_1_json[];
-extern const int src_vmaf_v0_6_1_json_len;
+extern const unsigned int src_vmaf_v0_6_1_json_len;
 extern const char src_vmaf_b_v0_6_3_json[];
-extern const int src_vmaf_b_v0_6_3_json_len;
+extern const unsigned int src_vmaf_b_v0_6_3_json_len;
 extern const char src_vmaf_v0_6_1neg_json[];
-extern const int src_vmaf_v0_6_1neg_json_len;
+extern const unsigned int src_vmaf_v0_6_1neg_json_len;
 extern const char src_vmaf_v0_6_1still_json[];
-extern const int src_vmaf_v0_6_1still_json_len;
+extern const unsigned int src_vmaf_v0_6_1still_json_len;
 extern const char src_vmaf_4k_v0_6_1_json[];
-extern const int src_vmaf_4k_v0_6_1_json_len;
+extern const unsigned int src_vmaf_4k_v0_6_1_json_len;
 extern const char src_vmaf_4k_v0_6_1neg_json[];
-extern const int src_vmaf_4k_v0_6_1neg_json_len;
+extern const unsigned int src_vmaf_4k_v0_6_1neg_json_len;
 /* VMAF v1.0.16 SDR models (ported from Netflix upstream 4718b4f5f). */
 extern const char src_vmaf_v1_0_16_3d0h_json[];
-extern const int src_vmaf_v1_0_16_3d0h_json_len;
+extern const unsigned int src_vmaf_v1_0_16_3d0h_json_len;
 extern const char src_vmaf_v1_0_16_3d0h_2160_json[];
-extern const int src_vmaf_v1_0_16_3d0h_2160_json_len;
+extern const unsigned int src_vmaf_v1_0_16_3d0h_2160_json_len;
 extern const char src_vmaf_v1_0_16_5d0h_json[];
-extern const int src_vmaf_v1_0_16_5d0h_json_len;
+extern const unsigned int src_vmaf_v1_0_16_5d0h_json_len;
 extern const char src_vmaf_v1_0_16_1d5h_2160_json[];
-extern const int src_vmaf_v1_0_16_1d5h_2160_json_len;
+extern const unsigned int src_vmaf_v1_0_16_1d5h_2160_json_len;
 extern const char src_vmaf_v1_0_16_hfr_3d0h_json[];
-extern const int src_vmaf_v1_0_16_hfr_3d0h_json_len;
+extern const unsigned int src_vmaf_v1_0_16_hfr_3d0h_json_len;
 extern const char src_vmaf_v1_0_16_hfr_3d0h_2160_json[];
-extern const int src_vmaf_v1_0_16_hfr_3d0h_2160_json_len;
+extern const unsigned int src_vmaf_v1_0_16_hfr_3d0h_2160_json_len;
 extern const char src_vmaf_v1_0_16_hfr_5d0h_json[];
-extern const int src_vmaf_v1_0_16_hfr_5d0h_json_len;
+extern const unsigned int src_vmaf_v1_0_16_hfr_5d0h_json_len;
 extern const char src_vmaf_v1_0_16_hfr_1d5h_2160_json[];
-extern const int src_vmaf_v1_0_16_hfr_1d5h_2160_json_len;
+extern const unsigned int src_vmaf_v1_0_16_hfr_1d5h_2160_json_len;
 extern const char src_hdr_vmaf_v1_1_8_3d0h_json[];
-extern const int src_hdr_vmaf_v1_1_8_3d0h_json_len;
+extern const unsigned int src_hdr_vmaf_v1_1_8_3d0h_json_len;
 extern const char src_hdr_vmaf_v1_1_8_3d0h_2160_json[];
-extern const int src_hdr_vmaf_v1_1_8_3d0h_2160_json_len;
+extern const unsigned int src_hdr_vmaf_v1_1_8_3d0h_2160_json_len;
 extern const char src_hdr_vmaf_v1_1_8_5d0h_json[];
-extern const int src_hdr_vmaf_v1_1_8_5d0h_json_len;
+extern const unsigned int src_hdr_vmaf_v1_1_8_5d0h_json_len;
 extern const char src_hdr_vmaf_v1_1_8_1d5h_2160_json[];
-extern const int src_hdr_vmaf_v1_1_8_1d5h_2160_json_len;
+extern const unsigned int src_hdr_vmaf_v1_1_8_1d5h_2160_json_len;
 extern const char src_hdr_vmaf_v1_1_8_hfr_3d0h_json[];
-extern const int src_hdr_vmaf_v1_1_8_hfr_3d0h_json_len;
+extern const unsigned int src_hdr_vmaf_v1_1_8_hfr_3d0h_json_len;
 extern const char src_hdr_vmaf_v1_1_8_hfr_3d0h_2160_json[];
-extern const int src_hdr_vmaf_v1_1_8_hfr_3d0h_2160_json_len;
+extern const unsigned int src_hdr_vmaf_v1_1_8_hfr_3d0h_2160_json_len;
 extern const char src_hdr_vmaf_v1_1_8_hfr_5d0h_json[];
-extern const int src_hdr_vmaf_v1_1_8_hfr_5d0h_json_len;
+extern const unsigned int src_hdr_vmaf_v1_1_8_hfr_5d0h_json_len;
 extern const char src_hdr_vmaf_v1_1_8_hfr_1d5h_2160_json[];
-extern const int src_hdr_vmaf_v1_1_8_hfr_1d5h_2160_json_len;
+extern const unsigned int src_hdr_vmaf_v1_1_8_hfr_1d5h_2160_json_len;
 #endif
 
 static const VmafBuiltInModel built_in_models[] = {
@@ -383,7 +387,7 @@ int vmaf_model_load(VmafModel **model, VmafModelConfig *cfg, const char *version
     }
 
     const int err = vmaf_read_json_model_from_buffer(model, cfg, built_in_model->data,
-                                                     *built_in_model->data_len);
+                                                     (int)*built_in_model->data_len);
     return vmaf_model_stamp_loaded(err, model, NULL, cfg, version, built_in_model->data,
                                    *built_in_model->data_len);
 }
@@ -629,7 +633,7 @@ int vmaf_model_collection_load(VmafModel **model, VmafModelCollection **model_co
     }
 
     const int err = vmaf_read_json_model_collection_from_buffer(
-        model, model_collection, cfg, built_in_model->data, *built_in_model->data_len);
+        model, model_collection, cfg, built_in_model->data, (int)*built_in_model->data_len);
     return vmaf_model_stamp_loaded(err, model, model_collection, cfg, version, built_in_model->data,
                                    *built_in_model->data_len);
 }
