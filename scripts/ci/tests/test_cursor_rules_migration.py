@@ -12,7 +12,6 @@ projection carries the same pointer (regenerate it, do not hand-edit).
 
 from __future__ import annotations
 
-import sys
 import unittest
 from pathlib import Path
 
