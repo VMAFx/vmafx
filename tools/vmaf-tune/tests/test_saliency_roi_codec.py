@@ -321,6 +321,29 @@ def test_saliency_aware_encode_libaom_preset_veryfast_accepted(tmp_path):
     assert "-qpfile" in cmd
 
 
+def test_saliency_aware_encode_libaom_preset_ultrafast_accepted(tmp_path):
+    """Positive twin: preset 'ultrafast' now maps to cpu-used 8 and succeeds."""
+    request, _ = _make_request(tmp_path, "libaom-av1", preset="ultrafast")
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    captured, runner = _capture_runner(tmp_path)
+
+    result = saliency_aware_encode(
+        request,
+        duration_frames=1,
+        model_path=fake_model,
+        config=SaliencyConfig(frame_samples=1, persist_qpfile=True),
+        encode_runner=runner,
+        session_factory=_session_factory_for(128, 128),
+    )
+
+    assert result.exit_status == 0
+    cmd = captured["cmd"]
+    assert cmd[cmd.index("-cpu-used") + 1] == "8"
+    assert "-usage" in cmd and cmd[cmd.index("-usage") + 1] == "realtime"
+    assert "-qpfile" in cmd
+
+
 def test_saliency_aware_encode_libaom_preset_faster_raises(tmp_path, monkeypatch):
     """Boundary negative: preset 'faster' (cpu-used 6) raises ValueError."""
     request, _ = _make_request(tmp_path, "libaom-av1", preset="faster")
