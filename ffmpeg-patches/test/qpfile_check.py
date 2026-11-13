@@ -7,6 +7,15 @@ Exits 0 on success, 1 on a failure and 77 when the FFmpeg lacks libx264 or a
 fixture is missing. Needs an FFmpeg built with the series and ``--enable-libx264``
 (``--enable-libaom`` and ``--enable-libsvtav1`` add their checks).
 
+By default a missing libaom-av1 / libsvtav1 encoder degrades to a
+"(skipped: encoder missing)" row counted as passing, and a missing fixture or
+libx264 degrades to exit 77. ``--require-encoders`` switches to the strict mode
+the FFmpeg integration CI workflow uses (issue #3351: an integration build must
+really exercise the encoders and must not go green by skipping them): a missing
+fixture, an ``--ffmpeg`` binary that cannot be launched, or any of libx264,
+libaom-av1 and libsvtav1 being absent is a hard ``FAIL`` that exits 1 before any
+case runs, and the per-encoder "skipped: encoder missing" rows are never emitted.
+
 - ``x264 applies the offsets``: a qpfile of +12 on every macroblock makes the
   libx264 encode smaller than the same encode without one, and -12 makes it
   larger (libx264 has no ``qpfile`` parameter: the option feeds x264's
@@ -204,8 +213,33 @@ def main() -> int:
     parser.add_argument("--ffmpeg", required=True)
     parser.add_argument("--libdir", default="", help="directory of the libraries FFmpeg loads")
     parser.add_argument("--yuv", default=str(ROOT / "python" / "test" / "resource" / "yuv"))
+    parser.add_argument(
+        "--require-encoders",
+        action="store_true",
+        help="strict CI mode (issue #3351): a missing fixture, ffmpeg or encoder "
+        "is a FAIL exit 1 instead of a skip",
+    )
     args = parser.parse_args()
     clip = Path(args.yuv) / "src01_hrc01_576x324.yuv"
+    if args.require_encoders:
+        if not clip.is_file():
+            print(f"FAIL required fixture missing: {clip}")
+            return 1
+        try:
+            encoders = run(args, [args.ffmpeg, "-hide_banner", "-encoders"]).stdout
+        except OSError as exc:
+            print(f"FAIL ffmpeg is not executable: {args.ffmpeg} ({exc.strerror or exc})")
+            return 1
+        present = {
+            line.split()[1]
+            for line in encoders.splitlines()
+            if line.startswith(" V") and len(line.split()) > 1
+        }
+        missing = [n for n in ("libx264", "libaom-av1", "libsvtav1") if n not in present]
+        for name in missing:
+            print(f"FAIL required encoder missing: {name}")
+        if missing:
+            return 1
     if not clip.is_file() or not has_encoder(args, "libx264"):
         print("skip: the fixture or libx264 is missing")
         return SKIP
