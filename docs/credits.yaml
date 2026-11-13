@@ -111,6 +111,16 @@ entries:
   - docs/adr/3357-hybrid-gcc-cpu-icpx-sycl.md
   - docs/adr/3358-vmafx-sycl-ffmpeg-container.md
   note: Dmitry Popovich (@Tualua) designed the hybrid GCC and icpx build and the SYCL plus FFmpeg image in PR 2216; the project reworked them into PR 2883 and PR 2891.
+- id: contribution-luoye-cpu-git-env-scrub
+  name: luoye-cpu's git env scrub helper
+  url: https://github.com/VMAFx/vmafx/pull/3339
+  kind: code
+  relation: used-by-CI
+  license: EUPL-1.2
+  paths:
+  - scripts/lib/git_env.py
+  - scripts/lib/test_git_env.py
+  note: luoye-cpu (@luoye-cpu) wrote the GIT_* environment scrub helper in PR 3339 (issue 3324); scripts and CI call drop() or hermetic() so git operations never inherit the caller's GIT_DIR and GIT_INDEX_FILE.
 - id: libsvm
   name: libsvm
   url: https://github.com/cjlin1/libsvm
