@@ -134,8 +134,7 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
         return -ENOMEM;
     }
     p->released = reinterpret_cast<bool *>(p->pic + p->cfg.pic_cnt);
-    /* The flag region shares p->pic's malloc block: its end must not run past
-     * the end of the pic block. */
+    /* The flag region shares p->pic's malloc block and must end inside it. */
     assert(reinterpret_cast<char *>(p->released + p->cfg.pic_cnt) <=
            reinterpret_cast<char *>(p->pic) + slot_bytes * p->cfg.pic_cnt);
     memset(p->released, 0, sizeof(*p->released) * p->cfg.pic_cnt);
