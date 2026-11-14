@@ -86,6 +86,26 @@ static int probe_alloc(const VmafCudaState *state, size_t bytes)
     return state->f->cuCtxPopCurrent(NULL) == CUDA_SUCCESS ? result : -1;
 }
 
+static int pause_poll_interval(void)
+{
+#ifdef _WIN32
+    Sleep(MEMORY_BACK_POLL_MS);
+    return 0;
+#else
+    struct timespec pause = {.tv_sec = 0, .tv_nsec = MEMORY_BACK_POLL_MS * 1000000L};
+    /* One initial attempt and at most three restarts after interruption. */
+    for (unsigned restart = 0; restart <= 3u; restart++) {
+        struct timespec rem = {0};
+        if (nanosleep(&pause, &rem) == 0)
+            return 0;
+        if (errno != EINTR)
+            return -1;
+        pause = rem;
+    }
+    return -1;
+#endif
+}
+
 static int wait_memory_back(const VmafCudaState *state)
 {
     int result = 0;
@@ -95,12 +115,10 @@ static int wait_memory_back(const VmafCudaState *state)
         result = probe_alloc(state, PROBE_BYTES);
         if (result != 0)
             break;
-#ifdef _WIN32
-        Sleep(MEMORY_BACK_POLL_MS);
-#else
-        const struct timespec pause = {.tv_sec = 0, .tv_nsec = MEMORY_BACK_POLL_MS * 1000000L};
-        (void)nanosleep(&pause, NULL);
-#endif
+        if (i + 1 < MEMORY_BACK_POLLS && pause_poll_interval() != 0) {
+            result = -1;
+            break;
+        }
     }
     (void)fprintf(stderr, "[memory back polls %u] ", polls);
     return result;
