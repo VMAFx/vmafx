@@ -1501,6 +1501,22 @@ repos:
         files: '^(docs/adr/|docs/research/|docs/assets/|docs/charts/|docs/javascripts/vendor/|packaging/schemas/|docs/index\.md$|docs/backends/index\.md$|docs/development/(upstream-parity|netflix-benchmark-baselines)\.md$|testdata/scores_(cpu|sycl_[a-z0-9]+)_576\.json$|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|scripts/ci/exact_twins\.d/|scripts/ci/cross_backend_calibration\.py$|docs/development/cross-backend-exact-twins\.md$|scripts/ci/upstream_parity\.d/|scripts/ci/upstream_parity_allowlist\.py$|docs/development/upstream-parity-allowlist\.md$|(.*/)?AGENTS\.d/|(.*/)?AGENTS\.md$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
         pass_filenames: false
 
+      - id: check-docs-fragment-imports
+        name: Third-party imports of the docs-fragments scripts are declared (issue 3244)
+        entry: python3 scripts/ci/check-docs-fragment-imports.py
+        language: system
+        stages: [pre-commit]
+        files: '^(Makefile$|requirements/locks/docs-check\.in$|scripts/ci/check-docs-fragment-imports\.py$|scripts/.*\.py$|tools/rc1-tester/src/.*\.py$)'
+        pass_filenames: false
+
+      - id: test-check-docs-fragment-imports
+        name: The declared-imports gate refuses its planted defects
+        entry: python3 -B scripts/ci/tests/test_check_docs_fragment_imports.py
+        language: system
+        stages: [pre-commit]
+        files: '^(Makefile$|requirements/locks/docs-check\.in$|scripts/ci/check-docs-fragment-imports\.py$|scripts/ci/tests/test_check_docs_fragment_imports\.py$|scripts/.*\.py$|tools/rc1-tester/src/.*\.py$)'
+        pass_filenames: false
+
       - id: test-docs-vendored-assets
         name: Vendored docs assets check keeps its contract
         entry: python3 -B scripts/docs/tests/test_vendored_assets.py
