@@ -9,7 +9,7 @@ import shutil
 from types import SimpleNamespace
 
 import pytest
-from _vmaf_cli import run_absolute_tool
+from _vmaf_cli import run_absolute_tool, vmaf_under_test
 
 from vmaftune import corpus, score
 from vmaftune.cache import CachedResult
@@ -35,6 +35,8 @@ def spot(tmp_path):
         opts=CorpusOptions(),
         decoded_reference=tmp_path / "reference.yuv",
         ref_decode_rc=0,
+        frame_skip_ref=0,
+        start_s=0.0,
     )
     cached = CachedResult(9, 1.0, "test", "test", 95.0, "test", 1.0, "test", artifact)
     return sweep, cached
@@ -73,6 +75,26 @@ def test_spot_scores_decoded_yuv_and_cleans_up(spot, monkeypatch, error):
     assert len(scored_paths) == 1
     assert not decoded_paths[0].parent.exists()
     assert list(cached.artifact_path.parent.iterdir()) == [cached.artifact_path]
+
+
+def test_spot_forwards_sample_window_reference_skip(spot, monkeypatch):
+    sweep, cached = spot
+    sweep.frame_skip_ref = 48
+    sweep.start_s = 2.0
+
+    def run_score(req, **kwargs):
+        assert req.frame_skip_ref == 48
+        assert req.frame_cnt == 24
+        assert req.duration_s == 1.0
+        return SimpleNamespace(vmaf_score=cached.vmaf_score)
+
+    monkeypatch.setattr(
+        corpus,
+        "_maybe_decode_distorted",
+        lambda req, **kwargs: dataclasses.replace(req, distorted=sweep.decoded_reference),
+    )
+    monkeypatch.setattr(score, "run_score", run_score)
+    assert corpus._verify_near_dup_spot(sweep, cached) is True
 
 
 def test_spot_refuses_failed_decode_without_scoring(spot, monkeypatch, caplog):
@@ -120,7 +142,7 @@ def _generate_cached_encode(sweep, cached, ffmpeg):
             "-f",
             "lavfi",
             "-i",
-            "testsrc2=size=320x240:rate=24:duration=1",
+            f"testsrc2=size=320x240:rate=24:duration={sweep.job.duration_s}",
             "-pix_fmt",
             "yuv420p",
             "-f",
@@ -142,10 +164,16 @@ def _generate_cached_encode(sweep, cached, ffmpeg):
             "320x240",
             "-r",
             "24",
+            "-ss",
+            str(sweep.start_s),
+            "-t",
+            "1",
             "-i",
             str(sweep.decoded_reference),
             "-c:v",
             "libx264",
+            "-crf",
+            "23",
             "-threads",
             "1",
             "-f",
@@ -185,3 +213,37 @@ def test_spot_decodes_real_cached_container(spot, monkeypatch):
     assert len(scored_paths) == 1
     assert not scored_paths[0].parent.exists()
     assert list(cached.artifact_path.parent.iterdir()) == [cached.artifact_path]
+
+
+def test_spot_scores_real_sample_window(spot, tmp_path):
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        pytest.skip("ffmpeg not on PATH")
+    sweep, cached = spot
+    sweep.opts = dataclasses.replace(sweep.opts, ffmpeg_bin=ffmpeg, vmaf_bin=str(vmaf_under_test()))
+    sweep.job = dataclasses.replace(sweep.job, duration_s=3.0)
+    sweep.frame_skip_ref = 24
+    sweep.start_s = 1.0
+    _generate_cached_encode(sweep, cached, ffmpeg)
+    req = score.ScoreRequest(
+        reference=sweep.decoded_reference,
+        distorted=cached.artifact_path,
+        width=320,
+        height=240,
+        pix_fmt="yuv420p",
+        frame_skip_ref=24,
+        frame_cnt=24,
+        duration_s=1.0,
+    )
+    decoded_req = corpus._maybe_decode_distorted(
+        req, encode_dir=tmp_path, ffmpeg_bin=ffmpeg, runner=run_absolute_tool
+    )
+    assert decoded_req.distorted.suffix == ".yuv"
+    result = score.run_score(decoded_req, vmaf_bin=sweep.opts.vmaf_bin, runner=run_absolute_tool)
+    assert result.exit_status == 0
+    # The encode covers source frames 24-47: scored against that window it is near-transparent.
+    assert result.vmaf_score > 90.0
+    cached = dataclasses.replace(cached, vmaf_score=result.vmaf_score)
+    assert corpus._verify_near_dup_spot(sweep, cached) is True
+    sweep.frame_skip_ref = 0
+    assert corpus._verify_near_dup_spot(sweep, cached) is False
