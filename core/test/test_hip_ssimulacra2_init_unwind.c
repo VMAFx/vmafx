@@ -229,7 +229,7 @@ hipError_t hipStreamSynchronize(hipStream_t stream)
 /* libvmaf stubs                                                        */
 /* ------------------------------------------------------------------ */
 
-const unsigned char ssimulacra2_device_hsaco[1] = {0};
+unsigned char ssimulacra2_device_hsaco[] = {0};
 
 int vmaf_feature_collector_append(VmafFeatureCollector *fc, const char *name, double score,
                                   unsigned index)
