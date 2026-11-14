@@ -13,7 +13,6 @@ subject, a breaking change without ``!`` or footer.
 
 from __future__ import annotations
 
-import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -21,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.lib import conventional_commits as cc
+from scripts.lib.safe_subprocess import TextCommandResult, run
 
 _ROOT = Path(__file__).resolve().parents[3]
 _CHECKER = _ROOT / "scripts" / "ci" / "check-pr-title.py"
@@ -71,12 +71,15 @@ class TestHookStaysOnTheSharedList(unittest.TestCase):
 class TestGateVerdicts(unittest.TestCase):
     """The cases issue #2750 names, through the checker's own entry point."""
 
-    def _run(self, *argv: str) -> subprocess.CompletedProcess[bytes]:
-        return subprocess.run(  # noqa: S603 - fixed argv; the checker path and inputs are this test's own fixtures
+    def _run(self, *argv: str) -> TextCommandResult:
+        return run(
             [sys.executable, str(_CHECKER), *argv],
+            allowed_executables=(sys.executable,),
             capture_output=True,
-            timeout=60,
+            text=True,
             check=False,
+            timeout_seconds=60,
+            max_output_bytes=262_144,
         )
 
     def test_valid_titles_pass(self) -> None:
@@ -99,14 +102,14 @@ class TestGateVerdicts(unittest.TestCase):
     def test_unknown_type_is_refused(self) -> None:
         result = self._run("security: harden the badges branch")
         self.assertEqual(result.returncode, 1)
-        self.assertIn("missing type", result.stdout.decode(errors="replace"))
+        self.assertIn("missing type", result.stdout)
         self.assertFalse(cc.is_conventional("security: harden the badges branch"))
         self.assertEqual(cc.errors("security: harden the badges branch"), ["type"])
 
     def test_missing_subject_is_refused(self) -> None:
         result = self._run("feat:")
         self.assertEqual(result.returncode, 1)
-        self.assertIn("missing subject", result.stdout.decode(errors="replace"))
+        self.assertIn("missing subject", result.stdout)
         self.assertFalse(cc.is_conventional("feat:"))
 
     def test_breaking_change_without_bang_or_footer_is_refused(self) -> None:
