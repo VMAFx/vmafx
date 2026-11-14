@@ -1025,7 +1025,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # (`SvtAv1Enc >= 0.9.0`) and that ships modern presets (`-preset 6` /
 # `-preset 8` are the rate-quality knobs vmaf-tune's compare sweep
 # exercises). Tags 2.x are current at time of writing; 2.1.0 is a
-# stable LTS-flavoured cut.
+# stable LTS-flavoured cut. Keep in step with SVTAV1_VERSION and SVTAV1_COMMIT
+# in build-config.env; the CI integration row checks out that exact commit.
 ARG SVTAV1_VERSION=4.2.0
 RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-dev-mcp \
     CCACHE_DIR=/root/.cache/ccache \

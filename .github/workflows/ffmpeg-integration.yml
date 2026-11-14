@@ -69,16 +69,28 @@ jobs:
             CC: gcc
             CXX: g++
             check_name: FFmpeg Ubuntu gcc
+            # Issue #3351: the `-qpfile` and loopback `-hwaccel` checks need
+            # real encoders configured. Scoped to the Ubuntu row so the macOS
+            # build surface does not change (no x264/aom/svtav1 there).
+            # libx264 is GPL, so configure refuses it without --enable-gpl.
+            encoders: '--enable-gpl --enable-libx264 --enable-libaom --enable-libsvtav1'
           - os: macos-latest
             CC: clang
             CXX: clang++
             check_name: FFmpeg macOS clang
+            encoders: ''
     name: ${{ matrix.check_name }} work
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # 60 covered the vmaf + FFmpeg build/FATE/install envelope. Issue #3351
+    # adds capped steps on the Ubuntu row (20+10+20+20 = 70 minutes of step
+    # caps; check_job_timeout_budget.py requires the job limit to reach that
+    # sum), so the envelope now also absorbs those ceilings plus the historical
+    # build runtime.
+    timeout-minutes: 120
     env:
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
+      ENCODERS: ${{ matrix.encoders }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Load build config
@@ -97,6 +109,17 @@ jobs:
       - name: Install dependencies (mac)
         if: matrix.os == 'macos-latest'
         run: brew install -q ninja nasm zimg
+
+      - name: Install FFmpeg encoder dependencies (ubuntu)
+        # Issue #3351: the configure line below adds --enable-libx264
+        # --enable-libaom --enable-libsvtav1 on this row, so those runtimes
+        # must exist first. The script builds SVT-AV1 from source (Ubuntu's
+        # libsvtav1-dev omits SvtAv1Enc.pc, which FFmpeg's configure probe
+        # needs) and fails closed unless every .pc resolves and aom >= 3.13.0.
+        # The step carries its own timeout: it runs apt-get install internally.
+        if: matrix.os == 'ubuntu-26.04'
+        timeout-minutes: 20
+        run: bash scripts/ci/install-ffmpeg-encoders.sh
 
       - name: Build vmaf
         run: |
@@ -127,10 +150,12 @@ jobs:
           # integration uses the filter. Scoping it out is consistent with
           # --disable-indevs above and leaves the warning gate meaningful, where
           # -DGL_SILENCE_DEPRECATION would only hide it.
+          # shellcheck disable=SC2086  # $ENCODERS holds the matrix's encoder flags: split on purpose
           ./configure --fatal-warnings \
             --enable-version3 --enable-libvmaf --disable-indevs \
             --disable-filter=coreimage --disable-filter=coreimagesrc \
             --disable-securetransport \
+            $ENCODERS \
             --cc="$CC" --cxx="$CXX" || { less ffbuild/config.log; exit 1; }
           build_jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)
           make -j "$build_jobs" build 2>&1 | tee /tmp/ffmpeg-build.log
@@ -149,6 +174,49 @@ jobs:
             exit 1
           fi
           sudo make install
+
+      # Issue #3351: exercise the shared fix series' `-qpfile` option on the
+      # encoders configured above, and the loopback decoder's `-hwaccel`
+      # surface. Both run against the in-tree ffmpeg the step above built; the
+      # fixture lands in python/test/resource/yuv/, the qpfile checker's
+      # default --yuv directory. Ubuntu row only — the encoders exist there.
+      - name: Fetch the qpfile test fixture (ubuntu)
+        if: matrix.os == 'ubuntu-26.04'
+        timeout-minutes: 10
+        run: bash scripts/test/fetch-test-yuvs.sh src01_hrc01_576x324.yuv
+
+      - name: Run -qpfile encoder checks (ubuntu)
+        if: matrix.os == 'ubuntu-26.04'
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          echo "## FFmpeg \`-qpfile\` encoder checks (issue #3351)" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          # --require-encoders: strict mode exits 1 on a missing encoder or
+          # fixture instead of returning the 77 "skip" sentinel — the whole
+          # point of this step is that the Ubuntu row really has all three
+          # (libx264, libaom-av1, libsvtav1).
+          python3 ffmpeg-patches/test/qpfile_check.py --require-encoders \
+            --ffmpeg "$GITHUB_WORKSPACE/ffmpeg/ffmpeg" 2>&1 \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Run loopback decoder -hwaccel checks (ubuntu)
+        if: matrix.os == 'ubuntu-26.04'
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          summary="$RUNNER_TEMP/loopback-hwaccel-summary.txt"
+          echo "## FFmpeg loopback decoder \`-hwaccel\` checks (issue #3351)" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          python3 ffmpeg-patches/test/loopback_hwaccel_check.py \
+            --ffmpeg "$GITHUB_WORKSPACE/ffmpeg/ffmpeg" \
+            --summary-out "$summary"
+          # Hosted runners have no GPU, and we deliberately do NOT pass
+          # --require-gpu: the checker then prints an explicit SKIP line plus
+          # substitute evidence and exits 0. The SKIP in the step summary is
+          # the proof the check RAN — an absent GPU must read as a visible
+          # skip, never as a silent pass.
+          cat "$summary" | tee -a "$GITHUB_STEP_SUMMARY"
 
   # Build-only: FFmpeg with SYCL patch (no GPU hardware on runners)
   ffmpeg-sycl-work:
