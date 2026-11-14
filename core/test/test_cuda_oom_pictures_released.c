@@ -21,6 +21,7 @@
  * Luma-sized allocation probes separate an ineffective hog (WDDM paging)
  * from delayed driver memory return and a broken pair/ring after OOM
  * (issue #3277).
+ * Memory return is polled for at most 5 seconds; Windows skips at the bound.
  *
  * The test skips (exit 77) when no CUDA device is visible.
  */
@@ -29,7 +30,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <time.h>
 #include <unistd.h>
 #endif
 
@@ -49,6 +53,8 @@
 #define FRAME_W 1920u
 #define FRAME_H 1080u
 #define PROBE_BYTES ((size_t)FRAME_W * FRAME_H)
+#define MEMORY_BACK_POLLS 100u
+#define MEMORY_BACK_POLL_MS 50u
 #define WATCHDOG_SECONDS 60u
 #define MAX_CHUNKS 4096u
 /* Chunk sizes, largest first; the driver keeps less than the smallest free. */
@@ -80,6 +86,26 @@ static int probe_alloc(const VmafCudaState *state, size_t bytes)
     return state->f->cuCtxPopCurrent(NULL) == CUDA_SUCCESS ? result : -1;
 }
 
+static int wait_memory_back(const VmafCudaState *state)
+{
+    int result = 0;
+    unsigned polls = 0;
+    for (unsigned i = 0; i < MEMORY_BACK_POLLS; i++) {
+        polls++;
+        result = probe_alloc(state, PROBE_BYTES);
+        if (result != 0)
+            break;
+#ifdef _WIN32
+        Sleep(MEMORY_BACK_POLL_MS);
+#else
+        const struct timespec pause = {.tv_sec = 0, .tv_nsec = MEMORY_BACK_POLL_MS * 1000000L};
+        (void)nanosleep(&pause, NULL);
+#endif
+    }
+    (void)fprintf(stderr, "[memory back polls %u] ", polls);
+    return result;
+}
+
 static void hog_take(const VmafCudaState *state, Hog *hog)
 {
     hog->count = 0;
@@ -106,6 +132,23 @@ static void hog_release(const VmafCudaState *state, Hog *hog)
     (void)state->f->cuCtxPopCurrent(NULL);
 }
 
+static char *close_context(VmafContext *vmaf, VmafCudaState *state)
+{
+#ifndef _WIN32
+    (void)alarm(0);
+#endif
+    mu_assert("close failed", vmaf_close(vmaf) == 0);
+    mu_assert("state free failed", vmaf_cuda_state_free(state) == 0);
+    return NULL;
+}
+
+static char *skip_context(VmafContext *vmaf, VmafCudaState *state)
+{
+    mu_assert_msg(close_context(vmaf, state));
+    mu_skipped = 1;
+    return NULL;
+}
+
 static char *skip_unexhausted_hog(VmafContext *vmaf, VmafCudaState *state, Hog *hog,
                                   int probe_hogged)
 {
@@ -114,14 +157,19 @@ static char *skip_unexhausted_hog(VmafContext *vmaf, VmafCudaState *state, Hog *
                   "[skip: device memory not exhausted by the hog (%zu MiB taken, "
                   "luma probe under the hog %d); WDDM may page allocations] ",
                   hog->bytes >> 20, probe_hogged);
-#ifndef _WIN32
-    (void)alarm(0);
-#endif
-    mu_assert("close failed", vmaf_close(vmaf) == 0);
-    mu_assert("state free failed", vmaf_cuda_state_free(state) == 0);
-    mu_skipped = 1;
-    return NULL;
+    return skip_context(vmaf, state);
 }
+
+#ifdef _WIN32
+static char *skip_delayed_memory(VmafContext *vmaf, VmafCudaState *state)
+{
+    (void)fprintf(stderr,
+                  "[skip: device memory not returned within %u ms after the hog was freed; "
+                  "the Windows driver can hold freed memory until process exit (issue #3277)] ",
+                  MEMORY_BACK_POLLS * MEMORY_BACK_POLL_MS);
+    return skip_context(vmaf, state);
+}
+#endif
 
 static int submit_pooled(VmafContext *vmaf, unsigned index)
 {
@@ -152,19 +200,21 @@ static int open_context(VmafCudaState **state, VmafContext **vmaf)
 }
 
 static char *check_oom_and_memory_return(VmafCudaState *state, Hog *hog, int oom_err,
-                                         int probe_hogged)
+                                         int probe_hogged, int *probe_back)
 {
     hog_release(state, hog);
-    const int probe_back = probe_alloc(state, PROBE_BYTES);
+    *probe_back = wait_memory_back(state);
     (void)fprintf(stderr, "[hog %zu MiB, luma probe under hog %d, first rc %d, memory back %d] ",
-                  hog->bytes >> 20, probe_hogged, oom_err, probe_back);
+                  hog->bytes >> 20, probe_hogged, oom_err, *probe_back);
     mu_assert("a frame was scored with the device's memory taken", oom_err != 0);
     (void)fprintf(stderr, "[first frame with no memory left: %d] ", oom_err);
 
     /* The pair of the failed call is back in the pool, and the ring that could
      * not be built is built now. */
-    mu_assert("allocation probe failed", probe_back >= 0);
-    mu_assert("device memory not yet returned after the hog was freed", probe_back == 1);
+    mu_assert("allocation probe failed", *probe_back >= 0);
+#ifndef _WIN32
+    mu_assert("device memory not yet returned after the hog was freed", *probe_back == 1);
+#endif
     return NULL;
 }
 
@@ -202,19 +252,19 @@ static char *test_out_of_memory_returns_an_error_and_keeps_the_pool(void)
     const int oom_err = submit_pooled(vmaf, 0);
     if (oom_err == 0)
         return skip_unexhausted_hog(vmaf, state, &hog, probe_hogged);
-    char *msg = check_oom_and_memory_return(state, &hog, oom_err, probe_hogged);
+    int probe_back = -1;
+    char *msg = check_oom_and_memory_return(state, &hog, oom_err, probe_hogged, &probe_back);
     if (msg)
         return msg;
+#ifdef _WIN32
+    if (probe_back == 0)
+        return skip_delayed_memory(vmaf, state);
+#endif
     msg = check_retry_and_psnr(vmaf);
     if (msg)
         return msg;
 
-#ifndef _WIN32
-    (void)alarm(0);
-#endif
-    mu_assert("close failed", vmaf_close(vmaf) == 0);
-    mu_assert("state free failed", vmaf_cuda_state_free(state) == 0);
-    return NULL;
+    return close_context(vmaf, state);
 }
 
 char *run_tests(void)
