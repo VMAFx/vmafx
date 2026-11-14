@@ -897,7 +897,7 @@ def _snapshot_operation_problems(commands: list[tuple[int, list[str]]], pin: int
         package = any(_is_apt_token(token) for token in cmd)
         if index < pin and package:
             live.append(cmd)
-        if package and any(action in cmd for action in ("update", "install")):
+        if package:
             if _snapshot_apt_override(cmd):
                 problems.append("package operation must inherit the persistent snapshot")
         problems.extend(_snapshot_script_problems(cmd, index - pin))
@@ -1299,6 +1299,10 @@ class UbuntuAptSnapshotContract(unittest.TestCase):
             "apt-get --snapshot now install -y curl",
             "apt-get -o APT::Snapshot=now install -y curl",
             "apt-get --config-file=/tmp/live.conf install -y curl",
+            "apt-get -o APT::Snapshot=now upgrade -y",
+            "apt-get --snapshot now build-dep -y curl",
+            "apt-get -c live.conf dist-upgrade -y",
+            "apt-get -S now full-upgrade -y",
             "sh -c 'apt-get install -y curl'",
             f"rm {APT_SNAPSHOT_FILE}",
             "rm -rf /etc/apt/apt.conf.d",
@@ -1380,7 +1384,7 @@ class UbuntuAptSnapshotContract(unittest.TestCase):
                 ("2026-11-01T00:00:00Z", 1),
             ):
                 with self.subTest(value=value):
-                    written.write_text(template % value, encoding="utf-8")
+                    written.write_text(template % value, encoding="utf-8", newline="\n")
                     result = run_command(
                         [grep, *APT_SNAPSHOT_CHECK[1:-1], str(written)],
                         allowed_executables=(grep,),
