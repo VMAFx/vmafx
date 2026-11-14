@@ -16,6 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 Finding = tuple[int, str, str]
@@ -40,7 +41,7 @@ def git_bytes(git: str, args: list[str], cwd: Path) -> tuple[int, bytes]:
     """Run a read-only git command in the selected repository."""
     # Read-only git in `cwd`; the hook's GIT_DIR / GIT_INDEX_FILE are dropped so
     # `cwd` alone names the repository.
-    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env = git_env.drop()
     proc = run_command(
         [git, *args],
         allowed_executables=(git,),

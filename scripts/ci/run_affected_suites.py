@@ -48,6 +48,7 @@ from typing import IO, overload
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.ci import suite_registry as registry_lib
+from scripts.lib import git_env
 from scripts.lib.push_head import outgoing_head
 from scripts.lib.safe_subprocess import CommandTimedOut, TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
@@ -87,7 +88,7 @@ class SuiteResult:
 
 def _env_without_git() -> dict[str, str]:
     drop = ("VIRTUAL_ENV", "PYTHONPATH", "PYTHONHOME")
-    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_") and k not in drop}
+    return {k: v for k, v in git_env.drop().items() if k not in drop}
 
 
 @overload

@@ -27,6 +27,7 @@ import yaml  # type: ignore[import-untyped]
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -119,7 +120,7 @@ def _setup_stacked_repo(repo_dir: str, env: Mapping[str, str]) -> tuple[str, str
 def _fixture_env(empty_home: Path) -> dict[str, str]:
     """Build an isolated Git and planner environment with an empty config home."""
     return {
-        **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+        **git_env.drop(),
         "GIT_CONFIG_GLOBAL": os.devnull,
         "GIT_CONFIG_NOSYSTEM": "1",
         "HOME": str(empty_home),

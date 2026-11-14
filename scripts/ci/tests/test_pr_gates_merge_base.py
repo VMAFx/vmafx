@@ -15,12 +15,16 @@ change deserves. A base with no merge base fails closed.
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib import git_env
 
 ROOT = Path(__file__).resolve().parents[3]
 CI = ROOT / "scripts" / "ci"
@@ -30,7 +34,7 @@ GIT_TIMEOUT_S = 60
 SCRIPT_TIMEOUT_S = 60
 # A git hook exports GIT_DIR and GIT_INDEX_FILE; with them the fixture's init, commits and
 # checkouts, and the gates under test, would act on the caller's repository.
-CLEAN = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+CLEAN = git_env.drop()
 IDENT = {
     "GIT_AUTHOR_NAME": "Ada",
     "GIT_AUTHOR_EMAIL": "ada@example.org",

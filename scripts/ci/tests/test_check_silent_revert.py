@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Fixture coverage for the silent-revert gate (ADR-1284).
 
+
+
 Every case builds a disposable repository, reproduces one merge shape, and
 asserts what ``scripts/ci/check-silent-revert.py`` reports for it.  The suite is
 positive / negative / boundary per HISS-15: a reproduced silent revert must be
@@ -29,6 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -44,9 +47,9 @@ ADR_0759_LANDED = "31a51afb2"
 ADR_0759_REVERTED = "92ea978a4"
 
 
-def git_env() -> dict[str, str]:
+def fixture_git_env() -> dict[str, str]:
     """A git environment that cannot reach the developer's real configuration."""
-    clean = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    clean = git_env.drop()
     clean.update(
         GIT_CONFIG_NOSYSTEM="1",
         GIT_CONFIG_GLOBAL=os.devnull,
@@ -66,7 +69,7 @@ def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
     """
     return subprocess.run(  # noqa: S603 -- fixed argv, no shell, disposable fixture repo
         [GIT, "-C", str(repo), *args],
-        env=git_env(),
+        env=fixture_git_env(),
         text=True,
         capture_output=True,
         check=check,
@@ -82,7 +85,7 @@ def run_gate(repo: Path, base: str, head: str, **env: str) -> TextCommandResult:
     return run_command(
         [sys.executable, str(GATE), "--repo", str(repo), "--base", base, "--head", head],
         allowed_executables=(sys.executable,),
-        env={**git_env(), **env},
+        env={**fixture_git_env(), **env},
         text=True,
         capture_output=True,
         check=False,
@@ -520,7 +523,7 @@ class RealHistoryReplayTest(unittest.TestCase):
         """
         probe = subprocess.run(  # noqa: S603 -- fixed argv, no shell
             [GIT, "-C", str(ROOT), "cat-file", "-e", f"{ADR_0759_REVERTED}^{{commit}}"],
-            env=git_env(),
+            env=fixture_git_env(),
             capture_output=True,
             text=True,
             check=False,

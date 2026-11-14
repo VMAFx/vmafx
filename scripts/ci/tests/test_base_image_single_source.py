@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import importlib.util
-import os
 import shutil
 import sys
 import tempfile
@@ -16,6 +15,7 @@ from types import ModuleType
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -84,8 +84,7 @@ class BaseImageGate(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.repo = Path(self.temporary.name)
-        self.env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-        self.env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+        self.env = git_env.hermetic()
         for name in (
             "build-config.env",
             ".node-version",

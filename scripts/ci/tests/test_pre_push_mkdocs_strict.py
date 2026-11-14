@@ -17,13 +17,17 @@ The suite skips, with the reason, when MkDocs is not installed.
 
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib import git_env
 
 REPO = Path(__file__).resolve().parents[3]
 HOOK = REPO / "scripts" / "git-hooks" / "pre-push-mkdocs-strict.sh"
@@ -45,8 +49,7 @@ validation:
 def _run(cmd: list[str], cwd: Path, timeout: int) -> subprocess.CompletedProcess[str]:
     """Run a subprocess command isolated from caller Git variables and hook environment."""
     # No GIT_DIR / GIT_INDEX_FILE from a hook: they would point git at the caller's repository.
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-    env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    env = git_env.hermetic()
     env.pop("SKIP", None)
     env.pop("PRE_COMMIT_REMOTE_NAME", None)
     return subprocess.run(  # noqa: S603 -- fixed argv, no shell, disposable fixture repo

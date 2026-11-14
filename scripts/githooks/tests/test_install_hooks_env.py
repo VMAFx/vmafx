@@ -42,6 +42,7 @@ import yaml  # type: ignore[import-untyped]
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -73,8 +74,8 @@ class InstallHooksEnvTests(unittest.TestCase):
         self.base = Path(self.temporary.name)
         self.env = {
             key: value
-            for key, value in os.environ.items()
-            if not key.startswith(("GIT_", "PRE_COMMIT_"))
+            for key, value in git_env.drop(prefixes=("GIT_", "PRE_COMMIT_")).items()
+            if key != "SKIP"
         }
         self.env.pop("SKIP", None)
         self.env.update(

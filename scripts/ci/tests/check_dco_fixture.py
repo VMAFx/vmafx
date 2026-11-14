@@ -16,6 +16,7 @@ from types import ModuleType
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
+from scripts.lib import git_env as git_env_lib  # noqa: E402
 from scripts.lib.safe_subprocess import TextCommandResult, run  # noqa: E402
 
 GATE = ROOT / "scripts" / "ci" / "check-dco.py"
@@ -62,14 +63,12 @@ ADVERSARIAL_PREFIXES = (
 def git_env(ident: tuple[str, str], committer: tuple[str, str] | None = None) -> dict[str, str]:
     """Prepare isolated fixture identities without inherited repository configuration."""
     committer = committer or ident
-    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env = git_env_lib.hermetic()
     env.update(
         GIT_AUTHOR_NAME=ident[0],
         GIT_AUTHOR_EMAIL=ident[1],
         GIT_COMMITTER_NAME=committer[0],
         GIT_COMMITTER_EMAIL=committer[1],
-        GIT_CONFIG_GLOBAL="/dev/null",
-        GIT_CONFIG_SYSTEM="/dev/null",
     )
     return env
 
@@ -88,10 +87,9 @@ def clean_env() -> dict[str, str]:
         "PR_BODY",
         "PRE_COMMIT_TO_REF",
     )
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env = git_env_lib.hermetic()
     for key in drop:
         env.pop(key, None)
-    env.update(GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null")
     return env
 
 

@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Planted-case tests for check-bot-squash-body.py.
 
+
 Proves the defence catches the dangerous pattern AND passes safe ones:
 
 - REFUSE: bot PR, auto-merge armed, null body, non-bot commit present
@@ -20,6 +21,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from scripts.lib import git_env
+
 SCRIPT = Path(__file__).resolve().parent.parent / "check-bot-squash-body.py"
 GIT = "git"
 GIT_TIMEOUT_S = 60
@@ -35,7 +39,7 @@ HUMAN_NAME = "t"
 def _fixture_env(
     author_name: str, author_email: str, committer_name: str, committer_email: str
 ) -> dict[str, str]:
-    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")} | {
+    return git_env.drop() | {
         "GIT_CONFIG_GLOBAL": os.devnull,
         "GIT_CONFIG_SYSTEM": os.devnull,
         "GIT_AUTHOR_NAME": author_name,
@@ -123,7 +127,7 @@ def run_check(repo: Path, base: str, head: str, **env_overrides: str) -> int:
 
     Verifies gate exit codes across simulated PR metadata and commit authors.
     """
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")} | {
+    env = git_env.drop() | {
         "GIT_CONFIG_GLOBAL": os.devnull,
         "GIT_CONFIG_SYSTEM": os.devnull,
         "PR_AUTHOR": "renovate[bot]",

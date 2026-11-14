@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -15,6 +14,10 @@ import unittest
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from types import ModuleType
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib import git_env
 
 ROOT = Path(__file__).resolve().parents[3]
 GIT_TIMEOUT_S = 60
@@ -49,7 +52,7 @@ class StatusDriftTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.repo = Path(self.tmp.name)
-        self.env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        self.env = git_env.drop()
         self.env.update(
             GIT_CONFIG_GLOBAL="/dev/null",
             GIT_CONFIG_SYSTEM="/dev/null",

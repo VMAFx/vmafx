@@ -15,6 +15,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.dev import upstream_pr_sweep as sweep_mod
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -53,7 +54,7 @@ FIXTURE_SETTINGS = (
 
 def fixture_environment(root: Path) -> dict[str, str]:
     """Process environment for one test: no caller GIT_*, identity and signing by env only."""
-    clean = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    clean = git_env.drop()
     settings = (
         *FIXTURE_SETTINGS,
         ("user.signingkey", str(root / "id_ed25519")),

@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """scripts/ci/praetor_tidy_coverage.py renders praetor's lane list and exceptions, and refuses a stale one.
 
+
 Each case builds a throwaway git repository. The planted defects: a unit a lane measures that the
 lane file lacks, an exception the manifest block lacks, and a block edited by hand; ``--check``
 must fail each, and ``--write`` must repair it. A HISS-11 entry of the repository list reaches the
@@ -12,7 +13,6 @@ block with the expiry cap; an entry of a rule praetor does not read stays out.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -20,11 +20,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib import git_env
+
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts/ci/praetor_tidy_coverage.py"
 GIT = shutil.which("git") or "git"
-CLEAN_ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-CLEAN_ENV.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+CLEAN_ENV = git_env.hermetic()
 TOML = (
     '[[exception]]\npath = "src/win32.c"\ncategory = "A"\nentered = 2026-11-02\n'
     'reason = "Windows only"\nexpires = 2027-06-30\n'

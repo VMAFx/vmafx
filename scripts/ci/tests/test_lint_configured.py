@@ -25,6 +25,7 @@ PUBLIC_MODEL = Path("scripts/ci/cppcheck-public-entrypoints.cfg")
 
 sys.path.insert(0, str(ROOT))
 
+from scripts.lib import git_env  # noqa: E402
 from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
@@ -183,7 +184,7 @@ class ConfiguredLintTests(unittest.TestCase):
         self.calls = self.root / "calls"
         self.calls.mkdir()
         self.env = dict(
-            {key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+            git_env.drop(),
             PATH=f"{self.bin}{os.pathsep}{os.environ['PATH']}",
             CALLS=str(self.calls),
             GIT_CONFIG_NOSYSTEM="1",

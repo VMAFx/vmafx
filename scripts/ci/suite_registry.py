@@ -48,6 +48,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import CommandTimedOut
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -223,7 +224,7 @@ def tracked_files(root: Path) -> list[str]:
     if git is None:
         raise RegistryError("git is not on PATH")
     # A hook parent's GIT_DIR / GIT_INDEX_FILE would point git at another repo.
-    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env = git_env.drop()
     result = run_command(
         [git, "-C", str(root), "ls-files", "-z"],
         allowed_executables=(git,),

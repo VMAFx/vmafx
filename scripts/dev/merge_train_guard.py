@@ -37,6 +37,7 @@ sys.path.insert(
     ),
 )
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 REPO = "VMAFx/vmafx"
@@ -93,9 +94,8 @@ def environment() -> dict[str, str]:
     """Do not inherit Git redirection or make dry-run/alternate-file flags."""
     return {
         key: value
-        for key, value in os.environ.items()
-        if not key.startswith("GIT_")
-        and key
+        for key, value in git_env.drop().items()
+        if key
         not in {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "GNUMAKEFLAGS", "MAKEFILES", "MAKEOVERRIDES"}
     }
 
