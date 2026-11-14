@@ -5,19 +5,21 @@ paths:
   - scripts/ci/validate-pr-body.sh
   - scripts/ci/ffmpeg-patches-surface-check.sh
   - scripts/ci/state-md-touch-check.sh
+  - scripts/ci/check-toolchain-claims.sh
   - scripts/ci/.shellcheckrc
   - scripts/ci/tests/test-pr-body-input-selection.sh
-invariant: Four gates source `pr-body-input.sh` from their own directory: classify stdin, read, close; never test `[ ! -t 0 ]`.
+invariant: Five gates source `pr-body-input.sh` from their own directory: classify stdin, read, close; never test `[ ! -t 0 ]`.
 area: gates
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # PR-body stdin classification (`pr-body-input.sh`)
 
-**Invariant — hard sibling-file dependency.** Four scripts source
+**Invariant — hard sibling-file dependency.** Five scripts source
 `scripts/ci/pr-body-input.sh` unconditionally, before any input branch, each
 resolving it from its own `${BASH_SOURCE[0]}` directory rather than from
 `$PWD`: `deliverables-check.sh`, `validate-pr-body.sh`,
-`ffmpeg-patches-surface-check.sh`, `state-md-touch-check.sh`. None of four
+`ffmpeg-patches-surface-check.sh`, `state-md-touch-check.sh`,
+`check-toolchain-claims.sh`. None of five
 is standalone any more. Consequences to preserve:
 
 - Copying, vendoring or relocating one of those scripts **must** carry
@@ -28,7 +30,7 @@ is standalone any more. Consequences to preserve:
   sibling does not degrade — it dies at `.` line before it reads anything.
 - `pr-body-input.sh` is sourced, never executed, and defines only
   `pr_body_*` functions and `PR_BODY_STDIN_KIND` / `PR_BODY_STDIN_FD`
-  variables. Do not give it top-level side effects: it runs inside four gates
+  variables. Do not give it top-level side effects: it runs inside five gates
   that have already set `set -euo pipefail` and their own `trap … EXIT`.
 - rebase-sensitive surfaces table above lists these scripts against their
   workflow jobs. workflow that invokes one of them by path is invoking two
@@ -49,7 +51,7 @@ whether fd 0 is terminal, which is true for `/dev/null`, for CI step's
 null stdin, and for *closed* descriptor. On closed fd 0
 `PR_BODY="$(cat)"` does not fail — it **deadlocks**, because command
 substitution's pipe takes freed descriptor 0 and `cat` reads pipe it
-is writing to. All four gates hung this way; measured at `timeout 12` → 124.
+is writing to. All five gates hung this way; measured at `timeout 12` → 124.
 New gates that read PR body call `pr_body_classify_stdin` instead.
 
 **Invariant — classify, read, close.** `pr_body_classify_stdin` hands
@@ -63,7 +65,7 @@ stays open — inherited by every `git`, `python3` and `mktemp` gate spawns
 afterwards.
 
 **Invariant — absent body means different things to different gates.**
-`deliverables-check.sh` / `validate-pr-body.sh` exist only to parse body, so
+`deliverables-check.sh` / `validate-pr-body.sh` / `check-toolchain-claims.sh` exist only to parse body, so
 no body is exit 2. `ffmpeg-patches-surface-check.sh` /
 `state-md-touch-check.sh` also have diff, so no body makes their opt-out
 sentinel unclaimable and they fall through to diff check. Do not
@@ -74,6 +76,6 @@ differ on `$PR_BODY` precedence — `+x` (set counts) for first pair, `-n`
 differently.
 
 `scripts/ci/tests/test-pr-body-input-selection.sh` pins all of above for
-all four gates, bounded by `timeout` so re-regression reports hang rather
+all five gates, bounded by `timeout` so re-regression reports hang rather
 than becoming one. It is wired as pre-commit/pre-push hook whose `files:`
-pattern lists every gate; adding fifth caller means adding it there too.
+pattern lists every gate; adding sixth caller means adding it there too.
