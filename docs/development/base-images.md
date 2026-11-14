@@ -379,7 +379,9 @@ and every later command of that RUN are joined with `&&`: an `||`, `;` or `|`
 there could skip the check or let the build continue past a failed one, and
 the image contract rejects it. The contract also requires that the RUN
 sources `build-config.env` directly before the snapshot write, and that no
-RUN, ENV or ARG instruction sets `APT_CONFIG`.
+RUN, ENV or ARG instruction sets `APT_CONFIG`. The contract reads only FROM,
+ARG, ENV, COPY, shell-form RUN, WORKDIR, CMD and a plain SHELL, and refuses
+any other instruction or form.
 
 The snapshot service requires HTTPS. Before activating the pin, each image
 refreshes the live archive once and installs only `ca-certificates` and its

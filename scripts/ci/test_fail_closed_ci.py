@@ -85,6 +85,14 @@ APT_UNBALANCED_QUOTE_MESSAGE = (
 APT_CONFIG_UNSET_MESSAGE = (
     "APT_CONFIG must stay unset: the persistent snapshot is the only APT configuration"
 )
+APT_SNAPSHOT_INSTRUCTION_MESSAGE = (
+    "snapshot contract reads FROM, ARG, ENV, COPY, RUN, WORKDIR, CMD and SHELL only"
+)
+APT_SNAPSHOT_RUN_MESSAGE = (
+    "snapshot contract reads plain shell-form RUN only: no exec form, flags or heredoc"
+)
+APT_SNAPSHOT_SHELL_MESSAGE = "SHELL must be /bin/bash -c or /bin/sh -c"
+APT_SNAPSHOT_ESCAPE_MESSAGE = "snapshot contract requires the default backslash escape"
 APT_CONTINUATION_MESSAGE = (
     f"continuation exceeds {MAX_CONTINUATION_LINES} physical lines; "
     "keep each command bounded (ADR-3537)"
@@ -820,6 +828,38 @@ def _snapshot_sets_apt_config(instruction: str, tokens: list[str]) -> bool:
     )
 
 
+def _snapshot_instruction_problems(number: int, instruction: str, body: str) -> list[str]:
+    """Allow only instruction shapes whose snapshot effects this reader understands."""
+    if not instruction:
+        if re.match(r"\s*#\s*escape\s*=", body, re.IGNORECASE):
+            return [f"{number}: {APT_SNAPSHOT_ESCAPE_MESSAGE}"]
+        return []
+    if instruction not in {"FROM", "ARG", "ENV", "COPY", "RUN", "WORKDIR", "CMD", "SHELL"}:
+        return [f"{number}: {APT_SNAPSHOT_INSTRUCTION_MESSAGE}"]
+    if instruction == "RUN":
+        if body.lstrip().startswith(("[", "--")) or "<<" in body:
+            return [f"{number}: {APT_SNAPSHOT_RUN_MESSAGE}"]
+    if instruction == "SHELL":
+        if _json_string_list(body) not in (["/bin/bash", "-c"], ["/bin/sh", "-c"]):
+            return [f"{number}: {APT_SNAPSHOT_SHELL_MESSAGE}"]
+    return []
+
+
+def _snapshot_shell_instruction(
+    number: int, instruction: str, body: str
+) -> tuple[list[tuple[int, list[str]]], list[str], list[str]]:
+    """Tokenise an accepted instruction with the existing snapshot shell reader."""
+    try:
+        tokens = _tokenise_shell_item(body)
+    except ValueError:
+        return [], [], [f"{number}: snapshot contract requires balanced shell quotes"]
+    problems = [APT_CONFIG_UNSET_MESSAGE] if _snapshot_sets_apt_config(instruction, tokens) else []
+    if instruction != "RUN":
+        return [(number, [instruction, *tokens])], [""], problems
+    clauses = _shell_clauses_with_operators(tokens)
+    return [(number, clause) for clause, _ in clauses], [end for _, end in clauses], problems
+
+
 def _snapshot_commands(
     text: str,
 ) -> tuple[list[tuple[int, list[str]]], list[str], list[str]]:
@@ -827,27 +867,23 @@ def _snapshot_commands(
     commands: list[tuple[int, list[str]]] = []
     ends: list[str] = []
     problems: list[str] = []
+    seen_instruction = False
     for number, line, overflowed in _logical_ci_lines(text):
         if overflowed:
             problems.append(f"{number}: {APT_CONTINUATION_MESSAGE}")
-        match = re.match(r"\s*(RUN|COPY|FROM|ENV|ARG)\s+(.*)", line, re.IGNORECASE | re.DOTALL)
-        if match is None:
+        match = re.match(r"\s*([A-Za-z]+)\s+(.*)", line, re.DOTALL)
+        if match is None and seen_instruction:
             continue
-        try:
-            tokens = _tokenise_shell_item(match[2])
-        except ValueError:
-            problems.append(f"{number}: snapshot contract requires balanced shell quotes")
+        instruction, body = (match[1].upper(), match[2]) if match else ("", line)
+        seen_instruction = match is not None
+        shape_problems = _snapshot_instruction_problems(number, instruction, body)
+        problems.extend(shape_problems)
+        if shape_problems or instruction not in {"RUN", *DOCKERFILE_INSTRUCTIONS}:
             continue
-        instruction = match[1].upper()
-        if _snapshot_sets_apt_config(instruction, tokens):
-            problems.append(APT_CONFIG_UNSET_MESSAGE)
-        if instruction == "RUN":
-            for clause, end in _shell_clauses_with_operators(tokens):
-                commands.append((number, clause))
-                ends.append(end)
-        else:
-            commands.append((number, [instruction, *tokens]))
-            ends.append("")
+        items, operators, shell_problems = _snapshot_shell_instruction(number, instruction, body)
+        commands.extend(items)
+        ends.extend(operators)
+        problems.extend(shell_problems)
     return commands, ends, problems
 
 
@@ -1245,6 +1281,49 @@ class UbuntuAptSnapshotContract(unittest.TestCase):
     def test_snapshot_is_one_timestamp_in_build_config(self) -> None:
         text = (ROOT / "build-config.env").read_text(encoding="utf-8")
         self.assertEqual(build_config_snapshot_problems(text), [])
+
+    def test_only_parsed_instruction_shapes_are_accepted(self) -> None:
+        image = self.image()
+        before_pin = image.index("RUN apt-get")
+        after_pin = len(image)
+        plants = (
+            ('RUN ["apt-get", "install", "-y", "curl"]', APT_SNAPSHOT_RUN_MESSAGE, before_pin),
+            (
+                'RUN ["apt-get", "-o", "Dir::Etc::SourceList=/x", "install", "-y", "curl"]',
+                APT_SNAPSHOT_RUN_MESSAGE,
+                after_pin,
+            ),
+            (
+                "RUN --mount=type=cache,target=/var/cache/apt apt-get install -y curl",
+                APT_SNAPSHOT_RUN_MESSAGE,
+                before_pin,
+            ),
+            ("RUN <<EOF\napt-get install -y curl\nEOF", APT_SNAPSHOT_RUN_MESSAGE, before_pin),
+            (
+                'SHELL ["env", "APT_CONFIG=/x.conf", "/bin/sh", "-c"]',
+                APT_SNAPSHOT_SHELL_MESSAGE,
+                before_pin,
+            ),
+            (
+                "ONBUILD RUN apt-get install -y curl",
+                APT_SNAPSHOT_INSTRUCTION_MESSAGE,
+                after_pin,
+            ),
+            (
+                "ADD https://example.invalid/x.list /etc/apt/sources.list.d/",
+                APT_SNAPSHOT_INSTRUCTION_MESSAGE,
+                after_pin,
+            ),
+            ("# escape=`", APT_SNAPSHOT_ESCAPE_MESSAGE, 0),
+        )
+        for instruction, message, offset in plants:
+            with self.subTest(instruction=instruction):
+                planted = image[:offset] + instruction + "\n" + image[offset:]
+                self.assertIn(message, "\n".join(ubuntu_apt_snapshot_problems(planted)))
+        for path in UBUNTU_DEV_DOCKERFILES:
+            with self.subTest(path=path):
+                self.assertEqual(ubuntu_apt_snapshot_problems(path.read_text(encoding="utf-8")), [])
+        self.assertEqual(ubuntu_apt_snapshot_problems(image + '\nSHELL ["/bin/sh", "-c"]\n'), [])
 
     def test_build_config_rejects_a_second_or_reshaped_snapshot(self) -> None:
         """Sourcing takes the last assignment; Renovate updates only the managed shape."""
