@@ -104,3 +104,18 @@ def test_geometry_field_change_changes_key(changes):
     baseline_key = _cell_params_key(_sweep(), "medium", 23)
     changed_key = _cell_params_key(_sweep(**changes), "medium", 23)
     assert changed_key != baseline_key, _GUARD_MESSAGE
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        pytest.param({"src_width": 1920}, id="src_width"),
+        pytest.param({"src_height": 1080}, id="src_height"),
+    ],
+)
+def test_source_dimension_change_changes_key(changes):
+    sweep = _sweep(src_width=1280, src_height=720)
+    baseline_key = _cell_params_key(sweep, "medium", 23)
+    sweep.job = replace(sweep.job, **changes)
+    changed_key = _cell_params_key(sweep, "medium", 23)
+    assert changed_key != baseline_key, _GUARD_MESSAGE
