@@ -512,6 +512,33 @@ device on the same pair, and compare. `/cross-backend-diff` and
 `scripts/ci/cross_backend_vif_diff.py` cover the feature backends, not the
 tiny-AI execution providers.
 
+### The CUDA EP on onnxruntime-gpu 1.31.1: TF32 and transnet_v2
+
+The two bounds above are strict fp32 bounds, and the gate pins the CUDA EP to
+strict fp32 to meet them. Measured across the 26-model tiny registry on two
+local GPUs ([#2947](https://github.com/VMAFx/vmafx/issues/2947), comment
+6696661349):
+
+- onnxruntime-gpu 1.31.1 leaves TF32 enabled by default in the CUDA EP. TF32
+  GEMM/conv breaks the documented 1e-4 fp32 bound for 13 of the 24 fp32
+  models, drifting 6e-04 to 3.9e-02 (worst case about 1e-2, stable across both
+  GPUs) at CI-like batch sizes. The parity gate therefore creates every CUDA
+  session with the provider option `use_tf32=0`, which puts all 24 models back
+  inside the bound (worst 3.8e-05). The session-config entry
+  `ep.cuda.use_tf32` is silently ignored by 1.31.1 — only the provider option
+  works. Opting back into TF32 means re-measuring against the band above, not
+  loosening the 1e-4 bound.
+- `transnet_v2` cannot execute on the CUDA EP in 1.31.1: the leg binds, but its
+  ScatterND node `fork_segmentsum_scatter` raises
+  `element_type 6 (int32) not implemented for ScatterND operator`,
+  deterministically on both GPUs. The CPU EP is unaffected. The gate runs the
+  model's target-provider leg as a zeros-input execute probe and records that
+  exact failure — whether it surfaces while creating the session or at Run
+  time — as an expected provider gap (`PROVIDER_GAP`); any other transnet_v2
+  failure still fails the gate, and a gap-listed model that executes is
+  reported as the gap closing.
+- fp16 (`smoke_fp16_v0`) and int8 models are exact and unaffected by TF32.
+
 ## History
 
 - **2026-05-02, ADR-0241.** `vmaf_tiny_v3` (`mlp_medium`, 6 to 32 to 16 to 1,
