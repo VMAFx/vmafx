@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "abi_major": 0,
+    "abi_minor": 2,
+    "abi_patch": 0,
+    "active_backend": "cpu",
+    "version": "v0.2.0-rc.1-3-g5c941077b",
+    "commit": "5c941077b175b6d72827e952e2067c9e800eb1ad",
+    "build_id": "sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+    "compiler": "c=gcc 15.2.1 cpp=gcc 15.2.1",
+    "backends": "cpu,cuda",
+    "simd": "avx2",
+    "device_index": 0,
+    "device_name": "cpu",
+    "device_runtime": "x86_64",
+    "n_frames": 2,
+    "digest": "sha256:1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809",
+    "elapsed_ns": 240000000
+  },
+  "scoring_configuration": {
+    "backend": "cpu",
+    "threads": 8
+  },
+  "frames": [
+    {
+      "time": { "frame_index": 0, "timestamp_ns": 0, "timecode": "00:00:00:00" },
+      "scores": { "integer_adm2": 0.98213, "vif": 0.95102, "motion": 8.41 }
+    },
+    {
+      "time": { "frame_index": 1, "timestamp_ns": 41708333, "timecode": "00:00:00:01" },
+      "scores": { "integer_adm2": 0.97747, "vif": 0.94855, "motion": 9.12 }
+    }
+  ],
+  "windows": [
+    {
+      "start": { "frame_index": 0 },
+      "end": { "frame_index": 2 },
+      "statistic": "pooled",
+      "feature": "integer_adm2",
+      "value": 0.9798
+    },
+    {
+      "start": { "frame_index": 0 },
+      "end": { "frame_index": 2 },
+      "statistic": "worst_frame",
+      "feature": "vif",
+      "value": 0.94855
+    }
+  ],
+  "events": [
+    {
+      "type": "alignment_decision",
+      "time": { "frame_index": 0, "timecode": "00:00:00:00" },
+      "detail": { "offset_frames": 0, "method": "first-frame anchor" }
+    },
+    {
+      "type": "masked_area",
+      "time": { "frame_index": 0, "timecode": "00:00:00:00" },
+      "detail": { "region": "bottom-bar", "reason": "burned-in caption" }
+    },
+    {
+      "type": "drop",
+      "time": { "frame_index": 1, "timestamp_ns": 41708333 },
+      "detail": { "reason": "duplicate pts" }
+    }
+  ]
+}
