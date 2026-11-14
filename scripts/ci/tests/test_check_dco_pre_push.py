@@ -78,14 +78,51 @@ class DcoPrePushTest(unittest.TestCase):
         self.assertIn("PASS - 2 commit(s)", done.stdout)
 
     def test_negative_review_bot_commit_under_signed_tip(self) -> None:
-        """#3426 shape: an unsigned bot commit sits between signed commits."""
+        """A committer-signed review bot commit is refused under a signed human tip."""
         self.repo.commit("fix: one", fx.HUMAN, signoff=True)
-        bot = self.repo.commit("fix: apply review suggestion", REVIEW_BOT)
+        bot = self.repo.commit("fix: apply review suggestion", REVIEW_BOT, True, fx.HUMAN)
         self.repo.commit("fix: three", fx.HUMAN, signoff=True)
         done = push_gate(self.repo, "--merge-base", "main")
         self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
         self.assertIn(bot[:10], done.stdout)
-        self.assertIn("Signed-off-by", done.stdout)
+        self.assertIn("coderabbitai[bot]", done.stdout)
+        self.assertIn("Co-authored-by", done.stdout)
+
+    def test_positive_bot_branch_with_signed_human_tip(self) -> None:
+        """The oldest author owns the branch even after a human adds a signed commit."""
+        self.repo.commit("chore: first update", fx.BOT_IDENT, signoff=True)
+        self.repo.commit("chore: second update", fx.BOT_IDENT, signoff=True)
+        self.repo.commit("fix: human update", fx.HUMAN, signoff=True)
+        done = push_gate(self.repo, "--merge-base", "main")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("PASS - 3 commit(s)", done.stdout)
+
+    def test_negative_bot_branch_requires_same_name_and_email(self) -> None:
+        """Matching just one field of the oldest author's identity is insufficient."""
+        self.repo.commit("chore: first update", fx.BOT_IDENT, signoff=True)
+        for ident in (
+            ("Other[bot]", fx.BOT_IDENT[1]),
+            (fx.BOT_IDENT[0], "other@example.org"),
+        ):
+            with self.subTest(ident=ident):
+                sha = self.repo.commit("chore: different author", ident, True, fx.HUMAN)
+                done = push_gate(self.repo, "--merge-base", "main")
+                self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+                self.assertIn(sha[:10], done.stdout)
+
+    def test_negative_first_bot_under_human_tip_is_not_opener(self) -> None:
+        """A bot as newest author cannot replace the oldest human as branch opener."""
+        self.repo.commit("fix: human opener", fx.HUMAN, signoff=True)
+        bot = self.repo.commit("fix: suggestion", REVIEW_BOT, True, fx.HUMAN)
+        done = push_gate(self.repo, "--merge-base", "main")
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        self.assertIn(bot[:10], done.stdout)
+
+    def test_boundary_empty_outgoing_range_passes(self) -> None:
+        """An empty range has no opener and no commits to refuse."""
+        done = push_gate(self.repo, "--merge-base", "main")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("PASS - 0 commit(s)", done.stdout)
 
     def test_boundary_pre_commit_to_ref_selects_the_pushed_commit(self) -> None:
         """pre-commit exports the pushed commit; later local commits stay out."""

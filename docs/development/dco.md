@@ -79,8 +79,22 @@ number.
 Both pull request and landed modes reject model or coding tool names in commit
 author and committer names or email addresses. Matching is case-insensitive
 and uses the tokens in `BANNED_COAUTHOR_TOKENS` in `scripts/ci/check-dco.py`.
-The `[bot]` trailer token is excluded from identity checks, so legitimate bot
-authors remain valid. The same message-line rules reject `Co-authored-by:`
+The shared identity scan excludes the `[bot]` trailer token. In PR and pre-push
+modes, a separate [bot-author check](../adr/3544-dco-refuse-bot-authored-commits.md)
+refuses an author name ending in `[bot]` or author email ending in
+`[bot]@users.noreply.github.com`, case-insensitively, unless the commit belongs
+to the branch opener. In PR mode, the opener must have type `Bot` and the commit
+email must end in `+<opener-login>@users.noreply.github.com`; membership in the
+sign-off exemption list is not required. In pre-push mode, the opener is the
+exact author name and email of the oldest non-merge commit in the outgoing
+range. This preserves bot-owned branches after signed human updates. A human
+sign-off, release exemption, or grandfathered PR cannot bypass bot-author
+refusal: a squash landing would add a bot `Co-authored-by:` trailer that the
+landed gate refuses. Re-author the refused commit with
+`git commit --amend --reset-author --no-edit` on that commit, retaining the
+required sign-off, or drop it; for an earlier commit, stop on it during an
+interactive rebase before amending. Landed mode keeps its existing rules.
+The same message-line rules reject `Co-authored-by:`
 lines with a banned token, generated or created attribution footers, and the
 robot emoji. Pull request mode applies those line rules to the body as well.
 

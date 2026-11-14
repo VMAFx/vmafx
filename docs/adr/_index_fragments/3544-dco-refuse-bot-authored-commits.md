@@ -1,0 +1,1 @@
+| [ADR-3544](3544-dco-refuse-bot-authored-commits.md) | Refuse bot-authored commits outside the bot's own branch in PR and pre-push DCO checks before squash landing | Accepted | ci, git, dco, fork-local |

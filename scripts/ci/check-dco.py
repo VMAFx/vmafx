@@ -4,6 +4,8 @@
 """Require DCO sign-offs and refuse model/tool attribution in PRs and landed commits.
 
 ADR-2462 covers pull request sign-offs; ADR-3389 covers landed squash commits.
+ADR-3531 covers identity and message attribution checks.
+ADR-3544 refuses bot-authored PR/pre-push commits unless the bot is the branch opener.
 
 Every non-merge commit in ``BASE..HEAD`` must end with a ``Signed-off-by: Name
 <email>`` trailer (what ``git commit -s`` writes), and the e-mail address of
@@ -270,9 +272,34 @@ def is_exempt_bot_commit(commit: Commit, author: str, author_type: str) -> bool:
     return commit.author_email.lower().endswith(bot_noreply_suffix(author))
 
 
-def judge(commit: Commit, author: str, author_type: str) -> str | None:
+def pr_attribution_reason(
+    commit: Commit, author: str, author_type: str, opener: tuple[str, str] | None = None
+) -> str | None:
+    """Refuse bot authors outside their own branches, then apply shared attribution rules."""
+    bot_author = commit.author_name.lower().endswith(
+        "[bot]"
+    ) or commit.author_email.lower().endswith("[bot]@users.noreply.github.com")
+    if opener is not None:
+        owns_branch = (commit.author_name, commit.author_email) == opener
+    else:
+        owns_branch = author_type == "Bot" and commit.author_email.lower().endswith(
+            bot_noreply_suffix(author)
+        )
+    if bot_author and not owns_branch:
+        return (
+            f"bot author {commit.author_name} <{commit.author_email}> is not the branch opener; "
+            "a squash landing would carry it as a Co-authored-by trailer that the landed gate "
+            "refuses; re-author that commit with git commit --amend --reset-author --no-edit "
+            "or drop it"
+        )
+    return commit_attribution_reason(commit)
+
+
+def judge(
+    commit: Commit, author: str, author_type: str, opener: tuple[str, str] | None = None
+) -> str | None:
     """Return None when the commit passes, else the reason it does not."""
-    reason = commit_attribution_reason(commit)
+    reason = pr_attribution_reason(commit, author, author_type, opener)
     if reason:
         return reason
     if is_exempt_bot_commit(commit, author, author_type):
@@ -559,20 +586,32 @@ def pr_signoff_exemption(args: argparse.Namespace) -> str | None:
     return None
 
 
+def branch_opener(commits: list[Commit], pre_push: bool) -> tuple[str, str] | None:
+    """Infer pre-push ownership from the oldest non-merge commit, if one exists."""
+    if pre_push and commits:
+        return commits[0].author_name, commits[0].author_email
+    return None
+
+
 def check_pr(args: argparse.Namespace) -> int:
     """Enforce commit and body attribution on every PR, and commit sign-offs unless exempt."""
+    commits = list_commits(args.base, args.head)
+    opener = branch_opener(commits, bool(args.merge_base))
     exemption = pr_signoff_exemption(args)
     judge_commit: Callable[[Commit], str | None]
     if exemption is not None:
         print(exemption)
-        judge_commit = commit_attribution_reason
+        judge_commit = functools.partial(
+            pr_attribution_reason, author=args.author, author_type=args.author_type, opener=opener
+        )
         kind = "release pull request" if args.release_pr else "grandfathered"
         summary = f" free of attribution; sign-off exempt ({kind})"
     else:
-        judge_commit = functools.partial(judge, author=args.author, author_type=args.author_type)
+        judge_commit = functools.partial(
+            judge, author=args.author, author_type=args.author_type, opener=opener
+        )
         summary = ", every one signed off or exempt"
     body_findings = pr_body_attribution(read_pr_body(args))
-    commits = list_commits(args.base, args.head)
     failures = [(c, reason) for c in commits if (reason := judge_commit(c)) is not None]
     if failures:
         report(failures)

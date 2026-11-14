@@ -359,11 +359,11 @@ class DcoAttributionGateTest(unittest.TestCase):
                     )
 
     def test_normalized_human_and_bot_identities_pass(self) -> None:
-        """Fullwidth human identities and the identity-only bot exclusion retain valid sign-offs."""
+        """Fullwidth human identities and a bot's own PR retain valid sign-offs."""
         for ident in (("\uff2a\uff41\uff4e\uff45 \uff24\uff4f\uff45", "j@d"), fx.BOT_IDENT):
             with self.subTest(ident=ident):
                 self.repo.commit("feat: signed", ident, signoff=True)
-                res = self.repo.gate()
+                res = self.repo.gate("--author", fx.BOT_LOGIN, "--author-type", "Bot")
                 self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
 
     def test_old_separator_identity_cannot_hide_tool(self) -> None:
@@ -442,6 +442,115 @@ class DcoAttributionGateTest(unittest.TestCase):
         msg = "feat: pair work\n\nCo-authored-by: Alice <alice@example.com>"
         self.repo.commit(msg, fx.HUMAN, signoff=True)
         res = self.repo.gate()
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+
+class DcoBotAuthorTest(unittest.TestCase):
+    """Bot authors must belong to the PR opener, regardless of sign-off exemptions."""
+
+    REVIEW_BOT = ("coderabbitai[bot]", "136622811+coderabbitai[bot]@users.noreply.github.com")
+    RELEASE_BOT = (
+        "vmafx-release-bot[bot]",
+        "340976456+vmafx-release-bot[bot]@users.noreply.github.com",
+    )
+
+    def setUp(self) -> None:
+        """Create an isolated repository for each bot author case."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.repo = fx.Repo(Path(tmp.name))
+
+    def test_negative_signed_review_bot_in_human_pr(self) -> None:
+        """A human committer's sign-off cannot authorize a review bot author."""
+        sha = self.repo.commit("fix: suggestion", self.REVIEW_BOT, True, fx.HUMAN)
+        res = self.repo.gate("--author", "lusoris", "--author-type", "User")
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        for part in (
+            sha[:10],
+            "coderabbitai[bot]",
+            "squash",
+            "Co-authored-by",
+            "landed gate",
+            "--amend --reset-author --no-edit",
+            "drop",
+        ):
+            self.assertIn(part, res.stdout)
+        self.assertNotIn("git rebase --signoff", res.stdout)
+
+    def test_negative_bot_suffix_in_either_author_field(self) -> None:
+        """Either bot suffix, including uppercase forms, is sufficient for refusal."""
+        identities = (
+            ("Plain Name", self.REVIEW_BOT[1]),
+            ("x[bot]", "x@example.org"),
+            ("Renovate[BOT]", "r@example.org"),
+            ("Plain Name", "1+review[BOT]@USERS.NOREPLY.GITHUB.COM"),
+        )
+        for ident in identities:
+            with self.subTest(ident=ident), tempfile.TemporaryDirectory() as directory:
+                repo = fx.Repo(Path(directory))
+                repo.commit("fix: suggestion", ident, True, fx.HUMAN)
+                res = repo.gate("--author", "ada", "--author-type", "User")
+                self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+                self.assertIn(f"{ident[0]} <{ident[1]}>", res.stdout)
+
+    def test_positive_bot_in_own_pr(self) -> None:
+        """Both allow-listed and other bots pass in their own PR with valid sign-offs."""
+        for ident in (
+            fx.BOT_IDENT,
+            self.RELEASE_BOT,
+            (fx.BOT_LOGIN, fx.BOT_IDENT[1].upper()),
+        ):
+            with self.subTest(ident=ident), tempfile.TemporaryDirectory() as directory:
+                repo = fx.Repo(Path(directory))
+                repo.commit("chore: update", ident, signoff=True)
+                res = repo.gate("--author", ident[0], "--author-type", "Bot")
+                self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+    def test_negative_other_bot_in_bot_pr(self) -> None:
+        """An allow-listed bot cannot contribute commits to another bot's PR."""
+        self.repo.commit("chore: update", fx.BOT_IDENT, signoff=True)
+        res = self.repo.gate("--author", self.RELEASE_BOT[0], "--author-type", "Bot")
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn(fx.BOT_LOGIN, res.stdout)
+
+    def test_negative_matching_login_with_user_type(self) -> None:
+        """A matching login requires GitHub's Bot author type."""
+        self.repo.commit("chore: update", fx.BOT_IDENT, signoff=True)
+        res = self.repo.gate("--author", fx.BOT_LOGIN, "--author-type", "User")
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn(fx.BOT_LOGIN, res.stdout)
+
+    def test_negative_matching_bot_name_without_opener_email(self) -> None:
+        """An author name matching the opener cannot replace the noreply email match."""
+        self.repo.commit("chore: spoof", (fx.BOT_LOGIN, "other@example.org"), signoff=True)
+        res = self.repo.gate("--author", fx.BOT_LOGIN, "--author-type", "Bot")
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn(fx.BOT_LOGIN, res.stdout)
+
+    def test_negative_bot_author_on_signoff_exempt_paths(self) -> None:
+        """Release and grandfathered sign-off exemptions cannot bypass bot refusal."""
+        self.repo.commit("fix: suggestion", self.REVIEW_BOT, True, fx.HUMAN)
+        for args in (("--release-pr",), ("--created-at", "2000-01-01T00:00:00Z")):
+            with self.subTest(args=args):
+                res = self.repo.gate(*args, "--author", "ada", "--author-type", "User")
+                self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+                self.assertIn("coderabbitai[bot]", res.stdout)
+
+    def test_positive_own_bot_on_signoff_exempt_paths(self) -> None:
+        """Bot ownership also applies on release and grandfathered paths."""
+        self.repo.commit("chore: render", self.RELEASE_BOT)
+        for args in (("--release-pr",), ("--created-at", "2000-01-01T00:00:00Z")):
+            with self.subTest(args=args):
+                res = self.repo.gate(*args, "--author", self.RELEASE_BOT[0], "--author-type", "Bot")
+                self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
+    def test_boundary_human_names_and_bot_committer_pass(self) -> None:
+        """Plain bot-like human names and a bot committer do not trigger author refusal."""
+        for ident in (("robot", "a@b.c"), ("bot", "bot@example.com")):
+            with self.subTest(ident=ident):
+                self.repo.commit("fix: human", ident, signoff=True)
+        self.repo.commit("fix: human author", fx.HUMAN, True, self.REVIEW_BOT)
+        res = self.repo.gate("--author", "ada", "--author-type", "User")
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
 
 
