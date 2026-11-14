@@ -239,6 +239,12 @@ exceptions:
     reason: "Category A, interval to the stated expiry. New unit test that compiles the xxd-generated model definitions against their hand-written extern declarations (core/test/meson.build target xxd_extern_definitions); the lanes' measured_sources change only when a tidy baseline is re-measured, and that re-measure adds this file."
     expires: "2027-01-04"
   - rule: clang-tidy-coverage
+    path: "core/test/test_xxd_hsaco_extern_types.c"
+    category: "A"
+    entered: "2026-11-14"
+    reason: "Category A, interval to the stated expiry. New unit test that compiles the xxd-generated HIP HSACO definitions against their hand-written extern declarations (core/test/meson.build target xxd_hsaco_extern_definitions); the lanes' measured_sources change only when a tidy baseline is re-measured, and that re-measure adds this file."
+    expires: "2027-01-04"
+  - rule: clang-tidy-coverage
     path: "core/tools/compat/win32/getopt.c"
     category: "A"
     entered: "2026-11-02"

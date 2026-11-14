@@ -39,12 +39,6 @@
  * documented /std:clatest C23 feature set does not include `nullptr` and the
  * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
 
-#ifdef HAVE_HIPCC
-/* The conversion kernels (import_convert.hip, embedded by xxd). */
-/* Match xxd -i object types exactly; keep read-only access at use sites. */
-extern unsigned char import_convert_hsaco[];
-#endif
-
 /* Devices whose names the enumeration keeps for the process (HISS-02). */
 #define VMAFX_HIP_MAX_DEVICES 64
 

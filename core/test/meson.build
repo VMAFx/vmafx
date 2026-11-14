@@ -2234,6 +2234,30 @@ for path in sys.argv[1:]:
     test('test_xxd_extern_types', test_xxd_extern_types, suite : ['fast'])
 endif
 
+if hip_hsaco_sources.length() > 0
+    xxd_hsaco_extern_definitions = custom_target('xxd_hsaco_extern_definitions',
+        input : hip_hsaco_sources,
+        output : 'xxd_hsaco_extern_definitions.h',
+        command : [import('python').find_installation(), '-c',
+                   '''import pathlib, sys
+for path in sys.argv[1:]:
+    print(f'#include "{pathlib.Path(path).resolve().as_posix()}"')
+''',
+                   '@INPUT@'],
+        capture : true,
+    )
+    test_xxd_hsaco_extern_types = executable('test_xxd_hsaco_extern_types',
+        ['test_xxd_hsaco_extern_types.c', xxd_hsaco_extern_definitions],
+        include_directories : [libvmaf_inc, include_directories('../src'),
+                               include_directories('../src/feature'),
+                               include_directories('../src/cuda')],
+        dependencies : hip_deps,
+        c_args : ['-DHAVE_HIP=1', '-DHAVE_HIPCC'],
+        kwargs : test_link_kwargs,
+    )
+    test('test_xxd_hsaco_extern_types', test_xxd_hsaco_extern_types, suite : ['fast'])
+endif
+
 test_model = executable('test_model',
     ['test.c', 'test_model.c', '../src/dict.cpp', json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
