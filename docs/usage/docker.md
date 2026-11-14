@@ -49,8 +49,9 @@ failed to register layer: ApplyLayer exit status 1 stdout:  stderr: archive/tar:
 (`docker run` prints the same line after `docker:`.) Debian 12's own `docker.io`
 package is 20.10.24 and fails this way: install Docker Engine from Docker's
 repository, use Debian 13 or Ubuntu's updated `docker.io`, or pull with Podman.
-Images published before ADR-1594 (`v1.0.0-rc.2` and earlier) have gzip layers
-and pull with any Docker.
+Images published before ADR-1594 (`v1.0.0-rc.2` and earlier, deleted
+after 0.1.0 per [ADR-3398](../adr/3398-delete-withdrawn-rc-releases.md))
+had gzip layers and pull with any Docker.
 
 Run a score on the CPU image:
 

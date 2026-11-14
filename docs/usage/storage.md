@@ -164,7 +164,7 @@ sftp://archive.example.com/corpus/ref.yuv
 
 The `vmafx-node` image bundles rclone at `/usr/local/bin/rclone`.  Verify:
 
-Images published after `v1.0.0-rc.2` have zstd layers and need Docker Engine 23.0 or
+Images published after `v1.0.0-rc.2` (including `0.1.0` and later) have zstd layers and need Docker Engine 23.0 or
 later, Docker Desktop 4.19 or later, Podman or containerd 1.5 or later ([what can pull
 them](docker.md#what-can-pull-the-images)).
 
@@ -244,4 +244,4 @@ vmafx-node
 ## History
 
 - **v1.0.0-rc.1.** The node image first published without rclone, so remote
-  inputs failed until the image was rebuilt with it.
+  inputs failed until the image was rebuilt with it (the rc.1 image was later deleted after 0.1.0 per [ADR-3398](../adr/3398-delete-withdrawn-rc-releases.md)).

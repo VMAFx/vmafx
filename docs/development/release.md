@@ -29,9 +29,11 @@ the point from which the rules above hold in full.
 The fork's first release is `v0.1.0`
 ([ADR-3292](../adr/3292-release-line-restart-0x.md)). The candidates
 `v1.0.0-rc.1` to `v1.0.0-rc.3` were published before the release line was
-restarted; their tags stay, and their releases are marked withdrawn. The
-first stable release, `v1.0.0`, will again be preceded by candidates, starting
-at `v1.0.0-rc.4`; the `0.x` minor releases have none.
+restarted; they were withdrawn (ADR-3292) and deleted from GitHub releases, git
+tags and GHCR after `v0.1.0` was published and signed
+([ADR-3398](../adr/3398-delete-withdrawn-rc-releases.md)). The first stable
+release, `v1.0.0`, will again be preceded by candidates, starting at
+`v1.0.0-rc.4`; the `0.x` minor releases have none.
 
 Netflix's tags (`v1.0.2` to `v3.2.1`) are not tags of this repository: the 26
 that had been copied into it were deleted on 2026-10-05 ([the record](inherited-tags.md),
@@ -98,8 +100,9 @@ milestone, and the user-facing version of this map is
 
 The candidates `v1.0.0-rc.1` (release-blocking correctness and the tester
 report path), `v1.0.0-rc.2` (stabilisation) and `v1.0.0-rc.3` (twin
-exactness) were published under the earlier map and are withdrawn; what they
-proved stays recorded in their release notes and in the records above.
+exactness) were published under the earlier map, withdrawn (ADR-3292), and
+deleted after `v0.1.0` ([ADR-3398](../adr/3398-delete-withdrawn-rc-releases.md));
+what they proved stays recorded in their changelog archives and in the records above.
 
 ### After 1.0.0
 
@@ -1108,7 +1111,8 @@ and check its title before cutting it.
 #### Cutting the candidates of 1.0.0
 
 Only `1.0.0` has candidates, starting at `v1.0.0-rc.4` so that no tag of the
-withdrawn `rc.1` to `rc.3` is reused. Before the first of them, a pull request
+withdrawn and deleted `rc.1` to `rc.3` is reused (ADR-3292, [ADR-3398](../adr/3398-delete-withdrawn-rc-releases.md)).
+Before the first of them, a pull request
 sets the root package back to `"versioning": "prerelease"` with
 `"prerelease": true` and `"release-as": "1.0.0-rc.4"`; the rollover deletes
 the `release-as` again in that cut. Later candidates are then numbered by
