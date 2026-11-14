@@ -29,6 +29,7 @@ import math
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import uuid
 from collections.abc import Iterator, Sequence
@@ -1028,6 +1029,12 @@ def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
     the row stores no source hash, when the file at the stored path no
     longer hashes to it, or when any decode step fails.
     """
+    if sweep.ref_decode_rc != 0:
+        _LOG.warning(
+            "vmaf-tune: near-dup reference decode failed for %s; refusing reuse",
+            sweep.job.source,
+        )
+        return False
     if not (cached.artifact_path and cached.artifact_path.exists()):
         return False
     stored_row = dict(cached.row or {})
@@ -1073,6 +1080,7 @@ def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
     one_second = max(1, int(fps))
     frame_skip_ref = sweep.frame_skip_ref
     frame_cnt = min(one_second, sweep.frame_cnt) if sweep.frame_cnt > 0 else one_second
+    spot_decode_s = (frame_skip_ref + frame_cnt) / fps + 1.0
 
     def spot_request(reference: Path, distorted: Path) -> ScoreRequest:
         return ScoreRequest(
@@ -1081,85 +1089,82 @@ def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
             width=cached_width,
             height=cached_height,
             pix_fmt=cached_pix_fmt,
+            model=_cell_score_model(sweep),
             frame_skip_ref=frame_skip_ref,
             frame_cnt=frame_cnt,
             duration_s=1.0,
         )
 
-    import subprocess as _sp
-
     try:
-        # The cached artifact is the encoded container the cache copied
-        # in; the vmaf CLI reads raw YUV only (issue #3447).
-        decoded = _maybe_decode_distorted(
-            spot_request(job.source, cached.artifact_path),
-            encode_dir=opts.encode_dir,
-            ffmpeg_bin=opts.ffmpeg_bin,
-            runner=_sp.run,
-        )
-        if Path(cached.artifact_path).suffix.lower() not in _VMAF_RAW_SUFFIXES and Path(
-            decoded.distorted
-        ) == Path(cached.artifact_path):
-            _LOG.info(
-                "vmaf-tune: near-dup spot verify fail-closed: the cached encode could not be decoded (%r)",
-                cached.artifact_path,
+        # Both legs score the decoded cached encode at the geometry the
+        # entry's row records (issue #3448); the decodes land in a
+        # temporary directory that closes with the check (issue #3447).
+        with tempfile.TemporaryDirectory(prefix="vmaf-tune-near-dup-") as decode_dir:
+            decoded = _maybe_decode_distorted(
+                spot_request(job.source, cached.artifact_path),
+                encode_dir=Path(decode_dir),
+                ffmpeg_bin=opts.ffmpeg_bin,
+                runner=subprocess.run,
             )
-            return False
-        # Both legs read at the cached geometry (issue #3448): the query
-        # is decoded — and scaled when its geometry differs — to the
-        # cached size; the cached source is already at it, so only a
-        # container needs its decode. The decode bounds at the window's
-        # end plus a second of margin, enough for the frames
-        # frame_skip_ref skips.
-        spot_decode_s = (frame_skip_ref + frame_cnt) / fps + 1.0
-        query_scaled = (int(job.width), int(job.height)) != (cached_width, cached_height)
-        query_ref, query_rc = _maybe_decode_reference(
-            job.source,
-            encode_dir=opts.encode_dir,
-            pix_fmt=cached_pix_fmt,
-            duration_s=spot_decode_s,
-            ffmpeg_bin=opts.ffmpeg_bin,
-            runner=_sp.run,
-            target_width=cached_width if query_scaled else None,
-            target_height=cached_height if query_scaled else None,
-            source_width=int(job.width),
-            source_height=int(job.height),
-            source_framerate=float(job.framerate) if float(job.framerate) > 0.0 else None,
-        )
-        cached_ref, cached_rc = cached_source, 0
-        if cached_source.suffix.lower() not in _VMAF_RAW_SUFFIXES:
-            cached_ref, cached_rc = _maybe_decode_reference(
-                cached_source,
-                encode_dir=opts.encode_dir,
+            if decoded.distorted.suffix.lower() not in _VMAF_RAW_SUFFIXES:
+                _LOG.warning(
+                    "vmaf-tune: near-dup spot decode failed for %s; refusing reuse",
+                    cached.artifact_path,
+                )
+                return False
+            # The query leg is decoded — and scaled when its geometry
+            # differs — to the cached size; the cached source is already
+            # at it, so only a container needs its decode. The decode
+            # bounds at the window's end plus a second of margin, enough
+            # for the frames frame_skip_ref skips.
+            query_scaled = (int(job.width), int(job.height)) != (cached_width, cached_height)
+            query_ref, query_rc = _maybe_decode_reference(
+                job.source,
+                encode_dir=Path(decode_dir),
                 pix_fmt=cached_pix_fmt,
                 duration_s=spot_decode_s,
                 ffmpeg_bin=opts.ffmpeg_bin,
-                runner=_sp.run,
-                target_width=cached_width,
-                target_height=cached_height,
-                source_width=cached_width,
-                source_height=cached_height,
-                source_framerate=cached_fps or None,
+                runner=subprocess.run,
+                target_width=cached_width if query_scaled else None,
+                target_height=cached_height if query_scaled else None,
+                source_width=int(job.width),
+                source_height=int(job.height),
+                source_framerate=float(job.framerate) if float(job.framerate) > 0.0 else None,
             )
-        if query_rc != 0 or cached_rc != 0 or not query_ref.exists() or not cached_ref.exists():
-            _LOG.info(
-                "vmaf-tune: near-dup spot verify fail-closed: a reference decode failed (query rc=%s, cached rc=%s)",
-                query_rc,
-                cached_rc,
+            cached_ref, cached_rc = cached_source, 0
+            if cached_source.suffix.lower() not in _VMAF_RAW_SUFFIXES:
+                cached_ref, cached_rc = _maybe_decode_reference(
+                    cached_source,
+                    encode_dir=Path(decode_dir),
+                    pix_fmt=cached_pix_fmt,
+                    duration_s=spot_decode_s,
+                    ffmpeg_bin=opts.ffmpeg_bin,
+                    runner=subprocess.run,
+                    target_width=cached_width,
+                    target_height=cached_height,
+                    source_width=cached_width,
+                    source_height=cached_height,
+                    source_framerate=cached_fps or None,
+                )
+            if query_rc != 0 or cached_rc != 0 or not query_ref.exists() or not cached_ref.exists():
+                _LOG.info(
+                    "vmaf-tune: near-dup spot verify fail-closed: a reference decode failed (query rc=%s, cached rc=%s)",
+                    query_rc,
+                    cached_rc,
+                )
+                return False
+            spot_res = run_score(
+                spot_request(query_ref, decoded.distorted),
+                vmaf_bin=opts.vmaf_bin,
+                backend=opts.score_backend,
             )
-            return False
-        spot_res = run_score(
-            spot_request(query_ref, decoded.distorted),
-            vmaf_bin=opts.vmaf_bin,
-            backend=opts.score_backend,
-        )
-        cached_spot_res = run_score(
-            spot_request(cached_ref, decoded.distorted),
-            vmaf_bin=opts.vmaf_bin,
-            backend=opts.score_backend,
-        )
-        delta = abs(float(spot_res.vmaf_score) - float(cached_spot_res.vmaf_score))
-        return delta <= NEAR_DUP_SPOT_MAX_DELTA
+            cached_spot_res = run_score(
+                spot_request(cached_ref, decoded.distorted),
+                vmaf_bin=opts.vmaf_bin,
+                backend=opts.score_backend,
+            )
+            delta = abs(float(spot_res.vmaf_score) - float(cached_spot_res.vmaf_score))
+            return delta <= NEAR_DUP_SPOT_MAX_DELTA
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
         _LOG.warning("vmaf-tune: near-dup spot verify failed: %s", exc)
         return False

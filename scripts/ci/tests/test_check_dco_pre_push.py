@@ -78,14 +78,114 @@ class DcoPrePushTest(unittest.TestCase):
         self.assertIn("PASS - 2 commit(s)", done.stdout)
 
     def test_negative_review_bot_commit_under_signed_tip(self) -> None:
-        """#3426 shape: an unsigned bot commit sits between signed commits."""
+        """A committer-signed review bot commit is refused under a signed human tip."""
         self.repo.commit("fix: one", fx.HUMAN, signoff=True)
-        bot = self.repo.commit("fix: apply review suggestion", REVIEW_BOT)
+        bot = self.repo.commit("fix: apply review suggestion", REVIEW_BOT, True, fx.HUMAN)
         self.repo.commit("fix: three", fx.HUMAN, signoff=True)
         done = push_gate(self.repo, "--merge-base", "main")
         self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
         self.assertIn(bot[:10], done.stdout)
-        self.assertIn("Signed-off-by", done.stdout)
+        self.assertIn("coderabbitai[bot]", done.stdout)
+        self.assertIn("Co-authored-by", done.stdout)
+
+    def test_positive_bot_branch_with_signed_human_tip(self) -> None:
+        """The oldest author owns the branch even after a human adds a signed commit."""
+        self.repo.commit("chore: first update", fx.BOT_IDENT, signoff=True)
+        self.repo.commit("chore: second update", fx.BOT_IDENT, signoff=True)
+        self.repo.commit("fix: human update", fx.HUMAN, signoff=True)
+        done = push_gate(self.repo, "--merge-base", "main")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("PASS - 3 commit(s)", done.stdout)
+
+    def test_negative_normalized_bot_suffix_under_human_opener(self) -> None:
+        """Normalized author suffixes cannot hide a bot on a human-owned branch."""
+        self.repo.commit("fix: human opener", fx.HUMAN, signoff=True)
+        for ident in (
+            ("coderabbitai[bot]\u200b", "x@example.org"),
+            ("coderabbitai\uff3bbot\uff3d", "x@example.org"),
+            ("Plain Name", "1+review[bot]@users.noreply.github.com\u200b"),
+            ("Plain Name", "1+review\uff3bbot\uff3d@users.noreply.github.com"),
+        ):
+            with self.subTest(ident=ident):
+                sha = self.repo.commit("fix: normalized suggestion", ident, True, fx.HUMAN)
+                done = push_gate(self.repo, "--merge-base", "main")
+                self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+                self.assertIn(sha[:10], done.stdout)
+                self.assertIn("is not the branch opener", done.stdout)
+
+    def test_positive_normalized_bot_opener_and_later_identity(self) -> None:
+        """Both sides of the opener comparison normalize names and email addresses."""
+        ident = ("ReNoVaTe[bot]", fx.BOT_IDENT[1].replace("@", "@\u200b"))
+        self.repo.commit("chore: first update", ident, True, fx.HUMAN)
+        self.repo.commit("chore: second update", fx.BOT_IDENT, signoff=True)
+        done = push_gate(self.repo, "--merge-base", "main")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("PASS - 2 commit(s)", done.stdout)
+
+    def test_negative_review_bot_opener_under_human_tip(self) -> None:
+        """An unlisted bot's oldest commit does not establish branch ownership."""
+        sha = self.repo.commit("fix: review opener", REVIEW_BOT, True, fx.HUMAN)
+        self.repo.commit("fix: human tip", fx.HUMAN, signoff=True)
+        done = push_gate(self.repo, "--merge-base", "main")
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        self.assertIn(sha[:10], done.stdout)
+        self.assertIn("coderabbitai[bot]", done.stdout)
+
+    def test_negative_review_bot_opener_and_second_commit(self) -> None:
+        """Neither commit from an unlisted bot can claim pre-push ownership."""
+        first = self.repo.commit("fix: review opener", REVIEW_BOT, True, fx.HUMAN)
+        second = self.repo.commit("fix: review follow-up", REVIEW_BOT, True, fx.HUMAN)
+        done = push_gate(self.repo, "--merge-base", "main")
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        self.assertIn(first[:10], done.stdout)
+        self.assertIn(second[:10], done.stdout)
+        self.assertEqual(done.stdout.count("bot author coderabbitai[bot]"), 2)
+
+    def test_positive_dependabot_opener_and_second_commit(self) -> None:
+        """A listed dependency bot may own the outgoing range."""
+        ident = ("dependabot[bot]", "49699333+dependabot[bot]@users.noreply.github.com")
+        self.repo.commit("chore: first update", ident, signoff=True)
+        self.repo.commit("chore: second update", ident, signoff=True)
+        done = push_gate(self.repo, "--merge-base", "main")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("PASS - 2 commit(s)", done.stdout)
+
+    def test_negative_release_bot_opener_even_with_pr_metadata(self) -> None:
+        """PR author flags cannot authorize an unlisted bot's local push."""
+        ident = ("vmafx-release-bot[bot]", "1+vmafx-release-bot[bot]@users.noreply.github.com")
+        self.repo.commit("chore: render", ident, True, fx.HUMAN)
+        done = push_gate(
+            self.repo, "--merge-base", "main", "--author", ident[0], "--author-type", "Bot"
+        )
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        self.assertIn("bot author vmafx-release-bot[bot]", done.stdout)
+
+    def test_negative_bot_branch_requires_same_name_and_email(self) -> None:
+        """Matching just one field of the oldest author's identity is insufficient."""
+        self.repo.commit("chore: first update", fx.BOT_IDENT, signoff=True)
+        for ident in (
+            ("Other[bot]", fx.BOT_IDENT[1]),
+            (fx.BOT_IDENT[0], "other@example.org"),
+        ):
+            with self.subTest(ident=ident):
+                sha = self.repo.commit("chore: different author", ident, True, fx.HUMAN)
+                done = push_gate(self.repo, "--merge-base", "main")
+                self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+                self.assertIn(sha[:10], done.stdout)
+
+    def test_negative_first_bot_under_human_tip_is_not_opener(self) -> None:
+        """A bot as newest author cannot replace the oldest human as branch opener."""
+        self.repo.commit("fix: human opener", fx.HUMAN, signoff=True)
+        bot = self.repo.commit("fix: suggestion", REVIEW_BOT, True, fx.HUMAN)
+        done = push_gate(self.repo, "--merge-base", "main")
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        self.assertIn(bot[:10], done.stdout)
+
+    def test_boundary_empty_outgoing_range_passes(self) -> None:
+        """An empty range has no opener and no commits to refuse."""
+        done = push_gate(self.repo, "--merge-base", "main")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("PASS - 0 commit(s)", done.stdout)
 
     def test_boundary_pre_commit_to_ref_selects_the_pushed_commit(self) -> None:
         """pre-commit exports the pushed commit; later local commits stay out."""
