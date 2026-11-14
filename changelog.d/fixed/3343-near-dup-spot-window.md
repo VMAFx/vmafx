@@ -12,30 +12,31 @@
   tests cover the positive, negative, exactly-1.5 boundary, the offset
   window and the four fail-closed cases; the option stays off by default
   (ADR-3372 decision 5).
-- **The spot check decodes the cached encode and scores both legs at the
-  cached entry's geometry.** The cached side of the spot check scored the
-  stored encode artifact directly, so a container-format artifact was scored
-  as raw YUV (issues #3447, #3448), and the query source was scored at the
-  query job's resolution rather than the entry's, so a query at a different
-  resolution was compared against pixels of a different size. The cached
-  encode is now run through the same decode path as the trial it came from,
-  both legs score at the width, height and pixel format recorded in the
-  entry's row, a query at another resolution is scaled to that geometry and
-  a query with a different pixel format is refused. Decode or geometry
-  failures refuse the candidate instead of scoring mismatched inputs.
-  Thirteen unit tests cover the decode, scaling, pixel-format and
-  fail-closed cases alongside the original window checks.
+- **The spot check decodes the cached encode before scoring.** The cached
+  side of the spot check scored the stored encode artifact directly, so a
+  container-format artifact was scored as raw YUV (issue #3447). The
+  decode path is shared with the landed fix for that issue: the cached
+  encode decodes in a temporary directory that closes with the check, a
+  failed decode refuses the candidate, and a container-format cached
+  source decodes into the same directory so no stale sidecar named for
+  another source can zero the delta. Geometry is not part of the check:
+  the near-duplicate index matches on the cell params, which carry width,
+  height, pixel format and frame rate, so a cached entry at another
+  geometry never reaches the spot check (issue #3448, closed as not
+  planned).
 - **Rebased onto the landed decode fix (#3451).** Upstream's decode
   change decodes the cached encode in a temporary directory that closes
   with the check, guards on the sweep's reference decode result, and
-  scores both legs with the cell's score model; this PR keeps all of
-  that and restores the same-window comparison on top of it — the
-  landed spot check compares the window score with the trial's
-  whole-clip aggregate again, which is the defect this PR exists to fix
-  (issue #3343) — and adds the entry's geometry to both legs (issue
-  #3448). The landed decode tests in
-  `tests/test_near_dup_spot_decode.py` are adapted to the two-leg
-  behavior: their cleanup, refusal and model assertions stand, their
-  single-run assertions now expect the two scoring legs, and the
-  real-ffmpeg window test refuses on a different cached source instead
-  of an offset the index cannot produce.
+  scores with the cell's score model; this PR keeps all of that and
+  restores the same-window comparison on top of it — the landed spot
+  check compares the window score with the trial's whole-clip aggregate
+  again, which is the defect this PR exists to fix (issue #3343). The
+  cached source decodes into the same temporary directory when it is a
+  container: the shared decode path leaves no files behind and never
+  reads a stale sidecar named for another source, and the cached-source
+  leg lives in its own helper to keep both functions inside the 60-line
+  limit. The landed decode tests in `tests/test_near_dup_spot_decode.py`
+  are adapted to the two-leg behavior: their cleanup, refusal and model
+  assertions stand, their single-run assertions now expect the two
+  scoring legs, and the real-ffmpeg window test refuses on a different
+  cached source instead of an offset the index cannot produce.

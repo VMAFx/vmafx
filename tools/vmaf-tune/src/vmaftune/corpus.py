@@ -998,6 +998,65 @@ def _cell_params_key(sweep: _Sweep, preset: str, crf: int) -> str:
     return params_key(**_cell_params(sweep, preset, crf))
 
 
+def _cached_source_leg(
+    sweep: _Sweep,
+    cached: CachedResult,
+    score_req: Any,
+    decode_dir: Path,
+) -> Any | None:
+    """Return the cached-source leg of the spot check, or ``None`` to refuse.
+
+    The cached source is read from the row's ``src`` column — the query
+    source scored against the cached encode covers only one side of the
+    comparison; decision 3 step 4 of ADR-3372 scores one second of *each*
+    source (issue #3343). The source must still hash to its stored
+    ``src_sha256``: a replaced or edited file refuses reuse the same way
+    a missing artifact does, so its old encode is never its baseline. A
+    container source decodes into ``decode_dir`` — the same temporary
+    directory the cached encode decodes into — so the check leaves no
+    files behind and never reads a stale sidecar named for a different
+    source: ``_maybe_decode_reference`` reuses an existing decode in its
+    encode directory, and a cached container that shares its file name
+    with the query source would otherwise zero the delta whatever its
+    content.
+    """
+    row = dict(cached.row or {})
+    src_value = row.get("src")
+    cached_source = Path(src_value) if src_value else None
+    if cached_source is None or not cached_source.exists():
+        _LOG.info(
+            "vmaf-tune: near-dup spot verify fail-closed: cached entry has no readable source (%r)",
+            src_value,
+        )
+        return None
+    stored_sha = str(row.get("src_sha256") or "")
+    if not stored_sha or _sha256_file(cached_source) != stored_sha:
+        _LOG.info(
+            "vmaf-tune: near-dup spot verify fail-closed: cached source does not match its stored hash (%r)",
+            src_value,
+        )
+        return None
+    reference = cached_source
+    if cached_source.suffix.lower() not in _VMAF_RAW_SUFFIXES:
+        fps = float(sweep.job.framerate) if float(sweep.job.framerate) > 0.0 else 24.0
+        decode_s = (score_req.frame_skip_ref + score_req.frame_cnt) / fps + 1.0
+        reference, rc = _maybe_decode_reference(
+            cached_source,
+            encode_dir=decode_dir,
+            pix_fmt=score_req.pix_fmt,
+            duration_s=decode_s,
+            ffmpeg_bin=sweep.opts.ffmpeg_bin,
+            runner=subprocess.run,
+        )
+        if rc != 0 or not reference.exists():
+            _LOG.info(
+                "vmaf-tune: near-dup spot verify fail-closed: cached source decode failed (%r)",
+                cached_source,
+            )
+            return None
+    return dataclasses.replace(score_req, reference=reference)
+
+
 def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
     """Spot-check 1 second of both sources against the cached encode (ADR-3372).
 
@@ -1010,24 +1069,20 @@ def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
     for an exact duplicate whose first second is easier or harder than
     its average (issue #3343).
 
-    Both legs score at the geometry the encode was built at, taken from
-    the cached row rather than from the query job (issue #3448): a
-    near-duplicate at another resolution is scaled to the cached size,
-    the cached source is read at its own recorded size, and a query
-    whose pixel format differs from the cached entry's is refused — raw
-    planes of two formats cannot be compared honestly. The cached
-    artifact is the encoded container the cache copied in, so it is
-    decoded once the way the main scoring path decodes an encode before
-    either leg is scored (issue #3447). The window sits at the entry's
-    own sample offset, not at the file's first second: the
-    near-duplicate index only matches entries built with the same cell
-    params (the params key carries the sample window, ADR-0301), so the
-    cached encode covers the window this sweep resolved and
-    ``frame_skip_ref`` points both sources at it. Refuses reuse when the
-    delta exceeds ``NEAR_DUP_SPOT_MAX_DELTA``; fails closed (like a
-    scoring error) when the cached entry has no usable source path, when
-    the row stores no source hash, when the file at the stored path no
-    longer hashes to it, or when any decode step fails.
+    The cached artifact is the encoded container the cache copied in, so
+    it is decoded once, in a temporary directory that closes with the
+    check, before either leg is scored (issue #3447); the cached-source
+    leg decodes its own container into the same directory rather than
+    reading a sidecar from ``opts.encode_dir``. The window sits at the
+    entry's own sample offset: the near-duplicate index only matches
+    entries built with the same cell params (the params key carries the
+    sample window and the geometry, ADR-0301), so the cached encode
+    covers the window this sweep resolved and ``frame_skip_ref`` points
+    both sources at it. Refuses reuse when the delta exceeds
+    ``NEAR_DUP_SPOT_MAX_DELTA``; fails closed when the cached entry has
+    no usable source path, when the row stores no source hash, when the
+    file at the stored path no longer hashes to it, or when any decode
+    step fails.
     """
     if sweep.ref_decode_rc != 0:
         _LOG.warning(
@@ -1037,129 +1092,46 @@ def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
         return False
     if not (cached.artifact_path and cached.artifact_path.exists()):
         return False
-    stored_row = dict(cached.row or {})
-    cached_src = stored_row.get("src")
-    cached_source = Path(cached_src) if cached_src else None
-    if cached_source is None or not cached_source.exists():
-        _LOG.info(
-            "vmaf-tune: near-dup spot verify fail-closed: cached entry has no readable source (%r)",
-            cached_src,
-        )
-        return False
-    stored_sha = str(stored_row.get("src_sha256") or "")
-    if not stored_sha or _sha256_file(cached_source) != stored_sha:
-        _LOG.info(
-            "vmaf-tune: near-dup spot verify fail-closed: cached source does not match its stored hash (%r)",
-            cached_src,
-        )
-        return False
     from .score import ScoreRequest, run_score
 
     job = sweep.job
     opts = sweep.opts
-    try:
-        cached_width = int(stored_row.get("width") or job.width)
-        cached_height = int(stored_row.get("height") or job.height)
-        cached_pix_fmt = str(stored_row.get("pix_fmt") or job.pix_fmt)
-        cached_fps = float(stored_row.get("framerate") or 0.0)
-    except (TypeError, ValueError):
-        cached_width, cached_height = int(job.width), int(job.height)
-        cached_pix_fmt, cached_fps = str(job.pix_fmt), 0.0
-    if str(job.pix_fmt) != cached_pix_fmt:
-        _LOG.info(
-            "vmaf-tune: near-dup spot verify fail-closed: query pixel format %s differs from the cached entry's %s",
-            job.pix_fmt,
-            cached_pix_fmt,
-        )
-        return False
-    fps = (
-        cached_fps
-        if cached_fps > 0.0
-        else (float(job.framerate) if float(job.framerate) > 0.0 else 24.0)
+    fps = float(job.framerate) if float(job.framerate) > 0.0 else 24.0
+    score_req = ScoreRequest(
+        reference=sweep.decoded_reference,
+        distorted=cached.artifact_path,
+        width=int(job.width),
+        height=int(job.height),
+        pix_fmt=job.pix_fmt,
+        model=_cell_score_model(sweep),
+        frame_skip_ref=sweep.frame_skip_ref,
+        frame_cnt=max(1, int(fps)),
+        duration_s=1.0,
     )
-    one_second = max(1, int(fps))
-    frame_skip_ref = sweep.frame_skip_ref
-    frame_cnt = min(one_second, sweep.frame_cnt) if sweep.frame_cnt > 0 else one_second
-    spot_decode_s = (frame_skip_ref + frame_cnt) / fps + 1.0
-
-    def spot_request(reference: Path, distorted: Path) -> ScoreRequest:
-        return ScoreRequest(
-            reference=reference,
-            distorted=distorted,
-            width=cached_width,
-            height=cached_height,
-            pix_fmt=cached_pix_fmt,
-            model=_cell_score_model(sweep),
-            frame_skip_ref=frame_skip_ref,
-            frame_cnt=frame_cnt,
-            duration_s=1.0,
-        )
-
     try:
-        # Both legs score the decoded cached encode at the geometry the
-        # entry's row records (issue #3448); the decodes land in a
-        # temporary directory that closes with the check (issue #3447).
         with tempfile.TemporaryDirectory(prefix="vmaf-tune-near-dup-") as decode_dir:
-            decoded = _maybe_decode_distorted(
-                spot_request(job.source, cached.artifact_path),
+            score_req = _maybe_decode_distorted(
+                score_req,
                 encode_dir=Path(decode_dir),
                 ffmpeg_bin=opts.ffmpeg_bin,
                 runner=subprocess.run,
             )
-            if decoded.distorted.suffix.lower() not in _VMAF_RAW_SUFFIXES:
+            if score_req.distorted.suffix.lower() not in _VMAF_RAW_SUFFIXES:
                 _LOG.warning(
                     "vmaf-tune: near-dup spot decode failed for %s; refusing reuse",
                     cached.artifact_path,
                 )
                 return False
-            # The query leg is decoded — and scaled when its geometry
-            # differs — to the cached size; the cached source is already
-            # at it, so only a container needs its decode. The decode
-            # bounds at the window's end plus a second of margin, enough
-            # for the frames frame_skip_ref skips.
-            query_scaled = (int(job.width), int(job.height)) != (cached_width, cached_height)
-            query_ref, query_rc = _maybe_decode_reference(
-                job.source,
-                encode_dir=Path(decode_dir),
-                pix_fmt=cached_pix_fmt,
-                duration_s=spot_decode_s,
-                ffmpeg_bin=opts.ffmpeg_bin,
-                runner=subprocess.run,
-                target_width=cached_width if query_scaled else None,
-                target_height=cached_height if query_scaled else None,
-                source_width=int(job.width),
-                source_height=int(job.height),
-                source_framerate=float(job.framerate) if float(job.framerate) > 0.0 else None,
-            )
-            cached_ref, cached_rc = cached_source, 0
-            if cached_source.suffix.lower() not in _VMAF_RAW_SUFFIXES:
-                cached_ref, cached_rc = _maybe_decode_reference(
-                    cached_source,
-                    encode_dir=Path(decode_dir),
-                    pix_fmt=cached_pix_fmt,
-                    duration_s=spot_decode_s,
-                    ffmpeg_bin=opts.ffmpeg_bin,
-                    runner=subprocess.run,
-                    target_width=cached_width,
-                    target_height=cached_height,
-                    source_width=cached_width,
-                    source_height=cached_height,
-                    source_framerate=cached_fps or None,
-                )
-            if query_rc != 0 or cached_rc != 0 or not query_ref.exists() or not cached_ref.exists():
-                _LOG.info(
-                    "vmaf-tune: near-dup spot verify fail-closed: a reference decode failed (query rc=%s, cached rc=%s)",
-                    query_rc,
-                    cached_rc,
-                )
+            cached_req = _cached_source_leg(sweep, cached, score_req, Path(decode_dir))
+            if cached_req is None:
                 return False
             spot_res = run_score(
-                spot_request(query_ref, decoded.distorted),
+                score_req,
                 vmaf_bin=opts.vmaf_bin,
                 backend=opts.score_backend,
             )
             cached_spot_res = run_score(
-                spot_request(cached_ref, decoded.distorted),
+                cached_req,
                 vmaf_bin=opts.vmaf_bin,
                 backend=opts.score_backend,
             )

@@ -203,11 +203,17 @@ scaling, pixel-format and fail-closed cases.
 
 Upstream merged the decode fix (#3447) separately: the cached encode
 decodes in a temporary directory, the sweep's reference decode result
-guards reuse, and both legs carry the cell's score model. This record's
-same-window decision (decision 3, step 4) was not part of that change —
-the landed spot check compares the window score with the trial's
-whole-clip aggregate again — so PR #3444 rebases onto it and restores
-the two-leg comparison, keeping the landed decode shape and adding the
-entry's geometry to both legs (#3448). The landed decode tests are
-adapted to the two-leg behavior with their cleanup, refusal and model
-assertions preserved.
+guards reuse, and the spot check carries the cell's score model. This
+record's same-window decision (decision 3, step 4) was not part of that
+change — the landed spot check compares the window score with the
+trial's whole-clip aggregate again — so PR #3444 rebases onto it and
+restores the two-leg comparison, keeping the landed decode shape. The
+cached source decodes into the same temporary directory through a
+dedicated helper, so no stale sidecar named for another source can zero
+the delta and both functions stay inside the 60-line limit. Geometry is
+not part of the check: the near-duplicate index matches on the cell
+params, which carry width, height, pixel format and frame rate, so a
+cached entry at another geometry never reaches the spot check (issue
+#3448, closed as not planned). The landed decode tests are adapted to
+the two-leg behavior with their cleanup, refusal and model assertions
+preserved.
