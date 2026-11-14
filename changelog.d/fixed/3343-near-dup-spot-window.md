@@ -25,3 +25,17 @@
   failures refuse the candidate instead of scoring mismatched inputs.
   Thirteen unit tests cover the decode, scaling, pixel-format and
   fail-closed cases alongside the original window checks.
+- **Rebased onto the landed decode fix (#3451).** Upstream's decode
+  change decodes the cached encode in a temporary directory that closes
+  with the check, guards on the sweep's reference decode result, and
+  scores both legs with the cell's score model; this PR keeps all of
+  that and restores the same-window comparison on top of it — the
+  landed spot check compares the window score with the trial's
+  whole-clip aggregate again, which is the defect this PR exists to fix
+  (issue #3343) — and adds the entry's geometry to both legs (issue
+  #3448). The landed decode tests in
+  `tests/test_near_dup_spot_decode.py` are adapted to the two-leg
+  behavior: their cleanup, refusal and model assertions stand, their
+  single-run assertions now expect the two scoring legs, and the
+  real-ffmpeg window test refuses on a different cached source instead
+  of an offset the index cannot produce.

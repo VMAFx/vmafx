@@ -198,3 +198,16 @@ A query whose pixel format differs from the entry's is refused, decode
 failures refuse the candidate, and the decode-time bound accounts for the
 window's position inside the file. Thirteen unit tests cover the decode,
 scaling, pixel-format and fail-closed cases.
+
+## Status update 2026-11-14: rebased onto the landed decode fix (#3451)
+
+Upstream merged the decode fix (#3447) separately: the cached encode
+decodes in a temporary directory, the sweep's reference decode result
+guards reuse, and both legs carry the cell's score model. This record's
+same-window decision (decision 3, step 4) was not part of that change —
+the landed spot check compares the window score with the trial's
+whole-clip aggregate again — so PR #3444 rebases onto it and restores
+the two-leg comparison, keeping the landed decode shape and adding the
+entry's geometry to both legs (#3448). The landed decode tests are
+adapted to the two-leg behavior with their cleanup, refusal and model
+assertions preserved.
