@@ -44,7 +44,7 @@ MAX_YAML_NODES = 16_384
 # take the staging directory from the Dockerfile's own COPY destination.
 IMAGE_BUILD_CONFIG_NAME = "build-config.env"
 IMAGE_INSTALLER_NAMES = frozenset(("ubuntu.sh", "install-cuda-toolkit.sh"))
-DOCKERFILE_INSTRUCTIONS = frozenset(("COPY", "FROM"))
+DOCKERFILE_INSTRUCTIONS = frozenset(("COPY", "FROM", "ENV", "ARG"))
 PPA_SOURCE_TEXT = re.compile(
     r"add-apt-repository|apt-add-repository|\bppa:|ppa\.launchpad(?:content)?\.net",
     re.IGNORECASE,
@@ -81,6 +81,9 @@ APT_UPDATE_MESSAGE = (
 )
 APT_UNBALANCED_QUOTE_MESSAGE = (
     "apt refresh must sit on one logical line with balanced quotes (ADR-3537)"
+)
+APT_CONFIG_UNSET_MESSAGE = (
+    "APT_CONFIG must stay unset: the persistent snapshot is the only APT configuration"
 )
 APT_CONTINUATION_MESSAGE = (
     f"continuation exceeds {MAX_CONTINUATION_LINES} physical lines; "
@@ -810,6 +813,13 @@ APT_CERTIFICATE_BOOTSTRAP = [
 ]
 
 
+def _snapshot_sets_apt_config(instruction: str, tokens: list[str]) -> bool:
+    """Keep every RUN, ENV and ARG token independent of an alternate APT configuration."""
+    return instruction in {"RUN", "ENV", "ARG"} and any(
+        arg == "APT_CONFIG" or arg.startswith("APT_CONFIG=") for arg in tokens
+    )
+
+
 def _snapshot_commands(
     text: str,
 ) -> tuple[list[tuple[int, list[str]]], list[str], list[str]]:
@@ -820,7 +830,7 @@ def _snapshot_commands(
     for number, line, overflowed in _logical_ci_lines(text):
         if overflowed:
             problems.append(f"{number}: {APT_CONTINUATION_MESSAGE}")
-        match = re.match(r"\s*(RUN|COPY|FROM)\s+(.*)", line, re.IGNORECASE | re.DOTALL)
+        match = re.match(r"\s*(RUN|COPY|FROM|ENV|ARG)\s+(.*)", line, re.IGNORECASE | re.DOTALL)
         if match is None:
             continue
         try:
@@ -828,12 +838,15 @@ def _snapshot_commands(
         except ValueError:
             problems.append(f"{number}: snapshot contract requires balanced shell quotes")
             continue
-        if match[1].upper() == "RUN":
+        instruction = match[1].upper()
+        if _snapshot_sets_apt_config(instruction, tokens):
+            problems.append(APT_CONFIG_UNSET_MESSAGE)
+        if instruction == "RUN":
             for clause, end in _shell_clauses_with_operators(tokens):
                 commands.append((number, clause))
                 ends.append(end)
         else:
-            commands.append((number, [match[1].upper(), *tokens]))
+            commands.append((number, [instruction, *tokens]))
             ends.append("")
     return commands, ends, problems
 
@@ -853,11 +866,8 @@ def _snapshot_input_problems(commands: list[tuple[int, list[str]]], pin: int) ->
     staging = _snapshot_staging_dir(commands, pin)
     if staging is None:
         problems.append("COPY build-config.env into a directory before configuring the snapshot")
-    elif not any(
-        line == pin_line and cmd == [".", staging + IMAGE_BUILD_CONFIG_NAME]
-        for line, cmd in commands[:pin]
-    ):
-        problems.append("source build-config.env in the snapshot configuration RUN")
+    elif pin == 0 or commands[pin - 1] != (pin_line, [".", staging + IMAGE_BUILD_CONFIG_NAME]):
+        problems.append("source build-config.env directly before the snapshot write")
     if sum(cmd[0] == "FROM" for _, cmd in commands) != 1:
         problems.append("snapshot contract requires one base stage")
     return problems
@@ -1287,12 +1297,40 @@ class UbuntuAptSnapshotContract(unittest.TestCase):
             ("scripts/setup/ubuntu.sh /tmp/", "scripts/setup/ubuntu.sh /opt/"),
             ("scripts/setup/ubuntu.sh /tmp/", "scripts/setup/ubuntu.sh /tmp"),
             (". /tmp/build-config.env", ":"),
+            (
+                "&& . /tmp/build-config.env",
+                "&& . /tmp/build-config.env && UBUNTU_APT_SNAPSHOT=20261001T000000Z",
+            ),
+            (
+                "&& . /tmp/build-config.env",
+                "&& . /tmp/build-config.env && export UBUNTU_APT_SNAPSHOT=20261001T000000Z",
+            ),
+            ("&& . /tmp/build-config.env", "&& . /tmp/build-config.env && :"),
             ("$UBUNTU_APT_SNAPSHOT", "20261101T000000Z"),
             ("# UBUNTU_APT_CERTIFICATE_BOOTSTRAP:", "# bootstrap:"),
         ):
             with self.subTest(removed=old):
                 self.assertNotEqual(self.image().replace(old, new), self.image())
                 self.assertTrue(ubuntu_apt_snapshot_problems(self.image().replace(old, new)))
+
+    def test_apt_config_cannot_be_set_anywhere(self) -> None:
+        """Every package operation must read the persistent snapshot configuration."""
+        for instruction in (
+            "RUN export APT_CONFIG=/tmp/other.conf && apt-get install -y curl",
+            "RUN env APT_CONFIG=/tmp/other.conf true",
+            "RUN declare APT_CONFIG=/tmp/other.conf",
+            "RUN readonly APT_CONFIG=/tmp/other.conf",
+            "RUN read APT_CONFIG",
+            "RUN APT_CONFIG=/tmp/other.conf",
+            "ENV APT_CONFIG=/tmp/other.conf",
+            "ENV APT_CONFIG /tmp/other.conf",
+            "ARG APT_CONFIG",
+            "ARG APT_CONFIG=/tmp/other.conf",
+        ):
+            with self.subTest(instruction=instruction):
+                planted = self.image() + f"\n{instruction}\nRUN apt-get install -y curl\n"
+                self.assertIn(APT_CONFIG_UNSET_MESSAGE, ubuntu_apt_snapshot_problems(planted))
+        self.assertEqual(ubuntu_apt_snapshot_problems(self.image()), [])
 
     def test_later_operations_cannot_override_or_remove_pin(self) -> None:
         for command in (
