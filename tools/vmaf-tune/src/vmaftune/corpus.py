@@ -29,6 +29,7 @@ import math
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import uuid
 from collections.abc import Iterator, Sequence
@@ -1002,6 +1003,12 @@ def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
 
     Refuses near-duplicate reuse if |vmaf_spot - vmaf_cached| > NEAR_DUP_SPOT_MAX_DELTA.
     """
+    if sweep.ref_decode_rc != 0:
+        _LOG.warning(
+            "vmaf-tune: near-dup reference decode failed for %s; refusing reuse",
+            sweep.job.source,
+        )
+        return False
     if not (cached.artifact_path and cached.artifact_path.exists()):
         return False
     from .score import ScoreRequest, run_score
@@ -1012,23 +1019,37 @@ def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
     frame_cnt = max(1, int(fps))
 
     score_req = ScoreRequest(
-        reference=job.source,
+        reference=sweep.decoded_reference,
         distorted=cached.artifact_path,
         width=int(job.width),
         height=int(job.height),
         pix_fmt=job.pix_fmt,
-        frame_skip_ref=0,
+        model=_cell_score_model(sweep),
+        frame_skip_ref=sweep.frame_skip_ref,
         frame_cnt=frame_cnt,
         duration_s=1.0,
     )
     try:
-        spot_res = run_score(
-            score_req,
-            vmaf_bin=opts.vmaf_bin,
-            backend=opts.score_backend,
-        )
-        delta = abs(float(spot_res.vmaf_score) - float(cached.vmaf_score))
-        return delta <= NEAR_DUP_SPOT_MAX_DELTA
+        with tempfile.TemporaryDirectory(prefix="vmaf-tune-near-dup-") as decode_dir:
+            score_req = _maybe_decode_distorted(
+                score_req,
+                encode_dir=Path(decode_dir),
+                ffmpeg_bin=opts.ffmpeg_bin,
+                runner=subprocess.run,
+            )
+            if score_req.distorted.suffix.lower() not in _VMAF_RAW_SUFFIXES:
+                _LOG.warning(
+                    "vmaf-tune: near-dup spot decode failed for %s; refusing reuse",
+                    cached.artifact_path,
+                )
+                return False
+            spot_res = run_score(
+                score_req,
+                vmaf_bin=opts.vmaf_bin,
+                backend=opts.score_backend,
+            )
+            delta = abs(float(spot_res.vmaf_score) - float(cached.vmaf_score))
+            return delta <= NEAR_DUP_SPOT_MAX_DELTA
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
         _LOG.warning("vmaf-tune: near-dup spot verify failed: %s", exc)
         return False
