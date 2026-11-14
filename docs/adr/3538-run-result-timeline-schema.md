@@ -11,8 +11,9 @@
 The run-result timeline schema (`api/run-result-timeline.schema.json`, #2452)
 is the versioned report format a scoring run writes and the C ABI writer/reader
 (the follow-up PRs of the same issue) serialises byte-for-byte. The skeleton
-closes every object (`additionalProperties: false`), fixes the event vocabulary
-to an enum and pins `schema_version` with `const: 1`.
+closes every object it defines (`additionalProperties: false`) apart from three
+pass-through members (Decision 1), fixes the event vocabulary to an enum and
+pins `schema_version` with `const: 1`.
 
 The repository carries two disagreeing precedents for how such a versioned
 document evolves:
