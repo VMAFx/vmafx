@@ -14,7 +14,7 @@
  *  Per-frame flow: 3 decimate launches and, per scale, a filter, a
  *  statistic and a row-sum launch; one readback.
  *  Self-contained submit/collect — does NOT register with
- *  vmaf_sycl_graph_register (the multi-scale layout doesn't fit the
+ *  vmaf_sycl_graph_register_flags (the multi-scale layout doesn't fit the
  *  shared_frame model).
  *
  *  Numerical contract (ADR-1422, after ADR-1412 for the CUDA twin). The twin
