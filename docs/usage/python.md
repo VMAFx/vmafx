@@ -23,26 +23,15 @@ repository's own tooling asks for 3.14). Check the version with
 
 ### Linux
 
-On Debian-based systems such as Debian 13 or Ubuntu 26.04 (the project's CI base
-images):
-
-```bash
-sudo apt install nasm doxygen python3-dev libzimg-dev
-```
-
-On Fedora 22 or higher, or CentOS 8 or higher:
-
-```bash
-sudo dnf install nasm doxygen python3-devel zimg-devel
-```
-
-On older CentOS and RHEL:
-
-```bash
-sudo yum install nasm doxygen python3-devel zimg-devel
-```
-
-Make sure `nasm` is 2.13.02 or higher (check by `nasm --version`).
+The build dependencies for the library (`nasm`, `doxygen`, the zimg headers and
+a C toolchain) are listed per distribution in the getting-started install
+guides: follow [Ubuntu](../getting-started/install/ubuntu.md) (the project's CI
+base images are Debian 13 and Ubuntu 26.04),
+[Fedora or the RHEL 9 family](../getting-started/install/fedora.md),
+[Arch](../getting-started/install/arch.md) or
+[Alpine](../getting-started/install/alpine.md). Older CentOS and RHEL releases
+are not in the supported set those guides cover. Whatever the distribution,
+make sure `nasm` is 2.13.02 or higher (check by `nasm --version`).
 
 ### macOS
 
