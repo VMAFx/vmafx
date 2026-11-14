@@ -41,7 +41,8 @@
 
 #ifdef HAVE_HIPCC
 /* The conversion kernels (import_convert.hip, embedded by xxd). */
-extern const unsigned char import_convert_hsaco[];
+/* Match xxd -i object types exactly; keep read-only access at use sites. */
+extern unsigned char import_convert_hsaco[];
 #endif
 
 /* Devices whose names the enumeration keeps for the process (HISS-02). */

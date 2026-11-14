@@ -27,8 +27,9 @@
 /* HSACO fat binary embedded by xxd -i (analogous to `motion_v2_score_ptx`
  * in the CUDA twin). The array is defined in the generated
  * `motion_v2_score_hsaco.c` custom_target output. */
-extern const unsigned char motion_v2_score_hsaco[];
-extern const unsigned int motion_v2_score_hsaco_len;
+/* Match xxd -i object types exactly; keep read-only access at use sites. */
+extern unsigned char motion_v2_score_hsaco[];
+extern unsigned int motion_v2_score_hsaco_len;
 #endif /* HAVE_HIPCC */
 
 #endif /* FEATURE_INTEGER_MOTION_V2_HIP_H_ */
