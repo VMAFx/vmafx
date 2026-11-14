@@ -148,3 +148,36 @@ cd tools/vmaf-tune && python -m pytest -q tests/test_fingerprint.py
 ```
 
 Result on 2026-11-08: 11 passed.
+
+## Status update 2026-11-15: the same-window spot check as reviewed (PR #3444)
+
+The remaining half of decision 3, step 4 is applied and survives review:
+both sides of the 1.5-point comparison are scored over the same
+one-second window at the entry's own sample offset — the query source
+against the decoded cached encode, and the cached source (read from the
+cached row's `src` column) against that same encode. The cached trial's
+whole-clip aggregate does not enter the comparison, so an exact
+duplicate whose first second is easier or harder than its average is no
+longer refused (issue #3343). The cached encode decodes through the
+landed decode path (issue #3447) in a temporary directory that closes
+with the check, and the cached source normalizes through the same
+reference-decode path the sweep uses for the query leg — the rung scale
+target from `_reference_scale_target`, the job's native source dims and
+frame rate — so a container decodes there and a raw source at another
+native geometry scales to the rung target instead of being misread at
+the rung geometry. Geometry is not part of the match decision: the
+near-duplicate index matches on the cell params, which carry the frame
+size, source size, pixel format and frame rate, so a cached entry at
+another geometry never reaches the check; issue #3448 is closed as not
+planned with a regression test pinning that (PR #3454). Fail-closed
+guards refuse reuse when the sweep's reference decode failed, the
+cached artifact is missing, the row has no readable source path or no
+stored `src_sha256`, the file no longer hashes to that stored hash, or
+any decode step fails. The unit tests live in
+`tools/vmaf-tune/tests/test_near_dup_verify.py` (the two-leg window and
+the fail-closed cases) and
+`tools/vmaf-tune/tests/test_near_dup_spot_decode.py` (the decode path,
+adapted to the two-leg behavior with their cleanup, refusal and model
+assertions preserved). Decision 5 still holds: the option stays off by
+default until the measured library run reports the hit rate, false
+matches and segment ratios.

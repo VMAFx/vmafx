@@ -1,11 +1,25 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Near-duplicate spot checks decode cached containers before scoring."""
+"""Near-duplicate spot checks decode cached containers before scoring.
+
+Adapted for the same-window two-leg comparison of PR #3444 (issue
+#3343): the query leg scores ``sweep.decoded_reference`` against the
+decoded cached encode, and the cached-source leg — added by this PR —
+scores the row's source against that same encode over the same window,
+so a scoring run covers both legs. Geometry stays the job's: the
+near-duplicate index matches on the cell params, which carry width,
+height, pixel format and frame rate, so a cached entry at another
+geometry never reaches the spot check (issue #3448, closed as not
+planned).
+"""
 
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import logging
 import shutil
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -17,12 +31,26 @@ from vmaftune.corpus import CorpusJob, CorpusOptions
 from vmaftune.score import DEFAULT_MODEL
 
 
+def _row_for(path: Path) -> dict:
+    """A cache row whose ``src`` column names ``path`` with its content hash."""
+    return {
+        "src": str(path),
+        "width": 320,
+        "height": 240,
+        "pix_fmt": "yuv420p",
+        "framerate": 24.0,
+        "src_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
+
+
 @pytest.fixture
 def spot(tmp_path):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     artifact = cache_dir / "blob.bin"
     artifact.write_bytes(b"container")
+    cached_source = tmp_path / "cached-source.yuv"
+    cached_source.write_bytes(b"cached source")
     sweep = SimpleNamespace(
         job=CorpusJob(
             source=tmp_path / "source.mkv",
@@ -40,7 +68,18 @@ def spot(tmp_path):
         start_s=0.0,
         score_model=DEFAULT_MODEL,
     )
-    cached = CachedResult(9, 1.0, "test", "test", 95.0, "test", 1.0, "test", artifact)
+    cached = CachedResult(
+        9,
+        1.0,
+        "test",
+        "test",
+        95.0,
+        "test",
+        1.0,
+        "test",
+        artifact,
+        row=_row_for(cached_source),
+    )
     return sweep, cached
 
 
@@ -61,12 +100,10 @@ def test_spot_scores_decoded_yuv_and_cleans_up(spot, monkeypatch, error):
         return dataclasses.replace(req, distorted=decoded)
 
     def run_score(req, **kwargs):
-        assert req.reference == sweep.decoded_reference
-        assert req.reference != sweep.job.source
         assert req.distorted.suffix == ".yuv"
         assert req.distorted == decoded_paths[0]
         assert req.distorted.exists()
-        scored_paths.append(req.distorted)
+        scored_paths.append(req)
         if error is not None:
             raise error("scoring failed")
         return SimpleNamespace(vmaf_score=cached.vmaf_score)
@@ -74,7 +111,11 @@ def test_spot_scores_decoded_yuv_and_cleans_up(spot, monkeypatch, error):
     monkeypatch.setattr(corpus, "_maybe_decode_distorted", decode)
     monkeypatch.setattr(score, "run_score", run_score)
     assert corpus._verify_near_dup_spot(sweep, cached) is (error is None)
-    assert len(scored_paths) == 1
+    # Two legs: the query reference and the cached source, same window.
+    assert len(scored_paths) == (2 if error is None else 1)
+    assert scored_paths[0].reference == sweep.decoded_reference
+    if error is None:
+        assert scored_paths[1].reference == Path(cached.row["src"])
     assert not decoded_paths[0].parent.exists()
     assert list(cached.artifact_path.parent.iterdir()) == [cached.artifact_path]
 
@@ -153,6 +194,29 @@ def test_spot_refuses_failed_reference_decode(spot, monkeypatch, caplog):
     assert str(sweep.job.source) in caplog.text
 
 
+def test_spot_refuses_a_replaced_cached_source(spot, monkeypatch, caplog):
+    """A cached source whose bytes no longer hash to the row refuses reuse."""
+    sweep, cached = spot
+    caplog.set_level(logging.INFO)
+    cached.row["src_sha256"] = hashlib.sha256(b"original bytes").hexdigest()
+
+    scored_paths = []
+
+    def run_score(req, **kwargs):
+        scored_paths.append(req.reference)
+        return SimpleNamespace(vmaf_score=cached.vmaf_score)
+
+    monkeypatch.setattr(
+        corpus,
+        "_maybe_decode_distorted",
+        lambda req, **kwargs: dataclasses.replace(req, distorted=sweep.decoded_reference),
+    )
+    monkeypatch.setattr(score, "run_score", run_score)
+    assert corpus._verify_near_dup_spot(sweep, cached) is False
+    assert scored_paths == []
+    assert len(caplog.records) == 1
+
+
 def _generate_cached_encode(sweep, cached, ffmpeg):
     common = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error"]
     run_absolute_tool(
@@ -212,10 +276,11 @@ def test_spot_decodes_real_cached_container(spot, monkeypatch):
         pytest.skip("ffmpeg not on PATH")
     sweep, cached = spot
     _generate_cached_encode(sweep, cached, ffmpeg)
-    scored_paths = []
+    cached = dataclasses.replace(cached, row=_row_for(sweep.job.source))
+    scored = []
+    ref_sizes = []
 
     def run_score(req, **kwargs):
-        assert req.reference == sweep.decoded_reference
         assert sweep.job.source.suffix == ".mkv"
         assert sweep.job.source.exists()
         assert req.distorted.suffix == ".yuv"
@@ -224,26 +289,42 @@ def test_spot_decodes_real_cached_container(spot, monkeypatch):
         frame_bytes = 320 * 240 * 3 // 2
         assert size > 0 and size % frame_bytes == 0
         assert size == frame_bytes * 24
-        scored_paths.append(req.distorted)
+        # Both legs score a reference that exists while the check runs;
+        # the temporary decode directory is gone by the time we assert.
+        ref_sizes.append(req.reference.stat().st_size)
+        scored.append(req)
         return SimpleNamespace(vmaf_score=cached.vmaf_score)
 
     monkeypatch.setattr(score, "run_score", run_score)
     assert corpus._verify_near_dup_spot(sweep, cached) is True
-    assert len(scored_paths) == 1
-    assert not scored_paths[0].parent.exists()
+    # Two legs: the query reference (the sweep's pre-decoded raw) and the
+    # cached source decoded out of its container into the temp directory.
+    assert len(scored) == 2
+    assert scored[0].reference == sweep.decoded_reference
+    assert scored[1].reference != sweep.job.source
+    assert scored[1].reference.suffix == ".yuv"
+    frame_bytes = 320 * 240 * 3 // 2
+    assert ref_sizes == [frame_bytes * 24, frame_bytes * 24]
+    assert not scored[0].distorted.parent.exists()
     assert list(cached.artifact_path.parent.iterdir()) == [cached.artifact_path]
 
 
-def test_spot_scores_real_sample_window(spot, tmp_path):
-    ffmpeg = shutil.which("ffmpeg")
-    if ffmpeg is None:
-        pytest.skip("ffmpeg not on PATH")
+def _real_window_sweep(spot, ffmpeg):
+    """A 3 s sweep whose cached encode covers source frames 24-47."""
     sweep, cached = spot
     sweep.opts = dataclasses.replace(sweep.opts, ffmpeg_bin=ffmpeg, vmaf_bin=str(vmaf_under_test()))
     sweep.job = dataclasses.replace(sweep.job, duration_s=3.0)
     sweep.frame_skip_ref = 24
     sweep.start_s = 1.0
     _generate_cached_encode(sweep, cached, ffmpeg)
+    return sweep, cached
+
+
+def test_spot_scores_real_sample_window(spot, tmp_path):
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        pytest.skip("ffmpeg not on PATH")
+    sweep, cached = _real_window_sweep(spot, ffmpeg)
     req = score.ScoreRequest(
         reference=sweep.decoded_reference,
         distorted=cached.artifact_path,
@@ -263,6 +344,47 @@ def test_spot_scores_real_sample_window(spot, tmp_path):
     # The encode covers source frames 24-47: scored against that window it is near-transparent.
     assert result.vmaf_score > 90.0
     cached = dataclasses.replace(cached, vmaf_score=result.vmaf_score)
+    # The row names the sweep's pre-decoded 3 s reference: the same
+    # content the cached encode was built from, so the cached-source leg
+    # has frames at the sample offset. (Naming the 1 s encode copy — the
+    # old fixture — left the leg with no frame at skip 24; review on
+    # #3444.)
+    cached = dataclasses.replace(cached, row=_row_for(sweep.decoded_reference))
     assert corpus._verify_near_dup_spot(sweep, cached) is True
-    sweep.frame_skip_ref = 0
+
+
+def test_spot_refuses_a_different_real_cached_source(spot, tmp_path):
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        pytest.skip("ffmpeg not on PATH")
+    sweep, cached = _real_window_sweep(spot, ffmpeg)
+    different = tmp_path / "different-source.mkv"
+    run_absolute_tool(
+        [
+            ffmpeg,
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"smptebars=size=320x240:rate=24:duration={sweep.job.duration_s}",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:v",
+            "libx264",
+            "-crf",
+            "23",
+            "-threads",
+            "1",
+            "-f",
+            "matroska",
+            str(different),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=20,
+    )
+    cached = dataclasses.replace(cached, row=_row_for(different))
     assert corpus._verify_near_dup_spot(sweep, cached) is False
