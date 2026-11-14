@@ -111,6 +111,18 @@ entries:
   - docs/adr/3357-hybrid-gcc-cpu-icpx-sycl.md
   - docs/adr/3358-vmafx-sycl-ffmpeg-container.md
   note: Dmitry Popovich (@Tualua) designed the hybrid GCC and icpx build and the SYCL plus FFmpeg image in PR 2216; the project reworked them into PR 2883 and PR 2891.
+- id: contribution-luoye-cpu-t0-idle-window
+  name: luoye-cpu's idle-window T0 calibration reports
+  url: https://github.com/VMAFx/vmafx/pull/3335
+  kind: dataset
+  relation: used-by-CI
+  license: EUPL-1.2
+  paths:
+  - testdata/perf/t0-idle-window/
+  evidence:
+  - testdata/perf/t0-idle-window/README.md
+  - testdata/perf/t0-idle-window/REPORT.md
+  note: luoye-cpu measured and wrote the 32 per-run wall-clock reports, their summary and the generator behind the T0 benchmark calibration, in PR 3335.
 - id: libsvm
   name: libsvm
   url: https://github.com/cjlin1/libsvm
