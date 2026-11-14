@@ -326,10 +326,10 @@ hipError_t hipStreamWaitEvent(hipStream_t stream, hipEvent_t event, unsigned int
  * this tree spell the null pointer constant `NULL`, and this file mirrors the
  * signatures of the libvmaf entry points it stands in for. Same exemption the
  * TU under test carries -- ADR-1138. */
-const unsigned char adm_dwt2_hsaco[1] = {0};
-const unsigned char adm_csf_hsaco[1] = {0};
-const unsigned char adm_csf_den_hsaco[1] = {0};
-const unsigned char adm_cm_hsaco[1] = {0};
+unsigned char adm_dwt2_hsaco[] = {0};
+unsigned char adm_csf_hsaco[] = {0};
+unsigned char adm_csf_den_hsaco[] = {0};
+unsigned char adm_cm_hsaco[] = {0};
 
 /* The dictionary constructor fails (NULL) unless a case sets g_dict_ok; then
  * it returns a placeholder the stubs never dereference. */

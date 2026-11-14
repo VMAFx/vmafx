@@ -1,0 +1,1 @@
+- **DCO checks refuse bot-authored commits outside the bot's own branch before squash landing.** PR and pre-push checks now catch review-bot authors even with a valid human sign-off, explain the landed co-author failure, and suggest re-authoring or dropping the commit. Bot-owned dependency and render branches remain supported (ADR-3544).

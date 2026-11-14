@@ -17,7 +17,8 @@
 
 /* HSACO blob embedded by xxd; consumed by `hipModuleLoadData` in
  * `float_vif_hip.c:fvif_hip_module_load()`. */
-extern const unsigned char float_vif_score_hsaco[];
-extern const unsigned int float_vif_score_hsaco_len;
+/* Match xxd -i object types exactly; keep read-only access at use sites. */
+extern unsigned char float_vif_score_hsaco[];
+extern unsigned int float_vif_score_hsaco_len;
 
 #endif /* FEATURE_FLOAT_VIF_HIP_H_ */

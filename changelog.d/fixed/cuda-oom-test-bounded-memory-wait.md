@@ -1,0 +1,1 @@
+- **Bound the CUDA out-of-memory test's wait for freed device memory.** The test polls up to 100 times at 50 ms intervals and reports the poll count. Windows skips with a reason if memory remains unavailable after 5 seconds because the driver can retain freed memory until process exit (issue #3277); other platforms still fail the memory-return assertion.
