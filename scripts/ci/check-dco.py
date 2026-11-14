@@ -276,15 +276,13 @@ def pr_attribution_reason(
     commit: Commit, author: str, author_type: str, opener: tuple[str, str] | None = None
 ) -> str | None:
     """Refuse bot authors outside their own branches, then apply shared attribution rules."""
-    bot_author = commit.author_name.lower().endswith(
-        "[bot]"
-    ) or commit.author_email.lower().endswith("[bot]@users.noreply.github.com")
+    name = normalized_identity(commit.author_name)
+    email = normalized_identity(commit.author_email)
+    bot_author = is_bot_identity(name, email)
     if opener is not None:
-        owns_branch = (commit.author_name, commit.author_email) == opener
+        owns_branch = (name, email) == tuple(normalized_identity(part) for part in opener)
     else:
-        owns_branch = author_type == "Bot" and commit.author_email.lower().endswith(
-            bot_noreply_suffix(author)
-        )
+        owns_branch = author_type == "Bot" and email.endswith(bot_noreply_suffix(author))
     if bot_author and not owns_branch:
         return (
             f"bot author {commit.author_name} <{commit.author_email}> is not the branch opener; "
@@ -375,6 +373,16 @@ def drop_format_characters(text: str) -> str:
     return "".join(character for character in text if unicodedata.category(character) != "Cf")
 
 
+def normalized_identity(text: str) -> str:
+    """Share NFKC, format removal, and case normalization across identity checks."""
+    return drop_format_characters(normalize_attribution_text(text)).lower()
+
+
+def is_bot_identity(name: str, email: str) -> bool:
+    """Recognize bot suffixes in an already normalized name and email."""
+    return name.endswith("[bot]") or email.endswith("[bot]@users.noreply.github.com")
+
+
 def input_bound_reason(text: str, source: str, max_bytes: int, max_lines: int) -> str | None:
     """Reject UTF-8 byte/Unicode splitlines bounds before attribution scanning."""
     if len(text.encode("utf-8")) > max_bytes:
@@ -407,7 +415,7 @@ def commit_attribution_reason(commit: Commit) -> str | None:
         ("author", commit.author_name, commit.author_email),
         ("committer", commit.committer_name, commit.committer_email),
     ):
-        identity = drop_format_characters(normalize_attribution_text(f"{name} <{email}>")).lower()
+        identity = normalized_identity(f"{name} <{email}>")
         for candidate in BANNED_COAUTHOR_TOKENS:
             if candidate != "[bot]" and candidate in identity:
                 return f"{role} identity names a model or coding tool ({candidate})"
@@ -587,10 +595,16 @@ def pr_signoff_exemption(args: argparse.Namespace) -> str | None:
 
 
 def branch_opener(commits: list[Commit], pre_push: bool) -> tuple[str, str] | None:
-    """Infer pre-push ownership from the oldest non-merge commit, if one exists."""
-    if pre_push and commits:
-        return commits[0].author_name, commits[0].author_email
-    return None
+    """Use the oldest pre-push author only if human or its normalized email matches BOT_LOGINS."""
+    if not pre_push or not commits:
+        return None
+    name = normalized_identity(commits[0].author_name)
+    email = normalized_identity(commits[0].author_email)
+    if is_bot_identity(name, email) and not any(
+        email.endswith(bot_noreply_suffix(login)) for login in BOT_LOGINS
+    ):
+        return None
+    return commits[0].author_name, commits[0].author_email
 
 
 def check_pr(args: argparse.Namespace) -> int:
@@ -646,6 +660,8 @@ def resolve_push_range(args: argparse.Namespace) -> None:
 def check(args: argparse.Namespace) -> int:
     if args.merge_base:
         resolve_push_range(args)
+        # Pre-push ownership comes only from eligible outgoing authors.
+        args.author_type = ""
     if args.landed:
         return check_landed(args)
     return check_pr(args)

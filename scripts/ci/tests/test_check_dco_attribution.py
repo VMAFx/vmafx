@@ -506,6 +506,28 @@ class DcoBotAuthorTest(unittest.TestCase):
                 res = repo.gate("--author", ident[0], "--author-type", "Bot")
                 self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
 
+    def test_negative_normalized_bot_suffix_in_human_pr(self) -> None:
+        """NFKC and format removal expose bot suffixes in either author field."""
+        for ident in (
+            ("coderabbitai[bot]\u200b", "x@example.org"),
+            ("coderabbitai\uff3bbot\uff3d", "x@example.org"),
+            ("Plain Name", "1+review[bot]@users.noreply.github.com\u200b"),
+            ("Plain Name", "1+review\uff3bbot\uff3d@users.noreply.github.com"),
+        ):
+            with self.subTest(ident=ident), tempfile.TemporaryDirectory() as directory:
+                repo = fx.Repo(Path(directory))
+                repo.commit("fix: normalized suggestion", ident, True, fx.HUMAN)
+                res = repo.gate("--author", "ada", "--author-type", "User")
+                self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+                self.assertIn("is not the branch opener", res.stdout)
+
+    def test_positive_normalized_email_in_own_pr(self) -> None:
+        """A signed bot commit retains ownership after email normalization."""
+        ident = (self.RELEASE_BOT[0], self.RELEASE_BOT[1] + "\u200b")
+        self.repo.commit("chore: render", ident, True, fx.HUMAN)
+        res = self.repo.gate("--author", self.RELEASE_BOT[0], "--author-type", "Bot")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
     def test_negative_other_bot_in_bot_pr(self) -> None:
         """An allow-listed bot cannot contribute commits to another bot's PR."""
         self.repo.commit("chore: update", fx.BOT_IDENT, signoff=True)
