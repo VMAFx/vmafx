@@ -2918,6 +2918,9 @@
   stride.
 
 
+- **DCO checks refuse bot-authored commits outside the bot's own branch before squash landing.** PR and pre-push checks now catch review-bot authors even with a valid human sign-off, explain the landed co-author failure, and suggest re-authoring or dropping the commit. Bot-owned dependency and render branches remain supported (ADR-3544).
+
+
 - CI: the `Dev Container Build work` job runs on `ubuntu-26.04` again. A new
   step, `scripts/ci/free-runner-disk.sh`, removes the preinstalled SDKs no step
   uses before the image build, which ran out of disk on that image. The two
@@ -3268,6 +3271,9 @@
 
 
 - Build: the Windows MinGW-w64 (UCRT64) build links again with link-time optimisation. `VMAFX_EXPORT` no longer expands to an ELF visibility attribute under MinGW GCC, which ignores it and warned at every LTO use; it is empty there, as `VMAF_EXPORT` already was. Exported symbols are unchanged.
+
+
+- **Build:** the Windows ARM64 MSVC build links again on MSVC 19.52. `core/src/model.c` declared the built-in models' `src_*_json_len` lengths as `int`, while `xxd -i` defines them as `unsigned int`; MSVC 19.52 reports that mismatch under `/LTCG` as warning C4744, and `/WX` made it fatal for `vmaf.exe`, `vmafx.exe` and four other binaries. The declarations now use `unsigned int`.
 
 
 - CI: the `Windows MSVC+CUDA` legs of `libvmaf-build-matrix.yml` and `build.yml`
@@ -3862,6 +3868,9 @@
   validator-head". The validator's git shim now checks out the commit it runs on.
 
 
+- **vmaf-tune near-duplicate spot checks.** Decode cached encode containers to temporary raw YUV before scoring, refuse reuse when decoding fails, and remove decoded files after the check. Score against the sweep's decoded reference so container sources can match. In sample-clip mode, the spot check reads the reference window that the cached encode covers. The spot check scores with the sweep's VMAF model, the model the cached score used.
+
+
 - **A VMAFx error names a long path in full.** `VmafxError` kept 95 bytes of
   its subject, so a model file whose path was longer was named by a cut-off
   path; subjects now keep 1023 bytes and messages 1023.
@@ -3944,6 +3953,16 @@
   `_open` to `_wsopen_s` / `_sopen_s` (the CRT's non-deprecated spellings) made the
   CRT reject permission bits other than `_S_IREAD` and `_S_IWRITE` as an invalid
   parameter; the mode is masked to those two bits, as the old calls effectively did.
+
+
+- Built-in JSON and BRISQUE models and HIP kernel blobs now declare the exact
+  `unsigned char[]` and `unsigned int` types emitted by `xxd -i`. Read-only
+  access remains const-qualified at use sites. The CPU build compiles model
+  declarations and generated definitions together in `test_xxd_extern_types`
+  to reject future type mismatches; run it with
+  `python3 scripts/ci/run_meson_test.py -- -C build test_xxd_extern_types`.
+  HIP builds with generated kernels also compile every HSACO declaration and
+  definition together in `test_xxd_hsaco_extern_types`.
 
 
 - **The direct y4m reader reads a stream shallower than the picture left-shifted to the picture's depth.**

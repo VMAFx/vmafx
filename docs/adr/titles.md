@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1449), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1450), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5807,3 +5807,7 @@ Every ADR, one heading each (1449), so the site search finds an ADR by its title
 ## ADR-3539: Count non-Actions app check runs outside the aggregator run window
 
 [3539-aggregator-app-checks-outside-run-window](3539-aggregator-app-checks-outside-run-window.md)
+
+## ADR-3544: Refuse bot-authored commits outside the bot's own branch
+
+[3544-dco-refuse-bot-authored-commits](3544-dco-refuse-bot-authored-commits.md)
