@@ -1,0 +1,1 @@
+- **vmaf-tune near-duplicate spot checks.** Decode cached encode containers to temporary raw YUV before scoring, refuse reuse when decoding fails, and remove decoded files after the check. Score against the sweep's decoded reference so container sources can match.
