@@ -381,10 +381,12 @@ class TestEmitLabelCli(unittest.TestCase):
             self.assertEqual(res.stdout, "")
 
     def test_missing_title_is_a_usage_error(self) -> None:
-        """Prove emit-label without a title exits 2."""
+        """Prove emit-label without a title exits 2 even with PR_TITLE exported."""
+        env = {key: value for key, value in os.environ.items() if key != "PR_TITLE"}
         res = safe_run(
             [sys.executable, str(SQUASH_SCRIPT), "emit-label"],
             allowed_executables=(sys.executable,),
+            env=env,
             capture_output=True,
             text=True,
             check=False,

@@ -4,7 +4,7 @@
   already checked that subject on every pull request via
   `scripts/ci/squash_message.py check` — but the composed subject `<title> (#N)` let
   two defects through that the pinned engine cannot see: a title with an empty
-  conventional subject (`fix:`) passed once the ` (#N)` suffix filled the description
+  conventional subject (`fix:`) passed once the `(#N)` suffix filled the description
   slot, and a type the hook refuses because `.pre-commit-config.yaml` does not declare
   it (such as `style`) passed on the engine's own type list. The check now refuses
   both, alongside the hook's own refusals (unknown type, missing delimiter, breaking
