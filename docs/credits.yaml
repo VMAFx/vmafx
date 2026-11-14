@@ -111,6 +111,17 @@ entries:
   - docs/adr/3357-hybrid-gcc-cpu-icpx-sycl.md
   - docs/adr/3358-vmafx-sycl-ffmpeg-container.md
   note: Dmitry Popovich (@Tualua) designed the hybrid GCC and icpx build and the SYCL plus FFmpeg image in PR 2216; the project reworked them into PR 2883 and PR 2891.
+- id: contribution-luoye-cpu-cuda-oom-retry-study
+  name: luoye-cpu's CUDA out-of-memory retry study
+  url: https://github.com/VMAFx/vmafx/pull/3336
+  kind: dataset
+  relation: used-by-CI
+  license: EUPL-1.2
+  paths:
+  - testdata/cuda-oom-retry-study/
+  evidence:
+  - testdata/cuda-oom-retry-study/SUMMARY.md
+  note: luoye-cpu ran the four-arm retry study and the probe A/B rounds on two CUDA devices and wrote the per-run logs, the run scripts and the summary, in PR 3336.
 - id: libsvm
   name: libsvm
   url: https://github.com/cjlin1/libsvm
