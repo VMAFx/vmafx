@@ -317,3 +317,56 @@ test('test_vmaf_raw_layouts', test_vmaf_raw_layouts,
          'MESON_BUILD_ROOT=' + meson.project_build_root(),
          'MESON_SOURCE_ROOT=' + meson.project_source_root(),
      ])
+
+# ADR-3543 — the user-facing text of the vmaf CLI is a contract: help, the
+# --version format, option-error transcripts and the yuv geometry refusals
+# are diffed against golden transcripts served by the real binary
+# (issue #3214 rows C15-01..C15-10). The vmafx alias is asserted to serve
+# byte-identical help and its own VMAFX version line.
+test_vmaf_cli_text_golden = find_program('test_vmaf_cli_text_golden.sh')
+test('test_vmaf_cli_text_golden', test_vmaf_cli_text_golden,
+     suite : ['fast'],
+     depends : [vmaf, vmafx],
+     workdir : meson.project_build_root(),
+     env: [
+         'MESON_BUILD_ROOT=' + meson.project_build_root(),
+         'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+     ],
+     timeout : 120)
+
+# ADR-3543 — the hand-written usage texts of the vmaf_roi / vmaf_vpl
+# sidecars are pinned the same way (issue #3214 rows C15-12/C15-13), as two
+# separate tests so the roi golden is a real PASS in every build; the vpl
+# test skips (exit 77) outside Linux SYCL builds, where its golden is
+# verified.
+test_vmaf_roi_usage = find_program('test_vmaf_roi_usage.sh')
+test('test_vmaf_roi_usage', test_vmaf_roi_usage,
+     suite : ['fast'],
+     depends : [vmaf_roi],
+     workdir : meson.project_build_root(),
+     env: [
+         'MESON_BUILD_ROOT=' + meson.project_build_root(),
+         'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+     ],
+     timeout : 120)
+test_vmaf_vpl_usage = find_program('test_vmaf_vpl_usage.sh')
+if vmaf_vpl_ok
+    test('test_vmaf_vpl_usage', test_vmaf_vpl_usage,
+         suite : ['fast'],
+         depends : [vmaf_vpl],
+         workdir : meson.project_build_root(),
+         env: [
+             'MESON_BUILD_ROOT=' + meson.project_build_root(),
+             'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+         ],
+         timeout : 120)
+else
+    test('test_vmaf_vpl_usage', test_vmaf_vpl_usage,
+         suite : ['fast'],
+         workdir : meson.project_build_root(),
+         env: [
+             'MESON_BUILD_ROOT=' + meson.project_build_root(),
+             'MESON_SOURCE_ROOT=' + meson.project_source_root(),
+         ],
+         timeout : 120)
+endif
