@@ -31,8 +31,8 @@ invariant: integer_ms_ssim_sycl.cpp = CPU arithmetic, type for type; honours ena
   surface. See
   [../../AGENTS.md §"MS-SSIM `enable_lcs` GPU contract"](../../../AGENTS.md).
 - **`integer_ssim_sycl.cpp` and `integer_ms_ssim_sycl.cpp` are
-  self-contained submit/collect** — do **not** register with
-  `vmaf_sycl_graph_register`. `integer_ms_ssim_sycl.cpp` needs float
+  self-contained submit/collect** — do **not** call
+  `vmaf_sycl_graph_register_flags`. `integer_ms_ssim_sycl.cpp` needs float
   [0, 255] intermediates from `picture_copy()`; `float_ssim_sycl` uploads
   its own raw luma and does that scaling on device (ADR-1370).
   `ciede_sycl` TU follows same pattern. **On rebase**: do not
