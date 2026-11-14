@@ -61,9 +61,6 @@
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
-extern const unsigned char vif_statistics_hsaco[];
-extern const unsigned int vif_statistics_hsaco_len;
-
 /* The kernels index the CPU's log2 table with their own copy of its size. */
 _Static_assert(VIF_HIP_LOG2_TABLE_SIZE == VIF_LOG2_TABLE_SIZE,
                "vif_statistics.hip reads the CPU's log2 table");
