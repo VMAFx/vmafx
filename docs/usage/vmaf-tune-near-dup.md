@@ -65,7 +65,7 @@ intro, or logo sequence are strictly refused at the 50% and 85% segments.
 | Flag | Subcommands | Description |
 |---|---|---|
 | `--near-dup-reuse` | `corpus`, `recommend` | Enable perceptual fingerprint secondary cache lookup on exact cache miss. Default: off. |
-| `--near-dup-verify` | `corpus`, `recommend` | Run a 1-second VMAF spot check against the reference; refuse the near-duplicate when the two scores differ by more than 1.5. Default: off. |
+| `--near-dup-verify` | `corpus`, `recommend` | Score one second of both sources at the entry's sample window against the cached encode and refuse the near-duplicate when the two scores differ by more than 1.5. The check reads the cached trial's source file at the path recorded in its row and requires its stored `src_sha256` to still match, so a source that has moved, been edited or been deleted is refused and reuse fails closed (a reorganised corpus sees fewer cache hits). Two seconds are scored per check instead of one, and a sample-mode entry verifies at its own offset rather than the file's first second. Default: off. |
 
 ## Python API
 

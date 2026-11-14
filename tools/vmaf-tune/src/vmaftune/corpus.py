@@ -1007,9 +1007,16 @@ def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
     window score with ``cached.vmaf_score`` would compare a one-second
     score with the trial's whole-clip aggregate, which moves the delta
     for an exact duplicate whose first second is easier or harder than
-    its average (issue #3343). Refuses reuse when the delta exceeds
-    ``NEAR_DUP_SPOT_MAX_DELTA``, and fail-closed (like a missing
-    artifact) when the cached entry has no usable source path.
+    its average (issue #3343). The window sits at the entry's own sample
+    offset, not at the file's first second: the near-duplicate index only
+    matches entries built with the same cell params (the params key
+    carries the sample window, ADR-0301), so the cached encode covers the
+    window this sweep resolved and ``frame_skip_ref`` points both sources
+    at it. Refuses reuse when the delta exceeds
+    ``NEAR_DUP_SPOT_MAX_DELTA``; fails closed (like a scoring error) when
+    the cached entry has no usable source path, when the row stores no
+    source hash, or when the file at the stored path no longer hashes to
+    it — a replaced file would otherwise be scored as the baseline.
     """
     if not (cached.artifact_path and cached.artifact_path.exists()):
         return False
@@ -1022,12 +1029,21 @@ def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
             cached_src,
         )
         return False
+    stored_sha = str(stored_row.get("src_sha256") or "")
+    if not stored_sha or _sha256_file(cached_source) != stored_sha:
+        _LOG.info(
+            "vmaf-tune: near-dup spot verify fail-closed: cached source does not match its stored hash (%r)",
+            cached_src,
+        )
+        return False
     from .score import ScoreRequest, run_score
 
     job = sweep.job
     opts = sweep.opts
     fps = float(job.framerate) if float(job.framerate) > 0.0 else 24.0
-    frame_cnt = max(1, int(fps))
+    one_second = max(1, int(fps))
+    frame_skip_ref = sweep.frame_skip_ref
+    frame_cnt = min(one_second, sweep.frame_cnt) if sweep.frame_cnt > 0 else one_second
 
     def spot_request(reference: Path) -> ScoreRequest:
         return ScoreRequest(
@@ -1036,7 +1052,7 @@ def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
             width=int(job.width),
             height=int(job.height),
             pix_fmt=job.pix_fmt,
-            frame_skip_ref=0,
+            frame_skip_ref=frame_skip_ref,
             frame_cnt=frame_cnt,
             duration_s=1.0,
         )

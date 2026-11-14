@@ -164,3 +164,21 @@ exactly-1.5-boundary and two fail-closed cases are unit tests in
 so they need no vmaf binary. Decision 5 still holds: the option stays off by
 default until the measured library run reports the hit rate, false matches and
 segment ratios.
+
+## Status update 2026-11-14 (review follow-ups on PR #3444)
+
+The same-window spot check gained two fail-closed guards from the review:
+
+- The cached source must still hash to the row's stored `src_sha256`
+  before it becomes the spot-check baseline; a row without a stored hash
+  also refuses. A file replaced at the recorded path is therefore never
+  scored as the baseline of its old encode.
+- The one-second window sits at the entry's own sample offset
+  (`sweep.frame_skip_ref`): the near-duplicate index only matches entries
+  built with the same cell params, which carry the sample window, so a
+  sample-mode entry is verified at the offset its encode covers instead
+  of the file's first second.
+
+`tools/vmaf-tune/tests/test_near_dup_verify.py` now counts nine tests
+(positive, negative, exactly-1.5 boundary, the offset window and four
+fail-closed cases).

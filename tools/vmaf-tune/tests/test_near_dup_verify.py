@@ -3,12 +3,13 @@
 """Unit tests for the near-duplicate spot check (ADR-3372, issue #3343).
 
 ``_verify_near_dup_spot`` must compare like with like: both sides of the
-1.5-point delta come from the same one-second window — the query source
-scored against the cached encode, and the cached source scored against
-that same encode over the same window. The cached trial's whole-clip
-aggregate must not enter the comparison, and a cached entry without a
-readable source path fails closed instead of comparing against a
-different window.
+1.5-point delta come from the same one-second window at the entry's own
+sample offset — the query source scored against the cached encode, and
+the cached source scored against that same encode over the same window.
+The cached trial's whole-clip aggregate must not enter the comparison,
+and a cached entry without a readable source path, without a stored
+source hash, or whose file no longer hashes to that hash fails closed
+instead of comparing against a different or replaced baseline.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ from vmaftune.per_shot import ShotMetadata
 from vmaftune.score import ScoreResult
 
 
-def _sweep(source: Path) -> _Sweep:
+def _sweep(source: Path, *, frame_skip_ref: int = 0, frame_cnt: int = 24) -> _Sweep:
     """A minimal sweep state for the spot check (only job/opts are read)."""
     return _Sweep(
         job=CorpusJob(
@@ -49,8 +50,8 @@ def _sweep(source: Path) -> _Sweep:
         tune_cache=None,
         clip_seconds=2.0,
         start_s=0.0,
-        frame_skip_ref=0,
-        frame_cnt=24,
+        frame_skip_ref=frame_skip_ref,
+        frame_cnt=frame_cnt,
         clip_mode="full",
         shot_meta=ShotMetadata(count=0, avg_duration_sec=0.0, duration_std_sec=0.0),
         hdr_info=None,
@@ -62,9 +63,23 @@ def _sweep(source: Path) -> _Sweep:
     )
 
 
+def _source_digest(path: Path) -> str:
+    from vmaftune.corpus import _sha256_file
+
+    return _sha256_file(path)
+
+
 def _cached(artifact: Path, src: Path | None, whole_clip_score: float) -> CachedResult:
-    """A cached trial whose aggregate score covers its whole clip."""
-    row = {"src": str(src)} if src is not None else None
+    """A cached trial whose aggregate score covers its whole clip.
+
+    The row mirrors a real one: ``src`` names the cached source and
+    ``src_sha256`` its content hash.
+    """
+    row = None
+    if src is not None:
+        row = {"src": str(src)}
+        if src.exists():
+            row["src_sha256"] = _source_digest(src)
     return CachedResult(
         encode_size_bytes=1024,
         encode_time_ms=1.0,
@@ -216,3 +231,99 @@ def test_cached_source_gone_fails_closed(tmp_path: Path, monkeypatch: pytest.Mon
     ):
         assert _verify_near_dup_spot(_sweep(source), cached) is False
     assert calls == []
+
+
+def test_missing_cached_artifact_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cached encode that is gone fails closed before any scoring."""
+    source = tmp_path / "query.yuv"
+    source.write_bytes(b"\x00" * 16)
+    cached_src = tmp_path / "cached.yuv"
+    cached_src.write_bytes(b"\x00" * 16)
+    cached = _cached(tmp_path / "gone.mkv", cached_src, whole_clip_score=85.0)
+    calls: list = []
+    with unittest.mock.patch(
+        "vmaftune.score.run_score",
+        _window_scores(calls, {source: 85.0}),
+    ):
+        assert _verify_near_dup_spot(_sweep(source), cached) is False
+    assert calls == []
+
+
+def test_replaced_cached_source_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cached source whose bytes no longer hash to the stored hash refuses.
+
+    Without this check the spot check would score the replacement against
+    the old encode: a replacement that happens to be a near-duplicate of
+    the query would then pass as a zero delta (review on #3444).
+    """
+    source = tmp_path / "query.yuv"
+    source.write_bytes(b"\x00" * 16)
+    cached_src = tmp_path / "cached.yuv"
+    cached_src.write_bytes(b"\x00" * 16)
+    artifact = tmp_path / "enc.mkv"
+    artifact.write_bytes(b"\x00" * 4)
+    cached = _cached(artifact, cached_src, whole_clip_score=85.0)
+    cached_src.write_bytes(b"\xff" * 16)  # replaced after the encode was cached
+    calls: list = []
+    with unittest.mock.patch(
+        "vmaftune.score.run_score",
+        _window_scores(calls, {source: 85.0}),
+    ):
+        assert _verify_near_dup_spot(_sweep(source), cached) is False
+    assert calls == []
+
+
+def test_cached_source_without_stored_hash_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A row without a stored source hash cannot prove the baseline: refuse."""
+    source = tmp_path / "query.yuv"
+    source.write_bytes(b"\x00" * 16)
+    cached_src = tmp_path / "cached.yuv"
+    cached_src.write_bytes(b"\x00" * 16)
+    artifact = tmp_path / "enc.mkv"
+    artifact.write_bytes(b"\x00" * 4)
+    cached = _cached(artifact, cached_src, whole_clip_score=85.0)
+    cached.row["src_sha256"] = ""
+    calls: list = []
+    with unittest.mock.patch(
+        "vmaftune.score.run_score",
+        _window_scores(calls, {source: 85.0}),
+    ):
+        assert _verify_near_dup_spot(_sweep(source), cached) is False
+    assert calls == []
+
+
+def test_nonzero_sample_window_is_scored_at_its_offset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sample-mode entry is verified at its own window, not at frame 0.
+
+    The near-duplicate index only matches entries built with the same
+    cell params, so the cached encode covers the window this sweep
+    resolved: both spot scores skip to ``frame_skip_ref`` and cap at one
+    second of the window (review on #3444).
+    """
+    source = tmp_path / "query.yuv"
+    source.write_bytes(b"\x00" * 16)
+    cached_src = tmp_path / "cached.yuv"
+    cached_src.write_bytes(b"\x00" * 16)
+    artifact = tmp_path / "enc.mkv"
+    artifact.write_bytes(b"\x00" * 4)
+    cached = _cached(artifact, cached_src, whole_clip_score=85.0)
+    sweep = _sweep(source, frame_skip_ref=720, frame_cnt=120)  # 5 s clip from 30 s
+    calls: list = []
+    with unittest.mock.patch(
+        "vmaftune.score.run_score",
+        _window_scores(calls, {source: 85.0, cached_src: 85.0}),
+    ):
+        assert _verify_near_dup_spot(sweep, cached) is True
+    assert len(calls) == 2
+    for req in calls:
+        assert req.frame_skip_ref == 720
+        assert req.frame_cnt == 24  # one second of the 24 fps window
+        assert req.duration_s == 1.0
