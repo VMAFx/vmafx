@@ -740,12 +740,38 @@ jobs:
           - name: Windows UCRT64
             msystem: UCRT64
             MINGW_PACKAGE_PREFIX: mingw-w64-ucrt-x86_64
+            cc: gcc
+            cxx: g++
+            compiler_package: gcc
+            runtime_archives: true
+            ldflags: -pipe -static -static-libgcc -static-libstdc++
+            werror: true
+          # C13-24: the docs claim MSYS2 / MinGW-w64 support; exercise the
+          # CLANG64 (libc++, UCRT) and MINGW64 (MSVCRT) environments too.
+          - name: Windows CLANG64
+            msystem: CLANG64
+            MINGW_PACKAGE_PREFIX: mingw-w64-clang-x86_64
+            cc: clang
+            cxx: clang++
+            compiler_package: clang
+            runtime_archives: false
+            ldflags: -pipe -static
+            werror: true
+          - name: Windows MINGW64 (MSVCRT)
+            msystem: MINGW64
+            MINGW_PACKAGE_PREFIX: mingw-w64-x86_64
+            cc: gcc
+            cxx: g++
+            compiler_package: gcc
+            runtime_archives: true
+            ldflags: -pipe -static -static-libgcc -static-libstdc++
+            werror: true
     env:
-      CC: ccache gcc
-      CXX: ccache g++
+      CC: ccache ${{ matrix.cc }}
+      CXX: ccache ${{ matrix.cxx }}
       CFLAGS: -pipe -static -O3 -mtune=generic -D_FILE_OFFSET_BITS=64 -mthreads
       CXXFLAGS: -pipe -static -O3 -mtune=generic -D_FILE_OFFSET_BITS=64 -mthreads
-      LDFLAGS: -pipe -static -static-libgcc -static-libstdc++
+      LDFLAGS: ${{ matrix.ldflags }}
     defaults:
       run:
         shell: msys2 {0}
@@ -772,7 +798,7 @@ jobs:
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-ccache
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-nasm
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-pkg-config
-            ${{ matrix.MINGW_PACKAGE_PREFIX }}-gcc
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-${{ matrix.compiler_package }}
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-meson
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-ninja
             ${{ matrix.MINGW_PACKAGE_PREFIX }}-python
@@ -790,13 +816,12 @@ jobs:
 
       - name: Configure vmaf
         run: |
-          # ADR-2170: this leg prints no warnings, so they are errors.
+          # ADR-2170: the MSYS2 legs print no warnings, so they are errors.
           # shellcheck disable=SC2046  # the helper prints one option per line, split on purpose
           meson setup core core/build --buildtype release \
             --default-library static --prefix "$MINGW_PREFIX" \
             -Denable_cuda=false -Denable_sycl=false -Denable_float=true \
-            -Dwerror=true \
-            $(bash scripts/ci/werror-args.sh true)
+            $(bash scripts/ci/werror-args.sh "${{ matrix.werror }}")
 
       - name: Build vmaf
         run: meson install -C core/build
@@ -832,13 +857,21 @@ jobs:
         # a toolchain-runtime export (multiple definition of _Unwind_Resume) is
         # named here instead of only in the linker error.
         if: ${{ !cancelled() }}
-        run: >-
-          python3 scripts/ci/check_mingw_import_thunks.py
-          --dll-dir core/build-shared/src
-          --runtime-archive "$(gcc -print-file-name=libgcc_eh.a)"
-          --runtime-archive "$(gcc -print-file-name=libgcc.a)"
-          --runtime-archive "$(gcc -print-file-name=libwinpthread.a)"
-          core/build-shared
+        run: |
+          if [ "${{ matrix.runtime_archives }}" = "true" ]; then
+            python3 scripts/ci/check_mingw_import_thunks.py \
+              --dll-dir core/build-shared/src \
+              --runtime-archive "$(gcc -print-file-name=libgcc_eh.a)" \
+              --runtime-archive "$(gcc -print-file-name=libgcc.a)" \
+              --runtime-archive "$(gcc -print-file-name=libwinpthread.a)" \
+              core/build-shared
+          else
+            # CLANG64 has no GCC runtime archives; check the thunk half only,
+            # the same shape the Linux->Windows cross lane uses.
+            python3 scripts/ci/check_mingw_import_thunks.py \
+              --dll-dir core/build-shared/src \
+              core/build-shared
+          fi
 
       - name: Run shared vmaf.exe
         run: PATH="$PWD/core/build-shared/src:$PATH" core/build-shared/tools/vmaf.exe --help

@@ -61,7 +61,7 @@ required and which ADR owns it, see
 | [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100, 0106, 0108 and 0165 process gates. |
 | [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml) | Netflix golden, sanitizers, tiny-AI, MCP, coverage, assertion density, the test-suite registry and tooling suite (`Tooling Tests`) and the Python package suites (`Python Package Tests (<suite>)`); which job runs which test suite: [test suites](test-suites.md). |
 | [`security-scans.yml`](../../.github/workflows/security-scans.yml) | Semgrep, CodeQL, Gitleaks, Dependency Review and the OpenSSF Scorecard PR policy (`Scorecard PR Gate`, ADR-1247). |
-| [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform, cross-backend libvmaf build matrix: 17 lanes, six of them required. |
+| [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml) | Cross-platform, cross-backend libvmaf build matrix: 19 lanes, six of them required. |
 | [`build.yml`](../../.github/workflows/build.yml) | One all-backend build per OS (`Linux Intel LLVM`, `macOS Clang+Metal`, `Windows MSVC+CUDA (full)`), alongside the matrix; required since ADR-1297. |
 | [`go-ci.yml`](../../.github/workflows/go-ci.yml) | Required Go modernization, vet, security scan, runner smoke and tests (ADRs 1238 and 1338). |
 | [`ffmpeg-integration.yml`](../../.github/workflows/ffmpeg-integration.yml) | FFmpeg plus libvmaf build (Linux GCC, macOS Clang, SYCL). |
@@ -866,7 +866,7 @@ CMake 5, Go 2, one direct compile).
 
 | Workflow | Lanes | Toolchain family |
 | --- | --- | --- |
-| `libvmaf-build-matrix.yml` | every Linux and macOS row, Windows UCRT64, Windows MSVC+CUDA, Windows MSVC+SYCL, Windows ARM64 MSVC, the Level Zero builds and the static link smoke | gcc 14, clang 22, Apple clang, icx / icpx, MinGW gcc, MSVC `cl.exe`, icx-cl, nvcc, hipcc |
+| `libvmaf-build-matrix.yml` | every Linux and macOS row, Windows UCRT64, Windows CLANG64, Windows MINGW64 (MSVCRT), Windows MSVC+CUDA, Windows MSVC+SYCL, Windows ARM64 MSVC, the Level Zero builds and the static link smoke | gcc 14, clang 22, Apple clang, icx / icpx, MinGW gcc, MinGW clang, MSVC `cl.exe`, icx-cl, nvcc, hipcc |
 | `build.yml` | Linux Intel LLVM, macOS Clang+Metal, Windows MSVC+CUDA (full), the Level Zero build | icx / icpx, Apple clang, MSVC, nvcc |
 | `sanitizers.yml`, `tests-and-quality-gates.yml` (sanitizer matrix) | ASan+UBSan, TSan, address, undefined, thread, nightly libFuzzer | clang 22, lld |
 | `tests-and-quality-gates.yml` | Netflix CPU golden, DNN, MCP smoke, coverage (gcov), coverage GPU | gcc, icx / icpx with nvcc |
@@ -937,7 +937,9 @@ Windows MSVC+CUDA and Windows ARM64 MSVC (C4101 and C4305 as C2220) and
 Windows MSVC+SYCL (icx-cl, `-Wunused-variable` as an error) in run
 37856727687; Linux Intel LLVM and Windows MSVC+CUDA (full) in run
 37856730893; Tidy Metal (Apple clang) in run 37856734080; the DNN and MCP
-smoke builds in run 37856740709. The same run stopped the macOS Clang+Metal
+smoke builds in run 37856740709. Windows CLANG64 and Windows MINGW64
+(MSVCRT) joined the matrix later and have no planted-warning run yet. The
+planted run also stopped the macOS Clang+Metal
 leg at `meson setup`, which the ld64 switch above fixes; the static link smoke
 under `-Wall -Wextra -Werror` reported three `-Wmaybe-uninitialized` sites of
 the LTO archive (`float_vif.c`, `speed.c`, `iqa/convolve.c` through `ssim.c`),
