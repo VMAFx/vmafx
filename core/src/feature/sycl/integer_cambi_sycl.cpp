@@ -7,7 +7,7 @@
  *  (T3-15 / ADR-0415), fully device-resident since ADR-1357.
  *
  *  Per-frame flow — every stage runs on the device, in order, on the
- *  combined in-order queue (vmaf_sycl_graph_register), reading the distorted
+ *  combined in-order queue (vmaf_sycl_graph_register_flags), reading the distorted
  *  luma plane the shared-frame upload already placed on the device:
  *
  *    1. reset         : zero the per-scale selection state and the status word.

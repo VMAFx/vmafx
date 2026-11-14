@@ -30,7 +30,7 @@
  *  the combined queue preserves in-order ordering with the
  *  graph-replayed luma kernel.
  *
- *  Phases (combined-graph contract — see `vmaf_sycl_graph_register`
+ *  Phases (combined-graph contract — see `vmaf_sycl_graph_register_flags`
  *  docs in `core/src/sycl/common.h`):
  *      submit   : upload the shared chroma planes (once per frame).
  *      pre_fn   : zero all 3 SSE accumulators.
@@ -38,7 +38,7 @@
  *      post_fn  : chroma SSE reduction kernels (direct) + D2H all 3
  *                 SSE accumulators.
  *
- *  Pattern: register with vmaf_sycl_graph_register and ride the
+ *  Pattern: register with vmaf_sycl_graph_register_flags and ride the
  *  combined-graph submit/wait machinery just like motion_sycl.
  *
  *  Options: the full CPU `psnr` table. The device only reduces SSE;
