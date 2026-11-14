@@ -1,0 +1,1 @@
+| [ADR-3541](3541-dev-image-apt-snapshot.md) | Pin Ubuntu development packages through one `UBUNTU_APT_SNAPSHOT` setting; retain a named HTTPS certificate bootstrap exception and propose weekly Renovate updates for manual review. | Accepted | docker, dev, supply-chain, renovate |
