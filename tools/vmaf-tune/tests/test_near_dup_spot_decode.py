@@ -309,16 +309,22 @@ def test_spot_decodes_real_cached_container(spot, monkeypatch):
     assert list(cached.artifact_path.parent.iterdir()) == [cached.artifact_path]
 
 
-def test_spot_scores_real_sample_window(spot, tmp_path):
-    ffmpeg = shutil.which("ffmpeg")
-    if ffmpeg is None:
-        pytest.skip("ffmpeg not on PATH")
+def _real_window_sweep(spot, ffmpeg):
+    """A 3 s sweep whose cached encode covers source frames 24-47."""
     sweep, cached = spot
     sweep.opts = dataclasses.replace(sweep.opts, ffmpeg_bin=ffmpeg, vmaf_bin=str(vmaf_under_test()))
     sweep.job = dataclasses.replace(sweep.job, duration_s=3.0)
     sweep.frame_skip_ref = 24
     sweep.start_s = 1.0
     _generate_cached_encode(sweep, cached, ffmpeg)
+    return sweep, cached
+
+
+def test_spot_scores_real_sample_window(spot, tmp_path):
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        pytest.skip("ffmpeg not on PATH")
+    sweep, cached = _real_window_sweep(spot, ffmpeg)
     req = score.ScoreRequest(
         reference=sweep.decoded_reference,
         distorted=cached.artifact_path,
@@ -338,11 +344,20 @@ def test_spot_scores_real_sample_window(spot, tmp_path):
     # The encode covers source frames 24-47: scored against that window it is near-transparent.
     assert result.vmaf_score > 90.0
     cached = dataclasses.replace(cached, vmaf_score=result.vmaf_score)
-    # Same content on both legs (the cached source is the query source),
-    # so the same-window comparison passes at any offset.
-    cached = dataclasses.replace(cached, row=_row_for(sweep.job.source))
+    # The row names the sweep's pre-decoded 3 s reference: the same
+    # content the cached encode was built from, so the cached-source leg
+    # has frames at the sample offset. (Naming the 1 s encode copy — the
+    # old fixture — left the leg with no frame at skip 24; review on
+    # #3444.)
+    cached = dataclasses.replace(cached, row=_row_for(sweep.decoded_reference))
     assert corpus._verify_near_dup_spot(sweep, cached) is True
-    # A cached entry whose source is different content refuses reuse.
+
+
+def test_spot_refuses_a_different_real_cached_source(spot, tmp_path):
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        pytest.skip("ffmpeg not on PATH")
+    sweep, cached = _real_window_sweep(spot, ffmpeg)
     different = tmp_path / "different-source.mkv"
     run_absolute_tool(
         [

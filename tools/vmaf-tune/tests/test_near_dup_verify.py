@@ -22,12 +22,14 @@ reference instead of being misread at the rung geometry.
 from __future__ import annotations
 
 import dataclasses
+import logging
 import unittest.mock
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from vmaftune import corpus
 from vmaftune.cache import CachedResult
 from vmaftune.corpus import (
     NEAR_DUP_SPOT_MAX_DELTA,
@@ -294,13 +296,16 @@ def test_missing_cached_artifact_fails_closed(
 
 
 def test_replaced_cached_source_fails_closed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog
 ) -> None:
     """A cached source whose bytes no longer hash to the stored hash refuses.
 
     Without this check the spot check would score the replacement against
     the old encode: a replacement that happens to be a near-duplicate of
-    the query would then pass as a zero delta (review on #3444).
+    the query would then pass as a zero delta (review on #3444). The
+    decode stand-ins let the check reach the hash guard instead of
+    failing on the dummy artifact decode first, and the recorder proves
+    the guard hashed the file.
     """
     source = tmp_path / "query.yuv"
     source.write_bytes(b"\x00" * 16)
@@ -310,6 +315,16 @@ def test_replaced_cached_source_fails_closed(
     artifact.write_bytes(b"\x00" * 4)
     cached = _cached(artifact, cached_src, whole_clip_score=85.0)
     cached_src.write_bytes(b"\xff" * 16)  # replaced after the encode was cached
+    _patch_decodes(monkeypatch, tmp_path)
+    hashed: list = []
+    real_sha = corpus._sha256_file
+
+    def recording_sha(path):
+        hashed.append(path)
+        return real_sha(path)
+
+    monkeypatch.setattr("vmaftune.corpus._sha256_file", recording_sha)
+    caplog.set_level(logging.INFO)
     calls: list = []
     with unittest.mock.patch(
         "vmaftune.score.run_score",
@@ -317,37 +332,18 @@ def test_replaced_cached_source_fails_closed(
     ):
         assert _verify_near_dup_spot(_sweep(source), cached) is False
     assert calls == []
+    assert hashed == [cached_src]  # the guard hashed the replaced file
+    assert "does not match its stored hash" in caplog.text
 
 
 def test_cached_source_without_stored_hash_fails_closed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog
 ) -> None:
-    """A row without a stored source hash cannot prove the baseline: refuse."""
-    source = tmp_path / "query.yuv"
-    source.write_bytes(b"\x00" * 16)
-    cached_src = tmp_path / "cached.yuv"
-    cached_src.write_bytes(b"\x00" * 16)
-    artifact = tmp_path / "enc.mkv"
-    artifact.write_bytes(b"\x00" * 4)
-    cached = _cached(artifact, cached_src, whole_clip_score=85.0)
-    cached.row["src_sha256"] = ""
-    calls: list = []
-    with unittest.mock.patch(
-        "vmaftune.score.run_score",
-        _window_scores(calls, {source: 85.0}),
-    ):
-        assert _verify_near_dup_spot(_sweep(source), cached) is False
-    assert calls == []
+    """A row without a stored source hash cannot prove the baseline: refuse.
 
-
-def test_unreadable_cached_source_fails_closed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A cached source that cannot be opened for hashing refuses, not raises.
-
-    The hash guard runs inside the helper the spot check calls under its
-    ``try``, so an unreadable file surfaces as a logged refusal instead of
-    escaping the check (review on #3444).
+    The decode stand-ins let the check reach the hash guard; the missing
+    hash short-circuits before the file is hashed, and the refusal log
+    proves the guard — not a decode failure — refused (review on #3444).
     """
     source = tmp_path / "query.yuv"
     source.write_bytes(b"\x00" * 16)
@@ -356,8 +352,43 @@ def test_unreadable_cached_source_fails_closed(
     artifact = tmp_path / "enc.mkv"
     artifact.write_bytes(b"\x00" * 4)
     cached = _cached(artifact, cached_src, whole_clip_score=85.0)
+    cached.row["src_sha256"] = ""
+    _patch_decodes(monkeypatch, tmp_path)
+    hashed: list = []
+    monkeypatch.setattr("vmaftune.corpus._sha256_file", lambda path: hashed.append(path) or "")
+    caplog.set_level(logging.INFO)
+    calls: list = []
+    with unittest.mock.patch(
+        "vmaftune.score.run_score",
+        _window_scores(calls, {source: 85.0}),
+    ):
+        assert _verify_near_dup_spot(_sweep(source), cached) is False
+    assert calls == []
+    assert hashed == []  # the missing hash short-circuits the hashing
+    assert "does not match its stored hash" in caplog.text
+
+
+def test_unreadable_cached_source_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog
+) -> None:
+    """A cached source that cannot be opened for hashing refuses, not raises.
+
+    The decode stand-ins let the check reach the hash guard; the raised
+    ``OSError`` surfaces as a logged refusal from the enclosing ``try``
+    instead of escaping the check (review on #3444).
+    """
+    source = tmp_path / "query.yuv"
+    source.write_bytes(b"\x00" * 16)
+    cached_src = tmp_path / "cached.yuv"
+    cached_src.write_bytes(b"\x00" * 16)
+    artifact = tmp_path / "enc.mkv"
+    artifact.write_bytes(b"\x00" * 4)
+    cached = _cached(artifact, cached_src, whole_clip_score=85.0)
+    _patch_decodes(monkeypatch, tmp_path)
+    hashed: list = []
 
     def unreadable(path: Path) -> str:
+        hashed.append(path)
         raise OSError(f"cannot open {path}")
 
     monkeypatch.setattr("vmaftune.corpus._sha256_file", unreadable)
@@ -368,6 +399,8 @@ def test_unreadable_cached_source_fails_closed(
     ):
         assert _verify_near_dup_spot(_sweep(source), cached) is False
     assert calls == []
+    assert hashed == [cached_src]  # the OSError branch was reached
+    assert "near-dup spot verify failed" in caplog.text
 
 
 def test_nonzero_sample_window_is_scored_at_its_offset(
