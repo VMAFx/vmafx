@@ -72,6 +72,14 @@ jobs:
           fi
           type="${label#type:}"
 
+          # Add the label before removing the stale ones: if the repository
+          # does not have the label yet, a failed add leaves the previous
+          # type label in place instead of removing it and ending with none.
+          if ! gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "$label"; then
+            echo "::warning::could not add $label to PR $PR_NUMBER; stale type labels are left in place."
+            exit 0
+          fi
+
           # Replace any previously-derived type label: the title can be edited,
           # and a PR carrying two type labels would appear twice in the release
           # notes, once under each section.
@@ -91,7 +99,6 @@ jobs:
             esac
           done <<< "$current"
 
-          gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "$label"
           echo "Applied $label (from '$type')."
 
           # A `!` before the colon, or a BREAKING CHANGE footer, is the

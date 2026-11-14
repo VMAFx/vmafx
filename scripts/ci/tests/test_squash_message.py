@@ -58,6 +58,7 @@ CLI_TIMEOUT_S = 60  # outer deadline for each squash_message.py CLI run
 sys.path.insert(0, str(REPO_ROOT))
 from scripts.ci import squash_message  # noqa: E402
 from scripts.dev import merge_train_guard as guard  # noqa: E402
+from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
 from scripts.lib.safe_subprocess import run as safe_run  # noqa: E402
 
 
@@ -344,7 +345,7 @@ class TestSubjectPolicy(unittest.TestCase):
 class TestEmitLabelCli(unittest.TestCase):
     """The emit-label CLI through the checker binary (issue 2750, HISS-15)."""
 
-    def _emit_label(self, title: str) -> subprocess.CompletedProcess[str]:
+    def _emit_label(self, title: str) -> TextCommandResult:
         """Invoke squash_message.py emit-label through safe_subprocess."""
         return safe_run(
             [sys.executable, str(SQUASH_SCRIPT), "emit-label", "--title", title],

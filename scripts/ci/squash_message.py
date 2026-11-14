@@ -43,6 +43,7 @@ Functions:
 - parse_subject_prefix(bare): Returns (type, description) or None without a prefix.
 - subject_policy_error(bare, declared): Repository-side subject refusal, or ''.
 - check_message(title, number, body, identity, ...): Checks message with engine.
+- run_engine_check(root, msg, argv, timeout): Runs the engine on the composed message.
 - declared_types(repo_root): Extracts conventional commit types from config.
 - engine_subject(subject, declared): Maps non-engine declared types to 'chore'.
 - engine_available(root): Checks if the pinned Praetor engine wrapper is runnable.
@@ -331,34 +332,19 @@ def resolve_engine_cmd(root: Path, engine_argv: list[str] | None) -> tuple[list[
     return list(engine_argv), ""
 
 
-def check_message(
-    title: str,
-    number: int,
-    body_text: str,
-    identity: str,
-    *,
-    engine_argv: list[str] | None = None,
-    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
-    repo_root: Path | None = None,
+def run_engine_check(
+    root: Path,
+    msg: str,
+    engine_argv: list[str] | None,
+    timeout_seconds: float,
 ) -> tuple[int, str]:
-    """Check the composed squash message against commit policy.
+    """Run the engine policy check on the composed message.
 
     Returns a tuple of (exit_status, output_text):
       0: message passes policy
       1: message refused by engine policy check
-      2: usage error, engine execution failure, timeout, or missing binary
+      2: engine execution failure, timeout, or missing binary
     """
-    root = repo_root or REPO_ROOT
-    try:
-        declared = declared_types(root)
-        msg = engine_message(compose(title, number, body_text, identity), declared)
-    except ValueError as exc:
-        return 2, f"composition error: {exc}\n"
-
-    policy_reason = subject_policy_error(bare_subject(title, number), declared)
-    if policy_reason:
-        return 1, f"refusing subject: {policy_reason}\n"
-
     cmd_prefix, err = resolve_engine_cmd(root, engine_argv)
     if cmd_prefix is None:
         return 2, err
@@ -395,6 +381,37 @@ def check_message(
     finally:
         if temp_path and temp_path.exists():
             temp_path.unlink(missing_ok=True)
+
+
+def check_message(
+    title: str,
+    number: int,
+    body_text: str,
+    identity: str,
+    *,
+    engine_argv: list[str] | None = None,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    repo_root: Path | None = None,
+) -> tuple[int, str]:
+    """Check the composed squash message against commit policy.
+
+    Returns a tuple of (exit_status, output_text):
+      0: message passes policy
+      1: message refused by engine policy check or the subject policy above
+      2: usage error, engine execution failure, timeout, or missing binary
+    """
+    root = repo_root or REPO_ROOT
+    try:
+        declared = declared_types(root)
+        msg = engine_message(compose(title, number, body_text, identity), declared)
+    except ValueError as exc:
+        return 2, f"composition error: {exc}\n"
+
+    policy_reason = subject_policy_error(bare_subject(title, number), declared)
+    if policy_reason:
+        return 1, f"refusing subject: {policy_reason}\n"
+
+    return run_engine_check(root, msg, engine_argv, timeout_seconds)
 
 
 def resolve_body(args: argparse.Namespace) -> str:
