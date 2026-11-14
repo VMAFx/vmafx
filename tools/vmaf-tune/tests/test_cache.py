@@ -212,6 +212,21 @@ def test_put_then_get_round_trip(tmp_path):
     assert verified is not None
     assert verified.near_dup_spot_score == 88.25
 
+def test_rejected_spot_score_leaves_the_existing_entry_unchanged(tmp_path):
+    c = TuneCache(tmp_path / "cache")
+    old = tmp_path / "old.mp4"
+    old.write_bytes(b"OLD")
+    c.put("k", _result(spot_score=88.25), old)
+    new = tmp_path / "new.mp4"
+    new.write_bytes(b"NEW")
+    with pytest.raises(ValueError):
+        c.put("k", _result(spot_score=math.nan), new)
+    hit = c.get("k")
+    assert hit is not None
+    assert hit.near_dup_spot_score == 88.25
+    assert hit.artifact_path.read_bytes() == b"OLD"
+
+
 def test_cache_meta_is_strict_json_and_nonfinite_score_is_miss(tmp_path):
     c = TuneCache(tmp_path / "cache")
     blob = tmp_path / "encode.mp4"

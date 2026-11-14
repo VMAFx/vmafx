@@ -395,6 +395,9 @@ class TuneCache:
         """
         if not artifact_path.exists():
             raise FileNotFoundError(f"artifact missing: {artifact_path}")
+        # Validate before the blob is replaced, so a rejected write keeps the existing entry consistent.
+        if result.near_dup_spot_score is not None and not math.isfinite(result.near_dup_spot_score):
+            raise ValueError("near-duplicate spot score must be finite")
 
         meta = self._meta_path(key)
         blob = self._blob_path(key)
@@ -415,8 +418,6 @@ class TuneCache:
             "vmaf_binary_version": result.vmaf_binary_version,
         }
         if result.near_dup_spot_score is not None:
-            if not math.isfinite(result.near_dup_spot_score):
-                raise ValueError("near-duplicate spot score must be finite")
             payload["near_dup_spot_score"] = float(result.near_dup_spot_score)
         if result.row is not None:
             payload["row"] = _row_to_meta(result.row)
