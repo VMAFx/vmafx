@@ -110,7 +110,11 @@ stage_library_chain() {
 # The bundle ships libvmafx with RUNPATH $ORIGIN, which resolves dependencies
 # in the bundle directory. If libvmafx was built with a dependency on libzimg,
 # resolve that exact soname via the dynamic loader and stage exactly what
-# DT_NEEDED names. When libvmafx does not need libzimg, stage nothing.
+# DT_NEEDED names. The package that owns the resolved file must be the source
+# package licensing.json credits (zimg-source-rpm.txt, issue #3396): `dnf`
+# `zimg-devel` is unpinned, so an EPEL rebuild must fail this build rather than
+# ship a library whose notice names the previous source. When libvmafx does not
+# need libzimg, stage nothing.
 stage_zimg() {
   local zimg_soname='' entry
   while IFS= read -r entry; do
@@ -135,6 +139,10 @@ stage_zimg() {
   )"
   if [[ -z "$resolved_path" || ! -f "$resolved_path" ]]; then
     echo "ERROR: libvmafx needs $zimg_soname but the loader cannot resolve it" >&2
+    return 1
+  fi
+  if ! python3 "$ZIMG_SOURCE_PACKAGE" --library "$resolved_path"; then
+    echo "ERROR: refusing to stage $resolved_path: its package is not the recorded zimg source package" >&2
     return 1
   fi
   cp -L -- "$resolved_path" "artifacts/$zimg_soname"
@@ -175,6 +183,7 @@ stage_cli() {
 }
 
 LICENSING=tools/rc1-tester/image/licensing.py
+ZIMG_SOURCE_PACKAGE=scripts/release/zimg_source_package.py
 LICENCE_WORK=build/release-licences
 
 # The notices of one staged tree (ADR-1503 rule 4, ADR-1513): written by

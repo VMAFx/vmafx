@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,12 @@ lic = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(lic)
 
 REPO = Path(__file__).resolve().parents[3]
+
+_spec_zimg = importlib.util.spec_from_file_location(
+    "zimg_source_package", REPO / "scripts" / "release" / "zimg_source_package.py"
+)
+zimg = importlib.util.module_from_spec(_spec_zimg)
+_spec_zimg.loader.exec_module(zimg)
 
 
 def write(path: Path, text: str) -> Path:
@@ -333,6 +340,165 @@ def test_the_release_files_carry_checked_notices() -> None:
         assert f"sbom-path: sbom/{sbom}" in workflow
     records = lic.load_manifest()["artifacts"]
     assert {"release-native", "release-models"} <= records.keys()
+
+
+# ------------------------------------------------- the Debian zimg record (issue #3242)
+
+
+def test_the_production_zimg_component_reads_the_debian_record() -> None:
+    """The production images copy libzimg2 out of Debian, so their zimg entry says so.
+
+    The tester entry already reads `usr/share/doc/libzimg2/SOURCE` and takes the
+    package's copyright file as its licence text; the production entry described
+    upstream zimg 3.0.6, which those images do not ship.
+    """
+    expanded = lic.load_manifest()["artifacts"]
+    tester = next(c for c in expanded["image"]["components"] if c["id"] == "zimg")
+    production = next(
+        c for c in expanded["production-cli-image"]["components"] if c["id"] == "zimg"
+    )
+    assert production["debian_source_file"] == tester["debian_source_file"]
+    assert production["texts"] == tester["texts"]
+    assert production["copyright"] == tester["copyright"]
+    assert production["licence"] == "WTFPL"
+    assert "usr/share/doc/libzimg2/**" in production["paths"]
+    assert production["source"] == tester["source"]
+
+
+def test_every_production_image_that_ships_zimg_reads_that_one_record() -> None:
+    """The eight production records inherit the component, so they agree with it."""
+    expanded = lic.load_manifest()["artifacts"]
+    cli = next(c for c in expanded["production-cli-image"]["components"] if c["id"] == "zimg")
+    for kind in (
+        "production-server-image",
+        "production-go-server-image",
+        "production-controller-image",
+        "production-node-image",
+        "production-node-sycl-image",
+        "production-cuda-image",
+        "production-rocm-image",
+        "production-oneapi-image",
+    ):
+        component = next(c for c in expanded[kind]["components"] if c["id"] == "zimg")
+        assert component == cli, kind
+
+
+def test_the_debian_record_is_the_text_the_gate_demands() -> None:
+    """The gate requires the copyright text by path, so the one in the record is it."""
+    record = lic.load_manifest()["artifacts"]["production-cli-image"]
+    scan = {"licences": [], "files": []}
+    needed = lic.needed_texts(record, scan, lic.load_manifest(), set())
+    assert "/usr/share/doc/libzimg2/copyright" in needed
+    assert needed["/usr/share/doc/libzimg2/copyright"]["artifact"] == (
+        "usr/share/doc/libzimg2/copyright"
+    )
+
+
+def test_the_images_that_link_zimg_from_source_keep_their_own_record() -> None:
+    """macOS and the Windows zips build zimg from source; release-native does not.
+
+    Issue #3242 left the two source-built families alone. The macOS bundle links
+    Homebrew's `libzimg.a` and the Windows zips vcpkg's, so each keeps its 3.0.6
+    archive entry. `release-native` is different: `stage_zimg` copies the
+    loader-resolved `libzimg.so*` from the release container's unpinned `dnf`
+    `zimg-devel` (dev/Containerfile), so since #3396 its entry names the
+    installed package that was measured — the EPEL 8 source package `zimg
+    3.0.6-1.el8` — instead of the upstream tag. None of them has a Debian SOURCE
+    file to point at and none may claim one.
+    """
+    expanded = lic.load_manifest()["artifacts"]
+    # The two families that really do build the 3.0.6 release say so in their own
+    # `source`, and carry the archive's WTFPL text by name — the tester-family
+    # entries fetch it, the repo-family entries copy the checked-in text.
+    expected = "https://github.com/sekrit-twc/zimg.git at commit f819b14e8f39d1282400b0d9543e8ef73c1b2bbd, tag release-3.0.6"
+    # The dnf package the release-build container resolves today (issue #3396):
+    # measured against the EPEL 8 repo metadata the manylinux_2_28 base installs from.
+    distributed = "the EPEL 8 source package zimg 3.0.6-1.el8 that dnf zimg-devel pulls into the release-build container, whose library stage_zimg copies as the loader resolves it for libvmafx"
+    archive_texts = (
+        [
+            {
+                "name": "WTFPL.txt",
+                "fetched": "zimg-3.0.6-COPYING",
+                "label": "zimg 3.0.6 licence text (WTFPL v2)",
+            }
+        ],
+        [
+            {
+                "name": "WTFPL.txt",
+                "repo": "tools/rc1-tester/image/licenses/zimg-3.0.6-COPYING.txt",
+                "label": "zimg 3.0.6 licence text (WTFPL v2)",
+            }
+        ],
+    )
+    # release-native ships the distribution build, so it names the measured dnf
+    # package (#3396) while claiming no Debian record; the source-built families
+    # keep their exact 3.0.6 archive source and text.
+    for kind in ("macos", "windows-zip", "windows-cuda-zip", "windows-sycl-zip", "release-native"):
+        component = next(c for c in expanded[kind]["components"] if c["id"] == "zimg")
+        assert "debian_source_file" not in component, kind
+        assert not any(
+            "usr/share/doc/libzimg2" in text for text in json.dumps(component["texts"]).split()
+        ), kind
+        if kind == "release-native":
+            assert component["source"] == distributed, kind
+            assert component["texts"] in archive_texts, kind
+            continue
+        assert component["source"] == expected, kind
+        assert component["texts"] in archive_texts, kind
+
+
+def test_the_recorded_zimg_source_package_is_the_one_the_record_names() -> None:
+    """Issue #3396: one file holds the expected source RPM and the manifest cites it."""
+    recorded = zimg.recorded_source_rpm(_IMAGE / "zimg-source-rpm.txt")
+    assert recorded == "zimg-3.0.6-1.el8.src.rpm"
+    component = next(
+        c
+        for c in lic.load_manifest()["artifacts"]["release-native"]["components"]
+        if c["id"] == "zimg"
+    )
+    assert "zimg 3.0.6-1.el8" in component["source"]
+
+
+def test_a_mismatched_zimg_source_package_is_refused(tmp_path: Path) -> None:
+    """An EPEL rebuild must fail the release, not silently keep the old notice."""
+    record = tmp_path / "zimg-source-rpm.txt"
+    record.write_text("zimg-3.0.6-1.el8.src.rpm\n")
+    library = tmp_path / "libzimg.so.2"
+    library.write_text("elf")
+
+    def runner(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command, 0, stdout="zimg-3.0.6-2.el8.src.rpm\n", stderr=""
+        )
+
+    with pytest.raises(ValueError, match="zimg-3.0.6-2.el8.src.rpm"):
+        zimg.check_source_package(library, record, runner=runner)
+
+
+def test_a_measured_zimg_source_package_passes(tmp_path: Path) -> None:
+    """The measured package the record names is staged unchanged."""
+    record = tmp_path / "zimg-source-rpm.txt"
+    record.write_text("zimg-3.0.6-1.el8.src.rpm\n")
+    library = tmp_path / "libzimg.so.2"
+    library.write_text("elf")
+
+    def runner(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command, 0, stdout="zimg-3.0.6-1.el8.src.rpm\n", stderr=""
+        )
+
+    assert (
+        zimg.check_source_package(library, record, runner=runner) == "zimg-3.0.6-1.el8.src.rpm"
+    )
+
+
+def test_the_build_stages_zimg_only_from_the_recorded_package() -> None:
+    """`stage_zimg` runs the same check before it copies the library."""
+    script = (REPO / "scripts" / "release" / "build-native-release-artifacts.sh").read_text()
+    assert 'python3 "$ZIMG_SOURCE_PACKAGE" --library "$resolved_path"' in script
+    assert script.index('--library "$resolved_path"') < script.index(
+        'cp -L -- "$resolved_path" "artifacts/$zimg_soname"'
+    )
 
 
 def test_production_node_sycl_image_shares_runtime_and_node_components() -> None:

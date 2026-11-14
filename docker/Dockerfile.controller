@@ -96,6 +96,9 @@ RUN mkdir -p /dist/lib/pkgconfig /dist/bin /dist/model \
     && find /build/src -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) \
         \( -type f -o -type l \) -exec cp -a {} /dist/lib/ \; \
     && cp -d /usr/lib/*-linux-gnu*/libzimg.so* /dist/lib/ \
+    && mkdir -p /dist/doc/libzimg2 \
+    && cp /usr/share/doc/libzimg2/copyright /dist/doc/libzimg2/copyright \
+    && dpkg-query -W -f='${source:Package}=${source:Version}\n' libzimg2 > /dist/doc/libzimg2/SOURCE \
     && cp /build/meson-private/libvmaf.pc /dist/lib/pkgconfig/libvmaf.pc \
     && cp /build/meson-private/libvmafx.pc /dist/lib/pkgconfig/libvmafx.pc \
     && cp /build/tools/vmaf /dist/bin/ \
@@ -180,6 +183,7 @@ LABEL org.opencontainers.image.vendor="Lusoris"
 
 # Copy libvmaf.so* and the vmaf CLI from the vmaf-builder stage.
 COPY --from=vmaf-builder /dist/lib/   /usr/local/lib/
+COPY --from=vmaf-builder /dist/doc/libzimg2 /usr/share/doc/libzimg2
 COPY --from=vmaf-builder /dist/bin/   /usr/local/bin/
 COPY --from=vmaf-builder /dist/model/ /usr/local/share/vmafx/model/
 

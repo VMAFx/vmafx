@@ -40,6 +40,12 @@ nice -n 10 ninja -C "${build_dir}" -j"${jobs}"
 mkdir -p "${dist_dir}/lib" "${dist_dir}/bin" "${dist_dir}/model" "${licence_inputs_dir}"
 find "${build_dir}/src" -maxdepth 1 \( -name 'libvmaf.so*' -o -name 'libvmafx.so*' \) -not -type d -exec cp -a {} "${dist_dir}/lib/" \;
 cp -d /usr/lib/*-linux-gnu*/libzimg.so* "${dist_dir}/lib/"
+# The Debian record of the libzimg2 those images ship (issue #3242): the zimg
+# component of licensing.json reads usr/share/doc/libzimg2/SOURCE and takes its
+# copyright file as the licence text, as the tester images already do.
+mkdir -p "${dist_dir}/doc/libzimg2"
+cp /usr/share/doc/libzimg2/copyright "${dist_dir}/doc/libzimg2/copyright"
+dpkg-query -W -f='${source:Package}=${source:Version}\n' libzimg2 >"${dist_dir}/doc/libzimg2/SOURCE"
 cp "${build_dir}/tools/vmaf" "${dist_dir}/bin/"
 cp -r model/. "${dist_dir}/model/"
 
