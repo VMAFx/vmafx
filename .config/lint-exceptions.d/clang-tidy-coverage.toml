@@ -243,6 +243,20 @@ reason = "Category A, interval to the stated expiry. Built only with -Denable_zi
 expires = 2027-02-12
 
 [[exception]]
+path = "core/test/test_xxd_extern_types.c"
+category = "A"
+entered = 2026-11-14
+reason = "Category A, interval to the stated expiry. New unit test that compiles the xxd-generated model definitions against their hand-written extern declarations (core/test/meson.build target xxd_extern_definitions); the lanes' measured_sources change only when a tidy baseline is re-measured, and that re-measure adds this file."
+expires = 2027-01-14
+
+[[exception]]
+path = "core/test/test_xxd_hsaco_extern_types.c"
+category = "A"
+entered = 2026-11-14
+reason = "Category A, interval to the stated expiry. New unit test that compiles the xxd-generated HIP HSACO definitions against their hand-written extern declarations (core/test/meson.build target xxd_hsaco_extern_definitions); the lanes' measured_sources change only when a tidy baseline is re-measured, and that re-measure adds this file."
+expires = 2027-01-14
+
+[[exception]]
 path = "core/test/test_integer_adm_buffer_alloc.c"
 category = "A"
 entered = 2026-11-02
