@@ -93,6 +93,7 @@ APT_SNAPSHOT_RUN_MESSAGE = (
 )
 APT_SNAPSHOT_SHELL_MESSAGE = "SHELL must be /bin/bash -c or /bin/sh -c"
 APT_SNAPSHOT_ESCAPE_MESSAGE = "snapshot contract requires the default backslash escape"
+APT_SNAPSHOT_LINE_MESSAGE = "snapshot contract cannot read this line as a Dockerfile instruction"
 APT_CONTINUATION_MESSAGE = (
     f"continuation exceeds {MAX_CONTINUATION_LINES} physical lines; "
     "keep each command bounded (ADR-3537)"
@@ -254,14 +255,19 @@ def ci_text_paths(root: Path) -> list[Path]:
 
 def _logical_ci_lines(text: str) -> list[tuple[int, str, bool]]:
     """Join backslash-continued physical lines up to MAX_CONTINUATION_LINES."""
+    return _join_continued_lines(list(enumerate(text.splitlines(), 1)))
+
+
+def _join_continued_lines(lines: list[tuple[int, str]]) -> list[tuple[int, str, bool]]:
+    """Join numbered lines, bounding storage by their original physical span."""
     logical: list[tuple[int, str, bool]] = []
     parts: list[str] = []
     start_line = 1
     count = 0
-    for number, raw in enumerate(text.splitlines(), 1):
+    for number, raw in lines:
         if count == 0:
             start_line = number
-        count += 1
+        count = number - start_line + 1
         stripped = raw.rstrip()
         continues = stripped.endswith("\\")
         if count <= MAX_CONTINUATION_LINES:
@@ -273,6 +279,28 @@ def _logical_ci_lines(text: str) -> list[tuple[int, str, bool]]:
     if count > 0:
         logical.append((start_line, "\n".join(parts), count > MAX_CONTINUATION_LINES))
     return logical
+
+
+def _dockerfile_logical_lines(text: str) -> list[tuple[int, str, bool]]:
+    """Drop Docker comments and blanks before joining; retain leading escape directives."""
+    logical: list[tuple[int, str, bool]] = []
+    lines: list[tuple[int, str]] = []
+    directives = True
+    for number, raw in enumerate(text.splitlines(), 1):
+        directive = (
+            re.match(r"\s*#\s*(syntax|escape|check)\s*=", raw, re.IGNORECASE)
+            if directives
+            else None
+        )
+        if directive:
+            if directive[1].lower() == "escape":
+                logical.append((number, raw, False))
+            continue
+        directives = False
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        lines.append((number, raw))
+    return [*logical, *_join_continued_lines(lines)]
 
 
 def _is_hosted_workflow_or_action(path: Path) -> bool:
@@ -867,15 +895,13 @@ def _snapshot_commands(
     commands: list[tuple[int, list[str]]] = []
     ends: list[str] = []
     problems: list[str] = []
-    seen_instruction = False
-    for number, line, overflowed in _logical_ci_lines(text):
+    for number, line, overflowed in _dockerfile_logical_lines(text):
         if overflowed:
             problems.append(f"{number}: {APT_CONTINUATION_MESSAGE}")
         match = re.match(r"\s*([A-Za-z]+)\s+(.*)", line, re.DOTALL)
-        if match is None and seen_instruction:
-            continue
+        if match is None and line.strip() and not line.lstrip().startswith("#"):
+            problems.append(f"{number}: {APT_SNAPSHOT_LINE_MESSAGE}")
         instruction, body = (match[1].upper(), match[2]) if match else ("", line)
-        seen_instruction = match is not None
         shape_problems = _snapshot_instruction_problems(number, instruction, body)
         problems.extend(shape_problems)
         if shape_problems or instruction not in {"RUN", *DOCKERFILE_INSTRUCTIONS}:
@@ -1281,6 +1307,52 @@ class UbuntuAptSnapshotContract(unittest.TestCase):
     def test_snapshot_is_one_timestamp_in_build_config(self) -> None:
         text = (ROOT / "build-config.env").read_text(encoding="utf-8")
         self.assertEqual(build_config_snapshot_problems(text), [])
+
+    def test_comment_lines_follow_docker_rules(self) -> None:
+        plants = (
+            ("# cleanup \\\nRUN rm " + APT_SNAPSHOT_FILE, False),
+            ("  # cleanup \\\nRUN rm " + APT_SNAPSHOT_FILE, False),
+            ("RUN true \\\n# note\n&& rm " + APT_SNAPSHOT_FILE, False),
+            ("# x \\\nRUN apt-get install -y curl", True),
+        )
+        for path in UBUNTU_DEV_DOCKERFILES:
+            image = path.read_text(encoding="utf-8")
+            for plant, before_pin in plants:
+                offset = image.index("RUN apt-get") if before_pin else len(image)
+                with self.subTest(path=path, plant=plant):
+                    planted = image[:offset] + plant + "\n" + image[offset:]
+                    self.assertTrue(ubuntu_apt_snapshot_problems(planted))
+            for comment in (
+                "",
+                "# plain comment",
+                "# plain comment \\",
+                "RUN true \\\n# note\n&& true",
+                "RUN true \\\n\n# note\n\n&& true",
+            ):
+                with self.subTest(path=path, comment=comment):
+                    self.assertEqual(ubuntu_apt_snapshot_problems(image + "\n" + comment), [])
+
+    def test_unreadable_snapshot_instructions_fail_closed(self) -> None:
+        image = self.image()
+        for line in ("&& true", "123", "RUN"):
+            for offset in (0, len(image)):
+                with self.subTest(line=line, offset=offset):
+                    planted = image[:offset] + line + "\n" + image[offset:]
+                    self.assertIn(
+                        APT_SNAPSHOT_LINE_MESSAGE, "\n".join(ubuntu_apt_snapshot_problems(planted))
+                    )
+        self.assertEqual(ubuntu_apt_snapshot_problems("# syntax=docker/dockerfile:1\n" + image), [])
+        self.assertEqual(ubuntu_apt_snapshot_problems("# comment\n# escape=`\n" + image), [])
+
+    def test_dockerfile_comments_preserve_physical_continuation_bound(self) -> None:
+        image = self.image()
+        at_bound = "RUN true \\\n" + "# comment\n" * (MAX_CONTINUATION_LINES - 2) + "&& true\n"
+        self.assertEqual(ubuntu_apt_snapshot_problems(image + "\n" + at_bound), [])
+        over_bound = at_bound.replace("&& true", "\n&& true")
+        self.assertIn(
+            APT_CONTINUATION_MESSAGE,
+            "\n".join(ubuntu_apt_snapshot_problems(image + "\n" + over_bound)),
+        )
 
     def test_only_parsed_instruction_shapes_are_accepted(self) -> None:
         image = self.image()

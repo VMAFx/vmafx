@@ -382,6 +382,9 @@ sources `build-config.env` directly before the snapshot write, and that no
 RUN, ENV or ARG instruction sets `APT_CONFIG`. The contract reads only FROM,
 ARG, ENV, COPY, shell-form RUN, WORKDIR, CMD and a plain SHELL, and refuses
 any other instruction or form.
+Comment lines follow Docker's rules (a comment ends at its line even with a
+trailing backslash, and a comment inside a continued instruction is dropped),
+and a line the contract cannot read as an instruction fails it.
 
 The snapshot service requires HTTPS. Before activating the pin, each image
 refreshes the live archive once and installs only `ca-certificates` and its
