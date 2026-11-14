@@ -35,6 +35,21 @@
 #                 HUNG — measured at the 12 s timeout below, unbounded in
 #                 reality. Every case here is wrapped in `timeout` and a
 #                 124 is reported as a hang, not merely as a wrong code.
+#
+# Exit 124 stopped meaning "hung" all by itself (issue #3457,
+# 2026-11-15): under a parallel pre-push run the ffmpeg-patches gate can
+# spend its whole 12 s budget in the #2435 invariant tree scans, which
+# run before the PR-body stage in that gate, and die killed-but-working.
+# The verdict therefore keys on the gate's own progress, not on the
+# timeout alone: a 124 whose captured output carries the gate's
+# `PR body from ...` line decided what fd 0 was and counts as a slow
+# pass, not a hang; a 124 without the line never reached the decision
+# and is reported as HUNG. The surface-gate cases below also pass
+# `--skip-invariants`, so their 12 s budget measures the fd-0 decision
+# instead of the tree scans, and the planted cases at the bottom keep
+# the HUNG verdict real — a gate that blocks on fd 0 prints nothing and
+# must never be reclassified as a slow pass.
+#
 #   /dev/null     `bash gate.sh </dev/null`, the shape a CI step, a git
 #                 hook and `nohup` all produce. Not a terminal, carries no
 #                 body, and must be named as such.
@@ -91,14 +106,21 @@ fail() {
 #
 # The snippet runs under `timeout 12 bash -c`, from the repo root, with
 # PR_BODY unset unless the snippet sets it. Exit 124 is reported as a hang
-# because that is the regression this file exists to catch.
+# because that is the regression this file exists to catch — but only when
+# the gate never made its PR-body decision (issue #3457): a gate killed at
+# 12 s after printing `PR body from ...` decided what fd 0 was and merely
+# ran out of budget behind it, which is a slow pass, not a hang.
 run_case() {
   local expected="$1" name="$2" snippet="$3"
   local out="" code=0
   out="$(cd "${repo_root}" && timeout 12 env -u PR_BODY bash -c "${snippet}" 2>&1)" || code=$?
   printf '%s' "${out}" >"${work}/last-output.txt"
   if [ "${code}" -eq 124 ]; then
-    fail "${name} — HUNG (killed at 12 s); the gate must decide, not block"
+    if grep -qiE -- 'PR body from' "${work}/last-output.txt"; then
+      pass "${name} — slow, not hung: the gate printed its PR-body decision before the 12 s budget expired"
+    else
+      fail "${name} — HUNG (killed at 12 s before the PR-body decision); the gate must decide, not block"
+    fi
     return
   fi
   if [ "${code}" -ne "${expected}" ]; then
@@ -134,6 +156,26 @@ expect_no_output() {
     echo "---------------------------"
   else
     pass "${name}"
+  fi
+}
+
+# expect_hung <name> <shell-snippet> — the negative control for the slow-pass
+# branch of run_case: the snippet must die at the 12 s timeout WITHOUT having
+# printed a PR-body decision. A run_case change that reclassified every 124 as
+# a slow pass (keying on the timeout alone, not on the gate's progress) would
+# let a real fd-0 hang go green; these planted cases keep that verdict armed.
+expect_hung() {
+  local name="$1" snippet="$2"
+  local out="" code=0
+  out="$(cd "${repo_root}" && timeout 12 env -u PR_BODY bash -c "${snippet}" 2>&1)" || code=$?
+  printf '%s' "${out}" >"${work}/last-output.txt"
+  if [ "${code}" -eq 124 ] && ! grep -qiE -- 'PR body from' "${work}/last-output.txt"; then
+    pass "${name} (exit=124, no PR-body decision — reported as HUNG)"
+  else
+    fail "${name} (got exit=${code}; expected 124 with no PR-body decision)"
+    echo "----- captured output -----"
+    printf '%s\n' "${out}"
+    echo "---------------------------"
   fi
 }
 
@@ -223,23 +265,30 @@ run_case 0 "validator: \$PR_BODY still reaches the parser with fd 0 on /dev/null
 
 echo "--- scripts/ci/ffmpeg-patches-surface-check.sh ---"
 
+# Every surface case passes --skip-invariants (issue #3457): the #2435
+# invariant tree scans run before the PR-body stage in this gate and are
+# the seconds of real work that outran the 12 s hang budget under a
+# parallel pre-push run. This test measures the fd-0 decision, not the
+# tree scans; the scans keep their own coverage in the pre-push
+# affected-tests hook.
+#
 # An absent body is legal for this gate: it makes the
 # `no ffmpeg-patches update needed:` opt-out unclaimable, and the gate then
 # decides on the diff alone. With HEAD..HEAD no public header moved, so the
 # correct answer to all three shapes is a clean PASS — arrived at, not hung.
 
 run_case 0 "ffmpeg-surface: closed fd 0 is decided, not a hang" \
-  "${same_rev} bash '${ffmpeg_surface}' 0<&-"
+  "${same_rev} bash '${ffmpeg_surface}' --skip-invariants 0<&-"
 expect_output "ffmpeg-surface: the closed-fd case names what fd 0 was" \
   'PR body from empty .closed stdin.'
 
 run_case 0 "ffmpeg-surface: </dev/null is decided, not read as a body" \
-  "${same_rev} bash '${ffmpeg_surface}' </dev/null"
+  "${same_rev} bash '${ffmpeg_surface}' --skip-invariants </dev/null"
 expect_output "ffmpeg-surface: the /dev/null case names what fd 0 was" \
   'PR body from empty .unreadable stdin.'
 
 run_case 0 "ffmpeg-surface: a real pipe still reaches the opt-out parser" \
-  "printf 'no ffmpeg-patches update needed: regression test\n' | ${same_rev} bash '${ffmpeg_surface}'"
+  "printf 'no ffmpeg-patches update needed: regression test\n' | ${same_rev} bash '${ffmpeg_surface}' --skip-invariants"
 expect_output "ffmpeg-surface: the piped opt-out was honoured" \
   'opt-out claimed in PR body'
 
@@ -264,12 +313,12 @@ chmod +x "${work}/shim/git"
 shim_env="REAL_GIT='$(command -v git)' PATH='${work}/shim':\"\$PATH\" ${same_rev}"
 
 run_case 2 "ffmpeg-surface: a failing git diff of the headers fails closed" \
-  "PLANT_GIT_FAILURE=1 ${shim_env} bash '${ffmpeg_surface}' </dev/null"
+  "PLANT_GIT_FAILURE=1 ${shim_env} bash '${ffmpeg_surface}' --skip-invariants </dev/null"
 expect_output "ffmpeg-surface: the failure names the status" \
   'command failed with status 128'
 
 run_case 0 "ffmpeg-surface: the same shim without the planted failure passes" \
-  "${shim_env} bash '${ffmpeg_surface}' </dev/null"
+  "${shim_env} bash '${ffmpeg_surface}' --skip-invariants </dev/null"
 
 echo "--- scripts/ci/state-md-touch-check.sh ---"
 
@@ -348,6 +397,35 @@ if [ -e /proc/self/fd ]; then
     'descriptor [0-9]+ released'
 else
   echo "SKIP: helper descriptor probe needs /proc/self/fd"
+fi
+
+echo "--- planted hangs (issue #3457): the HUNG verdict stays armed ---"
+
+# A gate that blocks on fd 0 the way the pre-fix gates did must be reported
+# as HUNG, never reclassified as a slow pass. Two planted shapes:
+#
+#   - portable: the gate's stdin is a pipe whose writer never writes, so
+#     `cat` blocks on read in every environment;
+#   - the exact pre-fix repro (`PR_BODY="$(cat)"` on a closed fd 0): on
+#     Linux the command-substitution pipe takes the freed descriptor 0 and
+#     `cat` reads the pipe it writes to, which is the hang this file exists
+#     to catch. MSYS reports EBADF on a closed fd instead of hanging, so
+#     the shape is probed first and skipped where it cannot exist.
+#
+# Neither shape prints a PR-body decision, which is exactly the property
+# that keeps run_case's slow-pass branch from masking a real hang.
+
+expect_hung "planted: a gate blocked on a silent stdin is reported as HUNG" \
+  "sleep 30 2>/dev/null | bash -c 'PR_BODY=\"\$(cat 2>/dev/null)\"'"
+
+probe_code=0
+# shellcheck disable=SC2016  # the planted snippet must reach the probe unexpanded
+timeout 3 bash -c 'PR_BODY="$(cat)"' 0<&- >/dev/null 2>&1 || probe_code=$?
+if [ "${probe_code}" -eq 124 ]; then
+  expect_hung "planted: a gate stuck reading a closed fd 0 is reported as HUNG" \
+    "bash -c 'PR_BODY=\"\$(cat)\"' 0<&-"
+else
+  echo "SKIP: planted closed-fd case: this bash reports exit=${probe_code} on a closed fd 0 instead of hanging (probe), so the shape cannot exist here"
 fi
 
 echo ""
