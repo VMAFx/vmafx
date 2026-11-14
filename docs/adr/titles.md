@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1442), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1449), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5772,6 +5772,14 @@ Every ADR, one heading each (1442), so the site search finds an ADR by its title
 
 [3519-readme-badges-rendered-branch](3519-readme-badges-rendered-branch.md)
 
+## ADR-3530: Reject new Bandit findings against the merge base
+
+[3530-bandit-new-merge-base-gate](3530-bandit-new-merge-base-gate.md)
+
+## ADR-3531: Refuse tool attribution in pull request commits and bodies
+
+[3531-dco-attribution-identity-refusal](3531-dco-attribution-identity-refusal.md)
+
 ## ADR-3532: Preserve trusted executable launch links
 
 [3532-trusted-executable-launch-links](3532-trusted-executable-launch-links.md)
@@ -5779,3 +5787,23 @@ Every ADR, one heading each (1442), so the site search finds an ADR by its title
 ## ADR-3533: Install the tidy compiler from the Ubuntu archive
 
 [3533-tidy-gcc-from-ubuntu-archive](3533-tidy-gcc-from-ubuntu-archive.md)
+
+## ADR-3534: Preserve executable links in the resolved file's directory
+
+[3534-same-directory-launch-link-trust](3534-same-directory-launch-link-trust.md)
+
+## ADR-3535: Isolate fixture repositories from inherited Git configuration
+
+[3535-fixture-git-config-isolation](3535-fixture-git-config-isolation.md)
+
+## ADR-3536: Escalate own pull requests touching platform launch paths to full CI
+
+[3536-ci-tier-full-paths](3536-ci-tier-full-paths.md)
+
+## ADR-3537: Fail closed and retry on APT package index refreshes
+
+[3537-apt-update-fail-closed](3537-apt-update-fail-closed.md)
+
+## ADR-3539: Count non-Actions app check runs outside the aggregator run window
+
+[3539-aggregator-app-checks-outside-run-window](3539-aggregator-app-checks-outside-run-window.md)

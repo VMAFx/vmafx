@@ -18,7 +18,7 @@ Parent scope: [`../AGENTS.md`](../AGENTS.md) (core) and
 
 | Touching | Read first | Invariant |
 | --- | --- | --- |
-| `meson.build`, `/core/test/check_exported_symbols.py` | [build-and-compiler](AGENTS.d/build-and-compiler.md) | Windows nvcc host = build MSVC, else newest vswhere toolset, else PATH; C++ targets take vmaf_cppflags_common. |
+| `meson.build`, `model.c`, `feature/brisque_model.h`, `/core/test/check_exported_symbols.py` | [build-and-compiler](AGENTS.d/build-and-compiler.md) | Windows nvcc host = build MSVC, else newest vswhere toolset, else PATH; C++ targets take vmaf_cppflags_common. |
 | `feature/ciede.c`, `feature/cuda/integer_ciede/ciede_device.h`, `feature/ciede_ff_math.h`, `/core/test/test_ciede_upstream_products.c` | [ciede-squares-are-products](AGENTS.d/ciede-squares-are-products.md) | ciede.c squares = products (ADR-1467); its chroma and rotation products = float, no double cast (ADR-1476). |
 | `conversion_context.c`, `conversion_context.h`, `conversion_policy.c`, `conversion_policy.h`, `read_json_model.c`, `read_json_model.cpp` | [conversion-target](AGENTS.d/conversion-target.md) | Convert to model's conversion_target on host; input colour lives on context. |
 | `picture.h`, `picture_pool.h` | [doxygen-header-invariants](AGENTS.d/doxygen-header-invariants.md) | Internal core/src headers carry Doxygen file briefs and parameter comments. |
