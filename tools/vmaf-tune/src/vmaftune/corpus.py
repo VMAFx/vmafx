@@ -29,6 +29,7 @@ import math
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import uuid
 from collections.abc import Iterator, Sequence
@@ -999,43 +1000,52 @@ def _cell_params_key(sweep: _Sweep, preset: str, crf: int) -> str:
 
 def _first_second_score(sweep: _Sweep, distorted: Path) -> float | None:
     """Score the encoded sample window against the matching source second."""
+    if sweep.ref_decode_rc != 0:
+        _LOG.warning(
+            "vmaf-tune: near-dup reference decode failed for %s; refusing spot score",
+            sweep.job.source,
+        )
+        return None
+
     from .score import ScoreRequest, run_score
 
     job = sweep.job
     opts = sweep.opts
     fps = float(job.framerate) if float(job.framerate) > 0.0 else 24.0
     one_second = max(1, int(fps))
-    sample_frame_cnt = int(getattr(sweep, "frame_cnt", 0) or 0)
-    frame_cnt = min(one_second, sample_frame_cnt) if sample_frame_cnt > 0 else one_second
+    frame_cnt = min(one_second, sweep.frame_cnt) if sweep.frame_cnt > 0 else one_second
     score_req = ScoreRequest(
         reference=sweep.decoded_reference,
         distorted=distorted,
         width=int(job.width),
         height=int(job.height),
         pix_fmt=job.pix_fmt,
-        frame_skip_ref=int(sweep.frame_skip_ref),
+        model=_cell_score_model(sweep),
+        frame_skip_ref=sweep.frame_skip_ref,
         frame_cnt=frame_cnt,
         duration_s=1.0,
     )
     try:
-        # The VMAF CLI accepts raw YUV only; decode cached encode containers first.
-        score_req = _maybe_decode_distorted(
-            score_req,
-            encode_dir=opts.encode_dir,
-            ffmpeg_bin=opts.ffmpeg_bin,
-            runner=subprocess.run,
-        )
-        if score_req.distorted == distorted and distorted.suffix.lower() not in _VMAF_RAW_SUFFIXES:
-            return None
-        spot_res = run_score(
-            score_req,
-            vmaf_bin=opts.vmaf_bin,
-            backend=opts.score_backend,
-        )
-        score = float(spot_res.vmaf_score)
-        return score if math.isfinite(score) else None
+        with tempfile.TemporaryDirectory(prefix="vmaf-tune-near-dup-") as decode_dir:
+            score_req = _maybe_decode_distorted(
+                score_req,
+                encode_dir=Path(decode_dir),
+                ffmpeg_bin=opts.ffmpeg_bin,
+                runner=subprocess.run,
+            )
+            if score_req.distorted.suffix.lower() not in _VMAF_RAW_SUFFIXES:
+                _LOG.warning(
+                    "vmaf-tune: near-dup spot decode failed for %s; refusing spot score",
+                    distorted,
+                )
+                return None
+            spot_res = run_score(
+                score_req, vmaf_bin=opts.vmaf_bin, backend=opts.score_backend
+            )
+            score = float(spot_res.vmaf_score)
+            return score if math.isfinite(score) else None
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
-        _LOG.warning("vmaf-tune: near-dup spot verify failed: %s", exc)
+        _LOG.warning("vmaf-tune: near-dup spot scoring failed: %s", exc)
         return None
 
 

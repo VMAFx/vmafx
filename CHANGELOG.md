@@ -466,6 +466,13 @@
   with no entry, and an entry path that is gone. See ADR-2485.
 
 
+- **DCO sign-off check before every push.** The `dco-sign-off` pre-push hook
+  runs `scripts/ci/check-dco.py --merge-base origin/master` on the commits a push
+  adds, so a commit that never passed the local commit-msg hook, such as a
+  review bot's suggestion pulled from the pull request branch, stops locally
+  instead of turning the DCO job red. See `docs/development/dco.md`.
+
+
 - Added the required check `DCO Sign-off`: every commit of a pull request must
   carry a `Signed-off-by:` line (`git commit -s`; `git rebase --signoff` fixes a
   branch). Renovate, Dependabot and GitHub Actions bot commits in their own pull
@@ -1322,6 +1329,20 @@
   the Q30 RGB coefficient table that `scripts/codegen/vmafx-api.py` writes.
 
 
+- **New Bandit findings in changed Python files now fail at pre-commit and pre-push, before Codacy sees them.**
+  The `bandit-new` hook (`scripts/ci/check_bandit_new.py`) runs Bandit with the 56 Codacy-enabled
+  patterns in `bandit.yml` and reports only findings the merge-base copy of the file does not carry,
+  so moved lines and Git-detected renames keep their old findings. Pre-push scans the outgoing
+  commit rather than local edits. Separate `bandit-new-push` and `flawfinder-new-push` hooks use
+  `--outgoing` to scan the full pre-push merge-base delta without framework filenames, including
+  docs-only follow-up pushes and files absent from the worktree. Configuration changes scan all
+  tracked Python files with each revision's pattern list only in the invocation that selects
+  `bandit.yml`, avoiding repeated full scans across partitioned file lists; Python stubs, Python
+  executables and PEP 263 encodings are supported. The default comparison follows `origin/HEAD`,
+  falling back to `origin/master`. A `# noqa` comment does not silence it. The flawfinder gate
+  shares the same merge-base comparison (`scripts/lib/new_scanner_findings.py`).
+
+
 - **One encoder registry feeds the Go and the Python tuners
   ([ADR-3388](docs/adr/3388-central-encoder-registry.md)).** Every encoder's
   quality knob, quality window, absolute range, presets, adapter version and
@@ -1458,6 +1479,18 @@
   ([ADR-3384](../docs/adr/3384-ci-queue-burst-renovate-schedule.md)).
 
 
+- **CI tier escalates own pull requests touching platform process-launch paths
+  to `full` ([ADR-3536](docs/adr/3536-ci-tier-full-paths.md)).**
+  `.github/ci-tier.json` adds `full_paths` (`fnmatch.fnmatchcase` globs) for
+  platform-guarded process-launch modules and their tests so unlabelled own
+  pull requests touching them run the full cross-platform suite, fail closed to
+  `full` when changed paths are unavailable or any file or label API entry is
+  malformed, and check `full_paths` against `git ls-files` via
+  `scripts/ci/ci_tier.py --check-full-paths` with repository-locating `GIT_*`
+  variables dropped and only an absolute `GIT_INDEX_FILE` kept for this
+  checkout.
+
+
 - **CI runs the tier a pull request owes, not the whole suite on every push
   ([ADR-2169](docs/adr/2169-ci-fewer-runs.md)).** A pull request from this repository
   (Renovate included) runs lint, format, the fast suite and the governance gates; the
@@ -1547,6 +1580,9 @@
 - The CUDA `integer_vif` horizontal filter updates its main and reduced-filter
   accumulators through shared inline helpers in `filter1d.cu`, deduping centre
   and border tap logic (HISS-19); scores and compiled SASS are unchanged.
+
+
+- **DCO attribution check covers commit identities and pull request bodies.** Pull requests and landed commits now refuse model or coding tool tokens in author and committer identities, plus banned co-author lines and generated attribution in commit messages. Pull request bodies follow the same line rules; local checks accept `--pr-body-file PATH` or `PR_BODY`.
 
 
 - `Dev Container Build` runs on light-tier pull requests that change the image's own inputs (`dev/**`, `.dockerignore`, `build-config.env`, the workflow and its build scripts); other light pull requests pass it with a notice naming the reason, and the full tier and the master push keep building the image for every input it copies (ADR-3338).
@@ -2669,6 +2705,9 @@
   failure.
 
 
+- **CI:** `Required Checks Aggregator` pins check-run producers (`github-advanced-security` for `CodeQL`, `Semgrep OSS` and `gitleaks`; `github-actions` otherwise), scopes the `minCreatedMs` age window to `github-actions` (and missing slugs on `github-actions` names), and waits through the propagation window after SARIF upload jobs so per-SHA code-scanning checks stay visible after draft transitions without masking new failures (pull request 3047, ADR-3539).
+
+
 - CI: the required-checks aggregator of a master push no longer reads the check runs of a scheduled
   workflow run on the same commit. A skipped scheduled `FFmpeg Patch Stack` run had failed master
   `fdf711ba6` although the push's own run succeeded (`T-CI-AGGREGATOR-READS-SCHEDULE-RUNS-2026-10-15`).
@@ -2689,6 +2728,9 @@
   now uses only the pinned major (`VMAFX_CLANG_FORMAT` names one explicitly)
   and skips, naming the version it found, otherwise; the Tooling Tests job
   installs the pinned release.
+
+
+- **Fail-closed APT index refreshes.** Pass `--error-on=any` and `-o Acquire::Retries=3` on every `apt-get update` invocation across CI workflows, container builds, and setup scripts so transient DNS or mirror errors retry and fail at index refresh instead of surfacing later during package installation, enforced by `AptUpdateFailClosedContract` ([ADR-3537](docs/adr/3537-apt-update-fail-closed.md)).
 
 
 - **The root `pyproject.toml` explains why black targets Python 3.10.** Black's target is the
@@ -2770,6 +2812,9 @@
   breaks system packages without it (`--user` installs are exempt).
 
 
+- **Changes to shared `scripts/lib` helpers and `scripts/__init__.py` now run the Build workflow's Python test legs.** A test fails when a helper imported by the Python tests is missing from the selector.
+
+
 - Windows UCRT64 CI: the MSYS2 leg installs `python-setuptools`, which the codegen suite (`test_vmafx_api_generator`) imports, instead of failing on a missing module.
 
 
@@ -2801,6 +2846,9 @@
 
 
 - **Keep Codacy off the compiled agent-context files.** `CLAUDE.md`, `.windsurfrules`, `.cursor/rules/*.mdc`, `.github/copilot-instructions.md`, `.codex/rules.md` and `.gemini/GEMINI.md` are rendered from `AGENTS.md` by `praetorctl compile-context`, so a Codacy finding on them cannot be fixed in place. They are now top-level `exclude_paths` in `.codacy.yml`, and `scripts/ci/tests/test_codacy_config.py` fails when any tracked file carrying the compile marker is not excluded. Codacy's Agentlinter still reads them, because its wrapper scans the whole checkout and only filters results by file.
+
+
+- **Keep Codacy's Ruff off the trees with their own Ruff configuration.** Codacy's Ruff reads only the root `pyproject.toml`, so it reported findings in `ai/`, `dev-llm/`, `mcp-server/vmaf-mcp/`, `tools/rc1-tester/`, `tools/vmaf-roi-score/` and `tools/vmaf-tune/` that their own configurations rule out, such as `PLR2004` in tests. The `ruff-check` hook still lints those trees with their nested configurations. `.codacy.yml` now excludes them from Codacy's Ruff, and `scripts/ci/tests/test_codacy_config.py` fails when that list and the directories holding a nested Ruff configuration drift apart.
 
 
 - **Fifteen code-scanning findings are fixed in code; the provided-feature lookup no longer reads past a full list.**
@@ -2971,6 +3019,12 @@
   encode (two tests failed on that, depending on the order they ran in).
 
 
+- **FIFO helper child exit codes.** Wait up to three seconds for failed FIFO helpers to finish exiting before reporting their exit code, report an unavailable exit code explicitly when that wait expires, and never wait for a helper that already signaled readiness.
+
+
+- Temporary Git test repositories ignore caller global and system configuration, preventing inherited commit-signing defaults from breaking fixtures. The existing static hook rejects Python filters that re-admit caller Git variables or omit configuration isolation ([ADR-3535](docs/adr/3535-fixture-git-config-isolation.md)).
+
+
 - Tests: scratch repositories built after `scripts/lib/clean-git-env.sh` no longer
   start git's automatic maintenance. A commit in such a repository started a
   detached `git maintenance run --auto`, whose repack deleted loose objects while
@@ -2978,6 +3032,9 @@
   `Tooling Tests` failed intermittently with `cp: cannot stat .git/objects/..`. The
   helper now sets `maintenance.auto=false` and `gc.auto=0`, and
   `scripts/ci/test_git_fixture_isolation.py` fails when it stops doing so.
+
+
+- **Fixture isolation check covers underscore Git helpers.** The static fixture-isolation scan now flags repository creation through helpers such as `self._git("init")` and `run_git(["clone", url])`, which its word-boundary pattern skipped; the one fixture it newly flags gains the system-configuration barrier ([ADR-3535](docs/adr/3535-fixture-git-config-isolation.md)).
 
 
 - **Data-only fixture prereleases now carry build provenance.** A
@@ -3174,6 +3231,9 @@
 - Build: libvmaf compiles on macOS again. `feature_collector.h` included C++ standard headers
   (through `model.h`) inside an `extern "C"` block, which libc++ rejects with "templates must
   have C++ linkage"; headers are now included before the C-linkage block.
+
+
+- Preserve macOS framework virtual environments when an owned interpreter link shares the resolved executable's directory; retain link and directory ownership checks and the existing protections for every other link.
 
 
 - **The MCP tools advertise and use the library's default model.** `vmaf_score`, `vmaf_score_encoded`
@@ -3752,6 +3812,9 @@
   saliency check keys on the ROI keys instead of any `-x265-params`. The
   `libvmaf_cuda` recipes convert NVDEC's NV12 with `scale_cuda` (the filter
   accepts `yuv420p` and `yuv444p16` only).
+
+
+- **Installed merge-train adapters work outside a checkout.** Releases include the gateway's derived `scripts.lib` dependencies and bind every library hash at launch. Caller and state-directory packages cannot replace release imports; library-only updates create a new release without changing the old one. A relative import, a `scripts.*` import outside `scripts.lib`, or a dynamic `__import__`/`import_module` call now refuses the preview instead of shipping a release that fails to import.
 
 
 - CI: the upstream watchers wait out the delay a GitHub search rate limit states. In run 39123672700

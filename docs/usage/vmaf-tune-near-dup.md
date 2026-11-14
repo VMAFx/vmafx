@@ -67,6 +67,12 @@ intro, or logo sequence are strictly refused at the 50% and 85% segments.
 | `--near-dup-reuse` | `corpus`, `recommend` | Enable perceptual fingerprint secondary cache lookup on exact cache miss. Default: off. |
 | `--near-dup-verify` | `corpus`, `recommend` | Run a 1-second VMAF spot check against the reference; refuse the near-duplicate when the two scores differ by more than 1.5. Default: off. |
 
+With verification enabled, each newly written cache entry stores a baseline
+score for the same one-second sample window. Entries written before this
+baseline existed, or without `--near-dup-verify`, are treated as cache misses
+when verified. Writing an entry with verification also adds a one-second VMAF
+score operation; checking a candidate adds another one-second score operation.
+
 ## Python API
 
 To use near-duplicate reuse programmatically with `CorpusOptions`:

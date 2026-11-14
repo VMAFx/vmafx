@@ -25,6 +25,7 @@ from vmaftune.corpus import (
     _cell_cache_key,
     _cell_encode_request,
     _cell_params,
+    _first_second_score,
     _verify_near_dup_spot,
     coarse_grid_crfs,
     coarse_to_fine_search,
@@ -79,6 +80,8 @@ def _near_dup_fixture(tmp_path: Path, *, cached_spot: float | None = 88.0):
             decoded_reference=source,
             frame_skip_ref=0,
             frame_cnt=24,
+            ref_decode_rc=0,
+            score_model="test-model",
         ),
         result,
     )
@@ -123,6 +126,7 @@ def test_near_dup_spot_compares_the_same_first_second(
     ), "near-duplicate verification must compare the stored same-window baseline"
     assert len(requests) == 1
     assert requests[0].reference == sweep.decoded_reference
+    assert requests[0].model == sweep.score_model
     assert (
         requests[0].frame_skip_ref == frame_skip_ref
     ), "spot verification must use the sample window offset"
@@ -204,7 +208,22 @@ def test_cache_put_records_same_window_near_dup_baseline(
     assert requests[0].reference == sweep.decoded_reference
     assert requests[0].distorted.suffix == ".yuv"
     assert requests[0].frame_skip_ref == 48
+    assert requests[0].model == sweep.score_model
     assert requests[0].duration_s == 1.0
+
+
+def test_near_dup_spot_score_stops_before_cached_decode_when_reference_decode_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sweep, cached = _near_dup_fixture(tmp_path)
+    sweep.ref_decode_rc = 1
+
+    def unexpected_call(*_args, **_kwargs):
+        pytest.fail("failed reference decode must stop before distorted decode or scoring")
+
+    monkeypatch.setattr("vmaftune.corpus._maybe_decode_distorted", unexpected_call)
+    monkeypatch.setattr("vmaftune.score.run_score", unexpected_call)
+    assert _first_second_score(sweep, cached.artifact_path) is None
 
 
 class _FakeCompleted:
