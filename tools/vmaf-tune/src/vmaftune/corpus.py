@@ -997,25 +997,36 @@ def _cell_params_key(sweep: _Sweep, preset: str, crf: int) -> str:
     return params_key(**_cell_params(sweep, preset, crf))
 
 
-def _first_second_score(
-    job: CorpusJob, opts: CorpusOptions, distorted: Path
-) -> float | None:
-    """Score one source second against an encode, or fail closed on error."""
+def _first_second_score(sweep: _Sweep, distorted: Path) -> float | None:
+    """Score the encoded sample window against the matching source second."""
     from .score import ScoreRequest, run_score
 
+    job = sweep.job
+    opts = sweep.opts
     fps = float(job.framerate) if float(job.framerate) > 0.0 else 24.0
-    frame_cnt = max(1, int(fps))
+    one_second = max(1, int(fps))
+    sample_frame_cnt = int(getattr(sweep, "frame_cnt", 0) or 0)
+    frame_cnt = min(one_second, sample_frame_cnt) if sample_frame_cnt > 0 else one_second
     score_req = ScoreRequest(
-        reference=job.source,
+        reference=sweep.decoded_reference,
         distorted=distorted,
         width=int(job.width),
         height=int(job.height),
         pix_fmt=job.pix_fmt,
-        frame_skip_ref=0,
+        frame_skip_ref=int(sweep.frame_skip_ref),
         frame_cnt=frame_cnt,
         duration_s=1.0,
     )
     try:
+        # The VMAF CLI accepts raw YUV only; decode cached encode containers first.
+        score_req = _maybe_decode_distorted(
+            score_req,
+            encode_dir=opts.encode_dir,
+            ffmpeg_bin=opts.ffmpeg_bin,
+            runner=subprocess.run,
+        )
+        if score_req.distorted == distorted and distorted.suffix.lower() not in _VMAF_RAW_SUFFIXES:
+            return None
         spot_res = run_score(
             score_req,
             vmaf_bin=opts.vmaf_bin,
@@ -1034,9 +1045,7 @@ def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
         return False
     if cached.near_dup_spot_score is None:
         return False
-    job = sweep.job
-    opts = sweep.opts
-    spot_score = _first_second_score(job, opts, cached.artifact_path)
+    spot_score = _first_second_score(sweep, cached.artifact_path)
     if spot_score is None:
         return False
     delta = abs(spot_score - cached.near_dup_spot_score)
@@ -1353,11 +1362,7 @@ def _cache_put(
     try:
         fp = sweep.fingerprint if sweep.opts.near_dup_reuse else None
         pkey = _cell_params_key(sweep, preset, crf) if sweep.opts.near_dup_reuse else None
-        spot_score = (
-            _first_second_score(sweep.job, sweep.opts, out)
-            if sweep.opts.near_dup_verify
-            else None
-        )
+        spot_score = _first_second_score(sweep, out) if sweep.opts.near_dup_verify else None
         sweep.tune_cache.put(
             _cell_cache_key(sweep, preset, crf),
             CachedResult(
@@ -1482,7 +1487,7 @@ def _row_result_columns(
         "preset": preset,
         "crf": crf,
         "extra_params": list(enc_res.request.extra_params),
-        "encode_path": (str(enc_res.request.output) if opts.keep_encodes else ""),
+        "encode_path": str(enc_res.request.output) if opts.keep_encodes else "",
         "encode_size_bytes": enc_res.encode_size_bytes,
         "bitrate_kbps": bitrate_kbps(enc_res.encode_size_bytes, encoded_duration_s),
         "encode_time_ms": enc_res.encode_time_ms,
@@ -1508,9 +1513,9 @@ def _row_context_columns(
         # detection is unavailable the fields are zero-valued so
         # downstream loaders can filter on ``shot_count > 0`` without
         # special-casing missing keys.
-        "shot_count": (shot_meta.count if shot_meta is not None else 0),
-        "shot_avg_duration_sec": (shot_meta.avg_duration_sec if shot_meta is not None else 0.0),
-        "shot_duration_std_sec": (shot_meta.duration_std_sec if shot_meta is not None else 0.0),
+        "shot_count": shot_meta.count if shot_meta is not None else 0,
+        "shot_avg_duration_sec": shot_meta.avg_duration_sec if shot_meta is not None else 0.0,
+        "shot_duration_std_sec": shot_meta.duration_std_sec if shot_meta is not None else 0.0,
     }
 
 

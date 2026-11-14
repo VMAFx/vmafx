@@ -212,6 +212,32 @@ def test_put_then_get_round_trip(tmp_path):
     assert verified is not None
     assert verified.near_dup_spot_score == 88.25
 
+
+def test_rejected_nonfinite_spot_score_preserves_existing_cache_entry(tmp_path):
+    import pytest
+
+    c = TuneCache(tmp_path / "cache")
+    original = tmp_path / "original.mp4"
+    replacement = tmp_path / "replacement.mp4"
+    original.write_bytes(b"original encode")
+    replacement.write_bytes(b"replacement encode")
+
+    stored = c.put("same-key", _result(score=92.5, spot_score=88.25), original)
+    meta = c.path / c.META_DIR / "same-key.json"
+    metadata_before = meta.read_text(encoding="utf-8")
+
+    with pytest.raises(ValueError, match="spot score must be finite"):
+        c.put("same-key", _result(score=80.0, spot_score=math.nan), replacement)
+
+    hit = c.get("same-key")
+    assert hit is not None
+    assert hit.vmaf_score == 92.5
+    assert hit.near_dup_spot_score == 88.25
+    assert hit.artifact_path == stored.artifact_path
+    assert hit.artifact_path.read_bytes() == b"original encode"
+    assert meta.read_text(encoding="utf-8") == metadata_before
+
+
 def test_cache_meta_is_strict_json_and_nonfinite_score_is_miss(tmp_path):
     c = TuneCache(tmp_path / "cache")
     blob = tmp_path / "encode.mp4"

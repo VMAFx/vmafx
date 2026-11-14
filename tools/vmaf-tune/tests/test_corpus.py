@@ -72,12 +72,32 @@ def _near_dup_fixture(tmp_path: Path, *, cached_spot: float | None = 88.0):
         artifact_path=artifact,
         near_dup_spot_score=cached_spot,
     )
-    return SimpleNamespace(job=job, opts=CorpusOptions()), result
+    return (
+        SimpleNamespace(
+            job=job,
+            opts=CorpusOptions(encode_dir=tmp_path / "encodes"),
+            decoded_reference=source,
+            frame_skip_ref=0,
+            frame_cnt=24,
+        ),
+        result,
+    )
+
+
+def _fake_decode_source_to_yuv(source, *, destination, **_kwargs):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(b"decoded")
+    return 0
 
 
 @pytest.mark.parametrize(
-    ("query_score", "cached_score", "accepted"),
-    [(88.0, 88.0, True), (89.5, 88.0, True), (89.5001, 88.0, False)],
+    ("query_score", "cached_score", "accepted", "frame_skip_ref"),
+    [
+        (88.0, 88.0, True, 0),
+        (89.5, 88.0, True, 0),
+        (89.5001, 88.0, False, 0),
+        (88.0, 88.0, True, 48),
+    ],
 )
 def test_near_dup_spot_compares_the_same_first_second(
     tmp_path: Path,
@@ -85,9 +105,11 @@ def test_near_dup_spot_compares_the_same_first_second(
     query_score: float,
     cached_score: float,
     accepted: bool,
+    frame_skip_ref: int,
 ) -> None:
-    """An aggregate whole-clip score cannot move the first-second delta."""
+    """Compare one matching source window, including sample-clip offsets."""
     sweep, cached = _near_dup_fixture(tmp_path, cached_spot=cached_score)
+    sweep.frame_skip_ref = frame_skip_ref
     requests = []
 
     def run_score(request, **_kwargs):
@@ -95,13 +117,40 @@ def test_near_dup_spot_compares_the_same_first_second(
         return SimpleNamespace(vmaf_score=query_score)
 
     monkeypatch.setattr("vmaftune.score.run_score", run_score)
-    assert _verify_near_dup_spot(sweep, cached) is accepted
+    monkeypatch.setattr("vmaftune.corpus._decode_source_to_yuv", _fake_decode_source_to_yuv)
+    assert (
+        _verify_near_dup_spot(sweep, cached) is accepted
+    ), "near-duplicate verification must compare the stored same-window baseline"
     assert len(requests) == 1
-    assert requests[0].reference == sweep.job.source
-    assert requests[0].distorted == cached.artifact_path
-    assert requests[0].frame_skip_ref == 0
+    assert requests[0].reference == sweep.decoded_reference
+    assert (
+        requests[0].frame_skip_ref == frame_skip_ref
+    ), "spot verification must use the sample window offset"
+    assert requests[0].distorted.suffix == ".yuv"
     assert requests[0].frame_cnt == 24
     assert requests[0].duration_s == 1.0
+
+
+def test_near_dup_spot_fails_closed_when_cached_encode_cannot_be_decoded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sweep, cached = _near_dup_fixture(tmp_path)
+    requests = []
+
+    def fail_decode(_source, *, destination, **_kwargs):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        return 1
+
+    def run_score(request, **_kwargs):
+        requests.append(request)
+        return SimpleNamespace(vmaf_score=88.0)
+
+    monkeypatch.setattr("vmaftune.corpus._decode_source_to_yuv", fail_decode)
+    monkeypatch.setattr("vmaftune.score.run_score", run_score)
+    assert not _verify_near_dup_spot(
+        sweep, cached
+    ), "spot verification must fail closed when decode fails"
+    assert requests == []
 
 
 def test_near_dup_spot_fails_closed_for_legacy_cache_entry(tmp_path: Path) -> None:
@@ -116,7 +165,8 @@ def test_cache_put_records_same_window_near_dup_baseline(
     out = tmp_path / "out.mp4"
     out.write_bytes(b"encoded")
     sweep, _ = _near_dup_fixture(tmp_path)
-    sweep.opts = CorpusOptions(near_dup_verify=True)
+    sweep.opts = CorpusOptions(near_dup_verify=True, encode_dir=tmp_path / "encodes")
+    sweep.frame_skip_ref = 48
     saved = {}
     requests = []
 
@@ -132,6 +182,7 @@ def test_cache_put_records_same_window_near_dup_baseline(
     sweep.src_hash = "a" * 64
     sweep.fingerprint = None
     monkeypatch.setattr("vmaftune.score.run_score", run_score)
+    monkeypatch.setattr("vmaftune.corpus._decode_source_to_yuv", _fake_decode_source_to_yuv)
     monkeypatch.setattr("vmaftune.corpus._cell_cache_key", lambda *_args: "cache-key")
     _cache_put(
         sweep,
@@ -150,8 +201,9 @@ def test_cache_put_records_same_window_near_dup_baseline(
     )
     assert saved["result"].near_dup_spot_score == 87.25
     assert len(requests) == 1
-    assert requests[0].reference == sweep.job.source
-    assert requests[0].distorted == out
+    assert requests[0].reference == sweep.decoded_reference
+    assert requests[0].distorted.suffix == ".yuv"
+    assert requests[0].frame_skip_ref == 48
     assert requests[0].duration_s == 1.0
 
 
