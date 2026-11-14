@@ -357,31 +357,6 @@ jobs:
         # `gh pr create` (mirrors deliverables-check.sh's pattern).
         run: bash scripts/ci/state-md-touch-check.sh
 
-  pr-title-check:
-    needs: tier
-    if: needs.tier.outputs.light == 'true'
-    # Issue #2750: the pull-request title becomes the subject of the squashed
-    # commit on master, and release-please builds the changelog and the next
-    # version from these subjects. The commit-msg hook only sees commits made
-    # on a machine with the hooks installed, so a contributor without them
-    # gets no signal before review. This gate holds every title to the same
-    # rules, from the one shared type list in
-    # scripts/lib/conventional_commits.py (test-pinned to the hook); the
-    # `edited` trigger above reruns it when a title changes.
-    # required-aggregator
-    name: PR Title Gate
-    runs-on: ubuntu-26.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Run the PR title check
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-        run: python3 scripts/ci/check-pr-title.py "$PR_TITLE"
-
   silent-revert-check:
     needs: tier
     if: needs.tier.outputs.light == 'true'

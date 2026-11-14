@@ -11,6 +11,15 @@ Covers:
   - indented/quoted 'Migration:' lines NOT copied
   - empty 'Migration:' lines NOT copied
   - 21 footer lines -> ValueError
+- subject policy (issue 2750):
+  - bare_subject strips the appended ' (#N)' suffix once
+  - empty conventional subject before the suffix -> check exit 1
+  - type the hook refuses (not declared in .pre-commit-config.yaml) -> exit 1
+  - declared-type subjects reach the engine unchanged
+- emit-label CLI (issue 2750):
+  - declared type -> prints type:<type>, exit 0
+  - no prefix / empty subject / undeclared type -> exit 1
+  - missing title -> exit 2
 - check with stub engine:
   - '!' title without Migration -> exit 1
   - with Migration -> exit 0
@@ -18,8 +27,10 @@ Covers:
   - stub sleeps past short timeout -> exit 2
 - real engine test (when praetor engine is available):
   - PR 3235 shape refused, with-Migration shape passes
-- wiring test:
+- wiring tests:
   - rule-enforcement.yml dco-sign-off job has step, env-only title/body, no injection
+  - pr-type-label.yml labels through emit-label with no title/body interpolation
+  - release.yml names every declared type and keeps the legacy aliases
 - merge_train_guard:
   - merge argv carries --subject and --body, refused check halts before merge
 """
@@ -39,12 +50,15 @@ from unittest.mock import patch
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SQUASH_SCRIPT = REPO_ROOT / "scripts" / "ci" / "squash_message.py"
 WORKFLOW_FILE = REPO_ROOT / ".github" / "workflows" / "rule-enforcement.yml"
+LABEL_WORKFLOW_FILE = REPO_ROOT / ".github" / "workflows" / "pr-type-label.yml"
+RELEASE_FILE = REPO_ROOT / ".github" / "release.yml"
 SH = shutil.which("sh") or "/bin/sh"
 CLI_TIMEOUT_S = 60  # outer deadline for each squash_message.py CLI run
 
 sys.path.insert(0, str(REPO_ROOT))
 from scripts.ci import squash_message  # noqa: E402
 from scripts.dev import merge_train_guard as guard  # noqa: E402
+from scripts.lib.safe_subprocess import run as safe_run  # noqa: E402
 
 
 def run_cli_check(
@@ -238,6 +252,145 @@ class TestDeclaredTypesAndEngineSubject(unittest.TestCase):
                 repo_root=temp_root,
             )
             self.assertEqual(code, 2)
+
+
+class TestSubjectPolicy(unittest.TestCase):
+    """Repository-side subject policy the engine cannot see (issue 2750)."""
+
+    def setUp(self) -> None:
+        """Create a temp directory with an always-pass engine stub."""
+        self.temp_dir = tempfile.TemporaryDirectory()
+        stub = Path(self.temp_dir.name) / "pass_stub.py"
+        stub.write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
+        self.pass_argv = [sys.executable, str(stub)]
+
+    def tearDown(self) -> None:
+        """Clean up the temp directory."""
+        self.temp_dir.cleanup()
+
+    def test_bare_subject_strips_the_appended_suffix_once(self) -> None:
+        """Prove bare_subject removes exactly the appended ' (#N)' suffix."""
+        self.assertEqual(squash_message.bare_subject("fix: real subject", 42), "fix: real subject")
+        self.assertEqual(
+            squash_message.bare_subject("fix: something (#123)", 42), "fix: something (#123)"
+        )
+
+    def test_parse_subject_prefix_shapes(self) -> None:
+        """Prove parse_subject_prefix returns (type, description) or None."""
+        self.assertEqual(squash_message.parse_subject_prefix("fix:"), ("fix", ""))
+        self.assertEqual(
+            squash_message.parse_subject_prefix("feat(cli)!: drop the flag"),
+            ("feat", "drop the flag"),
+        )
+        self.assertEqual(
+            squash_message.parse_subject_prefix("sycl: route the queue"),
+            ("sycl", "route the queue"),
+        )
+        self.assertIsNone(squash_message.parse_subject_prefix("Update the title gate"))
+
+    def test_policy_refuses_an_empty_subject_before_the_suffix(self) -> None:
+        """Prove a bare 'fix:' title is refused even though ' (#N)' would fill the slot."""
+        reason = squash_message.subject_policy_error(
+            "fix:", squash_message.declared_types(REPO_ROOT)
+        )
+        self.assertIn("empty", reason)
+        code, out = squash_message.check_message(
+            title="fix:",
+            number=210,
+            body_text="",
+            identity="lusoris <lusoris@proton.me>",
+            engine_argv=self.pass_argv,
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("empty", out)
+
+    def test_policy_refuses_a_type_the_hook_refuses(self) -> None:
+        """Prove an undeclared engine type (style) is refused before the engine runs."""
+        declared = squash_message.declared_types(REPO_ROOT)
+        reason = squash_message.subject_policy_error("style: reflow comments", declared)
+        self.assertIn("'style'", reason)
+        self.assertNotIn("style", declared)
+        code, out = squash_message.check_message(
+            title="style: reflow comments",
+            number=211,
+            body_text="",
+            identity="lusoris <lusoris@proton.me>",
+            engine_argv=self.pass_argv,
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("'style'", out)
+
+    def test_policy_passes_declared_type_subjects_to_the_engine(self) -> None:
+        """Prove declared-type subjects get no refusal and the pass stub returns 0."""
+        declared = squash_message.declared_types(REPO_ROOT)
+        for title in ("feat: add the thing", "sycl: route the queue", "feat(cli)!: drop the flag"):
+            self.assertEqual(squash_message.subject_policy_error(title, declared), "", title)
+        for title in ("feat: add the thing", "sycl: route the queue"):
+            code, _ = squash_message.check_message(
+                title=title,
+                number=212,
+                body_text="",
+                identity="lusoris <lusoris@proton.me>",
+                engine_argv=self.pass_argv,
+            )
+            self.assertEqual(code, 0, title)
+
+    def test_policy_leaves_non_conventional_subjects_to_the_engine(self) -> None:
+        """Prove a subject without a conventional prefix gets no policy refusal."""
+        declared = squash_message.declared_types(REPO_ROOT)
+        self.assertEqual(squash_message.subject_policy_error("Update the title gate", declared), "")
+
+
+class TestEmitLabelCli(unittest.TestCase):
+    """The emit-label CLI through the checker binary (issue 2750, HISS-15)."""
+
+    def _emit_label(self, title: str) -> subprocess.CompletedProcess[str]:
+        """Invoke squash_message.py emit-label through safe_subprocess."""
+        return safe_run(
+            [sys.executable, str(SQUASH_SCRIPT), "emit-label", "--title", title],
+            allowed_executables=(sys.executable,),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=CLI_TIMEOUT_S,
+        )
+
+    def test_declared_types_emit_their_label(self) -> None:
+        """Prove a valid declared-type title prints type:<type> and exits 0."""
+        for title, label in (
+            ("feat: add the thing", "type:feat"),
+            ("fix: one window", "type:fix"),
+            ("sycl: route the queue", "type:sycl"),
+            ("feat(cli)!: drop the flag", "type:feat"),
+        ):
+            res = self._emit_label(title)
+            self.assertEqual(res.returncode, 0, title)
+            self.assertEqual(res.stdout, f"{label}\n")
+
+    def test_refused_titles_exit_1(self) -> None:
+        """Prove no-prefix, empty-subject and undeclared-type titles exit 1."""
+        for title in (
+            "Update the title gate",
+            "fix:",
+            "style: reflow comments",
+            "feature: add a gate",
+        ):
+            res = self._emit_label(title)
+            self.assertEqual(res.returncode, 1, title)
+            self.assertEqual(res.stdout, "")
+
+    def test_missing_title_is_a_usage_error(self) -> None:
+        """Prove emit-label without a title exits 2."""
+        res = safe_run(
+            [sys.executable, str(SQUASH_SCRIPT), "emit-label"],
+            allowed_executables=(sys.executable,),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=CLI_TIMEOUT_S,
+        )
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("required", res.stderr)
 
 
 class TestCheckWithStubEngine(unittest.TestCase):
@@ -630,6 +783,35 @@ class TestWorkflowWiring(unittest.TestCase):
                 run_part = block.split("run:")[1]
                 self.assertNotIn("${{ github.event.pull_request.title }}", run_part)
                 self.assertNotIn("${{ github.event.pull_request.body }}", run_part)
+
+    def test_pr_type_label_job_wiring_and_no_interpolation(self) -> None:
+        """Verify pr-type-label.yml labels through emit-label with no injection."""
+        content = LABEL_WORKFLOW_FILE.read_text(encoding="utf-8")
+        self.assertIn("Label PR by commit type", content)
+        self.assertIn("scripts/ci/squash_message.py emit-label", content)
+        self.assertIn("requirements/locks/build.txt", content)
+        self.assertIn("--require-hashes", content)
+        self.assertIn("PR_TITLE: ${{ github.event.pull_request.title }}", content)
+        # The previous label derivation is gone: one definition, in squash_message.py.
+        self.assertNotIn("check-pr-title", content)
+        # Injection safety: the title and body reach run: blocks only through env.
+        for block in content.split("- name:")[1:]:
+            if "run:" in block:
+                run_part = block.split("run:", 1)[1]
+                self.assertNotIn("${{ github.event.pull_request.title }}", run_part)
+                self.assertNotIn("${{ github.event.pull_request.body }}", run_part)
+
+    def test_release_yml_names_every_declared_type(self) -> None:
+        """Verify release.yml labels every declared type and keeps legacy aliases."""
+        content = RELEASE_FILE.read_text(encoding="utf-8")
+        for declared_type in squash_message.declared_types(REPO_ROOT):
+            self.assertIn(f"- type:{declared_type}", content, declared_type)
+        # The entries the hook has always refused are gone from the sections.
+        self.assertNotIn("- type:security", content)
+        self.assertNotIn("- type:style", content)
+        # The previous mapping's names still land in the right sections.
+        self.assertIn("- type:feature", content)
+        self.assertIn("- type:bug", content)
 
 
 class TestMergeTrainGuardIntegration(unittest.TestCase):

@@ -33,9 +33,10 @@ jobs:
     # 5-minute floor: hosted runner setup and checkout jitter; bound is max(5, 2 x p95).
     timeout-minutes: 5
     steps:
-      # Issue #2750: the label comes from the shared Conventional-Commit
-      # definition in scripts/lib/conventional_commits.py, so the job checks
-      # the repository out instead of re-implementing the list in shell.
+      # Issue #2750: the label comes from declared_types() in
+      # scripts/ci/squash_message.py — the same list the commit-msg hook
+      # enforces — so the job checks the repository out instead of
+      # re-implementing the list in shell.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
@@ -57,13 +58,16 @@ jobs:
             exit 0
           fi
 
-          # `type(scope)!: subject` -> label, from the one shared
-          # Conventional-Commit definition (issue #2750): the same list the
-          # commit-msg hook enforces and the PR Title Gate refuses on, pinned
-          # by scripts/ci/tests/test_conventional_commits_shared.py. The
-          # workflow checks the repository out above so the script is present.
-          if ! label="$(python3 scripts/ci/check-pr-title.py --emit-label "$PR_TITLE")"; then
-            echo "::notice::the title has no known Conventional-Commit type prefix; no type label applied."
+          # `type(scope)!: subject` -> label, from declared_types() (issue
+          # #2750): the same list the commit-msg hook enforces and the
+          # squash-message gate refuses on. The venv mirrors the DCO job's
+          # so the script's pinned PyYAML loads the hook args.
+          python3 -m venv "$RUNNER_TEMP/squash-label"
+          "$RUNNER_TEMP/squash-label/bin/pip" install --quiet --require-hashes \
+            -r requirements/locks/build.txt
+          if ! label="$("$RUNNER_TEMP/squash-label/bin/python" -B scripts/ci/squash_message.py emit-label \
+                       --title "$PR_TITLE")"; then
+            echo "::notice::the title has no declared Conventional-Commit type prefix; no type label applied."
             exit 0
           fi
           type="${label#type:}"

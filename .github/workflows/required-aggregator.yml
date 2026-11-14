@@ -16,11 +16,7 @@ name: CI
 on:
   pull_request:
     branches: [master]
-    # `edited` re-verdicts the gates a title or body edit can change
-    # (rule-enforcement.yml re-reports them on `edited`, ADR-0331); the
-    # freshness rule at `editedAction` in the wait step keeps those verdicts
-    # post-edit instead of reading the pre-edit run of the same name.
-    types: [opened, edited, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [master]
   workflow_dispatch:
@@ -185,11 +181,6 @@ jobs:
               // to remove is invisible in the PR diff, so the gate has to be
               // required rather than advisory.
               'Silent-Revert Guard',
-              // Issue #2750 — the title becomes the subject of the squashed
-              // commit and release-please reads it. The gate reruns on an edit
-              // of the title and this workflow reruns with it, so the verdict
-              // tracks the edit (the editedAction note below).
-              'PR Title Gate',
               // ADR-2462 — pull-request only, like the gates above: absent on a
               // master push, where there is no pull request to sign off.
               'DCO Sign-off',
@@ -552,9 +543,6 @@ jobs:
               'docs/state.md Gate',
               'Doc-Substance Gate',
               'FFmpeg-Patches Surface Sync',
-              // Issue #2750 — absent on a push to master, where there is no
-              // pull-request title to check.
-              'PR Title Gate',
               'Silent-Revert Guard',
               'Release Script Contract',
               // The job condition requires a pull_request event (it compares
@@ -629,42 +617,6 @@ jobs:
             const minCreatedMs = runCreatedMs - 2 * 60 * 1000;
             const registrationGraceDeadline = Date.now() + 2 * 60 * 1000;
             const registrationPropagationMs = 2 * 60 * 1000;
-            // ADR-0331 keeps `edited` on rule-enforcement.yml so a PR-body fix
-            // reruns the gates without rerunning the build matrix. This
-            // workflow runs on `edited` too: a title that turns invalid after
-            // the aggregator passed must turn the required check red, and a
-            // corrected title must turn it green again without a push. The
-            // head SHA is unchanged on an edit, so the verdicts that do not
-            // re-report keep standing and runs of any age are admitted for
-            // them; only the names whose input the edit changes must
-            // re-report after it, newer than the edit timestamp, so the
-            // pre-edit run of the same name can never satisfy the poll. A
-            // fresh run that has not registered within the registration grace
-            // below fails the name, so an edit can never loosen the verdict.
-            const editedAction = context.eventName === 'pull_request' &&
-              context.payload.action === 'edited';
-            const editedAtMs = editedAction
-              ? Date.parse(context.payload.pull_request.updated_at) || 0
-              : 0;
-            const editedFreshNames = new Set();
-            if (editedAction) {
-              if (context.payload.changes && context.payload.changes.title) {
-                editedFreshNames.add('PR Title Gate');
-              }
-              if (context.payload.changes && context.payload.changes.body) {
-                // The rule-enforcement.yml gates that parse the pull-request
-                // body (the ADR-0108 deliverables, the doc-substance gate and
-                // the ADR-0165 state-delta sentinel); a diff or commit gate
-                // keeps standing, its input did not change.
-                editedFreshNames.add('Deliverables Checklist');
-                editedFreshNames.add('Doc-Substance Gate');
-                editedFreshNames.add('docs/state.md Gate');
-              }
-            }
-            const admittedAtMs = (name) => {
-              if (editedFreshNames.has(name)) return editedAtMs;
-              return editedAction ? 0 : minCreatedMs;
-            };
             const activeStatuses = new Set([
               'queued', 'in_progress', 'requested', 'waiting', 'pending',
             ]);
@@ -777,7 +729,7 @@ jobs:
                   continue;
                 }
                 const isActionsRun = !Object.hasOwn(expectedAppByCheck, run.name);
-                if (isActionsRun && runTimestampMs(run) < admittedAtMs(run.name)) continue;
+                if (isActionsRun && runTimestampMs(run) < minCreatedMs) continue;
                 if (run.check_suite && excludedSuites.has(run.check_suite.id)) continue;
                 const previous = byName[run.name];
                 if (!previous || runTimestampMs(run) > runTimestampMs(previous)) {
