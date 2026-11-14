@@ -1024,6 +1024,7 @@ def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
         width=int(job.width),
         height=int(job.height),
         pix_fmt=job.pix_fmt,
+        model=_cell_score_model(sweep),
         frame_skip_ref=sweep.frame_skip_ref,
         frame_cnt=frame_cnt,
         duration_s=1.0,

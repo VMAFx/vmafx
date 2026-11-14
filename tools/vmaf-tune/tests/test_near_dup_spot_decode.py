@@ -14,6 +14,7 @@ from _vmaf_cli import run_absolute_tool, vmaf_under_test
 from vmaftune import corpus, score
 from vmaftune.cache import CachedResult
 from vmaftune.corpus import CorpusJob, CorpusOptions
+from vmaftune.score import DEFAULT_MODEL
 
 
 @pytest.fixture
@@ -37,6 +38,7 @@ def spot(tmp_path):
         ref_decode_rc=0,
         frame_skip_ref=0,
         start_s=0.0,
+        score_model=DEFAULT_MODEL,
     )
     cached = CachedResult(9, 1.0, "test", "test", 95.0, "test", 1.0, "test", artifact)
     return sweep, cached
@@ -86,6 +88,23 @@ def test_spot_forwards_sample_window_reference_skip(spot, monkeypatch):
         assert req.frame_skip_ref == 48
         assert req.frame_cnt == 24
         assert req.duration_s == 1.0
+        return SimpleNamespace(vmaf_score=cached.vmaf_score)
+
+    monkeypatch.setattr(
+        corpus,
+        "_maybe_decode_distorted",
+        lambda req, **kwargs: dataclasses.replace(req, distorted=sweep.decoded_reference),
+    )
+    monkeypatch.setattr(score, "run_score", run_score)
+    assert corpus._verify_near_dup_spot(sweep, cached) is True
+
+
+def test_spot_scores_with_sweep_model(spot, monkeypatch):
+    sweep, cached = spot
+    sweep.score_model = "vmaf_4k_v0.6.1"
+
+    def run_score(req, **kwargs):
+        assert req.model == sweep.score_model
         return SimpleNamespace(vmaf_score=cached.vmaf_score)
 
     monkeypatch.setattr(
