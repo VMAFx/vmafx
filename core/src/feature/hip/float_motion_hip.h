@@ -17,7 +17,8 @@
 
 /* HSACO blob embedded by xxd; consumed by `hipModuleLoadData` in
  * `float_motion_hip.c:fm_hip_module_load()`. */
-extern const unsigned char float_motion_score_hsaco[];
-extern const unsigned int float_motion_score_hsaco_len;
+/* Match xxd -i object types exactly; keep read-only access at use sites. */
+extern unsigned char float_motion_score_hsaco[];
+extern unsigned int float_motion_score_hsaco_len;
 
 #endif /* FEATURE_FLOAT_MOTION_HIP_H_ */

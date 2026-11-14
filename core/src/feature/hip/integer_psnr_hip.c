@@ -73,12 +73,6 @@
  * translation unit whose sources spell the null pointer constant `NULL` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
-
-/* HSACO fat binary embedded by xxd -i during the meson hipcc pipeline
- * (ADR-0372 / `hip_hsaco_sources` meson block). The symbol is defined
- * by the auto-generated `psnr_score_hsaco.c` custom_target output. */
-extern const unsigned char psnr_score_hsaco[];
-extern const unsigned int psnr_score_hsaco_len;
 #endif /* HAVE_HIPCC */
 
 typedef struct PsnrStateHip {

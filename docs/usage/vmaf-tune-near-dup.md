@@ -38,7 +38,9 @@ It never silently falls back to unverified execution.
 3. **Exact miss, near-dup lookup**: The primary cache lookup by `src_sha256`
    always runs first. If an exact match is missing and `--near-dup-reuse` is
    enabled, the cache evaluates candidates sharing the same encode and score
-   parameters (`params_key`).
+   parameters (`params_key`). The key includes the frame size, source size,
+   pixel format and frame rate, so a cached encode at another resolution or
+   frame rate is never a near-duplicate candidate.
 4. **Refusal ladder**: Candidates are evaluated sequentially against a strict
    decision ladder. If any stage fails, the candidate is refused with a specific
    reason and execution proceeds with a standard encode.

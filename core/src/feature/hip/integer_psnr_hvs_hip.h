@@ -67,8 +67,9 @@ struct PsnrHvsHipKernelArgs {
  * Mirrors the way `psnr_hvs_score_ptx` is declared in
  * `core/src/feature/cuda/integer_psnr_hvs_cuda.h`.
  */
-extern const unsigned char psnr_hvs_score_hsaco[];
-extern const unsigned int psnr_hvs_score_hsaco_len;
+/* Match xxd -i object types exactly; keep read-only access at use sites. */
+extern unsigned char psnr_hvs_score_hsaco[];
+extern unsigned int psnr_hvs_score_hsaco_len;
 #endif /* HAVE_HIPCC */
 
 #endif /* FEATURE_PSNR_HVS_HIP_H_ */
