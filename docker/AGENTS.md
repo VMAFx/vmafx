@@ -143,6 +143,35 @@ stage Meson's generated `meson-private/libvmaf.pc`; never synthesize it from
 `scripts/ci/test_e2e_runtime_contract.py` pins these invariants for both
 Dockerfiles.
 
+## Debian zimg record per copying builder (issue #3242)
+
+`libzimg.so*` copied from `/usr/lib/*-linux-gnu*` = Debian `libzimg2`, never
+upstream 3.0.6 archive. So `zimg` component of `production-cli-image` reads
+`debian_source_file: usr/share/doc/libzimg2/SOURCE` and takes package copyright
+file as licence text, same as tester entry.
+
+- Every copying builder (`Dockerfile.go-server`, `docker/Dockerfile.controller`,
+  `.node`, `.production`, `.production-gpu`) and shared
+  `scripts/ci/build-oneapi-libvmaf.sh` (both oneAPI images) stage `copyright` +
+  `dpkg-query` `SOURCE` line under `/dist/doc/libzimg2`. New copying builder: same.
+- Every runtime stage publishing `libzimg.so*` installs that directory at
+  `/usr/share/doc/libzimg2`.
+- Missing record -> image `licensing.py sources` fails (source offer names no
+  Debian package without record); notice names version absent from image.
+- Copy sites discovered, not listed: `COPY_LINE` reads `cp -a` / `cp -d` from
+  `/usr/lib/*-linux-gnu*/` in `COPY_SOURCES` files; site missing from
+  `KNOWN_COPY_SITES` fails by name.
+- Discovery gaps, recorded in test: file outside `COPY_SOURCES`, concrete-arch
+  path, `install` copy. New copying file -> add to `COPY_SOURCES`; new copy
+  form -> extend `COPY_LINE` and form test together.
+- One audited build-only exception: `docker/Dockerfile.tester` `vmaf-build`.
+  `runtime` overwrites `/opt/vmafx/lib` from `python-venv` (carries record) before
+  install; test proves order.
+- macOS bundle, Windows zips build zimg from source; keep 3.0.6 archive entry.
+- `release-native` not from source: `stage_zimg` copies loader-resolved
+  `libzimg.so*` from `release-build` (unpinned `dnf` `zimg-devel`); 3.0.6
+  entry names wrong source, tracked in #3396.
+
 ## Fedora optional SYCL repository
 
 `dev/fedora-40.Dockerfile` writes seven literal oneAPI repository lines with
