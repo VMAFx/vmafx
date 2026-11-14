@@ -14,6 +14,10 @@ Flags:
     --write   Rewrite the outputs.
 
 Wired into `make docs-fragments-check` / `make docs-fragments-write` (ADR-0221 pattern).
+
+The rendered page is one HTML row per line, so docs/hardware-reports/.markdownlint-cli2.yaml
+carries the page's scoped MD013/MD033 exception (regenerated output is never
+hand-formatted to satisfy lint).
 """
 
 from __future__ import annotations
@@ -74,9 +78,9 @@ verdict `fail` is welcome: it is a finding.
 
 The table is filterable in the browser by device text, backend, exactness, result
 and operating system. When two reports measure the same backend on the same
-device, the newest row is shown and the older report is linked from that row. The
-page becomes a view of the result document ([#2311](https://github.com/VMAFx/vmafx/issues/2311))
-when that lands.
+machine's device slot, the newest row is shown and the older report is linked
+from that row. The page becomes a view of the result document
+([#2311](https://github.com/VMAFx/vmafx/issues/2311)) when that lands.
 
 """
 EMPTY = "No reports have been submitted yet.\n"
@@ -137,86 +141,131 @@ def _cpu_exactness(report: dict[str, Any]) -> str:
     return next(status for status in statuses if status != "identical")
 
 
-def _gpu_key(backend: str, facts: dict[str, Any]) -> str:
+def _host_key(report: dict[str, Any]) -> str:
+    host = report["host"]
+    return f"{_platform(report)}:{host.get('machine', '?')}:{host.get('cpu_model', '?')}"
+
+
+def _gpu_key(backend: str, report: dict[str, Any], device: dict[str, Any]) -> str:
+    """One row per host and device slot: repeat reports of the same machine's
+    device collapse into the newest, while the same model on another host, or a
+    second card of the same model in one report, keeps its own row."""
+    facts = device.get("facts", {})
     vendor = str(facts.get("vendor_id") or "")
     device_id = str(facts.get("device_id") or "")
     if vendor and device_id:
-        return f"{backend}:{vendor}:{device_id}"
-    name = str(facts.get("name") or "?").casefold()
-    return f"{backend}:{name}:{facts.get('compute_capability', '')}:{facts.get('family', '')}"
+        model = f"{vendor}:{device_id}"
+    else:
+        name = str(facts.get("name") or "?").casefold()
+        model = f"{name}:{facts.get('compute_capability', '')}:{facts.get('family', '')}"
+    return f"{backend}:{_host_key(report)}:{device.get('index', '?')}:{model}"
 
 
 def _backend_label(backend: str) -> str:
     return BACKEND_LABELS.get(backend, backend.upper())
 
 
-def _rows_for_report(path: Path, report: dict[str, Any]) -> list[dict[str, Any]]:
-    """One row per measured backend: CPU, Metal and every GPU device."""
-    host = report["host"]
-    date = report["generated_utc"][:10]
-    stamp = report["generated_utc"]
-    platform = _platform(report)
-    cpu_exactness = _cpu_exactness(report)
-    rows = [
-        {
-            "key": f"cpu:{platform}:{host.get('machine', '?')}:{host.get('cpu_model', '?')}",
-            "date": date,
-            "stamp": stamp,
-            "report": path.name,
-            "device": str(host.get("cpu_model") or "?"),
-            "backend": "cpu",
-            "driver": _driver(report, "cpu", {}),
-            "platform": platform,
-            "host": _host_cell(report, "cpu"),
-            "exactness": f"cpu {cpu_exactness}",
-            "exactness_status": cpu_exactness,
-            "result": _host_verdict({}, report),
-        }
-    ]
+def _metal_result(report: dict[str, Any], equivalence_status: str) -> str:
+    """`fail` when the equivalence or a present Metal gate is not passing — the
+    rule `_host_verdict` applies to METAL_CHECKS — else `pass`. A gate an older
+    schema lacks is not counted, like `_host_verdict`."""
+    if equivalence_status not in PASSING["metal_equivalence"]:
+        return "fail"
+    gate = report.get("metal_gate")
+    if gate and str(gate.get("status")) not in PASSING["metal_gate"]:
+        return "fail"
+    return "pass"
 
+
+def _cpu_row(
+    path: Path, report: dict[str, Any], date: str, stamp: str, platform: str
+) -> dict[str, Any]:
+    """The host's scalar and dispatch checks under the report's own CPU verdict."""
+    cpu_exactness = _cpu_exactness(report)
+    return {
+        "key": f"cpu:{_host_key(report)}",
+        "date": date,
+        "stamp": stamp,
+        "report": path.name,
+        "device": str(report["host"].get("cpu_model") or "?"),
+        "backend": "cpu",
+        "driver": _driver(report, "cpu", {}),
+        "platform": platform,
+        "host": _host_cell(report, "cpu"),
+        "exactness": f"cpu {cpu_exactness}",
+        "exactness_status": cpu_exactness,
+        "result": _host_verdict({}, report),
+    }
+
+
+def _metal_row(
+    path: Path, report: dict[str, Any], date: str, stamp: str, platform: str
+) -> dict[str, Any] | None:
+    """The macOS Metal row; None when the host reports no Metal device."""
     metal = report.get("metal_equivalence") or {}
-    metal_status = metal.get("status")
-    if metal_status and metal_status not in ("not_applicable", "no_device"):
+    status = metal.get("status")
+    if not status or status in ("not_applicable", "no_device"):
+        return None
+    return {
+        "key": f"metal:{report['host'].get('cpu_model', '?')}:{report['host'].get('machine', '?')}",
+        "date": date,
+        "stamp": stamp,
+        "report": path.name,
+        "device": f"{report['host'].get('cpu_model', '?')} (Metal)",
+        "backend": "metal",
+        "driver": _driver(report, "metal", {}),
+        "platform": platform,
+        "host": str(report["host"].get("cpu_model") or "?"),
+        "exactness": f"metal {status}",
+        "exactness_status": str(status),
+        "result": _metal_result(report, str(status)),
+    }
+
+
+def _gpu_rows(
+    path: Path, report: dict[str, Any], date: str, stamp: str, platform: str
+) -> list[dict[str, Any]]:
+    """One row per device: Exactness is the twin-measurement status; Result fails
+    when the device or its state rows fail — the rule `_gpu_verdicts` counts."""
+    gpu = report.get("gpu") or {}
+    backend = gpu.get("backend")
+    if not backend:
+        return []
+    rows = []
+    for device in gpu.get("devices", []):
+        facts = device.get("facts", {})
+        status = str(device.get("status") or "not_measured")
+        rows_status = str((device.get("rows") or {}).get("status") or "not_measured")
+        twins_status = str((device.get("twins") or {}).get("status") or "not_measured")
         rows.append(
             {
-                "key": f"metal:{host.get('cpu_model', '?')}:{host.get('machine', '?')}",
+                "key": _gpu_key(str(backend), report, device),
                 "date": date,
                 "stamp": stamp,
                 "report": path.name,
-                "device": f"{host.get('cpu_model', '?')} (Metal)",
-                "backend": "metal",
-                "driver": _driver(report, "metal", {}),
+                "device": str(facts.get("name") or "?"),
+                "backend": str(backend),
+                "driver": _driver(report, str(backend), facts),
                 "platform": platform,
-                "host": str(host.get("cpu_model") or "?"),
-                "exactness": f"metal {metal_status}",
-                "exactness_status": str(metal_status),
-                "result": str(metal_status),
+                "host": str(report["host"].get("cpu_model") or "?"),
+                "exactness": f"{backend} {twins_status}",
+                "exactness_status": twins_status,
+                "result": "fail" if "fail" in (status, rows_status) else rows_status,
             }
         )
+    return rows
 
-    gpu = report.get("gpu") or {}
-    backend = gpu.get("backend")
-    if backend:
-        for device in gpu.get("devices", []):
-            facts = device.get("facts", {})
-            status = str(device.get("status") or "not_measured")
-            name = str(facts.get("name") or "?")
-            rows.append(
-                {
-                    "key": _gpu_key(str(backend), facts),
-                    "date": date,
-                    "stamp": stamp,
-                    "report": path.name,
-                    "device": name,
-                    "backend": str(backend),
-                    "driver": _driver(report, str(backend), facts),
-                    "platform": platform,
-                    "host": str(host.get("cpu_model") or "?"),
-                    "exactness": f"{backend} {status}",
-                    "exactness_status": status,
-                    "result": status,
-                }
-            )
+
+def _rows_for_report(path: Path, report: dict[str, Any]) -> list[dict[str, Any]]:
+    """One row per measured backend: CPU, Metal and every GPU device."""
+    date = report["generated_utc"][:10]
+    stamp = report["generated_utc"]
+    platform = _platform(report)
+    rows = [_cpu_row(path, report, date, stamp, platform)]
+    metal = _metal_row(path, report, date, stamp, platform)
+    if metal:
+        rows.append(metal)
+    rows.extend(_gpu_rows(path, report, date, stamp, platform))
     return rows
 
 

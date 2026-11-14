@@ -160,12 +160,15 @@ def test_index_lists_reports_and_is_empty_without(tmp_path: Path) -> None:
     write(tmp_path, GOOD_NAME, good_gpu_report())
     text = index.render(tmp_path)
     assert "<td>Intel(R) UHD Graphics 770</td>" in text
-    assert "<td>sycl pass</td>" in text
+    assert "<td>sycl identical</td>" in text  # Exactness is the twins' verdict
+    assert 'data-result="pass"' in text
     assert 'data-backend="sycl"' in text
 
 
 def test_index_is_filterable_and_keeps_exactness_per_backend(tmp_path: Path) -> None:
-    write(tmp_path, GOOD_NAME, good_gpu_report())
+    report = good_gpu_report()
+    report["gpu"]["devices"][0]["twins"]["status"] = "within_bound"
+    write(tmp_path, GOOD_NAME, report)
     text = index.render(tmp_path)
     for marker in (
         "data-hardware-filter",
@@ -178,8 +181,8 @@ def test_index_is_filterable_and_keeps_exactness_per_backend(tmp_path: Path) -> 
     ):
         assert marker in text
     assert "<td>cpu identical</td>" in text
-    assert "<td>sycl pass</td>" in text
-    assert 'data-exactness="pass"' in text
+    assert "<td>sycl within_bound</td>" in text
+    assert 'data-exactness="within_bound"' in text
 
 
 def test_failed_twin_shows_failure_for_that_backend(tmp_path: Path) -> None:
@@ -189,9 +192,9 @@ def test_failed_twin_shows_failure_for_that_backend(tmp_path: Path) -> None:
     report["verdict"], report["failed_checks"] = "fail", ["gpu"]
     write(tmp_path, GOOD_NAME, report)
     text = index.render(tmp_path)
-    assert "<td>sycl fail</td>" in text
+    assert "<td>sycl identical</td>" in text  # the twins still agree
+    assert 'data-backend="sycl" data-exactness="identical" data-result="fail"' in text
     assert "<td>cpu identical</td>" in text
-    assert "<td>sycl pass</td>" not in text
 
 
 def test_newest_duplicate_device_wins_and_links_the_older_report(tmp_path: Path) -> None:
@@ -206,6 +209,72 @@ def test_newest_duplicate_device_wins_and_links_the_older_report(tmp_path: Path)
     assert "<td>2026-10-05</td>" in text
     assert 'older: <a href="2026-10-01-old.json">2026-10-01</a>' in text
     assert "<td>2026-10-01</td>" not in text
+
+
+def test_two_identical_devices_in_one_report_are_two_rows(tmp_path: Path) -> None:
+    """A second card of the same model in one report keeps its row: a failure on
+    it must not disappear behind the first card's row (#2325 review)."""
+    report = good_gpu_report()
+    first, second = gpu_device(), gpu_device(status="fail")
+    second["index"] = 1
+    for device in (first, second):
+        device["facts"]["vendor_id"] = "0x8086"
+        device["facts"]["device_id"] = "0x4680"
+    report["gpu"]["devices"] = [first, second]
+    report["gpu"]["status"] = "fail"
+    report["verdict"], report["failed_checks"] = "fail", ["gpu"]
+    write(tmp_path, GOOD_NAME, report)
+    text = index.render(tmp_path)
+    assert text.count("data-hardware-row") == 3  # one CPU row, two SYCL cards
+    assert 'data-result="fail"' in text  # the second card's failure is visible
+    assert "older:" not in text  # a same-report device is not an older report
+
+
+def test_same_gpu_model_on_two_hosts_is_two_rows(tmp_path: Path) -> None:
+    """The GPU key carries the host like the CPU key: the same model on another
+    machine is its own row, not an "older" link (#2325 review)."""
+    first = good_gpu_report()
+    first["generated_utc"] = "2026-10-05T10:00:00Z"
+    other = good_gpu_report()
+    other["generated_utc"] = "2026-10-06T10:00:00Z"
+    other["host"]["machine"] = "x86_64"
+    other["host"]["cpu_model"] = "13th Gen Intel(R) Core(TM) i5-13500"
+    other["host"]["kernel_release"] = "6.7"
+    write(tmp_path, "2026-10-05-i9.json", first)
+    write(tmp_path, "2026-10-06-i5.json", rehash(other))
+    text = index.render(tmp_path)
+    assert text.count("data-hardware-row") == 4  # two CPU rows, two SYCL rows
+    assert "<td>13th Gen Intel(R) Core(TM) i5-13500</td>" in text
+    assert "older:" not in text  # different hosts never collapse
+
+
+def test_gpu_result_reflects_a_failing_state_row(tmp_path: Path) -> None:
+    """The Result column counts a failing state row like `_gpu_verdicts` does, so
+    both tables of the page agree on the device (#2325 review)."""
+    report = good_gpu_report()
+    device = report["gpu"]["devices"][0]
+    device["status"] = "pass"
+    device["rows"]["status"] = "fail"
+    report["gpu"]["status"] = "fail"
+    report["verdict"], report["failed_checks"] = "fail", ["gpu"]
+    write(tmp_path, GOOD_NAME, report)
+    text = index.render(tmp_path)
+    assert 'data-result="fail"' in text
+    assert "<td>sycl identical</td>" in text  # the twins stay identical
+    assert 'data-exactness="identical"' in text
+
+
+@pytest.mark.parametrize("gate_status", ["fail", "error", "not_run"])
+def test_a_non_passing_metal_gate_fails_the_metal_row(tmp_path: Path, gate_status: str) -> None:
+    report = v2_report(
+        metal_equivalence={"status": "identical", "fixtures": []},
+        metal_gate={"status": gate_status, "fixtures": []},
+    )
+    write(tmp_path, GOOD_NAME, report)
+    text = index.render(tmp_path)
+    assert "(Metal)" in text  # the Metal row exists...
+    assert "<td>metal identical</td>" in text  # ...with the equivalence as Exactness
+    assert 'data-result="fail"' in text  # and the gate's failure as the Result
 
 
 def test_cpu_only_and_a_device_without_a_driver_version(tmp_path: Path) -> None:
