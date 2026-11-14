@@ -168,6 +168,8 @@ extra_css:
 # chart (ADR-1508, scripts/docs/generate-charts.py).
 extra_javascript:
   - javascripts/charts.js
+  # Filters the hardware report table (issue #2325); no other page uses it.
+  - javascripts/hardware-reports.js
   # Formulas (ADR-2705): the pinned KaTeX release in docs/javascripts/vendor/katex/,
   # served from the site, never from a CDN. katex.js runs after the two libraries.
   - javascripts/vendor/katex/katex.min.js

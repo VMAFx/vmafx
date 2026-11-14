@@ -969,7 +969,9 @@ and attach `report.json`. A maintainer commits it for you; give a name and an e-
 address in the form if you want a `Co-authored-by:` line with your credit.
 
 Reports from outside the project's own hosts are listed on the
-[hardware reports page](../hardware-reports/index.md).
+[hardware reports page](../hardware-reports/index.md). The page has one row per
+measured backend and can be filtered by device, backend, exactness and
+operating system.
 
 ## If something goes wrong
 

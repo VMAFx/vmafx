@@ -14,11 +14,16 @@ Flags:
     --write   Rewrite the outputs.
 
 Wired into `make docs-fragments-check` / `make docs-fragments-write` (ADR-0221 pattern).
+
+The rendered page is one HTML row per line, so docs/hardware-reports/.markdownlint-cli2.yaml
+carries the page's scoped MD013/MD033 exception (regenerated output is never
+hand-formatted to satisfy lint).
 """
 
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import sys
@@ -64,50 +69,328 @@ files in this directory; do not edit by hand. Add a report file and run
 # Hardware reports
 
 Reports printed by the [tester image](../usage/tester-image.md) on machines outside
-the project's own hosts, one file per report. Each row links the file. The
-[report schema](report.schema.json) lists every field, and the CI gate
+the project's own hosts, one file per report. The table lists one row per measured
+backend: a CPU row for the host's scalar and dispatch checks, a Metal row for
+macOS, and one row per CUDA, HIP or SYCL device. Each row links the report file.
+The [report schema](report.schema.json) lists every field, and the CI gate
 `scripts/ci/check-hardware-reports.py` validates each file. A report with
 verdict `fail` is welcome: it is a finding.
 
-"""
-TABLE = """\
-| Date | CPU | Arch | Dispatch flags | GPU | Verdict | Source commit | Report |
-| --- | --- | --- | --- | --- | --- | --- | --- |
+The table is filterable in the browser by device text, backend, exactness, result
+and operating system. When two reports measure the same backend on the same
+machine's device slot, the newest row is shown and the older report is linked
+from that row. The page becomes a view of the result document
+([#2311](https://github.com/VMAFx/vmafx/issues/2311)) when that lands.
+
 """
 EMPTY = "No reports have been submitted yet.\n"
 
+TABLE_HEAD = """\
+<table class="vx-hardware-table" data-hardware-table>
+<thead>
+<tr><th>Date</th><th>Device</th><th>Backend</th><th>Driver</th><th>OS</th><th>Host / flags</th><th>Exactness</th><th>Result</th><th>Report</th></tr>
+</thead>
+<tbody>
+"""
+TABLE_TAIL = """\
+</tbody>
+</table>
+<p class="vx-hardware-empty" data-hardware-empty hidden>No rows match the filters.</p>
+"""
 
-def _gpus(report: dict[str, Any]) -> str:
-    """The GPUs a schema-3 report measured, with their family; `-` for none."""
-    gpu = report.get("gpu") or {}
-    names = [
-        f"{d['facts'].get('name', '?')} ({d['facts'].get('family', '?')})"
-        for d in gpu.get("devices", [])
-    ]
-    return ", ".join(names).replace("|", "/") or "-"
+BACKEND_LABELS = {
+    "cpu": "CPU",
+    "cuda": "CUDA",
+    "hip": "HIP",
+    "metal": "Metal",
+    "sycl": "SYCL",
+}
 
 
-def _row(path: Path) -> str:
-    report = json.loads(path.read_text(encoding="utf-8"))
+def _platform(report: dict[str, Any]) -> str:
+    return str(report["host"].get("platform") or "?")
+
+
+def _host_cell(report: dict[str, Any], backend: str) -> str:
     host = report["host"]
-    cells = [
-        report["generated_utc"][:10],
-        host["cpu_model"].replace("|", "/"),
-        host["machine"],
-        ", ".join(host["dispatch_flags"]) or "none",
-        _gpus(report),
-        report["verdict"],
-        f"`{report['image']['source_commit'][:12]}`",
-        f"[{path.name}]({path.name})",
+    if backend == "cpu":
+        flags = ", ".join(host.get("dispatch_flags", [])) or "none"
+        return f"{host.get('machine', '?')}; {flags}"
+    return str(host.get("cpu_model") or "?")
+
+
+def _driver(report: dict[str, Any], backend: str, facts: dict[str, Any]) -> str:
+    if backend == "cpu":
+        return str(report["host"].get("kernel_release") or "not reported")
+    if backend == "metal":
+        return "not reported"
+    values = [str(facts[key]) for key in ("driver_version", "code_path") if facts.get(key)]
+    return " / ".join(values) or "not reported"
+
+
+def _cpu_exactness(report: dict[str, Any]) -> str:
+    statuses = [
+        str(section.get("status"))
+        for key in ("dispatch_equivalence", "reference_equivalence")
+        if (section := report.get(key)) and section.get("status")
     ]
-    return "| " + " | ".join(cells) + " |"
+    if not statuses:
+        return "not_measured"
+    if all(status == "identical" for status in statuses):
+        return "identical"
+    return next(status for status in statuses if status != "identical")
+
+
+def _host_key(report: dict[str, Any]) -> str:
+    host = report["host"]
+    return f"{_platform(report)}:{host.get('machine', '?')}:{host.get('cpu_model', '?')}"
+
+
+def _gpu_key(backend: str, report: dict[str, Any], device: dict[str, Any]) -> str:
+    """One row per host and device slot: repeat reports of the same machine's
+    device collapse into the newest, while the same model on another host, or a
+    second card of the same model in one report, keeps its own row."""
+    facts = device.get("facts", {})
+    vendor = str(facts.get("vendor_id") or "")
+    device_id = str(facts.get("device_id") or "")
+    if vendor and device_id:
+        model = f"{vendor}:{device_id}"
+    else:
+        name = str(facts.get("name") or "?").casefold()
+        model = f"{name}:{facts.get('compute_capability', '')}:{facts.get('family', '')}"
+    return f"{backend}:{_host_key(report)}:{device.get('index', '?')}:{model}"
+
+
+def _backend_label(backend: str) -> str:
+    return BACKEND_LABELS.get(backend, backend.upper())
+
+
+def _metal_result(report: dict[str, Any], equivalence_status: str) -> str:
+    """`fail` when the equivalence or a present Metal gate is not passing — the
+    rule `_host_verdict` applies to METAL_CHECKS — else `pass`. A gate an older
+    schema lacks is not counted, like `_host_verdict`."""
+    if equivalence_status not in PASSING["metal_equivalence"]:
+        return "fail"
+    gate = report.get("metal_gate")
+    if gate and str(gate.get("status")) not in PASSING["metal_gate"]:
+        return "fail"
+    return "pass"
+
+
+def _cpu_row(
+    path: Path, report: dict[str, Any], date: str, stamp: str, platform: str
+) -> dict[str, Any]:
+    """The host's scalar and dispatch checks under the report's own CPU verdict."""
+    cpu_exactness = _cpu_exactness(report)
+    return {
+        "key": f"cpu:{_host_key(report)}",
+        "date": date,
+        "stamp": stamp,
+        "report": path.name,
+        "device": str(report["host"].get("cpu_model") or "?"),
+        "backend": "cpu",
+        "driver": _driver(report, "cpu", {}),
+        "platform": platform,
+        "host": _host_cell(report, "cpu"),
+        "exactness": f"cpu {cpu_exactness}",
+        "exactness_status": cpu_exactness,
+        "result": _host_verdict({}, report),
+    }
+
+
+def _metal_row(
+    path: Path, report: dict[str, Any], date: str, stamp: str, platform: str
+) -> dict[str, Any] | None:
+    """The macOS Metal row; None when the host reports no Metal device."""
+    metal = report.get("metal_equivalence") or {}
+    status = metal.get("status")
+    if not status or status in ("not_applicable", "no_device"):
+        return None
+    return {
+        "key": f"metal:{report['host'].get('cpu_model', '?')}:{report['host'].get('machine', '?')}",
+        "date": date,
+        "stamp": stamp,
+        "report": path.name,
+        "device": f"{report['host'].get('cpu_model', '?')} (Metal)",
+        "backend": "metal",
+        "driver": _driver(report, "metal", {}),
+        "platform": platform,
+        "host": str(report["host"].get("cpu_model") or "?"),
+        "exactness": f"metal {status}",
+        "exactness_status": str(status),
+        "result": _metal_result(report, str(status)),
+    }
+
+
+def _gpu_rows(
+    path: Path, report: dict[str, Any], date: str, stamp: str, platform: str
+) -> list[dict[str, Any]]:
+    """One row per device: Exactness is the twin-measurement status; Result fails
+    when the device or its state rows fail — the rule `_gpu_verdicts` counts."""
+    gpu = report.get("gpu") or {}
+    backend = gpu.get("backend")
+    if not backend:
+        return []
+    rows = []
+    for device in gpu.get("devices", []):
+        facts = device.get("facts", {})
+        status = str(device.get("status") or "not_measured")
+        rows_status = str((device.get("rows") or {}).get("status") or "not_measured")
+        twins_status = str((device.get("twins") or {}).get("status") or "not_measured")
+        rows.append(
+            {
+                "key": _gpu_key(str(backend), report, device),
+                "date": date,
+                "stamp": stamp,
+                "report": path.name,
+                "device": str(facts.get("name") or "?"),
+                "backend": str(backend),
+                "driver": _driver(report, str(backend), facts),
+                "platform": platform,
+                "host": str(report["host"].get("cpu_model") or "?"),
+                "exactness": f"{backend} {twins_status}",
+                "exactness_status": twins_status,
+                "result": "fail" if "fail" in (status, rows_status) else rows_status,
+            }
+        )
+    return rows
+
+
+def _rows_for_report(path: Path, report: dict[str, Any]) -> list[dict[str, Any]]:
+    """One row per measured backend: CPU, Metal and every GPU device."""
+    date = report["generated_utc"][:10]
+    stamp = report["generated_utc"]
+    platform = _platform(report)
+    rows = [_cpu_row(path, report, date, stamp, platform)]
+    metal = _metal_row(path, report, date, stamp, platform)
+    if metal:
+        rows.append(metal)
+    rows.extend(_gpu_rows(path, report, date, stamp, platform))
+    return rows
+
+
+def _collect_rows(directory: Path) -> list[dict[str, Any]]:
+    """The rows of every report, with the newest row kept per device key."""
+    rows: list[dict[str, Any]] = []
+    for path in (p for p in sorted(directory.glob("*.json")) if p.name != SCHEMA_NAME):
+        rows.extend(_rows_for_report(path, json.loads(path.read_text(encoding="utf-8"))))
+
+    kept: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        current = kept.get(row["key"])
+        if current is None:
+            kept[row["key"]] = row
+            continue
+        row["older"] = [*list(current.get("older", [])), (current["date"], current["report"])]
+        if (row["stamp"], row["report"]) > (current["stamp"], current["report"]):
+            kept[row["key"]] = row
+        else:
+            current.setdefault("older", []).append((row["date"], row["report"]))
+    for row in kept.values():
+        older = sorted(
+            {item for item in row.get("older", []) if item[1] != row["report"]},
+            reverse=True,
+        )
+        row["older"] = older
+    return sorted(
+        kept.values(),
+        key=lambda row: (row["stamp"], row["backend"], row["device"]),
+        reverse=True,
+    )
+
+
+def _options(values: list[str], label: Any = str) -> str:
+    return "".join(
+        f'<option value="{html.escape(value, quote=True)}">{html.escape(label(value))}</option>'
+        for value in values
+    )
+
+
+def _filter(rows: list[dict[str, Any]]) -> str:
+    backends = sorted({row["backend"] for row in rows}, key=_backend_label)
+    statuses = sorted({row["exactness_status"] for row in rows})
+    results = sorted({row["result"] for row in rows})
+    platforms = sorted({row["platform"] for row in rows})
+    return (
+        '<div class="vx-hardware-filter" data-hardware-filter>'
+        '<label>Search <input type="search" data-hardware-search '
+        'placeholder="device, driver, host, report"></label>'
+        f'<label>Backend <select data-hardware-backend><option value="">all</option>'
+        f"{_options(backends, _backend_label)}</select></label>"
+        f'<label>Exactness <select data-hardware-exactness><option value="">all</option>'
+        f"{_options(statuses)}</select></label>"
+        f'<label>Result <select data-hardware-result><option value="">all</option>'
+        f"{_options(results)}</select></label>"
+        f'<label>OS <select data-hardware-platform><option value="">all</option>'
+        f"{_options(platforms)}</select></label>"
+        '<span data-hardware-count aria-live="polite"></span>'
+        "</div>"
+    )
+
+
+def _device_cell(row: dict[str, Any]) -> str:
+    text = html.escape(row["device"])
+    older = row.get("older") or []
+    if not older:
+        return text
+    links = ", ".join(
+        f'<a href="{html.escape(name, quote=True)}">{html.escape(date)}</a>' for date, name in older
+    )
+    return f'{text}<br><span class="vx-hardware-older">older: {links}</span>'
+
+
+def _row_html(row: dict[str, Any]) -> str:
+    search = " ".join(
+        [
+            row["date"],
+            row["device"],
+            row["backend"],
+            row["driver"],
+            row["platform"],
+            row["host"],
+            row["exactness"],
+            row["result"],
+            row["report"],
+        ]
+        + [date for date, _ in row.get("older", [])]
+    ).casefold()
+    attributes = (
+        f'data-backend="{html.escape(row["backend"], quote=True)}" '
+        f'data-exactness="{html.escape(row["exactness_status"], quote=True)}" '
+        f'data-result="{html.escape(row["result"], quote=True)}" '
+        f'data-platform="{html.escape(row["platform"], quote=True)}" '
+        f'data-search="{html.escape(search, quote=True)}"'
+    )
+    return (
+        f"<tr data-hardware-row {attributes}>"
+        f"<td>{html.escape(row['date'])}</td>"
+        f"<td>{_device_cell(row)}</td>"
+        f"<td>{html.escape(_backend_label(row['backend']))}</td>"
+        f"<td>{html.escape(row['driver'])}</td>"
+        f"<td>{html.escape(row['platform'])}</td>"
+        f"<td>{html.escape(row['host'])}</td>"
+        f"<td>{html.escape(row['exactness'])}</td>"
+        f"<td>{html.escape(row['result'])}</td>"
+        f'<td><a href="{html.escape(row["report"], quote=True)}">'
+        f"{html.escape(row['report'])}</a></td>"
+        "</tr>"
+    )
 
 
 def render(directory: Path) -> str:
     paths = [p for p in sorted(directory.glob("*.json")) if p.name != SCHEMA_NAME]
     if not paths:
         return HEADER + EMPTY
-    return HEADER + TABLE + "\n".join(_row(p) for p in paths) + "\n"
+    rows = _collect_rows(directory)
+    return (
+        HEADER
+        + _filter(rows)
+        + "\n"
+        + TABLE_HEAD
+        + "\n".join(_row_html(row) for row in rows)
+        + "\n"
+        + TABLE_TAIL
+    )
 
 
 def _host_matches(match: dict[str, Any], report: dict[str, Any]) -> bool:
