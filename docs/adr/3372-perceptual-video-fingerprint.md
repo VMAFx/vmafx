@@ -208,10 +208,14 @@ record's same-window decision (decision 3, step 4) was not part of that
 change — the landed spot check compares the window score with the
 trial's whole-clip aggregate again — so PR #3444 rebases onto it and
 restores the two-leg comparison, keeping the landed decode shape. The
-cached source decodes into the same temporary directory through a
-dedicated helper, so no stale sidecar named for another source can zero
-the delta and both functions stay inside the 60-line limit. Geometry is
-not part of the check: the near-duplicate index matches on the cell
+cached source normalizes into the same temporary directory through a
+dedicated helper that mirrors the sweep's reference-decode arguments —
+the rung scale target, the job's native source dims and frame rate — so
+no stale sidecar named for another source can zero the delta, a raw
+cached source is parsed at its native geometry and scaled like the
+query leg instead of being misread at the rung geometry, and both
+functions stay inside the 60-line limit. Geometry is still not part of
+the match decision: the near-duplicate index matches on the cell
 params, which carry width, height, pixel format and frame rate, so a
 cached entry at another geometry never reaches the spot check (issue
 #3448, closed as not planned). The landed decode tests are adapted to

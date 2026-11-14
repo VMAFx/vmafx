@@ -1011,14 +1011,17 @@ def _cached_source_leg(
     comparison; decision 3 step 4 of ADR-3372 scores one second of *each*
     source (issue #3343). The source must still hash to its stored
     ``src_sha256``: a replaced or edited file refuses reuse the same way
-    a missing artifact does, so its old encode is never its baseline. A
-    container source decodes into ``decode_dir`` — the same temporary
-    directory the cached encode decodes into — so the check leaves no
-    files behind and never reads a stale sidecar named for a different
-    source: ``_maybe_decode_reference`` reuses an existing decode in its
-    encode directory, and a cached container that shares its file name
-    with the query source would otherwise zero the delta whatever its
-    content.
+    a missing artifact does, so its old encode is never its baseline. The
+    source normalizes through the same reference-decode path the sweep
+    uses for the query leg (ADR-0498/ADR-0499/ADR-0501): a container
+    decodes, a raw source whose native geometry differs from the rung
+    target scales, and everything lands in ``decode_dir`` — the same
+    temporary directory the cached encode decodes into — so the check
+    leaves no files behind and never reads a stale sidecar named for a
+    different source: ``_maybe_decode_reference`` reuses an existing
+    decode in its encode directory, and a cached source that shares its
+    file name with the query source would otherwise zero the delta
+    whatever its content.
     """
     row = dict(cached.row or {})
     src_value = row.get("src")
@@ -1036,24 +1039,33 @@ def _cached_source_leg(
             src_value,
         )
         return None
-    reference = cached_source
-    if cached_source.suffix.lower() not in _VMAF_RAW_SUFFIXES:
-        fps = float(sweep.job.framerate) if float(sweep.job.framerate) > 0.0 else 24.0
-        decode_s = (score_req.frame_skip_ref + score_req.frame_cnt) / fps + 1.0
-        reference, rc = _maybe_decode_reference(
+    job = sweep.job
+    fps = float(job.framerate) if float(job.framerate) > 0.0 else 24.0
+    # Cap the decode at the analysed window so a long cached source
+    # doesn't spill raw YUV for frames the check never scores.
+    decode_s = (score_req.frame_skip_ref + score_req.frame_cnt) / fps + 1.0
+    ref_target_w, ref_target_h = _reference_scale_target(job)
+    src_dim_w = int(job.src_width) if job.src_width is not None else int(job.width)
+    src_dim_h = int(job.src_height) if job.src_height is not None else int(job.height)
+    reference, rc = _maybe_decode_reference(
+        cached_source,
+        encode_dir=decode_dir,
+        pix_fmt=job.pix_fmt,
+        duration_s=decode_s,
+        ffmpeg_bin=sweep.opts.ffmpeg_bin,
+        runner=subprocess.run,
+        target_width=ref_target_w,
+        target_height=ref_target_h,
+        source_width=src_dim_w,
+        source_height=src_dim_h,
+        source_framerate=float(job.framerate),
+    )
+    if rc != 0 or not reference.exists():
+        _LOG.info(
+            "vmaf-tune: near-dup spot verify fail-closed: cached source decode failed (%r)",
             cached_source,
-            encode_dir=decode_dir,
-            pix_fmt=score_req.pix_fmt,
-            duration_s=decode_s,
-            ffmpeg_bin=sweep.opts.ffmpeg_bin,
-            runner=subprocess.run,
         )
-        if rc != 0 or not reference.exists():
-            _LOG.info(
-                "vmaf-tune: near-dup spot verify fail-closed: cached source decode failed (%r)",
-                cached_source,
-            )
-            return None
+        return None
     return dataclasses.replace(score_req, reference=reference)
 
 

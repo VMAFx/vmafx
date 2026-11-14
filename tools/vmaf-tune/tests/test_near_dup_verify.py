@@ -13,7 +13,10 @@ different or replaced baseline. Geometry is not part of the check: the
 near-duplicate index matches on the cell params, which carry width,
 height, pixel format and frame rate, so a cached entry at another
 geometry never reaches the spot check (issue #3448, closed as not
-planned).
+planned). The cached source still normalizes through the same
+reference-decode path the sweep uses for the query leg, so a raw source
+at foreign native geometry is parsed and scaled like the sweep's own
+reference instead of being misread at the rung geometry.
 """
 
 from __future__ import annotations
@@ -109,9 +112,9 @@ def _cached(artifact: Path, src: Path | None, whole_clip_score: float) -> Cached
 
 def _patch_decodes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     """Stand-ins for the decode helpers: the encoded container decodes to a
-    fake raw sidecar; a container reference would decode to itself in the
-    check's temporary directory, but the fixture sources are raw so the
-    reference decode is never reached.
+    fake raw sidecar; the cached source passes through the reference-decode
+    stand-in unchanged, as the real one does for a raw source at the rung's
+    own geometry (no scale target).
 
     Returns the decoded-encode path the scoring requests must carry.
     """
@@ -337,6 +340,36 @@ def test_cached_source_without_stored_hash_fails_closed(
     assert calls == []
 
 
+def test_unreadable_cached_source_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cached source that cannot be opened for hashing refuses, not raises.
+
+    The hash guard runs inside the helper the spot check calls under its
+    ``try``, so an unreadable file surfaces as a logged refusal instead of
+    escaping the check (review on #3444).
+    """
+    source = tmp_path / "query.yuv"
+    source.write_bytes(b"\x00" * 16)
+    cached_src = tmp_path / "cached.yuv"
+    cached_src.write_bytes(b"\x00" * 16)
+    artifact = tmp_path / "enc.mkv"
+    artifact.write_bytes(b"\x00" * 4)
+    cached = _cached(artifact, cached_src, whole_clip_score=85.0)
+
+    def unreadable(path: Path) -> str:
+        raise OSError(f"cannot open {path}")
+
+    monkeypatch.setattr("vmaftune.corpus._sha256_file", unreadable)
+    calls: list = []
+    with unittest.mock.patch(
+        "vmaftune.score.run_score",
+        _window_scores(calls, {source: 85.0}),
+    ):
+        assert _verify_near_dup_spot(_sweep(source), cached) is False
+    assert calls == []
+
+
 def test_nonzero_sample_window_is_scored_at_its_offset(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -451,3 +484,62 @@ def test_query_pix_fmt_mismatch_is_unreachable(
     assert len(calls) == 2
     for req in calls:
         assert req.pix_fmt == "yuv420p"  # the job's format, not the row's
+
+
+def test_raw_cached_source_scales_like_the_query_leg(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A raw cached source normalizes through the sweep's reference-decode path.
+
+    A raw source whose native geometry differs from the rung target must be
+    parsed at its native dims and scaled to the rung target exactly like the
+    query leg's reference decode (ADR-0498/ADR-0501); passing it through
+    as-is would be misread at the rung geometry and turn the cached-source
+    leg into noise (review on #3444).
+    """
+    source = tmp_path / "query.yuv"
+    source.write_bytes(b"\x00" * 16)
+    cached_src = tmp_path / "cached.yuv"
+    cached_src.write_bytes(b"\x00" * 16)
+    artifact = tmp_path / "enc.mkv"
+    artifact.write_bytes(b"\x00" * 4)
+    cached = _cached(artifact, cached_src, whole_clip_score=85.0)
+    decoded = _patch_decodes(monkeypatch, tmp_path)
+    scaled = tmp_path / "cached.ref.decoded.640x360.yuv"
+    scaled.write_bytes(b"\x00" * 8)
+    decode_calls: list[dict] = []
+
+    def fake_reference(src, **kw):
+        decode_calls.append({"source": src, **kw})
+        return scaled, 0
+
+    monkeypatch.setattr("vmaftune.corpus._maybe_decode_reference", fake_reference)
+    sweep = dataclasses.replace(
+        _sweep(source),
+        job=dataclasses.replace(
+            _sweep(source).job, width=640, height=360, src_width=1280, src_height=720
+        ),
+    )
+    calls: list = []
+    with unittest.mock.patch(
+        "vmaftune.score.run_score",
+        _window_scores(calls, {source: 85.0, scaled: 85.0}),
+    ):
+        assert _verify_near_dup_spot(sweep, cached) is True
+    # The cached source went through the same decode the sweep gives its
+    # own reference: rung target, native source dims, job's frame rate —
+    # in the check's temporary directory, not next to the artifact.
+    assert len(decode_calls) == 1
+    call = decode_calls[0]
+    assert call["source"] == cached_src
+    assert call["target_width"] == 640 and call["target_height"] == 360
+    assert call["source_width"] == 1280 and call["source_height"] == 720
+    assert call["source_framerate"] == 24.0
+    assert call["pix_fmt"] == "yuv420p"
+    assert call["duration_s"] == 2.0  # the window's frames plus one second
+    assert call["encode_dir"] != artifact.parent
+    # The cached-source leg scores the scaled decode, not the raw file.
+    assert len(calls) == 2
+    assert calls[0].reference == source
+    assert calls[0].distorted == decoded
+    assert calls[1].reference == scaled

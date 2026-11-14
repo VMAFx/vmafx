@@ -17,13 +17,15 @@
   container-format artifact was scored as raw YUV (issue #3447). The
   decode path is shared with the landed fix for that issue: the cached
   encode decodes in a temporary directory that closes with the check, a
-  failed decode refuses the candidate, and a container-format cached
-  source decodes into the same directory so no stale sidecar named for
-  another source can zero the delta. Geometry is not part of the check:
-  the near-duplicate index matches on the cell params, which carry width,
-  height, pixel format and frame rate, so a cached entry at another
-  geometry never reaches the spot check (issue #3448, closed as not
-  planned).
+  failed decode refuses the candidate, and the cached source normalizes
+  into the same directory through the same reference-decode path the
+  sweep uses for the query leg — a container decodes there, and a raw
+  source whose native geometry differs from the rung target scales there
+  — so no stale sidecar named for another source can zero the delta and
+  no raw source is misread at the rung geometry. The near-duplicate
+  index still matches on the cell params, which carry width, height,
+  pixel format and frame rate, so a cached entry at another geometry
+  never reaches the spot check (issue #3448, closed as not planned).
 - **Rebased onto the landed decode fix (#3451).** Upstream's decode
   change decodes the cached encode in a temporary directory that closes
   with the check, guards on the sweep's reference decode result, and
@@ -31,10 +33,12 @@
   restores the same-window comparison on top of it — the landed spot
   check compares the window score with the trial's whole-clip aggregate
   again, which is the defect this PR exists to fix (issue #3343). The
-  cached source decodes into the same temporary directory when it is a
-  container: the shared decode path leaves no files behind and never
-  reads a stale sidecar named for another source, and the cached-source
-  leg lives in its own helper to keep both functions inside the 60-line
+  cached source normalizes into the same temporary directory through
+  the sweep's own reference-decode path: the shared decode path leaves
+  no files behind, never reads a stale sidecar named for another source,
+  and parses a raw cached source at its native geometry before scaling
+  to the rung target like the query leg, and the cached-source leg
+  lives in its own helper to keep both functions inside the 60-line
   limit. The landed decode tests in `tests/test_near_dup_spot_decode.py`
   are adapted to the two-leg behavior: their cleanup, refusal and model
   assertions stand, their single-run assertions now expect the two
