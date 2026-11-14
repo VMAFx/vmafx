@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import os
 import statistics
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -49,7 +48,7 @@ ENV_BASE = {
 def util_sample(k: int = 4) -> list[int]:
     vals = []
     for _ in range(k):
-        r = subprocess.run(
+        r = run_command(
             [
                 "nvidia-smi",
                 "-i",
@@ -57,9 +56,10 @@ def util_sample(k: int = 4) -> list[int]:
                 "--query-gpu=utilization.gpu",
                 "--format=csv,noheader,nounits",
             ],
+            allowed_executables=["nvidia-smi"],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout_seconds=30,
         )
         try:
             vals.append(int(r.stdout.strip()))
