@@ -245,6 +245,51 @@ class BuildSecretContract(unittest.TestCase):
         self.assertIn("docker build \\\n            --check", self.workflow)
         self.assertEqual(self.caller_errors(self.workflow, GATE), [])
 
+    def test_allowed_ubuntu_dev_image_raw_builds_pass(self) -> None:
+        target = '-f "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile"'
+        self.assertIn(target, self.workflow)
+        for dockerfile in (
+            "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile",
+            "docker/dev/ubuntu-26.04.Dockerfile",
+            "docker/dev/ubuntu-26.04-cuda.Dockerfile",
+            "docker/dev/ubuntu-26.04-sycl.Dockerfile",
+        ):
+            for flag in (f'-f "{dockerfile}"', f'--file "{dockerfile}"', f"--file={dockerfile}"):
+                with self.subTest(flag=flag):
+                    text = self.workflow.replace(target, flag, 1)
+                    self.assertEqual(self.errors(workflow=text), [])
+
+    def test_ubuntu_dev_image_raw_build_with_secret_or_token_arg_fails(self) -> None:
+        target = '-f "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile" \\\n'
+        self.assertIn(target, self.workflow)
+        for extra in (
+            "--secret id=github_token,env=GITHUB_TOKEN",
+            "--secret=id=github_token,env=GITHUB_TOKEN",
+            "--build-arg GITHUB_TOKEN=secret",
+            "--build-arg=GITHUB_TOKEN=secret",
+        ):
+            with self.subTest(extra=extra):
+                text = self.workflow.replace(target, f"{target}            {extra} \\\n", 1)
+                self.assertTrue(any("only via" in e for e in self.caller_errors(text, GATE)))
+
+    def test_disallowed_raw_docker_builds_fail(self) -> None:
+        ubuntu_build = (
+            "          docker build --progress=plain \\\n"
+            '            -f "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile" \\\n'
+            '            -t "vmafx-dev-ubuntu:${VARIANT}" \\\n'
+            "            .\n"
+        )
+        self.assertIn(ubuntu_build, self.workflow)
+        for raw_build in (
+            "          docker build -f dev/Containerfile --target release-build .\n",
+            "          docker build .\n",
+            "          docker build -f docker/dev/fedora.Dockerfile .\n",
+            "          docker build -f docker/dev/ubuntu-26.04.Dockerfile -f dev/Containerfile .\n",
+        ):
+            with self.subTest(raw_build=raw_build.strip()):
+                text = self.workflow.replace(ubuntu_build, raw_build, 1)
+                self.assertTrue(any("only via" in e for e in self.caller_errors(text, GATE)))
+
     # --- the publisher and the docs ------------------------------------------
 
     def test_release_rehearsal_matches_the_release_run(self) -> None:

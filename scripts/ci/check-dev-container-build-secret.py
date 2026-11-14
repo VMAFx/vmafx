@@ -10,7 +10,10 @@ the secret when it, a stage it is built FROM, or a stage it copies from
 mounts it, transitively. The shared stage
 builder (ADR-0819, ADR-1346, ADR-1354) must forward the secret for exactly those
 targets, and every workflow step that calls the builder must hand it
-GITHUB_TOKEN exactly when its target consumes the secret.
+GITHUB_TOKEN exactly when its target consumes the secret. Raw ``docker build``
+calls without ``--check`` are permitted only for the standalone
+``docker/dev/ubuntu-26.04*.Dockerfile`` images with no BuildKit secret or
+``GITHUB_TOKEN`` build argument (ADR-3545).
 """
 
 from __future__ import annotations
@@ -252,6 +255,112 @@ def _validate_caller_steps(
     return errors
 
 
+ALLOWED_RAW_DOCKERFILES = frozenset(
+    {
+        "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile",
+        "docker/dev/ubuntu-26.04.Dockerfile",
+        "docker/dev/ubuntu-26.04-cuda.Dockerfile",
+        "docker/dev/ubuntu-26.04-sycl.Dockerfile",
+    }
+)
+
+
+def _shell_clauses(command: str) -> list[list[str]] | None:
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()")
+        lexer.whitespace_split = True
+        words = list(lexer)
+    except ValueError:
+        return None
+    clauses: list[list[str]] = []
+    current: list[str] = []
+    for word in words:
+        if word and set(word) <= set(";&|()"):
+            if current:
+                clauses.append(current)
+                current = []
+        else:
+            current.append(word)
+    if current:
+        clauses.append(current)
+    return clauses
+
+
+def _clause_raw_build_args(clause: list[str]) -> tuple[list[str] | None, bool]:
+    if "docker" not in clause:
+        return None, False
+    sub = clause[clause.index("docker") + 1 :]
+    if not sub or sub[0] in ("compose", "run", "rmi"):
+        return None, False
+    if sub[0] == "build":
+        return sub[1:], False
+    return None, "build" in sub
+
+
+def _raw_build_args_list(command: str) -> list[list[str]] | None:
+    clauses = _shell_clauses(command) if "docker" in command else []
+    if clauses is None:
+        return None
+    builds: list[list[str]] = []
+    for clause in clauses:
+        args, invalid = _clause_raw_build_args(clause)
+        if invalid:
+            return None
+        if args is not None:
+            builds.append(args)
+    return None if ("docker build" in command and not builds) else builds
+
+
+def _has_forbidden_build_flag(args: list[str]) -> bool:
+    for index, arg in enumerate(args):
+        if arg.partition("=")[0] == "--secret":
+            return True
+        if arg == "--build-arg":
+            value = args[index + 1] if index + 1 < len(args) else "GITHUB_TOKEN"
+            if value.partition("=")[0] == "GITHUB_TOKEN":
+                return True
+        if arg.startswith("--build-arg="):
+            if arg.split("=", 1)[1].partition("=")[0] == "GITHUB_TOKEN":
+                return True
+    return False
+
+
+def _single_dockerfile_operand(args: list[str]) -> str | None:
+    files: list[str] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in ("-f", "--file"):
+            if index + 1 >= len(args):
+                return None
+            files.append(args[index + 1])
+            index += 2
+            continue
+        if arg.startswith("--file="):
+            files.append(arg.split("=", 1)[1])
+        elif arg.startswith("-") and not arg.startswith("--") and "f" in arg[1:]:
+            return None
+        index += 1
+    return files[0] if len(files) == 1 else None
+
+
+def _is_allowed_docker_build_args(args: list[str]) -> bool:
+    if any("$(" in arg or "`" in arg for arg in args):
+        return False
+    if _has_forbidden_build_flag(args):
+        return False
+    if "--check" in args:
+        return True
+    return _single_dockerfile_operand(args) in ALLOWED_RAW_DOCKERFILES
+
+
+def _has_disallowed_raw_build(command: str) -> bool:
+    builds = _raw_build_args_list(command)
+    if builds is None:
+        return True
+    return any(not _is_allowed_docker_build_args(args) for args in builds)
+
+
 def validate_stage_caller(
     workflow: str, label: str, expected: tuple[str, ...], containerfile: str
 ) -> list[str]:
@@ -263,7 +372,7 @@ def validate_stage_caller(
         if key and len(key.group("indent")) <= MAX_SHARED_ENV_INDENT:
             errors.append(f"the {label} workflow must not set GITHUB_TOKEN for a whole job")
     for command in _joined_commands(workflow):
-        if "docker build" in command and "--check" not in command:
+        if _has_disallowed_raw_build(command):
             errors.append(f"the {label} workflow must build stage images only via {STAGE_BUILDER}")
     return errors
 

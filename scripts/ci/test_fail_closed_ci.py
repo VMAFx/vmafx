@@ -439,15 +439,12 @@ def _strip_wrapper_prefix(
     return []
 
 
-def _clause_starts_sudo_shell(clause: list[str]) -> bool:
-    """Return True when `clause` starts a shell (`bash`, `sh`, `dash`, `zsh`, `ksh`) via `sudo`."""
-    sudo_indices = [index for index, token in enumerate(clause) if _is_sudo_token(token)]
-    if not sudo_indices:
-        return False
-    rest = _strip_wrapper_prefix(clause[sudo_indices[0] + 1 :], SUDO_ARG_FLAGS, SUDO_LONG_ARG_FLAGS)
+def _unwrap_env_sudo(args: list[str]) -> list[str]:
+    """Strip leading `NAME=value`, `env`, and `sudo` wrappers up to MAX_APT_WORK_ITEMS."""
+    rest = _drop_env_assignments(args)
     for _ in range(MAX_APT_WORK_ITEMS):
         if not rest:
-            return False
+            return []
         head = posixpath.basename(rest[0])
         if head == "env":
             rest = _strip_wrapper_prefix(rest[1:], ENV_SHORT_ARG_FLAGS, ENV_LONG_ARG_FLAGS)
@@ -455,6 +452,17 @@ def _clause_starts_sudo_shell(clause: list[str]) -> bool:
             rest = _strip_wrapper_prefix(rest[1:], SUDO_ARG_FLAGS, SUDO_LONG_ARG_FLAGS)
         else:
             break
+    return rest
+
+
+def _clause_starts_sudo_shell(clause: list[str]) -> bool:
+    """Return True when `clause` starts a shell (`bash`, `sh`, `dash`, `zsh`, `ksh`) via `sudo`."""
+    sudo_indices = [index for index, token in enumerate(clause) if _is_sudo_token(token)]
+    if not sudo_indices:
+        return False
+    rest = _unwrap_env_sudo(
+        _strip_wrapper_prefix(clause[sudo_indices[0] + 1 :], SUDO_ARG_FLAGS, SUDO_LONG_ARG_FLAGS)
+    )
     return bool(rest) and posixpath.basename(rest[0]) in SHELL_BASENAMES
 
 
@@ -2669,6 +2677,392 @@ class InstallStepContract(unittest.TestCase):
                     "# Copyright 2026 Lusoris and Claude (Anthropic)",
                 )
             )
+
+
+UBUNTU_SETUP_SCRIPT = ROOT / "scripts/setup/ubuntu.sh"
+UBUNTU_LOCK_REF = re.compile(r"\$REPO_ROOT/requirements/locks/([A-Za-z0-9_.-]+\.txt)")
+
+
+def ubuntu_setup_lock_names(text: str) -> tuple[str, ...]:
+    """Return sorted lock filenames read via $REPO_ROOT/requirements/locks/ in ubuntu.sh."""
+    return tuple(sorted(set(UBUNTU_LOCK_REF.findall(text))))
+
+
+def _copy_instruction_locks(cmd: list[str], target_dir: str) -> set[str]:
+    """Return lock filenames staged into `<target_dir>/` by one COPY instruction."""
+    operands = [item for item in cmd[1:] if not item.startswith("--")]
+    if not operands[:-1]:
+        return set()
+    sources, dest = operands[:-1], operands[-1]
+    single_source = len(sources) == 1
+    copied: set[str] = set()
+    for src in sources:
+        name = src.removeprefix("requirements/locks/")
+        if name != src and (
+            dest == f"{target_dir}/" or (single_source and dest == f"{target_dir}/{name}")
+        ):
+            copied.add(name)
+    return copied
+
+
+def _copied_ubuntu_locks(commands: list[tuple[int, list[str]]], target_dir: str) -> set[str]:
+    """Return lock filenames copied into `<target_dir>/` across Dockerfile COPY instructions."""
+    copied: set[str] = set()
+    for _, cmd in commands:
+        if cmd[0] == "COPY":
+            copied.update(_copy_instruction_locks(cmd, target_dir))
+    return copied
+
+
+def _dockerfile_env_map(commands: list[tuple[int, list[str]]]) -> dict[str, str]:
+    """Collect KEY=VALUE assignments from Dockerfile ENV instructions."""
+    env: dict[str, str] = {}
+    for _, cmd in commands:
+        if cmd[0] != "ENV":
+            continue
+        for assignment in cmd[1:]:
+            if "=" in assignment:
+                key, value = assignment.split("=", 1)
+                env[key] = value
+    return env
+
+
+def _ubuntu_repo_roots(commands: list[tuple[int, list[str]]]) -> list[str]:
+    """Extract ARG VMAFX_REPO_ROOT=<root> values from stage commands."""
+    roots: list[str] = []
+    for _, cmd in commands:
+        if cmd[0] != "ARG":
+            continue
+        for operand in cmd[1:]:
+            if operand == "VMAFX_REPO_ROOT" or operand.startswith("VMAFX_REPO_ROOT="):
+                roots.append(operand.partition("=")[2])
+    return roots
+
+
+SHELL_SCRIPT_SHORT_FLAGS = frozenset({"-O", "-o"})
+SHELL_SCRIPT_LONG_FLAGS = frozenset({"--rcfile", "--init-file"})
+
+
+def _shell_script_operand(args: list[str]) -> str | None:
+    """Return the script operand passed to a shell invocation, or None when `-c` is set."""
+    skip_next = False
+    for index, arg in enumerate(args):
+        if skip_next:
+            skip_next = False
+            continue
+        if arg == "--":
+            return next(iter(args[index + 1 :]), None)
+        if arg == "-" or not arg.startswith("-"):
+            return arg
+        if not arg.startswith("--") and "c" in arg[1:]:
+            return None
+        skip_next = _flag_takes_next_arg(arg, SHELL_SCRIPT_SHORT_FLAGS, SHELL_SCRIPT_LONG_FLAGS)
+    return None
+
+
+def _clause_script_target(cmd: list[str]) -> str | None:
+    """Return the script path executed or sourced by a parsed RUN clause, if any."""
+    if not cmd or cmd[0] in DOCKERFILE_INSTRUCTIONS:
+        return None
+    rest = _unwrap_env_sudo(cmd)
+    if not rest:
+        return None
+    if rest[0] in (".", "source"):
+        return rest[1] if len(rest) > 1 else None
+    if posixpath.basename(rest[0]) in SHELL_BASENAMES:
+        return _shell_script_operand(rest[1:])
+    return rest[0]
+
+
+def _invokes_ubuntu_setup(cmd: list[str]) -> bool:
+    """Return True when a parsed RUN clause executes or sources ubuntu.sh."""
+    target = _clause_script_target(cmd)
+    return target is not None and posixpath.basename(target) == "ubuntu.sh"
+
+
+def _ubuntu_pre_run_commands(
+    commands: list[tuple[int, list[str]]],
+) -> list[tuple[int, list[str]]] | None:
+    """Return instructions between the single FROM and single ubuntu.sh RUN clause."""
+    from_idx = [i for i, (_, cmd) in enumerate(commands) if cmd[0] == "FROM"]
+    run_idx = [i for i, (_, cmd) in enumerate(commands) if _invokes_ubuntu_setup(cmd)]
+    if len(from_idx) != 1 or len(run_idx) != 1 or from_idx[0] >= run_idx[0]:
+        return None
+    return commands[from_idx[0] + 1 : run_idx[0]]
+
+
+def _ubuntu_root_lock_problems(
+    pre_run: list[tuple[int, list[str]]], locks: tuple[str, ...]
+) -> list[str]:
+    """Check ARG VMAFX_REPO_ROOT and lock COPY completeness prior to ubuntu.sh."""
+    roots = _ubuntu_repo_roots(pre_run)
+    valid_root = len(roots) == 1 and roots[0].startswith("/") and bool(roots[0].rstrip("/"))
+    if not valid_root:
+        return ["declare ARG VMAFX_REPO_ROOT=<root> after FROM before ubuntu.sh"]
+    target_dir = f"{roots[0].rstrip('/')}/requirements/locks"
+    copied = _copied_ubuntu_locks(pre_run, target_dir)
+    return [
+        f"COPY requirements/locks/{lock} into {target_dir}/ before ubuntu.sh"
+        for lock in locks
+        if lock not in copied
+    ]
+
+
+def _ubuntu_venv_env_problems(pre_run: list[tuple[int, list[str]]]) -> list[str]:
+    """Check ENV VMAFX_TOOLS_VENV and PATH entries prior to ubuntu.sh."""
+    env = _dockerfile_env_map(pre_run)
+    problems: list[str] = []
+    if env.get("VMAFX_TOOLS_VENV") != "/opt/vmafx-tools":
+        problems.append("set ENV VMAFX_TOOLS_VENV=/opt/vmafx-tools before ubuntu.sh")
+    if "/opt/vmafx-tools/bin" not in env.get("PATH", "").split(":"):
+        problems.append("put /opt/vmafx-tools/bin on ENV PATH")
+    return problems
+
+
+def ubuntu_dev_image_lock_problems(text: str, locks: tuple[str, ...]) -> list[str]:
+    """Require ARG VMAFX_REPO_ROOT, matching lock COPYs, and /opt/vmafx-tools/bin on PATH."""
+    commands, _, problems = _snapshot_commands(text)
+    if not locks:
+        return [*problems, "ubuntu.sh declares no requirements/locks/*.txt inputs"]
+    pre_run = _ubuntu_pre_run_commands(commands)
+    if pre_run is None:
+        return [*problems, "declare one FROM stage and invoke ubuntu.sh after FROM"]
+    problems.extend(_ubuntu_root_lock_problems(pre_run, locks))
+    problems.extend(_ubuntu_venv_env_problems(pre_run))
+    return problems
+
+
+class UbuntuDevImageLockContract(unittest.TestCase):
+    """Require Ubuntu dev images to stage every lock read by ubuntu.sh and expose its venv."""
+
+    def locks(self) -> tuple[str, ...]:
+        return ubuntu_setup_lock_names(UBUNTU_SETUP_SCRIPT.read_text(encoding="utf-8"))
+
+    def run_ubuntu_setup_with_exit99_apt(
+        self, extra_env: dict[str, str]
+    ) -> subprocess.CompletedProcess[str]:
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("bash required for ubuntu.sh check")
+        with tempfile.TemporaryDirectory() as directory:
+            stubs = Path(directory) / "stubs"
+            stubs.mkdir()
+            for tool in ("apt-get", "sudo"):
+                stub = stubs / tool
+                stub.write_text(f"#!{bash}\nexit 99\n", encoding="utf-8")
+                stub.chmod(0o755)
+            env = {
+                "PATH": f"{stubs}:/usr/bin:/bin",
+                "HOME": directory,
+                **extra_env,
+            }
+            return subprocess.run(  # noqa: S603  # nosec B603
+                [bash, str(UBUNTU_SETUP_SCRIPT)],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+            )
+
+    def test_all_three_images_stage_locks_and_expose_tools_venv(self) -> None:
+        locks = self.locks()
+        self.assertEqual(locks, ("build.txt", "dev-linters.txt"))
+        for path in UBUNTU_DEV_DOCKERFILES:
+            with self.subTest(path=path):
+                problems = ubuntu_dev_image_lock_problems(path.read_text(encoding="utf-8"), locks)
+                self.assertEqual(problems, [], "\n".join(problems))
+
+    def stage_root(self, image: str) -> str:
+        commands, _, _ = _snapshot_commands(image)
+        staging = _snapshot_staging_dir(commands, len(commands))
+        if staging is None:
+            self.fail("expected COPY build-config.env staging directory")
+        return staging.rstrip("/")
+
+    def test_negative_missing_lock_or_missing_arg_is_refused(self) -> None:
+        locks = self.locks()
+        image = UBUNTU_DEV_DOCKERFILES[0].read_text(encoding="utf-8")
+        stage = self.stage_root(image)
+        dropped_lock = image.replace("requirements/locks/dev-linters.txt ", "")
+        problems = ubuntu_dev_image_lock_problems(dropped_lock, locks)
+        self.assertIn("dev-linters.txt", "\n".join(problems))
+        no_arg = image.replace(f"ARG VMAFX_REPO_ROOT={stage}\n", "")
+        self.assertIn(
+            "ARG VMAFX_REPO_ROOT=<root>",
+            "\n".join(ubuntu_dev_image_lock_problems(no_arg, locks)),
+        )
+        no_venv_path = image.replace("/opt/vmafx-tools/bin:", "")
+        self.assertIn(
+            "/opt/vmafx-tools/bin",
+            "\n".join(ubuntu_dev_image_lock_problems(no_venv_path, locks)),
+        )
+        no_invoke = image.replace(f"&& bash {stage}/ubuntu.sh \\\n    ", "")
+        self.assertIn(
+            "invoke ubuntu.sh after FROM",
+            "\n".join(ubuntu_dev_image_lock_problems(no_invoke, locks)),
+        )
+
+    def test_boundary_wrong_copy_depth_or_mismatched_arg_root_is_refused(self) -> None:
+        locks = self.locks()
+        image = UBUNTU_DEV_DOCKERFILES[0].read_text(encoding="utf-8")
+        stage = self.stage_root(image)
+        shallow = image.replace(f" {stage}/requirements/locks/", f" {stage}/requirements/")
+        shallow_problems = "\n".join(ubuntu_dev_image_lock_problems(shallow, locks))
+        self.assertIn("build.txt", shallow_problems)
+        self.assertIn("dev-linters.txt", shallow_problems)
+        self.assertIn(f"{stage}/requirements/locks/", shallow_problems)
+        mismatched = image.replace(f"ARG VMAFX_REPO_ROOT={stage}", "ARG VMAFX_REPO_ROOT=/opt")
+        mismatched_problems = "\n".join(ubuntu_dev_image_lock_problems(mismatched, locks))
+        self.assertIn("/opt/requirements/locks/", mismatched_problems)
+
+    def test_ubuntu_sh_rejects_numeric_boolean_flag_before_any_apt_call(self) -> None:
+        result = self.run_ubuntu_setup_with_exit99_apt({"INSTALL_LINTERS": "1"})
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("ubuntu.sh: INSTALL_LINTERS must be true or false, got '1'", result.stderr)
+
+    def test_ubuntu_sh_rejects_missing_lock_before_any_apt_call(self) -> None:
+        with tempfile.TemporaryDirectory() as missing_root:
+            result = self.run_ubuntu_setup_with_exit99_apt(
+                {"VMAFX_REPO_ROOT": missing_root, "INSTALL_LINTERS": "false"}
+            )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(
+            f"ubuntu.sh: lock file {missing_root}/requirements/locks/build.txt not found; "
+            "run from a checkout or set VMAFX_REPO_ROOT",
+            result.stderr,
+        )
+
+
+AGGREGATOR_MARKER_RE = re.compile(r"(?m)^\s*#\s*required-aggregator\s*$")
+
+
+def _aggregator_job_ids(text: str, jobs: dict[str, object]) -> list[str]:
+    """Return every job id in `text` whose job block carries `# required-aggregator`."""
+    return [
+        job_id
+        for job_id in jobs
+        if AGGREGATOR_MARKER_RE.search(workflow_job(text, job_id)) is not None
+    ]
+
+
+def _job_needs_set(job_cfg: dict[str, object]) -> set[str]:
+    """Return the set of direct `needs` job ids declared on one parsed job mapping."""
+    raw = job_cfg.get("needs", ())
+    if isinstance(raw, str):
+        return {raw}
+    if isinstance(raw, list):
+        return {str(item) for item in raw}
+    return set()
+
+
+def _result_env_var(step: dict[str, object], job_id: str) -> str | None:
+    """Return the step `env` key bound to `${{ needs.<job_id>.result }}`, if any."""
+    env = step.get("env")
+    if not isinstance(env, dict):
+        return None
+    pattern = re.compile(rf"\$\{{\{{\s*needs\.{re.escape(job_id)}\.result\s*\}}\}}")
+    for key, val in env.items():
+        if isinstance(key, str) and pattern.fullmatch(str(val).strip()) is not None:
+            return key
+    return None
+
+
+def _step_gates_job_result(step: dict[str, object], job_id: str) -> bool:
+    """Verify `step` binds `needs.<job_id>.result` and checks that variable in `run`."""
+    var = _result_env_var(step, job_id)
+    run_text = step.get("run")
+    if var is None or not isinstance(run_text, str):
+        return False
+    code = executable_body(run_text)
+    if job_id == "impact":
+        return bool(re.search(rf'"\$\{{?{re.escape(var)}\}}?"\s*!=\s*success\b', code))
+    case_guard = re.compile(
+        rf'case\s+"\$\{{?[A-Za-z_][A-Za-z0-9_]*\}}?:\$\{{?{re.escape(var)}\}}?"\s+in\s*\n'
+        r"\s*true:success\|false:skipped\)\s*;;"
+    )
+    return case_guard.search(code) is not None
+
+
+def _ungated_result_problems(
+    gate_id: str, gate_cfg: dict[str, object], other_jobs: list[str]
+) -> list[str]:
+    """Return findings for needed work/planner jobs whose `.result` is not gated in `run`."""
+    raw_steps = gate_cfg.get("steps")
+    steps = raw_steps if isinstance(raw_steps, list) else []
+    problems: list[str] = []
+    for job_id in other_jobs:
+        if job_id != "tier" and not any(
+            isinstance(step, dict) and _step_gates_job_result(step, job_id) for step in steps
+        ):
+            problems.append(f"{gate_id} run script does not gate needs.{job_id}.result")
+    return problems
+
+
+def dev_container_aggregator_problems(text: str) -> list[str]:
+    """Ensure dev-container-build's aggregator job needs every sibling job and gates results."""
+    parsed = yaml.safe_load(text)
+    jobs = parsed.get("jobs") if isinstance(parsed, dict) else None
+    if not isinstance(jobs, dict) or not jobs:
+        return ["dev-container-build.yml declares no jobs"]
+    gates = _aggregator_job_ids(text, jobs)
+    if len(gates) != 1:
+        return [f"expected one # required-aggregator job, found {gates}"]
+    gate_id = gates[0]
+    gate_cfg = jobs[gate_id]
+    if not isinstance(gate_cfg, dict):
+        return [f"{gate_id} job definition is not a mapping"]
+    other_jobs = sorted(set(jobs) - {gate_id})
+    missing = sorted(set(other_jobs) - _job_needs_set(gate_cfg))
+    problems = [f"{gate_id} needs is missing workflow job: {job_id}" for job_id in missing]
+    return [*problems, *_ungated_result_problems(gate_id, gate_cfg, other_jobs)]
+
+
+class DevContainerAggregatorGateContract(unittest.TestCase):
+    """Require dev-container-build's aggregator job to depend on and gate every work job."""
+
+    def workflow_text(self) -> str:
+        return (WORKFLOWS / "dev-container-build.yml").read_text(encoding="utf-8")
+
+    def test_dev_container_aggregator_covers_all_jobs_and_work_results(self) -> None:
+        problems = dev_container_aggregator_problems(self.workflow_text())
+        self.assertEqual(problems, [], "\n".join(problems))
+
+    def test_planted_missing_ubuntu_dev_images_need_is_refused(self) -> None:
+        text = self.workflow_text()
+        dropped = text.replace(
+            "needs: [tier, impact, dev-container-build-work, ubuntu-dev-images]",
+            "needs: [tier, impact, dev-container-build-work]",
+            1,
+        )
+        self.assertNotEqual(dropped, text)
+        problems = dev_container_aggregator_problems(dropped)
+        self.assertIn("ubuntu-dev-images", "\n".join(problems))
+
+    def test_planted_missing_work_result_check_is_refused(self) -> None:
+        text = self.workflow_text()
+        no_env = text.replace(
+            "          UBUNTU_RESULT: ${{ needs.ubuntu-dev-images.result }}\n", "", 1
+        )
+        self.assertNotEqual(no_env, text)
+        self.assertIn(
+            "needs.ubuntu-dev-images.result",
+            "\n".join(dev_container_aggregator_problems(no_env)),
+        )
+        no_case = text.replace(
+            '          case "$UBUNTU_SELECTED:$UBUNTU_RESULT" in\n'
+            "            true:success|false:skipped) ;;\n"
+            '            *) echo "::error::invalid ubuntu-dev-images gate state '
+            'selected=$UBUNTU_SELECTED work=$UBUNTU_RESULT"; exit 1 ;;\n'
+            "          esac\n",
+            "",
+            1,
+        )
+        self.assertNotEqual(no_case, text)
+        self.assertIn(
+            "needs.ubuntu-dev-images.result",
+            "\n".join(dev_container_aggregator_problems(no_case)),
+        )
 
 
 if __name__ == "__main__":
