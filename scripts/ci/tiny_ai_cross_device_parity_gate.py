@@ -311,13 +311,13 @@ def run_parity_gate(
     fp32_model: Path,
     fp16_model: Path,
     features_path: Path,
-    *,
-    transnet_model: Path = Path("model/tiny/transnet_v2.onnx"),
     ref_provider: str = DEFAULT_REF_PROVIDER,
     target_provider: str = DEFAULT_TARGET_PROVIDER,
     fp32_tol: float = DEFAULT_FP32_TOLERANCE,
     fp16_tol: float = DEFAULT_FP16_TOLERANCE,
     allow_missing_provider: bool = False,
+    *,
+    transnet_model: Path = Path("model/tiny/transnet_v2.onnx"),
 ) -> ParityGateReport:
     """Execute tiny AI cross-device parity checks across FP32 and FP16 cases."""
     available = ort.get_available_providers()

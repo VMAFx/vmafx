@@ -117,6 +117,23 @@ def test_missing_target_provider_allow_flag() -> None:
     assert not report.target_available
 
 
+def test_positional_callers_keep_the_master_parameter_order() -> None:
+    """transnet_model is keyword-only after the old parameters, so positional calls still bind."""
+    report = run_parity_gate(
+        FP32_MODEL,
+        FP16_MODEL,
+        FEATURES_PARQUET,
+        "CPUExecutionProvider",
+        "NonExistentExecutionProvider",
+        DEFAULT_FP32_TOLERANCE,
+        DEFAULT_FP16_TOLERANCE,
+        True,
+    )
+    assert report.ok
+    assert report.status == "MISSING_PROVIDER"
+    assert report.target_provider == "NonExistentExecutionProvider"
+
+
 def test_missing_reference_provider_fails_closed() -> None:
     """Missing reference provider must fail closed."""
     report = run_parity_gate(

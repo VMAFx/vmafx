@@ -4,6 +4,6 @@
   tiny models past the documented 1e-4 bound (worst 3.9e-02; with the pin, worst 3.8e-05), and the
   session-config entry `ep.cuda.use_tf32` is silently ignored by that release. `transnet_v2` runs as an
   execute probe — the CUDA leg binds but its `ScatterND` node fails at Run time on 1.31.1
-  (`element_type 6 (int32) not implemented for ScatterND operator`) — and that one named failure is
+  (`element_type 6 not implemented for ScatterND operator`, ONNX element type 6 being int32) — and that one named failure is
   recorded as an expected provider gap instead of failing the gate, while any other `transnet_v2`
   failure still fails. The JSON and Markdown summaries name the TF32 mode and the per-model provider gaps.
