@@ -28,6 +28,7 @@ import logging
 import math
 import os
 import subprocess
+import tempfile
 import sys
 import threading
 import uuid
@@ -471,6 +472,12 @@ class CorpusOptions:
     # callers that run sweeps concurrently cap the raw-YUV decodes in
     # flight (``ladder --max-concurrent-decodes``). ``None``: no cap.
     decode_semaphore: threading.Semaphore | None = None
+
+    def __post_init__(self) -> None:
+        # The near-duplicate spot check compares the first source second; sample-clip mode encodes a
+        # centre window, so the two would compare unrelated frames.
+        if self.near_dup_verify and self.sample_clip_seconds > 0.0:
+            raise ValueError("--near-dup-verify cannot be combined with sample-clip mode (--sample-clip-seconds)")
 
 
 def _encode_path(opts: CorpusOptions, source: Path, preset: str, crf: int) -> Path:
@@ -998,15 +1005,19 @@ def _cell_params_key(sweep: _Sweep, preset: str, crf: int) -> str:
 
 
 def _first_second_score(
-    job: CorpusJob, opts: CorpusOptions, distorted: Path
+    job: CorpusJob, opts: CorpusOptions, distorted: Path, reference: Path
 ) -> float | None:
-    """Score one source second against an encode, or fail closed on error."""
+    """Score one source second against an encode, or fail closed on error.
+
+    Both sides go through the corpus decode pipeline first, as the vmaf CLI accepts only raw YUV.
+    ``reference`` is the decoded source of the run.
+    """
     from .score import ScoreRequest, run_score
 
     fps = float(job.framerate) if float(job.framerate) > 0.0 else 24.0
     frame_cnt = max(1, int(fps))
     score_req = ScoreRequest(
-        reference=job.source,
+        reference=reference,
         distorted=distorted,
         width=int(job.width),
         height=int(job.height),
@@ -1016,11 +1027,21 @@ def _first_second_score(
         duration_s=1.0,
     )
     try:
-        spot_res = run_score(
-            score_req,
-            vmaf_bin=opts.vmaf_bin,
-            backend=opts.score_backend,
-        )
+        with tempfile.TemporaryDirectory(prefix="vmaf-tune-near-dup-") as decode_dir:
+            score_req = _maybe_decode_distorted(
+                score_req,
+                encode_dir=Path(decode_dir),
+                ffmpeg_bin=opts.ffmpeg_bin,
+                runner=subprocess.run,
+            )
+            if score_req.distorted.suffix.lower() not in _VMAF_RAW_SUFFIXES:
+                _LOG.warning("vmaf-tune: near-dup spot decode failed for %s; refusing reuse", distorted)
+                return None
+            spot_res = run_score(
+                score_req,
+                vmaf_bin=opts.vmaf_bin,
+                backend=opts.score_backend,
+            )
         score = float(spot_res.vmaf_score)
         return score if math.isfinite(score) else None
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
@@ -1036,7 +1057,7 @@ def _verify_near_dup_spot(sweep: _Sweep, cached: CachedResult) -> bool:
         return False
     job = sweep.job
     opts = sweep.opts
-    spot_score = _first_second_score(job, opts, cached.artifact_path)
+    spot_score = _first_second_score(job, opts, cached.artifact_path, sweep.decoded_reference)
     if spot_score is None:
         return False
     delta = abs(spot_score - cached.near_dup_spot_score)
@@ -1354,7 +1375,7 @@ def _cache_put(
         fp = sweep.fingerprint if sweep.opts.near_dup_reuse else None
         pkey = _cell_params_key(sweep, preset, crf) if sweep.opts.near_dup_reuse else None
         spot_score = (
-            _first_second_score(sweep.job, sweep.opts, out)
+            _first_second_score(sweep.job, sweep.opts, out, sweep.decoded_reference)
             if sweep.opts.near_dup_verify
             else None
         )

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 import json
 import sys
 from pathlib import Path
@@ -72,7 +73,16 @@ def _near_dup_fixture(tmp_path: Path, *, cached_spot: float | None = 88.0):
         artifact_path=artifact,
         near_dup_spot_score=cached_spot,
     )
-    return SimpleNamespace(job=job, opts=CorpusOptions()), result
+    return SimpleNamespace(job=job, opts=CorpusOptions(), decoded_reference=tmp_path / "reference.yuv"), result
+
+
+def _decoded_path(encode: Path) -> Path:
+    return Path(str(encode) + ".decoded.yuv")
+
+
+def _fake_decode(request, **_kwargs):
+    """Stand-in for the corpus decode step: a container becomes a raw YUV sidecar."""
+    return dataclasses.replace(request, distorted=_decoded_path(request.distorted))
 
 
 @pytest.mark.parametrize(
@@ -95,13 +105,22 @@ def test_near_dup_spot_compares_the_same_first_second(
         return SimpleNamespace(vmaf_score=query_score)
 
     monkeypatch.setattr("vmaftune.score.run_score", run_score)
+    monkeypatch.setattr("vmaftune.corpus._maybe_decode_distorted", _fake_decode)
     assert _verify_near_dup_spot(sweep, cached) is accepted
     assert len(requests) == 1
-    assert requests[0].reference == sweep.job.source
-    assert requests[0].distorted == cached.artifact_path
+    assert requests[0].reference == sweep.decoded_reference
+    assert requests[0].distorted == _decoded_path(cached.artifact_path)
     assert requests[0].frame_skip_ref == 0
     assert requests[0].frame_cnt == 24
     assert requests[0].duration_s == 1.0
+
+
+def test_near_dup_verify_refuses_sample_clip_mode() -> None:
+    """The verify window is the first source second; a centre-window encode must not be compared with it."""
+    with pytest.raises(ValueError, match="sample-clip"):
+        CorpusOptions(near_dup_verify=True, sample_clip_seconds=1.0)
+    CorpusOptions(near_dup_verify=True)
+    CorpusOptions(sample_clip_seconds=1.0)
 
 
 def test_near_dup_spot_fails_closed_for_legacy_cache_entry(tmp_path: Path) -> None:
@@ -132,6 +151,7 @@ def test_cache_put_records_same_window_near_dup_baseline(
     sweep.src_hash = "a" * 64
     sweep.fingerprint = None
     monkeypatch.setattr("vmaftune.score.run_score", run_score)
+    monkeypatch.setattr("vmaftune.corpus._maybe_decode_distorted", _fake_decode)
     monkeypatch.setattr("vmaftune.corpus._cell_cache_key", lambda *_args: "cache-key")
     _cache_put(
         sweep,
@@ -150,8 +170,8 @@ def test_cache_put_records_same_window_near_dup_baseline(
     )
     assert saved["result"].near_dup_spot_score == 87.25
     assert len(requests) == 1
-    assert requests[0].reference == sweep.job.source
-    assert requests[0].distorted == out
+    assert requests[0].reference == sweep.decoded_reference
+    assert requests[0].distorted == _decoded_path(out)
     assert requests[0].duration_s == 1.0
 
 
