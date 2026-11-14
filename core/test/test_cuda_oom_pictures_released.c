@@ -89,8 +89,9 @@ static int probe_alloc(const VmafCudaState *state, size_t bytes)
 static int pause_poll_interval(void)
 {
 #ifdef _WIN32
-    Sleep(MEMORY_BACK_POLL_MS);
-    return 0;
+    /* SleepEx with bAlertable FALSE returns zero when the interval expires; WAIT_IO_COMPLETION
+     * needs bAlertable TRUE (Microsoft Learn, synchapi.h SleepEx, "Return value"). */
+    return SleepEx(MEMORY_BACK_POLL_MS, FALSE) == 0 ? 0 : -1;
 #else
     struct timespec pause = {.tv_sec = 0, .tv_nsec = MEMORY_BACK_POLL_MS * 1000000L};
     /* One initial attempt and at most three restarts after interruption. */
