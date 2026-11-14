@@ -4,16 +4,19 @@
 
 ``_verify_near_dup_spot`` must compare like with like: both sides of the
 1.5-point delta come from the same one-second window at the entry's own
-sample offset — the query source scored against the cached encode, and
-the cached source scored against that same encode over the same window.
-The cached trial's whole-clip aggregate must not enter the comparison,
-and a cached entry without a readable source path, without a stored
-source hash, or whose file no longer hashes to that hash fails closed
-instead of comparing against a different or replaced baseline.
+sample offset, read at the geometry the cached row records — the query
+source scaled to it when its own geometry differs (issue #3448) — and
+against the decoded cached encode, not the container blob the cache
+stores (issue #3447). The cached trial's whole-clip aggregate must not
+enter the comparison, and a cached entry without a readable source path,
+without a stored source hash, or whose file no longer hashes to that
+hash fails closed instead of comparing against a different or replaced
+baseline.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import unittest.mock
 from pathlib import Path
 from types import SimpleNamespace
@@ -72,12 +75,20 @@ def _source_digest(path: Path) -> str:
 def _cached(artifact: Path, src: Path | None, whole_clip_score: float) -> CachedResult:
     """A cached trial whose aggregate score covers its whole clip.
 
-    The row mirrors a real one: ``src`` names the cached source and
-    ``src_sha256`` its content hash.
+    The row mirrors a real one: ``src`` names the cached source with its
+    content hash, and the geometry columns record what the encode was
+    built at.
     """
     row = None
     if src is not None:
-        row = {"src": str(src)}
+        row = {
+            "src": str(src),
+            "width": 64,
+            "height": 64,
+            "pix_fmt": "yuv420p",
+            "framerate": 24.0,
+            "duration_s": 2.0,
+        }
         if src.exists():
             row["src_sha256"] = _source_digest(src)
     return CachedResult(
@@ -92,6 +103,31 @@ def _cached(artifact: Path, src: Path | None, whole_clip_score: float) -> Cached
         artifact_path=artifact,
         row=row,
     )
+
+
+def _patch_decodes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Stand-ins for the decode helpers: the encoded container decodes to a
+    fake raw sidecar, references pass through unless a target is named.
+
+    Returns the decoded-encode path the scoring requests must carry.
+    """
+    decoded = tmp_path / "enc.decoded.yuv"
+    decoded.write_bytes(b"\x00" * 8)
+
+    def fake_distorted(req, *, encode_dir, ffmpeg_bin, runner):
+        return dataclasses.replace(req, distorted=decoded)
+
+    def fake_reference(source, **kw):
+        target_w, target_h = kw.get("target_width"), kw.get("target_height")
+        if target_w is not None:
+            scaled = source.with_name(f"{source.stem}.ref.decoded.{target_w}x{target_h}.yuv")
+            scaled.write_bytes(b"\x00" * 8)
+            return scaled, 0
+        return source, 0
+
+    monkeypatch.setattr("vmaftune.corpus._maybe_decode_distorted", fake_distorted)
+    monkeypatch.setattr("vmaftune.corpus._maybe_decode_reference", fake_reference)
+    return decoded
 
 
 def _window_scores(calls: list[SimpleNamespace], scores: dict[Path, float]):
@@ -145,6 +181,7 @@ def test_exact_duplicate_whose_first_second_differs_from_mean_passes(
     artifact = tmp_path / "enc.mkv"
     artifact.write_bytes(b"\x00" * 4)
     cached = _cached(artifact, source, whole_clip_score=90.0)
+    _patch_decodes(monkeypatch, tmp_path)
     calls: list = []
     with unittest.mock.patch(
         "vmaftune.score.run_score",
@@ -152,8 +189,9 @@ def test_exact_duplicate_whose_first_second_differs_from_mean_passes(
     ):
         assert _verify_near_dup_spot(_sweep(source), cached) is True
     _assert_same_window(calls)
-    # Both sides scored the cached encode over the same window.
-    assert calls[0].distorted == artifact and calls[1].distorted == artifact
+    # Both sides scored the decoded cached encode over the same window.
+    assert calls[0].distorted == calls[1].distorted
+    assert calls[0].distorted != artifact  # the container, decoded (#3447)
 
 
 def test_different_clip_over_the_window_refuses(
@@ -167,6 +205,7 @@ def test_different_clip_over_the_window_refuses(
     artifact = tmp_path / "enc.mkv"
     artifact.write_bytes(b"\x00" * 4)
     cached = _cached(artifact, cached_src, whole_clip_score=82.0)
+    _patch_decodes(monkeypatch, tmp_path)
     calls: list = []
     with unittest.mock.patch(
         "vmaftune.score.run_score",
@@ -190,6 +229,7 @@ def test_delta_exactly_at_the_ceiling_passes(
     artifact = tmp_path / "enc.mkv"
     artifact.write_bytes(b"\x00" * 4)
     cached = _cached(artifact, cached_src, whole_clip_score=95.0)
+    _patch_decodes(monkeypatch, tmp_path)
     calls: list = []
     with unittest.mock.patch(
         "vmaftune.score.run_score",
@@ -315,6 +355,7 @@ def test_nonzero_sample_window_is_scored_at_its_offset(
     artifact = tmp_path / "enc.mkv"
     artifact.write_bytes(b"\x00" * 4)
     cached = _cached(artifact, cached_src, whole_clip_score=85.0)
+    _patch_decodes(monkeypatch, tmp_path)
     sweep = _sweep(source, frame_skip_ref=720, frame_cnt=120)  # 5 s clip from 30 s
     calls: list = []
     with unittest.mock.patch(
@@ -327,3 +368,113 @@ def test_nonzero_sample_window_is_scored_at_its_offset(
         assert req.frame_skip_ref == 720
         assert req.frame_cnt == 24  # one second of the 24 fps window
         assert req.duration_s == 1.0
+
+
+def test_container_encode_is_decoded_before_scoring(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cached encode is the container the cache copied in; it is decoded
+    before either leg is scored (issue #3447).
+
+    Without the decode the vmaf CLI reads container bytes as raw planes
+    and the score collapses, so the check refused every real cache hit —
+    including an exact duplicate.
+    """
+    source = tmp_path / "query.yuv"
+    source.write_bytes(b"\x00" * 16)
+    cached_src = tmp_path / "cached.yuv"
+    cached_src.write_bytes(b"\x00" * 16)
+    artifact = tmp_path / "blob.mkv"
+    artifact.write_bytes(b"\x00" * 4)
+    cached = _cached(artifact, cached_src, whole_clip_score=85.0)
+    decoded = _patch_decodes(monkeypatch, tmp_path)
+    calls: list = []
+    with unittest.mock.patch(
+        "vmaftune.score.run_score",
+        _window_scores(calls, {source: 85.0, cached_src: 85.0}),
+    ):
+        assert _verify_near_dup_spot(_sweep(source), cached) is True
+    assert len(calls) == 2
+    for req in calls:
+        assert req.distorted == decoded  # the decoded raw sidecar, not the blob
+        assert req.distorted != artifact
+
+
+def test_undecodable_cached_encode_refuses(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A decode that leaves the container in place fails closed (#3447)."""
+
+    def failing_decode(req, *, encode_dir, ffmpeg_bin, runner):
+        return req  # the decode failed; the helper returns the request as-is
+
+    monkeypatch.setattr("vmaftune.corpus._maybe_decode_distorted", failing_decode)
+    source = tmp_path / "query.yuv"
+    source.write_bytes(b"\x00" * 16)
+    cached_src = tmp_path / "cached.yuv"
+    cached_src.write_bytes(b"\x00" * 16)
+    artifact = tmp_path / "blob.mkv"
+    artifact.write_bytes(b"\x00" * 4)
+    cached = _cached(artifact, cached_src, whole_clip_score=85.0)
+    calls: list = []
+    with unittest.mock.patch(
+        "vmaftune.score.run_score",
+        _window_scores(calls, {source: 85.0, cached_src: 85.0}),
+    ):
+        assert _verify_near_dup_spot(_sweep(source), cached) is False
+    assert calls == []
+
+
+def test_query_at_another_resolution_is_scaled_to_the_cached_geometry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A near-duplicate at another resolution is scored at the cached size.
+
+    Both legs read at the geometry the cached row records (issue #3448):
+    the query is decoded and scaled to it, the cached source is already
+    at it, and the requests name the cached width and height — not the
+    query job's, which would misread the encode and collapse the score.
+    """
+    source = tmp_path / "query.yuv"
+    source.write_bytes(b"\x00" * 16)
+    cached_src = tmp_path / "cached.yuv"
+    cached_src.write_bytes(b"\x00" * 16)
+    artifact = tmp_path / "enc.mkv"
+    artifact.write_bytes(b"\x00" * 4)
+    cached = _cached(artifact, cached_src, whole_clip_score=85.0)
+    cached.row["width"], cached.row["height"] = 640, 360
+    decoded = _patch_decodes(monkeypatch, tmp_path)
+    sweep = _sweep(source)
+    sweep = dataclasses.replace(sweep, job=dataclasses.replace(sweep.job, width=320, height=180))
+    scaled_ref = source.with_name("query.ref.decoded.640x360.yuv")
+    calls: list = []
+    with unittest.mock.patch(
+        "vmaftune.score.run_score",
+        _window_scores(calls, {scaled_ref: 85.0, cached_src: 85.0}),
+    ):
+        assert _verify_near_dup_spot(sweep, cached) is True
+    assert len(calls) == 2
+    for req in calls:
+        assert (req.width, req.height) == (640, 360)  # the cached geometry
+        assert req.pix_fmt == "yuv420p"
+    assert calls[0].reference == scaled_ref  # the query leg was scaled
+    assert calls[1].reference == cached_src  # the cached leg is native
+    assert calls[0].distorted == decoded
+
+
+def test_query_pix_fmt_mismatch_refuses(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A query whose pixel format differs from the cached entry's refuses:
+    raw planes of two formats cannot be compared at one geometry."""
+    source = tmp_path / "query.yuv"
+    source.write_bytes(b"\x00" * 16)
+    cached_src = tmp_path / "cached.yuv"
+    cached_src.write_bytes(b"\x00" * 16)
+    artifact = tmp_path / "enc.mkv"
+    artifact.write_bytes(b"\x00" * 4)
+    cached = _cached(artifact, cached_src, whole_clip_score=85.0)
+    cached.row["pix_fmt"] = "yuv422p"
+    calls: list = []
+    with unittest.mock.patch(
+        "vmaftune.score.run_score",
+        _window_scores(calls, {source: 85.0, cached_src: 85.0}),
+    ):
+        assert _verify_near_dup_spot(_sweep(source), cached) is False
+    assert calls == []

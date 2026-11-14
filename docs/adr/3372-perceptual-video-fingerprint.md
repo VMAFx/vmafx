@@ -182,3 +182,19 @@ The same-window spot check gained two fail-closed guards from the review:
 `tools/vmaf-tune/tests/test_near_dup_verify.py` now counts nine tests
 (positive, negative, exactly-1.5 boundary, the offset window and four
 fail-closed cases).
+
+## Status update 2026-11-14 (issues #3447 and #3448)
+
+Two more failure modes in the same spot check, filed against the applied
+check: the cached side scored the stored encode artifact as raw YUV even
+when it was a container file (#3447), and the query side scored at the
+query job's resolution instead of the entry's, so legs of different pixel
+sizes were compared (#3448). `_verify_near_dup_spot()` now runs the cached
+encode through the same decode path as a trial (`_maybe_decode_distorted`)
+before scoring, reads the geometry from the entry's row
+(`width`, `height`, `pix_fmt`, `framerate`) instead of the query job, and
+scales the query leg to that geometry through `_maybe_decode_reference`.
+A query whose pixel format differs from the entry's is refused, decode
+failures refuse the candidate, and the decode-time bound accounts for the
+window's position inside the file. Thirteen unit tests cover the decode,
+scaling, pixel-format and fail-closed cases.
