@@ -274,7 +274,11 @@ def test_spot_scores_real_sample_window(spot, tmp_path):
     assert result.exit_status == 0
     # The encode covers source frames 24-47: scored against that window it is near-transparent.
     assert result.vmaf_score > 90.0
-    cached = dataclasses.replace(cached, vmaf_score=result.vmaf_score)
+    cached = dataclasses.replace(
+        cached,
+        vmaf_score=result.vmaf_score,
+        near_dup_spot_score=result.vmaf_score,
+    )
     assert corpus._verify_near_dup_spot(sweep, cached) is True
     sweep.frame_skip_ref = 0
     assert corpus._verify_near_dup_spot(sweep, cached) is False
