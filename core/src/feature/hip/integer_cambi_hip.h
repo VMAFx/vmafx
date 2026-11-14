@@ -35,8 +35,9 @@ extern "C" {
 #ifdef HAVE_HIPCC
 /* HSACO fat binary embedded by xxd -i during the meson hipcc pipeline.
  * Defined in the auto-generated `cambi_score_hsaco.c` custom_target output. */
-extern const unsigned char cambi_score_hsaco[];
-extern const unsigned int cambi_score_hsaco_len;
+/* Match xxd -i object types exactly; keep read-only access at use sites. */
+extern unsigned char cambi_score_hsaco[];
+extern unsigned int cambi_score_hsaco_len;
 #endif /* HAVE_HIPCC */
 
 /* The resolved configuration of one extractor instance (cambi.c init). */

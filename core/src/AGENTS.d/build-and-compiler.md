@@ -1,6 +1,8 @@
 ---
 paths:
   - core/src/meson.build
+  - core/src/model.c
+  - core/src/feature/brisque_model.h
   - core/test/check_exported_symbols.py
 invariant: Windows nvcc host = build MSVC, else newest vswhere toolset, else PATH; C++ targets take vmaf_cppflags_common.
 ---
@@ -48,13 +50,30 @@ rule (ADR-0141) requires discharging in same PR.
 
 ## C++ placement new and delete visibility invariant (ADR-1337)
 
-`core/src/meson.build` defines `vmaf_cppflags_common` including `-fvisibility-inlines-hidden` alongside `-fvisibility=hidden`. In GCC 16 C++26 mode, standard library placement new and delete (`_ZnwmPv`, `_ZdlPvS_`) are inline functions in `<new>` (`_GLIBCXX_PLACEMENT_CONSTEXPR`) that inherit default visibility from libstdc++ headers unless `-fvisibility-inlines-hidden` is applied (`-fvisibility=hidden` alone leaves inline functions visible).
+`core/src/meson.build` defines `vmaf_cppflags_common` including `-fvisibility-inlines-hidden` alongside `-fvisibility=hidden`. In GCC 16 C++26 mode, standard library placement new and delete (`_ZnwmPv`, `_ZdlPvS_`) = inline functions in `<new>` (`_GLIBCXX_PLACEMENT_CONSTEXPR`), default visibility inherited from libstdc++ headers without `-fvisibility-inlines-hidden` (`-fvisibility=hidden` alone leaves inline functions visible).
 
 **Load-bearing cross-platform compiler behavior**:
 
-- **GCC & Clang (Linux ELF, Apple Clang Darwin Mach-O, MinGW PE/COFF)**: `-fvisibility-inlines-hidden` is supported across GCC (including GCC 16) and Clang (including Clang 22). It enforces hidden visibility on inline C++ standard library symbols, preventing `_ZnwmPv` and `_ZdlPvS_` from leaking into dynamic export table of `libvmaf.so` / `libvmaf.dylib`.
+- **GCC & Clang (Linux ELF, Apple Clang Darwin Mach-O, MinGW PE/COFF)**: `-fvisibility-inlines-hidden` supported across GCC (including GCC 16) and Clang (including Clang 22). Enforces hidden visibility on inline C++ standard library symbols, preventing `_ZnwmPv` and `_ZdlPvS_` from leaking into dynamic export table of `libvmaf.so` / `libvmaf.dylib`.
 - **MSVC & clang-cl (`cxx.get_argument_syntax() == 'msvc'`)**: Windows MSVC toolchains govern exported symbols via explicit `__declspec(dllexport)` rather than ELF/Mach-O visibility flags. Meson's `cxx.get_supported_arguments(...)` evaluates compiler support and cleanly drops `-fvisibility-inlines-hidden`, avoiding invalid option warnings or build breaks while maintaining hidden visibility across ELF and Mach-O targets.
 
-**Symbol gate & red cap**: `core/test/check_exported_symbols.py` runs on Linux shared builds. checker forbids globally allowlisting or suppressing C++ new/delete leaks. Instead, explicit red-cap check asserts `_ZnwmPv` and `_ZdlPvS_` are never exported, failing closed on leak regressions.
+**Symbol gate & red cap**: `core/test/check_exported_symbols.py` runs on Linux shared builds. checker forbids globally allowlisting or suppressing C++ new/delete leaks. Instead, explicit red-cap check asserts `_ZnwmPv` and `_ZdlPvS_` never exported, failing closed on leak regressions.
 
-**Invariant for rebases and follow-up branches**: all C++ targets in `core/src/` must inherit `vmaf_cppflags_common` with `-fvisibility-inlines-hidden` preserved. No impact on public C API headers (`core/include/libvmaf/`), Netflix golden assertions, models, tuning, or score paths.
+**Invariant for rebases and follow-up branches**: all C++ targets in `core/src/` inherit `vmaf_cppflags_common` with `-fvisibility-inlines-hidden` preserved. No impact on public C API headers (`core/include/libvmaf/`), Netflix golden assertions, models, tuning, or score paths.
+
+## xxd-embedded symbols keep the generator's types
+
+`xxd -i` (built-in JSON models, `brisque_live.model`, HIP `_hsaco` blobs in
+`meson.build`) defines `unsigned char <sym>[]` and `unsigned int <sym>_len`,
+no `const`. Every hand-written `extern` of `_len` symbol says `unsigned int`:
+`model.c` (`src_*_json_len`, `VmafBuiltInModel.data_len`),
+`feature/brisque_model.h`, `feature/hip/*.h`. `model.c` length externs: exact
+type, no added `const` (C11 6.2.7p2); read-only via `const unsigned int *`
+field. brisque, HIP and `src_*_json[]` arrays still add `const` or use `char`:
+issue #3440. MSVC 19.52 under `/LTCG`
+reports `int` vs `unsigned int` as C4744; `/WX` -> fatal in
+`Windows ARM64 MSVC` (required lane). GCC and Clang LTO: silent.
+Linux gate: `data_len` field typed `const unsigned int *`; new
+`extern const int ..._json_len` in model table trips `-Wpointer-sign` under
+`-Dwerror=true`. Upstream `model.c` still spells `const int`: keep fork
+spelling on sync.
