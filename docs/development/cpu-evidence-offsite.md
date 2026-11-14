@@ -8,9 +8,11 @@ not do — live in the [tester guide](../usage/tester-image.md); this page is
 the short version with the exact commands and the report path.
 
 **These reports are extra evidence next to the emulated matrix; the cut does
-not wait for them.** The CI lanes already measure every dispatch level
-bit-exact against the scalar code under emulation (Intel SDE, qemu); a report
-from real silicon sharpens the RC7 CPU capability source of truth
+not wait for them.** The CI lanes measure the dispatch levels bit-exact
+against the scalar code under emulation (Intel SDE for x86, qemu-user for
+aarch64) for the levels the emulated matrix covers — the AVX-512 dispatch so
+far only on one real Zen 5 machine — so a report from real silicon sharpens
+the RC7 CPU capability source of truth
 ([ADR-1490](../adr/1490-rc3-rc9-candidate-map-cpu-capability.md),
 [#1885](https://github.com/VMAFx/vmafx/issues/1885)) and blocks nothing.
 
@@ -47,6 +49,18 @@ The bundle adds every Metal twin against the CPU on real Apple silicon
 
 ```sh
 cd vmafx-tester-macos-arm64-<VERSION> && ./run.sh > report.json
+```
+
+The JSON goes to `report.json`; the summary and the file name to use go to
+the terminal on standard error, so the redirect hides nothing. The evidence
+row closes with an accepted report from each of the bundle and the tester
+container, so run the container on the same machine too (Docker pulls the
+arm64 image there on its own):
+
+```sh
+docker run --rm --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --tmpfs /tmp \
+  ghcr.io/vmafx/vmafx:<VERSION>-tester > report-container.json
 ```
 
 ## Where the report goes
