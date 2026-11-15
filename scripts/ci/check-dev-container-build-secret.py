@@ -263,6 +263,7 @@ ALLOWED_RAW_DOCKERFILES = frozenset(
         "docker/dev/ubuntu-26.04-sycl.Dockerfile",
     }
 )
+ALLOWED_RAW_BUILD_TAGS = frozenset({"vmafx-dev-ubuntu:${VARIANT}"})
 SHELL_CLAUSE_CHARS = frozenset(";&|()")
 DOUBLE_QUOTE_ESCAPES = frozenset({"\\", '"', "$", "`"})
 SUBSTITUTION_MARKERS = ("$(", "`", "<(", ">(")
@@ -434,6 +435,16 @@ def _consume_build_option(args: list[str], index: int) -> tuple[str, str, int] |
     return None
 
 
+def _is_allowed_build_expansion(opt: str, value: str) -> bool:
+    if "$" not in value:
+        return True
+    if opt in ("-f", "--file"):
+        return value in ALLOWED_RAW_DOCKERFILES
+    if opt == "-t":
+        return value in ALLOWED_RAW_BUILD_TAGS
+    return False
+
+
 def _parse_raw_build_args(args: list[str]) -> tuple[bool, list[str], int] | None:
     has_check = False
     files: list[str] = []
@@ -442,6 +453,8 @@ def _parse_raw_build_args(args: list[str]) -> tuple[bool, list[str], int] | None
     limit = len(args)
     while index < limit:
         if not args[index].startswith("-"):
+            if "$" in args[index]:
+                return None
             operands += 1
             index += 1
             continue
@@ -449,6 +462,8 @@ def _parse_raw_build_args(args: list[str]) -> tuple[bool, list[str], int] | None
         if parsed is None:
             return None
         opt, value, index = parsed
+        if not _is_allowed_build_expansion(opt, value):
+            return None
         if opt == "--check":
             has_check = True
         elif opt in ("-f", "--file"):

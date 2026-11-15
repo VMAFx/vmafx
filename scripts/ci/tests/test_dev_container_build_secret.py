@@ -326,6 +326,33 @@ class BuildSecretContract(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertTrue(MODULE._has_disallowed_raw_build(command))
 
+    def test_raw_build_parameter_expansion_rejected(self) -> None:
+        for command in (
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile $BUILD_ARGS",
+            'docker build -f docker/dev/ubuntu-26.04.Dockerfile "$BUILD_ARGS"',
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile ${BUILD_ARGS}",
+            "docker build --check --file dev/Containerfile $BUILD_ARGS",
+            'docker build -f "docker/dev/ubuntu-26.04${OTHER}.Dockerfile" .',
+            'docker build --check -f "docker/dev/ubuntu-26.04${OTHER}.Dockerfile" .',
+            'docker build -f docker/dev/ubuntu-26.04.Dockerfile -t "$TAG" .',
+            'docker build -f docker/dev/ubuntu-26.04.Dockerfile --progress="$PROGRESS" .',
+            'docker build --check --file dev/Containerfile --target "$TARGET" .',
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile '$BUILD_ARGS'",
+            "docker build --$OPT=plain -f docker/dev/ubuntu-26.04.Dockerfile .",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_allowlisted_parameter_expansion_allowed(self) -> None:
+        for command in (
+            "docker build --progress=plain "
+            '-f "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile" '
+            '-t "vmafx-dev-ubuntu:${VARIANT}" .',
+            "docker build --file=docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile .",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(MODULE._has_disallowed_raw_build(command))
+
     def test_workflow_allowed_raw_builds_stay_allowed(self) -> None:
         raw_builds = [
             command
