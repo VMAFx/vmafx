@@ -121,6 +121,17 @@ entries:
   - scripts/lib/git_env.py
   - scripts/lib/test_git_env.py
   note: luoye-cpu (@luoye-cpu) wrote the GIT_* environment scrub helper in PR 3339 (issue 3324); scripts and CI call drop() or hermetic() so git operations never inherit the caller's GIT_DIR and GIT_INDEX_FILE.
+- id: contribution-luoye-cpu-near-dup-spot-window
+  name: luoye-cpu's near-duplicate spot-check tests
+  url: https://github.com/VMAFx/vmafx/pull/3444
+  kind: code
+  relation: used-by-CI
+  license: EUPL-1.2
+  paths:
+  - tools/vmaf-tune/tests/test_near_dup_verify.py
+  evidence:
+  - tools/vmaf-tune/tests/test_near_dup_verify.py
+  note: luoye-cpu wrote the unit tests for the two-leg near-duplicate spot check and its fail-closed cases, in PR 3444.
 - id: libsvm
   name: libsvm
   url: https://github.com/cjlin1/libsvm

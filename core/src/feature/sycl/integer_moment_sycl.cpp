@@ -17,7 +17,7 @@
  *
  *  Single kernel per frame; four sycl::atomic_ref<int64_t>
  *  reductions into the four-slot device counter. Pattern:
- *  register with vmaf_sycl_graph_register and ride the combined
+ *  register with vmaf_sycl_graph_register_flags and ride the combined
  *  graph submit/wait machinery (mirrors psnr_sycl).
  *
  *  Bit-exactness contract (ADR-1449): the four sums are the CPU's.

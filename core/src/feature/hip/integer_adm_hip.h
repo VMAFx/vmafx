@@ -127,14 +127,15 @@ typedef struct AdmBufferHip {
 /* HSACO blobs — embedded by xxd -i during the meson hipcc pipeline       */
 /* --------------------------------------------------------------------- */
 #ifdef HAVE_HIPCC
-extern const unsigned char adm_dwt2_hsaco[];
-extern const unsigned int adm_dwt2_hsaco_len;
-extern const unsigned char adm_csf_hsaco[];
-extern const unsigned int adm_csf_hsaco_len;
-extern const unsigned char adm_csf_den_hsaco[];
-extern const unsigned int adm_csf_den_hsaco_len;
-extern const unsigned char adm_cm_hsaco[];
-extern const unsigned int adm_cm_hsaco_len;
+/* Match xxd -i object types exactly; keep read-only access at use sites. */
+extern unsigned char adm_dwt2_hsaco[];
+extern unsigned int adm_dwt2_hsaco_len;
+extern unsigned char adm_csf_hsaco[];
+extern unsigned int adm_csf_hsaco_len;
+extern unsigned char adm_csf_den_hsaco[];
+extern unsigned int adm_csf_den_hsaco_len;
+extern unsigned char adm_cm_hsaco[];
+extern unsigned int adm_cm_hsaco_len;
 #endif /* HAVE_HIPCC */
 
 #endif /* FEATURE_ADM_HIP_H_ */

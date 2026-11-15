@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT))
 
 # Hook runs keep the staged index for this checkout; fixtures drop caller GIT_* (issue #3324).
 from scripts.ci.check_agent_copyright_rule import git_environment  # noqa: E402
+from scripts.lib.renovate_regex import to_python  # noqa: E402
 from scripts.lib.safe_subprocess import CommandFailed, TextCommandResult  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
@@ -39,6 +40,11 @@ MAX_CI_TEXT_FILES = 1_864
 MAX_CONTINUATION_LINES = 200
 MAX_APT_WORK_ITEMS = 8
 MAX_YAML_NODES = 16_384
+# File names the dev images copy into their build stage. The snapshot checks
+# take the staging directory from the Dockerfile's own COPY destination.
+IMAGE_BUILD_CONFIG_NAME = "build-config.env"
+IMAGE_INSTALLER_NAMES = frozenset(("ubuntu.sh", "install-cuda-toolkit.sh"))
+DOCKERFILE_INSTRUCTIONS = frozenset(("COPY", "FROM", "ENV", "ARG"))
 PPA_SOURCE_TEXT = re.compile(
     r"add-apt-repository|apt-add-repository|\bppa:|ppa\.launchpad(?:content)?\.net",
     re.IGNORECASE,
@@ -76,6 +82,18 @@ APT_UPDATE_MESSAGE = (
 APT_UNBALANCED_QUOTE_MESSAGE = (
     "apt refresh must sit on one logical line with balanced quotes (ADR-3537)"
 )
+APT_CONFIG_UNSET_MESSAGE = (
+    "APT_CONFIG must stay unset: the persistent snapshot is the only APT configuration"
+)
+APT_SNAPSHOT_INSTRUCTION_MESSAGE = (
+    "snapshot contract reads FROM, ARG, ENV, COPY, RUN, WORKDIR, CMD and SHELL only"
+)
+APT_SNAPSHOT_RUN_MESSAGE = (
+    "snapshot contract reads plain shell-form RUN only: no exec form, flags or heredoc"
+)
+APT_SNAPSHOT_SHELL_MESSAGE = "SHELL must be /bin/bash -c or /bin/sh -c"
+APT_SNAPSHOT_ESCAPE_MESSAGE = "snapshot contract requires the default backslash escape"
+APT_SNAPSHOT_LINE_MESSAGE = "snapshot contract cannot read this line as a Dockerfile instruction"
 APT_CONTINUATION_MESSAGE = (
     f"continuation exceeds {MAX_CONTINUATION_LINES} physical lines; "
     "keep each command bounded (ADR-3537)"
@@ -237,14 +255,19 @@ def ci_text_paths(root: Path) -> list[Path]:
 
 def _logical_ci_lines(text: str) -> list[tuple[int, str, bool]]:
     """Join backslash-continued physical lines up to MAX_CONTINUATION_LINES."""
+    return _join_continued_lines(list(enumerate(text.splitlines(), 1)))
+
+
+def _join_continued_lines(lines: list[tuple[int, str]]) -> list[tuple[int, str, bool]]:
+    """Join numbered lines, bounding storage by their original physical span."""
     logical: list[tuple[int, str, bool]] = []
     parts: list[str] = []
     start_line = 1
     count = 0
-    for number, raw in enumerate(text.splitlines(), 1):
+    for number, raw in lines:
         if count == 0:
             start_line = number
-        count += 1
+        count = number - start_line + 1
         stripped = raw.rstrip()
         continues = stripped.endswith("\\")
         if count <= MAX_CONTINUATION_LINES:
@@ -256,6 +279,28 @@ def _logical_ci_lines(text: str) -> list[tuple[int, str, bool]]:
     if count > 0:
         logical.append((start_line, "\n".join(parts), count > MAX_CONTINUATION_LINES))
     return logical
+
+
+def _dockerfile_logical_lines(text: str) -> list[tuple[int, str, bool]]:
+    """Drop Docker comments and blanks before joining; retain leading escape directives."""
+    logical: list[tuple[int, str, bool]] = []
+    lines: list[tuple[int, str]] = []
+    directives = True
+    for number, raw in enumerate(text.splitlines(), 1):
+        directive = (
+            re.match(r"\s*#\s*(syntax|escape|check)\s*=", raw, re.IGNORECASE)
+            if directives
+            else None
+        )
+        if directive:
+            if directive[1].lower() == "escape":
+                logical.append((number, raw, False))
+            continue
+        directives = False
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        lines.append((number, raw))
+    return [*logical, *_join_continued_lines(lines)]
 
 
 def _is_hosted_workflow_or_action(path: Path) -> bool:
@@ -292,20 +337,24 @@ def _tokenise_shell_item(text: str) -> list[str]:
     return list(lexer)
 
 
-def _split_shell_clauses(tokens: list[str]) -> list[list[str]]:
-    """Split shell tokens on operator boundaries into non-empty command clauses."""
-    clauses: list[list[str]] = []
+def _shell_clauses_with_operators(tokens: list[str]) -> list[tuple[list[str], str]]:
+    """Pair each non-empty command clause with the operator token that ends it ("" at the end)."""
+    pairs: list[tuple[list[str], str]] = []
     current: list[str] = []
     for token in tokens:
-        if _is_operator_token(token):
-            if current:
-                clauses.append(current)
-                current = []
-        else:
+        if not _is_operator_token(token):
             current.append(token)
+        elif current:
+            pairs.append((current, token))
+            current = []
     if current:
-        clauses.append(current)
-    return clauses
+        pairs.append((current, ""))
+    return pairs
+
+
+def _split_shell_clauses(tokens: list[str]) -> list[list[str]]:
+    """Split shell tokens on operator boundaries into non-empty command clauses."""
+    return [clause for clause, _ in _shell_clauses_with_operators(tokens)]
 
 
 def _parse_apt_option(raw: str) -> tuple[str, str]:
@@ -782,6 +831,196 @@ def apt_update_contract_problems(root: Path) -> list[str]:
     return _scan_ci_text(root, apt_update_problems)
 
 
+UBUNTU_DEV_DOCKERFILES = tuple(
+    ROOT / f"docker/dev/ubuntu-26.04{variant}.Dockerfile" for variant in ("", "-cuda", "-sycl")
+)
+APT_SNAPSHOT_FILE = "/etc/apt/apt.conf.d/50ubuntu-snapshot"
+APT_SNAPSHOT_WRITE = [
+    "printf",
+    'APT::Snapshot "%s";\\n',
+    "$UBUNTU_APT_SNAPSHOT",
+    ">",
+    APT_SNAPSHOT_FILE,
+]
+APT_SNAPSHOT_CHECK = ["grep", "-Eqx", 'APT::Snapshot "[0-9]{8}T[0-9]{6}Z";', APT_SNAPSHOT_FILE]
+APT_CERTIFICATE_BOOTSTRAP = [
+    ["apt-get", "--error-on=any", "-o", "Acquire::Retries=3", "update"],
+    ["apt-get", "install", "-y", "--no-install-recommends", "ca-certificates"],
+]
+
+
+def _snapshot_sets_apt_config(instruction: str, tokens: list[str]) -> bool:
+    """Keep every RUN, ENV and ARG token independent of an alternate APT configuration."""
+    return instruction in {"RUN", "ENV", "ARG"} and any(
+        arg == "APT_CONFIG" or arg.startswith("APT_CONFIG=") for arg in tokens
+    )
+
+
+def _snapshot_instruction_problems(number: int, instruction: str, body: str) -> list[str]:
+    """Allow only instruction shapes whose snapshot effects this reader understands."""
+    if not instruction:
+        if re.match(r"\s*#\s*escape\s*=", body, re.IGNORECASE):
+            return [f"{number}: {APT_SNAPSHOT_ESCAPE_MESSAGE}"]
+        return []
+    if instruction not in {"FROM", "ARG", "ENV", "COPY", "RUN", "WORKDIR", "CMD", "SHELL"}:
+        return [f"{number}: {APT_SNAPSHOT_INSTRUCTION_MESSAGE}"]
+    if instruction == "RUN":
+        if body.lstrip().startswith(("[", "--")) or "<<" in body:
+            return [f"{number}: {APT_SNAPSHOT_RUN_MESSAGE}"]
+    if instruction == "SHELL":
+        if _json_string_list(body) not in (["/bin/bash", "-c"], ["/bin/sh", "-c"]):
+            return [f"{number}: {APT_SNAPSHOT_SHELL_MESSAGE}"]
+    return []
+
+
+def _snapshot_shell_instruction(
+    number: int, instruction: str, body: str
+) -> tuple[list[tuple[int, list[str]]], list[str], list[str]]:
+    """Tokenise an accepted instruction with the existing snapshot shell reader."""
+    try:
+        tokens = _tokenise_shell_item(body)
+    except ValueError:
+        return [], [], [f"{number}: snapshot contract requires balanced shell quotes"]
+    problems = [APT_CONFIG_UNSET_MESSAGE] if _snapshot_sets_apt_config(instruction, tokens) else []
+    if instruction != "RUN":
+        return [(number, [instruction, *tokens])], [""], problems
+    clauses = _shell_clauses_with_operators(tokens)
+    return [(number, clause) for clause, _ in clauses], [end for _, end in clauses], problems
+
+
+def _snapshot_commands(
+    text: str,
+) -> tuple[list[tuple[int, list[str]]], list[str], list[str]]:
+    """Read bounded Dockerfile shell instructions, the operator ending each, and problems."""
+    commands: list[tuple[int, list[str]]] = []
+    ends: list[str] = []
+    problems: list[str] = []
+    for number, line, overflowed in _dockerfile_logical_lines(text):
+        if overflowed:
+            problems.append(f"{number}: {APT_CONTINUATION_MESSAGE}")
+        match = re.match(r"\s*([A-Za-z]+)\s+(.*)", line, re.DOTALL)
+        if match is None and line.strip() and not line.lstrip().startswith("#"):
+            problems.append(f"{number}: {APT_SNAPSHOT_LINE_MESSAGE}")
+        instruction, body = (match[1].upper(), match[2]) if match else ("", line)
+        shape_problems = _snapshot_instruction_problems(number, instruction, body)
+        problems.extend(shape_problems)
+        if shape_problems or instruction not in {"RUN", *DOCKERFILE_INSTRUCTIONS}:
+            continue
+        items, operators, shell_problems = _snapshot_shell_instruction(number, instruction, body)
+        commands.extend(items)
+        ends.extend(operators)
+        problems.extend(shell_problems)
+    return commands, ends, problems
+
+
+def _snapshot_staging_dir(commands: list[tuple[int, list[str]]], pin: int) -> str | None:
+    """Return the directory the image copies build-config.env into before the pin."""
+    for _, cmd in commands[:pin]:
+        if cmd[0] == "COPY" and IMAGE_BUILD_CONFIG_NAME in cmd[1:-1] and cmd[-1].endswith("/"):
+            return cmd[-1]
+    return None
+
+
+def _snapshot_input_problems(commands: list[tuple[int, list[str]]], pin: int) -> list[str]:
+    """Require the pin value to originate from the copied shared build configuration."""
+    problems: list[str] = []
+    pin_line = commands[pin][0]
+    staging = _snapshot_staging_dir(commands, pin)
+    if staging is None:
+        problems.append("COPY build-config.env into a directory before configuring the snapshot")
+    elif pin == 0 or commands[pin - 1] != (pin_line, [".", staging + IMAGE_BUILD_CONFIG_NAME]):
+        problems.append("source build-config.env directly before the snapshot write")
+    if sum(cmd[0] == "FROM" for _, cmd in commands) != 1:
+        problems.append("snapshot contract requires one base stage")
+    return problems
+
+
+def _snapshot_apt_override(cmd: list[str]) -> bool:
+    """Recognise command-local options that could replace the persistent snapshot."""
+    return any(
+        "snapshot" in arg.lower()
+        or arg in ("-S", "-c", "--config-file")
+        or arg.startswith(("APT_CONFIG=", "--config-file="))
+        for arg in cmd
+    )
+
+
+def _snapshot_script_problems(cmd: list[str], position: int) -> list[str]:
+    """Keep installer execution after configuration and prevent later config removal."""
+    problems: list[str] = []
+    runs_installer = cmd[0] not in DOCKERFILE_INSTRUCTIONS and any(
+        posixpath.basename(token) in IMAGE_INSTALLER_NAMES for token in cmd
+    )
+    if position < 0 and runs_installer:
+        problems.append("configure the snapshot before calling package installer scripts")
+    rewrites = cmd != APT_SNAPSHOT_CHECK and any("/etc/apt/apt.conf" in token for token in cmd)
+    if position > 0 and rewrites:
+        problems.append("do not change or remove the persistent snapshot after configuration")
+    return problems
+
+
+def _snapshot_operation_problems(commands: list[tuple[int, list[str]]], pin: int) -> list[str]:
+    """Bound the live bootstrap and prevent package commands bypassing the pin."""
+    problems: list[str] = []
+    live = []
+    for index, (_, cmd) in enumerate(commands):
+        if any(re.search(r"\bapt(?:-get)?\s", token) for token in cmd):
+            problems.append("package commands must be direct Dockerfile shell clauses")
+        package = any(_is_apt_token(token) for token in cmd)
+        if index < pin and package:
+            live.append(cmd)
+        if package:
+            if _snapshot_apt_override(cmd):
+                problems.append("package operation must inherit the persistent snapshot")
+        problems.extend(_snapshot_script_problems(cmd, index - pin))
+    if live != APT_CERTIFICATE_BOOTSTRAP:
+        problems.append("only the named ca-certificates bootstrap may use the live archive")
+    return problems
+
+
+def _snapshot_check_masked(
+    commands: list[tuple[int, list[str]]], ends: list[str], write: int
+) -> bool:
+    """Report an operator that lets the RUN skip the timestamp check or pass a failed one."""
+    line = commands[write + 1][0]
+    ops = [ends[i] for i in range(write + 1, len(commands)) if commands[i][0] == line]
+    return ends[write] not in {"&&", ""} or ops != ["&&"] * (len(ops) - 1) + [""]
+
+
+def ubuntu_apt_snapshot_problems(text: str) -> list[str]:
+    """Require a persistent pin before every package operation except the named bootstrap."""
+    commands, ends, problems = _snapshot_commands(text)
+    writes = [i for i, (_, cmd) in enumerate(commands) if cmd == APT_SNAPSHOT_WRITE]
+    if len(writes) != 1:
+        return [*problems, "write UBUNTU_APT_SNAPSHOT to persistent APT::Snapshot exactly once"]
+    problems.extend(_snapshot_input_problems(commands, writes[0]))
+    problems.extend(_snapshot_operation_problems(commands, writes[0]))
+    if [cmd for _, cmd in commands[writes[0] + 1 : writes[0] + 2]] != [APT_SNAPSHOT_CHECK]:
+        problems.append("check the written APT::Snapshot timestamp before any package operation")
+    elif _snapshot_check_masked(commands, ends, writes[0]):
+        problems.append("join the APT::Snapshot timestamp check and every later clause with &&")
+    if "# UBUNTU_APT_CERTIFICATE_BOOTSTRAP:" not in text:
+        problems.append("name the live archive certificate bootstrap explicitly")
+    return problems
+
+
+BUILD_CONFIG_SNAPSHOT = re.compile(r'UBUNTU_APT_SNAPSHOT="[0-9]{8}T[0-9]{6}Z"')
+
+
+def build_config_snapshot_problems(text: str) -> list[str]:
+    """Allow one UBUNTU_APT_SNAPSHOT line, in the only shape the Renovate manager updates."""
+    named = [
+        line
+        for line in text.splitlines()
+        if "UBUNTU_APT_SNAPSHOT" in line and not line.lstrip().startswith("#")
+    ]
+    if len(named) != 1:
+        return [f"name UBUNTU_APT_SNAPSHOT on exactly one line, found {len(named)}"]
+    if BUILD_CONFIG_SNAPSHOT.fullmatch(named[0]) is None:
+        return [f'write the snapshot as UBUNTU_APT_SNAPSHOT="YYYYMMDDTHHMMSSZ": {named[0]!r}']
+    return []
+
+
 class DisposableRepoTestCase(unittest.TestCase):
     """Provide an isolated temporary Git repository for tracked-path contract tests."""
 
@@ -1047,6 +1286,347 @@ class LaunchpadPPAContract(DisposableRepoTestCase):
         )
         with self.assertRaisesRegex(AssertionError, rf"lint-and-format\.yml:{line}:"):
             self.assertEqual(problems, [], "\n".join(problems))
+
+
+class UbuntuAptSnapshotContract(unittest.TestCase):
+    """Pin all three Ubuntu dev images, including their nested package installers."""
+
+    def image(self) -> str:
+        return UBUNTU_DEV_DOCKERFILES[0].read_text(encoding="utf-8")
+
+    def test_all_three_images_inherit_snapshot(self) -> None:
+        for path in UBUNTU_DEV_DOCKERFILES:
+            with self.subTest(path=path):
+                problems = ubuntu_apt_snapshot_problems(path.read_text(encoding="utf-8"))
+                self.assertEqual(problems, [], "\n".join(problems))
+                self.assertEqual(
+                    apt_update_problems(path.relative_to(ROOT), path.read_text(encoding="utf-8")),
+                    [],
+                )
+
+    def test_snapshot_is_one_timestamp_in_build_config(self) -> None:
+        text = (ROOT / "build-config.env").read_text(encoding="utf-8")
+        self.assertEqual(build_config_snapshot_problems(text), [])
+
+    def test_comment_lines_follow_docker_rules(self) -> None:
+        plants = (
+            ("# cleanup \\\nRUN rm " + APT_SNAPSHOT_FILE, False),
+            ("  # cleanup \\\nRUN rm " + APT_SNAPSHOT_FILE, False),
+            ("RUN true \\\n# note\n&& rm " + APT_SNAPSHOT_FILE, False),
+            ("# x \\\nRUN apt-get install -y curl", True),
+        )
+        for path in UBUNTU_DEV_DOCKERFILES:
+            image = path.read_text(encoding="utf-8")
+            for plant, before_pin in plants:
+                offset = image.index("RUN apt-get") if before_pin else len(image)
+                with self.subTest(path=path, plant=plant):
+                    planted = image[:offset] + plant + "\n" + image[offset:]
+                    self.assertTrue(ubuntu_apt_snapshot_problems(planted))
+            for comment in (
+                "",
+                "# plain comment",
+                "# plain comment \\",
+                "RUN true \\\n# note\n&& true",
+                "RUN true \\\n\n# note\n\n&& true",
+            ):
+                with self.subTest(path=path, comment=comment):
+                    self.assertEqual(ubuntu_apt_snapshot_problems(image + "\n" + comment), [])
+
+    def test_unreadable_snapshot_instructions_fail_closed(self) -> None:
+        image = self.image()
+        for line in ("&& true", "123", "RUN"):
+            for offset in (0, len(image)):
+                with self.subTest(line=line, offset=offset):
+                    planted = image[:offset] + line + "\n" + image[offset:]
+                    self.assertIn(
+                        APT_SNAPSHOT_LINE_MESSAGE, "\n".join(ubuntu_apt_snapshot_problems(planted))
+                    )
+        self.assertEqual(ubuntu_apt_snapshot_problems("# syntax=docker/dockerfile:1\n" + image), [])
+        self.assertEqual(ubuntu_apt_snapshot_problems("# comment\n# escape=`\n" + image), [])
+
+    def test_dockerfile_comments_preserve_physical_continuation_bound(self) -> None:
+        image = self.image()
+        at_bound = "RUN true \\\n" + "# comment\n" * (MAX_CONTINUATION_LINES - 2) + "&& true\n"
+        self.assertEqual(ubuntu_apt_snapshot_problems(image + "\n" + at_bound), [])
+        over_bound = at_bound.replace("&& true", "\n&& true")
+        self.assertIn(
+            APT_CONTINUATION_MESSAGE,
+            "\n".join(ubuntu_apt_snapshot_problems(image + "\n" + over_bound)),
+        )
+
+    def test_only_parsed_instruction_shapes_are_accepted(self) -> None:
+        image = self.image()
+        before_pin = image.index("RUN apt-get")
+        after_pin = len(image)
+        plants = (
+            ('RUN ["apt-get", "install", "-y", "curl"]', APT_SNAPSHOT_RUN_MESSAGE, before_pin),
+            (
+                'RUN ["apt-get", "-o", "Dir::Etc::SourceList=/x", "install", "-y", "curl"]',
+                APT_SNAPSHOT_RUN_MESSAGE,
+                after_pin,
+            ),
+            (
+                "RUN --mount=type=cache,target=/var/cache/apt apt-get install -y curl",
+                APT_SNAPSHOT_RUN_MESSAGE,
+                before_pin,
+            ),
+            ("RUN <<EOF\napt-get install -y curl\nEOF", APT_SNAPSHOT_RUN_MESSAGE, before_pin),
+            (
+                'SHELL ["env", "APT_CONFIG=/x.conf", "/bin/sh", "-c"]',
+                APT_SNAPSHOT_SHELL_MESSAGE,
+                before_pin,
+            ),
+            (
+                "ONBUILD RUN apt-get install -y curl",
+                APT_SNAPSHOT_INSTRUCTION_MESSAGE,
+                after_pin,
+            ),
+            (
+                "ADD https://example.invalid/x.list /etc/apt/sources.list.d/",
+                APT_SNAPSHOT_INSTRUCTION_MESSAGE,
+                after_pin,
+            ),
+            ("# escape=`", APT_SNAPSHOT_ESCAPE_MESSAGE, 0),
+        )
+        for instruction, message, offset in plants:
+            with self.subTest(instruction=instruction):
+                planted = image[:offset] + instruction + "\n" + image[offset:]
+                self.assertIn(message, "\n".join(ubuntu_apt_snapshot_problems(planted)))
+        for path in UBUNTU_DEV_DOCKERFILES:
+            with self.subTest(path=path):
+                self.assertEqual(ubuntu_apt_snapshot_problems(path.read_text(encoding="utf-8")), [])
+        self.assertEqual(ubuntu_apt_snapshot_problems(image + '\nSHELL ["/bin/sh", "-c"]\n'), [])
+
+    def test_build_config_rejects_a_second_or_reshaped_snapshot(self) -> None:
+        """Sourcing takes the last assignment; Renovate updates only the managed shape."""
+        managed = 'UBUNTU_APT_SNAPSHOT="20261101T000000Z"'
+        others = {
+            "export": "export UBUNTU_APT_SNAPSHOT=20261201T000000Z",
+            "single quotes": "UBUNTU_APT_SNAPSHOT='20261201T000000Z'",
+            "trailing comment": 'UBUNTU_APT_SNAPSHOT="20261201T000000Z"  # newer',
+            "indented": '  UBUNTU_APT_SNAPSHOT="20261201T000000Z"',
+            "readonly": 'readonly UBUNTU_APT_SNAPSHOT="20261201T000000Z"',
+            "default expansion": ': "${UBUNTU_APT_SNAPSHOT:=20261201T000000Z}"',
+            "same line": f"{managed}; UBUNTU_APT_SNAPSHOT=20261201T000000Z",
+        }
+        for name, line in others.items():
+            with self.subTest(f"after the managed line: {name}"):
+                self.assertNotEqual(build_config_snapshot_problems(f"{managed}\n{line}\n"), [])
+            with self.subTest(f"alone: {name}"):
+                self.assertNotEqual(build_config_snapshot_problems(f"{line}\n"), [])
+        self.assertNotEqual(build_config_snapshot_problems("OTHER=1\n"), [])
+        commented = f"# UBUNTU_APT_SNAPSHOT advances weekly\n{managed}\n"
+        self.assertEqual(build_config_snapshot_problems(commented), [])
+
+    def test_unpinned_install_is_rejected(self) -> None:
+        planted = self.image().replace("RUN apt-get", "RUN apt-get install -y curl && apt-get", 1)
+        self.assertIn(
+            "only the named ca-certificates bootstrap may use the live archive",
+            ubuntu_apt_snapshot_problems(planted),
+        )
+
+    def test_bootstrap_allows_only_certificates_once(self) -> None:
+        for extra in (" curl", " ca-certificates"):
+            with self.subTest(extra=extra):
+                planted = self.image().replace(
+                    "--no-install-recommends ca-certificates",
+                    "--no-install-recommends ca-certificates" + extra,
+                    1,
+                )
+                self.assertTrue(ubuntu_apt_snapshot_problems(planted))
+        repeated = self.image().replace(
+            "&& . /tmp/build-config.env",
+            "&& apt-get install -y --no-install-recommends ca-certificates "
+            "&& . /tmp/build-config.env",
+        )
+        self.assertTrue(ubuntu_apt_snapshot_problems(repeated))
+        self.assertEqual(ubuntu_apt_snapshot_problems(self.image()), [])
+
+    def test_pin_inputs_cannot_be_removed(self) -> None:
+        for old, new in (
+            ("COPY build-config.env", "COPY other.env"),
+            ("scripts/setup/ubuntu.sh /tmp/", "scripts/setup/ubuntu.sh /opt/"),
+            ("scripts/setup/ubuntu.sh /tmp/", "scripts/setup/ubuntu.sh /tmp"),
+            (". /tmp/build-config.env", ":"),
+            (
+                "&& . /tmp/build-config.env",
+                "&& . /tmp/build-config.env && UBUNTU_APT_SNAPSHOT=20261001T000000Z",
+            ),
+            (
+                "&& . /tmp/build-config.env",
+                "&& . /tmp/build-config.env && export UBUNTU_APT_SNAPSHOT=20261001T000000Z",
+            ),
+            ("&& . /tmp/build-config.env", "&& . /tmp/build-config.env && :"),
+            ("$UBUNTU_APT_SNAPSHOT", "20261101T000000Z"),
+            ("# UBUNTU_APT_CERTIFICATE_BOOTSTRAP:", "# bootstrap:"),
+        ):
+            with self.subTest(removed=old):
+                self.assertNotEqual(self.image().replace(old, new), self.image())
+                self.assertTrue(ubuntu_apt_snapshot_problems(self.image().replace(old, new)))
+
+    def test_apt_config_cannot_be_set_anywhere(self) -> None:
+        """Every package operation must read the persistent snapshot configuration."""
+        for instruction in (
+            "RUN export APT_CONFIG=/tmp/other.conf && apt-get install -y curl",
+            "RUN env APT_CONFIG=/tmp/other.conf true",
+            "RUN declare APT_CONFIG=/tmp/other.conf",
+            "RUN readonly APT_CONFIG=/tmp/other.conf",
+            "RUN read APT_CONFIG",
+            "RUN APT_CONFIG=/tmp/other.conf",
+            "ENV APT_CONFIG=/tmp/other.conf",
+            "ENV APT_CONFIG /tmp/other.conf",
+            "ARG APT_CONFIG",
+            "ARG APT_CONFIG=/tmp/other.conf",
+        ):
+            with self.subTest(instruction=instruction):
+                planted = self.image() + f"\n{instruction}\nRUN apt-get install -y curl\n"
+                self.assertIn(APT_CONFIG_UNSET_MESSAGE, ubuntu_apt_snapshot_problems(planted))
+        self.assertEqual(ubuntu_apt_snapshot_problems(self.image()), [])
+
+    def test_later_operations_cannot_override_or_remove_pin(self) -> None:
+        for command in (
+            "apt-get --snapshot now install -y curl",
+            "apt-get -o APT::Snapshot=now install -y curl",
+            "apt-get --config-file=/tmp/live.conf install -y curl",
+            "apt-get -o APT::Snapshot=now upgrade -y",
+            "apt-get --snapshot now build-dep -y curl",
+            "apt-get -c live.conf dist-upgrade -y",
+            "apt-get -S now full-upgrade -y",
+            "sh -c 'apt-get install -y curl'",
+            f"rm {APT_SNAPSHOT_FILE}",
+            "rm -rf /etc/apt/apt.conf.d",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(ubuntu_apt_snapshot_problems(self.image() + f"\nRUN {command}\n"))
+
+    def test_every_package_command_before_pin_is_live(self) -> None:
+        """Any apt operation before the pin reads the live archive, not only installs."""
+        for command in (
+            "apt-get upgrade -y",
+            "apt-get dist-upgrade -y",
+            "apt-get full-upgrade -y",
+            "apt-get remove -y ca-certificates",
+            "apt-get build-dep -y curl",
+            "apt upgrade -y",
+        ):
+            with self.subTest(command=command):
+                planted = self.image().replace(
+                    "&& . /tmp/build-config.env", f"&& {command} && . /tmp/build-config.env", 1
+                )
+                self.assertNotEqual(planted, self.image())
+                self.assertIn(
+                    "only the named ca-certificates bootstrap may use the live archive",
+                    ubuntu_apt_snapshot_problems(planted),
+                )
+        after_pin = self.image() + "\nRUN apt-get upgrade -y\n"
+        self.assertEqual(ubuntu_apt_snapshot_problems(after_pin), [])
+
+    def test_written_timestamp_is_checked_before_use(self) -> None:
+        """The clause after the write checks the file APT reads; it cannot move or go."""
+        check = shlex.join(APT_SNAPSHOT_CHECK)
+        self.assertIn(f"&& {check} \\\n", self.image())
+        moved = self.image().replace(f"&& {check} \\\n", "", 1) + f"\nRUN {check}\n"
+        for planted in (self.image().replace(f"&& {check} \\\n", "", 1), moved):
+            with self.subTest(planted=planted.count(check)):
+                self.assertIn(
+                    "check the written APT::Snapshot timestamp before any package operation",
+                    ubuntu_apt_snapshot_problems(planted),
+                )
+
+    def test_failed_timestamp_check_cannot_be_masked(self) -> None:
+        """The check and every later clause join with ``&&``; ``||``, ``;`` or ``|`` mask it."""
+        check = shlex.join(APT_SNAPSHOT_CHECK)
+        line = f"&& {check} \\\n    && "
+        installer = "&& bash /tmp/ubuntu.sh \\\n"
+        self.assertIn(line, self.image())
+        self.assertIn(installer, self.image())
+        planted = {
+            "skipped": self.image().replace(line, f"|| {check} \\\n    && ", 1),
+            "or true": self.image().replace(line, f"&& {check} || true \\\n    && ", 1),
+            "semicolon": self.image().replace(line, f"&& {check} \\\n    ; ", 1),
+            "pipe": self.image().replace(line, f"&& {check} | cat \\\n    && ", 1),
+            "later or": self.image().replace(installer, "&& bash /tmp/ubuntu.sh || true \\\n", 1),
+        }
+        for name, text in planted.items():
+            with self.subTest(name):
+                self.assertNotEqual(text, self.image())
+                self.assertIn(
+                    "join the APT::Snapshot timestamp check and every later clause with &&",
+                    ubuntu_apt_snapshot_problems(text),
+                )
+        self.assertEqual(ubuntu_apt_snapshot_problems(self.image()), [])
+
+    def test_timestamp_check_rejects_missing_and_malformed_values(self) -> None:
+        """Run the image's check on what its printf writes for each build-config value."""
+        grep = shutil.which("grep")
+        if grep is None:
+            self.skipTest("grep not on PATH; the check runs inside the Ubuntu image")
+        template = APT_SNAPSHOT_WRITE[1].replace("\\n", "\n")
+        with tempfile.TemporaryDirectory() as scratch:
+            written = Path(scratch) / "50ubuntu-snapshot"
+            for value, expected in (
+                ("20261101T000000Z", 0),
+                ("", 1),
+                ("20261101", 1),
+                ("latest", 1),
+                ("20261101T000000Z0", 1),
+                ("2026-11-01T00:00:00Z", 1),
+            ):
+                with self.subTest(value=value):
+                    written.write_text(template % value, encoding="utf-8", newline="\n")
+                    result = run_command(
+                        [grep, *APT_SNAPSHOT_CHECK[1:-1], str(written)],
+                        allowed_executables=(grep,),
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        timeout_seconds=SCRIPT_TIMEOUT_S,
+                    )
+                    self.assertEqual(result.returncode, expected, result.stderr)
+
+    def test_installer_cannot_run_before_pin(self) -> None:
+        planted = self.image().replace("RUN apt-get", "RUN bash /tmp/ubuntu.sh && apt-get", 1)
+        self.assertIn(
+            "configure the snapshot before calling package installer scripts",
+            ubuntu_apt_snapshot_problems(planted),
+        )
+
+    def test_renovate_extracts_only_the_shared_timestamp(self) -> None:
+        config = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
+        managers = [
+            manager
+            for manager in config["customManagers"]
+            if manager.get("depNameTemplate") == "ubuntu-apt-snapshot"
+        ]
+        self.assertEqual(len(managers), 1)
+        manager = managers[0]
+        pattern = re.compile(to_python(manager["matchStrings"][0]))
+        text = (ROOT / "build-config.env").read_text(encoding="utf-8")
+        matches = list(pattern.finditer(text))
+        self.assertEqual(len(matches), 1)
+        self.assertIn(f'UBUNTU_APT_SNAPSHOT="{matches[0]["currentValue"]}"', text)
+        for invalid in ("20261101", "2026-11-01T000000Z", "latest", ""):
+            with self.subTest(invalid=invalid):
+                self.assertIsNone(pattern.search(f'UBUNTU_APT_SNAPSHOT="{invalid}"'))
+        file_pattern = re.compile(manager["managerFilePatterns"][0][1:-1])
+        self.assertIsNotNone(file_pattern.fullmatch("build-config.env"))
+        self.assertIsNone(file_pattern.fullmatch("nested/build-config.env"))
+        version = re.compile(to_python(manager["versioningTemplate"].removeprefix("regex:")))
+        older = version.fullmatch("20261101T000000Z")
+        newer = version.fullmatch("20261105T000000Z")
+        self.assertIsNotNone(older)
+        self.assertIsNotNone(newer)
+        if older is not None and newer is not None:
+            self.assertLess(int(older["major"]), int(newer["major"]))
+        rules = [
+            rule
+            for rule in config["packageRules"]
+            if "custom.ubuntu-apt-snapshot" in rule.get("matchDatasources", [])
+        ]
+        self.assertEqual(len(rules), 1)
+        self.assertEqual(rules[0]["schedule"], ["* 0-5 * * 1"])
+        self.assertFalse(rules[0]["automerge"])
+        self.assertIn("ubuntu-apt-snapshot", config["customDatasources"])
 
 
 class AptUpdateFailClosedContract(DisposableRepoTestCase):

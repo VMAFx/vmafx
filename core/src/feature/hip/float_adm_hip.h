@@ -22,8 +22,9 @@
  * Mirrors `float_adm_score_ptx` in
  * `core/src/feature/cuda/float_adm_cuda.h`.
  */
-extern const unsigned char float_adm_score_hsaco[];
-extern const unsigned int float_adm_score_hsaco_len;
+/* Match xxd -i object types exactly; keep read-only access at use sites. */
+extern unsigned char float_adm_score_hsaco[];
+extern unsigned int float_adm_score_hsaco_len;
 #endif /* HAVE_HIPCC */
 
 #endif /* FEATURE_FLOAT_ADM_HIP_H_ */
