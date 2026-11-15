@@ -435,7 +435,11 @@ also installs `shellcheck` via apt and `shfmt` from its pinned release
 `UbuntuDevImageLockContract` in `scripts/ci/test_fail_closed_ci.py` verifies
 that all three Dockerfiles declare `ARG VMAFX_REPO_ROOT`, stage every lock file
 referenced by `scripts/setup/ubuntu.sh` under `<root>/requirements/locks/`, and
-expose `/opt/vmafx-tools/bin` on `PATH`. In CI, the `ubuntu_dev_images`
+expose `/opt/vmafx-tools/bin` on `PATH`. It reads lock references written
+as `$REPO_ROOT`, `${REPO_ROOT}`, `"$REPO_ROOT"` or `"${REPO_ROOT}"` before
+`/requirements/locks/<name>.txt` and fails on any other `requirements/locks/`
+reference in `ubuntu.sh`, so a lock cannot drop out of the check unseen.
+In CI, the `ubuntu_dev_images`
 own-input selector in `.github/ci-impact.json` triggers `ubuntu-dev-images`
 (`cpu`, `cuda`, `sycl`) in `.github/workflows/dev-container-build.yml` whenever
 the Dockerfiles, `scripts/setup/ubuntu.sh`, the staged lock files, or shared

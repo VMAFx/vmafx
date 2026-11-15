@@ -2680,12 +2680,29 @@ class InstallStepContract(unittest.TestCase):
 
 
 UBUNTU_SETUP_SCRIPT = ROOT / "scripts/setup/ubuntu.sh"
-UBUNTU_LOCK_REF = re.compile(r"\$REPO_ROOT/requirements/locks/([A-Za-z0-9_.-]+\.txt)")
+# PR 3458 review (braced and quoted REPO_ROOT).
+UBUNTU_LOCK_REF = re.compile(
+    r"(?:\A|(?<=[\s(=;&|`]))"
+    r'(?:"\$(?:REPO_ROOT|\{REPO_ROOT\})"?|\$(?:REPO_ROOT|\{REPO_ROOT\}))'
+    r"/requirements/locks/([A-Za-z0-9_.-]+\.txt)"
+    r'(?=\Z|[\s)";&|#`,]|\.(?=\Z|\s))'
+)
 
 
 def ubuntu_setup_lock_names(text: str) -> tuple[str, ...]:
-    """Return sorted lock filenames read via $REPO_ROOT/requirements/locks/ in ubuntu.sh."""
-    return tuple(sorted(set(UBUNTU_LOCK_REF.findall(text))))
+    """Return sorted lock filenames read via REPO_ROOT/requirements/locks/ in ubuntu.sh.
+
+    Accepts `$REPO_ROOT`, `${REPO_ROOT}`, `"$REPO_ROOT"`, and `"${REPO_ROOT}"`
+    before `/requirements/locks/<name>.txt`; raises `ValueError` on any
+    unparsed `requirements/locks/` reference.
+    """
+    matches = UBUNTU_LOCK_REF.findall(text)
+    if len(matches) < text.count("requirements/locks/"):
+        for line in text.splitlines():
+            if len(UBUNTU_LOCK_REF.findall(line)) < line.count("requirements/locks/"):
+                raise ValueError(f"ubuntu.sh: unparsed lock reference: {line.strip()}")
+        raise ValueError("ubuntu.sh: unparsed lock reference")
+    return tuple(sorted(set(matches)))
 
 
 def _copy_instruction_locks(cmd: list[str], target_dir: str) -> set[str]:
@@ -2902,6 +2919,49 @@ class UbuntuDevImageLockContract(unittest.TestCase):
             "invoke ubuntu.sh after FROM",
             "\n".join(ubuntu_dev_image_lock_problems(no_invoke, locks)),
         )
+
+    def test_braced_and_quoted_repo_root_lock_refs_are_read(self) -> None:
+        script = UBUNTU_SETUP_SCRIPT.read_text(encoding="utf-8")
+        image = UBUNTU_DEV_DOCKERFILES[0].read_text(encoding="utf-8")
+        for spelling, line in (
+            ("${REPO_ROOT}", "required_locks+=(${REPO_ROOT}/requirements/locks/extra.txt)"),
+            ('"$REPO_ROOT"', 'required_locks+=("$REPO_ROOT"/requirements/locks/extra.txt)'),
+            ('"${REPO_ROOT}"', 'required_locks+=("${REPO_ROOT}"/requirements/locks/extra.txt)'),
+            (
+                '"${REPO_ROOT}/..."',
+                'required_locks+=("${REPO_ROOT}/requirements/locks/extra.txt")',
+            ),
+        ):
+            with self.subTest(spelling=spelling):
+                locks = ubuntu_setup_lock_names(f"{script}\n{line}\n")
+                self.assertEqual(locks, ("build.txt", "dev-linters.txt", "extra.txt"))
+                problems = ubuntu_dev_image_lock_problems(image, locks)
+                self.assertIn("extra.txt", "\n".join(problems))
+
+    def test_unparsed_lock_ref_fails_closed(self) -> None:
+        script = UBUNTU_SETUP_SCRIPT.read_text(encoding="utf-8")
+        for line in (
+            'required_locks+=("$ROOT/requirements/locks/extra.txt")',
+            '-r "$(dirname "$0")/../../requirements/locks/extra.txt"',
+            'required_locks+=("$OTHER/$REPO_ROOT/requirements/locks/extra.txt")',
+            "required_locks+=('$REPO_ROOT/requirements/locks/extra.txt')",
+            'required_locks+=("$REPO_ROOT/requirements/locks/build.txt" '
+            '"$ROOT/requirements/locks/extra.txt")',
+        ):
+            with self.subTest(line=line):
+                with self.assertRaises(ValueError) as ctx:
+                    ubuntu_setup_lock_names(f"{script}\n{line}\n")
+                self.assertIn("extra.txt", str(ctx.exception))
+
+    def test_plain_repo_root_lock_ref_still_read(self) -> None:
+        script = UBUNTU_SETUP_SCRIPT.read_text(encoding="utf-8")
+        for line in (
+            '-r "$REPO_ROOT/requirements/locks/extra.txt"',
+            "-r $REPO_ROOT/requirements/locks/extra.txt",
+        ):
+            with self.subTest(line=line):
+                locks = ubuntu_setup_lock_names(f"{script}\n{line}\n")
+                self.assertEqual(locks, ("build.txt", "dev-linters.txt", "extra.txt"))
 
     def test_boundary_wrong_copy_depth_or_mismatched_arg_root_is_refused(self) -> None:
         locks = self.locks()
