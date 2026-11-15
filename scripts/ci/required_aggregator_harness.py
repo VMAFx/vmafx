@@ -8,16 +8,19 @@ result or absence. Its keyword inputs:
 
 ``event`` is the triggering event the script sees (``pull_request`` or ``push``;
 a push is to ``master``) and ``action`` its ``pull_request`` action (``edited``
-arms the ready-for-review window anchor). Every other required check succeeds in
-check suite 1; the selected one reports from ``selected_suite``. ``workflow_runs``
-are the workflow runs on the commit (``event``, ``head_branch`` and
-``check_suite_id`` each), as the Actions API lists them. ``head_ref`` is the pull
-request's head branch (a ``release-please--`` ref arms the release must-report
-list). ``absent_checks`` omits the named required contexts from the baseline
-synthetic checks. ``extra_checks`` are further check runs on the commit (``name``,
-``conclusion``, ``check_suite``, and optionally ``status``). ``later_checks``,
-when given, replace every check run from the second listing on, as the Actions
-API shows a commit later.
+arms the ready-for-review window anchor and stale edited-rerun suite exclusion).
+Every synthetic required check defaults to check suite 1, overridden per check by
+``suite_by_check`` and on the selected check by ``selected_suite``. ``workflow_runs``
+are the workflow runs on the commit (``path``, ``event``, ``head_branch``,
+``check_suite_id``, and ``created_at`` or ``created_at_offset_s``); when omitted on
+an ``edited`` pull request, each workflow in ``editedRerunWorkflows`` gets a current
+synthetic run in suite 1 so non-suite tests keep their baseline.
+``later_workflow_runs`` replace ``workflow_runs`` from the second workflow-run
+listing on. ``head_ref`` is the pull request's head branch (a ``release-please--``
+ref arms the release must-report list). ``absent_checks`` omits named required
+contexts from the baseline synthetic checks. ``extra_checks`` are further check runs
+on the commit, and ``later_checks`` replace ``checks`` from the second check listing
+on.
 
 Timestamps: ``run_created_at`` is the aggregator run's own ``created_at`` and the
 zero point of every ``*_offset_s`` value. ``pr_created_at`` or
@@ -57,7 +60,11 @@ const parsedRunCreated =
   typeof input.runCreatedAt === 'string' ? Date.parse(input.runCreatedAt) : Number.NaN;
 const now = Number.isFinite(parsedRunCreated) ? parsedRunCreated : defaultNow;
 let clock = now;
-class VirtualDate extends Date { static now() { clock += 180000; return clock; } }
+let runListings = 0;
+const hasLaterRuns = Array.isArray(input.laterWorkflowRuns) && input.laterWorkflowRuns.length > 0;
+class VirtualDate extends Date {
+  static now() { clock += hasLaterRuns && runListings < 2 ? 15000 : 180000; return clock; }
+}
 const runCreatedAt =
   input.runCreatedAt != null ? input.runCreatedAt : new Date(now).toISOString();
 const offsetIso = offsetSec => new Date(now + offsetSec * 1000).toISOString();
@@ -81,16 +88,19 @@ const withDefaults = c => {
     ...copy,
   };
 };
-const withTimelineDefaults = ev => {
-  const copy = {...ev};
+const withCreatedOffset = item => {
+  const copy = {...item};
   const createdOffset = copy.created_at_offset_s;
   delete copy.created_at_offset_s;
   if (createdOffset !== undefined) copy.created_at = offsetIso(createdOffset);
   return copy;
 };
+const paginate = (items, page, perPage) => items.slice((page - 1) * perPage, page * perPage);
 const checks = input.checks.map(withDefaults);
 const laterChecks = (input.laterChecks || []).map(withDefaults);
-const timelineEvents = (input.timelineEvents || []).map(withTimelineDefaults);
+const timelineEvents = (input.timelineEvents || []).map(withCreatedOffset);
+const workflowRuns = (input.workflowRuns || []).map(withCreatedOffset);
+const laterWorkflowRuns = (input.laterWorkflowRuns || []).map(withCreatedOffset);
 let listings = 0;
 const failures = [];
 const infos = [];
@@ -109,20 +119,23 @@ const github = {rest: {
       checkApiError('getWorkflowRun');
       return {data: {created_at: runCreatedAt}};
     },
-    listWorkflowRunsForRepo: async () => {
+    listWorkflowRunsForRepo: async ({page = 1, per_page: perPage = 30} = {}) => {
       checkApiError('listWorkflowRunsForRepo');
-      return {data: {workflow_runs: input.workflowRuns || []}};
+      if (page === 1) runListings += 1;
+      const allRuns =
+        runListings > 1 && laterWorkflowRuns.length ? laterWorkflowRuns : workflowRuns;
+      return {data: {workflow_runs: paginate(allRuns, page, perPage)}};
     },
   },
   checks: {listForRef: async ({page = 1, per_page: perPage = 30} = {}) => {
     checkApiError('listForRef');
     if (page === 1) listings += 1;
     const all = listings > 1 && laterChecks.length ? laterChecks : checks;
-    return {data: {check_runs: all.slice((page - 1) * perPage, page * perPage)}};
+    return {data: {check_runs: paginate(all, page, perPage)}};
   }},
   issues: {listEventsForTimeline: async ({page = 1, per_page: perPage = 30} = {}) => {
     checkApiError('listEventsForTimeline');
-    return {data: timelineEvents.slice((page - 1) * perPage, page * perPage)};
+    return {data: paginate(timelineEvents, page, perPage)};
   }},
 }};
 const eventName = input.event || 'pull_request';
@@ -173,15 +186,47 @@ def _embedded_script(workflow_text: str) -> str:
     return textwrap.dedent(workflow_text.split(marker, 1)[1])
 
 
-def _required_names(script: str) -> list[str]:
-    required_block = re.search(r"const required = \[(.*?)\];", script, re.DOTALL)
-    if required_block is None:
-        raise AssertionError("required aggregator must declare its check list")
+def _javascript_string_list(script: str, array_name: str, description: str) -> list[str]:
+    block = re.search(rf"const {re.escape(array_name)} = \[(.*?)\];", script, re.DOTALL)
+    if block is None:
+        raise AssertionError(f"required aggregator must declare {description}")
     # Whole-line comments go first, as in scripts/ci/check-aggregator-names.sh: an
     # apostrophe in one ("praetor's") otherwise pairs with the next name's quote and
     # every name after it is lost (ADR-1687).
-    body = re.sub(r"(?m)^\s*//.*$", "", required_block.group(1))
+    body = re.sub(r"(?m)^\s*//.*$", "", block.group(1))
     return re.findall(r"'([^']+)'", body)
+
+
+def _required_names(script: str) -> list[str]:
+    return _javascript_string_list(script, "required", "its check list")
+
+
+def _edited_rerun_workflows(script: str) -> list[str]:
+    """Return workflow paths declared in editedRerunWorkflows by the aggregator script."""
+    return _javascript_string_list(script, "editedRerunWorkflows", "editedRerunWorkflows")
+
+
+def _resolve_workflow_runs(
+    script: str,
+    event: str,
+    action: str | None,
+    workflow_runs: Sequence[Mapping[str, object]] | None,
+) -> list[dict[str, object]]:
+    if workflow_runs is not None:
+        return [dict(run) for run in workflow_runs]
+    if event != "pull_request" or action != "edited":
+        return []
+    if "const editedRerunWorkflows = [" not in script:
+        return []
+    return [
+        {
+            "path": workflow_path,
+            "event": "pull_request",
+            "check_suite_id": 1,
+            "created_at_offset_s": 0,
+        }
+        for workflow_path in _edited_rerun_workflows(script)
+    ]
 
 
 def _expected_apps(script: str) -> dict[str, str]:
@@ -210,29 +255,45 @@ def _apply_check_offsets(
         item["created_at_offset_s"] = created_offsets_s[name]
 
 
+def _suite_for_check(
+    name: str,
+    check_name: str,
+    selected_suite: int | None,
+    suite_by_check: Mapping[str, int] | None,
+) -> int:
+    if name == check_name and selected_suite is not None:
+        return selected_suite
+    if suite_by_check is not None and name in suite_by_check:
+        return suite_by_check[name]
+    return 1
+
+
 def _synthetic_checks(
     names: list[str],
-    check_name: str,
-    conclusion: str | None,
-    selected_suite: int,
+    target: tuple[str, str | None, int | None, Mapping[str, int] | None],
     absent_checks: Collection[str] = (),
     *,
-    default_started_offset_s: float | None = None,
-    started_offsets_s: Mapping[str, float] | None = None,
-    created_offsets_s: Mapping[str, float] | None = None,
+    offsets: tuple[float | None, Mapping[str, float] | None, Mapping[str, float] | None] = (
+        None,
+        None,
+        None,
+    ),
 ) -> list[dict[str, object]]:
-    """Every required check succeeds in suite 1; the selected one reports as asked."""
+    """Every required check succeeds in its assigned suite; the selected one reports as asked."""
+    check_name, conclusion, selected_suite, suite_by_check = target
+    default_started_offset_s, started_offsets_s, created_offsets_s = offsets
     omitted = set(absent_checks)
-    started_map = started_offsets_s or {}
-    created_map = created_offsets_s or {}
+    started_map = started_offsets_s if started_offsets_s is not None else {}
+    created_map = created_offsets_s if created_offsets_s is not None else {}
     records: list[dict[str, object]] = []
     for name in names:
         if name in omitted or (name == check_name and conclusion is None):
             continue
+        suite_id = _suite_for_check(name, check_name, selected_suite, suite_by_check)
         item: dict[str, object] = {
             "name": name,
             "conclusion": conclusion if name == check_name else "success",
-            "check_suite": {"id": selected_suite if name == check_name else 1},
+            "check_suite": {"id": suite_id},
         }
         _apply_check_offsets(item, name, default_started_offset_s, started_map, created_map)
         records.append(item)
@@ -252,27 +313,14 @@ def _validate_declared_names(
 
 def _prepare_checks(
     script: str,
-    check_name: str,
-    conclusion: str | None,
-    selected_suite: int,
+    target: tuple[str, str | None, int | None, Mapping[str, int] | None],
     absent_checks: Collection[str],
     extra_checks: Sequence[Mapping[str, object]],
-    default_started_offset_s: float | None,
-    started_offsets_s: Mapping[str, float] | None,
-    created_offsets_s: Mapping[str, float] | None,
+    offsets: tuple[float | None, Mapping[str, float] | None, Mapping[str, float] | None],
 ) -> list[dict[str, object]]:
     names = _required_names(script)
-    _validate_declared_names(names, check_name, absent_checks)
-    checks = _synthetic_checks(
-        names,
-        check_name,
-        conclusion,
-        selected_suite,
-        absent_checks,
-        default_started_offset_s=default_started_offset_s,
-        started_offsets_s=started_offsets_s,
-        created_offsets_s=created_offsets_s,
-    )
+    _validate_declared_names(names, target[0], absent_checks)
+    checks = _synthetic_checks(names, target, absent_checks, offsets=offsets)
     checks.extend(dict(check) for check in extra_checks)
     return checks
 
@@ -331,8 +379,10 @@ def run_required_aggregator(
     default_started_offset_s: float | None = None,
     started_offsets_s: Mapping[str, float] | None = None,
     created_offsets_s: Mapping[str, float] | None = None,
-    selected_suite: int = 1,
-    workflow_runs: Sequence[Mapping[str, object]] = (),
+    selected_suite: int | None = None,
+    suite_by_check: Mapping[str, int] | None = None,
+    workflow_runs: Sequence[Mapping[str, object]] | None = None,
+    later_workflow_runs: Sequence[Mapping[str, object]] = (),
     head_ref: str = "fix/example",
     absent_checks: Collection[str] = (),
     extra_checks: Sequence[Mapping[str, object]] = (),
@@ -343,17 +393,10 @@ def run_required_aggregator(
 ) -> list[str]:
     """Run the real Actions JavaScript; the module docstring lists the inputs."""
     script = _embedded_script(AGGREGATOR_PATH.read_text(encoding="utf-8"))
-    checks = _prepare_checks(
-        script,
-        check_name,
-        conclusion,
-        selected_suite,
-        absent_checks,
-        extra_checks,
-        default_started_offset_s,
-        started_offsets_s,
-        created_offsets_s,
-    )
+    target = (check_name, conclusion, selected_suite, suite_by_check)
+    offsets = (default_started_offset_s, started_offsets_s, created_offsets_s)
+    checks = _prepare_checks(script, target, absent_checks, extra_checks, offsets)
+    runs = _resolve_workflow_runs(script, event, action, workflow_runs)
     driver_input: dict[str, object] = {
         "script": script,
         "checks": checks,
@@ -366,7 +409,8 @@ def run_required_aggregator(
         "prCreatedOffsetS": pr_created_offset_s,
         "runCreatedAt": run_created_at,
         "timelineEvents": [dict(item) for item in timeline_events],
-        "workflowRuns": [dict(run) for run in workflow_runs],
+        "workflowRuns": runs,
+        "laterWorkflowRuns": [dict(run) for run in later_workflow_runs],
         "headRef": head_ref,
         "laterChecks": [dict(check) for check in later_checks],
         "apiErrors": {name: list(codes) for name, codes in (api_errors or {}).items()},

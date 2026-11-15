@@ -512,10 +512,15 @@ draft-era checks cannot mask ready validation
 `rule-enforcement.yml` gates and leaves earlier build and test runs untouched,
 the anchor is the latest `ready_for_review` timeline event (or
 `pull_request.created_at` when never a draft); on every other event, the anchor
-is the aggregator run's own `created_at`.
+is the aggregator run's own `created_at`. On `edited` events, workflows listed
+in `editedRerunWorkflows` (`.github/workflows/rule-enforcement.yml`) must also
+report from a current-edit run (`created_at` at or after the aggregator run's
+`created_at` minus 60 seconds): older `Rules` check suites on the same head SHA
+are excluded, and the aggregator fails closed past the 2-minute registration
+grace when the `Rules` workflow does not start for the edit.
 `scripts/ci/tests/test_aggregator_edited_window.py` runs the embedded script
-across the edited-event window, boundary, draft-era exclusion and fail-closed
-timeline paths.
+across the edited-event window, stale-suite exclusion, boundary, draft-era
+exclusion and fail-closed API paths.
 
 On a master push the aggregator reads only the push's own check runs: a check
 run whose check suite belongs to a pull-request workflow run on the same commit
