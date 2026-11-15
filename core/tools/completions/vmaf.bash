@@ -46,7 +46,7 @@ _vmaf() {
   local cur prev
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD - 1]}"
-  if [[ -n "${_vmaf_values[${prev}]+set}" ]]; then
+  if [[ -n "${prev}" && -n "${_vmaf_values[${prev}]+set}" ]]; then
     _vmaf_compgen -W "${_vmaf_values[${prev}]}" -- "${cur}"
     return 0
   fi

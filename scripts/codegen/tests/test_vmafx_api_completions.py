@@ -12,7 +12,6 @@ escapes survive the documentations' own quotes and roff control characters.
 from __future__ import annotations
 
 import shutil
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,6 +20,8 @@ from support import fixture, parse
 from vmafx_api import emit_completions as completions
 from vmafx_api.emit_cli import cli_options
 from vmafx_api.model import CliSpelling, Option
+
+from scripts.lib.safe_subprocess import run as run_command
 
 BASH = "core/tools/completions/vmaf.bash"
 ZSH = "core/tools/completions/vmaf.zsh"
@@ -177,9 +178,14 @@ class ValueDomainTests(unittest.TestCase):
 
     def test_the_value_table_is_declared_global(self) -> None:
         # bash-completion sources the file inside a function, so a plain
-        # `declare -A` would be local and gone before `_vmaf` runs.
+        # `declare -A` would be local and gone before `_vmaf` runs; the
+        # non-empty guard keeps an empty previous word from expanding an
+        # empty subscript (`bad array subscript` on the user's prompt).
         self.assertIn("declare -gA _vmaf_values=(", self.outputs[BASH])
-        self.assertIn('"${_vmaf_values[${prev}]+set}"', self.outputs[BASH])
+        self.assertIn(
+            'if [[ -n "${prev}" && -n "${_vmaf_values[${prev}]+set}" ]]; then',
+            self.outputs[BASH],
+        )
 
     def test_man_names_the_short_after_the_long_flags(self) -> None:
         # The reference option carries the short `-r`; the names line reads
@@ -232,21 +238,48 @@ class HookCleanlinessTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "vmaf.bash"
             path.write_text(self.outputs[BASH], encoding="utf-8", newline="\n")
-            argv = ["shfmt", "-i", "2", "-ci", "-d", str(path)]
-            proc = subprocess.run(  # noqa: S603 -- resolved tool, argv from the test
-                argv, capture_output=True, text=True
+            result = run_command(
+                ["shfmt", "-i", "2", "-ci", "-d", str(path)],
+                allowed_executables=["shfmt"],
+                capture_output=True,
+                text=True,
             )
-        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertEqual(result.returncode, 0, result.stdout)
 
     @unittest.skipUnless(shutil.which("zsh"), "zsh is not installed")
     def test_zsh_parses(self) -> None:
         # ShellCheck has no zsh mode and the pre-commit hook excludes the file,
         # so `zsh -n` is the generated script's only syntax guard.
-        argv = ["zsh", "-n"]
-        proc = subprocess.run(  # noqa: S603 -- resolved tool, argv from the test
-            argv, input=self.outputs[ZSH], capture_output=True, text=True
+        result = run_command(
+            ["zsh", "-n"],
+            allowed_executables=["zsh"],
+            input_data=self.outputs[ZSH],
+            capture_output=True,
+            text=True,
         )
-        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(shutil.which("bash"), "bash is not installed")
+    def test_empty_previous_word_prints_nothing(self) -> None:
+        # `vmaf "" <Tab>` makes the domain lookup expand an empty subscript and
+        # bash prints `bad array subscript` to the user's prompt in the middle
+        # of the completion. The guard keeps the subscript unevaluated, so the
+        # completion falls through to file names silently.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "vmaf.bash"
+            path.write_text(self.outputs[BASH], encoding="utf-8", newline="\n")
+            script = (
+                f"source '{path.as_posix()}'; "
+                "COMP_WORDS=(vmaf '' ''); COMP_CWORD=2; _vmaf >/dev/null"
+            )
+            result = run_command(
+                ["bash", "-c", script],
+                allowed_executables=["bash"],
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
 
 
 class EscapeTests(unittest.TestCase):
