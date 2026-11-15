@@ -3,6 +3,7 @@ paths:
   - core/src/feature/integer_vif.c
   - core/src/feature/vif_tools.c
 invariant: Integer VIF scalar reference tails, log2 table generation, score append order, and NULL preservation.
+area: vif-motion-psnr
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Integer VIF Scalar Reference and Log2 Tables

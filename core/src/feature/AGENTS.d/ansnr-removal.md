@@ -3,6 +3,7 @@ paths:
   - core/src/feature/feature_extractor.cpp
   - core/src/feature/feature_collector.cpp
 invariant: ANSNR and float_ansnr extractors remain removed per ADR-0865.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # ANSNR and float_ansnr Feature Extractor Removal

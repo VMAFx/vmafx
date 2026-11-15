@@ -4,6 +4,7 @@ paths:
   - core/meson.build
   - core/src/meson.build
 invariant: SYCL feature TUs compile only when meson setup -Denable_sycl=true.
+area: build-and-parity
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Build

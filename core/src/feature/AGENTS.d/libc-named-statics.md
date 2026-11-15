@@ -19,6 +19,7 @@ paths:
   - core/src/feature/ssimulacra2.c
   - core/test/test_libc_named_internal_functions.py
 invariant: no static C function named after C library function; extractor close callback is close_fex.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Extractor callbacks never take a C library name

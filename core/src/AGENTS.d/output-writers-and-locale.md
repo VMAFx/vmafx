@@ -7,6 +7,7 @@ paths:
   - core/src/dict.cpp
   - core/src/feature/feature_name.cpp
 invariant: Score capacity checks use >=; JSON writers guard delimiters; locale pushes flush before pop.
+area: engine
 ---
 <!-- markdownlint-disable MD013 -->
 # Output writers, score bounds, and thread locale pushes

@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/integer_*.cpp
   - core/src/feature/cuda/integer_*.c
 invariant: Adding feature knob to any one backend must sync option tables across backends.
+area: runtime-and-kernels
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Per-feature option-table sync invariant

@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/sycl_exact_fp.h
   - core/src/meson.build
 invariant: Every TU is strict-clean; SYCL strict FP line load-bearing, one line for every TU.
+area: build-and-parity
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Strict floating-point flags

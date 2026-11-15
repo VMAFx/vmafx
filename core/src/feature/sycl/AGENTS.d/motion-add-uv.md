@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/integer_motion_sycl.cpp
   - core/test/test_sycl_motion_add_uv_parity.c
 invariant: integer_motion_sycl.cpp::motion_add_uv GPU contract; queue-sync invariant, no host wait in submit.
+area: motion-psnr-and-moment
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Motion add UV chroma extension

@@ -4,6 +4,7 @@ paths:
   - core/src/feature/cuda/integer_cambi_cuda.c
   - core/src/feature/hip/integer_cambi_hip.c
 invariant: CAMBI GPU twins mirror host-side semantics and hybrid host/GPU dispatch contracts.
+area: ssim-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # CAMBI GPU Twins and Hybrid Host Dispatch Contracts

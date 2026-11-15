@@ -3,6 +3,7 @@ paths:
   - core/src/feature/arm64/moment_sve2.c
   - core/src/feature/arm64/ssimulacra2_sve2.c
 invariant: SVE2 SIMD ports portability, build gating, and fallback guarantees.
+area: simd-and-gpu
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # SVE2 SIMD Ports Portability Invariant

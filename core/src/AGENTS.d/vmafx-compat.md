@@ -15,6 +15,7 @@ paths:
   - core/test/test_compat_*
   - core/test/compat_conformance*
 invariant: libvmaf.so.3 links exported VMAFx symbols only; engine TUs need engine_names_gen.h; GPU exceptions declared.
+area: vmafx
 ---
 <!-- markdownlint-disable MD013 -->
 # libvmaf compat library on libvmafx (ADR-1852 D3, ADR-2094)

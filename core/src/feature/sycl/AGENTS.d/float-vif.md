@@ -4,6 +4,7 @@ paths:
   - core/src/feature/sycl/sycl_float_vif_math.h
   - core/test/test_sycl_float_vif_parity.c
 invariant: float_vif_sycl.cpp = CPU arithmetic, bit for bit; options must be captured, not hardcoded.
+area: adm-and-vif
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Float VIF extractor and kernels

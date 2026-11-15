@@ -3,6 +3,7 @@ paths:
   - core/src/framesync.c
   - core/src/framesync.h
 invariant: Framesync buffer error paths invoke vmaf_framesync_abort to prevent consumer cond_wait hang.
+area: engine
 ---
 <!-- markdownlint-disable MD013 -->
 # Framesync producer error paths and abort signaling

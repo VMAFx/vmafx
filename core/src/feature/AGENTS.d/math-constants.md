@@ -17,6 +17,7 @@ paths:
   - core/src/feature/sycl/float_adm_sycl.cpp
   - core/src/feature/sycl/integer_adm_sycl.cpp
 invariant: No TU defines M_PI / M_E; <math.h> provides them, Windows via meson's -D_USE_MATH_DEFINES.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Math constants come from `<math.h>` (Netflix/vmaf 4e150067b)

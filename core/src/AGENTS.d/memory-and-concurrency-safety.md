@@ -4,6 +4,7 @@ paths:
   - core/src/pdjson.h
   - core/src/framesync.c
 invariant: pdjson enforces 512 container limit; pthread init, malloc, and size bounds checked without leak.
+area: engine
 ---
 <!-- markdownlint-disable MD013 -->
 # Memory safety, pdjson bounds, and concurrency invariants

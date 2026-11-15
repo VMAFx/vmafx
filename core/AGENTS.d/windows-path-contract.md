@@ -3,6 +3,7 @@ paths:
   - core/meson.build
   - core/src/meson.build
 invariant: Windows internal paths enforce UTF-8 normalization and runtime shims.
+area: build-and-toolchains
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Windows UTF-8 path contract and path shims

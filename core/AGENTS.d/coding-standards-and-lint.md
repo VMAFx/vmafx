@@ -3,6 +3,7 @@ paths:
   - docs/principles.md
   - .clang-tidy
 invariant: Public entry points carry VMAF_EXPORT; C++23 adheres to safety invariants; NOLINT cites ADR within one line.
+area: build-and-toolchains
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Coding standards, symbol visibility, C++23 safety, and NOLINT citations

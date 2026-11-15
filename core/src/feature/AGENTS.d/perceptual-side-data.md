@@ -5,6 +5,7 @@ paths:
   - core/src/feature/pelorus_udu_wrap.h
   - core/src/feature/perceptual_weight.c
 invariant: Perceptual side-data weighting golden-isolation invariant and normalization contracts.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Perceptual Side-Data Weighting Golden-Isolation

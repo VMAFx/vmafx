@@ -8,6 +8,7 @@ paths:
   - core/test/test_motion_window_advance_contract.py
   - core/test/test_score_pooled_eagain.c
 invariant: motion2/motion3 of frame i final once SADs 0..max(i+1,min_idx) in; same statements as flush; state carried.
+area: vif-motion-psnr
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # motion2 / motion3 frame by frame (ADR-2090)

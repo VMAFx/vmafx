@@ -3,6 +3,7 @@ paths:
   - core/src/feature/ciede.c
   - core/test/test_ciede.c
 invariant: CIEDE chroma-upsample subsample flags diverge from upstream to ensure correctness.
+area: ssim-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # CIEDE Chroma-Upsample Subsample Flags Invariant

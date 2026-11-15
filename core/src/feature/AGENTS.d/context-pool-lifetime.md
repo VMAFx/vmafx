@@ -3,6 +3,7 @@ paths:
   - core/src/feature/feature_extractor.h
   - core/src/feature/feature_collector.cpp
 invariant: VmafFeatureExtractorContextPool fex_list growable pointer table lifecycle rules.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Feature-Context Pool Entry Lifetime Invariant

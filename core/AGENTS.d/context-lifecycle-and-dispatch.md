@@ -3,6 +3,7 @@ paths:
   - core/src/libvmaf.c
   - core/include/libvmaf/libvmaf.h
 invariant: vmaf_init never reads output handle; subsystems init owns framesync lifecycle; output writers test ferror.
+area: engine-and-runtime
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Context lifecycle, initialization, and dispatch callbacks

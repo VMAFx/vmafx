@@ -3,6 +3,7 @@ paths:
   - core/src/feature/third_party/xiph/psnr_hvs.c
   - core/src/feature/psnr_hvs_score.c
 invariant: Masking threshold = upstream float product (ADR-1488); host scoring tail and SIMD DCT stay bit-exact.
+area: vif-motion-psnr
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # PSNR-HVS Host Scoring Tail and SIMD DCT Parity

@@ -5,6 +5,7 @@ paths:
   - core/test/test_win32_pthread_timeout.c
   - core/test/test_win32_pthread_shim_contract.py
 invariant: MSVC threads = header-only Win32 shim, no pthread-win32; timed wait ETIMEDOUT only past deadline.
+area: build-and-platform
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Win32 pthread shim (MSVC, clang-cl, icx-cl)

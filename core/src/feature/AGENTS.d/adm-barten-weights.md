@@ -3,6 +3,7 @@ paths:
   - core/src/feature/adm_csf_fixed_point.h
   - core/src/feature/integer_adm.c
 invariant: One power-of-two exponent per scale; weight limits come from adm_csf_fixed_limit(), never from storage.
+area: adm
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Integer ADM Barten Weights Exponent Contract

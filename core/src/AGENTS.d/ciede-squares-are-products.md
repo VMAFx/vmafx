@@ -5,6 +5,7 @@ paths:
   - core/src/feature/ciede_ff_math.h
   - core/test/test_ciede_upstream_products.c
 invariant: ciede.c squares = products (ADR-1467); its chroma and rotation products = float, no double cast (ADR-1476).
+area: models-and-rust
 ---
 <!-- markdownlint-disable MD013 -->
 # `ciede.c` writes squares as products (ADR-1467)

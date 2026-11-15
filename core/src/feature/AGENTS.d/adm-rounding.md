@@ -7,6 +7,7 @@ paths:
   - core/src/feature/x86/adm_avx2.c
   - core/src/feature/x86/adm_avx512.c
 invariant: Integer ADM i4_adm_cm rounding overflow, row rounding, scale-0 masking, and gain limits.
+area: adm
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Integer ADM Rounding Overflows and Masking Limits

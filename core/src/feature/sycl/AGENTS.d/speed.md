@@ -5,6 +5,7 @@ paths:
   - core/test/test_sycl_speed_*
   - core/src/feature/sycl/sycl_speed_cov_math.h
 invariant: SpEED pipeline arithmetic contract and singular-covariance contract; device-resident twins.
+area: ssim-cambi-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # SpEED pipeline arithmetic and singular covariance

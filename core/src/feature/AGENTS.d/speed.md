@@ -5,6 +5,7 @@ paths:
   - core/src/feature/speed_givens.h
   - core/test/test_speed_upstream_form.c
 invariant: SpEED buffer allocation, chroma dimensions, anti-alias decimation, covariance sums, Netflix's fp64 expressions.
+area: ssim-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # SpEED Buffers, Chroma Geometry, and Decimation

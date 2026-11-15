@@ -3,6 +3,7 @@ paths:
   - core/src/thread_pool.c
   - core/src/thread_pool.h
 invariant: Thread pool enforces bounded admission, job recycling, and inline buffer reuse.
+area: engine-and-runtime
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Thread pool admission, job recycling, and buffer recycling

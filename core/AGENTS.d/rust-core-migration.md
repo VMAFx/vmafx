@@ -5,6 +5,7 @@ paths:
   - core/src/feature/*.c
   - core/src/libvmaf.c
 invariant: New host-side work lands in Rust unless the ADR-2478 phase table says that layer is still C.
+area: engine-and-runtime
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Rust core migration (ADR-2478)

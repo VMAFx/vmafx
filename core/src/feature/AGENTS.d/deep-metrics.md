@@ -3,6 +3,7 @@ paths:
   - core/src/feature/feature_lpips.c
   - core/src/feature/feature_dists.c
 invariant: LPIPS and DISTS tiny-AI metric contracts and high-bit-depth normalization.
+area: ssim-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # LPIPS and DISTS High-Bit-Depth Normalization

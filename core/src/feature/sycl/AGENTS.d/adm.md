@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/integer_adm_sycl.cpp
   - core/test/test_sycl_adm_parity.c
 invariant: Integer ADM tiny frames and linkage; Scale 0 = CPU int16 semantics; scales 1-3 >> 32 rounding term.
+area: adm-and-vif
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Integer ADM tiny frames and linkage (T-GPU-ADM-TINY-FRAME-SHIFT-2026-09-18)

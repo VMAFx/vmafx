@@ -2,6 +2,7 @@
 paths:
   - core/src/feature/feature_extractor.cpp
 invariant: Helper functions split to meet LOC bounds must preserve expressions without truncation.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Split Helpers Expression Integrity and Inlining

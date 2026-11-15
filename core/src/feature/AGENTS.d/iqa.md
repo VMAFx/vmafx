@@ -3,6 +3,7 @@ paths:
   - core/src/feature/iqa/convolve.c
   - core/src/feature/iqa/ssim_tools.c
 invariant: IQA/VIF SIMD helper decomposition and reserved-identifier cleanup invariants.
+area: simd-and-gpu
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # IQA SIMD Helper Decomposition and Renames
@@ -61,3 +62,6 @@ invariant: IQA/VIF SIMD helper decomposition and reserved-identifier cleanup inv
   bridge. On rebase, keep all these brackets verbatim. See
   [ADR-0148](../../../../docs/adr/0148-iqa-rename-and-cleanup.md)
   and [rebase-notes 0041](../../../../docs/rebase-notes.md).
+- **Lockstep SIMD twin updates**: changes to `iqa/convolve.c`, `iqa/ssim_tools.c`,
+  or `iqa/ssim_accumulate_lane.h` ship in lockstep with x86 and ARM64 SIMD twins
+  in same PR; see [twin-update-rules](../arm64/AGENTS.d/twin-update-rules.md).

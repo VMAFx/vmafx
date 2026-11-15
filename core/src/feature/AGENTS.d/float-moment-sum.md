@@ -3,6 +3,7 @@ paths:
   - core/src/feature/float_moment_sum.h
   - core/src/feature/float_moment_sum_gpu.h
 invariant: float_moment twins form CPU's rounded 2nd-moment sum past 2^53 units; integers only, checked walk.
+area: vif-motion-psnr
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # The CPU's second-moment sum past 2^53 units (ADR-1497)
