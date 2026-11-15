@@ -52,19 +52,29 @@ declare -gA _vmaf_values=(
 )
 
 _vmaf() {
-  local cur prev
+  local cur prev prefix candidate
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD - 1]}"
-  if [[ "${cur}" == "=" ]]; then
+  # Only a long option takes the `=` join: getopt_long strips the `=`
+  # from `--opt=value`, but a short option keeps it inside its argument
+  # (`-p=nv12` is the value `=nv12`), so a short spelling must not
+  # complete as if it were a domain. When the current word still holds
+  # the `=`, the prefix keeps `--opt=` in front of each candidate.
+  prefix=""
+  if [[ "${cur}" == "=" && "${prev}" == --* ]]; then
     cur=""
   elif [[ "${prev}" == "=" ]] && ((COMP_CWORD >= 2)); then
-    prev="${COMP_WORDS[COMP_CWORD - 2]}"
-  elif [[ "${cur}" == *=* ]]; then
+    candidate="${COMP_WORDS[COMP_CWORD - 2]}"
+    if [[ "${candidate}" == --* ]]; then
+      prev="${candidate}"
+    fi
+  elif [[ "${cur}" == --*=* ]]; then
     prev="${cur%%=*}"
     cur="${cur#*=}"
+    prefix="${prev}="
   fi
   if [[ -n "${prev}" && -n "${_vmaf_values[${prev}]+set}" ]]; then
-    _vmaf_compgen -W "${_vmaf_values[${prev}]}" -- "${cur}"
+    _vmaf_compgen -P "${prefix}" -W "${_vmaf_values[${prev}]}" -- "${cur}"
     return 0
   fi
   if [[ "${cur}" == -* ]]; then

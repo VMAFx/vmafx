@@ -318,19 +318,24 @@ class HookCleanlinessTests(unittest.TestCase):
         # `vmaf --bitdepth=<Tab>` into `vmaf --bitdepth =` and
         # `vmaf --bitdepth=1<Tab>` into `vmaf --bitdepth = 1`: the boundary
         # normalization must cover both split shapes, not only the joined one.
-        # On bash < 4.2 the file returns before defining `_vmaf`.
+        # On bash < 4.2 the file returns before defining `_vmaf`; OLD_SHELL
+        # keeps that a skip instead of letting a missing DEFINED pass silently.
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "vmaf.bash"
             path.write_text(self.outputs[BASH], encoding="utf-8", newline="\n")
-            prefix = f"source '{path.as_posix()}'; declare -F _vmaf >/dev/null || exit 0; "
+            prefix = (
+                f"source '{path.as_posix()}'; "
+                "declare -F _vmaf >/dev/null || { echo OLD_SHELL; exit 0; }; "
+                "echo DEFINED; "
+            )
             cases = (
                 # `=` is the current word (`--bitdepth=<Tab>`): the full domain.
-                ("COMP_WORDS=(vmaf --bitdepth =); COMP_CWORD=2; _vmaf; ", "8", "10"),
+                ("COMP_WORDS=(vmaf --bitdepth =); COMP_CWORD=2; _vmaf; ", ("8", "10"), ()),
                 # `=` is the previous word (`--bitdepth=1<Tab>`): the domain
                 # filtered by the typed `1`.
-                ("COMP_WORDS=(vmaf --bitdepth = 1); COMP_CWORD=3; _vmaf; ", "10", None),
+                ("COMP_WORDS=(vmaf --bitdepth = 1); COMP_CWORD=3; _vmaf; ", ("10",), ("8",)),
             )
-            for words, expect, absent in cases:
+            for words, expected, absent in cases:
                 script = prefix + words + 'printf "%s\\n" "${COMPREPLY[@]}"'
                 result = run_command(
                     ["bash", "-c", script],
@@ -340,11 +345,75 @@ class HookCleanlinessTests(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stderr, "")
-                if "DEFINED" not in result.stdout:
+                if "OLD_SHELL" in result.stdout:
                     continue
-                self.assertIn(expect, result.stdout)
-                if absent is not None:
-                    self.assertNotIn(str(absent), result.stdout)
+                self.assertIn("DEFINED", result.stdout)
+                for value in expected:
+                    self.assertIn(value, result.stdout)
+                for value in absent:
+                    self.assertNotIn(value, result.stdout)
+
+    @unittest.skipUnless(shutil.which("bash"), "bash is not installed")
+    def test_short_option_does_not_take_the_equals_form(self) -> None:
+        # `-p=nv` and `-p = nv` hand `=nv` or `=` to getopt as the argument;
+        # completing a pixel format there would offer words the binary rejects.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "vmaf.bash"
+            path.write_text(self.outputs[BASH], encoding="utf-8", newline="\n")
+            prefix = (
+                f"source '{path.as_posix()}'; "
+                "declare -F _vmaf >/dev/null || { echo OLD_SHELL; exit 0; }; "
+                "echo DEFINED; "
+            )
+            cases = (
+                "COMP_WORDS=(vmaf -p = nv); COMP_CWORD=3; _vmaf; ",
+                "COMP_WORDS=(vmaf -p=nv); COMP_CWORD=1; _vmaf; ",
+            )
+            for words in cases:
+                script = prefix + words + 'printf "%s\\n" "${COMPREPLY[@]}"'
+                result = run_command(
+                    ["bash", "-c", script],
+                    allowed_executables=["bash"],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stderr, "")
+                if "OLD_SHELL" in result.stdout:
+                    continue
+                self.assertIn("DEFINED", result.stdout)
+                self.assertNotIn("nv12", result.stdout)
+
+    @unittest.skipUnless(shutil.which("bash"), "bash is not installed")
+    def test_equals_joined_form_keeps_the_prefix(self) -> None:
+        # A shell whose COMP_WORDBREAKS lacks `=` keeps `--bitdepth=1` as one
+        # word; readline replaces the whole word, so the candidate must carry
+        # `--bitdepth=` back or it becomes a bare `10`.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "vmaf.bash"
+            path.write_text(self.outputs[BASH], encoding="utf-8", newline="\n")
+            script = (
+                f"source '{path.as_posix()}'; "
+                "declare -F _vmaf >/dev/null || { echo OLD_SHELL; exit 0; }; "
+                "echo DEFINED; "
+                'COMP_WORDBREAKS="${COMP_WORDBREAKS//=/}"; '
+                "COMP_WORDS=(vmaf --bitdepth=1); COMP_CWORD=1; _vmaf; "
+                'printf "%s\\n" "${COMPREPLY[@]}"'
+            )
+            result = run_command(
+                ["bash", "-c", script],
+                allowed_executables=["bash"],
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        if "OLD_SHELL" in result.stdout:
+            return
+        self.assertIn("DEFINED", result.stdout)
+        lines = result.stdout.splitlines()
+        self.assertIn("--bitdepth=10", lines)
+        self.assertNotIn("10", lines)
 
     def test_files_carry_the_license_header(self) -> None:
         # Every new file starts with a license header (ADR-3401: the outside
@@ -352,7 +421,7 @@ class HookCleanlinessTests(unittest.TestCase):
         # its first line or the completion function never autoloads.
         for path, text in self.outputs.items():
             self.assertIn("Copyright 2026 luoye-cpu", text, path)
-            self.assertIn("SPDX-License-Identifier: EUPL-1.2", text, path)
+            self.assertIn("SPDX-License-" + "Identifier: EUPL-1.2", text, path)
         self.assertTrue(self.outputs[ZSH].startswith("#compdef vmaf vmafx\n"))
 
     def test_bash_returns_early_on_older_shells(self) -> None:

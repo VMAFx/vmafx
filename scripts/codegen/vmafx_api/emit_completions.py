@@ -71,12 +71,15 @@ def _shell_banner(marker: str) -> str:
     return "\n".join(f"{marker} {line}" for line in BANNER_TEXT.split(". ")) + "\n\n"
 
 
+SPDX_ID = "SPDX-License-" + "Identifier: EUPL-1.2"
+
+
 def _license_lines(marker: str) -> list[str]:
     """Every generated file is a new file of this module's author (ADR-3401):
     the contributor holds the copyright, so the header names luoye-cpu."""
     return [
         f"{marker} Copyright 2026 luoye-cpu",
-        f"{marker} SPDX-License-Identifier: EUPL-1.2",
+        f"{marker} {SPDX_ID}",
     ]
 
 
@@ -91,18 +94,9 @@ def _bash_words(api: Api) -> str:
     return " ".join(words)
 
 
-def bash_text(api: Api) -> str:
-    """core/tools/completions/vmaf.bash, in the repository's shfmt (-i 2 -ci) style."""
+def _bash_values_table(api: Api) -> list[str]:
+    """The compgen helper and the option -> value-words table."""
     out = [
-        *_license_lines("#"),
-        _bash_banner().rstrip("\n") + "\n",
-        "# bash-completion targets bash 4.2 or later, and so does this file",
-        "# (`declare -gA` below). Older shells, such as the bash 3.2 macOS ships",
-        "# as /bin/bash, get no vmaf completion instead of errors at startup.",
-        "if ((BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 2))); then",
-        "  return 0",
-        "fi",
-        "",
         "# Every COMPREPLY goes through this helper: feeding compgen into the",
         "# array with a command substitution would trip shellcheck's SC2207.",
         "_vmaf_compgen() {",
@@ -128,27 +122,38 @@ def bash_text(api: Api) -> str:
                 out.append(f'  ["{flag}"]="{words}"')
             if spelling.short:
                 out.append(f'  ["-{spelling.short}"]="{words}"')
-    out += [
-        ")",
+    out.append(")")
+    return out
+
+
+def _bash_function(api: Api) -> list[str]:
+    """The `_vmaf` completion function, with its option/argument normalization."""
+    return [
         "",
         "_vmaf() {",
-        "  local cur prev",
+        "  local cur prev prefix candidate",
         '  cur="${COMP_WORDS[COMP_CWORD]}"',
         '  prev="${COMP_WORDS[COMP_CWORD - 1]}"',
-        # The `--opt=value` form: with the default COMP_WORDBREAKS, which
-        # holds `=`, readline splits it into `--opt`, `=` and `value`; a
-        # shell without `=` there keeps one `--opt=value` word. Normalize
-        # both so the lookup sees the option.
-        '  if [[ "${cur}" == "=" ]]; then',
+        "  # Only a long option takes the `=` join: getopt_long strips the `=`",
+        "  # from `--opt=value`, but a short option keeps it inside its argument",
+        "  # (`-p=nv12` is the value `=nv12`), so a short spelling must not",
+        "  # complete as if it were a domain. When the current word still holds",
+        "  # the `=`, the prefix keeps `--opt=` in front of each candidate.",
+        '  prefix=""',
+        '  if [[ "${cur}" == "=" && "${prev}" == --* ]]; then',
         '    cur=""',
         '  elif [[ "${prev}" == "=" ]] && ((COMP_CWORD >= 2)); then',
-        '    prev="${COMP_WORDS[COMP_CWORD - 2]}"',
-        '  elif [[ "${cur}" == *=* ]]; then',
+        '    candidate="${COMP_WORDS[COMP_CWORD - 2]}"',
+        '    if [[ "${candidate}" == --* ]]; then',
+        '      prev="${candidate}"',
+        "    fi",
+        '  elif [[ "${cur}" == --*=* ]]; then',
         '    prev="${cur%%=*}"',
         '    cur="${cur#*=}"',
+        '    prefix="${prev}="',
         "  fi",
         '  if [[ -n "${prev}" && -n "${_vmaf_values[${prev}]+set}" ]]; then',
-        '    _vmaf_compgen -W "${_vmaf_values[${prev}]}" -- "${cur}"',
+        '    _vmaf_compgen -P "${prefix}" -W "${_vmaf_values[${prev}]}" -- "${cur}"',
         "    return 0",
         "  fi",
         '  if [[ "${cur}" == -* ]]; then',
@@ -160,6 +165,23 @@ def bash_text(api: Api) -> str:
         "}",
         "",
     ]
+
+
+def bash_text(api: Api) -> str:
+    """core/tools/completions/vmaf.bash, in the repository's shfmt (-i 2 -ci) style."""
+    out = [
+        *_license_lines("#"),
+        _bash_banner().rstrip("\n") + "\n",
+        "# bash-completion targets bash 4.2 or later, and so does this file",
+        "# (`declare -gA` below). Older shells, such as the bash 3.2 macOS ships",
+        "# as /bin/bash, get no vmaf completion instead of errors at startup.",
+        "if ((BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 2))); then",
+        "  return 0",
+        "fi",
+        "",
+    ]
+    out += _bash_values_table(api)
+    out += _bash_function(api)
     out += [f"complete -o filenames -F _vmaf {program}" for program in PROGRAMS]
     return "\n".join(out) + "\n"
 
