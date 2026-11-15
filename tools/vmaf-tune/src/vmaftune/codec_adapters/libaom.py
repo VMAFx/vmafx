@@ -14,10 +14,12 @@ The FFmpeg invocation shape is::
 
 libaom's quality knob ``-crf`` runs 0..63 (same numeric range as
 SVT-AV1, different rate-distortion curve). The speed/quality knob is
-``-cpu-used`` 0..9 (0 = slowest/best, 9 = fastest). For interface
-parity with x264/x265 we expose human-readable preset names that map
-onto the ``cpu-used`` integer; the search loop only ever speaks
-``preset`` and ``crf`` and never branches on codec identity.
+``-cpu-used``. libaom itself goes to 9, but FFmpeg's ``libaom-av1``
+wrapper accepts only 0..8, so this adapter stays inside that range:
+0 = slowest/best, 8 = fastest. For interface parity with x264/x265 we
+expose human-readable preset names that map onto the ``cpu-used``
+integer; the search loop only ever speaks ``preset`` and ``crf`` and
+never branches on codec identity.
 
 The adapter is live through the codec-dispatcher path in
 ``encode.py``: :meth:`ffmpeg_codec_args` emits libaom's
@@ -50,7 +52,9 @@ _PRESET_CPU_USED: Mapping[str, int] = MappingProxyType(
         "faster": 6,
         "veryfast": 7,
         "superfast": 8,
-        "ultrafast": 9,
+        # 9 is libaom's own maximum, but FFmpeg's libaom-av1 wrapper stops at
+        # 8 and refuses the encode at option parsing (issue 3350).
+        "ultrafast": 8,
     }
 )
 
@@ -62,7 +66,7 @@ class LibaomAdapter:
     name: str = "libaom-av1"
     encoder: str = "libaom-av1"
     # Cache-key component (ADR-0298): bump when the argv, presets or range change.
-    adapter_version: str = "1"
+    adapter_version: str = "2"
     quality_knob: str = "crf"
     # libaom accepts CRF 0..63; the full window is exposed because the
     # informative VMAF range for AV1 differs from x264 and Phase B
@@ -72,7 +76,7 @@ class LibaomAdapter:
     invert_quality: bool = True  # higher CRF = lower quality
 
     # Predictor probe-encode knobs. libaom uses cpu-used, not -preset; the
-    # canonical preset name maps to cpu-used 9 in _PRESET_CPU_USED.
+    # canonical preset name maps to cpu-used 8 in _PRESET_CPU_USED.
     probe_preset: str = "ultrafast"
     probe_quality: int = 35
     supports_qpfile: bool = True
