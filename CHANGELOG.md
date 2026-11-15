@@ -2710,6 +2710,16 @@
 - **Tag raw HDR inputs with colour transfer and primaries:** copy `-color_primaries`, `-color_trc`, `-colorspace`, and `-color_range` from encode options to input options for raw sources so FFmpeg passes colour properties to the encoder (issue 3345). User `--extra-ffmpeg-arg` colour options stay output-only.
 
 
+- **`libaom-av1` `ultrafast` maps to `-cpu-used 8`, the highest value FFmpeg accepts.**
+  The adapter mapped `ultrafast` to 9, which FFmpeg's `libaom-av1` wrapper refuses
+  (`Value 9.000000 for parameter 'cpu-used' out of range [0 - 8]`), so every
+  `ultrafast` encode and the predictor probe that uses it failed at option
+  parsing. The Python adapter, the Go twins (`pkg/encoder` and
+  `pkg/codecadapter`) and the docs now agree on 0..8, a unit test pins every
+  accepted preset inside that range, and the libaom adapter cache version moves
+  to `2` so cached argv from the old mapping is not reused.
+
+
 - **Run active SYCL combined-graph extractors on subsampled frames (#3356).**
   `vmaf_sycl_graph_submit()` now counts and enqueues only the registered graph extractors that run
   on the current frame under `--subsample N` (`N > 1`), using direct per-extractor submission on
@@ -2720,6 +2730,9 @@
 
 
 - **Credits page:** the credits check no longer lets the Netflix VMAF entry's `core/` directory cover every third-party file below it, and under `closest` REUSE precedence it reads a file's own licence header, so the two SSIMULACRA 2 headers are now credited to libjxl and the inherited speed-filter test and four inherited Python `third_party/` files to Netflix VMAF (issue 3370).
+
+
+- **Run the pinned Praetor engine in Makefile governance targets (#3468).** `verify-all`, `compile-context`, `audit`, `hiss-coverage` and `dedupe-check` called `standardsctl` from `PATH` instead of the repository pin; the `Makefile` now includes `.config/praetor/engine.mk` and invokes `$(PRAETORCTL)`, and `scripts/ci/tests/test_make_governance_engine_pin.py` rejects missing or misplaced includes and literal `standardsctl` or `praetorctl` calls.
 
 
 - **ADR allocator scans open pull request heads to avoid fork PR collisions.**
@@ -2991,6 +3004,9 @@
 
 
 - **The dev container builds again: ClangBuildAnalyzer is configured with the Ninja generator.** The `build-deps` stage of `dev/Containerfile` installs `ninja-build` but no make program, so CMake's default "Unix Makefiles" generator stopped the ClangBuildAnalyzer build of ADR-3336 and every dev image build failed. The configure now passes `-G Ninja`, and `scripts/ci/tests/test_dev_image_build_stages.py` refuses a CMake configure without a generator in that stage.
+
+
+- **Ubuntu dev images and `scripts/setup/ubuntu.sh`:** install hash-pinned Python build and lint tools into a dedicated virtual environment (`VMAFX_TOOLS_VENV`, `/opt/vmafx-tools` in `docker/dev/ubuntu-26.04*.Dockerfile`), stage `requirements/locks/build.txt` and `dev-linters.txt` via `ARG VMAFX_REPO_ROOT`, validate boolean flags strictly against `true|false`, and build and smoke-test all three Ubuntu dev images in CI when their inputs change (issue 3455, [ADR-3545](docs/adr/3545-dev-image-tools-venv-ci.md)).
 
 
 - **The dev container runs the command it is given and exits.** `dev/scripts/dev-mcp-entrypoint.sh`
