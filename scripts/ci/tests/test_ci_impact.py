@@ -47,7 +47,13 @@ REQUIRED_CONSUMER_CONTRACTS = {
     "dev-container-build.yml": (
         "dev_container",
         ("dev-container-build-work",),
-        (("dev-container-build", "Dev Container Build", "dev-container-build-work"),),
+        (
+            (
+                "dev-container-build",
+                "Dev Container Build",
+                "dev-container-build-work, ubuntu-dev-images",
+            ),
+        ),
     ),
     "docker-image.yml": (
         "docker_image",
@@ -147,9 +153,8 @@ MSVC_LEG_SELECTORS = {"windows_msvc_sycl"}
 CONSUMER_SELECTORS = {"upstream_consumers"}
 # ADR-3390: the GStreamer element job builds and tests only when its inputs change.
 GSTREAMER_SELECTORS = {"gstreamer_element"}
-# ADR-3338: the dev-container build a light-tier pull request owes when it
-# touches the image's own inputs.
-DEV_CONTAINER_LANE_SELECTORS = {"dev_container_inputs"}
+# ADR-3338 / ADR-3545: dev-container and docker/dev Ubuntu image own-input lanes.
+DEV_CONTAINER_LANE_SELECTORS = {"dev_container_inputs", "ubuntu_dev_images"}
 OWN_PATHS_ONLY = (
     TESTER_SELECTORS
     | MSVC_LEG_SELECTORS
@@ -785,6 +790,49 @@ class DevContainerLaneRouting(unittest.TestCase):
         self.assertTrue(plan.selectors[self.SELECTOR])
 
 
+class UbuntuDevImagesRouting(unittest.TestCase):
+    """ADR-3545: `ubuntu_dev_images` follows the three Ubuntu dev images' own inputs."""
+
+    SELECTOR = "ubuntu_dev_images"
+    OWN_INPUTS = (
+        "docker/dev/ubuntu-26.04.Dockerfile",
+        "docker/dev/ubuntu-26.04-cuda.Dockerfile",
+        "docker/dev/ubuntu-26.04-sycl.Dockerfile",
+        "scripts/setup/ubuntu.sh",
+        "requirements/locks/build.txt",
+        "requirements/locks/dev-linters.txt",
+        "build-config.env",
+        ".dockerignore",
+        ".github/workflows/dev-container-build.yml",
+        "scripts/ci/install-cuda-toolkit.sh",
+        "scripts/ci/docker-hub-mirror.sh",
+        "scripts/ci/free-runner-disk.sh",
+    )
+
+    def test_all_own_inputs_select_it(self) -> None:
+        for path in self.OWN_INPUTS:
+            with self.subTest(path=path):
+                self.assertTrue(_plan_for([path]).selectors[self.SELECTOR])
+
+    def test_unrelated_and_ci_authority_changes_leave_it_off(self) -> None:
+        for path in (
+            "docs/index.md",
+            "core/src/libvmaf.c",
+            "dev/Containerfile",
+            "requirements/locks/docs-check.txt",
+            "scripts/ci/plan-ci-impact.py",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(_plan_for([path]).selectors[self.SELECTOR])
+
+    def test_unknown_change_set_selects_it_and_empty_diff_does_not(self) -> None:
+        config = planner.load_config(CONFIG)
+        unknown = planner.build_plan(config, None, "event-not-routed:schedule", "b" * 40, "h" * 40)
+        empty = planner.build_plan(config, (), None, "b" * 40, "h" * 40)
+        self.assertTrue(cast(ImpactPlan, unknown).selectors[self.SELECTOR])
+        self.assertFalse(cast(ImpactPlan, empty).selectors[self.SELECTOR])
+
+
 class BuildWorkRouting(unittest.TestCase):
     """`build_work` runs build.yml's legs for every file their Python steps read.
 
@@ -1115,6 +1163,50 @@ class WorkflowContract(unittest.TestCase):
                             f"work={work_result} produced reason={reason!r}",
                         )
 
+    def _assert_gate_script_pair_states(
+        self,
+        filename: str,
+        check_name: str,
+        script: str,
+        pair: tuple[str, str],
+        peer_env: dict[str, str],
+    ) -> None:
+        selected_var, work_var = pair
+        for plan_result in ("success", "failure", "cancelled", "skipped"):
+            for selected in ("true", "false", ""):
+                for work_result in ("success", "skipped", "failure", "cancelled"):
+                    expected = plan_result == "success" and (
+                        selected,
+                        work_result,
+                    ) in {("true", "success"), ("false", "skipped")}
+                    result = run_command(
+                        [BASH, "-eu", "-o", "pipefail", "-c", script],
+                        allowed_executables=(BASH,),
+                        capture_output=True,
+                        text=True,
+                        env={
+                            **os.environ,
+                            **peer_env,
+                            "PLAN_RESULT": plan_result,
+                            selected_var: selected,
+                            work_var: work_result,
+                        },
+                        timeout_seconds=60,
+                    )
+                    with self.subTest(
+                        workflow=filename,
+                        gate=check_name,
+                        pair=selected_var,
+                        plan=plan_result,
+                        selected=selected,
+                        work=work_result,
+                    ):
+                        self.assertEqual(
+                            result.returncode == 0,
+                            expected,
+                            f"stdout={result.stdout!r}; stderr={result.stderr!r}",
+                        )
+
     def test_gate_scripts_accept_only_the_two_valid_state_tuples(self) -> None:
         workflow_root = REPO_ROOT / ".github" / "workflows"
         for filename, (_selector, _work_jobs, gates) in REQUIRED_CONSUMER_CONTRACTS.items():
@@ -1125,38 +1217,21 @@ class WorkflowContract(unittest.TestCase):
                     self._assert_gate_leg_result_states(filename, check_name)
                     continue
                 script = self._literal_run(block)
-                for plan_result in ("success", "failure", "cancelled", "skipped"):
-                    for selected in ("true", "false", ""):
-                        for work_result in ("success", "skipped", "failure", "cancelled"):
-                            expected = plan_result == "success" and (
-                                selected,
-                                work_result,
-                            ) in {("true", "success"), ("false", "skipped")}
-                            result = run_command(
-                                [BASH, "-eu", "-o", "pipefail", "-c", script],
-                                allowed_executables=(BASH,),
-                                capture_output=True,
-                                text=True,
-                                env={
-                                    **os.environ,
-                                    "PLAN_RESULT": plan_result,
-                                    "SELECTED": selected,
-                                    "WORK_RESULT": work_result,
-                                },
-                                timeout_seconds=60,
-                            )
-                            with self.subTest(
-                                workflow=filename,
-                                gate=check_name,
-                                plan=plan_result,
-                                selected=selected,
-                                work=work_result,
-                            ):
-                                self.assertEqual(
-                                    result.returncode == 0,
-                                    expected,
-                                    f"stdout={result.stdout!r}; stderr={result.stderr!r}",
-                                )
+                has_ubuntu = "UBUNTU_SELECTED" in script
+                peer = (
+                    {"UBUNTU_SELECTED": "false", "UBUNTU_RESULT": "skipped"} if has_ubuntu else {}
+                )
+                self._assert_gate_script_pair_states(
+                    filename, check_name, script, ("SELECTED", "WORK_RESULT"), peer
+                )
+                if has_ubuntu:
+                    self._assert_gate_script_pair_states(
+                        filename,
+                        check_name,
+                        script,
+                        ("UBUNTU_SELECTED", "UBUNTU_RESULT"),
+                        {"SELECTED": "false", "WORK_RESULT": "skipped"},
+                    )
 
 
 if __name__ == "__main__":
