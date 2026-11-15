@@ -83,48 +83,53 @@ def _bash_words(api: Api) -> str:
 
 
 def bash_text(api: Api) -> str:
-    """core/tools/completions/vmaf.bash."""
+    """core/tools/completions/vmaf.bash, in the repository's shfmt (-i 2 -ci) style."""
     out = [
-        _bash_banner(),
+        _bash_banner().rstrip("\n") + "\n",
         "# Every COMPREPLY goes through this helper: feeding compgen into the",
         "# array with a command substitution would trip shellcheck's SC2207.",
-        "_vmaf_compgen()",
-        "{",
-        "    local word",
-        "    COMPREPLY=()",
-        '    while IFS="" read -r word; do',
-        '        COMPREPLY+=("${word}")',
-        '    done < <(compgen "$@")',
+        "_vmaf_compgen() {",
+        "  local word",
+        "  COMPREPLY=()",
+        '  while IFS="" read -r word; do',
+        '    COMPREPLY+=("${word}")',
+        '  done < <(compgen "$@")',
         "}",
         "",
-        "_vmaf()",
-        "{",
-        "    local cur prev",
-        '    cur="${COMP_WORDS[COMP_CWORD]}"',
-        '    prev="${COMP_WORDS[COMP_CWORD-1]}"',
-        '    case "${prev}" in',
+        "# One entry per spelling of every value-domain option; the option's",
+        "# argument completes from its own words. `declare -g` because",
+        "# bash-completion sources this file inside a function, where a plain",
+        "# `declare -A` would be local and gone before `_vmaf` runs.",
+        "declare -gA _vmaf_values=(",
     ]
     for spelling in spellings(api):
         if spelling.takes_value and spelling.domain:
             words = " ".join(spelling.domain)
-            patterns = [*spelling.flags]
+            for flag in spelling.flags:
+                # Quoted key: shfmt reads an unquoted `[--tiny-device]` as
+                # arithmetic and spaces the dash (`[--tiny - device]`).
+                out.append(f'  ["{flag}"]="{words}"')
             if spelling.short:
-                patterns.append(f"-{spelling.short}")
-            out += [
-                f"        {'|'.join(patterns)})",
-                f'            _vmaf_compgen -W "{words}" -- "${{cur}}"',
-                "            return 0",
-                "            ;;",
-            ]
+                out.append(f'  ["-{spelling.short}"]="{words}"')
     out += [
-        "    esac",
-        '    if [[ "${cur}" == -* ]]; then',
-        f'        local flags="{_bash_words(api)}"',
-        '        _vmaf_compgen -W "${flags}" -- "${cur}"',
-        "        return 0",
-        "    fi",
-        '    _vmaf_compgen -f -- "${cur}"',
+        ")",
+        "",
+        "_vmaf() {",
+        "  local cur prev",
+        '  cur="${COMP_WORDS[COMP_CWORD]}"',
+        '  prev="${COMP_WORDS[COMP_CWORD - 1]}"',
+        '  if [[ -n "${_vmaf_values[${prev}]+set}" ]]; then',
+        '    _vmaf_compgen -W "${_vmaf_values[${prev}]}" -- "${cur}"',
+        "    return 0",
+        "  fi",
+        '  if [[ "${cur}" == -* ]]; then',
+        f'    local flags="{_bash_words(api)}"',
+        '    _vmaf_compgen -W "${flags}" -- "${cur}"',
+        "    return 0",
+        "  fi",
+        '  _vmaf_compgen -f -- "${cur}"',
         "}",
+        "",
     ]
     out += [f"complete -o filenames -F _vmaf {program}" for program in PROGRAMS]
     return "\n".join(out) + "\n"
@@ -216,7 +221,7 @@ def powershell_text(api: Api) -> str:
                 out.append(f"        {_ps(key)} = @({words})")
     out += [
         "    }",
-        "    $flags = @( ",
+        "    $flags = @(",
     ]
     flag_words: list[str] = []
     for spelling in spellings(api):

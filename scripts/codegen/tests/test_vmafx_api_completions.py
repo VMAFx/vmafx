@@ -11,7 +11,11 @@ escapes survive the documentations' own quotes and roff control characters.
 
 from __future__ import annotations
 
+import shutil
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
 from support import fixture, parse
 from vmafx_api import emit_completions as completions
@@ -31,7 +35,7 @@ def needle(path: str, flag: str) -> str:
     if path == FISH:
         return flag[2:]
     if path == MAN:
-        return completions._roff(flag)
+        return str(completions._roff(flag))
     return flag
 
 
@@ -116,7 +120,8 @@ class ValueDomainTests(unittest.TestCase):
     def test_int_choices_complete_as_the_argument(self) -> None:
         # The fixture's `bitdepth` option is an integer with choices [8, 10] and
         # the short `-b`; both spellings arm the argument completion.
-        self.assertIn("        --bitdepth|-b)", self.outputs[BASH])
+        self.assertIn('  ["--bitdepth"]="8 10"', self.outputs[BASH])
+        self.assertIn('  ["-b"]="8 10"', self.outputs[BASH])
         self.assertIn(":$unsigned:(8 10)", self.outputs[ZSH])
         self.assertIn("-a '8 10'", self.outputs[FISH])
         self.assertIn("'--bitdepth' = @('8','10')", self.outputs[PS1])
@@ -125,7 +130,7 @@ class ValueDomainTests(unittest.TestCase):
 
     def test_enum_values_complete_as_the_argument(self) -> None:
         # The fixture's `pool` option is an enum; its values complete.
-        self.assertIn("mean min harmonic_mean", self.outputs[BASH])
+        self.assertIn('  ["--pool"]="mean min harmonic_mean"', self.outputs[BASH])
         self.assertIn(":$string:(mean min harmonic_mean)", self.outputs[ZSH])
         self.assertIn("-a 'mean min harmonic_mean'", self.outputs[FISH])
         self.assertIn("'--pool' = @('mean','min','harmonic_mean')", self.outputs[PS1])
@@ -133,11 +138,11 @@ class ValueDomainTests(unittest.TestCase):
 
     def test_value_switches_complete_as_switches(self) -> None:
         # The fixture's `format` option spells its values as switches (--xml/--json),
-        # so no case arm or argument completion exists for a --format argument.
+        # so no value entry or argument completion exists for a --format argument.
         for path in (BASH, FISH, PS1, MAN):
             self.assertIn(needle(path, "--json"), self.outputs[path], path)
-        self.assertIn("--bitdepth|-b)", self.outputs[BASH])
-        self.assertNotIn("        --format)", self.outputs[BASH])
+        self.assertIn('  ["--bitdepth"]="8 10"', self.outputs[BASH])
+        self.assertNotIn('  ["--format"]="', self.outputs[BASH])
 
     def test_every_value_word_goes_through_the_compgen_helper(self) -> None:
         # shellcheck's SC2207 fires on `COMPREPLY=( $(compgen ...) )`, so the
@@ -155,7 +160,9 @@ class ValueDomainTests(unittest.TestCase):
         group["options"][0]["cli_short"] = "P"
         api = parse(doc)
         bash = completions.bash_text(api)
-        self.assertIn("        --pool|--pooling|-P)", bash)
+        self.assertIn('  ["--pool"]="mean min harmonic_mean"', bash)
+        self.assertIn('  ["--pooling"]="mean min harmonic_mean"', bash)
+        self.assertIn('  ["-P"]="mean min harmonic_mean"', bash)
         ps1 = completions.powershell_text(api)
         self.assertIn("'--pool' = @('mean','min','harmonic_mean')", ps1)
         self.assertIn("'--pooling' = @('mean','min','harmonic_mean')", ps1)
@@ -164,8 +171,15 @@ class ValueDomainTests(unittest.TestCase):
     def test_path_meta_completes_files_and_numbers_do_not(self) -> None:
         self.assertIn(":$path:_files", self.outputs[ZSH])
         self.assertNotIn(":$unsigned:_files", self.outputs[ZSH])
-        # bash: a path option has no case arm, so the non-dash branch completes files.
-        self.assertNotIn("        --reference)", self.outputs[BASH])
+        # bash: a path option has no domain entry, so the non-dash branch
+        # completes files.
+        self.assertNotIn('  ["--reference"]="', self.outputs[BASH])
+
+    def test_the_value_table_is_declared_global(self) -> None:
+        # bash-completion sources the file inside a function, so a plain
+        # `declare -A` would be local and gone before `_vmaf` runs.
+        self.assertIn("declare -gA _vmaf_values=(", self.outputs[BASH])
+        self.assertIn('"${_vmaf_values[${prev}]+set}"', self.outputs[BASH])
 
     def test_man_names_the_short_after_the_long_flags(self) -> None:
         # The reference option carries the short `-r`; the names line reads
@@ -198,6 +212,41 @@ class RemovedOptionDriftTests(unittest.TestCase):
 
     def api(self) -> object:
         return parse(fixture())
+
+
+class HookCleanlinessTests(unittest.TestCase):
+    """The generated files must already be in the style the repository's hooks
+    enforce (shfmt -i 2 -ci rewrites nothing, zsh parses), since a generated
+    file cannot be hand-formatted after the fact."""
+
+    def setUp(self) -> None:
+        api = parse(fixture())
+        self.outputs = {path: renderer(api) for path, renderer in completions.OUTPUT_TEXTS.items()}
+
+    @unittest.skipUnless(shutil.which("shfmt"), "shfmt is not installed")
+    def test_bash_is_shfmt_clean(self) -> None:
+        # The repository formats every tracked shell file with shfmt -i 2 -ci
+        # (hook shfmt-src); the generated script must already be in that style.
+        # Written to a file because the hook formats files, and stdin `-d` is
+        # unreliable on Windows.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "vmaf.bash"
+            path.write_text(self.outputs[BASH], encoding="utf-8", newline="\n")
+            argv = ["shfmt", "-i", "2", "-ci", "-d", str(path)]
+            proc = subprocess.run(  # noqa: S603 -- resolved tool, argv from the test
+                argv, capture_output=True, text=True
+            )
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+
+    @unittest.skipUnless(shutil.which("zsh"), "zsh is not installed")
+    def test_zsh_parses(self) -> None:
+        # ShellCheck has no zsh mode and the pre-commit hook excludes the file,
+        # so `zsh -n` is the generated script's only syntax guard.
+        argv = ["zsh", "-n"]
+        proc = subprocess.run(  # noqa: S603 -- resolved tool, argv from the test
+            argv, input=self.outputs[ZSH], capture_output=True, text=True
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
 
 
 class EscapeTests(unittest.TestCase):

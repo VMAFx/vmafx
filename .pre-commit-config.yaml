@@ -151,6 +151,13 @@ repos:
     rev: v0.11.0.1
     hooks:
       - id: shellcheck
+        # The generated zsh completion (core/tools/completions/vmaf.zsh) is the
+        # repository's first .zsh file; ShellCheck has no zsh mode (`shellcheck
+        # -s zsh` prints "Unknown shell: zsh"), so its findings there — SC2148
+        # and SC2016 on the `:$path:_files` specs — are all false. The emitter
+        # tests guard the file instead (test_vmafx_api_completions.py runs
+        # `zsh -n` when the interpreter is present).
+        exclude_types: [zsh]
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.24.0
