@@ -131,6 +131,11 @@ entries:
   paths:
   - scripts/codegen/vmafx_api/emit_completions.py
   - scripts/codegen/tests/test_vmafx_api_completions.py
+  - core/tools/completions/vmaf.bash
+  - core/tools/completions/vmaf.zsh
+  - core/tools/completions/vmaf.fish
+  - core/tools/completions/vmaf.ps1
+  - core/tools/man/vmaf.1
   evidence:
   - scripts/codegen/vmafx_api/emit_completions.py
   - scripts/codegen/tests/test_vmafx_api_completions.py

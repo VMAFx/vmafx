@@ -71,6 +71,15 @@ def _shell_banner(marker: str) -> str:
     return "\n".join(f"{marker} {line}" for line in BANNER_TEXT.split(". ")) + "\n\n"
 
 
+def _license_lines(marker: str) -> list[str]:
+    """Every generated file is a new file of this module's author (ADR-3401):
+    the contributor holds the copyright, so the header names luoye-cpu."""
+    return [
+        f"{marker} Copyright 2026 luoye-cpu",
+        f"{marker} SPDX-License-Identifier: EUPL-1.2",
+    ]
+
+
 def _bash_banner() -> str:
     return _shell_banner("#")
 
@@ -85,7 +94,15 @@ def _bash_words(api: Api) -> str:
 def bash_text(api: Api) -> str:
     """core/tools/completions/vmaf.bash, in the repository's shfmt (-i 2 -ci) style."""
     out = [
+        *_license_lines("#"),
         _bash_banner().rstrip("\n") + "\n",
+        "# bash-completion targets bash 4.2 or later, and so does this file",
+        "# (`declare -gA` below). Older shells, such as the bash 3.2 macOS ships",
+        "# as /bin/bash, get no vmaf completion instead of errors at startup.",
+        "if ((BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 2))); then",
+        "  return 0",
+        "fi",
+        "",
         "# Every COMPREPLY goes through this helper: feeding compgen into the",
         "# array with a command substitution would trip shellcheck's SC2207.",
         "_vmaf_compgen() {",
@@ -118,6 +135,13 @@ def bash_text(api: Api) -> str:
         "  local cur prev",
         '  cur="${COMP_WORDS[COMP_CWORD]}"',
         '  prev="${COMP_WORDS[COMP_CWORD - 1]}"',
+        # The `--opt=value` form puts the option and its argument in one word;
+        # normalize the boundary so the lookup sees the option, without
+        # touching the user's COMP_WORDBREAKS.
+        '  if [[ "${cur}" == *=* ]]; then',
+        '    prev="${cur%%=*}"',
+        '    cur="${cur#*=}"',
+        "  fi",
         '  if [[ -n "${prev}" && -n "${_vmaf_values[${prev}]+set}" ]]; then',
         '    _vmaf_compgen -W "${_vmaf_values[${prev}]}" -- "${cur}"',
         "    return 0",
@@ -135,13 +159,15 @@ def bash_text(api: Api) -> str:
     return "\n".join(out) + "\n"
 
 
-def _zsh_spec(spelling: _Spelling, flag: str) -> str:
+def _zsh_spec(spelling: _Spelling, flag: str, equals: bool = False) -> str:
     """One `_arguments` spec for one spelling, single-quoted per the zsh spec grammar.
     Every spelling of an option gets its own spec, so aliases and underscore
-    spellings complete; the doc text is escaped for the single-quoted string and
+    spellings complete; `equals` declares the `--opt=value` form, which the plain
+    spec does not cover; the doc text is escaped for the single-quoted string and
     for the `[...]` description block the spec grammar parses."""
     doc = spelling.doc.replace("\\", "\\\\").replace("]", "\\]")
     doc = doc.replace("$", "\\$").replace("`", "\\`").replace("'", "'\\''")
+    name = f"{flag}=" if equals else flag
     if spelling.takes_value:
         if spelling.domain:
             argument = f":{spelling.meta}:({' '.join(spelling.domain)})"
@@ -149,12 +175,13 @@ def _zsh_spec(spelling: _Spelling, flag: str) -> str:
             argument = f":{spelling.meta}:_files"
         else:
             argument = f":{spelling.meta}:"
-        return f"'{flag}[{doc}]{argument}'"
-    return f"'{flag}[{doc}]'"
+        return f"'{name}[{doc}]{argument}'"
+    return f"'{name}[{doc}]'"
 
 
 def _zsh_banner() -> str:
-    return "#compdef " + " ".join(PROGRAMS) + "\n\n" + _shell_banner("#")
+    header = "\n".join(_license_lines("#"))
+    return "#compdef " + " ".join(PROGRAMS) + "\n" + header + "\n\n" + _shell_banner("#")
 
 
 def zsh_text(api: Api) -> str:
@@ -163,6 +190,10 @@ def zsh_text(api: Api) -> str:
     for spelling in spellings(api):
         for flag in spelling.all_flags():
             specs.append(_zsh_spec(spelling, flag))
+            # A value-taking long option also accepts `--opt=value`; zsh only
+            # completes that form when the spec declares it.
+            if spelling.takes_value and flag.startswith("--"):
+                specs.append(_zsh_spec(spelling, flag, equals=True))
     body = " \\\n    ".join(specs)
     return _zsh_banner() + "_vmaf() {\n  _arguments -s \\\n    " + body + "\n}\n"
 
@@ -173,7 +204,7 @@ def _fish(text: str) -> str:
 
 def fish_text(api: Api) -> str:
     """core/tools/completions/vmaf.fish."""
-    out = [_fish_banner()]
+    out = [*_license_lines("#"), _fish_banner()]
     for spelling in spellings(api):
         parts = ["complete"]
         parts += [f"-c {program}" for program in PROGRAMS]
@@ -202,13 +233,26 @@ def _ps(text: str) -> str:
 def powershell_text(api: Api) -> str:
     """core/tools/completions/vmaf.ps1."""
     out = [
+        *_license_lines("#"),
         _shell_banner("#"),
         "Register-ArgumentCompleter -Native -CommandName "
         + ",".join(_ps(program) for program in PROGRAMS)
         + " -ScriptBlock {",
         "    param($wordToComplete, $commandAst, $cursorPosition)",
-        "    $elements = @($commandAst.CommandElements | ForEach-Object { $_.ToString() })",
-        "    $prev = if ($elements.Count -ge 2) { $elements[$elements.Count - 2] } else { '' }",
+        # The option before the word being completed: PowerShell gives no empty
+        # trailing element, so `Count - 2` would pick the word before the option
+        # (`vmaf --backend <Tab>` selects `vmaf`). Element extents and the cursor
+        # position name the option; the element the cursor edits itself is not
+        # the option.
+        "    $commandElements = @($commandAst.CommandElements)",
+        "    $prev = ''",
+        "    for ($i = $commandElements.Count - 1; $i -ge 0; $i--) {",
+        "      $text = $commandElements[$i].ToString()",
+        "      if ($commandElements[$i].Extent.EndOffset -le $cursorPosition -and $text -ne $wordToComplete) {",
+        "        $prev = $text",
+        "        break",
+        "      }",
+        "    }",
         "    $domains = @{",
     ]
     for spelling in spellings(api):
@@ -252,7 +296,8 @@ def _roff(text: str) -> str:
 
 
 def _man_banner() -> str:
-    return "\n".join(f'.\\" {line}' for line in BANNER_TEXT.split(". ")) + "\n"
+    lines = [f'.\\" {line}' for line in BANNER_TEXT.split(". ")]
+    return "\n".join([*_license_lines('.\\"'), *lines]) + "\n"
 
 
 def man_text(api: Api) -> str:

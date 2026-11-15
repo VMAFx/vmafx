@@ -1184,8 +1184,12 @@ groups; see [API generation](../development/api-generation.md#option-groups)):
   complete both installed command names (`vmaf` and the `vmafx` symlink),
   every long spelling with its aliases and underscore spellings, the short
   options and the value switches (`--json`, `--xml`, ...), and the argument
-  of an option whose values the definition lists (`--pool`, `--pixel_format`,
-  `--bitdepth`, ...).
+  of an option whose values the definition lists (`--pixel_format`/`-p`, the
+  colour and `rgb_*` options, `--backend`, the two CTC version options, the
+  tiny-AI device/endpoint/resize options and `--precision`). The bash
+  script needs bash 4.2 or later (`declare -gA`); older shells, such as the
+  bash 3.2 macOS ships as `/bin/bash`, get no vmaf completion instead of
+  errors.
 - `core/tools/man/vmaf.1` is the same option table as a man page.
 
 They are generated outputs: change the definition and run

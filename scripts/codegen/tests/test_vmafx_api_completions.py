@@ -270,6 +270,9 @@ class HookCleanlinessTests(unittest.TestCase):
             path.write_text(self.outputs[BASH], encoding="utf-8", newline="\n")
             script = (
                 f"source '{path.as_posix()}'; "
+                # On bash < 4.2 the file returns before defining `_vmaf`; sourcing
+                # it must still print nothing.
+                "declare -F _vmaf >/dev/null || exit 0; "
                 "COMP_WORDS=(vmaf '' ''); COMP_CWORD=2; _vmaf >/dev/null"
             )
             result = run_command(
@@ -280,6 +283,62 @@ class HookCleanlinessTests(unittest.TestCase):
             )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, "")
+
+    @unittest.skipUnless(shutil.which("bash"), "bash is not installed")
+    def test_equals_form_completes_the_domain(self) -> None:
+        # `vmaf --bitdepth=8<Tab>` puts the option and its argument in one word;
+        # the boundary is normalized so the lookup sees `--backend`, without
+        # touching the user's COMP_WORDBREAKS. On bash < 4.2 the file returns
+        # before defining `_vmaf`, and this test only pins a silent source.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "vmaf.bash"
+            path.write_text(self.outputs[BASH], encoding="utf-8", newline="\n")
+            script = (
+                f"source '{path.as_posix()}'; "
+                "declare -F _vmaf >/dev/null || exit 0; "
+                "echo DEFINED; "
+                "COMP_WORDS=(vmaf '--bitdepth='); COMP_CWORD=1; _vmaf; "
+                'printf "%s\\n" "${COMPREPLY[@]}"'
+            )
+            result = run_command(
+                ["bash", "-c", script],
+                allowed_executables=["bash"],
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        if "DEFINED" in result.stdout:
+            self.assertIn("8", result.stdout)
+            self.assertIn("10", result.stdout)
+
+    def test_files_carry_the_license_header(self) -> None:
+        # Every new file starts with a license header (ADR-3401: the outside
+        # contributor holds the copyright); the zsh file keeps `#compdef` as
+        # its first line or the completion function never autoloads.
+        for path, text in self.outputs.items():
+            self.assertIn("Copyright 2026 luoye-cpu", text, path)
+            self.assertIn("SPDX-License-Identifier: EUPL-1.2", text, path)
+        self.assertTrue(self.outputs[ZSH].startswith("#compdef vmaf vmafx\n"))
+
+    def test_bash_returns_early_on_older_shells(self) -> None:
+        # macOS ships bash 3.2 as /bin/bash; it has neither `declare -A` nor
+        # `declare -g`, so the file returns before either appears and older
+        # shells get no completion instead of errors at startup.
+        self.assertIn("if ((BASH_VERSINFO[0] < 4", self.outputs[BASH])
+        self.assertIn("  return 0", self.outputs[BASH])
+
+    def test_zsh_declares_the_equals_form_for_value_options(self) -> None:
+        # The plain spec covers `--opt value`; zsh only completes `--opt=value`
+        # when a spec declares the equals form.
+        self.assertIn("'--bitdepth=[Bits per sample.]:$unsigned:(8 10)'", self.outputs[ZSH])
+
+    def test_powershell_selects_the_previous_word_from_the_cursor(self) -> None:
+        # `Count - 2` picks the word before the option (PowerShell gives no
+        # empty trailing element); element extents and the cursor position
+        # name the option instead.
+        self.assertIn("Extent.EndOffset -le $cursorPosition", self.outputs[PS1])
+        self.assertNotIn("Count - 2", self.outputs[PS1])
 
 
 class EscapeTests(unittest.TestCase):
