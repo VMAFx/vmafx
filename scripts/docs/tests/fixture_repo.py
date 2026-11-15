@@ -19,7 +19,11 @@ def git_init(root: Path) -> None:
         (git, "init", "-q", str(root)),
         allowed_executables=(git,),
         # Without the hook's GIT_DIR: the fixture, not the caller's repository.
-        env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+        env={
+            **{key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+        },
         capture_output=True,
         check=True,
         timeout_seconds=60,

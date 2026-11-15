@@ -113,8 +113,10 @@ class UpstreamPrSweepHardeningTest(SweepFixtureCase):
         git_run(self.setup_clone, "checkout", "-b", foreign_branch, self.pr_old_sha)
         (self.setup_clone / "foreign.txt").write_text("untrusted code\n", encoding="utf-8")
         git_run(self.setup_clone, "add", "foreign.txt")
+        foreign_barriers = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
         foreign_env = dict(
             os.environ,
+            **foreign_barriers,
             GIT_AUTHOR_EMAIL="contributor@untrusted.example",
             GIT_COMMITTER_EMAIL="contributor@untrusted.example",
         )

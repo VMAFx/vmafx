@@ -6,13 +6,11 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import os
 import re
 import shutil
 import sys
 import tempfile
-import textwrap
 import unittest
 from pathlib import Path
 from typing import Any, cast
@@ -21,6 +19,7 @@ import yaml  # type: ignore[import-untyped]
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.ci.required_aggregator_harness import run_required_aggregator
 from scripts.lib.safe_subprocess import run as run_command
 
 # A hang detector, not a timing assertion: these subprocesses finish in tens of
@@ -203,62 +202,15 @@ class ScorecardWorkflowTests(unittest.TestCase):
             self.assertIn(dependency, hook)
 
     def aggregate(self, event: str, conclusion: str | None, inactive: str = "failure") -> list[str]:
-        workflow = (WORKFLOWS / "required-aggregator.yml").read_text()
-        script = textwrap.dedent(workflow.split("          script: |\n", 1)[1])
-        block = re.search(r"const required = \[(.*?)\];", script, re.DOTALL)
-        self.assertIsNotNone(block)
-        assert block is not None
-        names = re.findall(r"'([^']+)'", block.group(1))
         expected = "Scorecard PR Gate" if event == "pull_request" else "Scorecard Master Gate"
         other = "Scorecard Master Gate" if event == "pull_request" else "Scorecard PR Gate"
-        self.assertIn(expected, names)
-        self.assertIn(other, names)
-        checks = [
-            {
-                "name": name,
-                "conclusion": (
-                    conclusion if name == expected else inactive if name == other else "success"
-                ),
-            }
-            for name in names
-            if name != expected or conclusion is not None
-        ]
-        node = shutil.which("node")
-        self.assertIsNotNone(node, "Node is required for actual Actions-script controls")
-        assert node is not None
-        driver = r"""
-const input = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-const now = Date.now(); let clock = now;
-class VirtualDate extends Date { static now() { clock += 180000; return clock; } }
-const failures = [];
-const checks = input.checks.map(c => ({...c, status: 'completed', started_at: new Date(now).toISOString()}));
-const github = {rest: {
- actions: {getWorkflowRun: async () => ({data: {created_at: new Date(now).toISOString()}}),
-  listWorkflowRunsForRepo: async () => ({data: {workflow_runs: []}})},
- checks: {listForRef: async ({page, per_page}) =>
-  ({data: {check_runs: checks.slice((page - 1) * per_page, page * per_page)}})}
-}};
-const context = {eventName: input.event, sha: 'abc', repo: {owner:'test',repo:'test'},
- payload: {pull_request: {head:{ref:'fix/example',sha:'abc'}}}};
-const core = {info: () => {}, setFailed: message => failures.push(message)};
-const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-new AsyncFunction('github','context','core','process','Date','setTimeout',input.script)(
- github,context,core,{env:{GITHUB_RUN_ID:'1'}},VirtualDate,callback=>callback()
-).then(()=>process.stdout.write(JSON.stringify(failures))).catch(e=>{console.error(e);process.exitCode=1;});
-"""
-        result = run_command(
-            [node, "-e", driver],
-            allowed_executables=(node,),
-            input_data=json.dumps({"script": script, "event": event, "checks": checks}),
-            text=True,
-            capture_output=True,
-            check=True,
-            timeout_seconds=SUBPROCESS_TIMEOUT_S,
+        return run_required_aggregator(
+            expected,
+            conclusion,
+            event=event,
+            absent_checks=(other,),
+            extra_checks=({"name": other, "conclusion": inactive, "check_suite": {"id": 1}},),
         )
-        messages: object = json.loads(result.stdout)
-        if not isinstance(messages, list) or not all(isinstance(m, str) for m in messages):
-            self.fail("aggregator driver returned malformed failures")
-        return [str(m) for m in messages]
 
     def test_only_success_of_applicable_context_satisfies_aggregator(self) -> None:
         for event in ["pull_request", "push"]:

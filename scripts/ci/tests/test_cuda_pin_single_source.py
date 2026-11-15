@@ -386,10 +386,12 @@ class CudaPinGate(unittest.TestCase):
     """Run the real gate in disposable repositories, one spelling at a time."""
 
     def setUp(self) -> None:
+        """Create an isolated test repository with scrubbed Git config and copied gate fixtures."""
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.repo = Path(self.temporary.name)
         self.env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        self.env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
         for name in (GATE, "build-config.env", "dev/Containerfile"):
             target = self.repo / name
             target.parent.mkdir(parents=True, exist_ok=True)

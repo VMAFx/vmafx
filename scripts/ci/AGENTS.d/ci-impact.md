@@ -48,6 +48,8 @@ area: gates
 - **Inheritance resolved without recursion (HISS-01).** `inheritance_order()`
   sorts selectors topologically (and raises on cycle) and
   `impact_selectors()` resolves selectors in that order in one pass.
+- **`build_work` follows Python test trees' `scripts.*` imports.** Every module imported
+  transitively, parents' `__init__.py` included. Pin: `test_ci_impact_scripts_imports.py`; bound 256.
 
 - Tier = `ci_tier.py` decision. Fork PR, `ci: full`, master push, dispatch, schedule, release PR
   with `autorelease: cut` = full. Own PR (Renovate incl.) = light. Release PR without cut label
@@ -61,7 +63,7 @@ area: gates
   Failed `Decide the CI tier` check = aggregator failure; queued or running one = aggregator
   keeps waiting (jobs behind `needs: tier`: no check run before tier completes). Never add `labeled` to aggregator
   types: skipped aggregator run on same SHA reads as pass.
-- Only `pr-label-lanes.yml` listens for `labeled`; its `escalate` job (`if` = two labels) calls
+- Only `pr-label-lanes.yml` listens for `labeled`; `escalate` job (`if` = two labels) calls
   `ci-escalate.yml` (`workflow_call`, ADR-3314). Flow: cancel, await
   (bounded), re-run each latest PR run. Re-run reads live labels (`GH_TOKEN`, API): payload
   labels of re-run stale. Never put `labeled` in another workflow. Cancel answering 409 =
@@ -105,26 +107,26 @@ area: gates
   `impact` + gate on `outputs.light`. Step `pick` (shell, `'false'` truthy in expressions):
   `FULL=true` -> broad `dev_container`, else narrow `dev_container_inputs` (`own_paths_only`);
   other value = exit 1 -> gate fails. Job outputs `selected` + `reason`; gate notices reason
-  on skip. Narrow selector = dev/**, .dockerignore, build-config.env, workflow, scripts the
+  on skip. Narrow selector = dev/**, .dockerignore, build-config.env, workflow, scripts
   work job calls, install-cuda-toolkit.sh. Broad selector stays full tier + master push =
   second barrier. Never fold narrow into broad, never move `impact`/gate/pick back to
   `outputs.full`; `test_ci_routing_contract.py` plants all three.
 - **`build_work` = `c_core` + `python/**`, `compat/**`, build / pytest-timeout / tox
   locks, prune script.** `build.yml` work job (`Linux Intel LLVM`, `macOS Clang+Metal`,
   `Windows MSVC+CUDA (full)`) runs `compat/vmaf/tests/test_decorator_extended.py`
-  (Windows leg = only Windows run of it); macOS leg runs `tox -c python`. Not whole
-  `python` selector: tools, mcp-server, scripts would start heavy legs. New `-r` lock,
+  (Windows leg = only Windows run); macOS leg runs `tox -c python`. Not whole
+  `python` selector: tools, mcp-server, scripts start heavy legs. New `-r` lock,
   `tox -c` config or `python -m pytest` target in `build.yml` -> add path;
   `BuildWorkRouting` tests fail otherwise. Never point `build.yml` back at `c_core`:
-  compat-only diff then skips its own test.
+  compat-only diff then skips compat test.
 - **Cut check (ADR-2198).** `scripts/release/candidate-legs.json` lists tester legs
   cut needs green on exact commit. Leg added to Windows matrix, tester image or macOS bundle
   goes in list (`test_check_candidate_legs.py` pins names). Three tester workflows keep
   `run-name` carrying dispatched source: check accepts dispatch only when title holds full SHA.
 
-- **Pre-Commit job is diff-scoped on pull requests (HISS-18).**
+- **Pre-Commit job: diff-scoped on pull requests (HISS-18).**
   `lint-and-format.yml` `pre-commit` runs `scripts/ci/precommit_scope.py`:
-  `--from-ref <base sha> --to-ref HEAD` on a pull request, `--all-files` on
-  every other event or a malformed base. Keep the job always-running (required
-  context `Pre-Commit`); never add a workflow-level `paths:`.
-  `tests/test_precommit_scope.py` plants the old unconditional step.
+  `--from-ref <base sha> --to-ref HEAD` on pull requests, `--all-files` on
+  every other event or malformed base. Keep job always-running (required
+  context `Pre-Commit`); never add workflow-level `paths:`.
+  `tests/test_precommit_scope.py` plants old unconditional step.

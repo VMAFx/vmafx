@@ -27,7 +27,7 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   `submit` / `collect`, never `extract`: option handled only in
   `extract_fex_sycl()` is ignored (that was force-zero bug). Under
   `motion_force_zero`: init returns before any device allocation and before
-  `vmaf_sycl_graph_register()` (registered extractor must call
+  `vmaf_sycl_graph_register_flags()` (registered extractor must call
   `vmaf_sycl_graph_submit()` every frame, unregistered one must not);
   `submit` only marks frame pending, `collect` =
   `motion_append_forced_zero()` (SAD, motion2, motion3 = 0, + motion with

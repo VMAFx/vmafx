@@ -120,7 +120,7 @@ python3 "$fetcher" "${fetch_args[@]}"
 # runtime set also needs the distro's ocl-icd-libopencl1, so a fresh base image
 # takes the second branch.
 if ! $SUDO apt-get install -y --no-install-recommends "$tmp"/*.deb; then
-  $SUDO apt-get update -qq
+  $SUDO apt-get --error-on=any -o Acquire::Retries=3 update -qq
   $SUDO apt-get install -y --no-install-recommends "$tmp"/*.deb
 fi
 # The IGC debs put libigc.so.2 and libigdfcl.so.2 in /usr/local/lib without an

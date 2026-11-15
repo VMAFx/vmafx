@@ -114,16 +114,7 @@ jobs:
         # Measured max 6.6m (2026-10-23); 9 min is at least 1.25x the slowest healthy run.
         timeout-minutes: 9
         run: |
-          # The hosted runner ships pre-provisioned Microsoft/Azure apt
-          # sources (packages.microsoft.com) that intermittently 403 /
-          # "no longer signed", failing `apt-get update` with exit 100.
-          # vmaf needs none of them — drop them first. See
-          # T-CI-APT-MS-REPO-FLAKE (same fix as the Coverage Gate).
-          sudo rm -f /etc/apt/sources.list.d/*microsoft* \
-                     /etc/apt/sources.list.d/*azure*
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           mkdir -p "${RUNNER_TEMP}/apt-archives"
           if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
             sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/

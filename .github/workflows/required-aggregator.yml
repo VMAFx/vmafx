@@ -683,10 +683,53 @@ jobs:
               throw new Error('more than 1000 workflow runs reported for one SHA');
             }
 
+            // ADR-3539 — converting a pull request to draft and marking it
+            // ready again on an unchanged head re-runs every pull-request
+            // workflow on the same SHA, while github-advanced-security reports
+            // CodeQL, Semgrep OSS and gitleaks once per SHA and does not post
+            // again when an identical analysis is uploaded on a later event
+            // (pull request 3047, head
+            // 80595f3baaa80bdb423550eee237b1d6d279e746, run 43085402627). Pin
+            // each check name to its expected app slug so unrelated apps cannot
+            // satisfy or mask a required context: github-advanced-security
+            // checks count at any age, while github-actions checks (and runs
+            // missing app.slug on github-actions names, failing closed) keep
+            // the minCreatedMs window.
+            const expectedAppByCheck = {
+              "CodeQL": "github-advanced-security",
+              "Semgrep OSS": "github-advanced-security",
+              "gitleaks": "github-advanced-security"
+            };
+            // SARIF upload jobs in security-scans.yml that feed the external
+            // code-scanning checks above. Keep polling while any upload job of
+            // an owed external check is active or completed within
+            // registrationPropagationMs, even when an older check run for that
+            // external name already sits on the SHA.
+            const externalCheckUploadJobs = {
+              "CodeQL": ["CodeQL (Actions)", "CodeQL (C/C++)", "CodeQL (Python)"],
+              "Semgrep OSS": ["Semgrep"],
+              "gitleaks": ["Gitleaks"]
+            };
+            const ignoredForeignNames = new Set();
+
+            function admittedByProducer(run) {
+              const expectedApp = Object.hasOwn(expectedAppByCheck, run.name)
+                ? expectedAppByCheck[run.name]
+                : 'github-actions';
+              const appSlug = run.app ? (run.app.slug || '') : '';
+              if (expectedApp !== 'github-actions') return appSlug === expectedApp;
+              return appSlug === '' || appSlug === 'github-actions';
+            }
+
             function newestByName(checkRuns, excludedSuites) {
               const byName = {};
               for (const run of checkRuns) {
-                if (runTimestampMs(run) < minCreatedMs) continue;
+                if (!admittedByProducer(run)) {
+                  ignoredForeignNames.add(run.name);
+                  continue;
+                }
+                const isActionsRun = !Object.hasOwn(expectedAppByCheck, run.name);
+                if (isActionsRun && runTimestampMs(run) < minCreatedMs) continue;
                 if (run.check_suite && excludedSuites.has(run.check_suite.id)) continue;
                 const previous = byName[run.name];
                 if (!previous || runTimestampMs(run) > runTimestampMs(previous)) {
@@ -727,8 +770,8 @@ jobs:
               });
             }
 
-            function delayedRegistrationStillExpected(name, nowMs) {
-              return (delayedStrictDependencies[name] || []).some(dependency => {
+            function delayedRegistrationStillExpected(dependencies, name, nowMs) {
+              return (dependencies[name] || []).some(dependency => {
                 const run = byName[dependency];
                 if (!run) return false;
                 if (activeStatuses.has(run.status)) return true;
@@ -784,9 +827,13 @@ jobs:
               });
               const nowMs = Date.now();
               const delayedMissing = missing.filter(name =>
-                delayedRegistrationStillExpected(name, nowMs));
+                delayedRegistrationStillExpected(delayedStrictDependencies, name, nowMs));
+              const uploadPending = required.filter(name =>
+                !notOwed.has(name) && !eventExempt.has(name) &&
+                delayedRegistrationStillExpected(externalCheckUploadJobs, name, nowMs));
               const tierPending = tierDecisionPending(nowMs);
               if (stillRunning.length === 0 && delayedMissing.length === 0 && !tierPending &&
+                  uploadPending.length === 0 &&
                   (missing.length === 0 || nowMs > registrationGraceDeadline)) {
                 break;
               }
@@ -799,11 +846,29 @@ jobs:
                           (delayedMissing.length > 3
                             ? ` (+${delayedMissing.length - 3} more)` : ''));
               }
+              if (uploadPending.length > 0) {
+                core.info(`Waiting for external check propagation: ` +
+                          `${uploadPending.slice(0, 3).join(', ')}` +
+                          (uploadPending.length > 3
+                            ? ` (+${uploadPending.length - 3} more)` : ''));
+              }
               if (missing.length > 0 && Date.now() <= registrationGraceDeadline) {
                 core.info(`Waiting for check registration: ${missing.slice(0, 3).join(', ')}` +
                           (missing.length > 3 ? ` (+${missing.length - 3} more)` : ''));
               }
               await new Promise(r => setTimeout(r, 30000));
+            }
+            const ignoredNames = Array.from(ignoredForeignNames);
+            const maxLoggedForeignNames = 20;
+            const loggedForeignCount = Math.min(ignoredNames.length, maxLoggedForeignNames);
+            for (let i = 0; i < loggedForeignCount; i += 1) {
+              core.info(`Ignored check run from unexpected producer: ${ignoredNames[i]}`);
+            }
+            if (ignoredNames.length > maxLoggedForeignNames) {
+              core.info(
+                `Ignored ${ignoredNames.length - maxLoggedForeignNames} ` +
+                'additional foreign-producer check names'
+              );
             }
 
             // ADR-1177 / ADR-1319 — hardware lanes are admitted by an explicit

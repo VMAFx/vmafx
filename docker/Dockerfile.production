@@ -49,7 +49,7 @@ LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
 
 # Install only build-time deps; nothing carried into the runtime stage
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends \
         gcc \
         g++ \
@@ -101,7 +101,7 @@ FROM ${RELEASE_PYTHON_BASE} AS python-deps
 ARG DEBIAN_FRONTEND=noninteractive
 
 # hadolint ignore=DL3008
-RUN apt-get update \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends \
         gcc \
         ca-certificates \
@@ -214,7 +214,7 @@ FROM ${RELEASE_PYTHON_BASE} AS cli-source-fetch
 RUN --mount=type=bind,from=cli-with-notices,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
     && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact production-cli-image \
         --root /rootfs --repo /repo --out /sources.list \
     && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \
@@ -302,7 +302,7 @@ FROM ${RELEASE_PYTHON_BASE} AS server-source-fetch
 RUN --mount=type=bind,from=server-assembled,target=/rootfs \
     --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
     sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
     && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact production-server-image \
         --root /rootfs --repo /repo --out /sources.list \
     && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \

@@ -165,7 +165,7 @@ ARG RR_APT_VERSION=5.9.0-5
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
     # Toolchains
     ccache \
     gcc-13 \
@@ -433,7 +433,7 @@ RUN key="$(mktemp)" \
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
     intel-basekit
 
 # ---------- Intel GPU compute-runtime (Arc / Xe dispatch via Level Zero) ----
@@ -470,7 +470,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # in-container fallback-to-CPU regression.
 #
 # clinfo is installed in the same layer as the NEO .debs to avoid a
-# separate apt-get update/install round (saves one image layer). ADR-0790.
+# separate apt list refresh/install pass (saves one image layer). ADR-0790.
 # The matched set of Intel NEO runtime, gmmlib, IGC and ocloc packages is
 # derived dynamically from the release pinned as INTEL_NEO_VERSION in
 # build-config.env (ADR-1145); CI build hosts install that release's ocloc
@@ -484,12 +484,12 @@ RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     . /opt/vmafx/build-config.env \
-    && apt-get update && apt-get install -y --no-install-recommends clinfo \
+    && apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends clinfo \
     && mkdir -p /tmp/neo && cd /tmp/neo \
     && token_args=() \
     && if [[ -n "${GITHUB_TOKEN:-}" ]]; then token_args=(--github-token "${GITHUB_TOKEN}"); fi \
     && python3 /tmp/fetch-intel-neo.py --neo-ver "${INTEL_NEO_VERSION}" "${token_args[@]}" \
-    && apt-get update \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends ./*.deb \
     && ldconfig \
     && cd / && rm -rf /tmp/neo /tmp/fetch-intel-neo.py
@@ -509,7 +509,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     . /opt/vmafx/build-config.env \
     && curl --retry 3 --retry-all-errors -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze1_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze1.deb \
     && curl --retry 3 --retry-all-errors -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze-dev_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze-dev.deb \
-    && apt-get update \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends /tmp/libze1.deb /tmp/libze-dev.deb \
     && find /tmp -maxdepth 1 -name 'libze*.deb' -delete
 
@@ -633,7 +633,7 @@ COPY --from=rocm-src /opt/rocm /opt/rocm
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
     libxml2-16 \
     && ln -sf /usr/lib/x86_64-linux-gnu/libxml2.so.16.1.2 \
               /usr/lib/x86_64-linux-gnu/libxml2.so.2
@@ -987,7 +987,7 @@ USER root
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
     libx264-dev libx265-dev libvpx-dev libdav1d-dev \
     libfdk-aac-dev libmp3lame-dev libopus-dev libvorbis-dev \
     libass-dev libfreetype-dev libfontconfig-dev libfribidi-dev \

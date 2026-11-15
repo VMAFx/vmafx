@@ -9,6 +9,7 @@ import base64
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import shutil
 import struct
@@ -685,11 +686,12 @@ def source_repo(tmp: Path) -> tuple[Path, str]:
     """A local git repository with one commit (the test stand-in for TheRock)."""
     repo = tmp / "upstream"
     write(repo / "patches/numactl/0001.patch", "patch\n")
+    environment = dict(lic.git_environment(), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
 
     def git(*argv: str) -> str:  # never the caller's repository, even under a git hook
         """Run a git command in the upstream test repository and return stripped stdout."""
         done = subprocess.run(["git", *argv], cwd=repo, check=True, capture_output=True, text=True,
-                              env=lic.git_environment(), timeout=GIT_TIMEOUT_S)  # fmt: skip
+                              env=environment, timeout=GIT_TIMEOUT_S)  # fmt: skip
         return done.stdout.strip()
 
     git("init", "-q")

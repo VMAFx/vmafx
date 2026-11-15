@@ -88,7 +88,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg python3 \
         libgomp1 zlib1g \
         libva2 libva-drm2 intel-media-va-driver-non-free libvpl2 libmfx-gen1.2 \
@@ -138,7 +138,7 @@ RUN key="$(mktemp)" \
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
         intel-basekit \
         meson ninja-build cmake pkg-config nasm git \
         build-essential zlib1g-dev \
@@ -180,7 +180,7 @@ RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends xxd \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends xxd \
  && if ! command -v xxd >/dev/null; then echo "FATAL: xxd not installed"; exit 1; fi
 
 # ---- libvmaf build inputs: the source tree (core/, ADR-0700) + the JSON
@@ -382,7 +382,7 @@ RUN ldconfig \
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends python3 \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends python3 \
  && if ! command -v python3 >/dev/null; then echo "FATAL: python3 not installed"; exit 1; fi
 COPY --from=build /src/vmafx/scripts/test/reference_report.py /opt/vmaf-selftest/reference_report.py
 # The 5 Netflix golden YUV fixtures (fetched + MD5-verified in the build stage;

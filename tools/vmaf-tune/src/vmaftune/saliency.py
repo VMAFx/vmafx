@@ -750,7 +750,7 @@ def _check_libaom_roi_request(request: EncodeRequest) -> None:
     if source == "preset":
         raise ValueError(
             f"libaom-av1 saliency ROI requires preset with cpu-used 7 or 8 (supported: "
-            f"'veryfast', 'superfast'); preset {request.preset!r} maps to cpu-used {cpu_used}. "
+            f"'veryfast', 'superfast', 'ultrafast'); preset {request.preset!r} maps to cpu-used {cpu_used}. "
             f"libaom ignores ROI maps outside realtime cpu-used 7..8."
         )
     raise ValueError(

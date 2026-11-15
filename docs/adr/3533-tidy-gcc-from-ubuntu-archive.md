@@ -1,6 +1,6 @@
 # ADR-3533: Install the tidy compiler from the Ubuntu archive
 
-- **Status**: Accepted
+- **Status**: Accepted (scan scope widened by [ADR-3537](3537-apt-update-fail-closed.md))
 - **Supersedes**: [ADR-1230](1230-modern-gcc-toolchain.md), decision 1 only
 - **Date**: 2026-11-11
 - **Tags**: ci, build, tooling, clang-tidy
