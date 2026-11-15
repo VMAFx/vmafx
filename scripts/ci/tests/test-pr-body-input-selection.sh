@@ -36,19 +36,18 @@
 #                 reality. Every case here is wrapped in `timeout` and a
 #                 124 is reported as a hang, not merely as a wrong code.
 #
-# Exit 124 stopped meaning "hung" all by itself (issue #3457,
-# 2026-11-15): under a parallel pre-push run the ffmpeg-patches gate can
-# spend its whole 12 s budget in the #2435 invariant tree scans, which
-# run before the PR-body stage in that gate, and die killed-but-working.
-# The verdict therefore keys on the gate's own progress, not on the
-# timeout alone: a 124 whose captured output carries the gate's
-# `PR body from ...` line decided what fd 0 was and counts as a slow
-# pass, not a hang; a 124 without the line never reached the decision
-# and is reported as HUNG. The surface-gate cases below also pass
+# Exit 124 mostly means "hung" (issue #3457, 2026-11-15): under a parallel
+# pre-push run the ffmpeg-patches gate can spend its whole 12 s budget in
+# the #2435 invariant tree scans, which run before the PR-body stage in
+# that gate, and die killed-but-working. The surface-gate cases below pass
 # `--skip-invariants`, so their 12 s budget measures the fd-0 decision
-# instead of the tree scans, and the planted cases at the bottom keep
-# the HUNG verdict real — a gate that blocks on fd 0 prints nothing and
-# must never be reclassified as a slow pass.
+# instead of the tree scans — the measured cause is out of the window. A
+# 124 whose output carries the gate's `PR body from ...` line decided what
+# fd 0 was and is re-run once with a 60 s budget, judged as usual; a slow
+# case that completes with its expected verdict passes, a second timeout
+# is HUNG — a hang after the decision is still a hang. The planted cases
+# at the bottom keep both HUNG shapes armed, through the same run_case
+# path the real cases take.
 #
 #   /dev/null     `bash gate.sh </dev/null`, the shape a CI step, a git
 #                 hook and `nohup` all produce. Not a terminal, carries no
@@ -102,25 +101,47 @@ fail() {
   fail_count=$((fail_count + 1))
 }
 
-# run_case <expected-exit> <name> <shell-snippet>
+# run_case <expected-exit|hung> <name> <shell-snippet>
 #
 # The snippet runs under `timeout 12 bash -c`, from the repo root, with
 # PR_BODY unset unless the snippet sets it. Exit 124 is reported as a hang
-# because that is the regression this file exists to catch — but only when
-# the gate never made its PR-body decision (issue #3457): a gate killed at
-# 12 s after printing `PR body from ...` decided what fd 0 was and merely
-# ran out of budget behind it, which is a slow pass, not a hang.
+# because that is the regression this file exists to catch. A 124 whose
+# output carries the gate's `PR body from ...` line decided what fd 0 was
+# inside the budget, so the kill landed on post-decision work or on load
+# (issue #3457): the case is re-run once with a 60 s budget and judged as
+# usual — a slow case that completes with its expected verdict passes, a
+# second timeout is HUNG, because a hang after the decision is still a hang.
+# expected="hung" is the planted negative control: the case must time out
+# (either shape) and is reported as HUNG; anything else fails.
 run_case() {
   local expected="$1" name="$2" snippet="$3"
-  local out="" code=0
+  local out="" code=0 rerun=""
   out="$(cd "${repo_root}" && timeout 12 env -u PR_BODY bash -c "${snippet}" 2>&1)" || code=$?
   printf '%s' "${out}" >"${work}/last-output.txt"
+  if [ "${code}" -eq 124 ] && grep -qiE -- 'PR body from' "${work}/last-output.txt"; then
+    rerun="1"
+    out="$(cd "${repo_root}" && timeout 60 env -u PR_BODY bash -c "${snippet}" 2>&1)" || code=$?
+    printf '%s' "${out}" >"${work}/last-output.txt"
+  fi
   if [ "${code}" -eq 124 ]; then
-    if grep -qiE -- 'PR body from' "${work}/last-output.txt"; then
-      pass "${name} — slow, not hung: the gate printed its PR-body decision before the 12 s budget expired"
+    if [ "${expected}" = "hung" ]; then
+      if [ -n "${rerun}" ]; then
+        pass "${name} — planted hang reported as HUNG (killed at 12 s with the decision line, again at 60 s)"
+      else
+        pass "${name} — planted hang reported as HUNG (killed at 12 s before the decision)"
+      fi
+    elif [ -n "${rerun}" ]; then
+      fail "${name} — HUNG (killed again at 60 s after the PR-body decision); the gate must decide, not block"
     else
       fail "${name} — HUNG (killed at 12 s before the PR-body decision); the gate must decide, not block"
     fi
+    return
+  fi
+  if [ "${expected}" = "hung" ]; then
+    fail "${name} — the planted hang was expected to time out (got exit=${code})"
+    echo "----- captured output -----"
+    printf '%s\n' "${out}"
+    echo "---------------------------"
     return
   fi
   if [ "${code}" -ne "${expected}" ]; then
@@ -156,26 +177,6 @@ expect_no_output() {
     echo "---------------------------"
   else
     pass "${name}"
-  fi
-}
-
-# expect_hung <name> <shell-snippet> — the negative control for the slow-pass
-# branch of run_case: the snippet must die at the 12 s timeout WITHOUT having
-# printed a PR-body decision. A run_case change that reclassified every 124 as
-# a slow pass (keying on the timeout alone, not on the gate's progress) would
-# let a real fd-0 hang go green; these planted cases keep that verdict armed.
-expect_hung() {
-  local name="$1" snippet="$2"
-  local out="" code=0
-  out="$(cd "${repo_root}" && timeout 12 env -u PR_BODY bash -c "${snippet}" 2>&1)" || code=$?
-  printf '%s' "${out}" >"${work}/last-output.txt"
-  if [ "${code}" -eq 124 ] && ! grep -qiE -- 'PR body from' "${work}/last-output.txt"; then
-    pass "${name} (exit=124, no PR-body decision — reported as HUNG)"
-  else
-    fail "${name} (got exit=${code}; expected 124 with no PR-body decision)"
-    echo "----- captured output -----"
-    printf '%s\n' "${out}"
-    echo "---------------------------"
   fi
 }
 
@@ -401,28 +402,33 @@ fi
 
 echo "--- planted hangs (issue #3457): the HUNG verdict stays armed ---"
 
-# A gate that blocks on fd 0 the way the pre-fix gates did must be reported
-# as HUNG, never reclassified as a slow pass. Two planted shapes:
+# A gate that blocks must be reported as HUNG, never as a slow pass. Three
+# planted shapes, all through run_case's own "hung" expectation so the
+# verdict and the real cases share one code path:
 #
 #   - portable: the gate's stdin is a pipe whose writer never writes, so
 #     `cat` blocks on read in every environment;
+#   - decision-line: the gate prints its PR-body decision and then blocks,
+#     which is exactly the shape a slow-pass shortcut would miscount — the
+#     first kill carries the decision line, so this case exercises the 60 s
+#     re-run, and its second timeout must land on HUNG;
 #   - the exact pre-fix repro (`PR_BODY="$(cat)"` on a closed fd 0): on
 #     Linux the command-substitution pipe takes the freed descriptor 0 and
-#     `cat` reads the pipe it writes to, which is the hang this file exists
-#     to catch. MSYS reports EBADF on a closed fd instead of hanging, so
-#     the shape is probed first and skipped where it cannot exist.
-#
-# Neither shape prints a PR-body decision, which is exactly the property
-# that keeps run_case's slow-pass branch from masking a real hang.
+#     `cat` reads the pipe it writes to. MSYS reports EBADF on a closed fd
+#     instead of hanging, so the shape is probed first and skipped where it
+#     cannot exist.
 
-expect_hung "planted: a gate blocked on a silent stdin is reported as HUNG" \
+run_case hung "planted: a gate blocked on a silent stdin is reported as HUNG" \
   "sleep 30 2>/dev/null | bash -c 'PR_BODY=\"\$(cat 2>/dev/null)\"'"
 
-probe_code=0
+run_case hung "planted: a gate that prints the decision line and then blocks on stdin is reported as HUNG" \
+  "echo 'planted-gate: PR body from empty (closed stdin), diff from env'; sleep 30 2>/dev/null | cat"
+
 # shellcheck disable=SC2016  # the planted snippet must reach the probe unexpanded
+probe_code=0
 timeout 3 bash -c 'PR_BODY="$(cat)"' 0<&- >/dev/null 2>&1 || probe_code=$?
 if [ "${probe_code}" -eq 124 ]; then
-  expect_hung "planted: a gate stuck reading a closed fd 0 is reported as HUNG" \
+  run_case hung "planted: a gate stuck reading a closed fd 0 is reported as HUNG" \
     "bash -c 'PR_BODY=\"\$(cat)\"' 0<&-"
 else
   echo "SKIP: planted closed-fd case: this bash reports exit=${probe_code} on a closed fd 0 instead of hanging (probe), so the shape cannot exist here"

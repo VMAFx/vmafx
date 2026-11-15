@@ -415,6 +415,31 @@ class SkipInvariantsModeTests(_FixtureTree, unittest.TestCase):
     """Verify the --skip-invariants mode the PR-body-input selection test runs (issue #3457)."""
 
     SKIP_MARKER = "--skip-invariants: the #2435 invariant surface checks are skipped"
+    FLAG = "--skip-invariants"
+
+    def test_no_automation_passes_skip_invariants(self) -> None:
+        """Nothing under the automation surfaces may pass --skip-invariants to the gate.
+
+        The flag exists so the PR-body-input selection test can measure the
+        fd-0 decision without the tree scans (issue #3457). A workflow or
+        hook passing it would silently stop the #2435 invariant scans in CI
+        while the run still logs a pass, so every automation surface that
+        could invoke the gate is scanned for the flag (review of PR #3461).
+        """
+        surfaces: list[Path] = [ROOT / ".pre-commit-config.yaml", ROOT / "lefthook.yml"]
+        workflows = ROOT / ".github" / "workflows"
+        if workflows.is_dir():
+            surfaces.extend(sorted(p for p in workflows.iterdir() if p.suffix in (".yml", ".yaml")))
+        for path in surfaces:
+            if not path.is_file():
+                continue
+            with self.subTest(surface=str(path.relative_to(ROOT))):
+                self.assertNotIn(
+                    self.FLAG,
+                    path.read_text(encoding="utf-8"),
+                    f"{path.relative_to(ROOT)} passes {self.FLAG} to the surface gate; "
+                    "the #2435 invariant scans must run in CI",
+                )
 
     def test_skip_invariants_still_decides_the_body_stage(self) -> None:
         """Without origin/master the gate still fails closed in the diff stage — tree checks skipped, verdicts unchanged."""
