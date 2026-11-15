@@ -2976,10 +2976,18 @@ def _step_gates_job_result(step: dict[str, object], job_id: str) -> bool:
         return False
     code = executable_body(run_text)
     if job_id == "impact":
-        return bool(re.search(rf'"\$\{{?{re.escape(var)}\}}?"\s*!=\s*success\b', code))
+        impact_guard = re.compile(
+            rf'if\s+\[\[?\s*"\$\{{?{re.escape(var)}\}}?"\s*!=\s*success\s*\]\]?'
+            r"(?:;\s*|\s*\n\s*)then\b"
+            r"(?:(?!\bfi\b)[\s\S])*(?:^|[;\n])[ \t]*exit\s+1[ \t]*(?:;|\n)"
+            r"(?:(?!\bfi\b)[\s\S])*\bfi\b"
+        )
+        return impact_guard.search(code) is not None
     case_guard = re.compile(
         rf'case\s+"\$\{{?[A-Za-z_][A-Za-z0-9_]*\}}?:\$\{{?{re.escape(var)}\}}?"\s+in\s*\n'
-        r"\s*true:success\|false:skipped\)\s*;;"
+        r"\s*true:success\|false:skipped\)\s*;;\s*\n"
+        r"\s*\*\)(?:(?:(?!;;|\besac\b)[\s\S])*[;\n])?[ \t]*exit\s+1\s*;;\s*\n"
+        r"\s*esac\b"
     )
     return case_guard.search(code) is not None
 
@@ -3063,6 +3071,47 @@ class DevContainerAggregatorGateContract(unittest.TestCase):
             "needs.ubuntu-dev-images.result",
             "\n".join(dev_container_aggregator_problems(no_case)),
         )
+
+    def test_planted_missing_default_arm_or_impact_exit_is_refused(self) -> None:
+        text = self.workflow_text()
+        no_work_exit = text.replace(
+            '            *) echo "::error::invalid dev-container gate state '
+            'selected=$SELECTED work=$WORK_RESULT"; exit 1 ;;\n',
+            '            *) echo "::error::invalid dev-container gate state '
+            'selected=$SELECTED work=$WORK_RESULT" ;;\n',
+            1,
+        )
+        self.assertNotEqual(no_work_exit, text)
+        work_problems = dev_container_aggregator_problems(no_work_exit)
+        self.assertTrue(work_problems)
+        self.assertIn("needs.dev-container-build-work.result", "\n".join(work_problems))
+
+        no_ubuntu_exit = text.replace(
+            '            *) echo "::error::invalid ubuntu-dev-images gate state '
+            'selected=$UBUNTU_SELECTED work=$UBUNTU_RESULT"; exit 1 ;;\n',
+            '            *) echo "::error::invalid ubuntu-dev-images gate state '
+            'selected=$UBUNTU_SELECTED work=$UBUNTU_RESULT" ;;\n',
+            1,
+        )
+        self.assertNotEqual(no_ubuntu_exit, text)
+        ubuntu_problems = dev_container_aggregator_problems(no_ubuntu_exit)
+        self.assertTrue(ubuntu_problems)
+        self.assertIn("needs.ubuntu-dev-images.result", "\n".join(ubuntu_problems))
+
+        no_impact_exit = text.replace(
+            '          if [ "$PLAN_RESULT" != success ]; then\n'
+            '            echo "::error::impact planning did not succeed ($PLAN_RESULT)"\n'
+            "            exit 1\n"
+            "          fi\n",
+            '          if [ "$PLAN_RESULT" != success ]; then\n'
+            '            echo "::error::impact planning did not succeed ($PLAN_RESULT)"\n'
+            "          fi\n",
+            1,
+        )
+        self.assertNotEqual(no_impact_exit, text)
+        impact_problems = dev_container_aggregator_problems(no_impact_exit)
+        self.assertTrue(impact_problems)
+        self.assertIn("needs.impact.result", "\n".join(impact_problems))
 
 
 if __name__ == "__main__":

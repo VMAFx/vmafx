@@ -290,6 +290,60 @@ class BuildSecretContract(unittest.TestCase):
                 text = self.workflow.replace(ubuntu_build, raw_build, 1)
                 self.assertTrue(any("only via" in e for e in self.caller_errors(text, GATE)))
 
+    def test_raw_build_quoted_clause_separator_bypass_rejected(self) -> None:
+        for command in (
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile --label ';' "
+            "--secret id=github_token,env=GITHUB_TOKEN .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile -t vmafx:dev . ';' "
+            "--secret id=github_token,env=GITHUB_TOKEN",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile -t ';' .",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_option_value_as_file_bypass_rejected(self) -> None:
+        for command in (
+            "docker build --label --file=docker/dev/ubuntu-26.04.Dockerfile .",
+            "docker build -t --file=docker/dev/ubuntu-26.04.Dockerfile .",
+            "docker build --progress --file=docker/dev/ubuntu-26.04.Dockerfile .",
+            "docker build --no-cache -f docker/dev/ubuntu-26.04.Dockerfile .",
+            "docker build --file",
+            "docker build -f",
+            "docker build --file= .",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_command_and_process_substitution_rejected(self) -> None:
+        for command in (
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile "
+            "$(printf %s --secret=id=github_token,env=GITHUB_TOKEN) .",
+            "docker build -f <(cat docker/dev/ubuntu-26.04.Dockerfile) .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile <(echo .)",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile >(cat) .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile `printf %s .`",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_workflow_allowed_raw_builds_stay_allowed(self) -> None:
+        raw_builds = [
+            command
+            for workflow in (self.workflow, self.release)
+            for command in MODULE._joined_commands(workflow)
+            if "docker build" in command
+        ]
+        self.assertTrue(any("--check" in command for command in raw_builds))
+        self.assertTrue(
+            any("ubuntu-26.04${SUFFIX}.Dockerfile" in command for command in raw_builds)
+        )
+        for command in (
+            *raw_builds,
+            'docker build -f "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile" .',
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(MODULE._has_disallowed_raw_build(command))
+
     # --- the publisher and the docs ------------------------------------------
 
     def test_release_rehearsal_matches_the_release_run(self) -> None:

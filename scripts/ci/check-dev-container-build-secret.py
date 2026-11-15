@@ -263,26 +263,116 @@ ALLOWED_RAW_DOCKERFILES = frozenset(
         "docker/dev/ubuntu-26.04-sycl.Dockerfile",
     }
 )
+SHELL_CLAUSE_CHARS = frozenset(";&|()")
+DOUBLE_QUOTE_ESCAPES = frozenset({"\\", '"', "$", "`"})
+SUBSTITUTION_MARKERS = ("$(", "`", "<(", ">(")
+NON_BUILD_DOCKER_RE = re.compile(r"^\s*docker\s+(?:compose|run|rmi)(?:\s|$)")
+# Allow-list derived from the checked workflows' raw `docker build` calls:
+#   dev-container-build.yml: `--check --file ... --target ... .`
+#   dev-container-build.yml: `--progress=plain -f ... -t ... .`
+RAW_BUILD_FLAGS = frozenset({"--check"})
+RAW_BUILD_VALUE_OPTIONS = frozenset({"-f", "--file", "-t", "--progress", "--target"})
+
+
+def _has_disallowed_substitution(command: str) -> bool:
+    if not any(marker in command for marker in SUBSTITUTION_MARKERS):
+        return False
+    if NON_BUILD_DOCKER_RE.match(command) is None:
+        return True
+    rest = command.lstrip().removeprefix("docker")
+    return re.search(r"\bdocker\b", rest) is not None or any(sep in command for sep in ";&|")
+
+
+def _flush_word(clause: list[str], buf: list[str], has_word: bool) -> bool:
+    if has_word:
+        clause.append("".join(buf))
+        buf.clear()
+    return False
+
+
+def _comment_end(command: str, index: int) -> int:
+    end = command.find("\n", index)
+    return len(command) if end < 0 else end
+
+
+def _scan_quoted_char(
+    command: str, index: int, quote: str, buf: list[str]
+) -> tuple[int, str] | None:
+    ch = command[index]
+    if ch == quote:
+        return index + 1, ""
+    if quote == '"' and ch == "\\":
+        if index + 1 >= len(command):
+            return None
+        nxt = command[index + 1]
+        if nxt != "\n":
+            if nxt not in DOUBLE_QUOTE_ESCAPES:
+                buf.append("\\")
+            buf.append(nxt)
+        return index + 2, quote
+    buf.append(ch)
+    return index + 1, quote
+
+
+def _scan_unquoted_char(
+    command: str,
+    index: int,
+    buf: list[str],
+    has_word: bool,
+    clause: list[str],
+    clauses: list[list[str]],
+) -> tuple[int, str, bool] | None:
+    ch = command[index]
+    quote = ""
+    step = 1
+    if ch in " \t\r\n":
+        has_word = _flush_word(clause, buf, has_word)
+    elif ch == "#" and not has_word:
+        step = _comment_end(command, index) - index
+    elif ch in SHELL_CLAUSE_CHARS:
+        has_word = _flush_word(clause, buf, has_word)
+        if clause:
+            clauses.append(clause.copy())
+            clause.clear()
+    elif ch in ("'", '"'):
+        quote = ch
+        has_word = True
+    elif ch == "\\":
+        if index + 1 >= len(command):
+            return None
+        buf.append(command[index + 1])
+        has_word = True
+        step = 2
+    else:
+        buf.append(ch)
+        has_word = True
+    return index + step, quote, has_word
 
 
 def _shell_clauses(command: str) -> list[list[str]] | None:
-    try:
-        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()")
-        lexer.whitespace_split = True
-        words = list(lexer)
-    except ValueError:
-        return None
     clauses: list[list[str]] = []
-    current: list[str] = []
-    for word in words:
-        if word and set(word) <= set(";&|()"):
-            if current:
-                clauses.append(current)
-                current = []
+    clause: list[str] = []
+    buf: list[str] = []
+    quote = ""
+    has_word = False
+    index = 0
+    limit = len(command)
+    while index < limit:
+        if quote:
+            quoted = _scan_quoted_char(command, index, quote, buf)
+            if quoted is None:
+                return None
+            index, quote = quoted
         else:
-            current.append(word)
-    if current:
-        clauses.append(current)
+            unquoted = _scan_unquoted_char(command, index, buf, has_word, clause, clauses)
+            if unquoted is None:
+                return None
+            index, quote, has_word = unquoted
+    if quote:
+        return None
+    _flush_word(clause, buf, has_word)
+    if clause:
+        clauses.append(clause)
     return clauses
 
 
@@ -298,7 +388,11 @@ def _clause_raw_build_args(clause: list[str]) -> tuple[list[str] | None, bool]:
 
 
 def _raw_build_args_list(command: str) -> list[list[str]] | None:
-    clauses = _shell_clauses(command) if "docker" in command else []
+    if "docker" not in command:
+        return []
+    if _has_disallowed_substitution(command):
+        return None
+    clauses = _shell_clauses(command)
     if clauses is None:
         return None
     builds: list[list[str]] = []
@@ -325,31 +419,63 @@ def _has_forbidden_build_flag(args: list[str]) -> bool:
     return False
 
 
-def _single_dockerfile_operand(args: list[str]) -> str | None:
-    files: list[str] = []
-    index = 0
-    while index < len(args):
-        arg = args[index]
-        if arg in ("-f", "--file"):
-            if index + 1 >= len(args):
-                return None
-            files.append(args[index + 1])
-            index += 2
-            continue
-        if arg.startswith("--file="):
-            files.append(arg.split("=", 1)[1])
-        elif arg.startswith("-") and not arg.startswith("--") and "f" in arg[1:]:
+def _consume_build_option(args: list[str], index: int) -> tuple[str, str, int] | None:
+    arg = args[index]
+    if arg in RAW_BUILD_FLAGS:
+        return arg, "", index + 1
+    if arg in RAW_BUILD_VALUE_OPTIONS:
+        if index + 1 >= len(args) or not args[index + 1]:
             return None
-        index += 1
-    return files[0] if len(files) == 1 else None
+        return arg, args[index + 1], index + 2
+    if arg.startswith("--") and "=" in arg:
+        opt, _, value = arg.partition("=")
+        if opt in RAW_BUILD_VALUE_OPTIONS and value:
+            return opt, value, index + 1
+    return None
+
+
+def _parse_raw_build_args(args: list[str]) -> tuple[bool, list[str], int] | None:
+    has_check = False
+    files: list[str] = []
+    operands = 0
+    index = 0
+    limit = len(args)
+    while index < limit:
+        if not args[index].startswith("-"):
+            operands += 1
+            index += 1
+            continue
+        parsed = _consume_build_option(args, index)
+        if parsed is None:
+            return None
+        opt, value, index = parsed
+        if opt == "--check":
+            has_check = True
+        elif opt in ("-f", "--file"):
+            files.append(value)
+    return has_check, files, operands
+
+
+def _single_dockerfile_operand(args: list[str]) -> str | None:
+    parsed = _parse_raw_build_args(args)
+    if parsed is None:
+        return None
+    _, files, operands = parsed
+    return files[0] if len(files) == 1 and operands == 1 else None
 
 
 def _is_allowed_docker_build_args(args: list[str]) -> bool:
-    if any("$(" in arg or "`" in arg for arg in args):
+    if any(SHELL_CLAUSE_CHARS.intersection(arg) for arg in args):
         return False
     if _has_forbidden_build_flag(args):
         return False
-    if "--check" in args:
+    parsed = _parse_raw_build_args(args)
+    if parsed is None:
+        return False
+    has_check, files, operands = parsed
+    if operands != 1 or len(files) > 1:
+        return False
+    if has_check:
         return True
     return _single_dockerfile_operand(args) in ALLOWED_RAW_DOCKERFILES
 
