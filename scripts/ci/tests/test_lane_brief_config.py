@@ -125,7 +125,7 @@ class LaneBriefConfigShapeTest(unittest.TestCase):
     def test_shape_check_rejects_a_list_at_top_level(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             bad = Path(tmp) / "lane-brief.yaml"
-            bad.write_text("- review\n", encoding="utf-8")
+            bad.write_text("- review\n", encoding="utf-8", newline="\n")
             with self.assertRaises(TypeError):
                 load_config(bad)
 
@@ -142,7 +142,7 @@ class LaneBriefReplayTest(unittest.TestCase):
         self.serial = 0
         self.tmp = Path(tempfile.mkdtemp(prefix="lane-brief-test-"))
         self.router = self.tmp / "routing.yaml"
-        self.router.write_text(ROUTER_STUB, encoding="utf-8")
+        self.router.write_text(ROUTER_STUB, encoding="utf-8", newline="\n")
 
     def tearDown(self) -> None:
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -152,13 +152,15 @@ class LaneBriefReplayTest(unittest.TestCase):
         self.serial += 1
         root = self.tmp / f"wt{self.serial}"
         (root / ".config").mkdir(parents=True)
-        (root / ".config" / "lane-brief.yaml").write_text(config_text, encoding="utf-8")
+        (root / ".config" / "lane-brief.yaml").write_text(
+            config_text, encoding="utf-8", newline="\n"
+        )
         return root
 
     def required(self, brief_text: str, worktree: Path) -> TextCommandResult:
         self.serial += 1
         brief = self.tmp / f"brief{self.serial}.md"
-        brief.write_text(brief_text, encoding="utf-8")
+        brief.write_text(brief_text, encoding="utf-8", newline="\n")
         env = dict(os.environ, LANE_ROUTER_CONFIG=str(self.router))
         return run_command(
             [sys.executable, "-B", str(self.reader), "required", str(brief), str(worktree)],
