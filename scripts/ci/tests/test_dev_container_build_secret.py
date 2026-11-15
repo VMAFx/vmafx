@@ -183,6 +183,22 @@ class BuildSecretContract(unittest.TestCase):
                     any("exactly one docker build" in error for error in self.builder_errors(extra))
                 )
 
+    def test_stage_builder_extra_wrapped_docker_build_fails(self) -> None:
+        for line in (
+            'env "$DOCKER" build -f dev/Containerfile .',
+            "env -u HOME docker build -f dev/Containerfile .",
+            "bash -c 'docker build -f dev/Containerfile .'",
+            "env -S'docker build -f dev/Containerfile .'",
+            "env -Sdocker build -f dev/Containerfile .",
+            "sudo docker image build -f dev/Containerfile .",
+            "docker-buildx build -f dev/Containerfile .",
+        ):
+            with self.subTest(line=line):
+                extra = f"{self.builder}\n{line}\n"
+                self.assertTrue(
+                    any("exactly one docker build" in error for error in self.builder_errors(extra))
+                )
+
     # --- workflow callers ----------------------------------------------------
 
     def test_missing_raw_build_wiring_fails(self) -> None:
@@ -329,6 +345,62 @@ class BuildSecretContract(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_wrapped_and_multi_clause_builds_rejected(self) -> None:
+        for command in (
+            'env "$DOCKER" build -f dev/Containerfile .',
+            'env -u HOME "$DOCKER" build -f dev/Containerfile .',
+            'env DOCKER_BUILDKIT=1 "${DOCKER}" build --secret id=github_token,env=GITHUB_TOKEN .',
+            "env -S 'docker build -f dev/Containerfile .'",
+            "env -u HOME docker build -f dev/Containerfile --target release-build .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . "
+            "&& bash -c 'docker build -f dev/Containerfile .'",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . ; "
+            "sudo docker build -f dev/Containerfile .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . "
+            '&& sudo "$DOCKER" build -f dev/Containerfile .',
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . "
+            "&& docker run --rm img sh -c 'docker build -f dev/Containerfile .'",
+            # Attached env options and wrappers ahead of other build spellings.
+            'env --split-string="docker build -f dev/Containerfile ."',
+            'env -S"docker build -f dev/Containerfile ."',
+            "env -S'docker build -f dev/Containerfile .'",
+            "env -Sdocker build -f dev/Containerfile .",
+            "env -C /tmp docker image build -f dev/Containerfile .",
+            "sudo docker image build -f dev/Containerfile .",
+            "timeout 600 docker buildx build -f dev/Containerfile .",
+            "docker-buildx build -f dev/Containerfile .",
+            "sudo /usr/libexec/docker/cli-plugins/docker-buildx build -f dev/Containerfile .",
+            "docker.exe build -f dev/Containerfile .",
+            "docker run --rm img docker image build -f dev/Containerfile .",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_wrapped_and_multi_clause_non_builds_allowed(self) -> None:
+        for command in (
+            'env -u GITHUB_TOKEN docker compose --project-directory "$PWD" '
+            "-f dev/docker-compose.yml config --quiet",
+            "env -u GITHUB_TOKEN docker build --check --file dev/Containerfile "
+            "--target libvmaf-build .",
+            'env -u GITHUB_TOKEN docker compose --project-directory "$PWD" '
+            "-f dev/docker-compose.yml build --check dev-mcp",
+            'docker build --progress=plain -f "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile" '
+            '-t "vmafx-dev-ubuntu:${VARIANT}" .',
+            'docker run --rm "vmafx-dev-ubuntu:${VARIANT}" '
+            "sh -c 'meson --version && ninja --version && ruff --version "
+            "&& shellcheck --version >/dev/null && shfmt --version'",
+            "DOCKER_BUILDKIT=1 env -u HOME docker build -f docker/dev/ubuntu-26.04.Dockerfile .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . "
+            "&& docker run --rm img sh -c 'meson --version'",
+            'echo "$HOME" && docker build -f docker/dev/ubuntu-26.04.Dockerfile .',
+            # Plain repository paths naming docker stay allowed (boundary).
+            "bash scripts/ci/docker-hub-mirror.sh",
+            "bash scripts/ci/check-compose-dri-writable.sh dev/docker-compose.yml",
+            "git checkout FETCH_HEAD -- docker/ docker/dev/ubuntu-26.04.Dockerfile",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(MODULE._has_disallowed_raw_build(command))
 
     def test_raw_build_parameter_command_word_rejected(self) -> None:
         for command in (

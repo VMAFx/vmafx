@@ -189,13 +189,57 @@ def _is_docker_word(word: str) -> bool:
     return word == "docker" or word.endswith("/docker")
 
 
-def _is_builder_docker_build(line: str) -> bool:
-    # A parameter command word (`"$DOCKER" build`) counts as a build too, so a
-    # second build through a variable trips the exactly-one rule.
-    executable, *rest = [word.strip("\"'") for word in line.split()] or [""]
-    if not rest or rest[0] != "build":
+def _is_docker_path_word(word: str) -> bool:
+    if _is_docker_word(word) or DOCKER_PATH_WORD_RE.fullmatch(word) is None:
         return False
-    return _is_docker_word(executable) or "$" in executable
+    last = word.rpartition("/")[2]
+    return "docker" not in last or DOCKER_FILE_COMPONENT_RE.fullmatch(last) is not None
+
+
+def _has_hidden_docker_word(words: list[str]) -> bool:
+    return any("docker" in word and not _is_docker_path_word(word) for word in words)
+
+
+def _consume_env_option(words: list[str], index: int) -> int:
+    word = words[index]
+    if word in ENV_NO_ARG_FLAGS or ENV_ASSIGNMENT_RE.match(word) is not None:
+        return 1
+    if word.startswith("--unset="):
+        return int(ENV_NAME_RE.fullmatch(word.removeprefix("--unset=")) is not None)
+    if word == "-u" and index + 1 < len(words):
+        return 2 if ENV_NAME_RE.fullmatch(words[index + 1]) is not None else 0
+    return 0
+
+
+# PR 3458 review (wrapped Docker executables).
+def _command_words(words: list[str]) -> list[str]:
+    trimmed = list(dropwhile(lambda word: ENV_ASSIGNMENT_RE.match(word) is not None, words))
+    if trimmed[:1] != ["env"]:
+        return trimmed
+    index = 1
+    limit = len(trimmed)
+    while index < limit:
+        if trimmed[index] == "--":
+            index += 1
+            break
+        step = _consume_env_option(trimmed, index)
+        if step == 0:
+            break
+        index += step
+    rest = list(dropwhile(lambda word: ENV_ASSIGNMENT_RE.match(word) is not None, trimmed[index:]))
+    return trimmed if rest and rest[0].startswith("-") else rest
+
+
+def _is_builder_docker_build(line: str) -> bool:
+    # A parameter or env-wrapped command word (`env "$DOCKER" build`) and any
+    # wrapped `docker build` (`bash -c 'docker build ...'`) count as builds too.
+    words = [word.strip("\"'") for word in line.split()]
+    executable, *rest = _command_words(words) or [""]
+    if rest[:1] == ["build"] and (_is_docker_word(executable) or "$" in executable):
+        return True
+    if not _is_docker_word(executable) and _has_hidden_docker_word(words):
+        return True
+    return RAW_DOCKER_BUILD_RE.search(line) is not None
 
 
 def _validate_builder_command(code: str) -> list[str]:
@@ -282,7 +326,9 @@ ALLOWED_RAW_BUILD_TAGS = frozenset({"vmafx-dev-ubuntu:${VARIANT}"})
 # PR 3458 review (brace expansion, globs, tilde, parameter expansion):
 # character allow-list for raw-build words after quote and escape stripping.
 RAW_BUILD_WORD = re.compile(r"[A-Za-z0-9._/:@+=-]+")
+ENV_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 ENV_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+ENV_NO_ARG_FLAGS = frozenset({"-i", "--ignore-environment"})
 SHELL_CLAUSE_CHARS = frozenset(";&|()")
 DOUBLE_QUOTE_ESCAPES = frozenset({"\\", '"', "$", "`"})
 SUBSTITUTION_MARKERS = ("$(", "`", "<(", ">(")
@@ -293,6 +339,15 @@ RAW_DOCKER_BUILD_RE = re.compile(
     rf"(?:^|[\s;&|()\"'`]){DOCKER_EXEC_PATTERN}[\"'`]*\s+[\"'`]*build(?=$|[\s;&|()\"'`])"
 )
 STANDALONE_BUILD_RE = re.compile(r"(?:^|[\s;&|()\"'`])build(?=$|[\s;&|()\"'`])")
+# PR 3458 review (wrapped Docker executables): allow-list for a word that names
+# docker anywhere except as the clause's command word. It must be a plain path
+# whose last component, when it names docker, is a data or script file such as
+# dev/docker-compose.yml. Anything else (`sudo docker`, `env -Sdocker`, a quoted
+# command string, `docker-buildx`, `docker.exe`) counts as a hidden Docker call.
+DOCKER_PATH_WORD_RE = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9_./-]*")
+DOCKER_FILE_COMPONENT_RE = re.compile(
+    r"[A-Za-z0-9_-]*docker[-_][A-Za-z0-9_.-]*\.(?:ya?ml|sh|json|md|txt|env|toml)"
+)
 # Allow-list derived from the checked workflows' raw `docker build` calls:
 #   dev-container-build.yml: `--check --file ... --target ... .`
 #   dev-container-build.yml: `--progress=plain -f ... -t ... .`
@@ -407,29 +462,33 @@ def _has_param_build_command(words: list[str]) -> bool:
     return bool(words) and "$" in words[0] and "build" in words[1:]
 
 
+def _docker_clause_build_args(sub: list[str]) -> tuple[list[str] | None, bool]:
+    if sub[:1] == ["build"]:
+        return sub[1:], False
+    # A nested Docker call (`docker run img sh -c 'docker build ...'`) is hidden.
+    hidden = _has_hidden_docker_word(sub)
+    if not sub or sub[0] in ("compose", "run", "rmi"):
+        return None, hidden
+    return None, hidden or "build" in sub
+
+
 def _clause_raw_build_args(clause: list[str]) -> tuple[list[str] | None, bool]:
-    words = list(dropwhile(lambda word: ENV_ASSIGNMENT_RE.match(word) is not None, clause))
+    words = _command_words(clause)
     if _has_param_build_command(words):
         return None, True
-    docker_at = next((i for i, word in enumerate(words) if _is_docker_word(word)), -1)
-    if docker_at < 0:
-        return None, False
-    sub = words[docker_at + 1 :]
-    if not sub or sub[0] in ("compose", "run", "rmi"):
-        return None, False
-    if sub[0] == "build":
-        return sub[1:], False
-    return None, "build" in sub
+    if words and _is_docker_word(words[0]):
+        return _docker_clause_build_args(words[1:])
+    text = " ".join(clause)
+    invalid = _has_hidden_docker_word(clause) or (
+        "$" in text and STANDALONE_BUILD_RE.search(text) is not None
+    )
+    return None, invalid
 
 
 def _may_contain_raw_build(command: str) -> bool:
     return "docker" in command or (
         "$" in command and STANDALONE_BUILD_RE.search(command) is not None
     )
-
-
-def _has_unparsed_docker_build(command: str, builds: list[list[str]]) -> bool:
-    return not builds and RAW_DOCKER_BUILD_RE.search(command) is not None
 
 
 def _raw_build_args_list(command: str) -> list[list[str]] | None:
@@ -447,7 +506,7 @@ def _raw_build_args_list(command: str) -> list[list[str]] | None:
             return None
         if args is not None:
             builds.append(args)
-    return None if _has_unparsed_docker_build(command, builds) else builds
+    return builds
 
 
 def _has_forbidden_build_flag(args: list[str]) -> bool:
