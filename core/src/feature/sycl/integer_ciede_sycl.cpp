@@ -10,7 +10,7 @@
  *  batch 1c part 2).
  *
  *  Self-contained submit / collect — does *not* register with
- *  vmaf_sycl_graph_register because the shared_frame buffers are
+ *  vmaf_sycl_graph_register_flags because the shared_frame buffers are
  *  luma-only and ciede needs full Y/U/V. Each submit packs the
  *  ref/dis Y, U and V planes at their native resolution into
  *  pinned staging, uploads them, launches one kernel and reads
