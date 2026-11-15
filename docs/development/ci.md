@@ -24,6 +24,11 @@ pre-commit run --all-files  # if .pre-commit-config.yaml hooks are installed
 The format-check and pre-commit pair catches roughly the same surface as the
 `pre-commit` job of `lint-and-format.yml`.
 
+The Makefile governance targets (`verify-all`, `compile-context`, `audit`,
+`hiss-coverage`, `dedupe-check`) run the engine the repository pins through
+`.config/praetor/engine.mk` (`make praetor-engine-path` prints its path), never
+the binary on `PATH` (issue 3468).
+
 The duplicate scan is deliberately separate from `standardsctl audit`: the audit
 baseline does not include AST clones. `make verify-all`, pre-commit, pre-push
 and the required Standards job therefore invoke `standardsctl dedupe scan .`
