@@ -8,12 +8,13 @@ ready-head build and test checks stay at their original timestamps. The aggregat
 anchors `minCreatedMs` at `anchorMs - 2 * 60 * 1000` (`runTimestampMs >= minCreatedMs`
 inclusive; `< minCreatedMs` excluded), where `anchorMs` is the latest `ready_for_review`
 timeline event or `pull_request.created_at` when never a draft. Workflows listed in
-`editedRerunWorkflows` must also report from a current-edit run (`createdMs >=
-ownCreatedMs - 60 * 1000` inclusive; `< ownCreatedMs - 60 * 1000` is stale and its check
-suite is excluded, failing closed if no current run starts). Non-edited events keep the
-aggregator run's own `created_at`.
+`editedRerunWorkflows` must also report from a current-edit run whose `display_title`
+starts with `[<pull_request.updated_at>] `; every other run of those workflows is stale
+and its check suite is excluded, failing closed when `pull_request.updated_at` is missing
+or no current run starts. Non-edited events keep the aggregator run's own `created_at`.
 
-AGGREGATOR_UNDER_TEST points the suite at another workflow copy for mutation proofs.
+AGGREGATOR_UNDER_TEST and REPO_ROOT_UNDER_TEST point the suite at scratch copies for
+mutation proofs.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ import os
 import re
 import sys
 import unittest
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -42,8 +43,12 @@ MIN_90_AGO = -90 * 60
 MIN_100_AGO = -100 * 60
 MIN_120_AGO = -120 * 60
 AFTER_EDIT_S = 10
-EDIT_FLOOR_EDGE_S = -60
-BEFORE_EDIT_FLOOR_S = -61
+THIRTY_SEC_AGO = -30
+STAMP_T1 = "2026-11-15T04:59:30Z"
+STAMP_T2_MINUS_1S = "2026-11-15T04:59:59Z"
+STAMP_T2 = harness.DEFAULT_EDIT_STAMP
+PR_TITLE = "fix(ci): demo pull request"
+EDIT_STAMP_RUN_NAME_PREFIX = "[${{ github.event.pull_request.updated_at }}] "
 BODY_GATE = "Deliverables Checklist"
 TITLE_GATE = "DCO Sign-off"
 BUILD_CHECK = "Pre-Commit"
@@ -72,7 +77,18 @@ _OVERRIDE = contextlib.ExitStack()
 
 
 def setUpModule() -> None:
-    """Point the harness at AGGREGATOR_UNDER_TEST when set."""
+    """Point the harness at REPO_ROOT_UNDER_TEST or AGGREGATOR_UNDER_TEST when set."""
+    repo_override = os.environ.get("REPO_ROOT_UNDER_TEST")
+    if repo_override:
+        root = Path(repo_override)
+        _OVERRIDE.enter_context(mock.patch.object(harness, "REPO_ROOT", root))
+        _OVERRIDE.enter_context(
+            mock.patch.object(
+                harness,
+                "AGGREGATOR_PATH",
+                root / ".github" / "workflows" / "required-aggregator.yml",
+            )
+        )
     override = os.environ.get("AGGREGATOR_UNDER_TEST")
     if override:
         _OVERRIDE.enter_context(mock.patch.object(harness, "AGGREGATOR_PATH", Path(override)))
@@ -83,14 +99,28 @@ def tearDownModule() -> None:
     _OVERRIDE.close()
 
 
-def _rules_run(suite_id: int, created_at_offset_s: float) -> dict[str, object]:
+def _rules_run(
+    suite_id: int,
+    created_at_offset_s: float = 0,
+    *,
+    display_title: str | None = None,
+    edit_stamp: str | None = None,
+) -> dict[str, object]:
     """Build one synthetic rule-enforcement.yml workflow-run entry."""
-    return {
+    resolved_title = (
+        display_title
+        if display_title is not None
+        else (f"[{edit_stamp}] {PR_TITLE}" if edit_stamp is not None else None)
+    )
+    run: dict[str, object] = {
         "path": RULES_WORKFLOW,
         "event": "pull_request",
         "check_suite_id": suite_id,
         "created_at_offset_s": created_at_offset_s,
     }
+    if resolved_title is not None:
+        run["display_title"] = resolved_title
+    return run
 
 
 def _rules_suite_checks(
@@ -219,6 +249,12 @@ class AggregatorEditedTriggerContract(unittest.TestCase):
             self.assertTrue(workflow_file.is_file(), rel_path)
             parsed = yaml.safe_load(workflow_file.read_text(encoding="utf-8")) or {}
             self.assertIn("edited", _workflow_pull_request_types(parsed), rel_path)
+            run_name = parsed.get("run-name")
+            self.assertIsInstance(run_name, str, f"{rel_path} must declare top-level run-name")
+            self.assertTrue(
+                isinstance(run_name, str) and run_name.startswith(EDIT_STAMP_RUN_NAME_PREFIX),
+                f"{rel_path} run-name must start with {EDIT_STAMP_RUN_NAME_PREFIX!r}",
+            )
 
 
 class AggregatorEditedWindowTests(unittest.TestCase):
@@ -484,18 +520,51 @@ class AggregatorEditedWindowTests(unittest.TestCase):
         self.assertEqual(len(overflow_pages), 1, overflow_pages)
         self.assertIn("Cannot derive window anchor", overflow_pages[0])
 
-    def test_edited_race_old_rules_suite_without_current_run_blocks(self) -> None:
-        """Fail naming rule-enforcement.yml when only a stale Rules suite exists on edited."""
-        infos: list[str] = []
-        no_current_run = run_required_aggregator(
+    def _run_edited_suites(
+        self,
+        workflow_runs: Sequence[Mapping[str, object]],
+        *,
+        pr_updated_at: str | None = STAMP_T2,
+        extra_checks: Sequence[Mapping[str, object]] = (),
+        started_offsets_s: Mapping[str, float] | None = None,
+        later_workflow_runs: Sequence[Mapping[str, object]] = (),
+        info_logs: list[str] | None = None,
+    ) -> list[str]:
+        """Run edited-event aggregator with baseline Rules checks in OLD_RULES_SUITE."""
+        return run_required_aggregator(
             BODY_GATE,
             "success",
             action="edited",
+            pr_updated_at=pr_updated_at,
             run_created_at=RUN_CREATED_AT,
             timeline_events=READY_TIMELINE,
             default_started_offset_s=MIN_30_AGO,
+            started_offsets_s=started_offsets_s,
             suite_by_check=RULES_SUITE_MAP,
-            workflow_runs=[_rules_run(OLD_RULES_SUITE, MIN_30_AGO)],
+            workflow_runs=workflow_runs,
+            later_workflow_runs=later_workflow_runs,
+            extra_checks=extra_checks,
+            info_logs=info_logs,
+        )
+
+    def test_two_edits_30s_apart_earlier_green_rules_run_blocks(self) -> None:
+        """Reject a green [T1] Rules run created 30 s before a [T2] edited aggregator."""
+        infos: list[str] = []
+        failures = self._run_edited_suites(
+            [_rules_run(OLD_RULES_SUITE, THIRTY_SEC_AGO, edit_stamp=STAMP_T1)],
+            started_offsets_s=dict.fromkeys(RULES_GATES, THIRTY_SEC_AGO + 5),
+            info_logs=infos,
+        )
+        self.assertEqual(len(failures), 1, failures)
+        self.assertIn("rule-enforcement.yml", failures[0])
+        self.assertIn("the Rules workflow did not start for this edit", failures[0])
+        self.assertIn("Excluded 1 stale edited-rerun check suite(s)", infos)
+
+    def test_edited_race_old_rules_suite_without_current_run_blocks(self) -> None:
+        """Fail naming rule-enforcement.yml when only a stale Rules suite exists on edited."""
+        infos: list[str] = []
+        no_current_run = self._run_edited_suites(
+            [_rules_run(OLD_RULES_SUITE, MIN_30_AGO, edit_stamp=STAMP_T1)],
             info_logs=infos,
         )
         self.assertEqual(len(no_current_run), 1, no_current_run)
@@ -503,57 +572,57 @@ class AggregatorEditedWindowTests(unittest.TestCase):
         self.assertIn("the Rules workflow did not start for this edit", no_current_run[0])
         self.assertIn("Excluded 1 stale edited-rerun check suite(s)", infos)
 
-        unregistered_gates = run_required_aggregator(
-            BODY_GATE,
-            "success",
-            action="edited",
-            run_created_at=RUN_CREATED_AT,
-            timeline_events=READY_TIMELINE,
-            default_started_offset_s=MIN_30_AGO,
-            suite_by_check=RULES_SUITE_MAP,
-            workflow_runs=[
-                _rules_run(OLD_RULES_SUITE, MIN_30_AGO),
-                _rules_run(CURRENT_RULES_SUITE, 0),
+        unregistered_gates = self._run_edited_suites(
+            [
+                _rules_run(OLD_RULES_SUITE, MIN_30_AGO, edit_stamp=STAMP_T1),
+                _rules_run(CURRENT_RULES_SUITE, 0, edit_stamp=STAMP_T2),
             ],
         )
         self.assertEqual(len(unregistered_gates), 1, unregistered_gates)
         self.assertIn(f"{BODY_GATE}: never reported", unregistered_gates[0])
 
     def test_edited_current_rules_gate_failure_not_masked_by_stale_suite(self) -> None:
-        """Fail naming Deliverables Checklist even when a stale green check has newer timestamp."""
-        failures = run_required_aggregator(
-            BODY_GATE,
-            "success",
-            action="edited",
-            run_created_at=RUN_CREATED_AT,
-            timeline_events=READY_TIMELINE,
-            default_started_offset_s=MIN_30_AGO,
-            started_offsets_s={BODY_GATE: AFTER_EDIT_S + 30},
-            suite_by_check=RULES_SUITE_MAP,
-            workflow_runs=[
-                _rules_run(OLD_RULES_SUITE, MIN_30_AGO),
-                _rules_run(CURRENT_RULES_SUITE, 0),
-            ],
-            extra_checks=_rules_suite_checks(
-                CURRENT_RULES_SUITE, conclusions={BODY_GATE: "failure"}
-            ),
-        )
-        self._assert_single_failed_check(failures, f"{BODY_GATE}: failure")
+        """Fail on [T2] Deliverables Checklist or DCO Sign-off despite newer green [T1]."""
+        for failing_gate in (BODY_GATE, TITLE_GATE):
+            with self.subTest(failing_gate=failing_gate):
+                infos: list[str] = []
+                failures = self._run_edited_suites(
+                    [
+                        _rules_run(OLD_RULES_SUITE, THIRTY_SEC_AGO, edit_stamp=STAMP_T1),
+                        _rules_run(CURRENT_RULES_SUITE, 0, edit_stamp=STAMP_T2),
+                    ],
+                    started_offsets_s={failing_gate: AFTER_EDIT_S + 30},
+                    extra_checks=_rules_suite_checks(
+                        CURRENT_RULES_SUITE, conclusions={failing_gate: "failure"}
+                    ),
+                    info_logs=infos,
+                )
+                self._assert_single_failed_check(failures, f"{failing_gate}: failure")
+                self.assertIn("Excluded 1 stale edited-rerun check suite(s)", infos)
 
     def test_edited_current_rules_all_green_counts_prior_build_checks(self) -> None:
-        """Pass when current Rules suite is green and build checks ran 30 min before edit."""
+        """Pass when [T2] Rules suite is green and build checks ran 30 min before edit."""
+        only_current_infos: list[str] = []
+        only_current = self._run_edited_suites(
+            [_rules_run(OLD_RULES_SUITE, 0, edit_stamp=STAMP_T2)],
+            info_logs=only_current_infos,
+        )
+        self.assertEqual(only_current, [])
+        self.assertIn("Excluded 0 stale edited-rerun check suite(s)", only_current_infos)
+
         infos: list[str] = []
         failures = run_required_aggregator(
             BODY_GATE,
             "failure",
             action="edited",
+            pr_updated_at=STAMP_T2,
             run_created_at=RUN_CREATED_AT,
             timeline_events=READY_TIMELINE,
             default_started_offset_s=MIN_30_AGO,
             suite_by_check=RULES_SUITE_MAP,
             workflow_runs=[
-                _rules_run(OLD_RULES_SUITE, MIN_30_AGO),
-                _rules_run(CURRENT_RULES_SUITE, 0),
+                _rules_run(OLD_RULES_SUITE, MIN_30_AGO, edit_stamp=STAMP_T1),
+                _rules_run(CURRENT_RULES_SUITE, 0, edit_stamp=STAMP_T2),
             ],
             extra_checks=_rules_suite_checks(CURRENT_RULES_SUITE),
             info_logs=infos,
@@ -561,54 +630,56 @@ class AggregatorEditedWindowTests(unittest.TestCase):
         self.assertEqual(failures, [])
         self.assertIn("Excluded 1 stale edited-rerun check suite(s)", infos)
 
-    def test_edit_floor_boundary_minus_60s_current_and_minus_61s_stale(self) -> None:
-        """createdMs >= ownCreatedMs - 60s is CURRENT (-60s counts); < (-61s) is STALE."""
-        at_floor_infos: list[str] = []
-        at_floor = run_required_aggregator(
-            BODY_GATE,
-            "success",
-            action="edited",
-            run_created_at=RUN_CREATED_AT,
-            timeline_events=READY_TIMELINE,
-            default_started_offset_s=MIN_30_AGO,
-            suite_by_check=RULES_SUITE_MAP,
-            workflow_runs=[_rules_run(OLD_RULES_SUITE, EDIT_FLOOR_EDGE_S)],
-            info_logs=at_floor_infos,
+    def test_edit_stamp_boundary_exact_current_and_off_by_1s_or_missing_stale(self) -> None:
+        """Exact [T2] prefix is CURRENT; [T2 - 1 s], missing title, or no space is STALE."""
+        exact_infos: list[str] = []
+        exact = self._run_edited_suites(
+            [_rules_run(OLD_RULES_SUITE, MIN_30_AGO, edit_stamp=STAMP_T2)],
+            info_logs=exact_infos,
         )
-        self.assertEqual(at_floor, [])
-        self.assertIn("Excluded 0 stale edited-rerun check suite(s)", at_floor_infos)
+        self.assertEqual(exact, [])
+        self.assertIn("Excluded 0 stale edited-rerun check suite(s)", exact_infos)
 
-        past_floor = run_required_aggregator(
-            BODY_GATE,
-            "success",
-            action="edited",
-            run_created_at=RUN_CREATED_AT,
-            timeline_events=READY_TIMELINE,
-            default_started_offset_s=MIN_30_AGO,
-            suite_by_check=RULES_SUITE_MAP,
-            workflow_runs=[_rules_run(OLD_RULES_SUITE, BEFORE_EDIT_FLOOR_S)],
-        )
-        self.assertEqual(len(past_floor), 1, past_floor)
-        self.assertIn("rule-enforcement.yml", past_floor[0])
-
-        past_floor_masked = run_required_aggregator(
-            BODY_GATE,
-            "success",
-            action="edited",
-            run_created_at=RUN_CREATED_AT,
-            timeline_events=READY_TIMELINE,
-            default_started_offset_s=MIN_30_AGO,
-            started_offsets_s={BODY_GATE: AFTER_EDIT_S + 30},
-            suite_by_check=RULES_SUITE_MAP,
-            workflow_runs=[
-                _rules_run(OLD_RULES_SUITE, BEFORE_EDIT_FLOOR_S),
-                _rules_run(CURRENT_RULES_SUITE, 0),
-            ],
-            extra_checks=_rules_suite_checks(
-                CURRENT_RULES_SUITE, conclusions={BODY_GATE: "failure"}
+        for label, stale_run in (
+            ("one_second_off", _rules_run(OLD_RULES_SUITE, 0, edit_stamp=STAMP_T2_MINUS_1S)),
+            ("missing_display_title", _rules_run(OLD_RULES_SUITE, 0)),
+            (
+                "missing_trailing_space",
+                _rules_run(OLD_RULES_SUITE, 0, display_title=f"[{STAMP_T2}]"),
             ),
-        )
-        self._assert_single_failed_check(past_floor_masked, f"{BODY_GATE}: failure")
+        ):
+            with self.subTest(case=label):
+                failures = self._run_edited_suites([stale_run])
+                self.assertEqual(len(failures), 1, failures)
+                self.assertIn("rule-enforcement.yml", failures[0])
+
+    def test_edit_stamp_boundary_stamp_not_at_start_is_stale(self) -> None:
+        """Treat display_title with [T2] outside position 0 (`title [T2]`) as STALE."""
+        for bad_title in (f"title [{STAMP_T2}]", f"title [{STAMP_T2}] trailing"):
+            with self.subTest(display_title=bad_title):
+                failures = self._run_edited_suites(
+                    [_rules_run(OLD_RULES_SUITE, 0, display_title=bad_title)]
+                )
+                self.assertEqual(len(failures), 1, failures)
+                self.assertIn("rule-enforcement.yml", failures[0])
+
+    def test_edit_stamp_boundary_prefix_t1_with_t2_in_title_is_stale(self) -> None:
+        """Treat `[T1] [T2] title` (author title starts with `[T2] `) as STALE on edit T2."""
+        crafted = f"[{STAMP_T1}] [{STAMP_T2}] title"
+        failures = self._run_edited_suites([_rules_run(OLD_RULES_SUITE, 0, display_title=crafted)])
+        self.assertEqual(len(failures), 1, failures)
+        self.assertIn("rule-enforcement.yml", failures[0])
+
+    def test_edited_missing_own_updated_at_fails_closed(self) -> None:
+        """Fail closed naming pull_request.updated_at when the edited payload lacks a stamp."""
+        for bad_stamp in (None, "", "   "):
+            with self.subTest(pr_updated_at=bad_stamp):
+                failures = self._run_edited_suites(
+                    [_rules_run(OLD_RULES_SUITE, 0, edit_stamp=STAMP_T1)],
+                    pr_updated_at=bad_stamp,
+                )
+                self.assertEqual(len(failures), 1, failures)
+                self.assertIn("pull_request.updated_at", failures[0])
 
     def test_non_rules_suite_keeps_r2_ready_anchor(self) -> None:
         """Keep ready_for_review anchor for build checks in a non-Rules suite 30 min old."""
@@ -622,11 +693,12 @@ class AggregatorEditedWindowTests(unittest.TestCase):
             BUILD_CHECK,
             "success",
             action="edited",
+            pr_updated_at=STAMP_T2,
             run_created_at=RUN_CREATED_AT,
             timeline_events=READY_TIMELINE,
             default_started_offset_s=MIN_30_AGO,
             suite_by_check=RULES_SUITE_MAP,
-            workflow_runs=[build_run, _rules_run(CURRENT_RULES_SUITE, 0)],
+            workflow_runs=[build_run, _rules_run(CURRENT_RULES_SUITE, 0, edit_stamp=STAMP_T2)],
             extra_checks=_rules_suite_checks(CURRENT_RULES_SUITE),
         )
         self.assertEqual(failures, [])
@@ -671,18 +743,11 @@ class AggregatorEditedWindowTests(unittest.TestCase):
     def test_edited_relists_workflow_runs_before_grace_expires(self) -> None:
         """Keep polling within registration grace until the current Rules run appears."""
         infos: list[str] = []
-        failures = run_required_aggregator(
-            BODY_GATE,
-            "success",
-            action="edited",
-            run_created_at=RUN_CREATED_AT,
-            timeline_events=READY_TIMELINE,
-            default_started_offset_s=MIN_30_AGO,
-            suite_by_check=RULES_SUITE_MAP,
-            workflow_runs=[_rules_run(OLD_RULES_SUITE, MIN_30_AGO)],
+        failures = self._run_edited_suites(
+            [_rules_run(OLD_RULES_SUITE, MIN_30_AGO, edit_stamp=STAMP_T1)],
             later_workflow_runs=[
-                _rules_run(OLD_RULES_SUITE, MIN_30_AGO),
-                _rules_run(CURRENT_RULES_SUITE, 5),
+                _rules_run(OLD_RULES_SUITE, MIN_30_AGO, edit_stamp=STAMP_T1),
+                _rules_run(CURRENT_RULES_SUITE, 5, edit_stamp=STAMP_T2),
             ],
             extra_checks=_rules_suite_checks(CURRENT_RULES_SUITE),
             info_logs=infos,

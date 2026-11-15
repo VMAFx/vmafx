@@ -519,10 +519,11 @@ the anchor is the latest `ready_for_review` timeline event (or
 `pull_request.created_at` when never a draft); on every other event, the anchor
 is the aggregator run's own `created_at`. On `edited` events, workflows listed
 in `editedRerunWorkflows` (`.github/workflows/rule-enforcement.yml`) must also
-report from a current-edit run (`created_at` at or after the aggregator run's
-`created_at` minus 60 seconds): older `Rules` check suites on the same head SHA
-are excluded, and the aggregator fails closed past the 2-minute registration
-grace when the `Rules` workflow does not start for the edit.
+report from a current-edit run whose `display_title` starts with
+`"[<pull_request.updated_at>] "` (set via top-level `run-name:`): other `Rules`
+check suites on the same head SHA are excluded, and the aggregator fails closed
+when `pull_request.updated_at` is missing or when the `Rules` workflow does not
+start for the edit within the 2-minute registration grace.
 `scripts/ci/tests/test_aggregator_edited_window.py` runs the embedded script
 across the edited-event window, stale-suite exclusion, boundary, draft-era
 exclusion and fail-closed API paths.

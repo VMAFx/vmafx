@@ -621,6 +621,21 @@ jobs:
             }
             const isEditedPullRequest =
               context.eventName === 'pull_request' && context.payload.action === 'edited';
+            const rawEditStamp =
+              isEditedPullRequest && context.payload.pull_request
+                ? context.payload.pull_request.updated_at
+                : '';
+            const ownEditStamp = typeof rawEditStamp === 'string' ? rawEditStamp.trim() : '';
+            if (isEditedPullRequest && ownEditStamp === '') {
+              core.setFailed(
+                'Cannot correlate edited pull-request workflow runs: ' +
+                'pull_request.updated_at is missing.'
+              );
+              return;
+            }
+            const editStampPrefix = isEditedPullRequest
+              ? `[${context.payload.pull_request.updated_at}] `
+              : '';
             // Issue 3459 / ADR-3551 — on pull_request `edited` events, only
             // rule-enforcement.yml gates re-run while earlier build/test checks
             // keep their ready-head timestamps. Anchor the 2-minute window at the
@@ -681,7 +696,6 @@ jobs:
             const anchorMs = await windowAnchorMs();
             if (anchorMs === null) return;
             const minCreatedMs = anchorMs - 2 * 60 * 1000;
-            const editFloorMs = ownCreatedMs - 60 * 1000;
             const registrationGraceDeadline = Date.now() + 2 * 60 * 1000;
             const registrationPropagationMs = 2 * 60 * 1000;
             const activeStatuses = new Set([
@@ -774,12 +788,15 @@ jobs:
               "Semgrep OSS": "github-advanced-security",
               "gitleaks": "github-advanced-security"
             };
-            // Issue 3459 / ADR-3551, review finding on PR 3466 — workflows whose
-            // pull_request trigger includes `edited` and that produce required
-            // checks. On an `edited` event, runs created before editFloorMs came
-            // from an earlier event on the same head SHA; their check suites are
-            // excluded so stale green gates cannot satisfy or mask the edit, and
-            // each listed workflow must start a current run within the grace window.
+            // Issue 3459 / ADR-3551, PR 3466 review — workflows whose pull_request
+            // trigger includes `edited` and that produce required checks. Each
+            // listed workflow sets a top-level `run-name` starting with
+            // `[${{ github.event.pull_request.updated_at }}] `; on an `edited`
+            // event, only runs whose `display_title` starts with editStampPrefix
+            // belong to this edit. Every other run of those workflows is excluded
+            // as stale so an earlier edit (even seconds prior) cannot satisfy or
+            // mask the current edit, and each listed workflow must start a current
+            // run within the grace window.
             const editedRerunWorkflows = [
               '.github/workflows/rule-enforcement.yml',
             ];
@@ -790,8 +807,8 @@ jobs:
               const currentWorkflows = new Set();
               for (const run of workflowRuns) {
                 if (!run || !editedRerunWorkflowSet.has(run.path)) continue;
-                const createdMs = Date.parse(run.created_at || '');
-                if (Number.isFinite(createdMs) && createdMs >= editFloorMs) {
+                const displayTitle = typeof run.display_title === 'string' ? run.display_title : '';
+                if (editStampPrefix !== '' && displayTitle.startsWith(editStampPrefix)) {
                   currentWorkflows.add(run.path);
                 } else if (run.check_suite_id !== undefined && run.check_suite_id !== null) {
                   staleSuites.add(run.check_suite_id);

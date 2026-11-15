@@ -12,9 +12,11 @@ arms the ready-for-review window anchor and stale edited-rerun suite exclusion).
 Every synthetic required check defaults to check suite 1, overridden per check by
 ``suite_by_check`` and on the selected check by ``selected_suite``. ``workflow_runs``
 are the workflow runs on the commit (``path``, ``event``, ``head_branch``,
-``check_suite_id``, and ``created_at`` or ``created_at_offset_s``); when omitted on
-an ``edited`` pull request, each workflow in ``editedRerunWorkflows`` gets a current
-synthetic run in suite 1 so non-suite tests keep their baseline.
+``check_suite_id``, optional ``display_title``, and ``created_at`` or
+``created_at_offset_s``); runs of ``editedRerunWorkflows`` without ``display_title``
+stay stale-safe, while omitting ``workflow_runs`` on an ``edited`` pull request gives
+each workflow in ``editedRerunWorkflows`` a current synthetic run in suite 1 matching
+``pr_updated_at`` so non-suite tests keep their baseline.
 ``later_workflow_runs`` replace ``workflow_runs`` from the second workflow-run
 listing on. ``head_ref`` is the pull request's head branch (a ``release-please--``
 ref arms the release must-report list). ``absent_checks`` omits named required
@@ -24,7 +26,9 @@ on.
 
 Timestamps: ``run_created_at`` is the aggregator run's own ``created_at`` and the
 zero point of every ``*_offset_s`` value. ``pr_created_at`` or
-``pr_created_offset_s`` sets ``pull_request.created_at``; ``pr_number`` its number.
+``pr_created_offset_s`` sets ``pull_request.created_at``; ``pr_updated_at`` sets
+``pull_request.updated_at`` on ``edited`` events (default ``DEFAULT_EDIT_STAMP``;
+pass ``None`` to omit it); ``pr_number`` sets ``pull_request.number``.
 ``default_started_offset_s`` sets ``started_at`` on every synthetic check, and
 ``started_offsets_s`` / ``created_offsets_s`` set it per check name.
 ``timeline_events`` are the issue timeline entries (``event`` and ``created_at``
@@ -51,6 +55,7 @@ from scripts.lib.safe_subprocess import run as run_command
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AGGREGATOR_PATH = REPO_ROOT / ".github" / "workflows" / "required-aggregator.yml"
 SUBPROCESS_TIMEOUT_S = 120
+DEFAULT_EDIT_STAMP = "2026-11-15T05:00:00Z"
 
 _NODE_DRIVER = r"""
 const fs = require('fs');
@@ -145,6 +150,9 @@ const prCreatedAt = input.prCreatedOffsetS != null
 const prPayload = {
   ...(input.prNumber != null ? {number: input.prNumber} : {}),
   ...(prCreatedAt != null ? {created_at: prCreatedAt} : {}),
+  ...(input.action === 'edited' && input.prUpdatedAt != null
+    ? {updated_at: input.prUpdatedAt}
+    : {}),
   head: {ref: input.headRef || 'fix/example', sha: 'abc'},
 };
 const context = {
@@ -210,6 +218,7 @@ def _resolve_workflow_runs(
     script: str,
     event: str,
     action: str | None,
+    pr_updated_at: str | None,
     workflow_runs: Sequence[Mapping[str, object]] | None,
 ) -> list[dict[str, object]]:
     if workflow_runs is not None:
@@ -218,12 +227,14 @@ def _resolve_workflow_runs(
         return []
     if "const editedRerunWorkflows = [" not in script:
         return []
+    stamp = pr_updated_at if pr_updated_at is not None else DEFAULT_EDIT_STAMP
     return [
         {
             "path": workflow_path,
             "event": "pull_request",
             "check_suite_id": 1,
             "created_at_offset_s": 0,
+            "display_title": f"[{stamp}] synthetic pull request",
         }
         for workflow_path in _edited_rerun_workflows(script)
     ]
@@ -374,6 +385,7 @@ def run_required_aggregator(
     pr_number: int | None = 1,
     pr_created_at: str | None = None,
     pr_created_offset_s: float | None = None,
+    pr_updated_at: str | None = DEFAULT_EDIT_STAMP,
     run_created_at: str | None = None,
     timeline_events: Sequence[Mapping[str, object]] = (),
     default_started_offset_s: float | None = None,
@@ -396,7 +408,7 @@ def run_required_aggregator(
     target = (check_name, conclusion, selected_suite, suite_by_check)
     offsets = (default_started_offset_s, started_offsets_s, created_offsets_s)
     checks = _prepare_checks(script, target, absent_checks, extra_checks, offsets)
-    runs = _resolve_workflow_runs(script, event, action, workflow_runs)
+    runs = _resolve_workflow_runs(script, event, action, pr_updated_at, workflow_runs)
     driver_input: dict[str, object] = {
         "script": script,
         "checks": checks,
@@ -407,6 +419,7 @@ def run_required_aggregator(
         "prNumber": pr_number,
         "prCreatedAt": pr_created_at,
         "prCreatedOffsetS": pr_created_offset_s,
+        "prUpdatedAt": pr_updated_at,
         "runCreatedAt": run_created_at,
         "timelineEvents": [dict(item) for item in timeline_events],
         "workflowRuns": runs,
