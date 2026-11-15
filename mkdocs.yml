@@ -239,6 +239,7 @@ nav:
       - Go module and versions: usage/go.md
       - MATLAB: usage/matlab.md
       - vmafx CLI: usage/vmafx-cli.md
+      - Migration guides: usage/migration.md
       - vmaf_bench: usage/bench.md
       - Test on your hardware:
           - Hardware we need: usage/hardware-we-need.md

@@ -312,7 +312,8 @@ docs-render-check:
 # AGENTS.md next to an AGENTS.d/ matches its topic pages (ADR-1454), the
 # documentation charts match their specs, data and renders, and every vendored
 # docs asset matches the hashes in its vendor.json (ADR-1508), and every link and
-# heading anchor under docs/api/ resolves (scripts/docs/check_doc_links.py).
+# heading anchor under docs/api/ resolves (scripts/docs/check_doc_links.py), and
+# the migration guide's equivalence rows match the golden-pair snapshot (issue 2331).
 docs-fragments-check:
 	@echo "--- changelog.d/ fragments ---"
 	@bash scripts/release/concat-changelog-fragments.sh --lint
@@ -339,6 +340,8 @@ docs-fragments-check:
 	@python3 scripts/docs/check_vendored_assets.py
 	@echo "--- docs/api/ links and heading anchors (issue 2436) ---"
 	@python3 scripts/docs/check_doc_links.py docs/api
+	@echo "--- docs/usage/migration.md equivalence rows vs the golden snapshot (issue 2331) ---"
+	@python3 scripts/docs/check_migration_equivalence.py
 
 # Regenerate consolidated outputs from fragments (ADR-0221).
 docs-fragments-write: docs-render
