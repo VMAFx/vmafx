@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import sys
 import types
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -43,11 +44,17 @@ EXPECTED_IDS = {
 }
 
 
-def _fake_run(score: float):
+def _fake_run(score: float) -> Callable[..., types.SimpleNamespace]:
     """A run_command stand-in: probes fail (so only cli rows execute), real
     invocations print one JSON pooled score."""
 
-    def fake_run(cmd, allowed_executables, capture_output, text, timeout_seconds):
+    def fake_run(
+        cmd: list[str],
+        allowed_executables: list[str],
+        capture_output: bool,
+        text: bool,
+        timeout_seconds: float,
+    ) -> types.SimpleNamespace:
         if cmd[1:2] == ["-c"] or cmd[1:2] == ["-h"]:
             raise RuntimeError("probe refused")
         return types.SimpleNamespace(
@@ -106,6 +113,21 @@ def test_not_equivalent_row_with_block_fails(tmp_path: Path) -> None:
     page = tmp_path / "migration.md"
     page.write_text(PAGE_TEXT + f"\n{marker}```bash\n{block}```\n", encoding="utf-8")
     assert main(["--page", str(page), "--snapshot", str(SNAPSHOT)]) == EXIT_FAILURE
+
+
+def test_command_block_comments_are_not_arguments() -> None:
+    """A trailing `# stock upstream` note stays a note, not an ffmpeg argument."""
+    block = checker.TaggedBlock(
+        "synthetic",
+        "ffmpeg",
+        'ffmpeg -i a.yuv -lavfi "libvmaf=x" -  # stock upstream\n',
+    )
+    argv = checker._join_command(block)
+    assert "libvmaf=x" in argv
+    assert "#" not in argv
+    assert "stock" not in argv
+    continued = checker.TaggedBlock("continued", "cli", "vmaf --a 1 \\\n    --b 2\n")
+    assert checker._join_command(continued) == ["vmaf", "--a", "1", "--b", "2"]
 
 
 def test_ordinary_tables_are_not_check_rows(tmp_path: Path) -> None:

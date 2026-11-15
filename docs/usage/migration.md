@@ -10,7 +10,7 @@ pair. The FFmpeg-side option renaming is already tabled on
 page covers the whole-command move from four starting points:
 
 - [the upstream `vmaf` CLI and Python harness](#from-the-upstream-vmaf-cli-and-python-harness),
-- [the FFmpeg `libvmaf` filter](#from-the-ffmpeg-libvmaf-filter),
+- [the stock upstream FFmpeg `libvmaf` filter](#from-the-ffmpeg-libvmaf-filter),
 - [`ffmpeg-quality-metrics`](#from-ffmpeg-quality-metrics),
 - [`easyVmaf`](#from-easyvmaf).
 
@@ -103,8 +103,8 @@ bite a moved command:
 - The fork filter pairs frames by timestamp and passes unpaired main frames
   unscored instead of repeating the last reference frame
   ([Pairing the two inputs](ffmpeg.md#pairing-the-two-inputs)).
-- `libvmaf_vulkan` / `vulkan_device` have no replacement
-  (ADR-0726, ADR-0860, ADR-2166).
+- The fork's retired Vulkan filter and its `vulkan_device` option have no
+  replacement (ADR-0726, ADR-0860, ADR-2166).
 
 Upstream filter command on the fixture pair (`log_fmt=json` to stdout):
 
@@ -113,8 +113,7 @@ ffmpeg -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
     -i testdata/dis_576x324_48f.yuv \
     -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
     -i testdata/ref_576x324_48f.yuv \
-    -lavfi "[0:v][1:v]libvmaf=model=version=vmaf_v0.6.1:log_fmt=json:log_path=/dev/stdout" \
-    -f null -
+    -f null -lavfi "[0:v][1:v]libvmaf=model=version=vmaf_v0.6.1:log_fmt=json:log_path=/dev/stdout" -  # stock upstream libvmaf filter
 ```
 
 The VMAFx equivalent renames the filter to `vmafx`; with the same model the

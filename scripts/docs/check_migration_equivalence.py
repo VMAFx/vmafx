@@ -25,6 +25,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 from shutil import which
@@ -263,9 +264,19 @@ def _score_parsers() -> dict[str, Callable[[str], float]]:
 
 
 def _join_command(block: TaggedBlock) -> list[str]:
-    """Split a documented command block into one argv, honouring backslash continuations."""
-    joined = " ".join(part.strip() for part in block.command.replace("\\\n", " ").split("\n"))
-    return joined.split()
+    """Split a documented command block into one argv, honouring backslash
+    continuations, the shell's quoting and trailing `#` comments.
+
+    The blocks are shell snippets, so shell rules apply: a backslash-newline
+    continues the line, quotes group one argument, and an unquoted `#` starts
+    a comment. Splitting on whitespace alone would keep the quotes (and any
+    explanatory comment) as arguments of the command.
+    """
+    try:
+        continued = block.command.replace("\\\n", " ")
+        return shlex.split(continued, comments=True, posix=True)
+    except ValueError as exc:
+        raise ValueError(f"cannot parse command block {block.block_id}: {exc}") from exc
 
 
 def _run_cli_row(argv: list[str], cli_binary: str | None) -> tuple[str | None, str]:
