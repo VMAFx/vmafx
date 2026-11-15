@@ -504,8 +504,18 @@ check missing from it can be red while the merge button stays green
 
 It runs on every PR and master push. Draft PRs fail immediately; ready PRs poll
 for the named sibling check runs to reach a terminal state and accept
-`success`, `skipped` or `neutral` per check. Results predating the current run
-are excluded, so skipped draft-era checks cannot mask ready validation.
+`success`, `skipped` or `neutral` per check. GitHub Actions check runs older
+than a 2-minute margin before the window anchor are excluded, so skipped
+draft-era checks cannot mask ready validation
+([ADR-3551](../adr/3551-aggregator-edited-window.md)): on `pull_request`
+`edited` events, where a title or body edit re-runs only the
+`rule-enforcement.yml` gates and leaves earlier build and test runs untouched,
+the anchor is the latest `ready_for_review` timeline event (or
+`pull_request.created_at` when never a draft); on every other event, the anchor
+is the aggregator run's own `created_at`.
+`scripts/ci/tests/test_aggregator_edited_window.py` runs the embedded script
+across the edited-event window, boundary, draft-era exclusion and fail-closed
+timeline paths.
 
 On a master push the aggregator reads only the push's own check runs: a check
 run whose check suite belongs to a pull-request workflow run on the same commit
@@ -534,10 +544,11 @@ absent or skipped, never failed: the names the run's CI tier does not owe, the
 operator switch is off. `scripts/ci/tests/test_aggregator_absent_fails.py`
 runs the embedded script against both rules.
 
-The aggregator's GitHub API calls (`getWorkflowRun`, `listAllCheckRuns`,
-`pullRequestSuites`) retry HTTP 5xx answers for 15 minutes. If the API still
-answers 5xx, the job fails with `Transient GitHub API failure:`, the call and
-the status, and judges no check: rerun the job, because the code did not fail.
+The aggregator's GitHub API calls (`getWorkflowRun`, `listEventsForTimeline`,
+`listAllCheckRuns`, `pullRequestSuites`) retry HTTP 5xx answers for 15 minutes.
+If the API still answers 5xx, the job fails with `Transient GitHub API failure:`,
+the call and the status, and judges no check: rerun the job, because the code
+did not fail.
 Any other API error ends the job at once.
 `scripts/ci/tests/test_ci_aggregator_tier.py` runs both paths against a stub.
 

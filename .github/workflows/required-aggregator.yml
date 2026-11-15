@@ -16,7 +16,7 @@ name: CI
 on:
   pull_request:
     branches: [master]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, edited, synchronize, reopened, ready_for_review]
   push:
     branches: [master]
   workflow_dispatch:
@@ -613,8 +613,71 @@ jobs:
               })
             );
             if (!currentRun) return;
-            const runCreatedMs = Date.parse(currentRun.data.created_at);
-            const minCreatedMs = runCreatedMs - 2 * 60 * 1000;
+            // Issue 3459 / ADR-3551 — on pull_request `edited` events, only
+            // rule-enforcement.yml gates re-run while earlier build/test checks
+            // keep their ready-head timestamps. Anchor the 2-minute window at the
+            // latest `ready_for_review` timeline event (or pull_request.created_at
+            // when never a draft), and keep the own-run anchor on every other event.
+            async function windowAnchorMs(ownCreatedAt) {
+              if (context.eventName !== 'pull_request' || context.payload.action !== 'edited') {
+                const ownMs = Date.parse(ownCreatedAt || '');
+                if (!Number.isFinite(ownMs)) {
+                  core.setFailed('Cannot derive window anchor: workflow run created_at is invalid.');
+                  return null;
+                }
+                core.info(`window anchor: own run created at ${ownCreatedAt}`);
+                return ownMs;
+              }
+              const pr = context.payload.pull_request || {};
+              if (!Number.isInteger(pr.number) || pr.number <= 0) {
+                core.setFailed('Cannot derive window anchor: pull_request.number is missing.');
+                return null;
+              }
+              let latestReadyAt = null;
+              let latestReadyMs = Number.NaN;
+              for (let page = 1; page <= 10; page += 1) {
+                const response = await withApiBackoff('listEventsForTimeline', () =>
+                  github.rest.issues.listEventsForTimeline({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: pr.number,
+                    per_page: 100,
+                    page,
+                  })
+                );
+                if (!response) return null;
+                for (const item of response.data) {
+                  if (!item || item.event !== 'ready_for_review') continue;
+                  const eventMs = Date.parse(item.created_at || '');
+                  if (!Number.isFinite(eventMs)) {
+                    core.setFailed('Cannot derive window anchor: invalid ready_for_review date.');
+                    return null;
+                  }
+                  if (!Number.isFinite(latestReadyMs) || eventMs >= latestReadyMs) {
+                    latestReadyMs = eventMs;
+                    latestReadyAt = item.created_at;
+                  }
+                }
+                if (response.data.length < 100) {
+                  if (Number.isFinite(latestReadyMs)) {
+                    core.info(`window anchor: ready_for_review at ${latestReadyAt}`);
+                    return latestReadyMs;
+                  }
+                  const prMs = Date.parse(pr.created_at || '');
+                  if (!Number.isFinite(prMs)) {
+                    core.setFailed('Cannot derive window anchor: missing pull_request.created_at.');
+                    return null;
+                  }
+                  core.info(`window anchor: pull request created at ${pr.created_at}`);
+                  return prMs;
+                }
+              }
+              core.setFailed('Cannot derive window anchor: more than 1000 timeline events.');
+              return null;
+            }
+            const anchorMs = await windowAnchorMs(currentRun.data && currentRun.data.created_at);
+            if (anchorMs === null) return;
+            const minCreatedMs = anchorMs - 2 * 60 * 1000;
             const registrationGraceDeadline = Date.now() + 2 * 60 * 1000;
             const registrationPropagationMs = 2 * 60 * 1000;
             const activeStatuses = new Set([
