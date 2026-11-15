@@ -28,8 +28,9 @@
 /* HSACO fat binary embedded by xxd -i (analogous to
  * `integer_ssim_score_ptx` in the CUDA twin). The array is defined in the generated
  * `integer_ssim_score_hsaco.c` custom_target output. */
-extern const unsigned char integer_ssim_score_hsaco[];
-extern const unsigned int integer_ssim_score_hsaco_len;
+/* Match xxd -i object types exactly; keep read-only access at use sites. */
+extern unsigned char integer_ssim_score_hsaco[];
+extern unsigned int integer_ssim_score_hsaco_len;
 #endif /* HAVE_HIPCC */
 
 #endif /* FEATURE_INTEGER_SSIM_HIP_H_ */

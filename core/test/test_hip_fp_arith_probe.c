@@ -21,7 +21,7 @@
  * required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 /* HSACO embedded by xxd from test_hip_fp_arith_probe.hip. */
-extern const unsigned char test_hip_fp_arith_probe_hsaco[];
+extern unsigned char test_hip_fp_arith_probe_hsaco[];
 
 enum {
     PROBE_ARRAYS = 6,

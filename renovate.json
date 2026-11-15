@@ -501,6 +501,25 @@
         "cordanaLLM/praetor/**"
       ],
       "enabled": false
+    },
+    {
+      "description": "Propose seven-day-old Ubuntu archive dates weekly; image rebuild and manual review required (ADR-3541).",
+      "matchDatasources": [
+        "custom.ubuntu-apt-snapshot"
+      ],
+      "matchPackageNames": [
+        "ubuntu-apt-snapshot"
+      ],
+      "schedule": [
+        "* 0-5 * * 1"
+      ],
+      "minimumReleaseAge": "0 days",
+      "automerge": false,
+      "labels": [
+        "dependencies",
+        "dev-image",
+        "manual-review"
+      ]
     }
   ],
   "customManagers": [
@@ -758,6 +777,19 @@
       "packageNameTemplate": "actions/node-versions",
       "versioningTemplate": "node",
       "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+)(-\\d+)?$"
+    },
+    {
+      "customType": "regex",
+      "description": "Ubuntu dev-image archive date (ADR-3541): one shared timestamp, read by all three Dockerfiles.",
+      "managerFilePatterns": [
+        "/^build-config\\.env$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)UBUNTU_APT_SNAPSHOT=\"(?<currentValue>[0-9]{8}T[0-9]{6}Z)\""
+      ],
+      "datasourceTemplate": "custom.ubuntu-apt-snapshot",
+      "depNameTemplate": "ubuntu-apt-snapshot",
+      "versioningTemplate": "regex:^(?<major>[0-9]{8})T(?<minor>[0-9]{6})Z$"
     }
   ],
   "vulnerabilityAlerts": {
@@ -790,6 +822,13 @@
     "nvidia-cuda-redist": {
       "defaultRegistryUrlTemplate": "https://developer.download.nvidia.com/compute/cuda/redist/",
       "format": "html"
+    },
+    "ubuntu-apt-snapshot": {
+      "defaultRegistryUrlTemplate": "https://snapshot.ubuntu.com/",
+      "format": "plain",
+      "transformTemplates": [
+        "{\"releases\":[{\"version\": $fromMillis($millis() - 604800000, \"[Y0001][M01][D01]T000000Z\")}]}"
+      ]
     }
   }
 }
