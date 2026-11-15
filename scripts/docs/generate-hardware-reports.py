@@ -79,7 +79,10 @@ verdict `fail` is welcome: it is a finding.
 The table is filterable in the browser by device text, backend, exactness, result
 and operating system. When two reports measure the same backend on the same
 machine's device slot, the newest row is shown and the older report is linked
-from that row. The page becomes a view of the result document
+from that row. A report records no host-unique identity, so "the same machine"
+means the same configuration — platform, machine and CPU model — and two
+machines reporting the same configuration share a row. The page becomes a view
+of the result document
 ([#2311](https://github.com/VMAFx/vmafx/issues/2311)) when that lands.
 
 """
@@ -120,12 +123,13 @@ def _host_cell(report: dict[str, Any], backend: str) -> str:
 
 
 def _driver(report: dict[str, Any], backend: str, facts: dict[str, Any]) -> str:
+    """The driver of the row's backend. The compile target (`code_path`, the
+    cubin/sm level) is a build fact, not a driver, and stays out of the column."""
     if backend == "cpu":
         return str(report["host"].get("kernel_release") or "not reported")
     if backend == "metal":
         return "not reported"
-    values = [str(facts[key]) for key in ("driver_version", "code_path") if facts.get(key)]
-    return " / ".join(values) or "not reported"
+    return str(facts.get("driver_version") or "not reported")
 
 
 def _cpu_exactness(report: dict[str, Any]) -> str:
@@ -426,10 +430,15 @@ def _gpu_verdicts(match: dict[str, Any], report: dict[str, Any]) -> list[str]:
 
 def _host_verdict(row: dict[str, Any], report: dict[str, Any]) -> str:
     """`fail` when one of the row's own checks failed (or the image's files do not match
-    its build), else `pass`. A section an older schema lacks is not counted."""
+    its build), else `pass`. A section an older schema lacks is not counted — including
+    `executed_dispatch`, the schema-4 extension of the dispatch check that the report
+    writer counts through hw_report.EXECUTED_CHECK."""
     checks = CPU_CHECKS + (METAL_CHECKS if row.get("metal_rows") else ())
     keys = [CHECK_KEYS[check] for check in checks]
     failed = [k for k in keys if k in report and report[k]["status"] not in PASSING[k]]
+    executed = report.get("executed_dispatch")
+    if executed and executed["status"] not in PASSING["executed_dispatch"]:
+        failed.append("executed_dispatch")
     if failed or not report["image"]["files_match_build"]:
         return "fail"
     return "pass"
