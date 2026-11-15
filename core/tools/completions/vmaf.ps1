@@ -8,6 +8,7 @@ Register-ArgumentCompleter -Native -CommandName 'vmaf','vmafx' -ScriptBlock {
     $prev = if ($elements.Count -ge 2) { $elements[$elements.Count - 2] } else { '' }
     $domains = @{
         '--pixel_format' = @('400','420','422','444','nv12','nv16','nv24','p010','p016','p210','p216','p410','p416','yuyv422','uyvy422','v210','y210','y212','xv30','xv36','vuyx','ayuv','yuv444p16msb','rgb','rgba','bgra')
+        '-p' = @('400','420','422','444','nv12','nv16','nv24','p010','p016','p210','p216','p410','p416','yuyv422','uyvy422','v210','y210','y212','xv30','xv36','vuyx','ayuv','yuv444p16msb','rgb','rgba','bgra')
         '--color_range_ref' = @('unknown','limited','full')
         '--color_range_dist' = @('unknown','limited','full')
         '--color_primaries_ref' = @('unknown','bt709','bt2020')
@@ -24,8 +25,11 @@ Register-ArgumentCompleter -Native -CommandName 'vmaf','vmafx' -ScriptBlock {
         '--aom_ctc' = @('v1.0','v2.0','v3.0','v4.0','v5.0','v6.0','v7.0')
         '--nflx_ctc' = @('v1.0')
         '--tiny-device' = @('auto','cpu','cuda','openvino','openvino-npu','openvino-cpu','openvino-gpu','coreml','coreml-ane','coreml-gpu','coreml-cpu','rocm')
+        '--tiny_device' = @('auto','cpu','cuda','openvino','openvino-npu','openvino-cpu','openvino-gpu','coreml','coreml-ane','coreml-gpu','coreml-cpu','rocm')
         '--dnn-ep' = @('auto','cpu','cuda','openvino','openvino-npu','openvino-cpu','openvino-gpu','coreml','coreml-ane','coreml-gpu','coreml-cpu','rocm')
+        '--dnn_ep' = @('auto','cpu','cuda','openvino','openvino-npu','openvino-cpu','openvino-gpu','coreml','coreml-ane','coreml-gpu','coreml-cpu','rocm')
         '--tiny-resize' = @('bilinear','nearest','bicubic','disabled')
+        '--tiny_resize' = @('bilinear','nearest','bicubic','disabled')
         '--precision' = @('legacy','max','full','1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17')
     }
     $flags = @( 

@@ -2,99 +2,110 @@
 # Do not edit: change the definition and run `python3 scripts/codegen/vmafx-api.py --write`.
 
 
+# Every COMPREPLY goes through this helper: feeding compgen into the
+# array with a command substitution would trip shellcheck's SC2207.
+_vmaf_compgen()
+{
+    local word
+    COMPREPLY=()
+    while IFS="" read -r word; do
+        COMPREPLY+=("${word}")
+    done < <(compgen "$@")
+}
+
 _vmaf()
 {
     local cur prev
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     case "${prev}" in
-        --pixel_format)
-            COMPREPLY=( $(compgen -W "400 420 422 444 nv12 nv16 nv24 p010 p016 p210 p216 p410 p416 yuyv422 uyvy422 v210 y210 y212 xv30 xv36 vuyx ayuv yuv444p16msb rgb rgba bgra" -- "${cur}") )
+        --pixel_format|-p)
+            _vmaf_compgen -W "400 420 422 444 nv12 nv16 nv24 p010 p016 p210 p216 p410 p416 yuyv422 uyvy422 v210 y210 y212 xv30 xv36 vuyx ayuv yuv444p16msb rgb rgba bgra" -- "${cur}"
             return 0
             ;;
         --color_range_ref)
-            COMPREPLY=( $(compgen -W "unknown limited full" -- "${cur}") )
+            _vmaf_compgen -W "unknown limited full" -- "${cur}"
             return 0
             ;;
         --color_range_dist)
-            COMPREPLY=( $(compgen -W "unknown limited full" -- "${cur}") )
+            _vmaf_compgen -W "unknown limited full" -- "${cur}"
             return 0
             ;;
         --color_primaries_ref)
-            COMPREPLY=( $(compgen -W "unknown bt709 bt2020" -- "${cur}") )
+            _vmaf_compgen -W "unknown bt709 bt2020" -- "${cur}"
             return 0
             ;;
         --color_primaries_dist)
-            COMPREPLY=( $(compgen -W "unknown bt709 bt2020" -- "${cur}") )
+            _vmaf_compgen -W "unknown bt709 bt2020" -- "${cur}"
             return 0
             ;;
         --color_trc_ref)
-            COMPREPLY=( $(compgen -W "unknown bt709 smpte2084 pq" -- "${cur}") )
+            _vmaf_compgen -W "unknown bt709 smpte2084 pq" -- "${cur}"
             return 0
             ;;
         --color_trc_dist)
-            COMPREPLY=( $(compgen -W "unknown bt709 smpte2084 pq" -- "${cur}") )
+            _vmaf_compgen -W "unknown bt709 smpte2084 pq" -- "${cur}"
             return 0
             ;;
         --color_matrix_ref)
-            COMPREPLY=( $(compgen -W "unknown bt709 bt2020nc ictcp" -- "${cur}") )
+            _vmaf_compgen -W "unknown bt709 bt2020nc ictcp" -- "${cur}"
             return 0
             ;;
         --color_matrix_dist)
-            COMPREPLY=( $(compgen -W "unknown bt709 bt2020nc ictcp" -- "${cur}") )
+            _vmaf_compgen -W "unknown bt709 bt2020nc ictcp" -- "${cur}"
             return 0
             ;;
         --rgb_matrix)
-            COMPREPLY=( $(compgen -W "bt601 bt709 bt2020ncl" -- "${cur}") )
+            _vmaf_compgen -W "bt601 bt709 bt2020ncl" -- "${cur}"
             return 0
             ;;
         --rgb_range)
-            COMPREPLY=( $(compgen -W "limited full" -- "${cur}") )
+            _vmaf_compgen -W "limited full" -- "${cur}"
             return 0
             ;;
         --rgb_transfer)
-            COMPREPLY=( $(compgen -W "bt709 srgb pq hlg" -- "${cur}") )
+            _vmaf_compgen -W "bt709 srgb pq hlg" -- "${cur}"
             return 0
             ;;
         --rgb_out_range)
-            COMPREPLY=( $(compgen -W "limited full" -- "${cur}") )
+            _vmaf_compgen -W "limited full" -- "${cur}"
             return 0
             ;;
         --backend)
-            COMPREPLY=( $(compgen -W "auto cpu cuda sycl hip metal" -- "${cur}") )
+            _vmaf_compgen -W "auto cpu cuda sycl hip metal" -- "${cur}"
             return 0
             ;;
         --aom_ctc)
-            COMPREPLY=( $(compgen -W "v1.0 v2.0 v3.0 v4.0 v5.0 v6.0 v7.0" -- "${cur}") )
+            _vmaf_compgen -W "v1.0 v2.0 v3.0 v4.0 v5.0 v6.0 v7.0" -- "${cur}"
             return 0
             ;;
         --nflx_ctc)
-            COMPREPLY=( $(compgen -W "v1.0" -- "${cur}") )
+            _vmaf_compgen -W "v1.0" -- "${cur}"
             return 0
             ;;
         --tiny-device|--tiny_device)
-            COMPREPLY=( $(compgen -W "auto cpu cuda openvino openvino-npu openvino-cpu openvino-gpu coreml coreml-ane coreml-gpu coreml-cpu rocm" -- "${cur}") )
+            _vmaf_compgen -W "auto cpu cuda openvino openvino-npu openvino-cpu openvino-gpu coreml coreml-ane coreml-gpu coreml-cpu rocm" -- "${cur}"
             return 0
             ;;
         --dnn-ep|--dnn_ep)
-            COMPREPLY=( $(compgen -W "auto cpu cuda openvino openvino-npu openvino-cpu openvino-gpu coreml coreml-ane coreml-gpu coreml-cpu rocm" -- "${cur}") )
+            _vmaf_compgen -W "auto cpu cuda openvino openvino-npu openvino-cpu openvino-gpu coreml coreml-ane coreml-gpu coreml-cpu rocm" -- "${cur}"
             return 0
             ;;
         --tiny-resize|--tiny_resize)
-            COMPREPLY=( $(compgen -W "bilinear nearest bicubic disabled" -- "${cur}") )
+            _vmaf_compgen -W "bilinear nearest bicubic disabled" -- "${cur}"
             return 0
             ;;
         --precision)
-            COMPREPLY=( $(compgen -W "legacy max full 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17" -- "${cur}") )
+            _vmaf_compgen -W "legacy max full 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17" -- "${cur}"
             return 0
             ;;
     esac
     if [[ "${cur}" == -* ]]; then
         local flags="--reference -r --distorted -d --width -w --height -h --width_ref --width_dist --height_ref --height_dist --pixel_format -p --bitdepth -b --check-sample-range --check_sample_range --color_range_ref --color_range_dist --color_primaries_ref --color_primaries_dist --color_trc_ref --color_trc_dist --color_matrix_ref --color_matrix_dist --rgb_matrix --rgb_range --rgb_transfer --rgb_out_range --model -m --backend --no_cuda --no_sycl --no_hip --no_metal --feature --aom_ctc --nflx_ctc --tiny-model --tiny_model --tiny-device --tiny_device --dnn-ep --dnn_ep --tiny-threads --tiny_threads --tiny-fp16 --tiny_fp16 --tiny-model-verify --tiny_model_verify --tiny-codec --tiny_codec --tiny-preset --tiny_preset --tiny-crf --tiny_crf --tiny-resize --tiny_resize --no-reference --no_reference --threads --frame_cnt --frame_skip_ref --frame_skip_dist --no_prediction -n --cpumask -c --gpumask --sycl_device --hip_device --metal_device --subsample --precision --output -o --xml --json --csv --sub --provenance-sidecar --netflix-compat --netflix_compat --quiet -q --version -v --list-backends --help --verify-provenance"
-        COMPREPLY=( $(compgen -W "${flags}" -- "${cur}") )
+        _vmaf_compgen -W "${flags}" -- "${cur}"
         return 0
     fi
-    COMPREPLY=( $(compgen -f -- "${cur}") )
+    _vmaf_compgen -f -- "${cur}"
 }
 complete -o filenames -F _vmaf vmaf
 complete -o filenames -F _vmaf vmafx

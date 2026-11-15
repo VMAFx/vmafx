@@ -114,12 +114,14 @@ class ValueDomainTests(unittest.TestCase):
             self.assertIn("--bitdepth", self.outputs[path], path)
 
     def test_int_choices_complete_as_the_argument(self) -> None:
-        # The fixture's `bitdepth` option is an integer with choices [8, 10].
-        self.assertIn("        --bitdepth)", self.outputs[BASH])
+        # The fixture's `bitdepth` option is an integer with choices [8, 10] and
+        # the short `-b`; both spellings arm the argument completion.
+        self.assertIn("        --bitdepth|-b)", self.outputs[BASH])
         self.assertIn(":$unsigned:(8 10)", self.outputs[ZSH])
         self.assertIn("-a '8 10'", self.outputs[FISH])
         self.assertIn("'--bitdepth' = @('8','10')", self.outputs[PS1])
-        self.assertIn("One of: 8|10.", self.outputs[MAN])
+        self.assertIn("'-b' = @('8','10')", self.outputs[PS1])
+        self.assertIn("One of: 8|\\:10.", self.outputs[MAN])
 
     def test_enum_values_complete_as_the_argument(self) -> None:
         # The fixture's `pool` option is an enum; its values complete.
@@ -127,21 +129,49 @@ class ValueDomainTests(unittest.TestCase):
         self.assertIn(":$string:(mean min harmonic_mean)", self.outputs[ZSH])
         self.assertIn("-a 'mean min harmonic_mean'", self.outputs[FISH])
         self.assertIn("'--pool' = @('mean','min','harmonic_mean')", self.outputs[PS1])
-        self.assertIn("One of: mean|min|harmonic_mean.", self.outputs[MAN])
+        self.assertIn("One of: mean|\\:min|\\:harmonic_mean.", self.outputs[MAN])
 
     def test_value_switches_complete_as_switches(self) -> None:
         # The fixture's `format` option spells its values as switches (--xml/--json),
         # so no case arm or argument completion exists for a --format argument.
         for path in (BASH, FISH, PS1, MAN):
             self.assertIn(needle(path, "--json"), self.outputs[path], path)
-        self.assertIn("--bitdepth)", self.outputs[BASH])
+        self.assertIn("--bitdepth|-b)", self.outputs[BASH])
         self.assertNotIn("        --format)", self.outputs[BASH])
+
+    def test_every_value_word_goes_through_the_compgen_helper(self) -> None:
+        # shellcheck's SC2207 fires on `COMPREPLY=( $(compgen ...) )`, so the
+        # generated script fills the array through one helper instead; the
+        # substitution form must never reappear.
+        self.assertIn('done < <(compgen "$@")', self.outputs[BASH])
+        self.assertNotIn("COMPREPLY=( $(", self.outputs[BASH])
+
+    def test_bash_and_powershell_key_the_domain_by_every_spelling(self) -> None:
+        # Aliases and the short spell the same option, so `-p <TAB>` and
+        # `--the_alias <TAB>` must complete the same argument words.
+        doc = fixture()
+        group = next(group for group in doc["option_groups"] if group["name"] == "pool")
+        group["options"][0]["cli"] = ["--pool", "--pooling"]
+        group["options"][0]["cli_short"] = "P"
+        api = parse(doc)
+        bash = completions.bash_text(api)
+        self.assertIn("        --pool|--pooling|-P)", bash)
+        ps1 = completions.powershell_text(api)
+        self.assertIn("'--pool' = @('mean','min','harmonic_mean')", ps1)
+        self.assertIn("'--pooling' = @('mean','min','harmonic_mean')", ps1)
+        self.assertIn("'-P' = @('mean','min','harmonic_mean')", ps1)
 
     def test_path_meta_completes_files_and_numbers_do_not(self) -> None:
         self.assertIn(":$path:_files", self.outputs[ZSH])
         self.assertNotIn(":$unsigned:_files", self.outputs[ZSH])
         # bash: a path option has no case arm, so the non-dash branch completes files.
         self.assertNotIn("        --reference)", self.outputs[BASH])
+
+    def test_man_names_the_short_after_the_long_flags(self) -> None:
+        # The reference option carries the short `-r`; the names line reads
+        # `--reference, -r` with no stray separator between the two spellings.
+        self.assertNotIn(", / ", self.outputs[MAN])
+        self.assertIn("\\-\\-reference, \\-r", self.outputs[MAN])
 
 
 class RemovedOptionDriftTests(unittest.TestCase):
