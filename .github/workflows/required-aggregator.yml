@@ -946,12 +946,15 @@ jobs:
             let byName = {};
             let missingEditedWorkflows = [];
             let lastExcludedEditedSuites = 0;
+            let editedListedAfterGrace = !isEditedPullRequest;
             while (Date.now() < deadline) {
               const check_runs = await withApiBackoff('listAllCheckRuns', () => listAllCheckRuns());
               if (!check_runs) return;
               const suites = await withApiBackoff('pullRequestSuites', () => pullRequestSuites());
               if (!suites) return;
               if (isEditedPullRequest) {
+                const editedListingStartMs = Date.now();
+                editedListedAfterGrace = editedListingStartMs > registrationGraceDeadline;
                 const workflowRuns = await withApiBackoff('listWorkflowRunsForRepo', () =>
                   listWorkflowRunsForSha()
                 );
@@ -988,13 +991,19 @@ jobs:
               if (stillRunning.length === 0 && delayedMissing.length === 0 && !tierPending &&
                   uploadPending.length === 0 &&
                   (missing.length === 0 || graceExpired) &&
-                  (missingEditedWorkflows.length === 0 || graceExpired)) {
+                  (missingEditedWorkflows.length === 0 || graceExpired) &&
+                  editedListedAfterGrace) {
                 break;
               }
               if (tierPending) core.info('Waiting for the CI tier decisions of the workflows');
               if (missingEditedWorkflows.length > 0 && !graceExpired) {
                 core.info(
                   `Waiting for edited-event workflow run: ${missingEditedWorkflows.join(', ')}`
+                );
+              }
+              if (isEditedPullRequest && !editedListedAfterGrace) {
+                core.info(
+                  'Waiting out edited-event registration grace before trusting the edit-stamped run'
                 );
               }
               core.info(`Waiting on: ${stillRunning.slice(0, 3).join(', ')}` +

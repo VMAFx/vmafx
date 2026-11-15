@@ -50,6 +50,7 @@ STAMP_T2_MINUS_1S = "2026-11-15T04:59:59Z"
 STAMP_T2 = harness.DEFAULT_EDIT_STAMP
 PR_TITLE = "fix(ci): demo pull request"
 EDIT_STAMP_RUN_NAME_PREFIX = "[${{ github.event.pull_request.updated_at }}] "
+GRACE_WAIT_LOG = "Waiting out edited-event registration grace before trusting the edit-stamped run"
 BODY_GATE = "Deliverables Checklist"
 TITLE_GATE = "DCO Sign-off"
 BUILD_CHECK = "Pre-Commit"
@@ -883,6 +884,91 @@ class AggregatorEditedWindowTests(unittest.TestCase):
             extra_checks=_rules_suite_checks(CURRENT_RULES_SUITE),
         )
         self.assertEqual(failures, [])
+
+    def test_same_second_duplicate_registering_during_grace_fails_closed(self) -> None:
+        """Fail closed when a second [T2] Rules run registers on a later poll within grace."""
+        first_run = _rules_run(
+            OLD_RULES_SUITE,
+            0,
+            edit_stamp=STAMP_T2,
+            status="completed",
+            conclusion="success",
+        )
+        second_run = _rules_run(
+            CURRENT_RULES_SUITE,
+            5,
+            edit_stamp=STAMP_T2,
+            status="queued",
+        )
+        failures = self._run_edited_suites(
+            [first_run],
+            later_workflow_runs=[first_run, second_run],
+        )
+        self.assertEqual(len(failures), 1, failures)
+        self.assertIn(RULES_WORKFLOW, failures[0])
+        self.assertIn(STAMP_T2, failures[0])
+        self.assertIn("edit the pull request again", failures[0])
+        self.assertIn("push a commit", failures[0])
+
+    def test_edited_single_stamped_run_waits_out_grace_and_passes(self) -> None:
+        """Wait out registration grace and pass when one green [T2] run stays unambiguous."""
+        runs = [
+            _rules_run(
+                OLD_RULES_SUITE,
+                0,
+                edit_stamp=STAMP_T2,
+                status="completed",
+                conclusion="success",
+            )
+        ]
+        infos: list[str] = []
+        failures = self._run_edited_suites(
+            runs,
+            later_workflow_runs=runs,
+            info_logs=infos,
+        )
+        self.assertEqual(failures, [])
+        self.assertIn(GRACE_WAIT_LOG, infos)
+
+    def test_edited_single_stamped_run_after_grace_boundary_passes(self) -> None:
+        """Pass after registration grace with one green [T2] run and no later_workflow_runs."""
+        failures = self._run_edited_suites(
+            [
+                _rules_run(
+                    OLD_RULES_SUITE,
+                    0,
+                    edit_stamp=STAMP_T2,
+                    status="completed",
+                    conclusion="success",
+                )
+            ],
+        )
+        self.assertEqual(failures, [])
+
+    def test_synchronize_skips_edited_grace_wait(self) -> None:
+        """Keep synchronize break behaviour without edited grace-wait polling or logs."""
+        single_run = _rules_run(
+            OLD_RULES_SUITE,
+            0,
+            edit_stamp=STAMP_T2,
+            status="completed",
+            conclusion="success",
+        )
+        infos: list[str] = []
+        failures = run_required_aggregator(
+            BODY_GATE,
+            "success",
+            action="synchronize",
+            run_created_at=RUN_CREATED_AT,
+            timeline_events=READY_TIMELINE,
+            suite_by_check=RULES_SUITE_MAP,
+            workflow_runs=[single_run],
+            later_workflow_runs=[single_run],
+            api_always={"listWorkflowRunsForRepo": 500},
+            info_logs=infos,
+        )
+        self.assertEqual(failures, [])
+        self.assertNotIn(GRACE_WAIT_LOG, infos)
 
 
 if __name__ == "__main__":

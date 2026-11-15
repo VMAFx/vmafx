@@ -526,7 +526,12 @@ when `pull_request.updated_at` is missing or when the `Rules` workflow does not
 start for the edit within the 2-minute registration grace. If two edits land in
 the same second and produce multiple `Rules` runs sharing the edit-stamp prefix
 (in any status), the aggregator fails closed at once and asks for another
-pull-request edit or a commit push. Because `actions/runner` converts any YAML
+pull-request edit or a commit push. To catch a second same-second `Rules` run
+before passing on an earlier green one, an `edited` aggregator run keeps
+polling until a workflow-runs listing started after the 2-minute registration
+grace, though a duplicate registering after the grace is not seen by that
+aggregator run (its own `Rules` checks still report on the head commit).
+Because `actions/runner` converts any YAML
 string containing `${{` into one expression capped at 21,000 UTF-16 code units
 after `.NET` `Char.IsWhiteSpace` expression trimming,
 `scripts/ci/check-workflow-size.py` also checks every workflow scalar against
