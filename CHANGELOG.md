@@ -2979,7 +2979,7 @@
   stride.
 
 
-- **DCO checks refuse bot-authored commits outside the bot's own branch before squash landing.** PR and pre-push checks now catch review-bot authors even with a valid human sign-off, explain the landed co-author failure, and suggest re-authoring or dropping the commit. Bot-owned dependency and render branches remain supported (ADR-3544).
+- **DCO checks refuse bot-authored commits outside the bot's own branch before squash landing.** PR and pre-push checks now catch review-bot authors even with a valid human sign-off, explain the landed co-author failure, and suggest re-authoring or dropping the commit. Dependency-bot branches (`BOT_LOGINS`) remain supported in PR and pre-push checks. Render branches of `vmafx-release-bot[bot]` remain supported in PR checks, where the forge reports the bot as the opener; pre-push checks refuse their commits, because that bot is outside `BOT_LOGINS` (ADR-3544).
 
 
 - CI: the `Dev Container Build work` job runs on `ubuntu-26.04` again. A new
@@ -3012,6 +3012,12 @@
 
 
 - Documentation: the FFmpeg commands that make the distorted test clips in `docs/benchmarks.md` and `docs/usage/bench.md` encode with libx264 again (one piped raw video into a decoder that expected raw frames and failed, the other wrote a copy of the reference), and the `vmaf_pre` example of `docs/ai/models/learned_filter_v1.md` gives raw inputs their pixel format and size (#2477).
+
+
+- CI: `docs-render-pr.yml` now runs on every push to `master` in addition to
+  its hourly schedule fallback, so dropped GitHub scheduled runs no longer
+  leave an open render pull request `BEHIND` past the 24-hour render bound
+  (#3462, ADR-3552).
 
 
 - **The documentation site names `https://vmafx.dev/` as its address.** The
