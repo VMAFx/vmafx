@@ -430,6 +430,9 @@ class SkipInvariantsModeTests(_FixtureTree, unittest.TestCase):
         workflows = ROOT / ".github" / "workflows"
         if workflows.is_dir():
             surfaces.extend(sorted(p for p in workflows.iterdir() if p.suffix in (".yml", ".yaml")))
+        actions = ROOT / ".github" / "actions"
+        if actions.is_dir():
+            surfaces.extend(sorted(actions.glob("*/action.y*ml")))
         for path in surfaces:
             if not path.is_file():
                 continue

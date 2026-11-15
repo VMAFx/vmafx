@@ -120,6 +120,7 @@ run_case() {
   printf '%s' "${out}" >"${work}/last-output.txt"
   if [ "${code}" -eq 124 ] && grep -qiE -- 'PR body from' "${work}/last-output.txt"; then
     rerun="1"
+    code=0
     out="$(cd "${repo_root}" && timeout 60 env -u PR_BODY bash -c "${snippet}" 2>&1)" || code=$?
     printf '%s' "${out}" >"${work}/last-output.txt"
   fi
@@ -422,10 +423,10 @@ run_case hung "planted: a gate blocked on a silent stdin is reported as HUNG" \
   "sleep 30 2>/dev/null | bash -c 'PR_BODY=\"\$(cat 2>/dev/null)\"'"
 
 run_case hung "planted: a gate that prints the decision line and then blocks on stdin is reported as HUNG" \
-  "echo 'planted-gate: PR body from empty (closed stdin), diff from env'; sleep 30 2>/dev/null | cat"
+  "echo 'planted-gate: PR body from empty (closed stdin), diff from env'; sleep 90 2>/dev/null | cat"
 
-# shellcheck disable=SC2016  # the planted snippet must reach the probe unexpanded
 probe_code=0
+# shellcheck disable=SC2016  # the planted snippet must reach the probe unexpanded
 timeout 3 bash -c 'PR_BODY="$(cat)"' 0<&- >/dev/null 2>&1 || probe_code=$?
 if [ "${probe_code}" -eq 124 ]; then
   run_case hung "planted: a gate stuck reading a closed fd 0 is reported as HUNG" \
