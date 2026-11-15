@@ -279,6 +279,7 @@ def _sizes(directory: str, root: Path, report: Report) -> None:
         (path.stat().st_size, path.name)
         for path in pages_dir.glob("*.md")
         if path.name != agents_index.HEAD_NAME
+        and not path.name.startswith(agents_index.AREA_PREFIX)
     )
     values = [size for size, _ in sizes]
     report.lines.append(
@@ -296,6 +297,8 @@ def _new_sources(directory: str, root: Path) -> list[tuple[str, str]]:
     pages_dir = root / directory / agents_index.PAGES_DIR
     sources: list[tuple[str, str]] = []
     for path in sorted(pages_dir.glob("*.md")):
+        if path.name.startswith(agents_index.AREA_PREFIX):
+            continue
         name = path.relative_to(root).as_posix()
         text = path.read_text(encoding="utf-8")
         if path.name != agents_index.HEAD_NAME:
@@ -307,19 +310,28 @@ def _new_sources(directory: str, root: Path) -> list[tuple[str, str]]:
 
 
 def _index_is_stale(directory: str, root: Path) -> list[str]:
-    index = root / directory / agents_index.INDEX_NAME
-    rendered = agents_index.render(directory, root)
-    current = index.read_text(encoding="utf-8") if index.is_file() else None
-    if current == rendered:
-        return []
-    return [agents_index.stale_message(directory, current, rendered).splitlines()[0]]
+    outputs = {
+        agents_index.INDEX_NAME: agents_index.render(directory, root),
+        **agents_index.render_areas(directory, root),
+    }
+    stale: list[str] = []
+    for name, rendered in outputs.items():
+        index = root / directory / name
+        current = index.read_text(encoding="utf-8") if index.is_file() else None
+        if current != rendered:
+            stale.append(
+                agents_index.stale_message(directory, current, rendered, name).splitlines()[0]
+            )
+    return stale
 
 
 def check(old_text: str, directory: str, root: Path = ROOT) -> Report:
     """Compare ``old_text`` with the split sources of ``directory``."""
 
     report = Report()
-    agents_index.load_pages(root / directory / agents_index.PAGES_DIR, root)
+    pages_dir = root / directory / agents_index.PAGES_DIR
+    pages = agents_index.load_pages(pages_dir, root)
+    agents_index.load_areas(pages_dir, root, pages)
     old_name = posixpath.join(directory, agents_index.INDEX_NAME) + " (old)"
     pages_base = posixpath.join(directory, agents_index.PAGES_DIR)
     old_units = split_units(old_text, old_name)
@@ -352,21 +364,58 @@ def check(old_text: str, directory: str, root: Path = ROOT) -> Report:
     return report
 
 
-def read_old(ref: str | None, file: Path | None, directory: str, root: Path) -> str:
-    """Return the old file's text from a Git revision or from a copy on disk."""
-
-    if file is not None:
-        return file.read_text(encoding="utf-8")
-    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+def _git_show(ref_path: str, root: Path, env: dict[str, str]) -> str:
     result = run_command(
-        ("git", "-C", str(root), "show", f"{ref}:{directory}/{agents_index.INDEX_NAME}"),
+        ("git", "-C", str(root), "show", ref_path),
         allowed_executables=("git",),
-        env=environment,
+        env=env,
         capture_output=True,
         text=True,
         check=True,
     )
     return result.stdout
+
+
+def _read_split_ref(ref: str, directory: str, root: Path, env: dict[str, str]) -> str | None:
+    pages_rel = posixpath.join(directory, agents_index.PAGES_DIR)
+    listing = run_command(
+        ("git", "-C", str(root), "ls-tree", "-z", "--name-only", f"{ref}:{pages_rel}"),
+        allowed_executables=("git",),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    names = sorted(name for name in listing.stdout.split("\0") if name.endswith(".md"))
+    if listing.returncode != 0 or agents_index.HEAD_NAME not in names:
+        return None
+    parts: list[str] = []
+    for name in names:
+        if name.startswith(agents_index.AREA_PREFIX):
+            continue
+        raw = _git_show(f"{ref}:{pages_rel}/{name}", root, env)
+        body = (
+            raw
+            if name == agents_index.HEAD_NAME
+            else agents_index.split_front_matter(raw, f"{pages_rel}/{name}")[1]
+        )
+        parts.append(agents_index.rebase_links(body, pages_rel, directory).strip("\n"))
+    return "\n\n".join(parts) + "\n"
+
+
+def read_old(ref: str | None, file: Path | None, directory: str, root: Path) -> str:
+    """Return the old file's text from a Git revision or from a copy on disk."""
+
+    if file is not None:
+        return file.read_text(encoding="utf-8")
+    if ref is None:
+        raise ValueError("either --old-ref or --old-file is required")
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    split = _read_split_ref(ref, directory, root, environment)
+    if split is not None:
+        return split
+    target = posixpath.join(directory, agents_index.INDEX_NAME)
+    return _git_show(f"{ref}:{target}", root, environment)
 
 
 def main(argv: list[str] | None = None) -> int:

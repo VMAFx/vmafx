@@ -5,6 +5,7 @@ paths:
   - core/src/feature/brisque_model.h
   - core/test/check_exported_symbols.py
 invariant: Windows nvcc host = build MSVC, else newest vswhere toolset, else PATH; C++ targets take vmaf_cppflags_common.
+area: build-and-platform
 ---
 <!-- markdownlint-disable MD013 -->
 # Build system, compiler discovery, and C++ profile invariants

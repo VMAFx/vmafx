@@ -2,6 +2,7 @@
 paths:
   - core/src/feature/simd_dx.h
 invariant: SIMD DX framework macros and recurring vector kernel patterns across targets.
+area: simd-and-gpu
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # SIMD DX Framework Macros and Recurring Patterns

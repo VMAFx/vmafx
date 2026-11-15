@@ -2,6 +2,7 @@
 paths:
   - core/test/test_feature_isa_invariance.c
 invariant: Feature scores must not depend on host ISA; promotions and reductions must match scalar.
+area: simd-and-gpu
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Feature Score Invariance Across Host ISAs

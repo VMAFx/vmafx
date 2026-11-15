@@ -3,7 +3,10 @@ paths:
   - core/src/feature/sycl/integer_ssim_sycl.cpp
   - core/src/feature/sycl/sycl_ssim_terms.h
   - core/test/test_sycl_ssim_parity.c
+  - core/test/test_sycl_float_ssim_parity.c
+  - core/test/test_sycl_float_ssim_exact_contract.py
 invariant: float_ssim_sycl terms = CPU doubles, frame sums = CPU raster order; decimation is bit-exact with CPU.
+area: ssim-cambi-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Float SSIM terms, sums, and decimation

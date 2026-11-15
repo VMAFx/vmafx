@@ -9,6 +9,7 @@ paths:
   - core/test/test_ssimulacra2_pixel_format.c
   - core/test/test_ssimulacra2_pixel_format_contract.py
 invariant: Every ssimulacra2 init() refuses 4:0:0 first, through vmaf_ss2_check_pixel_format(); no private check.
+area: ssim-and-metrics
 ---
 # SSIMULACRA 2 input pixel formats
 

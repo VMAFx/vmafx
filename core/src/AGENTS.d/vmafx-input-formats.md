@@ -10,6 +10,7 @@ paths:
   - core/tools/yuv_input.c
   - core/tools/y4m_input.c
 invariant: One format table, one reference per layout, RGB never guessed; the CLI reads raw layouts with the import's code.
+area: vmafx
 ---
 <!-- markdownlint-disable MD013 -->
 # VMAFx input formats and RGB (ADR-2145, ADR-2146)

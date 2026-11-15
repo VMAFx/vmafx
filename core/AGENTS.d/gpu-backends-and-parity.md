@@ -3,6 +3,7 @@ paths:
   - core/src/cuda/common.h
   - core/src/sycl/common.h
 invariant: GPU-parity matrix gates cross-backend consistency; HIP follows scaffolding; icpx wraps SYCL tidy.
+area: backends-metrics-and-tests
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # GPU backend parity, HIP scaffolding, and SYCL toolchain

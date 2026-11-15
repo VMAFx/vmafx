@@ -3,6 +3,7 @@ paths:
   - core/src/feature/feature_collector.cpp
   - core/src/feature/feature_name.cpp
 invariant: Model options gate GPU twin selection; every option must be parsed or safely rejected.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Model Options Gate GPU Twin Selection

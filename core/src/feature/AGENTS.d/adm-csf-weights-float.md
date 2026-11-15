@@ -7,6 +7,7 @@ paths:
   - core/test/test_float_adm_csf_upstream_contract.py
   - core/test/barten_csf_cxx.cpp
 invariant: float ADM CSF weights (Watson step, Barten CSF) = upstream float arithmetic; Barten header same bits in C and C++.
+area: adm
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Float ADM CSF weights: Watson step and Barten CSF (ADR-1489)

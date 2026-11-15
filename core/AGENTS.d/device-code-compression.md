@@ -5,6 +5,7 @@ paths:
   - core/src/check_device_compression.py
   - core/test/test_device_code_compression.py
 invariant: Every device compile takes its backend's compression list; the build refuses raw device code.
+area: build-and-toolchains
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Device code compression policy (ADR-1590)

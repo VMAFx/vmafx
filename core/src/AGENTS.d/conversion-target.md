@@ -7,6 +7,7 @@ paths:
   - core/src/read_json_model.c
   - core/src/read_json_model.cpp
 invariant: Convert to model's conversion_target on host; input colour lives on context.
+area: engine
 ---
 <!-- markdownlint-disable MD013 -->
 # Model conversion target and input colorimetry

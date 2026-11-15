@@ -5,6 +5,7 @@ paths:
   - core/src/feature/arm64/moment_neon.c
   - core/src/feature/arm64/moment_sve2.c
 invariant: compute_2nd_moment adds float squares into one double in raster order; every SIMD kernel returns its bits.
+area: vif-motion-psnr
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # moment.c compute_2nd_moment Reduction Contract

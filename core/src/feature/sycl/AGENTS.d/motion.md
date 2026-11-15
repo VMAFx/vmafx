@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/integer_motion_sycl.cpp
   - core/test/test_sycl_motion*
 invariant: motion_sycl output set = CPU motion, and motion_force_zero lives in submit / collect.
+area: motion-psnr-and-moment
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Parity invariant — motion3 CPU and SYCL moving-average paths

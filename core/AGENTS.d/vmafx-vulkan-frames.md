@@ -6,6 +6,7 @@ paths:
   - core/test/vmafx_vulkan_test_util.h
   - core/test/test_vmafx_import_vulkan*
 invariant: Library makes no Vulkan call; CUDA imports opaque memory + timelines, SYCL/HIP take the dma-buf route; refusals named.
+area: backends-metrics-and-tests
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # VMAFx Vulkan frame import (ADR-2152)

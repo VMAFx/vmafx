@@ -2,9 +2,11 @@
 paths:
   - .github/workflows/release-please.yml
   - .github/workflows/supply-chain.yml
+  - release-please-config.json
+  - .release-please-manifest.json
   - scripts/release/verify-release-version.sh
   - dev/Containerfile
-invariant: Single root package draft release; release-publish environment; native release-build stage; tag-bound recovery.
+invariant: Single root draft release; one-shot release-as/bootstrap-sha; release-publish env; native stage; tag-bound recovery.
 ---
 # Single SemVer release fan-out and supply chain (ADR-1127)
 
@@ -27,7 +29,9 @@ ADR-1201) and 0.1.0 restart (ADR-3292) each selected by one-time
 `release-as` config field; release-PR rollover removes that field and
 `bootstrap-sha` before release PR merges, so neither override can affect
 later releases; `scripts/release/check-one-shot-fields.sh` refuses survivors.
-Later forced versions: `Release-As:` footer.
+Later forced versions: `Release-As:` footer. Release-line numbering,
+SONAME independence, single-marker `extra-files`, and `autorelease: cut`
+invariants: [release-line-invariants](../../scripts/release/AGENTS.d/release-line-invariants.md).
 
 Every job publishing to GHCR, uploading GitHub Release assets, or minting
 release-artifact Sigstore identity is bound to protected
@@ -39,7 +43,9 @@ release reviewer; read-only validation stays outside them. Provenance jobs
 write, `contents: read`, so they sit in `release-publish` too; they upload
 bundle only as workflow artifact. Environment-gated attachment job is sole
 release-asset writer. Never give provenance jobs `contents: write` or
-release-upload step.
+release-upload step. Server-side environment preflight, deployment-branch
+policy, and reviewer binding rules live in
+[publication-environment-binding](../../scripts/release/AGENTS.d/publication-environment-binding.md).
 
 `supply-chain.yml` runs `scripts/release/verify-release-version.sh` before any
 write or OIDC job. It keeps native and `vmaf-mcp` hashes in distinct provenance

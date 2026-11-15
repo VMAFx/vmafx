@@ -3,6 +3,7 @@ paths:
   - scripts/ci/cross_backend_parity_gate.py
   - core/test/test_sycl_*_parity.c
 invariant: Every shipping SYCL kernel here must have scalar-vs-SYCL parity test.
+area: build-and-parity
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Per-kernel parity-test invariant (rounds 1–3)

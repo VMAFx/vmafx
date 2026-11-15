@@ -9,6 +9,7 @@ paths:
   - core/test/float_adm_twin_parity.h
   - core/test/test_float_adm_debug_key_refusal.c
 invariant: float_adm's debug ratio `adm` is never suffixed, on CPU and every twin; second debug instance is refused.
+area: adm
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # `float_adm` debug key (ADR-2056)

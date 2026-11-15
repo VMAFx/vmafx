@@ -15,6 +15,7 @@ paths:
   - core/src/feature/sycl/ssimulacra2_sycl.cpp
   - core/test/vmafx_sycl_cells.h
 invariant: Twins copy SYCL device pictures on the device via vmaf_sycl_picture_read_plane, never the host (ADR-2091).
+area: runtime-and-kernels
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # SYCL device pictures (VMAFx imports)

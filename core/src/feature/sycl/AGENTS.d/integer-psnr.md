@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/integer_psnr_sycl.cpp
   - core/test/test_sycl_psnr_parity.c
 invariant: integer_psnr_sycl.cpp = full CPU psnr option table, bit-exact; ceiling division for chroma plane geometry.
+area: motion-psnr-and-moment
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Integer PSNR extractor and kernels

@@ -4,6 +4,7 @@ paths:
   - core/test/meson.build
   - dev/Containerfile
 invariant: CC=gcc CXX=icpx builds give icpx C++ the strict spelling and link SYCL-on tests as C++.
+area: build-and-toolchains
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Hybrid GCC C + icpx C++ / SYCL toolchain (ADR-3357)

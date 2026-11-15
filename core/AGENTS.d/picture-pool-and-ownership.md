@@ -4,6 +4,7 @@ paths:
   - core/src/picture_pool.c
   - core/src/libvmaf.c
 invariant: Picture pool fetch errors signal availability; vmaf_read_pictures centralizes picture ownership release.
+area: engine-and-runtime
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Picture pool geometry, allocation signaling, and picture ownership

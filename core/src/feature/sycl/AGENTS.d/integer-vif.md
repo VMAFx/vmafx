@@ -4,6 +4,7 @@ paths:
   - core/src/feature/sycl/sycl_integer_vif_math.h
   - core/test/test_sycl_vif_parity.c
 invariant: integer_vif_sycl.cpp = CPU vif, bit for bit; rd_stride uses ceiling division for odd widths.
+area: adm-and-vif
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Integer VIF extractor and kernels

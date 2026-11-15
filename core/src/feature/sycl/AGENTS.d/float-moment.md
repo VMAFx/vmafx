@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/integer_moment_sycl.cpp
   - core/test/test_sycl_float_moment_parity.c
 invariant: float_moment_sycl = CPU float_moment, bit for bit past 2^53 units too; integers only; no scratch.
+area: motion-psnr-and-moment
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Float moment extractor and kernels

@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/integer_psnr_hvs_sycl.cpp
   - core/test/test_sycl_psnr_hvs_parity.c
 invariant: psnr_hvs_sycl = CPU scores bit for bit; integer_psnr_hvs_sycl.cpp DCT lives in local memory.
+area: motion-psnr-and-moment
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # PSNR-HVS extractor and DCT kernel

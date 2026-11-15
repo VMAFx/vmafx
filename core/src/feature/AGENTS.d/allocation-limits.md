@@ -1,7 +1,10 @@
 ---
 paths:
   - core/src/feature/feature_extractor.h
+  - core/src/feature/float_vif.c
+  - core/src/feature/ssimulacra2.c
 invariant: Per-frame malloc or aligned_malloc for geometry-sized buffers is strictly prohibited.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Geometry-Sized Buffer Heap Allocation Prohibition

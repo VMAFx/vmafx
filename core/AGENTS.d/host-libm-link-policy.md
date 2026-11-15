@@ -3,6 +3,7 @@ paths:
   - core/src/meson.build
   - core/test/test_icx_system_libm.py
 invariant: Every icx / icpx link gets -no-intel-lib=libimf; host math comes from glibc libm.
+area: build-and-toolchains
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Host math library link policy (ADR-1495)

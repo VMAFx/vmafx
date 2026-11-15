@@ -3,6 +3,7 @@ paths:
   - core/src/fex_ctx_vector.cpp
   - core/src/fex_ctx_vector.h
 invariant: Feature context registration compares option keys for deduplication and manages option-copy lifecycle.
+area: engine-and-runtime
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Feature context registration, deduplication, and option ownership

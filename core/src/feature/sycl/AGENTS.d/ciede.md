@@ -4,6 +4,7 @@ paths:
   - core/src/feature/sycl/sycl_ciede_math.h
   - core/test/test_sycl_ciede_parity.c
 invariant: integer_ciede_sycl.cpp stages Y/U/V at native size; statements on fp32 pairs match ciede.c.
+area: ssim-cambi-and-metrics
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # CIEDE2000 extractor and kernels

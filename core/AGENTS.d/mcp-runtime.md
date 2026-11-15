@@ -3,6 +3,7 @@ paths:
   - core/src/mcp/mcp.c
   - core/src/mcp/mcp_internal.h
 invariant: Embedded MCP runtime conforms to ADR-0209 transport contract and lifecycle.
+area: engine-and-runtime
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Embedded MCP runtime contract and transport lifecycle

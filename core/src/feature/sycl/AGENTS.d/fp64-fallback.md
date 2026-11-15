@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/sycl_soft_double.h
   - core/src/feature/sycl/sycl_soft_signed.h
 invariant: fp64-free kernels non-negotiable; double emulation through soft double on hardware without native fp64.
+area: build-and-parity
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # fp64-free kernels and emulation fallback

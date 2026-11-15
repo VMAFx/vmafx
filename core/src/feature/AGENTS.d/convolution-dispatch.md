@@ -4,6 +4,7 @@ paths:
   - core/src/feature/common/convolution_avx.c
   - core/src/feature/common/convolution_avx512.c
 invariant: Convolution scanline helpers and SIMD dispatch twin synchronization across backends.
+area: simd-and-gpu
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Convolution Helpers and SIMD Dispatch Synchronization

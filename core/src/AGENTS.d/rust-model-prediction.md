@@ -9,6 +9,7 @@ paths:
   - core/src/rust/shim/rust_predict.c
   - core/src/rust/shim/rust_predict.h
 invariant: Rust predictor returns C predictor's score bit for bit; change to one changes other in same PR.
+area: models-and-rust
 ---
 <!-- markdownlint-disable MD013 -->
 # Rust model prediction (RC4 lane P, #1723)

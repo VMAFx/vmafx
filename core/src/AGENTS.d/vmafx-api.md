@@ -23,6 +23,7 @@ paths:
   - api/openapi/components.gen.yaml
   - ffmpeg-patches/src/vf_vmafx_options.h
 invariant: Generated from vmafx.toml, never hand-edit; engine bodies compile as vmaf_engine_*; frame ref = picture VmafRef.
+area: vmafx
 ---
 <!-- markdownlint-disable MD013 -->
 # VMAFx API and its libvmaf compat shims (ADR-1852)

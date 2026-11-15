@@ -3,6 +3,7 @@ paths:
   - core/meson.build
   - scripts/ci/run_meson_test.py
 invariant: Meson strips secret tokens from test environment, pins version >= 1.4.0, and tracks SYCL headers.
+area: build-and-toolchains
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Meson build configuration, dependency tracking, and environment sanitization

@@ -3,6 +3,7 @@ paths:
   - core/src/feature/vif_tools.c
   - core/src/feature/vif_tools.h
 invariant: lanczos4 prescale weights single implementation shared with GPU twins.
+area: vif-motion-psnr
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # lanczos4 Prescale Weights Shared Implementation

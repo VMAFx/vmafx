@@ -11,6 +11,7 @@ paths:
   - core/test/test_sycl_zero_copy_admission.c
   - core/test/test_sycl_zero_copy_model_gate.c
 invariant: reads_shared_luma_only() true only if submit() reads no picture for these options (ADR-1688).
+area: runtime-and-kernels
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Zero-copy admission hook

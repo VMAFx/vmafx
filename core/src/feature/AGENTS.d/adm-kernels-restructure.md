@@ -3,6 +3,7 @@ paths:
   - core/src/feature/integer_adm.c
   - core/src/feature/adm_tools.c
 invariant: Integer ADM kernels header separation, AIM clipping differences, and adm_min_val clamping.
+area: adm
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Integer ADM Restructuring and AIM Clipping

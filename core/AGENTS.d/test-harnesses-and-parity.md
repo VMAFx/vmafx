@@ -3,6 +3,7 @@ paths:
   - core/test/meson.build
   - core/test/test_motion_avx512_parity.c
 invariant: Fuzz harnesses track coverage; required aggregator rejects removed float_ansnr; AVX-512 verifies parity.
+area: backends-metrics-and-tests
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Fuzz harness coverage, required aggregator, and motion parity

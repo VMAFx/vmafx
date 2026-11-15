@@ -3,6 +3,7 @@ paths:
   - core/src/feature/feature_extractor.h
   - core/src/feature/feature_name.cpp
 invariant: GPU-twin VmafOption tables mirror CPU table entry-for-entry with full semantics.
+area: simd-and-gpu
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # GPU-Twin Option Tables CPU Mirror and Semantics

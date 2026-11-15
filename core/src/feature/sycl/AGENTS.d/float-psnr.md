@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/float_psnr_sycl.cpp
   - core/test/test_sycl_float_psnr_parity.c
 invariant: float_psnr_sycl = CPU float_psnr, bit for bit past 2^53 units too; 64-bit int row-segment sums.
+area: motion-psnr-and-moment
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Float PSNR extractor and kernels

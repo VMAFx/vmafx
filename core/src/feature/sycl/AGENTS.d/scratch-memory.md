@@ -7,6 +7,7 @@ paths:
   - core/src/feature/sycl/integer_motion_pipeline_sycl.cpp
   - core/src/feature/sycl/ssimulacra2_sycl.cpp
 invariant: No scratch memory in kernels; zero private_mem_size and spill_memory_size on xe.
+area: runtime-and-kernels
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Scratch memory avoidance on Intel Xe

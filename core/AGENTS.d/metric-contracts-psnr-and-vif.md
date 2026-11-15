@@ -3,6 +3,7 @@ paths:
   - core/src/feature/vif.c
   - core/src/feature/psnr.c
 invariant: integer_vif is luma-only across backends; psnr_max separates scale from peak; float VIF avoids AVX-512.
+area: backends-metrics-and-tests
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # PSNR and VIF metric contracts across backends

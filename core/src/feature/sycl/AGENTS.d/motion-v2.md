@@ -3,6 +3,7 @@ paths:
   - core/src/feature/sycl/integer_motion_v2_sycl.cpp
   - core/test/test_sycl_motion_v2_parity.c
 invariant: integer_motion_v2_sycl.cpp reads shared frame; flush derives motion2_v2 / motion3_v2 via CPU window function.
+area: motion-psnr-and-moment
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # motion3_v2 cross-twin invariant (ADR-1108)

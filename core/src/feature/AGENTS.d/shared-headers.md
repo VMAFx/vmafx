@@ -3,6 +3,7 @@ paths:
   - core/src/feature/feature_extractor.h
   - core/src/feature/feature_collector.h
 invariant: Shared C/C++ headers must declare one enum definition, never C++-only narrow enum.
+area: framework
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Shared C / C++ Headers Enum Definition Invariant
