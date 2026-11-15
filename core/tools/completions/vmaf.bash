@@ -82,7 +82,7 @@ _vmaf() {
     _vmaf_compgen -W "${flags}" -- "${cur}"
     return 0
   fi
-  _vmaf_compgen -f -- "${cur}"
+  _vmaf_compgen -P "${prefix}" -f -- "${cur}"
 }
 
 complete -o filenames -F _vmaf vmaf

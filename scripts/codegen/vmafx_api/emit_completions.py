@@ -161,7 +161,7 @@ def _bash_function(api: Api) -> list[str]:
         '    _vmaf_compgen -W "${flags}" -- "${cur}"',
         "    return 0",
         "  fi",
-        '  _vmaf_compgen -f -- "${cur}"',
+        '  _vmaf_compgen -P "${prefix}" -f -- "${cur}"',
         "}",
         "",
     ]
@@ -300,6 +300,17 @@ def powershell_text(api: Api) -> str:
     out.append("        " + ", ".join(flag_words))
     out += [
         "    )",
+        "    $joinedName = ''",
+        "    $joinedPrefix = ''",
+        "    if ($wordToComplete -match '^(--[^=]+)=(.*)$') {",
+        "      $joinedName = $Matches[1]",
+        "      $joinedPrefix = $Matches[2]",
+        "    }",
+        "    if ($joinedName -and $domains.ContainsKey($joinedName)) {",
+        '        $domains[$joinedName] | Where-Object { $_ -like "$joinedPrefix*" }'
+        ' | ForEach-Object { [System.Management.Automation.CompletionResult]::new("$joinedName=$_") }',
+        "        return",
+        "    }",
         "    if ($domains.ContainsKey($prev)) {",
         '        $domains[$prev] | Where-Object { $_ -like "$wordToComplete*" }'
         " | ForEach-Object { [System.Management.Automation.CompletionResult]::new($_) }",

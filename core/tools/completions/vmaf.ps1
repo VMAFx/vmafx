@@ -44,6 +44,16 @@ Register-ArgumentCompleter -Native -CommandName 'vmaf','vmafx' -ScriptBlock {
     $flags = @(
         '--reference', '-r', '--distorted', '-d', '--width', '-w', '--height', '-h', '--width_ref', '--width_dist', '--height_ref', '--height_dist', '--pixel_format', '-p', '--bitdepth', '-b', '--check-sample-range', '--check_sample_range', '--color_range_ref', '--color_range_dist', '--color_primaries_ref', '--color_primaries_dist', '--color_trc_ref', '--color_trc_dist', '--color_matrix_ref', '--color_matrix_dist', '--rgb_matrix', '--rgb_range', '--rgb_transfer', '--rgb_out_range', '--model', '-m', '--backend', '--no_cuda', '--no_sycl', '--no_hip', '--no_metal', '--feature', '--aom_ctc', '--nflx_ctc', '--tiny-model', '--tiny_model', '--tiny-device', '--tiny_device', '--dnn-ep', '--dnn_ep', '--tiny-threads', '--tiny_threads', '--tiny-fp16', '--tiny_fp16', '--tiny-model-verify', '--tiny_model_verify', '--tiny-codec', '--tiny_codec', '--tiny-preset', '--tiny_preset', '--tiny-crf', '--tiny_crf', '--tiny-resize', '--tiny_resize', '--no-reference', '--no_reference', '--threads', '--frame_cnt', '--frame_skip_ref', '--frame_skip_dist', '--no_prediction', '-n', '--cpumask', '-c', '--gpumask', '--sycl_device', '--hip_device', '--metal_device', '--subsample', '--precision', '--output', '-o', '--xml', '--json', '--csv', '--sub', '--provenance-sidecar', '--netflix-compat', '--netflix_compat', '--quiet', '-q', '--version', '-v', '--list-backends', '--help', '--verify-provenance'
     )
+    $joinedName = ''
+    $joinedPrefix = ''
+    if ($wordToComplete -match '^(--[^=]+)=(.*)$') {
+      $joinedName = $Matches[1]
+      $joinedPrefix = $Matches[2]
+    }
+    if ($joinedName -and $domains.ContainsKey($joinedName)) {
+        $domains[$joinedName] | Where-Object { $_ -like "$joinedPrefix*" } | ForEach-Object { [System.Management.Automation.CompletionResult]::new("$joinedName=$_") }
+        return
+    }
     if ($domains.ContainsKey($prev)) {
         $domains[$prev] | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object { [System.Management.Automation.CompletionResult]::new($_) }
         return

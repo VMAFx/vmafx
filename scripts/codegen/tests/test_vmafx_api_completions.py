@@ -330,12 +330,12 @@ class HookCleanlinessTests(unittest.TestCase):
             )
             cases = (
                 # `=` is the current word (`--bitdepth=<Tab>`): the full domain.
-                ("COMP_WORDS=(vmaf --bitdepth =); COMP_CWORD=2; _vmaf; ", ("8", "10"), ()),
+                ("COMP_WORDS=(vmaf --bitdepth =); COMP_CWORD=2; _vmaf; ", ("8", "10")),
                 # `=` is the previous word (`--bitdepth=1<Tab>`): the domain
                 # filtered by the typed `1`.
-                ("COMP_WORDS=(vmaf --bitdepth = 1); COMP_CWORD=3; _vmaf; ", ("10",), ("8",)),
+                ("COMP_WORDS=(vmaf --bitdepth = 1); COMP_CWORD=3; _vmaf; ", ("10",)),
             )
-            for words, expected, absent in cases:
+            for words, expected in cases:
                 script = prefix + words + 'printf "%s\\n" "${COMPREPLY[@]}"'
                 result = run_command(
                     ["bash", "-c", script],
@@ -346,12 +346,14 @@ class HookCleanlinessTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stderr, "")
                 if "OLD_SHELL" in result.stdout:
-                    continue
+                    self.skipTest("bash < 4.2: _vmaf not defined")
                 self.assertIn("DEFINED", result.stdout)
-                for value in expected:
-                    self.assertIn(value, result.stdout)
-                for value in absent:
-                    self.assertNotIn(value, result.stdout)
+                lines = [
+                    line
+                    for line in result.stdout.splitlines()
+                    if line and line not in ("DEFINED", "OLD_SHELL")
+                ]
+                self.assertEqual(lines, list(expected))
 
     @unittest.skipUnless(shutil.which("bash"), "bash is not installed")
     def test_short_option_does_not_take_the_equals_form(self) -> None:
@@ -366,54 +368,75 @@ class HookCleanlinessTests(unittest.TestCase):
                 "echo DEFINED; "
             )
             cases = (
-                "COMP_WORDS=(vmaf -p = nv); COMP_CWORD=3; _vmaf; ",
-                "COMP_WORDS=(vmaf -p=nv); COMP_CWORD=1; _vmaf; ",
+                "COMP_WORDS=(vmaf -b = 1); COMP_CWORD=3; _vmaf; ",
+                "COMP_WORDS=(vmaf -b =); COMP_CWORD=2; _vmaf; ",
             )
             for words in cases:
                 script = prefix + words + 'printf "%s\\n" "${COMPREPLY[@]}"'
                 result = run_command(
                     ["bash", "-c", script],
                     allowed_executables=["bash"],
+                    cwd=tmp,
                     capture_output=True,
                     text=True,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stderr, "")
                 if "OLD_SHELL" in result.stdout:
-                    continue
+                    self.skipTest("bash < 4.2: _vmaf not defined")
                 self.assertIn("DEFINED", result.stdout)
-                self.assertNotIn("nv12", result.stdout)
+                lines = [
+                    line
+                    for line in result.stdout.splitlines()
+                    if line and line not in ("DEFINED", "OLD_SHELL")
+                ]
+                self.assertEqual(lines, [], f"short option completed a value: {words}")
 
     @unittest.skipUnless(shutil.which("bash"), "bash is not installed")
     def test_equals_joined_form_keeps_the_prefix(self) -> None:
         # A shell whose COMP_WORDBREAKS lacks `=` keeps `--bitdepth=1` as one
         # word; readline replaces the whole word, so the candidate must carry
-        # `--bitdepth=` back or it becomes a bare `10`.
+        # `--bitdepth=` back or it becomes a bare `10`. The file fallback needs
+        # the same prefix: `--reference=al` must complete `--reference=alpha.y4m`,
+        # not `alpha.y4m`.
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "vmaf.bash"
             path.write_text(self.outputs[BASH], encoding="utf-8", newline="\n")
-            script = (
-                f"source '{path.as_posix()}'; "
-                "declare -F _vmaf >/dev/null || { echo OLD_SHELL; exit 0; }; "
-                "echo DEFINED; "
-                'COMP_WORDBREAKS="${COMP_WORDBREAKS//=/}"; '
-                "COMP_WORDS=(vmaf --bitdepth=1); COMP_CWORD=1; _vmaf; "
-                'printf "%s\\n" "${COMPREPLY[@]}"'
+            (Path(tmp) / "alpha.y4m").touch()
+            cases = (
+                ("COMP_WORDS=(vmaf --bitdepth=1); COMP_CWORD=1; _vmaf; ", ["--bitdepth=10"]),
+                (
+                    "COMP_WORDS=(vmaf --reference=al); COMP_CWORD=1; _vmaf; ",
+                    ["--reference=alpha.y4m"],
+                ),
             )
-            result = run_command(
-                ["bash", "-c", script],
-                allowed_executables=["bash"],
-                capture_output=True,
-                text=True,
-            )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stderr, "")
-        if "OLD_SHELL" in result.stdout:
-            return
-        self.assertIn("DEFINED", result.stdout)
-        lines = result.stdout.splitlines()
-        self.assertIn("--bitdepth=10", lines)
-        self.assertNotIn("10", lines)
+            for words, expected in cases:
+                script = (
+                    f"source '{path.as_posix()}'; "
+                    "declare -F _vmaf >/dev/null || { echo OLD_SHELL; exit 0; }; "
+                    "echo DEFINED; "
+                    'COMP_WORDBREAKS="${COMP_WORDBREAKS//=/}"; '
+                    + words
+                    + 'printf "%s\\n" "${COMPREPLY[@]}"'
+                )
+                result = run_command(
+                    ["bash", "-c", script],
+                    allowed_executables=["bash"],
+                    cwd=tmp,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stderr, "")
+                if "OLD_SHELL" in result.stdout:
+                    self.skipTest("bash < 4.2: _vmaf not defined")
+                self.assertIn("DEFINED", result.stdout)
+                lines = [
+                    line
+                    for line in result.stdout.splitlines()
+                    if line and line not in ("DEFINED", "OLD_SHELL")
+                ]
+                self.assertEqual(lines, expected)
 
     def test_files_carry_the_license_header(self) -> None:
         # Every new file starts with a license header (ADR-3401: the outside
@@ -442,6 +465,39 @@ class HookCleanlinessTests(unittest.TestCase):
         # name the option instead.
         self.assertIn("Extent.EndOffset -le $cursorPosition", self.outputs[PS1])
         self.assertNotIn("Count - 2", self.outputs[PS1])
+        # The joined `--opt=value` form is one word, so `$prev` is not the
+        # option; the generator splits it and returns `--opt=value` candidates.
+        self.assertIn("$wordToComplete -match '^(--[^=]+)=(.*)$'", self.outputs[PS1])
+        self.assertIn('CompletionResult]::new("$joinedName=$_")', self.outputs[PS1])
+
+    @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not installed")
+    def test_powershell_completes_the_joined_value_form(self) -> None:
+        # `vmaf --pool=ha<Tab>` is one word in PowerShell; the domain lookup
+        # must see `--pool`, filter by `ha`, and return `--pool=harmonic_mean`.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "vmaf.ps1"
+            path.write_text(self.outputs[PS1], encoding="utf-8", newline="\n")
+            escaped = str(path).replace("'", "''")
+            script = f"""
+$tokens = $null
+$parseErrors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile('{escaped}', [ref]$tokens, [ref]$parseErrors)
+$sbAst = $ast.Find({{ param($node) $node -is [System.Management.Automation.Language.ScriptBlockExpressionAst] }}, $true)
+$sb = $sbAst.ScriptBlock.GetScriptBlock()
+$cmd = 'vmaf --pool=ha'
+$inputAst = [System.Management.Automation.Language.Parser]::ParseInput($cmd, [ref]$tokens, [ref]$parseErrors)
+$cmdAst = $inputAst.Find({{ param($node) $node -is [System.Management.Automation.Language.CommandAst] }}, $true)
+& $sb '--pool=ha' $cmdAst $cmd.Length | ForEach-Object {{ $_.CompletionText }}
+"""
+            result = run_command(
+                ["pwsh", "-NoProfile", "-Command", script],
+                allowed_executables=["pwsh"],
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertEqual(result.stdout.splitlines(), ["--pool=harmonic_mean"])
 
 
 class EscapeTests(unittest.TestCase):
