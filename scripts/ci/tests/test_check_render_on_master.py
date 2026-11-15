@@ -22,6 +22,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml  # type: ignore[import-untyped]  # hook environments omit PyYAML stubs
+
 ROOT = Path(__file__).resolve().parents[3]
 CHECK = ROOT / "scripts" / "ci" / "check_render_on_master.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "lint-and-format.yml"
@@ -206,6 +208,31 @@ class RenderOnMasterWiringTest(unittest.TestCase):
         # A pull request opened with GITHUB_TOKEN gets no check runs (ADR-1151).
         self.assertIn("actions/create-github-app-token@", text)
         self.assertIn("run: bash scripts/ci/open-render-pr.sh", text)
+
+    def test_render_pull_request_runs_on_master_push(self) -> None:
+        # Issue 3462 (ADR-3552): scheduled runs are dropped, so a push to master
+        # must start the workflow; schedule stays as the hourly fallback.
+        data = yaml.safe_load(RENDER_PR_WORKFLOW.read_text(encoding="utf-8"))
+        self.assertIsInstance(data, dict)
+        triggers = data.get("on", data.get(True))
+        self.assertIsInstance(triggers, dict)
+        self.assertIn("push", triggers)
+        push = triggers["push"]
+        self.assertIsInstance(push, dict)
+        # Boundary: push runs on master and names no other branch (a render on
+        # any other branch's push would render a non-master tip).
+        self.assertEqual(push.get("branches"), ["master"])
+        self.assertEqual(set(push.get("branches", [])), {"master"})
+        for forbidden in ("paths", "paths-ignore", "tags", "branches-ignore"):
+            self.assertNotIn(forbidden, push)
+        self.assertEqual(set(push.keys()), {"branches"})
+        self.assertIn("schedule", triggers)
+        schedule = triggers["schedule"]
+        self.assertIsInstance(schedule, list)
+        self.assertEqual(len(schedule), 1)
+        self.assertIsInstance(schedule[0], dict)
+        self.assertIn("cron", schedule[0])
+        self.assertIn("workflow_dispatch", triggers)
 
     def test_render_pull_request_carries_rendered_paths_only(self) -> None:
         script = RENDER_PR_SCRIPT.read_text()
