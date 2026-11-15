@@ -790,34 +790,44 @@ jobs:
             };
             // Issue 3459 / ADR-3551, PR 3466 review — workflows whose pull_request
             // trigger includes `edited` and that produce required checks. Each
-            // listed workflow sets a top-level `run-name` starting with
-            // `[${{ github.event.pull_request.updated_at }}] `; on an `edited`
-            // event, only runs whose `display_title` starts with editStampPrefix
-            // belong to this edit. Every other run of those workflows is excluded
-            // as stale so an earlier edit (even seconds prior) cannot satisfy or
-            // mask the current edit, and each listed workflow must start a current
-            // run within the grace window.
+            // listed workflow sets a top-level `run-name` starting with the edit
+            // stamp `[<pull_request.updated_at>] `; on an `edited` event, only runs
+            // whose `display_title` starts with editStampPrefix belong to this
+            // edit. Every other run of those workflows is excluded as stale so an
+            // earlier edit (even seconds prior) cannot satisfy or mask the current
+            // edit, each listed workflow must start a current run within the grace
+            // window, and multiple runs sharing editStampPrefix (same-second edits)
+            // fail closed.
             const editedRerunWorkflows = [
               '.github/workflows/rule-enforcement.yml',
             ];
-            const editedRerunWorkflowSet = new Set(editedRerunWorkflows);
+
+            function hasCurrentEditStamp(run) {
+              return editStampPrefix !== '' &&
+                typeof run.display_title === 'string' &&
+                run.display_title.startsWith(editStampPrefix);
+            }
 
             function classifyEditedRerunSuites(workflowRuns) {
               const staleSuites = new Set();
-              const currentWorkflows = new Set();
+              // Distinct current runs per workflow: a run listed twice (a new run
+              // shifting the newest-first listing between pages) counts once.
+              const currentRuns = new Map(editedRerunWorkflows.map(p => [p, new Set()]));
               for (const run of workflowRuns) {
-                if (!run || !editedRerunWorkflowSet.has(run.path)) continue;
-                const displayTitle = typeof run.display_title === 'string' ? run.display_title : '';
-                if (editStampPrefix !== '' && displayTitle.startsWith(editStampPrefix)) {
-                  currentWorkflows.add(run.path);
-                } else if (run.check_suite_id !== undefined && run.check_suite_id !== null) {
+                if (!run || !currentRuns.has(run.path)) continue;
+                if (hasCurrentEditStamp(run)) {
+                  currentRuns.get(run.path).add(run.id ?? run.check_suite_id ?? Symbol('run'));
+                } else if (run.check_suite_id != null) {
                   staleSuites.add(run.check_suite_id);
                 }
               }
               const missingWorkflows = editedRerunWorkflows.filter(
-                workflowPath => !currentWorkflows.has(workflowPath)
+                workflowPath => currentRuns.get(workflowPath).size === 0
               );
-              return { staleSuites, missingWorkflows };
+              const ambiguousWorkflows = editedRerunWorkflows.filter(
+                workflowPath => currentRuns.get(workflowPath).size > 1
+              );
+              return { staleSuites, missingWorkflows, ambiguousWorkflows };
             }
 
             // SARIF upload jobs in security-scans.yml that feed the external
@@ -947,6 +957,16 @@ jobs:
                 );
                 if (!workflowRuns) return;
                 const editedState = classifyEditedRerunSuites(workflowRuns);
+                if (editedState.ambiguousWorkflows.length > 0) {
+                  core.setFailed(
+                    'Ambiguous edited-event workflow runs share edit stamp ' +
+                    `${editStampPrefix.trim()}: ${editedState.ambiguousWorkflows.join(', ')}. ` +
+                    'Multiple edits landed in the same second so their runs cannot be told apart; ' +
+                    'edit the pull request again (any title or body change re-stamps it) ' +
+                    'or push a commit.'
+                  );
+                  return;
+                }
                 for (const suiteId of editedState.staleSuites) suites.add(suiteId);
                 missingEditedWorkflows = editedState.missingWorkflows;
                 lastExcludedEditedSuites = editedState.staleSuites.size;

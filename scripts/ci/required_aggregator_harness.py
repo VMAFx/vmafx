@@ -12,11 +12,13 @@ arms the ready-for-review window anchor and stale edited-rerun suite exclusion).
 Every synthetic required check defaults to check suite 1, overridden per check by
 ``suite_by_check`` and on the selected check by ``selected_suite``. ``workflow_runs``
 are the workflow runs on the commit (``path``, ``event``, ``head_branch``,
-``check_suite_id``, optional ``display_title``, and ``created_at`` or
-``created_at_offset_s``); runs of ``editedRerunWorkflows`` without ``display_title``
-stay stale-safe, while omitting ``workflow_runs`` on an ``edited`` pull request gives
-each workflow in ``editedRerunWorkflows`` a current synthetic run in suite 1 matching
-``pr_updated_at`` so non-suite tests keep their baseline.
+``check_suite_id``, optional ``display_title``, optional ``status`` and ``conclusion``,
+and ``created_at`` or ``created_at_offset_s``); runs of ``editedRerunWorkflows`` without
+``display_title`` stay stale-safe, multiple runs sharing the current edit-stamp prefix
+fail closed as ambiguous regardless of status, while omitting ``workflow_runs`` on an
+``edited`` pull request gives each workflow in ``editedRerunWorkflows`` a single current
+synthetic run in suite 1 matching ``pr_updated_at`` so non-suite tests keep their
+baseline.
 ``later_workflow_runs`` replace ``workflow_runs`` from the second workflow-run
 listing on. ``head_ref`` is the pull request's head branch (a ``release-please--``
 ref arms the release must-report list). ``absent_checks`` omits named required

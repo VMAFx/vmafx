@@ -8,10 +8,11 @@ ready-head build and test checks stay at their original timestamps. The aggregat
 anchors `minCreatedMs` at `anchorMs - 2 * 60 * 1000` (`runTimestampMs >= minCreatedMs`
 inclusive; `< minCreatedMs` excluded), where `anchorMs` is the latest `ready_for_review`
 timeline event or `pull_request.created_at` when never a draft. Workflows listed in
-`editedRerunWorkflows` must also report from a current-edit run whose `display_title`
+`editedRerunWorkflows` must also report from a single current-edit run whose `display_title`
 starts with `[<pull_request.updated_at>] `; every other run of those workflows is stale
-and its check suite is excluded, failing closed when `pull_request.updated_at` is missing
-or no current run starts. Non-edited events keep the aggregator run's own `created_at`.
+and its check suite is excluded, failing closed when `pull_request.updated_at` is missing,
+when no current run starts, or when multiple runs share the same edit-stamp prefix
+(same-second edits). Non-edited events keep the aggregator run's own `created_at`.
 
 AGGREGATOR_UNDER_TEST and REPO_ROOT_UNDER_TEST point the suite at scratch copies for
 mutation proofs.
@@ -105,6 +106,8 @@ def _rules_run(
     *,
     display_title: str | None = None,
     edit_stamp: str | None = None,
+    status: str | None = None,
+    conclusion: str | None = None,
 ) -> dict[str, object]:
     """Build one synthetic rule-enforcement.yml workflow-run entry."""
     resolved_title = (
@@ -120,6 +123,10 @@ def _rules_run(
     }
     if resolved_title is not None:
         run["display_title"] = resolved_title
+    if status is not None:
+        run["status"] = status
+    if conclusion is not None:
+        run["conclusion"] = conclusion
     return run
 
 
@@ -755,6 +762,127 @@ class AggregatorEditedWindowTests(unittest.TestCase):
         self.assertEqual(failures, [])
         self.assertIn(f"Waiting for edited-event workflow run: {RULES_WORKFLOW}", infos)
         self.assertIn("Excluded 1 stale edited-rerun check suite(s)", infos)
+
+    def test_same_second_duplicate_stamps_green_and_in_progress_fails_closed(self) -> None:
+        """Fail closed when two same-second Rules runs share [T2] (earlier green, later running)."""
+        failures = self._run_edited_suites(
+            [
+                _rules_run(
+                    OLD_RULES_SUITE,
+                    0,
+                    edit_stamp=STAMP_T2,
+                    status="completed",
+                    conclusion="success",
+                ),
+                _rules_run(
+                    CURRENT_RULES_SUITE,
+                    0,
+                    edit_stamp=STAMP_T2,
+                    status="in_progress",
+                ),
+            ],
+        )
+        self.assertEqual(len(failures), 1, failures)
+        self.assertIn(RULES_WORKFLOW, failures[0])
+        self.assertIn(STAMP_T2, failures[0])
+        self.assertIn("edit the pull request again", failures[0])
+        self.assertIn("push a commit", failures[0])
+
+    def test_same_second_duplicate_stamps_cancelled_and_green_fails_closed(self) -> None:
+        """Fail closed when an earlier duplicate [T2] Rules run is cancelled and later is green."""
+        failures = run_required_aggregator(
+            BODY_GATE,
+            "cancelled",
+            action="edited",
+            pr_updated_at=STAMP_T2,
+            run_created_at=RUN_CREATED_AT,
+            timeline_events=READY_TIMELINE,
+            default_started_offset_s=MIN_30_AGO,
+            suite_by_check=RULES_SUITE_MAP,
+            workflow_runs=[
+                _rules_run(
+                    OLD_RULES_SUITE,
+                    0,
+                    edit_stamp=STAMP_T2,
+                    status="completed",
+                    conclusion="cancelled",
+                ),
+                _rules_run(
+                    CURRENT_RULES_SUITE,
+                    0,
+                    edit_stamp=STAMP_T2,
+                    status="completed",
+                    conclusion="success",
+                ),
+            ],
+            extra_checks=_rules_suite_checks(CURRENT_RULES_SUITE),
+        )
+        self.assertEqual(len(failures), 1, failures)
+        self.assertIn(RULES_WORKFLOW, failures[0])
+        self.assertIn(STAMP_T2, failures[0])
+        self.assertIn("edit the pull request again", failures[0])
+        self.assertIn("push a commit", failures[0])
+
+    def test_one_stamped_run_plus_one_second_off_run_passes(self) -> None:
+        """Pass when one Rules run matches [T2] and an earlier Rules run is 1 s off ([T2 - 1 s])."""
+        infos: list[str] = []
+        failures = run_required_aggregator(
+            BODY_GATE,
+            "failure",
+            action="edited",
+            pr_updated_at=STAMP_T2,
+            run_created_at=RUN_CREATED_AT,
+            timeline_events=READY_TIMELINE,
+            default_started_offset_s=MIN_30_AGO,
+            suite_by_check=RULES_SUITE_MAP,
+            workflow_runs=[
+                _rules_run(
+                    OLD_RULES_SUITE,
+                    -1,
+                    edit_stamp=STAMP_T2_MINUS_1S,
+                    status="completed",
+                    conclusion="failure",
+                ),
+                _rules_run(
+                    CURRENT_RULES_SUITE,
+                    0,
+                    edit_stamp=STAMP_T2,
+                    status="completed",
+                    conclusion="success",
+                ),
+            ],
+            extra_checks=_rules_suite_checks(CURRENT_RULES_SUITE),
+            info_logs=infos,
+        )
+        self.assertEqual(failures, [])
+        self.assertIn("Excluded 1 stale edited-rerun check suite(s)", infos)
+
+    def test_current_run_listed_twice_counts_once_and_passes(self) -> None:
+        """Pass when the one [T2] Rules run appears twice in the run listing (page shift)."""
+        current = _rules_run(
+            CURRENT_RULES_SUITE,
+            0,
+            edit_stamp=STAMP_T2,
+            status="completed",
+            conclusion="success",
+        )
+        failures = run_required_aggregator(
+            BODY_GATE,
+            "failure",
+            action="edited",
+            pr_updated_at=STAMP_T2,
+            run_created_at=RUN_CREATED_AT,
+            timeline_events=READY_TIMELINE,
+            default_started_offset_s=MIN_30_AGO,
+            suite_by_check=RULES_SUITE_MAP,
+            workflow_runs=[
+                _rules_run(OLD_RULES_SUITE, -60, edit_stamp=STAMP_T2_MINUS_1S),
+                current,
+                dict(current),
+            ],
+            extra_checks=_rules_suite_checks(CURRENT_RULES_SUITE),
+        )
+        self.assertEqual(failures, [])
 
 
 if __name__ == "__main__":
