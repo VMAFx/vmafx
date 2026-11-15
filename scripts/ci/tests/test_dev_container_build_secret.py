@@ -343,6 +343,54 @@ class BuildSecretContract(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertTrue(MODULE._has_disallowed_raw_build(command))
 
+    def test_raw_build_brace_expansion_rejected(self) -> None:
+        for command in (
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile "
+            r"{--secret=id=github_token\,env=GITHUB_TOKEN,.}",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile "
+            r"{.,--secret=id=github_token\,env=GITHUB_TOKEN}",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile "
+            r"-t {a,--secret=id=github_token\,env=GITHUB_TOKEN} .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile --progress={plain,auto} .",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_glob_and_tilde_rejected(self) -> None:
+        for command in (
+            'docker build -f docker/dev/ubuntu-26.04.Dockerfile --target "*" .',
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile ./*",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile ~",
+            "docker build --check --file ~/Containerfile .",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_non_root_context_rejected(self) -> None:
+        for command in (
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile "
+            "https://build.example/context.tar.gz",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile docker/dev",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile git@github.com:example/ctx.git",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile -",
+            "docker build --check --file dev/Containerfile https://build.example/context.tar.gz",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile ./",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_root_context_and_plain_words_allowed(self) -> None:
+        for command in (
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile -t vmafx-ubuntu-dev .",
+            "docker build --check --file dev/Containerfile .",
+            "docker build --progress=plain "
+            '-f "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile" '
+            '-t "vmafx-dev-ubuntu:${VARIANT}" .',
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(MODULE._has_disallowed_raw_build(command))
+
     def test_raw_build_allowlisted_parameter_expansion_allowed(self) -> None:
         for command in (
             "docker build --progress=plain "

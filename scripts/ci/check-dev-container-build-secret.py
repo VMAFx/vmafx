@@ -264,6 +264,9 @@ ALLOWED_RAW_DOCKERFILES = frozenset(
     }
 )
 ALLOWED_RAW_BUILD_TAGS = frozenset({"vmafx-dev-ubuntu:${VARIANT}"})
+# PR 3458 review (brace expansion, globs, tilde, parameter expansion):
+# character allow-list for raw-build words after quote and escape stripping.
+RAW_BUILD_WORD = re.compile(r"[A-Za-z0-9._/:@+=-]+")
 SHELL_CLAUSE_CHARS = frozenset(";&|()")
 DOUBLE_QUOTE_ESCAPES = frozenset({"\\", '"', "$", "`"})
 SUBSTITUTION_MARKERS = ("$(", "`", "<(", ">(")
@@ -435,34 +438,35 @@ def _consume_build_option(args: list[str], index: int) -> tuple[str, str, int] |
     return None
 
 
-def _is_allowed_build_expansion(opt: str, value: str) -> bool:
-    if "$" not in value:
+def _is_allowed_build_value(opt: str, value: str) -> bool:
+    if opt in RAW_BUILD_FLAGS:
+        return not value
+    if opt in ("-f", "--file") and value in ALLOWED_RAW_DOCKERFILES:
         return True
-    if opt in ("-f", "--file"):
-        return value in ALLOWED_RAW_DOCKERFILES
-    if opt == "-t":
-        return value in ALLOWED_RAW_BUILD_TAGS
-    return False
+    if opt == "-t" and value in ALLOWED_RAW_BUILD_TAGS:
+        return True
+    return RAW_BUILD_WORD.fullmatch(value) is not None
 
 
-def _parse_raw_build_args(args: list[str]) -> tuple[bool, list[str], int] | None:
+def _parse_raw_build_args(args: list[str]) -> tuple[bool, list[str], list[str]] | None:
     has_check = False
     files: list[str] = []
-    operands = 0
+    operands: list[str] = []
     index = 0
     limit = len(args)
     while index < limit:
-        if not args[index].startswith("-"):
-            if "$" in args[index]:
+        arg = args[index]
+        if arg == "-" or not arg.startswith("-"):
+            if not _is_allowed_build_value("", arg):
                 return None
-            operands += 1
+            operands.append(arg)
             index += 1
             continue
         parsed = _consume_build_option(args, index)
         if parsed is None:
             return None
         opt, value, index = parsed
-        if not _is_allowed_build_expansion(opt, value):
+        if not _is_allowed_build_value(opt, value):
             return None
         if opt == "--check":
             has_check = True
@@ -476,7 +480,7 @@ def _single_dockerfile_operand(args: list[str]) -> str | None:
     if parsed is None:
         return None
     _, files, operands = parsed
-    return files[0] if len(files) == 1 and operands == 1 else None
+    return files[0] if len(files) == 1 and operands == ["."] else None
 
 
 def _is_allowed_docker_build_args(args: list[str]) -> bool:
@@ -488,7 +492,7 @@ def _is_allowed_docker_build_args(args: list[str]) -> bool:
     if parsed is None:
         return False
     has_check, files, operands = parsed
-    if operands != 1 or len(files) > 1:
+    if operands != ["."] or len(files) > 1:
         return False
     if has_check:
         return True
