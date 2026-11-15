@@ -152,3 +152,5 @@ No build flag is required: `delta_e_itp` is compiled unconditionally.
 6. **End-to-end** — the registered extractor loads, scores an identical
    frame as `0.0`, and a distorted frame as a finite positive value.
 7. **Scope guard** — `transfer=hlg` is rejected at init with `-EINVAL`.
+
+See the [glossary](../reference/glossary.md) — terms used here: [HDR](../reference/glossary.md#hdr), [SDR](../reference/glossary.md#sdr).

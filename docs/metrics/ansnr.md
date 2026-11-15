@@ -35,3 +35,5 @@ first-class extractors with active CPU + GPU paths.
 - [Features](features.md) — current feature extractor reference.
 - [ADR-0865](../adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md)
 - [ADR-0749](../adr/0749-sunset-legacy-vmaf-feature-extractor.md)
+
+See the [glossary](../reference/glossary.md) for the terms used across the metric pages.

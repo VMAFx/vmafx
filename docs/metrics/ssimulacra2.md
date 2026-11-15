@@ -279,3 +279,5 @@ shipped function, so it will not catch a shipped copy that drifts.
 - [ADR-0130](../adr/0130-ssimulacra2-scalar-implementation.md)
 - [ADR-0164](../adr/0164-ssimulacra2-snapshot-gate.md)
 - [ADR-0206](../adr/0206-ssimulacra2-cuda-sycl.md)
+
+See the [glossary](../reference/glossary.md) — terms used here: [pooling](../reference/glossary.md#pooling).

@@ -283,3 +283,5 @@ Limitations:
 - Remaining follow-ups are per-shot CRF aggregation and true RGB / bilinear
   thumbnail input; the model shipped here is not the old smoke-only
   placeholder.
+
+See the [glossary](../reference/glossary.md) for the terms used across the metric pages.

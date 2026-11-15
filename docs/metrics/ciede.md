@@ -215,3 +215,5 @@ Check it with:
 python3 scripts/dev/speed_gpu_parity.py --backend hip --feature ciede \
     --max-abs-diff 1e-9 --vmaf "$PWD/build-hip/tools/vmaf"
 ```
+
+See the [glossary](../reference/glossary.md) for the terms used across the metric pages.

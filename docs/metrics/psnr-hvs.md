@@ -242,3 +242,5 @@ Ryzen 9 9950X3D that other work shared (the integrated gfx1036 varied between
 ## See also
 
 - [Features](features.md) - full feature extractor reference
+
+See the [glossary](../reference/glossary.md) for the terms used across the metric pages.

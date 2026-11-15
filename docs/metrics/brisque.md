@@ -228,3 +228,5 @@ core/build-cpu/tools/vmaf \
 - [model/brisque_live_card.md](../../model/brisque_live_card.md) — model card,
   acknowledgement and citation.
 - [NIQE](niqe.md) — the sibling no-reference, opinion-unaware metric.
+
+See the [glossary](../reference/glossary.md) — terms used here: [HDR](../reference/glossary.md#hdr), [SDR](../reference/glossary.md#sdr).

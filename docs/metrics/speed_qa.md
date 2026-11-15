@@ -182,3 +182,5 @@ python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
 The two executables retain five registered cases each. The temporal QA test
 uses small setup helpers that propagate the original assertion failure to
 the same test runner; its 64×64 inputs and 0-to-255 frame step are unchanged.
+
+See the [glossary](../reference/glossary.md) for the terms used across the metric pages.

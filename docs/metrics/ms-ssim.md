@@ -274,3 +274,5 @@ own pyramid and per-window terms.
 
 - [SSIM](ssim.md) - single-scale structural similarity
 - [SSIMULACRA2](ssimulacra2.md) - perceptually tuned alternative
+
+See the [glossary](../reference/glossary.md) for the terms used across the metric pages.

@@ -163,3 +163,5 @@ combined efficiency of codec plus post-processing.
   NEG motivation; search Netflix Tech Blog for the article).
 - `model/vmaf_v0.6.1neg.json` — in-tree SVM model (HD).
 - `model/vmaf_4k_v0.6.1neg.json` — in-tree SVM model (4K).
+
+See the [glossary](../reference/glossary.md) — terms used here: [NEG](../reference/glossary.md#neg).

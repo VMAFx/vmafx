@@ -939,3 +939,5 @@ Newest first.
   [ADR-0865](../adr/0865-ansnr-sunset-pre-vmaf-metric-drop.md).
 - The CAMBI Vulkan kernel (T7-36 / ADR-0210) was removed with the backend in
   ADR-0726.
+
+See the [glossary](../reference/glossary.md) for the terms used across the metric pages.

@@ -312,7 +312,8 @@ docs-render-check:
 # AGENTS.md next to an AGENTS.d/ matches its topic pages (ADR-1454), the
 # documentation charts match their specs, data and renders, and every vendored
 # docs asset matches the hashes in its vendor.json (ADR-1508), and every link and
-# heading anchor under docs/api/ resolves (scripts/docs/check_doc_links.py).
+# heading anchor under docs/api/ resolves (scripts/docs/check_doc_links.py), and
+# the metric pages link their glossary terms (issue 2332).
 docs-fragments-check:
 	@echo "--- changelog.d/ fragments ---"
 	@bash scripts/release/concat-changelog-fragments.sh --lint
@@ -339,6 +340,8 @@ docs-fragments-check:
 	@python3 scripts/docs/check_vendored_assets.py
 	@echo "--- docs/api/ links and heading anchors (issue 2436) ---"
 	@python3 scripts/docs/check_doc_links.py docs/api
+	@echo "--- docs/reference/glossary.md vs the metric pages (issue 2332) ---"
+	@python3 scripts/docs/check_glossary_links.py
 
 # Regenerate consolidated outputs from fragments (ADR-0221).
 docs-fragments-write: docs-render

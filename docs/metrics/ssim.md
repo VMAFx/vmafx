@@ -170,3 +170,5 @@ values on the host in the CPU's order.
 
 - [MS-SSIM](ms-ssim.md) - multi-scale structural similarity
 - [SSIMULACRA2](ssimulacra2.md) - perceptually tuned alternative
+
+See the [glossary](../reference/glossary.md) for the terms used across the metric pages.

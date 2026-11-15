@@ -122,6 +122,18 @@ entries:
   evidence:
   - tools/vmaf-tune/tests/test_near_dup_verify.py
   note: luoye-cpu wrote the unit tests for the two-leg near-duplicate spot check and its fail-closed cases, in PR 3444.
+- id: contribution-luoye-cpu-glossary-link-check
+  name: luoye-cpu's glossary-link checker
+  url: https://github.com/VMAFx/vmafx/issues/2332
+  kind: code
+  relation: used-by-CI
+  license: EUPL-1.2
+  paths:
+  - scripts/docs/check_glossary_links.py
+  - scripts/docs/tests/test_check_glossary_links.py
+  evidence:
+  - scripts/docs/check_glossary_links.py
+  note: luoye-cpu wrote the docs check that holds the metric pages to the glossary, in the issue 2332 pull request.
 - id: libsvm
   name: libsvm
   url: https://github.com/cjlin1/libsvm

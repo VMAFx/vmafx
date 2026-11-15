@@ -64,3 +64,5 @@ aggregate metrics.
 
 Precompiled static binaries of the upstream releases are attached to the
 release pages linked above.
+
+See the [glossary](../../reference/glossary.md) — terms used here: [NEG](../../reference/glossary.md#neg), [CTC](../../reference/glossary.md#ctc).
