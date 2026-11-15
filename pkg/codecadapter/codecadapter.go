@@ -8,7 +8,7 @@
 // branch on codec identity. Each adapter declares its quality knob, range,
 // defaults, and FFmpeg encoder name, plus a mnemonic-preset table that
 // normalises the ultrafast..placebo vocabulary onto the encoder's native
-// preset axis (NVENC p1..p7, SVT-AV1 0..13, libaom -cpu-used 0..9, ...).
+// preset axis (NVENC p1..p7, SVT-AV1 0..13, libaom -cpu-used 0..8, ...).
 //
 // The Python original is nineteen dataclasses across a package; the Go port
 // collapses them into one data-driven table because every adapter differs
@@ -139,10 +139,12 @@ var amfQualityMap = map[string]string{
 	"placebo": "quality",
 }
 
-// aomCPUUsedMap maps mnemonics onto libaom's -cpu-used 0..9.
+// aomCPUUsedMap maps mnemonics onto the -cpu-used 0..8 range FFmpeg's
+// libaom-av1 wrapper accepts; libaom itself also takes 9, but FFmpeg
+// refuses it at option parsing.
 var aomCPUUsedMap = map[string]string{
 	"placebo": "0", "slowest": "1", "slower": "2", "slow": "3", "medium": "4",
-	"fast": "5", "faster": "6", "veryfast": "7", "superfast": "8", "ultrafast": "9",
+	"fast": "5", "faster": "6", "veryfast": "7", "superfast": "8", "ultrafast": "8",
 }
 
 // vpxCPUUsedMap maps mnemonics onto libvpx-vp9's -cpu-used 0..5.
