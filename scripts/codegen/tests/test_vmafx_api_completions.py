@@ -312,6 +312,40 @@ class HookCleanlinessTests(unittest.TestCase):
             self.assertIn("8", result.stdout)
             self.assertIn("10", result.stdout)
 
+    @unittest.skipUnless(shutil.which("bash"), "bash is not installed")
+    def test_equals_default_split_completes_the_domain(self) -> None:
+        # With the default COMP_WORDBREAKS, which holds `=`, readline splits
+        # `vmaf --bitdepth=<Tab>` into `vmaf --bitdepth =` and
+        # `vmaf --bitdepth=1<Tab>` into `vmaf --bitdepth = 1`: the boundary
+        # normalization must cover both split shapes, not only the joined one.
+        # On bash < 4.2 the file returns before defining `_vmaf`.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "vmaf.bash"
+            path.write_text(self.outputs[BASH], encoding="utf-8", newline="\n")
+            prefix = f"source '{path.as_posix()}'; declare -F _vmaf >/dev/null || exit 0; "
+            cases = (
+                # `=` is the current word (`--bitdepth=<Tab>`): the full domain.
+                ("COMP_WORDS=(vmaf --bitdepth =); COMP_CWORD=2; _vmaf; ", "8", "10"),
+                # `=` is the previous word (`--bitdepth=1<Tab>`): the domain
+                # filtered by the typed `1`.
+                ("COMP_WORDS=(vmaf --bitdepth = 1); COMP_CWORD=3; _vmaf; ", "10", None),
+            )
+            for words, expect, absent in cases:
+                script = prefix + words + 'printf "%s\\n" "${COMPREPLY[@]}"'
+                result = run_command(
+                    ["bash", "-c", script],
+                    allowed_executables=["bash"],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stderr, "")
+                if "DEFINED" not in result.stdout:
+                    continue
+                self.assertIn(expect, result.stdout)
+                if absent is not None:
+                    self.assertNotIn(str(absent), result.stdout)
+
     def test_files_carry_the_license_header(self) -> None:
         # Every new file starts with a license header (ADR-3401: the outside
         # contributor holds the copyright); the zsh file keeps `#compdef` as

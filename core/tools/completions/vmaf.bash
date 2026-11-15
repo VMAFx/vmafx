@@ -55,7 +55,11 @@ _vmaf() {
   local cur prev
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD - 1]}"
-  if [[ "${cur}" == *=* ]]; then
+  if [[ "${cur}" == "=" ]]; then
+    cur=""
+  elif [[ "${prev}" == "=" ]] && ((COMP_CWORD >= 2)); then
+    prev="${COMP_WORDS[COMP_CWORD - 2]}"
+  elif [[ "${cur}" == *=* ]]; then
     prev="${cur%%=*}"
     cur="${cur#*=}"
   fi

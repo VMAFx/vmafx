@@ -135,10 +135,15 @@ def bash_text(api: Api) -> str:
         "  local cur prev",
         '  cur="${COMP_WORDS[COMP_CWORD]}"',
         '  prev="${COMP_WORDS[COMP_CWORD - 1]}"',
-        # The `--opt=value` form puts the option and its argument in one word;
-        # normalize the boundary so the lookup sees the option, without
-        # touching the user's COMP_WORDBREAKS.
-        '  if [[ "${cur}" == *=* ]]; then',
+        # The `--opt=value` form: with the default COMP_WORDBREAKS, which
+        # holds `=`, readline splits it into `--opt`, `=` and `value`; a
+        # shell without `=` there keeps one `--opt=value` word. Normalize
+        # both so the lookup sees the option.
+        '  if [[ "${cur}" == "=" ]]; then',
+        '    cur=""',
+        '  elif [[ "${prev}" == "=" ]] && ((COMP_CWORD >= 2)); then',
+        '    prev="${COMP_WORDS[COMP_CWORD - 2]}"',
+        '  elif [[ "${cur}" == *=* ]]; then',
         '    prev="${cur%%=*}"',
         '    cur="${cur#*=}"',
         "  fi",
