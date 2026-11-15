@@ -64,7 +64,11 @@ header keep the upstream terms (ADR-1250); the paths column lists them.
 | [libjxl SSIMULACRA 2 reference](https://github.com/libjxl/libjxl) | adapted | `BSD-3-Clause` | `core/src/feature/arm64/ssimulacra2_arm64_common.h`, `core/src/feature/arm64/ssimulacra2_host_neon.c`, `core/src/feature/arm64/ssimulacra2_host_neon.h`, `core/src/feature/arm64/ssimulacra2_neon.c`, and 31 more | The JPEG XL Project Authors tools/ssimulacra2.cc is the reference the SSIMULACRA 2 port follows. |
 | [libsvm](https://github.com/cjlin1/libsvm) | vendored | `BSD-3-Clause` | `core/src/svm.cpp`, `core/src/svm.h` | Chih-Chung Chang and Chih-Jen Lin; SVM model evaluation for VMAF models. |
 | [LIME local explainer](https://github.com/marcotcr/lime) | vendored | `BSD-2-Clause` | `compat/python-vmaf/core/local_explainer.py` | Marco Tulio Correia Ribeiro, 2016. |
+<<<<<<< HEAD
 | [luoye-cpu's community metrics report](https://github.com/VMAFx/vmafx/pull/3340) | used-by-CI | `EUPL-1.2` | `scripts/dev/community_metrics.py`, `scripts/dev/tests/test_community_metrics.py` | luoye-cpu wrote the maintainer community-metrics report and its fixture tests, in PR 3340. |
+=======
+| [luoye-cpu's near-duplicate spot-check tests](https://github.com/VMAFx/vmafx/pull/3444) | used-by-CI | `EUPL-1.2` | `tools/vmaf-tune/tests/test_near_dup_verify.py` | luoye-cpu wrote the unit tests for the two-leg near-duplicate spot check and its fail-closed cases, in PR 3444. |
+>>>>>>> upstream/master
 | [MATLAB reference implementations (iCID, SpEED, STMAD, matlabPyrTools, colorspace)](https://github.com/Netflix/vmaf) | vendored | `unknown` | `compat/python-vmaf/matlab/` | Inherited from Netflix/vmaf; most files state no licence. iCID is supplementary material of Preiss, Fernandes and Urban (IEEE TIP 2014); the colorspace code is by Pascal Getreuer. |
 | [mkdirp.c by Stephen Mathieson](https://github.com/stephenmathieson/mkdirp.c) | adapted | `MIT` | `core/src/feature/mkdirp.cpp`, `core/src/feature/mkdirp.h` | C++ conversion of the original C implementation. |
 | [Netflix VMAF](https://github.com/Netflix/vmaf) | vendored | `BSD-2-Clause-Patent AND BSD-3-Clause-Clear` (the inherited Python harness files are tagged BSD-3-Clause-Clear) | `NOTICE`, `core/`, `compat/python-vmaf/`, `python/`, and 7 more | The project VMAFx is forked from. Inherited files keep Netflix terms (ADR-1250). |

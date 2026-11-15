@@ -719,7 +719,7 @@
           "ultrafast"
         ],
         "preset_style": "libaom-cpu-used",
-        "version": "1",
+        "version": "2",
         "probe_preset": "ultrafast",
         "probe_quality": 35,
         "supports_qpfile": true,

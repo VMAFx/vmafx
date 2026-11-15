@@ -124,6 +124,34 @@ entries:
   - scripts/dev/community_metrics.py
   - scripts/dev/tests/test_community_metrics.py
   note: luoye-cpu wrote the maintainer community-metrics report and its fixture tests, in PR 3340.
+- id: contribution-luoye-cpu-near-dup-spot-window
+  name: luoye-cpu's near-duplicate spot-check tests
+  url: https://github.com/VMAFx/vmafx/pull/3444
+  kind: code
+  relation: used-by-CI
+  license: EUPL-1.2
+  paths:
+  - tools/vmaf-tune/tests/test_near_dup_verify.py
+  evidence:
+  - tools/vmaf-tune/tests/test_near_dup_verify.py
+  note: luoye-cpu wrote the unit tests for the two-leg near-duplicate spot check and its fail-closed cases, in PR 3444.
+  kind: code
+  relation: used-by-CI
+  license: EUPL-1.2
+  paths:
+<<<<<<< HEAD
+  - scripts/dev/community_metrics.py
+  - scripts/dev/tests/test_community_metrics.py
+  evidence:
+  - scripts/dev/community_metrics.py
+  - scripts/dev/tests/test_community_metrics.py
+  note: luoye-cpu wrote the maintainer community-metrics report and its fixture tests, in PR 3340.
+=======
+  - tools/vmaf-tune/tests/test_near_dup_verify.py
+  evidence:
+  - tools/vmaf-tune/tests/test_near_dup_verify.py
+  note: luoye-cpu wrote the unit tests for the two-leg near-duplicate spot check and its fail-closed cases, in PR 3444.
+>>>>>>> upstream/master
 - id: libsvm
   name: libsvm
   url: https://github.com/cjlin1/libsvm
