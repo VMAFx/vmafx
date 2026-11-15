@@ -32,6 +32,7 @@ from . import (
     emit_chart,
     emit_cli,
     emit_compat,
+    emit_completions,
     emit_config,
     emit_conformance,
     emit_docs,
@@ -91,6 +92,7 @@ FIXED_OUTPUTS: tuple[tuple[str, Renderer], ...] = (
 
 OPTION_OUTPUTS: tuple[tuple[str, Renderer], ...] = (
     ("core/tools/cli_options.gen.inc", emit_cli.include_text),
+    *((path, renderer) for path, renderer in emit_completions.OUTPUT_TEXTS.items()),
     *((path, emit_mcp.options_json) for path in emit_mcp.OUTPUTS),
     (emit_proto.PATH, emit_proto.proto_text),
     (emit_openapi.COMPONENTS_PATH, emit_openapi.components_text),

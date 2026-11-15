@@ -1173,6 +1173,25 @@ goldens preserved as a required CI gate. The CLI path is pinned to
 - **`--no_cuda` + `--no_sycl` together.** Forces CPU-only even on a build with
   both GPU backends compiled in. Useful for cross-backend diff sessions.
 
+## Shell completion and the man page
+
+The option table of [Option reference](#option-reference) renders two more
+consumers: completion scripts for bash, zsh, fish and PowerShell, and the man
+page, all generated from the same definition (`core/api/vmafx.toml`, option
+groups; see [API generation](../development/api-generation.md#option-groups)):
+
+- `core/tools/completions/vmaf.bash`, `vmaf.zsh`, `vmaf.fish` and `vmaf.ps1`
+  complete both installed command names (`vmaf` and the `vmafx` symlink),
+  every long spelling with its aliases and underscore spellings, the short
+  options and the value switches (`--json`, `--xml`, ...), and the argument
+  of an option whose values the definition lists (`--pool`, `--pixel_format`,
+  `--bitdepth`, ...).
+- `core/tools/man/vmaf.1` is the same option table as a man page.
+
+They are generated outputs: change the definition and run
+`python3 scripts/codegen/vmafx-api.py --write` (never edit them by hand); the
+generator's `--check` fails when a committed file is stale.
+
 ## Related
 
 - [bench.md](bench.md) — `vmaf_bench` micro-benchmark harness.
