@@ -16,12 +16,42 @@ import scripts.docs.check_glossary_links as checker
 from scripts.docs.check_glossary_links import (
     EXIT_FAILURE,
     EXIT_SUCCESS,
+    EXIT_UNREADABLE,
     glossary_anchors,
     main,
     term_pattern,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+GLOSSARY = (
+    "# Glossary\n\n"
+    "## NEG {#neg}\n\nNo Enhancement Gain.\n\n"
+    "## CTC {#ctc}\n\nCommon test conditions.\n\n"
+    "## HDR {#hdr}\n\nHigh dynamic range.\n\n"
+    "## SDR {#sdr}\n\nStandard dynamic range.\n\n"
+    "## Pooling {#pooling}\n\nCollapse per-frame scores.\n\n"
+    "## 3H {#3h}\n\nThree screen heights.\n"
+)
+
+
+def _make_tree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    page_rel: str,
+    page_text: str,
+) -> Path:
+    """Create a temp docs tree with the glossary and one metric page."""
+    glossary = tmp_path / "reference" / "glossary.md"
+    glossary.parent.mkdir(parents=True)
+    glossary.write_text(GLOSSARY, encoding="utf-8")
+    page = tmp_path / page_rel
+    page.parent.mkdir(parents=True, exist_ok=True)
+    page.write_text(page_text, encoding="utf-8")
+    monkeypatch.setattr(checker, "ROOT", tmp_path)
+    monkeypatch.setattr(checker, "GLOSSARY", glossary)
+    monkeypatch.setattr(checker, "METRICS_DIR", tmp_path / "metrics")
+    return page
 
 
 def test_real_tree_passes() -> None:
@@ -37,10 +67,13 @@ def test_every_known_term_has_a_glossary_entry() -> None:
 
 def test_term_without_entry_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A known term whose glossary entry is missing fails the gate."""
-    monkeypatch.setattr(checker, "GLOSSARY", tmp_path / "glossary.md")
-    monkeypatch.setattr(checker, "METRICS_DIR", tmp_path / "metrics")
-    (tmp_path / "metrics").mkdir()
-    (tmp_path / "glossary.md").write_text(
+    _make_tree(
+        tmp_path,
+        monkeypatch,
+        "metrics/widget.md",
+        "# Widget\n\nThe [NEG](../reference/glossary.md#neg) variant.\n",
+    )
+    (tmp_path / "reference" / "glossary.md").write_text(
         "# Glossary\n\n## Pooling {#pooling}\n\nCollapse per-frame scores.\n",
         encoding="utf-8",
     )
@@ -51,22 +84,15 @@ def test_term_without_entry_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 def test_metric_page_using_a_term_without_link_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(checker, "GLOSSARY", tmp_path / "glossary.md")
-    monkeypatch.setattr(checker, "METRICS_DIR", tmp_path / "metrics")
-    (tmp_path / "metrics").mkdir()
-    (tmp_path / "glossary.md").write_text(
-        "# Glossary\n\n## NEG {#neg}\n\nNo Enhancement Gain.\n"
-        "## CTC {#ctc}\n\nCommon test conditions.\n"
-        "## HDR {#hdr}\n## SDR {#sdr}\n## Pooling {#pooling}\n## 3H {#3h}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "metrics" / "widget.md").write_text(
+    page = _make_tree(
+        tmp_path,
+        monkeypatch,
+        "metrics/widget.md",
         "# Widget\n\nThe NEG variant penalises sharpening.\n",
-        encoding="utf-8",
     )
     assert main([]) == EXIT_FAILURE
 
-    (tmp_path / "metrics" / "widget.md").write_text(
+    page.write_text(
         "# Widget\n\nThe [NEG](../reference/glossary.md#neg) variant "
         "penalises sharpening. See the [glossary](../reference/glossary.md).\n",
         encoding="utf-8",
@@ -77,16 +103,11 @@ def test_metric_page_using_a_term_without_link_fails(
 def test_metric_page_without_glossary_link_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(checker, "GLOSSARY", tmp_path / "glossary.md")
-    monkeypatch.setattr(checker, "METRICS_DIR", tmp_path / "metrics")
-    (tmp_path / "metrics").mkdir()
-    (tmp_path / "glossary.md").write_text(
-        "# Glossary\n\n## Pooling {#pooling}\n## NEG {#neg}\n## CTC {#ctc}\n"
-        "## HDR {#hdr}\n## SDR {#sdr}\n## 3H {#3h}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "metrics" / "plain.md").write_text(
-        "# Plain\n\nNo glossary terms used here.\n", encoding="utf-8"
+    _make_tree(
+        tmp_path,
+        monkeypatch,
+        "metrics/plain.md",
+        "# Plain\n\nNo glossary terms used here.\n",
     )
     assert main([]) == EXIT_FAILURE
 
@@ -100,9 +121,63 @@ def test_term_pattern_is_whole_word() -> None:
     assert term_pattern("pooling").search("pooled") is None
 
 
-def test_subdirectory_pages_link_with_correct_depth() -> None:
+def test_subdirectory_page_needs_two_levels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """ctc/aom.md sits one level deeper and needs ../../reference paths."""
-    page = checker.ROOT / "docs" / "metrics" / "ctc" / "aom.md"
-    text = checker._read(page)
-    assert "../../reference/glossary.md#neg" in text
-    assert "../reference/glossary.md#neg}" not in text
+    page = _make_tree(
+        tmp_path,
+        monkeypatch,
+        "metrics/ctc/aom.md",
+        "# AOM\n\nThe [NEG](../../reference/glossary.md#neg) variant. "
+        "See the [glossary](../../reference/glossary.md).\n",
+    )
+    assert main([]) == EXIT_SUCCESS
+
+    page.write_text(
+        "# AOM\n\nThe [NEG](../reference/glossary.md#neg) variant. "
+        "See the [glossary](../reference/glossary.md).\n",
+        encoding="utf-8",
+    )
+    assert main([]) == EXIT_FAILURE
+
+
+def test_link_inside_html_comment_does_not_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A commented-out link is not a live link for gate 2."""
+    _make_tree(
+        tmp_path,
+        monkeypatch,
+        "metrics/widget.md",
+        "# Widget\n\n<!-- [NEG](../reference/glossary.md#neg) -->\n"
+        "The NEG variant penalises sharpening. See the "
+        "[glossary](../reference/glossary.md).\n",
+    )
+    assert main([]) == EXIT_FAILURE
+
+
+def test_wrong_anchor_prefix_does_not_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A link to a nonexistent anchor that shares the first letters fails."""
+    _make_tree(
+        tmp_path,
+        monkeypatch,
+        "metrics/widget.md",
+        "# Widget\n\nThe [NEG](../reference/glossary.md#negative-model-typo) "
+        "variant. See the [glossary](../reference/glossary.md).\n",
+    )
+    assert main([]) == EXIT_FAILURE
+
+
+def test_invalid_utf8_page_is_unreadable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A page that is not valid UTF-8 exits 2 instead of raising."""
+    page = _make_tree(
+        tmp_path,
+        monkeypatch,
+        "metrics/widget.md",
+        "# Widget\n\nThe [NEG](../reference/glossary.md#neg) variant.\n",
+    )
+    page.write_bytes(b"# Widget\n\n\xff\xfe broken\n")
+    assert main([]) == EXIT_UNREADABLE

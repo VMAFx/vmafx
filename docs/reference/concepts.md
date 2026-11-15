@@ -66,17 +66,17 @@ default-model score are never comparable ([NEG](glossary.md#neg)).
 
 The classic models are trained on SDR content; PQ/HLG luma breaks their
 assumptions, and blind metrics (BRISQUE, NIQE) are SDR-luma-trained
-explicitly. Score HDR with the adapters — `pu21_psnr` / `pu21_ssim` for
-perceptual PSNR/SSIM, `delta_e_itp` for colour difference — and state the
-transfer and matrix instead of trusting defaults
-([HDR](glossary.md#hdr), [ΔE-ITP options](../metrics/delta_e_itp.md)).
+explicitly. Score HDR with the adapters — the `pu21` extractor's
+`pu21_psnr` / `pu21_ssim` for perceptual PSNR/SSIM, and `delta_e_itp` for
+colour difference — and state the transfer and matrix instead of trusting
+defaults ([HDR](glossary.md#hdr), [ΔE-ITP options](../metrics/delta_e_itp.md)).
 
 Runnable on the fixture pair (SDR, so the numbers are meaningful) and on any
 HDR pair you have — the fixture pair exercises the command shape:
 
 ```bash
 vmaf -r testdata/ref_576x324_48f.yuv -d testdata/dis_576x324_48f.yuv \
-    -w 576 -h 324 -p 420 -b 8 --feature pu21_psnr --feature delta_e_itp \
+    -w 576 -h 324 -p 420 -b 8 --feature pu21 --feature delta_e_itp \
     --json -o /dev/null
 ```
 
@@ -100,13 +100,25 @@ filter warns and passes unpaired mains instead
 the same frames (`trim` / `-frames:v`) before the filter
 ([score exactly N frames](../usage/ffmpeg.md#score-exactly-n-frames)).
 
-### Self-comparison is not 100 {#self-comparison-is-not-100}
+### Interlaced input {#interlaced-input}
 
-Scoring a video against itself lands near but not exactly at 100 (~98.7 on
-the classic model): ADM and VIF pass through a fit-polynomial stage without a
-closed-form identity at zero distortion
+VMAF's motion and temporal pooling assume progressive frames. Scoring an
+interlaced stream field-by-field, or feeding the fields as full frames, mixes
+two time instants and counts combing as motion and detail. Deinterlace both
+inputs the same way (`bwdif` or `yadif`) before scoring, and never deinterlace
+only one side — a progressive reference against interlaced distorted frames
+measures the deinterlacer, not the encoder.
+
+### Self-comparison lands near 100 {#self-comparison-lands-near-100}
+
+Scoring a video against itself lands at or near 100. On the fixture pair the
+classic model scores 97.428478 on the first frame and pools to 99.946427,
+while the default `vmaf_v1.0.16_3d0h` scores all 48 frames at 100.0. A 100.0
+is not a bug: `model/vmaf_v0.6.1.json` sets `score_clip` to `[0.0, 100.0]`,
+and `core/src/predict.c` clamps every prediction into that range. Neither the
+upstream FAQ's ~98.7 nor a 100.000 on the same setup means the metric is
+broken
 ([FAQ](faq.md#q-when-i-compare-a-video-with-itself-as-reference-i-expect-a-perfect-vmaf-score-of-100-but-i-see-987-is-this-a-bug)).
-A 98.7 self-score is not a bug; a 100.000 on the same setup would be.
 
 ### Metric-implementation differences {#metric-implementation-differences}
 

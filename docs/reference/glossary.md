@@ -100,7 +100,8 @@ the Netflix 4K set
 
 High dynamic range content (PQ or HLG transfer, typically BT.2020). The
 classic models are trained on SDR content, so they misjudge HDR input; HDR
-work needs the HDR adapters — `pu21_psnr`/`pu21_ssim` map luminance through a
+work needs the HDR adapters — the `pu21` extractor outputs
+`pu21_psnr`/`pu21_ssim`, which map luminance through a
 contrast-sensitivity curve, and `delta_e_itp` measures colour difference in
 ICtCp ([PU21](../metrics/pu21.md), [ΔE-ITP](../metrics/delta_e_itp.md),
 [concepts: HDR input](concepts.md#hdr-input-with-an-sdr-model)).

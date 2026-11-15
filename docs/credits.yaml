@@ -124,7 +124,7 @@ entries:
   note: luoye-cpu wrote the unit tests for the two-leg near-duplicate spot check and its fail-closed cases, in PR 3444.
 - id: contribution-luoye-cpu-glossary-link-check
   name: luoye-cpu's glossary-link checker
-  url: https://github.com/VMAFx/vmafx/issues/2332
+  url: https://github.com/VMAFx/vmafx/pull/3471
   kind: code
   relation: used-by-CI
   license: EUPL-1.2

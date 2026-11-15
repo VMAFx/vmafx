@@ -5,9 +5,10 @@
   (1080p at 3H), and the pitfalls that bend it — reversed FFmpeg pads
   (83.782079 vs 76.667830, from Research-0730), model and generation
   mismatch, HDR input with an SDR model, limited-vs-full range, frame
-  alignment, the ~98.7 self-comparison, and metric-implementation
-  differences — each with its recorded wrong/right numbers or a runnable
-  command on the fixture pair. `docs/reference/chooser.md` is the decision
+  alignment, interlacing, the clipped-at-100 self-comparison, and
+  metric-implementation differences — with the recorded wrong/right numbers
+  where measured and a runnable HDR command shape on the fixture pair.
+  `docs/reference/chooser.md` is the decision
   table from question to metric, model and pitfall (per-backend cost waits
   for the RC8 numbers). `docs/reference/glossary.md` defines the terms the
   metric pages use, each entry naming the flag that controls it. The new

@@ -18,7 +18,7 @@ per backend rather than guesses.
 | Phone screen quality | `vmaf` | `vmaf_v1.0.16_5d0h`, or `vmaf_v0.6.1:enable_transform=true` | The transform changes the output curve, not the features ([phone model](glossary.md#phone-model)) |
 | 4K content | `vmaf` | `vmaf_v1.0.16_1d5h_2160` or `vmaf_4k_v0.6.1` | The 4K v1 3H variant reports on a [0, 110] range — not comparable with [0, 100] models |
 | High-frame-rate content | `vmaf` | the `_hfr` variants | Trained on high-frame-rate subjective data; regular models misjudge high temporal activity |
-| HDR content | `pu21_psnr`, `pu21_ssim` | (adapters, no model) | Classic models are SDR-trained; PQ/HLG luma breaks their assumptions ([HDR](glossary.md#hdr)) |
+| HDR content | `pu21_psnr`, `pu21_ssim` | (adapters, no model) | Both are outputs of the `pu21` extractor (`--feature pu21`); classic models are SDR-trained and PQ/HLG luma breaks their assumptions ([HDR](glossary.md#hdr)) |
 | HDR colour errors | `delta_e_itp`, `ciede` | (features) | `delta_e_itp` defaults to PQ, BT.2020 NCL, limited range — state the real one ([range](glossary.md#range)) |
 | Banding / contouring | `cambi` | (feature) | CAMBI measures at 10-bit internally; 8-bit input is converted first |
 | Chroma damage | `ciede2000`, `delta_e_itp` | (features) | Luma-only metrics (`psnr`, `ssim`, `vmaf`) do not see chroma subsampling damage ([chroma subsampling](glossary.md#chroma-subsampling)) |
