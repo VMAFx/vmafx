@@ -299,7 +299,10 @@ dependencies).
   enabled Bandit IDs, then run the planted recall tests in
   `scripts/ci/tests/test_check_bandit_new_*.py`.
 - ✅ CodeQL — zero security-and-quality issues at `security-extended` suite
-- ✅ Conventional commit messages (enforced by commit-msg hook)
+- ✅ Conventional commit messages (enforced by the commit-msg hook locally and
+  the squash-message check on every pull request in CI — issue #2750; the
+  required `DCO Sign-off` job checks the title as the squash subject, and the
+  PR-type label workflow labels by the same declared types)
 - ✅ CI matrix green on Linux/macOS/Windows
 - ✅ Netflix source-of-truth golden tests pass (CPU, 3 pairs: 1 normal + 2
   checkerboard)
