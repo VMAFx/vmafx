@@ -85,9 +85,10 @@
       "workflow": "dev-container-build.yml",
       "context": "Dev Container Build",
       "selectors": [
-        "dev_container_inputs"
+        "dev_container_inputs",
+        "ubuntu_dev_images"
       ],
-      "reason": "A full-only context whose build also runs on a light-tier pull request, but only when the diff touches dev/, .dockerignore, build-config.env or a script the build job calls (selector of .github/ci-impact.json, ADR-3338): #2821 changed dev/Containerfile on the light tier, built no image, and the master push 2c0db0b99 that followed failed in the stage it added. The broad dev_container selector (core, Python, AI, Go and shell sources the image copies) still runs on the full tier and the master push."
+      "reason": "A full-only context whose build also runs on a light-tier pull request, but only when the diff touches dev/, .dockerignore, build-config.env or a script the build job calls (selector of .github/ci-impact.json, ADR-3338): #2821 changed dev/Containerfile on the light tier, built no image, and the master push 2c0db0b99 that followed failed in the stage it added. The broad dev_container selector (core, Python, AI, Go and shell sources the image copies) still runs on the full tier and the master push. The ubuntu_dev_images selector also runs docker/dev/ubuntu-26.04.Dockerfile, docker/dev/ubuntu-26.04-cuda.Dockerfile and docker/dev/ubuntu-26.04-sycl.Dockerfile under this gate when their own inputs change (ADR-3545)."
     }
   ],
   "untiered_jobs": [

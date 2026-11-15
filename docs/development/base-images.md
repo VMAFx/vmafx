@@ -421,6 +421,33 @@ security fixes into the next build; leaving the timestamp unchanged leaves
 those packages unchanged. See [ADR-3541](../adr/3541-dev-image-apt-snapshot.md)
 for the bootstrap exception and update design.
 
+### Tools virtual environment and CI lane
+
+Each `docker/dev/ubuntu-26.04*.Dockerfile` sets `ARG VMAFX_REPO_ROOT=/tmp`,
+copies `requirements/locks/build.txt` and `requirements/locks/dev-linters.txt`
+into `/tmp/requirements/locks/` before invoking `scripts/setup/ubuntu.sh`, and
+removes `/tmp/requirements` in the same `RUN` cleanup. Python build and lint
+tools (`meson`, `ninja`, `ruff`) install into `VMAFX_TOOLS_VENV=/opt/vmafx-tools`
+with `/opt/vmafx-tools/bin` prepended to `PATH`, while `INSTALL_LINTERS=true`
+also installs `shellcheck` via apt and `shfmt` from its pinned release
+([ADR-3545](../adr/3545-dev-image-tools-venv-ci.md)).
+
+`UbuntuDevImageLockContract` in `scripts/ci/test_fail_closed_ci.py` verifies
+that all three Dockerfiles declare `ARG VMAFX_REPO_ROOT`, stage every lock file
+referenced by `scripts/setup/ubuntu.sh` under `<root>/requirements/locks/`, and
+expose `/opt/vmafx-tools/bin` on `PATH`. It reads lock references written
+as `$REPO_ROOT`, `${REPO_ROOT}`, `"$REPO_ROOT"` or `"${REPO_ROOT}"` before
+`/requirements/locks/<name>.txt` and fails on any other `requirements/locks/`
+reference in `ubuntu.sh`, so a lock cannot drop out of the check unseen.
+In CI, the `ubuntu_dev_images`
+own-input selector in `.github/ci-impact.json` triggers `ubuntu-dev-images`
+(`cpu`, `cuda`, `sycl`) in `.github/workflows/dev-container-build.yml` whenever
+the Dockerfiles, `scripts/setup/ubuntu.sh`, the staged lock files, or shared
+image-build helpers change, building each variant and smoke-testing its
+installed tools. The `Dev Container Build` required check gates
+`ubuntu-dev-images` alongside `dev-container-build-work`, and
+`.github/ci-tier.json` records `ubuntu_dev_images` on that own-input lane.
+
 ## Renovate
 
 Renovate's built-in `dockerfile` manager understands `ARG X=image` + `FROM $X`,
