@@ -78,7 +78,7 @@ class CheckWorkflowSizeTests(unittest.TestCase):
             },
         }
         path = self.tmp_path / name
-        path.write_text(yaml.safe_dump(workflow, sort_keys=False), encoding="utf-8")
+        path.write_text(yaml.safe_dump(workflow, sort_keys=False), encoding="utf-8", newline="\n")
         return path
 
     def _write_script_workflow(self, name: str, script_value: str) -> Path:
@@ -99,7 +99,27 @@ class CheckWorkflowSizeTests(unittest.TestCase):
             },
         }
         path = self.tmp_path / name
-        path.write_text(yaml.safe_dump(workflow, sort_keys=False), encoding="utf-8")
+        path.write_text(yaml.safe_dump(workflow, sort_keys=False), encoding="utf-8", newline="\n")
+        return path
+
+    def _write_env_workflow(self, name: str, env_value: str) -> Path:
+        workflow = {
+            "name": "Planted Env",
+            "on": "push",
+            "jobs": {
+                "build": {
+                    "runs-on": "ubuntu-26.04",
+                    "env": {"PLANTED_VAL": env_value},
+                    "steps": [{"name": "Noop", "run": "true"}],
+                }
+            },
+        }
+        path = self.tmp_path / name
+        path.write_text(
+            yaml.safe_dump(workflow, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+            newline="\n",
+        )
         return path
 
     def test_real_workflows_yml_pass_both_bounds(self) -> None:
@@ -111,34 +131,122 @@ class CheckWorkflowSizeTests(unittest.TestCase):
 
     def test_run_expression_length_boundary_21000_passes_and_21001_fails(self) -> None:
         """Boundary case: 21000-char runner expression passes and 21001-char fails."""
-        # format('<prefix>{0}',  github.sha ) overhead is 8 + 3 + 1 + 2 + 12 + 1 = 27 chars,
-        # so a 20973-char plain prefix gives exact expression length 21000.
+        # format('<prefix>{0}', github.sha) overhead after trimming ` github.sha ` is
+        # 8 + 3 + 1 + 2 + 10 + 1 = 25 chars, so a 20975-char plain prefix gives 21000.
         exact_format = self._write_run_workflow(
-            "exact_format.yml", "echo " + ("a" * 20968) + "${{ github.sha }}"
+            "exact_format.yml", "echo " + ("a" * 20970) + "${{ github.sha }}"
         )
         res_exact_format = self.run_checker(str(exact_format))
         self.assertEqual(res_exact_format.returncode, 0, res_exact_format.stderr)
 
         over_format = self._write_run_workflow(
-            "over_format.yml", "echo " + ("a" * 20969) + "${{ github.sha }}"
+            "over_format.yml", "echo " + ("a" * 20971) + "${{ github.sha }}"
         )
         res_over_format = self.run_checker(str(over_format))
         self.assertEqual(res_over_format.returncode, 1)
         self.assertIn("jobs.build.steps[0].run", res_over_format.stderr)
         self.assertIn("21001", res_over_format.stderr)
 
-        # Single-expression scalar `${{ '<chars>' }}` has inner length 2 + N + 2.
+        # Single-expression scalar `${{ '<chars>' }}` trims to `'<chars>'` (length 1 + N + 1).
         exact_single = self._write_run_workflow(
-            "exact_single.yml", "${{ '" + ("a" * 20996) + "' }}"
+            "exact_single.yml", "${{ '" + ("a" * 20998) + "' }}"
         )
         res_exact_single = self.run_checker(str(exact_single))
         self.assertEqual(res_exact_single.returncode, 0, res_exact_single.stderr)
 
-        over_single = self._write_run_workflow("over_single.yml", "${{ '" + ("a" * 20997) + "' }}")
+        over_single = self._write_run_workflow("over_single.yml", "${{ '" + ("a" * 20999) + "' }}")
         res_over_single = self.run_checker(str(over_single))
         self.assertEqual(res_over_single.returncode, 1)
         self.assertIn("jobs.build.steps[0].run", res_over_single.stderr)
         self.assertIn("21001", res_over_single.stderr)
+
+    def test_single_expression_whitespace_trim_boundary(self) -> None:
+        """Boundary case: `${{<spaces>expr<spaces>}}` trims to 21000 passes, 21001 fails."""
+        pad = " " * 50
+        exact_inner = pad + "'" + ("a" * 20998) + "'" + pad
+        self.assertGreater(len(exact_inner), 21000)
+        exact_wf = self._write_run_workflow("trim_single_exact.yml", "${{" + exact_inner + "}}")
+        res_exact = self.run_checker(str(exact_wf))
+        self.assertEqual(res_exact.returncode, 0, res_exact.stderr)
+
+        over_inner = pad + "'" + ("a" * 20999) + "'" + pad
+        over_wf = self._write_run_workflow("trim_single_over.yml", "${{" + over_inner + "}}")
+        res_over = self.run_checker(str(over_wf))
+        self.assertEqual(res_over.returncode, 1)
+        self.assertIn("jobs.build.steps[0].run", res_over.stderr)
+        self.assertIn("21001", res_over.stderr)
+
+    def test_format_expression_whitespace_trim_boundary(self) -> None:
+        """Boundary case: literal + padded `${{ <expr> }}` trims to 21000 passes, 21001 fails."""
+        padded_expr = "${{" + (" " * 50) + "github.sha" + (" " * 50) + "}}"
+        exact_wf = self._write_run_workflow(
+            "trim_format_exact.yml", "echo " + ("a" * 20970) + padded_expr
+        )
+        res_exact = self.run_checker(str(exact_wf))
+        self.assertEqual(res_exact.returncode, 0, res_exact.stderr)
+
+        over_wf = self._write_run_workflow(
+            "trim_format_over.yml", "echo " + ("a" * 20971) + padded_expr
+        )
+        res_over = self.run_checker(str(over_wf))
+        self.assertEqual(res_over.returncode, 1)
+        self.assertIn("jobs.build.steps[0].run", res_over.stderr)
+        self.assertIn("21001", res_over.stderr)
+
+    def test_dotnet_whitespace_set_retains_u001f_and_trims_u3000(self) -> None:
+        """Allow-list case: U+001F is retained in length while U+3000 is trimmed."""
+        core_21000 = "'" + ("a" * 20998) + "'"
+        u001f_padded = "${{" + ("\u001f" * 5) + core_21000 + ("\u001f" * 5) + "}}"
+        wf_u001f = self._write_run_workflow("u001f_not_trimmed.yml", u001f_padded)
+        res_u001f = self.run_checker(str(wf_u001f))
+        self.assertEqual(res_u001f.returncode, 1)
+        self.assertIn("jobs.build.steps[0].run", res_u001f.stderr)
+        self.assertIn("21010", res_u001f.stderr)
+
+        u3000_padded = "${{" + ("\u3000" * 5) + core_21000 + ("\u3000" * 5) + "}}"
+        wf_u3000 = self._write_run_workflow("u3000_trimmed.yml", u3000_padded)
+        res_u3000 = self.run_checker(str(wf_u3000))
+        self.assertEqual(res_u3000.returncode, 0, res_u3000.stderr)
+
+    def test_supplementary_emoji_counts_as_two_utf16_units(self) -> None:
+        """Boundary case: supplementary U+1F600 counts 2 UTF-16 units (21000 passes, +1 fails)."""
+        # format('<10487 emoji> {0}', github.sha) = 8 + (10487 * 2 + 1) + 3 + 1 + 12 + 1 = 21000.
+        exact_env = ("\U0001f600" * 10487) + " ${{ github.sha }}"
+        wf_exact = self._write_env_workflow("emoji_exact.yml", exact_env)
+        res_exact = self.run_checker(str(wf_exact))
+        self.assertEqual(res_exact.returncode, 0, res_exact.stderr)
+
+        over_env = ("\U0001f600" * 10488) + " ${{ github.sha }}"
+        self.assertLess(len(over_env), 21000)
+        wf_over = self._write_env_workflow("emoji_over.yml", over_env)
+        res_over = self.run_checker(str(wf_over))
+        self.assertEqual(res_over.returncode, 1)
+        self.assertIn("jobs.build.env.PLANTED_VAL", res_over.stderr)
+        self.assertIn("21002", res_over.stderr)
+
+        # Single-expression astral string literal: `'...emoji...'` = 1 + 10499 * 2 + 1 = 21000.
+        wf_expr_exact = self._write_env_workflow(
+            "emoji_expr_exact.yml", "${{ '" + ("\U0001f600" * 10499) + "' }}"
+        )
+        self.assertEqual(self.run_checker(str(wf_expr_exact)).returncode, 0)
+        over_expr = "${{ '" + ("\U0001f600" * 10500) + "' }}"
+        self.assertLess(len(over_expr), 21000)
+        wf_expr_over = self._write_env_workflow("emoji_expr_over.yml", over_expr)
+        self.assertEqual(self.run_checker(str(wf_expr_over)).returncode, 1)
+
+    def test_bmp_non_ascii_literal_counts_as_one_utf16_unit(self) -> None:
+        """Boundary case: BMP non-ASCII U+00E9 counts as 1 UTF-16 code unit, not 2 UTF-8 bytes."""
+        exact_bmp = ("\u00e9" * 20975) + "${{ github.sha }}"
+        wf_exact = self._write_env_workflow("bmp_exact.yml", exact_bmp)
+        res_exact = self.run_checker(str(wf_exact))
+        self.assertEqual(res_exact.returncode, 0, res_exact.stderr)
+
+        over_bmp = ("\u00e9" * 20976) + "${{ github.sha }}"
+        wf_over = self._write_env_workflow("bmp_over.yml", over_bmp)
+        res_over = self.run_checker(str(wf_over))
+        self.assertEqual(res_over.returncode, 1)
+        self.assertIn("jobs.build.env.PLANTED_VAL", res_over.stderr)
+        self.assertIn("21001", res_over.stderr)
 
     def test_planted_30000_char_script_without_expression_passes(self) -> None:
         """Positive boundary: a 30000-char literal script with no `${{` has no 21000 bound."""

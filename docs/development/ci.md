@@ -527,10 +527,11 @@ start for the edit within the 2-minute registration grace. If two edits land in
 the same second and produce multiple `Rules` runs sharing the edit-stamp prefix
 (in any status), the aggregator fails closed at once and asks for another
 pull-request edit or a commit push. Because `actions/runner` converts any YAML
-string containing `${{` into one `format(...)` expression capped at 21,000
-characters, `scripts/ci/check-workflow-size.py` also checks every workflow
-scalar against that 21,000-character runner expression bound alongside the
-64 KiB file limit.
+string containing `${{` into one expression capped at 21,000 UTF-16 code units
+after `.NET` `Char.IsWhiteSpace` expression trimming,
+`scripts/ci/check-workflow-size.py` also checks every workflow scalar against
+that runner expression bound (`scripts/ci/tests/test_check_workflow_size.py`)
+alongside the 64 KiB file limit.
 `scripts/ci/tests/test_aggregator_edited_window.py` runs the embedded script
 across the edited-event window, stale-suite exclusion, boundary, draft-era
 exclusion and fail-closed API paths.
