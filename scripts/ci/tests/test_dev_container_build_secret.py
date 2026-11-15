@@ -170,6 +170,19 @@ class BuildSecretContract(unittest.TestCase):
                 )
                 self.assertTrue(any(expected in error for error in self.builder_errors(text)))
 
+    def test_stage_builder_extra_path_qualified_docker_build_fails(self) -> None:
+        self.assertEqual(self.builder_errors(self.builder), [])
+        for line in (
+            "/usr/bin/docker build -f dev/Containerfile .",
+            '"$DOCKER" build -f dev/Containerfile .',
+            "${DOCKER} build -f dev/Containerfile .",
+        ):
+            with self.subTest(line=line):
+                extra = f"{self.builder}\n{line}\n"
+                self.assertTrue(
+                    any("exactly one docker build" in error for error in self.builder_errors(extra))
+                )
+
     # --- workflow callers ----------------------------------------------------
 
     def test_missing_raw_build_wiring_fails(self) -> None:
@@ -300,6 +313,45 @@ class BuildSecretContract(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_path_qualified_docker_rejected(self) -> None:
+        for command in (
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . "
+            "&& /usr/bin/docker build -f dev/Containerfile --target release-build .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . ; "
+            "/usr/local/bin/docker build --secret id=github_token,env=GITHUB_TOKEN .",
+            "./docker build --secret id=github_token,env=GITHUB_TOKEN .",
+            "../bin/docker build --secret id=github_token,env=GITHUB_TOKEN .",
+            "/usr/bin/docker build -f dev/Containerfile --target release-build .",
+            '"/usr/bin/docker" build -f dev/Containerfile --target release-build .',
+            "sh -c '\"/usr/bin/docker\" build -f dev/Containerfile .'",
+            "docker run --rm $(/usr/bin/docker build -q .)",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_parameter_command_word_rejected(self) -> None:
+        for command in (
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . "
+            "&& $DOCKER build -f dev/Containerfile .",
+            '"${DOCKER}" build --secret id=github_token,env=GITHUB_TOKEN .',
+            "FOO=1 $DOCKER build -f dev/Containerfile .",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_path_qualified_and_non_build_clauses_allowed(self) -> None:
+        for command in (
+            "/usr/bin/docker build -f docker/dev/ubuntu-26.04.Dockerfile .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . "
+            "&& /usr/bin/docker run --rm vmafx-dev true",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile .",
+            'echo "$HOME" && docker build -f docker/dev/ubuntu-26.04.Dockerfile .',
+            '/usr/bin/docker run --rm --user "$(id -u):$(id -g)" vmafx-dev true',
+            "ninja -C build",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(MODULE._has_disallowed_raw_build(command))
 
     def test_raw_build_option_value_as_file_bypass_rejected(self) -> None:
         for command in (
