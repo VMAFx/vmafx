@@ -81,7 +81,7 @@ The lane launcher (`tools/lanes/agy-run.sh` in the praetor repository) reads [`.
 
 - **Every brief** needs a `task:` line in its first 20 lines naming the router label (for example `task: review` or `task: feature_implementation`). Without it the launcher cannot pick the stage and refuses the brief with rc 2.
 - **Review briefs** (`task: review`) must contain both `Write nothing in the worktree` and `return: final message only`. A review job that leaves any path in its worktree ends with rc 79 and its report is discarded, so scratch copies go outside the worktree and the report goes in the final message.
-- **Check a brief without starting a job**: `bash tools/lanes/agy-run.sh --check-brief <brief> <worktree>` from the praetor repository. `scripts/ci/tests/test_lane_brief_config.py` checks the file's shape on every run; set `LANE_BRIEF_STAGE_PY` to praetor's `tools/lanes/brief_stage.py` to also replay the planted briefs against the reader.
+- **Check a brief without starting a job**: `bash tools/lanes/agy-run.sh --check-brief <brief> <worktree>` from the praetor repository. `scripts/ci/tests/test_lane_brief_config.py` checks the file's shape on every run; set `LANE_BRIEF_STAGE_PY` to praetor's `tools/lanes/brief_stage.py` to also replay the planted briefs against the reader. A variable that names a missing file fails those tests rather than skipping them.
 
 ## Build and IDE notes
 

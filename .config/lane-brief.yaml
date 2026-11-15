@@ -1,16 +1,24 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
 #
-# Lines a lane brief for this repository must contain before the lane launcher starts a job
-# (ADR-3553). The launcher reads this file from the job's worktree and refuses a brief that
-# lacks a listed line; the match is a plain substring match on the brief text. Keys and
-# limits come from the launcher's reader (brief_stage.py in the praetor repository: at most
-# 32 strings per list, each up to 200 characters). scripts/ci/tests/test_lane_brief_config.py
-# checks the shape and replays a planted brief against the reader.
+# Lines a lane brief for this repository must contain before the lane
+# launcher starts a job (ADR-3553). The launcher's reader (brief_stage.py in
+# the praetor repository) reads this file from the job's worktree:
+# - top-level keys: required (every brief), required_by_stage (keyed by
+#   impl, fix, review, audit or research) and credential_stub_tests;
+# - each list holds at most 32 strings of 1 to 200 characters;
+# - a brief's stage comes from the first `task:` line in its first 20
+#   lines, mapped through the router's task labels;
+# - the match is a plain substring match on the brief text;
+# - rc 1 lists each missing line; rc 2 means an invalid file or a brief
+#   whose stage cannot be resolved (no `task:` line, unknown label).
+# scripts/ci/tests/test_lane_brief_config.py checks the shape and replays
+# planted briefs against the reader.
+---
 required_by_stage:
-  # A review job that leaves any path in the worktree ends with rc 79 (lane guard in
-  # agy-job.sh), so a review brief must forbid worktree output and ask for the report
-  # in the final message.
+  # A review job that leaves any path in the worktree ends with rc 79 (lane
+  # guard in agy-job.sh), so a review brief must forbid worktree output and
+  # ask for the report in the final message.
   review:
     - "Write nothing in the worktree"
     - "return: final message only"

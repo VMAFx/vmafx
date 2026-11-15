@@ -84,9 +84,11 @@ copied from it passes unchanged.
   vmafx brief without a `task:` line in its first 20 lines is refused with rc 2
   (`cannot resolve brief stage for required_by_stage`), for implementation briefs too.
   The agent brief shape already starts with `task:`, so current briefs pass.
-- CI has no praetor checkout, so the five replay tests skip there with a stated reason.
-  The six shape and routing tests run everywhere; the host replay with the real 3470 and 3464 briefs and
-  a mutation run are in the pull request evidence.
+- CI has no praetor checkout, so the nine replay tests skip there with a stated reason.
+  The thirteen shape, boundary, routing and reader-lookup tests run everywhere; the host
+  replay with the real 3470 and 3464 briefs and a mutation run are in the pull request
+  evidence. A `LANE_BRIEF_STAGE_PY` or `LANE_TOOLS_DIR` that names a missing file fails
+  the replay tests instead of skipping them.
 
 ### Neutral / follow-ups
 
