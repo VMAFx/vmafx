@@ -70,6 +70,9 @@ jobs:
     # minutes is about 2.5x the measured build, with room for the
     # hosted-runner spread (measured at up to 2.3x on the Coverage Gate).
     timeout-minutes: 25
+    # 30, not 25: the same job now also builds the CPU vmaf CLI and runs every
+    # tutorial/cookbook run-check block (issue 2330). The measured mkdocs strict
+    # build is ~10 minutes; the CLI build adds a few and the checks seconds.
     # Ref-scoped: one docs build per branch, superseded only by a newer push to
     # that same branch. No cross-PR contention.
     concurrency:
@@ -114,6 +117,25 @@ jobs:
       - name: Check documentation charts against a fresh render
         if: steps.impact.outputs.docs == 'true'
         run: python3 scripts/docs/generate-charts.py --check --require-render
+      - name: Install the build tools for the tutorial checks
+        # issue 2330: the tutorial and cookbook run-check blocks are executed
+        # against the fixture pair, so this job needs a vmaf CLI of its own.
+        if: steps.impact.outputs.docs == 'true'
+        run: pip install --require-hashes -r requirements/locks/build.txt
+      - name: Build the vmaf CLI for the tutorial checks
+        if: steps.impact.outputs.docs == 'true'
+        run: |
+          # A CPU-only CLI is enough: every run-check block pins --backend cpu.
+          # asm, zimg and DNN stay off so this build needs no nasm, libzimg or
+          # ONNX runtime beyond a C compiler, meson and ninja.
+          meson setup build-docs-cli core --buildtype release \
+            -Denable_asm=false -Denable_zimg=false -Denable_dnn=disabled \
+            -Denable_cuda=false -Denable_sycl=false -Denable_hip=false \
+            -Denable_metal=disabled
+          ninja -C build-docs-cli tools/vmaf
+      - name: Run the tutorial and cookbook commands
+        if: steps.impact.outputs.docs == 'true'
+        run: python3 scripts/docs/check_docs_commands.py --execute --bin build-docs-cli/tools/vmaf
       # Linux only (HISS-21). Docs Site Build runs only on ubuntu-26.04; skipped
       # on macOS and Windows to conserve CI compute. Alternate evidence: pure Python
       # standard-library implementation (pathlib, re, sys, argparse) tested across

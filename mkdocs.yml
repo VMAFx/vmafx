@@ -198,6 +198,20 @@ nav:
       - Licensing: licensing.md
       - Credits: credits.md
       - Support VMAFx: support-vmafx.md
+  - Tutorials:
+      - tutorials/index.md
+      - Score a pair: tutorials/score-a-pair.md
+      - Compare two encodes: tutorials/compare-encodes.md
+      - Choose a target: tutorials/choose-a-target.md
+      - Gate a build: tutorials/gate-a-build.md
+      - Score live: tutorials/score-live.md
+  - Cookbook:
+      - cookbook/index.md
+      - Score a 10-bit pair: cookbook/10-bit.md
+      - Score with a frame offset: cookbook/frame-offset.md
+      - Score non-420 subsampling: cookbook/subsampling.md
+      - Score a batch of pairs: cookbook/batch.md
+      - Score on two GPUs: cookbook/two-gpus.md
   - Choose a backend:
       - backends/index.md
       - x86 SIMD (AVX2 / AVX-512): backends/x86/avx512.md

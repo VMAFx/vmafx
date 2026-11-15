@@ -122,6 +122,20 @@ entries:
   evidence:
   - tools/vmaf-tune/tests/test_near_dup_verify.py
   note: luoye-cpu wrote the unit tests for the two-leg near-duplicate spot check and its fail-closed cases, in PR 3444.
+- id: contribution-luoye-cpu-tutorial-cookbook-check
+  name: luoye-cpu's tutorial and cookbook run-check
+  url: https://github.com/VMAFx/vmafx/issues/2330
+  kind: code
+  relation: used-by-CI
+  license: EUPL-1.2
+  paths:
+  - scripts/docs/check_docs_commands.py
+  - scripts/docs/tests/test_check_docs_commands.py
+  - docs/tutorials/
+  - docs/cookbook/
+  evidence:
+  - scripts/docs/check_docs_commands.py
+  note: luoye-cpu wrote the tutorial series, the first cookbook slice and the docs check that holds every run-check block and quoted number, in the issue 2330 pull request.
 - id: libsvm
   name: libsvm
   url: https://github.com/cjlin1/libsvm
