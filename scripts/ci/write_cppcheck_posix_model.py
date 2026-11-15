@@ -10,9 +10,19 @@ import argparse
 import os
 import re
 import shutil
-import subprocess
+import sys
 import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import (
+    CommandOutputLimitExceeded,
+    CommandTimedOut,
+    CommandValidationError,
+    resolve_executable,
+)
+from scripts.lib.safe_subprocess import run as run_command
 
 FUNCTION_PATTERN = re.compile(rb"<function\b[^>]*\bname\s*=\s*['\"]pthread_cond_init['\"][^>]*>")
 ARGUMENT_PATTERNS = {
@@ -27,6 +37,7 @@ CONDITION_MODEL = b"""  <function name="pthread_cond_init">
     <arg nr="1" direction="out"><not-null/></arg>
     <arg nr="2" direction="in"/>
   </function>"""
+SUBPROCESS_TIMEOUT_S = 60
 
 
 def legacy_filesdir(binary: str) -> Path | None:
@@ -50,10 +61,21 @@ def legacy_filesdir(binary: str) -> Path | None:
 def cppcheck_filesdir(binary: str) -> Path:
     """Return Cppcheck's compiled-in data directory or fail closed."""
     try:
-        result = subprocess.run(  # noqa: S603 -- caller-selected analyzer binary
-            [binary, "--filesdir"], capture_output=True, text=True, check=False
+        result = run_command(
+            [binary, "--filesdir"],
+            allowed_executables=(binary,),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=SUBPROCESS_TIMEOUT_S,
         )
-    except OSError as error:
+    except (
+        OSError,
+        TimeoutError,
+        CommandValidationError,
+        CommandTimedOut,
+        CommandOutputLimitExceeded,
+    ) as error:
         raise ValueError(f"cannot execute Cppcheck binary {binary}: {error}") from error
     filesdir = result.stdout.strip()
     if result.returncode == 0 and filesdir and "\n" not in filesdir:
@@ -147,6 +169,14 @@ def corrected_model(source: Path) -> bytes:
     return model[:start] + corrected_function + model[end:]
 
 
+def resolve_cppcheck(binary: str) -> str:
+    """Resolve the Cppcheck binary once to an absolute executable path."""
+    try:
+        return resolve_executable(binary)
+    except CommandValidationError as error:
+        raise ValueError(f"Cppcheck binary is unavailable or not executable: {binary}") from error
+
+
 def validate_model(binary: str, model: Path, directory: Path) -> None:
     """Ask the selected Cppcheck binary to parse the generated model."""
     descriptor, control_name = tempfile.mkstemp(
@@ -155,7 +185,7 @@ def validate_model(binary: str, model: Path, directory: Path) -> None:
     os.close(descriptor)
     control = Path(control_name)
     try:
-        result = subprocess.run(  # noqa: S603 -- caller-selected analyzer binary
+        result = run_command(
             [
                 binary,
                 "--check-library",
@@ -163,11 +193,19 @@ def validate_model(binary: str, model: Path, directory: Path) -> None:
                 "--error-exitcode=1",
                 str(control),
             ],
+            allowed_executables=(binary,),
             capture_output=True,
             text=True,
             check=False,
+            timeout_seconds=SUBPROCESS_TIMEOUT_S,
         )
-    except OSError as error:
+    except (
+        OSError,
+        TimeoutError,
+        CommandValidationError,
+        CommandTimedOut,
+        CommandOutputLimitExceeded,
+    ) as error:
         raise ValueError(f"cannot validate generated POSIX model: {error}") from error
     finally:
         control.unlink(missing_ok=True)
@@ -178,7 +216,8 @@ def validate_model(binary: str, model: Path, directory: Path) -> None:
 
 def write_model(binary: str, output: Path) -> None:
     """Derive and atomically publish the corrected model."""
-    source = cppcheck_filesdir(binary) / "cfg" / "posix.cfg"
+    resolved_binary = resolve_cppcheck(binary)
+    source = cppcheck_filesdir(resolved_binary) / "cfg" / "posix.cfg"
     model = corrected_model(source)
     output.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{output.name}.", dir=output.parent)
@@ -188,13 +227,14 @@ def write_model(binary: str, output: Path) -> None:
             stream.write(model)
             stream.flush()
             os.fsync(stream.fileno())
-        validate_model(binary, temporary, output.parent)
+        validate_model(resolved_binary, temporary, output.parent)
         temporary.replace(output)
     finally:
         temporary.unlink(missing_ok=True)
 
 
 def main() -> int:
+    """Derive and atomically publish the corrected POSIX model."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cppcheck", default="cppcheck")
     parser.add_argument("--output", type=Path, required=True)

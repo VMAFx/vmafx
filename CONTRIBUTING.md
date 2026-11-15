@@ -51,6 +51,17 @@ from machines the project does not own, and
   `conventional-pre-commit`. Allowed types: `feat`, `fix`, `perf`, `refactor`,
   `docs`, `test`, `build`, `ci`, `chore`, `revert`, `port` (upstream cherry-pick),
   `sycl`, `cuda`, `simd`. Use `!` or `BREAKING CHANGE:` for breaking changes.
+
+  A breaking pull request must place `BREAKING CHANGE: <summary>` and
+  `Migration: <documentation-or-path>` lines directly in its pull request
+  body. Each footer line must start in column 0 (not indented, not quoted).
+  The composer reads raw body lines, so a column-0 footer-shaped line inside a
+  fenced code block counts as a footer too. Upstream-port and backend types
+  (`port`, `sycl`, `cuda`, `simd`) pass the check alongside the standard
+  types. The squash composer (`scripts/ci/squash_message.py`) extracts these
+  footers so the merge train preserves them in the resulting squash commit
+  on `master`, and the `DCO Sign-off` gate refuses any breaking pull request
+  that lacks a `Migration:` footer.
 - **Engineering principles** — see [`docs/principles.md`](docs/principles.md).
   NASA Power-of-10 + JPL-C-STD + SEI CERT C/C++ + MISRA-C:2012 (informative).
   `.clang-tidy` enforces the subset that can be machine-checked.
@@ -84,9 +95,11 @@ files it touches. There is no contributor licence agreement. The required
 check **DCO Sign-off** fails a pull request with an unsigned commit; fix a
 branch with `git rebase --signoff origin/master`, then
 `git push --force-with-lease`. Bot commits (Renovate, release automation) are
-exempt. The check applies to pull requests created on or after
-2026-10-09 (the cutoff in `scripts/ci/dco-cutoff.txt`); earlier pull requests
-are grandfathered. Details, the check command and the exact exemptions:
+exempt from sign-off. The sign-off requirement applies to pull requests
+created on or after 2026-10-09 (the cutoff in `scripts/ci/dco-cutoff.txt`);
+earlier pull requests are grandfathered for sign-off, while model and coding
+tool attribution checks run on every pull request. Details, the check command
+and the exact exemptions:
 [DCO sign-off](docs/development/dco.md).
 
 ## Branch naming

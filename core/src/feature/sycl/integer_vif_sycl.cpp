@@ -1650,6 +1650,9 @@ static void vif_log_kernel_mode(const VifStateSycl *s)
 
 namespace
 {
+/* Build the feature-name dictionary and register the VIF extractor with the
+ * combined SYCL graph together with its feature-extractor flags. Returns 0 on
+ * success or a negative error code on failure. */
 static int vif_register_graph(VmafFeatureExtractor *fex, VmafSyclState *state, VifStateSycl *s)
 {
     s->feature_name_dict =
@@ -1659,8 +1662,8 @@ static int vif_register_graph(VmafFeatureExtractor *fex, VmafSyclState *state, V
         return -ENOMEM;
     }
 
-    const int err = vmaf_sycl_graph_register(state, enqueue_vif_work, vif_pre_graph, vif_post_graph,
-                                             nullptr, s, "VIF");
+    const int err = vmaf_sycl_graph_register_flags(state, enqueue_vif_work, vif_pre_graph,
+                                                   vif_post_graph, nullptr, s, "VIF", fex->flags);
     if (err)
         close_fex_sycl(fex);
     return err;

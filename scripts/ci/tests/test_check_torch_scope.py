@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts/ci/check-torch-scope.py"
+SCRIPT_TIMEOUT_S = 60
 _spec = importlib.util.spec_from_file_location("check_torch_scope", SCRIPT)
 assert _spec is not None and _spec.loader is not None
 scope = importlib.util.module_from_spec(_spec)
@@ -93,8 +94,16 @@ requires = ["torchao"]
         self.assertEqual(check(files), [])
 
     def test_the_tree_passes(self) -> None:
+        """Prove scripts/ci/check-torch-scope.py accepts the current tree.
+
+        ADR-1886: verifies the tree contains no illegal torch dependencies.
+        """
         result = subprocess.run(  # noqa: S603 -- the script under test
-            [sys.executable, str(SCRIPT)], capture_output=True, text=True, check=False
+            [sys.executable, str(SCRIPT)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 

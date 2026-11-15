@@ -102,7 +102,8 @@ class SvtAv1Adapter:
     supports_qpfile: bool = True
     # ADR-0400: this encoder has no parseable first-pass stats file.
     supports_encoder_stats: bool = False
-    # ADR-3386: patch 0007 carries x264-style 16x16 maps through -qpfile.
+    # ADR-3386: shared fix series patch 0043 carries x264-style 16x16 maps
+    # through -qpfile.
     supports_saliency_roi: bool = True
     # ADR-0595 (Phase F real 2-pass): SVT-AV1 supports multi-pass
     # **only in VBR mode**. Quoting the encoder's runtime error

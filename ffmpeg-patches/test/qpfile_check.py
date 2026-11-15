@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Checks of the ``-qpfile`` option of the patched encoders (patch 0007).
+"""Checks of the ``-qpfile`` option of the patched encoders (shared fix series patch 0043).
 
 Exits 0 on success, 1 on a failure and 77 when the FFmpeg lacks libx264 or a
 fixture is missing. Needs an FFmpeg built with the series and ``--enable-libx264``
@@ -14,7 +14,11 @@ fixture is missing. Needs an FFmpeg built with the series and ``--enable-libx264
 - ``x264 refuses a grid that does not fit the video`` and ``x264 refuses
   aq-mode=0`` (the offsets travel through adaptive quantization): both fail at
   encoder open and say why.
-- ``libaom`` / ``libsvtav1`` accept the same file and encode.
+- ``libsvtav1`` accepts the same file and encodes.
+- ``libaom`` accepts the file only with ``-usage realtime`` and ``-cpu-used``
+  7 or 8; other usage modes and lower ``-cpu-used`` levels are refused at
+  encoder open (libaom ignores ROI maps otherwise), and both refusals are
+  checked.
 """
 
 from __future__ import annotations
@@ -120,25 +124,78 @@ def x264_checks(args: argparse.Namespace, tmp: Path, source: Path) -> list[tuple
     return results
 
 
+def libaom_checks(args: argparse.Namespace, tmp: Path, source: Path) -> list[tuple[str, bool, str]]:
+    """Run the libaom-av1 qpfile cases and return (label, passed, stderr tail) rows."""
+    if not has_encoder(args, "libaom-av1"):
+        return [
+            ("libaom-av1 accepts a qpfile (skipped: encoder missing)", True, ""),
+            ("libaom-av1 accepts cpu-used 7 (skipped: encoder missing)", True, ""),
+            ("libaom-av1 refuses cpu-used 6 (skipped: encoder missing)", True, ""),
+            ("libaom-av1 refuses without -usage realtime (skipped: encoder missing)", True, ""),
+        ]
+    qp = tmp / "plus.qp"
+    results: list[tuple[str, bool, str]] = []
+    cases = (
+        (
+            "libaom-av1 accepts a qpfile",
+            "rt8",
+            ["-usage", "realtime", "-cpu-used", "8", "-crf", "40"],
+            True,
+            "",
+        ),
+        (
+            "libaom-av1 accepts cpu-used 7",
+            "rt7",
+            ["-usage", "realtime", "-cpu-used", "7", "-crf", "40"],
+            True,
+            "",
+        ),
+        (
+            "libaom-av1 refuses cpu-used 6",
+            "rt6",
+            ["-usage", "realtime", "-cpu-used", "6", "-crf", "40"],
+            False,
+            "needs -usage realtime",
+        ),
+        (
+            "libaom-av1 refuses without -usage realtime",
+            "good8",
+            ["-cpu-used", "8", "-crf", "40"],
+            False,
+            "needs -usage realtime",
+        ),
+    )
+    for label, name, extra, ok_pred, needle in cases:
+        run_, size = encode(
+            args, tmp, f"libaom-{name}", "libaom-av1", [*extra, "-qpfile", str(qp)], source
+        )
+        if ok_pred:
+            passed = run_.returncode == 0 and "qpfile=" in run_.stderr and size > 0
+        else:
+            passed = run_.returncode != 0 and needle in run_.stderr
+        results.append((label, passed, run_.stderr[-300:]))
+    return results
+
+
 def other_checks(args: argparse.Namespace, tmp: Path, source: Path) -> list[tuple[str, bool, str]]:
+    """Run the libsvtav1 qpfile case, then the libaom-av1 cases; return the result rows."""
     results: list[tuple[str, bool, str]] = []
     qp = tmp / "plus.qp"
-    for codec, extra in (
-        ("libsvtav1", ["-preset", "12"]),
-        ("libaom-av1", ["-cpu-used", "8", "-crf", "40"]),
-    ):
-        if not has_encoder(args, codec):
-            results.append((f"{codec} accepts a qpfile (skipped: encoder missing)", True, ""))
-            continue
-        run_, size = encode(args, tmp, codec, codec, [*extra, "-qpfile", str(qp)], source)
+    if not has_encoder(args, "libsvtav1"):
+        results.append(("libsvtav1 accepts a qpfile (skipped: encoder missing)", True, ""))
+    else:
+        run_, size = encode(
+            args, tmp, "libsvtav1", "libsvtav1", ["-preset", "12", "-qpfile", str(qp)], source
+        )
         loaded = "qpfile=" in run_.stderr
         results.append(
             (
-                f"{codec} accepts a qpfile",
+                "libsvtav1 accepts a qpfile",
                 run_.returncode == 0 and loaded and size > 0,
                 run_.stderr[-300:],
             )
         )
+    results.extend(libaom_checks(args, tmp, source))
     return results
 
 

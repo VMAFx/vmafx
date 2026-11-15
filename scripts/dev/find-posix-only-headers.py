@@ -40,6 +40,8 @@ import sys
 from functools import cache
 from pathlib import Path
 
+GIT_TIMEOUT_S = 60
+
 POSIX_ONLY = re.compile(
     r"^\s*#\s*include\s*<("
     r"(?:unistd|dlfcn|poll|termios|libgen|strings|dirent|glob|semaphore|sched|syslog|pwd|grp)\.h"
@@ -174,9 +176,18 @@ def git_lines(*args: str, no_match_ok: bool = False) -> list[str]:
     git = shutil.which("git")
     if git is None:
         raise SystemExit("find-posix-only-headers: git not found on PATH")
-    done = subprocess.run(  # noqa: S603 -- resolved git, fixed argv
-        [git, *args], capture_output=True, text=True, check=False
-    )
+    try:
+        done = subprocess.run(  # noqa: S603 -- resolved git, fixed argv
+            [git, *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=GIT_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise SystemExit(
+            f"find-posix-only-headers: git {args[0]} timed out after {GIT_TIMEOUT_S}s"
+        ) from exc
     # `git grep` exits 1 when nothing matches; anything else is a failure.
     if done.returncode != 0 and not (no_match_ok and done.returncode == 1 and not done.stderr):
         raise SystemExit(f"find-posix-only-headers: git {args[0]} failed: {done.stderr.strip()}")

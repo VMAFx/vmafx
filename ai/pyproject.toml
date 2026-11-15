@@ -131,3 +131,10 @@ ignore = [
   "PLR0917", "BLE001", "S110", "TRY004", "SIM102", "SIM103", "SIM117",
   "PLC0206", "PLR0124", "PLW1510", "DTZ011",
 ]
+
+[tool.ruff.lint.isort]
+# Same classification as the root pyproject.toml, which Codacy's ruff reads.
+# Without it the two configs sort `scripts` and `ai` into different sections
+# and no import order passes both.
+known-first-party = ["vmaf", "ai", "vmaf_train", "corpus", "aiutils", "scripts"]
+known-third-party = ["packaging"]

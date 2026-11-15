@@ -642,7 +642,7 @@ func TestBuildAugment(t *testing.T) {
 	}
 }
 
-// TestBuildAugmentSVTAV1 pins the 16x16 input grid consumed by patch 0007.
+// TestBuildAugmentSVTAV1 pins the 16x16 input grid consumed by shared fix series patch 0043.
 func TestBuildAugmentSVTAV1(t *testing.T) {
 	t.Parallel()
 

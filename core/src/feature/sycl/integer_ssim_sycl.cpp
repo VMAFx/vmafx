@@ -12,7 +12,7 @@
  *  batch 2 part 1b).
  *
  *  Self-contained submit / collect — does *not* register with
- *  vmaf_sycl_graph_register (see core/src/feature/sycl/AGENTS.md).
+ *  vmaf_sycl_graph_register_flags (see core/src/feature/sycl/AGENTS.md).
  *  Same approach as ciede_sycl (PR #137).
  *
  *  Per frame (ADR-1370), all on the device, one queue wait in collect:

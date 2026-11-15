@@ -26,6 +26,8 @@ PIN = "19.1.7"
 OBJECT = b"fake bpf object\n"
 OBJECT_SHA = hashlib.sha256(OBJECT).hexdigest()
 GIT = shutil.which("git") or "git"
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 HAS_LIBBPF = Path("/usr/include/bpf/bpf_helpers.h").is_file()
 
 FAKE_CLANG = """#!/bin/sh
@@ -227,21 +229,25 @@ class GenNodeBpf(unittest.TestCase):
         self.assertIn("commit the regenerated binding", changed.stderr)
 
     def test_repository_ignores_the_generated_files(self) -> None:
+        """Assert that generated eBPF artifacts are ignored by Git."""
         for name in ("rclonebypass_bpfel.o", ".rclonebypass.stamp"):
             result = subprocess.run(  # noqa: S603 - fixed argv
                 [GIT, "check-ignore", "-q", f"cmd/vmafx-node/bpf/{name}"],
                 cwd=REPO,
                 check=False,
+                timeout=GIT_TIMEOUT_S,
             )
             self.assertEqual(result.returncode, 0, f"{name} is not git-ignored")
 
     def test_repository_tracks_no_ebpf_object(self) -> None:
+        """Assert that no compiled eBPF object files are tracked in the repository."""
         tracked = subprocess.run(  # noqa: S603 - fixed argv
             [GIT, "ls-files", "cmd/vmafx-node/bpf"],
             cwd=REPO,
             capture_output=True,
             text=True,
             check=True,
+            timeout=GIT_TIMEOUT_S,
         ).stdout.split()
         self.assertEqual([name for name in tracked if name.endswith(".o")], [])
         self.assertTrue(os.access(SCRIPT, os.X_OK))
@@ -255,6 +261,7 @@ class GenNodeBpf(unittest.TestCase):
         self.assertIn("var _RcloneBypassBytes = embeddedObject()", binding)
 
     def test_embed_rewrite_is_idempotent_and_refuses_unknown_output(self) -> None:
+        """Assert that embedding rewrite is idempotent and rejects input lacking go:embed."""
         script = REPO / "cmd" / "vmafx-node" / "bpf" / "embed_generated_object.sh"
         raw = self.tmp / "raw.go"
         raw.write_text(
@@ -263,7 +270,11 @@ class GenNodeBpf(unittest.TestCase):
         )
         for _ in range(2):
             done = subprocess.run(  # noqa: S603 - fixed argv
-                ["/bin/sh", str(script), str(raw)], capture_output=True, text=True, check=False
+                ["/bin/sh", str(script), str(raw)],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=SCRIPT_TIMEOUT_S,
             )
             self.assertEqual(done.returncode, 0, done.stderr)
         text = raw.read_text(encoding="utf-8")
@@ -272,7 +283,11 @@ class GenNodeBpf(unittest.TestCase):
         other = self.tmp / "other.go"
         other.write_text("package bpf\n", encoding="utf-8")
         refused = subprocess.run(  # noqa: S603 - fixed argv
-            ["/bin/sh", str(script), str(other)], capture_output=True, text=True, check=False
+            ["/bin/sh", str(script), str(other)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertNotEqual(refused.returncode, 0)
         self.assertIn("go:embed", refused.stderr)

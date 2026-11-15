@@ -9,7 +9,9 @@ existing source checkout. The rationale is [ADR-1244](../adr/1244-merge-train-ow
 ## Inspect and configure
 
 Use Python 3.10 or newer on POSIX, Git, authenticated GitHub CLI, and the existing
-full-gate toolchain. The installed GitHub CLI must support `pr merge
+full-gate toolchain. The installed gateway runs under the `python3` its launcher
+finds, which needs PyYAML for the squash composer; check with
+`python3 -c "import yaml"`. The installed GitHub CLI must support `pr merge
 --match-head-commit` and `pr checks --required --json`. GitHub requests name
 `github.com/VMAFx/vmafx` explicitly. Both origin fetch and push URLs must identify
 only the canonical repository; multiple push destinations are refused.
@@ -103,6 +105,23 @@ cancelled, failed, or absent checks block both `merge` and `arm`; GitHub CLI exi
 strict gates before requesting GitHub auto-merge. Both use `--match-head-commit`,
 never admin bypass or branch deletion.
 
+Both `merge` and `arm` compose the squash commit message using
+[`scripts/ci/squash_message.py`](../../scripts/ci/squash_message.py) (`Train.merge` in
+`scripts/dev/merge_train_guard.py`). Before merging, they invoke its
+`check_message` against the pinned engine (`.config/lefthook/engine.sh`,
+`forge check-message`); any validation failure aborts with
+`squash message check failed: <engine output>`. The composer formats line 1
+as the trimmed pull request title and parenthesised PR number, while the commit
+body retains any breaking-change and migration footers (`BREAKING CHANGE:`,
+`BREAKING-CHANGE:`, or `Migration:`) followed by the `Signed-off-by` trailer of
+`LANDING_IDENTITY`. A footer is kept only when its line starts in column zero
+with one of those prefixes and a non-blank value (`FOOTER_RE`); continuation
+lines below it are dropped, so write each migration step as its own footer
+line. More than 20 footer lines (`MAX_FOOTER_LINES`) or a body above 65,537
+lines make the composer raise an error instead of truncating the message. The
+[DCO Sign-off job](../../.github/workflows/rule-enforcement.yml)
+in CI runs the same check on every pull request except release pull requests.
+
 Prefer `merge` in the automatic loop: future local holds cannot stop auto-merge
 already stored on GitHub. When imposing a hold on an armed PR, also disable its
 server auto-merge explicitly. GitHub remains responsible for branch protection
@@ -136,13 +155,68 @@ python3 scripts/dev/install_merge_train_guard.py \
 ```
 
 After reviewing the JSON plan, repeat the same command with
-`--apply --expect-plan THE_PRINTED_SHA256`. Any changed runtime target or gateway
-source requires a new preview. The helper backs up originals/modes into a fresh
-`migration-*/` directory with `plan.json` and `receipt.json`, copies the committed
-gateway to `releases/GATEWAY_SHA256/`, and leaves `PAUSED` present. It preserves
-existing hold text and unions new protected owners into the existing policy.
-Every generated entry point verifies the gateway's hash before execution. A
-failure preserves the backups and pause; do not start an incomplete migration.
+`--apply --expect-plan THE_PRINTED_SHA256`. Any changed runtime target, gateway,
+composer or library source requires a new preview. The helper backs up originals
+and modes into a fresh `migration-*/` directory with `plan.json` and `receipt.json`,
+copies the committed runtime files to `releases/RELEASE_NAME/`, and leaves `PAUSED` present.
+The preview records `gateway_sha256`, `composer_sha256` and a sorted
+`library_sha256` map from repository-relative library paths to SHA-256 digests.
+`RELEASE_NAME` hashes the canonical JSON of those three fields (sorted keys,
+compact separators), so a library-only change also installs into a new directory
+and leaves the old release intact. Installation rechecks library bytes against
+the preview before changing runtime state.
+It preserves existing hold text and unions new protected owners into the
+existing policy. A failure preserves the backups and pause; do not start an
+incomplete migration.
+
+The release directory contains the gateway (`merge_train_guard.py`), the squash
+message composer (`squash_message.py`), and its imported libraries under
+`scripts/lib/`, all installed read-only (`0o444`). The installer walks the
+committed gateway's Python AST for absolute `scripts.lib` imports, follows their
+library dependencies, and includes package initializers; `scripts/lib/__init__.py`
+ships even when the gateway imports no library. Every source must match its
+committed blob at the preview's `source_commit`.
+
+The preview refuses three import forms that the release could not satisfy, so
+they fail at plan time instead of as an `ImportError` once the train runs:
+
+- a relative import (`from . import helper`, `from .module import name`) in the
+  gateway or any library it reaches;
+- a `scripts.*` import outside `scripts.lib`, such as `scripts.ci` or
+  `scripts.dev`;
+- a dynamic `__import__` or `import_module` call, bare or attribute-qualified,
+  in the gateway or any library it reaches.
+
+The refusals read:
+
+```text
+relative import in scripts/lib/MODULE.py:LINE; use an absolute scripts.lib import
+scripts/lib/MODULE.py imports scripts.ci outside scripts.lib; the release ships only scripts.lib
+dynamic import in scripts/lib/MODULE.py:LINE; the release ships static scripts.lib imports only
+```
+
+The gateway's `importlib.util.spec_from_file_location` path loader remains
+accepted: it loads the separately shipped, hash-checked squash message composer.
+
+Every generated launcher verifies all runtime hashes before executing the
+gateway. A changed or missing library refuses with
+`refused: installed library hash changed: scripts/lib/MODULE.py`. Launchers
+remove the caller's working directory and adapter directory from Python's import
+path, put the release first, and bind the `scripts` package to that release only.
+Every adapter starts Python in `-I` isolated mode, which Python 3.10 supports:
+the shell adapters run `python3 -I`, and the operator adapter's shebang is
+`#!/usr/bin/env -S python3 -I`. The flag has to be there at start-up, because
+Python imports site hooks such as `sitecustomize.py` while it initialises, before
+the first line of the script runs. When someone runs the operator as
+`python3 merge_train_operator.py`, it re-executes itself with `-I` before it
+imports anything else, but site hooks have already run by then; run it directly.
+Isolated mode also ignores `PYTHONPATH`, other `PYTHON*` variables and user site
+packages. Adapters therefore work outside a checkout and ignore a planted
+`scripts` package, standard-library module or `sitecustomize.py` in the caller's
+directory, the state directory or `PYTHONPATH`. The gateway's repository
+copy continues to import from the repository root; composer loading still uses
+the file beside the installed gateway.
+
 The helper never kills or launches a process. It installs this mapping:
 
 | Legacy entry | Replacement |

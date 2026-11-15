@@ -1,0 +1,1 @@
+| [ADR-3403](3403-ffmpeg-series-forge-api-fallback.md) | `scripts/ci/ffmpeg-shared-series.sh` falls back to `gh release download` through the forge API when direct github.com release download encounters HTTP failures; retains identical sha256, checksum, and cosign verification | Accepted | build, ci, docker, ffmpeg, supply-chain |

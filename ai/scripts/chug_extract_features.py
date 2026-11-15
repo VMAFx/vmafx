@@ -61,7 +61,6 @@ def _load_runtime_helpers() -> tuple[Any, ...]:
         aggregate_clip_stats,
         extract_features,
     )
-
     from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
     from aiutils.file_utils import write_text_atomic
     from aiutils.run_manifest import build_run_provenance
@@ -105,6 +104,8 @@ DEFAULT_CLIPS_DIR = DEFAULT_CHUG_DIR / "clips"
 DEFAULT_CACHE_DIR = DEFAULT_CHUG_DIR / "feature-cache"
 DEFAULT_FEATURE_SET = "canonical"
 DEFAULT_SPLIT_SEED = "chug-hdr-v1"
+# Bound >= max(60s, 10x measured): probe 0.04s, 10-bit decode 1.23s (1080p, 10 s clip).
+FFMPEG_TIMEOUT_S = 60
 SPLIT_NAMES = ("train", "val", "test")
 HDR_METADATA_FIELDS: tuple[str, ...] = (
     "codec_name",
@@ -251,6 +252,7 @@ def _ffprobe_hdr_payload(
     ffprobe_bin: str,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> dict[str, Any] | None:
+    """Return the ffprobe stream payload, or None when the probe fails or times out."""
     cmd = [
         ffprobe_bin,
         "-v",
@@ -267,8 +269,8 @@ def _ffprobe_hdr_payload(
         str(clip_path),
     ]
     try:
-        proc = runner(cmd, check=False, capture_output=True, text=True)
-    except (FileNotFoundError, OSError):
+        proc = runner(cmd, check=False, capture_output=True, text=True, timeout=FFMPEG_TIMEOUT_S)
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
         return None
     if int(getattr(proc, "returncode", 1)) != 0:
         return None
@@ -510,6 +512,7 @@ def _decode_to_yuv10(
     ffmpeg_bin: str,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> None:
+    """Decode a clip to raw 10-bit 4:2:0 at the given size; a timeout propagates."""
     out.parent.mkdir(parents=True, exist_ok=True)
     scale_filter = f"scale={width}:{height}:flags=bicubic,format=yuv420p10le"
     cmd = [
@@ -527,7 +530,7 @@ def _decode_to_yuv10(
         "rawvideo",
         str(out),
     ]
-    runner(cmd, check=True)
+    runner(cmd, check=True, timeout=FFMPEG_TIMEOUT_S)
 
 
 def _empty_visual_signals() -> dict[str, float | None]:

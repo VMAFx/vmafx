@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+SCRIPT_TIMEOUT_S = 60
+
 LINKS = Path(__file__).resolve().parents[3] / "scripts" / "ci" / "check-macos-bundle-links.sh"
 pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
 
@@ -59,6 +61,7 @@ class Bundle:
         return path
 
     def check(self) -> subprocess.CompletedProcess:
+        """Run the macos bundle links check script and return the completed process."""
         env = {**os.environ, "PATH": f"{self.fake}:{os.environ['PATH']}"}
         return subprocess.run(
             ["bash", str(LINKS), str(self.root)],
@@ -66,6 +69,7 @@ class Bundle:
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
 

@@ -5,9 +5,7 @@
 # Grouped by purpose, numbered from 0001, no gaps (issue #2435).
 # Applied after the shared fix series (ADR-3143).
 # Replay with `python3 scripts/ci/ffmpeg_patch_stack.py --check`.
-0001-codec-qpfile-unified.patch
-0002-pass-autotune-cli-glue.patch
-0003-add-vmafx-profile-cli-glue.patch
-0004-add-vmafx-filter.patch
-0005-add-vmafx-pre-filter.patch
-0006-fftools-loopback-decoder-hwaccel.patch
+0001-pass-autotune-cli-glue.patch
+0002-add-vmafx-profile-cli-glue.patch
+0003-add-vmafx-filter.patch
+0004-add-vmafx-pre-filter.patch

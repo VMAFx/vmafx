@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -29,6 +28,10 @@ from ai.scripts.validate_quant_parity import (  # noqa: E402
     _evaluate_model,
     _load_features,
 )
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+
+# Bound = max(60, 10x the slowest measured run): each call took 0.6 s or less.
+SCRIPT_TIMEOUT_S = 60
 
 
 def test_load_features_json() -> None:
@@ -73,19 +76,29 @@ def test_evaluate_model_defaults_and_relaxed() -> None:
 
 
 def test_cli_default_run_fails_with_exit_1() -> None:
+    """The CLI exits with code 1 when default thresholds fail for a model."""
     cmd = [
         sys.executable,
         str(SCRIPT_PATH),
         "--model",
         "vmaf_tiny_v3",
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
+    proc = run_command(
+        cmd,
+        allowed_executables=(sys.executable,),
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
+    )
     assert proc.returncode == 1, f"Expected exit code 1, got {proc.returncode}"
     assert "FAIL" in proc.stdout
     assert "Retraining under QAT (Epic #1246) is required" in proc.stdout
 
 
 def test_cli_relaxed_run_succeeds_with_exit_0() -> None:
+    """The CLI exits with code 0 when run with relaxed delta thresholds."""
     cmd = [
         sys.executable,
         str(SCRIPT_PATH),
@@ -96,12 +109,21 @@ def test_cli_relaxed_run_succeeds_with_exit_0() -> None:
         "--max-single-delta",
         "1.5",
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
+    proc = run_command(
+        cmd,
+        allowed_executables=(sys.executable,),
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
+    )
     assert proc.returncode == 0, f"Expected exit code 0, got {proc.returncode}\n{proc.stderr}"
     assert "Overall Parity Gate: PASS" in proc.stdout
 
 
 def test_cli_manifest_output(tmp_path: Path) -> None:
+    """The CLI outputs a valid JSON parity report containing run provenance."""
     out_json = tmp_path / "parity_report.json"
     cmd = [
         sys.executable,
@@ -115,7 +137,15 @@ def test_cli_manifest_output(tmp_path: Path) -> None:
         "--max-single-delta",
         "1.5",
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
+    proc = run_command(
+        cmd,
+        allowed_executables=(sys.executable,),
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
+    )
     assert proc.returncode == 0
     assert out_json.is_file()
     data = json.loads(out_json.read_text())
@@ -127,6 +157,7 @@ def test_cli_manifest_output(tmp_path: Path) -> None:
 
 
 def test_cli_all_flag() -> None:
+    """The CLI with the all flag validates quantization parity for all default models."""
     cmd = [
         sys.executable,
         str(SCRIPT_PATH),
@@ -136,7 +167,15 @@ def test_cli_all_flag() -> None:
         "--max-single-delta",
         "3.0",
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
+    proc = run_command(
+        cmd,
+        allowed_executables=(sys.executable,),
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
+    )
     assert proc.returncode == 0, f"Expected exit code 0, got {proc.returncode}\n{proc.stderr}"
     assert "vmaf_tiny_v3" in proc.stdout
     assert "vmaf_tiny_v4" in proc.stdout
@@ -144,6 +183,7 @@ def test_cli_all_flag() -> None:
 
 
 def test_cli_fp32_int8_override() -> None:
+    """The CLI runs quantization parity validation with custom model file overrides."""
     fp32 = REPO_ROOT / "model" / "tiny" / "vmaf_tiny_v4.onnx"
     int8 = REPO_ROOT / "model" / "tiny" / "vmaf_tiny_v4.int8.onnx"
     cmd = [
@@ -160,6 +200,14 @@ def test_cli_fp32_int8_override() -> None:
         "--max-single-delta",
         "1.5",
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
+    proc = run_command(
+        cmd,
+        allowed_executables=(sys.executable,),
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
+    )
     assert proc.returncode == 0, f"Expected exit code 0, got {proc.returncode}\n{proc.stderr}"
     assert "Model: custom_v4_test" in proc.stdout

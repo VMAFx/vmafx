@@ -38,7 +38,9 @@ It never silently falls back to unverified execution.
 3. **Exact miss, near-dup lookup**: The primary cache lookup by `src_sha256`
    always runs first. If an exact match is missing and `--near-dup-reuse` is
    enabled, the cache evaluates candidates sharing the same encode and score
-   parameters (`params_key`).
+   parameters (`params_key`). The key includes the frame size, source size,
+   pixel format and frame rate, so a cached encode at another resolution or
+   frame rate is never a near-duplicate candidate.
 4. **Refusal ladder**: Candidates are evaluated sequentially against a strict
    decision ladder. If any stage fails, the candidate is refused with a specific
    reason and execution proceeds with a standard encode.
@@ -65,7 +67,7 @@ intro, or logo sequence are strictly refused at the 50% and 85% segments.
 | Flag | Subcommands | Description |
 |---|---|---|
 | `--near-dup-reuse` | `corpus`, `recommend` | Enable perceptual fingerprint secondary cache lookup on exact cache miss. Default: off. |
-| `--near-dup-verify` | `corpus`, `recommend` | Run a 1-second VMAF spot check against the reference; refuse the near-duplicate when the two scores differ by more than 1.5. Default: off. |
+| `--near-dup-verify` | `corpus`, `recommend` | Score one second of both sources at the entry's sample window against the cached encode and refuse the near-duplicate when the two scores differ by more than 1.5. The check reads the cached trial's source file at the path recorded in its row and requires its stored `src_sha256` to still match, so a source that has moved, been edited or been deleted is refused and reuse fails closed (a reorganised corpus sees fewer cache hits). The cached encode is decoded out of its container before scoring, in a temporary directory that closes with the check; the cached source normalizes there too through the same reference-decode path the sweep uses for the query leg — a container decodes there, and a raw source whose native geometry differs from the rung target scales there. Two seconds are scored per check instead of one, and a sample-mode entry verifies at its own offset rather than the file's first second. Default: off. |
 
 ## Python API
 

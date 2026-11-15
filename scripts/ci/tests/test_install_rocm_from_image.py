@@ -10,13 +10,19 @@ import json
 import os
 import stat
 import subprocess
+import sys
 import tarfile
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import run as run_command
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SCRIPT = REPO_ROOT / "scripts" / "ci" / "install-rocm-from-image.sh"
 SCRIPT_PATH = Path(os.environ.get("VMAFX_INSTALL_ROCM_SCRIPT", str(DEFAULT_SCRIPT)))
+SCRIPT_TIMEOUT_S = 60
 
 ROCM_DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 EMPTY_DIGEST = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -24,6 +30,7 @@ EMPTY_DIGEST = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 EXPECTED_RETRY_CALL_COUNT = 2
 NEGATIVE_ATTEMPT_COUNT = 3
 EXPECTED_BOUNDARY_CALL_COUNT = 1
+CURL_PARTIAL_EXIT = 92
 
 CURL_STUB = """#!/usr/bin/env python3
 import json
@@ -32,14 +39,29 @@ import sys
 from pathlib import Path
 
 state_dir = Path(os.environ["FAKE_CURL_STATE_DIR"])
+args = sys.argv[1:]
+output = None
+for index, arg in enumerate(args):
+    if arg in ("-o", "--output") and index + 1 < len(args):
+        output = args[index + 1]
+    elif arg.startswith("--output="):
+        output = arg.partition("=")[2]
+
+def write_body(data):
+    if output is None or output == "-":
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
+    else:
+        Path(output).write_bytes(data)
+
 url = None
-for arg in sys.argv[1:]:
+for arg in args:
     if arg.startswith("http://") or arg.startswith("https://"):
         url = arg
         break
 
 if not url:
-    for arg in sys.argv[1:]:
+    for arg in args:
         if "token" in arg or "/manifests/" in arg or "/blobs/" in arg:
             url = arg
             break
@@ -48,12 +70,12 @@ if not url:
     sys.exit(1)
 
 if "token" in url or "auth" in url:
-    sys.stdout.write(json.dumps({"token": "t"}))
+    write_body(json.dumps({"token": "t"}).encode())
     sys.exit(0)
 
 if "/manifests/" in url:
     manifest_file = state_dir / "manifest.json"
-    sys.stdout.write(manifest_file.read_text(encoding="utf-8"))
+    write_body(manifest_file.read_bytes())
     sys.exit(0)
 
 if "/blobs/" in url:
@@ -78,19 +100,15 @@ if "/blobs/" in url:
 
     if mode == "fail_once":
         if count == 1:
-            sys.stdout.buffer.write(data[: len(data) // 2])
-            sys.stdout.buffer.flush()
+            write_body(data[: len(data) // 2])
             sys.exit(92)
-        sys.stdout.buffer.write(data)
-        sys.stdout.buffer.flush()
+        write_body(data)
         sys.exit(0)
     elif mode == "always_fail":
-        sys.stdout.buffer.write(data[: len(data) // 2])
-        sys.stdout.buffer.flush()
+        write_body(data[: len(data) // 2])
         sys.exit(92)
     elif mode == "succeed":
-        sys.stdout.buffer.write(data)
-        sys.stdout.buffer.flush()
+        write_body(data)
         sys.exit(0)
     else:
         sys.exit(1)
@@ -197,6 +215,7 @@ def _run_installer(
     dest_dir: Path,
     env: dict[str, str],
 ) -> subprocess.CompletedProcess[str]:
+    """Execute the ROCm image installer script with the given arguments and environment."""
     cmd = [
         "bash",
         str(SCRIPT_PATH),
@@ -211,7 +230,54 @@ def _run_installer(
         capture_output=True,
         text=True,
         check=False,
+        timeout=SCRIPT_TIMEOUT_S,
     )
+
+
+def test_curl_stub_output_modes(tmp_path: Path) -> None:
+    """Send bodies to each curl output spelling, or stdout when none is set."""
+    bin_dir, state_dir, _, env = _setup_test_env(tmp_path)
+    manifest = b'{"layers": []}'
+    (state_dir / "manifest.json").write_bytes(manifest)
+    url = "https://registry.example.invalid/v2/rocm/manifests/test"
+    curl = str(bin_dir / "curl")
+    for index, option in enumerate(("-o", "--output", "--output=")):
+        output = tmp_path / f"manifest-{index}.json"
+        arguments = [f"{option}{output}"] if option.endswith("=") else [option, str(output)]
+        proc = run_command(
+            [curl, *arguments, url],
+            allowed_executables=(curl,),
+            env=env,
+            capture_output=True,
+            timeout_seconds=60,
+        )
+        assert proc.returncode == 0
+        assert proc.stdout == b""
+        assert output.read_bytes() == manifest
+
+    proc = run_command(
+        [curl, url],
+        allowed_executables=(curl,),
+        env=env,
+        capture_output=True,
+        timeout_seconds=60,
+    )
+    assert proc.returncode == 0
+    assert proc.stdout == manifest
+
+    (state_dir / "mode.txt").write_text("always_fail", encoding="utf-8")
+    blob = (state_dir / "rocm.tar.gz").read_bytes()
+    output = tmp_path / "partial.tar.gz"
+    proc = run_command(
+        [curl, "--output", str(output), f"https://registry.example.invalid/blobs/{ROCM_DIGEST}"],
+        allowed_executables=(curl,),
+        env=env,
+        capture_output=True,
+        timeout_seconds=60,
+    )
+    assert proc.returncode == CURL_PARTIAL_EXIT
+    assert proc.stdout == b""
+    assert output.read_bytes() == blob[: len(blob) // 2]
 
 
 def test_positive_midstream_retry(tmp_path: Path) -> None:

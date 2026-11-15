@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import dataclasses
 import enum
+import math
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -221,9 +222,9 @@ def _decide_verdict(
     threshold: float,
 ) -> ValidationReport:
     """Map a residuals list to a :class:`ValidationReport`."""
-    if not residuals:
-        # Empty selection — pessimistic verdict so the caller
-        # falls back to full encode-and-score on every shot.
+    if not residuals or any(not math.isfinite(r.residual) for r in residuals):
+        # Empty or unmeasured selection — pessimistic verdict so the
+        # caller falls back to full encode-and-score on every shot.
         return ValidationReport(
             verdict=Verdict.FALL_BACK,
             residuals=residuals,

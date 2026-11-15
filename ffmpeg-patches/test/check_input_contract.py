@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 WRONG_EXAMPLE_MARKER = "<!-- vmafx-ffmpeg-input-order: intentionally-wrong -->"
-PATCH_NAME = "0004-add-vmafx-filter.patch"
+PATCH_NAME = "0003-add-vmafx-filter.patch"
 FILTER_NAME = r"(?:libvmaf(?:_[a-z0-9_]+)?|vmafx(?:_tune)?)"
 FILTER_RE = re.compile(rf"(?<![a-zA-Z0-9_]){FILTER_NAME}(?=[\s=,;'\"\[]|$)")
 PADDED_FILTER_RE = re.compile(rf"\[\s*([^\]]+?)\s*\]\s*\[\s*([^\]]+?)\s*\]\s*({FILTER_NAME})\b")

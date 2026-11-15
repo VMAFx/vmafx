@@ -45,12 +45,19 @@
 #   per-SHA via a single git cat-file --batch run).  Numbers claimed by
 #   in-flight branches are skipped.  This covers the parallel-agent scenario
 #   where each agent pushes to its own branch before merging.
+#   In claim mode, open pull request heads on the target repository are also
+#   scanned via gh pr list. By default the target repository is determined from
+#   the origin remote URL; contributors with a personal fork as origin can set
+#   VMAF_ADR_PR_REPO (e.g. VMAF_ADR_PR_REPO=VMAFx/vmafx) to query the upstream
+#   project instead of their personal fork.
 #
 # Offline / network-fail mode:
 #   If git ls-remote or gh pr list fail (offline, no network, timeout), the
 #   script logs a WARNING to stderr and falls back to local-only behavior.
 #   The number allocated is still collision-free among local + master state,
 #   but may collide with another in-flight agent on a different machine.
+#   A pull request opened after the scan is not seen; the claim file and stub
+#   are the coordination.
 #
 # Performance:
 #   Target: < 5 s on a repo with 600+ ADRs and 30+ open branches.
@@ -243,6 +250,62 @@ _ls_remote_heads() {
   git ls-remote --heads origin 2>/dev/null
 }
 
+# Upper bound on open pull request heads fetched from GitHub CLI.
+readonly _OPEN_PR_HEAD_LIMIT=1000
+
+# Query GitHub CLI for head commit SHAs of open pull requests in the given repository.
+_collect_open_pr_heads() {
+  local repo="$1"
+  gh pr list -R "${repo}" --state open --limit "${_OPEN_PR_HEAD_LIMIT}" --json headRefOid --jq '.[].headRefOid'
+}
+
+# Fetch branch tip commit SHAs; warn if origin cannot be reached.
+_fetch_branch_tips() {
+  local -a branch_shas=("$@")
+  [ "${#branch_shas[@]}" -gt 0 ] || return 0
+
+  local -a depth_args=()
+  mapfile -t depth_args < <(adr_depth_args --depth=1)
+  if ! git fetch --no-tags "${depth_args[@]}" --quiet origin \
+    "${branch_shas[@]}" 2>/dev/null; then
+    printf 'WARNING: could not fetch remote branch tips; their ADR numbers are skipped.\n' >&2
+  fi
+}
+
+# Fetch open pull request head SHAs; on batch failure retry each individually
+# and warn on any SHA that cannot be fetched.
+_fetch_open_pr_heads() {
+  local -a pr_shas=("$@")
+  [ "${#pr_shas[@]}" -gt 0 ] || return 0
+
+  local -a depth_args=()
+  mapfile -t depth_args < <(adr_depth_args --depth=1)
+
+  if ! git fetch --no-tags "${depth_args[@]}" --quiet origin \
+    "${pr_shas[@]}" 2>/dev/null; then
+    local sha
+    for sha in "${pr_shas[@]}"; do
+      if ! git fetch --no-tags "${depth_args[@]}" --quiet origin \
+        "${sha}" 2>/dev/null; then
+        printf 'WARNING: could not fetch open pull request head %s; its ADR numbers are skipped.\n' \
+          "${sha}" >&2
+      fi
+    done
+  fi
+}
+
+# Scan docs/adr/ tree entries across given commit SHAs and print taken numbers.
+_scan_sha_adrs() {
+  local sha listing
+  for sha in "$@"; do
+    if listing="$(git ls-tree -r --name-only "${sha}" -- docs/adr/ 2>/dev/null)"; then
+      printf '%s\n' "${listing}" |
+        grep -oE 'docs/adr/[0-9]{4}-' |
+        grep -oE '[0-9]{4}' || _no_match_ok $?
+    fi
+  done
+}
+
 # _collect_remote_branch_numbers: internal worker; called from a process
 # substitution.  Receives the raw ls-remote output on stdin (piped from the
 # main shell) so it never calls git ls-remote itself.
@@ -255,37 +318,51 @@ _collect_remote_branch_numbers() {
 
   # Step 2: extract unique SHAs (multiple refs can share the same commit).
   # Skip master — it's already covered by _collect_local_taken via origin/master.
-  local -a shas=()
+  # Separate origin branch tips from open PR heads so PR fetch failures cannot
+  # drop branch ADR numbers.
+  local -a branch_shas=() pr_shas=()
+  local -A seen_branch=() seen_pr=()
+  local sha ref
+
   while IFS=' 	' read -r sha ref; do
     [ -n "${sha}" ] || continue
     [[ "${ref}" == "refs/heads/master" ]] && continue
-    shas+=("${sha}")
-  done < <(printf '%s\n' "${ls_remote_out}" | LC_ALL=C sort -u -k1,1)
+    if [[ "${ref}" != "refs/pull/open/head" ]]; then
+      if [ -z "${seen_branch[${sha}]:-}" ]; then
+        seen_branch["${sha}"]=1
+        branch_shas+=("${sha}")
+      fi
+    fi
+  done <<<"${ls_remote_out}"
 
-  if [ "${#shas[@]}" -eq 0 ]; then
+  while IFS=' 	' read -r sha ref; do
+    [ -n "${sha}" ] || continue
+    if [[ "${ref}" == "refs/pull/open/head" ]]; then
+      if [ -z "${seen_branch[${sha}]:-}" ] && [ -z "${seen_pr[${sha}]:-}" ]; then
+        seen_pr["${sha}"]=1
+        pr_shas+=("${sha}")
+      fi
+    fi
+  done <<<"${ls_remote_out}"
+
+  if [ "${#branch_shas[@]}" -eq 0 ] && [ "${#pr_shas[@]}" -eq 0 ]; then
     return 0
   fi
 
-  # Step 3: fetch all branch tips so git ls-tree can resolve the SHAs.
-  # --no-tags avoids tag-name expansion; --depth=1 is the minimal fetch.
-  # Soft failure: if the network drops between the ls-remote above and here,
-  # ls-tree will simply find nothing.
-  mapfile -t _adr_depth < <(adr_depth_args --depth=1)
-  if ! git fetch --no-tags "${_adr_depth[@]}" --quiet origin \
-    "${shas[@]}" 2>/dev/null; then
-    printf 'WARNING: could not fetch remote branch tips; their ADR numbers are skipped.\n' >&2
-  fi
+  # Step 3: fetch branch tips and open PR heads independently.
+  _fetch_branch_tips "${branch_shas[@]+"${branch_shas[@]}"}"
+  _fetch_open_pr_heads "${pr_shas[@]+"${pr_shas[@]}"}"
 
   # Step 4: for each SHA, run git ls-tree to enumerate docs/adr/ entries.
-  # git ls-tree is fast (tree object lookup, no working-tree I/O).
-  for sha in "${shas[@]}"; do
-    local listing
-    if listing="$(git ls-tree -r --name-only "${sha}" -- docs/adr/ 2>/dev/null)"; then
-      printf '%s\n' "${listing}" |
-        grep -oE 'docs/adr/[0-9]{4}-' |
-        grep -oE '[0-9]{4}' || _no_match_ok $?
-    fi
-  done
+  local -a all_shas=()
+  if [ "${#branch_shas[@]}" -gt 0 ]; then
+    all_shas+=("${branch_shas[@]}")
+  fi
+  if [ "${#pr_shas[@]}" -gt 0 ]; then
+    all_shas+=("${pr_shas[@]}")
+  fi
+
+  _scan_sha_adrs "${all_shas[@]}"
 }
 
 # Collect all taken 4-digit ADR numbers from:
@@ -503,16 +580,57 @@ if ! ls_remote_out="$(_ls_remote_heads 2>/dev/null)"; then
   REMOTE_OFFLINE=1
 fi
 
+if [ "${REMOTE_OFFLINE}" -eq 0 ]; then
+  if ! command -v gh >/dev/null 2>&1; then
+    printf 'WARNING: open pull request heads not scanned (gh not found on PATH); fork pull request ADR numbers may collide.\n' >&2
+  else
+    _pr_repo="${VMAF_ADR_PR_REPO:-}"
+    if [ -z "${_pr_repo}" ]; then
+      _pr_repo="$(git remote get-url origin 2>/dev/null)" || _pr_repo=""
+    fi
+    if [ -z "${_pr_repo}" ]; then
+      printf 'WARNING: open pull request heads not scanned (no origin remote); fork pull request ADR numbers may collide.\n' >&2
+    else
+      _gh_out=""
+      if _gh_out="$(_collect_open_pr_heads "${_pr_repo}" 2>&1)"; then
+        _gh_sha_count=0
+        if [ -n "${_gh_out}" ]; then
+          while IFS= read -r _sha; do
+            if [[ "${_sha}" =~ ^[0-9a-fA-F]{40,64}$ ]]; then
+              _gh_sha_count=$((_gh_sha_count + 1))
+              if [ -n "${ls_remote_out}" ]; then
+                ls_remote_out+=$'\n'"${_sha}"$'\trefs/pull/open/head'
+              else
+                ls_remote_out="${_sha}"$'\trefs/pull/open/head'
+              fi
+            fi
+          done <<<"${_gh_out}"
+        fi
+        if [ "${_gh_sha_count}" -eq "${_OPEN_PR_HEAD_LIMIT}" ]; then
+          printf 'WARNING: open pull request heads scan incomplete (%s-head limit reached); fork pull request ADR numbers may collide.\n' \
+            "${_OPEN_PR_HEAD_LIMIT}" >&2
+        fi
+      else
+        _gh_rc=$?
+        _gh_err="$(printf '%s' "${_gh_out}" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+        _gh_reason="${_gh_err:-gh exited with status ${_gh_rc}}"
+        printf 'WARNING: open pull request heads not scanned (%s); fork pull request ADR numbers may collide.\n' \
+          "${_gh_reason}" >&2
+      fi
+    fi
+  fi
+fi
+
 remote_numbers=()
 if [ "${REMOTE_OFFLINE}" -eq 0 ]; then
   while IFS= read -r n; do
     [ -n "${n}" ] && remote_numbers+=("${n}")
-  done < <(_collect_remote_branch_numbers "${ls_remote_out}" 2>/dev/null ||
+  done < <(_collect_remote_branch_numbers "${ls_remote_out}" ||
     printf 'WARNING: remote branch scan failed.\n' >&2)
 fi
 
 if [ "${REMOTE_OFFLINE}" -eq 1 ]; then
-  printf 'WARNING: could not reach origin — remote branch scan skipped.\n' >&2
+  printf 'WARNING: could not reach origin — remote branch scan skipped; open pull request heads not scanned.\n' >&2
   printf '         Collision risk if other agents are working on separate branches.\n' >&2
   printf '         Proceeding with local + master + .git/adr-claims/ only.\n' >&2
 fi

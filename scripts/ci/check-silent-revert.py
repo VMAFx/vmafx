@@ -72,6 +72,7 @@ from typing import Any
 # Resolved once: an absolute path keeps the invocation independent of whatever
 # PATH the caller (a CI step, a Makefile recipe, a hook) happens to export.
 GIT = shutil.which("git") or "/usr/bin/git"
+GIT_TIMEOUT_S = 60
 
 # Paths whose content is rendered from elsewhere in the tree.  A "rewind" there
 # is a regeneration artefact, not a lost commit; the generator's input is what
@@ -129,18 +130,22 @@ class Repo:
 
     def run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         """Invoke git with a fixed argv (never a shell) and return the result."""
-        proc = subprocess.run(  # noqa: S603 -- fixed argv list, no shell, no user string splicing
-            [GIT, "-C", str(self.root), *args],
-            capture_output=True,
-            text=True,
-            # git content is bytes: a file auto-detected as text may hold any
-            # byte (a flat-grey raw frame is all 0x80). Strict UTF-8 decoding
-            # crashed the gate; surrogateescape keeps every byte and compares
-            # removed and added lines exactly.
-            encoding="utf-8",
-            errors="surrogateescape",
-            check=False,
-        )
+        try:
+            proc = subprocess.run(  # noqa: S603 -- fixed argv list, no shell, no user string splicing
+                [GIT, "-C", str(self.root), *args],
+                capture_output=True,
+                text=True,
+                # git content is bytes: a file auto-detected as text may hold any
+                # byte (a flat-grey raw frame is all 0x80). Strict UTF-8 decoding
+                # crashed the gate; surrogateescape keeps every byte and compares
+                # removed and added lines exactly.
+                encoding="utf-8",
+                errors="surrogateescape",
+                check=False,
+                timeout=GIT_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise GitError(f"git {' '.join(args)} timed out after {GIT_TIMEOUT_S}s") from exc
         if check and proc.returncode != 0:
             raise GitError(
                 f"git {' '.join(args)} failed ({proc.returncode}): {proc.stderr.strip()}"
@@ -255,13 +260,17 @@ def history_blobs(repo: Repo, ref: str, path: str, window: int) -> dict[str, str
     if not revs:
         return {}
     query = "\n".join(f"{rev}:{path}" for rev in revs) + "\n"
-    proc = subprocess.run(  # noqa: S603 -- fixed argv list, no shell; refs come from git itself
-        [GIT, "-C", str(repo.root), "cat-file", "--batch-check=%(objectname)"],
-        input=query,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(  # noqa: S603 -- fixed argv list, no shell; refs come from git itself
+            [GIT, "-C", str(repo.root), "cat-file", "--batch-check=%(objectname)"],
+            input=query,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=GIT_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise GitError(f"git cat-file timed out after {GIT_TIMEOUT_S}s") from exc
     seen: dict[str, str] = {}
     for rev, line in zip(revs, proc.stdout.split("\n"), strict=False):
         blob = line.strip()

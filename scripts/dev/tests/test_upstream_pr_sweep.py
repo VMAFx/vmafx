@@ -32,12 +32,14 @@ class HookEnvironmentIsolationTest(unittest.TestCase):
     """A hook exports GIT_DIR; neither the fixture nor the tool may act on that repository."""
 
     def test_sentinel_repository_is_untouched_by_fixture_and_tool_git(self) -> None:
+        """Verify fixture and tool Git runs leave a sentinel repository in GIT_DIR untouched."""
         with tempfile.TemporaryDirectory() as scratch:
             root = Path(scratch).resolve()
             sentinel = root / "sentinel.git"
             git_bin = shutil.which("git")
             assert git_bin is not None
             clean = fixture_environment(root)
+            clean.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
             run_command(
                 [git_bin, "init", "--quiet", str(root / "sentinel")],
                 allowed_executables=(git_bin,),

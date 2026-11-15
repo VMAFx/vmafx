@@ -29,18 +29,20 @@ extern "C" char *__real_vmaf_feature_name_from_options(const char *, const VmafO
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) — ADR-0723; Research-2047: GNU link wrapping ABI.
 extern "C" void *__real_realloc(void *, size_t);
 
-/* Visible on purpose — the library builds `-fvisibility=hidden` and a `--wrap`
- * interposer that a DSO has to reach cannot be hidden. See the same note in
- * test_fex_pool_growth.c, where icpx rejected the hidden form outright. */
-#define VMAF_WRAP_EXPORT __attribute__((visibility("default")))
+/* Every `__wrap_*` below carries `__attribute__((visibility("default")))` on purpose:
+ * the library builds `-fvisibility=hidden` and a `--wrap` interposer that a DSO has to
+ * reach cannot be hidden. See the same note in test_fex_pool_growth.c, where icpx
+ * rejected the hidden form outright. The attribute is written out directly on each wrapper
+ * instead of via a macro because the Semgrep C/C++ parser fails on a macro before the
+ * return type (issue 3252). */
 
 // cppcheck-suppress unusedFunction
-// The signature does not fit on one line once VMAF_WRAP_EXPORT is in it, so
+// The signature does not fit on one line once the visibility attribute is in it, so
 // clang-format breaks after the return type and the identifier lands two lines
 // below the marker. A begin/end band is used instead of a next-line marker
 // because it survives any future reflow of this signature.
 // NOLINTBEGIN(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0723; Research-2047: GNU linker calls this entry point.
-extern "C" VMAF_WRAP_EXPORT char *
+extern "C" __attribute__((visibility("default"))) char *
 __wrap_vmaf_feature_name_from_options(const char *name, const VmafOption *opts, const void *obj)
 {
     if (fail_name_call && ++name_calls == fail_name_call)
@@ -51,7 +53,7 @@ __wrap_vmaf_feature_name_from_options(const char *name, const VmafOption *opts, 
 
 // cppcheck-suppress unusedFunction
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp,misc-use-internal-linkage) — ADR-0723; Research-2047: GNU linker calls this entry point.
-extern "C" VMAF_WRAP_EXPORT void *__wrap_realloc(void *ptr, size_t bytes)
+extern "C" __attribute__((visibility("default"))) void *__wrap_realloc(void *ptr, size_t bytes)
 {
     if (fail_grow_pointer && ptr == fail_grow_pointer) {
         fail_grow_pointer = nullptr;

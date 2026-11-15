@@ -14,6 +14,9 @@ from pathlib import Path
 
 import pytest
 
+# Bound = max(60, 10x the slowest measured run): each call took 0.58 s or less.
+SCRIPT_TIMEOUT_S = 60
+
 
 def _module_name(source: Path) -> str:
     return "vmaf_mcp" if source.stem == "__init__" else f"vmaf_mcp.{source.stem}"
@@ -99,6 +102,7 @@ get_http_scoring_runtime()
         capture_output=True,
         text=True,
         env=env,
+        timeout=SCRIPT_TIMEOUT_S,
     )
     assert completed.returncode == 0, completed.stderr
 
@@ -140,5 +144,6 @@ assert get_http_scoring_runtime() is runtime
         capture_output=True,
         text=True,
         env=env,
+        timeout=SCRIPT_TIMEOUT_S,
     )
     assert completed.returncode == 0, completed.stderr

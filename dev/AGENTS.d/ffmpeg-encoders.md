@@ -23,12 +23,13 @@ would fail to compile:
    `/usr/local/lib/pkgconfig/` as side effect. Do NOT replace with
    distro package.
 
-   **libaom intentionally NOT enabled.** Fork's
-   `ffmpeg-patches/0001` references libaom `aom_roi_map_t` fields
-   that don't exist in any released libaom version. SVT-AV1 covers
-   production AV1 lane. Re-enabling libaom requires first fixing
-   patch 0001's ROI helper to either target real libaom version or
-   gate ROI bridge behind version probe.
+   **libaom intentionally NOT enabled.** Shared fix series
+   patch 0043 needs libaom >= 3.13.0 for its `aom_roi_map_t` fields
+   (v3.12.1 and older lack them). The dev container base ships 3.13.1, but
+   libaom remains omitted until a separate build change adds libaom-dev and
+   `--enable-libaom` and proves it in a patch-stack build. The node builder base
+   (Debian 13) ships 3.12.1 (lacks the fields). SVT-AV1 covers the production
+   AV1 lane.
 2. **`libvvenc` (Fraunhofer VVC reference) must be built from
    source, installed under `/usr/local`.** Package not in Ubuntu
    apt. Pin to release tag (`v1.14.0` as of ADR-0568; bumped from
@@ -69,6 +70,6 @@ would fail to compile:
    --branch <tag>` emits a warning for both annotated tags in the image's Git
    version and violates zero-diagnostic build contract.
 6. **FFmpeg vmafx filter cleanup destroys context and releases device.**
-   `ffmpeg-patches/src/vf_vmafx.c` (patch `0004`) cleans up in `release_all()`:
+   `ffmpeg-patches/src/vf_vmafx.c` (patch `0003`) cleans up in `release_all()`:
    it destroys the VMAFx context via `vmafx_context_destroy(s->context, NULL)`
    and releases `s->vdev` via `vmafx_device_unref(s->vdev)`.

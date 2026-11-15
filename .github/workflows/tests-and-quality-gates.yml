@@ -1004,8 +1004,6 @@ jobs:
         if: steps.impact.outputs.golden_harness == 'true'
         timeout-minutes: 35
         run: |
-          sudo rm -f /etc/apt/sources.list.d/*microsoft* \
-                     /etc/apt/sources.list.d/*azure*
           bash scripts/ci/apt-install-cached.sh install .github/apt/coverage.txt
           # ADR-0692 (design notes)
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \
@@ -1047,7 +1045,7 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/ort-cache"
           tarball="${RUNNER_TEMP}/ort-cache/onnxruntime-linux-x64-gpu-${ORT_VERSION}.tgz"
           if [ ! -f "$tarball" ]; then
-            curl -fsSL --retry 3 --retry-delay 5 --max-time 600 -o "$tarball" \
+            curl -fsSL --retry 3 --retry-all-errors --retry-delay 5 --max-time 600 -o "$tarball" \
               "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-gpu-${ORT_VERSION}.tgz"
           fi
           if ! printf '%s  %s\n' "${ORT_SHA256}" "$tarball" | sha256sum --check --strict; then

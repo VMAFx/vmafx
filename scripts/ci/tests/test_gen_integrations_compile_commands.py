@@ -116,12 +116,13 @@ class GenerateEntries(unittest.TestCase):
 
 class RefusesToMeasureNothing(unittest.TestCase):
     def test_missing_ffmpeg_line_fails(self) -> None:
+        """A build missing the vf_vmafx_pre.c compile line exits 1 and names the file."""
         with tempfile.TemporaryDirectory() as tmp:
             build = Path(tmp)
             _populate(build, gst=GST_SOURCES, ffmpeg=["libavfilter/vf_vmafx.c"])
             status, err = _run(build)
         self.assertEqual(status, 1)
-        self.assertIn("fftools/ffmpeg_dec_hwaccel.c", err)
+        self.assertIn("libavfilter/vf_vmafx_pre.c", err)
 
     def test_missing_plugin_source_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

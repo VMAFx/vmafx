@@ -16,19 +16,50 @@ and each unit is checked against its own language's compiler.
 
 from __future__ import annotations
 
+import functools
 import importlib.util
 import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
+
+# Direct script execution also needs the canonical repository subprocess helper.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from test_cuda_parity_gate_skip import meson_timeout
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
+
+# One deadline for this Meson test process, shared by all matrix and compiler calls.
+TEST_TIMEOUT_S = 80
+
+
+@functools.cache
+def _test_deadline() -> float:
+    """Start the shared deadline when its first caller needs a command budget."""
+    return time.monotonic() + TEST_TIMEOUT_S
+
+
+def remaining_timeout(bound: float) -> float:
+    """Limit a command to the shared test deadline, refusing work after it expires."""
+    remaining = _test_deadline() - time.monotonic()
+    if remaining <= 0:
+        raise AssertionError(f"strict-FP test deadline exhausted after {TEST_TIMEOUT_S}s")
+    return min(bound, remaining)
+
 
 SOURCE_MESON = Path(__file__).resolve().parents[1] / "src" / "meson.build"
+# Bounds = max(60, 10x the slowest measured run): the meson call took 1.33 s, icx 0.09 s.
+MESON_TIMEOUT_S = 60
+CC_TIMEOUT_S = 60
 TEST_MESON = Path(__file__).resolve().with_name("meson.build")
 TOOLS_MESON = Path(__file__).resolve().parents[1] / "tools" / "meson.build"
 METAL_MESON = Path(__file__).resolve().parents[1] / "src" / "metal" / "meson.build"
@@ -332,13 +363,18 @@ def _marked_block(begin: str, end: str, what: str) -> str:
 
 def _policy_block() -> str:
     block = _marked_block(POLICY_BEGIN, POLICY_END, "strict-FP compiler")
-    return block.replace(
+    block = block.replace(
         "_strict_fp_compiler_id = cc.get_id()",
         "_strict_fp_compiler_id = strict_fp_fixture_compiler_id",
-    ).replace(
-        "host_machine.system()",
-        "strict_fp_fixture_system",
     )
+    # The CUDA host FP spelling follows the BUILD machine: nvcc's host frontend
+    # is the build machine's own, which in a native build is also the host
+    # machine. The two machine expressions are substituted INDEPENDENTLY so the
+    # matrix can state a cross build (build=linux, host=windows): a rebase that
+    # reverts the shipped condition to host_machine.system() then fails that
+    # row instead of passing under either spelling.
+    block = block.replace("build_machine.system()", "strict_fp_fixture_build_system")
+    return block.replace("host_machine.system()", "strict_fp_fixture_host_system")
 
 
 def _meson_list(values: list[str]) -> str:
@@ -405,11 +441,14 @@ def _meson_setup(case: unittest.TestCase, name: str, fixture: str) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "meson.build").write_text(fixture, encoding="utf-8")
-        result = subprocess.run(  # noqa: S603 -- Meson is resolved locally.
+        result = run_command(
             [*MESON_COMMAND, "setup", str(root / "build"), str(root)],
+            allowed_executables=[MESON_COMMAND[0]],
             capture_output=True,
             check=False,
+            text=True,
             encoding="utf-8",
+            timeout_seconds=remaining_timeout(MESON_TIMEOUT_S),
         )
         case.assertEqual(
             result.returncode,
@@ -433,6 +472,29 @@ def _target_block(source: str, target: str) -> str:
     raise AssertionError(f"{target}: unbalanced static_library() call")
 
 
+class StrictFpDeadlineTest(unittest.TestCase):
+    """Keep all calls inside the Meson timeout and reject an exhausted budget."""
+
+    def test_deadline_is_under_meson_timeout(self) -> None:
+        """Leave time for process-group cleanup before Meson kills the test."""
+        self.assertLess(TEST_TIMEOUT_S, meson_timeout("test_strict_fp_compiler_args"))
+
+    def test_remaining_budget_caps_the_call_bound(self) -> None:
+        """Use the smaller of the call bound and time remaining in the test."""
+        deadline = _test_deadline()
+        with mock.patch.object(time, "monotonic", return_value=deadline - 3):
+            self.assertEqual(remaining_timeout(60), 3)
+            self.assertEqual(remaining_timeout(1), 1)
+
+    def test_exhausted_deadline_names_the_bound(self) -> None:
+        """Refuse subprocess calls at or beyond the shared deadline."""
+        deadline = _test_deadline()
+        for offset in (0, 1):
+            with mock.patch.object(time, "monotonic", return_value=deadline + offset):
+                with self.assertRaisesRegex(AssertionError, f"deadline.*{TEST_TIMEOUT_S}s"):
+                    remaining_timeout(60)
+
+
 class StrictFpCompilerArgsTest(unittest.TestCase):
     @unittest.skipUnless(MESON_COMMAND, "Meson is not installed")
     def test_compiler_matrix_executes_shipped_policy(self) -> None:
@@ -447,7 +509,8 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
                 fixture = textwrap.dedent(f"""\
                     project('strict-fp-args-{compiler_id}')
                     strict_fp_fixture_compiler_id = '{compiler_id}'
-                    strict_fp_fixture_system = '{system}'
+                    strict_fp_fixture_build_system = '{system}'
+                    strict_fp_fixture_host_system = '{system}'
 
                     {policy}
 
@@ -459,6 +522,53 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
                            'wrong CUDA host FP arguments for {compiler_id}')
                     """)
                 _meson_setup(self, compiler_id, fixture)
+        # Cross rows: nvcc's host frontend is the BUILD machine's own, so a
+        # linux build machine must keep the Unix spelling even though the
+        # TARGET (host machine) is windows. A rebase that reverts the shipped
+        # condition to host_machine.system() fails exactly here, which is what
+        # lets docs/rebase-notes.d/build-machine-cuda-host-flags.md claim the
+        # test guards the fix.
+        cross_cuda_host_args = ["-Xcompiler=-ffp-contract=off"]
+        for compiler_id, (_, model_args, strict_args, _) in COMPILER_MATRIX.items():
+            with self.subTest(compiler_id=compiler_id, cross="build=linux host=windows"):
+                fixture = textwrap.dedent(f"""\
+                    project('strict-fp-args-{compiler_id}-cross')
+                    strict_fp_fixture_compiler_id = '{compiler_id}'
+                    strict_fp_fixture_build_system = 'linux'
+                    strict_fp_fixture_host_system = 'windows'
+
+                    {policy}
+
+                    assert(vmaf_fp_model_args == {_meson_list(model_args)},
+                           'wrong general FP model arguments for {compiler_id}')
+                    assert(vmaf_strict_fp_args == {_meson_list(strict_args)},
+                           'wrong strict FP arguments for {compiler_id}')
+                    assert(vmaf_cuda_host_strict_fp_args == {_meson_list(cross_cuda_host_args)},
+                           'CUDA host FP spelling must follow the build machine for {compiler_id}')
+                    """)
+                _meson_setup(self, f"{compiler_id}-cross", fixture)
+
+    def test_cuda_host_policies_key_on_the_build_machine(self) -> None:
+        """Both nvcc host-side gates follow the BUILD machine, not the host.
+
+        nvcc shells its host pass out to the build machine's own frontend (the
+        -ccbin selection is keyed the same way since #3293). The strict-FP
+        spelling and the win32 pthread shim include path used to key on
+        host_machine.system(): on a linux->windows cross the first turned
+        `/fp:precise` into a gcc input-file error and the second put compat/win32
+        on the include path where its own `#ifndef _WIN32` guard fires. The
+        matrix above catches an FP revert dynamically; this check pins both
+        spellings statically so either revert is caught on its own.
+        """
+        raw = SOURCE_MESON.read_text(encoding="utf-8")
+        policy = _meson_code(raw[raw.index(POLICY_BEGIN) : raw.index(POLICY_END)])
+        self.assertIn("build_machine.system()", policy)
+        self.assertNotIn("host_machine.system()", policy)
+        start = raw.index("cuda_extra_includes = []")
+        gate = _meson_code(raw[start : raw.index("endif", start)])
+        self.assertIn("'compat' / 'win32'", gate)
+        self.assertIn("build_machine.system()", gate)
+        self.assertNotIn("host_machine.system()", gate)
 
     def test_fixture_project_with_a_language_is_refused(self) -> None:
         self.assertIsNone(_fixture_project_failure("project('strict-fp-args-gcc')\n"))
@@ -797,12 +907,15 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             src.write_text("float f(float a, float b, float c) { return a * b + c; }\n")
             obj = Path(tmp) / "probe.o"
 
-            def compile_with(flags: list[str]) -> subprocess.CompletedProcess[str]:
-                return subprocess.run(  # noqa: S603 -- icx is resolved on PATH above.
+            def compile_with(flags: list[str]) -> TextCommandResult:
+                """Compile the C probe source with icx using the given compiler flags."""
+                return run_command(
                     [icx, "-O2", "-Werror", *flags, "-c", str(src), "-o", str(obj)],
+                    allowed_executables=[icx],
                     capture_output=True,
                     text=True,
                     check=False,
+                    timeout_seconds=remaining_timeout(CC_TIMEOUT_S),
                 )
 
             ok = compile_with(strict)
@@ -812,11 +925,13 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             self.assertNotEqual(bad.returncode, 0)
             self.assertIn("-Woverriding-option", bad.stderr)
             # No contraction: a * b + c is two instructions with the strict spelling.
-            disasm = subprocess.run(  # noqa: S603 -- icx is resolved on PATH above.
+            disasm = run_command(
                 [icx, "-O2", "-mavx2", "-mfma", *strict, "-S", "-o", "-", str(src)],
+                allowed_executables=[icx],
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout_seconds=remaining_timeout(CC_TIMEOUT_S),
             )
             self.assertEqual(disasm.returncode, 0, disasm.stderr)
             self.assertNotIn("vfmadd", disasm.stdout)

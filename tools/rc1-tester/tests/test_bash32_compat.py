@@ -10,14 +10,34 @@ tools (the stub run is skipped, not failed, without Docker).
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import shutil
 import stat
-import subprocess
+import sys
+import uuid
 from pathlib import Path
 
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from vmaf_rc1_tester.safe_process import (
+    CommandOutputLimitExceeded,
+    CommandResult,
+    CommandTimedOut,
+    run_bounded,
+)
+
+SCRIPT_TIMEOUT_S = 60
+SUBPROCESS_TIMEOUT_S = 60
+MAX_OUTPUT_BYTES = 4 * 1024 * 1024
+DOCKER_CALLS_ON_TIMEOUT = 2
+
+BASH = shutil.which("bash")
+DOCKER = shutil.which("docker")
+SHELLCHECK = shutil.which("shellcheck")
 
 _ROOT = Path(__file__).resolve().parents[3]
 BUILD_SH = _ROOT / "scripts" / "ci" / "build-macos-tester-bundle.sh"
@@ -78,12 +98,14 @@ def test_the_scan_catches_what_broke_the_runner() -> None:
 
 
 def test_run_sh_is_posix_sh() -> None:
+    """Assert run.sh starts with a POSIX sh shebang and passes shellcheck."""
     assert RUN_SH.read_text(encoding="utf-8").startswith("#!/bin/sh\n")
-    shellcheck = shutil.which("shellcheck")
-    if shellcheck is None:
+    if SHELLCHECK is None:
         pytest.skip("shellcheck not installed")
-    result = subprocess.run(
-        [shellcheck, "--shell=sh", str(RUN_SH)], capture_output=True, text=True, check=False
+    result = run_bounded(
+        [SHELLCHECK, "--shell=sh", str(RUN_SH)],
+        timeout_seconds=SCRIPT_TIMEOUT_S,
+        max_output_bytes=MAX_OUTPUT_BYTES,
     )
     assert result.returncode == 0, result.stdout
 
@@ -92,11 +114,17 @@ def test_run_sh_is_posix_sh() -> None:
 
 
 def bash32_available() -> bool:
-    if shutil.which("docker") is None:
+    """Return True if docker is installed and the bash:3.2 image is available."""
+    if DOCKER is None:
         return False
-    probe = subprocess.run(
-        ["docker", "image", "inspect", "bash:3.2"], capture_output=True, check=False
-    )
+    try:
+        probe = run_bounded(
+            [DOCKER, "image", "inspect", "bash:3.2"],
+            timeout_seconds=SUBPROCESS_TIMEOUT_S,
+            max_output_bytes=MAX_OUTPUT_BYTES,
+        )
+    except CommandTimedOut:
+        return False
     return probe.returncode == 0
 
 
@@ -112,6 +140,25 @@ def bash32_skip_reason(available: bool, required: bool) -> str | None:
     if required:
         pytest.fail("VMAFX_REQUIRE_BASH32=1 but docker image bash:3.2 is not available")
     return "docker image bash:3.2 not available (docker pull bash:3.2)"
+
+
+def test_bash32_available_returns_false_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Assert bash32_available returns False when the docker probe raises TimeoutExpired."""
+
+    def fake_run(argv: list[str], **_kwargs: object) -> CommandResult:
+        raise CommandTimedOut(SUBPROCESS_TIMEOUT_S, "", "")
+
+    monkeypatch.setattr(sys.modules[__name__], "run_bounded", fake_run)
+    monkeypatch.setattr(sys.modules[__name__], "DOCKER", "/usr/bin/docker")
+    assert bash32_available() is False
+
+
+def test_bash32_available_returns_false_when_docker_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Assert bash32_available returns False when docker executable is not found."""
+    monkeypatch.setattr(sys.modules[__name__], "DOCKER", None)
+    assert bash32_available() is False
 
 
 def test_required_bash32_never_skips() -> None:
@@ -147,18 +194,130 @@ def test_shasum_stub_reads_its_input_like_shasum(tmp_path: Path) -> None:
         f"set -euo pipefail; (sleep 0.3; echo \"0123  /w/x\") | {tmp_path / 'shasum'} -a 256 -c -; "
         "echo reached"
     )
-    result = subprocess.run(
-        ["bash", "-c", late_writer], capture_output=True, text=True, check=False, timeout=60
+    result = run_bounded(
+        [BASH, "-c", late_writer],
+        timeout_seconds=SUBPROCESS_TIMEOUT_S,
+        max_output_bytes=MAX_OUTPUT_BYTES,
     )
     assert result.returncode == 0 and "reached" in result.stdout, (result.returncode, result.stderr)
 
 
-def docker_bash32(mount: Path, command: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["docker", "run", "--rm", "--network", "none", "--user", f"{os.getuid()}:{os.getgid()}", "-v", f"{mount}:/w", "-v",
-         f"{_ROOT}:/repo:ro", "-w", "/repo", "bash:3.2", "bash", "-c", command],
-        capture_output=True, text=True, check=False,
-    )  # fmt: skip
+def _remove_container(name: str) -> None:
+    """Remove a docker container by name, ignoring timeout if removal hangs."""
+    with contextlib.suppress(CommandTimedOut):
+        run_bounded(
+            [DOCKER, "rm", "--force", name],
+            timeout_seconds=SUBPROCESS_TIMEOUT_S,
+            max_output_bytes=MAX_OUTPUT_BYTES,
+        )
+
+
+def docker_bash32(mount: Path, command: str) -> CommandResult:
+    """Execute a command in a bash:3.2 docker container and return the process result."""
+    name = f"vmafx-bash32-{uuid.uuid4().hex[:12]}"
+    try:
+        return run_bounded(
+            [
+                DOCKER,
+                "run",
+                "--rm",
+                "--name",
+                name,
+                "--network",
+                "none",
+                "--user",
+                f"{os.getuid()}:{os.getgid()}",
+                "-v",
+                f"{mount}:/w",
+                "-v",
+                f"{_ROOT}:/repo:ro",
+                "-w",
+                "/repo",
+                "bash:3.2",
+                "bash",
+                "-c",
+                command,
+            ],
+            timeout_seconds=SUBPROCESS_TIMEOUT_S,
+            max_output_bytes=MAX_OUTPUT_BYTES,
+        )
+    except CommandTimedOut:
+        _remove_container(name)
+        pytest.fail(
+            f"docker_bash32 timed out after {SUBPROCESS_TIMEOUT_S}s running {command!r} "
+            f"(container {name})"
+        )
+    except CommandOutputLimitExceeded:
+        _remove_container(name)
+        raise
+
+
+def test_docker_bash32_raises_pytest_fail_on_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Assert docker_bash32 fails naming the bound in seconds and the command string."""
+    cmd = "echo slow_command_test"
+
+    def fake_run(argv: list[str], **_kwargs: object) -> CommandResult:
+        raise CommandTimedOut(SUBPROCESS_TIMEOUT_S, "", "")
+
+    monkeypatch.setattr(sys.modules[__name__], "run_bounded", fake_run)
+    pattern = rf"{SUBPROCESS_TIMEOUT_S}.*{re.escape(cmd)}"
+    with pytest.raises(pytest.fail.Exception, match=pattern):
+        docker_bash32(tmp_path, cmd)
+
+
+def test_docker_bash32_removes_the_container_on_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Assert docker_bash32 removes the container on timeout and names it in the failure."""
+    calls: list[list[str]] = []
+
+    def fake_run(argv: list[str], **_kwargs: object) -> CommandResult:
+        calls.append(list(argv))
+        if len(argv) > 1 and argv[1] == "run":
+            raise CommandTimedOut(SUBPROCESS_TIMEOUT_S, "", "")
+        return CommandResult(0, "", "")
+
+    monkeypatch.setattr(sys.modules[__name__], "run_bounded", fake_run)
+    monkeypatch.setattr(sys.modules[__name__], "DOCKER", "/usr/bin/docker")
+
+    with pytest.raises(pytest.fail.Exception) as exc_info:
+        docker_bash32(tmp_path, "echo test")
+
+    assert len(calls) == DOCKER_CALLS_ON_TIMEOUT
+    first_argv, second_argv = calls[0], calls[1]
+    name_idx = first_argv.index("--name")
+    name = first_argv[name_idx + 1]
+    assert name.startswith("vmafx-bash32-")
+    assert second_argv == ["/usr/bin/docker", "rm", "--force", name]
+    assert name in str(exc_info.value)
+
+
+def test_docker_bash32_removes_the_container_on_output_limit_exceeded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Assert docker_bash32 removes the container on output limit exceeded and re-raises."""
+    calls: list[list[str]] = []
+
+    def fake_run(argv: list[str], **_kwargs: object) -> CommandResult:
+        calls.append(list(argv))
+        if len(argv) > 1 and argv[1] == "run":
+            raise CommandOutputLimitExceeded(MAX_OUTPUT_BYTES, "", "")
+        return CommandResult(0, "", "")
+
+    monkeypatch.setattr(sys.modules[__name__], "run_bounded", fake_run)
+    monkeypatch.setattr(sys.modules[__name__], "DOCKER", "/usr/bin/docker")
+
+    with pytest.raises(CommandOutputLimitExceeded):
+        docker_bash32(tmp_path, "echo test")
+
+    assert len(calls) == DOCKER_CALLS_ON_TIMEOUT
+    first_argv, second_argv = calls[0], calls[1]
+    name_idx = first_argv.index("--name")
+    name = first_argv[name_idx + 1]
+    assert name.startswith("vmafx-bash32-")
+    assert second_argv == ["/usr/bin/docker", "rm", "--force", name]
 
 
 @needs_bash32

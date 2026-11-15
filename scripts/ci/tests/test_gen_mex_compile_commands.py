@@ -10,7 +10,6 @@ import io
 import json
 import shlex
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -18,6 +17,11 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import run as run_command
+
+CC_TIMEOUT_S = 60
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE.parent / "gen-mex-compile-commands.py"
 
@@ -144,17 +148,35 @@ class GenerateEntries(unittest.TestCase):
 @unittest.skipUnless(shutil.which("cc"), "no C compiler")
 class StubsAreSufficient(unittest.TestCase):
     def test_every_mex_source_parses_against_the_stubs(self) -> None:
+        """Every MEX source file must parse cleanly with syntax-only compilation."""
         for src in gen.mex_sources(REPO):
             entry = gen.entry_for(src, REPO, REPO)
             argv = [*shlex.split(entry["command"])[:-2], "-fsyntax-only"]
-            done = subprocess.run(argv, capture_output=True, text=True, check=False)  # noqa: S603
+            self.assertEqual(argv[0], "cc", argv)  # entry_for builds every command on cc
+            done = run_command(
+                argv,
+                allowed_executables=("cc",),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout_seconds=CC_TIMEOUT_S,
+            )
             self.assertEqual(done.returncode, 0, f"{src}: {done.stderr[-400:]}")
 
     def test_standalone_sources_parse(self) -> None:
+        """Standalone source files must parse cleanly with syntax-only compilation."""
         for src in gen.STANDALONE_SOURCES:
             entry = gen.entry_for(src, REPO, REPO)
             argv = [*shlex.split(entry["command"])[:-2], "-fsyntax-only"]
-            done = subprocess.run(argv, capture_output=True, text=True, check=False)  # noqa: S603
+            self.assertEqual(argv[0], "cc", argv)  # entry_for builds every command on cc
+            done = run_command(
+                argv,
+                allowed_executables=("cc",),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout_seconds=CC_TIMEOUT_S,
+            )
             self.assertEqual(done.returncode, 0, f"{src}: {done.stderr[-400:]}")
 
 

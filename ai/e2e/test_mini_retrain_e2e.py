@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, TypeVar, cast
 
 import pytest
+
 from scripts.lib import vmaftest
 from scripts.lib.safe_subprocess import signal_process_group
 

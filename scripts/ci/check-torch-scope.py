@@ -46,6 +46,7 @@ TORCH_FAMILY = frozenset(
 
 #: Package roots that train models and may depend on torch.
 TRAINING_ROOTS = ("ai", "tools/ensemble-training-kit")
+GIT_TIMEOUT_S = 60
 
 _NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 _REQUIREMENT_FILE = re.compile(r"(^|/)requirements[^/]*\.(txt|in)$")
@@ -128,14 +129,20 @@ def violations(files: list[str], read: Callable[[str], str]) -> list[str]:
 
 
 def tracked_files(root: Path) -> list[str]:
+    """Return the list of Git-tracked file paths relative to the repository root."""
     git = shutil.which("git") or "/usr/bin/git"
     result = subprocess.run(  # noqa: S603 -- fixed argv, resolved git
-        [git, "-C", str(root), "ls-files"], capture_output=True, text=True, check=True
+        [git, "-C", str(root), "ls-files"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=GIT_TIMEOUT_S,
     )
     return result.stdout.splitlines()
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the torch-scope check across tracked repository files and return an exit code."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
     args = parser.parse_args(argv)
@@ -149,6 +156,7 @@ def main(argv: list[str] | None = None) -> int:
         UnicodeDecodeError,
         tomllib.TOMLDecodeError,
         subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
     ) as error:
         print(f"check-torch-scope: cannot read the tree: {error}", file=sys.stderr)
         return 2

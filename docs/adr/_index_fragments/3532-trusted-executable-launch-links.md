@@ -1,0 +1,1 @@
+| [ADR-3532](3532-trusted-executable-launch-links.md) | Preserve trusted Linux/macOS executable launch links; reject nonsticky group/other-writable directories and macOS ACL allow entries; bound traversal and ACL inspection; untrusted chains, other POSIX platforms and Windows launch the resolved file. | Accepted | python, security, testing |

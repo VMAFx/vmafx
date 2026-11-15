@@ -20,6 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github" / "workflows" / "lint-and-format.yml"
+SCRIPT_TIMEOUT_S = 60
 OBJC_ONLY = "core/src/metal/objc_handle.h"
 CXX_ONLY = ("core/src/feature/ff_math.h", "core/src/feature/ciede_ff_math.h")
 KEPT = (
@@ -44,6 +45,7 @@ def run_filter(paths: list[str]) -> list[str]:
         text=True,
         capture_output=True,
         check=True,
+        timeout=SCRIPT_TIMEOUT_S,
     )
     return done.stdout.split()
 

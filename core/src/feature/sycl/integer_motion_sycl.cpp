@@ -394,6 +394,11 @@ static int motion_alloc_chroma(VmafSyclState *state, MotionStateSycl *s, unsigne
     return 0;
 }
 
+/* Initialize the SYCL motion feature extractor: creates the feature-name dictionary,
+ * allocates the luma and chroma device buffers, and registers the extractor with the
+ * combined graph together with its feature-extractor flags. With motion_force_zero it
+ * stops after the dictionary (no buffers, no registration). Returns 0 or a negative
+ * error code. */
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -442,8 +447,9 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->sycl_state = state;
 
     // Register with combined command graph
-    err = vmaf_sycl_graph_register(state, enqueue_motion_work, motion_pre_graph, motion_post_graph,
-                                   config_motion_slot, s, "MOTION");
+    err = vmaf_sycl_graph_register_flags(state, enqueue_motion_work, motion_pre_graph,
+                                         motion_post_graph, config_motion_slot, s, "MOTION",
+                                         fex->flags);
     if (err) {
         close_fex_sycl(fex);
         return err;

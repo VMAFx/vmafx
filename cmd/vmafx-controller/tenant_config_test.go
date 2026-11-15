@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"go.uber.org/fx"
-	"go.uber.org/fx/fxtest"
 	googlegrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
@@ -158,10 +157,7 @@ func startTenantController(t *testing.T, path string) *googlegrpc.ClientConn {
 	t.Helper()
 	tenantEnv(t, path)
 	t.Setenv("VMAFX_AUTH_TENANTS_REFRESH", "1s")
-	addr := freeLocalAddr(t)
-	t.Setenv("VMAFX_GRPC_LISTEN", addr)
-	app := fxtest.New(t, productionGraph())
-	app.RequireStart()
+	app, addr := startController(t, "VMAFX_GRPC_LISTEN")
 	t.Cleanup(app.RequireStop)
 	return dialInsecure(t, addr)
 }

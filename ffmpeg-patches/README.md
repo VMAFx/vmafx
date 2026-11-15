@@ -18,17 +18,13 @@ retired legacy filters, see the
 
 ## Patch Stack (`series.txt`)
 
-The series consists of six consecutive patches:
+The series consists of four consecutive patches:
 
-- **`0001-codec-qpfile-unified.patch`**: Adds unified `-qpfile <path>` AVOption
-  to `libx264`, `libsvtav1`, and `libaom-av1`. Uses the shared per-frame parser
-  in `libavcodec/qpfile_parser.{c,h}` to supply macroblock and per-picture
-  quantization deltas.
-- **`0002-pass-autotune-cli-glue.patch`**: Adds `-pass-autotune` CLI option in
+- **`0001-pass-autotune-cli-glue.patch`**: Adds `-pass-autotune` CLI option in
   `fftools/ffmpeg_opt.c` for multi-pass rate-control orchestration.
-- **`0003-add-vmafx-profile-cli-glue.patch`**: Adds `-vmafx-profile <path>`
+- **`0002-add-vmafx-profile-cli-glue.patch`**: Adds `-vmafx-profile <path>`
   CLI option in `fftools/ffmpeg_opt.c` for profile-guided encoder tuning.
-- **`0004-add-vmafx-filter.patch`**: Implements the primary `vmafx` scoring
+- **`0003-add-vmafx-filter.patch`**: Implements the primary `vmafx` scoring
   filter and `vmafx_tune` filter. Built from canonical sources
   `ffmpeg-patches/src/vf_vmafx.c` and `vf_vmafx_options.h`. Provides unified
   runtime backend selection (`backend=auto|cpu|cuda|sycl|hip|metal`), hardware
@@ -38,12 +34,12 @@ The series consists of six consecutive patches:
   not implemented), AVFrame colorimetry mapping to `libvmafx`, windowed
   statistics, score formatting (`score_fmt`), and fail-closed error handling.
   Enabled via `--enable-libvmafx`.
-- **`0005-add-vmafx-pre-filter.patch`**: Implements the `vmafx_pre` learned
+- **`0004-add-vmafx-pre-filter.patch`**: Implements the `vmafx_pre` learned
   filter for ONNX neural pre-processing. Built from canonical source
   `ffmpeg-patches/src/vf_vmafx_pre.c`. Enabled via `--enable-libvmafx`.
-- **`0006-fftools-loopback-decoder-hwaccel.patch`**: Adds GPU loopback decoder
-  hardware acceleration in `fftools/ffmpeg_dec_hwaccel.c` before `-dec` for
-  efficient decode-score pipelines (ADR-2125 Q-048).
+
+The `-qpfile` option (`0043`) and the loopback decoder hwaccel (`0044`) ship in
+the shared fix series (ADR-3143).
 
 ## Test Scripts
 
@@ -90,10 +86,10 @@ per-patch apply. Its receipt is mirrored here:
 > `n9.0.2` checkout (cumulative `git am --3way`), NOT a per-patch
 > `git apply --check`. The latter rejects `0002+` because they
 > reference cumulative-state hunks that don't exist in pristine `n9.0.2`.
-> The 42 patches of the shared fix series `v0.6.0` and the 6
+> The 44 patches of the shared fix series `v0.7.0` and the 4
 > patches here replay cumulatively on upstream commit
 > `946fcce07b6dcd0331c8cc609192aeff5e1924f8`; the resulting tree is
-> `cca685f94570591993ba9b676ed7cba0051572ca`
+> `af5797bedf02145a271e3060092131c42652451a`
 > (`python3 scripts/ci/ffmpeg_patch_stack.py --check`). The refresh evidence and
 > earlier replay history live in
 > [`docs/rebase-notes.md`](../docs/rebase-notes.md).

@@ -1,15 +1,39 @@
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 import os
-import subprocess
+import shlex
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 from vmaf import ExternalProgram, run_process
 from vmaf.config import VmafConfig
 from vmaf.tools.misc import MyTestCase
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
+# Bound = 10x the slowest measured run, rounded up: the slowest call took 28.61 s cold.
+VMAF_TIMEOUT_S = 300
+
+
+def _run_quiet(cmd):
+    """Run a test command line without a shell, discarding its output like `>/dev/null 2>&1`."""
+    argv = shlex.split(cmd)
+    with open(os.devnull, "w", encoding="utf-8") as devnull:
+        return run_command(
+            argv,
+            allowed_executables=[argv[0]],
+            stdout=devnull,
+            stderr_to_stdout=True,
+            check=False,
+            timeout_seconds=VMAF_TIMEOUT_S,
+        ).returncode
 
 
 class RunProcessTest(MyTestCase):
@@ -153,6 +177,7 @@ class CommandLineTest(MyTestCase):
         self.assertEqual(ret, 0)
 
     def test_run_vmaf_both_local_explain_and_ci(self):
+        """Passing both --local-explain and --ci returns exit code 2."""
         exe = VmafConfig.root_path("python", "vmaf", "script", "run_vmaf.py")
         line = (
             "yuv420p 576 324 {root}/python/test/resource/yuv/src01_hrc00_576x324.yuv "
@@ -160,13 +185,8 @@ class CommandLineTest(MyTestCase):
                 root=VmafConfig.root_path()
             )
         )
-        cmd = "{exe} {line} --local-explain --ci >/dev/null 2>&1".format(line=line, exe=exe)
-        # `cmd` is built from VmafConfig.root_path() + hardcoded test-fixture
-        # paths under python/test/resource/yuv/. No attacker-controlled string
-        # flows in. shell=True is needed for `>/dev/null 2>&1` redirection /
-        # CLI argument quoting. See Research-0090, F13–F17.
-        # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true
-        ret = subprocess.call(cmd, shell=True)
+        cmd = "{exe} {line} --local-explain --ci".format(line=line, exe=exe)
+        ret = _run_quiet(cmd)
         self.assertEqual(ret, 2)
 
     def test_run_psnr(self):
@@ -216,6 +236,7 @@ class VmafexecCommandLineTest(MyTestCase):
         super().tearDown()
 
     def test_run_vmafexec(self):
+        """Run vmafexec and assert successful execution with expected PSNR output."""
         exe = ExternalProgram.vmafexec
         cmd = (
             "{exe} --reference {ref} --distorted {dis} --width 576 --height 324 --pixel_format 420 --bitdepth 8 --xml --feature psnr "
@@ -227,12 +248,7 @@ class VmafexecCommandLineTest(MyTestCase):
                 output=self.output_file_path,
             )
         )
-        # `cmd` is built from VmafConfig.root_path() + hardcoded test-fixture
-        # paths under python/test/resource/yuv/. No attacker-controlled string
-        # flows in. shell=True is needed for `>/dev/null 2>&1` redirection /
-        # CLI argument quoting. See Research-0090, F13–F17.
-        # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true
-        ret = subprocess.call(cmd, shell=True)
+        ret = _run_quiet(cmd)
         self.assertEqual(ret, self.RC_SUCCESS)
         with open(self.output_file_path, "rt") as fo:
             fc = fo.read()
@@ -242,6 +258,7 @@ class VmafexecCommandLineTest(MyTestCase):
             )
 
     def test_run_vmafexec_with_frame_skipping(self):
+        """Run vmafexec with equal frame skipping and assert expected PSNR output."""
         exe = ExternalProgram.vmafexec
         cmd = (
             "{exe} --reference {ref} --distorted {dis} --width 576 --height 324 --pixel_format 420 --bitdepth 8 --xml --feature psnr "
@@ -253,12 +270,7 @@ class VmafexecCommandLineTest(MyTestCase):
                 output=self.output_file_path,
             )
         )
-        # `cmd` is built from VmafConfig.root_path() + hardcoded test-fixture
-        # paths under python/test/resource/yuv/. No attacker-controlled string
-        # flows in. shell=True is needed for `>/dev/null 2>&1` redirection /
-        # CLI argument quoting. See Research-0090, F13–F17.
-        # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true
-        ret = subprocess.call(cmd, shell=True)
+        ret = _run_quiet(cmd)
         self.assertEqual(ret, self.RC_SUCCESS)
         with open(self.output_file_path, "rt") as fo:
             fc = fo.read()
@@ -268,6 +280,7 @@ class VmafexecCommandLineTest(MyTestCase):
             )
 
     def test_run_vmafexec_with_frame_skipping_unequal(self):
+        """Run vmafexec with unequal frame skipping and assert expected PSNR output."""
         exe = ExternalProgram.vmafexec
         cmd = (
             "{exe} --reference {ref} --distorted {dis} --width 576 --height 324 --pixel_format 420 --bitdepth 8 --xml --feature psnr "
@@ -279,12 +292,7 @@ class VmafexecCommandLineTest(MyTestCase):
                 output=self.output_file_path,
             )
         )
-        # `cmd` is built from VmafConfig.root_path() + hardcoded test-fixture
-        # paths under python/test/resource/yuv/. No attacker-controlled string
-        # flows in. shell=True is needed for `>/dev/null 2>&1` redirection /
-        # CLI argument quoting. See Research-0090, F13–F17.
-        # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true
-        ret = subprocess.call(cmd, shell=True)
+        ret = _run_quiet(cmd)
         self.assertEqual(ret, self.RC_SUCCESS)
         with open(self.output_file_path, "rt") as fo:
             fc = fo.read()

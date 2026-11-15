@@ -4,9 +4,9 @@
 # Apt packages for the Tidy Changed (clang-tidy) job in lint-and-format.yml.
 # One package per line; comments starting with # are ignored.
 
-# gcc from ubuntu-toolchain-r/test: the ubuntu-24.04 image's newest gcc is 14,
-# and the tree targets C23 / C++26 (ADR-0692). gcc supplies the system headers
-# clang-tidy parses, so the ratchet's warning counts depend on it (ADR-1230).
+# gcc-15 / g++-15 from the Ubuntu 26.04 archive (ADR-3533); the tree targets
+# C23 / C++26 (ADR-0692). gcc supplies the system headers clang-tidy parses,
+# so the ratchet's warning counts depend on it (ADR-1230).
 gcc-15
 g++-15
 ninja-build

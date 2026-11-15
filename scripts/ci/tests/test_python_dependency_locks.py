@@ -19,8 +19,18 @@ from pathlib import Path
 from typing import Any, cast
 from unittest import mock
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import (
+    CommandOutputLimitExceeded,
+    CommandTimedOut,
+    CommandValidationError,
+)
+from scripts.lib.safe_subprocess import run as run_command
+
 ROOT = Path(__file__).resolve().parents[3]
 CHECKER = ROOT / "scripts/ci/check_python_dependency_locks.py"
+SCRIPT_TIMEOUT_S = 60
 
 
 def load_checker() -> Any:
@@ -1150,6 +1160,7 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn(Path(".devcontainer/Dockerfile.praetor"), paths)
 
     def test_out_of_tree_cli_check_passes_from_unrelated_cwd(self) -> None:
+        """The lock checker passes when run from an unrelated working directory."""
         with tempfile.TemporaryDirectory() as temp_dir:
             result = subprocess.run(  # noqa: S603
                 [sys.executable, str(CHECKER), "--root", str(ROOT), "check"],
@@ -1157,6 +1168,7 @@ class RepositoryContractTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=SCRIPT_TIMEOUT_S,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("python dependency locks: OK", result.stdout)
@@ -1262,11 +1274,13 @@ class RepositoryContractTests(unittest.TestCase):
             self._assert_dockerfile_python_contract(mut_venv)
 
     def test_repository_contract_is_current(self) -> None:
+        """The repository satisfies the Python dependency lock contract."""
         result = subprocess.run(  # noqa: S603
             [sys.executable, str(CHECKER), "--root", str(ROOT), "check"],
             text=True,
             capture_output=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -2197,6 +2211,123 @@ class FingerprintTests(unittest.TestCase):
                 self.assertEqual(before, self.checker.entry_digest(root, entry))
                 source.write_text(PYPROJECT.replace("numpy", "scipy"), encoding="utf-8")
                 self.assertNotEqual(before, self.checker.entry_digest(root, entry))
+
+
+class UvExecutionAndCompileArgsTests(unittest.TestCase):
+    """Verify uv execution through safe_subprocess and compile_args validation."""
+
+    def setUp(self) -> None:
+        self.checker = load_checker()
+
+    def test_missing_uv_executable_raises_contract_error(self) -> None:
+        """A missing uv executable raises ContractError on version inspection."""
+        with self.assertRaises(self.checker.ContractError):
+            self.checker.uv_version("nonexistent-uv-binary")
+
+    def test_missing_uv_cli_write_exits_one_without_traceback(self) -> None:
+        """CLI write with missing uv binary exits 1 and prints clean error."""
+        result = run_command(
+            [sys.executable, str(CHECKER), "--root", str(ROOT), "write", "--uv", "nonexistent-uv"],
+            allowed_executables=(sys.executable,),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=30,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR:", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_malformed_compile_args_raises_contract_error(self) -> None:
+        """compile_args that is not a list of str must raise ContractError."""
+        cases = [
+            ("string", "not-a-list"),
+            ("none", None),
+            ("int-item", [123]),
+            ("mixed", ["arg", 456]),
+        ]
+        for name, bad_args in cases:
+            with self.subTest(case=name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    manifest_dir = root / "requirements" / "locks"
+                    manifest_dir.mkdir(parents=True)
+                    manifest_file = manifest_dir / "manifest.json"
+                    entry = {
+                        "output": "pkg/lock.txt",
+                        "inputs": ["pkg/requirements.in"],
+                        "compile_args": bad_args,
+                    }
+                    manifest_file.write_text(
+                        json.dumps({"uv_version": "0.12.18", "locks": [entry]}),
+                        encoding="utf-8",
+                    )
+                    with (
+                        mock.patch.object(self.checker, "uv_version", return_value="0.12.18"),
+                        mock.patch.object(
+                            self.checker,
+                            "load_manifest",
+                            return_value={"uv_version": "0.12.18", "locks": [entry]},
+                        ),
+                    ):
+                        with self.assertRaisesRegex(
+                            self.checker.ContractError, "compile_args must be a list of str"
+                        ):
+                            self.checker.write(root, "uv")
+
+    def test_missing_uv_binary_in_write_raises_contract_error_before_compile(self) -> None:
+        """A missing uv binary given to write() raises ContractError before running commands."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with mock.patch.object(self.checker, "run_command") as mock_run:
+                with self.assertRaisesRegex(self.checker.ContractError, "cannot execute uv"):
+                    self.checker.write(root, "nonexistent-uv-binary")
+                mock_run.assert_not_called()
+
+    def test_run_uv_timeout_raises_contract_error(self) -> None:
+        """CommandTimedOut from run_command causes _run_uv to report timeout."""
+
+        def stub(*_args: Any, **_kwargs: Any) -> Any:
+            raise CommandTimedOut(("uv",), 120.0, "", "")
+
+        with mock.patch.object(self.checker, "run_command", stub):
+            with self.assertRaises(self.checker.ContractError) as ctx:
+                self.checker._run_uv("uv", ["--version"])
+        self.assertIn("uv timed out after", str(ctx.exception))
+
+    def test_run_uv_os_error_raises_contract_error(self) -> None:
+        """Plain OSError causes _run_uv to report cannot execute without timeout."""
+
+        def stub(*_args: Any, **_kwargs: Any) -> Any:
+            raise FileNotFoundError(2, "No such file or directory", "uv")
+
+        with mock.patch.object(self.checker, "run_command", stub):
+            with self.assertRaises(self.checker.ContractError) as ctx:
+                self.checker._run_uv("uv", ["--version"])
+        self.assertIn("cannot execute uv", str(ctx.exception))
+        self.assertNotIn("timed out", str(ctx.exception))
+
+    def test_run_uv_output_limit_exceeded_raises_contract_error(self) -> None:
+        """CommandOutputLimitExceeded causes _run_uv to report limit exceeded."""
+
+        def stub(*_args: Any, **_kwargs: Any) -> Any:
+            raise CommandOutputLimitExceeded(("uv",), 16 * 1_048_576, "", "")
+
+        with mock.patch.object(self.checker, "run_command", stub):
+            with self.assertRaises(self.checker.ContractError) as ctx:
+                self.checker._run_uv("uv", ["--version"])
+        self.assertIn("uv output exceeded", str(ctx.exception))
+
+    def test_run_uv_validation_error_raises_contract_error(self) -> None:
+        """CommandValidationError causes _run_uv to report cannot execute uv."""
+
+        def stub(*_args: Any, **_kwargs: Any) -> Any:
+            raise CommandValidationError("command not allowed: uv")
+
+        with mock.patch.object(self.checker, "run_command", stub):
+            with self.assertRaises(self.checker.ContractError) as ctx:
+                self.checker._run_uv("uv", ["--version"])
+        self.assertIn("cannot execute uv", str(ctx.exception))
 
 
 if __name__ == "__main__":

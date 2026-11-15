@@ -23,8 +23,13 @@ static unsigned create_calls, fail_create_at;
 static unsigned init_calls, fail_init_at, destroy_calls;
 static pthread_mutex_t observer_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t observer_changed = PTHREAD_COND_INITIALIZER;
-static _Thread_local bool producer;
-static _Thread_local bool destroying;
+#ifdef _MSC_VER
+static __declspec(thread) bool producer;
+static __declspec(thread) bool destroying;
+#else
+static __thread bool producer;
+static __thread bool destroying;
+#endif
 static bool producer_waiting, delay_wake, producer_delayed, release_producer;
 static bool workers_exited, destroy_phase_ready;
 static pthread_cond_t *worker_stop_cond;

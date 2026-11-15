@@ -73,3 +73,61 @@ The audit pass that produced [ADR-0547](../adr/0547-ai-script-env-vars.md)
 flagged hard-coded, maintainer-specific local corpus defaults across more than
 15 scripts. ADR-1277 standardises those defaults under `.corpus/`; the env-var
 layer remains the portable one-line override for containers and other hosts.
+
+## Subprocess timeouts
+
+The scripts listed in the table below run every external command they start
+(ffprobe, ffmpeg, the `vmaf` binary, a Python helper) with a time limit, so a
+hung process fails one step instead of stalling a whole corpus run. Where a
+step was measured, its limit is at least ten times the slowest measured run,
+and never under 60 seconds; the table names the measurement or says it was
+not measured.
+
+| Script | Step | Constant | Value | Measured |
+| --- | --- | --- | --- | --- |
+| [feature_extractor.py][fe] | Feature extract | `VMAF_TIMEOUT_S` | 3600s | 229.38s (1080p, 300 frames, full features) |
+| [bvi_dvc_to_full_features.py][bvi] | Header probe | `FFMPEG_TIMEOUT_S` | 60s | 0.15s (1080p) |
+| [bvi_dvc_to_full_features.py][bvi] | 10-bit pipe | `TRANSCODE_TIMEOUT_S` | 300s | 10.72s (x2) |
+| [bvi_dvc_to_full_features.py][bvi] | libvmaf full | `VMAF_TIMEOUT_S` | 2400s | 96.52s (x2) |
+| [chug_extract_features.py][chug] | HDR probe / 10-bit decode | `FFMPEG_TIMEOUT_S` | 60s | 0.04s / 1.23s (1080p, 10 s) |
+| [collect_gpu_calibration_data.py][gpu] | Calibration | `VMAF_TIMEOUT_S` | 1800s | 168.31s CPU ciede (1080p, 300 frames); GPU legs not measured |
+| [export_transnet_v2.py][trans] | tf2onnx export | `SCRIPT_TIMEOUT_S` | 1800s | Not measured (tf2onnx not installed on the measuring host) |
+| [extract_k150k_features.py][k150k] | Probe / decode | `FFMPEG_TIMEOUT_S` | 60s | 0.16s / 1.25s |
+| [extract_k150k_features.py][k150k] | libvmaf full | `VMAF_TIMEOUT_S` | 1800s | 123.81s (2 thr) |
+| [extract_konvid_frames.py][kframes] | Frame extract | `FFMPEG_TIMEOUT_S` | 60s | 0.20s (1080p) |
+| [extract_ugc_features.py][ugc] | Probe / decode | `FFMPEG_TIMEOUT_S` | 60s | 0.20s / 0.29s |
+| [extract_ugc_features.py][ugc] | libvmaf features | `VMAF_TIMEOUT_S` | 60s | 4.20s (360p) |
+| [fetch_youtube_ugc_subset.py][fetch] | Socket operation | `API_TIMEOUT_S` | 60s | Not measured; bounds each socket operation, not a whole download |
+| [konvid_to_full_features.py][kfull] | Probe / transcode | `FFMPEG_TIMEOUT_S` | 60s | 0.15s (1080p) / 0.44s (540p) |
+| [konvid_to_full_features.py][kfull] | libvmaf full | `VMAF_TIMEOUT_S` | 600s | 27.56s (x1.6) |
+| [konvid_to_vmaf_pairs.py][kpairs] | Probe / transcode | `FFMPEG_TIMEOUT_S` | 60s | 0.15s (1080p) / 0.44s (540p) |
+| [konvid_to_vmaf_pairs.py][kpairs] | libvmaf student | `VMAF_TIMEOUT_S` | 60s | 0.39s (540p) |
+| [validate_saliency_student.py][val_sal] | Registry check | `SCRIPT_TIMEOUT_S` | 60s | 0.53s |
+
+[fe]: ../../ai/data/feature_extractor.py
+[bvi]: ../../ai/scripts/bvi_dvc_to_full_features.py
+[chug]: ../../ai/scripts/chug_extract_features.py
+[gpu]: ../../ai/scripts/collect_gpu_calibration_data.py
+[trans]: ../../ai/scripts/export_transnet_v2.py
+[k150k]: ../../ai/scripts/extract_k150k_features.py
+[kframes]: ../../ai/scripts/extract_konvid_frames.py
+[ugc]: ../../ai/scripts/extract_ugc_features.py
+[fetch]: ../../ai/scripts/fetch_youtube_ugc_subset.py
+[kfull]: ../../ai/scripts/konvid_to_full_features.py
+[kpairs]: ../../ai/scripts/konvid_to_vmaf_pairs.py
+[val_sal]: ../../ai/scripts/validate_saliency_student.py
+
+When a command fails or runs past its limit, what happens next depends on the
+script:
+
+- The KonViD scripts log the clip as `FAILED`, the BVI-DVC script logs it as
+  `FAIL`, and both continue with the rest of the batch.
+- [`chug_extract_features.py`][chug] records a timed-out HDR probe as unknown
+  metadata, logs a timed-out decode as `FAIL` for that pair, and continues with
+  the batch.
+- [`collect_gpu_calibration_data.py`][gpu] logs the timed-out cell on stderr
+  with rc 124 and skips it. The CLI exits 0 when any cell produced rows, or 1
+  when none did.
+- [`export_transnet_v2.py`][trans] exits with the timeout message.
+- A missing executable, one outside the script's allowlist, or an argument
+  holding a NUL byte fails validation (`ValueError`) before any process starts.

@@ -22,12 +22,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml  # type: ignore[import-untyped]  # hook environments omit PyYAML stubs
+
 ROOT = Path(__file__).resolve().parents[3]
 CHECK = ROOT / "scripts" / "ci" / "check_render_on_master.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "lint-and-format.yml"
 RENDER_PR_WORKFLOW = ROOT / ".github" / "workflows" / "docs-render-pr.yml"
 RENDER_PR_SCRIPT = ROOT / "scripts" / "ci" / "open-render-pr.sh"
 GIT = shutil.which("git") or "/usr/bin/git"
+GIT_TIMEOUT_S = 60
+SCRIPT_TIMEOUT_S = 60
 NOW = 1_800_000_000
 HOUR = 3600
 IDENT = {
@@ -59,12 +63,22 @@ class RenderOnMasterTest(unittest.TestCase):
         self.commit({"CHANGELOG.md": "- fixed a\n"}, age_h=99)
 
     def git(self, *args: str, date: str | None = None) -> str:
+        """Run fixture Git commands for scripts/ci/check_render_on_master.py.
+
+        Constructs fixture commits with fixed commit timestamps.
+        """
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         env.update(IDENT)
         if date is not None:
             env.update(GIT_AUTHOR_DATE=date, GIT_COMMITTER_DATE=date)
         done = subprocess.run(  # noqa: S603 -- fixed argv, no shell, fixture repo
-            [GIT, *args], cwd=self.repo, env=env, capture_output=True, text=True, check=True
+            [GIT, *args],
+            cwd=self.repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=GIT_TIMEOUT_S,
         )
         return done.stdout
 
@@ -77,6 +91,10 @@ class RenderOnMasterTest(unittest.TestCase):
         self.git("commit", "-q", "-m", "change", date=f"@{int(NOW - age_h * HOUR)} +0000")
 
     def check(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        """Run scripts/ci/check_render_on_master.py at a simulated wall-clock time.
+
+        ADR-3295: runs the master render check at a simulated wall-clock time.
+        """
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         return subprocess.run(  # noqa: S603 -- fixed argv, no shell, check under test
             [sys.executable, str(CHECK), "--root", str(self.repo), "--now", str(NOW), *extra],
@@ -84,6 +102,7 @@ class RenderOnMasterTest(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     def assert_status(
@@ -189,6 +208,31 @@ class RenderOnMasterWiringTest(unittest.TestCase):
         # A pull request opened with GITHUB_TOKEN gets no check runs (ADR-1151).
         self.assertIn("actions/create-github-app-token@", text)
         self.assertIn("run: bash scripts/ci/open-render-pr.sh", text)
+
+    def test_render_pull_request_runs_on_master_push(self) -> None:
+        # Issue 3462 (ADR-3552): scheduled runs are dropped, so a push to master
+        # must start the workflow; schedule stays as the hourly fallback.
+        data = yaml.safe_load(RENDER_PR_WORKFLOW.read_text(encoding="utf-8"))
+        self.assertIsInstance(data, dict)
+        triggers = data.get("on", data.get(True))
+        self.assertIsInstance(triggers, dict)
+        self.assertIn("push", triggers)
+        push = triggers["push"]
+        self.assertIsInstance(push, dict)
+        # Boundary: push runs on master and names no other branch (a render on
+        # any other branch's push would render a non-master tip).
+        self.assertEqual(push.get("branches"), ["master"])
+        self.assertEqual(set(push.get("branches", [])), {"master"})
+        for forbidden in ("paths", "paths-ignore", "tags", "branches-ignore"):
+            self.assertNotIn(forbidden, push)
+        self.assertEqual(set(push.keys()), {"branches"})
+        self.assertIn("schedule", triggers)
+        schedule = triggers["schedule"]
+        self.assertIsInstance(schedule, list)
+        self.assertEqual(len(schedule), 1)
+        self.assertIsInstance(schedule[0], dict)
+        self.assertIn("cron", schedule[0])
+        self.assertIn("workflow_dispatch", triggers)
 
     def test_render_pull_request_carries_rendered_paths_only(self) -> None:
         script = RENDER_PR_SCRIPT.read_text()

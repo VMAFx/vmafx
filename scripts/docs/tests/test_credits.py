@@ -21,6 +21,9 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import ModuleType
 
+import reuse
+from reuse.global_licensing import AnnotationsItem
+
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
@@ -400,8 +403,38 @@ class Validation(Fixture):
             self.assertEqual(GATE.main([], root=self.root), 2)
 
 
+REUSE_TABLE: tuple[tuple[str, str, bool], ...] = (
+    ("pkg/**/x.c", "pkg/x.c", True),
+    ("pkg/**/x.c", "pkg/a/x.c", True),
+    ("pkg/**/x.c", "pkg/a/b/x.c", True),
+    ("pkg/**/x.c", "pkg/ax.c", True),
+    ("pkg/**", "pkg/x.c", True),
+    ("pkg/**", "pkg/a/x.c", True),
+    ("pkg/**", "pkg", False),
+    ("pkg/**", "pkgx/y", False),
+    ("pkg/*", "pkg/x.c", True),
+    ("pkg/*", "pkg/a/x.c", False),
+    ("pkg/*.c", "pkg/x.c", True),
+    ("pkg/*.c", "pkg/a/x.c", False),
+    ("**/x.c", "x.c", True),
+    ("**/x.c", "a/x.c", True),
+    ("**", "a/b", True),
+    ("pkg", "pkg/x.c", False),
+    ("pkg/", "pkg/x.c", False),
+    ("pkg/x.c", "pkg/x.c", True),
+    ("pkg/*/x.c", "pkg/x.c", False),
+    ("pkg/*/x.c", "pkg/a/x.c", True),
+    ("a**b", "a/x/b", True),
+    ("a/**b", "a/xb", True),
+    ("a/**b", "a/b", True),
+    ("a/***/b", "a/b", True),
+    ("a.c", "abc", False),
+)
+
+
 class Helpers(unittest.TestCase):
     def test_path_matches(self) -> None:
+        """Verify path matching for prefix, exact, and glob patterns with prefix on and off."""
         self.assertTrue(lib.path_matches("core/", "core/a/b.c"))
         self.assertTrue(lib.path_matches("core", "core/a/b.c"))
         self.assertTrue(lib.path_matches("a/b.c", "a/b.c"))
@@ -409,6 +442,10 @@ class Helpers(unittest.TestCase):
         self.assertTrue(lib.path_matches("model/tiny/fast.*", "model/tiny/fast.onnx"))
         self.assertTrue(lib.path_matches("a/**/z.c", "a/b/c/z.c"))
         self.assertFalse(lib.path_matches("a/*.c", "a/b/z.c"))
+        self.assertFalse(lib.path_matches("core/", "core/a/b.c", prefix=False))
+        self.assertFalse(lib.path_matches("core", "core/a/b.c", prefix=False))
+        self.assertTrue(lib.path_matches("core/a/b.c", "core/a/b.c", prefix=False))
+        self.assertTrue(lib.path_matches("core/**", "core/a/b.c", prefix=False))
 
     def test_license_tokens_and_urls(self) -> None:
         self.assertEqual(lib.license_tokens("MIT AND (A OR B WITH C)"), ["MIT", "A", "B", "C"])
@@ -417,11 +454,384 @@ class Helpers(unittest.TestCase):
             checks.normalise_url("https://github.com/o/r/graphs/contributors"), "github.com/o/r"
         )
 
+    def test_note_strings_shapes(self) -> None:
+        """Verify a string, an array, a missing key and a non-string value of an annotation."""
+        note: dict[str, object] = {"path": ["a/**", 3], "SPDX-FileCopyrightText": "2026 X"}
+        self.assertEqual(checks.note_strings(note, "path"), ["a/**", "3"])
+        self.assertEqual(checks.note_strings(note, "SPDX-FileCopyrightText"), ["2026 X"])
+        self.assertEqual(checks.note_strings(note, "missing"), [])
+        self.assertEqual(checks.note_strings({"path": 7}, "path"), [])
+        self.assertEqual(checks.note_strings({"path": []}, "path"), [])
+
     def test_counts_and_unverified_summary(self) -> None:
         e = lib.Entry("a", "A", "https://x", "code", "vendored", "unknown")
         text = lib.blocks([e])["summary"]
         self.assertIn("1 entries", text)
         self.assertIn("could not verify", text)
+
+    def test_reuse_path_matches_table(self) -> None:
+        """Verify reuse_path_matches against every row of the specification table."""
+        for pattern, name, expected in REUSE_TABLE:
+            with self.subTest(pattern=pattern, name=name):
+                self.assertEqual(lib.reuse_path_matches(pattern, name), expected)
+
+    def test_reuse_path_matches_differential(self) -> None:
+        """Verify reuse_path_matches differential against reuse 6.2.0 AnnotationsItem."""
+        self.assertEqual(reuse.__version__, "6.2.0")
+        for pattern, name, _ in REUSE_TABLE:
+            with self.subTest(pattern=pattern, name=name):
+                self.assertEqual(
+                    lib.reuse_path_matches(pattern, name),
+                    AnnotationsItem(paths={pattern}).matches(name),
+                )
+
+    def test_reuse_path_matches_backslash_negative(self) -> None:
+        """Verify backslash in pattern raises CreditsError."""
+        with self.assertRaises(lib.CreditsError) as ctx:
+            lib.reuse_path_matches("a\\*b", "a*b")
+        self.assertIn("a\\*b", str(ctx.exception))
+        self.assertIn(
+            "backslash escapes in REUSE.toml paths are not supported",
+            str(ctx.exception),
+        )
+
+
+class UpstreamMatcher(Fixture):
+    """Matcher rule: kind upstream covers only by exact path or glob, never prefix."""
+
+    def test_upstream_directory_prefix_does_not_cover(self) -> None:
+        """Plant core/sub/foreign.c with a foreign copyright line under the upstream core/
+        prefix entry; expect an uncredited-path finding."""
+        self.put("core/sub/foreign.c", "/* Copyright 2026 Foreign Author */\n")
+        self.assertTrue(self.findings()["uncredited-path"])
+
+    def test_kind_code_directory_prefix_covers(self) -> None:
+        """Plant core/sub/foreign.c and a kind: code prefix entry; expect no finding."""
+        self.put("core/sub/foreign.c", "/* Copyright 2026 Foreign Author */\n")
+        self.add_entry(
+            "- id: custom-code\n  name: custom-code\n  url: https://example.org/code\n"
+            "  kind: code\n  relation: vendored\n  license: MIT\n  paths: [core/]\n"
+        )
+        self.assertEqual(self.findings()["uncredited-path"], [])
+
+    def test_upstream_exact_path_covers(self) -> None:
+        """Plant core/sub/foreign.c and credit its exact path under upstream; expect no finding."""
+        self.put("core/sub/foreign.c", "/* Copyright 2026 Foreign Author */\n")
+        (self.root / "docs/credits.yaml").write_text(
+            "entries:\n- id: netflix-vmaf\n  name: Netflix VMAF\n"
+            "  url: https://github.com/Netflix/vmaf\n  kind: upstream\n"
+            "  relation: vendored\n  license: BSD-2-Clause-Patent\n"
+            "  paths: [core/, core/sub/foreign.c]\n"
+        )
+        self.render()
+        self.assertEqual(self.findings()["uncredited-path"], [])
+
+    def test_upstream_glob_entry_still_does_not_cover_zero_directories(self) -> None:
+        """Verify covered() with an upstream entry on pkg/**/x.c does not cover pkg/x.c."""
+        entry = lib.Entry(
+            id="test-upstream",
+            name="Test Upstream",
+            url="https://example.com/test",
+            kind="upstream",
+            relation="vendored",
+            license="MIT",
+            paths=("pkg/**/x.c",),
+        )
+        self.assertFalse(lib.covered("pkg/x.c", [entry]))
+        self.assertTrue(lib.covered("pkg/a/x.c", [entry]))
+
+
+class ReusePrecedence(Fixture):
+    """REUSE.toml precedence: closest vs override and SPDX header."""
+
+    def test_closest_with_header_is_not_flagged(self) -> None:
+        """Plant closest GPL annotation and own header in pkg/x/a.c; expect no finding."""
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "closest"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\n'
+            'SPDX-License-Identifier = "GPL-3.0-or-later"\n',
+        )
+        # REUSE-IgnoreStart
+        self.put("pkg/x/a.c", "/*\n * SPDX-License-Identifier: EUPL-1.2\n */\n")
+        # REUSE-IgnoreEnd
+        self.assertEqual(self.findings()["uncredited-path"], [])
+
+    def test_closest_with_non_own_header_is_flagged(self) -> None:
+        """Plant a closest GPL annotation and a BSD-3-Clause header in pkg/x/a.c; expect a
+        finding that names the header expression BSD-3-Clause."""
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "closest"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\n'
+            'SPDX-License-Identifier = "GPL-3.0-or-later"\n',
+        )
+        # REUSE-IgnoreStart
+        self.put(
+            "pkg/x/a.c",
+            "/*\n * SPDX-License-Identifier: BSD-3-Clause\n */\nint a = 1;\n",
+        )
+        # REUSE-IgnoreEnd
+        found = self.only("uncredited-path")
+        self.assertTrue(any("pkg/x/a.c: BSD-3-Clause" in line for line in found))
+
+    def test_closest_with_multi_header_including_non_own_is_flagged(self) -> None:
+        """Plant closest GPL annotation and multi-line header with EUPL-1.2 and
+        BSD-3-Clause in pkg/x/a.c; expect one uncredited-path finding naming pkg/x/a.c
+        and BSD-3-Clause."""
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "closest"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\n'
+            'SPDX-License-Identifier = "GPL-3.0-or-later"\n',
+        )
+        # REUSE-IgnoreStart
+        self.put(
+            "pkg/x/a.c",
+            "/*\n"
+            " * SPDX-License-Identifier: EUPL-1.2\n"
+            " * SPDX-License-Identifier: BSD-3-Clause\n"
+            " */\nint a = 1;\n",
+        )
+        # REUSE-IgnoreEnd
+        found = self.only("uncredited-path")
+        self.assertEqual(len(found), 1)
+        self.assertIn("pkg/x/a.c", found[0])
+        self.assertIn("BSD-3-Clause", found[0])
+
+    def test_closest_with_multi_own_header_is_not_flagged(self) -> None:
+        """Plant closest GPL annotation and two own license header lines in pkg/x/a.c;
+        expect no finding."""
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "closest"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\n'
+            'SPDX-License-Identifier = "GPL-3.0-or-later"\n',
+        )
+        second_own = lib.OWN_LICENSES[1]
+        # REUSE-IgnoreStart
+        self.put(
+            "pkg/x/a.c",
+            "/*\n"
+            " * SPDX-License-Identifier: EUPL-1.2\n"
+            f" * SPDX-License-Identifier: {second_own}\n"
+            " */\nint a = 1;\n",
+        )
+        # REUSE-IgnoreEnd
+        self.assertEqual(self.findings()["uncredited-path"], [])
+
+    def test_header_spdx_expression_boundary(self) -> None:
+        """Plant a one-line /* SPDX ... */ header; expect EUPL-1.2 without the trailing */."""
+        # REUSE-IgnoreStart
+        self.put("pkg/x/a.c", "/* SPDX-License-Identifier: EUPL-1.2 */\n")
+        # REUSE-IgnoreEnd
+        expr = checks.header_spdx_expression(self.root, "pkg/x/a.c")
+        self.assertEqual(expr, "EUPL-1.2")
+
+    def test_header_spdx_expression_multi_line_boundary(self) -> None:
+        """Plant a two-line header with EUPL-1.2 and MIT OR Apache-2.0; expect
+        exact expression (EUPL-1.2) AND (MIT OR Apache-2.0)."""
+        # REUSE-IgnoreStart
+        self.put(
+            "pkg/x/a.c",
+            "/*\n"
+            " * SPDX-License-Identifier: EUPL-1.2\n"
+            " * SPDX-License-Identifier: MIT OR Apache-2.0\n"
+            " */\n",
+        )
+        # REUSE-IgnoreEnd
+        expr = checks.header_spdx_expression(self.root, "pkg/x/a.c")
+        self.assertEqual(expr, "(EUPL-1.2) AND (MIT OR Apache-2.0)")
+
+    def test_structural_third_party_with_own_override(self) -> None:
+        """Plant headerless third_party/pkg/a.c: flagged with no annotation, cleared by an
+        EUPL-1.2 override annotation, flagged again under a BSD-3-Clause override."""
+        self.put("third_party/pkg/a.c", "int a = 1;\n")
+        self.assertTrue(any("third_party/pkg/a.c" in line for line in self.only("uncredited-path")))
+        base_reuse = (self.root / "REUSE.toml").read_text()
+        self.put(
+            "REUSE.toml",
+            base_reuse + '[[annotations]]\npath = ["third_party/pkg/**"]\n'
+            'precedence = "override"\nSPDX-FileCopyrightText = "2026 Lusoris"\n'
+            'SPDX-License-Identifier = "EUPL-1.2"\n',
+        )
+        self.assertEqual(self.findings()["uncredited-path"], [])
+        self.put(
+            "REUSE.toml",
+            base_reuse + '[[annotations]]\npath = ["third_party/pkg/**"]\n'
+            'precedence = "override"\nSPDX-FileCopyrightText = "2026 Lusoris"\n'
+            'SPDX-License-Identifier = "BSD-3-Clause"\n',
+        )
+        self.assertTrue(any("third_party/pkg/a.c" in line for line in self.only("uncredited-path")))
+
+    def test_structural_own_header_under_third_party_is_flagged(self) -> None:
+        """Plant third_party/pkg/a.py with an EUPL-1.2 header and no annotation; expect an
+        uncredited-path finding, since an own header alone does not exempt third_party/."""
+        # REUSE-IgnoreStart
+        self.put(
+            "third_party/pkg/a.py",
+            "# SPDX-License-Identifier: EUPL-1.2\n",
+        )
+        # REUSE-IgnoreEnd
+        found = self.only("uncredited-path")
+        self.assertTrue(any("third_party/pkg/a.py" in line for line in found))
+
+    def test_closest_without_header_is_flagged(self) -> None:
+        """Plant closest GPL annotation and headerless pkg/x/a.c; expect uncredited-path."""
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "closest"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\n'
+            'SPDX-License-Identifier = "GPL-3.0-or-later"\n',
+        )
+        self.put("pkg/x/a.c", "int a = 1;\n")
+        found = self.only("uncredited-path")
+        self.assertTrue(any("pkg/x/a.c" in line for line in found))
+
+    def test_override_with_header_is_flagged(self) -> None:
+        """Plant override GPL annotation and own header in pkg/x/a.c; expect uncredited-path."""
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "override"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\n'
+            'SPDX-License-Identifier = "GPL-3.0-or-later"\n',
+        )
+        # REUSE-IgnoreStart
+        self.put("pkg/x/a.c", "/*\n * SPDX-License-Identifier: EUPL-1.2\n */\n")
+        # REUSE-IgnoreEnd
+        found = self.only("uncredited-path")
+        self.assertTrue(any("pkg/x/a.c" in line for line in found))
+
+    def test_unknown_precedence_raises_credits_error(self) -> None:
+        """Plant REUSE annotation with unknown precedence and pkg/x/a.c; expect CreditsError."""
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "bogus"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\nSPDX-License-Identifier = "MIT"\n',
+        )
+        self.put("pkg/x/a.c", "int a = 1;\n")
+        with self.assertRaises(lib.CreditsError):
+            checks.reuse_third_party_paths(self.root, ["pkg/x/a.c"])
+
+    def test_override_without_licence_does_not_exempt(self) -> None:
+        """Plant headerless third_party/pkg/a.c under an override annotation that names no
+        SPDX-License-Identifier; expect the structural finding to stay."""
+        self.put("third_party/pkg/a.c", "int a = 1;\n")
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["third_party/pkg/**"]\n'
+            'precedence = "override"\nSPDX-FileCopyrightText = "2026 Lusoris"\n',
+        )
+        self.assertTrue(any("third_party/pkg/a.c" in line for line in self.only("uncredited-path")))
+
+    def test_own_holders_skip_annotation_without_licence(self) -> None:
+        """Plant an annotation with a copyright line and no licence; expect its holder not
+        to count as own, while the EUPL-1.2 base annotation's holder still does."""
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text() + '[[annotations]]\npath = ["pkg/x/**"]\n'
+            'SPDX-FileCopyrightText = "2020 Someone Else"\n',
+        )
+        holders = checks.own_holders(self.root)
+        self.assertIn("lusoris", holders)
+        self.assertNotIn("someone else", holders)
+
+    def test_later_own_annotation_governs_overlap(self) -> None:
+        """Plant a GPL annotation over pkg/x/** and a later EUPL-1.2 one over pkg/x/a.c;
+        expect only pkg/x/b.c flagged, since REUSE applies the last matching annotation."""
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text() + '[[annotations]]\npath = ["pkg/x/**"]\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\n'
+            'SPDX-License-Identifier = "GPL-3.0-or-later"\n'
+            '[[annotations]]\npath = ["pkg/x/a.c"]\n'
+            'SPDX-FileCopyrightText = "2026 Lusoris"\nSPDX-License-Identifier = "EUPL-1.2"\n',
+        )
+        self.put("pkg/x/a.c", "int a = 1;\n")
+        self.put("pkg/x/b.c", "int b = 1;\n")
+        found = checks.reuse_third_party_paths(self.root, ["pkg/x/a.c", "pkg/x/b.c"])
+        self.assertEqual(found, {"pkg/x/b.c": "GPL-3.0-or-later"})
+
+    def test_later_third_party_annotation_governs_overlap(self) -> None:
+        """Plant an EUPL-1.2 override over third_party/pkg/** and a later MIT override over
+        third_party/pkg/a.c; expect a.c flagged and b.c still exempt."""
+        self.put("third_party/pkg/a.c", "int a = 1;\n")
+        self.put("third_party/pkg/b.c", "int b = 1;\n")
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["third_party/pkg/**"]\nprecedence = "override"\n'
+            'SPDX-FileCopyrightText = "2026 Lusoris"\nSPDX-License-Identifier = "EUPL-1.2"\n'
+            '[[annotations]]\npath = ["third_party/pkg/a.c"]\nprecedence = "override"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\nSPDX-License-Identifier = "MIT"\n',
+        )
+        found = self.only("uncredited-path")
+        self.assertTrue(any("third_party/pkg/a.c" in line for line in found))
+        self.assertFalse(any("third_party/pkg/b.c" in line for line in found))
+
+    def test_bare_directory_override_does_not_exempt(self) -> None:
+        """Plant headerless third_party/pkg/a.c under an EUPL-1.2 override whose path is the
+        bare directory third_party/pkg; expect the finding to stay, since a REUSE path
+        matches whole file paths and globs, never a directory prefix."""
+        self.put("third_party/pkg/a.c", "int a = 1;\n")
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["third_party/pkg"]\nprecedence = "override"\n'
+            'SPDX-FileCopyrightText = "2026 Lusoris"\nSPDX-License-Identifier = "EUPL-1.2"\n',
+        )
+        self.assertTrue(any("third_party/pkg/a.c" in line for line in self.only("uncredited-path")))
+
+    def test_later_bare_directory_does_not_replace_glob(self) -> None:
+        """Plant an MIT override over pkg/x/** and a later EUPL-1.2 override over the bare
+        directory pkg/x/; expect pkg/x/a.c to keep MIT, since the later path matches no file."""
+        self.put("pkg/x/a.c", "int a = 1;\n")
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/x/**"]\nprecedence = "override"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\nSPDX-License-Identifier = "MIT"\n'
+            '[[annotations]]\npath = ["pkg/x/"]\nprecedence = "override"\n'
+            'SPDX-FileCopyrightText = "2026 Lusoris"\nSPDX-License-Identifier = "EUPL-1.2"\n',
+        )
+        found = checks.reuse_third_party_paths(self.root, ["pkg/x/a.c"])
+        self.assertEqual(found, {"pkg/x/a.c": "MIT"})
+        self.assertEqual(checks.reuse_own_override_paths(self.root, ["pkg/x/a.c"]), set())
+
+    def test_reuse_glob_double_star_matches_zero_directories(self) -> None:
+        """Plant pkg/**/x.c under an MIT override; expect pkg/x.c to be recognized as MIT."""
+        self.put("pkg/x.c", "int a = 1;\n")
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["pkg/**/x.c"]\nprecedence = "override"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\nSPDX-License-Identifier = "MIT"\n',
+        )
+        found = checks.reuse_third_party_paths(self.root, ["pkg/x.c"])
+        self.assertEqual(found, {"pkg/x.c": "MIT"})
+
+    def test_effective_annotations_backslash_raises_credits_error(self) -> None:
+        """Plant an annotation path with backslash; expect effective_annotations to raise."""
+        self.put(
+            "REUSE.toml",
+            (self.root / "REUSE.toml").read_text()
+            + '[[annotations]]\npath = ["a\\\\*b"]\nprecedence = "override"\n'
+            'SPDX-FileCopyrightText = "2020 Someone"\nSPDX-License-Identifier = "MIT"\n',
+        )
+        with self.assertRaises(lib.CreditsError) as ctx:
+            checks.effective_annotations(self.root, ["a*b"])
+        self.assertIn(
+            "backslash escapes in REUSE.toml paths are not supported",
+            str(ctx.exception),
+        )
 
 
 class ThisRepository(unittest.TestCase):

@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+FFMPEG_TIMEOUT_S = 60
+
 # Make src/ importable without an editable install.
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
@@ -311,6 +313,7 @@ def test_run_encode_handles_filenotfounderror_when_ffmpeg_absent(tmp_path: Path)
     reason="set VMAF_TUNE_INTEGRATION=1 to exercise the real ffmpeg/x265 stack",
 )
 def test_real_x265_smoke_when_runner_has_ffmpeg(tmp_path: Path):
+    """Assert real ffmpeg encodes a synthetic YUV clip using libx265."""
     if shutil.which("ffmpeg") is None:
         pytest.skip("ffmpeg not on PATH")
     # Generate a tiny YUV420 reference via ffmpeg's testsrc filter.
@@ -334,6 +337,7 @@ def test_real_x265_smoke_when_runner_has_ffmpeg(tmp_path: Path):
         ],
         capture_output=True,
         check=False,
+        timeout=FFMPEG_TIMEOUT_S,
     )
     if proc.returncode != 0:
         pytest.skip("could not synthesise YUV reference via lavfi testsrc")

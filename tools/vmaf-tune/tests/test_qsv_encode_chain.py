@@ -22,7 +22,7 @@ sys.path.insert(0, str(_HERE.parent / "src"))
 
 from vmaftune import cli, compare, hdr, hw_devices
 from vmaftune.codec_adapters._qsv_common import QSV_UPLOAD_FILTER
-from vmaftune.encode import EncodeRequest, build_ffmpeg_command
+from vmaftune.encode import EncodeRequest, build_ffmpeg_command, with_upload_filter
 
 QSV = ("h264_qsv", "hevc_qsv", "av1_qsv")
 DEVICE = "/dev/dri/renderD131"
@@ -105,10 +105,128 @@ def test_qsv_upload_follows_output_depth(tmp_path, encoder, pix_fmt, extra, surf
 
 @pytest.mark.parametrize("encoder", ["hevc_qsv", "av1_qsv"])
 def test_qsv_hdr_upload_uses_p010le(tmp_path, encoder):
+    """HDR10 QSV requests upload as p010le and carry no output -pix_fmt after -i."""
     info = hdr.HdrInfo("pq", "bt2020", "bt2020nc", "tv", "yuv420p10le")
     extra = hdr.hdr_codec_args(encoder, info)
     argv = build_ffmpeg_command(_request(tmp_path, encoder, extra_params=extra))
     assert argv[argv.index("-vf") + 1] == "format=p010le,hwupload=extra_hw_frames=64"
+    tail = argv[argv.index("-i") :]
+    assert "-pix_fmt" not in tail
+    assert "-pix_fmt:v" not in tail
+
+
+def test_qsv_hdr_hevc_drops_pix_fmt(tmp_path):
+    """(a) QSV HDR10 hevc_qsv request drops output -pix_fmt after -i."""
+    info = hdr.HdrInfo("pq", "bt2020", "bt2020nc", "tv", "yuv420p10le")
+    extra = hdr.hdr_codec_args("hevc_qsv", info)
+    argv = build_ffmpeg_command(_request(tmp_path, "hevc_qsv", extra_params=extra))
+    tail = argv[argv.index("-i") :]
+    assert tail[tail.index("-vf") + 1] == "format=p010le,hwupload=extra_hw_frames=64"
+    assert "-pix_fmt" not in tail
+    assert "-pix_fmt:v" not in tail
+
+
+def test_qsv_hdr_av1_drops_pix_fmt(tmp_path):
+    """(b) QSV HDR10 av1_qsv request drops output -pix_fmt after -i."""
+    info = hdr.HdrInfo("pq", "bt2020", "bt2020nc", "tv", "yuv420p10le")
+    extra = hdr.hdr_codec_args("av1_qsv", info)
+    argv = build_ffmpeg_command(_request(tmp_path, "av1_qsv", extra_params=extra))
+    tail = argv[argv.index("-i") :]
+    assert tail[tail.index("-vf") + 1] == "format=p010le,hwupload=extra_hw_frames=64"
+    assert "-pix_fmt" not in tail
+    assert "-pix_fmt:v" not in tail
+
+
+def test_libx265_hdr_keeps_pix_fmt(tmp_path):
+    """(c) Negative: libx265 HDR10 request keeps output -pix_fmt p010le."""
+    info = hdr.HdrInfo("pq", "bt2020", "bt2020nc", "tv", "yuv420p10le")
+    extra = ("-pix_fmt", "p010le", *hdr.hdr_codec_args("libx265", info))
+    argv = build_ffmpeg_command(_request(tmp_path, "libx265", extra_params=extra))
+    tail = argv[argv.index("-i") :]
+    assert "-pix_fmt" in tail
+    assert tail[tail.index("-pix_fmt") + 1] == "p010le"
+
+
+_UPLOAD_P010 = "format=p010le,hwupload=extra_hw_frames=64"
+
+
+def test_with_upload_filter_dangling_pix_fmt_keeps_following_option():
+    """A dangling -pix_fmt before an option keeps the option."""
+    got = with_upload_filter(["-pix_fmt", "-vf", "scale=1280:720"], _UPLOAD_P010)
+    assert got == ["-vf", f"scale=1280:720,{_UPLOAD_P010}"]
+
+
+def test_with_upload_filter_dangling_pix_fmt_v_keeps_following_option():
+    """A dangling -pix_fmt:v before an option keeps the option."""
+    got = with_upload_filter(["-pix_fmt:v", "-profile:v", "main10"], _UPLOAD_P010)
+    assert got == ["-vf", _UPLOAD_P010, "-profile:v", "main10"]
+
+
+def test_with_upload_filter_drops_trailing_dangling_pix_fmt():
+    """A trailing dangling -pix_fmt is dropped."""
+    got = with_upload_filter(["-profile:v", "main10", "-pix_fmt"], _UPLOAD_P010)
+    assert got == ["-vf", _UPLOAD_P010, "-profile:v", "main10"]
+
+
+def test_hevc_qsv_8bit_argv_pinned(tmp_path):
+    """(d) Boundary: 8-bit hevc_qsv request without -pix_fmt is identical to master."""
+    req = _request(tmp_path, "hevc_qsv", vaapi_device=DEVICE)
+    argv = build_ffmpeg_command(req)
+    want = [
+        "ffmpeg",
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "info",
+        "-init_hw_device",
+        f"vaapi=va:{DEVICE}",
+        "-init_hw_device",
+        "qsv=qsv_dev@va",
+        "-filter_hw_device",
+        "qsv_dev",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "yuv420p",
+        "-s",
+        "1920x1080",
+        "-r",
+        "24.0",
+        "-i",
+        str(tmp_path / "ref.yuv"),
+        "-c:v",
+        "hevc_qsv",
+        "-preset",
+        "medium",
+        "-global_quality",
+        "23",
+        "-vf",
+        "format=nv12,hwupload=extra_hw_frames=64",
+        str(tmp_path / "out.mp4"),
+    ]
+    assert argv == want
+
+
+def test_qsv_hdr_with_scale_filter_drops_pix_fmt(tmp_path):
+    """(e) Caller -vf scale + HDR QSV produces chained filter and drops -pix_fmt."""
+    info = hdr.HdrInfo("pq", "bt2020", "bt2020nc", "tv", "yuv420p10le")
+    extra = ("-vf", "scale=1280:720", *hdr.hdr_codec_args("hevc_qsv", info))
+    argv = build_ffmpeg_command(_request(tmp_path, "hevc_qsv", extra_params=extra))
+    tail = argv[argv.index("-i") :]
+    expected_vf = "scale=1280:720,format=p010le,hwupload=extra_hw_frames=64"
+    assert tail[tail.index("-vf") + 1] == expected_vf
+    assert "-pix_fmt" not in tail
+    assert "-pix_fmt:v" not in tail
+
+
+def test_qsv_hdr_pix_fmt_v_form_dropped(tmp_path):
+    """(f) Output -pix_fmt:v form is also dropped after hardware upload."""
+    extra = ("-pix_fmt:v", "p010le", "-profile:v", "main10")
+    argv = build_ffmpeg_command(_request(tmp_path, "hevc_qsv", extra_params=extra))
+    tail = argv[argv.index("-i") :]
+    assert tail[tail.index("-vf") + 1] == "format=p010le,hwupload=extra_hw_frames=64"
+    assert "-pix_fmt" not in tail
+    assert "-pix_fmt:v" not in tail
 
 
 @pytest.mark.parametrize("encoder", ["libx264", "h264_nvenc", "h264_amf", "libsvtav1"])

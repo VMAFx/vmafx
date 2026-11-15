@@ -49,6 +49,17 @@ The script stops, without applying anything, when:
 - `FFMPEG_FIX_SERIES_VERIFY=cosign` is set and cosign is missing, or cosign
   refuses the release's signed `SHA256SUMS`.
 
+A failed github.com release download is fetched again with `gh release download`
+through the forge API (needs `gh` and `GH_TOKEN` or a gh login). The output names
+the address that failed and the path that ran, while the sha256, `SHA256SUMS` and
+signature checks apply unchanged. `FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS` ($S$,
+default 120) bounds each direct download attempt and each forge API fallback
+attempt through the deadline helper. One script run makes at most $N = 3$
+download calls (tarball, `SHA256SUMS` and `SHA256SUMS.sigstore.json`), so the
+worst-case download time is $N \times 2 \times S = 6 \times S$ (720 s at the
+default $S = 120$). `scripts/ci/ffmpeg_patch_stack.py` gives the script
+`max(600, N * 2 * S + 120)` seconds, so 840 s when $S$ is unset.
+
 Whatever the verify mode, the script also downloads the release's `SHA256SUMS`,
 prints the tarball's sha256 next to the line it lists and refuses a difference
 (`FFMPEG_FIX_SERIES_SUMS_URL` names another location; a `FFMPEG_FIX_SERIES_URL`

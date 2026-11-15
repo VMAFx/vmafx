@@ -105,13 +105,13 @@ step "fixtures (pinned commit, SHA-256 checked)"
 python3 "$image_dir/prepare_build.py" fixtures "$image_dir/fixtures.sha256" \
   "$image_dir/fixtures.json" >"$out/fixtures-needed.sha256"
 while read -r _ file; do
-  curl -fsSL --max-time 600 --retry 3 --create-dirs -o "$resource/$file" \
+  curl -fsSL --max-time 600 --retry 3 --retry-all-errors --create-dirs -o "$resource/$file" \
     "https://raw.githubusercontent.com/Netflix/vmaf_resource/$VMAF_RESOURCE_COMMIT/python/test/resource/$file"
 done <"$out/fixtures-needed.sha256"
 (cd "$resource" && shasum -a 256 -c "$out/fixtures-needed.sha256")
 
 step "interpreter (python-build-standalone, SHA-256 checked)"
-curl -fsSL --max-time 600 --retry 3 -o "$out/pbs.tar.gz" "$PBS_URL"
+curl -fsSL --max-time 600 --retry 3 --retry-all-errors -o "$out/pbs.tar.gz" "$PBS_URL"
 echo "$PBS_SHA256  $out/pbs.tar.gz" | shasum -a 256 -c -
 mkdir "$out/pbs"
 tar -xzf "$out/pbs.tar.gz" -C "$out/pbs"
@@ -141,7 +141,7 @@ step "licence texts (python-build-standalone full archive, CPython Doc/license.r
 # The install_only archive holds no licence texts; the full archive of the same
 # release has them for every library linked into the interpreter (ADR-1503).
 mkdir -p "$texts/python-build-standalone"
-curl -fsSL --max-time 600 --retry 3 -o "$out/pbs-full.tar.zst" "$PBS_FULL_URL"
+curl -fsSL --max-time 600 --retry 3 --retry-all-errors -o "$out/pbs-full.tar.zst" "$PBS_FULL_URL"
 echo "$PBS_FULL_SHA256  $out/pbs-full.tar.zst" | shasum -a 256 -c -
 zstd -dc "$out/pbs-full.tar.zst" | tar -xf - -C "$out" python/licenses python/PYTHON.json
 mv "$out"/python/licenses/* "$out/python/PYTHON.json" "$texts/python-build-standalone/"

@@ -36,7 +36,6 @@ FFMPEG_SOURCE_DIR = Path("ffmpeg-patches/src")
 FFMPEG_UNITS = {
     "libavfilter/vf_vmafx.c": "vf_vmafx.c",
     "libavfilter/vf_vmafx_pre.c": "vf_vmafx_pre.c",
-    "fftools/ffmpeg_dec_hwaccel.c": "ffmpeg_dec_hwaccel.c",
 }
 # Switches that only write make's dependency files; each of the -MF / -MT forms
 # takes the next argument.

@@ -68,14 +68,19 @@ typedef struct SsimKernels {
                        double *c_sum, double *s_sum);
 } SsimKernels;
 
+#if HAVE_AVX512
 static const SsimKernels k_kernels[] = {
     {"avx2", VMAF_X86_CPU_FLAG_AVX2, ssim_precompute_avx2, ssim_variance_avx2,
      ssim_accumulate_avx2},
-#if HAVE_AVX512
     {"avx512", VMAF_X86_CPU_FLAG_AVX512, ssim_precompute_avx512, ssim_variance_avx512,
      ssim_accumulate_avx512},
-#endif
 };
+#else
+static const SsimKernels k_kernels[] = {
+    {"avx2", VMAF_X86_CPU_FLAG_AVX2, ssim_precompute_avx2, ssim_variance_avx2,
+     ssim_accumulate_avx2},
+};
+#endif
 #define K_NUM_KERNELS ((int)(sizeof(k_kernels) / sizeof(k_kernels[0])))
 
 /* The five planes the variance and accumulate stages read. */

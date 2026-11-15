@@ -108,6 +108,7 @@
     "SECURITY.md",
     "SPONSORS.md",
     "SUPPORT.md",
+    "bandit.yml",
     "buf.gen.yaml",
     "buf.yaml",
     "clippy.toml",
@@ -313,6 +314,7 @@
         "LICENSES/**",
         ".markdownlint.json",
         ".codacy.yml",
+        "bandit.yml",
         ".codespellrc"
       ]
     },
@@ -497,7 +499,12 @@
         "requirements/locks/build.txt",
         "requirements/locks/pytest-timeout.txt",
         "requirements/locks/tox.txt",
-        "scripts/ci/prune-corrupt-fixtures.sh"
+        "scripts/__init__.py",
+        "scripts/ci/prune-corrupt-fixtures.sh",
+        "scripts/lib/__init__.py",
+        "scripts/lib/http_stand_in.py",
+        "scripts/lib/safe_subprocess.py",
+        "scripts/lib/vmaftest.py"
       ]
     },
     "tiny_ai": {

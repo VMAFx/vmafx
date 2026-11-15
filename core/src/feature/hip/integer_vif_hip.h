@@ -102,8 +102,9 @@ typedef struct VifBufferHip VifBufferHip;
  * The meson `hip_hsaco_sources` custom_target pipeline embeds the blob
  * exactly as it does for psnr_score.hsaco (ADR-0372).
  */
-extern const unsigned char vif_statistics_hsaco[];
-extern const unsigned int vif_statistics_hsaco_len;
+/* Match xxd -i object types exactly; keep read-only access at use sites. */
+extern unsigned char vif_statistics_hsaco[];
+extern unsigned int vif_statistics_hsaco_len;
 #endif /* HAVE_HIPCC */
 
 #endif /* FEATURE_INTEGER_VIF_HIP_H_ */

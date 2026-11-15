@@ -97,7 +97,7 @@ jobs:
           2. Bump the fork's `ffmpeg-patches/series.txt` baseline if
              needed (reviewed release: build-config.env FFMPEG_TAG).
           3. Extend `ffmpeg-patches/src/vf_vmafx.c` (patch
-             `0004-add-vmafx-filter.patch`) with HIP-native AVFrame consumption
+             `0003-add-vmafx-filter.patch`) with HIP-native AVFrame consumption
              via the new hwcontext.
           4. Update `docs/usage/ffmpeg.md`.
           5. Update `docs/state.md` T-FFMPEG-HIP-FILTER-DEFERRED row

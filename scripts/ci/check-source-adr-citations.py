@@ -84,6 +84,7 @@ MIN_ADR_FILENAME_LENGTH = len("0000-a.md")
 MIN_RETIREMENT_REASON_LENGTH = 20
 MIN_FIXTURE_REASON_LENGTH = 12
 GIT = shutil.which("git") or "/usr/bin/git"
+GIT_TIMEOUT_S = 60
 
 
 class GateError(RuntimeError):
@@ -92,14 +93,18 @@ class GateError(RuntimeError):
 
 def run_git(root: Path, args: list[str]) -> str:
     """Run Git without consulting caller aliases; any failure is fatal."""
-    proc = subprocess.run(  # noqa: S603 -- fixed Git binary; validated internal argv only
-        [GIT, "-c", "alias.ls-files=", *args],
-        cwd=root,
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    try:
+        proc = subprocess.run(  # noqa: S603 -- fixed Git binary; validated internal argv only
+            [GIT, "-c", "alias.ls-files=", *args],
+            cwd=root,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=GIT_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise GateError(f"git {' '.join(args)} timed out after {GIT_TIMEOUT_S}s") from exc
     if proc.returncode != 0:
         detail = proc.stderr.strip() or proc.stdout.strip() or "no diagnostic"
         raise GateError(f"git {' '.join(args)} failed: {detail}")

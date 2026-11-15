@@ -309,13 +309,46 @@ def _glob_regex(pattern: str) -> re.Pattern[str]:
     return re.compile("".join(out) + r"\Z")
 
 
-def path_matches(pattern: str, name: str) -> bool:
-    """True when ``name`` is ``pattern``, lies under it as a directory, or matches it as a glob."""
+def path_matches(pattern: str, name: str, prefix: bool = True) -> bool:
+    """True when ``name`` matches ``pattern`` by path, prefix or glob.
+
+    Matches exact path, under the directory prefix when ``prefix`` is True,
+    or against ``*`` and ``**`` wildcards.
+    """
     base = pattern.rstrip("/")
-    if name == base or name.startswith(base + "/"):
+    if name == base or (prefix and name.startswith(base + "/")):
         return True
     return "*" in pattern and bool(_glob_regex(pattern).match(name))
 
 
 def covered(name: str, entries: list[Entry]) -> bool:
-    return any(path_matches(p, name) for e in entries for p in e.paths)
+    """True when any entry's declared paths cover ``name``."""
+    return any(
+        path_matches(p, name, prefix=(e.kind != "upstream")) for e in entries for p in e.paths
+    )
+
+
+def reuse_path_matches(pattern: str, name: str) -> bool:
+    """Matches a REUSE.toml annotation path the way reuse 6.2.0 does."""
+    if "\\" in pattern:
+        raise CreditsError(
+            f"{pattern}: backslash escapes in REUSE.toml paths are not supported by the credits check"
+        )
+    out: list[str] = []
+    i = 0
+    while i < len(pattern):
+        if pattern[i] == "*":
+            star_count = 0
+            while i < len(pattern) and pattern[i] == "*":
+                star_count += 1
+                i += 1
+            if star_count == 1:
+                out.append("[^/]*")
+            else:
+                if i < len(pattern) and pattern[i] == "/":
+                    i += 1
+                out.append(".*")
+        else:
+            out.append(re.escape(pattern[i]))
+            i += 1
+    return bool(re.compile("".join(out) + r"\Z").match(name))

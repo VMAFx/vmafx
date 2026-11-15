@@ -48,6 +48,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.lib.push_head import outgoing_head
 from scripts.lib.safe_subprocess import CommandFailed
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -285,16 +286,6 @@ def verify_paths(selected: list[str], root: Path) -> None:
             raise RuntimeError(f"selected Python path is not a regular file: {filename}")
 
 
-def outgoing_head(head: str) -> None:
-    """The all-files first-push path exposes only LOCAL_BRANCH; normal runs TO_REF."""
-    outgoing = os.environ.get("PRE_COMMIT_TO_REF", os.environ.get("PRE_COMMIT_LOCAL_BRANCH"))
-    if outgoing is None:
-        return
-    target = git("rev-parse", "--verify", "--end-of-options", f"{outgoing}^{{commit}}").strip()
-    if target != head:
-        raise RuntimeError("outgoing ref differs from HEAD; check out the branch being pushed")
-
-
 def report(introduced: set[str], inherited: int) -> int:
     if not introduced:
         print(f"mypy: no new findings ({inherited} inherited from the merge base, not reported)")
@@ -311,10 +302,11 @@ def report(introduced: set[str], inherited: int) -> int:
 
 
 def main() -> int:
+    """Check owned Python changes against the outgoing commit and inherited findings."""
     try:
         root = Path(git("rev-parse", "--show-toplevel").strip()).resolve()
         head = git("rev-parse", "--verify", "HEAD^{commit}").strip()
-        outgoing_head(head)
+        outgoing_head(head, root)
         base_ref = os.environ.get(BASE_REF_ENV, "origin/master").strip()
         if not base_ref:
             raise RuntimeError(f"{BASE_REF_ENV} must name a commit when set")

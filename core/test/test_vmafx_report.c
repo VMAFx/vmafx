@@ -300,16 +300,17 @@ static bool text_passes(const char *path, bool (*check)(const char *text))
  * (output_file_open() in libvmaf.c, as upstream's fopen(path, "w")), so a line
  * ends in CR LF on Windows; read_text() reads the bytes. */
 #ifdef _WIN32
-#define REPORT_EOL "\r\n"
+#define WITH_REPORT_EOL(before, after) before "\r\n" after
 #else
-#define REPORT_EOL "\n"
+#define WITH_REPORT_EOL(before, after) before "\n" after
 #endif
 
+/* Return whether the XML report contains the expected provenance and model elements. */
 static bool xml_has_record(const char *xml)
 {
     return strstr(xml, "<provenance abi_major=") != NULL &&
            strstr(xml, "<model name=\"vmaf\"") != NULL &&
-           strstr(xml, "</provenance>" REPORT_EOL "</VMAF>") != NULL;
+           strstr(xml, WITH_REPORT_EOL("</provenance>", "</VMAF>")) != NULL;
 }
 
 static bool csv_untouched(const char *csv)
@@ -422,24 +423,31 @@ static char *test_write_to_full_device(void)
 }
 #endif /* VMAF_TEST_FULL_DEVICE_ONLY */
 
+#ifdef VMAF_TEST_FULL_DEVICE_ONLY
+static const MuTest full_device_tests[] = {
+    MU_TEST(test_write_to_full_device),
+};
+#else
+static const MuTest default_tests[] = {
+    MU_TEST(test_json_report_carries_the_record),
+    MU_TEST(test_rerun_matches),
+    MU_TEST(test_planted_model_digest),
+    MU_TEST(test_planted_backend),
+    MU_TEST(test_planted_score),
+    MU_TEST(test_planted_digest),
+    MU_TEST(test_xml_csv_and_sidecar),
+    MU_TEST(test_write_refusals),
+    MU_TEST(test_open_refusals),
+};
+#endif
+
 char *run_tests(void)
 {
-    static const MuTest tests[] = {
 #ifdef VMAF_TEST_FULL_DEVICE_ONLY
-        MU_TEST(test_write_to_full_device),
+    return mu_run_table(full_device_tests, MU_TABLE_LEN(full_device_tests));
 #else
-        MU_TEST(test_json_report_carries_the_record),
-        MU_TEST(test_rerun_matches),
-        MU_TEST(test_planted_model_digest),
-        MU_TEST(test_planted_backend),
-        MU_TEST(test_planted_score),
-        MU_TEST(test_planted_digest),
-        MU_TEST(test_xml_csv_and_sidecar),
-        MU_TEST(test_write_refusals),
-        MU_TEST(test_open_refusals),
+    return mu_run_table(default_tests, MU_TABLE_LEN(default_tests));
 #endif
-    };
-    return mu_run_table(tests, MU_TABLE_LEN(tests));
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

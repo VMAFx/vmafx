@@ -249,7 +249,7 @@ expect_rejected("a libvmaf builder whose one-line package list lacks xxd", no_xx
 xxd_in_comment = deepcopy(texts)
 xxd_in_comment["docker/Dockerfile.production"] = re.sub(
     r"(?m)^\s+xxd \\\n", "", xxd_in_comment["docker/Dockerfile.production"], count=1
-).replace("RUN apt-get update", "# xxd comes later\nRUN apt-get update", 1)
+).replace("RUN apt-get --error-on=any -o Acquire::Retries=3 update", "# xxd comes later\nRUN apt-get --error-on=any -o Acquire::Retries=3 update", 1)
 expect_rejected("a builder that names xxd only in a comment", xxd_in_comment)
 
 no_umf = deepcopy(texts)

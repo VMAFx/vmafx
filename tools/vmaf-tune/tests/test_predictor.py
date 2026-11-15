@@ -283,6 +283,24 @@ def test_decide_verdict_fall_back_on_empty_residuals():
     assert rep.verdict == Verdict.FALL_BACK
 
 
+def test_decide_verdict_fall_back_when_nan_residual_follows_finite() -> None:
+    """Assert a NaN residual following a finite value triggers fallback."""
+    rep = _decide_verdict(_residuals(90.0, [0.5, float("nan")]), target_vmaf=90.0, threshold=1.5)
+    assert rep.verdict == Verdict.FALL_BACK
+
+
+def test_decide_verdict_fall_back_when_nan_residual_precedes_finite() -> None:
+    """Assert a NaN residual preceding a finite value triggers fallback."""
+    rep = _decide_verdict(_residuals(90.0, [float("nan"), 0.5]), target_vmaf=90.0, threshold=1.5)
+    assert rep.verdict == Verdict.FALL_BACK
+
+
+def test_decide_verdict_fall_back_when_infinite_residual_present() -> None:
+    """Assert an infinite residual triggers fallback."""
+    rep = _decide_verdict(_residuals(90.0, [0.5, float("inf")]), target_vmaf=90.0, threshold=1.5)
+    assert rep.verdict == Verdict.FALL_BACK
+
+
 def test_validate_predictor_end_to_end_with_stubs():
     shots = [Shot(i * 100, (i + 1) * 100) for i in range(8)]
     p = Predictor()

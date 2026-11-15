@@ -308,7 +308,7 @@ func TestInjectQSVInitChain_MergesCallerFilter(t *testing.T) {
 		{"no caller filter", nil,
 			[]string{"-vf", "format=nv12,hwupload=extra_hw_frames=64"}},
 		{"10-bit output", []string{"-pix_fmt", "yuv420p10le"},
-			[]string{"-vf", "format=p010le,hwupload=extra_hw_frames=64", "-pix_fmt", "yuv420p10le"}},
+			[]string{"-vf", "format=p010le,hwupload=extra_hw_frames=64"}},
 		{"main10 with scale", []string{"-vf", "scale=640:360", "-profile:v", "main10"},
 			[]string{"-vf", "scale=640:360,format=p010le,hwupload=extra_hw_frames=64", "-profile:v", "main10"}},
 		{"dangling -vf is not a chain", []string{"-vf"},

@@ -17,6 +17,8 @@ pd = pytest.importorskip("pandas")
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_DIR = _REPO_ROOT / "ai" / "scripts"
 _SCRIPT_PATH = _SCRIPT_DIR / "enrich_k150k_parquet_metadata.py"
+# Bound = max(60, 10x the slowest measured run): each call took 0.6 s or less.
+SCRIPT_TIMEOUT_S = 60
 
 
 def _load_module():
@@ -114,6 +116,7 @@ def _setup_enrich_fixture_data(tmp_path: Path) -> tuple[Path, Path, Path]:
 
 
 def test_cli_enriches_existing_parquet(tmp_path: Path) -> None:
+    """The CLI enriches an existing parquet file and generates a validation manifest."""
     features, metadata, out = _setup_enrich_fixture_data(tmp_path)
 
     proc = subprocess.run(
@@ -132,6 +135,7 @@ def test_cli_enriches_existing_parquet(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         check=True,
+        timeout=SCRIPT_TIMEOUT_S,
     )
 
     summary = json.loads(proc.stdout)

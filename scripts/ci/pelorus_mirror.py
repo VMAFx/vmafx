@@ -31,6 +31,9 @@ NATIVE_SUFFIXES = frozenset(
         ".mm",
     }
 )
+# 10x the pinned clang-format 23.1.3 over all 1615 hook files in one serial
+# pass: 5.5 s, so max(60, 55) = 60.
+CC_TIMEOUT_S = 60
 
 
 def load_manifest(path: Path = MANIFEST_PATH) -> frozenset[str]:
@@ -88,9 +91,15 @@ def run_clang_format(arguments: list[str]) -> int:
     if clang_format is None:
         print("error: clang-format not found in the hook environment", file=sys.stderr)
         return 127
-    return subprocess.run(  # noqa: S603 -- fixed executable supplied by hook env
-        [clang_format, "-i", *options, *paths], check=False
-    ).returncode
+    try:
+        return subprocess.run(  # noqa: S603 -- fixed executable supplied by hook env
+            [clang_format, "-i", *options, *paths],
+            check=False,
+            timeout=CC_TIMEOUT_S,
+        ).returncode
+    except subprocess.TimeoutExpired:
+        print(f"error: clang-format timed out after {CC_TIMEOUT_S}s", file=sys.stderr)
+        return 124
 
 
 def build_parser() -> argparse.ArgumentParser:

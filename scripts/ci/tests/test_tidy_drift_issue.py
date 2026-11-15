@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "tidy-drift-issue.sh"
+SCRIPT_TIMEOUT_S = 60
 
 # A stand-in for `gh`: it appends its arguments to $STUB_LOG and answers the three
 # calls the script makes from $STUB_JOBS (failed job names) and $STUB_EXISTING (an
@@ -39,6 +40,7 @@ class TidyDriftIssue(unittest.TestCase):
         self.stub.chmod(self.stub.stat().st_mode | stat.S_IXUSR)
 
     def run_script(self, jobs: str, existing: str, *args: str) -> subprocess.CompletedProcess[str]:
+        """Run the tidy drift issue script against the stubbed gh environment."""
         env = {
             **os.environ,
             "TIDY_DRIFT_GH": str(self.stub),
@@ -53,6 +55,7 @@ class TidyDriftIssue(unittest.TestCase):
             text=True,
             capture_output=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
 
     def calls(self) -> list[str]:
@@ -81,6 +84,7 @@ class TidyDriftIssue(unittest.TestCase):
         self.assertFalse([c for c in self.calls() if c.startswith("issue ")])
 
     def test_rejects_malformed_arguments(self) -> None:
+        """Malformed positional arguments to the script cause it to exit with code 2."""
         for args in (("VMAFx",), ("VMAFx/vmafx", "12x"), ("VMAFx/vmafx",), ()):
             with self.subTest(args=args):
                 result = subprocess.run(  # noqa: S603 - fixed argv: bash, the script under test
@@ -89,10 +93,12 @@ class TidyDriftIssue(unittest.TestCase):
                     text=True,
                     capture_output=True,
                     check=False,
+                    timeout=SCRIPT_TIMEOUT_S,
                 )
                 self.assertEqual(result.returncode, 2)
 
     def test_a_failed_api_read_fails_closed(self) -> None:
+        """A failed GitHub API read causes the tidy drift script to fail closed."""
         failing = Path(self.tmp.name) / "gh-fail"
         failing.write_text("#!/usr/bin/env bash\nexit 4\n", encoding="utf-8")
         failing.chmod(failing.stat().st_mode | stat.S_IXUSR)
@@ -102,6 +108,7 @@ class TidyDriftIssue(unittest.TestCase):
             text=True,
             capture_output=True,
             check=False,
+            timeout=SCRIPT_TIMEOUT_S,
         )
         self.assertEqual(result.returncode, 1)
         self.assertIn("cannot read the jobs", result.stderr)

@@ -24,6 +24,7 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 
 CHART = Path(__file__).resolve().parents[3] / "deploy" / "helm" / "vmafx"
+HELM_TIMEOUT_S = 60
 CNPG_API = "postgresql.cnpg.io/v1"
 BASE = """
 controller: {enabled: true}
@@ -55,7 +56,7 @@ def helm_template(values: str, *args: str) -> subprocess.CompletedProcess[str]:
             *args,
         ]
         return subprocess.run(  # noqa: S603 -- fixed helm executable; argv built here
-            cmd, capture_output=True, text=True, check=False
+            cmd, capture_output=True, text=True, check=False, timeout=HELM_TIMEOUT_S
         )
 
 

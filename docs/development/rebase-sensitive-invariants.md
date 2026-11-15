@@ -121,7 +121,7 @@ backend within it.
   [`.zed/AGENTS.md`](../../.zed/AGENTS.md).
 
 - **`-qpfile` on libx264 goes through `quant_offsets` ([ADR-2167](../adr/2167-ffmpeg-x264-qpfile-quant-offsets.md))**:
-  patch `0001`'s libx264 hunks load the file with `ff_qpfile_load()` in
+  shared fix series patch `0043`'s libx264 hunks load the file with `ff_qpfile_load()` in
   `X264_init()` (refusing `aq-mode=0` and a grid that is not the video's
   macroblock grid) and add the deltas of input frame `n` to the picture's
   `quant_offsets` in `setup_frame()`; libx264 has no `qpfile` parameter, so
@@ -230,8 +230,9 @@ backend within it.
   header, `core/src/sycl/detile.h`. Preserve `test_vmafx_import_sycl*` and
   `core/test/vmafx_sycl_cells.h` together.
 - **The `vmafx` FFmpeg filters are generated from their sources ([ADR-2125](../adr/2125-vmafx-ffmpeg-gstreamer-filters.md))**:
-  `ffmpeg-patches/src/vf_vmafx.c`, `vf_vmafx_pre.c`, `vf_vmafx_options.h` and
-  `ffmpeg_dec_hwaccel.c` are the truth for patches `0004` to `0006` (ADR-2166);
+  `ffmpeg-patches/src/vf_vmafx.c`, `vf_vmafx_pre.c`, and `vf_vmafx_options.h`
+  are the truth for patches `0003` and `0004` (ADR-2166; loopback decoder
+  hwaccel is no longer ours, now shared fix series patch `0044`);
   `scripts/ci/ffmpeg_patch_stack.py --refresh` amends the owning patch and
   refuses a source no patch owns. Host frames are wrapped on the CPU device
   (`NULL`) whatever device the context scores on, every hardware pixel format
@@ -245,8 +246,9 @@ backend within it.
   imported straight from the producer's pool and never on another GPU
   (`vk_import()`). `ffmpeg-patches/test/vmafx_filter_check.py` (`parity`, `pool`,
   `refusal`, `e2e`, `vulkan`) and `gstreamer/test/test_gst_vmafx_parity.py`
-  guard them; patch `0006` is fork-only (Q-048) and is refreshed, not dropped,
-  when FFmpeg changes `fftools/ffmpeg_dec.c` or `ffmpeg_demux.c`.
+  guard them; loopback decoder hwaccel is now shared fix series patch `0044`
+  (refreshed in the ffmpeg-patches repo, not dropped, when FFmpeg changes
+  `fftools/ffmpeg_dec.c` or `ffmpeg_demux.c`).
   The filter pairs or reports ([ADR-2165](../adr/2165-vmafx-filter-pairing-contract.md)):
   `vmafx_preinit()` sets the framesync defaults `eof_action=pass` and
   `repeatlast=0`, a main frame without a reference frame passes on unscored
@@ -575,13 +577,13 @@ backend within it.
 
 - **`vmafx` imports DRM PRIME frames on SYCL and never passes a frame through unscored on import failure ([ADR-1761](../adr/1761-sycl-filter-import-retry-then-fail.md))**:
   Bounded retry lives in core under decision D8 (`vmafx_context_import_frame()`, `core/src/vmafx/frame_import_admit.c`, proven by `test_vmafx_import_fence`).
-  FFmpeg patch `0004` (`src/vf_vmafx.c`) imports DRM PRIME frames as dma-bufs into the VMAFx device; a failed import stops
-  the filter naming the frame on all import paths (drm, cuda, vulkan, host), with no pooled score after it. Patch `0004`'s Metal backend
+  FFmpeg patch `0003` (`src/vf_vmafx.c`) imports DRM PRIME frames as dma-bufs into the VMAFx device; a failed import stops
+  the filter naming the frame on all import paths (drm, cuda, vulkan, host), with no pooled score after it. Patch `0003`'s Metal backend
   prints no pooled score after a stop either. A refresh or an upstream rebase must not
   bring back a pass-through on a failed import or a score after a stop.
   `ffmpeg-patches/test/check-vmafx-import-failure.sh` guards the filter contract.
 - **`vmafx` prints no pooled score after an error ([ADR-1768](../adr/1768-ffmpeg-libvmaf-no-score-after-error.md))**:
-  In FFmpeg patch `0004` (`src/vf_vmafx.c`), `uninit()` prints no score after a stop, a failed
+  In FFmpeg patch `0003` (`src/vf_vmafx.c`), `uninit()` prints no score after a stop, a failed
   flush or an error. A series refresh keeps this contract. `core/test/test_ffmpeg_vmafx_stop_contract.py`
   guards it without a device, `ffmpeg-patches/test/check-vmafx-no-score-after-error.sh` on one.
 - **SYCL zero-copy admission ([ADR-1688](../adr/1688-sycl-zero-copy-luma-only-admission.md))**:
@@ -971,7 +973,7 @@ backend within it.
 - **Metal IOSurface import reads NV12 / P010 itself ([ADR-1679](../adr/1679-metal-iosurface-biplanar-import.md))**:
   `core/src/metal/picture_import.mm` plans each plane from the surface's CoreVideo
   pixel format through `core/src/metal/iosurface_layout.h` (bi-planar chroma
-  de-interleaved, P010 shifted, other layouts `-ENOTSUP`); in FFmpeg patch `0004`
+  de-interleaved, P010 shifted, other layouts `-ENOTSUP`); in FFmpeg patch `0003`
   (`src/vf_vmafx.c`), Metal zero-copy IOSurface import is not implemented and
   VideoToolbox frames are downloaded via `import=host`.
   `core/test/test_metal_iosurface_filter_contract.py`, `test_metal_iosurface_layout`

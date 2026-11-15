@@ -69,8 +69,6 @@
  * Boilerplate provided by `simd_bitexact_test.h` (ADR-0245).
  */
 
-#include <inttypes.h>
-
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
@@ -153,8 +151,8 @@ static char *test_adm_accum_precision(void)
          * produce the identical IEEE-754 float as the scalar reference.
          * An epsilon here would defeat the regression guard. */
         if (!vmaf_test_identical_f32(f_fixed, f_scalar)) { /* bit-exact parity assertion */
-            (void)fprintf(stderr, "  adm f_accum precision: accum=%" PRId64 " scalar=%a fixed=%a\n",
-                          accum, (double)f_scalar, (double)f_fixed);
+            (void)fprintf(stderr, "  adm f_accum precision: accum=%lld scalar=%a fixed=%a\n",
+                          (long long)accum, (double)f_scalar, (double)f_fixed);
             return "adm_cm_avx2 f_accum_h fixed expr differs from scalar";
         }
 
@@ -166,9 +164,9 @@ static char *test_adm_accum_precision(void)
         if (vmaf_test_identical_f32(f_buggy,
                                     f_scalar)) { /* vacuity guard: intentional exact compare */
             (void)fprintf(stderr,
-                          "  info: adm accum %" PRId64 " buggy==scalar (no ULP diff "
+                          "  info: adm accum %lld buggy==scalar (no ULP diff "
                           "for this value; other values in the set will diverge)\n",
-                          accum);
+                          (long long)accum);
         }
     }
     return NULL;

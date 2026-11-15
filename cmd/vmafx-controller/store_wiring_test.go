@@ -67,14 +67,10 @@ func TestControllerRunsOnThePostgresBackend(t *testing.T) {
 func startPostgresController(t *testing.T, dsn string) (*fxtest.App, string) {
 	t.Helper()
 	writeControllerEnv(t)
-	httpAddr := freeLocalAddr(t)
-	t.Setenv("VMAFX_HTTP_ADDR", httpAddr)
 	t.Setenv("VMAFX_STORE_BACKEND", "postgres")
 	t.Setenv("VMAFX_DB_DSN", dsn)
 	t.Setenv("VMAFX_STORE_SWEEP_INTERVAL", "1s")
-	app := fxtest.New(t, productionGraph())
-	app.RequireStart()
-	return app, httpAddr
+	return startController(t, "VMAFX_HTTP_ADDR")
 }
 
 // completedSweeps counts the lease sweeps River has worked.

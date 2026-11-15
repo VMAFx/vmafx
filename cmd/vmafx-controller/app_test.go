@@ -30,12 +30,15 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -145,11 +148,7 @@ func TestAppStartsAndStops(t *testing.T) {
 // synthetic dev tenant and the RPC reaches the handler.
 func TestGRPCListenerBindsAndServes(t *testing.T) {
 	writeControllerEnv(t)
-	addr := freeLocalAddr(t)
-	t.Setenv("VMAFX_GRPC_LISTEN", addr)
-
-	app := fxtest.New(t, productionGraph())
-	app.RequireStart()
+	app, addr := startController(t, "VMAFX_GRPC_LISTEN")
 	defer app.RequireStop()
 
 	conn, err := googlegrpc.NewClient(addr, googlegrpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -183,15 +182,12 @@ func TestGRPCListenerBindsAndServes(t *testing.T) {
 // circuited the call iff it returns Unauthenticated.
 func TestAuthInterceptorRejectsMissingTokenWhenEnabled(t *testing.T) {
 	writeControllerEnv(t)
-	addr := freeLocalAddr(t)
-	t.Setenv("VMAFX_GRPC_LISTEN", addr)
 	// Enable auth with a (never-reached) JWKS endpoint + issuer.
 	t.Setenv("VMAFX_AUTH_DISABLED", "false")
 	t.Setenv("VMAFX_JWKS_ENDPOINT", "https://idp.invalid/.well-known/jwks.json")
 	t.Setenv("VMAFX_AUTH_ISSUER", "https://idp.invalid")
 
-	app := fxtest.New(t, productionGraph())
-	app.RequireStart()
+	app, addr := startController(t, "VMAFX_GRPC_LISTEN")
 	defer app.RequireStop()
 
 	conn, err := googlegrpc.NewClient(addr, googlegrpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -319,20 +315,150 @@ func TestProductionGraphBadGRPCAddrFailsStart(t *testing.T) {
 	}
 }
 
-// freeLocalAddr returns a 127.0.0.1:PORT address with an OS-assigned free port.
-// The listener is closed before returning so the caller (golusoris grpc.Module)
-// can re-bind it.
-func freeLocalAddr(t *testing.T) string {
-	t.Helper()
+// maxControllerStartAttempts bounds retries when reserving ephemeral ports (HISS-02).
+const maxControllerStartAttempts = 5
+
+// portReserveFunc allocates a candidate local TCP address for a controller listener.
+type portReserveFunc func() (string, error)
+
+// defaultReservePort reserves an ephemeral local TCP address and immediately
+// closes the listener so the controller server can re-bind it.
+func defaultReservePort() (string, error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("reserve free port: %v", err)
+		return "", fmt.Errorf("reserve free port: %w", err)
 	}
 	addr := ln.Addr().String()
 	if err := ln.Close(); err != nil {
-		t.Fatalf("release free port: %v", err)
+		return "", fmt.Errorf("release free port: %w", err)
 	}
-	return addr
+	return addr, nil
+}
+
+// isAddressInUse reports whether err represents a TCP bind address collision.
+// It checks syscall.EADDRINUSE via errors.Is first where the error chain allows;
+// if the error chain was flattened into a string, it falls back to matching
+// "address already in use".
+func isAddressInUse(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return true
+	}
+	return strings.Contains(err.Error(), "address already in use")
+}
+
+// controllerStarter coordinates test controller startup with bounded retries.
+type controllerStarter struct {
+	reserve     portReserveFunc
+	maxAttempts int
+}
+
+// startTB intercepts FailNow during fxtest.New so configuration and build errors
+// can be returned as standard Go errors instead of immediately terminating the test.
+type startTB struct {
+	*testing.T
+	ignoreFail bool
+	failed     bool
+}
+
+// Logf forwards logging to the underlying testing.T.
+func (b *startTB) Logf(format string, args ...any) {
+	b.T.Logf(format, args...)
+}
+
+// Errorf marks the failure and logs, suppressing FailNow when ignoreFail is true.
+func (b *startTB) Errorf(format string, args ...any) {
+	b.failed = true
+	if !b.ignoreFail {
+		b.T.Errorf(format, args...)
+	} else {
+		b.T.Logf(format, args...)
+	}
+}
+
+// FailNow marks failure, terminating only when ignoreFail is false.
+func (b *startTB) FailNow() {
+	b.failed = true
+	if !b.ignoreFail {
+		b.T.FailNow()
+	}
+}
+
+// start boots the controller on envKey using s.reserve and s.maxAttempts.
+func (s *controllerStarter) start(t *testing.T, envKey string, opts ...fx.Option) (*fxtest.App, string, error) {
+	t.Helper()
+	if s.maxAttempts <= 0 {
+		return nil, "", fmt.Errorf("maxAttempts must be > 0, got %d", s.maxAttempts)
+	}
+	var lastErr error
+	for attempt := 0; attempt < s.maxAttempts; attempt++ {
+		addr, err := s.reserve()
+		if err != nil {
+			return nil, "", fmt.Errorf("reserve port attempt %d: %w", attempt+1, err)
+		}
+		t.Setenv(envKey, addr)
+
+		appOpts := make([]fx.Option, 0, len(opts)+1)
+		appOpts = append(appOpts, productionGraph())
+		appOpts = append(appOpts, opts...)
+		tb := &startTB{T: t, ignoreFail: true}
+		app := fxtest.New(tb, appOpts...)
+		tb.ignoreFail = false
+
+		if buildErr := app.Err(); buildErr != nil {
+			return nil, "", fmt.Errorf("build controller on %s: %w", envKey, buildErr)
+		}
+		if tb.failed {
+			return nil, "", fmt.Errorf("build controller on %s: fxtest reported a failure", envKey)
+		}
+
+		startCtx, cancel := context.WithTimeout(context.Background(), app.StartTimeout())
+		startErr := app.Start(startCtx)
+		cancel()
+
+		if startErr == nil {
+			return app, addr, nil
+		}
+
+		// No Stop here: fx rolls back a failed Start itself ("If any of the start
+		// hooks return an error, Start short-circuits, calls Stop, and returns the
+		// inciting error", go.uber.org/fx v1.24.0 app.go).
+		if !isAddressInUse(startErr) {
+			return nil, "", fmt.Errorf("start controller on %s: %w", envKey, startErr)
+		}
+		lastErr = startErr
+	}
+	return nil, "", fmt.Errorf("start controller on %s exhausted %d attempts: %w", envKey, s.maxAttempts, lastErr)
+}
+
+// startController boots the production fx graph, binding envKey to a reserved
+// local address with bounded retries when port collisions occur.
+func startController(t *testing.T, envKey string, opts ...fx.Option) (*fxtest.App, string) {
+	t.Helper()
+	app, addr, err := startControllerWithSource(t, envKey, defaultReservePort, maxControllerStartAttempts, opts...)
+	if err != nil {
+		t.Fatalf("start controller on %s: %v", envKey, err)
+	}
+	return app, addr
+}
+
+// startControllerWithSource boots the controller with an explicit port source
+// and attempt bound, returning an error on startup failure or bound exhaustion.
+func startControllerWithSource(
+	t *testing.T,
+	envKey string,
+	reserve portReserveFunc,
+	maxAttempts int,
+	opts ...fx.Option,
+) (*fxtest.App, string, error) {
+	t.Helper()
+	s := &controllerStarter{
+		reserve:     reserve,
+		maxAttempts: maxAttempts,
+	}
+	return s.start(t, envKey, opts...)
 }
 
 // TestOTelWiredThroughBootstrap asserts the OTel contract vmafx-controller
@@ -374,12 +500,9 @@ func TestOTelWiredThroughBootstrap(t *testing.T) {
 // i.e. the W3C traceparent crossed the wire and the two hops are linked.
 func TestGRPCHealthEmitsLinkedSpans(t *testing.T) {
 	writeControllerEnv(t)
-	addr := freeLocalAddr(t)
-	t.Setenv("VMAFX_GRPC_LISTEN", addr)
 	sr := oteltest.Recorder(t)
 
-	app := fxtest.New(t, productionGraph())
-	app.RequireStart()
+	app, addr := startController(t, "VMAFX_GRPC_LISTEN")
 	defer app.RequireStop()
 
 	conn, err := googlegrpc.NewClient(addr,
@@ -436,4 +559,117 @@ func closeWithTest(t *testing.T, c interface{ Close() error }) {
 			t.Errorf("close: %v", err)
 		}
 	})
+}
+
+// TestControllerStartRecoversFromPortSteal proves that when a reserved port is
+// stolen (held by an active listener before start), startController retries on a
+// fresh port and the controller successfully boots and serves requests (HISS-15).
+func TestControllerStartRecoversFromPortSteal(t *testing.T) {
+	writeControllerEnv(t)
+
+	// Hold an active listener on the first port so the controller encounters
+	// EADDRINUSE on its first start attempt.
+	stolenLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen on stolen port: %v", err)
+	}
+	closeWithTest(t, stolenLn)
+	stolenAddr := stolenLn.Addr().String()
+
+	attempt := 0
+	reserve := func() (string, error) {
+		attempt++
+		if attempt == 1 {
+			return stolenAddr, nil
+		}
+		return defaultReservePort()
+	}
+
+	app, addr, err := startControllerWithSource(t, "VMAFX_GRPC_LISTEN", reserve, maxControllerStartAttempts)
+	if err != nil {
+		t.Fatalf("expected successful start on retry, got: %v", err)
+	}
+	defer app.RequireStop()
+
+	if addr == stolenAddr {
+		t.Fatalf("app bound to stolen addr %s, expected different port", stolenAddr)
+	}
+	if attempt < 2 {
+		t.Fatalf("expected at least 2 attempts to recover from stolen port, got %d", attempt)
+	}
+
+	conn, err := googlegrpc.NewClient(addr, googlegrpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("dial gRPC: %v", err)
+	}
+	closeWithTest(t, conn)
+
+	client := vmafxv1.NewVmafxScoringClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	resp, err := client.Health(ctx, &vmafxv1.HealthRequest{})
+	if err != nil {
+		t.Fatalf("Health RPC against retried gRPC listener %s failed: %v", addr, err)
+	}
+	if !resp.GetOk() {
+		t.Errorf("Health.ok = false, want true — listener bound but service mis-wired")
+	}
+}
+
+// TestControllerStartFailsImmediatelyOnNonPortError proves that a start failure
+// not caused by address-in-use fails immediately without retrying (HISS-15).
+func TestControllerStartFailsImmediatelyOnNonPortError(t *testing.T) {
+	writeControllerEnv(t)
+	// Invalid store backend triggers a configuration validation error on start.
+	t.Setenv("VMAFX_STORE_BACKEND", "etcd")
+
+	attempts := 0
+	reserve := func() (string, error) {
+		attempts++
+		return defaultReservePort()
+	}
+
+	app, addr, err := startControllerWithSource(t, "VMAFX_GRPC_LISTEN", reserve, maxControllerStartAttempts)
+	if err == nil {
+		app.RequireStop()
+		t.Fatalf("expected start to fail with invalid store backend, got addr %s", addr)
+	}
+	if attempts != 1 {
+		t.Fatalf("expected exactly 1 attempt on non-port error, got %d", attempts)
+	}
+	if isAddressInUse(err) {
+		t.Fatalf("expected non-port error, got address-in-use error: %v", err)
+	}
+}
+
+// TestControllerStartMaxAttemptsBound proves that when all candidate ports collide,
+// controllerStarter halts after maxAttempts and does not loop further (HISS-02, HISS-15).
+func TestControllerStartMaxAttemptsBound(t *testing.T) {
+	writeControllerEnv(t)
+
+	stolenLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen on stolen port: %v", err)
+	}
+	closeWithTest(t, stolenLn)
+	stolenAddr := stolenLn.Addr().String()
+
+	attempts := 0
+	reserve := func() (string, error) {
+		attempts++
+		return stolenAddr, nil
+	}
+
+	app, _, err := startControllerWithSource(t, "VMAFX_GRPC_LISTEN", reserve, 3)
+	if err == nil {
+		app.RequireStop()
+		t.Fatal("expected start to fail when all attempts collide")
+	}
+	if attempts != 3 {
+		t.Fatalf("expected exactly 3 attempts before halting, got %d", attempts)
+	}
+	if !strings.Contains(err.Error(), "exhausted 3 attempts") {
+		t.Fatalf("expected exhausted error message, got: %v", err)
+	}
 }

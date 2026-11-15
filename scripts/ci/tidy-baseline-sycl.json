@@ -4,7 +4,7 @@
   "generator": "scripts/ci/tidy-ratchet.py",
   "clang_tidy_version": "22.1.8",
   "cc_version": "Intel(R) oneAPI DPC++/C++ Compiler 2026.1.1 (2026.1.1.20260724)",
-  "tus": 496,
+  "tus": 497,
   "measured_sources": [
     "core/src/compat/path_utf8.c",
     "core/src/cpu.cpp",
@@ -455,6 +455,7 @@
     "core/test/test_sycl_ssimulacra2_math.c",
     "core/test/test_sycl_ssimulacra2_math_probe.cpp",
     "core/test/test_sycl_ssimulacra2_parity.c",
+    "core/test/test_sycl_subsample_motion_vif.c",
     "core/test/test_sycl_twin_option_parity.c",
     "core/test/test_sycl_vif_min_dim.c",
     "core/test/test_sycl_vif_parity.c",
@@ -690,6 +691,20 @@
         }
       },
       "previous_baseline_sha256": "47d3679b2fff4c6cd77fec8c626c1d250516f216fe8366e37277f65ecd46fb44"
+    },
+    {
+      "sources": [
+        "core/test/test_sycl_subsample_motion_vif.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "measured_sources": {
+          "added": [
+            "core/test/test_sycl_subsample_motion_vif.c"
+          ]
+        }
+      },
+      "previous_baseline_sha256": "cb91e80f36160d07eaf26f85e3835ee4ea5c055748141c12fc5dce13835efe4b"
     }
   ]
 }

@@ -33,6 +33,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+SCRIPT_TIMEOUT_S = 60
+
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
@@ -402,5 +404,6 @@ def test_v6_3_ladder_nonexistent_src_returns_nonzero(tmp_path: Path) -> None:
             "PATH": "/usr/bin:/bin",
             "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src"),
         },
+        timeout=SCRIPT_TIMEOUT_S,
     )
     assert proc.returncode != 0, f"expected non-zero RC, got 0; stderr={proc.stderr!r}"

@@ -72,6 +72,9 @@ class EncodeRequest:
     # input flags so ffmpeg auto-detects the format. sample_clip_seconds
     # uses -ss/-t on the input side when set.
     source_is_container: bool = False
+    # Holds the raw source's colour options, which the encoder places before
+    # -i only for raw sources.
+    source_color_params: tuple[str, ...] = ()
     # BBB e2e v6 Bug #V6-1 (ADR-0506): when the corpus job is bound to
     # an analysed-window length (``CorpusJob.duration_s > 0``) and the
     # caller has NOT opted into sample-clip mode, the encode must still
@@ -306,6 +309,28 @@ def _hw_upload_filter(adapter: object | None, req: EncodeRequest) -> str:
     return getattr(adapter, "hw_upload_filter", "")
 
 
+def _drop_output_pix_fmt(extra_params: Sequence[str]) -> list[str]:
+    """Drop ``-pix_fmt`` / ``-pix_fmt:v`` tokens and their following values.
+
+    A ``-pix_fmt`` or ``-pix_fmt:v`` token is dropped together with the next
+    token only when a next token exists and does not start with ``-``.
+    Otherwise only the flag is dropped and the next token is kept.
+    """
+    params: list[str] = []
+    i = 0
+    n = len(extra_params)
+    while i < n:
+        if extra_params[i] in ("-pix_fmt", "-pix_fmt:v"):
+            if i + 1 < n and not extra_params[i + 1].startswith("-"):
+                i += 2
+            else:
+                i += 1
+        else:
+            params.append(extra_params[i])
+            i += 1
+    return params
+
+
 def with_upload_filter(extra_params: Sequence[str], upload_filter: str) -> list[str]:
     """Return ``extra_params`` with ``upload_filter`` ending its ``-vf`` chain.
 
@@ -313,16 +338,22 @@ def with_upload_filter(extra_params: Sequence[str], upload_filter: str) -> list[
     appended to the caller's chain (``scale=W:H,format=nv12,hwupload...``)
     rather than added as a second ``-vf`` that would drop the scale or
     the upload. Without a caller chain it becomes ``-vf <upload_filter>``.
-    An empty ``upload_filter`` returns the params unchanged.
+    An empty ``upload_filter`` returns the params unchanged. Output
+    ``-pix_fmt`` is dropped when uploading hardware frames so ffmpeg does
+    not attempt an unsupported conversion back to software frames. A dangling
+    flag is dropped alone.
     """
-    out = list(extra_params)
     if not upload_filter:
-        return out
-    for i in range(len(out) - 1):
-        if out[i] in ("-vf", "-filter:v"):
-            out[i + 1] = f"{out[i + 1]},{upload_filter}"
-            return out
-    return ["-vf", upload_filter, *out]
+        return list(extra_params)
+    if "hwupload" in upload_filter:
+        params = _drop_output_pix_fmt(extra_params)
+    else:
+        params = list(extra_params)
+    for i in range(len(params) - 1):
+        if params[i] in ("-vf", "-filter:v"):
+            params[i + 1] = f"{params[i + 1]},{upload_filter}"
+            return params
+    return ["-vf", upload_filter, *params]
 
 
 def _build_seek_args(req: EncodeRequest) -> list[str]:
@@ -362,13 +393,45 @@ def _raw_demuxer_args(req: EncodeRequest) -> list[str]:
     ]
 
 
+_COLOR_TAG_FLAGS: tuple[str, ...] = (
+    "-color_primaries",
+    "-color_trc",
+    "-colorspace",
+    "-color_range",
+)
+
+
+def color_tag_args(params: Sequence[str]) -> list[str]:
+    """Filter and deduplicate colour signalling flags to their last-seen values."""
+    latest: dict[str, str] = {}
+    i = 0
+    n = len(params)
+    while i < n:
+        flag = params[i]
+        if flag in _COLOR_TAG_FLAGS and i + 1 < n:
+            latest[flag] = params[i + 1]
+            i += 2
+        else:
+            i += 1
+    out: list[str] = []
+    for flag in _COLOR_TAG_FLAGS:
+        if flag in latest:
+            out.extend([flag, latest[flag]])
+    return out
+
+
 def _build_input_args(req: EncodeRequest) -> list[str]:
-    """Demuxer flags, seek window and ``-i`` for the source leg."""
+    """Demuxer flags, seek window and ``-i`` for the source leg.
+
+    Raw frames carry no colour props; FFmpeg n9 takes encoder trc/primaries
+    from frames, so raw sources copy color options from req.source_color_params.
+    """
     args: list[str] = []
     if not req.source_is_container:
         # Raw YUV source: must tell ffmpeg the format explicitly.
         # A container source is left to ffmpeg's auto-detection.
         args.extend(_raw_demuxer_args(req))
+        args.extend(color_tag_args(req.source_color_params))
     args.extend(_build_seek_args(req))
     args.extend(["-i", str(req.source)])
     return args
@@ -806,6 +869,8 @@ def _pass1_input_args(req: EncodeRequest) -> list[str]:
     Same argv as :func:`_build_input_args` except for a NaN
     ``sample_clip_seconds``: the ``duration_s`` fallback here requires
     ``sample_clip_seconds <= 0.0``, so a NaN clip length emits no ``-t``.
+    Raw frames carry no colour props; FFmpeg n9 takes encoder trc/primaries
+    from frames, so raw sources copy color options from req.extra_params.
     """
     # V6-1 / #1266 follow-up: `build_pass1_stats_command` lost the
     # duration_s fallback that `build_ffmpeg_command` got — the ladder's
@@ -818,6 +883,7 @@ def _pass1_input_args(req: EncodeRequest) -> list[str]:
     args: list[str] = []
     if not req.source_is_container:
         args.extend(_raw_demuxer_args(req))
+        args.extend(color_tag_args(req.source_color_params))
     if req.sample_clip_seconds > 0.0:
         args.extend(["-ss", f"{req.sample_clip_start_s}"])
         args.extend(["-t", f"{req.sample_clip_seconds}"])

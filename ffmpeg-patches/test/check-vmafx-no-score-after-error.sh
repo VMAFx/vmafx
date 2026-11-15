@@ -4,7 +4,7 @@
 #
 # check-vmafx-no-score-after-error.sh — after a mid-run error the vmafx
 # filter (and vmafx backend=cuda) stops with one error naming the frame,
-# exits non-zero, prints no pooled score, and writes no log (patch 0004,
+# exits non-zero, prints no pooled score, and writes no log (patch 0003,
 # ADR-1768). Upstream FFmpeg pools the frames read before the error and
 # prints their score.
 #

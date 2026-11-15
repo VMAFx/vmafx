@@ -428,16 +428,25 @@ static char *test_matmul_avx512_narrow(void)
 
 #endif /* ARCH_X86 */
 
+static const MuTest portable_tests[] = {
+    MU_TEST(test_cov_row_scalar),
+};
+
+#if ARCH_AARCH64
+/* NEON is baseline on aarch64: no runtime gate. */
+static const MuTest aarch64_tests[] = {
+    MU_TEST(test_cov_row_neon),
+};
+#endif
+
+/* Run speed SIMD tests and return the first failure message, or NULL on success. */
 char *run_tests(void)
 {
-    static const MuTest portable_tests[] = {
-        MU_TEST(test_cov_row_scalar),
-#if ARCH_AARCH64
-        /* NEON is baseline on aarch64: no runtime gate. */
-        MU_TEST(test_cov_row_neon),
-#endif
-    };
     char *msg = mu_run_table(portable_tests, MU_TABLE_LEN(portable_tests));
+#if ARCH_AARCH64
+    if (!msg)
+        msg = mu_run_table(aarch64_tests, MU_TABLE_LEN(aarch64_tests));
+#endif
 #if ARCH_X86
     /* Guarded by `if (have)` rather than an early `return NULL`: the AVX2 and
      * AVX-512 gates then read the same way, and the TU keeps exactly one

@@ -41,7 +41,17 @@ _fail() {
 
 # Clean up any stubs we create, even on early exit.
 _STUBS_TO_CLEAN=()
+TMP_STUB_DIR="$(mktemp -d)"
+cat >"${TMP_STUB_DIR}/gh" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "${TMP_STUB_DIR}/gh"
+export PATH="${TMP_STUB_DIR}:${PATH}"
+
+# Remove the stub directory and the stub files.
 _cleanup() {
+  rm -rf "${TMP_STUB_DIR}"
   for s in "${_STUBS_TO_CLEAN[@]+"${_STUBS_TO_CLEAN[@]}"}"; do
     rm -f "${s}"
   done

@@ -60,7 +60,7 @@
 # =============================================================================
 # Stage 1 — runtime (shared base for `build` and `prod`; no oneAPI compiler)
 # =============================================================================
-FROM ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944 AS runtime
+FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c AS runtime
 
 LABEL org.opencontainers.image.title="vmafx"
 LABEL org.opencontainers.image.description="VMAFx fork: libvmaf (SYCL) + ffmpeg with the fork patches, Intel Arc/Xe"
@@ -88,7 +88,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg python3 \
         libgomp1 zlib1g \
         libva2 libva-drm2 intel-media-va-driver-non-free libvpl2 libmfx-gen1.2 \
@@ -128,16 +128,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # umf/tcm/tbb component dirs together without missing-dependency surprises.
 # The ~10 GB it installs never leaves this stage — stage 3 copies out only
 # the specific .so's `ldd` says vmaf/ffmpeg/libvmaf actually link (below).
-RUN curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
-        | gpg --dearmor \
-        | tee /usr/share/keyrings/intel-sw-products.gpg > /dev/null \
+RUN key="$(mktemp)" \
+    && curl --retry 3 --retry-all-errors -fsSL -o "$key" https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+    && gpg --dearmor < "$key" | tee /usr/share/keyrings/intel-sw-products.gpg > /dev/null \
+    && rm -f "$key" \
     && printf 'deb [signed-by=/usr/share/keyrings/intel-sw-products.gpg] https://apt.repos.intel.com/oneapi all main\n' \
         > /etc/apt/sources.list.d/intel-oneapi.list
 
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
         intel-basekit \
         meson ninja-build cmake pkg-config nasm git \
         build-essential zlib1g-dev \
@@ -179,7 +180,7 @@ RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends xxd \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends xxd \
  && if ! command -v xxd >/dev/null; then echo "FATAL: xxd not installed"; exit 1; fi
 
 # ---- libvmaf build inputs: the source tree (core/, ADR-0700) + the JSON
@@ -381,7 +382,7 @@ RUN ldconfig \
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends python3 \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends python3 \
  && if ! command -v python3 >/dev/null; then echo "FATAL: python3 not installed"; exit 1; fi
 COPY --from=build /src/vmafx/scripts/test/reference_report.py /opt/vmaf-selftest/reference_report.py
 # The 5 Netflix golden YUV fixtures (fetched + MD5-verified in the build stage;

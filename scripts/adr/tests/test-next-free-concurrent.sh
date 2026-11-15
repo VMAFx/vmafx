@@ -27,7 +27,14 @@ ROUNDS="${2:-5}"
 
 TMPDIR_BASE="$(mktemp -d)"
 FAKE_REPO="${TMPDIR_BASE}/fakerepo"
-mkdir -p "${FAKE_REPO}/docs/adr"
+STUB_BIN="${TMPDIR_BASE}/stub-bin"
+mkdir -p "${FAKE_REPO}/docs/adr" "${STUB_BIN}"
+cat >"${STUB_BIN}/gh" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "${STUB_BIN}/gh"
+export PATH="${STUB_BIN}:${PATH}"
 git -C "${FAKE_REPO}" init --quiet
 touch "${FAKE_REPO}/docs/adr/0600-alpha.md"
 git -C "${FAKE_REPO}" add .

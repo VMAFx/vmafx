@@ -74,15 +74,15 @@ behind pinning to a tag rather than a rolling release branch.
 
 ## ffmpeg-patches
 
-The node image applies the fork's 6-patch series from `ffmpeg-patches/`
+The node image applies the fork's 4-patch series from `ffmpeg-patches/`
 during the `ffmpeg-builder-cpu` stage (ADR-2166). The patches:
 
-- Add the `qpfile` option across encoders (`0001-codec-qpfile-unified.patch`).
-- Add the `-pass-autotune` CLI glue (`0002-pass-autotune-cli-glue.patch`).
-- Add the `-vmafx-profile` CLI glue (`0003-add-vmafx-profile-cli-glue.patch`).
-- Add the `vmafx` and `vmafx_tune` filters (`0004-add-vmafx-filter.patch`).
-- Add the `vmafx_pre` learned filter (`0005-add-vmafx-pre-filter.patch`).
-- Add loopback decoder hwaccel (`0006-fftools-loopback-decoder-hwaccel.patch`).
+- Add the `-pass-autotune` CLI glue (`0001-pass-autotune-cli-glue.patch`).
+- Add the `-vmafx-profile` CLI glue (`0002-add-vmafx-profile-cli-glue.patch`).
+- Add the `vmafx` and `vmafx_tune` filters (`0003-add-vmafx-filter.patch`).
+- Add the `vmafx_pre` learned filter (`0004-add-vmafx-pre-filter.patch`).
+- The `qpfile` option (`0043`) and the loopback decoder hwaccel (`0044`) ship
+  in the shared fix series (ADR-3143).
 - Keep the pinned FFmpeg sources warning-clean under GCC 14 and GCC 16 without
   removing VVC or another codec and without compiler-warning suppressions.
 - Resolve annotated release tags through the shared peeled-commit checkout
@@ -111,9 +111,11 @@ verification gate and invariants.
 | AV1 | encode | libsvtav1 | Intel/Netflix SVT-AV1 (production AV1 lane) |
 | AV1 | decode | libdav1d | Fast AV1 decoder |
 
-**libaom is excluded**: `ffmpeg-patches/0007` references `aom_roi_map_t`
-fields not present in any released libaom. SVT-AV1 covers the AV1 production
-lane. See `dev/Containerfile` §NOTE:libaom for the full rationale.
+**libaom is excluded**: shared fix series patch `0043` needs libaom >= 3.13.0
+(v3.12.1 and older lack required `aom_roi_map_t` fields). The node builder base
+(Debian 13) ships 3.12.1 (lacks the fields); enabling there needs libaom >= 3.13.0.
+SVT-AV1 covers the AV1 production lane. See `dev/Containerfile` §NOTE:libaom
+for the full rationale.
 
 ## Encoder startup probe
 

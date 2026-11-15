@@ -2214,6 +2214,52 @@ test_cjson = executable('test_cjson',
 )
 test('test_cjson', test_cjson, suite : ['fast'])
 
+# Compile declarations and xxd definitions together: cross-TU type mismatches
+# otherwise evade ordinary builds, even with LTO on some compilers.
+if json_model_c_sources.length() > 0
+    xxd_extern_definitions = custom_target('xxd_extern_definitions',
+        input : json_model_c_sources + brisque_model_c_sources,
+        output : 'xxd_extern_definitions.h',
+        command : [import('python').find_installation(), '-c',
+                   '''import pathlib, sys
+for path in sys.argv[1:]:
+    print(f'#include "{pathlib.Path(path).resolve().as_posix()}"')
+''',
+                   '@INPUT@'],
+        capture : true,
+    )
+    test_xxd_extern_types = executable('test_xxd_extern_types',
+        ['test_xxd_extern_types.c', xxd_extern_definitions],
+        include_directories : include_directories('../src'),
+        kwargs : test_link_kwargs,
+    )
+    test('test_xxd_extern_types', test_xxd_extern_types, suite : ['fast'])
+endif
+
+if hip_hsaco_sources.length() > 0
+    xxd_hsaco_extern_definitions = custom_target('xxd_hsaco_extern_definitions',
+        input : hip_hsaco_sources,
+        output : 'xxd_hsaco_extern_definitions.h',
+        command : [import('python').find_installation(), '-c',
+                   '''import pathlib, sys
+for path in sys.argv[1:]:
+    print(f'#include "{pathlib.Path(path).resolve().as_posix()}"')
+''',
+                   '@INPUT@'],
+        capture : true,
+    )
+    test_xxd_hsaco_extern_types = executable('test_xxd_hsaco_extern_types',
+        ['test_xxd_hsaco_extern_types.c', xxd_hsaco_extern_definitions],
+        include_directories : [libvmaf_inc, include_directories('../src'),
+                               include_directories('../src/feature'),
+                               include_directories('../src/cuda')],
+        dependencies : hip_deps,
+        c_args : ['-DHAVE_HIP=1', '-DHAVE_HIPCC'],
+        kwargs : test_link_kwargs,
+    )
+    test('test_xxd_hsaco_extern_types', test_xxd_hsaco_extern_types, suite : ['fast'])
+endif
+
 test_model = executable('test_model',
     ['test.c', 'test_model.c', '../src/dict.cpp', json_model_c_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
@@ -3643,7 +3689,7 @@ test('test_ffmpeg_vmafx_pelorus_scan_contract',
     timeout : 30,
 )
 
-# ADR-2093 / FFmpeg patch 0004: the vmafx filter declares the AVFrame colour to
+# ADR-2093 / FFmpeg patch 0003: the vmafx filter declares the AVFrame colour to
 # VMAFx. Device-free: reads the series; the FFmpeg run is
 # ffmpeg-patches/test/check-vmafx-input-colorimetry.sh.
 test('test_ffmpeg_libvmaf_input_colorimetry_contract',
@@ -7960,6 +8006,27 @@ test('test_sycl_motion_five_frame_window', test_sycl_motion_five_frame_window,
     is_parallel : false,
     timeout : 120)
 
+test_sycl_subsample_motion_vif = executable('test_sycl_subsample_motion_vif',
+    ['test.c', 'test_sycl_subsample_motion_vif.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : vmaf_test_link,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1'],
+    kwargs : test_link_kwargs,
+)
+test('test_sycl_subsample_motion_vif', test_sycl_subsample_motion_vif,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false,
+    timeout : 120)
+# Same binary under forced graph dispatch: every SYCL run must also record
+# the combined graph, so replay runs on frames where all extractors are
+# active (#3362 review).
+test('test_sycl_subsample_motion_vif_graph', test_sycl_subsample_motion_vif,
+    suite : ['fast', 'gpu', 'sycl'],
+    env : ['VMAF_SYCL_DISPATCH=MOTION:graph,PSNR:graph', 'VMAFX_TEST_EXPECT_SYCL_GRAPH=1'],
+    is_parallel : false,
+    timeout : 120)
+
 # ADR-1395: SYCL kernels use no scratch memory (private arrays in memory,
 # register spills) on Intel GPUs, where the Linux xe driver returns wrong
 # values from them. Builds every registered kernel for the default GPU and
@@ -8021,7 +8088,7 @@ if host_machine.system() == 'linux' and get_option('default_library') != 'shared
             '-Wl,--wrap=vmaf_dictionary_free',
             '-Wl,--wrap=vmaf_sycl_shared_frame_init',
             '-Wl,--wrap=vmaf_sycl_shared_chroma_init',
-            '-Wl,--wrap=vmaf_sycl_graph_register',
+            '-Wl,--wrap=vmaf_sycl_graph_register_flags',
             '-Wl,--wrap=vmaf_sycl_graph_unregister',
         ],
         kwargs : test_link_kwargs,

@@ -31,15 +31,25 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib.safe_subprocess import (
+    CommandOutputLimitExceeded,
+    CommandTimedOut,
+    CommandValidationError,
+)
+from scripts.lib.safe_subprocess import run as run_command
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "build-config.env"
 VEX = ROOT / "security" / "vex" / "go.openvex.json"
 MODULE = "golang.org/x/vuln/cmd/govulncheck"
+# 10x the cold-cache run (module download, build, scan): 36.8 s.
+SUBPROCESS_TIMEOUT_S = 600
 
 
 def configured_version(config: Path = CONFIG) -> str:
@@ -146,18 +156,43 @@ def judge(output: list[dict[str, Any]], justified: dict[str, str]) -> tuple[list
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run govulncheck against Go packages and evaluate vulnerabilities against VEX statements."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("packages", nargs="*", default=["./..."])
     parser.add_argument(
         "--dir", type=Path, default=ROOT, help="module to scan (default: the repository)"
     )
     args = parser.parse_args(argv)
+    for pkg in args.packages:
+        if not pkg or pkg.startswith("-"):
+            print(
+                f"govulncheck-gate: invalid package pattern {pkg!r}: "
+                "cannot be empty or start with '-'",
+                file=sys.stderr,
+            )
+            return 2
+    cmd = command(args.packages)
+    executable = cmd[0]
     try:
-        result = subprocess.run(  # noqa: S603 -- fixed argv
-            command(args.packages), cwd=args.dir, capture_output=True, text=True, check=False
+        result = run_command(
+            cmd,
+            allowed_executables=(executable,),
+            cwd=args.dir,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=SUBPROCESS_TIMEOUT_S,
+            max_output_bytes=16 * 1_048_576,
         )
         output = messages(result.stdout)
-    except (OSError, ValueError) as error:
+    except (
+        OSError,
+        ValueError,
+        TimeoutError,
+        CommandValidationError,
+        CommandTimedOut,
+        CommandOutputLimitExceeded,
+    ) as error:
         print(f"govulncheck-gate: the scan did not complete: {error}", file=sys.stderr)
         return 2
     if result.returncode != 0 or not any("config" in m for m in output):

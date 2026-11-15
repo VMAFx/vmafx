@@ -52,7 +52,15 @@ targets above
 (including for the single-test commands shown in [build flags](build-flags.md)
 and
 [oneAPI install](oneapi-install.md), which should be run through the wrapper).
-This repository cannot control an arbitrary command typed outside its wrappers.
+For agent sessions, the Claude Code and Codex command hooks
+(`.claude/hooks/block-unsafe-bash.sh`, `.codex/hooks/block-unsafe-bash.sh`)
+refuse these direct calls: direct `meson test`, `ninja` with `test` as a
+separate target word, and `meson compile` with `test` as a separate target word.
+The match stops at `;`, `|`, `&` and a newline, so a build line followed by
+another command is allowed. The repository ships no such hook for Gemini CLI
+(its `.gemini/settings.json` runs the engine's `praetorctl hook gemini pre-tool`),
+Antigravity or opencode, and a shell outside an agent session is unguarded too,
+so the pre-commit `testlog-credential-scan` remains.
 
 The wrapper removes the twelve listed names plus every name that matches a
 credential pattern ([ADR-3400](../adr/3400-meson-testlog-credential-patterns.md)):
