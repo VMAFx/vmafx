@@ -16,7 +16,13 @@ HISS-19), this module invokes the pinned Praetor engine via:
     sh .config/lefthook/engine.sh forge check-message <file>
 which provides the authoritative evaluation for conventional commit format,
 breaking change markers ('!' or 'BREAKING CHANGE:'), mandatory 'Migration:'
-footers, and sign-off trailers.
+footers, and sign-off trailers. Two repository-side gaps stay out of the
+engine's reach and are checked here, in subject_policy_error(): the engine
+only ever sees the composed subject '<title> (#<number>)', so a title whose
+conventional subject is empty (a bare 'fix:') passes once the suffix fills
+the description slot; and the engine's type list is upstream's, so a type
+the hook refuses because .pre-commit-config.yaml does not declare it (such
+as 'style') would otherwise pass. Anything else remains the engine's call.
 
 Fork commit types and engine compatibility:
 The engine's `forge check-message` enforces a fixed type list (build, chore,
@@ -32,8 +38,12 @@ accepts repository-declared types.
 Functions:
 - compose(title, number, body, identity): Returns the full squash message.
 - subject(title, number): Returns line 1 ('<title> (#<number>)').
+- bare_subject(title, number): Returns line 1 without the appended ' (#<number>)'.
 - body(body_text, identity): Returns the body content after the blank line.
+- parse_subject_prefix(bare): Returns (type, description) or None without a prefix.
+- subject_policy_error(bare, declared): Repository-side subject refusal, or ''.
 - check_message(title, number, body, identity, ...): Checks message with engine.
+- run_engine_check(root, msg, argv, timeout): Runs the engine on the composed message.
 - declared_types(repo_root): Extracts conventional commit types from config.
 - engine_subject(subject, declared): Maps non-engine declared types to 'chore'.
 - engine_available(root): Checks if the pinned Praetor engine wrapper is runnable.
@@ -43,6 +53,8 @@ CLI:
 - check: Reads inputs (--title, --number, --body/--body-file, --identity, --timeout) from flags
   or environment variables, runs the engine check.
 - body: Prints the composed commit body for a lander.
+- emit-label: Prints the type:<type> label for a pull-request title and refuses
+  titles without a declared type prefix (--title or PR_TITLE).
 """
 
 from __future__ import annotations
@@ -74,6 +86,10 @@ ENGINE_PROBE_TIMEOUT_SECONDS = 360.0
 DEFAULT_LANDING_IDENTITY = "lusoris <lusoris@proton.me>"
 FOOTER_RE = re.compile(r"^(?:BREAKING CHANGE|BREAKING-CHANGE|Migration): \S")
 CONVENTIONAL_SUBJECT_RE = re.compile(r"^([a-z]+)(\([^)]*\))?(!)?: ")
+# Repository-side subject policy (issue 2750): the description slot may be
+# empty before the appended ' (#N)' suffix, so the engine never sees it.
+SUBJECT_PREFIX_RE = re.compile(r"^([a-z]+)(\([^)]*\))?(!)?:\s*(.*)$")
+SQUASH_SUFFIX_RE = re.compile(r" \(#\d+\)$")
 
 # Fixed commit subject types supported by praetor internal/forge/commit_message.go
 # (commitSubjectTypes) at pin 4ae64cb27e56.
@@ -199,6 +215,46 @@ def subject(title: str, number: int) -> str:
     return f"{clean_title} (#{number})"
 
 
+def bare_subject(title: str, number: int) -> str:
+    """Return line 1 of the squash message without the appended ' (#<number>)'."""
+    return SQUASH_SUFFIX_RE.sub("", subject(title, number), count=1)
+
+
+def parse_subject_prefix(bare_subject: str) -> tuple[str, str] | None:
+    """Parse '<type>(<scope>)!<description>' from a subject without the suffix.
+
+    Returns (type, description), or None when the subject carries no
+    conventional prefix — those stay the engine's to judge.
+    """
+    match = SUBJECT_PREFIX_RE.match(bare_subject)
+    if not match:
+        return None
+    return match.group(1), match.group(4)
+
+
+def subject_policy_error(bare_subject: str, declared: Sequence[str]) -> str:
+    """Return the repository-side subject refusal for bare_subject, or ''.
+
+    Covers exactly the two gaps the pinned engine cannot see (issue 2750):
+    a description that is empty before the appended ' (#N)' suffix, and a
+    type the commit-msg hook refuses because .pre-commit-config.yaml does
+    not declare it (such as 'style'). A subject without a conventional
+    prefix returns '' and remains the engine's call.
+    """
+    parsed = parse_subject_prefix(bare_subject)
+    if parsed is None:
+        return ""
+    commit_type, description = parsed
+    if commit_type not in declared:
+        return (
+            f"type '{commit_type}' is not declared in .pre-commit-config.yaml "
+            "(the commit-msg hook refuses it)"
+        )
+    if not description.strip():
+        return "the conventional subject is empty before the squash ' (#N)' suffix"
+    return ""
+
+
 def body(body_text: str, identity: str) -> str:
     """Return the squash commit message body (after the subject and blank line)."""
     footers = extract_footers(str(body_text or ""))
@@ -276,29 +332,19 @@ def resolve_engine_cmd(root: Path, engine_argv: list[str] | None) -> tuple[list[
     return list(engine_argv), ""
 
 
-def check_message(
-    title: str,
-    number: int,
-    body_text: str,
-    identity: str,
-    *,
-    engine_argv: list[str] | None = None,
-    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
-    repo_root: Path | None = None,
+def run_engine_check(
+    root: Path,
+    msg: str,
+    engine_argv: list[str] | None,
+    timeout_seconds: float,
 ) -> tuple[int, str]:
-    """Check the composed squash message against commit policy.
+    """Run the engine policy check on the composed message.
 
     Returns a tuple of (exit_status, output_text):
       0: message passes policy
       1: message refused by engine policy check
-      2: usage error, engine execution failure, timeout, or missing binary
+      2: engine execution failure, timeout, or missing binary
     """
-    root = repo_root or REPO_ROOT
-    try:
-        msg = engine_message(compose(title, number, body_text, identity), declared_types(root))
-    except ValueError as exc:
-        return 2, f"composition error: {exc}\n"
-
     cmd_prefix, err = resolve_engine_cmd(root, engine_argv)
     if cmd_prefix is None:
         return 2, err
@@ -335,6 +381,37 @@ def check_message(
     finally:
         if temp_path and temp_path.exists():
             temp_path.unlink(missing_ok=True)
+
+
+def check_message(
+    title: str,
+    number: int,
+    body_text: str,
+    identity: str,
+    *,
+    engine_argv: list[str] | None = None,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    repo_root: Path | None = None,
+) -> tuple[int, str]:
+    """Check the composed squash message against commit policy.
+
+    Returns a tuple of (exit_status, output_text):
+      0: message passes policy
+      1: message refused by engine policy check or the subject policy above
+      2: usage error, engine execution failure, timeout, or missing binary
+    """
+    root = repo_root or REPO_ROOT
+    try:
+        declared = declared_types(root)
+        msg = engine_message(compose(title, number, body_text, identity), declared)
+    except ValueError as exc:
+        return 2, f"composition error: {exc}\n"
+
+    policy_reason = subject_policy_error(bare_subject(title, number), declared)
+    if policy_reason:
+        return 1, f"refusing subject: {policy_reason}\n"
+
+    return run_engine_check(root, msg, engine_argv, timeout_seconds)
 
 
 def resolve_body(args: argparse.Namespace) -> str:
@@ -405,6 +482,31 @@ def run_body_cmd(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_emit_label_cmd(args: argparse.Namespace) -> int:
+    """Handle the 'emit-label' CLI subcommand."""
+    title = str(args.title or "").strip()
+    if not title:
+        print("squash_message: PR title is required", file=sys.stderr)
+        return 2
+
+    try:
+        declared = declared_types()
+    except ValueError as exc:
+        print(f"squash_message: {exc}", file=sys.stderr)
+        return 2
+
+    reason = subject_policy_error(title, declared)
+    parsed = parse_subject_prefix(title)
+    if reason or parsed is None:
+        print(
+            f"squash_message: {reason or 'title has no conventional-commit prefix'}",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"type:{parsed[0]}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Construct CLI argument parser with subcommands."""
     env = os.environ.get
@@ -437,6 +539,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--identity",
         default=env("LANDING_IDENTITY", DEFAULT_LANDING_IDENTITY),
     )
+
+    label_p = subparsers.add_parser(
+        "emit-label", help="Print the type:* label for a pull-request title"
+    )
+    label_p.add_argument("--title", default=env("PR_TITLE", ""))
     return parser
 
 
@@ -452,6 +559,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_check_cmd(args)
     if args.subcommand == "body":
         return run_body_cmd(args)
+    if args.subcommand == "emit-label":
+        return run_emit_label_cmd(args)
     return 2
 
 
