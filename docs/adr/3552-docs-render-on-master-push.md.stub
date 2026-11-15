@@ -1,0 +1,36 @@
+<!-- ADR-3552 stub — claimed by scripts/adr/next-free.sh --claim docs-render-on-master-push on 2026-11-15T03:53:56Z -->
+<!-- Replace this file with the real ADR and rename to 3552-docs-render-on-master-push.md before committing. -->
+<!-- To abandon this claim run: scripts/adr/next-free.sh --release 3552 -->
+
+# ADR-3552: <fill in title>
+
+- **Status**: Proposed
+- **Date**: 2026-11-15
+- **Deciders**: <fill in>
+- **Tags**: <fill in>
+
+## Context
+
+<fill in>
+
+## Decision
+
+<fill in>
+
+## Alternatives considered
+
+| Option | Pros | Cons | Why not chosen |
+|---|---|---|---|
+| | | | |
+
+## Consequences
+
+- **Positive**: <fill in>
+- **Negative**: <fill in>
+- **Neutral / follow-ups**: <fill in>
+
+## References
+
+- See [ADR-0535](0535-adr-atomic-allocator.md) for the original allocator design.
+- See [ADR-0628](0628-adr-allocator-remote-aware.md) for the remote-aware extension.
+- Source: <req or Q<round>.<q>>
