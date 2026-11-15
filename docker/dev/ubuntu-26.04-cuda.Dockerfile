@@ -18,15 +18,21 @@ ENV DEBIAN_FRONTEND=noninteractive \
     # NVIDIA reserves the right to tighten the relaxed rules later.
     NVCCFLAGS="--expt-relaxed-constexpr --extended-lambda --expt-extended-lambda"
 
-COPY build-config.env scripts/ci/install-cuda-toolkit.sh /tmp/
-RUN /tmp/install-cuda-toolkit.sh --mode=builder /tmp \
-    && rm -f /tmp/install-cuda-toolkit.sh /tmp/build-config.env
-
-COPY scripts/setup/ubuntu.sh /tmp/ubuntu.sh
-RUN apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
-        ca-certificates curl git sudo \
+COPY build-config.env scripts/ci/install-cuda-toolkit.sh scripts/setup/ubuntu.sh /tmp/
+# UBUNTU_APT_CERTIFICATE_BOOTSTRAP: HTTPS-only snapshots need the live archive's CA bundle.
+# DL3008: later installs resolve from APT::Snapshot; only this bootstrap is unpinned (ADR-3541).
+# hadolint ignore=DL3008
+RUN apt-get --error-on=any -o Acquire::Retries=3 update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && . /tmp/build-config.env \
+    && printf 'APT::Snapshot "%s";\n' "$UBUNTU_APT_SNAPSHOT" > /etc/apt/apt.conf.d/50ubuntu-snapshot \
+    && grep -Eqx 'APT::Snapshot "[0-9]{8}T[0-9]{6}Z";' /etc/apt/apt.conf.d/50ubuntu-snapshot \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get --error-on=any -o Acquire::Retries=3 update \
+    && apt-get install -y --no-install-recommends curl git sudo \
+    && /tmp/install-cuda-toolkit.sh --mode=builder /tmp \
     && bash /tmp/ubuntu.sh \
-    && rm -rf /var/lib/apt/lists/* /tmp/ubuntu.sh
+    && rm -rf /var/lib/apt/lists/* /tmp/ubuntu.sh /tmp/build-config.env /tmp/install-cuda-toolkit.sh
 
 WORKDIR /src
 CMD ["bash"]
