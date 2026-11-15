@@ -940,4 +940,5 @@ Newest first.
 - The CAMBI Vulkan kernel (T7-36 / ADR-0210) was removed with the backend in
   ADR-0726.
 
-See the [glossary](../reference/glossary.md) for the terms used across the metric pages.
+See the [glossary](../reference/glossary.md) for the terms used across the
+metric pages.

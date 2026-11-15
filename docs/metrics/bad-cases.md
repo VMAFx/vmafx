@@ -46,4 +46,5 @@ File the report through the
 "hardware report" for a result from a device the project does not test. Open
 and confirmed bugs are tracked in [the state ledger](../state.md).
 
-See the [glossary](../reference/glossary.md) for the terms used across the metric pages.
+See the [glossary](../reference/glossary.md) for the terms used across the
+metric pages.

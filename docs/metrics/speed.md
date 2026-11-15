@@ -652,4 +652,5 @@ build of the C library contains the extractors.
   [SYCL backend](../backends/sycl/overview.md): backend selection and
   `--backend`.
 
-See the [glossary](../reference/glossary.md) for the terms used across the metric pages.
+See the [glossary](../reference/glossary.md) for the terms used across the
+metric pages.

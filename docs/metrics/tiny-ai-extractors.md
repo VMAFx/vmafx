@@ -284,4 +284,5 @@ Limitations:
   thumbnail input; the model shipped here is not the old smoke-only
   placeholder.
 
-See the [glossary](../reference/glossary.md) for the terms used across the metric pages.
+See the [glossary](../reference/glossary.md) for the terms used across the
+metric pages.

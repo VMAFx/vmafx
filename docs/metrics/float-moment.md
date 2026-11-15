@@ -87,4 +87,5 @@ every SVE vector length. `test_moment_simd` has the cases.
   the CPU and warned that the backend had no twin; the twin ran only when
   named (`--feature float_moment_cuda`). It now runs the twin.
 
-See the [glossary](../reference/glossary.md) for the terms used across the metric pages.
+See the [glossary](../reference/glossary.md) for the terms used across the
+metric pages.

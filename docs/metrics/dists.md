@@ -96,4 +96,5 @@ LPIPS extractor.
 - [Feature extractor matrix](features.md)
 - [ADR-0236](../adr/0236-dists-extractor.md)
 
-See the [glossary](../reference/glossary.md) for the terms used across the metric pages.
+See the [glossary](../reference/glossary.md) for the terms used across the
+metric pages.

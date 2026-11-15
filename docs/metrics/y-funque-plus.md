@@ -141,4 +141,6 @@ python3 scripts/ci/run_meson_test.py -- \
 - [SSIMULACRA 2](ssimulacra2.md) — the other fork wavelet/perceptual metric
 - [Features overview](features.md)
 
-See the [glossary](../reference/glossary.md) — terms used here: [HDR](../reference/glossary.md#hdr), [SDR](../reference/glossary.md#sdr), [pooling](../reference/glossary.md#pooling).
+See the [glossary](../reference/glossary.md) — terms used here:
+[HDR](../reference/glossary.md#hdr), [SDR](../reference/glossary.md#sdr),
+[pooling](../reference/glossary.md#pooling).
