@@ -1193,6 +1193,14 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: make-governance-engine-pin
+        name: Makefile governance targets run the pinned engine
+        entry: python3 -B scripts/ci/tests/test_make_governance_engine_pin.py
+        language: system
+        files: '^(Makefile|\.config/praetor/engine\.mk|scripts/ci/tests/test_make_governance_engine_pin\.py|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: mypy-scope-contract
         name: Check pre-push mypy merge-base scope
         entry: python3 scripts/git-hooks/test-pre-push-mypy.py

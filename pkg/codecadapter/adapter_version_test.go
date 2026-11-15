@@ -19,7 +19,7 @@ func TestAdapterVersionMatchesPython(t *testing.T) {
 
 	want := map[string]string{
 		"libx264": "2", "libx265": "2", "libvpx-vp9": "1", "libvvenc": "2",
-		"libaom-av1": "1", "libsvtav1": "1",
+		"libaom-av1": "2", "libsvtav1": "1",
 		"h264_nvenc": "1", "hevc_nvenc": "1", "av1_nvenc": "1",
 		"h264_amf": "2", "hevc_amf": "2", "av1_amf": "2",
 		"h264_qsv": "4", "hevc_qsv": "4", "av1_qsv": "4",
