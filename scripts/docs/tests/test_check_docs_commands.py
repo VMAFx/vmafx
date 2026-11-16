@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 import types
 from pathlib import Path
@@ -169,7 +170,7 @@ def test_execute_without_any_toolchain_fails(
 
 
 def test_relative_cli_binary_is_made_absolute(tmp_path: Path) -> None:
-    args = types.SimpleNamespace(bin=str(tmp_path / "build" / "tools" / "vmaf"))
+    args = argparse.Namespace(bin=str(tmp_path / "build" / "tools" / "vmaf"))
     resolved = checker._resolve_cli_binary(args)
     assert resolved is not None
     assert Path(resolved).is_absolute()

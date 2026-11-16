@@ -36,6 +36,7 @@ from typing import NamedTuple
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 PAGES_DIRS = [ROOT / "docs" / "tutorials", ROOT / "docs" / "cookbook"]
@@ -190,7 +191,7 @@ def _resolve_cli_binary(args: argparse.Namespace) -> str | None:
     return None
 
 
-def _safe_run(cmd: list[str], allowed: list[str]):
+def _safe_run(cmd: list[str], allowed: list[str]) -> TextCommandResult:
     """Run one argv and return the completed process (stdout/stderr intact)."""
     return run_command(
         cmd,
