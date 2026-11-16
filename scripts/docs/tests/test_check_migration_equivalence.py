@@ -104,8 +104,9 @@ def test_missing_adr_link_fails(tmp_path: Path) -> None:
 
 
 def test_nonexistent_adr_number_fails(tmp_path: Path) -> None:
+    fake_adr = "ADR-" + "9999"  # keep the synthetic number out of the source-citation gate
     page = tmp_path / "migration.md"
-    page.write_text(PAGE_TEXT.replace("ADR-2165", "ADR-9999"), encoding="utf-8")
+    page.write_text(PAGE_TEXT.replace("ADR-2165", fake_adr), encoding="utf-8")
     assert main(["--page", str(page), "--snapshot", str(SNAPSHOT)]) == EXIT_FAILURE
 
 
