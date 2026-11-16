@@ -1,0 +1,1 @@
+- **CI:** exclude `docs/hardware-reports/index.md` by exact path from Codacy's `markdownlint` engine in `.codacy.yml` alongside `docs/hardware-reports/.markdownlint-cli2.yaml` (Codacy reads only the root `.markdownlint.json`), and fail `scripts/ci/tests/test_codacy_config.py` when nested `markdownlint-cli2` configurations and exact-path Codacy exclusions drift apart.

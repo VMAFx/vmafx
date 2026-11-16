@@ -468,6 +468,88 @@ Hand-written prose outside the generated block.
         self.assertIn("nested generated block", result.stdout)
         self.assertNotIn("clean", result.stdout)
 
+    def test_generated_block_stray_end_marker_fails_closed(self) -> None:
+        """An end marker without a start is malformed input, not an exemption."""
+        page = """# Credits
+
+<!-- credits:end -->
+
+Hand-written prose.
+"""
+        self.write("docs/credits.md", page)
+        self.write("README.md", "# fixture\n")
+        base = self.commit("docs: seed the malformed credits page")
+
+        self.write("docs/credits.md", page + "Extra prose.\n")
+        head = self.commit("docs: add a line")
+
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("has no start marker", result.stdout)
+        self.assertNotIn("clean", result.stdout)
+
+    def test_generated_block_mismatched_end_marker_fails_closed(self) -> None:
+        """An end marker must name the block its start marker opened."""
+        page = """# Credits
+
+<!-- credits:table summary -->
+1 entries. By kind: code 1.
+<!-- hardware-we-need:end -->
+
+Hand-written prose.
+"""
+        self.write("docs/credits.md", page)
+        self.write("README.md", "# fixture\n")
+        base = self.commit("docs: seed the mismatched credits page")
+
+        self.write("docs/credits.md", page + "Extra prose.\n")
+        head = self.commit("docs: add a line")
+
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("does not match", result.stdout)
+        self.assertNotIn("clean", result.stdout)
+
+    def test_generated_marker_edit_is_not_exempt(self) -> None:
+        """Editing a marker line keeps it a marker but is still a removal."""
+        seed = credits_page("1 entries. By kind: code 1.", "| row-zero |")
+        self.write("docs/credits.md", seed)
+        self.write("README.md", "# fixture\n")
+        start = self.commit("docs: seed the credits page")
+
+        self.write(
+            "docs/credits.md",
+            credits_page("2 entries. By kind: code 2.", "| row-zero |\n| row-master |"),
+        )
+        base = self.commit("docs: add the master credit")
+
+        git(self.repo, "checkout", "-q", "-b", "feature", start)
+        self.write(
+            "docs/credits.md",
+            credits_page("1 entries. By kind: code 1.", "| row-zero |\n| row-branch |"),
+        )
+        self.commit("docs: add the branch credit")
+
+        git(self.repo, "merge", "--no-commit", "--no-ff", base, check=False)
+        self.write(
+            "docs/credits.md",
+            credits_page(
+                "3 entries. By kind: code 3.",
+                "| row-zero |\n| row-branch |\n| row-master |",
+            ).replace(
+                "<!-- credits:table summary -->",
+                "<!-- credits:table summary-renamed -->",
+            ),
+        )
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "merge master into feature")
+        head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("dropped", result.stdout)
+        self.assertNotIn("clean", result.stdout)
+
     def test_branch_deletion_is_not_a_reverse_hunk(self) -> None:
         """A file the branch deletes on purpose is not a partial rewind of it.
 
