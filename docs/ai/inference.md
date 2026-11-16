@@ -531,8 +531,9 @@ local GPUs ([#2947](https://github.com/VMAFx/vmafx/issues/2947), comment
 - `transnet_v2` cannot execute on the CUDA EP in 1.31.1: the leg binds, but its
   ScatterND node `fork_segmentsum_scatter` raises
   `element_type 6 not implemented for ScatterND operator.` (ONNX element
-  type 6 is int32) deterministically on both GPUs. The CPU EP is unaffected. The gate runs the
-  model's target-provider leg as a zeros-input execute probe and records that
+  type 6 is int32) deterministically on both GPUs. The CPU EP is unaffected. The
+  gate runs the model's target-provider leg as a zeros-input execute probe and
+  records that
   exact failure — whether it surfaces while creating the session or at Run
   time — as an expected provider gap (`PROVIDER_GAP`); any other transnet_v2
   failure still fails the gate, and a gap-listed model that executes is
