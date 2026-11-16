@@ -37,6 +37,7 @@ class WorkflowGate(Protocol):
     RUN_RE: re.Pattern[str]
     LEVEL_ZERO_CONFIG: str
     LEVEL_ZERO_URL: str
+    LEVEL_ZERO_FETCHER: str
 
     def check_level_zero_container(self, root: Path) -> list[str]: ...
 
@@ -96,37 +97,63 @@ class LevelZeroSingleSource(unittest.TestCase):
                 self.assertEqual(result.returncode, status, result.stdout + result.stderr)
 
     def test_missing_copy_source_or_reintroduced_argument_fails(self) -> None:
+        readded_curl_run = (
+            self.text + f'\nRUN . {GATE.LEVEL_ZERO_CONFIG} && curl -fsSL "{GATE.LEVEL_ZERO_URL}'
+            'v${LEVEL_ZERO_VERSION}/libze1_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb"'
+            " -o libze1.deb\n"
+        )
         for text in (
             self.text.replace(f"COPY build-config.env {GATE.LEVEL_ZERO_CONFIG}", ""),
             self.text.replace(f". {GATE.LEVEL_ZERO_CONFIG}", "true"),
             self.text + "\nARG LEVEL_ZERO_VER=1.32.0\n",
             self.text.replace("${LEVEL_ZERO_VERSION}", "1.32.0"),
             self.text.replace("${LEVEL_ZERO_VERSION}", "${UNREGISTERED_VERSION}", 1),
+            self.text.replace(' --level-zero-ver "${LEVEL_ZERO_VERSION}"', ""),
+            self.text.replace(" --level-zero-dev", ""),
+            readded_curl_run,
         ):
             with self.subTest(change=text[:80]):
                 self.assertTrue(self.check(text))
+        self.assertIn(
+            "dev/Containerfile must not download Level Zero debs outside the lock-verified fetcher",
+            self.check(readded_curl_run),
+        )
 
     def test_actual_download_command_uses_changed_config_not_inherited_value(self) -> None:
         runs = [
             match.group(0)
             for match in GATE.RUN_RE.finditer(self.text)
-            if GATE.LEVEL_ZERO_URL in match.group(0)
+            if GATE.LEVEL_ZERO_FETCHER in match.group(0)
         ]
         self.assertEqual(len(runs), 1)
-        command = runs[0].replace("\\\n", " ")
-        command = re.sub(r"^RUN(?:\s+--mount=\S+)+\s+", "", command)
+        scratch = self.repo / "scratch"
+        scratch.mkdir()
         config = self.repo / "build-config.env"
+        command = re.sub(r"^RUN(?:\s+--mount=\S+)+\s+", "", runs[0].replace("\\\n", " "))
+        mkdir_match = re.search(r"\bmkdir\s+-p\s+(\S+)", command)
+        self.assertIsNotNone(mkdir_match)
+        assert mkdir_match is not None
+        scratch_prefix = f"{Path(mkdir_match.group(1)).parent.as_posix()}/"
+        command = command.replace(scratch_prefix, f"{scratch.as_posix()}/")
+        command = re.sub(r"\bcd\s+/(?=\s|$)", f"cd {shlex.quote(str(scratch))}", command)
         command = command.replace(GATE.LEVEL_ZERO_CONFIG, shlex.quote(str(config)))
         tools = self.repo / "bin"
         tools.mkdir()
-        for name in ("curl", "apt-get", "find"):
+        for host_tool in ("mkdir", "rm"):
+            resolved = shutil.which(host_tool)
+            self.assertIsNotNone(resolved)
+            assert resolved is not None
+            (tools / host_tool).symlink_to(resolved)
+        for name in ("python3", "apt-get", "ldconfig"):
             tool = tools / name
-            tool.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$PROBE_LOG"\n')
+            tool.write_text(f'#!/bin/sh\nprintf "{name} %s\\n" "$*" >> "$PROBE_LOG"\n')
             tool.chmod(0o700)
         log = self.repo / "commands.log"
         for version in ("1.32.0", "1.33.9"):
             with self.subTest(version=version):
-                config.write_text(f'LEVEL_ZERO_VERSION="{version}"\n')
+                config.write_text(
+                    f'INTEL_NEO_VERSION="26.35.39758.10"\nLEVEL_ZERO_VERSION="{version}"\n'
+                )
                 log.write_text("")
                 result = run_command(
                     [BASH, "-c", command],
@@ -138,8 +165,10 @@ class LevelZeroSingleSource(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 calls = log.read_text()
-                for package in ("libze1", "libze-dev"):
-                    self.assertIn(f"/v{version}/{package}_{version}%2Bu24.04_amd64.deb", calls)
+                python_calls = [line for line in calls.splitlines() if line.startswith("python3 ")]
+                self.assertEqual(len(python_calls), 1)
+                self.assertIn(f"--level-zero-ver {version}", python_calls[0])
+                self.assertIn("--level-zero-dev", python_calls[0])
                 self.assertNotIn("0.0.0", calls)
 
     def test_renovate_tracks_only_the_shared_level_zero_owner(self) -> None:

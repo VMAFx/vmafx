@@ -93,7 +93,10 @@ BRANCH_RE = re.compile(r'--branch\s+"?v([0-9][0-9.]*)')
 RUN_RE = re.compile(r"(?m)^RUN(?:[^\n]*\\\n)*[^\n]*")
 LEVEL_ZERO_CONFIG = "/opt/vmafx/build-config.env"
 LEVEL_ZERO_URL = "https://github.com/oneapi-src/level-zero/releases/download/"
-LEVEL_ZERO_VERSION_FIELDS = 2  # release tag and package filename in each URL
+LEVEL_ZERO_FETCHER = "fetch-intel-neo.py"
+LEVEL_ZERO_FETCHER_CALL_RE = re.compile(
+    r"(?:python[0-9.]*\s+\S*fetch-intel-neo\.py|\S*fetch-intel-neo\.py(?=\s+--))\b[^;&|]*"
+)
 
 
 PYTHON_RE = re.compile(r'python-version:\s*[\'"]?([0-9]+\.[0-9]+\.[0-9]+)[\'"]?')
@@ -113,13 +116,50 @@ def load_config(root: Path) -> dict[str, str]:
     return values
 
 
+def _check_level_zero_fetcher_run(
+    copy: re.Match[str] | None, run: re.Match[str], call: re.Match[str], normalized: str
+) -> list[str]:
+    problems: list[str] = []
+    source = f". {LEVEL_ZERO_CONFIG}"
+    if (
+        not copy
+        or copy.end() > run.start()
+        or source not in normalized
+        or normalized.index(source) > call.start()
+    ):
+        problems.append(
+            f"dev/Containerfile must source the copied config before invoking {LEVEL_ZERO_FETCHER}"
+        )
+    if re.search(r"\bLEVEL_ZERO_VER\b", normalized) or re.search(
+        r'--level-zero-ver(?:=|\s+)["\']?v?[0-9]', normalized
+    ):
+        problems.append(
+            "dev/Containerfile must pass LEVEL_ZERO_VERSION from build-config.env "
+            f"to {LEVEL_ZERO_FETCHER}"
+        )
+    clause = call.group(0)
+    has_ver = re.search(r'(?:^|\s)--level-zero-ver\s+"\$\{LEVEL_ZERO_VERSION\}"(?:\s|$)', clause)
+    has_dev = re.search(r"(?:^|\s)--level-zero-dev(?:\s|$)", clause)
+    if not has_ver or not has_dev:
+        problems.append(
+            'dev/Containerfile must pass --level-zero-ver "${LEVEL_ZERO_VERSION}" '
+            f"and --level-zero-dev to {LEVEL_ZERO_FETCHER}"
+        )
+    return problems
+
+
 def check_level_zero_container(root: Path) -> list[str]:
-    """The SDK stage consumes the shared value at RUN time; no ARG is needed."""
+    """The dev container fetches Level Zero debs through fetch-intel-neo.py (ADR-1231, ADR-3555).
+
+    The NEO/Level Zero RUN sources the copied build-config.env at RUN time (no
+    ARG mirror) and passes LEVEL_ZERO_VERSION with --level-zero-dev to the
+    lock-verified fetcher; direct github.com release downloads are refused.
+    """
     path = root / "dev" / "Containerfile"
     if not path.is_file():
         return []
     text = path.read_text(encoding="utf-8")
-    problems = []
+    problems: list[str] = []
     copy = re.search(rf"(?m)^COPY\s+build-config\.env\s+{re.escape(LEVEL_ZERO_CONFIG)}\s*$", text)
     if not copy:
         problems.append("dev/Containerfile must COPY build-config.env for the Level Zero SDK step")
@@ -127,33 +167,22 @@ def check_level_zero_container(root: Path) -> list[str]:
         problems.append(
             "dev/Containerfile must not duplicate the shared Level Zero version as an ARG"
         )
-    downloads = [run for run in RUN_RE.finditer(text) if LEVEL_ZERO_URL in run.group(0)]
-    if len(downloads) != 1:
+    runs = list(RUN_RE.finditer(text))
+    if any(LEVEL_ZERO_URL in run.group(0) for run in runs):
         problems.append(
-            "dev/Containerfile needs one Level Zero download RUN sourced from the shared config"
+            "dev/Containerfile must not download Level Zero debs outside the lock-verified fetcher"
         )
+    calls = [
+        (run, call, normalized)
+        for run in runs
+        for normalized in (re.sub(r"\\\n\s*", " ", run.group(0)),)
+        for call in LEVEL_ZERO_FETCHER_CALL_RE.finditer(normalized)
+    ]
+    if len(calls) != 1:
+        problems.append(f"dev/Containerfile must invoke {LEVEL_ZERO_FETCHER} in exactly one RUN")
         return problems
-    run = downloads[0]
-    source = f". {LEVEL_ZERO_CONFIG}"
-    command = run.group(0)
-    if (
-        not copy
-        or copy.end() > run.start()
-        or source not in command
-        or command.index(source) > command.index(LEVEL_ZERO_URL)
-    ):
-        problems.append(
-            "dev/Containerfile must source the copied config before downloading Level Zero"
-        )
-    if re.search(r"LEVEL_ZERO_VER\b", command) or re.search(
-        re.escape(LEVEL_ZERO_URL) + r"v[0-9]", command
-    ):
-        problems.append(
-            "dev/Containerfile Level Zero downloads must use LEVEL_ZERO_VERSION from build-config.env"
-        )
-    urls = re.findall(re.escape(LEVEL_ZERO_URL) + r'[^"\s]+', command)
-    if any(url.count("${LEVEL_ZERO_VERSION}") != LEVEL_ZERO_VERSION_FIELDS for url in urls):
-        problems.append("dev/Containerfile does not consume LEVEL_ZERO_VERSION in every SDK URL")
+    run, call, normalized = calls[0]
+    problems.extend(_check_level_zero_fetcher_run(copy, run, call, normalized))
     return problems
 
 

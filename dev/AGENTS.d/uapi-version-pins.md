@@ -17,10 +17,11 @@ silently falls back to CPU. Two hard pins live in
 - **Shared `INTEL_NEO_VERSION`** and shared `LEVEL_ZERO_VERSION`.
   Pinned via GitHub releases: Intel's `noble/unified` APT repo's
   newest as of 2026-05-18 = `25.18.x`, too old for kernel ≥ 7.0.
-  Level Zero loader comes from `oneapi-src/level-zero`. NEO and
-  Level Zero `RUN`s source copied root `build-config.env` from
-  `/opt/vmafx/`; both Level Zero download URL components use
-  `LEVEL_ZERO_VERSION`. Do not reintroduce separate
+  Level Zero loader comes from `oneapi-src/level-zero`. NEO `RUN`
+  sources copied root `build-config.env` from `/opt/vmafx/` and
+  passes `--level-zero-ver "${LEVEL_ZERO_VERSION}" --level-zero-dev`
+  to `fetch-intel-neo.py`; never download Level Zero `.deb` files
+  outside lock-verified fetcher. Do not reintroduce separate
   `LEVEL_ZERO_VER`/`LEVEL_ZERO_VERSION` ARG or literal version.
   `scripts/ci/check-workflow-versions.py` and single-source fixture
   gate protect this consumer. Renovate owns setting only in
