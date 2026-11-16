@@ -4,6 +4,8 @@
 """Require DCO sign-offs and refuse model/tool attribution in PRs and landed commits.
 
 ADR-2462 covers pull request sign-offs; ADR-3389 covers landed squash commits.
+ADR-3531 covers identity and message attribution checks.
+ADR-3544 refuses bot-authored PR/pre-push commits unless the bot is the branch opener.
 
 Every non-merge commit in ``BASE..HEAD`` must end with a ``Signed-off-by: Name
 <email>`` trailer (what ``git commit -s`` writes), and the e-mail address of
@@ -40,9 +42,19 @@ Usage::
     python3 scripts/ci/check-dco.py --landed --landing-identity "Name <email>" \\
         --base <sha> --head <sha>
 
+    python3 scripts/ci/check-dco.py --merge-base origin/master [--head <rev>]
+
+``--merge-base REF`` is the pre-push mode, named like the other pre-push hooks'
+option: it checks the commits the push adds on top of ``REF``, those reachable
+from the outgoing commit but not from ``REF``. The outgoing commit is
+``--head``, else the ``PRE_COMMIT_TO_REF`` that pre-commit exports during a
+push, else ``HEAD``. It catches commits that never passed the local commit-msg
+hook, such as a review bot's commit pulled from the pull request branch.
+
 ``BASE_SHA``, ``HEAD_SHA``, ``PR_AUTHOR``, ``PR_AUTHOR_TYPE``,
 ``DCO_RELEASE_PR``, ``PR_CREATED_AT`` and ``LANDING_IDENTITY`` are read when the flags
-are absent. ``--pr-body-from-event`` reads ``GITHUB_EVENT_PATH`` JSON in CI.
+are absent. ``--merge-base`` does not read ``HEAD_SHA``, so an inherited value
+cannot replace the pushed commit. ``--pr-body-from-event`` reads ``GITHUB_EVENT_PATH`` JSON in CI.
 Locally, ``--pr-body-file`` (alias ``--pr-body``) reads a UTF-8 file; otherwise
 ``PR_BODY`` supplies the body. Inputs exceeding named byte/line bounds are refused.
 Exit status: 0 all checks pass, 1 attribution or sign-off fails, 2 usage or git error.
@@ -260,9 +272,32 @@ def is_exempt_bot_commit(commit: Commit, author: str, author_type: str) -> bool:
     return commit.author_email.lower().endswith(bot_noreply_suffix(author))
 
 
-def judge(commit: Commit, author: str, author_type: str) -> str | None:
+def pr_attribution_reason(
+    commit: Commit, author: str, author_type: str, opener: tuple[str, str] | None = None
+) -> str | None:
+    """Refuse bot authors outside their own branches, then apply shared attribution rules."""
+    name = normalized_identity(commit.author_name)
+    email = normalized_identity(commit.author_email)
+    bot_author = is_bot_identity(name, email)
+    if opener is not None:
+        owns_branch = (name, email) == tuple(normalized_identity(part) for part in opener)
+    else:
+        owns_branch = author_type == "Bot" and email.endswith(bot_noreply_suffix(author))
+    if bot_author and not owns_branch:
+        return (
+            f"bot author {commit.author_name} <{commit.author_email}> is not the branch opener; "
+            "a squash landing would carry it as a Co-authored-by trailer that the landed gate "
+            "refuses; re-author that commit with git commit --amend --reset-author --no-edit "
+            "or drop it"
+        )
+    return commit_attribution_reason(commit)
+
+
+def judge(
+    commit: Commit, author: str, author_type: str, opener: tuple[str, str] | None = None
+) -> str | None:
     """Return None when the commit passes, else the reason it does not."""
-    reason = commit_attribution_reason(commit)
+    reason = pr_attribution_reason(commit, author, author_type, opener)
     if reason:
         return reason
     if is_exempt_bot_commit(commit, author, author_type):
@@ -338,6 +373,16 @@ def drop_format_characters(text: str) -> str:
     return "".join(character for character in text if unicodedata.category(character) != "Cf")
 
 
+def normalized_identity(text: str) -> str:
+    """Share NFKC, format removal, and case normalization across identity checks."""
+    return drop_format_characters(normalize_attribution_text(text)).lower()
+
+
+def is_bot_identity(name: str, email: str) -> bool:
+    """Recognize bot suffixes in an already normalized name and email."""
+    return name.endswith("[bot]") or email.endswith("[bot]@users.noreply.github.com")
+
+
 def input_bound_reason(text: str, source: str, max_bytes: int, max_lines: int) -> str | None:
     """Reject UTF-8 byte/Unicode splitlines bounds before attribution scanning."""
     if len(text.encode("utf-8")) > max_bytes:
@@ -370,7 +415,7 @@ def commit_attribution_reason(commit: Commit) -> str | None:
         ("author", commit.author_name, commit.author_email),
         ("committer", commit.committer_name, commit.committer_email),
     ):
-        identity = drop_format_characters(normalize_attribution_text(f"{name} <{email}>")).lower()
+        identity = normalized_identity(f"{name} <{email}>")
         for candidate in BANNED_COAUTHOR_TOKENS:
             if candidate != "[bot]" and candidate in identity:
                 return f"{role} identity names a model or coding tool ({candidate})"
@@ -549,20 +594,38 @@ def pr_signoff_exemption(args: argparse.Namespace) -> str | None:
     return None
 
 
+def branch_opener(commits: list[Commit], pre_push: bool) -> tuple[str, str] | None:
+    """Use the oldest pre-push author only if human or its normalized email matches BOT_LOGINS."""
+    if not pre_push or not commits:
+        return None
+    name = normalized_identity(commits[0].author_name)
+    email = normalized_identity(commits[0].author_email)
+    if is_bot_identity(name, email) and not any(
+        email.endswith(bot_noreply_suffix(login)) for login in BOT_LOGINS
+    ):
+        return None
+    return commits[0].author_name, commits[0].author_email
+
+
 def check_pr(args: argparse.Namespace) -> int:
     """Enforce commit and body attribution on every PR, and commit sign-offs unless exempt."""
+    commits = list_commits(args.base, args.head)
+    opener = branch_opener(commits, bool(args.merge_base))
     exemption = pr_signoff_exemption(args)
     judge_commit: Callable[[Commit], str | None]
     if exemption is not None:
         print(exemption)
-        judge_commit = commit_attribution_reason
+        judge_commit = functools.partial(
+            pr_attribution_reason, author=args.author, author_type=args.author_type, opener=opener
+        )
         kind = "release pull request" if args.release_pr else "grandfathered"
         summary = f" free of attribution; sign-off exempt ({kind})"
     else:
-        judge_commit = functools.partial(judge, author=args.author, author_type=args.author_type)
+        judge_commit = functools.partial(
+            judge, author=args.author, author_type=args.author_type, opener=opener
+        )
         summary = ", every one signed off or exempt"
     body_findings = pr_body_attribution(read_pr_body(args))
-    commits = list_commits(args.base, args.head)
     failures = [(c, reason) for c in commits if (reason := judge_commit(c)) is not None]
     if failures:
         report(failures)
@@ -576,7 +639,29 @@ def check_pr(args: argparse.Namespace) -> int:
     return 0
 
 
+def resolve_push_range(args: argparse.Namespace) -> None:
+    """Point ``--base`` at REF and ``--head`` at the outgoing commit.
+
+    ``REF..head`` is the merge-base range without its criss-cross caveat: it
+    leaves out every commit reachable from REF, including those a branch took
+    in by merging REF.
+    """
+    if args.base:
+        raise UsageError("--merge-base and --base (or BASE_SHA) are mutually exclusive")
+    if args.landed:
+        raise UsageError("--merge-base checks a branch before push; it cannot take --landed")
+    head = args.head or os.environ.get("PRE_COMMIT_TO_REF", "") or "HEAD"
+    args.head = run_git(["rev-parse", "--verify", "--end-of-options", f"{head}^{{commit}}"])
+    args.head = args.head.strip()
+    base = run_git(["rev-parse", "--verify", "--end-of-options", f"{args.merge_base}^{{commit}}"])
+    args.base = base.strip()
+
+
 def check(args: argparse.Namespace) -> int:
+    if args.merge_base:
+        resolve_push_range(args)
+        # Pre-push ownership comes only from eligible outgoing authors.
+        args.author_type = ""
     if args.landed:
         return check_landed(args)
     return check_pr(args)
@@ -587,7 +672,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     env = os.environ.get
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--base", default=env("BASE_SHA", ""))
-    parser.add_argument("--head", default=env("HEAD_SHA", ""))
+    parser.add_argument("--head", default=None)
     parser.add_argument("--author", default=env("PR_AUTHOR", ""))
     parser.add_argument("--author-type", default=env("PR_AUTHOR_TYPE", ""))
     parser.add_argument("--created-at", default=env("PR_CREATED_AT", ""))
@@ -600,16 +685,23 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--release-pr", action="store_true", default=env("DCO_RELEASE_PR", "") == "true"
     )
     parser.add_argument("--landed", action="store_true")
+    parser.add_argument("--merge-base", default="", metavar="REF")
     parser.add_argument("--landing-identity", default=env("LANDING_IDENTITY", ""))
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.head is None:
+        # --merge-base names the pushed commit itself; HEAD_SHA must not replace it.
+        args.head = "" if args.merge_base else env("HEAD_SHA", "")
+    return args
 
 
 def main(argv: list[str]) -> int:
     """Validate required inputs and return distinct statuses for policy and usage failures."""
     args = parse_args(argv)
-    if not args.base or not args.head:
+    if not args.merge_base and (not args.base or not args.head):
         print(
-            "check-dco: --base and --head (or BASE_SHA and HEAD_SHA) are required", file=sys.stderr
+            "check-dco: --base and --head (or BASE_SHA and HEAD_SHA), or --merge-base,"
+            " are required",
+            file=sys.stderr,
         )
         return 2
     if args.landed and not args.landing_identity:

@@ -117,10 +117,11 @@ environment. Three details matter when a probe fails:
   under `HOME`, so the probes set `PYTHONUSERBASE` to the user base the test
   interpreter resolved (an explicit host `PYTHONUSERBASE` is carried
   unchanged). This extends ADR-1333's platform-runtime allowlist by one path
-  so that a Meson installed with `--user`, as `scripts/setup/ubuntu.sh` does,
-  works the same as a system or virtualenv install. If the probes fail with
-  `No module named 'mesonbuild'`, check that `meson` on `PATH` and the Python
-  that runs the test share that user base.
+  so that a caller Meson installed with `--user` works the same as a system or
+  virtualenv install (`scripts/setup/ubuntu.sh` installs into a dedicated tools
+  virtualenv; [ADR-3545](../adr/3545-dev-image-tools-venv-ci.md)). If the
+  probes fail with `No module named 'mesonbuild'`, check that `meson` on `PATH`
+  and the Python that runs the test share that user base.
 - **Timeout**: probe subprocesses default to 120 seconds to avoid
   false-positive timeout flakes under CPU/IO contention.
   `VMAFX_MESON_TEST_TIMEOUT_SECONDS` accepts only finite values from 60

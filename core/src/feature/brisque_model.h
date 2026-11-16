@@ -42,8 +42,9 @@
 #if VMAF_BRISQUE_BUILT_IN_MODEL
 /* Native libsvm text model bytes (NOT NUL-terminated; the length symbol is the
  * exact byte count). svm_parse_model_from_buffer() takes (buf, len). */
-extern const unsigned char src_brisque_live_model[];
-extern const unsigned int src_brisque_live_model_len;
+/* Match xxd -i object types exactly; keep read-only access at use sites. */
+extern unsigned char src_brisque_live_model[];
+extern unsigned int src_brisque_live_model_len;
 #endif /* VMAF_BRISQUE_BUILT_IN_MODEL */
 
 #endif /* VMAF_FEATURE_BRISQUE_MODEL_H_ */
