@@ -127,33 +127,40 @@ def parse_rows(text: str) -> dict[str, Row]:
     return rows
 
 
+def _consume_block_line(
+    line: str,
+    current: TaggedBlock | None,
+    in_fence: bool,
+    blocks: dict[str, TaggedBlock],
+) -> tuple[TaggedBlock | None, bool]:
+    """Advance the block parser by one page line."""
+    if in_fence:
+        if FENCE_CLOSE_RE.match(line):
+            assert current is not None
+            blocks[current.block_id] = current
+            return None, False
+        if current is not None and line.strip():
+            current = current._replace(command=current.command + line + "\n")
+        return current, True
+    if current is None:
+        marker = MARKER_RE.search(line)
+        if not marker:
+            return None, False
+        if marker.group(1) in blocks:
+            raise ValueError(f"duplicate migration-check marker: {marker.group(1)}")
+        return TaggedBlock(marker.group(1), marker.group(2), ""), False
+    if FENCE_OPEN_RE.match(line):
+        return current, True
+    return current, False
+
+
 def parse_blocks(text: str) -> dict[str, TaggedBlock]:
     """Collect (id -> block) from the page's migration-check markers."""
-    lines = text.split("\n")
     blocks: dict[str, TaggedBlock] = {}
     current: TaggedBlock | None = None
     in_fence = False
-    for line in lines:
-        if not in_fence:
-            marker = MARKER_RE.search(line)
-            if marker:
-                if marker.group(1) in blocks:
-                    raise ValueError(f"duplicate migration-check marker: {marker.group(1)}")
-                current = TaggedBlock(marker.group(1), marker.group(2), "")
-                continue
-        if current is None:
-            continue
-        if in_fence:
-            if FENCE_CLOSE_RE.match(line):
-                blocks[current.block_id] = current
-                current = None
-                in_fence = False
-            elif line.strip():
-                current = current._replace(command=current.command + line + "\n")
-            continue
-        if FENCE_OPEN_RE.match(line):
-            in_fence = True
-            continue
+    for line in text.split("\n"):
+        current, in_fence = _consume_block_line(line, current, in_fence, blocks)
     if current is not None:
         raise ValueError(f"unterminated migration-check block: {current.block_id}")
     return blocks
@@ -166,30 +173,36 @@ def _row_notes(text: str, row_id: str) -> str:
     return ""
 
 
+def _row_failures(
+    text: str, row_id: str, row: Row, block: TaggedBlock | None, pooled_mean: float
+) -> list[str]:
+    """Return the structural failures for one check row."""
+    failures: list[str] = []
+    if row.not_equivalent:
+        if block is not None:
+            failures.append(f"not-equivalent row {row_id} must not carry a command block")
+        if not ADR_RE.search(_row_notes(text, row_id)):
+            failures.append(f"not-equivalent row {row_id} must link an ADR in its notes")
+    elif block is None:
+        failures.append(f"equivalent row {row_id} has no migration-check block")
+    elif row.expected is None or abs(row.expected - pooled_mean) > SCORE_TOLERANCE:
+        failures.append(
+            f"row {row_id} quotes {row.expected}, snapshot pooled mean is {pooled_mean}"
+        )
+    return failures
+
+
 def check_page(text: str, pooled_mean: float) -> list[str]:
     """Structural gate: return the list of failures (empty when the page holds)."""
-    failures: list[str] = []
     rows = parse_rows(text)
     blocks = parse_blocks(text)
     if not rows:
-        failures.append("page carries no check rows")
-        return failures
+        return ["page carries no check rows"]
     if not blocks:
-        failures.append("page carries no migration-check command blocks")
-        return failures
+        return ["page carries no migration-check command blocks"]
+    failures: list[str] = []
     for row_id, row in rows.items():
-        block = blocks.get(row_id)
-        if row.not_equivalent:
-            if block is not None:
-                failures.append(f"not-equivalent row {row_id} must not carry a command block")
-            if not ADR_RE.search(_row_notes(text, row_id)):
-                failures.append(f"not-equivalent row {row_id} must link an ADR in its notes")
-        elif block is None:
-            failures.append(f"equivalent row {row_id} has no migration-check block")
-        elif row.expected is None or abs(row.expected - pooled_mean) > SCORE_TOLERANCE:
-            failures.append(
-                f"row {row_id} quotes {row.expected}, snapshot pooled mean is {pooled_mean}"
-            )
+        failures.extend(_row_failures(text, row_id, row, blocks.get(row_id), pooled_mean))
     for block_id in blocks:
         if block_id not in rows:
             failures.append(f"migration-check block {block_id} has no table row")
@@ -212,14 +225,37 @@ def _resolve_cli_binary(args: argparse.Namespace) -> str | None:
 
 
 def _safe_run(cmd: list[str], allowed: list[str]) -> str:
+    """Run a row command; return stdout only, and raise on a non-zero exit.
+
+    stderr is diagnostics, not score data: keeping it out of the returned text
+    stops an FFmpeg warning or a Python traceback from reaching the JSON
+    parsers.
+    """
     result = run_command(
         cmd,
         allowed_executables=allowed,
         capture_output=True,
         text=True,
         timeout_seconds=900,
+        check=True,
     )
-    return (result.stdout or "") + (result.stderr or "")
+    return result.stdout or ""
+
+
+def _probe(cmd: list[str], allowed: list[str]) -> tuple[int, str]:
+    """Run a toolchain probe and return (exit status, stdout + stderr)."""
+    try:
+        result = run_command(
+            cmd,
+            allowed_executables=allowed,
+            capture_output=True,
+            text=True,
+            timeout_seconds=900,
+            check=False,
+        )
+    except Exception as exc:
+        return 1, str(exc)
+    return result.returncode, (result.stdout or "") + (result.stderr or "")
 
 
 def _json_pooled_mean(output: str) -> float:
@@ -244,7 +280,7 @@ def _score_parsers() -> dict[str, Callable[[str], float]]:
     def wrapper_json_or_frames(output: str) -> float:
         try:
             return _json_pooled_mean(output)
-        except (ValueError, KeyError, json.JSONDecodeError):
+        except ValueError, KeyError, json.JSONDecodeError:
             data = json.loads(output)
             scores = [
                 float(value["vmaf"])
@@ -287,10 +323,9 @@ def _run_cli_row(argv: list[str], cli_binary: str | None) -> tuple[str | None, s
 
 
 def _run_python_row(argv: list[str], cli_binary: str | None) -> tuple[str | None, str]:
-    try:
-        _safe_run([sys.executable, "-c", "import vmaf"], [sys.executable])
-    except Exception:
-        return "python package 'vmaf' not importable", ""
+    status, output = _probe([sys.executable, "-c", "import vmaf"], [sys.executable])
+    if status != 0:
+        return f"python package 'vmaf' not importable: {output.strip()}", ""
     argv[0] = sys.executable
     return None, _safe_run(argv, [sys.executable])
 
@@ -298,9 +333,8 @@ def _run_python_row(argv: list[str], cli_binary: str | None) -> tuple[str | None
 def _run_ffmpeg_row(argv: list[str], cli_binary: str | None) -> tuple[str | None, str]:
     filter_match = FILTER_RE.search(" ".join(argv))
     filter_name = filter_match.group(1) if filter_match else "libvmaf"
-    try:
-        _safe_run(["ffmpeg", "-h", f"filter={filter_name}"], ["ffmpeg"])
-    except Exception:
+    status, output = _probe(["ffmpeg", "-h", f"filter={filter_name}"], ["ffmpeg"])
+    if status != 0 or "Unknown filter" in output or filter_name not in output:
         return f"no ffmpeg carrying the {filter_name} filter", ""
     return None, _safe_run(argv, ["ffmpeg"])
 
@@ -395,7 +429,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"UNREADABLE: {exc}")
         return EXIT_UNREADABLE
 
-    failures = check_page(text, pooled_mean)
+    try:
+        failures = check_page(text, pooled_mean)
+    except ValueError as exc:
+        print(f"UNREADABLE: {exc}")
+        return EXIT_UNREADABLE
     if args.execute:
         try:
             blocks = parse_blocks(text)

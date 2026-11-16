@@ -19,6 +19,7 @@ import scripts.docs.check_migration_equivalence as checker
 from scripts.docs.check_migration_equivalence import (
     EXIT_FAILURE,
     EXIT_SUCCESS,
+    EXIT_UNREADABLE,
     check_page,
     main,
     parse_blocks,
@@ -37,6 +38,7 @@ EXPECTED_IDS = {
     "cli-vmafx-default",
     "cli-netflix-compat",
     "python-run-vmaf",
+    "ffmpeg-upstream",
     "ffmpeg-libvmaf",
     "fqm-vmaf",
     "easyvmaf-aligned",
@@ -54,12 +56,14 @@ def _fake_run(score: float) -> Callable[..., types.SimpleNamespace]:
         capture_output: bool,
         text: bool,
         timeout_seconds: float,
+        check: bool = False,
     ) -> types.SimpleNamespace:
         if cmd[1:2] == ["-c"] or cmd[1:2] == ["-h"]:
             raise RuntimeError("probe refused")
         return types.SimpleNamespace(
             stdout=json.dumps({"pooled_metrics": {"vmaf": {"mean": score}}}),
             stderr="",
+            returncode=0,
         )
 
     return fake_run
@@ -128,6 +132,47 @@ def test_command_block_comments_are_not_arguments() -> None:
     assert "stock" not in argv
     continued = checker.TaggedBlock("continued", "cli", "vmaf --a 1 \\\n    --b 2\n")
     assert checker._join_command(continued) == ["vmaf", "--a", "1", "--b", "2"]
+
+
+def test_duplicate_check_row_is_unreadable(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    lines = PAGE_TEXT.splitlines()
+    index = next(i for i, line in enumerate(lines) if line.startswith("| `cli-vmafx-default` |"))
+    duplicate = lines[index]
+    page = tmp_path / "migration.md"
+    page.write_text(
+        "\n".join([*lines[: index + 1], duplicate, *lines[index + 1 :]]) + "\n",
+        encoding="utf-8",
+    )
+    assert main(["--page", str(page), "--snapshot", str(SNAPSHOT)]) == EXIT_UNREADABLE
+    assert "UNREADABLE: duplicate check id" in capsys.readouterr().out
+
+
+def test_probe_status_and_unknown_filter_skip_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(
+        cmd: list[str],
+        allowed_executables: list[str],
+        capture_output: bool,
+        text: bool,
+        timeout_seconds: float,
+        check: bool = False,
+    ) -> types.SimpleNamespace:
+        if cmd[1:2] == ["-c"]:
+            return types.SimpleNamespace(returncode=1, stdout="", stderr="no vmaf")
+        if cmd[1:2] == ["-h"]:
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="Unknown filter 'vmafx'.")
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(checker, "run_command", fake_run)
+    skip, output = checker._run_python_row(["python", "-m", "vmaf"], None)
+    assert skip is not None and "not importable" in skip
+    assert output == ""
+    skip, output = checker._run_ffmpeg_row(["ffmpeg", "-lavfi", "[0:v][1:v]vmafx=x"], None)
+    assert skip is not None and "no ffmpeg carrying the vmafx filter" in skip
+    assert output == ""
 
 
 def test_ordinary_tables_are_not_check_rows(tmp_path: Path) -> None:

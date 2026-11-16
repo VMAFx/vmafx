@@ -161,6 +161,12 @@ jobs:
         timeout-minutes: 15
         run: bash scripts/ci/run-hdr-golden-pins.sh "${{ runner.temp }}/hdr_golden_junit.xml"
 
+      - name: Execute the migration guide's CLI equivalence rows
+        if: steps.impact.outputs.golden_harness == 'true'
+        env:
+          VMAF_BIN: ${{ github.workspace }}/core/build/tools/vmaf
+        run: python3 scripts/docs/check_migration_equivalence.py --execute
+
       - name: Finish with the HDR ICtCp fixture
         if: ${{ !cancelled() && (steps.impact.outputs.golden_harness == 'true') }}
         uses: ./.github/actions/pq-fixture

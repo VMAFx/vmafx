@@ -208,8 +208,8 @@ jobs:
           VMAF_BIN: ${{ github.workspace }}/build/tools/vmaf
         run: bash testdata/bench_all.sh
       - name: Execute the migration guide's equivalence rows
-        # The rows execute the vmafx binary: --netflix-compat only exists
-        # under the vmafx basename (issue 2331).
+        # Both basenames parse --netflix-compat; VMAF_BIN points at the
+        # vmafx-built binary so the scan is representative.
         env:
           VMAF_BIN: ${{ github.workspace }}/build/tools/vmafx
         run: python3 scripts/docs/check_migration_equivalence.py --execute

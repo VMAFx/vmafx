@@ -38,9 +38,11 @@ skipping — build the containers with the wrap commands in
 
 ## From the upstream `vmaf` CLI and Python harness
 
-The `vmaf` binary is upstream Netflix's CLI and the fork keeps it
-flag-compatible; `vmafx` is the modernized twin with different defaults
-([vmafx CLI](vmafx-cli.md)). The upstream Python harness
+The `vmaf` binary is upstream Netflix's CLI and the fork keeps its flags
+and scores compatible when the model is pinned: pass
+`-m version=vmaf_v0.6.1` as the commands below do. Unpinned, both `vmaf`
+and `vmafx` default to `vmaf_v1.0.16_3d0h`, a different score; `vmafx` is
+the modernized twin with different defaults ([vmafx CLI](vmafx-cli.md)). The upstream Python harness
 (`python -m vmaf.script.run_vmaf`, [Python library](python.md)) is retained
 unchanged in the fork's compatibility package.
 
@@ -62,8 +64,8 @@ python -m vmaf.script.run_vmaf yuv420p 576 324 \
 
 | Check id | Expected pooled mean | Status | Notes |
 |---|---|---|---|
-| `cli-vmafx-default` | `94.32301` | equivalent | `vmafx` defaults to `--precision=max`, so the JSON carries full-precision scores; the pooled mean matches the `vmaf` run. Output precision differences are ADR-0119. |
-| `cli-netflix-compat` | `94.32301` | equivalent | `vmafx --netflix-compat` restores every upstream default (`.6f` scores, upstream banner), so output text matches the upstream `vmaf` run line for line. |
+| `cli-vmafx-default` | `94.32301` | equivalent | `vmafx` defaults to `--precision=max`, so the JSON carries full-precision scores; the pooled mean matches the `vmaf` run. Output precision differences are ADR-0690. |
+| `cli-netflix-compat` | `94.32301` | equivalent | `vmafx --netflix-compat` restores the four upstream defaults — `.6f` scores, the upstream banner, the CPU backend, and `vmaf_v0.6.1` (ADR-0696) — so the score text matches; the JSON still carries the fork's `wall_fps` and provenance record. |
 | `python-run-vmaf` | `94.32301` | equivalent | The harness reports `aggregate.VMAF_score` (mean pool) with the same default model; the number matches the CLI row. |
 
 The VMAFx equivalents the check executes (`VMAF_BIN` overrides the binary
@@ -104,10 +106,12 @@ bite a moved command:
   unscored instead of repeating the last reference frame
   ([Pairing the two inputs](ffmpeg.md#pairing-the-two-inputs)).
 - The fork's retired Vulkan filter and its `vulkan_device` option have no
-  replacement (ADR-0726, ADR-0860, ADR-2166).
+  replacement; see [the stock upstream libvmaf filter migration table](ffmpeg.md#migrating-from-the-libvmaf-filters)
+  (ADR-0726, ADR-0860, ADR-2166).
 
 Upstream filter command on the fixture pair (`log_fmt=json` to stdout):
 
+<!-- migration-check:ffmpeg-upstream exec=ffmpeg -->
 ```bash
 ffmpeg -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
     -i testdata/dis_576x324_48f.yuv \
@@ -132,7 +136,8 @@ ffmpeg -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
 
 | Check id | Expected pooled mean | Status | Notes |
 |---|---|---|---|
-| `ffmpeg-libvmaf` | `94.32301` | equivalent | Same engine and model behind both filters; the fork build needs `--enable-libvmafx` (ADR-2125, ADR-1852). |
+| `ffmpeg-upstream` | `94.32301` | equivalent | Stock upstream FFmpeg `libvmaf` filter; this is the row the FFmpeg integration job executes. |
+| `ffmpeg-libvmaf` | `94.32301` | equivalent | Same engine and model behind both filters; the fork build needs `--enable-libvmafx` (ADR-1852, ADR-2166). |
 
 ## From `ffmpeg-quality-metrics`
 
@@ -214,7 +219,7 @@ easyvmaf -d testdata/migration-fixture/dis.mkv -r testdata/migration-fixture/ref
 
 | Moving from | Same | Differs in VMAFx |
 |---|---|---|
-| `vmaf` CLI | flags, models, scores | `vmafx` defaults (`--precision=max`, banner, ADR-0119); `--netflix-compat` restores them |
+| `vmaf` CLI | flags and scores with the model pinned | `vmafx` defaults (`--precision=max`, banner, ADR-0690); `--netflix-compat` restores `.6f`, banner, CPU backend and `vmaf_v0.6.1` (ADR-0696) |
 | Python harness | `run_vmaf` module path and flags | nothing to move; the `vmafx` bindings package ([Python package](python-package.md)) is the modernized C API alternative |
 | FFmpeg `libvmaf` | pad meaning, model spelling | filter renamed `vmafx`, some options renamed (mapping table), pairing defaults stricter, Vulkan dropped (ADR-0726, ADR-2166) |
 | `ffmpeg-quality-metrics` | libvmaf scores | tool drives stock FFmpeg; call `vmafx` directly instead; distorted-first order |

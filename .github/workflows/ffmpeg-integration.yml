@@ -57,7 +57,9 @@ jobs:
 
   ffmpeg-work:
     needs: impact
-    if: needs.impact.outputs.selected == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    if: >-
+      (needs.impact.outputs.selected == 'true' || needs.impact.outputs.consumers == 'true') &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     strategy:
       fail-fast: false
       matrix:
@@ -150,10 +152,15 @@ jobs:
           fi
           sudo make install
 
+      - name: Execute the migration guide's FFmpeg filter row
+        run: python3 scripts/docs/check_migration_equivalence.py --execute
+
   # Build-only: FFmpeg with SYCL patch (no GPU hardware on runners)
   ffmpeg-sycl-work:
     needs: impact
-    if: needs.impact.outputs.selected == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    if: >-
+      (needs.impact.outputs.selected == 'true' || needs.impact.outputs.consumers == 'true') &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     # ADR-1297 — required. Build-only FFmpeg with the SYCL patch applied; no
     # other leg links that patch-stack surface.
     name: FFmpeg SYCL work
@@ -291,6 +298,9 @@ jobs:
           fi
           sudo make install
           echo "FFmpeg with SYCL support built successfully"
+
+      - name: Execute the migration guide's FFmpeg filter rows
+        run: python3 scripts/docs/check_migration_equivalence.py --execute
 
   # ADR-2783 (upstream 3e1385bed, Q-300): the configured FFmpeg release with
   # the whole patch series, compiled by cl.exe through FFmpeg's own configure
