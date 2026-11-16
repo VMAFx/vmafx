@@ -71,7 +71,8 @@ The function that collapses per-frame scores into one number for a clip or a
 window. The engine and every user surface agree on eight methods: `mean`
 (the default aggregate), `harmonic_mean` (weights the worst frames more), the
 order statistics `min`, `max`, `median`, `perc5`, `perc10` and `perc20`
-([ADR-1188]). The `vmaf` CLI report always carries `min`, `max`, `mean` and
+([ADR-1188](../adr/1188-percentile-pooling-methods.md)). The `vmaf` CLI
+report always carries `min`, `max`, `mean` and
 `harmonic_mean` side by side; the percentile methods are selectable through
 the C API, the Python harness (`--pool`) and the FFmpeg `pool` option. Only
 `mean` and `harmonic_mean` accept perceptual spatial weights.

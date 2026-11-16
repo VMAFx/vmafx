@@ -182,7 +182,8 @@ vmaf -r testdata/ref_576x324_48f.yuv -d testdata/dis_576x324_48f.yuv \
     --json -o model-right.json
 
 # HDR with an SDR model: make a 10-bit PQ copy of the fixture, score it
-# directly (wrong), then tone-map it back to SDR and score it (right).
+# directly (wrong), then make a PQ→BT.709 round trip (not tone mapping)
+# and score it (right).
 ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
     -i testdata/ref_576x324_48f.yuv \
     -vf "zscale=pin=bt709:tin=bt709:min=bt709:p=bt2020:t=smpte2084:m=bt2020nc,format=yuv420p10le" \
