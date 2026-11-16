@@ -25,6 +25,10 @@
   "3.14.8": {
    "url": "https://raw.githubusercontent.com/python/cpython/v3.14.8/Doc/license.rst",
    "sha256": "cd6f471c0bfdb099efefc25ddff9b3df8bf62e10428987f1f05e6f2f9e35d563"
+  },
+  "3.14.10": {
+   "url": "https://raw.githubusercontent.com/python/cpython/v3.14.10/Doc/license.rst",
+   "sha256": "8a7329b25131f64b2bea284155f0824876b1af9f4a2f970e6335751d97dfa6dd"
   }
  },
  "generated_build_files": [
@@ -245,7 +249,7 @@
    "licence_root": "opt/vmafx/licenses",
    "source_offer": "the image ghcr.io/vmafx/vmafx:{tag}-source in the same registry package, published with this image (Debian source packages of every installed package at the installed version, and the source RPMs listed under [grafted]); SOURCES.txt inside it is the index.",
    "python": {
-    "version": "3.14.8"
+    "version": "3.14.10"
    },
    "components": [
     {
@@ -2780,7 +2784,7 @@
    "licence_root": "usr/local/share/vmafx/licenses",
    "source_offer": "the image ghcr.io/vmafx/vmafx:{tag}-source in the same registry package, published with this image (Debian source packages of every installed package at the installed version, and the source RPMs listed under [grafted]); SOURCES.txt inside it is the index.",
    "python": {
-    "version": "3.14.8"
+    "version": "3.14.10"
    },
    "components": [
     {
