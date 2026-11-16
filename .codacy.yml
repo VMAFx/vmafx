@@ -9,6 +9,9 @@
 # are spliced under a heading by the release renderers (ADR-0221), so MD041 (first
 # line a heading) and MD013 (80 columns) cannot hold for them.
 # scripts/ci/tests/test_codacy_config.py fails when the two lists drift apart.
+# Nested markdownlint configs (Codacy reads only the root .markdownlint.json)
+# get their Markdown files listed here by exact path; test_codacy_config.py
+# fails when those exact entries and the nested configs drift apart.
 #
 # Ruff skips the trees that carry their own Ruff configuration. Codacy's Ruff
 # reads only the root pyproject.toml, while the ruff-check hook in
@@ -50,6 +53,7 @@ engines:
       - "docs/rebase-notes.d/**"
       - "changelog.d/**"
       - "tools/figures/**"
+      - "docs/hardware-reports/index.md"
   ruff:
     exclude_paths:
       - "ai/**"
