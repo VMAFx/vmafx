@@ -657,6 +657,12 @@
 - **Per-platform install tables.** Document installation routes, commands, status, and GPU backend support per platform in Getting Started ([#2319](https://github.com/VMAFx/vmafx/issues/2319)).
 
 
+- Agents: `.config/lane-brief.yaml` makes the lane launcher refuse a vmafx review
+  brief that lacks `Write nothing in the worktree` or `return: final message only`,
+  so a review job can no longer spend its run and then end in the rc 79 worktree
+  guard (ADR-3553).
+
+
 - **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
   `make mini-retrain` runs extraction, feature checks, combination, training and export of
   `vmaf_tiny_v2` to `v4` and `fr_regressor_v1`, validation, registry validation and a PLCC / SROCC / RMSE
@@ -2468,6 +2474,9 @@
   +4.2 ms is `T-SYCL-SPEED-COV-EXACT-SEQUENTIAL-COST-2026-10-06` (RC8).
 
 
+- `Tester Image` runs on light-tier pull requests that change the tester image's own inputs (`docker/Dockerfile.tester`, `tools/rc1-tester/**`, `build-config.env`, the toolkit install scripts, the licence inputs and the workflow), the Required Checks Aggregator waits while a selected own-input lane's build jobs run on the light tier, and `tools/rc1-tester/image/licensing.json` records CPython 3.14.10 for the tester and production MCP server images ([ADR-3554](docs/adr/3554-tester-image-own-input-lane.md)).
+
+
 - **The changed-files clang-tidy jobs defer to the lane that measures a file instead of failing
   on it (Q-341, Q-342).** In `Tidy Changed`, a changed file without a command in the CPU build is
   skipped only when a lane's `measured_sources` lists it, or when a live `clang-tidy-coverage`
@@ -2710,6 +2719,16 @@
 - **Tag raw HDR inputs with colour transfer and primaries:** copy `-color_primaries`, `-color_trc`, `-colorspace`, and `-color_range` from encode options to input options for raw sources so FFmpeg passes colour properties to the encoder (issue 3345). User `--extra-ffmpeg-arg` colour options stay output-only.
 
 
+- **`libaom-av1` `ultrafast` maps to `-cpu-used 8`, the highest value FFmpeg accepts.**
+  The adapter mapped `ultrafast` to 9, which FFmpeg's `libaom-av1` wrapper refuses
+  (`Value 9.000000 for parameter 'cpu-used' out of range [0 - 8]`), so every
+  `ultrafast` encode and the predictor probe that uses it failed at option
+  parsing. The Python adapter, the Go twins (`pkg/encoder` and
+  `pkg/codecadapter`) and the docs now agree on 0..8, a unit test pins every
+  accepted preset inside that range, and the libaom adapter cache version moves
+  to `2` so cached argv from the old mapping is not reused.
+
+
 - **Run active SYCL combined-graph extractors on subsampled frames (#3356).**
   `vmaf_sycl_graph_submit()` now counts and enqueues only the registered graph extractors that run
   on the current frame under `--subsample N` (`N > 1`), using direct per-extractor submission on
@@ -2720,6 +2739,9 @@
 
 
 - **Credits page:** the credits check no longer lets the Netflix VMAF entry's `core/` directory cover every third-party file below it, and under `closest` REUSE precedence it reads a file's own licence header, so the two SSIMULACRA 2 headers are now credited to libjxl and the inherited speed-filter test and four inherited Python `third_party/` files to Netflix VMAF (issue 3370).
+
+
+- **Run the pinned Praetor engine in Makefile governance targets (#3468).** `verify-all`, `compile-context`, `audit`, `hiss-coverage` and `dedupe-check` called `standardsctl` from `PATH` instead of the repository pin; the `Makefile` now includes `.config/praetor/engine.mk` and invokes `$(PRAETORCTL)`, and `scripts/ci/tests/test_make_governance_engine_pin.py` rejects missing or misplaced includes and literal `standardsctl` or `praetorctl` calls.
 
 
 - **ADR allocator scans open pull request heads to avoid fork PR collisions.**
@@ -2979,7 +3001,7 @@
   stride.
 
 
-- **DCO checks refuse bot-authored commits outside the bot's own branch before squash landing.** PR and pre-push checks now catch review-bot authors even with a valid human sign-off, explain the landed co-author failure, and suggest re-authoring or dropping the commit. Bot-owned dependency and render branches remain supported (ADR-3544).
+- **DCO checks refuse bot-authored commits outside the bot's own branch before squash landing.** PR and pre-push checks now catch review-bot authors even with a valid human sign-off, explain the landed co-author failure, and suggest re-authoring or dropping the commit. Dependency-bot branches (`BOT_LOGINS`) remain supported in PR and pre-push checks. Render branches of `vmafx-release-bot[bot]` remain supported in PR checks, where the forge reports the bot as the opener; pre-push checks refuse their commits, because that bot is outside `BOT_LOGINS` (ADR-3544).
 
 
 - CI: the `Dev Container Build work` job runs on `ubuntu-26.04` again. A new
@@ -2991,6 +3013,9 @@
 
 
 - **The dev container builds again: ClangBuildAnalyzer is configured with the Ninja generator.** The `build-deps` stage of `dev/Containerfile` installs `ninja-build` but no make program, so CMake's default "Unix Makefiles" generator stopped the ClangBuildAnalyzer build of ADR-3336 and every dev image build failed. The configure now passes `-G Ninja`, and `scripts/ci/tests/test_dev_image_build_stages.py` refuses a CMake configure without a generator in that stage.
+
+
+- **Ubuntu dev images and `scripts/setup/ubuntu.sh`:** install hash-pinned Python build and lint tools into a dedicated virtual environment (`VMAFX_TOOLS_VENV`, `/opt/vmafx-tools` in `docker/dev/ubuntu-26.04*.Dockerfile`), stage `requirements/locks/build.txt` and `dev-linters.txt` via `ARG VMAFX_REPO_ROOT`, validate boolean flags strictly against `true|false`, and build and smoke-test all three Ubuntu dev images in CI when their inputs change (issue 3455, [ADR-3545](docs/adr/3545-dev-image-tools-venv-ci.md)).
 
 
 - **The dev container runs the command it is given and exits.** `dev/scripts/dev-mcp-entrypoint.sh`
@@ -3012,6 +3037,12 @@
 
 
 - Documentation: the FFmpeg commands that make the distorted test clips in `docs/benchmarks.md` and `docs/usage/bench.md` encode with libx264 again (one piped raw video into a decoder that expected raw frames and failed, the other wrote a copy of the reference), and the `vmaf_pre` example of `docs/ai/models/learned_filter_v1.md` gives raw inputs their pixel format and size (#2477).
+
+
+- CI: `docs-render-pr.yml` now runs on every push to `master` in addition to
+  its hourly schedule fallback, so dropped GitHub scheduled runs no longer
+  leave an open render pull request `BEHIND` past the 24-hour render bound
+  (#3462, ADR-3552).
 
 
 - **The documentation site names `https://vmafx.dev/` as its address.** The

@@ -170,6 +170,35 @@ class BuildSecretContract(unittest.TestCase):
                 )
                 self.assertTrue(any(expected in error for error in self.builder_errors(text)))
 
+    def test_stage_builder_extra_path_qualified_docker_build_fails(self) -> None:
+        self.assertEqual(self.builder_errors(self.builder), [])
+        for line in (
+            "/usr/bin/docker build -f dev/Containerfile .",
+            '"$DOCKER" build -f dev/Containerfile .',
+            "${DOCKER} build -f dev/Containerfile .",
+        ):
+            with self.subTest(line=line):
+                extra = f"{self.builder}\n{line}\n"
+                self.assertTrue(
+                    any("exactly one docker build" in error for error in self.builder_errors(extra))
+                )
+
+    def test_stage_builder_extra_wrapped_docker_build_fails(self) -> None:
+        for line in (
+            'env "$DOCKER" build -f dev/Containerfile .',
+            "env -u HOME docker build -f dev/Containerfile .",
+            "bash -c 'docker build -f dev/Containerfile .'",
+            "env -S'docker build -f dev/Containerfile .'",
+            "env -Sdocker build -f dev/Containerfile .",
+            "sudo docker image build -f dev/Containerfile .",
+            "docker-buildx build -f dev/Containerfile .",
+        ):
+            with self.subTest(line=line):
+                extra = f"{self.builder}\n{line}\n"
+                self.assertTrue(
+                    any("exactly one docker build" in error for error in self.builder_errors(extra))
+                )
+
     # --- workflow callers ----------------------------------------------------
 
     def test_missing_raw_build_wiring_fails(self) -> None:
@@ -244,6 +273,275 @@ class BuildSecretContract(unittest.TestCase):
         self.assertTrue(any("only via" in e for e in self.caller_errors(inline, RELEASE)))
         self.assertIn("docker build \\\n            --check", self.workflow)
         self.assertEqual(self.caller_errors(self.workflow, GATE), [])
+
+    def test_allowed_ubuntu_dev_image_raw_builds_pass(self) -> None:
+        target = '-f "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile"'
+        self.assertIn(target, self.workflow)
+        for dockerfile in (
+            "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile",
+            "docker/dev/ubuntu-26.04.Dockerfile",
+            "docker/dev/ubuntu-26.04-cuda.Dockerfile",
+            "docker/dev/ubuntu-26.04-sycl.Dockerfile",
+        ):
+            for flag in (f'-f "{dockerfile}"', f'--file "{dockerfile}"', f"--file={dockerfile}"):
+                with self.subTest(flag=flag):
+                    text = self.workflow.replace(target, flag, 1)
+                    self.assertEqual(self.errors(workflow=text), [])
+
+    def test_ubuntu_dev_image_raw_build_with_secret_or_token_arg_fails(self) -> None:
+        target = '-f "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile" \\\n'
+        self.assertIn(target, self.workflow)
+        for extra in (
+            "--secret id=github_token,env=GITHUB_TOKEN",
+            "--secret=id=github_token,env=GITHUB_TOKEN",
+            "--build-arg GITHUB_TOKEN=secret",
+            "--build-arg=GITHUB_TOKEN=secret",
+        ):
+            with self.subTest(extra=extra):
+                text = self.workflow.replace(target, f"{target}            {extra} \\\n", 1)
+                self.assertTrue(any("only via" in e for e in self.caller_errors(text, GATE)))
+
+    def test_disallowed_raw_docker_builds_fail(self) -> None:
+        ubuntu_build = (
+            "          docker build --progress=plain \\\n"
+            '            -f "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile" \\\n'
+            '            -t "vmafx-dev-ubuntu:${VARIANT}" \\\n'
+            "            .\n"
+        )
+        self.assertIn(ubuntu_build, self.workflow)
+        for raw_build in (
+            "          docker build -f dev/Containerfile --target release-build .\n",
+            "          docker build .\n",
+            "          docker build -f docker/dev/fedora.Dockerfile .\n",
+            "          docker build -f docker/dev/ubuntu-26.04.Dockerfile -f dev/Containerfile .\n",
+        ):
+            with self.subTest(raw_build=raw_build.strip()):
+                text = self.workflow.replace(ubuntu_build, raw_build, 1)
+                self.assertTrue(any("only via" in e for e in self.caller_errors(text, GATE)))
+
+    def test_raw_build_quoted_clause_separator_bypass_rejected(self) -> None:
+        for command in (
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile --label ';' "
+            "--secret id=github_token,env=GITHUB_TOKEN .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile -t vmafx:dev . ';' "
+            "--secret id=github_token,env=GITHUB_TOKEN",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile -t ';' .",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_path_qualified_docker_rejected(self) -> None:
+        for command in (
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . "
+            "&& /usr/bin/docker build -f dev/Containerfile --target release-build .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . ; "
+            "/usr/local/bin/docker build --secret id=github_token,env=GITHUB_TOKEN .",
+            "./docker build --secret id=github_token,env=GITHUB_TOKEN .",
+            "../bin/docker build --secret id=github_token,env=GITHUB_TOKEN .",
+            "/usr/bin/docker build -f dev/Containerfile --target release-build .",
+            '"/usr/bin/docker" build -f dev/Containerfile --target release-build .',
+            "sh -c '\"/usr/bin/docker\" build -f dev/Containerfile .'",
+            "docker run --rm $(/usr/bin/docker build -q .)",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_wrapped_and_multi_clause_builds_rejected(self) -> None:
+        for command in (
+            'env "$DOCKER" build -f dev/Containerfile .',
+            'env -u HOME "$DOCKER" build -f dev/Containerfile .',
+            'env DOCKER_BUILDKIT=1 "${DOCKER}" build --secret id=github_token,env=GITHUB_TOKEN .',
+            "env -S 'docker build -f dev/Containerfile .'",
+            "env -u HOME docker build -f dev/Containerfile --target release-build .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . "
+            "&& bash -c 'docker build -f dev/Containerfile .'",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . ; "
+            "sudo docker build -f dev/Containerfile .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . "
+            '&& sudo "$DOCKER" build -f dev/Containerfile .',
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . "
+            "&& docker run --rm img sh -c 'docker build -f dev/Containerfile .'",
+            # Attached env options and wrappers ahead of other build spellings.
+            'env --split-string="docker build -f dev/Containerfile ."',
+            'env -S"docker build -f dev/Containerfile ."',
+            "env -S'docker build -f dev/Containerfile .'",
+            "env -Sdocker build -f dev/Containerfile .",
+            "env -C /tmp docker image build -f dev/Containerfile .",
+            "sudo docker image build -f dev/Containerfile .",
+            "timeout 600 docker buildx build -f dev/Containerfile .",
+            "docker-buildx build -f dev/Containerfile .",
+            "sudo /usr/libexec/docker/cli-plugins/docker-buildx build -f dev/Containerfile .",
+            "docker.exe build -f dev/Containerfile .",
+            "docker run --rm img docker image build -f dev/Containerfile .",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_wrapped_and_multi_clause_non_builds_allowed(self) -> None:
+        for command in (
+            'env -u GITHUB_TOKEN docker compose --project-directory "$PWD" '
+            "-f dev/docker-compose.yml config --quiet",
+            "env -u GITHUB_TOKEN docker build --check --file dev/Containerfile "
+            "--target libvmaf-build .",
+            'env -u GITHUB_TOKEN docker compose --project-directory "$PWD" '
+            "-f dev/docker-compose.yml build --check dev-mcp",
+            'docker build --progress=plain -f "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile" '
+            '-t "vmafx-dev-ubuntu:${VARIANT}" .',
+            'docker run --rm "vmafx-dev-ubuntu:${VARIANT}" '
+            "sh -c 'meson --version && ninja --version && ruff --version "
+            "&& shellcheck --version >/dev/null && shfmt --version'",
+            "DOCKER_BUILDKIT=1 env -u HOME docker build -f docker/dev/ubuntu-26.04.Dockerfile .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . "
+            "&& docker run --rm img sh -c 'meson --version'",
+            'echo "$HOME" && docker build -f docker/dev/ubuntu-26.04.Dockerfile .',
+            # Plain repository paths naming docker stay allowed (boundary).
+            "bash scripts/ci/docker-hub-mirror.sh",
+            "bash scripts/ci/check-compose-dri-writable.sh dev/docker-compose.yml",
+            "git checkout FETCH_HEAD -- docker/ docker/dev/ubuntu-26.04.Dockerfile",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_parameter_command_word_rejected(self) -> None:
+        for command in (
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . "
+            "&& $DOCKER build -f dev/Containerfile .",
+            '"${DOCKER}" build --secret id=github_token,env=GITHUB_TOKEN .',
+            "FOO=1 $DOCKER build -f dev/Containerfile .",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_path_qualified_and_non_build_clauses_allowed(self) -> None:
+        for command in (
+            "/usr/bin/docker build -f docker/dev/ubuntu-26.04.Dockerfile .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile . "
+            "&& /usr/bin/docker run --rm vmafx-dev true",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile .",
+            'echo "$HOME" && docker build -f docker/dev/ubuntu-26.04.Dockerfile .',
+            '/usr/bin/docker run --rm --user "$(id -u):$(id -g)" vmafx-dev true',
+            "ninja -C build",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_option_value_as_file_bypass_rejected(self) -> None:
+        for command in (
+            "docker build --label --file=docker/dev/ubuntu-26.04.Dockerfile .",
+            "docker build -t --file=docker/dev/ubuntu-26.04.Dockerfile .",
+            "docker build --progress --file=docker/dev/ubuntu-26.04.Dockerfile .",
+            "docker build --no-cache -f docker/dev/ubuntu-26.04.Dockerfile .",
+            "docker build --file",
+            "docker build -f",
+            "docker build --file= .",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_command_and_process_substitution_rejected(self) -> None:
+        for command in (
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile "
+            "$(printf %s --secret=id=github_token,env=GITHUB_TOKEN) .",
+            "docker build -f <(cat docker/dev/ubuntu-26.04.Dockerfile) .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile <(echo .)",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile >(cat) .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile `printf %s .`",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_parameter_expansion_rejected(self) -> None:
+        for command in (
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile $BUILD_ARGS",
+            'docker build -f docker/dev/ubuntu-26.04.Dockerfile "$BUILD_ARGS"',
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile ${BUILD_ARGS}",
+            "docker build --check --file dev/Containerfile $BUILD_ARGS",
+            'docker build -f "docker/dev/ubuntu-26.04${OTHER}.Dockerfile" .',
+            'docker build --check -f "docker/dev/ubuntu-26.04${OTHER}.Dockerfile" .',
+            'docker build -f docker/dev/ubuntu-26.04.Dockerfile -t "$TAG" .',
+            'docker build -f docker/dev/ubuntu-26.04.Dockerfile --progress="$PROGRESS" .',
+            'docker build --check --file dev/Containerfile --target "$TARGET" .',
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile '$BUILD_ARGS'",
+            "docker build --$OPT=plain -f docker/dev/ubuntu-26.04.Dockerfile .",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_brace_expansion_rejected(self) -> None:
+        for command in (
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile "
+            r"{--secret=id=github_token\,env=GITHUB_TOKEN,.}",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile "
+            r"{.,--secret=id=github_token\,env=GITHUB_TOKEN}",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile "
+            r"-t {a,--secret=id=github_token\,env=GITHUB_TOKEN} .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile --progress={plain,auto} .",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_glob_and_tilde_rejected(self) -> None:
+        for command in (
+            'docker build -f docker/dev/ubuntu-26.04.Dockerfile --target "*" .',
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile ./*",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile ~",
+            "docker build --check --file ~/Containerfile .",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_non_root_context_rejected(self) -> None:
+        for command in (
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile "
+            "https://build.example/context.tar.gz",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile docker/dev",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile git@github.com:example/ctx.git",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile -",
+            "docker build --check --file dev/Containerfile https://build.example/context.tar.gz",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile ./",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_root_context_and_plain_words_allowed(self) -> None:
+        for command in (
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile .",
+            "docker build -f docker/dev/ubuntu-26.04.Dockerfile -t vmafx-ubuntu-dev .",
+            "docker build --check --file dev/Containerfile .",
+            "docker build --progress=plain "
+            '-f "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile" '
+            '-t "vmafx-dev-ubuntu:${VARIANT}" .',
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(MODULE._has_disallowed_raw_build(command))
+
+    def test_raw_build_allowlisted_parameter_expansion_allowed(self) -> None:
+        for command in (
+            "docker build --progress=plain "
+            '-f "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile" '
+            '-t "vmafx-dev-ubuntu:${VARIANT}" .',
+            "docker build --file=docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile .",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(MODULE._has_disallowed_raw_build(command))
+
+    def test_workflow_allowed_raw_builds_stay_allowed(self) -> None:
+        raw_builds = [
+            command
+            for workflow in (self.workflow, self.release)
+            for command in MODULE._joined_commands(workflow)
+            if "docker build" in command
+        ]
+        self.assertTrue(any("--check" in command for command in raw_builds))
+        self.assertTrue(
+            any("ubuntu-26.04${SUFFIX}.Dockerfile" in command for command in raw_builds)
+        )
+        for command in (
+            *raw_builds,
+            'docker build -f "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile" .',
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(MODULE._has_disallowed_raw_build(command))
 
     # --- the publisher and the docs ------------------------------------------
 
