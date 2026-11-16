@@ -362,12 +362,14 @@ class SurfaceOnlyModeTests(_FixtureTree, unittest.TestCase):
         cases = {
             "unknown option": ("--surface",),
             "second argument": ("--surface-only", "--surface-only"),
+            "second argument, skip-invariants": ("--skip-invariants", "--skip-invariants"),
+            "both flags": ("--surface-only", "--skip-invariants"),
         }
         for label, args in cases.items():
             with self.subTest(label):
                 res = _run_script(SCRIPT, ROOT, *args)
                 self.assertEqual(res.returncode, 2, f"stderr:\n{res.stderr}")
-                self.assertIn("the only option is --surface-only", res.stderr)
+                self.assertIn("the options are --surface-only and --skip-invariants", res.stderr)
                 self.assertNotIn("[PASS]", res.stdout)
 
     def test_hook_runs_surface_only_on_every_tree_check_input(self) -> None:
@@ -407,6 +409,81 @@ class SurfaceOnlyModeTests(_FixtureTree, unittest.TestCase):
         for path in ("core/src/libvmaf.c", "docs/usage/ffmpeg.txt", "Dockerfile.node"):
             with self.subTest(unread=path):
                 self.assertIsNone(files.search(path), f"{path} triggers {HOOK_ID}")
+
+
+class SkipInvariantsModeTests(_FixtureTree, unittest.TestCase):
+    """Verify the --skip-invariants mode the PR-body-input selection test runs (issue #3457)."""
+
+    SKIP_MARKER = "--skip-invariants: the #2435 invariant surface checks are skipped"
+    FLAG = "--skip-invariants"
+
+    def test_skip_invariants_still_decides_the_body_stage(self) -> None:
+        """Without origin/master the gate still fails closed in the diff stage — tree checks skipped, verdicts unchanged."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = self._prepare_temp_worktree(Path(td), origin_master=False)
+            script = tmp / "scripts" / "ci" / SCRIPT.name
+
+            res = _run_script(script, tmp, "--skip-invariants", REPO_ROOT=str(tmp))
+            self.assertEqual(res.returncode, 2, f"stderr:\n{res.stderr}")
+            self.assertIn("origin/master not found", res.stderr)
+            self.assertIn(self.SKIP_MARKER, res.stdout)
+            self.assertNotIn("series surface", res.stdout)
+
+    def test_skip_invariants_reaches_the_full_verdict(self) -> None:
+        """A clean diff passes with the body stage intact and no invariant line printed."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = self._prepare_temp_worktree(Path(td))
+            script = tmp / "scripts" / "ci" / SCRIPT.name
+
+            res = _run_script(script, tmp, "--skip-invariants", REPO_ROOT=str(tmp))
+            self.assertEqual(res.returncode, 0, f"stdout:\n{res.stdout}\nstderr:\n{res.stderr}")
+            self.assertIn("PR body from", res.stdout)
+            self.assertIn(self.SKIP_MARKER, res.stdout)
+            self.assertNotIn("series surface", res.stdout)
+            self.assertNotIn("docs examples", res.stdout)
+
+    def test_skip_invariants_ignores_planted_doc_defects(self) -> None:
+        """A planted retired filter in a doc only the tree scans read does not fail this mode."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = self._prepare_temp_worktree(Path(td))
+            target_doc = tmp / "docs" / "usage" / "vmaf-tune-ffmpeg.md"
+            with target_doc.open("a", encoding="utf-8") as fp:
+                fp.write("\nPlanted defect: use vmaf_pre in the graph.\n")
+
+            res = _run_script(
+                tmp / "scripts" / "ci" / SCRIPT.name, tmp, "--skip-invariants", REPO_ROOT=str(tmp)
+            )
+            self.assertEqual(res.returncode, 0, f"stderr:\n{res.stderr}")
+            self.assertIn(self.SKIP_MARKER, res.stdout)
+
+    def test_no_automation_passes_skip_invariants(self) -> None:
+        """Nothing under the automation surfaces may pass --skip-invariants to the gate.
+
+        The flag exists so the PR-body-input selection test can measure the
+        fd-0 decision without the tree scans (issue #3457). A workflow or
+        hook passing it would silently stop the #2435 invariant scans in CI
+        while the run still logs a pass, so every automation surface that
+        could invoke the gate is scanned for the flag — the workflows, the
+        composite actions under .github/actions/ (review of PR #3461), the
+        pre-commit config and the lefthook config.
+        """
+        surfaces: list[Path] = [ROOT / ".pre-commit-config.yaml", ROOT / "lefthook.yml"]
+        workflows = ROOT / ".github" / "workflows"
+        if workflows.is_dir():
+            surfaces.extend(sorted(p for p in workflows.iterdir() if p.suffix in (".yml", ".yaml")))
+        actions = ROOT / ".github" / "actions"
+        if actions.is_dir():
+            surfaces.extend(sorted(actions.glob("*/action.y*ml")))
+        for path in surfaces:
+            if not path.is_file():
+                continue
+            with self.subTest(surface=str(path.relative_to(ROOT))):
+                self.assertNotIn(
+                    self.FLAG,
+                    path.read_text(encoding="utf-8"),
+                    f"{path.relative_to(ROOT)} passes {self.FLAG} to the surface gate; "
+                    "the #2435 invariant scans must run in CI",
+                )
 
 
 if __name__ == "__main__":

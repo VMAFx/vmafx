@@ -8,7 +8,7 @@ area: gates
 <!-- markdownlint-disable MD013 MD060 -->
 # FFmpeg patches surface check (ADR-0409, ADR-2166)
 
-Script: `scripts/ci/ffmpeg-patches-surface-check.sh`. Full mode = CI gate (tree checks + PR-body/diff check). `--surface-only` = tree checks alone, local hook.
+Script: `scripts/ci/ffmpeg-patches-surface-check.sh`. Full mode = CI gate (tree checks + PR-body/diff check). `--surface-only` = tree checks alone, local hook. `--skip-invariants` = PR-body/diff stages alone, only the PR-body-input selection test (issue #3457): the tree scans are the seconds of real work that outran that test's 12 s hang budget, and the flag narrows what is checked, never how the fd-0 answer is reached; CI never passes it (`SkipInvariantsModeTests.test_no_automation_passes_skip_invariants` pins that).
 
 ## Tree checks
 
