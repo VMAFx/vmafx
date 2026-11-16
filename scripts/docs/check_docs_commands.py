@@ -93,7 +93,7 @@ def snapshot_numbers() -> set[str]:
     for path in SNAPSHOTS:
         try:
             data = json.loads(_read(path))
-        except (OSError, ValueError, KeyError):
+        except OSError, ValueError, KeyError:
             continue
         for metric in ("vmaf",):
             pooled = data.get("pooled_metrics", {}).get(metric, {})
