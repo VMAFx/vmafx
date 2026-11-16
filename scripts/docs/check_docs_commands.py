@@ -139,6 +139,12 @@ def _join_command(block: Block) -> list[str]:
         raise ValueError(f"cannot parse run-check block {block.block_id}: {exc}") from exc
 
 
+def _number_scan_text(text: str) -> str:
+    """Remove HTML comments and fenced blocks before scanning prose numbers."""
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+    return re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+
+
 def structural_failures(pages: list[tuple[str, str]], allowed_numbers: set[str]) -> list[str]:
     failures: list[str] = []
     blocks = parse_blocks(pages)
@@ -154,13 +160,11 @@ def structural_failures(pages: list[tuple[str, str]], allowed_numbers: set[str])
                 f"run-check block '{block.block_id}' on {block.page} has an empty command"
             )
     for page_rel, text in pages:
-        if Path(page_rel).name in NO_BLOCK_PAGES:
-            continue
-        if "run-check:" not in text:
+        if Path(page_rel).name not in NO_BLOCK_PAGES and "run-check:" not in text:
             failures.append(
                 f"{page_rel}: no run-check block — every tutorial and cookbook page carries one"
             )
-        for match in NUMBER_RE.finditer(text):
+        for match in NUMBER_RE.finditer(_number_scan_text(text)):
             if match.group(0) not in allowed_numbers:
                 failures.append(
                     f"{page_rel}: quotes {match.group(0)}, which no recorded source pins — "
@@ -177,22 +181,95 @@ def _resolve_cli_binary(args: argparse.Namespace) -> str | None:
         candidates.append(os.environ["VMAF_BIN"])
     for candidate in candidates:
         if re.search(r"[\\/]", candidate):
-            return candidate
+            # safe_subprocess accepts a bare name or an absolute path, and CI
+            # passes a workspace-relative build-docs-cli/tools/vmaf.
+            return str(Path(candidate).resolve())
         found = which(candidate)
         if found:
-            return found
+            return str(Path(found).resolve())
     return None
 
 
-def _safe_run(cmd: list[str], allowed: list[str]) -> int:
-    result = run_command(
+def _safe_run(cmd: list[str], allowed: list[str]):
+    """Run one argv and return the completed process (stdout/stderr intact)."""
+    return run_command(
         cmd,
         allowed_executables=allowed,
         capture_output=True,
         text=True,
         timeout_seconds=900,
     )
-    return result.returncode
+
+
+def _ffmpeg_probe(argv: list[str]) -> tuple[bool, str]:
+    """Return (toolchain_available, probe_output)."""
+    needs_encoder = "-c:v" in argv
+    needs_filter = next((a for a in argv if a.startswith("-lavfi")), None)
+    filter_name = "vmafx"
+    if needs_filter:
+        match = re.search(r"(libvmaf|vmafx)=", needs_filter)
+        filter_name = match.group(1) if match else "vmafx"
+    if needs_encoder:
+        probe = ["ffmpeg", "-hide_banner", "-h", "encoder=libx264"]
+    else:
+        probe = ["ffmpeg", "-hide_banner", "-h", "filter=" + filter_name]
+    try:
+        result = _safe_run(probe, ["ffmpeg"])
+    except Exception as exc:
+        return False, str(exc)
+    text = (result.stdout or "") + (result.stderr or "")
+    if result.returncode != 0:
+        return False, text
+    if not needs_encoder and "Unknown filter" in text:
+        return False, text
+    return True, text
+
+
+def _prepare_block(
+    block: Block, cli_binary: str | None
+) -> tuple[list[str] | None, list[str], bool, str | None]:
+    """Resolve the argv, allowed executables, score expectation and early failure."""
+    argv = _join_command(block)
+    if not argv:
+        return None, [], False, f"run-check block '{block.block_id}' has an empty command"
+    if block.exec_class == "cli":
+        if cli_binary is None:
+            print(f"SKIP {block.block_id} (no vmaf binary (--bin or $VMAF_BIN))")
+            return None, [], False, None
+        argv[0] = cli_binary
+        return argv, [cli_binary], False, None
+    if argv[0] != "ffmpeg":
+        argv = ["ffmpeg", *argv]
+    available, probe_text = _ffmpeg_probe(argv)
+    if not available:
+        what = "encoder libx264" if "-c:v" in argv else "filter vmafx"
+        print(f"SKIP {block.block_id} (no ffmpeg carrying the {what})")
+        if not probe_text:
+            print(f"  probe: {probe_text}")
+        return None, [], False, None
+    expect_score = any("vmafx=" in arg for arg in argv) and "-c:v" not in argv
+    return argv, ["ffmpeg"], expect_score, None
+
+
+def _run_block(block: Block, cli_binary: str | None) -> tuple[bool, str | None]:
+    """Run one block. Returns (executed, failure). Skipped blocks are not executed."""
+    argv, allowed, expect_score, failure = _prepare_block(block, cli_binary)
+    if failure:
+        return False, failure
+    if argv is None:
+        return False, None
+    try:
+        result = _safe_run(argv, allowed)
+    except Exception as exc:
+        return True, f"block {block.block_id} failed to run: {exc}"
+    if result.returncode != 0:
+        return True, f"block {block.block_id} exited {result.returncode}"
+    if expect_score:
+        output = (result.stdout or "") + (result.stderr or "")
+        if not re.search(r"VMAF score: |vmafx \S+ mean: ", output):
+            return True, f"block {block.block_id} printed no score line"
+    print(f"OK {block.block_id}")
+    return True, None
 
 
 def _execute_blocks(
@@ -201,44 +278,10 @@ def _execute_blocks(
     failures: list[str] = []
     executed = 0
     for block in blocks:
-        argv = _join_command(block)
-        if not argv:
-            failures.append(f"run-check block '{block.block_id}' has an empty command")
-            continue
-        if block.exec_class == "cli":
-            if cli_binary is None:
-                print(f"SKIP {block.block_id} (no vmaf binary (--bin or $VMAF_BIN))")
-                continue
-            argv[0] = cli_binary
-            allowed = [cli_binary]
-        else:  # ffmpeg
-            needs_encoder = "-c:v" in argv
-            needs_filter = next((a for a in argv if a.startswith("-lavfi")), None)
-            filter_name = "vmafx"
-            if needs_filter:
-                match = re.search(r"(libvmaf|vmafx)=", needs_filter)
-                filter_name = match.group(1) if match else "vmafx"
-            probe = ["ffmpeg", "-hide_banner", "-h", "filter=" + filter_name]
-            if needs_encoder:
-                probe = ["ffmpeg", "-hide_banner", "-h", "encoder=libx264"]
-            try:
-                _safe_run(probe, ["ffmpeg"])
-            except Exception:
-                what = "encoder libx264" if needs_encoder else f"filter {filter_name}"
-                print(f"SKIP {block.block_id} (no ffmpeg carrying the {what})")
-                continue
-            argv = ["ffmpeg", *argv]
-            allowed = ["ffmpeg"]
-        executed += 1
-        try:
-            code = _safe_run(argv, allowed)
-        except Exception as exc:
-            failures.append(f"block {block.block_id} failed to run: {exc}")
-            continue
-        if code != 0:
-            failures.append(f"block {block.block_id} exited {code}")
-        else:
-            print(f"OK {block.block_id}")
+        ran, failure = _run_block(block, cli_binary)
+        executed += int(ran)
+        if failure:
+            failures.append(failure)
     if executed == 0:
         failures.append(
             "--execute ran no blocks (no toolchain present); a requested "

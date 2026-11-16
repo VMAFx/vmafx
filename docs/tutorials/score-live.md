@@ -39,12 +39,18 @@ crf 30 -> <score>
 A descending table — the same verdict Tutorial 2 produced by hand, now
 as a loop you can point at a real pipeline's output directory.
 
+<!-- run-check:t5-encode exec=ffmpeg -->
+```bash
+ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
+    -i testdata/ref_576x324_48f.yuv -c:v libx264 -crf 22 -x264-params keyint=48 \
+    live-22.mkv
+```
+
 <!-- run-check:t5-score exec=ffmpeg -->
 ```bash
-ffmpeg -loglevel error -i live-22.mkv -f rawvideo -pix_fmt yuv420p \
+ffmpeg -loglevel info -i live-22.mkv -f rawvideo -pix_fmt yuv420p \
     -s 576x324 -r 24 -i testdata/ref_576x324_48f.yuv \
-    -lavfi "[0:v][1:v]vmafx=model=version=vmaf_v0.6.1" -f null - 2>&1 \
-    | grep "vmaf vmaf mean"
+    -lavfi "[0:v][1:v]vmafx=model=version=vmaf_v0.6.1" -f null -
 ```
 
 ## Reading scores as they happen
@@ -57,7 +63,7 @@ ffmpeg -loglevel error -i live-22.mkv -f rawvideo -pix_fmt yuv420p \
 - For farm-wide aggregation, keep the model, the geometry and the pooling
   fixed across every run, or the table compares apples and oranges
   ([what the score means](../reference/concepts.md)).
-- The `vmaf_tune` watcher and the
+- The `vmaf-tune` watcher and the
   [bd-rate tools](../usage/bd-rate.md) build on exactly this loop.
 
 ## Where to go next

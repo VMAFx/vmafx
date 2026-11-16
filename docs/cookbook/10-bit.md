@@ -15,11 +15,15 @@ number.
 FFmpeg widens 8-bit YUV to 10-bit losslessly (values shift into the 10-bit
 range):
 
-<!-- run-check:10bit-convert exec=ffmpeg -->
+<!-- run-check:10bit-convert-ref exec=ffmpeg -->
 ```bash
 ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
     -i testdata/ref_576x324_48f.yuv -pix_fmt yuv420p10le -f rawvideo \
     ref10_576x324_48f.yuv
+```
+
+<!-- run-check:10bit-convert-dis exec=ffmpeg -->
+```bash
 ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
     -i testdata/dis_576x324_48f.yuv -pix_fmt yuv420p10le -f rawvideo \
     dis10_576x324_48f.yuv

@@ -93,11 +93,16 @@ def test_execute_runs_cli_and_skips_ffmpeg(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """--execute with a stubbed runner: cli blocks run, ffmpeg blocks skip."""
-    fake = types.SimpleNamespace(returncode=0)
 
     def fake_run(cmd, allowed_executables, capture_output, text, timeout_seconds):
-        assert cmd[0].endswith("stub-vmafx") or cmd[0] == "ffmpeg"
-        return fake
+        if cmd[0] == "ffmpeg":
+            return types.SimpleNamespace(
+                returncode=1,
+                stdout="",
+                stderr="Unknown filter 'vmafx'.",
+            )
+        assert cmd[0].endswith("stub-vmafx")
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(checker, "run_command", fake_run)
     monkeypatch.setattr(
@@ -122,3 +127,53 @@ def test_execute_without_any_toolchain_fails(
         checker, "_safe_run", lambda cmd, allowed: (_ for _ in ()).throw(RuntimeError("no"))
     )
     assert main(argv) == EXIT_FAILURE
+
+
+def test_relative_cli_binary_is_made_absolute(tmp_path: Path) -> None:
+    args = types.SimpleNamespace(bin=str(tmp_path / "build" / "tools" / "vmaf"))
+    resolved = checker._resolve_cli_binary(args)
+    assert resolved is not None
+    assert Path(resolved).is_absolute()
+    assert Path(resolved) == (tmp_path / "build" / "tools" / "vmaf").resolve()
+
+
+def test_number_scan_ignores_html_comments_and_fences() -> None:
+    text = (
+        "# Page\n\n"
+        "<!-- a stale 91.74213 in a comment -->\n\n"
+        "```text\n91.74213 inside a fence\n```\n\n"
+        "The recorded value is 94.32301.\n"
+    )
+    assert checker.NUMBER_RE.findall(checker._number_scan_text(text)) == ["94.32301"]
+
+
+def test_ffmpeg_score_block_needs_a_score_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    block = checker.Block(
+        "score",
+        "ffmpeg",
+        "ffmpeg -i a -lavfi vmafx=model=version=vmaf_v0.6.1 -f null -\n",
+        "fake.md",
+    )
+    monkeypatch.setattr(checker, "_ffmpeg_probe", lambda argv: (True, ""))
+    monkeypatch.setattr(
+        checker,
+        "_safe_run",
+        lambda cmd, allowed: types.SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    ran, failure = checker._run_block(block, None)
+    assert ran is True
+    assert failure is not None
+    assert "printed no score line" in failure
+
+    monkeypatch.setattr(
+        checker,
+        "_safe_run",
+        lambda cmd, allowed: types.SimpleNamespace(
+            returncode=0, stdout="VMAF score: 94.32301\n", stderr=""
+        ),
+    )
+    ran, failure = checker._run_block(block, None)
+    assert ran is True
+    assert failure is None

@@ -9,14 +9,11 @@ report naming does the bookkeeping.
 
 Name the pairs so a glob finds them: `pairs/<case>.ref.yuv` and
 `pairs/<case>.dis.yuv`, all sharing one geometry. The in-tree fixture pair
-gives you two "cases" if you fake a tree from the two resolutions:
+gives you one "case":
 
-<!-- run-check:batch-tree exec=cli -->
 ```bash
 mkdir -p pairs && cp testdata/ref_576x324_48f.yuv pairs/r576.ref.yuv && \
-cp testdata/dis_576x324_48f.yuv pairs/r576.dis.yuv && \
-cp testdata/ref_640x480_48f.yuv pairs/r640.ref.yuv && \
-cp testdata/dis_640x480_48f.yuv pairs/r640.dis.yuv
+cp testdata/dis_576x324_48f.yuv pairs/r576.dis.yuv
 ```
 
 ## The loop
@@ -42,8 +39,18 @@ for path in sorted(glob.glob("reports/*.json")):
 EOF
 ```
 
-`bash batch.sh pairs 576 324 420` (then `bash batch.sh pairs 640 480 420`
-for the second geometry) prints one mean per case.
+`bash batch.sh pairs 576 324 420` prints one mean per case. For a second
+geometry, build a second `pairs` tree and pass its `W H P` — do not mix
+resolutions in one invocation.
+
+Score one pair directly to confirm the toolchain before the loop:
+
+<!-- run-check:batch-score exec=cli -->
+```bash
+vmaf -r testdata/ref_576x324_48f.yuv -d testdata/dis_576x324_48f.yuv \
+    -w 576 -h 324 -p 420 -b 8 -m version=vmaf_v0.6.1 --backend cpu \
+    --json -o batch-score.json
+```
 
 ## Reading it
 

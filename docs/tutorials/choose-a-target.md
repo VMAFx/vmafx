@@ -59,10 +59,9 @@ ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
 
 <!-- run-check:t3-score exec=ffmpeg -->
 ```bash
-ffmpeg -loglevel error -i enc-target.mkv -f rawvideo -pix_fmt yuv420p \
+ffmpeg -loglevel info -i enc-target.mkv -f rawvideo -pix_fmt yuv420p \
     -s 576x324 -r 24 -i testdata/ref_576x324_48f.yuv \
-    -lavfi "[0:v][1:v]vmafx=model=version=vmaf_v0.6.1" -f null - 2>&1 \
-    | grep "vmaf vmaf mean"
+    -lavfi "[0:v][1:v]vmafx=model=version=vmaf_v0.6.1" -f null -
 ```
 
 ## Read the result

@@ -38,18 +38,16 @@ happens on the decoded frames. Use the `vmafx` filter in a filter graph:
 
 <!-- run-check:t2-score-hi exec=ffmpeg -->
 ```bash
-ffmpeg -loglevel error -i encode-hi.mkv -f rawvideo -pix_fmt yuv420p \
+ffmpeg -loglevel info -i encode-hi.mkv -f rawvideo -pix_fmt yuv420p \
     -s 576x324 -r 24 -i testdata/ref_576x324_48f.yuv \
-    -lavfi "[0:v][1:v]vmafx=model=version=vmaf_v0.6.1" -f null - 2>&1 \
-    | grep "vmaf vmaf mean"
+    -lavfi "[0:v][1:v]vmafx=model=version=vmaf_v0.6.1" -f null -
 ```
 
 <!-- run-check:t2-score-lo exec=ffmpeg -->
 ```bash
-ffmpeg -loglevel error -i encode-lo.mkv -f rawvideo -pix_fmt yuv420p \
+ffmpeg -loglevel info -i encode-lo.mkv -f rawvideo -pix_fmt yuv420p \
     -s 576x324 -r 24 -i testdata/ref_576x324_48f.yuv \
-    -lavfi "[0:v][1:v]vmafx=model=version=vmaf_v0.6.1" -f null - 2>&1 \
-    | grep "vmaf vmaf mean"
+    -lavfi "[0:v][1:v]vmafx=model=version=vmaf_v0.6.1" -f null -
 ```
 
 Two lines come out, one per encode:

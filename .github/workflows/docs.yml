@@ -66,13 +66,12 @@ jobs:
     # built in 562.22 seconds", leaving about 38 s of the 600 s budget for
     # checkout, setup-python, `pip install -r docs/requirements.txt` and
     # `make docs-fragments-check`. The site carries ~1300 ADRs and grows every
-    # time one lands, so this ceiling was always going to be crossed. 25
-    # minutes is about 2.5x the measured build, with room for the
-    # hosted-runner spread (measured at up to 2.3x on the Coverage Gate).
-    timeout-minutes: 25
-    # 30, not 25: the same job now also builds the CPU vmaf CLI and runs every
-    # tutorial/cookbook run-check block (issue 2330). The measured mkdocs strict
-    # build is ~10 minutes; the CLI build adds a few and the checks seconds.
+    # time one lands, so this ceiling was always going to be crossed. 30
+    # minutes is about 3x the measured mkdocs build, with room for the
+    # hosted-runner spread (measured at up to 2.3x on the Coverage Gate) and
+    # for the CPU vmaf CLI build plus every tutorial/cookbook run-check block
+    # added for issue 2330.
+    timeout-minutes: 30
     # Ref-scoped: one docs build per branch, superseded only by a newer push to
     # that same branch. No cross-PR contention.
     concurrency:

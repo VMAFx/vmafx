@@ -124,7 +124,7 @@ entries:
   note: luoye-cpu wrote the unit tests for the two-leg near-duplicate spot check and its fail-closed cases, in PR 3444.
 - id: contribution-luoye-cpu-tutorial-cookbook-check
   name: luoye-cpu's tutorial and cookbook run-check
-  url: https://github.com/VMAFx/vmafx/issues/2330
+  url: https://github.com/VMAFx/vmafx/pull/3473
   kind: code
   relation: used-by-CI
   license: EUPL-1.2

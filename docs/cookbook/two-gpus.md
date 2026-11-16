@@ -16,7 +16,7 @@ vmaf -r ref.yuv -d dis.yuv -w 576 -h 324 -p 420 -b 8 \
 
 # SYCL: device index is explicit on the flag
 vmaf -r ref.yuv -d dis.yuv -w 576 -h 324 -p 420 -b 8 \
-    -m version=vmaf_v0.6.1 --backend sycl:device=1 --json -o sycl1.json
+    -m version=vmaf_v0.6.1 --backend sycl --sycl_device 1 --json -o sycl1.json
 ```
 
 For multi-GPU CUDA, drive the device selection from the environment instead

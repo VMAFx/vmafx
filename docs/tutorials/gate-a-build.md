@@ -43,9 +43,7 @@ snapshot, every number from this machine is suspect:
 ```bash
 vmaf -r testdata/ref_576x324_48f.yuv -d testdata/dis_576x324_48f.yuv \
     -w 576 -h 324 -p 420 -b 8 -m version=vmaf_v0.6.1 --backend cpu \
-    --json -o /dev/stdout \
-    | python3 -c "import json, sys; \
-d = json.load(sys.stdin); print(d['pooled_metrics']['vmaf']['mean'])"
+    --json -o t4-score.json
 ```
 
 ```text

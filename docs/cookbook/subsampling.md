@@ -14,11 +14,15 @@ a quality statement.
 FFmpeg upsamples chroma losslessly from 4:2:0 to 4:2:2/4:4:4 (luma untouched,
 chroma duplicated), so the converted pair scores the same as the original:
 
-<!-- run-check:subs-convert exec=ffmpeg -->
+<!-- run-check:subs-convert-ref exec=ffmpeg -->
 ```bash
 ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
     -i testdata/ref_576x324_48f.yuv -pix_fmt yuv422p -f rawvideo \
     ref422_576x324_48f.yuv
+```
+
+<!-- run-check:subs-convert-dis exec=ffmpeg -->
+```bash
 ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
     -i testdata/dis_576x324_48f.yuv -pix_fmt yuv422p -f rawvideo \
     dis422_576x324_48f.yuv
