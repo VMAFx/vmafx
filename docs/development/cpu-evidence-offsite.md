@@ -8,11 +8,12 @@ not do — live in the [tester guide](../usage/tester-image.md); this page is
 the short version with the exact commands and the report path.
 
 **These reports are extra evidence next to the emulated matrix; the cut does
-not wait for them.** The CI lanes measure the dispatch levels bit-exact
-against the scalar code under emulation (Intel SDE for x86, qemu-user for
-aarch64) for the levels the emulated matrix covers — the AVX-512 dispatch so
-far only on one real Zen 5 machine — so a report from real silicon sharpens
-the RC7 CPU capability source of truth
+not wait for them.** The CI lanes run the SIMD unit tests against the scalar
+code natively on the hosted runners: x86, and arm64 on Linux, macOS and
+Windows. The emulated matrix of the RC7 exit bar (Intel SDE for the x86 levels
+the runners lack) is still to come, and the AVX-512 dispatch has run only on
+one real Zen 5 machine, so a report from real silicon sharpens the RC7 CPU
+capability source of truth
 ([ADR-1490](../adr/1490-rc3-rc9-candidate-map-cpu-capability.md),
 [#1885](https://github.com/VMAFx/vmafx/issues/1885)) and blocks nothing.
 
