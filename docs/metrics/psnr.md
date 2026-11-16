@@ -321,4 +321,5 @@ after, pictures preloaded, medians of 5 interleaved runs:
 
 See the [glossary](../reference/glossary.md) for the terms used across the metric pages.
 
-Glossary terms: [Range](../reference/glossary.md#range), [Frame alignment](../reference/glossary.md#frame-alignment).
+Glossary terms: [Range](../reference/glossary.md#range),
+[Frame alignment](../reference/glossary.md#frame-alignment).

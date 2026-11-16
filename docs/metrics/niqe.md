@@ -162,4 +162,7 @@ See the [glossary](../reference/glossary.md) — terms used here:
 [HDR](../reference/glossary.md#hdr),
 [pooling](../reference/glossary.md#pooling).
 
-Glossary terms: [Feature extractor](../reference/glossary.md#feature-extractor), [PQ](../reference/glossary.md#pq-hlg), [HLG](../reference/glossary.md#pq-hlg), [Range](../reference/glossary.md#range), [Scaling](../reference/glossary.md#scaling).
+Glossary terms: [Feature extractor](../reference/glossary.md#feature-extractor),
+[PQ](../reference/glossary.md#pq-hlg), [HLG](../reference/glossary.md#pq-hlg),
+[Range](../reference/glossary.md#range),
+[Scaling](../reference/glossary.md#scaling).

@@ -145,4 +145,5 @@ See the [glossary](../reference/glossary.md) — terms used here:
 [HDR](../reference/glossary.md#hdr), [SDR](../reference/glossary.md#sdr),
 [pooling](../reference/glossary.md#pooling).
 
-Glossary terms: [PQ](../reference/glossary.md#pq-hlg), [HLG](../reference/glossary.md#pq-hlg).
+Glossary terms: [PQ](../reference/glossary.md#pq-hlg),
+[HLG](../reference/glossary.md#pq-hlg).
