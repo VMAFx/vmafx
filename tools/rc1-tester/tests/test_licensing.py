@@ -790,6 +790,29 @@ def test_every_artifact_records_its_interpreter_and_core_components() -> None:
             assert "dpkg" in kinds, kind
 
 
+def test_cpython_31410_is_recorded_for_tester_and_production_server_images(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data = lic.load_manifest()
+    assert data["artifacts"]["image"]["python"]["version"] == "3.14.10"
+    assert data["artifacts"]["production-server-image"]["python"]["version"] == "3.14.10"
+    assert data["artifacts"]["published-rc-server-image"]["python"]["version"] == "3.14.7"
+    calls: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(lic, "download", lambda url, dest, sha: calls.append((url, dest.name, sha)))
+    args = argparse.Namespace(artifact="image", python_version="3.14.10", out=str(tmp_path / "out"))
+    lic.fetch_texts(args, data)
+    assert (
+        "https://raw.githubusercontent.com/python/cpython/v3.14.10/Doc/license.rst",
+        "cpython-license.rst",
+        "8a7329b25131f64b2bea284155f0824876b1af9f4a2f970e6335751d97dfa6dd",
+    ) in calls
+    unrecorded = argparse.Namespace(
+        artifact="image", python_version="3.14.99", out=str(tmp_path / "bad")
+    )
+    with pytest.raises(lic.LicensingError, match="no cpython_license_rst entry for Python 3.14.99"):
+        lic.fetch_texts(unrecorded, data)
+
+
 def test_the_record_allows_every_licence_the_repo_files_declare() -> None:
     """Every licence a build component allows has a text to ship."""
     data = lic.load_manifest()

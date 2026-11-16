@@ -22,6 +22,14 @@ each tree that carries its own Ruff configuration with that nested configuration
 Ruff `exclude_paths` of `.codacy.yml` must name exactly those trees: a new nested
 configuration without a Codacy glob turns its per-file ignores into Codacy findings,
 and a glob whose configuration is gone hides a tree from Codacy for no reason.
+
+Codacy's markdownlint likewise reads only the root `.markdownlint.json`, while the
+`markdownlint-cli2` hook honours nested directory configurations. The markdownlint
+`exclude_paths` of `.codacy.yml` must list by exact path every non-hook-excluded
+Markdown file governed by a nested configuration: a nested configuration without a
+matching exact Codacy entry turns its local rule overrides into Codacy findings, and
+an exact Codacy entry without a nested configuration hides a file from Codacy for no
+reason.
 """
 
 from __future__ import annotations
@@ -97,13 +105,23 @@ def precommit_markdownlint_exclude(text: str) -> re.Pattern[str]:
     raise ValueError("no markdownlint-cli2 hook in .pre-commit-config.yaml")
 
 
-def drift(codacy_text: str, precommit_text: str, paths: list[str]) -> list[str]:
-    """Paths one exclusion list skips and the other lints, as 'hook-only:' / 'codacy-only:'."""
+def drift(
+    codacy_text: str,
+    precommit_text: str,
+    paths: list[str],
+    *,
+    nested: frozenset[str] = frozenset(),
+) -> list[str]:
+    """Paths one exclusion list skips and the other lints, as 'hook-only:' / 'codacy-only:'.
+
+    A path in nested counts as expected-excluded on the hook side so its exact Codacy
+    entry is not reported as codacy-only.
+    """
     hook = precommit_markdownlint_exclude(precommit_text)
     globs = [glob_regex(glob) for glob in codacy_markdownlint_excludes(codacy_text)]
     out = []
     for path in sorted(set(paths)):
-        by_hook = hook.search(path) is not None
+        by_hook = hook.search(path) is not None or path in nested
         by_codacy = any(glob.match(path) for glob in globs)
         if by_hook != by_codacy:
             out.append(f"{'hook-only' if by_hook else 'codacy-only'}: {path}")
@@ -168,6 +186,53 @@ def tracked_markdown() -> list[str]:
     return tracked_files("*.md", "*.markdown") + list(PROBES)
 
 
+MARKDOWNLINT_FILES = (
+    ".markdownlint-cli2.jsonc",
+    ".markdownlint-cli2.yaml",
+    ".markdownlint-cli2.cjs",
+    ".markdownlint-cli2.mjs",
+    ".markdownlint.jsonc",
+    ".markdownlint.json",
+    ".markdownlint.yaml",
+    ".markdownlint.yml",
+    ".markdownlint.cjs",
+    ".markdownlint.mjs",
+)
+GLOB_META = frozenset("*?[{")
+
+
+def nested_markdownlint_files(paths: list[str]) -> list[str]:
+    """Tracked .md and .markdown paths governed by a nested markdownlint config."""
+    config_dirs = set()
+    for path in paths:
+        if "/" in path:
+            parent, name = path.rsplit("/", 1)
+            if parent and name in MARKDOWNLINT_FILES:
+                config_dirs.add(parent)
+    prefixes = tuple(f"{d}/" for d in config_dirs)
+    return sorted(
+        {
+            path
+            for path in paths
+            if path.endswith((".md", ".markdown")) and path.startswith(prefixes)
+        }
+    )
+
+
+def markdownlint_nested_drift(codacy_text: str, precommit_text: str, paths: list[str]) -> list[str]:
+    """Nested-config Markdown files Codacy lints ('missing:') and exact entries without one ('stale:')."""
+    hook = precommit_markdownlint_exclude(precommit_text)
+    want = {path for path in nested_markdownlint_files(paths) if hook.search(path) is None}
+    have = {
+        entry
+        for entry in codacy_markdownlint_excludes(codacy_text)
+        if GLOB_META.isdisjoint(entry) and hook.search(entry) is None
+    }
+    return [f"missing: {p}" for p in sorted(want - have)] + [
+        f"stale: {p}" for p in sorted(have - want)
+    ]
+
+
 RUFF_FILES = ("ruff.toml", ".ruff.toml")
 
 
@@ -214,7 +279,15 @@ def read_tracked(path: str) -> str:
 class CodacyConfig(unittest.TestCase):
     def test_repository_lists_agree(self) -> None:
         """Positive: Codacy and the hook skip the same tracked Markdown files."""
-        self.assertEqual(drift(CODACY.read_text(), PRECOMMIT.read_text(), tracked_markdown()), [])
+        self.assertEqual(
+            drift(
+                CODACY.read_text(encoding="utf-8"),
+                PRECOMMIT.read_text(encoding="utf-8"),
+                tracked_markdown(),
+                nested=frozenset(nested_markdownlint_files(tracked_files())),
+            ),
+            [],
+        )
 
     def test_config_without_changelog_tree_fails(self) -> None:
         """Negative: a planted config that drops changelog.d is reported."""
@@ -320,6 +393,84 @@ class CodacyConfig(unittest.TestCase):
         self.assertTrue(glob_regex("testdata/**").match("testdata/x.md"))
         self.assertFalse(glob_regex("docs/*.md").match("docs/adr/x.md"))
         self.assertFalse(glob_regex("docs/adr/README.md").match("docs/adr/README.mdx"))
+
+    def test_markdownlint_skips_nested_config_files_by_exact_path(self) -> None:
+        """Positive: Codacy's markdownlint lists each nested-config Markdown file."""
+        paths = tracked_files()
+        self.assertIn("docs/hardware-reports/index.md", nested_markdownlint_files(paths))
+        self.assertEqual(
+            markdownlint_nested_drift(
+                CODACY.read_text(encoding="utf-8"),
+                PRECOMMIT.read_text(encoding="utf-8"),
+                paths,
+            ),
+            [],
+        )
+
+    def test_nested_markdownlint_file_without_codacy_entry_fails(self) -> None:
+        """Negative: a planted config that drops docs/hardware-reports/index.md is reported."""
+        planted = without_glob(CODACY.read_text(encoding="utf-8"), "docs/hardware-reports/index.md")
+        self.assertEqual(
+            markdownlint_nested_drift(
+                planted, PRECOMMIT.read_text(encoding="utf-8"), tracked_files()
+            ),
+            ["missing: docs/hardware-reports/index.md"],
+        )
+
+    def test_exact_codacy_entry_without_nested_config_is_stale(self) -> None:
+        """Negative: an exact Codacy entry whose nested markdownlint config is gone is stale."""
+        paths = [p for p in tracked_files() if p != "docs/hardware-reports/.markdownlint-cli2.yaml"]
+        self.assertEqual(
+            markdownlint_nested_drift(
+                CODACY.read_text(encoding="utf-8"),
+                PRECOMMIT.read_text(encoding="utf-8"),
+                paths,
+            ),
+            ["stale: docs/hardware-reports/index.md"],
+        )
+
+    def test_nested_markdownlint_glob_instead_of_exact_path_fails(self) -> None:
+        """Negative: replacing the exact Codacy entry with a directory glob still fails."""
+        config = yaml.safe_load(CODACY.read_text(encoding="utf-8"))
+        excludes = config["engines"]["markdownlint"]["exclude_paths"]
+        excludes[excludes.index("docs/hardware-reports/index.md")] = "docs/hardware-reports/**"
+        planted = "---\n" + str(yaml.safe_dump(config, sort_keys=False))
+        self.assertEqual(
+            markdownlint_nested_drift(
+                planted, PRECOMMIT.read_text(encoding="utf-8"), tracked_files()
+            ),
+            ["missing: docs/hardware-reports/index.md"],
+        )
+
+    def test_nested_markdownlint_discovery_and_hook_boundaries(self) -> None:
+        """Boundary: root config is not nested, subtrees apply, hook-excluded paths skip."""
+        self.assertEqual(nested_markdownlint_files([".markdownlint.json", "README.md"]), [])
+        self.assertEqual(
+            nested_markdownlint_files(["a/.markdownlint-cli2.jsonc", "a/b/c.md", "b/d.md"]),
+            ["a/b/c.md"],
+        )
+        self.assertEqual(nested_markdownlint_files(["a/.markdownlint.mjs", "a/data.json"]), [])
+        self.assertEqual(
+            markdownlint_nested_drift(
+                "---\nengines: {}\n",
+                PRECOMMIT.read_text(encoding="utf-8"),
+                ["changelog.d/.markdownlint.yaml", "changelog.d/fixed/x.md"],
+            ),
+            [],
+        )
+
+    def test_drift_treats_nested_files_as_hook_excluded(self) -> None:
+        """Boundary: drift() allows a Codacy entry for a nested-config file only via nested."""
+        codacy = "---\nengines:\n  markdownlint:\n    exclude_paths:\n      - 'x/y.md'\n"
+        precommit = PRECOMMIT.read_text(encoding="utf-8")
+        self.assertEqual(
+            drift(codacy, precommit, ["x/y.md"], nested=frozenset({"x/y.md"})),
+            [],
+        )
+        self.assertEqual(
+            drift(codacy, precommit, ["x/y.md"]),
+            ["codacy-only: x/y.md"],
+        )
 
 
 if __name__ == "__main__":

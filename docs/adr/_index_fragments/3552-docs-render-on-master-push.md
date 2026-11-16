@@ -1,0 +1,1 @@
+| [ADR-3552](3552-docs-render-on-master-push.md) | Run `docs-render-pr.yml` on every `master` push with the hourly schedule kept as fallback so dropped cron runs cannot leave the render PR behind past the 24-hour bound | Accepted | ci, docs, release, fork-local |

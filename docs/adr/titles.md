@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1449), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1456), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5807,3 +5807,31 @@ Every ADR, one heading each (1449), so the site search finds an ADR by its title
 ## ADR-3539: Count non-Actions app check runs outside the aggregator run window
 
 [3539-aggregator-app-checks-outside-run-window](3539-aggregator-app-checks-outside-run-window.md)
+
+## ADR-3541: Pin Ubuntu development packages to one archive snapshot
+
+[3541-dev-image-apt-snapshot](3541-dev-image-apt-snapshot.md)
+
+## ADR-3544: Refuse bot-authored commits outside the bot's own branch
+
+[3544-dco-refuse-bot-authored-commits](3544-dco-refuse-bot-authored-commits.md)
+
+## ADR-3545: Tools virtual environment and CI gate for Ubuntu dev images
+
+[3545-dev-image-tools-venv-ci](3545-dev-image-tools-venv-ci.md)
+
+## ADR-3551: Anchor edited pull-request aggregator runs at ready-for-review
+
+[3551-aggregator-edited-window](3551-aggregator-edited-window.md)
+
+## ADR-3552: Run the render pull request workflow on every master push
+
+[3552-docs-render-on-master-push](3552-docs-render-on-master-push.md)
+
+## ADR-3553: Require the read-only and final-message clauses in vmafx review lane briefs
+
+[3553-lane-brief-review-clause](3553-lane-brief-review-clause.md)
+
+## ADR-3554: Tester Image runs on light-tier pull requests that change the image's own inputs
+
+[3554-tester-image-own-input-lane](3554-tester-image-own-input-lane.md)
