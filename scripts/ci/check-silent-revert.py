@@ -98,6 +98,10 @@ GENERATED_PREFIXES = (
 # unterminated or nested block is malformed input rather than a silent clean.
 GENERATED_BLOCK_START = re.compile(r"^<!--\s*([a-z0-9][a-z0-9-]*):(?:begin|table)\b.*-->$")
 GENERATED_BLOCK_END = re.compile(r"^<!--\s*([a-z0-9][a-z0-9-]*):end\s*-->\s*$")
+GENERATED_BLOCK_PATHS = (
+    "docs/credits.md",
+    "docs/usage/hardware-we-need.md",
+)
 
 # An intended reversal is declared in the tree, not argued in a PR comment.
 # Each entry names the superseding ADR, the target commit whose hunks the merge
@@ -237,6 +241,8 @@ def generated_block_ranges(text: str, path: str) -> list[tuple[int, int]]:
 
 def generated_block_ranges_at(repo: Repo, ref: str, path: str) -> list[tuple[int, int]]:
     """Read the generated-block ranges for *path* at *ref*, or [] when absent."""
+    if path not in GENERATED_BLOCK_PATHS:
+        return []
     proc = repo.run("show", f"{ref}:{path}", check=False)
     if proc.returncode != 0:
         return []
