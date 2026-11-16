@@ -144,7 +144,6 @@ def ols(points: list[tuple[float, float]]) -> tuple[float, float, float]:
     """Return (T0, t_frame, R2) for T(N) = T0 + N*t_frame."""
     xs = [p[0] for p in points]
     ys = [p[1] for p in points]
-    n = len(xs)
     mx, my = statistics.fmean(xs), statistics.fmean(ys)
     sxx = sum((x - mx) ** 2 for x in xs)
     sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
