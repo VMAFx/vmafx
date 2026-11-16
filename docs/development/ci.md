@@ -501,10 +501,13 @@ commit ever gets a complete verdict ([ADR-1673](../adr/1673-master-runs-not-canc
 
 ## Merge queue
 
-Pull requests merge into `master` through GitHub's merge queue
-([ADR-3556](../adr/3556-merge-queue-merge-group.md)). Queue entries dispatch
-`merge_group` (`types: [checks_requested]`, `branches: [master]`) on synthetic
-`refs/heads/gh-readonly-queue/master/...` refs:
+Every required-check workflow owed on `merge_group` listens for `merge_group`
+(`types: [checks_requested]`, `branches: [master]`). The queue itself is
+switched on by the master ruleset `merge_queue` rule
+([ADR-3556](../adr/3556-merge-queue-merge-group.md)). Once that rule is on,
+each queue entry runs these workflows on a synthetic
+`refs/heads/gh-readonly-queue/master/...` ref. Before it is on, nothing changes
+for pull requests.
 
 - Every `merge_group` run executes tier `full` (`scripts/ci/ci_tier.py`) and
   the full impact plan (`scripts/ci/plan-ci-impact.py` emits
