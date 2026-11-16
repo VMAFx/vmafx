@@ -64,6 +64,12 @@ docker run --rm --network none --read-only --cap-drop ALL \
   ghcr.io/vmafx/vmafx:<VERSION>-tester > report-container.json
 ```
 
+`<VERSION>` here is the image tag the maintainers publish (the `git describe`
+tag in the [tester guide, section B](../usage/tester-image.md#b-container-image)),
+not the `tester-<date>-<sha>` prerelease tag of the macOS bundle: when the
+bundle and the image use different tags, take the archive tag from the bundle
+release and the image tag from the tester-image publish.
+
 ## Where the report goes
 
 Reports land under `docs/hardware-reports/<file name>.json`; the run prints
