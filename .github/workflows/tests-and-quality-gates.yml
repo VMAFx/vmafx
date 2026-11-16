@@ -11,6 +11,9 @@ on:
     # ADR-0331 (design notes)
     types: [opened, synchronize, reopened, ready_for_review]
     # ADR-0341, ADR-1140, ADR-2169, ADR-3293 (design notes)
+  merge_group:
+    types: [checks_requested]
+    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -1276,7 +1279,7 @@ jobs:
   # ADR-1319 (design notes)
   gpu-full-runner-available:
     needs: tier
-    if: needs.tier.outputs.full == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+    if: needs.tier.outputs.full == 'true' && (github.event_name == 'push' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
     name: Probe GPU Full Runner
     runs-on: ubuntu-26.04
     timeout-minutes: 5

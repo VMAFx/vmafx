@@ -52,6 +52,9 @@ on:
   pull_request:
     branches: [master]
     types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
+    branches: [master]
   push:
     branches: [master]
   workflow_dispatch:
@@ -167,14 +170,19 @@ jobs:
           SELECTED: ${{ needs.impact.outputs.selected }}
           SELECTED_SYCL: ${{ needs.impact.outputs.selected-sycl }}
         run: |
-          if [[ "$GITHUB_EVENT_NAME" != pull_request && \
-                "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == merge_group ]]; then
+            if [[ "$GITHUB_REF" != "refs/heads/gh-readonly-queue/$DEFAULT_BRANCH/"* ]]; then
+              echo "ERROR: run this workflow on $DEFAULT_BRANCH, not $GITHUB_REF" >&2
+              exit 1
+            fi
+          elif [[ "$GITHUB_EVENT_NAME" != pull_request && \
+                  "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
             echo "ERROR: run this workflow on $DEFAULT_BRANCH, not $GITHUB_REF" >&2
             exit 1
           fi
           git fetch --tags --force origin
           publish=false
-          if [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == pull_request ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == pull_request || "$GITHUB_EVENT_NAME" == merge_group ]]; then
             # A push to master or a pull request (its merge commit): build and
             # verify only.
             source_sha="$GITHUB_SHA"

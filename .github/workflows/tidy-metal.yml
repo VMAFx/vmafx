@@ -29,6 +29,9 @@ on:
     branches: [master]
     # ADR-2169: draft pull requests do not run; promoting one to ready does.
     types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
+    branches: [master]
   push:
     branches: [master]
 

@@ -1,0 +1,1 @@
+| [ADR-3556](3556-merge-queue-merge-group.md) | Trigger Required Checks Aggregator and feeding workflows on merge_group for the master merge queue, exempting Scorecard gates and keeping publish steps off merge_group | Accepted | ci, fork-local |

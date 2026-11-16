@@ -6,8 +6,9 @@
 ``run_required_aggregator`` runs the real Actions JavaScript with one selected check
 result or absence. Its keyword inputs:
 
-``event`` is the triggering event the script sees (``pull_request`` or ``push``;
-a push is to ``master``) and ``action`` its ``pull_request`` action (``edited``
+``event`` is the triggering event the script sees (``pull_request``, ``merge_group``,
+or ``push``; ``ref`` overrides ``context.ref`` when set, defaulting to
+``refs/pull/1/merge`` on ``pull_request`` and ``refs/heads/master`` otherwise) and ``action`` its ``pull_request`` action (``edited``
 arms the ready-for-review window anchor and stale edited-rerun suite exclusion).
 Every synthetic required check defaults to check suite 1, overridden per check by
 ``suite_by_check`` and on the selected check by ``selected_suite``. ``workflow_runs``
@@ -383,6 +384,7 @@ def run_required_aggregator(
     *,
     env: Mapping[str, str] | None = None,
     event: str = "pull_request",
+    ref: str | None = None,
     action: str | None = None,
     pr_number: int | None = 1,
     pr_created_at: str | None = None,
@@ -417,6 +419,7 @@ def run_required_aggregator(
         "expectedApps": _expected_apps(script),
         "env": dict(env or {}),
         "event": event,
+        "ref": ref,
         "action": action,
         "prNumber": pr_number,
         "prCreatedAt": pr_created_at,

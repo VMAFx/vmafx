@@ -499,6 +499,28 @@ commit ever gets a complete verdict ([ADR-1673](../adr/1673-master-runs-not-canc
   added to that list with a reason. Run the check with
   `python3 -B -m unittest scripts/ci/tests/test_master_concurrency_contract.py`.
 
+## Merge queue
+
+Pull requests merge into `master` through GitHub's merge queue
+([ADR-3556](../adr/3556-merge-queue-merge-group.md)). Queue entries dispatch
+`merge_group` (`types: [checks_requested]`, `branches: [master]`) on synthetic
+`refs/heads/gh-readonly-queue/master/...` refs:
+
+- Every `merge_group` run executes tier `full` (`scripts/ci/ci_tier.py`) and
+  the full impact plan (`scripts/ci/plan-ci-impact.py` emits
+  `event-not-routed:merge_group`).
+- `Required Checks Aggregator` exempts `pullRequestOnly` contexts plus both
+  OpenSSF Scorecard gates on `merge_group`: `Scorecard PR Gate` requires a
+  pull-request payload and already ran on the pull request, while `Scorecard
+  Master Gate` (`mergeGroupExempt`) publishes default-branch Scorecard results
+  and runs on the `master` push after the merge lands.
+- Publish, deploy, registry-push, release-signing, repository-write, and Pages
+  steps keep their existing triggers and never run on `merge_group`.
+- Check the aggregator `merge_group` cases and workflow trigger contract
+  locally with
+  `python3 -m pytest -q scripts/ci/tests/test_aggregator_event_scope.py` and
+  `python3 -m pytest -q scripts/ci/tests/test_merge_group_workflow_contract.py`.
+
 ## Required-checks aggregator
 
 The single required check on `master` branch protection is the **Required

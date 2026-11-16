@@ -9,6 +9,9 @@ on:
     # ADR-0331 (design notes)
     types: [opened, synchronize, reopened, ready_for_review]
     # ADR-0341, ADR-1140, ADR-2169, ADR-3293 (design notes)
+  merge_group:
+    types: [checks_requested]
+    branches: [master]
   workflow_dispatch:
 
 permissions:
