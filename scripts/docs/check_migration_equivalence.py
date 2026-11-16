@@ -271,16 +271,10 @@ def _score_parsers() -> dict[str, Callable[[str], float]]:
     def pooled_from_json(output: str) -> float:
         return _json_pooled_mean(output)
 
-    def ffmpeg_logged(output: str) -> float:
-        match = re.search(r"(?:vmafx vmaf mean|VMAF score): ([0-9]+\.[0-9]+)", output)
-        if not match:
-            raise ValueError("no pooled score line in ffmpeg output")
-        return float(match.group(1))
-
     def wrapper_json_or_frames(output: str) -> float:
         try:
             return _json_pooled_mean(output)
-        except ValueError, KeyError, json.JSONDecodeError:
+        except (ValueError, KeyError, json.JSONDecodeError):
             data = json.loads(output)
             scores = [
                 float(value["vmaf"])
@@ -294,7 +288,7 @@ def _score_parsers() -> dict[str, Callable[[str], float]]:
     return {
         "cli": pooled_from_json,
         "python": pooled_from_json,
-        "ffmpeg": ffmpeg_logged,
+        "ffmpeg": pooled_from_json,
         "wrapper": wrapper_json_or_frames,
     }
 

@@ -69,7 +69,7 @@ python -m vmaf.script.run_vmaf yuv420p 576 324 \
 | `python-run-vmaf` | `94.32301` | equivalent | The harness reports `aggregate.VMAF_score` (mean pool) with the same default model; the number matches the CLI row. |
 
 The VMAFx equivalents the check executes (`VMAF_BIN` overrides the binary
-name; `--backend cpu` pins the snapshot's backend):
+name; it must be absolute, and `--backend cpu` pins the snapshot's backend):
 
 <!-- migration-check:cli-vmafx-default exec=cli -->
 ```bash
@@ -205,7 +205,7 @@ easyvmaf -d testdata/migration-fixture/dis.mkv -r testdata/migration-fixture/ref
 | Check id | Expected pooled mean | Status | Notes |
 |---|---|---|---|
 | `easyvmaf-aligned` | `94.32301` | equivalent | Pre-aligned, same-format inputs only; the tool's summary JSON mean matches the CLI row. Argument order is reversed against the CLI (distorted first, reference second). |
-| `easyvmaf-auto-prep` | n/a | not equivalent | The automatic deinterlace/scale/sync/fps preprocessing has no VMAFx equivalent flag: the engine scores the pair it is given and warns on unpaired frames instead of aligning them ([Pairing the two inputs](ffmpeg.md#pairing-the-two-inputs), ADR-2125). Do the preprocessing in an FFmpeg chain first, then score with `vmafx`. |
+| `easyvmaf-auto-prep` | n/a | not equivalent | The automatic deinterlace/scale/sync/fps preprocessing has no VMAFx equivalent flag: the engine scores the pair it is given and warns on unpaired frames instead of aligning them ([Pairing the two inputs](ffmpeg.md#pairing-the-two-inputs), ADR-2165). Do the preprocessing in an FFmpeg chain first, then score with `vmafx`. |
 
 The VMAFx equivalent for the aligned row is again
 `cli-vmafx-default`; the check runs the tool itself where it is installed:
@@ -223,4 +223,4 @@ easyvmaf -d testdata/migration-fixture/dis.mkv -r testdata/migration-fixture/ref
 | Python harness | `run_vmaf` module path and flags | nothing to move; the `vmafx` bindings package ([Python package](python-package.md)) is the modernized C API alternative |
 | FFmpeg `libvmaf` | pad meaning, model spelling | filter renamed `vmafx`, some options renamed (mapping table), pairing defaults stricter, Vulkan dropped (ADR-0726, ADR-2166) |
 | `ffmpeg-quality-metrics` | libvmaf scores | tool drives stock FFmpeg; call `vmafx` directly instead; distorted-first order |
-| `easyVmaf` | libvmaf scores on aligned pairs | auto-preprocessing not equivalent (ADR-2125); align first, then score |
+| `easyVmaf` | libvmaf scores on aligned pairs | auto-preprocessing not equivalent (ADR-2125; pairing contract ADR-2165); align first, then score |

@@ -95,7 +95,7 @@ def test_drifted_number_fails(tmp_path: Path) -> None:
 
 def test_missing_adr_link_fails(tmp_path: Path) -> None:
     stripped = PAGE_TEXT.replace(
-        "([Pairing the two inputs](ffmpeg.md#pairing-the-two-inputs), ADR-2125)",
+        "([Pairing the two inputs](ffmpeg.md#pairing-the-two-inputs), ADR-2165)",
         "([Pairing the two inputs](ffmpeg.md#pairing-the-two-inputs))",
     )
     page = tmp_path / "migration.md"
@@ -196,6 +196,12 @@ def test_snapshot_mean_is_the_pinned_value() -> None:
     data = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
     assert data["backend_used"] == "cpu"
     assert pytest.approx(94.32301, abs=1e-6) == POOLED
+
+
+def test_ffmpeg_parser_reads_the_json_stdout() -> None:
+    """Every FFmpeg row sets log_fmt=json and log_path=/dev/stdout."""
+    payload = json.dumps({"pooled_metrics": {"vmaf": {"mean": POOLED}}})
+    assert checker._score_parsers()["ffmpeg"](payload) == pytest.approx(POOLED)
 
 
 def test_cli_row_executes_and_compares(
