@@ -49,19 +49,10 @@ jobs:
 
       - name: Plan CI impact (ADR-1140)
         id: impact
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
-            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
-      - name: Not impacted — Netflix CPU Golden Tests skipped by plan
-        if: steps.impact.outputs.golden_harness != 'true'
-        env:
-          MODE: ${{ steps.impact.outputs.mode }}
-          REASON: ${{ steps.impact.outputs.reason }}
-        run: echo "::notice::golden_harness not impacted (mode=$MODE reason=$REASON) — Netflix CPU Golden Tests satisfied without running (ADR-1140)"
+        uses: ./.github/actions/plan-ci-impact
+        with:
+          lane_key: golden_harness
+          lane_label: Netflix CPU Golden Tests
       - name: Restore apt archives
         id: apt-cache
         if: steps.impact.outputs.golden_harness == 'true'
@@ -198,20 +189,10 @@ jobs:
 
       - name: Plan CI impact (ADR-1140)
         id: impact
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
-            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
-
-      - name: Not impacted — Compat ABI Parity skipped by plan
-        if: steps.impact.outputs.golden_harness != 'true'
-        env:
-          MODE: ${{ steps.impact.outputs.mode }}
-          REASON: ${{ steps.impact.outputs.reason }}
-        run: echo "::notice::golden_harness not impacted (mode=$MODE reason=$REASON) — Compat ABI Parity satisfied without running (ADR-1140)"
+        uses: ./.github/actions/plan-ci-impact
+        with:
+          lane_key: golden_harness
+          lane_label: Compat ABI Parity
 
       - name: Restore apt archives
         id: apt-cache
@@ -311,19 +292,10 @@ jobs:
           fetch-depth: 0
       - name: Plan CI impact (ADR-1140)
         id: impact
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
-            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
-      - name: Not impacted — Sanitizers skipped by plan
-        if: steps.impact.outputs.c_core != 'true'
-        env:
-          MODE: ${{ steps.impact.outputs.mode }}
-          REASON: ${{ steps.impact.outputs.reason }}
-        run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — Sanitizers satisfied without running (ADR-1140)"
+        uses: ./.github/actions/plan-ci-impact
+        with:
+          lane_key: c_core
+          lane_label: Sanitizers
       - name: Restore apt archives
         id: apt-cache
         if: steps.impact.outputs.c_core == 'true'
@@ -430,19 +402,10 @@ jobs:
           fetch-depth: 0
       - name: Plan CI impact (ADR-1140)
         id: impact
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
-            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
-      - name: Not impacted — Tiny AI skipped by plan
-        if: steps.impact.outputs.tiny_ai != 'true'
-        env:
-          MODE: ${{ steps.impact.outputs.mode }}
-          REASON: ${{ steps.impact.outputs.reason }}
-        run: echo "::notice::tiny_ai not impacted (mode=$MODE reason=$REASON) — Tiny AI satisfied without running (ADR-1140)"
+        uses: ./.github/actions/plan-ci-impact
+        with:
+          lane_key: tiny_ai
+          lane_label: Tiny AI
       - name: Restore apt archives
         id: apt-cache
         if: steps.impact.outputs.tiny_ai == 'true'
@@ -675,20 +638,10 @@ jobs:
           persist-credentials: false
       - name: Plan CI impact (ADR-1140)
         id: impact
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
-            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
-      - name: Not impacted — Python package suite skipped by plan
-        if: steps.impact.outputs.python != 'true'
-        env:
-          MODE: ${{ steps.impact.outputs.mode }}
-          REASON: ${{ steps.impact.outputs.reason }}
-          SUITE: ${{ matrix.name }}
-        run: echo "::notice::python not impacted (mode=$MODE reason=$REASON) — Python Package Tests ($SUITE) satisfied without running (ADR-1140)"
+        uses: ./.github/actions/plan-ci-impact
+        with:
+          lane_key: python
+          lane_label: "Python Package Tests (${{ matrix.name }})"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         if: steps.impact.outputs.python == 'true'
         with:
@@ -743,19 +696,10 @@ jobs:
           persist-credentials: false
       - name: Plan CI impact (ADR-1140)
         id: impact
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
-            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
-      - name: Not impacted — vmaf-tune suite skipped by plan
-        if: steps.impact.outputs.python != 'true'
-        env:
-          MODE: ${{ steps.impact.outputs.mode }}
-          REASON: ${{ steps.impact.outputs.reason }}
-        run: echo "::notice::python not impacted (mode=$MODE reason=$REASON) — Python Package Tests (vmaf-tune) satisfied without running (ADR-1140)"
+        uses: ./.github/actions/plan-ci-impact
+        with:
+          lane_key: python
+          lane_label: Python Package Tests (vmaf-tune)
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         if: steps.impact.outputs.python == 'true'
         with:
@@ -977,19 +921,10 @@ jobs:
           fetch-depth: 0
       - name: Plan CI impact (ADR-1140)
         id: impact
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
-            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
-      - name: Not impacted — Coverage Gate skipped by plan
-        if: steps.impact.outputs.golden_harness != 'true'
-        env:
-          MODE: ${{ steps.impact.outputs.mode }}
-          REASON: ${{ steps.impact.outputs.reason }}
-        run: echo "::notice::golden_harness not impacted (mode=$MODE reason=$REASON) — Coverage Gate satisfied without running (ADR-1140)"
+        uses: ./.github/actions/plan-ci-impact
+        with:
+          lane_key: golden_harness
+          lane_label: Coverage Gate
       - name: Restore apt archives
         id: apt-cache
         if: steps.impact.outputs.golden_harness == 'true'
@@ -1142,12 +1077,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/python
           LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage/src
-        run: |
-          timeout --kill-after=30s 30m python3 scripts/ci/run_pytest_shard.py --shard 1/4 -- \
-            python/test/ -v -m "not slow" --tb=short \
-            --timeout=600 --timeout-method=thread \
-            --ignore=python/test/resource \
-            --deselect python/test/command_line_test.py::CommandLineTest
+        run: bash scripts/ci/run-coverage-python-shard.sh --shard 1/4
       - name: Run Python test suite, shard 2/4
         id: python_coverage_shard_2
         if: steps.impact.outputs.golden_harness == 'true'
@@ -1155,12 +1085,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/python
           LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage/src
-        run: |
-          timeout --kill-after=30s 30m python3 scripts/ci/run_pytest_shard.py --shard 2/4 -- \
-            python/test/ -v -m "not slow" --tb=short \
-            --timeout=600 --timeout-method=thread \
-            --ignore=python/test/resource \
-            --deselect python/test/command_line_test.py::CommandLineTest
+        run: bash scripts/ci/run-coverage-python-shard.sh --shard 2/4
       - name: Run Python test suite, shard 3/4
         id: python_coverage_shard_3
         if: steps.impact.outputs.golden_harness == 'true'
@@ -1168,12 +1093,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/python
           LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage/src
-        run: |
-          timeout --kill-after=30s 30m python3 scripts/ci/run_pytest_shard.py --shard 3/4 -- \
-            python/test/ -v -m "not slow" --tb=short \
-            --timeout=600 --timeout-method=thread \
-            --ignore=python/test/resource \
-            --deselect python/test/command_line_test.py::CommandLineTest
+        run: bash scripts/ci/run-coverage-python-shard.sh --shard 3/4
       - name: Run Python test suite, shard 4/4
         id: python_coverage_shard_4
         if: steps.impact.outputs.golden_harness == 'true'
@@ -1181,12 +1101,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/python
           LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage/src
-        run: |
-          timeout --kill-after=30s 30m python3 scripts/ci/run_pytest_shard.py --shard 4/4 -- \
-            python/test/ -v -m "not slow" --tb=short \
-            --timeout=600 --timeout-method=thread \
-            --ignore=python/test/resource \
-            --deselect python/test/command_line_test.py::CommandLineTest
+        run: bash scripts/ci/run-coverage-python-shard.sh --shard 4/4
       - name: Gather coverage report (gcovr)
         if: ${{ always() && steps.impact.outputs.golden_harness == 'true' }}
         working-directory: core
@@ -1432,19 +1347,10 @@ jobs:
           fetch-depth: 0
       - name: Plan CI impact (ADR-1140)
         id: impact
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
-            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
-      - name: Not impacted — Assertion Density skipped by plan
-        if: steps.impact.outputs.c_core != 'true'
-        env:
-          MODE: ${{ steps.impact.outputs.mode }}
-          REASON: ${{ steps.impact.outputs.reason }}
-        run: echo "::notice::c_core not impacted (mode=$MODE reason=$REASON) — Assertion Density satisfied without running (ADR-1140)"
+        uses: ./.github/actions/plan-ci-impact
+        with:
+          lane_key: c_core
+          lane_label: Assertion Density
       - name: Run assertion density scanner
         if: steps.impact.outputs.c_core == 'true'
         run: bash scripts/ci/assertion-density.sh

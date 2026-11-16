@@ -1,0 +1,91 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+name: Plan CI impact
+description: >-
+  Runs scripts/ci/plan-ci-impact.py once for the job (ADR-1140) and prints the
+  caller's lane skip notice when that lane is not impacted. The per-job
+  "Plan CI impact" + "Not impacted" step pairs in tests-and-quality-gates.yml
+  repeat this block byte for byte eight times, and the workflow is size-bound
+  (scripts/ci/check-workflow-size.py, 64 KiB), so the pair lives here once
+  (issue #3501, dedup sweep #3073/#2802). The job reads the planner's outputs
+  as steps.<id>.outputs.<key>; only the keys that workflow consumes are
+  re-declared here.
+
+inputs:
+  lane_key:
+    description: >-
+      Planner selector this job's lanes are gated on: golden_harness, c_core,
+      tiny_ai or python. Any other key fails the action closed.
+    required: true
+  lane_label:
+    description: >-
+      Lane display name for the skip notice, e.g. "Netflix CPU Golden Tests"
+      or "Python Package Tests (vmaf-tune)".
+    required: true
+
+outputs:
+  mode:
+    description: "Planner mode: full or impact (ADR-1140)."
+    value: ${{ steps.plan.outputs.mode }}
+  reason:
+    description: "Why the plan fell back to full, when it did."
+    value: ${{ steps.plan.outputs.reason }}
+  golden_harness:
+    description: "'true' when the golden-harness lanes should run."
+    value: ${{ steps.plan.outputs.golden_harness }}
+  c_core:
+    description: "'true' when the C-core lanes should run."
+    value: ${{ steps.plan.outputs.c_core }}
+  tiny_ai:
+    description: "'true' when the Tiny AI lane should run."
+    value: ${{ steps.plan.outputs.tiny_ai }}
+  python:
+    description: "'true' when the Python lanes should run."
+    value: ${{ steps.plan.outputs.python }}
+
+runs:
+  using: composite
+  steps:
+    - id: plan
+      name: Run the impact planner
+      shell: bash
+      # Every value the script reads arrives through env, never through an
+      # expression inside the script text: the runner expands an expression
+      # into the script before the shell parses it (template injection).
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      run: |
+        python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+          --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
+
+    # Same notice text the workflow's inline step printed, keyed off the lane
+    # the caller picked. When the lane is impacted the step prints nothing.
+    - id: notice
+      name: Print the lane skip notice when the lane is not impacted
+      if: steps.plan.outcome == 'success'
+      shell: bash
+      env:
+        LANE_KEY: ${{ inputs.lane_key }}
+        LANE_LABEL: ${{ inputs.lane_label }}
+        MODE: ${{ steps.plan.outputs.mode }}
+        REASON: ${{ steps.plan.outputs.reason }}
+        GOLDEN_HARNESS: ${{ steps.plan.outputs.golden_harness }}
+        C_CORE: ${{ steps.plan.outputs.c_core }}
+        TINY_AI: ${{ steps.plan.outputs.tiny_ai }}
+        PYTHON_LANE: ${{ steps.plan.outputs.python }}
+      run: |
+        case "${LANE_KEY}" in
+          golden_harness) value="${GOLDEN_HARNESS}" ;;
+          c_core) value="${C_CORE}" ;;
+          tiny_ai) value="${TINY_AI}" ;;
+          python) value="${PYTHON_LANE}" ;;
+          *)
+            echo "::error::plan-ci-impact action: unknown lane key '${LANE_KEY}'" >&2
+            exit 1
+            ;;
+        esac
+        if [ "${value}" != "true" ]; then
+          echo "::notice::${LANE_KEY} not impacted (mode=${MODE} reason=${REASON}) — ${LANE_LABEL} satisfied without running (ADR-1140)"
+        fi
