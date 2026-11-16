@@ -113,7 +113,7 @@ was trained on. Blind metrics such as BRISQUE and NIQE are SDR-luma-trained
 and break down on PQ/HLG luma
 ([concepts: HDR input](concepts.md#hdr-input-with-an-sdr-model)).
 
-## PQ / HLG {#pqr-hlg}
+## PQ / HLG {#pq-hlg}
 
 The two HDR transfer functions: PQ (SMPTE ST 2084, absolute luminance, used
 by HDR10) and HLG (BBC/NHK hybrid log-gamma, backward compatible with SDR

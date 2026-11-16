@@ -37,7 +37,7 @@ GLOSSARY = (
     "## CTC {#ctc}\n\nCommon test conditions.\n\n"
     "## HDR {#hdr}\n\nHigh dynamic range.\n\n"
     "## SDR {#sdr}\n\nStandard dynamic range.\n\n"
-    "## PQ / HLG {#pqr-hlg}\n\nHDR transfer functions.\n\n"
+    "## PQ / HLG {#pq-hlg}\n\nHDR transfer functions.\n\n"
     "## BT.709 / BT.2020 {#bt709-bt2020}\n\nColour primaries.\n\n"
     "## Range {#range}\n\nLimited or full range.\n\n"
     "## Frame alignment {#frame-alignment}\n\nSame frames on both sides.\n\n"
@@ -121,6 +121,19 @@ def test_metric_page_using_a_term_without_link_fails(
     assert main([]) == EXIT_SUCCESS
 
 
+def test_footer_link_alone_satisfies_the_term_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A page whose only term occurrence is the footer link still passes."""
+    _make_tree(
+        tmp_path,
+        monkeypatch,
+        "metrics/footer.md",
+        "# Footer\n\nScores things.\n\n" "Glossary terms: [NEG](../reference/glossary.md#neg).\n",
+    )
+    assert main([]) == EXIT_SUCCESS
+
+
 def test_metric_page_without_glossary_link_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -140,6 +153,8 @@ def test_term_pattern_is_whole_word() -> None:
     assert term_pattern("3H").search("the 3Height") is None
     assert term_pattern("pooling").search("Pooling is applied")
     assert term_pattern("pooling").search("pooled") is None
+    assert term_pattern("full range").search("a full range stream")
+    assert term_pattern("full range").search("full-range") is None
 
 
 def test_subdirectory_page_needs_two_levels(
