@@ -31,6 +31,7 @@ import re
 import sys
 import urllib.parse
 from pathlib import Path
+from typing import cast
 
 _SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 if str(_SCRIPTS_DIR) not in sys.path:
@@ -99,7 +100,10 @@ def _mask_html_comments(text: str) -> str:
 
 def _masked(text: str) -> str:
     """Mask code fences, inline code spans and HTML comments before parsing."""
-    return mask_inline_code_spans(mask_fenced_code_blocks(_mask_html_comments(text)))
+    masked = mask_inline_code_spans(mask_fenced_code_blocks(_mask_html_comments(text)))
+    # The import is skipped by mypy's follow_imports setting (pyproject.toml),
+    # so the call is Any even though check_doc_links annotates the return.
+    return cast(str, masked)
 
 
 def glossary_anchors(text: str) -> set[str]:
