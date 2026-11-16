@@ -2,14 +2,18 @@
 # NOTE: intel/oneapi-basekit does not yet publish an ubuntu26.04 variant.
 # Pinned to ubuntu24.04 until Intel ships one; track https://hub.docker.com/r/intel/oneapi-basekit/tags.
 FROM intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04@sha256:79a5e333ff6f773793d124b78047001c51cbcd53035e5100313abf2f771af95a
+ARG VMAFX_REPO_ROOT=/tmp
 
+# Intel oneAPI DPC++ toolkit comes from the intel/oneapi-basekit base image rather than ubuntu.sh.
 ENV DEBIAN_FRONTEND=noninteractive \
-    INSTALL_LINTERS=1 \
-    ENABLE_SYCL=1 \
+    INSTALL_LINTERS=true \
+    VMAFX_TOOLS_VENV=/opt/vmafx-tools \
+    PATH=/opt/vmafx-tools/bin:$PATH \
     LC_ALL=C.UTF-8 \
     LANG=C.UTF-8
 
 COPY build-config.env scripts/setup/ubuntu.sh /tmp/
+COPY requirements/locks/build.txt requirements/locks/dev-linters.txt /tmp/requirements/locks/
 # UBUNTU_APT_CERTIFICATE_BOOTSTRAP: HTTPS-only snapshots need the live archive's CA bundle.
 # DL3008: later installs resolve from APT::Snapshot; only this bootstrap is unpinned (ADR-3541).
 # hadolint ignore=DL3008
@@ -22,7 +26,7 @@ RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends curl git sudo \
     && bash /tmp/ubuntu.sh \
-    && rm -rf /var/lib/apt/lists/* /tmp/ubuntu.sh /tmp/build-config.env
+    && rm -rf /var/lib/apt/lists/* /tmp/ubuntu.sh /tmp/build-config.env /tmp/requirements
 
 SHELL ["/bin/bash", "-c"]
 WORKDIR /src

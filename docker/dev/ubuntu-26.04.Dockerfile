@@ -1,12 +1,16 @@
 # syntax=docker/dockerfile:1.28@sha256:bb22d9815c728170f72750f4e5b0d672e06176142e1d602c7e66c050100b7e5b
-FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
+FROM ubuntu:26.04@sha256:065aa8626841f16057b78b027b464cd59c4fac36c204c72dcbf48d66f5fa8a96
+ARG VMAFX_REPO_ROOT=/tmp
 
 ENV DEBIAN_FRONTEND=noninteractive \
-    INSTALL_LINTERS=1 \
+    INSTALL_LINTERS=true \
+    VMAFX_TOOLS_VENV=/opt/vmafx-tools \
+    PATH=/opt/vmafx-tools/bin:$PATH \
     LC_ALL=C.UTF-8 \
     LANG=C.UTF-8
 
 COPY build-config.env scripts/setup/ubuntu.sh /tmp/
+COPY requirements/locks/build.txt requirements/locks/dev-linters.txt /tmp/requirements/locks/
 # UBUNTU_APT_CERTIFICATE_BOOTSTRAP: HTTPS-only snapshots need the live archive's CA bundle.
 # DL3008: later installs resolve from APT::Snapshot; only this bootstrap is unpinned (ADR-3541).
 # hadolint ignore=DL3008
@@ -19,7 +23,7 @@ RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends curl git sudo \
     && bash /tmp/ubuntu.sh \
-    && rm -rf /var/lib/apt/lists/* /tmp/ubuntu.sh /tmp/build-config.env
+    && rm -rf /var/lib/apt/lists/* /tmp/ubuntu.sh /tmp/build-config.env /tmp/requirements
 
 WORKDIR /src
 CMD ["bash"]
