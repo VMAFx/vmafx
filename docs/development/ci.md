@@ -509,8 +509,37 @@ check missing from it can be red while the merge button stays green
 
 It runs on every PR and master push. Draft PRs fail immediately; ready PRs poll
 for the named sibling check runs to reach a terminal state and accept
-`success`, `skipped` or `neutral` per check. Results predating the current run
-are excluded, so skipped draft-era checks cannot mask ready validation.
+`success`, `skipped` or `neutral` per check. GitHub Actions check runs older
+than a 2-minute margin before the window anchor are excluded, so skipped
+draft-era checks cannot mask ready validation
+([ADR-3551](../adr/3551-aggregator-edited-window.md)): on `pull_request`
+`edited` events, where a title or body edit re-runs only the
+`rule-enforcement.yml` gates and leaves earlier build and test runs untouched,
+the anchor is the latest `ready_for_review` timeline event (or
+`pull_request.created_at` when never a draft); on every other event, the anchor
+is the aggregator run's own `created_at`. On `edited` events, workflows listed
+in `editedRerunWorkflows` (`.github/workflows/rule-enforcement.yml`) must also
+report from a current-edit run whose `display_title` starts with
+`"[<pull_request.updated_at>] "` (set via top-level `run-name:`): other `Rules`
+check suites on the same head SHA are excluded, and the aggregator fails closed
+when `pull_request.updated_at` is missing or when the `Rules` workflow does not
+start for the edit within the 2-minute registration grace. If two edits land in
+the same second and produce multiple `Rules` runs sharing the edit-stamp prefix
+(in any status), the aggregator fails closed at once and asks for another
+pull-request edit or a commit push. To catch a second same-second `Rules` run
+before passing on an earlier green one, an `edited` aggregator run keeps
+polling until a workflow-runs listing started after the 2-minute registration
+grace, though a duplicate registering after the grace is not seen by that
+aggregator run (its own `Rules` checks still report on the head commit).
+Because `actions/runner` converts any YAML
+string containing `${{` into one expression capped at 21,000 UTF-16 code units
+after `.NET` `Char.IsWhiteSpace` expression trimming,
+`scripts/ci/check-workflow-size.py` also checks every workflow scalar against
+that runner expression bound (`scripts/ci/tests/test_check_workflow_size.py`)
+alongside the 64 KiB file limit.
+`scripts/ci/tests/test_aggregator_edited_window.py` runs the embedded script
+across the edited-event window, stale-suite exclusion, boundary, draft-era
+exclusion and fail-closed API paths.
 
 On a master push the aggregator reads only the push's own check runs: a check
 run whose check suite belongs to a pull-request workflow run on the same commit
@@ -539,10 +568,11 @@ absent or skipped, never failed: the names the run's CI tier does not owe, the
 operator switch is off. `scripts/ci/tests/test_aggregator_absent_fails.py`
 runs the embedded script against both rules.
 
-The aggregator's GitHub API calls (`getWorkflowRun`, `listAllCheckRuns`,
-`pullRequestSuites`) retry HTTP 5xx answers for 15 minutes. If the API still
-answers 5xx, the job fails with `Transient GitHub API failure:`, the call and
-the status, and judges no check: rerun the job, because the code did not fail.
+The aggregator's GitHub API calls (`getWorkflowRun`, `listEventsForTimeline`,
+`listAllCheckRuns`, `pullRequestSuites`) retry HTTP 5xx answers for 15 minutes.
+If the API still answers 5xx, the job fails with `Transient GitHub API failure:`,
+the call and the status, and judges no check: rerun the job, because the code
+did not fail.
 Any other API error ends the job at once.
 `scripts/ci/tests/test_ci_aggregator_tier.py` runs both paths against a stub.
 
