@@ -1,0 +1,2 @@
+- **The upstream-watcher ledger records Netflix/vmaf `cf677baaa039` (svm.cpp: use `std::` `min`/`max`/`swap`) as in-fork, disposing tracking issue #3514.**
+  The fork already swaps through `using std::swap;` in `core/src/svm.cpp` (PR #1601) — the same fix for the clang/libc++ ambiguity [Netflix/vmaf#1616](https://github.com/Netflix/vmaf/issues/1616) reports — and keeps libsvm's own `min`/`max` on purpose: `std::min`/`std::max` return the first argument on a tie or a NaN operand, which would change training results.

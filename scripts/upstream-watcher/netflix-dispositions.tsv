@@ -50,3 +50,4 @@ f712fa7564fe49b12991d83920b83573af2ae063	ported	every Linux leg builds with zimg
 74f930d17de8c58e7c2ce55e2b897b0030ebd8ef	ported	#2999 (287ead8eb)
 4611e47a7330cd342498dcc130e1008efbeab6e4	ported	port/netflix-4611e47a7
 a6ed0f18285cab504b779bbccb0bbaddc3bf44c2	in-fork	#3012
+cf677baaa039723876fff8c2677164f25102e684	in-fork	#1601 (aaa1d97fd); std::min/std::max part not-applicable (fork keeps libsvm's own min/max on purpose: tie/NaN return order would change training results)
