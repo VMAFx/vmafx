@@ -57,6 +57,7 @@ FENCE_CLOSE_RE = re.compile(r"^```\s*$")
 ROW_ID_RE = re.compile(r"^`([a-z0-9][a-z0-9-]*)`$")
 FLOAT_RE = re.compile(r"^\d+\.\d+$")
 ADR_RE = re.compile(r"ADR-\d{4}")
+ADR_DIR = REPO_ROOT / "docs" / "adr"
 FILTER_RE = re.compile(r"\b(libvmaf|vmafx)=")
 CHECK_TABLE_HEADER = "| Check id |"
 MIN_CHECK_ROW_CELLS = 3
@@ -181,8 +182,19 @@ def _row_failures(
     if row.not_equivalent:
         if block is not None:
             failures.append(f"not-equivalent row {row_id} must not carry a command block")
-        if not ADR_RE.search(_row_notes(text, row_id)):
+        adr_numbers = list(
+            dict.fromkeys(
+                number.removeprefix("ADR-") for number in ADR_RE.findall(_row_notes(text, row_id))
+            )
+        )
+        if not adr_numbers:
             failures.append(f"not-equivalent row {row_id} must link an ADR in its notes")
+        for number in adr_numbers:
+            if not any(ADR_DIR.glob(f"{number}-*.md")):
+                failures.append(
+                    f"not-equivalent row {row_id} cites {number}, but "
+                    f"docs/adr/{number}-*.md does not exist"
+                )
     elif block is None:
         failures.append(f"equivalent row {row_id} has no migration-check block")
     elif row.expected is None or abs(row.expected - pooled_mean) > SCORE_TOLERANCE:
