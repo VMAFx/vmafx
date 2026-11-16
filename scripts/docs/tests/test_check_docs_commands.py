@@ -94,7 +94,13 @@ def test_execute_runs_cli_and_skips_ffmpeg(
 ) -> None:
     """--execute with a stubbed runner: cli blocks run, ffmpeg blocks skip."""
 
-    def fake_run(cmd, allowed_executables, capture_output, text, timeout_seconds):
+    def fake_run(
+        cmd: list[str],
+        allowed_executables: list[str],
+        capture_output: bool,
+        text: bool,
+        timeout_seconds: float,
+    ) -> types.SimpleNamespace:
         if cmd[0] == "ffmpeg":
             return types.SimpleNamespace(
                 returncode=1,
@@ -145,6 +151,38 @@ def test_number_scan_ignores_html_comments_and_fences() -> None:
         "The recorded value is 94.32301.\n"
     )
     assert checker.NUMBER_RE.findall(checker._number_scan_text(text)) == ["94.32301"]
+
+
+def test_number_scan_boundaries() -> None:
+    text = "two decimals 91.74, three 91.742, four 91.74213."
+    assert checker.NUMBER_RE.findall(checker._number_scan_text(text)) == [
+        "91.742",
+        "91.74213",
+    ]
+
+
+def test_no_block_index_still_scans_numbers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(checker, "PAGES_DIRS", [tmp_path])
+    monkeypatch.setattr(checker, "SNAPSHOTS", [])
+    (tmp_path / "index.md").write_text(
+        "# Index\n\nNo block here, but the mean is 91.74213.\n", encoding="utf-8"
+    )
+    assert main([]) == EXIT_FAILURE
+
+
+def test_block_nonzero_exit_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    block = checker.Block("cli", "cli", "vmaf -r a -d b\n", "fake.md")
+    monkeypatch.setattr(
+        checker,
+        "_safe_run",
+        lambda cmd, allowed: types.SimpleNamespace(returncode=3, stdout="", stderr=""),
+    )
+    ran, failure = checker._run_block(block, "vmaf")
+    assert ran is True
+    assert failure is not None
+    assert "exited 3" in failure
 
 
 def test_ffmpeg_score_block_needs_a_score_line(
