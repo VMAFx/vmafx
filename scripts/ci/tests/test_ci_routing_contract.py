@@ -462,6 +462,13 @@ class RoutingContract(unittest.TestCase):
         expect_own_input_lanes(self.contract, OWN)
         expect_own_input_lanes(self.contract, RENOVATE)
 
+    def test_renovate_pull_request_runs_tester_image_planner_and_gate(self) -> None:
+        """ADR-3554: a light-tier Renovate PR runs impact and Tester Image."""
+        _, runs = self.contract.run(RENOVATE)
+        self.assertIn(("docker-publish-tester.yml", "impact"), wr.ran_jobs(runs))
+        self.assertIn("Tester Image", wr.ran_names(runs))
+        self.assertIn("Tester Image", self.contract.lanes)
+
     def test_own_input_lanes_do_not_run_on_the_release_pull_request(self) -> None:
         expect_own_input_lanes_idle(self.contract, RELEASE)
 
@@ -775,6 +782,28 @@ class PlantedDefects(unittest.TestCase):
         )
         with self.assertRaises(AssertionError):
             expect_own_input_lanes(contract, OWN)
+
+    def test_a_tester_image_gate_back_on_the_full_tier_is_caught(self) -> None:
+        """ADR-3554: moving the Tester Image gate back to full skips Renovate PRs."""
+        contract = self.mutated(
+            "docker-publish-tester.yml",
+            "    if: always() && needs.tier.outputs.light == 'true'\n",
+            "    if: always() && needs.tier.outputs.full == 'true'\n",
+        )
+        with self.assertRaises(AssertionError):
+            expect_own_input_lanes(contract, RENOVATE)
+
+    def test_a_tester_image_planner_back_on_the_full_tier_is_caught(self) -> None:
+        """ADR-3554: moving the Tester Image planner back to full skips Renovate PRs."""
+        contract = self.mutated(
+            "docker-publish-tester.yml",
+            "    needs: tier\n    if: needs.tier.outputs.light == 'true'\n"
+            "    name: Plan tester image impact",
+            "    needs: tier\n    if: needs.tier.outputs.full == 'true'\n"
+            "    name: Plan tester image impact",
+        )
+        with self.assertRaises(AssertionError):
+            expect_own_input_lanes(contract, RENOVATE)
 
     def test_an_msvc_job_that_starts_in_a_cancelled_run_is_caught(self) -> None:
         contract = self.mutated(
