@@ -657,6 +657,12 @@
 - **Per-platform install tables.** Document installation routes, commands, status, and GPU backend support per platform in Getting Started ([#2319](https://github.com/VMAFx/vmafx/issues/2319)).
 
 
+- Agents: `.config/lane-brief.yaml` makes the lane launcher refuse a vmafx review
+  brief that lacks `Write nothing in the worktree` or `return: final message only`,
+  so a review job can no longer spend its run and then end in the rc 79 worktree
+  guard (ADR-3553).
+
+
 - **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
   `make mini-retrain` runs extraction, feature checks, combination, training and export of
   `vmaf_tiny_v2` to `v4` and `fr_regressor_v1`, validation, registry validation and a PLCC / SROCC / RMSE
@@ -2466,6 +2472,9 @@
   per frame against 28.53 ms for the per-entry exact kernel (56 to 59 % of its
   cost recovered) and 18.83 ms for the old inexact kernel; the remaining
   +4.2 ms is `T-SYCL-SPEED-COV-EXACT-SEQUENTIAL-COST-2026-10-06` (RC8).
+
+
+- `Tester Image` runs on light-tier pull requests that change the tester image's own inputs (`docker/Dockerfile.tester`, `tools/rc1-tester/**`, `build-config.env`, the toolkit install scripts, the licence inputs and the workflow), the Required Checks Aggregator waits while a selected own-input lane's build jobs run on the light tier, and `tools/rc1-tester/image/licensing.json` records CPython 3.14.10 for the tester and production MCP server images ([ADR-3554](docs/adr/3554-tester-image-own-input-lane.md)).
 
 
 - **The changed-files clang-tidy jobs defer to the lane that measures a file instead of failing
