@@ -119,10 +119,12 @@ jobs:
       - name: Install the build tools for the tutorial checks
         # issue 2330: the tutorial and cookbook run-check blocks are executed
         # against the fixture pair, so this job needs a vmaf CLI of its own.
+        # Stock ffmpeg runs the raw conversion blocks; it lacks the vmafx
+        # filter, so the filter and encoder rows still skip with a reason.
         if: steps.impact.outputs.docs == 'true'
         run: |
           bash scripts/ci/apt-install-cached.sh refresh
-          sudo -E apt-get -yq install --no-install-recommends libzimg-dev
+          sudo -E apt-get -yq install --no-install-recommends libzimg-dev ffmpeg
           pip install --require-hashes -r requirements/locks/build.txt
       - name: Build the vmaf CLI for the tutorial checks
         if: steps.impact.outputs.docs == 'true'
