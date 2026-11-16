@@ -48,7 +48,7 @@
 # sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
 # these lines, then run `make base-images-sync`.
 ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2"
-ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170"
+ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f"
 ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.1.0-full@sha256:4f5ed1bf6532a4b9920400401b0ad0f706af356dae61e40afefbfd6c8073f0ce"
 ARG ONEAPI_BUILDER="debian:13-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2"
 ARG ONEAPI_RUNTIME="debian:13-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2"
