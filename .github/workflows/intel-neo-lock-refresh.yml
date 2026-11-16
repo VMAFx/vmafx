@@ -77,16 +77,20 @@ jobs:
             echo "$stray" >&2
             exit 1
           fi
-          bot="${APP_SLUG}[bot]"
-          bot_id="$(gh api "users/$bot" --jq .id)"
-          email="${bot_id}+${bot}@users.noreply.github.com"
+          bot="vmafx-release-bot[bot]"
+          email="340976456+vmafx-release-bot[bot]@users.noreply.github.com"
+          if [[ "${APP_SLUG}[bot]" != "$bot" ]]; then
+            echo "::error::intel-neo-lock-refresh: expected app '$bot', got '${APP_SLUG}[bot]'" >&2
+            exit 1
+          fi
           msg="$RUNNER_TEMP/neo-lock-commit.txt"
           printf 'chore(deps): refresh Intel NEO and Level Zero asset lock\n\n%s\n%s\n\nSigned-off-by: %s <%s>\n' \
             "Refresh dev/scripts/intel-neo-lock.json for NEO ${INTEL_NEO_VERSION}" \
             "and Level Zero ${LEVEL_ZERO_VERSION} (ADR-3555)." \
             "$bot" "$email" >"$msg"
           git add -- "$lock"
-          git -c user.name="$bot" -c user.email="$email" commit -q -F "$msg"
+          git -c user.name="$bot" -c user.email="$email" commit -q \
+            --author="$bot <$email>" -F "$msg" -- "$lock"
           git push -q \
             "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             "HEAD:${GITHUB_REF}"

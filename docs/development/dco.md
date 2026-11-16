@@ -85,7 +85,9 @@ refuses an author name ending in `[bot]` or author email ending in
 `[bot]@users.noreply.github.com`, after NFKC normalization, format-character
 removal, and lowercasing, unless the commit belongs to the branch opener.
 In PR mode, the opener must have type `Bot` and the commit
-email must end in `+<opener-login>@users.noreply.github.com`; membership in the
+email must end in `+<opener-login>@users.noreply.github.com` (except for the
+single conditional `dco-bot-opener` lock-refresh exemption documented under
+[Exemptions](#exemptions)); membership in the
 sign-off exemption list is not required. In pre-push mode, the oldest outgoing
 non-merge author counts as opener only if human or its normalized email matches
 a `BOT_LOGINS` noreply suffix; other bots establish no opener and every
@@ -133,7 +135,8 @@ the byte limit plus one byte. Event JSON has an additional
 `MAX_PR_EVENT_BYTES` envelope: six times the body-byte limit plus 1 MiB for
 metadata and JSON escapes. Commit output is captured one commit at a time
 with `MAX_COMMIT_LOG_BYTES` (twice the message-byte limit plus 65,536 bytes
-for metadata); exceeding this capture bound also refuses the input. Git
+for metadata), and per-commit changed-path queries use `MAX_COMMIT_PATHS_BYTES`
+(65,536 bytes); exceeding either capture bound also refuses the input. Git
 fields and records are NUL-delimited so embedded legacy separators cannot
 move identity text into another field.
 
@@ -183,6 +186,31 @@ pre-cutoff ones included:
 
 Renovate also signs off its own commits (`:gitSignOff` in `renovate.json`), so
 the exemption is a second line, not the only one.
+
+One conditional PR-mode exemption lifts only the
+[bot-opener refusal](../adr/3544-dco-refuse-bot-authored-commits.md)
+(`commit_attribution_reason`, PR-body attribution, and the `Signed-off-by:`
+trailer check in `judge` still run, and `--landed` and pre-push `--merge-base`
+modes keep their existing rules unchanged) when all four conditions hold
+([ADR-3555](../adr/3555-intel-neo-lock-file.md)):
+
+- Evaluation runs in pull request mode (neither `--landed` nor `--merge-base`).
+- GitHub reports the pull request opener as `--author renovate[bot]` with
+  `--author-type Bot`.
+- The commit's author name and email, normalized with `normalized_identity`
+  (NFKC normalization, `Cf` format-character removal, and lowercasing), equal
+  `vmafx-release-bot[bot]` and
+  `340976456+vmafx-release-bot[bot]@users.noreply.github.com`
+  (`RELEASE_BOT_NAME` and `RELEASE_BOT_EMAIL` in `scripts/ci/check-dco.py`).
+- The commit's changed path list from
+  `git diff-tree -z --root --no-commit-id --name-only -r --no-renames`
+  (refused rather than truncated past `MAX_COMMIT_PATHS_BYTES` = 65,536 bytes)
+  is non-empty and every path is a live declared exception of rule
+  `dco-bot-opener` in `.config/lint-exceptions.d/dco-bot-opener.toml`, checked
+  with `scripts/ci/lint_exceptions.py` `still_read("dco-bot-opener", paths, root)`
+  returning an empty list (`--exceptions-root` overrides `root` in fixture
+  tests). The sole declared entry is `dev/scripts/intel-neo-lock.json`
+  (Category D, entered `2026-11-16`, expires `2027-03-16`).
 
 Verbatim upstream ports and merge commits are not special-cased: merge commits
 are not judged, and a port is committed by a person who signs it off like any

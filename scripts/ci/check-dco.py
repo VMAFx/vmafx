@@ -6,6 +6,8 @@
 ADR-2462 covers pull request sign-offs; ADR-3389 covers landed squash commits.
 ADR-3531 covers identity and message attribution checks.
 ADR-3544 refuses bot-authored PR/pre-push commits unless the bot is the branch opener.
+ADR-3555 lifts only that PR-mode opener refusal for a signed release-bot commit on a
+``renovate[bot]`` PR when every changed path is a live ``dco-bot-opener`` exception.
 
 Every non-merge commit in ``BASE..HEAD`` must end with a ``Signed-off-by: Name
 <email>`` trailer (what ``git commit -s`` writes), and the e-mail address of
@@ -36,8 +38,8 @@ Usage::
 
     python3 scripts/ci/check-dco.py --base <sha> --head <sha> \\
         [--author <login> --author-type <User|Bot>] [--release-pr] \\
-        [--created-at <ISO 8601>] [--cutoff-file <path>] \
-        [--pr-body-file <path> | --pr-body-from-event]
+        [--created-at <ISO 8601>] [--cutoff-file <path>] \\
+        [--exceptions-root <path>] [--pr-body-file <path> | --pr-body-from-event]
 
     python3 scripts/ci/check-dco.py --landed --landing-identity "Name <email>" \\
         --base <sha> --head <sha>
@@ -77,6 +79,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.ci import lint_exceptions
 from scripts.lib.safe_subprocess import (
     CommandOutputLimitExceeded,
     CommandTimedOut,
@@ -85,6 +88,7 @@ from scripts.lib.safe_subprocess import (
 
 GIT = shutil.which("git") or "/usr/bin/git"
 GIT_TIMEOUT_S = 120
+DEFAULT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CUTOFF_FILE = Path(__file__).resolve().parent / "dco-cutoff.txt"
 MAX_COMMITS = 5000
 
@@ -99,10 +103,17 @@ MAX_PR_BODY_LINES = 544 * 4
 MAX_PR_EVENT_BYTES = MAX_PR_BODY_BYTES * 6 + 1_048_576
 # One commit per read; subject can repeat the message, plus bounded identity metadata.
 MAX_COMMIT_LOG_BYTES = MAX_COMMIT_MESSAGE_BYTES * 2 + 65_536
+# Changed path list for a single commit (NUL-delimited repository-relative paths).
+MAX_COMMIT_PATHS_BYTES = 65_536
 
 # GitHub logins (as the API reports them) whose commits are exempt.  Keep the
 # list in docs/development/dco.md in step with this one.
 BOT_LOGINS = ("renovate[bot]", "dependabot[bot]", "github-actions[bot]")
+# Conditional PR-mode bot-opener exemption (ADR-3555); keep docs/development/dco.md in step.
+RENOVATE_BOT_LOGIN = "renovate[bot]"
+RELEASE_BOT_NAME = "vmafx-release-bot[bot]"
+RELEASE_BOT_EMAIL = "340976456+vmafx-release-bot[bot]@users.noreply.github.com"
+BOT_OPENER_EXCEPTION_RULE = "dco-bot-opener"
 
 # All 13 tokens equal praetor tools/planning/commit_msg_check.py BANNED_COAUTHORS;
 # both Python tuples use substring matching. Engine internal/forge/commit_message.go
@@ -159,7 +170,10 @@ class Commit:
 
 
 def run_git(
-    args: list[str], stdin: str | None = None, max_output_bytes: int = MAX_COMMIT_LOG_BYTES
+    args: list[str],
+    stdin: str | None = None,
+    max_output_bytes: int = MAX_COMMIT_LOG_BYTES,
+    bound_name: str = "MAX_COMMIT_LOG_BYTES",
 ) -> str:
     """Run bounded Git; failure never becomes an empty successful answer."""
     try:
@@ -174,9 +188,13 @@ def run_git(
             max_output_bytes=max_output_bytes,
         )
     except CommandOutputLimitExceeded as exc:
+        detail = (
+            f"; MAX_COMMIT_MESSAGE_BYTES is {MAX_COMMIT_MESSAGE_BYTES}"
+            if bound_name == "MAX_COMMIT_LOG_BYTES"
+            else ""
+        )
         raise InputBoundError(
-            f"git output exceeds MAX_COMMIT_LOG_BYTES ({max_output_bytes}); "
-            f"MAX_COMMIT_MESSAGE_BYTES is {MAX_COMMIT_MESSAGE_BYTES}"
+            f"git output exceeds {bound_name} ({max_output_bytes}){detail}"
         ) from exc
     except (OSError, CommandTimedOut) as exc:
         raise UsageError(f"git {' '.join(args)}: {exc}") from exc
@@ -272,8 +290,58 @@ def is_exempt_bot_commit(commit: Commit, author: str, author_type: str) -> bool:
     return commit.author_email.lower().endswith(bot_noreply_suffix(author))
 
 
+def commit_changed_paths(sha: str) -> list[str]:
+    """Return the NUL-delimited repository-relative paths changed by one commit."""
+    out = run_git(
+        [
+            "diff-tree",
+            "-z",
+            "--root",
+            "--no-commit-id",
+            "--name-only",
+            "-r",
+            "--no-renames",
+            "--end-of-options",
+            sha,
+        ],
+        max_output_bytes=MAX_COMMIT_PATHS_BYTES,
+        bound_name="MAX_COMMIT_PATHS_BYTES",
+    )
+    if not out:
+        return []
+    paths = out.split(FIELD_SEP)
+    if paths.pop() != "":
+        raise UsageError("unparseable NUL-terminated git diff-tree record")
+    return paths
+
+
+def is_exempt_opener_commit(
+    sha: str,
+    name: str,
+    email: str,
+    author: str,
+    author_type: str,
+    *,
+    pre_push: bool = False,
+    root: Path = DEFAULT_ROOT,
+) -> bool:
+    """True when a Renovate PR commit is the release-bot refresh of excepted paths only."""
+    if pre_push or author != RENOVATE_BOT_LOGIN or author_type != "Bot":
+        return False
+    if (name, email) != (RELEASE_BOT_NAME, RELEASE_BOT_EMAIL):
+        return False
+    paths = commit_changed_paths(sha)
+    return bool(paths) and not lint_exceptions.still_read(BOT_OPENER_EXCEPTION_RULE, paths, root)
+
+
 def pr_attribution_reason(
-    commit: Commit, author: str, author_type: str, opener: tuple[str, str] | None = None
+    commit: Commit,
+    author: str,
+    author_type: str,
+    opener: tuple[str, str] | None = None,
+    *,
+    pre_push: bool = False,
+    root: Path = DEFAULT_ROOT,
 ) -> str | None:
     """Refuse bot authors outside their own branches, then apply shared attribution rules."""
     name = normalized_identity(commit.author_name)
@@ -283,7 +351,13 @@ def pr_attribution_reason(
         owns_branch = (name, email) == tuple(normalized_identity(part) for part in opener)
     else:
         owns_branch = author_type == "Bot" and email.endswith(bot_noreply_suffix(author))
-    if bot_author and not owns_branch:
+    if (
+        bot_author
+        and not owns_branch
+        and not is_exempt_opener_commit(
+            commit.sha, name, email, author, author_type, pre_push=pre_push, root=root
+        )
+    ):
         return (
             f"bot author {commit.author_name} <{commit.author_email}> is not the branch opener; "
             "a squash landing would carry it as a Co-authored-by trailer that the landed gate "
@@ -294,10 +368,18 @@ def pr_attribution_reason(
 
 
 def judge(
-    commit: Commit, author: str, author_type: str, opener: tuple[str, str] | None = None
+    commit: Commit,
+    author: str,
+    author_type: str,
+    opener: tuple[str, str] | None = None,
+    *,
+    pre_push: bool = False,
+    root: Path = DEFAULT_ROOT,
 ) -> str | None:
     """Return None when the commit passes, else the reason it does not."""
-    reason = pr_attribution_reason(commit, author, author_type, opener)
+    reason = pr_attribution_reason(
+        commit, author, author_type, opener, pre_push=pre_push, root=root
+    )
     if reason:
         return reason
     if is_exempt_bot_commit(commit, author, author_type):
@@ -610,19 +692,31 @@ def branch_opener(commits: list[Commit], pre_push: bool) -> tuple[str, str] | No
 def check_pr(args: argparse.Namespace) -> int:
     """Enforce commit and body attribution on every PR, and commit sign-offs unless exempt."""
     commits = list_commits(args.base, args.head)
-    opener = branch_opener(commits, bool(args.merge_base))
+    pre_push = bool(args.merge_base)
+    opener = branch_opener(commits, pre_push)
+    root = Path(args.exceptions_root)
     exemption = pr_signoff_exemption(args)
     judge_commit: Callable[[Commit], str | None]
     if exemption is not None:
         print(exemption)
         judge_commit = functools.partial(
-            pr_attribution_reason, author=args.author, author_type=args.author_type, opener=opener
+            pr_attribution_reason,
+            author=args.author,
+            author_type=args.author_type,
+            opener=opener,
+            pre_push=pre_push,
+            root=root,
         )
         kind = "release pull request" if args.release_pr else "grandfathered"
         summary = f" free of attribution; sign-off exempt ({kind})"
     else:
         judge_commit = functools.partial(
-            judge, author=args.author, author_type=args.author_type, opener=opener
+            judge,
+            author=args.author,
+            author_type=args.author_type,
+            opener=opener,
+            pre_push=pre_push,
+            root=root,
         )
         summary = ", every one signed off or exempt"
     body_findings = pr_body_attribution(read_pr_body(args))
@@ -677,6 +771,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--author-type", default=env("PR_AUTHOR_TYPE", ""))
     parser.add_argument("--created-at", default=env("PR_CREATED_AT", ""))
     parser.add_argument("--cutoff-file", default=str(DEFAULT_CUTOFF_FILE))
+    parser.add_argument("--exceptions-root", default=str(DEFAULT_ROOT))
     body = parser.add_mutually_exclusive_group()
     body.add_argument("--pr-body-file", "--pr-body", default="")
     body.add_argument("--pr-body-from-event", action="store_true")
