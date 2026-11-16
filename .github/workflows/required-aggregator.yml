@@ -633,6 +633,7 @@ jobs:
               );
               return;
             }
+            const editUpdatedMs = isEditedPullRequest ? Date.parse(ownEditStamp) : Number.NaN;
             const editStampPrefix = isEditedPullRequest
               ? `[${context.payload.pull_request.updated_at}] `
               : '';
@@ -798,9 +799,7 @@ jobs:
             // edit, each listed workflow must start a current run within the grace
             // window, and multiple runs sharing editStampPrefix (same-second edits)
             // fail closed. A run with no stamp that is still waiting for fork
-            // approval (`action_required` / `waiting`) is not a stale edit: name
-            // that run and the approval action instead of claiming the workflow
-            // never started.
+            // approval-gated current-edit run: name it; older/stamped runs stay stale.
             const editedRerunWorkflows = [
               '.github/workflows/rule-enforcement.yml',
             ];
@@ -831,7 +830,15 @@ jobs:
                   currentRuns.get(run.path).add(run.id ?? run.check_suite_id ?? Symbol('run'));
                 } else {
                   if (run.check_suite_id != null) staleSuites.add(run.check_suite_id);
-                  if (awaitsApproval(run)) {
+                  const hasStamp = typeof run.display_title === 'string' &&
+                    run.display_title.startsWith('[');
+                  const createdMs = Date.parse(run.created_at || '');
+                  if (
+                    awaitsApproval(run) &&
+                    !hasStamp &&
+                    Number.isFinite(createdMs) &&
+                    createdMs >= editUpdatedMs
+                  ) {
                     approvalPendingRuns.get(run.path).add(
                       run.id ?? run.check_suite_id ?? 'unknown'
                     );
@@ -1060,19 +1067,19 @@ jobs:
                     `${workflowPath} run ` +
                     Array.from(approvalPendingRuns.get(workflowPath)).join(', ')
                   );
-                if (approvalDetails.length > 0) {
-                  core.setFailed(
-                    'Edited-event required workflow awaits maintainer approval: ' +
-                    `${approvalDetails.join(', ')}; ` +
-                    'approve or re-run it, then re-run this check.'
-                  );
-                  return;
-                }
-                core.setFailed(
-                  'Edited-event required workflow did not start within registration grace: ' +
-                  `${missingEditedWorkflows.join(', ')} ` +
-                  '(the Rules workflow did not start for this edit).'
+                const notStarted = missingEditedWorkflows.filter(
+                  workflowPath => !approvalPendingRuns.get(workflowPath).size
                 );
+                const failureParts = [];
+                if (approvalDetails.length) failureParts.push(
+                  'Edited-event required workflow awaits maintainer approval: ' +
+                  `${approvalDetails.join(', ')}; approve or re-run it, then re-run this check.`
+                );
+                if (notStarted.length) failureParts.push(
+                  'Edited-event required workflow did not start within registration grace: ' +
+                  `${notStarted.join(', ')} (the Rules workflow did not start for this edit).`
+                );
+                core.setFailed(failureParts.join(' '));
                 return;
               }
             }
