@@ -384,7 +384,7 @@ the selectors declared in `.github/ci-impact.json`. There are 27 selectors:
 | `dev_container` | `c_core`, `python`, `ai`, `go`, `shell` plus `dev/` | Dev container build |
 | `doxygen` | `core/include/libvmaf/`, the public-API Doxyfile | Doxygen public API |
 | `helm` | `deploy/helm/` | Helm chart |
-| `tester_image` | `docker/Dockerfile.tester`, `tools/rc1-tester/`, the toolkit install scripts, `build-config.env`, the licence inputs; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Tester Image` ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)) |
+| `tester_image` | `docker/Dockerfile.tester`, `tools/rc1-tester/`, the toolkit install scripts, `build-config.env`, the licence inputs; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Tester Image` on full-tier and light-tier pull requests ([ADR-1687](../adr/1687-required-release-dry-run-legs.md), [ADR-3554](../adr/3554-tester-image-own-input-lane.md)) |
 | `windows_tester_zip` | The Windows zip build scripts, its lock file and the Windows inputs under `tools/rc1-tester/image/`; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Windows Tester Zip` ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)) |
 | `windows_tester_zip_sycl` | Everything `windows_tester_zip` owns, plus `sycl-rows.json`, `prepare_build.py`, `build-config.env` and the SYCL scratch ratchet list; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | The x64 SYCL zip of `Windows Tester Zip` ([ADR-2198](../adr/2198-windows-sycl-leg-and-cut-check.md)) |
 | `windows_msvc_sycl` | C, C++ and header files under `core/` (`*.c`, `*.h`, `*.cpp`, `*.inc`, `*.h.in`), the Meson files under `core/`, `libvmaf-build-matrix.yml`, `werror-args.sh`, `check_msvc_library_names.py`, `run_meson_test.py` and the build lock file; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Windows MSVC+SYCL` on a light-tier pull request ([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)) |
@@ -610,11 +610,26 @@ Python, AI, MCP and Go sources the image copies, `supply-chain.yml` and
 `build-native-release-artifacts.sh`. Add the label `ci: full` when a pull
 request changes one of those and needs the image built before it lands.
 
-These are full-tier contexts, with one declared exception
-([ADR-2198](../adr/2198-windows-sycl-leg-and-cut-check.md)): `Windows Tester
-Zip` is an **own-input lane** (`own_input_lanes` of `.github/ci-tier.json`), so
-a pull request from this repository also runs it, but its planner builds only
-what the diff touches. Selector `windows_tester_zip` builds the x64 zip;
+`Tester Image` of `docker-publish-tester.yml` is the fourth own-input lane
+([ADR-3554](../adr/3554-tester-image-own-input-lane.md)). On a light-tier pull
+request (Renovate digest updates included) its `impact` planner and
+`Tester Image` gate run on `needs.tier.outputs.light == 'true'`, reading the
+`own_paths_only` selector `tester_image` (`docker/Dockerfile.tester`,
+`tools/rc1-tester/`, `build-config.env`, the toolkit install scripts, the
+licence inputs and the workflow). When selected, the amd64 tester image builds
+(including `licence-texts`, `notices` and `licence-check`) and runs its report
+before merging; otherwise the gate reports `success` with a skip notice. The
+Required Checks Aggregator also waits while any non-skipped
+`delayedStrictDependencies` work job of an own-input lane runs on the light
+tier, so a fast light-tier run cannot pass before a selected `Tester Image`
+build registers its gate check.
+
+These three release-leg contexts live in `full_only`, with two declared
+own-input-lane exceptions (`own_input_lanes` of `.github/ci-tier.json`):
+`Windows Tester Zip` ([ADR-2198](../adr/2198-windows-sycl-leg-and-cut-check.md))
+and `Tester Image` ([ADR-3554](../adr/3554-tester-image-own-input-lane.md)), so
+a pull request from this repository also runs both, while each planner builds
+only what the diff touches. Selector `windows_tester_zip` builds the x64 zip;
 selector `windows_tester_zip_sycl` (everything the x64 zip reads, plus
 `sycl-rows.json`, `prepare_build.py`, `build-config.env` and the SYCL scratch
 ratchet list) adds the x64 SYCL zip. The arm64 and CUDA zips, `Tester Image`'s

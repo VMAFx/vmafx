@@ -905,6 +905,7 @@ jobs:
                 const run = byName[dependency];
                 if (!run) return false;
                 if (activeStatuses.has(run.status)) return true;
+                if (notOwed.has(name) && run.conclusion === 'skipped') return false;
                 const completedMs = Date.parse(run.completed_at || 0);
                 return Number.isFinite(completedMs) &&
                   nowMs - completedMs <= registrationPropagationMs;
@@ -981,7 +982,12 @@ jobs:
                 return run && activeStatuses.has(run.status);
               });
               const nowMs = Date.now();
-              const delayedMissing = missing.filter(name =>
+              // ADR-3554 — own-input lanes stay in CI_TIER_FULL_ONLY (notOwed on
+              // the light tier), yet GitHub creates their gate check run only once
+              // their planner and work jobs complete; wait while those dependencies
+              // run so a light-tier PR cannot pass before a selected lane finishes.
+              const delayedMissing = required.filter(name =>
+                !byName[name] && !eventExempt.has(name) &&
                 delayedRegistrationStillExpected(delayedStrictDependencies, name, nowMs));
               const uploadPending = required.filter(name =>
                 !notOwed.has(name) && !eventExempt.has(name) &&
