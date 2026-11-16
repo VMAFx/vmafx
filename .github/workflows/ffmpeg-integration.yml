@@ -152,7 +152,9 @@ jobs:
           fi
           sudo make install
 
-      - name: Execute the migration guide's FFmpeg filter row
+      - name: Execute the migration guide's FFmpeg filter and CLI rows
+        env:
+          VMAF_BIN: ${{ github.workspace }}/core/build/tools/vmaf
         run: python3 scripts/docs/check_migration_equivalence.py --execute
 
   # Build-only: FFmpeg with SYCL patch (no GPU hardware on runners)
