@@ -1182,10 +1182,20 @@ jobs:
         run: python scripts\ci\prefetch_go_modules.py
 
       - name: Run fast unit suite
+        id: fast_unit_suite
         shell: cmd
         run: >-
           python scripts\ci\run_meson_test.py --
           -C core\build --suite fast --print-errorlogs
+
+      # #3481: a timed-out contract test leaves its phase timing in testlog.
+      - name: Upload meson testlog on failure
+        if: ${{ env.GITEA_ACTIONS != 'true' && failure() && steps.fast_unit_suite.outcome == 'failure' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: windows-arm64-msvc-testlog
+          path: core/build/meson-logs/testlog.txt
+          if-no-files-found: warn
 
       - name: Upload vmaf.exe artifact
         if: ${{ env.GITEA_ACTIONS != 'true' }}
