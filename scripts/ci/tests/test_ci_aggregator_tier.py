@@ -73,6 +73,51 @@ class LightTier(unittest.TestCase):
     def test_the_release_contract_is_owed(self) -> None:
         self.assertEqual(len(run(RELEASE_CONTRACT, "failure", "light")), 1)
 
+    def _tester_image_delayed_failure(self) -> list[str]:
+        running_work = {
+            "name": "x86_64 reference scores",
+            "status": "in_progress",
+            "conclusion": None,
+            "check_suite": {"id": 1},
+        }
+        failed_work = {
+            "name": "x86_64 reference scores",
+            "conclusion": "failure",
+            "check_suite": {"id": 1},
+        }
+        later = [
+            ({**check, "conclusion": "failure"} if check["name"] == "Tester Image" else check)
+            for check in every_required_check_passes()
+        ]
+        return run(
+            "Tester Image",
+            None,
+            "light",
+            extra_checks=[running_work],
+            later_checks=[*later, failed_work],
+        )
+
+    def test_an_own_input_lane_whose_work_is_running_holds_and_blocks_on_failure(self) -> None:
+        failures = self._tester_image_delayed_failure()
+        self.assertEqual(len(failures), 1)
+        self.assertIn("Tester Image: failure", failures[0])
+
+    def test_without_not_owed_delayed_wait_light_tier_misses_running_tester_image(self) -> None:
+        """Planted defect: filtering delayedMissing from missing skips own-input lanes."""
+        text = harness.AGGREGATOR_PATH.read_text(encoding="utf-8")
+        mutated = text.replace(
+            "const delayedMissing = required.filter(name =>\n"
+            "                !byName[name] && !eventExempt.has(name) &&",
+            "const delayedMissing = missing.filter(name =>",
+        )
+        self.assertNotEqual(text, mutated)
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, directory, True)
+        copy = directory / "required-aggregator.yml"
+        copy.write_text(mutated, encoding="utf-8")
+        with mock.patch.object(harness, "AGGREGATOR_PATH", copy):
+            self.assertEqual(self._tester_image_delayed_failure(), [])
+
 
 class ReleaseLightTier(unittest.TestCase):
     def test_only_the_release_contract_is_owed(self) -> None:
