@@ -107,7 +107,6 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
         return -EINVAL;
 
     int err = 0;
-
     /* Publish to caller's *pool before any later failure path.  Set *pool = NULL
      * on every failure path so the caller can treat a non-zero return as
      * "pool not constructed" — prevents UAF via vmaf_gpu_picture_pool_close()
