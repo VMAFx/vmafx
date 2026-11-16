@@ -359,9 +359,7 @@ def _builder_writes_record(path: str, builder: str, source: str) -> bool:
     staged = _stages((REPO / path).read_text(encoding="utf-8")).get(builder)
     if staged is None:
         return False
-    body = "\n".join(
-        line for line in staged[1].splitlines() if not line.lstrip().startswith("#")
-    )
+    body = "\n".join(line for line in staged[1].splitlines() if not line.lstrip().startswith("#"))
     root = re.escape(source.rstrip("/"))
     writes_copyright = re.search(rf"\bcp\s+\S+/copyright\s+{root}/copyright(?=\s|$)", body)
     writes_source = re.search(rf">\s*{root}/SOURCE(?=\s|$)", body)
