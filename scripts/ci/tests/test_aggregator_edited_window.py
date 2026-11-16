@@ -970,6 +970,64 @@ class AggregatorEditedWindowTests(unittest.TestCase):
         self.assertEqual(failures, [])
         self.assertNotIn(GRACE_WAIT_LOG, infos)
 
+    def test_duplicate_t2_run_appearing_before_final_listing_fails_closed(self) -> None:
+        """Fail closed when a second [T2] Rules run appears before the final grace listing."""
+        stale_run = _rules_run(OLD_RULES_SUITE, MIN_30_AGO, edit_stamp=STAMP_T1)
+        current_run = _rules_run(
+            CURRENT_RULES_SUITE,
+            0,
+            edit_stamp=STAMP_T2,
+            status="completed",
+            conclusion="success",
+        )
+        late_duplicate = _rules_run(
+            CURRENT_RULES_SUITE + 1,
+            15,
+            edit_stamp=STAMP_T2,
+            status="in_progress",
+        )
+        infos: list[str] = []
+        failures = self._run_edited_suites(
+            [stale_run, current_run],
+            later_workflow_runs=[stale_run, current_run, late_duplicate],
+            extra_checks=_rules_suite_checks(CURRENT_RULES_SUITE),
+            info_logs=infos,
+        )
+        self.assertEqual(len(failures), 1, failures)
+        self.assertIn(RULES_WORKFLOW, failures[0])
+        self.assertIn(STAMP_T2, failures[0])
+        self.assertIn("edit the pull request again", failures[0])
+        self.assertIn("push a commit", failures[0])
+        self.assertIn(GRACE_WAIT_LOG, infos)
+
+    def test_single_t2_run_through_post_grace_final_listing_passes(self) -> None:
+        """Pass when every listing through the post-grace final listing shows one [T2] Rules run.
+
+        A duplicate that registers only after that final listing cannot be seen by this run;
+        its own `Rules` checks report on the head commit; see
+        docs/adr/3551-aggregator-edited-window.md (Negative consequences).
+        """
+        runs = [
+            _rules_run(OLD_RULES_SUITE, MIN_30_AGO, edit_stamp=STAMP_T1),
+            _rules_run(
+                CURRENT_RULES_SUITE,
+                0,
+                edit_stamp=STAMP_T2,
+                status="completed",
+                conclusion="success",
+            ),
+        ]
+        infos: list[str] = []
+        failures = self._run_edited_suites(
+            runs,
+            later_workflow_runs=runs,
+            extra_checks=_rules_suite_checks(CURRENT_RULES_SUITE),
+            info_logs=infos,
+        )
+        self.assertEqual(failures, [])
+        self.assertIn(GRACE_WAIT_LOG, infos)
+        self.assertIn("Excluded 1 stale edited-rerun check suite(s)", infos)
+
 
 if __name__ == "__main__":
     unittest.main()
