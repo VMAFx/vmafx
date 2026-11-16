@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import io
 import json
@@ -11,7 +12,8 @@ import sys
 from email.message import Message
 from http.client import IncompleteRead
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO
+from urllib.parse import unquote, urlsplit
 from urllib.request import Request
 
 import pytest
@@ -373,3 +375,385 @@ def test_level_zero_dev_without_a_version_is_rejected(
 
     with pytest.raises(SystemExit, match="2"):
         fetch_intel_neo.main()
+
+
+_FIXTURE_NEO_VER = "26.35.39758.10"
+_FIXTURE_LZ_VER = "1.34.0"
+
+
+def _fixture_deb_bytes(filename: str) -> bytes:
+    return f"deb-payload:{filename}\n".encode("utf-8")
+
+
+def _fixture_sha256(filename: str) -> str:
+    return hashlib.sha256(_fixture_deb_bytes(filename)).hexdigest()
+
+
+def _fixture_api_responses(
+    neo_ver: str = _FIXTURE_NEO_VER, lz_ver: str = _FIXTURE_LZ_VER
+) -> tuple[dict[str, bytes], dict[str, Any]]:
+    neo_base = f"https://github.com/intel/compute-runtime/releases/download/{neo_ver}/"
+    igc_base = "https://github.com/intel/intel-graphics-compiler/releases/download/v2.40.13/"
+    gmm = "libigdgmm12_22.10.0_amd64.deb"
+    icd = f"intel-opencl-icd_{neo_ver}_amd64.deb"
+    lz_gpu = f"libze-intel-gpu1_{neo_ver}_amd64.deb"
+    ocloc = f"intel-ocloc_{neo_ver}_amd64.deb"
+    igc_core = "intel-igc-core-2_2.40.13+22418_amd64.deb"
+    igc_opencl = "intel-igc-opencl-2_2.40.13+22418_amd64.deb"
+    sum_name = "ww35.sum"
+    neo_doc = {
+        "assets": [
+            {"name": n, "browser_download_url": neo_base + n}
+            for n in (gmm, icd, lz_gpu, ocloc, sum_name)
+        ],
+        "body": (
+            f"{igc_base}{igc_core.replace('+', '%2B')}\n"
+            f"{igc_base}{igc_opencl.replace('+', '%2B')}\n"
+        ),
+    }
+    sum_body = "\n".join(f"{_fixture_sha256(n)}  {n}" for n in (gmm, icd, lz_gpu, ocloc)) + "\n"
+    igc_doc = {"body": "\n".join(f"{_fixture_sha256(n)}  {n}" for n in (igc_core, igc_opencl))}
+    lz_names = (f"libze1_{lz_ver}+u24.04_amd64.deb", f"libze-dev_{lz_ver}+u24.04_amd64.deb")
+    lz_doc = {
+        "assets": [
+            {
+                "name": n,
+                "browser_download_url": (
+                    f"https://github.com/oneapi-src/level-zero/releases/download/v{lz_ver}/"
+                    + n.replace("+", "%2B")
+                ),
+                "digest": "sha256:" + _fixture_sha256(n),
+            }
+            for n in lz_names
+        ]
+    }
+    responses = {
+        f"https://api.github.com/repos/intel/compute-runtime/releases/tags/{neo_ver}": (
+            json.dumps(neo_doc).encode("utf-8")
+        ),
+        neo_base + sum_name: sum_body.encode("utf-8"),
+        "https://api.github.com/repos/intel/intel-graphics-compiler/releases/tags/v2.40.13": (
+            json.dumps(igc_doc).encode("utf-8")
+        ),
+        f"https://api.github.com/repos/oneapi-src/level-zero/releases/tags/v{lz_ver}": (
+            json.dumps(lz_doc).encode("utf-8")
+        ),
+    }
+    return responses, neo_doc
+
+
+def _write_fixture_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    neo_ver: str = _FIXTURE_NEO_VER,
+    lz_ver: str = _FIXTURE_LZ_VER,
+) -> Path:
+    responses, _ = _fixture_api_responses(neo_ver, lz_ver)
+    lock_path = tmp_path / "intel-neo-lock.json"
+    monkeypatch.setattr(fetch_intel_neo, "make_request", lambda url, token=None: responses[url])
+    fetch_intel_neo.write_lock(lock_path, neo_ver, lz_ver)
+    return lock_path
+
+
+class _RecordingAssetOpener:
+    def __init__(self, seen_urls: list[str]) -> None:
+        self._seen_urls = seen_urls
+
+    def open(self, url: str, *, timeout: int) -> io.BytesIO:
+        assert timeout == fetch_intel_neo.HTTP_TIMEOUT_SECONDS
+        fetch_intel_neo._validate_https_url(url)
+        self._seen_urls.append(url)
+        filename = unquote(Path(urlsplit(url).path).name)
+        return io.BytesIO(_fixture_deb_bytes(filename))
+
+
+def test_planted_missing_lock_fails_closed_with_refresh_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    missing = tmp_path / "missing-intel-neo-lock.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "fetch-intel-neo.py",
+            "--neo-ver",
+            _FIXTURE_NEO_VER,
+            "--lock",
+            str(missing),
+            "--output-dir",
+            str(tmp_path / "out"),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        fetch_intel_neo.main()
+
+    err = capsys.readouterr().err
+    assert exc.value.code != 0
+    assert str(missing) in err
+    assert "--write-lock" in err
+
+
+def test_planted_tampered_lock_sha256_fails_naming_asset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    lock_path = _write_fixture_lock(tmp_path, monkeypatch)
+    data = json.loads(lock_path.read_text(encoding="utf-8"))
+    tampered_name = data["neo"]["ocloc"]["name"]
+    data["neo"]["ocloc"]["sha256"] = "0" * 64
+    lock_path.write_text(
+        json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
+    )
+    seen_urls: list[str] = []
+    monkeypatch.setattr(
+        fetch_intel_neo, "_opener", lambda _url, _token: _RecordingAssetOpener(seen_urls)
+    )
+    out_dir = tmp_path / "debs"
+
+    with pytest.raises(SystemExit) as exc:
+        fetch_intel_neo.fetch_from_lock(lock_path, _FIXTURE_NEO_VER, out_dir, components="ocloc")
+
+    err = capsys.readouterr().err
+    assert exc.value.code != 0
+    assert tampered_name in err
+    assert not (out_dir / tampered_name).exists()
+
+
+def test_planted_lock_mode_makes_no_api_github_requests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock_path = _write_fixture_lock(tmp_path, monkeypatch)
+    seen_urls: list[str] = []
+    seen_tokens: list[str | None] = []
+
+    def fake_opener(url: str, token: str | None) -> _RecordingAssetOpener:
+        seen_urls.append(url)
+        seen_tokens.append(token)
+        return _RecordingAssetOpener(seen_urls)
+
+    monkeypatch.setattr(fetch_intel_neo, "_opener", fake_opener)
+    monkeypatch.setattr(
+        fetch_intel_neo,
+        "make_request",
+        lambda url, token=None: seen_urls.append(url) or b"",
+    )
+    invocations = (
+        ["--components", "ocloc"],
+        ["--components", "runtime"],
+        ["--components", "ocloc", "--level-zero-ver", _FIXTURE_LZ_VER, "--level-zero-dev"],
+        ["--components", "runtime", "--level-zero-ver", _FIXTURE_LZ_VER, "--github-token", "tok"],
+    )
+    for idx, extra in enumerate(invocations):
+        out = tmp_path / f"out-{idx}"
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "fetch-intel-neo.py",
+                "--neo-ver",
+                _FIXTURE_NEO_VER,
+                "--lock",
+                str(lock_path),
+                "--output-dir",
+                str(out),
+                *extra,
+            ],
+        )
+        fetch_intel_neo.main()
+        assert (out / "SHA256SUMS").is_file()
+
+    assert seen_urls
+    assert all(urlsplit(u).hostname == "github.com" for u in seen_urls)
+    assert all(tok is None for tok in seen_tokens)
+
+
+def test_planted_version_drift_check_fails_when_config_bumps_without_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checker_path = Path(__file__).resolve().parents[2] / "scripts/ci/check-workflow-versions.py"
+    spec = importlib.util.spec_from_file_location(
+        "check_workflow_versions_under_test", checker_path
+    )
+    assert spec is not None and spec.loader is not None
+    checker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(checker)
+
+    lock_path = _write_fixture_lock(tmp_path, monkeypatch)
+    repo = tmp_path / "repo"
+    scripts_dir = repo / "dev" / "scripts"
+    scripts_dir.mkdir(parents=True)
+    (scripts_dir / "fetch-intel-neo.py").write_text("# stub\n", encoding="utf-8", newline="\n")
+    assert checker.check_intel_neo_lock(repo, _FIXTURE_NEO_VER, _FIXTURE_LZ_VER) != []
+
+    (scripts_dir / "intel-neo-lock.json").write_text(
+        lock_path.read_text(encoding="utf-8"), encoding="utf-8", newline="\n"
+    )
+    assert checker.check_intel_neo_lock(repo, _FIXTURE_NEO_VER, _FIXTURE_LZ_VER) == []
+    assert any(
+        "INTEL_NEO_VERSION" in p
+        for p in checker.check_intel_neo_lock(repo, "99.0.0", _FIXTURE_LZ_VER)
+    )
+    assert any(
+        "LEVEL_ZERO_VERSION" in p
+        for p in checker.check_intel_neo_lock(repo, _FIXTURE_NEO_VER, "9.9.9")
+    )
+
+
+def test_write_lock_round_trip_matches_select_and_is_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    responses, neo_doc = _fixture_api_responses()
+    monkeypatch.setattr(fetch_intel_neo, "make_request", lambda url, token=None: responses[url])
+    monkeypatch.setattr(
+        fetch_intel_neo,
+        "download_file",
+        lambda *_a, **_kw: (_ for _ in ()).throw(AssertionError("download_file called")),
+    )
+    lock_a = tmp_path / "lock-a.json"
+    lock_b = tmp_path / "lock-b.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "fetch-intel-neo.py",
+            "--neo-ver",
+            _FIXTURE_NEO_VER,
+            "--level-zero-ver",
+            _FIXTURE_LZ_VER,
+            "--write-lock",
+            str(lock_a),
+        ],
+    )
+    fetch_intel_neo.main()
+    fetch_intel_neo.write_lock(lock_b, _FIXTURE_NEO_VER, _FIXTURE_LZ_VER)
+    assert lock_a.read_bytes() == lock_b.read_bytes()
+
+    locked = fetch_intel_neo.load_lock(lock_a)
+    expected_stack = fetch_intel_neo._resolve_stack(neo_doc, _FIXTURE_NEO_VER, "fixture")
+    for comp in ("ocloc", "runtime"):
+        assert [n for n, _u in locked.stack.select(comp)] == [
+            n for n, _u in expected_stack.select(comp)
+        ]
+    for dev in (False, True):
+        pkgs = fetch_intel_neo.level_zero_packages(dev)
+        assert [locked.level_zero_assets[p][0] for p in pkgs] == [
+            f"{p}_{_FIXTURE_LZ_VER}+u24.04_amd64.deb" for p in pkgs
+        ]
+
+
+def test_lock_version_and_distro_mismatch_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    lock_path = _write_fixture_lock(tmp_path, monkeypatch)
+    with pytest.raises(SystemExit, match="1"):
+        fetch_intel_neo.fetch_from_lock(lock_path, "99.1.0", tmp_path / "out")
+    assert "--write-lock" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit, match="1"):
+        fetch_intel_neo.fetch_from_lock(
+            lock_path, _FIXTURE_NEO_VER, tmp_path / "out", level_zero_ver="9.9.9"
+        )
+    assert "--write-lock" in capsys.readouterr().err
+
+    bad_distro = json.loads(lock_path.read_text(encoding="utf-8"))
+    bad_distro["level_zero_distro"] = "u22.04"
+    bad_path = tmp_path / "bad-distro.json"
+    bad_path.write_text(json.dumps(bad_distro), encoding="utf-8", newline="\n")
+    with pytest.raises(SystemExit, match="1"):
+        fetch_intel_neo.load_lock(bad_path)
+    assert str(bad_path) in capsys.readouterr().err
+
+
+def test_lock_rejects_non_github_release_asset_urls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock_path = _write_fixture_lock(tmp_path, monkeypatch)
+    base_data = json.loads(lock_path.read_text(encoding="utf-8"))
+    ocloc_name = base_data["neo"]["ocloc"]["name"]
+    bad_urls = (
+        f"https://api.github.com/repos/intel/compute-runtime/releases/download/v1/{ocloc_name}",
+        f"https://release-assets.githubusercontent.com/intel/compute-runtime/releases/download/v1/{ocloc_name}",
+        f"https://example.com/intel/compute-runtime/releases/download/v1/{ocloc_name}",
+        f"https://github.com/intel/compute-runtime/archive/v1/{ocloc_name}",
+        f"https://github.com/intel/compute-runtime/releases/download/v1/{ocloc_name}?token=1",
+        "https://github.com/intel/compute-runtime/releases/download/v1/other_amd64.deb",
+    )
+    for idx, bad_url in enumerate(bad_urls):
+        mutated = json.loads(json.dumps(base_data))
+        mutated["neo"]["ocloc"]["url"] = bad_url
+        candidate = tmp_path / f"bad-url-{idx}.json"
+        candidate.write_text(json.dumps(mutated), encoding="utf-8", newline="\n")
+        with pytest.raises(SystemExit, match="1"):
+            fetch_intel_neo.load_lock(candidate)
+
+
+def test_lock_rejects_uppercase_short_or_non_hex_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock_path = _write_fixture_lock(tmp_path, monkeypatch)
+    base_data = json.loads(lock_path.read_text(encoding="utf-8"))
+    bad_digests = (
+        "A" * 64,
+        "a" * 63 + "F",
+        "a" * 63,
+        "a" * 65,
+        "sha256:" + "a" * 64,
+        "g" * 64,
+    )
+    for idx, bad_digest in enumerate(bad_digests):
+        mutated = json.loads(json.dumps(base_data))
+        mutated["neo"]["ocloc"]["sha256"] = bad_digest
+        candidate = tmp_path / f"bad-sha-{idx}.json"
+        candidate.write_text(json.dumps(mutated), encoding="utf-8", newline="\n")
+        with pytest.raises(SystemExit, match="1"):
+            fetch_intel_neo.load_lock(candidate)
+
+
+def test_lock_rejects_unknown_keys_duplicate_keys_and_malformed_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock_path = _write_fixture_lock(tmp_path, monkeypatch)
+    base_text = lock_path.read_text(encoding="utf-8")
+    raw_cases = [
+        "{malformed",
+        "[]",
+        '{"neo_version": "1", "neo_version": "2"}',
+    ]
+    for extra_target in ("top", "neo", "level_zero", "asset", "missing"):
+        doc = json.loads(base_text)
+        if extra_target == "top":
+            doc["unexpected"] = True
+        elif extra_target == "neo":
+            doc["neo"]["extra"] = doc["neo"]["ocloc"]
+        elif extra_target == "level_zero":
+            doc["level_zero"]["extra"] = doc["level_zero"]["libze1"]
+        elif extra_target == "asset":
+            doc["neo"]["ocloc"]["extra"] = "1"
+        else:
+            del doc["neo"]["ocloc"]
+        raw_cases.append(json.dumps(doc))
+    for idx, text in enumerate(raw_cases):
+        candidate = tmp_path / f"schema-{idx}.json"
+        candidate.write_text(text, encoding="utf-8", newline="\n")
+        with pytest.raises(SystemExit, match="1"):
+            fetch_intel_neo.load_lock(candidate)
+
+
+def test_cli_lock_argument_boundaries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for argv in (
+        ["fetch-intel-neo.py", "--neo-ver", "1", "--write-lock", str(tmp_path / "out.json")],
+        [
+            "fetch-intel-neo.py",
+            "--neo-ver",
+            "1",
+            "--level-zero-ver",
+            "1",
+            "--lock",
+            str(tmp_path / "a.json"),
+            "--write-lock",
+            str(tmp_path / "b.json"),
+        ],
+    ):
+        monkeypatch.setattr(sys, "argv", argv)
+        with pytest.raises(SystemExit, match="2"):
+            fetch_intel_neo.main()

@@ -55,6 +55,7 @@ Exit: 0 clean, 1 a literal disagrees with the config, 2 the config is missing.
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import sys
@@ -543,6 +544,47 @@ def check_node_pins(root: Path, node_want: str | None) -> list[str]:
     return problems
 
 
+def _read_intel_neo_lock(lock_path: Path) -> tuple[dict[str, object] | None, str | None]:
+    try:
+        document = json.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return None, f"dev/scripts/intel-neo-lock.json cannot be read as JSON ({exc})"
+    if not isinstance(document, dict):
+        return None, "dev/scripts/intel-neo-lock.json top-level value is not an object"
+    return document, None
+
+
+def check_intel_neo_lock(root: Path, neo_want: str | None, lz_want: str | None) -> list[str]:
+    """dev/scripts/intel-neo-lock.json tracks INTEL_NEO_VERSION and LEVEL_ZERO_VERSION (ADR-3555)."""
+    fetcher = root / "dev" / "scripts" / "fetch-intel-neo.py"
+    lock_path = root / "dev" / "scripts" / "intel-neo-lock.json"
+    if not fetcher.is_file() and not lock_path.is_file():
+        return []
+    if not neo_want or not lz_want:
+        return ["build-config.env must define INTEL_NEO_VERSION and LEVEL_ZERO_VERSION (ADR-3555)"]
+    if not lock_path.is_file():
+        return [
+            "dev/scripts/intel-neo-lock.json is missing; refresh it with "
+            "dev/scripts/fetch-intel-neo.py --write-lock (ADR-3555)"
+        ]
+    document, err = _read_intel_neo_lock(lock_path)
+    if err is not None or document is None:
+        return [err or "dev/scripts/intel-neo-lock.json is unreadable"]
+    problems: list[str] = []
+    if document.get("neo_version") != neo_want:
+        problems.append(
+            f"dev/scripts/intel-neo-lock.json pins neo_version '{document.get('neo_version')}'; "
+            f"build-config.env says INTEL_NEO_VERSION '{neo_want}'"
+        )
+    if document.get("level_zero_version") != lz_want:
+        problems.append(
+            "dev/scripts/intel-neo-lock.json pins level_zero_version "
+            f"'{document.get('level_zero_version')}'; "
+            f"build-config.env says LEVEL_ZERO_VERSION '{lz_want}'"
+        )
+    return problems
+
+
 def main() -> int:
     root = Path(
         run_command(
@@ -555,6 +597,7 @@ def main() -> int:
         ).stdout.strip()
     )
     cfg = load_config(root)
+    neo_want = cfg.get("INTEL_NEO_VERSION")
     lz_want = cfg.get("LEVEL_ZERO_VERSION")
     py_want = cfg.get("PYTHON_CI_VERSION")
     ver_want = cfg.get("VMAFX_VERSION")
@@ -570,6 +613,7 @@ def main() -> int:
     problems.extend(check_mypy_python_version(root, py_want))
     problems.extend(check_rust_pins(root, rust_want))
     problems.extend(check_node_pins(root, node_want))
+    problems.extend(check_intel_neo_lock(root, neo_want, lz_want))
 
     for problem in problems:
         print(f"::error title=version drift::{problem}", file=sys.stderr)

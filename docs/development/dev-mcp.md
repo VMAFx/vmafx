@@ -655,14 +655,24 @@ Containerfile ARGs to match the host kernel's i915 / xe / KFD ioctl ABI
 
 | Pin | Current value | Why pinned |
 | --- | --- | --- |
-| `INTEL_NEO_VERSION` | Defined in [`build-config.env`](../../build-config.env) | Intel's `noble/unified` APT repo's newest as of 2026-05-18 is `25.18.x`, too old for kernel 7.0 and later: NEO 25.18 returns `ZE_RESULT_ERROR_UNINITIALIZED` from `zeInit()` against kernel-7.x i915/xe. Pulled from `github.com/intel/compute-runtime/releases`. The matching `gmmlib`, `IGC` and `intel-ocloc` deb packages and checksums are derived at build time by `dev/scripts/fetch-intel-neo.py` (ADR-1145). `ocloc` is the offline compiler icpx runs for the SYCL ahead-of-time images; CI build hosts install the same release's copy with `scripts/ci/install-intel-ocloc.sh` (ADR-1360). |
+| `INTEL_NEO_VERSION` | Defined in [`build-config.env`](../../build-config.env) | Intel's `noble/unified` APT repo's newest as of 2026-05-18 is `25.18.x`, too old for kernel 7.0 and later: NEO 25.18 returns `ZE_RESULT_ERROR_UNINITIALIZED` from `zeInit()` against kernel-7.x i915/xe. Pulled from `github.com/intel/compute-runtime/releases`. The matching `gmmlib`, `IGC`, `intel-ocloc` and Level Zero `.deb` asset URLs and SHA-256 digests are pinned in `dev/scripts/intel-neo-lock.json` and verified offline from `api.github.com` at build time by `dev/scripts/fetch-intel-neo.py` ([ADR-1145](../adr/1145-neo-stack-derived-from-release.md), [ADR-3555](../adr/3555-intel-neo-lock-file.md)). `ocloc` is the offline compiler icpx runs for the SYCL ahead-of-time images; CI build hosts install the same release's copy with `scripts/ci/install-intel-ocloc.sh` ([ADR-1360](../adr/1360-sycl-aot-compile-time-device-codegen.md)). |
 | `rocm-src` stage image | `rocm/dev-ubuntu-26.04:10.1.0-full` (digest-pinned; `ROCM_BUILDER` in `build-config.env` and `dev/Containerfile`) | Replaces the old `ARG ROCM_VER` apt install: ROCm 7.14 and later ship only as a container image (ADR-1225). ROCm 6.x KFD userspace returns `Unable to open /dev/kfd read-write: Invalid argument` against kernel-7.x KFD ioctls; 10.0.0 was verified against Linux 7.2.3 on `gfx1036` and 10.1.0 against Linux 7.2.9. The stage prunes about 15 GB of math libraries libvmaf never links (21 GB to 5.8 GB in 10.1.0), but never `librocprofiler-register`, which `libamdhip64.so` needs at load. |
 
-The NEO resolver accepts only GitHub-hosted HTTPS URLs. API credentials are
-sent only to `api.github.com` and are removed before cross-host redirects.
-Metadata reads are bounded, package downloads use atomic temporary files with
-transient-error retries, and checksum or Debian-package validation failures
-remove the invalid output before the build stops.
+The NEO fetcher reads `dev/scripts/intel-neo-lock.json` by default without
+querying `api.github.com` and accepts only `https://github.com/.../releases/download/...`
+asset URLs (followed across GitHub's HTTPS redirect boundary). During
+`--write-lock` refresh, API credentials are sent only to `api.github.com` and
+are removed before cross-host redirects. Metadata reads are bounded, package
+downloads use atomic temporary files with transient-error retries, and checksum
+or Debian-package validation failures remove the invalid output before the build
+stops. When updating `INTEL_NEO_VERSION` or `LEVEL_ZERO_VERSION` in
+`build-config.env`, refresh the lock file in the same change:
+
+```bash
+bash -c '. ./build-config.env && python3 dev/scripts/fetch-intel-neo.py \
+  --neo-ver "$INTEL_NEO_VERSION" --level-zero-ver "$LEVEL_ZERO_VERSION" \
+  --write-lock dev/scripts/intel-neo-lock.json'
+```
 
 `dev-mcp-entrypoint.sh` emits a runtime visibility probe on container start
 (ADR-0543):

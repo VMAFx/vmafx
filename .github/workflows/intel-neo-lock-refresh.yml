@@ -1,0 +1,92 @@
+name: intel-neo-lock-refresh
+
+# Refresh dev/scripts/intel-neo-lock.json when Renovate updates build-config.env
+# on a renovate/** branch (ADR-3555).
+#
+# Renovate tracks INTEL_NEO_VERSION and LEVEL_ZERO_VERSION in build-config.env
+# via the Mend-hosted GitHub App, where postUpgradeTasks commands stay blocked.
+# On a push to renovate/** touching build-config.env, this workflow mints an
+# installation token for the release-bot App (so any pushed commit triggers PR
+# check runs, ADR-1151), runs `fetch-intel-neo.py --write-lock`, and commits and
+# pushes dev/scripts/intel-neo-lock.json only when its contents changed.
+
+on:
+  push:
+    branches:
+      - "renovate/**"
+    paths:
+      - "build-config.env"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: intel-neo-lock-refresh-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh-lock:
+    name: Refresh Intel NEO lock file
+    if: github.repository == 'VMAFx/vmafx'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.14.10"
+      - name: Mint the release-bot installation token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510  # v3.3.0
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+      - name: Refresh lock and push when changed
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${GH_TOKEN:?}" "${APP_SLUG:?}" "${GITHUB_REPOSITORY:?}" "${GITHUB_REF:?}" "${RUNNER_TEMP:?}"
+          case "$GITHUB_REF" in
+            refs/heads/renovate/*) ;;
+            *)
+              echo "::error::intel-neo-lock-refresh: refusing non-Renovate ref '$GITHUB_REF'" >&2
+              exit 1
+              ;;
+          esac
+          lock="dev/scripts/intel-neo-lock.json"
+          # shellcheck source=build-config.env
+          . ./build-config.env
+          python3 dev/scripts/fetch-intel-neo.py \
+            --neo-ver "$INTEL_NEO_VERSION" \
+            --level-zero-ver "$LEVEL_ZERO_VERSION" \
+            --github-token "$GH_TOKEN" \
+            --write-lock "$lock"
+          if [[ -z "$(git status --porcelain --untracked-files=all -- "$lock")" ]]; then
+            echo "$lock is already current for NEO $INTEL_NEO_VERSION and Level Zero $LEVEL_ZERO_VERSION"
+            exit 0
+          fi
+          stray="$(git status --porcelain --untracked-files=all -- . ":!$lock")"
+          if [[ -n "$stray" ]]; then
+            echo "::error::intel-neo-lock-refresh: --write-lock wrote outside $lock:" >&2
+            echo "$stray" >&2
+            exit 1
+          fi
+          bot="${APP_SLUG}[bot]"
+          bot_id="$(gh api "users/$bot" --jq .id)"
+          email="${bot_id}+${bot}@users.noreply.github.com"
+          msg="$RUNNER_TEMP/neo-lock-commit.txt"
+          printf 'chore(deps): refresh Intel NEO and Level Zero asset lock\n\n%s\n%s\n\nSigned-off-by: %s <%s>\n' \
+            "Refresh dev/scripts/intel-neo-lock.json for NEO ${INTEL_NEO_VERSION}" \
+            "and Level Zero ${LEVEL_ZERO_VERSION} (ADR-3555)." \
+            "$bot" "$email" >"$msg"
+          git add -- "$lock"
+          git -c user.name="$bot" -c user.email="$email" commit -q -F "$msg"
+          git push -q \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:${GITHUB_REF}"
