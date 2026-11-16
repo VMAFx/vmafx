@@ -75,6 +75,14 @@ Key requirements and operational details:
 - **Fork-added tests**: All fork-specific tests reside in separate files and directories.
 - **HDR model score pins**: HDR model score pins run in `python/test/hdr_models_pin_test.py` and `python/test/vmaf_v1_quality_runner_test.py` as part of the golden gate and CI coverage gate. The build requires zimg support (`-Denable_zimg=true`, `libzimg-dev`); any build without zimg fails explicitly naming zimg rather than skipping tests, and CI strictly verifies that no required HDR test is skipped or absent.
 
+## Lane brief requirements
+
+The lane launcher (`tools/lanes/agy-run.sh` in the praetor repository) reads [`.config/lane-brief.yaml`](../../.config/lane-brief.yaml) from the job's worktree and refuses a brief that lacks a listed line before the job starts ([ADR-3553](../adr/3553-lane-brief-review-clause.md)). The match is a plain substring match on the brief text.
+
+- **Every brief** needs a `task:` line in its first 20 lines naming the router label (for example `task: review` or `task: feature_implementation`). Without it the launcher cannot pick the stage and refuses the brief with rc 2.
+- **Review briefs** (`task: review`) must contain both `Write nothing in the worktree` and `return: final message only`. A review job that leaves any path in its worktree ends with rc 79 and its report is discarded, so scratch copies go outside the worktree and the report goes in the final message.
+- **Check a brief without starting a job**: `bash tools/lanes/agy-run.sh --check-brief <brief> <worktree>` from the praetor repository. `scripts/ci/tests/test_lane_brief_config.py` checks the file's shape on every run; set `LANE_BRIEF_STAGE_PY` to praetor's `tools/lanes/brief_stage.py` to also replay the planted briefs against the reader. A variable that names a missing file fails those tests rather than skipping them.
+
 ## Build and IDE notes
 
 - **IDE configuration**: Both clangd and the VS Code C/C++ extension read `${workspaceFolder}/build/` ([`.vscode/c_cpp_properties.json`](../../.vscode/c_cpp_properties.json)). Configure the build directory with every backend toolchain present; otherwise `compile_commands.json` will lack CUDA and SYCL include paths, producing "undeclared identifier" diagnostics across backend files. For detailed setup steps, see [ide-setup.md](ide-setup.md).
