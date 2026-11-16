@@ -26,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: bash scripts/setup/ubuntu.sh
         env:
-          INSTALL_LINTERS: "1"
+          INSTALL_LINTERS: "false"
       - name: Meson setup (TSan)
         run: |
           cd core
