@@ -127,7 +127,7 @@ jobs:
           # A CPU-only CLI is enough: every run-check block pins --backend cpu.
           # asm, zimg and DNN stay off so this build needs no nasm, libzimg or
           # ONNX runtime beyond a C compiler, meson and ninja.
-          meson setup build-docs-cli core --buildtype release \
+          meson setup build-docs-cli core --buildtype release -Dwerror=true \
             -Denable_asm=false -Denable_zimg=false -Denable_dnn=disabled \
             -Denable_cuda=false -Denable_sycl=false -Denable_hip=false \
             -Denable_metal=disabled

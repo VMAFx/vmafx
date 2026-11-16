@@ -211,8 +211,12 @@ def _ffmpeg_probe(argv: list[str]) -> tuple[bool, str]:
         filter_name = match.group(1) if match else "vmafx"
     if needs_encoder:
         probe = ["ffmpeg", "-hide_banner", "-h", "encoder=libx264"]
-    else:
+    elif needs_filter:
         probe = ["ffmpeg", "-hide_banner", "-h", "filter=" + filter_name]
+    else:
+        # A pure conversion block (no vmafx filter and no libx264) only needs
+        # any ffmpeg, not the patched filter build.
+        probe = ["ffmpeg", "-version"]
     try:
         result = _safe_run(probe, ["ffmpeg"])
     except Exception as exc:
@@ -220,7 +224,7 @@ def _ffmpeg_probe(argv: list[str]) -> tuple[bool, str]:
     text = (result.stdout or "") + (result.stderr or "")
     if result.returncode != 0:
         return False, text
-    if not needs_encoder and "Unknown filter" in text:
+    if needs_filter and "Unknown filter" in text:
         return False, text
     return True, text
 

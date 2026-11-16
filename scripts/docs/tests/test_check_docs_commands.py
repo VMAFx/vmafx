@@ -89,6 +89,38 @@ def test_page_without_block_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert main([]) == EXIT_FAILURE
 
 
+def test_ffmpeg_probe_separates_conversion_from_the_filter_build(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A plain ffmpeg conversion does not need the vmafx filter build."""
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], allowed: list[str]) -> types.SimpleNamespace:
+        calls.append(cmd)
+        if cmd[-1] == "-version":
+            return types.SimpleNamespace(returncode=0, stdout="ffmpeg version", stderr="")
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="Unknown filter 'vmafx'.")
+
+    monkeypatch.setattr(checker, "_safe_run", fake_run)
+    conversion = ["ffmpeg", "-i", "a.yuv", "-pix_fmt", "yuv420p10le", "-f", "rawvideo", "b.yuv"]
+    assert checker._ffmpeg_probe(conversion)[0] is True
+    assert calls == [["ffmpeg", "-version"]]
+
+    filtered = [
+        "ffmpeg",
+        "-i",
+        "a.yuv",
+        "-lavfi",
+        "vmafx=model=version=vmaf_v0.6.1",
+        "-f",
+        "null",
+        "-",
+    ]
+    assert checker._ffmpeg_probe(filtered)[0] is False
+    assert calls[-1][-1] == "filter=vmafx"
+
+
 def test_execute_runs_cli_and_skips_ffmpeg(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
