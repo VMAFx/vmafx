@@ -797,7 +797,10 @@ jobs:
             // earlier edit (even seconds prior) cannot satisfy or mask the current
             // edit, each listed workflow must start a current run within the grace
             // window, and multiple runs sharing editStampPrefix (same-second edits)
-            // fail closed.
+            // fail closed. A run with no stamp that is still waiting for fork
+            // approval (`action_required` / `waiting`) is not a stale edit: name
+            // that run and the approval action instead of claiming the workflow
+            // never started.
             const editedRerunWorkflows = [
               '.github/workflows/rule-enforcement.yml',
             ];
@@ -808,17 +811,31 @@ jobs:
                 run.display_title.startsWith(editStampPrefix);
             }
 
+            function awaitsApproval(run) {
+              return run.conclusion === 'action_required' ||
+                run.status === 'action_required' ||
+                run.status === 'waiting';
+            }
+
             function classifyEditedRerunSuites(workflowRuns) {
               const staleSuites = new Set();
               // Distinct current runs per workflow: a run listed twice (a new run
               // shifting the newest-first listing between pages) counts once.
               const currentRuns = new Map(editedRerunWorkflows.map(p => [p, new Set()]));
+              const approvalPendingRuns = new Map(
+                editedRerunWorkflows.map(p => [p, new Set()])
+              );
               for (const run of workflowRuns) {
                 if (!run || !currentRuns.has(run.path)) continue;
                 if (hasCurrentEditStamp(run)) {
                   currentRuns.get(run.path).add(run.id ?? run.check_suite_id ?? Symbol('run'));
-                } else if (run.check_suite_id != null) {
-                  staleSuites.add(run.check_suite_id);
+                } else {
+                  if (run.check_suite_id != null) staleSuites.add(run.check_suite_id);
+                  if (awaitsApproval(run)) {
+                    approvalPendingRuns.get(run.path).add(
+                      run.id ?? run.check_suite_id ?? 'unknown'
+                    );
+                  }
                 }
               }
               const missingWorkflows = editedRerunWorkflows.filter(
@@ -827,7 +844,7 @@ jobs:
               const ambiguousWorkflows = editedRerunWorkflows.filter(
                 workflowPath => currentRuns.get(workflowPath).size > 1
               );
-              return { staleSuites, missingWorkflows, ambiguousWorkflows };
+              return { staleSuites, missingWorkflows, ambiguousWorkflows, approvalPendingRuns };
             }
 
             // SARIF upload jobs in security-scans.yml that feed the external
@@ -946,6 +963,7 @@ jobs:
             const deadline = Date.now() + 240 * 60 * 1000;
             let byName = {};
             let missingEditedWorkflows = [];
+            let approvalPendingRuns = new Map();
             let lastExcludedEditedSuites = 0;
             let editedListedAfterGrace = !isEditedPullRequest;
             while (Date.now() < deadline) {
@@ -973,6 +991,7 @@ jobs:
                 }
                 for (const suiteId of editedState.staleSuites) suites.add(suiteId);
                 missingEditedWorkflows = editedState.missingWorkflows;
+                approvalPendingRuns = editedState.approvalPendingRuns;
                 lastExcludedEditedSuites = editedState.staleSuites.size;
               }
               byName = newestByName(check_runs, suites);
@@ -1035,6 +1054,20 @@ jobs:
             if (isEditedPullRequest) {
               core.info(`Excluded ${lastExcludedEditedSuites} stale edited-rerun check suite(s)`);
               if (missingEditedWorkflows.length > 0) {
+                const approvalDetails = missingEditedWorkflows
+                  .filter(workflowPath => approvalPendingRuns.get(workflowPath).size > 0)
+                  .map(workflowPath =>
+                    `${workflowPath} run ` +
+                    Array.from(approvalPendingRuns.get(workflowPath)).join(', ')
+                  );
+                if (approvalDetails.length > 0) {
+                  core.setFailed(
+                    'Edited-event required workflow awaits maintainer approval: ' +
+                    `${approvalDetails.join(', ')}; ` +
+                    'approve or re-run it, then re-run this check.'
+                  );
+                  return;
+                }
                 core.setFailed(
                   'Edited-event required workflow did not start within registration grace: ' +
                   `${missingEditedWorkflows.join(', ')} ` +

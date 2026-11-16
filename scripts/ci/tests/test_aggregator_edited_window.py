@@ -671,6 +671,23 @@ class AggregatorEditedWindowTests(unittest.TestCase):
                 self.assertEqual(len(failures), 1, failures)
                 self.assertIn("rule-enforcement.yml", failures[0])
 
+    def test_edited_unstamped_approval_gated_run_names_approval(self) -> None:
+        """Name an unstamped action_required/waiting Rules run instead of 'did not start'."""
+        for label, status, conclusion in (
+            ("action_required_conclusion", "completed", "action_required"),
+            ("action_required_status", "action_required", None),
+            ("waiting_status", "waiting", None),
+        ):
+            with self.subTest(case=label):
+                run = _rules_run(OLD_RULES_SUITE, MIN_30_AGO, status=status, conclusion=conclusion)
+                run["id"] = 43885542580
+                failures = self._run_edited_suites([run])
+                self.assertEqual(len(failures), 1, failures)
+                self.assertIn("awaits maintainer approval", failures[0])
+                self.assertIn("43885542580", failures[0])
+                self.assertIn("approve or re-run it, then re-run this check", failures[0])
+                self.assertNotIn("did not start", failures[0])
+
     def test_edit_stamp_boundary_prefix_t1_with_t2_in_title_is_stale(self) -> None:
         """Treat `[T1] [T2] title` (author title starts with `[T2] `) as STALE on edit T2."""
         crafted = f"[{STAMP_T1}] [{STAMP_T2}] title"
