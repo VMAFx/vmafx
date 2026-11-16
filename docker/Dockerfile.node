@@ -257,7 +257,7 @@ RUN ldconfig
 # ---- SVT-AV1 source build --------------------------------------------------
 # Ubuntu's libsvtav1-dev omits SvtAv1Enc.pc. Build from source so
 # FFmpeg's --enable-libsvtav1 configure probe resolves correctly.
-ARG SVTAV1_VERSION=4.2.0
+ARG SVTAV1_VERSION=4.3.0
 RUN git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
         https://gitlab.com/AOMediaCodec/SVT-AV1.git /tmp/SVT-AV1 \
     && cmake -S /tmp/SVT-AV1 -B /tmp/SVT-AV1/build \
