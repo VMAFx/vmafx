@@ -144,3 +144,5 @@ python3 scripts/ci/run_meson_test.py -- \
 See the [glossary](../reference/glossary.md) — terms used here:
 [HDR](../reference/glossary.md#hdr), [SDR](../reference/glossary.md#sdr),
 [pooling](../reference/glossary.md#pooling).
+
+Glossary terms: [PQ](../reference/glossary.md#pqr-hlg), [HLG](../reference/glossary.md#pqr-hlg).

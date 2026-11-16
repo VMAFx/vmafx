@@ -286,3 +286,5 @@ Limitations:
 
 See the [glossary](../reference/glossary.md) for the terms used across the
 metric pages.
+
+Glossary terms: [Feature extractor](../reference/glossary.md#feature-extractor), [Range](../reference/glossary.md#range).

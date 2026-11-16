@@ -52,13 +52,32 @@ EXIT_FAILURE = 1
 EXIT_UNREADABLE = 2
 
 # term -> glossary anchor. Case-insensitive word matching on metric pages.
+# Every `## Title {#anchor}` entry in docs/reference/glossary.md has at least
+# one term here; `test_every_glossary_entry_has_a_term` keeps the two in step.
 TERMS = {
+    "Viewing condition": "viewing-condition",
+    "3H": "3h",
+    "Phone model": "phone-model",
+    "Default model": "default-model",
+    "Feature extractor": "feature-extractor",
+    "Motion": "motion",
+    "Pooling": "pooling",
     "NEG": "neg",
     "CTC": "ctc",
     "HDR": "hdr",
     "SDR": "sdr",
-    "pooling": "pooling",
-    "3H": "3h",
+    "PQ": "pqr-hlg",
+    "HLG": "pqr-hlg",
+    "BT.709": "bt709-bt2020",
+    "BT.2020": "bt709-bt2020",
+    "Range": "range",
+    "Frame alignment": "frame-alignment",
+    "Scaling": "scaling",
+    "Interlacing": "interlacing",
+    "Chroma subsampling": "chroma-subsampling",
+    "10-bit": "10-bit",
+    "Confidence interval": "confidence-interval",
+    "Score transform": "score-transform",
 }
 
 
@@ -134,12 +153,11 @@ def _check_page(
             continue
         if not _has_glossary_link(page, links, anchor, anchor_cache):
             failures.append(
-                f"{rel}: uses '{term}' but never links the glossary entry "
-                f"({glossary_rel}#{anchor})"
+                f"{rel}: uses '{term}' but never links the glossary entry ({glossary_rel}#{anchor})"
             )
     if not _has_glossary_link(page, links, None, anchor_cache):
         failures.append(
-            f"{rel}: no link to the glossary ({glossary_rel}) — every metric " "page links it"
+            f"{rel}: no link to the glossary ({glossary_rel}) — every metric page links it"
         )
     return failures
 

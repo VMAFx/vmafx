@@ -580,3 +580,5 @@ python3 scripts/ci/rust_twin_diff.py --vmaf build-rs/tools/vmaf \
 
 See the [glossary](../reference/glossary.md) for the terms used across the
 metric pages.
+
+Glossary terms: [Feature extractor](../reference/glossary.md#feature-extractor), [Motion](../reference/glossary.md#motion), [Range](../reference/glossary.md#range).

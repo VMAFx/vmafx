@@ -218,3 +218,5 @@ python3 scripts/dev/speed_gpu_parity.py --backend hip --feature ciede \
 
 See the [glossary](../reference/glossary.md) for the terms used across the
 metric pages.
+
+Glossary terms: [BT.709](../reference/glossary.md#bt709-bt2020), [BT.2020](../reference/glossary.md#bt709-bt2020), [Range](../reference/glossary.md#range), [Chroma subsampling](../reference/glossary.md#chroma-subsampling), [10-bit](../reference/glossary.md#10-bit).

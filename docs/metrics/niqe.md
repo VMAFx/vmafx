@@ -161,3 +161,5 @@ python3 scripts/ci/run_meson_test.py -- -C core/build-cpu test_niqe
 See the [glossary](../reference/glossary.md) — terms used here:
 [HDR](../reference/glossary.md#hdr),
 [pooling](../reference/glossary.md#pooling).
+
+Glossary terms: [Feature extractor](../reference/glossary.md#feature-extractor), [PQ](../reference/glossary.md#pqr-hlg), [HLG](../reference/glossary.md#pqr-hlg), [Range](../reference/glossary.md#range), [Scaling](../reference/glossary.md#scaling).

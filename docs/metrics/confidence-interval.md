@@ -170,3 +170,5 @@ python -m vmaf.script.run_vmaf_training compat/python-vmaf/resource/dataset/NFLX
 ```
 
 See the [glossary](../reference/glossary.md) for the terms used across the metric pages.
+
+Glossary terms: [Confidence interval](../reference/glossary.md#confidence-interval).

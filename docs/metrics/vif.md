@@ -404,3 +404,5 @@ Now under [floating-point stage dumps](#floating-point-stage-dumps).
   carry the `_enable_chroma` suffix when the option is set.
 
 See the [glossary](../reference/glossary.md) — terms used here: [NEG](../reference/glossary.md#neg).
+
+Glossary terms: [Feature extractor](../reference/glossary.md#feature-extractor), [Range](../reference/glossary.md#range), [Scaling](../reference/glossary.md#scaling), [10-bit](../reference/glossary.md#10-bit).

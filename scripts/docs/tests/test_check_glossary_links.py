@@ -26,12 +26,27 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 GLOSSARY = (
     "# Glossary\n\n"
+    "## Viewing condition {#viewing-condition}\n\nViewing setup.\n\n"
+    "## 3H {#3h}\n\nThree screen heights.\n\n"
+    "## Phone model {#phone-model}\n\nPhone viewing model.\n\n"
+    "## Default model {#default-model}\n\nThe default model.\n\n"
+    "## Feature extractor {#feature-extractor}\n\nA feature extractor.\n\n"
+    "## Motion {#motion}\n\nTemporal motion.\n\n"
+    "## Pooling {#pooling}\n\nCollapse per-frame scores.\n\n"
     "## NEG {#neg}\n\nNo Enhancement Gain.\n\n"
     "## CTC {#ctc}\n\nCommon test conditions.\n\n"
     "## HDR {#hdr}\n\nHigh dynamic range.\n\n"
     "## SDR {#sdr}\n\nStandard dynamic range.\n\n"
-    "## Pooling {#pooling}\n\nCollapse per-frame scores.\n\n"
-    "## 3H {#3h}\n\nThree screen heights.\n"
+    "## PQ / HLG {#pqr-hlg}\n\nHDR transfer functions.\n\n"
+    "## BT.709 / BT.2020 {#bt709-bt2020}\n\nColour primaries.\n\n"
+    "## Range {#range}\n\nLimited or full range.\n\n"
+    "## Frame alignment {#frame-alignment}\n\nSame frames on both sides.\n\n"
+    "## Scaling {#scaling}\n\nResampling before scoring.\n\n"
+    "## Interlacing {#interlacing}\n\nField order.\n\n"
+    "## Chroma subsampling {#chroma-subsampling}\n\n420, 422 or 444.\n\n"
+    "## 10-bit {#10-bit}\n\nTen bits per component.\n\n"
+    "## Confidence interval {#confidence-interval}\n\nBootstrap interval.\n\n"
+    "## Score transform {#score-transform}\n\nScore mapping.\n"
 )
 
 
@@ -63,6 +78,12 @@ def test_every_known_term_has_a_glossary_entry() -> None:
     anchors = glossary_anchors(checker._read(checker.GLOSSARY))
     missing = {term: anchor for term, anchor in checker.TERMS.items() if anchor not in anchors}
     assert missing == {}, f"terms without a glossary entry: {missing}"
+
+
+def test_every_glossary_entry_has_a_term() -> None:
+    """A new glossary entry without a term would pass gate 2 unnoticed."""
+    anchors = glossary_anchors(checker._read(checker.GLOSSARY))
+    assert anchors <= set(checker.TERMS.values())
 
 
 def test_term_without_entry_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -185,3 +185,5 @@ the same test runner; its 64×64 inputs and 0-to-255 frame step are unchanged.
 
 See the [glossary](../reference/glossary.md) for the terms used across the
 metric pages.
+
+Glossary terms: [Feature extractor](../reference/glossary.md#feature-extractor), [Range](../reference/glossary.md#range).

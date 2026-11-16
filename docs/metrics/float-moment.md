@@ -89,3 +89,5 @@ every SVE vector length. `test_moment_simd` has the cases.
 
 See the [glossary](../reference/glossary.md) for the terms used across the
 metric pages.
+
+Glossary terms: [Range](../reference/glossary.md#range).

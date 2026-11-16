@@ -654,3 +654,5 @@ build of the C library contains the extractors.
 
 See the [glossary](../reference/glossary.md) for the terms used across the
 metric pages.
+
+Glossary terms: [Default model](../reference/glossary.md#default-model), [Range](../reference/glossary.md#range), [Scaling](../reference/glossary.md#scaling), [10-bit](../reference/glossary.md#10-bit).

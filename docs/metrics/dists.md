@@ -98,3 +98,5 @@ LPIPS extractor.
 
 See the [glossary](../reference/glossary.md) for the terms used across the
 metric pages.
+
+Glossary terms: [Feature extractor](../reference/glossary.md#feature-extractor), [BT.709](../reference/glossary.md#bt709-bt2020), [Range](../reference/glossary.md#range).

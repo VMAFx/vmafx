@@ -320,3 +320,5 @@ after, pictures preloaded, medians of 5 interleaved runs:
 - [PSNR-HVS](psnr-hvs.md): the perceptually weighted variant.
 
 See the [glossary](../reference/glossary.md) for the terms used across the metric pages.
+
+Glossary terms: [Range](../reference/glossary.md#range), [Frame alignment](../reference/glossary.md#frame-alignment).

@@ -697,3 +697,5 @@ pointer and a CUDA picture holds a device address in that field
 host c-values and pooling ([ADR-0360](../adr/0360-cambi-cuda.md)).
 
 See the [glossary](../reference/glossary.md) — terms used here: [pooling](../reference/glossary.md#pooling).
+
+Glossary terms: [Default model](../reference/glossary.md#default-model), [Feature extractor](../reference/glossary.md#feature-extractor), [Range](../reference/glossary.md#range), [Scaling](../reference/glossary.md#scaling), [10-bit](../reference/glossary.md#10-bit).

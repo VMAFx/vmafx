@@ -815,3 +815,5 @@ Multimedia 13(5):935–949, 2011.
 See the [glossary](../reference/glossary.md) — terms used here:
 [NEG](../reference/glossary.md#neg), [HDR](../reference/glossary.md#hdr),
 [pooling](../reference/glossary.md#pooling), [3H](../reference/glossary.md#3h).
+
+Glossary terms: [Default model](../reference/glossary.md#default-model), [Range](../reference/glossary.md#range), [Scaling](../reference/glossary.md#scaling), [10-bit](../reference/glossary.md#10-bit).

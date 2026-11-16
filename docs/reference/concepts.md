@@ -112,8 +112,9 @@ measures the deinterlacer, not the encoder.
 ### Self-comparison lands near 100 {#self-comparison-lands-near-100}
 
 Scoring a video against itself lands at or near 100. On the fixture pair the
-classic model scores 97.428478 on the first frame and pools to 99.946427,
-while the default `vmaf_v1.0.16_3d0h` scores all 48 frames at 100.0. A 100.0
+classic model scores 97.428025 on the first frame and pools to 97.732879
+(min 97.428025, max 100.0), while the default `vmaf_v1.0.16_3d0h` pools to
+99.995262 — 47 of its 48 frames are 100.0 and one is 99.942927. A 100.0
 is not a bug: `model/vmaf_v0.6.1.json` sets `score_clip` to `[0.0, 100.0]`,
 and `core/src/predict.c` clamps every prediction into that range. Neither the
 upstream FAQ's ~98.7 nor a 100.000 on the same setup means the metric is
@@ -128,6 +129,131 @@ paper and FFmpeg's `ssim` filter does not, and PSNR caps at 60 dB for 8-bit
 input by design. Compare numbers produced by the same implementation
 ([FAQ: SSIM difference](faq.md#q-why-does-the-included-ssim-tool-produce-different-numbers-than-other-ssim-implementations),
 [FAQ: PSNR caps](faq.md#q-why-are-psnr-values-capped-at-60-db-for-8-bit-inputs-72-db-for-10-bit-84-db-for-12-bit-and-108-db-for-16-bit)).
+
+## Fixture checks {#fixture-checks}
+
+All numbers below are pooled VMAF means from the CPU CLI on the 576x324
+48-frame fixture pair (`testdata/ref_576x324_48f.yuv` /
+`testdata/dis_576x324_48f.yuv`), with `vmaf_v0.6.1` unless the row names a
+different model. "Wrong" is the setup the pitfall warns about; "right" is the
+matched setup. The commands are runnable from the repository root and write
+their JSON reports next to the working directory.
+
+| Pitfall | Wrong | Right |
+|---|---|---|
+| Reversed inputs | 94.63212 (dis passed as `-r`) | 94.32301 |
+| Model / generation | 94.358152 (`vmaf_b_v0.6.3`) | 94.32301 (`vmaf_v0.6.1`) |
+| HDR input with an SDR model | 95.746059 (PQ luma into an SDR model) | 92.570145 (tone-mapped back to SDR first) |
+| Range | 99.839253 (limited ref against full dis) | 94.692167 (both limited) |
+| Frame alignment | 90.903612 (one-frame offset) | 94.32301 |
+| Scaling | 94.32301 (native 576) | 84.777934 (upscaled to 1080) |
+| Interlacing | 85.837692 (progressive ref, interlaced dis) | 94.778674 (both deinterlaced) |
+
+```bash
+# Reversed inputs: wrong order first, then the right order.
+vmaf -r testdata/dis_576x324_48f.yuv -d testdata/ref_576x324_48f.yuv \
+    -w 576 -h 324 -p 420 -b 8 -m path=model/vmaf_v0.6.1.json \
+    --json -o reversed-wrong.json
+vmaf -r testdata/ref_576x324_48f.yuv -d testdata/dis_576x324_48f.yuv \
+    -w 576 -h 324 -p 420 -b 8 -m path=model/vmaf_v0.6.1.json \
+    --json -o reversed-right.json
+
+# Model / generation: the 0.6.3 model, then the 0.6.1 model.
+vmaf -r testdata/ref_576x324_48f.yuv -d testdata/dis_576x324_48f.yuv \
+    -w 576 -h 324 -p 420 -b 8 -m path=model/vmaf_b_v0.6.3.json \
+    --json -o model-wrong.json
+vmaf -r testdata/ref_576x324_48f.yuv -d testdata/dis_576x324_48f.yuv \
+    -w 576 -h 324 -p 420 -b 8 -m path=model/vmaf_v0.6.1.json \
+    --json -o model-right.json
+
+# HDR with an SDR model: make a 10-bit PQ copy of the fixture, score it
+# directly (wrong), then tone-map it back to SDR and score it (right).
+ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
+    -i testdata/ref_576x324_48f.yuv \
+    -vf "zscale=pin=bt709:tin=bt709:min=bt709:p=bt2020:t=smpte2084:m=bt2020nc,format=yuv420p10le" \
+    -pix_fmt yuv420p10le -f rawvideo ref_hdr.yuv
+ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
+    -i testdata/dis_576x324_48f.yuv \
+    -vf "zscale=pin=bt709:tin=bt709:min=bt709:p=bt2020:t=smpte2084:m=bt2020nc,format=yuv420p10le" \
+    -pix_fmt yuv420p10le -f rawvideo dis_hdr.yuv
+vmaf -r ref_hdr.yuv -d dis_hdr.yuv -w 576 -h 324 -p 420 -b 10 \
+    -m path=model/vmaf_v0.6.1.json --json -o hdr-wrong.json
+ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p10le -s 576x324 -r 24 \
+    -i ref_hdr.yuv \
+    -vf "zscale=pin=bt2020:tin=smpte2084:min=bt2020nc:p=bt709:t=bt709:m=bt709,format=yuv420p" \
+    -pix_fmt yuv420p -f rawvideo ref_sdr.yuv
+ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p10le -s 576x324 -r 24 \
+    -i dis_hdr.yuv \
+    -vf "zscale=pin=bt2020:tin=smpte2084:min=bt2020nc:p=bt709:t=bt709:m=bt709,format=yuv420p" \
+    -pix_fmt yuv420p -f rawvideo dis_sdr.yuv
+vmaf -r ref_sdr.yuv -d dis_sdr.yuv -w 576 -h 324 -p 420 -b 8 \
+    -m path=model/vmaf_v0.6.1.json --json -o hdr-right.json
+
+# Range: convert both sides to limited once, then compare a limited ref
+# against a full dis (wrong) and limited against limited (right).
+ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
+    -i testdata/ref_576x324_48f.yuv \
+    -vf "scale=in_range=full:out_range=limited" -pix_fmt yuv420p \
+    -f rawvideo ref_lim.yuv
+ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
+    -i testdata/dis_576x324_48f.yuv \
+    -vf "scale=in_range=full:out_range=limited" -pix_fmt yuv420p \
+    -f rawvideo dis_lim.yuv
+vmaf -r ref_lim.yuv -d testdata/dis_576x324_48f.yuv -w 576 -h 324 -p 420 -b 8 \
+    -m path=model/vmaf_v0.6.1.json --json -o range-wrong.json
+vmaf -r ref_lim.yuv -d dis_lim.yuv -w 576 -h 324 -p 420 -b 8 \
+    -m path=model/vmaf_v0.6.1.json --json -o range-right.json
+
+# Frame alignment: drop the first distorted frame and repeat the last,
+# then score the shifted stream against the reference.
+python3 - <<'PY'
+from pathlib import Path
+frame = 576 * 324 * 3 // 2
+dis = Path("testdata/dis_576x324_48f.yuv").read_bytes()
+Path("dis_shift.yuv").write_bytes(dis[frame:] + dis[-frame:])
+PY
+vmaf -r testdata/ref_576x324_48f.yuv -d dis_shift.yuv -w 576 -h 324 -p 420 -b 8 \
+    -m path=model/vmaf_v0.6.1.json --json -o offset-wrong.json
+vmaf -r testdata/ref_576x324_48f.yuv -d testdata/dis_576x324_48f.yuv \
+    -w 576 -h 324 -p 420 -b 8 -m path=model/vmaf_v0.6.1.json \
+    --json -o offset-right.json
+
+# Scaling: score the native pair, then the pair upscaled to 1080.
+vmaf -r testdata/ref_576x324_48f.yuv -d testdata/dis_576x324_48f.yuv \
+    -w 576 -h 324 -p 420 -b 8 -m path=model/vmaf_v0.6.1.json \
+    --json -o scale-wrong.json
+ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
+    -i testdata/ref_576x324_48f.yuv -vf "scale=1920:1080:flags=lanczos" \
+    -pix_fmt yuv420p -f rawvideo ref_1080.yuv
+ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
+    -i testdata/dis_576x324_48f.yuv -vf "scale=1920:1080:flags=lanczos" \
+    -pix_fmt yuv420p -f rawvideo dis_1080.yuv
+vmaf -r ref_1080.yuv -d dis_1080.yuv -w 1920 -h 1080 -p 420 -b 8 \
+    -m path=model/vmaf_v0.6.1.json --json -o scale-right.json
+
+# Interlacing: progressive ref against interlaced dis (wrong), then both
+# sides interlaced and deinterlaced the same way (right).
+ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
+    -i testdata/ref_576x324_48f.yuv -vf interlace -pix_fmt yuv420p \
+    -f rawvideo ref_int.yuv
+ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
+    -i testdata/dis_576x324_48f.yuv -vf interlace -pix_fmt yuv420p \
+    -f rawvideo dis_int.yuv
+vmaf -r testdata/ref_576x324_48f.yuv -d dis_int.yuv -w 576 -h 324 -p 420 -b 8 \
+    -m path=model/vmaf_v0.6.1.json --json -o interlace-wrong.json
+ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
+    -i ref_int.yuv -vf bwdif -pix_fmt yuv420p -f rawvideo ref_int_deint.yuv
+ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
+    -i dis_int.yuv -vf bwdif -pix_fmt yuv420p -f rawvideo dis_deint.yuv
+vmaf -r ref_int_deint.yuv -d dis_deint.yuv -w 576 -h 324 -p 420 -b 8 \
+    -m path=model/vmaf_v0.6.1.json --json -o interlace-right.json
+```
+
+The self-comparison row has no wrong/right pair: scoring a stream against
+itself is the right setup and lands at 97.732879 (`vmaf_v0.6.1`) or 99.995262
+(`vmaf_v1.0.16_3d0h`), as recorded above. The metric-implementation
+difference has no fixture pair either — both tools are right for their own
+implementation; compare only numbers from the same one.
 
 ## How every pitfall is held
 

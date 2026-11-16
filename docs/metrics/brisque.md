@@ -231,3 +231,5 @@ core/build-cpu/tools/vmaf \
 
 See the [glossary](../reference/glossary.md) — terms used here:
 [HDR](../reference/glossary.md#hdr), [SDR](../reference/glossary.md#sdr).
+
+Glossary terms: [Feature extractor](../reference/glossary.md#feature-extractor), [PQ](../reference/glossary.md#pqr-hlg), [HLG](../reference/glossary.md#pqr-hlg), [Range](../reference/glossary.md#range).

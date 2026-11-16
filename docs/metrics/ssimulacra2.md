@@ -281,3 +281,5 @@ shipped function, so it will not catch a shipped copy that drifts.
 - [ADR-0206](../adr/0206-ssimulacra2-cuda-sycl.md)
 
 See the [glossary](../reference/glossary.md) — terms used here: [pooling](../reference/glossary.md#pooling).
+
+Glossary terms: [Feature extractor](../reference/glossary.md#feature-extractor), [BT.709](../reference/glossary.md#bt709-bt2020), [Range](../reference/glossary.md#range), [10-bit](../reference/glossary.md#10-bit).

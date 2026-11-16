@@ -131,3 +131,5 @@ New Rust extractors are twins of C extractors and follow the
 (ADR-1713), not TAD's hand-written wrapper.
 
 See the [glossary](../reference/glossary.md) for the terms used across the metric pages.
+
+Glossary terms: [Range](../reference/glossary.md#range), [10-bit](../reference/glossary.md#10-bit).

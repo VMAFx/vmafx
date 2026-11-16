@@ -276,3 +276,5 @@ own pyramid and per-window terms.
 - [SSIMULACRA2](ssimulacra2.md) - perceptually tuned alternative
 
 See the [glossary](../reference/glossary.md) for the terms used across the metric pages.
+
+Glossary terms: [10-bit](../reference/glossary.md#10-bit).
