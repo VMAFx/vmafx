@@ -17,13 +17,17 @@ qualifier; nothing else defines the expression.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+from collections.abc import Iterator
 from pathlib import Path
 from unittest import mock
 
@@ -377,6 +381,22 @@ def frame_import_findings(text: str) -> list[str]:
     return [msg for ok, msg in checks if not ok]
 
 
+_COMPILER_CACHE: dict[tuple[str, str, object], bool | str] = {}
+
+
+def clear_compiler_cache() -> None:
+    _COMPILER_CACHE.clear()
+
+
+@contextlib.contextmanager
+def compiler_phase(name: str) -> Iterator[None]:
+    print(f"rgb_math_contract phase {name} start", file=sys.stderr, flush=True)
+    t0 = time.monotonic()
+    yield
+    elapsed = time.monotonic() - t0
+    print(f"rgb_math_contract phase {name} done {elapsed:.2f} s", file=sys.stderr, flush=True)
+
+
 def resolve_compiler_path(candidate: str | None) -> str | None:
     if not candidate or not Path(candidate).is_absolute():
         return None
@@ -387,34 +407,46 @@ def resolve_compiler_path(candidate: str | None) -> str | None:
 
 
 def is_gnu_gcc(exe: str) -> bool:
-    version = subprocess.run(  # noqa: S603 # nosec B603 -- resolved compiler, fixed argv
-        [exe, "--version"],
-        capture_output=True,
-        text=True,
-        check=False,
-        shell=False,
-        timeout=TIMEOUT,
-    )
+    resolved = resolve_compiler_path(exe)
+    if resolved is None:
+        return False
+    cache_key = ("gnu_gcc", resolved, subprocess.run)
+    if cache_key in _COMPILER_CACHE:
+        return bool(_COMPILER_CACHE[cache_key])
+    tool = Path(resolved).name
+    with compiler_phase(f"{tool} --version"):
+        version = subprocess.run(  # noqa: S603 # nosec B603 -- resolved compiler, fixed argv
+            [resolved, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+            shell=False,
+            timeout=TIMEOUT,
+        )
     if (
         version.returncode != 0
         or not re.search(r"\bgcc\b", version.stdout, re.IGNORECASE)
         or "clang" in version.stdout.lower()
     ):
         return False
-    probe = subprocess.run(  # noqa: S603 # nosec B603 -- resolved compiler, fixed argv
-        [exe, "-dM", "-E", "-x", "c", "-"],
-        input="",
-        capture_output=True,
-        text=True,
-        check=False,
-        shell=False,
-        timeout=TIMEOUT,
-    )
-    return (
+    with compiler_phase(f"{tool} -dM"):
+        probe = subprocess.run(  # noqa: S603 # nosec B603 -- resolved compiler, fixed argv
+            [resolved, "-dM", "-E", "-x", "c", "-"],
+            input="",
+            capture_output=True,
+            text=True,
+            check=False,
+            shell=False,
+            timeout=TIMEOUT,
+        )
+    ok = (
         probe.returncode == 0
         and "#define __GNUC__" in probe.stdout
         and "#define __clang__" not in probe.stdout
     )
+    if ok:
+        _COMPILER_CACHE[cache_key] = True
+    return ok
 
 
 def find_gnu_gcc() -> str | None:
@@ -429,18 +461,25 @@ def probe_c_std(gcc: str) -> str:
     exe = resolve_compiler_path(gcc)
     if exe is None:
         raise ValueError(f"compiler path must be an absolute executable file: {gcc!r}")
+    cache_key = ("c_std", exe, subprocess.run)
+    if cache_key in _COMPILER_CACHE:
+        return str(_COMPILER_CACHE[cache_key])
+    tool = Path(exe).name
     for flag in C_STD_CANDIDATES:
-        probe = subprocess.run(  # noqa: S603 # nosec B603 -- resolved compiler, fixed argv
-            [exe, flag, "-x", "c", "-E", "-"],
-            input="",
-            capture_output=True,
-            text=True,
-            check=False,
-            shell=False,
-            timeout=TIMEOUT,
-        )
+        with compiler_phase(f"{tool} {flag} probe"):
+            probe = subprocess.run(  # noqa: S603 # nosec B603 -- resolved compiler, fixed argv
+                [exe, flag, "-x", "c", "-E", "-"],
+                input="",
+                capture_output=True,
+                text=True,
+                check=False,
+                shell=False,
+                timeout=TIMEOUT,
+            )
         if probe.returncode == 0:
+            _COMPILER_CACHE[cache_key] = flag
             return flag
+    _COMPILER_CACHE[cache_key] = "-std=c2x"
     return "-std=c2x"
 
 
@@ -451,6 +490,7 @@ def compile_frame_import(
     if exe is None or not is_gnu_gcc(exe):
         raise ValueError(f"compiler must be a resolved GNU GCC executable: {gcc!r}")
     std_flag = c_std if c_std in C_STD_CANDIDATES else probe_c_std(exe)
+    tool = Path(exe).name
     with tempfile.TemporaryDirectory() as tmp:
         t = Path(tmp)
         (t / "config.h").write_text("", encoding="utf-8")
@@ -458,36 +498,40 @@ def compile_frame_import(
         (t / "libvmaf" / "version.h").write_text("", encoding="utf-8")
         src = t / "frame_import.c"
         src.write_text(source_text, encoding="utf-8")
-        return subprocess.run(  # noqa: S603 # nosec B603 -- resolved compiler, fixed argv
-            [
-                exe,
-                std_flag,
-                "-O2",
-                "-DNDEBUG",
-                "-fno-lto",
-                "-Wall",
-                "-Wextra",
-                "-Werror=maybe-uninitialized",
-                "-DVMAF_BUILDING_LIBVMAF",
-                f"-I{t}",
-                f"-I{ROOT}/core/include",
-                f"-I{ROOT}/core/src",
-                f"-I{ROOT}/core/src/vmafx",
-                "-c",
-                str(src),
-                "-o",
-                str(t / "frame_import.o"),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            shell=False,
-            timeout=TIMEOUT,
-            env={**os.environ, "LC_ALL": "C"},
-        )
+        with compiler_phase(f"{tool} frame_import compile"):
+            return subprocess.run(  # noqa: S603 # nosec B603 -- resolved compiler, fixed argv
+                [
+                    exe,
+                    std_flag,
+                    "-O2",
+                    "-DNDEBUG",
+                    "-fno-lto",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror=maybe-uninitialized",
+                    "-DVMAF_BUILDING_LIBVMAF",
+                    f"-I{t}",
+                    f"-I{ROOT}/core/include",
+                    f"-I{ROOT}/core/src",
+                    f"-I{ROOT}/core/src/vmafx",
+                    "-c",
+                    str(src),
+                    "-o",
+                    str(t / "frame_import.o"),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                shell=False,
+                timeout=TIMEOUT,
+                env={**os.environ, "LC_ALL": "C"},
+            )
 
 
 class RgbMathContract(unittest.TestCase):
+    def setUp(self) -> None:
+        clear_compiler_cache()
+
     def test_header_is_the_integer_expression_only(self) -> None:
         self.assertEqual(findings(HEADER.read_text(encoding="utf-8")), [])
 
@@ -513,27 +557,28 @@ class RgbMathContract(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmp:
                 src = Path(tmp) / f"t.{'c' if lang == 'c' else 'cpp'}"
                 src.write_text('#include "vmafx/rgb_math.h"\nint main(void) { return 0; }\n')
-                done = subprocess.run(  # noqa: S603 # nosec B603 -- resolved compiler, fixed argv
-                    [
-                        exe,
-                        std,
-                        "-Wall",
-                        "-Wextra",
-                        "-Werror",
-                        "-pedantic",
-                        f"-I{ROOT}/core/src",
-                        "-x",
-                        lang,
-                        str(src),
-                        "-o",
-                        str(Path(tmp) / "t"),
-                    ],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    shell=False,
-                    timeout=TIMEOUT,
-                )
+                with compiler_phase(f"{tool} header compile"):
+                    done = subprocess.run(  # noqa: S603 # nosec B603 -- fixed argv
+                        [
+                            exe,
+                            std,
+                            "-Wall",
+                            "-Wextra",
+                            "-Werror",
+                            "-pedantic",
+                            f"-I{ROOT}/core/src",
+                            "-x",
+                            lang,
+                            str(src),
+                            "-o",
+                            str(Path(tmp) / "t"),
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        shell=False,
+                        timeout=TIMEOUT,
+                    )
                 self.assertEqual(done.returncode, 0, done.stderr)
 
     def test_kernels_use_the_shared_expression(self) -> None:
@@ -947,6 +992,91 @@ class RgbMathContract(unittest.TestCase):
             bad.returncode, 0, "unfixed fill_plane must fail -Werror=maybe-uninitialized"
         )
         self.assertIn("maybe-uninitialized", bad.stderr)
+
+    def test_compiler_phase_logs_start_and_done(self) -> None:
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf), compiler_phase("cc --version"):
+            pass
+        lines = buf.getvalue().splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(lines[0], "rgb_math_contract phase cc --version start")
+        self.assertRegex(lines[1], r"^rgb_math_contract phase cc --version done \d+\.\d{2} s$")
+        aborted = io.StringIO()
+        with (
+            self.assertRaises(RuntimeError),
+            contextlib.redirect_stderr(aborted),
+            compiler_phase("gcc -std=c23 probe"),
+        ):
+            raise RuntimeError("stalled")
+        self.assertEqual(
+            aborted.getvalue().splitlines(),
+            ["rgb_math_contract phase gcc -std=c23 probe start"],
+        )
+
+    def test_second_compile_frame_import_skips_compiler_probes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "gcc"
+            fake.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake.chmod(0o500)
+            exe = str(fake.resolve())
+
+            def gcc_stub(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                if "--version" in argv:
+                    return subprocess.CompletedProcess(argv, 0, "gcc (GCC) 14.2.0\n", "")
+                if "-dM" in argv:
+                    return subprocess.CompletedProcess(argv, 0, "#define __GNUC__ 14\n", "")
+                return subprocess.CompletedProcess(argv, 0, "", "")
+
+            with (
+                contextlib.redirect_stderr(io.StringIO()),
+                mock.patch.object(subprocess, "run", side_effect=gcc_stub) as run_mock,
+            ):
+                first = compile_frame_import(exe, "int a;\n")
+                self.assertEqual(first.returncode, 0)
+                self.assertEqual(run_mock.call_count, 4)
+                second = compile_frame_import(exe, "int b;\n")
+                self.assertEqual(second.returncode, 0)
+                self.assertEqual(run_mock.call_count, 5)
+                second_argv = run_mock.call_args_list[4].args[0]
+                self.assertIn("-c", second_argv)
+                for probe_flag in ("--version", "-dM", "-E"):
+                    self.assertNotIn(probe_flag, second_argv)
+
+    def test_compiler_cache_separates_paths_and_clears(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            gcc_a = Path(tmp) / "gcc-a"
+            gcc_b = Path(tmp) / "gcc-b"
+            for item in (gcc_a, gcc_b):
+                item.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                item.chmod(0o500)
+            exe_a = str(gcc_a.resolve())
+            exe_b = str(gcc_b.resolve())
+
+            def multi_stub(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                if "--version" in argv:
+                    return subprocess.CompletedProcess(argv, 0, "gcc (GCC) 14.2.0\n", "")
+                if "-dM" in argv:
+                    return subprocess.CompletedProcess(argv, 0, "#define __GNUC__ 14\n", "")
+                rc = 1 if (argv[0] == exe_b and "-std=c23" in argv) else 0
+                return subprocess.CompletedProcess(argv, rc, "", "")
+
+            with (
+                contextlib.redirect_stderr(io.StringIO()),
+                mock.patch.object(subprocess, "run", side_effect=multi_stub) as run_mock,
+            ):
+                self.assertTrue(is_gnu_gcc(exe_a))
+                self.assertEqual(probe_c_std(exe_a), "-std=c23")
+                self.assertEqual(run_mock.call_count, 3)
+                self.assertTrue(is_gnu_gcc(exe_a))
+                self.assertEqual(probe_c_std(exe_a), "-std=c23")
+                self.assertEqual(run_mock.call_count, 3)
+                self.assertTrue(is_gnu_gcc(exe_b))
+                self.assertEqual(probe_c_std(exe_b), "-std=c2x")
+                self.assertEqual(run_mock.call_count, 7)
+                clear_compiler_cache()
+                self.assertTrue(is_gnu_gcc(exe_a))
+                self.assertEqual(probe_c_std(exe_a), "-std=c23")
+                self.assertEqual(run_mock.call_count, 10)
 
 
 if __name__ == "__main__":
