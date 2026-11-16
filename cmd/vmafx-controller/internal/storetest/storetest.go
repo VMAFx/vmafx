@@ -28,7 +28,7 @@ import (
 // Image is the PostgreSQL release the chart deploys (ADR-2350 D1). golusoris
 // testutil/pg refuses a test image without a digest (since v0.13.0), so both
 // images are pinned as tag@sha256 of the multi-platform index.
-const Image = "postgres:18.6-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395"
+const Image = "postgres:18.6-alpine@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b"
 
 // OldestImage is the oldest release external servers may run.
 const OldestImage = "postgres:16.15-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139"
