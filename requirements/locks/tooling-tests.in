@@ -23,5 +23,5 @@ mypy==2.4.0
 pre-commit==4.7.0
 pytest-timeout==2.4.0
 pyyaml==6.0.3
-reuse==6.2.0
+reuse==6.3.0
 uv==0.13.6
