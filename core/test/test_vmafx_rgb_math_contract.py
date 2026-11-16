@@ -13,6 +13,8 @@ modulo, no array indexed by a run-time value). Negative: the same scan refuses a
 planted `double`, a planted division and a planted run-time index. Boundary: the
 device kernels pass the plan by value and include the header with the function
 qualifier; nothing else defines the expression.
+
+`--warm-up` compiles once outside the unit tests for CI runner preparation.
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ KERNELS = ROOT / "core/src/vmafx/import_convert_kernels.h"
 FRAME_IMPORT = ROOT / "core/src/vmafx/frame_import.c"
 TIMEOUT = 120
 C_STD_CANDIDATES = ("-std=c23", "-std=c2x", "-std=c17")
+HEADER_COMPILERS = (("cc", "c", "-std=c11"), ("c++", "c++", "-std=c++17"))
 BANNED = (
     (r"\b(float|double|long\s+double)\b", "floating-point type"),
     (r"(?<![/*])/(?![/*])", "division"),
@@ -528,6 +531,107 @@ def compile_frame_import(
             )
 
 
+def compile_header_alone(tool: str, lang: str, std: str) -> subprocess.CompletedProcess[str] | None:
+    exe = resolve_compiler_path(shutil.which(tool))
+    if exe is None:
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / f"t.{'c' if lang == 'c' else 'cpp'}"
+        src.write_text(
+            '#include "vmafx/rgb_math.h"\nint main(void) { return 0; }\n',
+            encoding="utf-8",
+        )
+        with compiler_phase(f"{tool} header compile"):
+            return subprocess.run(  # noqa: S603 # nosec B603 -- resolved compiler, fixed argv
+                [
+                    exe,
+                    std,
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-pedantic",
+                    f"-I{ROOT}/core/src",
+                    "-x",
+                    lang,
+                    str(src),
+                    "-o",
+                    str(Path(tmp) / "t"),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                shell=False,
+                timeout=TIMEOUT,
+            )
+
+
+def warm_up() -> int:
+    rc = 0
+    try:
+        gcc = find_gnu_gcc()
+        if gcc is None:
+            print(
+                "rgb_math_contract warm-up: no GNU gcc on PATH; frame_import step skipped",
+                file=sys.stderr,
+                flush=True,
+            )
+        else:
+            frame_done = compile_frame_import(gcc, FRAME_IMPORT.read_text(encoding="utf-8"))
+            print(
+                f"rgb_math_contract warm-up: frame_import compile rc={frame_done.returncode}",
+                file=sys.stderr,
+                flush=True,
+            )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(
+            f"rgb_math_contract warm-up: frame_import compile failed: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+        rc = 1
+    for tool, lang, std in HEADER_COMPILERS:
+        step = f"{tool} header compile"
+        try:
+            header_done = compile_header_alone(tool, lang, std)
+            if header_done is None:
+                print(
+                    f"rgb_math_contract warm-up: no {tool} on PATH; {step} step skipped",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            else:
+                print(
+                    f"rgb_math_contract warm-up: {step} rc={header_done.returncode}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            print(f"rgb_math_contract warm-up: {step} failed: {exc}", file=sys.stderr, flush=True)
+            rc = 1
+    return rc
+
+
+def _make_fake_compilers(tmp: str, names: tuple[str, ...] = ("gcc", "cc", "c++")) -> dict[str, str]:
+    tools: dict[str, str] = {}
+    for name in names:
+        fake = Path(tmp) / name
+        fake.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        fake.chmod(0o500)
+        tools[name] = str(fake.resolve())
+    return tools
+
+
+def _gcc_stub_response(argv: list[str], compile_rc: int = 0) -> subprocess.CompletedProcess[str]:
+    if "--version" in argv:
+        return subprocess.CompletedProcess(argv, 0, "gcc (GCC) 14.2.0\n", "")
+    if "-dM" in argv:
+        return subprocess.CompletedProcess(argv, 0, "#define __GNUC__ 14\n", "")
+    if "-E" in argv:
+        return subprocess.CompletedProcess(argv, 0, "", "")
+    err = "simulated diagnostic\n" if compile_rc else ""
+    return subprocess.CompletedProcess(argv, compile_rc, "", err)
+
+
 class RgbMathContract(unittest.TestCase):
     def setUp(self) -> None:
         clear_compiler_cache()
@@ -549,37 +653,11 @@ class RgbMathContract(unittest.TestCase):
             self.assertIn(what, findings(mutated), what)
 
     def test_header_compiles_alone(self) -> None:
-        compilers = [("cc", "c", "-std=c11"), ("c++", "c++", "-std=c++17")]
-        for tool, lang, std in compilers:
-            exe = resolve_compiler_path(shutil.which(tool))
-            if exe is None:
+        for tool, lang, std in HEADER_COMPILERS:
+            done = compile_header_alone(tool, lang, std)
+            if done is None:
                 continue
-            with tempfile.TemporaryDirectory() as tmp:
-                src = Path(tmp) / f"t.{'c' if lang == 'c' else 'cpp'}"
-                src.write_text('#include "vmafx/rgb_math.h"\nint main(void) { return 0; }\n')
-                with compiler_phase(f"{tool} header compile"):
-                    done = subprocess.run(  # noqa: S603 # nosec B603 -- fixed argv
-                        [
-                            exe,
-                            std,
-                            "-Wall",
-                            "-Wextra",
-                            "-Werror",
-                            "-pedantic",
-                            f"-I{ROOT}/core/src",
-                            "-x",
-                            lang,
-                            str(src),
-                            "-o",
-                            str(Path(tmp) / "t"),
-                        ],
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                        shell=False,
-                        timeout=TIMEOUT,
-                    )
-                self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertEqual(done.returncode, 0, done.stderr)
 
     def test_kernels_use_the_shared_expression(self) -> None:
         text = KERNELS.read_text(encoding="utf-8")
@@ -1078,6 +1156,138 @@ class RgbMathContract(unittest.TestCase):
                 self.assertEqual(probe_c_std(exe_a), "-std=c23")
                 self.assertEqual(run_mock.call_count, 10)
 
+    def test_warm_up_compiles_frame_import_and_headers_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tools = _make_fake_compilers(tmp)
+            buf = io.StringIO()
+            with (
+                contextlib.redirect_stderr(buf),
+                mock.patch.object(shutil, "which", side_effect=tools.get),
+                mock.patch.object(
+                    subprocess, "run", side_effect=lambda argv, **_kw: _gcc_stub_response(argv)
+                ) as run_mock,
+            ):
+                self.assertEqual(warm_up(), 0)
+            argvs = [call.args[0] for call in run_mock.call_args_list]
+            self.assertEqual(sum("-c" in a for a in argvs), 1)
+            for tool, lang, std in HEADER_COMPILERS:
+                self.assertEqual(sum(a[:2] == [tools[tool], std] and lang in a for a in argvs), 1)
+            err = buf.getvalue()
+            for phase in ("gcc frame_import compile", "cc header compile", "c++ header compile"):
+                self.assertIn(f"rgb_math_contract phase {phase} start", err)
+                self.assertRegex(
+                    err, rf"(?m)^rgb_math_contract phase {re.escape(phase)} done \d+\.\d{{2}} s$"
+                )
+            for step in ("frame_import compile", "cc header compile", "c++ header compile"):
+                self.assertIn(f"rgb_math_contract warm-up: {step} rc=0", err)
+
+    def test_warm_up_timeout_and_oserror_return_one_and_name_step(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tools = _make_fake_compilers(tmp)
+
+            def fail_cc_timeout(
+                argv: list[str], **_kwargs: object
+            ) -> subprocess.CompletedProcess[str]:
+                if argv[0] == tools["cc"]:
+                    raise subprocess.TimeoutExpired(argv, TIMEOUT)
+                return _gcc_stub_response(argv)
+
+            buf = io.StringIO()
+            with (
+                contextlib.redirect_stderr(buf),
+                mock.patch.object(shutil, "which", side_effect=tools.get),
+                mock.patch.object(subprocess, "run", side_effect=fail_cc_timeout),
+            ):
+                self.assertEqual(warm_up(), 1)
+            err = buf.getvalue()
+            self.assertIn("rgb_math_contract warm-up: cc header compile failed:", err)
+            self.assertIn("rgb_math_contract warm-up: c++ header compile rc=0", err)
+
+            clear_compiler_cache()
+
+            def fail_frame_oserror(
+                argv: list[str], **_kwargs: object
+            ) -> subprocess.CompletedProcess[str]:
+                if "-c" in argv:
+                    raise OSError("spawn failed")
+                return _gcc_stub_response(argv)
+
+            buf2 = io.StringIO()
+            with (
+                contextlib.redirect_stderr(buf2),
+                mock.patch.object(shutil, "which", side_effect=tools.get),
+                mock.patch.object(subprocess, "run", side_effect=fail_frame_oserror),
+            ):
+                self.assertEqual(warm_up(), 1)
+            self.assertIn(
+                "rgb_math_contract warm-up: frame_import compile failed: spawn failed",
+                buf2.getvalue(),
+            )
+
+    def test_warm_up_nonzero_compiler_rc_returns_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tools = _make_fake_compilers(tmp)
+            buf = io.StringIO()
+            with (
+                contextlib.redirect_stderr(buf),
+                mock.patch.object(shutil, "which", side_effect=tools.get),
+                mock.patch.object(
+                    subprocess,
+                    "run",
+                    side_effect=lambda argv, **_kw: _gcc_stub_response(argv, compile_rc=1),
+                ),
+            ):
+                self.assertEqual(warm_up(), 0)
+            err = buf.getvalue()
+            for step in ("frame_import compile", "cc header compile", "c++ header compile"):
+                self.assertIn(f"rgb_math_contract warm-up: {step} rc=1", err)
+
+    def test_warm_up_skips_when_nothing_resolved(self) -> None:
+        buf = io.StringIO()
+        with (
+            contextlib.redirect_stderr(buf),
+            mock.patch.object(shutil, "which", return_value="relative/cc"),
+            mock.patch.object(
+                sys.modules[__name__], "resolve_compiler_path", wraps=resolve_compiler_path
+            ) as resolve_mock,
+            mock.patch.object(subprocess, "run") as run_mock,
+        ):
+            self.assertEqual(warm_up(), 0)
+        self.assertGreaterEqual(resolve_mock.call_count, 4)
+        run_mock.assert_not_called()
+        self.assertIn(
+            "rgb_math_contract warm-up: no GNU gcc on PATH; frame_import step skipped",
+            buf.getvalue().splitlines(),
+        )
+
+    def test_main_dispatches_warm_up_and_unittest(self) -> None:
+        mod = sys.modules[__name__]
+        with (
+            mock.patch.object(mod, "warm_up", return_value=0) as warm_mock,
+            mock.patch.object(unittest, "main") as unit_mock,
+        ):
+            self.assertEqual(main(["--warm-up"]), 0)
+            warm_mock.assert_called_once_with()
+            unit_mock.assert_not_called()
+        with (
+            mock.patch.object(mod, "warm_up", return_value=1) as warm_mock,
+            mock.patch.object(unittest, "main") as unit_mock,
+        ):
+            self.assertEqual(main(["--warm-up"]), 1)
+            self.assertEqual(main([]), 0)
+            self.assertEqual(main(["-v"]), 0)
+            self.assertEqual(main(["--warm-up", "-v"]), 0)
+            warm_mock.assert_called_once_with()
+            self.assertEqual(unit_mock.call_count, 3)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    if args == ["--warm-up"]:
+        return warm_up()
+    unittest.main()
+    return 0
+
 
 if __name__ == "__main__":
-    sys.exit(unittest.main())
+    sys.exit(main())

@@ -4,4 +4,6 @@
   Meson test log on the Windows ARM64 MSVC job. `is_gnu_gcc` and `probe_c_std`
   now cache per resolved compiler executable, every compiler subprocess logs
   `start` and `done` phase lines to `stderr` with flushing, and `windows-arm64`
-  uploads `core\build\meson-logs\testlog.txt` when an earlier step fails.
+  uploads `core\build\meson-logs\testlog.txt` when an earlier step fails. The
+  `windows-arm64` job warms the GNU compilers the test resolves (`--warm-up`)
+  before the fast suite and keeps the test log on every non-cancelled run.
