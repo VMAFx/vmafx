@@ -28,9 +28,9 @@ python3 -c "exit(0 if float('$score') >= float('$FLOOR') else 1)" \
 echo "QUALITY GATE PASSED"
 ```
 
-`bash gate.sh encode-hi.mkv testdata/ref_576x324_48f.yuv 576 324 420 90`
-prints the score and the verdict. Tutorial 2's `encode-hi.mkv` passes a 90
-floor; `encode-lo.mkv` is the interesting case — lower the floor or expect
+`bash gate.sh encoded-hi.mkv testdata/ref_576x324_48f.yuv 576 324 420 90`
+prints the score and the verdict. Tutorial 2's `encoded-hi.mkv` passes a 90
+floor; `encoded-lo.mkv` is the interesting case — lower the floor or expect
 the gate to refuse it.
 
 ## Gate the fixture pair itself
@@ -66,6 +66,6 @@ exactly like the recorded run.
 
 ## Try one thing
 
-Run the gate on `encode-lo.mkv` with the same floor and watch it fail with
+Run the gate on `encoded-lo.mkv` with the same floor and watch it fail with
 exit 1 — then wire it into CI as a step. Continue to
 [Score live](score-live.md).

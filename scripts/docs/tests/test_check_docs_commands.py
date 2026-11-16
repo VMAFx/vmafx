@@ -132,6 +132,7 @@ def test_execute_runs_cli_and_skips_ffmpeg(
         capture_output: bool,
         text: bool,
         timeout_seconds: float,
+        cwd: str | None = None,
     ) -> types.SimpleNamespace:
         if cmd[0] == "ffmpeg":
             return types.SimpleNamespace(

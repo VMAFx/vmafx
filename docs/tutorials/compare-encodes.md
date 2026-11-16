@@ -19,14 +19,14 @@ the other:
 ```bash
 ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
     -i testdata/ref_576x324_48f.yuv -c:v libx264 -crf 18 -x264-params keyint=48 \
-    encode-hi.mkv
+    encoded-hi.mkv
 ```
 
 <!-- run-check:t2-encode-lo exec=ffmpeg -->
 ```bash
 ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
     -i testdata/ref_576x324_48f.yuv -c:v libx264 -crf 34 -x264-params keyint=48 \
-    encode-lo.mkv
+    encoded-lo.mkv
 ```
 
 ## Score both against the reference
@@ -38,14 +38,14 @@ happens on the decoded frames. Use the `vmafx` filter in a filter graph:
 
 <!-- run-check:t2-score-hi exec=ffmpeg -->
 ```bash
-ffmpeg -loglevel info -i encode-hi.mkv -f rawvideo -pix_fmt yuv420p \
+ffmpeg -loglevel info -i encoded-hi.mkv -f rawvideo -pix_fmt yuv420p \
     -s 576x324 -r 24 -i testdata/ref_576x324_48f.yuv \
     -lavfi "[0:v][1:v]vmafx=model=version=vmaf_v0.6.1" -f null -
 ```
 
 <!-- run-check:t2-score-lo exec=ffmpeg -->
 ```bash
-ffmpeg -loglevel info -i encode-lo.mkv -f rawvideo -pix_fmt yuv420p \
+ffmpeg -loglevel info -i encoded-lo.mkv -f rawvideo -pix_fmt yuv420p \
     -s 576x324 -r 24 -i testdata/ref_576x324_48f.yuv \
     -lavfi "[0:v][1:v]vmafx=model=version=vmaf_v0.6.1" -f null -
 ```
@@ -53,8 +53,8 @@ ffmpeg -loglevel info -i encode-lo.mkv -f rawvideo -pix_fmt yuv420p \
 Two lines come out, one per encode:
 
 ```text
-vmafx vmaf mean: <higher score for encode-hi>
-vmafx vmaf mean: <lower score for encode-lo>
+vmafx vmaf mean: <higher score for encoded-hi>
+vmafx vmaf mean: <lower score for encoded-lo>
 ```
 
 The crf-18 encode scores higher than the crf-34 encode — that ordering is

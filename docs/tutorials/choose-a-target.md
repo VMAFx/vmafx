@@ -24,7 +24,7 @@ above the target with the smallest bitrate; run it with bash:
 
 ```bash
 #!/usr/bin/env bash
-# target.sh REF DIS_W H P — bisect CRF for a VMAF target (vmaf_v0.6.1, CPU)
+# target.sh REF W H P — bisect CRF for a VMAF target (vmaf_v0.6.1, CPU)
 set -euo pipefail
 REF=$1; W=$2; H=$3; P=$4
 TARGET=${TARGET:-90}
@@ -33,10 +33,10 @@ while [ "$lo" -lt "$hi" ]; do
     mid=$(( (lo + hi + 1) / 2 ))
     ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s "${W}x${H}" -r 24 \
         -i "$REF" -c:v libx264 -crf "$mid" -x264-params keyint=48 enc-t.mp4
-    score=$(ffmpeg -loglevel error -i enc-t.mp4 -f rawvideo -pix_fmt yuv420p \
-        -s "${W}x${H}" -r 24 -i testdata/ref_576x324_48f.yuv \
+    score=$(ffmpeg -loglevel info -i enc-t.mp4 -f rawvideo -pix_fmt yuv420p \
+        -s "${W}x${H}" -r 24 -i "$REF" \
         -lavfi "[0:v][1:v]vmafx=model=version=vmaf_v0.6.1" -f null - 2>&1 \
-        | grep -oP 'vmaf vmaf mean: \K[0-9.]+')
+        | grep -oP 'vmafx \S+ mean: \K[0-9.]+')
     echo "crf $mid -> $score"
     if python3 -c "exit(0 if float('$score') >= float('$TARGET') else 1)"; then
         lo=$mid
@@ -47,19 +47,19 @@ done
 echo "target CRF: $lo"
 ```
 
-`bash target.sh testdata/ref_576x324_48f.yuv 576 324 420 TARGET=90` prints
+`TARGET=90 bash target.sh testdata/ref_576x324_48f.yuv 576 324 420` prints
 one line per probe and ends with the CRF to use.
 
 <!-- run-check:t3-encode exec=ffmpeg -->
 ```bash
 ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
     -i testdata/ref_576x324_48f.yuv -c:v libx264 -crf 24 -x264-params keyint=48 \
-    enc-target.mkv
+    encoded-target.mkv
 ```
 
 <!-- run-check:t3-score exec=ffmpeg -->
 ```bash
-ffmpeg -loglevel info -i enc-target.mkv -f rawvideo -pix_fmt yuv420p \
+ffmpeg -loglevel info -i encoded-target.mkv -f rawvideo -pix_fmt yuv420p \
     -s 576x324 -r 24 -i testdata/ref_576x324_48f.yuv \
     -lavfi "[0:v][1:v]vmafx=model=version=vmaf_v0.6.1" -f null -
 ```

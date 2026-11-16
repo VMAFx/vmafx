@@ -21,10 +21,10 @@ REF=$1; W=$2; H=$3; P=$4
 for crf in 18 22 26 30; do
     ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s "${W}x${H}" -r 24 \
         -i "$REF" -c:v libx264 -crf "$crf" -x264-params keyint=48 "live-$crf.mkv"
-    score=$(ffmpeg -loglevel error -i "live-$crf.mkv" -f rawvideo -pix_fmt yuv420p \
+    score=$(ffmpeg -loglevel info -i "live-$crf.mkv" -f rawvideo -pix_fmt yuv420p \
         -s "${W}x${H}" -r 24 -i "$REF" \
         -lavfi "[0:v][1:v]vmafx=model=version=vmaf_v0.6.1" -f null - 2>&1 \
-        | grep -oP 'vmaf vmaf mean: \K[0-9.]+')
+        | grep -oP 'vmafx \S+ mean: \K[0-9.]+')
     printf 'crf %s -> %s\n' "$crf" "$score"
 done
 ```
@@ -43,12 +43,12 @@ as a loop you can point at a real pipeline's output directory.
 ```bash
 ffmpeg -loglevel error -y -f rawvideo -pix_fmt yuv420p -s 576x324 -r 24 \
     -i testdata/ref_576x324_48f.yuv -c:v libx264 -crf 22 -x264-params keyint=48 \
-    live-22.mkv
+    encoded-live-22.mkv
 ```
 
 <!-- run-check:t5-score exec=ffmpeg -->
 ```bash
-ffmpeg -loglevel info -i live-22.mkv -f rawvideo -pix_fmt yuv420p \
+ffmpeg -loglevel info -i encoded-live-22.mkv -f rawvideo -pix_fmt yuv420p \
     -s 576x324 -r 24 -i testdata/ref_576x324_48f.yuv \
     -lavfi "[0:v][1:v]vmafx=model=version=vmaf_v0.6.1" -f null -
 ```
@@ -63,7 +63,7 @@ ffmpeg -loglevel info -i live-22.mkv -f rawvideo -pix_fmt yuv420p \
 - For farm-wide aggregation, keep the model, the geometry and the pooling
   fixed across every run, or the table compares apples and oranges
   ([what the score means](../reference/concepts.md)).
-- The `vmaf-tune` watcher and the
+- The `vmaf-tune` tool and the
   [bd-rate tools](../usage/bd-rate.md) build on exactly this loop.
 
 ## Where to go next

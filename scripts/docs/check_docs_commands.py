@@ -93,7 +93,7 @@ def snapshot_numbers() -> set[str]:
     for path in SNAPSHOTS:
         try:
             data = json.loads(_read(path))
-        except OSError, ValueError, KeyError:
+        except (OSError, ValueError, KeyError):
             continue
         for metric in ("vmaf",):
             pooled = data.get("pooled_metrics", {}).get(metric, {})
@@ -195,6 +195,7 @@ def _safe_run(cmd: list[str], allowed: list[str]):
     return run_command(
         cmd,
         allowed_executables=allowed,
+        cwd=str(ROOT),
         capture_output=True,
         text=True,
         timeout_seconds=900,
@@ -248,7 +249,7 @@ def _prepare_block(
     if not available:
         what = "encoder libx264" if "-c:v" in argv else "filter vmafx"
         print(f"SKIP {block.block_id} (no ffmpeg carrying the {what})")
-        if not probe_text:
+        if probe_text:
             print(f"  probe: {probe_text}")
         return None, [], False, None
     expect_score = any("vmafx=" in arg for arg in argv) and "-c:v" not in argv
