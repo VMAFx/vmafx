@@ -9,6 +9,21 @@ precedence = "closest"
 SPDX-FileCopyrightText = "2026 Lusoris"
 SPDX-License-Identifier = "EUPL-1.2"
 
+# The run-result timeline schema, its fixtures, its test and its docs page are
+# contributor-authored (PR #3385, issue #2452): the fork-local EUPL-1.2 default
+# applies, credited to their author.
+[[annotations]]
+path = [
+    "api/run-result-timeline.schema.json",
+    "api/testdata/run-result-timeline/*.json",
+    "changelog.d/added/run-result-timeline-schema.md",
+    "docs/api/run-result-timeline.md",
+    "scripts/ci/tests/test_run_result_timeline_schema.py",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 luoye-cpu"
+SPDX-License-Identifier = "EUPL-1.2"
+
 # These six files descend from Netflix/vmaf root files.  ADR-1250 requires
 # inherited work, and every fork contribution to it, to remain on the terms it
 # already carried rather than being swept into the fork-local EUPL default.
