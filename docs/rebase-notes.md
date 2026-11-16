@@ -8,6 +8,35 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## SYCL graph registration has one entry point (2026-11-14)
+
+`fix/issue-3365-sycl-register`. `vmaf_sycl_graph_register_flags()` is the
+only combined-graph registration function; do not reintroduce the flagless
+forwarding shim during an upstream sync. `core/test/test_sycl_init_unwind.cpp`
+wraps only `_flags`, and `core/src/sycl/AGENTS.md` keeps the combined-queue
+allocation before the extractor-table increment. Live comments in
+`core/src/feature/sycl/` name the flags entry point; accepted ADRs and the
+changelog archive keep the historical name.
+
+## Built-in model lengths are `unsigned int` (2026-11-13)
+
+- `core/src/model.c` declares every `src_*_json_len` as
+  `extern unsigned int`, the exact type `xxd -i` emits (no added `const`;
+  C11 6.2.7p2), and types `VmafBuiltInModel.data_len` as
+  `const unsigned int *` so reads stay read-only. Issue #3440 tracks the
+  other xxd declarations that still differ from the generated types.
+  The two buffer readers take the length as `(int)*data_len`, the same cast
+  `core/src/vmafx/model.c` already uses.
+- **On sync**: Netflix's `libvmaf/src/model.c` still declares these as
+  `extern const int`. Keep the fork's `unsigned int` when a port adds a model
+  or conflicts in this block; a new `extern const int ..._json_len` in the
+  table trips `-Wpointer-sign` under `-Dwerror=true`, and on MSVC 19.52 it
+  is warning C4744 under `/LTCG`.
+
+## Merge-base Bandit gate and outgoing scanner snapshots (2026-11-11)
+
+ADR-3530. No rebase impact: the scanner scripts, hook configuration, dependency locks and agent notes are fork-local tooling; no Netflix source, public ABI or golden assertion changes. Preserve the shared revision selection in `scripts/lib/new_scanner_findings.py`, the Bandit configuration in `bandit.yml`, and the paired tests when syncing tooling. Regenerate `scripts/ci/AGENTS-gates.md` from `scripts/ci/AGENTS.d/bandit-new.md`; ADR indexes remain render-only outputs.
+
 ## CI downloads retry connection failures and write to a file first (2026-11-10)
 
 - Netflix-derived `Dockerfile`: keep wget connection and host-resolution retry flags when updating the optional oneAPI key setup from upstream.
@@ -1550,6 +1579,10 @@ rebase or sync keeps `PRAETOR_REF` at `9bf502ec6ce5...` in `.github/workflows/st
 and keeps the seven governance jobs of `lefthook.yml`, `scripts/git-hooks/hiss-audit.sh` and
 `scripts/githooks/state-sync.sh` on `sh .config/lefthook/engine.sh <arguments>`: a side of a
 conflict that calls `praetorctl` or `standardsctl` directly brings back the engine from `PATH`.
+The `Makefile` governance targets (`verify-all`, `compile-context`, `audit`, `hiss-coverage`,
+`dedupe-check`) likewise keep `-include .config/praetor/engine.mk` and `$(PRAETORCTL)`: a side of a
+conflict that calls `standardsctl` there brings back the `PATH` engine, and
+`scripts/ci/tests/test_make_governance_engine_pin.py` fails on it (issue 3468).
 `.config/lefthook/engine.sh` and `.config/praetor/engine.mk` are praetor's text. `praetorctl adopt`
 refreshes each only while it is unedited, so never edit or format them: take them from one side of a
 conflict, or regenerate them with `adopt --lock-source-root=<praetor clone at the pin>` in a

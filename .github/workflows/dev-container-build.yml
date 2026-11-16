@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: EUPL-1.2
 # Copyright 2026 Lusoris
 #
-# dev-container-build.yml — PR-time build gate for the dev/Containerfile.
+# dev-container-build.yml — PR-time build gate for dev/Containerfile and
+# docker/dev/ubuntu-26.04*.Dockerfile (ADR-0819, ADR-3545).
 #
 # Motivation (ADR-0819): previously there was no CI gate on dev/Containerfile;
 # regressions were only discovered at user runtime after the container fiasco
@@ -59,6 +60,8 @@ jobs:
     outputs:
       selected: ${{ steps.pick.outputs.selected }}
       reason: ${{ steps.pick.outputs.reason }}
+      ubuntu_dev_images: ${{ steps.pick-ubuntu-dev-images.outputs.selected }}
+      ubuntu_dev_images_reason: ${{ steps.pick-ubuntu-dev-images.outputs.reason }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -94,6 +97,18 @@ jobs:
           esac
           echo "$reason"
           { echo "selected=$selected"; echo "reason=$reason"; } >> "$GITHUB_OUTPUT"
+      - name: Validate ubuntu_dev_images selector
+        id: pick-ubuntu-dev-images
+        env:
+          SELECTED: ${{ steps.impact.outputs.ubuntu_dev_images }}
+        run: |
+          case "$SELECTED" in
+            true) reason="selected by ubuntu_dev_images" ;;
+            false) reason="not selected: ubuntu_dev_images matched no changed path" ;;
+            *) echo "::error::planner gave ubuntu_dev_images='$SELECTED'"; exit 1 ;;
+          esac
+          echo "$reason"
+          { echo "selected=$SELECTED"; echo "reason=$reason"; } >> "$GITHUB_OUTPUT"
 
   dev-container-build-work:
     needs: impact
@@ -291,7 +306,7 @@ jobs:
           done
 
   dev-container-build:
-    needs: [tier, impact, dev-container-build-work]
+    needs: [tier, impact, dev-container-build-work, ubuntu-dev-images]
     if: always() && needs.tier.outputs.light == 'true'
     # required-aggregator
     name: Dev Container Build
@@ -305,6 +320,9 @@ jobs:
           SELECTED: ${{ needs.impact.outputs.selected }}
           REASON: ${{ needs.impact.outputs.reason }}
           WORK_RESULT: ${{ needs.dev-container-build-work.result }}
+          UBUNTU_SELECTED: ${{ needs.impact.outputs.ubuntu_dev_images }}
+          UBUNTU_REASON: ${{ needs.impact.outputs.ubuntu_dev_images_reason }}
+          UBUNTU_RESULT: ${{ needs.ubuntu-dev-images.result }}
         run: |
           if [ "$PLAN_RESULT" != success ]; then
             echo "::error::impact planning did not succeed ($PLAN_RESULT)"
@@ -316,4 +334,61 @@ jobs:
           esac
           if [ "$SELECTED" = false ]; then
             echo "::notice::Dev Container Build skipped, ${REASON:-no reason given}"
+          fi
+          case "$UBUNTU_SELECTED:$UBUNTU_RESULT" in
+            true:success|false:skipped) ;;
+            *) echo "::error::invalid ubuntu-dev-images gate state selected=$UBUNTU_SELECTED work=$UBUNTU_RESULT"; exit 1 ;;
+          esac
+          if [ "$UBUNTU_SELECTED" = false ]; then
+            echo "::notice::Ubuntu Dev Images skipped, ${UBUNTU_REASON:-no reason given}"
+          fi
+
+  ubuntu-dev-images:
+    needs: impact
+    if: needs.impact.outputs.ubuntu_dev_images == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    name: Ubuntu Dev Image (${{ matrix.variant }})
+    runs-on: ubuntu-26.04
+    # no measured history yet, revisit after ten runs
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: cpu
+            suffix: ""
+          - variant: cuda
+            suffix: "-cuda"
+          - variant: sycl
+            suffix: "-sycl"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Pull Docker Hub images through mirror.gcr.io
+        run: bash scripts/ci/docker-hub-mirror.sh
+
+      - name: Free runner disk for the image build
+        run: bash scripts/ci/free-runner-disk.sh
+
+      - name: Build Ubuntu dev image
+        env:
+          VARIANT: ${{ matrix.variant }}
+          SUFFIX: ${{ matrix.suffix }}
+        run: |
+          docker build --progress=plain \
+            -f "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile" \
+            -t "vmafx-dev-ubuntu:${VARIANT}" \
+            .
+
+      - name: Smoke test Ubuntu dev image
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          docker run --rm "vmafx-dev-ubuntu:${VARIANT}" \
+            sh -c 'meson --version && ninja --version && ruff --version && shellcheck --version >/dev/null && shfmt --version'
+          if [ "$VARIANT" = sycl ]; then
+            docker run --rm "vmafx-dev-ubuntu:${VARIANT}" \
+              bash -lc 'command -v meson'
           fi
