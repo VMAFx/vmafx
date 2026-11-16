@@ -289,13 +289,14 @@ class HookCleanlinessTests(unittest.TestCase):
         # `vmaf --bitdepth=8<Tab>` puts the option and its argument in one word;
         # the boundary is normalized so the lookup sees `--backend`, without
         # touching the user's COMP_WORDBREAKS. On bash < 4.2 the file returns
-        # before defining `_vmaf`, and this test only pins a silent source.
+        # before defining `_vmaf`; OLD_SHELL keeps that a skip instead of letting
+        # a missing DEFINED pass silently.
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "vmaf.bash"
             path.write_text(self.outputs[BASH], encoding="utf-8", newline="\n")
             script = (
                 f"source '{path.as_posix()}'; "
-                "declare -F _vmaf >/dev/null || exit 0; "
+                "declare -F _vmaf >/dev/null || { echo OLD_SHELL; exit 0; }; "
                 "echo DEFINED; "
                 "COMP_WORDS=(vmaf '--bitdepth='); COMP_CWORD=1; _vmaf; "
                 'printf "%s\\n" "${COMPREPLY[@]}"'
@@ -308,9 +309,15 @@ class HookCleanlinessTests(unittest.TestCase):
             )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, "")
-        if "DEFINED" in result.stdout:
-            self.assertIn("8", result.stdout)
-            self.assertIn("10", result.stdout)
+        if "OLD_SHELL" in result.stdout:
+            self.skipTest("bash < 4.2: _vmaf not defined")
+        self.assertIn("DEFINED", result.stdout)
+        lines = [
+            line
+            for line in result.stdout.splitlines()
+            if line and line not in ("DEFINED", "OLD_SHELL")
+        ]
+        self.assertEqual(lines, ["--bitdepth=8", "--bitdepth=10"])
 
     @unittest.skipUnless(shutil.which("bash"), "bash is not installed")
     def test_equals_default_split_completes_the_domain(self) -> None:

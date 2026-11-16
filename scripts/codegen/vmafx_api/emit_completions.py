@@ -257,6 +257,20 @@ def _ps(text: str) -> str:
     return "'" + text.replace("'", "''") + "'"
 
 
+def _powershell_domains(api: Api) -> list[str]:
+    """Emit the PowerShell `$domains` entries for every value-taking option."""
+    out: list[str] = []
+    for spelling in spellings(api):
+        if spelling.takes_value and spelling.domain:
+            words = ",".join(_ps(word) for word in spelling.domain)
+            keys = [*spelling.flags]
+            if spelling.short:
+                keys.append(f"-{spelling.short}")
+            for key in keys:
+                out.append(f"        {_ps(key)} = @({words})")
+    return out
+
+
 def powershell_text(api: Api) -> str:
     """core/tools/completions/vmaf.ps1."""
     out = [
@@ -282,14 +296,7 @@ def powershell_text(api: Api) -> str:
         "    }",
         "    $domains = @{",
     ]
-    for spelling in spellings(api):
-        if spelling.takes_value and spelling.domain:
-            words = ",".join(_ps(word) for word in spelling.domain)
-            keys = [*spelling.flags]
-            if spelling.short:
-                keys.append(f"-{spelling.short}")
-            for key in keys:
-                out.append(f"        {_ps(key)} = @({words})")
+    out += _powershell_domains(api)
     out += [
         "    }",
         "    $flags = @(",
