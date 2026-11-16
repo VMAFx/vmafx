@@ -157,7 +157,7 @@ def test_subdirectory_page_needs_two_levels(
 
     page.write_text(
         "# AOM\n\nThe [NEG](../reference/glossary.md#neg) variant. "
-        "See the [glossary](../reference/glossary.md).\n",
+        "See the [glossary](../../reference/glossary.md).\n",
         encoding="utf-8",
     )
     assert main([]) == EXIT_FAILURE

@@ -114,9 +114,10 @@ measures the deinterlacer, not the encoder.
 Scoring a video against itself lands at or near 100. On the fixture pair the
 classic model scores 97.428025 on the first frame and pools to 97.732879
 (min 97.428025, max 100.0), while the default `vmaf_v1.0.16_3d0h` pools to
-99.995262 — 47 of its 48 frames are 100.0 and one is 99.942927. A 100.0
-is not a bug: `model/vmaf_v0.6.1.json` sets `score_clip` to `[0.0, 100.0]`,
-and `core/src/predict.c` clamps every prediction into that range. Neither the
+99.995262 — 41 of its 48 frames are 100.0 and the other seven are below it.
+A 100.0 is not a bug: `model/vmaf_v0.6.1.json` sets `score_clip` to
+`[0.0, 100.0]`, and `core/src/predict.c` clamps every prediction into that
+range. Neither the
 upstream FAQ's ~98.7 nor a 100.000 on the same setup means the metric is
 broken
 ([FAQ](faq.md#q-when-i-compare-a-video-with-itself-as-reference-i-expect-a-perfect-vmaf-score-of-100-but-i-see-987-is-this-a-bug)).

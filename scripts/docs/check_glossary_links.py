@@ -107,7 +107,7 @@ def glossary_anchors(text: str) -> set[str]:
 
 
 def term_pattern(term: str) -> re.Pattern[str]:
-    """Whole-word, case-insensitive pattern; a hyphen counts as a boundary."""
+    """Whole-word, case-insensitive pattern; a hyphen stays part of the word."""
     return re.compile(rf"(?<![A-Za-z0-9-]){re.escape(term)}(?![A-Za-z0-9-])", re.IGNORECASE)
 
 
