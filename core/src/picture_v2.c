@@ -158,7 +158,9 @@ int vmaf_picture_v1_to_v2(const VmafPicture *src, VmafPicture2 *dst)
         dst->data[i] = src->data[i];
     }
     dst->ref = src->ref;
-    assert(dst->ref == src->ref);
+    /* The copy is an independent reference: its last unref calls
+     * priv->release_picture(), so a refcounted source must carry a priv. */
+    assert(src->priv != NULL);
     dst->priv = src->priv;
 
     /* Increment refcount so the v2 picture is a true independent reference. */
@@ -196,7 +198,9 @@ int vmaf_picture_v2_to_v1(const VmafPicture2 *src, VmafPicture *dst)
         dst->data[i] = src->data[i];
     }
     dst->ref = src->ref;
-    assert(dst->ref == src->ref);
+    /* The copy is an independent reference: its last unref calls
+     * priv->release_picture(), so a refcounted source must carry a priv. */
+    assert(src->priv != NULL);
     dst->priv = src->priv;
 
     /* Increment refcount so the v1 picture is a true independent reference. */
