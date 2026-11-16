@@ -108,6 +108,25 @@ STALE = """int scale_of(int value)
 """
 
 
+def credits_page(
+    summary: str, rows: str, prose: str = "Hand-written prose outside the generated blocks.\n"
+) -> str:
+    """Build the two-block generator shape used by docs/credits.md."""
+    return f"""# Credits
+
+<!-- credits:table summary -->
+{summary}
+<!-- credits:end -->
+
+<!-- credits:table code -->
+| Item |
+| --- |
+{rows}
+<!-- credits:end -->
+
+{prose}"""
+
+
 class SilentRevertGateTest(unittest.TestCase):
     """Each test owns one disposable repository."""
 
@@ -263,6 +282,158 @@ class SilentRevertGateTest(unittest.TestCase):
 
         result = run_gate(self.repo, base, head)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_generated_block_regeneration_is_clean(self) -> None:
+        """A merge that regenerates repeated marker blocks is not a silent revert."""
+        seed = credits_page("1 entries. By kind: code 1.", "| row-zero |")
+        self.write("docs/credits.md", seed)
+        self.write("README.md", "# fixture\n")
+        start = self.commit("docs: seed the credits page")
+
+        self.write(
+            "docs/credits.md",
+            credits_page(
+                "2 entries. By kind: code 2.",
+                "| row-zero |\n| row-master |",
+            ),
+        )
+        base = self.commit("docs: add the master credit")
+
+        git(self.repo, "checkout", "-q", "-b", "feature", start)
+        self.write(
+            "docs/credits.md",
+            credits_page(
+                "2 entries. By kind: code 2.",
+                "| row-zero |\n| row-branch |",
+            ),
+        )
+        self.commit("docs: add the branch credit")
+
+        git(self.repo, "merge", "--no-commit", "--no-ff", base, check=False)
+        self.write(
+            "docs/credits.md",
+            credits_page(
+                "3 entries. By kind: code 3.",
+                "| row-zero |\n| row-branch |\n| row-master |",
+            ),
+        )
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "merge master into feature")
+        head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("clean", result.stdout)
+
+    def test_generated_block_does_not_hide_prose_removal(self) -> None:
+        """A hand-written line outside the markers is still protected."""
+        seed = credits_page("1 entries. By kind: code 1.", "| row-zero |")
+        self.write("docs/credits.md", seed)
+        self.write("README.md", "# fixture\n")
+        start = self.commit("docs: seed the credits page")
+
+        self.write(
+            "docs/credits.md",
+            credits_page("2 entries. By kind: code 2.", "| row-zero |\n| row-master |"),
+        )
+        base = self.commit("docs: add the master credit")
+
+        git(self.repo, "checkout", "-q", "-b", "feature", start)
+        self.write(
+            "docs/credits.md",
+            credits_page("2 entries. By kind: code 2.", "| row-zero |\n| row-branch |"),
+        )
+        self.commit("docs: add the branch credit")
+
+        git(self.repo, "merge", "--no-commit", "--no-ff", base, check=False)
+        self.write(
+            "docs/credits.md",
+            credits_page(
+                "3 entries. By kind: code 3.",
+                "| row-zero |\n| row-branch |\n| row-master |",
+                prose="",
+            ),
+        )
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "merge master into feature")
+        head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("dropped", result.stdout)
+        self.assertIn("Hand-written prose outside the generated blocks", result.stdout)
+
+    def test_generated_marker_line_is_not_exempt(self) -> None:
+        """Deleting a marker itself leaves an unterminated block, never a clean pass."""
+        page = """# Credits
+
+<!-- credits:table summary -->
+1 entries. By kind: code 1.
+<!-- credits:end -->
+"""
+        self.write("docs/credits.md", page)
+        self.write("README.md", "# fixture\n")
+        start = self.commit("docs: seed the credits page")
+
+        self.write("docs/credits.md", page.replace("1 entries", "2 entries"))
+        base = self.commit("docs: add the master credit")
+
+        git(self.repo, "checkout", "-q", "-b", "feature", start)
+        self.write("docs/credits.md", page.replace("1 entries", "2 entries"))
+        self.commit("docs: add the branch credit")
+
+        git(self.repo, "merge", "--no-commit", "--no-ff", base, check=False)
+        self.write(
+            "docs/credits.md",
+            page.replace("2 entries", "3 entries").replace("<!-- credits:end -->", ""),
+        )
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "merge master into feature")
+        head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("unterminated generated block", result.stdout)
+        self.assertNotIn("clean", result.stdout)
+
+    def test_nested_generated_block_fails_closed(self) -> None:
+        """A nested start marker is malformed input, not an exemption."""
+        page = """# Credits
+
+<!-- credits:table summary -->
+1 entries. By kind: code 1.
+<!-- credits:end -->
+"""
+        self.write("docs/credits.md", page)
+        self.write("README.md", "# fixture\n")
+        start = self.commit("docs: seed the credits page")
+
+        self.write("docs/credits.md", page.replace("1 entries", "2 entries"))
+        base = self.commit("docs: add the master credit")
+
+        git(self.repo, "checkout", "-q", "-b", "feature", start)
+        self.write("docs/credits.md", page.replace("1 entries", "2 entries"))
+        self.commit("docs: add the branch credit")
+
+        git(self.repo, "merge", "--no-commit", "--no-ff", base, check=False)
+        self.write(
+            "docs/credits.md",
+            """# Credits
+
+<!-- credits:table summary -->
+2 entries. By kind: code 2.
+<!-- credits:table nested -->
+<!-- credits:end -->
+""",
+        )
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "merge master into feature")
+        head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("nested generated block", result.stdout)
+        self.assertNotIn("clean", result.stdout)
 
     def test_branch_deletion_is_not_a_reverse_hunk(self) -> None:
         """A file the branch deletes on purpose is not a partial rewind of it.

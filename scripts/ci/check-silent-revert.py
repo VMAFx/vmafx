@@ -67,7 +67,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 # Resolved once: an absolute path keeps the invocation independent of whatever
 # PATH the caller (a CI step, a Makefile recipe, a hook) happens to export.
@@ -88,6 +88,16 @@ GENERATED_PREFIXES = (
     ".standards-baseline.json",
     "scripts/ci/tidy-baseline-",
 )
+
+# Some hand-written pages own a block that a generator renders in place:
+# ``docs/credits.md`` carries ``<!-- credits:table name -->`` ... ``<!--
+# credits:end -->`` blocks, and ``docs/usage/hardware-we-need.md`` uses the
+# same shape with ``hardware-needs``.  Lines strictly between the markers are
+# the generator's output; the generator input (credits.yaml, hardware-needs.json)
+# is the file the gate protects.  Marker lines themselves stay protected, and an
+# unterminated or nested block is malformed input rather than a silent clean.
+GENERATED_BLOCK_START = re.compile(r"^<!--\s*([a-z0-9][a-z0-9-]*):(?:begin|table)\b.*-->$")
+GENERATED_BLOCK_END = re.compile(r"^<!--\s*([a-z0-9][a-z0-9-]*):end\s*-->\s*$")
 
 # An intended reversal is declared in the tree, not argued in a PR comment.
 # Each entry names the superseding ADR, the target commit whose hunks the merge
@@ -185,11 +195,69 @@ def is_evidence(line: str) -> bool:
     return len(stripped) >= MIN_EVIDENCE_LEN and any(ch.isalnum() for ch in stripped)
 
 
-def parse_diff(diff: str) -> tuple[FileLines, FileLines]:
-    """Split a ``-U0`` unified diff into per-file added and removed line bags."""
+def generated_block_ranges(text: str, path: str) -> list[tuple[int, int]]:
+    """Return the 1-based, inclusive line ranges *inside* generator markers.
+
+    Marker lines are deliberately outside the ranges: deleting the generator
+    contract itself is still a finding.  A start marker without an end marker,
+    an end without a start, or a nested start is malformed rather than something
+    the gate may silently treat as generated.
+    """
+    ranges: list[tuple[int, int]] = []
+    open_name = ""
+    start_line = 0
+    for number, raw_line in enumerate(text.split("\n"), start=1):
+        line = raw_line.strip()
+        start = GENERATED_BLOCK_START.match(line)
+        end = GENERATED_BLOCK_END.match(line)
+        if not open_name:
+            if start:
+                open_name = start.group(1)
+                start_line = number
+            elif end:
+                raise GitError(f"{path}:{number}: generated-block end marker has no start marker")
+            continue
+        if start:
+            raise GitError(
+                f"{path}:{number}: nested generated block {start.group(1)!r} "
+                f"inside {open_name!r}"
+            )
+        if end:
+            if end.group(1) != open_name:
+                raise GitError(
+                    f"{path}:{number}: generated-block end marker {end.group(1)!r} "
+                    f"does not match {open_name!r}"
+                )
+            ranges.append((start_line + 1, number - 1))
+            open_name = ""
+    if open_name:
+        raise GitError(f"{path}:{start_line}: unterminated generated block {open_name!r}")
+    return ranges
+
+
+def generated_block_ranges_at(repo: Repo, ref: str, path: str) -> list[tuple[int, int]]:
+    """Read the generated-block ranges for *path* at *ref*, or [] when absent."""
+    proc = repo.run("show", f"{ref}:{path}", check=False)
+    if proc.returncode != 0:
+        return []
+    return generated_block_ranges(proc.stdout, path)
+
+
+def parse_diff(
+    diff: str, skip: Callable[[str, str, int], bool] | None = None
+) -> tuple[FileLines, FileLines]:
+    """Split a ``-U0`` unified diff into per-file added and removed line bags.
+
+    *skip* receives ``(path, side, line_number)`` for every hunk line, where
+    *side* is ``"old"`` or ``"new"``; returning true drops that line from the
+    bags.  It lets ``diff_pair`` ignore regenerated marker-block content by
+    position, without exempting hand-written prose that happens to share text.
+    """
     added: FileLines = collections.defaultdict(Lines)
     removed: FileLines = collections.defaultdict(Lines)
     path = None
+    old_line = 0
+    new_line = 0
     for line in diff.split("\n"):
         # `+++ b/<path>` names every file except a deletion, where it reads
         # `+++ /dev/null` and only the `--- a/<path>` header carries the name.
@@ -197,20 +265,48 @@ def parse_diff(diff: str) -> tuple[FileLines, FileLines]:
             path = line[6:]
         elif line.startswith("diff --git "):
             path = None
+            old_line = 0
+            new_line = 0
+        elif line.startswith("@@"):
+            match = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@", line)
+            if match:
+                old_line = int(match.group(1))
+                new_line = int(match.group(2))
         elif path is None or is_generated(path):
             continue
         elif line.startswith("+") and not line.startswith("+++"):
-            added[path][line[1:].rstrip()] += 1
+            if not (skip and skip(path, "new", new_line)):
+                added[path][line[1:].rstrip()] += 1
+            new_line += 1
         elif line.startswith("-") and not line.startswith("---"):
-            removed[path][line[1:].rstrip()] += 1
+            if not (skip and skip(path, "old", old_line)):
+                removed[path][line[1:].rstrip()] += 1
+            old_line += 1
+        elif line.startswith(" "):
+            old_line += 1
+            new_line += 1
     return dict(added), dict(removed)
 
 
 DIFF_FLAGS = ("--no-color", "--no-renames", "--no-ext-diff", "-U0", "-M0")
 
 
-def diff_pair(repo: Repo, before: str, after: str) -> tuple[FileLines, FileLines]:
-    return parse_diff(repo.out("diff", *DIFF_FLAGS, before, after))
+def diff_pair(
+    repo: Repo, before: str, after: str, *, skip_generated: bool = False
+) -> tuple[FileLines, FileLines]:
+    cache: dict[tuple[str, str], list[tuple[int, int]]] = {}
+
+    def skip(path: str, side: str, line_number: int) -> bool:
+        key = (path, side)
+        if key not in cache:
+            ref = before if side == "old" else after
+            cache[key] = generated_block_ranges_at(repo, ref, path)
+        return any(start <= line_number <= end for start, end in cache[key])
+
+    return parse_diff(
+        repo.out("diff", *DIFF_FLAGS, before, after),
+        skip if skip_generated else None,
+    )
 
 
 def merge_result_tree(repo: Repo, base: str, head: str) -> str:
@@ -598,7 +694,7 @@ def analyse(repo: Repo, base: str, head: str, window: int) -> list[Finding]:
             "so what the merge would remove cannot be established"
         )
     merged = merge_result_tree(repo, base, head)
-    eff_added, eff_removed = diff_pair(repo, base, merged)
+    eff_added, eff_removed = diff_pair(repo, base, merged, skip_generated=True)
     int_added, int_removed = branch_intent(repo, merge_base.stdout.strip(), head)
     paths = sorted(set(eff_added) | set(eff_removed))
     return [
