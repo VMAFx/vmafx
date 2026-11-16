@@ -54,7 +54,7 @@ jobs:
     outputs:
       docs: ${{ steps.impact.outputs.docs }}
     runs-on: ubuntu-26.04
-    # 25, not 10. Every run that actually built docs hit the 10-minute ceiling,
+    # 30, not 10. Every run that actually built docs hit the 10-minute ceiling,
     # and GitHub reports a timed-out job as `cancelled`, which reads like
     # contention rather than a budget. Measured 2026-09-22 at job level:
     #   48300e324  19:29:21 -> 19:39:31  10m10s  cancelled
@@ -66,10 +66,12 @@ jobs:
     # built in 562.22 seconds", leaving about 38 s of the 600 s budget for
     # checkout, setup-python, `pip install -r docs/requirements.txt` and
     # `make docs-fragments-check`. The site carries ~1300 ADRs and grows every
-    # time one lands, so this ceiling was always going to be crossed. 25
-    # minutes is about 2.5x the measured build, with room for the
-    # hosted-runner spread (measured at up to 2.3x on the Coverage Gate).
-    timeout-minutes: 25
+    # time one lands, so this ceiling was always going to be crossed. 30
+    # minutes is about 3x the measured mkdocs build, with room for the
+    # hosted-runner spread (measured at up to 2.3x on the Coverage Gate) and
+    # for the CPU vmaf CLI build plus every tutorial/cookbook run-check block
+    # added for issue 2330.
+    timeout-minutes: 30
     # Ref-scoped: one docs build per branch, superseded only by a newer push to
     # that same branch. No cross-PR contention.
     concurrency:
@@ -114,6 +116,30 @@ jobs:
       - name: Check documentation charts against a fresh render
         if: steps.impact.outputs.docs == 'true'
         run: python3 scripts/docs/generate-charts.py --check --require-render
+      - name: Install the build tools for the tutorial checks
+        # issue 2330: the tutorial and cookbook run-check blocks are executed
+        # against the fixture pair, so this job needs a vmaf CLI of its own.
+        # Stock ffmpeg runs the raw conversion blocks; it lacks the vmafx
+        # filter, so the filter and encoder rows still skip with a reason.
+        if: steps.impact.outputs.docs == 'true'
+        run: |
+          bash scripts/ci/apt-install-cached.sh refresh
+          sudo -E apt-get -yq install --no-install-recommends libzimg-dev ffmpeg
+          pip install --require-hashes -r requirements/locks/build.txt
+      - name: Build the vmaf CLI for the tutorial checks
+        if: steps.impact.outputs.docs == 'true'
+        run: |
+          # A CPU-only CLI is enough: every run-check block pins --backend cpu.
+          # asm and DNN stay off, but zimg is required by the shared Meson-job
+          # invariant; installing it costs less than a separate exception.
+          meson setup build-docs-cli core --buildtype release -Dwerror=true \
+            -Denable_asm=false -Denable_dnn=disabled \
+            -Denable_cuda=false -Denable_sycl=false -Denable_hip=false \
+            -Denable_metal=disabled
+          ninja -C build-docs-cli tools/vmaf
+      - name: Run the tutorial and cookbook commands
+        if: steps.impact.outputs.docs == 'true'
+        run: python3 scripts/docs/check_docs_commands.py --execute --bin build-docs-cli/tools/vmaf
       # Linux only (HISS-21). Docs Site Build runs only on ubuntu-26.04; skipped
       # on macOS and Windows to conserve CI compute. Alternate evidence: pure Python
       # standard-library implementation (pathlib, re, sys, argparse) tested across

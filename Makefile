@@ -339,6 +339,8 @@ docs-fragments-check:
 	@python3 scripts/docs/check_vendored_assets.py
 	@echo "--- docs/api/ links and heading anchors (issue 2436) ---"
 	@python3 scripts/docs/check_doc_links.py docs/api
+	@echo "--- docs/tutorials + docs/cookbook run-check blocks (issue 2330) ---"
+	@python3 scripts/docs/check_docs_commands.py
 
 # Regenerate consolidated outputs from fragments (ADR-0221).
 docs-fragments-write: docs-render

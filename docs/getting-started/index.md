@@ -4,7 +4,10 @@
 VMAFx scores how a distorted video compares with its reference, the way a
 viewer would judge it. You can run it as a container image, as a downloaded
 binary, or from a source build. Pick one below, then
-[score your first pair](first-score.md).
+[score your first pair](first-score.md). The five
+[tutorials](../tutorials/index.md) take that pair further, in order; the
+[cookbook](../cookbook/index.md) has a recipe for 10-bit input, frame
+offsets, non-420 subsampling, batch runs and two GPUs.
 
 ## Choose how to get VMAFx
 
