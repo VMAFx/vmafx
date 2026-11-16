@@ -511,6 +511,36 @@ class AllowlistError(RuntimeError):
 REQUIRED_ENTRY_KEYS = ("adr", "kind", "paths", "reason")
 
 
+def _validated_entry(entry: Any, index: int) -> dict[str, Any]:
+    """Validate one allowlist entry and attach its compiled evidence regex.
+
+    Raises AllowlistError with the entry's position in the message. The
+    `_evidence` key is attached in place, exactly as the loader always did.
+    """
+    where = f"{ALLOWLIST_PATH} entry {index}"
+    if not isinstance(entry, dict):
+        raise AllowlistError(f"{where} is not an object")
+    missing = [key for key in REQUIRED_ENTRY_KEYS if not entry.get(key)]
+    if missing:
+        raise AllowlistError(f"{where} is missing {', '.join(missing)}")
+    if entry["kind"] not in ("rewind", "reverse-hunk", "dropped", "resurrected"):
+        raise AllowlistError(f"{where} names no detector: {entry['kind']!r}")
+    # Without a target commit a reverse-hunk entry would cover every past
+    # commit that ever wrote those paths, which is a path exclusion wearing
+    # an ADR number.
+    if entry["kind"] == "reverse-hunk" and not entry.get("undoes"):
+        raise AllowlistError(f"{where} is a reverse-hunk entry with no `undoes` commit")
+    if not isinstance(entry["paths"], list) or not all(
+        isinstance(item, str) for item in entry["paths"]
+    ):
+        raise AllowlistError(f"{where} must list `paths` as strings")
+    try:
+        entry["_evidence"] = re.compile(entry["evidence"]) if entry.get("evidence") else None
+    except re.error as err:
+        raise AllowlistError(f"{where} has an invalid `evidence` regex: {err}") from err
+    return entry
+
+
 def load_allowlist(root: Path) -> list[dict[str, Any]]:
     """Read the declared-reversal entries the tree carries; absent means none.
 
@@ -529,31 +559,7 @@ def load_allowlist(root: Path) -> list[dict[str, Any]]:
     if not isinstance(data, dict) or not isinstance(data.get("reversals", []), list):
         raise AllowlistError(f"{ALLOWLIST_PATH} must hold a `reversals` list")
 
-    entries: list[dict[str, Any]] = []
-    for index, entry in enumerate(data.get("reversals", [])):
-        where = f"{ALLOWLIST_PATH} entry {index}"
-        if not isinstance(entry, dict):
-            raise AllowlistError(f"{where} is not an object")
-        missing = [key for key in REQUIRED_ENTRY_KEYS if not entry.get(key)]
-        if missing:
-            raise AllowlistError(f"{where} is missing {', '.join(missing)}")
-        if entry["kind"] not in ("rewind", "reverse-hunk", "dropped", "resurrected"):
-            raise AllowlistError(f"{where} names no detector: {entry['kind']!r}")
-        # Without a target commit a reverse-hunk entry would cover every past
-        # commit that ever wrote those paths, which is a path exclusion wearing
-        # an ADR number.
-        if entry["kind"] == "reverse-hunk" and not entry.get("undoes"):
-            raise AllowlistError(f"{where} is a reverse-hunk entry with no `undoes` commit")
-        if not isinstance(entry["paths"], list) or not all(
-            isinstance(item, str) for item in entry["paths"]
-        ):
-            raise AllowlistError(f"{where} must list `paths` as strings")
-        try:
-            entry["_evidence"] = re.compile(entry["evidence"]) if entry.get("evidence") else None
-        except re.error as err:
-            raise AllowlistError(f"{where} has an invalid `evidence` regex: {err}") from err
-        entries.append(entry)
-    return entries
+    return [_validated_entry(entry, index) for index, entry in enumerate(data.get("reversals", []))]
 
 
 def allowed_by(finding: Finding, entries: list[dict[str, Any]]) -> dict[str, Any] | None:
