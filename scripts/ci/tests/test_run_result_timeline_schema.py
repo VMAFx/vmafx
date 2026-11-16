@@ -76,16 +76,16 @@ class RunResultTimelineSchemaTests(unittest.TestCase):
                 )
 
     def test_full_document_keeps_the_rules_the_schema_cannot_state(self) -> None:
-        """Frames and events ascend by frame index; every window ends at or after its start."""
+        """Frames ascend strictly, events ascend by frame index; windows end after they start."""
         document = self.load("valid-full.json")
-        for section in ("frames", "events"):
-            with self.subTest(section=section):
-                keys = [entry["time"]["frame_index"] for entry in document[section]]
-                self.assertEqual(keys, sorted(keys))
+        frames = [entry["time"]["frame_index"] for entry in document["frames"]]
+        self.assertEqual(frames, sorted(set(frames)))
+        events = [entry["time"]["frame_index"] for entry in document["events"]]
+        self.assertEqual(events, sorted(events))
         for window in document["windows"]:
             with self.subTest(window=window["statistic"]):
                 self.assertEqual(set(window["start"]), set(window["end"]))
-                self.assertLessEqual(window["start"]["frame_index"], window["end"]["frame_index"])
+                self.assertLess(window["start"]["frame_index"], window["end"]["frame_index"])
 
     def test_event_without_time_key_refused_by_name(self) -> None:
         """A planted event without a time key is refused, naming the event."""
