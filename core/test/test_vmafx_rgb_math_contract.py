@@ -1119,6 +1119,8 @@ class RgbMathContract(unittest.TestCase):
                 self.assertIn("-c", second_argv)
                 for probe_flag in ("--version", "-dM", "-E"):
                     self.assertNotIn(probe_flag, second_argv)
+                for call in run_mock.call_args_list:
+                    self.assertEqual(call.kwargs.get("timeout"), TIMEOUT)
 
     def test_compiler_cache_separates_paths_and_clears(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1168,6 +1170,9 @@ class RgbMathContract(unittest.TestCase):
                 ) as run_mock,
             ):
                 self.assertEqual(warm_up(), 0)
+            self.assertGreater(run_mock.call_count, 0)
+            for call in run_mock.call_args_list:
+                self.assertEqual(call.kwargs.get("timeout"), TIMEOUT)
             argvs = [call.args[0] for call in run_mock.call_args_list]
             self.assertEqual(sum("-c" in a for a in argvs), 1)
             for tool, lang, std in HEADER_COMPILERS:
@@ -1279,13 +1284,21 @@ class RgbMathContract(unittest.TestCase):
             self.assertEqual(main(["--warm-up", "-v"]), 0)
             warm_mock.assert_called_once_with()
             self.assertEqual(unit_mock.call_count, 3)
+            self.assertEqual(
+                unit_mock.call_args_list,
+                [
+                    mock.call(argv=[sys.argv[0]]),
+                    mock.call(argv=[sys.argv[0], "-v"]),
+                    mock.call(argv=[sys.argv[0], "--warm-up", "-v"]),
+                ],
+            )
 
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if args == ["--warm-up"]:
         return warm_up()
-    unittest.main()
+    unittest.main(argv=[sys.argv[0], *args])
     return 0
 
 
