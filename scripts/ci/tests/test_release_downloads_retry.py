@@ -33,7 +33,10 @@ STEP = re.compile(r"(?m)^      - (?:name|uses|run):")
 FETCH = re.compile(r"(?<![\w.-])(curl(?:\.exe)?|wget)\s+(?=[\"']?(?:-|https?://|\$|%))")
 RELEASE = "releases/download"
 ENV_URL = re.compile(r'(?m)^\s*([A-Z][A-Z0-9_]*):\s*["\']?(https://github\.com/[^\s"\']+)')
-VAR_USE = re.compile(r"\$\{?([A-Z][A-Z0-9_]*)\}?")
+VAR_USE = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?")
+SHELL_URL = re.compile(
+    r"(?:^|[\s;&|])(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=[\"']?[^\s\"']*releases/download"
+)
 WRAPPER = "scripts/ci/download-release.sh"
 GIT_LOCATION_VARIABLES = frozenset(
     {
@@ -115,10 +118,11 @@ def findings(path: str, text: str) -> list[tuple[int, str]]:
     out: list[tuple[int, str]] = []
     declared = release_variables(text)
     for offset, block in blocks(text):
+        names = declared | set(SHELL_URL.findall(block))
         for command_line, command in shell_commands(block, offset):
             if not FETCH.search(command):
                 continue
-            uses_declared = any(name in declared for name in VAR_USE.findall(command))
+            uses_declared = any(name in names for name in VAR_USE.findall(command))
             if RELEASE not in command and not uses_declared:
                 continue
             line = command_line
@@ -199,6 +203,32 @@ class ReleaseDownloadRetryTest(unittest.TestCase):
         for path, reason in ALLOWLIST.items():
             self.assertTrue(path.endswith(".sh"))
             self.assertTrue(reason)
+
+    def test_a_shell_variable_release_fetch_is_refused(self) -> None:
+        for name, script in {
+            "lowercase": (
+                "      - name: Install tool\n"
+                "        run: |\n"
+                "          url=https://github.com/owner/repo/releases/download/v1/tool\n"
+                '          curl -fsSL -o /tmp/tool "$url"\n'
+            ),
+            "uppercase": (
+                "      - name: Install tool\n"
+                "        run: |\n"
+                "          URL=https://github.com/owner/repo/releases/download/v1/tool\n"
+                '          curl -fsSL -o /tmp/tool "${URL}"\n'
+            ),
+            "same-line": (
+                "      - name: Install tool\n"
+                "        run: |\n"
+                "          URL=https://github.com/owner/repo/releases/download/v1/tool; "
+                'curl -fsSL -o /tmp/tool "$URL"\n'
+            ),
+        }.items():
+            with self.subTest(name=name):
+                found = findings("fixture.yml", script)
+                self.assertEqual(1, len(found))
+                self.assertEqual("fetch a release asset through " + WRAPPER, found[0][1])
 
     def test_wrapper_rejects_malformed_release_urls(self) -> None:
         if sys.platform == "win32":
