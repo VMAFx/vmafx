@@ -437,6 +437,16 @@ device. The image has no OpenCL ICD. During the build, the image's `ldd` check
 fails on any of those libraries that cannot be resolved. The image's licence
 notices list each package under the `intel-gpu-stack` component.
 
+After `publish-node-sycl` signs the pushed digest, the `smoke-test` job of
+`.github/workflows/docker-publish-operator-node.yml` verifies its cosign
+signature and runs `scripts/release/smoke-published-image.sh` with kind
+`node-sycl`. That check inspects `Config.Env` of the pulled image and refuses
+an image that lacks the exact `VMAFX_BACKEND=sycl` entry (missing or set to
+another backend value), a wrong `/usr/local/bin/vmafx-node` entrypoint, a
+`--version` mismatch or a broken FUSE mount; SYCL scoring is skipped with an
+explicit message because the hosted runner has no Intel GPU
+(`scripts/release/tests/test-smoke-published-image.sh`).
+
 To check the image on a host with an Intel GPU, list the SYCL devices it sees:
 
 ```bash
