@@ -106,10 +106,30 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
-        choices=("filter", "clang-format", "list", "suffixes"),
+        choices=("filter", "clang-format", "list", "load-manifest", "suffixes"),
     )
     parser.add_argument("arguments", nargs=argparse.REMAINDER)
     return parser
+
+
+def run_load_manifest(arguments: list[str]) -> int:
+    """Validate one exact-path manifest and print its sorted entries.
+
+    Reuses load_manifest() so every consumer of an exact-path list gets the
+    same contract (sorted, duplicate-free, repository-relative paths) instead
+    of a second matcher. Callers that need a stale-entry check compare the
+    printed paths against their own listing.
+    """
+    if len(arguments) != 1:
+        build_parser().error("load-manifest takes exactly one manifest path")
+    try:
+        entries = load_manifest(Path(arguments[0]))
+    except (OSError, UnicodeDecodeError, ValueError) as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 1
+    for entry in sorted(entries):
+        print(entry)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -122,6 +142,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "clang-format":
         return run_clang_format(args.arguments)
+    if args.command == "load-manifest":
+        return run_load_manifest(args.arguments)
     if args.arguments:
         build_parser().error(f"{args.command} takes no arguments")
     values = (
