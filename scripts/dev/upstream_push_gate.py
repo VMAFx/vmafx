@@ -170,7 +170,8 @@ def load_classes() -> list[ReviewClass]:
         if cid in seen or not re.fullmatch(r"C[0-9]{2}", cid):
             raise ValueError(f"duplicate or invalid class id: {cid}")
         seen.add(cid)
-        if type(row.get("hits")) is not int or row["hits"] < 0:
+        hits = row.get("hits")
+        if isinstance(hits, bool) or not isinstance(hits, int) or hits < 0:
             raise ValueError(f"{cid}: invalid hit count")
         if mode not in {"mechanical", "self-review", "online", "non-actionable"}:
             raise ValueError(f"{cid}: invalid mode")

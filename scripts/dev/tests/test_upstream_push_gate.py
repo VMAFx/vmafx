@@ -355,6 +355,21 @@ class PushGateTest(SweepFixtureCase):
             {row["id"] for row in data["classes"] if row["mode"] == "online"}, {"C01", "C10"}
         )
 
+    def test_catalog_hit_count_boundaries(self) -> None:
+        data = json.loads(gate.CLASS_FILE.read_text(encoding="utf-8"))
+        catalog = self.root / "classes.json"
+        cid = data["classes"][0]["id"]
+        for hits in (True, -1, "3", 0):
+            with self.subTest(hits=hits):
+                data["classes"][0]["hits"] = hits
+                catalog.write_text(json.dumps(data), encoding="utf-8")
+                with patch.object(gate, "CLASS_FILE", catalog):
+                    if hits == 0 and not isinstance(hits, bool):
+                        gate.load_classes()
+                    else:
+                        with self.assertRaisesRegex(ValueError, f"{cid}: invalid hit count"):
+                            gate.load_classes()
+
     def test_missing_implemented_class_refuses_gate(self) -> None:
         data = json.loads(gate.CLASS_FILE.read_text(encoding="utf-8"))
         data["classes"] = [row for row in data["classes"] if row["id"] != "C03"]
