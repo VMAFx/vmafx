@@ -13,42 +13,72 @@ binary is a failure, not a skip.
 from __future__ import annotations
 
 import shutil
-import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import run as run_command
+
 CHART = Path(__file__).resolve().parents[3] / "deploy" / "helm" / "vmafx"
 HELM_TIMEOUT_S = 60
 
 
-def render(*sets: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    """Run `helm template` with the given --set values."""
+def render(*sets: str, check: bool = True, values_yaml: str | None = None) -> TextCommandResult:
+    """Run `helm template` with the given --set values and optional values file."""
     helm = shutil.which("helm")
     if helm is None:
         raise AssertionError("helm binary not found on PATH; install helm to run this test")
     argv = [helm, "template", "vmafx", str(CHART), "--namespace", "vmafx"]
     for value in sets:
         argv += ["--set", value]
-    return subprocess.run(  # noqa: S603 -- resolved helm binary, fixed argv, no shell
-        argv, capture_output=True, text=True, check=check, timeout=HELM_TIMEOUT_S
-    )
+    if values_yaml is None:
+        return run_command(
+            argv,
+            allowed_executables=(helm,),
+            capture_output=True,
+            text=True,
+            check=check,
+            timeout_seconds=HELM_TIMEOUT_S,
+        )
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", encoding="utf-8") as fh:
+        fh.write(values_yaml)
+        fh.flush()
+        return run_command(
+            [*argv, "-f", fh.name],
+            allowed_executables=(helm,),
+            capture_output=True,
+            text=True,
+            check=check,
+            timeout_seconds=HELM_TIMEOUT_S,
+        )
 
 
-def manifests(*sets: str) -> list[dict[str, Any]]:
+def manifests(*sets: str, values_yaml: str | None = None) -> list[dict[str, Any]]:
     """Rendered manifests, empty documents dropped."""
-    return [doc for doc in yaml.safe_load_all(render(*sets).stdout) if doc]
+    out = render(*sets, values_yaml=values_yaml).stdout
+    return [doc for doc in yaml.safe_load_all(out) if doc]
 
 
-def node_container(*sets: str) -> dict[str, Any]:
-    """The vmafx-node container of the node Deployment."""
-    for doc in manifests("node.enabled=true", *sets):
+def node_pod_spec(*sets: str, values_yaml: str | None = None) -> dict[str, Any]:
+    """The PodSpec of the node Deployment."""
+    for doc in manifests("node.enabled=true", *sets, values_yaml=values_yaml):
         if doc["kind"] == "Deployment" and doc["metadata"]["name"].endswith("-node"):
-            container: dict[str, Any] = doc["spec"]["template"]["spec"]["containers"][0]
-            return container
+            spec: dict[str, Any] = doc["spec"]["template"]["spec"]
+            return spec
     raise AssertionError("no node Deployment rendered")
+
+
+def node_container(*sets: str, values_yaml: str | None = None) -> dict[str, Any]:
+    """The vmafx-node container of the node Deployment."""
+    container: dict[str, Any] = node_pod_spec(*sets, values_yaml=values_yaml)["containers"][0]
+    return container
 
 
 def node_env(*sets: str) -> dict[str, str]:
@@ -230,6 +260,129 @@ class ControllerToNodePort(unittest.TestCase):
         )
         assert doc is not None
         self.assertEqual(doc["spec"]["ingress"][0]["ports"][0]["port"], 6000)
+
+
+ARC_PREFERRED_AFFINITY = """
+node:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: gpu.intel.com/product
+                operator: In
+                values: ["Arc_Pro_B60"]
+        - weight: 50
+          preference:
+            matchExpressions:
+              - key: gpu.intel.com/product
+                operator: In
+                values: ["Arc_B580"]
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 10
+        preference:
+          matchExpressions:
+            - key: gpu.vendor
+              operator: In
+              values: ["nvidia"]
+"""
+
+GLOBAL_AFFINITY_ONLY = """
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 25
+        preference:
+          matchExpressions:
+            - key: gpu.vendor
+              operator: In
+              values: ["intel"]
+"""
+
+
+class NodeProbesAndSidecar(unittest.TestCase):
+    """HTTP /readyz probe and opt-in VMAFX_SIDECAR_ENABLED (ADR-3558)."""
+
+    def test_readiness_http_readyz_and_liveness_tcp_grpc(self) -> None:
+        container = node_container()
+        self.assertEqual(
+            container["livenessProbe"],
+            {
+                "tcpSocket": {"port": "grpc"},
+                "initialDelaySeconds": 15,
+                "periodSeconds": 30,
+                "failureThreshold": 3,
+            },
+        )
+        self.assertEqual(
+            container["readinessProbe"],
+            {
+                "httpGet": {"path": "/readyz", "port": "metrics"},
+                "initialDelaySeconds": 5,
+                "periodSeconds": 10,
+                "failureThreshold": 3,
+                "successThreshold": 1,
+            },
+        )
+
+    def test_default_omits_sidecar_enabled_env(self) -> None:
+        self.assertNotIn("VMAFX_SIDECAR_ENABLED", node_env())
+
+    def test_sidecar_enabled_renders_true(self) -> None:
+        env = node_env("node.sidecar.enabled=true")
+        self.assertEqual(env["VMAFX_SIDECAR_ENABLED"], "true")
+
+    def test_schema_refuses_non_boolean_sidecar_enabled(self) -> None:
+        result = render("node.sidecar.enabled=notabool", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("/node/sidecar/enabled", result.stderr)
+
+
+class NodeAffinity(unittest.TestCase):
+    """Per-node soft affinity override with fallback to global affinity (ADR-3558)."""
+
+    def test_preferred_arc_terms_rendered_verbatim_without_required_pin(self) -> None:
+        spec = node_pod_spec(values_yaml=ARC_PREFERRED_AFFINITY)
+        node_aff = spec["affinity"]["nodeAffinity"]
+        self.assertNotIn("requiredDuringSchedulingIgnoredDuringExecution", node_aff)
+        self.assertEqual(
+            node_aff["preferredDuringSchedulingIgnoredDuringExecution"],
+            [
+                {
+                    "weight": 100,
+                    "preference": {
+                        "matchExpressions": [
+                            {
+                                "key": "gpu.intel.com/product",
+                                "operator": "In",
+                                "values": ["Arc_Pro_B60"],
+                            }
+                        ]
+                    },
+                },
+                {
+                    "weight": 50,
+                    "preference": {
+                        "matchExpressions": [
+                            {
+                                "key": "gpu.intel.com/product",
+                                "operator": "In",
+                                "values": ["Arc_B580"],
+                            }
+                        ]
+                    },
+                },
+            ],
+        )
+
+    def test_empty_node_affinity_falls_back_to_global_affinity(self) -> None:
+        spec = node_pod_spec(values_yaml=GLOBAL_AFFINITY_ONLY)
+        terms = spec["affinity"]["nodeAffinity"]["preferredDuringSchedulingIgnoredDuringExecution"]
+        self.assertEqual(terms[0]["weight"], 25)
+        self.assertNotIn("affinity", node_pod_spec())
 
 
 if __name__ == "__main__":
