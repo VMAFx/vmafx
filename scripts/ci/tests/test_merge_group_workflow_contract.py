@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Fail closed when workflows feeding merge_group lack the merge_group trigger (ADR-3556).
 
-Also fail closed when a merge_group workflow's pull_request cost guard omits merge_group.
+A merge_group workflow's pull_request cost guard must exclude merge_group with !=.
 """
 
 from __future__ import annotations
@@ -40,6 +40,7 @@ PRAETOR_LOCKED_BARE_MERGE_GROUP: dict[str, str] = {
 }
 LOCAL_WORKFLOW_RE = re.compile(r"^\./\.github/workflows/([^/@]+\.ya?ml)$")
 PR_COST_GUARD_RE = re.compile(r"github\.event_name\s*!=\s*'pull_request'(?!\s*\|\|)")
+MERGE_GROUP_EXCLUSION_RE = re.compile(r"github\.event_name\s*!=\s*'merge_group'")
 
 
 def _expand_job_names(job_id: str, job_cfg: dict[str, Any]) -> list[str]:
@@ -153,10 +154,10 @@ def _validate_merge_group_trigger(wf_name: str, on_map: dict[str, Any]) -> str |
 
 
 def _is_unadapted_pr_cost_guard(guard: object) -> TypeGuard[str]:
-    """Return True when ``guard`` skips ``pull_request`` for cost without ``merge_group``."""
+    """True when guard skips pull_request for cost without excluding merge_group through !=."""
     if not isinstance(guard, str):
         return False
-    return bool(PR_COST_GUARD_RE.search(guard)) and "merge_group" not in guard
+    return bool(PR_COST_GUARD_RE.search(guard)) and not MERGE_GROUP_EXCLUSION_RE.search(guard)
 
 
 def _job_cost_guard_errors(wf_name: str, job_id: str, job_cfg: Mapping[str, Any]) -> list[str]:
@@ -287,10 +288,18 @@ class MergeGroupWorkflowContractTests(unittest.TestCase):
         )
 
     def test_cost_guard_boundary_cases(self) -> None:
-        """Flag only unadapted PR cost guards on merge_group workflows across jobs and steps."""
+        """Flag only unadapted PR cost guards on merge_group workflows across jobs and steps.
+
+        An equality comparison on merge_group is no exclusion.
+        """
         flagged = "github.event_name != 'pull_request' && github.event_name != 'schedule'"
         draft = "(github.event_name != 'pull_request' || github.event.pull_request.draft == false)"
         adapted = "github.event_name != 'pull_request' && github.event_name != 'merge_group'"
+        equality = (
+            "github.event_name != 'pull_request' "
+            "&& github.event_name == 'merge_group' "
+            "&& github.event_name != 'schedule'"
+        )
         queued_docs: dict[str, dict[str, Any]] = {
             "sample.yml": {
                 "on": {"merge_group": {"types": ["checks_requested"], "branches": ["master"]}},
@@ -305,6 +314,7 @@ class MergeGroupWorkflowContractTests(unittest.TestCase):
                         ],
                     },
                     "adapted-job": {"if": adapted},
+                    "equality-job": {"if": equality},
                 },
             }
         }
@@ -314,6 +324,8 @@ class MergeGroupWorkflowContractTests(unittest.TestCase):
                 f"sample.yml: job cost-job (if) skips pull_request without merge_group: {flagged}",
                 "sample.yml: job draft-job (steps[1].if) skips pull_request without "
                 f"merge_group: {flagged}",
+                "sample.yml: job equality-job (if) skips pull_request without "
+                f"merge_group: {equality}",
             ],
         )
         unqueued_docs: dict[str, dict[str, Any]] = {
