@@ -143,15 +143,14 @@ def test_spaced_attribute_list_anchors(tmp_path: Path, capsys: pytest.CaptureFix
         "[Unspaced](target.md#plain-id)\n"
         "[Spaced](target.md#spaced-id)\n"
         "[Mixed](target.md#mixed-id)\n"
-        "[Trailing](target.md#trailing-id)\n"
-        "[Natural slug](target.md#spaced-heading)\n",
+        "[Trailing](target.md#trailing-id)\n",
         encoding="utf-8",
     )
 
     rc = main(["--root", str(tmp_path), str(doc)])
     assert rc == EXIT_SUCCESS
     out, _ = capsys.readouterr()
-    assert "5 links checked in 1 files" in out
+    assert "4 links checked in 1 files" in out
 
 
 def test_spaced_attribute_list_missing_anchor_reported(
@@ -174,6 +173,7 @@ def test_spaced_attribute_list_missing_anchor_reported(
         "# Spaced Attribute Lists\n\n"
         "[Bad spaced](target.md#no-such-spaced-id)\n"
         "[Bad mixed](target.md#no-such-mixed-id)\n"
+        "[Natural slug](target.md#spaced-heading)\n"
         "[Leaked slug](target.md#spaced-heading-spaced-id)\n",
         encoding="utf-8",
     )
@@ -183,6 +183,7 @@ def test_spaced_attribute_list_missing_anchor_reported(
     out, _ = capsys.readouterr()
     assert "missing anchor target.md#no-such-spaced-id" in out
     assert "missing anchor target.md#no-such-mixed-id" in out
+    assert "missing anchor target.md#spaced-heading" in out
     assert "missing anchor target.md#spaced-heading-spaced-id" in out
 
 

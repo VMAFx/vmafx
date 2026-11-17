@@ -84,9 +84,16 @@ def extract_anchors(path: Path) -> set[str]:
         heading_match = re.match(r"^[ ]{0,3}#{1,6}\s+(.*?)(?:\s+#+)?$", line)
         if not heading_match:
             continue
-        # Strip the attribute list when it carries an ID so the spaced form
-        # does not leak into the heading slug.
-        heading = re.sub(r"\{(?:[^{}\n]*\s)?#[^{}\n]*\}", "", heading_match.group(1)).strip()
+        # Attribute-list IDs: an explicit `#id` replaces the natural heading
+        # slug on the built site, so strip the list before slugging and skip
+        # the slug when the list carried an ID.
+        heading_raw = heading_match.group(1)
+        has_explicit_id = bool(
+            re.search(r"\{(?:[^{}\n]*\s)?#[A-Za-z0-9_\-]+[^{}\n]*\}", heading_raw)
+        )
+        heading = re.sub(r"\{(?:[^{}\n]*\s)?#[^{}\n]*\}", "", heading_raw).strip()
+        if has_explicit_id:
+            continue
         slug = slugify(heading)
         if not slug:
             continue
