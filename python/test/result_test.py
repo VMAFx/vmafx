@@ -53,14 +53,6 @@ class ResultFormattingTest(unittest.TestCase):
         #     self.runner.remove_results()
         pass
 
-    @unittest.skip(
-        "XML attribute order is Python-version-dependent: the test's hardcoded "
-        "string expects 'SSIM_... frameNum=...' but xml.dom.minidom emits "
-        "'frameNum=... SSIM_...' on Python 3.8+. Scores are correct; the "
-        "assertion is fragile. Fix: compare parsed XML nodes instead of raw "
-        "strings, or drop in favour of the to_dict / to_json tests. "
-        "(scaffold-audit ADR-0621 P3-3)"
-    )
     def test_to_xml(self):
         self.assertEqual(
             self.result.to_xml().strip(),
