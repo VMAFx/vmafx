@@ -8,6 +8,9 @@ ADR-3531 covers identity and message attribution checks.
 ADR-3544 refuses bot-authored PR/pre-push commits unless the bot is the branch opener.
 ADR-3555 lifts only that PR-mode opener refusal for a signed release-bot commit on a
 ``renovate[bot]`` PR when every changed path is a live ``dco-bot-opener`` exception.
+In ``--landed`` mode, ADR-3555 also strips a single exact ``vmafx-release-bot[bot]``
+``Co-authored-by:`` line on a ``renovate[bot]`` squash commit that changes a live
+``dco-landed-release-bot-coauthor`` exception path.
 
 Every non-merge commit in ``BASE..HEAD`` must end with a ``Signed-off-by: Name
 <email>`` trailer (what ``git commit -s`` writes), and the e-mail address of
@@ -73,7 +76,7 @@ import shutil
 import sys
 import unicodedata
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -109,11 +112,15 @@ MAX_COMMIT_PATHS_BYTES = 65_536
 # GitHub logins (as the API reports them) whose commits are exempt.  Keep the
 # list in docs/development/dco.md in step with this one.
 BOT_LOGINS = ("renovate[bot]", "dependabot[bot]", "github-actions[bot]")
-# Conditional PR-mode bot-opener exemption (ADR-3555); keep docs/development/dco.md in step.
+# Conditional PR-mode bot-opener and landed co-author exemptions (ADR-3555);
+# keep docs/development/dco.md in step.
 RENOVATE_BOT_LOGIN = "renovate[bot]"
+RENOVATE_BOT_EMAIL = "29139614+renovate[bot]@users.noreply.github.com"
 RELEASE_BOT_NAME = "vmafx-release-bot[bot]"
 RELEASE_BOT_EMAIL = "340976456+vmafx-release-bot[bot]@users.noreply.github.com"
+RELEASE_BOT_COAUTHOR = f"Co-authored-by: {RELEASE_BOT_NAME} <{RELEASE_BOT_EMAIL}>"
 BOT_OPENER_EXCEPTION_RULE = "dco-bot-opener"
+LANDED_COAUTHOR_EXCEPTION_RULE = "dco-landed-release-bot-coauthor"
 
 # All 13 tokens equal praetor tools/planning/commit_msg_check.py BANNED_COAUTHORS;
 # both Python tuples use substring matching. Engine internal/forge/commit_message.go
@@ -508,9 +515,31 @@ def commit_attribution_reason(commit: Commit) -> str | None:
     return None
 
 
-def judge_landed(commit: Commit, landing_email: str) -> str | None:
+def landed_exempt_message(commit: Commit, root: Path = DEFAULT_ROOT) -> str:
+    """Strip the single release-bot co-author line on a Renovate lock-refresh squash."""
+    if input_bound_reason(
+        commit.message, "COMMIT_MESSAGE", MAX_COMMIT_MESSAGE_BYTES, MAX_COMMIT_MESSAGE_LINES
+    ):
+        return commit.message
+    if (commit.author_name, commit.author_email.lower()) != (
+        RENOVATE_BOT_LOGIN,
+        RENOVATE_BOT_EMAIL,
+    ):
+        return commit.message
+    lines = commit.message.splitlines(keepends=True)
+    kept = [line for line in lines if line.strip() != RELEASE_BOT_COAUTHOR]
+    if len(lines) - len(kept) != 1:
+        return commit.message
+    paths = commit_changed_paths(commit.sha)
+    unexcepted = lint_exceptions.still_read(LANDED_COAUTHOR_EXCEPTION_RULE, paths, root)
+    if not paths or len(unexcepted) >= len(paths):
+        return commit.message
+    return "".join(kept)
+
+
+def judge_landed(commit: Commit, landing_email: str, root: Path = DEFAULT_ROOT) -> str | None:
     """Judge a commit on master: refuse bot co-authors, generated trailers, and bad sign-offs."""
-    reason = commit_attribution_reason(commit)
+    reason = commit_attribution_reason(replace(commit, message=landed_exempt_message(commit, root)))
     if reason:
         return reason
     emails = signoff_emails(commit.message)

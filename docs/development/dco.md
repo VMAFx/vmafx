@@ -95,8 +95,9 @@ bot-authored commit in that range is refused. Ownership compares normalized
 author names and emails. This preserves listed bots' branches after signed
 human updates. A human
 sign-off, release exemption, or grandfathered PR cannot bypass bot-author
-refusal: a squash landing would add a bot `Co-authored-by:` trailer that the
-landed gate refuses. Re-author the refused commit with
+refusal: apart from the single `dco-landed-release-bot-coauthor` lock-refresh
+case documented below, a squash landing would add a bot `Co-authored-by:`
+trailer that the landed gate refuses. Re-author the refused commit with
 `git commit --amend --reset-author --no-edit` on that commit, retaining the
 required sign-off, or drop it; for an earlier commit, stop on it during an
 interactive rebase before amending. Landed mode keeps its existing rules.
@@ -212,6 +213,25 @@ modes keep their existing rules unchanged) when all four conditions hold
   tests). The sole declared entry is `dev/scripts/intel-neo-lock.json`
   (Category D, entered `2026-11-16`, expires `2027-03-16`).
 
+One conditional landed-mode (`--landed`) exemption strips a single exact
+release-bot `Co-authored-by:` trailer line (`RELEASE_BOT_COAUTHOR` in
+`scripts/ci/check-dco.py`) before the landed attribution scan when the commit
+author is `renovate[bot]` with lowercased email
+`29139614+renovate[bot]@users.noreply.github.com` (`RENOVATE_BOT_EMAIL`), that
+stripped line appears once (case-sensitive after `.strip()`), and the commit's
+non-empty changed path list includes at least one live exception in
+`.config/lint-exceptions.d/dco-landed-release-bot-coauthor.toml`
+(`dev/scripts/intel-neo-lock.json`, Category D, entered `2026-11-17`, expires
+`2027-03-17`, [ADR-3555](../adr/3555-intel-neo-lock-file.md)):
+
+```text
+Co-authored-by: vmafx-release-bot[bot] <340976456+vmafx-release-bot[bot]@users.noreply.github.com>
+```
+
+Every other line of the message and the `Signed-off-by:` check in
+`judge_landed` still run unchanged; a second release-bot line or any other bot
+or tool trailer is still refused.
+
 Verbatim upstream ports and merge commits are not special-cased: merge commits
 are not judged, and a port is committed by a person who signs it off like any
 other commit.
@@ -233,7 +253,8 @@ failure indicates an invalid squash body landed on `master`; published history
 is not rewritten.
 
 The `--landed` mode disables all exemptions (bot logins, `--release-pr`, and
-the cutoff date). It refuses any non-merge commit where:
+the cutoff date), except for the single conditional release-bot co-author
+exemption below. It refuses any non-merge commit where:
 
 - A `Co-authored-by:` line names a bot or automated tool (such as Renovate or
   coding assistants).
@@ -243,6 +264,19 @@ the cutoff date). It refuses any non-merge commit where:
 - The commit lacks a `Signed-off-by:` trailer matching either the commit
   author or the landing identity (`--landing-identity`). The committer address
   is not accepted because GitHub is the committer on every squash merge.
+
+The sole landed exemption ([ADR-3555](../adr/3555-intel-neo-lock-file.md))
+strips one exact `RELEASE_BOT_COAUTHOR` line before the attribution scan when
+the commit author is `renovate[bot]`
+(`<29139614+renovate[bot]@users.noreply.github.com>`), that exact line appears
+once, and the commit changes a live exception path in
+`.config/lint-exceptions.d/dco-landed-release-bot-coauthor.toml`
+(`dev/scripts/intel-neo-lock.json`, Category D, entered `2026-11-17`, expires
+`2027-03-17`):
+
+```text
+Co-authored-by: vmafx-release-bot[bot] <340976456+vmafx-release-bot[bot]@users.noreply.github.com>
+```
 
 The check examines non-merge commits in the range `BASE_SHA..HEAD_SHA`. If
 the base SHA is all zeros (initial push) or not an ancestor-reachable commit,

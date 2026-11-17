@@ -11,7 +11,7 @@ SHA-256 digest and writing ``SHA256SUMS`` to ``--output-dir`` (ADR-3555).
 ``--write-lock PATH`` resolves the matched Intel NEO compute stack (ADR-1145)
 and Level Zero loader packages (ADR-1368) via the GitHub Releases API, records
 upstream SHA-256 digests without downloading ``.deb`` archives, and writes the
-sorted lock file.
+sorted lock file. The payload is validated before the lock is replaced.
 
 Lock file schema (``dev/scripts/intel-neo-lock.json``):
   - ``neo_version`` (str): pinned ``intel/compute-runtime`` release tag.
@@ -613,9 +613,7 @@ def _parse_lock_group(
     return parsed
 
 
-def load_lock(lock_path: Path) -> LockedStack:
-    """Read and validate ``lock_path`` without performing any network request."""
-    document = _read_lock_json(lock_path)
+def _parse_lock_document(document: dict[str, Any], lock_path: Path) -> LockedStack:
     _check_exact_keys(document, LOCK_TOP_KEYS, "top-level object", lock_path)
     neo_ver = document["neo_version"]
     lz_ver = document["level_zero_version"]
@@ -648,6 +646,11 @@ def load_lock(lock_path: Path) -> LockedStack:
         checksum=(lock_path.name, ""),
     )
     return LockedStack(neo_ver, lz_ver, lz_distro, stack, lz_map, checksums)
+
+
+def load_lock(lock_path: Path) -> LockedStack:
+    """Read and validate ``lock_path`` without performing any network request."""
+    return _parse_lock_document(_read_lock_json(lock_path), lock_path)
 
 
 def fetch_from_lock(
@@ -688,8 +691,7 @@ def _lock_entry(asset: tuple[str, str], checksums: dict[str, str]) -> dict[str, 
     return {"name": name, "sha256": digest, "url": url}
 
 
-def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    serialized = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+def _atomic_write_json(path: Path, serialized: str) -> None:
     temporary_path: Path | None = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -750,7 +752,12 @@ def write_lock(
         "neo": neo_entries,
         "neo_version": neo_ver,
     }
-    _atomic_write_json(lock_path, payload)
+    serialized = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    if len(serialized.encode("utf-8")) > MAX_LOCK_BYTES:
+        _lock_fatal(lock_path, "lock file exceeds size limit")
+    parsed = json.loads(serialized, object_pairs_hook=_no_duplicate_keys)
+    _parse_lock_document(parsed, lock_path)
+    _atomic_write_json(lock_path, serialized)
     load_lock(lock_path)
     print(f"\nWrote verified Intel NEO and Level Zero lock file to {lock_path}.")
 

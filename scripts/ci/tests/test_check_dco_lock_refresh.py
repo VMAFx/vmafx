@@ -12,6 +12,9 @@ import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from types import ModuleType
+from typing import Any
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
@@ -23,6 +26,9 @@ LOCK_PATH = "dev/scripts/intel-neo-lock.json"
 RULE = "dco-bot-opener"
 TODAY = "2026-11-16"
 EXPIRES = "2027-03-16"
+LANDED_RULE = "dco-landed-release-bot-coauthor"
+LANDED_TODAY = "2026-11-17"
+LANDED_EXPIRES = "2027-03-17"
 RELEASE_BOT = (
     "vmafx-release-bot[bot]",
     "340976456+vmafx-release-bot[bot]@users.noreply.github.com",
@@ -38,10 +44,13 @@ DEPENDABOT = (
 
 
 def write_exception_list(
-    exc_root: Path, paths: tuple[str, ...] = (LOCK_PATH,), expires: str = EXPIRES
+    exc_root: Path,
+    paths: tuple[str, ...] = (LOCK_PATH,),
+    expires: str = EXPIRES,
+    rule: str = RULE,
 ) -> None:
-    """Write a temporary dco-bot-opener exception list under exc_root."""
-    target = exc_root / ".config" / "lint-exceptions.d" / f"{RULE}.toml"
+    """Write a temporary lint-exception list under exc_root."""
+    target = exc_root / ".config" / "lint-exceptions.d" / f"{rule}.toml"
     target.parent.mkdir(parents=True, exist_ok=True)
     blocks = [
         f'[[exception]]\npath = "{path}"\nreason = "fixture"\nexpires = {expires}\n'
@@ -354,6 +363,180 @@ class DcoLockRefreshExemptionTest(unittest.TestCase):
             '--author="$bot <$email>" -F "$msg" -- "$lock"',
         ):
             self.assertIn(snippet, workflow)
+
+
+def judge_landed_in_repo(
+    mod: ModuleType,
+    repo: fx.Repo,
+    sha: str,
+    exc_root: Path,
+    *,
+    today: str = LANDED_TODAY,
+) -> str | None:
+    """Load ``sha`` from ``repo`` and call ``judge_landed`` directly under isolated Git."""
+    env = fx.clean_env()
+
+    def isolated_run(args: list[str], **kwargs: Any) -> Any:
+        return run(args, cwd=repo.path, env=env, **kwargs)
+
+    day = dt.date.fromisoformat(today)
+    with (
+        mock.patch.object(mod, "run", side_effect=isolated_run),
+        mock.patch.object(mod.lint_exceptions, "today", return_value=day),
+    ):
+        (commit,) = mod.list_head_commit(sha)
+        reason = mod.judge_landed(commit, mod.extract_email(fx.LANDING_ID), root=exc_root)
+        assert reason is None or isinstance(reason, str)
+        return reason
+
+
+class DcoLandedReleaseBotCoauthorTest(unittest.TestCase):
+    """Positive, planted refusal, and boundary cases for dco-landed-release-bot-coauthor."""
+
+    def setUp(self) -> None:
+        """Create an isolated repo, temp exception root, and loaded gate module."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        base = Path(tmp.name)
+        (base / "repo").mkdir()
+        self.repo = fx.Repo(base / "repo")
+        self.exc_root = base / "exc"
+        write_exception_list(self.exc_root, expires=LANDED_EXPIRES, rule=LANDED_RULE)
+        self.mod = fx.load_gate("check_dco_landed_lock_refresh")
+        self.addCleanup(sys.modules.pop, "check_dco_landed_lock_refresh", None)
+        self.renovate = (self.mod.RENOVATE_BOT_LOGIN, self.mod.RENOVATE_BOT_EMAIL)
+        self.signoff = f"Signed-off-by: {self.renovate[0]} <{self.renovate[1]}>"
+        self.exempt_msg = (
+            "chore(deps): update Intel NEO (#3501)\n\n"
+            f"{self.signoff}\n"
+            f"{self.mod.RELEASE_BOT_COAUTHOR}"
+        )
+
+    def test_positive_renovate_squash_with_release_bot_coauthor_passes(self) -> None:
+        """Renovate squash touching lock + another file with one release-bot co-author passes."""
+        sha = commit_paths(
+            self.repo,
+            ("build-config.env", LOCK_PATH),
+            self.renovate,
+            message=self.exempt_msg,
+            signoff=False,
+        )
+        for day in (LANDED_TODAY, LANDED_EXPIRES):
+            with self.subTest(today=day):
+                reason = judge_landed_in_repo(self.mod, self.repo, sha, self.exc_root, today=day)
+                self.assertIsNone(reason)
+        cli = run_gate(
+            self.repo,
+            "--landed",
+            "--landing-identity",
+            fx.LANDING_ID,
+            today=LANDED_TODAY,
+        )
+        self.assertEqual(cli.returncode, 0, cli.stdout + cli.stderr)
+        self.assertIn("PASS", cli.stdout)
+
+    def test_planted_refusal_a_another_bot_coauthor(self) -> None:
+        """Another bot in the Co-authored-by trailer is refused."""
+        msg = (
+            "chore(deps): update Intel NEO (#3501)\n\n"
+            f"{self.signoff}\n"
+            f"Co-authored-by: {DEPENDABOT[0]} <{DEPENDABOT[1]}>"
+        )
+        sha = commit_paths(
+            self.repo, ("build-config.env", LOCK_PATH), self.renovate, message=msg, signoff=False
+        )
+        reason = judge_landed_in_repo(self.mod, self.repo, sha, self.exc_root)
+        self.assertIsNotNone(reason)
+        assert reason is not None
+        self.assertIn("disallowed Co-authored-by trailer", reason)
+
+    def test_planted_refusal_b_without_lock_path(self) -> None:
+        """A commit that does not change the excepted lock path is refused."""
+        for paths in (("build-config.env",), ()):
+            with self.subTest(paths=paths), tempfile.TemporaryDirectory() as directory:
+                repo = fx.Repo(Path(directory))
+                sha = commit_paths(
+                    repo, paths, self.renovate, message=self.exempt_msg, signoff=False
+                )
+                reason = judge_landed_in_repo(self.mod, repo, sha, self.exc_root)
+                self.assertIsNotNone(reason)
+                assert reason is not None
+                self.assertIn("disallowed Co-authored-by trailer", reason)
+
+    def test_planted_refusal_c_two_release_bot_coauthor_lines(self) -> None:
+        """Two RELEASE_BOT_COAUTHOR lines disable the exemption and fail."""
+        msg = f"{self.exempt_msg}\n{self.mod.RELEASE_BOT_COAUTHOR}"
+        sha = commit_paths(
+            self.repo, ("build-config.env", LOCK_PATH), self.renovate, message=msg, signoff=False
+        )
+        reason = judge_landed_in_repo(self.mod, self.repo, sha, self.exc_root)
+        self.assertIsNotNone(reason)
+        assert reason is not None
+        self.assertIn("disallowed Co-authored-by trailer", reason)
+
+    def test_planted_refusal_d_non_renovate_author(self) -> None:
+        """A human author with the identical message and paths is refused."""
+        sha = commit_paths(
+            self.repo,
+            ("build-config.env", LOCK_PATH),
+            fx.HUMAN,
+            message=self.exempt_msg,
+            signoff=False,
+        )
+        reason = judge_landed_in_repo(self.mod, self.repo, sha, self.exc_root)
+        self.assertIsNotNone(reason)
+        assert reason is not None
+        self.assertIn("disallowed Co-authored-by trailer", reason)
+
+    def test_planted_refusal_e_expired_exception(self) -> None:
+        """An expired dco-landed-release-bot-coauthor entry fails closed."""
+        write_exception_list(self.exc_root, expires="2026-11-16", rule=LANDED_RULE)
+        sha = commit_paths(
+            self.repo,
+            ("build-config.env", LOCK_PATH),
+            self.renovate,
+            message=self.exempt_msg,
+            signoff=False,
+        )
+        reason = judge_landed_in_repo(self.mod, self.repo, sha, self.exc_root, today=LANDED_TODAY)
+        self.assertIsNotNone(reason)
+        assert reason is not None
+        self.assertIn("disallowed Co-authored-by trailer", reason)
+
+    def test_planted_refusal_f_extra_tool_coauthor_line(self) -> None:
+        """An extra tool Co-authored-by trailer alongside RELEASE_BOT_COAUTHOR is refused."""
+        msg = f"{self.exempt_msg}\nCo-authored-by: Codex <codex@example.org>"
+        sha = commit_paths(
+            self.repo, ("build-config.env", LOCK_PATH), self.renovate, message=msg, signoff=False
+        )
+        reason = judge_landed_in_repo(self.mod, self.repo, sha, self.exc_root)
+        self.assertIsNotNone(reason)
+        assert reason is not None
+        self.assertIn("disallowed Co-authored-by trailer", reason)
+        self.assertIn("(codex)", reason)
+
+    def test_boundary_renovate_without_coauthor_still_passes(self) -> None:
+        """A renovate[bot] commit with no Co-authored-by line still passes."""
+        msg = f"chore(deps): update Intel NEO (#3501)\n\n{self.signoff}"
+        for paths in (("build-config.env",), ("build-config.env", LOCK_PATH)):
+            with self.subTest(paths=paths), tempfile.TemporaryDirectory() as directory:
+                repo = fx.Repo(Path(directory))
+                sha = commit_paths(repo, paths, self.renovate, message=msg, signoff=False)
+                self.assertIsNone(judge_landed_in_repo(self.mod, repo, sha, self.exc_root))
+
+    def test_landed_exception_file_matches_contract(self) -> None:
+        """Checked-in dco-landed-release-bot-coauthor.toml matches identity, path, and dates."""
+        toml_path = fx.ROOT / ".config" / "lint-exceptions.d" / f"{LANDED_RULE}.toml"
+        entries = tomllib.loads(toml_path.read_text(encoding="utf-8"))["exception"]
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        self.assertEqual(entry["path"], LOCK_PATH)
+        self.assertEqual(entry["category"], "D")
+        self.assertEqual(entry["entered"], dt.date.fromisoformat(LANDED_TODAY))
+        self.assertEqual(entry["expires"], dt.date.fromisoformat(LANDED_EXPIRES))
+        self.assertTrue(entry["reason"].startswith("Category D, 120-day interval."))
+        for token in (fx.BOT_LOGIN, self.mod.RELEASE_BOT_COAUTHOR, "dco-bot-opener.toml"):
+            self.assertIn(token, entry["reason"])
 
 
 if __name__ == "__main__":

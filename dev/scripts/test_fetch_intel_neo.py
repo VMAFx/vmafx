@@ -757,3 +757,23 @@ def test_cli_lock_argument_boundaries(tmp_path: Path, monkeypatch: pytest.Monkey
         monkeypatch.setattr(sys, "argv", argv)
         with pytest.raises(SystemExit, match="2"):
             fetch_intel_neo.main()
+
+
+def test_write_lock_refuses_invalid_payload_without_replacing_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock_path = _write_fixture_lock(tmp_path, monkeypatch)
+    original_bytes = lock_path.read_bytes()
+    responses, _ = _fixture_api_responses()
+    lz_url = f"https://api.github.com/repos/oneapi-src/level-zero/releases/tags/v{_FIXTURE_LZ_VER}"
+    lz_doc = json.loads(responses[lz_url].decode("utf-8"))
+    lz_doc["assets"][0]["browser_download_url"] += "?download=1"
+    responses[lz_url] = json.dumps(lz_doc).encode("utf-8")
+    monkeypatch.setattr(fetch_intel_neo, "make_request", lambda url, token=None: responses[url])
+
+    with pytest.raises(SystemExit) as exc:
+        fetch_intel_neo.write_lock(lock_path, _FIXTURE_NEO_VER, _FIXTURE_LZ_VER)
+
+    assert exc.value.code != 0
+    assert lock_path.read_bytes() == original_bytes
+    assert list(tmp_path.glob(".intel-neo-lock.json.*")) == []
