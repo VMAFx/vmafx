@@ -353,11 +353,9 @@ jobs:
           set -euo pipefail
           install_dir="${RUNNER_TEMP}/vmafx-e2e-tools/bin"
           install -d -m 0755 "${install_dir}"
-          curl --fail --location --show-error --silent \
-            --connect-timeout 20 --max-time 300 \
-            --retry 5 --retry-all-errors \
-            --output "${install_dir}/kubectl-kuttl" \
-            "https://github.com/kudobuilder/kuttl/releases/download/${KUTTL_VERSION}/kubectl-kuttl_${KUTTL_VERSION#v}_linux_x86_64"
+          bash scripts/ci/download-release.sh \
+            "https://github.com/kudobuilder/kuttl/releases/download/${KUTTL_VERSION}/kubectl-kuttl_${KUTTL_VERSION#v}_linux_x86_64" \
+            "${install_dir}/kubectl-kuttl"
           chmod 0755 "${install_dir}/kubectl-kuttl"
           printf '%s\n' "${install_dir}" >> "${GITHUB_PATH}"
           "${install_dir}/kubectl-kuttl" version

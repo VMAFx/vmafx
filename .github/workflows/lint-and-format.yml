@@ -1120,7 +1120,7 @@ jobs:
           fi
           url="https://github.com/stoplightio/spectral/releases/download/v${version}/spectral-linux-x64"
           mkdir -p "${RUNNER_TEMP}/spectral"
-          curl -fsSL --retry 3 --retry-all-errors --max-time 300 -o "${RUNNER_TEMP}/spectral/spectral" "${url}"
+          bash scripts/ci/download-release.sh "${url}" "${RUNNER_TEMP}/spectral/spectral"
           echo "${sha}  ${RUNNER_TEMP}/spectral/spectral" | sha256sum -c -
           chmod +x "${RUNNER_TEMP}/spectral/spectral"
           echo "${RUNNER_TEMP}/spectral" >> "${GITHUB_PATH}"
@@ -1259,7 +1259,7 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/trivy-bin"
           tarball="trivy_${version}_Linux-64bit.tar.gz"
           url="https://github.com/aquasecurity/trivy/releases/download/v${version}/${tarball}"
-          curl -fsSL --retry 3 --retry-all-errors --max-time 300 -o "${RUNNER_TEMP}/${tarball}" "${url}"
+          bash scripts/ci/download-release.sh "${url}" "${RUNNER_TEMP}/${tarball}"
           echo "${expected_sha}  ${RUNNER_TEMP}/${tarball}" | sha256sum -c -
           tar -xzf "${RUNNER_TEMP}/${tarball}" -C "${RUNNER_TEMP}/trivy-bin" trivy
           echo "${RUNNER_TEMP}/trivy-bin" >> "${GITHUB_PATH}"

@@ -455,37 +455,33 @@ class ConfigTest(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
             path = tmp.name
         try:
-            with mock.patch.object(vmaf_config.urllib.request, "urlretrieve") as ret:
+            with mock.patch.object(vmaf_config, "retrieve") as ret:
                 download_reactively(path, "https://example.invalid/x")
             ret.assert_not_called()
         finally:
             os.remove(path)
 
     def test_download_reactively_happy_path(self):
-        # Stub urlretrieve so we don't hit the network; just write a byte.
+        # Stub retrieve so we don't hit the network; just write a byte.
         with tempfile.TemporaryDirectory() as tmpdir:
             target = os.path.join(tmpdir, "subdir", "downloaded.bin")
 
-            def fake_urlretrieve(url, tmp_path):
+            def fake_retrieve(url, tmp_path):
                 with open(tmp_path, "wb") as fh:
                     fh.write(b"ok")
 
-            with mock.patch.object(
-                vmaf_config.urllib.request, "urlretrieve", side_effect=fake_urlretrieve
-            ):
+            with mock.patch.object(vmaf_config, "retrieve", side_effect=fake_retrieve):
                 download_reactively(target, "https://example.invalid/x")
             self.assertTrue(os.path.exists(target))
             with open(target, "rb") as fh:
                 self.assertEqual(fh.read(), b"ok")
 
     def test_download_reactively_cleans_up_partial_on_failure(self):
-        # urlretrieve raises -> partial tempfile must be removed.
+        # retrieve raises -> partial tempfile must be removed.
         with tempfile.TemporaryDirectory() as tmpdir:
             target = os.path.join(tmpdir, "fail.bin")
             with mock.patch.object(
-                vmaf_config.urllib.request,
-                "urlretrieve",
-                side_effect=RuntimeError("network down"),
+                vmaf_config, "retrieve", side_effect=RuntimeError("network down")
             ):
                 with self.assertRaises(RuntimeError):
                     download_reactively(target, "https://example.invalid/x")
@@ -509,7 +505,7 @@ class ConfigTest(unittest.TestCase):
                 "https://example.invalid/x", 404, "Not Found", hdrs=None, fp=None
             )
             with contextlib.closing(err):
-                with mock.patch.object(vmaf_config.urllib.request, "urlretrieve", side_effect=err):
+                with mock.patch.object(vmaf_config, "retrieve", side_effect=err):
                     with self.assertRaises(urllib.error.HTTPError):
                         download_reactively(target, "https://example.invalid/x")
 

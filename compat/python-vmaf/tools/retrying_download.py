@@ -26,6 +26,7 @@ import ssl
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 
@@ -36,6 +37,14 @@ from collections.abc import Callable
 # their fixtures through download_reactively().
 RETRY_DELAYS_S: tuple[float, ...] = (5, 10, 20, 40, 80, 120)
 TRANSIENT_HTTP_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504, 522, 524})
+# One transfer is bounded: a socket read waits at most READ_TIMEOUT_S, and the
+# whole body must arrive within TRANSFER_TIMEOUT_S. CI tool downloads used
+# curl --max-time 300 before #3349; the fixture downloads keep the same bound.
+READ_TIMEOUT_S = 60
+TRANSFER_TIMEOUT_S = 300
+READ_CHUNK = 1 << 20
+# Upper bound on body reads (HISS-02); the deadline ends a slow transfer first.
+MAX_READS = 1 << 22
 USAGE = "usage: retrying_download.py URL PATH"
 
 
@@ -46,6 +55,41 @@ def transient(error: BaseException) -> bool:
     if isinstance(error, urllib.error.URLError):
         return not isinstance(error.reason, ssl.SSLCertVerificationError)
     return isinstance(error, (TimeoutError, ConnectionError, http.client.HTTPException))
+
+
+def _set_read_timeout(response: object, seconds: float) -> None:
+    """Cap the next blocking socket read at SECONDS, when the socket is reachable."""
+    sock = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
+    if sock is not None:
+        sock.settimeout(max(0.001, seconds))
+
+
+def _copy_body(response: object, path: str, deadline: float) -> None:
+    """Stream a response to PATH, failing on a total deadline or a short body."""
+    expected = response.headers.get("Content-Length")  # type: ignore[attr-defined]
+    received = 0
+    with open(path, "wb") as output:
+        for _ in range(MAX_READS):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"transfer exceeded {TRANSFER_TIMEOUT_S} s")
+            _set_read_timeout(response, min(READ_TIMEOUT_S, remaining))
+            # read1 performs at most one socket read, so a trickling server
+            # cannot hold the loop for a whole chunk between deadline checks.
+            chunk = response.read1(READ_CHUNK)  # type: ignore[attr-defined]
+            if not chunk:
+                break
+            output.write(chunk)
+            received += len(chunk)
+        else:
+            raise TimeoutError(f"transfer exceeded {MAX_READS} reads")
+    if expected is not None:
+        try:
+            declared = int(expected)
+        except ValueError:
+            declared = -1
+        if declared >= 0 and received != declared:
+            raise http.client.IncompleteRead(b"", max(0, declared - received))
 
 
 def retrieve(
@@ -59,14 +103,23 @@ def retrieve(
     Up to ``len(delays) + 1`` attempts, ``delays[i]`` seconds after the failed
     attempt ``i + 1`` (``sleep`` waits; ``time.sleep`` when not given). The
     last error, or the first one that is not transient, is raised unchanged.
+
+    Each transfer is bounded: a read waits at most ``READ_TIMEOUT_S`` and the
+    whole body must arrive within ``TRANSFER_TIMEOUT_S``. A stalled connection
+    therefore raises and joins the retry loop instead of hanging the job.
     """
     attempts = len(delays) + 1
     wait = time.sleep if sleep is None else sleep
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(f"retrying_download: only http(s) URLs are supported: {url}")
+    open_url = urllib.request.urlopen  # nosec B310 - the scheme is checked above
     for attempt, delay in enumerate((*delays, None), start=1):
         try:
-            # The URL is the caller's fixture address (http or https, checked
-            # by main() for the script form).
-            urllib.request.urlretrieve(url, path)  # noqa: S310
+            # The URL is the caller's fixture address, checked above for this
+            # and the script form.
+            with open_url(url, timeout=READ_TIMEOUT_S) as response:
+                _copy_body(response, path, time.monotonic() + TRANSFER_TIMEOUT_S)
         except Exception as error:
             if delay is None or not transient(error):
                 raise

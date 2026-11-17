@@ -49,6 +49,10 @@
 #   FFMPEG_FIX_SERIES_SUMS_URL  SHA256SUMS location instead of the release's (a
 #                             file:// URL in the tests); without it, a
 #                             FFMPEG_FIX_SERIES_URL override skips that check
+#   FFMPEG_FIX_SERIES_SUMS_SIGSTORE_URL  SHA256SUMS signature bundle location
+#                             instead of the release's (a file:// URL when a
+#                             mirror serves both); the cosign identity below
+#                             still names the release repository and tag
 #   FFMPEG_FIX_SERIES_DOWNLOAD_SECONDS  timeout in seconds for downloads (default:
 #                             120); overrides DOWNLOAD_SECONDS
 #   FFMPEG_FIX_SERIES_CACHE   where the verified tarball is kept (default:
@@ -312,7 +316,7 @@ verify_signature() { # verify_signature TARBALL WORK
     return 0
   fi
   [ -f "$work/SHA256SUMS" ] || download "${release_url}/SHA256SUMS" "$work/SHA256SUMS"
-  download "${release_url}/SHA256SUMS.sigstore.json" "$work/SHA256SUMS.sigstore.json"
+  download "${FFMPEG_FIX_SERIES_SUMS_SIGSTORE_URL:-${release_url}/SHA256SUMS.sigstore.json}" "$work/SHA256SUMS.sigstore.json"
   identity="${FFMPEG_FIX_SERIES_REPO}/.github/workflows/release-build.yml@refs/tags/${FFMPEG_FIX_SERIES_TAG}"
   export TUF_ROOT="${TUF_ROOT:-$work/sigstore}"
   cosign verify-blob --bundle "$work/SHA256SUMS.sigstore.json" \

@@ -18,6 +18,7 @@ import socket
 import ssl
 import subprocess
 import sys
+import time
 import urllib.error
 from collections.abc import Iterator
 from pathlib import Path
@@ -86,6 +87,52 @@ def test_an_outage_longer_than_the_policy_raises_the_last_error(tmp_path: Path) 
         assert len(server.requests) == len(retrying_download.RETRY_DELAYS_S) + 1
     assert raised.value.code == 504
     assert waits == list(retrying_download.RETRY_DELAYS_S)
+
+
+def test_a_slow_trickle_hits_the_total_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 4 KiB in 256-byte pieces, one piece every 100 ms: the whole body would
+    # take 1.6 s, but the deadline is 0.3 s. read1() must return between pieces
+    # so the deadline check can run; a buffered read() would hide the trickle.
+    monkeypatch.setattr(retrying_download, "TRANSFER_TIMEOUT_S", 0.3)
+    monkeypatch.setattr(retrying_download, "READ_TIMEOUT_S", 0.2)
+    body = b"x" * 4096
+    with StandIn([], body, trickle_s=0.1) as server:
+        with pytest.raises(TimeoutError):
+            retrying_download.retrieve(
+                server.url(FIXTURE), str(tmp_path / "f"), delays=(), sleep=lambda _: None
+            )
+
+
+class _Trickle:
+    """A response that yields the given chunks and then an empty body."""
+
+    def __init__(self, chunks: list[bytes]) -> None:
+        self.headers: dict[str, str] = {}
+        self._chunks = list(chunks)
+
+    def read1(self, _size: int) -> bytes:
+        return self._chunks.pop(0) if self._chunks else b""
+
+
+def test_a_body_within_the_read_bound_is_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(retrying_download, "MAX_READS", 3)
+    monkeypatch.setattr(retrying_download, "_set_read_timeout", lambda *_: None)
+    target = tmp_path / "file"
+    retrying_download._copy_body(_Trickle([b"a", b"b"]), str(target), time.monotonic() + 30)
+    assert target.read_bytes() == b"ab"
+
+
+def test_a_body_past_the_read_bound_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(retrying_download, "MAX_READS", 2)
+    monkeypatch.setattr(retrying_download, "_set_read_timeout", lambda *_: None)
+    with pytest.raises(TimeoutError, match="2 reads"):
+        retrying_download._copy_body(
+            _Trickle([b"a", b"b", b"c"]), str(tmp_path / "file"), time.monotonic() + 30
+        )
 
 
 def test_a_refused_connection_is_retried(tmp_path: Path) -> None:

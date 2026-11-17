@@ -158,10 +158,7 @@ jobs:
           ort_name="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
           ort_archive="${RUNNER_TEMP}/${ort_name}"
           ort_url="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${ort_name}"
-          curl -fSL --retry 5 --retry-delay 5 --retry-all-errors --remove-on-error \
-            --max-time 300 \
-            --output "${ort_archive}" \
-            "${ort_url}"
+          bash scripts/ci/download-release.sh "${ort_url}" "${ort_archive}"
           printf '%s  %s\n' "${ORT_SHA256}" "${ort_archive}" \
             | sha256sum --check --strict
           sudo tar -xzf "${ort_archive}" -C /opt/
