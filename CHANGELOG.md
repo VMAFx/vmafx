@@ -2660,6 +2660,14 @@ Contributed by luoye-cpu.
 
 ### Fixed
 
+- **Docs:** the Python library page no longer walks readers through the
+  three distribution package-manager blocks (including the `yum` route for
+  old CentOS and RHEL, which the supported install table does not cover);
+  it now points Linux readers at the per-distribution getting-started
+  install guides and keeps the Python-version requirement, the `nasm`
+  2.13.02 floor and the Python headers note (issue 2339).
+
+
 - **CI:** the `FFmpeg vmafx Filter` job fails on any compiler warning and on a build log its warning scan cannot read, so the series' own C code meets the warning gate the other FFmpeg builds already enforce (issue 2477).
 
 
@@ -2729,6 +2737,16 @@ Contributed by luoye-cpu.
 - **Tag raw HDR inputs with colour transfer and primaries:** copy `-color_primaries`, `-color_trc`, `-colorspace`, and `-color_range` from encode options to input options for raw sources so FFmpeg passes colour properties to the encoder (issue 3345). User `--extra-ffmpeg-arg` colour options stay output-only.
 
 
+- **Move the `.cursor/rules/vmafx-workspace.mdc` instructions into the canonical agent documents, so `praetorctl compile-context --verify` no longer refuses an instruction file outside `AGENTS.md`.**
+  Workspace defaults (`.vscode/` tasks, clangd as the only C/C++ language server, `meson setup <build-dir> core`)
+  merge into `docs/development/ide-setup.md`, where the setup steps already live. The agent-integration and
+  hand-off rules move to a new "Agent integration contract" section of `docs/development/agent-reference.md`,
+  which section 9 of `AGENTS.md` already links. `AGENTS.md` gains one pointer line and the hand-written
+  `.mdc` is deleted, so Cursor reads the generated projection instead.
+  `scripts/ci/tests/test_cursor_rules_migration.py` checks the deletion, the canonical sentences,
+  the `AGENTS.md` pointer and the generated projection line without needing `praetorctl`.
+
+
 - **`libaom-av1` `ultrafast` maps to `-cpu-used 8`, the highest value FFmpeg accepts.**
   The adapter mapped `ultrafast` to 9, which FFmpeg's `libaom-av1` wrapper refuses
   (`Value 9.000000 for parameter 'cpu-used' out of range [0 - 8]`), so every
@@ -2759,6 +2777,24 @@ Contributed by luoye-cpu.
 
 
 - **Run the pinned Praetor engine in Makefile governance targets (#3468).** `verify-all`, `compile-context`, `audit`, `hiss-coverage` and `dedupe-check` called `standardsctl` from `PATH` instead of the repository pin; the `Makefile` now includes `.config/praetor/engine.mk` and invokes `$(PRAETORCTL)`, and `scripts/ci/tests/test_make_governance_engine_pin.py` rejects missing or misplaced includes and literal `standardsctl` or `praetorctl` calls.
+
+
+- **Forward `main()` argv and pin timeouts in `test_vmafx_rgb_math_contract`.**
+  `main(argv)` called `unittest.main()` without `argv`, parsing `sys.argv`
+  instead of its own argument list; it now passes `argv=[sys.argv[0], *args]`,
+  and the warm-up test pins `timeout=TIMEOUT` on every compiler call.
+
+
+- **Cache compiler probes, log phases and warm up compilers for
+  `test_vmafx_rgb_math_contract`.**
+  `compile_frame_import` re-ran `is_gnu_gcc` and `probe_c_std` on every call,
+  and a timed-out run reported neither which compiler step stalled nor the
+  Meson test log on the Windows ARM64 MSVC job. `is_gnu_gcc` and `probe_c_std`
+  now cache per resolved compiler executable, and every compiler subprocess
+  logs `start` and `done` phase lines to `stderr` with flushing. The
+  `windows-arm64` job warms the GNU compilers the test resolves (`--warm-up`)
+  before the fast suite and uploads `core\build\meson-logs\testlog.txt` on
+  every non-cancelled run.
 
 
 - **ADR allocator scans open pull request heads to avoid fork PR collisions.**
