@@ -27,6 +27,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
@@ -430,6 +431,27 @@ Hand-written prose outside the generated block.
         self.assertIn("unterminated generated block", result.stdout)
         self.assertNotIn("clean", result.stdout)
 
+    def test_end_marker_only_deletion_checks_the_merged_file(self) -> None:
+        """A diff with no new-side rows must still validate the merged tree."""
+        page = """# Credits
+
+<!-- credits:table summary -->
+1 entries. By kind: code 1.
+<!-- credits:end -->
+"""
+        self.write("docs/credits.md", page)
+        self.write("README.md", "# fixture\n")
+        base = self.commit("docs: seed the credits page")
+
+        git(self.repo, "checkout", "-q", "-b", "feature", base)
+        self.write("docs/credits.md", page.replace("<!-- credits:end -->\n", ""))
+        head = self.commit("docs: drop the credits end marker")
+
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("unterminated generated block", result.stdout)
+        self.assertNotIn("clean", result.stdout)
+
     def test_nested_generated_block_fails_closed(self) -> None:
         """A nested start marker is malformed input, not an exemption."""
         page = """# Credits
@@ -609,7 +631,8 @@ Hand-written prose.
 
         gate_module = runpy.run_path(str(GATE))
         repo = gate_module["Repo"](self.repo)
-        bags = gate_module["commit_diffs"](repo, "master", "docs/credits.md", 10)
+        with mock.patch.dict(os.environ, git_env(), clear=True):
+            bags = gate_module["commit_diffs"](repo, "master", "docs/credits.md", 10)
         added = next(added for sha, added, _removed in bags if sha == head)
         self.assertNotIn("| row-master |", added)
         self.assertIn("Master prose added.", added)

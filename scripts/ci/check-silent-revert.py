@@ -330,14 +330,21 @@ DIFF_FLAGS = ("--no-color", "--no-renames", "--no-ext-diff", "-U0", "-M0")
 def diff_pair(
     repo: Repo, before: str, after: str, *, skip_generated: bool = False
 ) -> tuple[FileLines, FileLines]:
-    cache: dict[tuple[str, str], list[tuple[int, int]]] = {}
+    cache: dict[str, tuple[list[tuple[int, int]], list[tuple[int, int]]]] = {}
 
     def skip(path: str, side: str, line_number: int) -> bool:
-        key = (path, side)
-        if key not in cache:
-            ref = before if side == "old" else after
-            cache[key] = generated_block_ranges_at(repo, ref, path)
-        return any(start <= line_number <= end for start, end in cache[key])
+        # Validate both versions as soon as a path is seen.  A diff can carry
+        # only old-side rows (for example, deleting just an end marker), so a
+        # per-side lazy lookup would leave the merged file unchecked and miss
+        # an unterminated generated block.
+        if path not in cache:
+            cache[path] = (
+                generated_block_ranges_at(repo, before, path),
+                generated_block_ranges_at(repo, after, path),
+            )
+        old_ranges, new_ranges = cache[path]
+        ranges = new_ranges if side == "new" else old_ranges
+        return any(start <= line_number <= end for start, end in ranges)
 
     return parse_diff(
         repo.out("diff", *DIFF_FLAGS, before, after),
