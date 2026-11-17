@@ -29,6 +29,14 @@ Three long-standing open bugs accumulated with no resolution path:
   (Mesa-ANV / DG2) surviving Phase-3b stronger-fence experiment. Open since
   2026-05-08.
 
+  *Erratum (2026-11-17, issue #3312): research-0090's hardware-mapping
+  correction (PR #512, 2026-05-09) re-attributed this residual to NVIDIA
+  (RTX 4090 + driver 595.71.05; Arc measured 0/48), and PR #787's
+  `subgroupShuffleXor` butterfly in `vif.comp` closed it on 2026-05-14 —
+  NVIDIA, Arc and RADV each 0/48 at `places=4` — before this ADR was
+  written. The misattribution and the open status above are wrong; the
+  drop decision and the other two blockers stand.*
+
 The Vulkan backend also had the highest per-backend CI footprint of any
 non-CUDA backend (3 CI jobs, 2 build-matrix rows, 8 test binaries) and
 the highest source LOC (~30 000 lines including 24 feature files, GLSL
