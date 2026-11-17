@@ -23,6 +23,7 @@ from scripts.lib.renovate_regex import to_python
 
 ROOT = Path(__file__).resolve().parents[3]
 HOLD = "hold"
+GLOB_METACHARACTERS = frozenset("*?[]{}()\\")
 DIMENSIONS = (
     "matchManagers",
     "matchUpdateTypes",
@@ -54,7 +55,11 @@ def regex(value: str) -> re.Pattern[str] | None:
 
 def concrete(value: str) -> bool:
     """Only exact positive strings can prove coverage by a later rule."""
-    return not value.startswith("!") and regex(value) is None and "*" not in value
+    return (
+        not value.startswith("!")
+        and regex(value) is None
+        and not any(char in GLOB_METACHARACTERS for char in value)
+    )
 
 
 def matches(pattern: str, value: str) -> bool:
@@ -63,18 +68,22 @@ def matches(pattern: str, value: str) -> bool:
         return False
     expression = regex(pattern)
     if expression is not None:
-        return expression.search(value) is not None
-    return "*" not in pattern and pattern == value
+        return bool(expression.search(value)) and (
+            bool(expression.flags & re.IGNORECASE) or value.lower() == value.upper()
+        )
+    return concrete(pattern) and pattern.casefold() == value.casefold()
 
 
 def pair_overlap(left: str, right: str) -> bool:
     """Unknown pattern intersections conservatively count as overlapping."""
     if concrete(left) and concrete(right):
-        return left == right
-    if concrete(right) and regex(left) is not None:
-        return matches(left, right)
-    if concrete(left) and regex(right) is not None:
-        return matches(right, left)
+        return left.casefold() == right.casefold()
+    for pattern, value in ((left, right), (right, left)):
+        expression = regex(pattern)
+        if concrete(value) and expression is not None:
+            return (
+                re.search(expression.pattern, value, expression.flags | re.IGNORECASE) is not None
+            )
     return True
 
 
@@ -99,8 +108,11 @@ def covers(k: Rule, r: Rule) -> bool:
             continue
         if key not in r:
             return False
+        patterns = values(k[key])
         for value in values(r[key]):
-            if not concrete(value) or not any(matches(p, value) for p in values(k[key])):
+            if not concrete(value) or not any(matches(p, value) for p in patterns):
+                return False
+            if any(pair_overlap(p[1:], value) for p in patterns if p.startswith("!")):
                 return False
     return True
 
@@ -255,6 +267,40 @@ class ReviewedRulesCarryHold(unittest.TestCase):
                 self.assertTrue(may_overlap([left], [right]))
                 self.assertTrue(may_overlap([right], [left]))
 
+    def test_glob_metacharacters_cannot_hide_leaks(self) -> None:
+        for pattern, value in (("foo?", "fooa"), ("foo[ab]", "fooa"), ("{foo,bar}", "foo")):
+            with self.subTest(pattern=pattern):
+                rules = [
+                    {"matchPackageNames": [pattern], "automerge": False, "addLabels": [HOLD]},
+                    {"matchPackageNames": [value], "automerge": True},
+                ]
+                self.assertTrue(pair_overlap(pattern, value))
+                self.assertIn(
+                    "hold on 0 reaches an automerged update", findings({"packageRules": rules})
+                )
+
+    def test_case_insensitive_exact_overlap_and_coverage(self) -> None:
+        self.assertTrue(pair_overlap("numpy", "NumPy"))
+        self.assertTrue(pair_overlap("/^NUMPY$/", "numpy"))
+        rules = [
+            {"matchPackageNames": ["numpy"], "automerge": False, "addLabels": [HOLD]},
+            {"matchPackageNames": ["NumPy"], "automerge": True},
+        ]
+        self.assertIn("hold on 0 reaches an automerged update", findings({"packageRules": rules}))
+        self.assertFalse(covers({"matchPackageNames": ["/^numpy$/"]}, rules[0]))
+        self.assertTrue(covers({"matchPackageNames": ["/^numpy$/i"]}, rules[0]))
+        self.assertTrue(covers({"matchPackageNames": ["NumPy"]}, rules[0]))
+
+    def test_later_review_exclusions_control_settlement(self) -> None:
+        rules = [
+            {"matchPackageNames": ["foo"], "automerge": False, "addLabels": [HOLD]},
+            {"matchManagers": ["custom.regex"], "automerge": True},
+            {"matchPackageNames": ["foo", "bar", "!foo"], "automerge": False, "addLabels": [HOLD]},
+        ]
+        self.assertIn("hold on 0 reaches an automerged update", findings({"packageRules": rules}))
+        rules[2]["matchPackageNames"] = ["foo", "bar", "!baz"]
+        self.assertFalse(leaks(rules, 0))
+
     def test_coverage_requires_proof_in_every_dimension(self) -> None:
         reviewed = {"matchPackageNames": ["foo", "bar"]}
         self.assertFalse(covers({"matchPackageNames": ["foo"]}, reviewed))
@@ -263,7 +309,7 @@ class ReviewedRulesCarryHold(unittest.TestCase):
         self.assertFalse(covers({"matchPackageNames": ["!baz"]}, reviewed))
         self.assertTrue(covers({}, {"matchPackageNames": ["/^foo/"]}))
         self.assertFalse(covers(reviewed, {"matchPackageNames": ["/^foo/"]}))
-        self.assertTrue(covers({"matchPackageNames": ["/^(foo|bar)$/"]}, reviewed))
+        self.assertTrue(covers({"matchPackageNames": ["/^(foo|bar)$/i"]}, reviewed))
 
     def test_disabled_rules_do_not_affect_findings_or_settle_leaks(self) -> None:
         rules = [
