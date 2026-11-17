@@ -191,6 +191,105 @@ def check_merge_group_cost_guards(docs: Mapping[str, Mapping[str, Any]]) -> list
     return errors
 
 
+SECRET_RE = re.compile(r"secrets\.(?!GITHUB_TOKEN\b)[A-Za-z_][A-Za-z0-9_]*", re.I)
+GITHUB_TOKEN_EXPR = "${{ " + "github.token }}"
+PRIVATE_EXPR = "${{ " + "secrets.PRIVATE }}"
+ACTION_PATH = ROOT / ".github/actions/runner-probe/action.yml"
+PROVENANCE_IF = "github.event_name == 'merge_group'"
+PROBE_IF = "github.event_name != 'merge_group' || steps.provenance.outputs.same_repo == 'true'"
+
+
+def _secret_steps(job: Mapping[str, Any]) -> list[int]:
+    steps = job.get("steps", [])
+    return (
+        [i for i, step in enumerate(steps) if SECRET_RE.search(str(step))]
+        if isinstance(steps, list)
+        else []
+    )
+
+
+def _guarded_steps(job: Mapping[str, Any], *, composite: bool = False) -> bool:
+    steps = job.get("steps", [])
+    if not isinstance(steps, list):
+        return False
+    secret_indices = _secret_steps(job)
+    if composite:
+        secret_indices = [
+            i
+            for i, step in enumerate(steps)
+            if "inputs.token" in str(step) or SECRET_RE.search(str(step))
+        ]
+    for i, step in enumerate(steps):
+        if not isinstance(step, Mapping):
+            continue
+        if (
+            step.get("id") == "provenance"
+            and step.get("if") == PROVENANCE_IF
+            and step.get("run") == "python3 scripts/ci/merge_group_provenance.py"
+            and step.get("env") == {"GH_TOKEN": GITHUB_TOKEN_EXPR}
+            and secret_indices
+            and all(i < j for j in secret_indices)
+        ):
+            return all(steps[j].get("if") == PROBE_IF for j in secret_indices)
+    return False
+
+
+def _guarded_probe(job: Mapping[str, Any], action_path: Path = ACTION_PATH) -> bool:
+    steps = job.get("steps", [])
+    if not isinstance(steps, list):
+        return False
+    secret_indices = _secret_steps(job)
+    if _guarded_steps(job):
+        return True
+    try:
+        action = yaml.safe_load(action_path.read_text(encoding="utf-8"))
+        runs = action["runs"]
+        if runs.get("using") != "composite" or not _guarded_steps(runs, composite=True):
+            return False
+    except OSError, KeyError, TypeError, AttributeError, yaml.YAMLError:
+        return False
+    return bool(secret_indices) and all(
+        isinstance(steps[i], Mapping)
+        and steps[i].get("id") == "probe"
+        and steps[i].get("uses") == "./.github/actions/runner-probe"
+        and SECRET_RE.search(str(steps[i].get("with", {}).get("token", "")))
+        for i in secret_indices
+    )
+
+
+def check_merge_group_sensitive_jobs(docs: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    """Require a provenance probe before secret use or self-hosted execution."""
+    errors = []
+    for name, doc in sorted(docs.items()):
+        if "merge_group" not in wr.triggers_of(doc):
+            continue
+        jobs = doc.get("jobs", {})
+        if not isinstance(jobs, Mapping):
+            continue
+        for job_id, job in jobs.items():
+            if not isinstance(job, Mapping):
+                continue
+            secret = bool(SECRET_RE.search(str(job)))
+            hosted = "self-hosted" in str(job.get("runs-on", ""))
+            condition = str(job.get("if", ""))
+            excluded = MERGE_GROUP_EXCLUSION_RE.search(condition) and "||" not in condition
+            if not (secret or hosted) or excluded:
+                continue
+            needs = job.get("needs", [])
+            needs = [needs] if isinstance(needs, str) else needs
+            guarded = _guarded_probe(job) if secret else False
+            if hosted and not secret and isinstance(needs, list):
+                guarded = any(
+                    isinstance(jobs.get(dep), Mapping)
+                    and _guarded_probe(jobs[dep])
+                    and f"needs.{dep}.outputs.available == 'true'" in str(job.get("if", ""))
+                    for dep in needs
+                )
+            if not guarded:
+                errors.append(f"{name}: job {job_id} lacks merge_group provenance guard")
+    return errors
+
+
 def check_merge_group_workflow_contract(workflows_dir: Path = WORKFLOWS_DIR) -> list[str]:
     """Return all ``merge_group`` trigger contract violations under ``workflows_dir``."""
     triples, pr_only_workflows, errors = compute_merge_group_feeding_map(workflows_dir)
@@ -247,6 +346,56 @@ class MergeGroupWorkflowContractTests(unittest.TestCase):
     def test_repository_workflows_satisfy_merge_group_contract(self) -> None:
         """Require merge_group on required-aggregator.yml and every feeding workflow only."""
         self.assertEqual(check_merge_group_workflow_contract(WORKFLOWS_DIR), [])
+
+    def test_sensitive_jobs_have_provenance_guards(self) -> None:
+        self.assertEqual(check_merge_group_sensitive_jobs(wr.load_workflows(WORKFLOWS_DIR)), [])
+
+    def test_sycl_sensitive_jobs_have_provenance_guards(self) -> None:
+        docs = wr.load_workflows(WORKFLOWS_DIR)
+        self.assertEqual(
+            check_merge_group_sensitive_jobs({"sycl-parity.yml": docs["sycl-parity.yml"]}), []
+        )
+
+    def test_sensitive_job_planted_cases(self) -> None:
+        secret = {"env": {"TOKEN": PRIVATE_EXPR}, "if": PROBE_IF}
+        provenance = {
+            "id": "provenance",
+            "if": PROVENANCE_IF,
+            "run": "python3 scripts/ci/merge_group_provenance.py",
+            "env": {"GH_TOKEN": GITHUB_TOKEN_EXPR},
+        }
+        doc = {"sample.yml": {"on": {"merge_group": {}}, "jobs": {"probe": {"steps": [secret]}}}}
+        job = doc["sample.yml"]["jobs"]["probe"]
+        self.assertTrue(check_merge_group_sensitive_jobs(doc))
+        job["steps"] = [secret, provenance]
+        self.assertTrue(check_merge_group_sensitive_jobs(doc))
+        job["steps"] = [provenance, secret]
+        self.assertEqual(check_merge_group_sensitive_jobs(doc), [])
+        job["steps"] = [secret]
+        job["if"] = "github.event_name != 'merge_group'"
+        self.assertEqual(check_merge_group_sensitive_jobs(doc), [])
+
+    def test_composite_guard_planted_cases(self) -> None:
+        action = yaml.safe_load(ACTION_PATH.read_text(encoding="utf-8"))
+        steps = action["runs"]["steps"]
+        job = {
+            "steps": [
+                {
+                    "id": "probe",
+                    "uses": "./.github/actions/runner-probe",
+                    "with": {"token": PRIVATE_EXPR},
+                }
+            ]
+        }
+        self.assertTrue(_guarded_probe(job))
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "action.yml"
+            action["runs"]["steps"] = steps[1:]
+            copy.write_text(yaml.safe_dump(action), encoding="utf-8")
+            self.assertFalse(_guarded_probe(job, copy))
+            action["runs"]["steps"] = list(reversed(steps))
+            copy.write_text(yaml.safe_dump(action), encoding="utf-8")
+            self.assertFalse(_guarded_probe(job, copy))
 
     def test_missing_merge_group_trigger_on_feeding_workflow_fails_closed(self) -> None:
         """Fail when a feeding workflow lacks its merge_group trigger."""

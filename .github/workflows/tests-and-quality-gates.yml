@@ -302,7 +302,7 @@ jobs:
     if: needs.tier.outputs.full == 'true'
     name: "Sanitizers (${{ matrix.sanitizer }})"
     # ADR-0359, ADR-3286 (design notes)
-    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'arc-runners' || 'ubuntu-26.04' }}
+    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) && 'arc-runners' || 'ubuntu-26.04' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -1282,6 +1282,9 @@ jobs:
     if: needs.tier.outputs.full == 'true' && (github.event_name == 'push' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
     name: Probe GPU Full Runner
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      pull-requests: read
     timeout-minutes: 5
     outputs:
       available: ${{ steps.probe.outputs.available }}
@@ -1291,15 +1294,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Check gpu-full runner availability
         id: probe
-        env:
-          GH_TOKEN: ${{ secrets.SYCL_RUNNER_PROBE_TOKEN || github.token }}
-          RUNNER_ENABLED: ${{ vars.GPU_COVERAGE_ENABLED }}
-          RUNNER_LABELS: "self-hosted linux gpu-full"
-          RUNNER_DISPLAY_NAME: "Coverage GPU"
-          RUNNER_SWITCH_NAME: "GPU_COVERAGE_ENABLED"
-          RUNNER_RUNBOOK: "docs/development/self-hosted-runner.md"
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: bash scripts/ci/check-runner-available.sh
+        uses: ./.github/actions/runner-probe
+        with:
+          token: ${{ secrets.SYCL_RUNNER_PROBE_TOKEN || github.token }}
+          enabled: ${{ vars.GPU_COVERAGE_ENABLED }}
+          labels: "self-hosted linux gpu-full"
+          display-name: "Coverage GPU"
+          switch-name: "GPU_COVERAGE_ENABLED"
+          runbook: "docs/development/self-hosted-runner.md"
 
   coverage-gpu:
     # required-aggregator

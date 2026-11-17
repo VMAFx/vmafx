@@ -25,7 +25,7 @@ ARC_LABEL = "arc-runners"
 # allow-list, so a reordered or loosened expression is refused, not parsed.
 ARC_SELECTOR = re.compile(
     r"^runs-on: \$\{\{ vars\.ARC_RUNNERS_ENABLED == 'true' && "
-    r"\(github\.event_name != 'pull_request' \|\| "
+    r"\(github\.event_name == 'push' \|\| github\.event_name == 'workflow_dispatch' \|\| "
     r"github\.event\.pull_request\.head\.repo\.full_name == github\.repository\) && "
     r"'arc-runners' \|\| '(?P<fallback>ubuntu-26\.04(?:-arm)?)' \}\}$"
 )
@@ -97,6 +97,11 @@ class ArcForkGuardContract(unittest.TestCase):
             "(github.event_name != 'pull_request' || "
             "github.event.pull_request.head.repo.full_name != '') && "
             "'arc-runners' || 'ubuntu-26.04' }}",
+            # The old selector admits merge groups.
+            "    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && "
+            "(github.event_name != 'pull_request' || "
+            "github.event.pull_request.head.repo.full_name == github.repository) && "
+            "'arc-runners' || 'ubuntu-26.04' }}",
             # The pool named directly.
             "    runs-on: arc-runners",
             "    runs-on: [arc-runners]",
@@ -109,7 +114,7 @@ class ArcForkGuardContract(unittest.TestCase):
         admitted = (
             "    # routes this job to the `arc-runners` scale set",
             "    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && "
-            "(github.event_name != 'pull_request' || "
+            "(github.event_name == 'push' || github.event_name == 'workflow_dispatch' || "
             "github.event.pull_request.head.repo.full_name == github.repository) && "
             "'arc-runners' || 'ubuntu-26.04' }}",
         )
@@ -129,9 +134,12 @@ class SelfHostedRunnerWorkflowContract(unittest.TestCase):
         coverage = _job_block(self.tests_workflow, "coverage-gpu")
 
         self.assertIn("runs-on: ubuntu-26.04", probe)
-        self.assertIn("RUNNER_ENABLED: ${{ vars.GPU_COVERAGE_ENABLED }}", probe)
-        self.assertIn('RUNNER_LABELS: "self-hosted linux gpu-full"', probe)
-        self.assertIn("bash scripts/ci/check-runner-available.sh", probe)
+        self.assertIn("enabled: ${{ vars.GPU_COVERAGE_ENABLED }}", probe)
+        self.assertIn('labels: "self-hosted linux gpu-full"', probe)
+        self.assertIn("uses: ./.github/actions/runner-probe", probe)
+        action = (ROOT / ".github/actions/runner-probe/action.yml").read_text(encoding="utf-8")
+        self.assertIn("bash scripts/ci/check-runner-available.sh", action)
+        self.assertIn('switch-name: "GPU_COVERAGE_ENABLED"', probe)
         self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", probe)
 
         self.assertIn("needs: [gpu-full-runner-available]", coverage)
@@ -154,7 +162,7 @@ class SelfHostedRunnerWorkflowContract(unittest.TestCase):
         self.assertIn("runs-on: [self-hosted, linux, x64, sycl-arc]", parity)
         probe = _job_block(self.sycl_workflow, "runner-available")
         self.assertIn(
-            'RUNNER_LABELS: "self-hosted linux x64 sycl-arc"',
+            'labels: "self-hosted linux x64 sycl-arc"',
             probe,
         )
         self.assertIn("--features float_ssim", parity)

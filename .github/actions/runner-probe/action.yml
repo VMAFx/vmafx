@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+name: Guard and probe a self-hosted runner
+description: Verify merge group provenance before checking runner availability.
+inputs:
+  token:
+    description: Token for the runner availability API.
+    required: true
+  enabled:
+    description: Runner lane switch.
+    required: true
+  labels:
+    description: Runner labels.
+    required: true
+  display-name:
+    description: Runner lane display name.
+    default: ''
+  switch-name:
+    description: Runner lane switch name.
+    default: ''
+  runbook:
+    description: Runner lane runbook.
+    default: ''
+outputs:
+  available:
+    description: Whether the runner is available.
+    value: ${{ steps.probe.outputs.available }}
+  registered:
+    description: Whether the runner is registered.
+    value: ${{ steps.probe.outputs.registered }}
+  enabled:
+    description: Whether the runner lane is enabled.
+    value: ${{ steps.probe.outputs.enabled }}
+runs:
+  using: composite
+  steps:
+    - id: provenance
+      if: github.event_name == 'merge_group'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 scripts/ci/merge_group_provenance.py
+    - id: probe
+      if: github.event_name != 'merge_group' || steps.provenance.outputs.same_repo == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        RUNNER_ENABLED: ${{ inputs.enabled }}
+        RUNNER_LABELS: ${{ inputs.labels }}
+        RUNNER_DISPLAY_NAME: ${{ inputs.display-name }}
+        RUNNER_SWITCH_NAME: ${{ inputs.switch-name }}
+        RUNNER_RUNBOOK: ${{ inputs.runbook }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+      run: bash scripts/ci/check-runner-available.sh

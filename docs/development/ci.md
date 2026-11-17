@@ -509,6 +509,21 @@ each queue entry runs these workflows on a synthetic
 `refs/heads/gh-readonly-queue/master/...` ref. Before it is on, nothing changes
 for pull requests.
 
+Queue admission accepts only pull requests whose head branch lives in
+VMAFx/vmafx. `scripts/dev/merge_train_guard.py` refuses cross-repository pull
+requests; a maintainer adding one by hand applies the same rule. A fork
+contribution enters only after its reviewed change sits on an in-repository
+branch. Semgrep and CodeQL jobs retain `security-events: write` on `merge_group`
+under this rule. The merge group head includes queued diffs that can rewrite
+workflow conditions, permissions, guards and scripts, so in-file permission
+scoping is not the enforcement point. The provenance guard before hardware
+probes and hosted ARC routing provide a second barrier against an enqueue
+mistake. Workflow-token access to `mergeQueue` remains unproven until the first
+live merge group; lookup failures fail closed.
+
+- The workflow contract refuses jobs on `merge_group` that read a secret other
+  than `GITHUB_TOKEN` or run self-hosted without an exclusion or the provenance
+  guard in `.github/actions/runner-probe/action.yml`.
 - Every `merge_group` run executes tier `full` (`scripts/ci/ci_tier.py`) and
   the full impact plan (`scripts/ci/plan-ci-impact.py` emits
   `event-not-routed:merge_group`).
@@ -521,7 +536,10 @@ for pull requests.
   steps keep their existing triggers and never run on `merge_group`.
 - Jobs a pull request skips for runner cost (the three tester GPU image builds
   in `docker-publish-tester.yml` `build-gpu`) skip a merge group too and run on
-  the `master` push after the merge;
+  the `master` push after the merge only when that push selects `tester_image`
+  (`own_paths_only` in `.github/ci-impact.json`). The workflow `validate` job
+  requires `impact.outputs.selected`, and `build` requires `validate`; a merge
+  limited to other paths, such as `core/`, builds no tester GPU image.
   `scripts/ci/tests/test_merge_group_workflow_contract.py` refuses a guard that
   skips `pull_request` without also skipping `merge_group`.
 - Check the aggregator `merge_group` cases and workflow trigger contract

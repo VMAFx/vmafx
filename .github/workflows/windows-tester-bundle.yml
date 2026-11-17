@@ -612,7 +612,7 @@ jobs:
   publish:
     name: Attest and publish the tester zips
     needs: [validate, build, verify]
-    if: needs.validate.outputs.publish == 'true'
+    if: github.event_name != 'merge_group' && needs.validate.outputs.publish == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: tester-publish
