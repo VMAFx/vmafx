@@ -5,32 +5,25 @@
      wraps at 80. -->
 <div align="center">
 
-  <img src="docs/assets/vmafx-readme-banner.svg" alt="VMAFx — perceptual video quality assessment, GPU-accelerated and SIMD-tuned" height="120" />
+  <img src="docs/assets/vmafx-readme-banner.svg" alt="VMAFx — perceptual video quality assessment, GPU-accelerated and SIMD-tuned" height="120" /> <!-- 1 release/version --> <!-- README-STANDARD badge block: one band, fixed group order (docs/README-STANDARD.md) -->
 
-  <!-- README-STANDARD badge block: one group, fixed order (docs/README-STANDARD.md) -->
-  <!-- 1 release/version -->
   [![Release](https://img.shields.io/static/v1?label=release&message=v1.0.0-rc.3&style=for-the-badge&color=3b82f6&labelColor=111a35)](https://github.com/VMAFx/vmafx/releases) <!-- x-release-please-version -->
-  <!-- 2 CI/build -->
-  [![Tests](https://raw.githubusercontent.com/VMAFx/vmafx/badges/tests.svg)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
+  [![Tests](https://raw.githubusercontent.com/VMAFx/vmafx/badges/tests.svg)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml) <!-- 2 CI/build -->
   [![Builds](https://raw.githubusercontent.com/VMAFx/vmafx/badges/builds.svg)](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml)
   [![Lint](https://raw.githubusercontent.com/VMAFx/vmafx/badges/lint.svg)](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml)
   [![FFmpeg](https://raw.githubusercontent.com/VMAFx/vmafx/badges/ffmpeg.svg)](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml)
   [![Go](https://raw.githubusercontent.com/VMAFx/vmafx/badges/go.svg)](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml)
   [![Rust](https://raw.githubusercontent.com/VMAFx/vmafx/badges/rust.svg)](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml)
-  <!-- 3 security/scorecard -->
-  [![Security](https://raw.githubusercontent.com/VMAFx/vmafx/badges/security.svg)](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml)
+  [![Security](https://raw.githubusercontent.com/VMAFx/vmafx/badges/security.svg)](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml) <!-- 3 security/scorecard -->
   [![OpenSSF Scorecard](https://raw.githubusercontent.com/VMAFx/vmafx/badges/scorecard.svg)](https://scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx)
   [![OpenSSF Best Practices](https://raw.githubusercontent.com/VMAFx/vmafx/badges/best-practices.svg)](https://www.bestpractices.dev/projects/14549)
   [![Codacy](https://raw.githubusercontent.com/VMAFx/vmafx/badges/codacy.svg)](https://app.codacy.com/gh/VMAFx/vmafx/dashboard)
   [![CodeRabbit](https://img.shields.io/badge/Reviews-CodeRabbit-8b5cf6?style=for-the-badge&logo=coderabbit&logoColor=white&labelColor=111a35)](https://coderabbit.ai)
-  <!-- 4 standards -->
-  [![HISS-21](https://img.shields.io/badge/Standards-HISS--21-06b6d4?style=for-the-badge&logo=nasa&labelColor=111a35)](AGENTS.md)
+  [![HISS-21](https://img.shields.io/badge/Standards-HISS--21-06b6d4?style=for-the-badge&logo=nasa&labelColor=111a35)](AGENTS.md) <!-- 4 standards -->
   [![Power of 10](https://img.shields.io/badge/NASA_JPL-Power_of_10-3b82f6?style=for-the-badge&logo=nasa&labelColor=111a35)](docs/principles.md)
   [![Conventional Commits](https://img.shields.io/badge/Commits-Conventional-8b5cf6?style=for-the-badge&logo=conventionalcommits&logoColor=white&labelColor=111a35)](CONTRIBUTING.md)
-  <!-- 5 licence -->
-  [![License](https://img.shields.io/badge/License-EUPL--1.2_·_BSD--2--Clause--Patent-3b82f6?style=for-the-badge&labelColor=111a35)](docs/adr/1250-eupl-fork-relicense.md)
-  <!-- 6 support -->
-  [![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-8b5cf6?style=for-the-badge&logo=githubsponsors&logoColor=white&labelColor=111a35)](https://github.com/sponsors/lusoris)
+  [![License](https://img.shields.io/badge/License-EUPL--1.2_·_BSD--2--Clause--Patent-3b82f6?style=for-the-badge&labelColor=111a35)](docs/adr/1250-eupl-fork-relicense.md) <!-- 5 licence -->
+  [![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-8b5cf6?style=for-the-badge&logo=githubsponsors&logoColor=white&labelColor=111a35)](https://github.com/sponsors/lusoris) <!-- 6 support -->
   [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-8b5cf6?style=for-the-badge&logo=kofi&logoColor=white&labelColor=111a35)](https://ko-fi.com/lusoris)
 
   **Perceptual video quality assessment — GPU-accelerated, SIMD-tuned, numerically exact**
