@@ -1,0 +1,131 @@
+{
+  "schema": 1,
+  "upstream": "Netflix/vmaf",
+  "classes": [
+    {
+      "id": "C01",
+      "slug": "no_ci_or_red_ci_on_head",
+      "hits": 48,
+      "mode": "online",
+      "check": "Require green fork CI on the exact proposed head before publishing or updating the upstream pull request."
+    },
+    {
+      "id": "C02",
+      "slug": "no_reviewer_requested",
+      "hits": 48,
+      "mode": "non-actionable",
+      "check": "Catalogue reviewer requests only: outside authors cannot request reviewers and the base has no CODEOWNERS."
+    },
+    {
+      "id": "C03",
+      "slug": "patch_split_or_shape",
+      "hits": 30,
+      "mode": "mechanical",
+      "check": "Require upstream subsystem subjects, a non-empty body, and 72-column message wrapping."
+    },
+    {
+      "id": "C04",
+      "slug": "missing_or_insufficient_test",
+      "hits": 29,
+      "mode": "mechanical",
+      "check": "Require a test change for source changes or an explicit C04 self-review reason."
+    },
+    {
+      "id": "C05",
+      "slug": "fork_or_agent_artifact_leak",
+      "hits": 24,
+      "mode": "mechanical",
+      "check": "Reject model or tool attribution and fork artifacts in commit messages, drafts, and added diff lines."
+    },
+    {
+      "id": "C06",
+      "slug": "overtaken_by_upstream",
+      "hits": 19,
+      "mode": "mechanical",
+      "check": "Require the pushed head to merge cleanly onto the supplied local upstream ref."
+    },
+    {
+      "id": "C07",
+      "slug": "scope_creep_multi_concern",
+      "hits": 15,
+      "mode": "mechanical",
+      "check": "Require one contribution commit unless C07 explains the reviewable split."
+    },
+    {
+      "id": "C08",
+      "slug": "unmeasured_or_suboptimal_perf_cost",
+      "hits": 13,
+      "mode": "self-review",
+      "check": "Require recorded performance measurements of candidate forms under two compilers.",
+      "question": "Have candidate kernel, SIMD, or GPU forms been measured under two compilers, with commands and results recorded?"
+    },
+    {
+      "id": "C09",
+      "slug": "stale_or_unpushed_head_sync",
+      "hits": 12,
+      "mode": "mechanical",
+      "check": "Require every resolvable commit ID in drafts to be reachable from the pushed head or upstream ref."
+    },
+    {
+      "id": "C10",
+      "slug": "duplicate_or_overlapping_pr",
+      "hits": 11,
+      "mode": "online",
+      "check": "Check for open upstream pull requests touching the same functions before publishing."
+    },
+    {
+      "id": "C11",
+      "slug": "no_demonstrated_output_effect",
+      "hits": 9,
+      "mode": "self-review",
+      "check": "Require a release-build reproducer demonstrating an output, exit-code, or memory effect.",
+      "question": "Does a named release-build input demonstrate the changed output, exit code, or memory use, with before and after evidence?"
+    },
+    {
+      "id": "C12",
+      "slug": "error_path_leak_or_check",
+      "hits": 8,
+      "mode": "self-review",
+      "check": "Require checks of fallible calls and resource release on failure in touched functions.",
+      "question": "Are all fallible calls in touched functions checked and all resources released on failure, with inspected paths recorded?"
+    },
+    {
+      "id": "C13",
+      "slug": "incomplete_sibling_parity",
+      "hits": 8,
+      "mode": "self-review",
+      "check": "Require a search of sibling backends and call sites, with fixes or an explicit scope reason.",
+      "question": "Were sibling backends and call sites searched and fixed or explicitly scoped, with search evidence recorded?"
+    },
+    {
+      "id": "C14",
+      "slug": "unverified_commit_signature",
+      "hits": 7,
+      "mode": "mechanical",
+      "check": "Require signature status G for every contribution commit in the exact pushed range."
+    },
+    {
+      "id": "C15",
+      "slug": "unagreed_behaviour_change",
+      "hits": 6,
+      "mode": "self-review",
+      "check": "Require prior upstream issue agreement for score, public API, or exit-behaviour changes.",
+      "question": "Was any score, public API, or exit-behaviour change agreed on the upstream issue first, with the agreement recorded?"
+    },
+    {
+      "id": "C16",
+      "slug": "high_bitdepth_overflow_or_narrowing",
+      "hits": 3,
+      "mode": "self-review",
+      "check": "Require sanitizer evidence for extremal inputs at 8, 10, 12, and 16 bits.",
+      "question": "Were extremal 8-, 10-, 12-, and 16-bit inputs checked under sanitizers, with commands and results recorded?"
+    },
+    {
+      "id": "C17",
+      "slug": "wrong_target_repository",
+      "hits": 2,
+      "mode": "mechanical",
+      "check": "Reject fork-only paths and contribution ranges exceeding three commits."
+    }
+  ]
+}

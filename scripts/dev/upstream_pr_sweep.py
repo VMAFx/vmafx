@@ -610,8 +610,8 @@ def run_rebase(wt: Path, base_sha: str) -> tuple[str | None, str]:
     return "REBASE-FAIL", first_line or f"git rebase exited {rc}"
 
 
-def count_unsigned(wt: Path, base_sha: str) -> tuple[int, str]:
-    rc, out, err = git_cmd(wt, ["log", "--format=%G?", f"{base_sha}..HEAD"])
+def count_unsigned(wt: Path, base_sha: str, head: str = "HEAD") -> tuple[int, str]:
+    rc, out, err = git_cmd(wt, ["log", "--format=%G?", f"{base_sha}..{head}"])
     if rc != 0:
         detail = (
             f"git log signature verification failed: {err.strip()}"
@@ -735,7 +735,13 @@ def _is_object_id(value: str) -> bool:
 
 
 def push_branch(
-    wt: Path, branch: str, old_sha: str, new_sha: str, fork: str = ""
+    wt: Path,
+    branch: str,
+    old_sha: str,
+    new_sha: str,
+    fork: str = "",
+    *,
+    base_sha: str = "upstream/master",
 ) -> tuple[bool, str]:
     """Push the verified ``new_sha``, never the symbolic HEAD, under a lease on ``old_sha``."""
     if fork:
@@ -744,6 +750,21 @@ def push_branch(
             return False, f"push refused: {url_detail}"
     if not _is_object_id(new_sha):
         return False, "push refused: no verified commit SHA"
+    # Import lazily: the gate shares this module's bounded Git and signature helpers.
+    from scripts.dev.upstream_push_gate import (  # noqa: PLC0415 - gate imports sweep helpers
+        MAX_CLASSES,
+        run_gate,
+    )
+
+    try:
+        results = run_gate(wt, base=base_sha, head=new_sha, mechanical_only="rebase-only push")
+    except (OSError, ValueError, RuntimeError) as exc:
+        return False, f"push refused: upstream gate could not run ({type(exc).__name__})"
+    for result in results[:MAX_CLASSES]:
+        print(result.line(), file=sys.stderr)
+    for result in results[:MAX_CLASSES]:
+        if result.verdict.status == "FAIL":
+            return False, result.line()
     refspec = f"{new_sha}:refs/heads/{branch}"
     lease = f"--force-with-lease=refs/heads/{branch}:{old_sha}"
     rc, out, err = git_cmd(wt, ["push", lease, "origin", refspec], timeout=60.0)
@@ -893,6 +914,7 @@ def _execute_build_and_push(
     old_sha: str,
     new_sha: str,
     *,
+    base_sha: str,
     fork: str = "",
     build: bool,
     push: bool,
@@ -904,7 +926,9 @@ def _execute_build_and_push(
         if status != "OK":
             return SweepRow(target.number, target.branch, status, old_sha, new_sha, 0, detail)
     if push:
-        push_ok, push_detail = push_branch(wt, target.branch, old_sha, new_sha, fork=fork)
+        push_ok, push_detail = push_branch(
+            wt, target.branch, old_sha, new_sha, fork=fork, base_sha=base_sha
+        )
         if not push_ok:
             return SweepRow(
                 target.number, target.branch, "REFUSED", old_sha, new_sha, 0, push_detail
@@ -953,6 +977,7 @@ def _apply_pr_changes(
         target,
         old_sha,
         new_sha,
+        base_sha=base_sha,
         fork=fork,
         build=build,
         push=push,

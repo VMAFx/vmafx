@@ -106,6 +106,13 @@ class HookEnvironmentIsolationTest(unittest.TestCase):
 
 
 class UpstreamPrSweepTest(SweepFixtureCase):
+    def setUp(self) -> None:
+        super().setUp()
+        # These legacy fixtures test sweep mechanics; the gate has signed integration tests.
+        gate = patch("scripts.dev.upstream_push_gate.run_gate", return_value=[])
+        gate.start()
+        self.addCleanup(gate.stop)
+
     def test_positive_dry_run_then_apply_and_push(self) -> None:
         parser = sweep_mod.build_parser()
         args_dry = parser.parse_args(

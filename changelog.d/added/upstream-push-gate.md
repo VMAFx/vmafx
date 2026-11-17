@@ -1,0 +1,1 @@
+- Upstream contribution branches: offline pre-push checks for patch shape, tests, attribution, merge conflicts, stale draft IDs, signatures, target paths, and self-review evidence (ADR-3559).
