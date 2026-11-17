@@ -934,7 +934,12 @@ After that:
 - the Go-service workflow starts the Go scoring server and probes
   `/healthz` plus `/readyz`;
 - it also checks the operator version and executes `vmaf --version` plus
-  `ffmpeg -version` from the node image.
+  `ffmpeg -version` from the node image;
+- for `ghcr.io/vmafx/vmafx-node:<tag>-sycl`, `smoke-published-image.sh` with
+  kind `node-sycl` refuses an image whose `Config.Env` lacks the exact
+  `VMAFX_BACKEND=sycl` entry (missing or another value), a wrong entrypoint, a
+  mismatched `--version` or a broken FUSE mount, and prints the GPU skip reason
+  instead of passing SYCL scoring silently.
 
 A signature or runtime-linkage gap fails the release rather than silently
 shipping a broken image.
