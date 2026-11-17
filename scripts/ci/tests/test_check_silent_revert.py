@@ -614,6 +614,57 @@ Hand-written prose.
         self.assertNotIn("| row-master |", added)
         self.assertIn("Master prose added.", added)
 
+    def test_reverse_hunk_survives_generated_row_filtering(self) -> None:
+        """A later merge can undo a commit that changed prose and generated rows."""
+        self.write(
+            "docs/credits.md",
+            credits_page(
+                "1 entries. By kind: code 1.",
+                "| row-zero |",
+                "Seed prose one.\nSeed prose two.\n",
+            ),
+        )
+        seed = self.commit("docs: seed the credits table")
+        self.write(
+            "docs/credits.md",
+            credits_page(
+                "2 entries. By kind: code 2.",
+                "| row-master |",
+                "Master prose one.\nMaster prose two.\n",
+            ),
+        )
+        target = self.commit("docs: add prose and a generated row")
+
+        git(self.repo, "checkout", "-q", "-b", "feature", target)
+        self.write(
+            "docs/credits.md",
+            credits_page(
+                "2 entries. By kind: code 2.",
+                "| row-master |",
+                "Master prose one.\nMaster prose two.\nFeature prose three.\n",
+            ),
+        )
+        self.commit("chore: feature marker")
+
+        git(self.repo, "checkout", "-q", "-b", "rollback", seed)
+        git(self.repo, "checkout", "-q", "feature")
+        git(self.repo, "merge", "--no-commit", "--no-ff", "rollback", check=False)
+        self.write(
+            "docs/credits.md",
+            credits_page(
+                "1 entries. By kind: code 1.",
+                "| row-zero |",
+                "Seed prose one.\nSeed prose two.\nFeature prose three.\n",
+            ),
+        )
+        git(self.repo, "add", "-A")
+        head = self.commit("merge rollback into feature")
+
+        result = run_gate(self.repo, target, head)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("reverse-hunk", result.stdout)
+        self.assertIn(target[:9], result.stdout, "the report must name the undone commit")
+
     def test_branch_deletion_is_not_a_reverse_hunk(self) -> None:
         """A file the branch deletes on purpose is not a partial rewind of it.
 

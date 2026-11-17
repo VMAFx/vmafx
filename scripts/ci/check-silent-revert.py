@@ -394,6 +394,18 @@ def history_blobs(repo: Repo, ref: str, path: str, window: int) -> dict[str, str
     return seen
 
 
+def generated_row_skipper(
+    new_ranges: list[tuple[int, int]], old_ranges: list[tuple[int, int]]
+) -> Callable[[str, str, int], bool]:
+    """Skip predicate for one commit: new-side rows by its tree, old-side rows by its parent."""
+
+    def skip(_path: str, side: str, line_number: int) -> bool:
+        ranges = new_ranges if side == "new" else old_ranges
+        return any(start <= line_number <= end for start, end in ranges)
+
+    return skip
+
+
 def commit_diffs(repo: Repo, ref: str, path: str, window: int) -> list[tuple[str, Lines, Lines]]:
     """Per-commit (sha, added, removed) bags for *path* over the last *window* commits.
 
@@ -406,18 +418,10 @@ def commit_diffs(repo: Repo, ref: str, path: str, window: int) -> list[tuple[str
     revs = repo.out("rev-list", f"--max-count={window}", ref, "--", path).split()
     out: list[tuple[str, Lines, Lines]] = []
     for rev in revs:
-        new_ranges = generated_block_ranges_at(repo, rev, path)
-        old_ranges = generated_block_ranges_at(repo, f"{rev}^", path)
-
-        def skip(
-            _path: str,
-            side: str,
-            line_number: int,
-            _new_ranges: list[tuple[int, int]] = new_ranges,
-            _old_ranges: list[tuple[int, int]] = old_ranges,
-        ) -> bool:
-            ranges = _new_ranges if side == "new" else _old_ranges
-            return any(start <= line_number <= end for start, end in ranges)
+        skip = generated_row_skipper(
+            generated_block_ranges_at(repo, rev, path),
+            generated_block_ranges_at(repo, f"{rev}^", path),
+        )
 
         diff = repo.out(
             "diff-tree",
