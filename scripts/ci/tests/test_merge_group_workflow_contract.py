@@ -364,7 +364,9 @@ class MergeGroupWorkflowContractTests(unittest.TestCase):
             "run": "python3 scripts/ci/merge_group_provenance.py",
             "env": {"GH_TOKEN": GITHUB_TOKEN_EXPR},
         }
-        doc = {"sample.yml": {"on": {"merge_group": {}}, "jobs": {"probe": {"steps": [secret]}}}}
+        doc: dict[str, Any] = {
+            "sample.yml": {"on": {"merge_group": {}}, "jobs": {"probe": {"steps": [secret]}}}
+        }
         job = doc["sample.yml"]["jobs"]["probe"]
         self.assertTrue(check_merge_group_sensitive_jobs(doc))
         job["steps"] = [secret, provenance]

@@ -5,11 +5,14 @@
 
 import tempfile
 from pathlib import Path
+from typing import Any, NoReturn
+
+import pytest
 
 from scripts.ci import merge_group_provenance as provenance
 
 
-def response(entries, more=False):
+def response(entries: list[tuple[int, str, bool]], more: bool = False) -> dict[str, Any]:
     nodes = [
         {
             "position": position,
@@ -27,7 +30,7 @@ def response(entries, more=False):
     }
 
 
-def test_queue_prefix():
+def test_queue_prefix() -> None:
     for entries, expected in [
         ([(1, "a", False), (2, "ours", False)], True),
         ([(1, "a", True), (2, "ours", False)], False),
@@ -43,20 +46,31 @@ def test_queue_prefix():
     )
 
 
-def test_errors_fail_closed():
+def test_errors_fail_closed() -> None:
+    missing_pull_request = {
+        "data": {
+            "repository": {
+                "mergeQueue": {
+                    "entries": {
+                        "pageInfo": {"hasNextPage": False},
+                        "nodes": [{"position": 1, "headCommit": {"oid": "ours"}}],
+                    }
+                }
+            }
+        }
+    }
+    value: dict[str, Any]
     for value in (
         {"errors": [{"message": "denied"}]},
         {"data": {"repository": {"mergeQueue": None}}},
         {"data": {}},
-        response([(1, "ours", False)]),
+        missing_pull_request,
     ):
-        if "entries" in str(value):
-            del value["data"]["repository"]["mergeQueue"]["entries"]["nodes"][0]["pullRequest"]
         assert not provenance.decide(value, "ours")[0]
 
 
-def test_network_error_and_output(capsys):
-    def fail(*args):
+def test_network_error_and_output(capsys: pytest.CaptureFixture[str]) -> None:
+    def fail(*args: object) -> NoReturn:
         raise OSError("offline")
 
     result = provenance.run(
