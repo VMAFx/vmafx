@@ -2,7 +2,7 @@
 // Copyright 2026 Lusoris
 //
 // cmd/vmafx-node/online_feedback_pump_test.go — table-driven tests that
-// exercise the FeedbackClient.pump / sendOne / Send paths with a real Unix
+// exercise the FeedbackClient.pump / sendOneOnPump / Send paths with a real Unix
 // socket listener, verifying end-to-end message delivery, the drop counter, and
 // the sidecar-reconnect path.
 //
@@ -142,12 +142,16 @@ func TestFeedbackClient_RetryQueuedAckIsAccepted(t *testing.T) {
 		))
 	}()
 
-	disposition, err := fc.sendOne(client, bufio.NewReader(client), msg)
+	ctx, cancel := context.WithTimeout(context.Background(), feedbackWriteTimeout)
+	t.Cleanup(cancel)
+	ackCh, stopReader := fc.startAckReader(ctx, client)
+	t.Cleanup(stopReader)
+	disposition, err := fc.sendOneOnPump(ctx, client, ackCh, msg)
 	if err != nil {
-		t.Fatalf("sendOne returned error for admitted retry-queued sample: %v", err)
+		t.Fatalf("sendOneOnPump returned error for admitted retry-queued sample: %v", err)
 	}
 	if disposition != feedbackSendAccepted {
-		t.Fatalf("sendOne disposition = %d, want accepted", disposition)
+		t.Fatalf("sendOneOnPump disposition = %d, want accepted", disposition)
 	}
 }
 
