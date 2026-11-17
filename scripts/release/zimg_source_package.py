@@ -17,9 +17,11 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 RECORD = Path("tools/rc1-tester/image/zimg-source-rpm.txt")
+Runner = Callable[..., "subprocess.CompletedProcess[str]"]
 
 
 def recorded_source_rpm(record: Path = RECORD) -> str:
@@ -30,7 +32,7 @@ def recorded_source_rpm(record: Path = RECORD) -> str:
     return value
 
 
-def source_rpm_of(library: Path, *, runner=subprocess.run) -> str:
+def source_rpm_of(library: Path, *, runner: Runner = subprocess.run) -> str:
     """The ``SOURCERPM`` of the installed package that owns ``library``."""
     result = runner(
         ["rpm", "-qf", "--qf", "%{SOURCERPM}", str(library)],
@@ -48,7 +50,7 @@ def source_rpm_of(library: Path, *, runner=subprocess.run) -> str:
 
 
 def check_source_package(
-    library: Path, record: Path = RECORD, *, runner=subprocess.run
+    library: Path, record: Path = RECORD, *, runner: Runner = subprocess.run
 ) -> str:
     """Return the measured source package, or raise when it is not the recorded one."""
     expected = recorded_source_rpm(record)

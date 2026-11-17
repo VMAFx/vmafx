@@ -492,7 +492,7 @@ def test_the_record_writer_reader_needs_both_files(tmp_path: Path) -> None:
             "# cp x/copyright /dist/doc/libzimg2/copyright > /dist/doc/libzimg2/SOURCE\n",
             False,
         ),
-        "elsewhere": (writes.replace("/dist/doc/libzimg2/", "/tmp/"), False),
+        "elsewhere": (writes.replace("/dist/doc/libzimg2/", "/srv/elsewhere/"), False),
         "copyright-only": (writes.splitlines()[0] + "\n", False),
     }
     for name, (body, expected) in cases.items():

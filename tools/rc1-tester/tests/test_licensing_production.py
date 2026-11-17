@@ -11,7 +11,7 @@ import importlib.util
 import json
 import os
 import re
-import subprocess
+import subprocess  # nosec B404 -- CompletedProcess fixtures only; no command runs
 from pathlib import Path
 
 import pytest
