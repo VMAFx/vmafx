@@ -31,8 +31,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
+	"strings"
 
 	"go.uber.org/fx"
 
@@ -141,32 +144,54 @@ func provideExecutor(scorer *libvmaf.Scorer, cfg *config.Config, log *slog.Logge
 	return e, nil
 }
 
-// provideFeedbackClient constructs the online-training sidecar feedback client
-// and binds its background drainer to the fx lifecycle: the drainer is started
-// in OnStart (no goroutine spawned at construction) and Close()'d — which stops
-// and awaits the drainer — in OnStop. This eliminates the prior pattern where
-// NewFeedbackClient spawned a goroutine bound to a caller ctx, and guarantees a
-// clean, leak-free shutdown.
-//
-// Because this provider is constructed after provideScorer and before the gRPC
-// server (the R-node ordering), its OnStop fires AFTER the gRPC GracefulStop
-// (RPCs that still want to Send feedback have drained) and BEFORE the scorer
-// Close.
-func provideFeedbackClient(lc fx.Lifecycle, cfg *config.Config, log *slog.Logger) *FeedbackClient {
+// parseSidecarEnabled parses sidecar.enabled (VMAFX_SIDECAR_ENABLED). Empty
+// defaults to false; a non-boolean value is a startup error (ADR-3558).
+func parseSidecarEnabled(cfg configGetter) (bool, error) {
+	raw := strings.TrimSpace(cfg.Get("sidecar.enabled"))
+	if raw == "" {
+		return false, nil
+	}
+	enabled, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("sidecar.enabled=%q is not a boolean (VMAFX_SIDECAR_ENABLED): %w", raw, err)
+	}
+	return enabled, nil
+}
+
+// provideFeedbackClient constructs the online-training sidecar feedback client.
+// By default (sidecar.enabled=false) no drainer goroutine is started and Send
+// counts local drops (ADR-3558). When sidecar.enabled=true, the drainer starts
+// in OnStart and Close() stops and awaits it in OnStop (after gRPC GracefulStop
+// and before scorer Close, R-node).
+func provideFeedbackClient(lc fx.Lifecycle, cfg *config.Config, log *slog.Logger) (*FeedbackClient, error) {
+	if log == nil {
+		log = slog.Default()
+	}
+	enabled, err := parseSidecarEnabled(cfg)
+	if err != nil {
+		return nil, err
+	}
 	// golusoris env transform: VMAFX_SIDECAR_SOCKET -> "sidecar.socket". The
 	// FeedbackClient still honours the bare VMAFX_SIDECAR_SOCKET os.Getenv path
 	// for compatibility with the Python sidecar's own env contract; main resolves
 	// the config value and exports it so both observe the same socket.
 	if socket := cfg.Get("sidecar.socket"); socket != "" {
-		if err := os.Setenv(feedbackSocketEnv, socket); err != nil {
-			// Not fatal: NewFeedbackClient falls back to the default socket path, so the
-			// drainer still starts. Reporting it keeps the mismatch between the configured
-			// socket and the one actually used from being silent.
+		if setErr := os.Setenv(feedbackSocketEnv, socket); setErr != nil {
 			log.Warn("exporting the configured sidecar socket failed",
-				"env", feedbackSocketEnv, "socket", socket, "err", err)
+				"env", feedbackSocketEnv, "socket", socket, "err", setErr)
 		}
 	}
-	fc := NewFeedbackClient(log)
+	fc := newFeedbackClient(log, enabled)
+	if !enabled {
+		log.Info("sidecar disabled")
+		lc.Append(fx.Hook{
+			OnStop: func(_ context.Context) error {
+				fc.Close()
+				return nil
+			},
+		})
+		return fc, nil
+	}
 	lc.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
 			fc.Start()
@@ -179,7 +204,7 @@ func provideFeedbackClient(lc fx.Lifecycle, cfg *config.Config, log *slog.Logger
 			return nil
 		},
 	})
-	return fc
+	return fc, nil
 }
 
 // ffmpegBinary resolves the ffmpeg binary path from config. golusoris env
