@@ -264,27 +264,36 @@ def parse_diff(
     path = None
     old_line = 0
     new_line = 0
+    in_hunk = False
     for line in diff.split("\n"):
-        # `+++ b/<path>` names every file except a deletion, where it reads
-        # `+++ /dev/null` and only the `--- a/<path>` header carries the name.
-        if line.startswith("+++ b/") or (line.startswith("--- a/") and path is None):
-            path = line[6:]
-        elif line.startswith("diff --git "):
+        # A new file starts outside any hunk, even after a previous hunk's
+        # content; reset the counters before looking at its headers.
+        if line.startswith("diff --git "):
             path = None
             old_line = 0
             new_line = 0
+            in_hunk = False
+        # `+++ b/<path>` names every file except a deletion, where it reads
+        # `+++ /dev/null` and only the `--- a/<path>` header carries the name.
+        # A content line that happens to start with `+++` or `---` is only a
+        # header when it appears outside a hunk.
+        elif not in_hunk and (
+            line.startswith("+++ b/") or (line.startswith("--- a/") and path is None)
+        ):
+            path = line[6:]
         elif line.startswith("@@"):
             match = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@", line)
             if match:
                 old_line = int(match.group(1))
                 new_line = int(match.group(2))
+                in_hunk = True
         elif path is None or is_generated(path):
             continue
-        elif line.startswith("+") and not line.startswith("+++"):
+        elif line.startswith("+"):
             if not (skip and skip(path, "new", new_line)):
                 added[path][line[1:].rstrip()] += 1
             new_line += 1
-        elif line.startswith("-") and not line.startswith("---"):
+        elif line.startswith("-"):
             if not (skip and skip(path, "old", old_line)):
                 removed[path][line[1:].rstrip()] += 1
             old_line += 1
@@ -382,32 +391,42 @@ def history_blobs(repo: Repo, ref: str, path: str, window: int) -> dict[str, str
 
 
 def commit_diffs(repo: Repo, ref: str, path: str, window: int) -> list[tuple[str, Lines, Lines]]:
-    """Per-commit (sha, added, removed) bags for *path* over the last *window* commits."""
-    text = repo.out(
-        "log",
-        f"--max-count={window}",
-        "--format=__commit__ %H",
-        "-p",
-        *DIFF_FLAGS,
-        ref,
-        "--",
-        path,
-    )
+    """Per-commit (sha, added, removed) bags for *path* over the last *window* commits.
+
+    Generated marker-block rows are filtered at the commit's own tree for added
+    rows and at its parent's tree for removed rows.  Leaving them in would make
+    a commit that touches both prose and generated rows keep its generated rows
+    in ``live`` while ``analyse``'s effect set excludes them, so ``_undone``
+    could never match the prose reversal.
+    """
+    revs = repo.out("rev-list", f"--max-count={window}", ref, "--", path).split()
     out: list[tuple[str, Lines, Lines]] = []
-    sha = ""
-    added: Lines = Lines()
-    removed: Lines = Lines()
-    for line in text.split("\n"):
-        if line.startswith("__commit__ "):
-            if sha:
-                out.append((sha, added, removed))
-            sha, added, removed = line.split(" ", 1)[1].strip(), Lines(), Lines()
-        elif line.startswith("+") and not line.startswith("+++"):
-            added[line[1:].rstrip()] += 1
-        elif line.startswith("-") and not line.startswith("---"):
-            removed[line[1:].rstrip()] += 1
-    if sha:
-        out.append((sha, added, removed))
+    for rev in revs:
+        new_ranges = generated_block_ranges_at(repo, rev, path)
+        old_ranges = generated_block_ranges_at(repo, f"{rev}^", path)
+
+        def skip(
+            _path: str,
+            side: str,
+            line_number: int,
+            _new_ranges: list[tuple[int, int]] = new_ranges,
+            _old_ranges: list[tuple[int, int]] = old_ranges,
+        ) -> bool:
+            ranges = _new_ranges if side == "new" else _old_ranges
+            return any(start <= line_number <= end for start, end in ranges)
+
+        diff = repo.out(
+            "diff-tree",
+            "--root",
+            "--no-commit-id",
+            "-p",
+            *DIFF_FLAGS,
+            rev,
+            "--",
+            path,
+        )
+        added, removed = parse_diff(diff, skip if path in GENERATED_BLOCK_PATHS else None)
+        out.append((rev, added.get(path, Lines()), removed.get(path, Lines())))
     return out
 
 

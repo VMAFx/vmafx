@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import runpy
 import shutil
 import subprocess
 import sys
@@ -549,6 +550,52 @@ Hand-written prose.
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("dropped", result.stdout)
         self.assertNotIn("clean", result.stdout)
+
+    def test_excluded_separator_lines_advance_positions(self) -> None:
+        """A removed `---` separator must still advance the old-line counter."""
+        gate_module = runpy.run_path(str(GATE))
+        seen: list[tuple[str, int]] = []
+        diff = (
+            "diff --git a/docs/credits.md b/docs/credits.md\n"
+            "--- a/docs/credits.md\n"
+            "+++ b/docs/credits.md\n"
+            "@@ -10,3 +10,1 @@\n"
+            "----\n"
+            "----\n"
+            "-removed prose\n"
+            "+new line\n"
+        )
+        gate_module["parse_diff"](
+            diff, lambda path, side, line_number: seen.append((side, line_number))
+        )
+        self.assertEqual(
+            seen,
+            [("old", 10), ("old", 11), ("old", 12), ("new", 10)],
+        )
+
+    def test_commit_diffs_filters_generated_rows(self) -> None:
+        """Historical commit bags exclude marker-block rows but keep prose."""
+        self.write(
+            "docs/credits.md",
+            credits_page("1 entries. By kind: code 1.", "| row-zero |"),
+        )
+        self.commit("docs: seed the credits table")
+        self.write(
+            "docs/credits.md",
+            credits_page(
+                "2 entries. By kind: code 2.",
+                "| row-master |",
+                "Master prose added.\n",
+            ),
+        )
+        head = self.commit("docs: update the credits table")
+
+        gate_module = runpy.run_path(str(GATE))
+        repo = gate_module["Repo"](self.repo)
+        bags = gate_module["commit_diffs"](repo, "master", "docs/credits.md", 10)
+        added = next(added for sha, added, _removed in bags if sha == head)
+        self.assertNotIn("| row-master |", added)
+        self.assertIn("Master prose added.", added)
 
     def test_branch_deletion_is_not_a_reverse_hunk(self) -> None:
         """A file the branch deletes on purpose is not a partial rewind of it.
