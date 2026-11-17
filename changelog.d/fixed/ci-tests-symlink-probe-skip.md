@@ -1,0 +1,1 @@
+- **CI:** symbolic-link test fixtures under `scripts/ci/tests` probe the target directory via `symlink_test_support.py` and `scripts/lib/symlink-probe.sh` before creating links and skip with the probe's error on Windows volumes or hosts that reject symbolic links, enforced by `scripts/ci/tests/test_symlink_test_support.py`.
