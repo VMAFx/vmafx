@@ -332,6 +332,7 @@ ENV PATH="/opt/python/cp314-cp314/bin:${PATH}"
 ENV CC=gcc CXX=g++
 
 COPY requirements/locks/build.txt /build/requirements/build.txt
+COPY --chmod=0755 scripts/ci/git_clone_retry.py /usr/local/bin/git_clone_retry.py
 ARG NATIVE_NASM_VERSION=3.02
 ARG NATIVE_NASM_SHA256=87336eba53b4acfe917424ab5d500d2b0054d9f5148d35c2273ccf2cfb712f0d
 # hadolint ignore=DL3041
@@ -544,7 +545,7 @@ ARG VPL_GPU_RT_TAG=intel-onevpl-26.2.4
 # hadolint ignore=DL3003
 RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-dev-mcp \
     CCACHE_DIR=/root/.cache/ccache \
-    git clone --depth=1 --branch "${VPL_GPU_RT_TAG}" https://github.com/intel/vpl-gpu-rt.git /tmp/vpl-gpu-rt \
+    python3 /usr/local/bin/git_clone_retry.py --depth=1 --branch "${VPL_GPU_RT_TAG}" https://github.com/intel/vpl-gpu-rt.git /tmp/vpl-gpu-rt \
     && cd /tmp/vpl-gpu-rt \
     && git lfs pull \
     && cmake -S . -B build \
@@ -1026,7 +1027,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 ARG SVTAV1_VERSION=4.2.0
 RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-dev-mcp \
     CCACHE_DIR=/root/.cache/ccache \
-    git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
+    python3 /usr/local/bin/git_clone_retry.py --depth=1 --branch "v${SVTAV1_VERSION}" \
         https://gitlab.com/AOMediaCodec/SVT-AV1.git /tmp/SVT-AV1 \
     && cmake -S /tmp/SVT-AV1 -B /tmp/SVT-AV1/build \
         -DCMAKE_BUILD_TYPE=Release \
@@ -1063,7 +1064,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-dev-m
 ARG VVENC_VERSION=1.14.0
 RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-dev-mcp \
     CCACHE_DIR=/root/.cache/ccache \
-    git clone --depth=1 --branch "v${VVENC_VERSION}" \
+    python3 /usr/local/bin/git_clone_retry.py --depth=1 --branch "v${VVENC_VERSION}" \
         https://github.com/fraunhoferhhi/vvenc.git /tmp/vvenc \
     && cmake -S /tmp/vvenc -B /tmp/vvenc/build \
         -DCMAKE_BUILD_TYPE=Release \

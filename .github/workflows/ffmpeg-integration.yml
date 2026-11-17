@@ -203,7 +203,7 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
           bash scripts/ci/apt-install-cached.sh refresh
           sudo -E apt-get -yq install "${ONEAPI_APT_PACKAGE}" cmake
-          git clone --depth=1 --branch "v${LEVEL_ZERO_VERSION}" \
+          python3 scripts/ci/git_clone_retry.py --depth=1 --branch "v${LEVEL_ZERO_VERSION}" \
             https://github.com/oneapi-src/level-zero.git /tmp/level-zero
           cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr \
             -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
@@ -624,7 +624,7 @@ jobs:
         run: |
           set -euo pipefail
           pin="$(python3 scripts/ci/upstream_parity_pin.py)"
-          git clone --filter=blob:none --no-checkout --quiet \
+          python3 scripts/ci/git_clone_retry.py --filter=blob:none --no-checkout --quiet \
             https://github.com/Netflix/vmaf.git "$RUNNER_TEMP/netflix-src"
           git -C "$RUNNER_TEMP/netflix-src" checkout --quiet --detach "$pin"
           meson setup "$RUNNER_TEMP/netflix-build" "$RUNNER_TEMP/netflix-src/libvmaf" \

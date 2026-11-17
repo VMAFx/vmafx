@@ -85,6 +85,9 @@ OLD_CURL_STAGES = (
     ),
 )
 FETCH = re.compile(r"(?<![\w.-])(curl(?:\.exe)?|wget)\s+(?=[\"']?(?:-|https?://|\$|%))")
+GIT_CLONE = re.compile(r"(?<![\w.-])git\s+clone\b")
+GIT_CLONE_HELPER = "scripts/ci/git_clone_retry.py"
+GIT_CLONE_LOCAL = frozenset({"scripts/adr/tests/test-next-free-shallow-safe.sh"})
 SHELL_HEADER = re.compile(r"^#![^\n]*\b(?:sh|ash|bash|dash|ksh|zsh|fish|pwsh)\b")
 SHELL_SUFFIXES = frozenset((".sh", ".bash", ".ksh", ".zsh", ".fish", ".ps1", ".cmd", ".bat"))
 CONTROL = frozenset((";", "&&", "||", "|", "&", "(", ")", ";;"))
@@ -478,6 +481,20 @@ def old_curl_errors(
     return errors
 
 
+def git_clone_errors(path: str, text: str) -> list[str]:
+    """Network clones must go through the shared bounded-retry helper."""
+    if path in {GIT_CLONE_HELPER, *GIT_CLONE_LOCAL}:
+        return []
+    errors: list[str] = []
+    for line, source_line in logical_lines(text):
+        command = strip_comment(source_line)
+        for match in GIT_CLONE.finditer(command):
+            tail = command[match.start() :]
+            if re.search(r"https?://|\$", tail):
+                errors.append(f"{path}:{line}: git clone must use {GIT_CLONE_HELPER}")
+    return errors
+
+
 def audit_sources(
     sources: list[tuple[str, str]],
     allowlist: tuple[tuple[str, str, str], ...] = ALLOWLIST,
@@ -488,6 +505,7 @@ def audit_sources(
     seen: Counter[tuple[str, str, str]] = Counter()
     for path, text in sources:
         errors.extend(apt_errors(path, text))
+        errors.extend(git_clone_errors(path, text))
         for line, parsed in fetch_commands(text):
             matches = matching_exemptions(path, parsed, allowlist)
             if matches:
@@ -856,9 +874,19 @@ class FetchConnectRetryTests(unittest.TestCase):
         )
         self.assertEqual(audit_sources([(path, "# apt-get update")], ()), [])
 
-    def test_known_gap_git_clone(self) -> None:
-        """Known gap (#3392): Git clone retries remain outside this scanner."""
-        self.assertEqual(self.check_script("git clone https://example.invalid/r.git"), [])
+    def test_git_clone_requires_the_shared_helper(self) -> None:
+        """A network clone outside the helper is the gap this issue closes."""
+        self.assertEqual(
+            self.check_script("git clone https://example.invalid/r.git"),
+            ["fetch.sh:1: git clone must use scripts/ci/git_clone_retry.py"],
+        )
+        self.assertEqual(
+            self.check_script("git clone https://example.invalid/r.git dest"),
+            ["fetch.sh:1: git clone must use scripts/ci/git_clone_retry.py"],
+        )
+
+    def test_local_git_clone_is_out_of_scope(self) -> None:
+        self.assertEqual(self.check_script("git clone ../r.git dest"), [])
 
     def test_known_gap_other_apt(self) -> None:
         """Known gap (#3392): APT outside tidy-lane remains outside this scanner."""
