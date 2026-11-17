@@ -183,8 +183,13 @@ def test_spaced_attribute_list_missing_anchor_reported(
     out, _ = capsys.readouterr()
     assert "missing anchor target.md#no-such-spaced-id" in out
     assert "missing anchor target.md#no-such-mixed-id" in out
-    assert "missing anchor target.md#spaced-heading" in out
-    assert "missing anchor target.md#spaced-heading-spaced-id" in out
+    assert any(
+        line.endswith("missing anchor target.md#spaced-heading") for line in out.splitlines()
+    )
+    assert any(
+        line.endswith("missing anchor target.md#spaced-heading-spaced-id")
+        for line in out.splitlines()
+    )
 
 
 def test_duplicate_heading_hyphen_suffix_refused(
