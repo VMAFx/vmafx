@@ -116,27 +116,27 @@ fail() {
 # expected="hung" is the planted negative control: the case must time out
 # (either shape) and is reported as HUNG; anything else fails.
 run_case() {
-  local expected="$1" name="$2" snippet="$3"
+  local expected="$1" name="$2" snippet="$3" budget="${4:-12}" rerun_budget="${5:-60}"
   local out="" code=0 rerun=""
-  out="$(cd "${repo_root}" && timeout 12 env -u PR_BODY bash -c "${snippet}" 2>&1)" || code=$?
+  out="$(cd "${repo_root}" && timeout "${budget}" env -u PR_BODY bash -c "${snippet}" 2>&1)" || code=$?
   printf '%s' "${out}" >"${work}/last-output.txt"
   if [ "${code}" -eq 124 ] && grep -qiE -- 'PR body from' "${work}/last-output.txt"; then
     rerun="1"
     code=0
-    out="$(cd "${repo_root}" && timeout 60 env -u PR_BODY bash -c "${snippet}" 2>&1)" || code=$?
+    out="$(cd "${repo_root}" && timeout "${rerun_budget}" env -u PR_BODY bash -c "${snippet}" 2>&1)" || code=$?
     printf '%s' "${out}" >"${work}/last-output.txt"
   fi
   if [ "${code}" -eq 124 ]; then
     if [ "${expected}" = "hung" ]; then
       if [ -n "${rerun}" ]; then
-        pass "${name} — planted hang reported as HUNG (killed at 12 s with the decision line, again at 60 s)"
+        pass "${name} — planted hang reported as HUNG (killed at ${budget} s with the decision line, again at ${rerun_budget} s)"
       else
-        pass "${name} — planted hang reported as HUNG (killed at 12 s before the PR-body decision)"
+        pass "${name} — planted hang reported as HUNG (killed at ${budget} s before the PR-body decision)"
       fi
     elif [ -n "${rerun}" ]; then
-      fail "${name} — HUNG (killed again at 60 s after the PR-body decision); the gate must decide, not block"
+      fail "${name} — HUNG (killed again at ${rerun_budget} s after the PR-body decision); the gate must decide, not block"
     else
-      fail "${name} — HUNG (killed at 12 s before the PR-body decision); the gate must decide, not block"
+      fail "${name} — HUNG (killed at ${budget} s before the PR-body decision); the gate must decide, not block"
     fi
     return
   fi
@@ -422,17 +422,17 @@ echo "--- planted hangs (issue #3457): the HUNG verdict stays armed ---"
 #     cannot exist.
 
 run_case hung "planted: a gate blocked on a silent stdin is reported as HUNG" \
-  "sleep 30 2>/dev/null | bash -c 'PR_BODY=\"\$(cat 2>/dev/null)\"'"
+  "sleep 30 2>/dev/null | bash -c 'PR_BODY=\"\$(cat 2>/dev/null)\"'" 2 4
 
 run_case hung "planted: a gate that prints the decision line and then blocks on stdin is reported as HUNG" \
-  "echo 'planted-gate: PR body from empty (closed stdin), diff from env'; sleep 90 2>/dev/null | cat"
+  "echo 'planted-gate: PR body from empty (closed stdin), diff from env'; sleep 90 2>/dev/null | cat" 2 4
 
 probe_code=0
 # shellcheck disable=SC2016  # the planted snippet must reach the probe unexpanded
 timeout 3 bash -c 'PR_BODY="$(cat)"' 0<&- >/dev/null 2>&1 || probe_code=$?
 if [ "${probe_code}" -eq 124 ]; then
   run_case hung "planted: a gate stuck reading a closed fd 0 is reported as HUNG" \
-    "bash -c 'PR_BODY=\"\$(cat)\"' 0<&-"
+    "bash -c 'PR_BODY=\"\$(cat)\"' 0<&-" 2 4
 else
   echo "SKIP: planted closed-fd case: this bash reports exit=${probe_code} on a closed fd 0 instead of hanging (probe), so the shape cannot exist here"
 fi
