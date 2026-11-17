@@ -36,6 +36,11 @@ FuncNode: TypeAlias = ast.FunctionDef | ast.AsyncFunctionDef
 _SHELL_COMMENT_RE = re.compile(r"(?:^|\s)#.*$")
 _SHELL_LN_S_RE = re.compile(r"(?:^|[;&|(\s/])ln(?:\s+-[A-Za-z]*)*\s+-[A-Za-z]*s[A-Za-z]*(?:\s|$)")
 _SHELL_PROBE_RE = re.compile(r"(?:^|[;&|(\s])symlink_probe\s")
+_SHELL_IF_OPEN_RE = re.compile(r"^if(?:$|[\s;|&()<>])")
+_SHELL_ELIF_RE = re.compile(r"^elif(?:$|[\s;|&()<>])")
+_SHELL_ELSE_RE = re.compile(r"^else(?:$|[\s;|&()<>])")
+_SHELL_START_FI_RE = re.compile(r"^fi(?:$|[\s;|&()<>])")
+_SHELL_END_FI_RE = re.compile(r";\s*fi$")
 
 
 def _is_link_call(node: ast.Call) -> bool:
@@ -106,18 +111,37 @@ def unguarded_python_links(source: str, name: str) -> list[str]:
     return findings
 
 
+def _update_shell_if_stack_head(stripped: str, stack: list[bool]) -> None:
+    has_probe = bool(_SHELL_PROBE_RE.search(stripped))
+    if _SHELL_IF_OPEN_RE.match(stripped):
+        stack.append(has_probe)
+    elif _SHELL_ELIF_RE.match(stripped):
+        if stack:
+            stack[-1] = has_probe
+    elif _SHELL_ELSE_RE.match(stripped):
+        if stack:
+            stack[-1] = False
+    elif _SHELL_START_FI_RE.match(stripped) and stack:
+        stack.pop()
+
+
 def unguarded_shell_links(text: str, name: str) -> list[str]:
-    """Return findings for shell ``ln -s*`` lines without an earlier ``symlink_probe``."""
-    seen_probe = False
+    """Return findings for shell ``ln -s*`` lines outside a ``symlink_probe`` ``then`` branch.
+
+    An ``ln -s*`` line counts as guarded only while inside the ``then`` branch
+    of an ``if`` (or ``elif``) whose condition calls ``symlink_probe``.
+    """
+    stack: list[bool] = []
     findings: list[str] = []
     for lineno, raw in enumerate(text.splitlines(), start=1):
-        code = _SHELL_COMMENT_RE.sub("", raw)
-        if not code.strip():
+        stripped = _SHELL_COMMENT_RE.sub("", raw).strip()
+        if not stripped:
             continue
-        if _SHELL_LN_S_RE.search(code) and not seen_probe:
+        _update_shell_if_stack_head(stripped, stack)
+        if _SHELL_LN_S_RE.search(stripped) and not any(stack):
             findings.append(f"{name}:{lineno}: shell symlink fixture without symlink_probe")
-        if _SHELL_PROBE_RE.search(code):
-            seen_probe = True
+        if _SHELL_END_FI_RE.search(stripped) and stack:
+            stack.pop()
     return findings
 
 
@@ -244,6 +268,75 @@ class ScannerContractTest(unittest.TestCase):
     def test_shell_plain_hard_link_passes(self) -> None:
         text = "ln target hardlink\nln -f target hardlink2\n"
         self.assertEqual(unguarded_shell_links(text, "sample.sh"), [])
+
+    def test_shell_ln_s_after_closed_probe_block_is_reported(self) -> None:
+        text = 'if reason=$(symlink_probe "$d"); then\n  ln -s target link\nfi\nln -s a b\n'
+        self.assertEqual(
+            unguarded_shell_links(text, "sample.sh"),
+            ["sample.sh:4: shell symlink fixture without symlink_probe"],
+        )
+
+    def test_shell_ln_s_in_else_branch_of_probe_block_is_reported(self) -> None:
+        text = 'if reason=$(symlink_probe "$d"); then\n  echo ok\nelse\n  ln -s a b\nfi\n'
+        self.assertEqual(
+            unguarded_shell_links(text, "sample.sh"),
+            ["sample.sh:4: shell symlink fixture without symlink_probe"],
+        )
+
+    def test_shell_ln_s_in_nested_if_inside_probe_then_passes(self) -> None:
+        text = (
+            'if reason=$(symlink_probe "$d"); then\n  if [ -d x ]; then\n    ln -s a b\n  fi\nfi\n'
+        )
+        self.assertEqual(unguarded_shell_links(text, "sample.sh"), [])
+
+    def test_shell_middle_unguarded_block_between_probe_blocks_is_reported(self) -> None:
+        text = (
+            'if reason=$(symlink_probe "$d1"); then\n'
+            "  ln -s a1 b1\n"
+            "fi\n"
+            "if true; then\n"
+            "  ln -s a2 b2\n"
+            "fi\n"
+            'if reason=$(symlink_probe "$d3"); then\n'
+            "  ln -s a3 b3\n"
+            "fi\n"
+        )
+        self.assertEqual(
+            unguarded_shell_links(text, "sample.sh"),
+            ["sample.sh:5: shell symlink fixture without symlink_probe"],
+        )
+
+    def test_shell_bare_probe_statement_before_ln_s_is_reported(self) -> None:
+        text = 'symlink_probe "$d"\nln -s a b\n'
+        self.assertEqual(
+            unguarded_shell_links(text, "sample.sh"),
+            ["sample.sh:2: shell symlink fixture without symlink_probe"],
+        )
+
+    def test_shell_one_line_probe_if_then_ln_s_fi_passes(self) -> None:
+        text = 'if reason=$(symlink_probe "$d"); then ln -s a b; fi\n'
+        self.assertEqual(unguarded_shell_links(text, "sample.sh"), [])
+
+    def test_shell_extra_fi_on_empty_stack_then_ln_s_is_reported(self) -> None:
+        text = "fi\nln -s a b\n"
+        self.assertEqual(
+            unguarded_shell_links(text, "sample.sh"),
+            ["sample.sh:2: shell symlink fixture without symlink_probe"],
+        )
+
+    def test_shell_elif_and_inline_fi_update_stack(self) -> None:
+        cleared = 'if reason=$(symlink_probe "$d"); then\n  :\nelif true; then\n  ln -s a b\nfi\n'
+        guarded = 'if false; then\n  :\nelif reason=$(symlink_probe "$d"); then\n  ln -s a b\nfi\n'
+        inline_closed = 'if reason=$(symlink_probe "$d"); then ln -s a b;fi\nln -s c d\n'
+        self.assertEqual(
+            unguarded_shell_links(cleared, "sample.sh"),
+            ["sample.sh:4: shell symlink fixture without symlink_probe"],
+        )
+        self.assertEqual(unguarded_shell_links(guarded, "sample.sh"), [])
+        self.assertEqual(
+            unguarded_shell_links(inline_closed, "sample.sh"),
+            ["sample.sh:2: shell symlink fixture without symlink_probe"],
+        )
 
 
 class SymlinkProbeSupportTest(unittest.TestCase):

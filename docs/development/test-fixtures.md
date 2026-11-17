@@ -221,8 +221,9 @@ links:
 
 The contract test `scripts/ci/tests/test_symlink_test_support.py` scans every
 `scripts/ci/tests/test_*.py` and `scripts/ci/tests/test-*.sh` file and fails on
-any unguarded symbolic-link fixture. No Windows CI leg runs `scripts/ci/tests`
-today.
+any unguarded symbolic-link fixture. An `ln -s` counts as guarded only inside
+the `then` branch of an `if` whose condition calls `symlink_probe`. No Windows
+CI leg runs `scripts/ci/tests` today.
 
 ## Related
 
