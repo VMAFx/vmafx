@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import itertools
 import re
 import shutil
 import sys
@@ -19,6 +18,7 @@ import yaml  # type: ignore[import-untyped]
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
+from scripts.ci import ci_router as wr  # noqa: E402
 from scripts.ci import required_aggregator_harness as harness  # noqa: E402
 
 WORKFLOWS_DIR = ROOT / ".github" / "workflows"
@@ -34,73 +34,15 @@ PRAETOR_LOCKED_BARE_MERGE_GROUP: dict[str, str] = {
         "merge_group: trigger defaults to checks_requested across all branches including master"
     ),
 }
-MATRIX_EXPR_RE = re.compile(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}")
 LOCAL_WORKFLOW_RE = re.compile(r"^\./\.github/workflows/([^/@]+\.ya?ml)$")
 
 
-def _load_workflows(workflows_dir: Path) -> dict[str, dict[str, Any]]:
-    """Parse every workflow YAML file in ``workflows_dir``."""
-    docs: dict[str, dict[str, Any]] = {}
-    for path in sorted(workflows_dir.iterdir()):
-        if path.suffix in (".yml", ".yaml") and path.is_file():
-            parsed = yaml.safe_load(path.read_text(encoding="utf-8"))
-            if isinstance(parsed, dict):
-                docs[path.name] = parsed
-    return docs
-
-
-def _on_mapping(doc: dict[str, Any]) -> dict[str, Any]:
-    """Normalize a workflow's ``on`` block into an event-name mapping."""
-    raw = doc.get("on", doc.get(True))
-    if isinstance(raw, str):
-        return {raw: None}
-    if isinstance(raw, list):
-        return {str(item): None for item in raw}
-    if isinstance(raw, dict):
-        return {str(key): value for key, value in raw.items()}
-    return {}
-
-
-def _row_matches_exclude(row: dict[str, Any], excludes: list[dict[str, Any]]) -> bool:
-    """Return True when ``row`` matches every key-value pair of any exclude entry."""
-    return any(all(row.get(key) == val for key, val in entry.items()) for entry in excludes)
-
-
-def _matrix_rows(matrix_cfg: Any) -> list[dict[str, Any]]:
-    """Expand a job's ``strategy.matrix`` dimensions, includes and excludes."""
-    if not isinstance(matrix_cfg, dict):
-        return [{}]
-    dims = {
-        key: val
-        for key, val in matrix_cfg.items()
-        if key not in ("include", "exclude") and isinstance(val, list) and val
-    }
-    keys = list(dims.keys())
-    rows = (
-        [
-            dict(zip(keys, combo, strict=True))
-            for combo in itertools.product(*(dims[k] for k in keys))
-        ]
-        if keys
-        else []
-    )
-    rows.extend(dict(ex) for ex in (matrix_cfg.get("include") or []) if isinstance(ex, dict))
-    excludes = [ex for ex in (matrix_cfg.get("exclude") or []) if isinstance(ex, dict)]
-    filtered = [row for row in rows if not _row_matches_exclude(row, excludes)]
-    return filtered or [{}]
-
-
 def _expand_job_names(job_id: str, job_cfg: dict[str, Any]) -> list[str]:
-    """Expand static and matrix-templated check-run names for a single job."""
+    """Expand static and matrix-templated check-run names for a single job (ci_router rows)."""
     raw_name = str(job_cfg.get("name", job_id))
     if "matrix." not in raw_name:
         return [raw_name]
-    strategy = job_cfg.get("strategy")
-    matrix_cfg = strategy.get("matrix") if isinstance(strategy, dict) else None
-    return [
-        MATRIX_EXPR_RE.sub(lambda m, r=row: str(r.get(m.group(1), m.group(0))), raw_name)
-        for row in _matrix_rows(matrix_cfg)
-    ]
+    return [wr._expand(raw_name, row) for row in wr._matrix_rows(job_cfg)]
 
 
 def _callee_contexts(
@@ -167,11 +109,11 @@ def compute_merge_group_feeding_map(
     """Compute ``(owed_triples, pr_only_workflows, errors)`` across ``workflows_dir``."""
     required, pr_only, mg_exempt, errors = _aggregator_sets(workflows_dir)
     owed = required - pr_only - {"Scorecard PR Gate"} - mg_exempt
-    docs = _load_workflows(workflows_dir)
+    docs = wr.load_workflows(workflows_dir)
     triples: list[tuple[str, str, str]] = []
     pr_only_workflows: set[str] = set()
     for wf_name, doc in docs.items():
-        if wf_name == AGGREGATOR_FILE or set(_on_mapping(doc)) == {"workflow_call"}:
+        if wf_name == AGGREGATOR_FILE or set(wr.triggers_of(doc)) == {"workflow_call"}:
             continue
         reported = _workflow_reported_contexts(wf_name, doc, docs)
         req_in_wf = {ctx for ctx, _, _ in reported if ctx in required}
@@ -184,11 +126,15 @@ def compute_merge_group_feeding_map(
 
 
 def _validate_merge_group_trigger(wf_name: str, on_map: dict[str, Any]) -> str | None:
-    """Validate ``on.merge_group`` for a workflow that owes ``merge_group`` runs."""
+    """Validate ``on.merge_group`` for a workflow that owes ``merge_group`` runs.
+
+    ``ci_router.triggers_of`` turns a bare ``merge_group:`` into ``{}``; GitHub reads both
+    the bare key and an empty mapping as default types on all branches.
+    """
     if "merge_group" not in on_map:
         return f"{wf_name}: missing merge_group trigger"
     cfg = on_map["merge_group"]
-    if wf_name in PRAETOR_LOCKED_BARE_MERGE_GROUP and cfg is None:
+    if wf_name in PRAETOR_LOCKED_BARE_MERGE_GROUP and not cfg:
         return None
     if not isinstance(cfg, dict):
         return f"{wf_name}: merge_group must declare types and branches (got {cfg!r})"
@@ -204,19 +150,19 @@ def _validate_merge_group_trigger(wf_name: str, on_map: dict[str, Any]) -> str |
 def check_merge_group_workflow_contract(workflows_dir: Path = WORKFLOWS_DIR) -> list[str]:
     """Return all ``merge_group`` trigger contract violations under ``workflows_dir``."""
     triples, pr_only_workflows, errors = compute_merge_group_feeding_map(workflows_dir)
-    docs = _load_workflows(workflows_dir)
+    docs = wr.load_workflows(workflows_dir)
     feeding_workflows = {wf for _, wf, _ in triples}
     for wf_name in sorted(feeding_workflows | {AGGREGATOR_FILE}):
-        problem = _validate_merge_group_trigger(wf_name, _on_mapping(docs.get(wf_name, {})))
+        problem = _validate_merge_group_trigger(wf_name, wr.triggers_of(docs.get(wf_name, {})))
         if problem is not None:
             errors.append(problem)
     for locked_wf in sorted(PRAETOR_LOCKED_BARE_MERGE_GROUP):
-        on_map = _on_mapping(docs.get(locked_wf, {}))
-        if locked_wf not in feeding_workflows or on_map.get("merge_group", "absent") is not None:
+        on_map = wr.triggers_of(docs.get(locked_wf, {}))
+        if locked_wf not in feeding_workflows or on_map.get("merge_group") != {}:
             errors.append(f"{locked_wf}: stale PRAETOR_LOCKED_BARE_MERGE_GROUP exception")
     forbidden = set(FORBIDDEN_MERGE_GROUP_WORKFLOWS) | pr_only_workflows
     for forbidden_wf in sorted(forbidden):
-        if "merge_group" in _on_mapping(docs.get(forbidden_wf, {})):
+        if "merge_group" in wr.triggers_of(docs.get(forbidden_wf, {})):
             errors.append(f"{forbidden_wf}: must not declare merge_group trigger")
     return errors
 
