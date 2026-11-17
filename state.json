@@ -2,56 +2,56 @@
   "badges": {
     "best-practices": {
       "color": "#1f883d",
-      "fetched_at": "2026-11-16T16:56:57Z",
+      "fetched_at": "2026-11-17T00:46:32Z",
       "message": "passing"
     },
     "builds": {
       "color": "#1f883d",
-      "fetched_at": "2026-11-16T16:56:57Z",
+      "fetched_at": "2026-11-17T00:46:32Z",
       "message": "passing"
     },
     "codacy": {
       "color": "#1f883d",
-      "fetched_at": "2026-11-16T16:56:57Z",
+      "fetched_at": "2026-11-17T00:46:32Z",
       "message": "A"
     },
     "ffmpeg": {
       "color": "#1f883d",
-      "fetched_at": "2026-11-16T16:56:57Z",
+      "fetched_at": "2026-11-17T00:46:32Z",
       "message": "passing"
     },
     "go": {
       "color": "#1f883d",
-      "fetched_at": "2026-11-16T16:56:57Z",
+      "fetched_at": "2026-11-17T00:46:32Z",
       "message": "passing"
     },
     "lint": {
       "color": "#1f883d",
-      "fetched_at": "2026-11-16T16:56:57Z",
+      "fetched_at": "2026-11-17T00:46:32Z",
       "message": "passing"
     },
     "rust": {
       "color": "#1f883d",
-      "fetched_at": "2026-11-16T16:56:57Z",
+      "fetched_at": "2026-11-17T00:46:32Z",
       "message": "passing"
     },
     "scorecard": {
       "color": "#1f883d",
-      "fetched_at": "2026-11-16T16:56:57Z",
-      "message": "8.9 / 10"
+      "fetched_at": "2026-11-17T00:46:32Z",
+      "message": "9.0 / 10"
     },
     "security": {
       "color": "#1f883d",
-      "fetched_at": "2026-11-16T16:56:57Z",
+      "fetched_at": "2026-11-17T00:46:32Z",
       "message": "passing"
     },
     "tests": {
       "color": "#1f883d",
-      "fetched_at": "2026-11-16T16:56:57Z",
+      "fetched_at": "2026-11-17T00:46:32Z",
       "message": "passing"
     }
   },
   "failures": [],
-  "generated_at": "2026-11-16T16:56:57Z",
+  "generated_at": "2026-11-17T00:46:32Z",
   "version": 1
 }
