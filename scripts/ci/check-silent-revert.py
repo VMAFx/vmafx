@@ -287,6 +287,10 @@ def parse_diff(
                 old_line = int(match.group(1))
                 new_line = int(match.group(2))
                 in_hunk = True
+        elif not in_hunk:
+            # Remaining pre-hunk lines are file metadata, including a deletion's
+            # `+++ /dev/null`; only hunk lines are add/remove content.
+            continue
         elif path is None or is_generated(path):
             continue
         elif line.startswith("+"):

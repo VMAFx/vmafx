@@ -573,6 +573,23 @@ Hand-written prose.
             [("old", 10), ("old", 11), ("old", 12), ("new", 10)],
         )
 
+    def test_deleted_file_header_is_not_added_content(self) -> None:
+        """A deletion's `+++ /dev/null` header must not become an added row."""
+        gate_module = runpy.run_path(str(GATE))
+        diff = (
+            "diff --git a/docs/gone.md b/docs/gone.md\n"
+            "deleted file mode 100644\n"
+            "index 1111111..0000000\n"
+            "--- a/docs/gone.md\n"
+            "+++ /dev/null\n"
+            "@@ -1,2 +0,0 @@\n"
+            "-line one\n"
+            "-line two\n"
+        )
+        added, removed = gate_module["parse_diff"](diff)
+        self.assertEqual(added, {})
+        self.assertEqual(dict(removed["docs/gone.md"]), {"line one": 1, "line two": 1})
+
     def test_commit_diffs_filters_generated_rows(self) -> None:
         """Historical commit bags exclude marker-block rows but keep prose."""
         self.write(
