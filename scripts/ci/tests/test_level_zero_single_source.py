@@ -19,6 +19,7 @@ from typing import Protocol, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.ci.tests import symlink_test_support as links
 from scripts.lib.renovate_regex import to_python
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -139,6 +140,7 @@ class LevelZeroSingleSource(unittest.TestCase):
         command = command.replace(GATE.LEVEL_ZERO_CONFIG, shlex.quote(str(config)))
         tools = self.repo / "bin"
         tools.mkdir()
+        links.skip_without_symlinks(tools)
         for host_tool in ("mkdir", "rm"):
             resolved = shutil.which(host_tool)
             self.assertIsNotNone(resolved)
