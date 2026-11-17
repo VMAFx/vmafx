@@ -677,6 +677,52 @@ def manifest_problems(root: Path, manifest: Path) -> list[str]:
     return checks[manifest.name](root, manifest)
 
 
+IMAGE_LICENCE_LABELS = {
+    "docker/Dockerfile.controller": "production-controller-image",
+    "docker/Dockerfile.production": "production-cli-image",
+    "docker/Dockerfile.production-gpu": "production-cuda-image",
+}
+
+
+def dockerfile_licence_label_problems(root: Path) -> list[str]:
+    """Each image licence label is the licence set its manifest record ships."""
+    manifest = root / LICENSING_MANIFEST
+    if not manifest.is_file():
+        return [f"{LICENSING_MANIFEST.as_posix()} is missing"]
+    records = licensing.load_manifest(manifest)["artifacts"]
+    problems: list[str] = []
+    for relative, record_name in IMAGE_LICENCE_LABELS.items():
+        path = root / relative
+        if not path.is_file():
+            problems.append(f"{relative}: file is missing")
+            continue
+        try:
+            binaries = next(
+                component
+                for component in records[record_name]["components"]
+                if component.get("id") == "vmafx-binaries"
+            )
+        except (KeyError, StopIteration) as error:
+            raise ModelError(f"{record_name}: no vmafx-binaries component") from error
+        expected = set(binaries.get("licences", ()))
+        labels = re.findall(
+            r'^LABEL org\.opencontainers\.image\.licenses="([^"]*)"', path.read_text(), re.MULTILINE
+        )
+        if not labels:
+            problems.append(f"{relative}: no org.opencontainers.image.licenses label")
+            continue
+        for label in labels:
+            found = {term.strip() for term in label.split(" AND ")}
+            if found != expected:
+                missing = sorted(expected - found)
+                extra = sorted(found - expected)
+                problems.append(
+                    f"{relative}: licences label differs from {record_name}: "
+                    f"missing {missing}, extra {extra}"
+                )
+    return problems
+
+
 def check(root: Path) -> tuple[list[str], int]:
     """(problems, number of manifests read) for the tree at `root`."""
     names = [_relative(root, path) for path in tracked_files(root, [root])]
@@ -684,6 +730,7 @@ def check(root: Path) -> tuple[list[str], int]:
     manifests = sorted(root / name for name in names if Path(name).name in MANIFEST_NAMES)
     for manifest in manifests:
         problems += manifest_problems(root, manifest)
+    problems += dockerfile_licence_label_problems(root)
     return problems, len(manifests)
 
 

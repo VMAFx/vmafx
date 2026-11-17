@@ -124,6 +124,9 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(problems, [])
         self.assertGreater(count, 10)
 
+    def test_image_licence_labels_match_their_manifest_records(self) -> None:
+        self.assertEqual(gate.dockerfile_licence_label_problems(REPO_ROOT), [])
+
     def test_the_main_entry_point_exits_zero_on_the_repository(self) -> None:
         output = io.StringIO()
         with contextlib.redirect_stdout(output):

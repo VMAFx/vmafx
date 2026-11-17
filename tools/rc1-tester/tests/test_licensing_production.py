@@ -190,6 +190,7 @@ def test_the_licence_artifacts_action_attests_spdx_with_the_pinned_tools() -> No
 
 
 @pytest.mark.parametrize(("dockerfile", "kinds"), [
+    ("docker/Dockerfile.controller", ["production-controller-image"]),
     ("docker/Dockerfile.production", ["production-cli-image", "production-server-image"]),
     ("docker/Dockerfile.production-gpu",
      ["production-cuda-image", "production-rocm-image", "production-oneapi-image"]),

@@ -175,7 +175,7 @@ FROM ${RELEASE_RUNTIME_CC} AS controller-assembled
 LABEL org.opencontainers.image.title="vmafx-controller"
 LABEL org.opencontainers.image.description="VMAFX controller — job queue, node API and auth gateway, gRPC + HTTP, backed by libvmaf. Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
-LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE AND WTFPL"
+LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
 LABEL org.opencontainers.image.vendor="Lusoris"
 
 # Copy libvmaf.so* and the vmaf CLI from the vmaf-builder stage.
