@@ -767,9 +767,9 @@ node:
       maxUnavailable: 0
 
   # grpcPort is the port the vmafx-node gRPC server listens on.
-  # Must match VMAFX_GRPC_LISTEN (deploy sets :grpcPort).  The liveness and
-  # readiness probes use tcpSocket on this port — it is the only listener
-  # the node binary exposes.
+  # Must match VMAFX_GRPC_LISTEN (deploy sets :grpcPort).  The liveness probe
+  # uses tcpSocket on this port; readiness queries HTTP /readyz on metricsPort
+  # (ADR-3558, amending ADR-1094).
   grpcPort: 50052
 
   # Image overrides for the node binary. The defaults match the canonical
@@ -796,9 +796,10 @@ node:
     secretName: ""
     key: token
 
-  # metricsPort is the Prometheus scrape port exposed by vmafx-node.
+  # metricsPort is the HTTP port exposed by vmafx-node for Prometheus /metrics
+  # and the /livez, /readyz and /startupz health probes (ADR-3558).
   # Changing this value updates the node Deployment containerPort, the
-  # node-metrics Service port, and the NetworkPolicy allow rule together.
+  # node Service port, and the NetworkPolicy allow rule together.
   # The default (9090) matches the vmafx-node binary default.
   metricsPort: 9090
 
@@ -810,6 +811,28 @@ node:
   # Example (NVIDIA):
   #   nvidia.com/gpu.present: "true"
   nodeSelector: {}
+
+  # affinity overrides for the node pods; falls back to .Values.affinity when
+  # empty. Soft preference example for Intel Arc pools (prefer Arc Pro B60 over
+  # Arc B580 with no requiredDuringScheduling term). The Intel GPU plugin labels
+  # each GPU node with gpu.intel.com/product (Arc_Pro_B60 or Arc_B580);
+  # gpu.intel.com/device-id.<id>.present labels are an alternative key:
+  #   affinity:
+  #     nodeAffinity:
+  #       preferredDuringSchedulingIgnoredDuringExecution:
+  #         - weight: 100
+  #           preference:
+  #             matchExpressions:
+  #               - key: gpu.intel.com/product
+  #                 operator: In
+  #                 values: ["Arc_Pro_B60"]
+  #         - weight: 50
+  #           preference:
+  #             matchExpressions:
+  #               - key: gpu.intel.com/product
+  #                 operator: In
+  #                 values: ["Arc_B580"]
+  affinity: {}
 
   # tolerations for GPU taint (NVIDIA example):
   #   - key: nvidia.com/gpu
@@ -853,6 +876,13 @@ node:
   ebpf:
     enabled: false
     mountPrefix: /rclone-mount/
+
+  # sidecar — opt-in online-training feedback client (VMAFX_SIDECAR_ENABLED,
+  # ADR-0781, ADR-3558). Disabled by default because the chart deploys no
+  # sidecar container; when enabled, /readyz requires a live connection to
+  # VMAFX_SIDECAR_SOCKET.
+  sidecar:
+    enabled: false
 
 # ---------------------------------------------------------------------------
 # Auth — multi-tenant JWT / OIDC gateway (ADR-0794, ADR-1518, ADR-1519)
