@@ -22,7 +22,8 @@ permissions:
 
 concurrency:
   group: rule-enforcement-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  # ADR-3557: only a synchronize (new head) cancels; same-head events queue.
+  cancel-in-progress: ${{ github.event.action == 'synchronize' }}
 
 jobs:
   tier:

@@ -20,6 +20,12 @@ SHAs, and for two pushes to one pull request:
 A `SERIALISED` entry must name a block that exists, in a workflow that a push
 to master triggers, and that really shares one group between master SHAs; a
 stale entry fails like a missing one.
+
+For the merge-gate workflows (`required-aggregator.yml` and every workflow in
+its `editedRerunWorkflows` array), a pull-request event that does not move the
+head (`edited`, `reopened`, `ready_for_review`) must not cancel a running run
+of the same head, and `jobs.aggregator` must not skip on the event action
+(ADR-3557); only `synchronize` cancels the superseded run.
 """
 
 from __future__ import annotations
@@ -149,11 +155,16 @@ def pr_push(sha: str) -> dict[str, str]:
         "github.ref": "refs/pull/7/merge",
         "github.sha": sha,
         "github.event_name": "pull_request",
+        "github.event.action": "synchronize",
         "github.workflow": "W",
         "github.event.pull_request.number": "7",
         "github.event.number": "7",
         "github.run_id": f"run-{sha}",
     }
+
+
+def pr_event(sha: str, action: str) -> dict[str, str]:
+    return {**pr_push(sha), "github.event.action": action}
 
 
 def triggers(workflow: dict[Any, Any]) -> dict[str, Any]:
@@ -275,6 +286,111 @@ def unsuperseded_findings(
     return problems
 
 
+EDITED_RERUN_ARRAY_RE = re.compile(r"\beditedRerunWorkflows\s*=\s*\[(.*?)\]", re.S)
+QUOTED_PATH_RE = re.compile(r"""['"]([^'"]+)['"]""")
+DEFAULT_PR_TYPES = ("opened", "synchronize", "reopened")
+EXEMPT_SAME_HEAD_TYPES = frozenset({"synchronize", "opened", "closed"})
+
+
+def _aggregator_scripts(workflows: dict[str, dict[Any, Any]]) -> list[str]:
+    aggregator = workflows.get("required-aggregator.yml")
+    jobs = aggregator.get("jobs") if isinstance(aggregator, dict) else None
+    job = jobs.get("aggregator") if isinstance(jobs, dict) else None
+    steps = job.get("steps") if isinstance(job, dict) else None
+    if not isinstance(steps, list):
+        return []
+    scripts: list[str] = []
+    for step in steps:
+        with_map = step.get("with") if isinstance(step, dict) else None
+        script = with_map.get("script") if isinstance(with_map, dict) else None
+        if isinstance(script, str):
+            scripts.append(script)
+    return scripts
+
+
+def gate_workflows(workflows: dict[str, dict[Any, Any]]) -> tuple[set[str], list[str]]:
+    """Return merge-gate workflow basenames and any editedRerunWorkflows parse findings."""
+    gates: set[str] = {"required-aggregator.yml"}
+    found_paths: list[str] = []
+    for script in _aggregator_scripts(workflows):
+        for match in EDITED_RERUN_ARRAY_RE.finditer(script):
+            uncommented = re.sub(
+                r"//[^\n]*", "", re.sub(r"/\*.*?\*/", "", match.group(1), flags=re.S)
+            )
+            found_paths.extend(
+                Path(raw).name for raw in QUOTED_PATH_RE.findall(uncommented) if Path(raw).name
+            )
+    if not found_paths:
+        return (
+            gates,
+            ["required-aggregator.yml [aggregator] missing or empty editedRerunWorkflows array"],
+        )
+    gates.update(found_paths)
+    return gates, []
+
+
+def pull_request_types(workflow: dict[Any, Any]) -> list[str]:
+    trig = triggers(workflow)
+    if "pull_request" not in trig:
+        return []
+    pr_on = trig["pull_request"]
+    raw = pr_on.get("types") if isinstance(pr_on, dict) else None
+    if raw is None:
+        return list(DEFAULT_PR_TYPES)
+    return [raw] if isinstance(raw, str) else [str(item) for item in raw]
+
+
+def same_head_findings(workflows: dict[str, dict[Any, Any]]) -> list[str]:
+    """A non-synchronize PR event must never cancel a running merge-gate run of the same head."""
+    gates, problems = gate_workflows(workflows)
+    sha_a = "a" * 40
+    for name in sorted(gates):
+        workflow = workflows.get(name)
+        if workflow is None:
+            problems.append(f"{name} is listed as a gate workflow but does not exist")
+            continue
+        checked_types = [t for t in pull_request_types(workflow) if t not in EXEMPT_SAME_HEAD_TYPES]
+        for scope, raw in concurrency_blocks(workflow).items():
+            block = normalise(raw)
+            push_group = render(block["group"], pr_push(sha_a))
+            for action in checked_types:
+                event_ctx = pr_event(sha_a, action)
+                same_group = push_group == render(block["group"], event_ctx)
+                cancel = render(block.get("cancel-in-progress", False), event_ctx)
+                if same_group and cancel in (True, "true"):
+                    problems.append(
+                        f"{name} [{scope}] a same-head {action} run cancels the running run "
+                        "of the same head"
+                    )
+    return problems
+
+
+def skip_findings(workflows: dict[str, dict[Any, Any]]) -> list[str]:
+    """Skipping jobs.aggregator or its steps on an action passes branch protection."""
+    aggregator = workflows.get("required-aggregator.yml")
+    jobs = aggregator.get("jobs") if isinstance(aggregator, dict) else None
+    job = jobs.get("aggregator") if isinstance(jobs, dict) else None
+    if not isinstance(job, dict):
+        return ["required-aggregator.yml [aggregator] missing aggregator job"]
+    problems: list[str] = []
+    if "if" in job:
+        problems.append(
+            f"required-aggregator.yml [aggregator] job has if: {job['if']!r} "
+            "(a skipped required context counts as passing)"
+        )
+    for idx, step in enumerate(job.get("steps") or []):
+        if not isinstance(step, dict) or "if" not in step:
+            continue
+        cond = str(step["if"])
+        if "github.event.action" in cond or "edited" in cond:
+            label = step.get("name") or f"step {idx}"
+            problems.append(
+                f"required-aggregator.yml [aggregator:{label}] step has if: {cond!r} "
+                "(a skipped required context counts as passing)"
+            )
+    return problems
+
+
 def load_all() -> dict[str, dict[Any, Any]]:
     return {
         path.name: yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -297,6 +413,53 @@ NEW = {
     "group": f"x-${{{{ github.workflow }}}}-{FIXED}",
     "cancel-in-progress": "${{ github.ref != 'refs/heads/master' }}",
 }
+GATE_PR_ON: dict[str, Any] = {
+    "pull_request": {"types": ["opened", "edited", "synchronize", "reopened", "ready_for_review"]}
+}
+AGGREGATOR_ON: dict[str, Any] = {**GATE_PR_ON, "push": {"branches": ["master"]}}
+AGGREGATOR_NEW: dict[str, Any] = {
+    "group": f"required-aggregator-${{{{ github.workflow }}}}-{FIXED}",
+    "cancel-in-progress": (
+        "${{ github.event_name == 'pull_request' && github.event.action == 'synchronize' }}"
+    ),
+}
+RULES_NEW: dict[str, Any] = {
+    "group": "rule-enforcement-${{ github.event.pull_request.number }}",
+    "cancel-in-progress": "${{ github.event.action == 'synchronize' }}",
+}
+GATE_SCRIPT = "const editedRerunWorkflows = [\n  '.github/workflows/rule-enforcement.yml',\n];"
+
+
+def aggregator_jobs(
+    script: str | None = GATE_SCRIPT,
+    *,
+    job_if: str | None = None,
+    step_if: str | None = None,
+) -> dict[str, Any]:
+    steps: list[dict[str, Any]] = []
+    if step_if is not None:
+        steps.append({"name": "guard", "if": step_if, "run": "true"})
+    if script is not None:
+        steps.append({"name": "poll", "with": {"script": script}})
+    job: dict[str, Any] = {"steps": steps}
+    if job_if is not None:
+        job["if"] = job_if
+    return {"aggregator": job}
+
+
+def gate_pair(
+    *,
+    aggregator: dict[Any, Any] | None = None,
+    rules: dict[Any, Any] | None = None,
+) -> dict[str, dict[Any, Any]]:
+    return {
+        "required-aggregator.yml": (
+            aggregator
+            if aggregator is not None
+            else wf(AGGREGATOR_ON, AGGREGATOR_NEW, aggregator_jobs())
+        ),
+        "rule-enforcement.yml": rules if rules is not None else wf(GATE_PR_ON, RULES_NEW),
+    }
 
 
 class RepositoryWorkflows(unittest.TestCase):
@@ -318,6 +481,30 @@ class RepositoryWorkflows(unittest.TestCase):
             render(block["group"], master_push("b" * 40)),
         )
         self.assertFalse(render(block["cancel-in-progress"], master_push("a" * 40)))
+
+    def test_no_same_head_event_cancels_a_gate_workflow(self) -> None:
+        self.assertEqual(same_head_findings(load_all()), [])
+
+    def test_aggregator_never_skips_on_pull_request_action(self) -> None:
+        self.assertEqual(skip_findings(load_all()), [])
+
+    def test_synchronize_still_cancels_stale_gate_workflow_runs(self) -> None:
+        workflows = load_all()
+        gates, findings = gate_workflows(workflows)
+        self.assertEqual(findings, [])
+        self.assertEqual(gates, {"required-aggregator.yml", "rule-enforcement.yml"})
+        for name in sorted(gates):
+            block = normalise(workflows[name]["concurrency"])
+            self.assertEqual(
+                render(block["group"], pr_event("a" * 40, "synchronize")),
+                render(block["group"], pr_event("b" * 40, "synchronize")),
+                name,
+            )
+            self.assertIs(
+                render(block["cancel-in-progress"], pr_event("b" * 40, "synchronize")),
+                True,
+                name,
+            )
 
 
 class Contract(unittest.TestCase):
@@ -441,6 +628,100 @@ class Contract(unittest.TestCase):
         )
         self.assertEqual(master_findings({"x.yml": flow}, {}), [])
         self.assertEqual(pull_request_findings({"x.yml": flow}, {}), [])
+
+    def test_negative_same_head_old_block_on_edited_gate_workflow_is_refused(self) -> None:
+        agg = wf(
+            {"pull_request": {"types": ["opened", "edited", "synchronize"]}},
+            NEW,
+            aggregator_jobs(),
+        )
+        self.assertEqual(
+            same_head_findings(gate_pair(aggregator=agg)),
+            [
+                "required-aggregator.yml [workflow] a same-head edited run cancels the "
+                "running run of the same head"
+            ],
+        )
+        rules = wf({"pull_request": {"types": ["opened", "edited", "synchronize"]}}, OLD)
+        self.assertEqual(
+            same_head_findings(gate_pair(rules=rules)),
+            [
+                "rule-enforcement.yml [workflow] a same-head edited run cancels the "
+                "running run of the same head"
+            ],
+        )
+
+    def test_positive_same_head_synchronize_only_expression_is_accepted(self) -> None:
+        self.assertEqual(same_head_findings(gate_pair()), [])
+
+    def test_boundary_same_head_absent_types_evaluates_reopened(self) -> None:
+        rules = wf({"pull_request": None}, OLD)
+        self.assertEqual(
+            same_head_findings(gate_pair(rules=rules)),
+            [
+                "rule-enforcement.yml [workflow] a same-head reopened run cancels the "
+                "running run of the same head"
+            ],
+        )
+
+    def test_boundary_same_head_opened_and_closed_are_exempt(self) -> None:
+        rules = wf({"pull_request": {"types": ["opened", "closed", "synchronize"]}}, OLD)
+        self.assertEqual(same_head_findings(gate_pair(rules=rules)), [])
+
+    def test_negative_same_head_job_level_block_is_refused(self) -> None:
+        rules = wf(
+            {"pull_request": {"types": ["edited"]}},
+            RULES_NEW,
+            {"gates": {"concurrency": OLD}},
+        )
+        self.assertEqual(
+            same_head_findings(gate_pair(rules=rules)),
+            [
+                "rule-enforcement.yml [gates] a same-head edited run cancels the "
+                "running run of the same head"
+            ],
+        )
+
+    def test_negative_missing_or_empty_edited_rerun_workflows_is_refused(self) -> None:
+        for bad_script in (None, "const required = [];", "const editedRerunWorkflows = [];"):
+            agg = wf(AGGREGATOR_ON, AGGREGATOR_NEW, aggregator_jobs(script=bad_script))
+            _, problems = gate_workflows({"required-aggregator.yml": agg})
+            self.assertEqual(len(problems), 1)
+            self.assertEqual(len(same_head_findings({"required-aggregator.yml": agg})), 1)
+
+    def test_negative_aggregator_job_if_skipping_edited_is_refused(self) -> None:
+        agg = wf(
+            AGGREGATOR_ON,
+            AGGREGATOR_NEW,
+            aggregator_jobs(job_if="github.event.action != 'edited'"),
+        )
+        found = skip_findings(gate_pair(aggregator=agg))
+        self.assertEqual(len(found), 1)
+        self.assertIn("required-aggregator.yml [aggregator]", found[0])
+
+    def test_negative_aggregator_step_if_mentioning_edited_or_action_is_refused(self) -> None:
+        for step_if in (
+            "github.event.action != 'edited'",
+            "github.head_ref != 'edited'",
+            "github.event.action == 'synchronize'",
+        ):
+            agg = wf(AGGREGATOR_ON, AGGREGATOR_NEW, aggregator_jobs(step_if=step_if))
+            self.assertEqual(len(skip_findings(gate_pair(aggregator=agg))), 1)
+
+    def test_boundary_aggregator_draft_step_if_and_non_gate_workflow_are_accepted(self) -> None:
+        agg = wf(
+            AGGREGATOR_ON,
+            AGGREGATOR_NEW,
+            aggregator_jobs(
+                step_if="github.event_name == 'pull_request' && github.event.pull_request.draft == true"
+            ),
+        )
+        pair = {
+            **gate_pair(aggregator=agg),
+            "advisory.yml": wf({"pull_request": {"types": ["edited"]}}, OLD),
+        }
+        self.assertEqual(skip_findings(pair), [])
+        self.assertEqual(same_head_findings(pair), [])
 
 
 if __name__ == "__main__":

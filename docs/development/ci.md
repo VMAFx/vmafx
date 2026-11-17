@@ -451,12 +451,24 @@ does not start rebase waves outside its schedule
 
 - Every workflow with a `pull_request`, `pull_request_target` or `merge_group`
   trigger carries a workflow-level `concurrency` block whose group is the same
-  for every push of one pull request and whose `cancel-in-progress` is true off
-  master (the block under "Master push runs" below). A workflow that cannot
+  for every push of one pull request and whose `cancel-in-progress` is true on
+  a new push (for `required-aggregator.yml` and `rule-enforcement.yml`, only a
+  `synchronize` event cancels; other workflows keep `cancel-in-progress` true
+  off master, as shown under "Master push runs" below). A workflow that cannot
   carry one is listed in `UNSUPERSEDED` of
   `scripts/ci/tests/test_master_concurrency_contract.py` with its reason; today
   `docs.yml` (per-job groups, the Pages deploy is never cancelled) and
   `pr-label-lanes.yml` (its called workflows keep their own groups).
+- In `required-aggregator.yml` and `rule-enforcement.yml`, same-head
+  `pull_request` events (`edited`, `reopened`, `ready_for_review`) keep
+  `cancel-in-progress` false
+  ([ADR-3557](../adr/3557-aggregator-same-head-queue.md)): a review bot edits
+  the pull-request body seconds after each push, GitHub counts a cancelled
+  check run in an earlier check suite on the head commit as blocking the merge
+  even when a newer suite succeeds, and a pending same-head twin waits behind
+  the running run (further pending edits collapse to the newest without
+  creating check runs). Enforced by `same_head_findings` and `skip_findings` in
+  `scripts/ci/tests/test_master_concurrency_contract.py`.
 - `renovate.json` sets `updateNotScheduled: false`: Renovate opens and rebases
   its branches only in its Monday schedule, at most two pull requests and three
   branches at once. Ticking a pull request's rebase box on the dependency
@@ -486,10 +498,14 @@ commit ever gets a complete verdict ([ADR-1673](../adr/1673-master-runs-not-canc
 - The merge train keeps one sentinel master commit's runs alive and cancels the
   other superseded master runs itself through the API. GitHub's per-ref
   cancellation is not involved on master.
-- The Required Checks Aggregator follows the same rule. Re-running the
-  aggregator of an old master head no longer cancels the newest one. On a PR ref
-  the old warning stands: re-running an older head's aggregator cancels the
-  current head's.
+- The Required Checks Aggregator follows the same SHA group rule on master, and
+  on a PR ref cancels only on `synchronize`
+  ([ADR-3557](../adr/3557-aggregator-same-head-queue.md)). Re-running the
+  aggregator of an old master head no longer cancels the newest one. On a PR
+  ref, re-running an older head's `synchronize` run still cancels the current
+  head's run, while re-running an `edited` twin waits as pending; re-run a
+  cancelled aggregator only when no aggregator run of the same head is in
+  progress.
 - Blocks that must serialise keep their group and are listed with a reason in
   `scripts/ci/tests/test_master_concurrency_contract.py`: `dev-container-publish.yml`
   (registry publish), `release-please.yml` (one release PR per push),
