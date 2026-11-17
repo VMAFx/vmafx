@@ -103,14 +103,16 @@ fail() {
   fail_count=$((fail_count + 1))
 }
 
-# run_case <expected-exit|hung> <name> <shell-snippet>
+# run_case <expected-exit|hung> <name> <shell-snippet> [budget] [rerun-budget]
 #
-# The snippet runs under `timeout 12 bash -c`, from the repo root, with
+# The snippet runs under `timeout "${budget}" bash -c` (default 12 s), from
+# the repo root, with
 # PR_BODY unset unless the snippet sets it. Exit 124 is reported as a hang
 # because that is the regression this file exists to catch — but a 124 whose
 # output carries the gate's `PR body from ...` line decided what fd 0 was
 # inside the budget, so the kill landed on post-decision work or on load
-# (issue #3457): the case is re-run once with a 60 s budget and judged as
+# (issue #3457): the case is re-run once with the re-run budget (default
+# 60 s) and judged as
 # usual — a slow case that completes with its expected verdict passes, a
 # second timeout is HUNG, because a hang after the decision is still a hang.
 # expected="hung" is the planted negative control: the case must time out
@@ -407,7 +409,8 @@ echo "--- planted hangs (issue #3457): the HUNG verdict stays armed ---"
 
 # A gate that blocks must be reported as HUNG, never as a slow pass. Three
 # planted shapes, all through run_case's own "hung" expectation so the
-# verdict and the real cases share one code path:
+# verdict and the real cases share one code path, at 2 s / 4 s budgets —
+# the shapes block immediately, so longer budgets only pay the kill latency:
 #
 #   - portable: the gate's stdin is a pipe whose writer never writes, so
 #     `cat` blocks on read in every environment;
