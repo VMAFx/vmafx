@@ -74,18 +74,22 @@ typedef struct VkLayoutCase {
     const char *name;
 } VkLayoutCase;
 
-static const VkLayoutCase vk_layouts[] = {
 #if VMAFX_VK_LANE == 1
+static const VkLayoutCase vk_layouts[] = {
     {VKP_IMAGE_OPTIMAL, false, 0u, "optimal image, opaque fd"},
     {VKP_BUFFER, false, 0u, "buffer, opaque fd"},
+};
 #elif VMAFX_VK_LANE == 2
+static const VkLayoutCase vk_layouts[] = {
     {VKP_BUFFER, false, 0u, "buffer, opaque fd"},
     {VKP_IMAGE_DRM, true, VK_MOD_INTEL_TILE4, "Tile4 image, dma-buf"},
+};
 #else
+static const VkLayoutCase vk_layouts[] = {
     {VKP_BUFFER, false, 0u, "buffer, opaque fd"},
     {VKP_IMAGE_DRM, true, 0u, "linear image, dma-buf"},
-#endif
 };
+#endif
 
 #define VK_N_LAYOUTS (sizeof(vk_layouts) / sizeof(vk_layouts[0]))
 /* The index of the buffer layout (LINEAR) in vk_layouts. */

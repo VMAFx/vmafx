@@ -29,7 +29,9 @@ def clean_environment() -> dict[str, str]:
     """The environment without GIT_* variables. A git hook exports GIT_INDEX_FILE
     (absolute in a linked worktree) and GIT_DIR; inherited, they would make the
     fixture's `git add -A` rewrite the index of the repository running the hook."""
-    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    return env
 
 
 FILES = {

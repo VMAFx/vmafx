@@ -21,13 +21,17 @@ changelog:
         - breaking-change
     - title: 🚀 Features
       labels:
+        # `type:feat`/`type:fix` are what the labeler derives from the
+        # declared types (issue #2750); the second name keeps PRs labelled
+        # by the previous mapping in the right section.
+        - type:feat
         - type:feature
     - title: 🐛 Bug fixes
       labels:
+        - type:fix
         - type:bug
     - title: 🔒 Security
       labels:
-        - type:security
         - security
     - title: ⚡ Performance
       labels:
@@ -62,7 +66,6 @@ changelog:
     - title: 🧹 Miscellaneous
       labels:
         - type:chore
-        - type:style
         - type:revert
     # Catch-all. If this section is ever large, the labeler is not working.
     - title: Other changes

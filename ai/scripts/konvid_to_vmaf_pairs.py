@@ -46,7 +46,6 @@ import argparse
 import json
 import os
 import shlex
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -59,13 +58,27 @@ try:
 except ModuleNotFoundError:
     from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from ai.data.scores import DEFAULT_MODEL, resolve_teacher_model  # noqa: E402
-
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    CommandFailed,
+    CommandTimedOut,
+    executable_argument,
+)
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    run as run_command,
+)
+
+# Bound = max(60, 10x the slowest measured run): the header ffprobe took 0.15 s
+# on a 1080p clip and 0.03 s on a KonViD clip.
+# Decode took 0.34 s and libx264 encode+decode 0.44 s on a 540p 149-frame clip.
+FFMPEG_TIMEOUT_S = 60
+# Bound = max(60, 10x slowest measured run): libvmaf CLI took 0.39 s on a 540p 149-frame clip.
+VMAF_TIMEOUT_S = 60
 
 # Canonical-6 student features — same set the LOSO trainer expects.
 DEFAULT_FEATURES = (
@@ -78,13 +91,14 @@ DEFAULT_FEATURES = (
 )
 
 
-def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, check=True, **kw)
+def _run(cmd: list[str], *, allowed: tuple[str, ...], timeout_s: float) -> None:
+    """Execute a command with an explicit executable allowlist and timeout."""
+    run_command(cmd, allowed_executables=allowed, check=True, timeout_seconds=timeout_s)
 
 
 def _decode_yuv(src_mp4: Path, out_yuv: Path) -> tuple[int, int, int]:
     """ffmpeg-decode @p src_mp4 to yuv420p; return (w, h, n_frames)."""
-    probe = subprocess.run(
+    probe = run_command(
         [
             "ffprobe",
             "-v",
@@ -97,9 +111,11 @@ def _decode_yuv(src_mp4: Path, out_yuv: Path) -> tuple[int, int, int]:
             "default=nw=1:nk=1",
             str(src_mp4),
         ],
+        allowed_executables=("ffprobe",),
         capture_output=True,
         text=True,
         check=True,
+        timeout_seconds=FFMPEG_TIMEOUT_S,
     )
     w, h, n = (int(x) for x in probe.stdout.strip().split("\n"))
     _run(
@@ -116,7 +132,9 @@ def _decode_yuv(src_mp4: Path, out_yuv: Path) -> tuple[int, int, int]:
             "-f",
             "rawvideo",
             str(out_yuv),
-        ]
+        ],
+        allowed=("ffmpeg",),
+        timeout_s=FFMPEG_TIMEOUT_S,
     )
     return w, h, n
 
@@ -124,45 +142,51 @@ def _decode_yuv(src_mp4: Path, out_yuv: Path) -> tuple[int, int, int]:
 def _encode_dis(src_mp4: Path, out_yuv: Path, crf: int) -> None:
     """Round-trip through libx264 @ @p crf to introduce compression artefacts."""
     intermediate = out_yuv.with_suffix(".dis.mp4")
-    _run(
-        [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-i",
-            str(src_mp4),
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            str(crf),
-            "-pix_fmt",
-            "yuv420p",
-            "-f",
-            "mp4",
-            str(intermediate),
-        ]
-    )
-    _run(
-        [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-i",
-            str(intermediate),
-            "-pix_fmt",
-            "yuv420p",
-            "-f",
-            "rawvideo",
-            str(out_yuv),
-        ]
-    )
-    intermediate.unlink(missing_ok=True)
+    try:
+        _run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(src_mp4),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                str(crf),
+                "-pix_fmt",
+                "yuv420p",
+                "-f",
+                "mp4",
+                str(intermediate),
+            ],
+            allowed=("ffmpeg",),
+            timeout_s=FFMPEG_TIMEOUT_S,
+        )
+        _run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(intermediate),
+                "-pix_fmt",
+                "yuv420p",
+                "-f",
+                "rawvideo",
+                str(out_yuv),
+            ],
+            allowed=("ffmpeg",),
+            timeout_s=FFMPEG_TIMEOUT_S,
+        )
+    finally:
+        intermediate.unlink(missing_ok=True)
 
 
 def _run_vmaf(
@@ -178,9 +202,10 @@ def _run_vmaf(
     (`vif`, `adm`, `motion`) emit `integer_*` keys in the JSON without
     needing explicit `--feature` flags."""
     resolved = resolve_teacher_model(model)
+    vmaf = executable_argument(vmaf_bin, Path.cwd())
     _run(
         [
-            str(vmaf_bin),
+            vmaf,
             "--reference",
             str(ref_yuv),
             "--distorted",
@@ -203,7 +228,9 @@ def _run_vmaf(
             str(out_json),
             "--json",
             "-q",
-        ]
+        ],
+        allowed=(vmaf,),
+        timeout_s=VMAF_TIMEOUT_S,
     )
 
 
@@ -395,8 +422,14 @@ def _process_all_clips(
                 cache_dir,
                 args.scratch,
             )
-        except subprocess.CalledProcessError as exc:
-            print(f"[konvid] {key} FAILED: {shlex.join(exc.cmd)}", file=sys.stderr)
+        except (CommandFailed, CommandTimedOut) as exc:
+            argv = exc.result.argv if isinstance(exc, CommandFailed) else exc.argv
+            suffix = (
+                f" (timed out after {exc.timeout_seconds:g}s)"
+                if isinstance(exc, CommandTimedOut)
+                else ""
+            )
+            print(f"[konvid] {key} FAILED: {shlex.join(argv)}{suffix}", file=sys.stderr)
             failed_clips.append(key)
             continue
         all_rows.extend(rows)

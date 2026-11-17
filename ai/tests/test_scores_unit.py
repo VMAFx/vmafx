@@ -11,7 +11,6 @@ absent pooled metrics, NaN handling).
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -19,6 +18,7 @@ import numpy as np
 import pytest
 
 from ai.data import scores as scores_mod
+from scripts.lib.safe_subprocess import CommandFailed, TextCommandResult
 
 # ---------------------------------------------------------------------------
 # TeacherScores dataclass
@@ -124,6 +124,7 @@ def test_resolve_teacher_model_directory_ignored(
 def test_run_vmaf_score_default_passes_version_arg(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Verify scoring selects the default version argument when no override exists."""
     monkeypatch.delenv("VMAF_MODEL_PATH", raising=False)
     fake_binary = tmp_path / "vmaf"
     fake_binary.write_text("")
@@ -135,12 +136,13 @@ def test_run_vmaf_score_default_passes_version_arg(
     captured_argv: list[list[str]] = []
 
     def fake_run(cmd, **kw):
+        """Fake scoring by recording arguments, writing empty score JSON, and returning success."""
         captured_argv.append(list(cmd))
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.write_text(json.dumps({"frames": [], "pooled_metrics": {}}))
-        return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+        return TextCommandResult(tuple(cmd), 0, "", "")
 
-    with patch("ai.data.feature_extractor.subprocess.run", side_effect=fake_run):
+    with patch("ai.data.feature_extractor.run_command", side_effect=fake_run):
         scores_mod._run_vmaf_score(
             fake_binary,
             ref,
@@ -151,7 +153,7 @@ def test_run_vmaf_score_default_passes_version_arg(
             bitdepth=8,
         )
 
-    assert captured_argv, "subprocess.run not invoked"
+    assert captured_argv, "run_command not invoked"
     argv = captured_argv[0]
     assert argv[argv.index("-m") + 1] == f"version={scores_mod.DEFAULT_MODEL}"
 
@@ -162,6 +164,7 @@ def test_run_vmaf_score_default_passes_version_arg(
 
 
 def test_run_vmaf_score_composes_argv(tmp_path: Path) -> None:
+    """Verify scoring composes input dimensions, pixel settings, and a custom scoring path."""
     fake_binary = tmp_path / "vmaf"
     fake_binary.write_text("")  # contents irrelevant under mock
     ref = tmp_path / "ref.yuv"
@@ -174,13 +177,14 @@ def test_run_vmaf_score_composes_argv(tmp_path: Path) -> None:
     captured_argv: list[list[str]] = []
 
     def fake_run(cmd, **kw):
+        """Fake scoring by recording arguments, writing empty score JSON, and returning success."""
         captured_argv.append(list(cmd))
         # The function reads <out_path>.json — write a stub.
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.write_text(json.dumps({"frames": [], "pooled_metrics": {}}))
-        return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+        return TextCommandResult(tuple(cmd), 0, "", "")
 
-    with patch("ai.data.feature_extractor.subprocess.run", side_effect=fake_run):
+    with patch("ai.data.feature_extractor.run_command", side_effect=fake_run):
         doc = scores_mod._run_vmaf_score(
             fake_binary,
             ref,
@@ -192,7 +196,7 @@ def test_run_vmaf_score_composes_argv(tmp_path: Path) -> None:
             model=model,
         )
 
-    assert captured_argv, "subprocess.run not invoked"
+    assert captured_argv, "run_command not invoked"
     argv = captured_argv[0]
     assert argv[0] == str(fake_binary)
     assert "-r" in argv and argv[argv.index("-r") + 1] == str(ref)
@@ -206,6 +210,7 @@ def test_run_vmaf_score_composes_argv(tmp_path: Path) -> None:
 
 
 def test_run_vmaf_score_cleans_up_output_on_subprocess_failure(tmp_path: Path) -> None:
+    """Verify scoring removes its temporary output after a command failure."""
     fake_binary = tmp_path / "vmaf"
     fake_binary.write_text("")
     ref = tmp_path / "ref.yuv"
@@ -218,12 +223,13 @@ def test_run_vmaf_score_cleans_up_output_on_subprocess_failure(tmp_path: Path) -
     leftover: list[Path] = []
 
     def fake_run(cmd, **kw):
+        """Fake scoring by recording its output path and raising CommandFailed."""
         leftover.append(Path(cmd[cmd.index("-o") + 1]))
-        raise subprocess.CalledProcessError(returncode=2, cmd=cmd)
+        raise CommandFailed(TextCommandResult(tuple(cmd), 2, "", ""))
 
     with (
-        patch("ai.data.feature_extractor.subprocess.run", side_effect=fake_run),
-        pytest.raises(subprocess.CalledProcessError),
+        patch("ai.data.feature_extractor.run_command", side_effect=fake_run),
+        pytest.raises(CommandFailed),
     ):
         scores_mod._run_vmaf_score(
             fake_binary,

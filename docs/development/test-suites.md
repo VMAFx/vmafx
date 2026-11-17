@@ -204,6 +204,70 @@ spec. A documentation-only change affects nothing and the command exits 0. The
 mapping is the registry's own, so a new suite or test directory needs no change
 here.
 
+For fast feedback, use focused mode:
+
+```bash
+python3 scripts/ci/run_affected_suites.py --focused --merge-base origin/master
+python3 scripts/ci/run_affected_suites.py --focused --files scripts/ci/install-rocm-from-image.sh
+```
+
+`--merge-base REF` compares `git merge-base REF HEAD` with `HEAD`; it is
+mutually exclusive with `--base`, `--head` and `--files`. During a push, the
+runner refuses an outgoing ref that differs from the checked-out `HEAD`, so
+it cannot validate the wrong branch.
+With `--base A --head B`, focused mode requires `B` to resolve to `HEAD`,
+because it reads candidate tests from `HEAD`; another commit exits 2.
+Non-focused runs accept any `--base`/`--head` pair.
+
+- `--focused`: changed test files; tests naming changed repository-relative
+  paths, unique tracked basenames, dotted Python module paths; unique Python
+  stems in imports, multiline imports included. Literal first arguments:
+  `importlib.import_module`, from-import `import_module`, `__import__`;
+  dotted names -> final leaf. Non-literal arguments excluded.
+- Package `__init__.py`: dotted module = parent directory; short import =
+  parent directory leaf, unique over package directories. Compat `vmaf` alias:
+  `python/vmaf/__init__.py` loads `compat/vmaf` -> `compat/python-vmaf`.
+- Uniqueness tree: current index + comparison base's tracked paths
+  (`git ls-tree -r`); deleted modules retain import identities and collisions.
+- Complete tokens only: `xinstall-rocm-from-image.sh.bak` !=
+  `install-rocm-from-image.sh`. Root-prefixed paths accepted:
+  `f"{ROOT}/scripts/ci/install-rocm-from-image.sh"`,
+  `./scripts/ci/install-rocm-from-image.sh`; sentence-final period accepted.
+  Duplicate `__init__.py` / `meson.build` basenames insufficient.
+- Paths outside every registry trigger: candidate tests from every locally
+  runnable suite searched; matches add suite + matching tests. Registry
+  triggers unchanged; CI routing unchanged.
+- Every unmatched changed non-test path, including paths outside triggers:
+  `NOT RUN <path>: no test names this file; alternate coverage: pull request CI jobs: ...`.
+  Empty selection: `<suite>: NOT RUN (no test names a changed file)`;
+  alternate coverage line; zero passed tests. Unavailable local suite:
+  `not_local` reason + alternate coverage line. Coverage names from registry
+  `checks`; e.g. Tooling Tests runs `suite_registry.py run tooling` in
+  `.github/workflows/tests-and-quality-gates.yml`.
+- Recorded gaps: default exit 0; `--strict` -> exit 1 for unrun suite or
+  unmatched path. Test failure = 1; usage/I/O/dirty checkout = 2.
+- Before execution: every changed path + selected test matches HEAD in index
+  AND worktree. The registry `.github/test-suites.json` must also match HEAD
+  in both places before loading, except with `--list`.
+  Focused selection reads candidate test text from HEAD blobs, ignoring
+  candidate paths absent from HEAD.
+  Difference -> exit 2, paths named. Unrelated tracked edits
+  and untracked files outside those paths irrelevant. Pre-commit ordinary
+  pre-push stashes unstaged edits only; first-push `all_files=True` bypasses
+  stash; staged edits remain visible.
+- `--focused --list`: selection only; no tests, venv builds, or checkout
+  cleanliness validation.
+- Known gap: basename assembled from pieces, e.g.
+  `ROOT / "scripts" / "ci" / ("check-codeql-" + "unused-static.py")`;
+  no complete path/module token -> NOT selected. Textual selector, no
+  dependency graph. Full CI suites retain alternate coverage.
+
+The `affected-tests` pre-push hook runs focused mode against `origin/master`
+on every push. Its first run builds the affected suites' cached environments;
+allow disk space and download time, especially for `ai` (about 6 GB).
+The hook reuses the same suite registry, locks, timeouts and skip policy as
+the full runner. Omit `--focused` when full-suite coverage is needed.
+
 For each affected suite the runner builds a virtual environment once in
 `~/.cache/vmafx-suite-venvs/<suite>-<hash of its lock files>`
 (`VMAFX_SUITE_VENVS` or `--venv-root` moves it), installs the registry's locks
@@ -241,7 +305,7 @@ the workflow; a follow-up makes them read `install` too.
 
 ## Pre-commit hooks that run tests
 
-Fifty-one local pre-commit hooks run a test of the tooling suite when a file
+Eighty-one local pre-commit hooks run a test of the tooling suite when a file
 they watch changes. They stay active at commit time, where they give the
 fastest feedback. The CI `Pre-Commit` job skips them, because Tooling Tests runs the
 same files on every pull request and push:

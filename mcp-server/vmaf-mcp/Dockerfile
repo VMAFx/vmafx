@@ -13,11 +13,11 @@
 #
 # The server runs as UID/GID 65532; mount the corpus readable by that user.
 
-FROM ubuntu:26.04@sha256:157dc3d6e4a3e4f2c68d12df9df9ed6e808b59af6d4c3757b432b4f519916725 AS build
+FROM ubuntu:26.04@sha256:0d5255be560e2d2ddcfbfda88549e9e815ef29e7cd7fc62183d5709e6e2963c6 AS build
 
 ENV DEBIAN_FRONTEND=noninteractive
 # hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
         build-essential meson ninja-build pkg-config nasm \
         python3 python3-pip python3-venv \
         ca-certificates git libzimg-dev \
@@ -33,14 +33,14 @@ RUN python3 -m pip install --no-cache-dir --break-system-packages --ignore-insta
         -r requirements/locks/package-build.txt \
     && python3 -m build --no-isolation --wheel --outdir /wheels mcp-server/vmaf-mcp
 
-FROM ubuntu:26.04@sha256:157dc3d6e4a3e4f2c68d12df9df9ed6e808b59af6d4c3757b432b4f519916725
+FROM ubuntu:26.04@sha256:0d5255be560e2d2ddcfbfda88549e9e815ef29e7cd7fc62183d5709e6e2963c6
 
 ENV DEBIAN_FRONTEND=noninteractive \
     VMAF_BIN=/opt/vmaf/vmaf \
     PATH=/opt/vmaf:$PATH
 
 # hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
         python3 python3-pip python3-venv \
         ca-certificates libzimg2 \
     && rm -rf /var/lib/apt/lists/*

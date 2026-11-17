@@ -30,6 +30,7 @@ does not change the status unless ``--strict`` is given.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import os
 import re
@@ -38,14 +39,16 @@ import sys
 import tempfile
 import time
 import xml.etree.ElementTree as ET
-from collections.abc import Iterable, Sequence
+from collections import Counter
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO
+from typing import IO, overload
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.ci import suite_registry as registry_lib
+from scripts.lib.push_head import outgoing_head
 from scripts.lib.safe_subprocess import CommandTimedOut, TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -54,6 +57,7 @@ DEFAULT_CACHE = Path.home() / ".cache" / "vmafx-suite-venvs"
 DEFAULT_TIME_CAP_SECONDS = 900.0
 DEFAULT_INSTALL_CAP_SECONDS = 1800.0
 GIT_TIMEOUT_SECONDS = 60.0
+HEAD_BLOB_HEADER_FIELDS = 3
 MAX_OUTPUT_BYTES = 256 * 1_048_576
 LOCK_POLL_SECONDS = 2.0
 READY_MARKER = ".vmafx-ready"
@@ -86,7 +90,18 @@ def _env_without_git() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if not k.startswith("GIT_") and k not in drop}
 
 
-def _git(root: Path, *args: str) -> str:
+@overload
+def _git(root: Path, *args: str, input_data: bytes) -> bytes:
+    """Return raw Git output for a binary batch request."""
+
+
+@overload
+def _git(root: Path, *args: str, input_data: None = None) -> str:
+    """Return decoded Git output for ordinary queries."""
+
+
+def _git(root: Path, *args: str, input_data: bytes | None = None) -> str | bytes:
+    """Run bounded Git queries with isolated repository variables and optional binary input."""
     git = shutil.which("git")
     if git is None:
         raise RunnerError("git is not on PATH")
@@ -95,12 +110,17 @@ def _git(root: Path, *args: str) -> str:
         allowed_executables=(git,),
         env=_env_without_git(),
         capture_output=True,
-        text=True,
+        input_data=input_data,
+        text=input_data is None,
         check=False,
         timeout_seconds=GIT_TIMEOUT_SECONDS,
+        max_output_bytes=MAX_OUTPUT_BYTES,
     )
     if result.returncode != 0:
-        raise RunnerError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
+        stderr = result.stderr
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        raise RunnerError(f"git {' '.join(args)} failed: {stderr.strip()}")
     return result.stdout
 
 
@@ -146,6 +166,101 @@ def affected_suites(
         if hits:
             result[suite.name] = hits
     return result
+
+
+def _import_names(text: str) -> set[str]:
+    """Python stems actually named by imports, excluding aliases and ordinary prose."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return set()
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            names.update(alias.name.rsplit(".", 1)[-1] for alias in node.names)
+        if isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module.rsplit(".", 1)[-1])
+        literal = _dynamic_import(node)
+        if literal is not None:
+            names.add(literal.rsplit(".", 1)[-1])
+    return names
+
+
+def _dynamic_import(node: ast.AST) -> str | None:
+    """Recognize literal module names passed to the supported dynamic import APIs."""
+    if not isinstance(node, ast.Call) or not node.args:
+        return None
+    function = node.func
+    name = function.id if isinstance(function, ast.Name) else ""
+    if isinstance(function, ast.Attribute) and isinstance(function.value, ast.Name):
+        if function.value.id == "importlib":
+            name = function.attr
+    first = node.args[0]
+    if name in ("import_module", "__import__") and isinstance(first, ast.Constant):
+        return first.value if isinstance(first.value, str) else None
+    return None
+
+
+def _module_paths(path: str) -> list[str]:
+    """Include package initializers and the verified legacy vmaf import aliases."""
+    module = path.removesuffix(".py").removesuffix("/__init__")
+    modules = [module.replace("/", ".")]
+    # python/vmaf/__init__.py loads compat/vmaf, a symlink to compat/python-vmaf.
+    for prefix in ("compat/python-vmaf", "python/vmaf"):
+        if module == prefix or module.startswith(prefix + "/"):
+            modules.append(("vmaf" + module[len(prefix) :]).replace("/", "."))
+    return modules
+
+
+def _reference_pattern(
+    path: str, basenames: Counter[str], packages: Counter[str]
+) -> re.Pattern[str]:
+    """Match complete file and module tokens without ambiguous short package names."""
+    # A path or unique basename may follow "/" (f"{ROOT}/scripts/x.sh", "./x.sh") and
+    # end a sentence ("x.sh."); a longer name ("xx.sh", "x.sh.bak", "x.sh-old") is not it.
+    # Selecting one test too many costs time; missing one lets a red test through.
+    paths = [path]
+    if basenames[Path(path).name] == 1:
+        paths.append(Path(path).name)
+    path_form = r"(?<![\w.-])(?:" + "|".join(map(re.escape, paths)) + r")(?![\w/-])(?!\.\w)"
+    if not path.endswith(".py"):
+        return re.compile(path_form)
+    modules = _module_paths(path)
+    if Path(path).name == "__init__.py" and packages[Path(path).parent.name] != 1:
+        modules = [module for module in modules if "." in module or module != modules[0]]
+    module_forms = [r"(?<![\w./-])" + re.escape(module) + r"(?![\w/-])" for module in modules]
+    return re.compile("|".join([path_form, *module_forms]))
+
+
+def focused_selection(
+    changed: Sequence[str], tracked: Sequence[str], test_texts: Mapping[str, str]
+) -> tuple[list[str], list[str]]:
+    """Pure selection: narrowed tests and changed paths no candidate test names.
+
+    Only complete path/module tokens, globally unique basenames, and unique
+    Python stems in imports count. Changed candidate tests select themselves.
+    """
+    basenames = Counter(Path(path).name for path in tracked)
+    stems = Counter(Path(path).stem for path in tracked if path.endswith(".py"))
+    packages = Counter(Path(path).parent.name for path in tracked if path.endswith("/__init__.py"))
+    imports = {test: _import_names(text) for test, text in test_texts.items()}
+    selected: set[str] = set()
+    unnamed: list[str] = []
+    for path in changed:
+        pattern = _reference_pattern(path, basenames, packages)
+        initializer = Path(path).name == "__init__.py"
+        stem = Path(path).parent.name if initializer else Path(path).stem
+        counts = packages if initializer else stems
+        importable = path.endswith(".py") and counts[stem] == 1
+        matches = {
+            test
+            for test, text in test_texts.items()
+            if test == path or pattern.search(text) or (importable and stem in imports[test])
+        }
+        selected.update(matches)
+        if not matches:
+            unnamed.append(path)
+    return sorted(selected), unnamed
 
 
 def venv_key(root: Path, owner: registry_lib.Suite) -> str:
@@ -413,8 +528,126 @@ def run_shell_files(root: Path, files: Sequence[str]) -> tuple[int, list[str]]:
 
 
 def suite_test_files(root: Path, registry: registry_lib.Registry, name: str) -> list[str]:
+    """List the suite's tracked test files that exist in the checkout."""
     files = registry_lib.suite_files(registry, registry_lib.tracked_files(root), name)
     return [f for f in files if (root / f).is_file()]
+
+
+def alternate_coverage(suites: Iterable[registry_lib.Suite]) -> str:
+    """Name the pull request jobs already declared as each suite's full coverage."""
+    checks = sorted({check for suite in suites for check in suite.checks})
+    return "alternate coverage: pull request CI jobs: " + ", ".join(checks)
+
+
+def _selection_tracked(root: Path, base: str | None) -> list[str]:
+    """Preserve deleted files' identities and ambiguities from the comparison base."""
+    tracked = set(registry_lib.tracked_files(root))
+    if base is not None:
+        tracked.update(_git(root, "ls-tree", "-r", "--name-only", "-z", base).split("\0"))
+    return sorted(tracked - {""})
+
+
+def _head_test_texts(root: Path, paths: Sequence[str]) -> dict[str, str]:
+    """Read candidate HEAD blobs in one batch, omitting paths absent from HEAD.
+
+    Requests and headers are newline-framed because ``cat-file -Z`` needs Git 2.42;
+    a path containing a newline cannot be framed and is refused.
+    """
+    if not paths:
+        return {}
+    unframed = [path for path in paths if "\n" in path]
+    if unframed:
+        raise RunnerError(f"test path contains a newline: {unframed[0]!r}")
+    requests = b"".join(b"HEAD:" + os.fsencode(path) + b"\n" for path in paths)
+    output = _git(root, "cat-file", "--batch", input_data=requests)
+    texts: dict[str, str] = {}
+    offset = 0
+    for path in paths:
+        header_end = output.find(b"\n", offset)
+        if header_end < 0:
+            raise RunnerError(f"incomplete HEAD blob header: {path}")
+        header = output[offset:header_end]
+        offset = header_end + 1
+        if header == b"HEAD:" + os.fsencode(path) + b" missing":
+            continue
+        fields = header.split()
+        if (
+            len(fields) != HEAD_BLOB_HEADER_FIELDS
+            or fields[1] != b"blob"
+            or not fields[2].isdigit()
+        ):
+            raise RunnerError(f"invalid HEAD blob header: {path}")
+        end = offset + int(fields[2])
+        if output[end : end + 1] != b"\n":
+            raise RunnerError(f"incomplete HEAD blob content: {path}")
+        texts[path] = output[offset:end].decode("utf-8", errors="replace")
+        offset = end + 1
+    if offset != len(output):
+        raise RunnerError("unexpected trailing HEAD blob output")
+    return texts
+
+
+def _focused_suite_files(
+    root: Path,
+    registry: registry_lib.Registry,
+    affected: dict[str, list[str]],
+    changed: Sequence[str],
+    base: str | None = None,
+) -> tuple[dict[str, list[str]], list[str]]:
+    """Discover tests for triggered and unmapped changes; explain every uncovered path."""
+    tracked = _selection_tracked(root, base)
+    suite_files = {
+        suite.name: registry_lib.suite_files(registry, tracked, suite.name)
+        for suite in registry.suites
+    }
+    texts = _head_test_texts(
+        root, sorted({path for files in suite_files.values() for path in files})
+    )
+    triggered = {path for hits in affected.values() for path in hits}
+    untriggered = sorted(set(changed) - triggered)
+    selected: dict[str, list[str]] = {}
+    named: set[str] = set()
+    tests: set[str] = set()
+    for suite in registry.suites:
+        candidates = sorted(triggered) if suite.name in affected else []
+        if suite.not_local is None:
+            candidates += untriggered
+        if not candidates:
+            continue
+        files = suite_files[suite.name]
+        tests.update(files)
+        matches, unnamed = focused_selection(
+            candidates, tracked, {path: texts[path] for path in files if path in texts}
+        )
+        named.update(set(candidates) - set(unnamed))
+        if suite.name in affected or matches:
+            selected[suite.name] = matches
+            print(f"{suite.name}: selected {len(matches)} test file(s)", flush=True)
+    unmatched = sorted(set(changed) - named - tests)
+    for path in unmatched:
+        covering = [suite for suite in registry.suites if path in affected.get(suite.name, [])]
+        if not covering:
+            covering = [suite for suite in registry.suites if suite.not_local is None]
+        print(
+            f"NOT RUN {path}: no test names this file; {alternate_coverage(covering)}", flush=True
+        )
+    return selected, unmatched
+
+
+def verify_clean_paths(root: Path, paths: Iterable[str]) -> None:
+    """Refuse to execute selected checkout content that differs from the pushed HEAD."""
+    paths = sorted(set(paths))
+    if not paths:
+        return
+    dirty: set[str] = set()
+    for flags in ((), ("--cached",)):
+        dirty.update(
+            _git(root, "diff", "--name-only", "-z", *flags, "HEAD", "--", *paths).split("\0")
+        )
+    dirty.update(_git(root, "ls-files", "--others", "-z", "--", *paths).split("\0"))
+    dirty.discard("")
+    if dirty:
+        raise RunnerError("working tree/index differs from HEAD: " + ", ".join(sorted(dirty)))
 
 
 def run_suite(
@@ -422,12 +655,24 @@ def run_suite(
     registry: registry_lib.Registry,
     suite: registry_lib.Suite,
     options: argparse.Namespace,
+    files: Sequence[str] | None = None,
 ) -> SuiteResult:
     """Build or reuse the venv, then run the suite's Python and shell tests."""
+    if files is not None and not files:
+        return SuiteResult(
+            suite.name,
+            "not-run",
+            notes=["no test names a changed file", alternate_coverage([suite])],
+        )
     if suite.not_local is not None:
-        return SuiteResult(suite.name, "not-run", notes=[suite.not_local])
+        return SuiteResult(
+            suite.name,
+            "not-run",
+            notes=[f"cannot run on a workstation: {suite.not_local}", alternate_coverage([suite])],
+        )
     owner = venv_owner(registry, suite)
-    files = suite_test_files(root, registry, suite.name)
+    if files is None:
+        files = suite_test_files(root, registry, suite.name)
     env = _env_without_git()
     binary = find_vmaf_bin(root, options.vmaf_bin)
     if binary:
@@ -452,6 +697,8 @@ def run_suite(
             )
     result.seconds = time.monotonic() - started
     result.venv = venv_note
+    if result.status == "failed":
+        details.insert(0, "test files: " + ", ".join(files))
     result.notes = details
     return result
 
@@ -464,6 +711,7 @@ def _run_in(
     options: argparse.Namespace,
     env: dict[str, str],
 ) -> tuple[SuiteResult, list[str]]:
+    """Run one suite's Python and shell test files in a resolved interpreter and merge results."""
     py_files = [f for f in files if f.endswith(".py")]
     sh_files = [f for f in files if f.endswith(".sh")]
     result, details = run_pytest(root, suite, python, py_files, options.time_cap, env)
@@ -476,8 +724,9 @@ def _run_in(
 
 
 def format_result(result: SuiteResult) -> str:
+    """Distinguish completed tests from recorded local coverage gaps."""
     if result.status == "not-run":
-        return f"{result.name}: NOT RUN (cannot run on a workstation: {result.notes[0]})"
+        return f"{result.name}: NOT RUN ({result.notes[0]})"
     verdict = "passed" if result.status == "passed" else "FAILED"
     return (
         f"{result.name}: {verdict}: {result.passed} passed, {result.failed} failed, "
@@ -486,11 +735,18 @@ def format_result(result: SuiteResult) -> str:
 
 
 def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
+    """Require one unambiguous source of changed paths for selection."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=REPO_ROOT, help="repository root")
     parser.add_argument("--base", help="base commit of the change")
     parser.add_argument("--head", help="head commit of the change")
+    parser.add_argument(
+        "--merge-base", metavar="REF", help="diff merge-base of REF and HEAD to HEAD"
+    )
     parser.add_argument("--files", help="changed files, comma or space separated ('-': stdin)")
+    parser.add_argument(
+        "--focused", action="store_true", help="run only tests naming changed files"
+    )
     parser.add_argument("--list", action="store_true", help="print the affected suites only")
     parser.add_argument("--strict", action="store_true", help="a suite that cannot run fails")
     parser.add_argument("--time-cap", type=float, default=DEFAULT_TIME_CAP_SECONDS)
@@ -505,34 +761,77 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="run in this interpreter instead of a cached venv (diagnostics)",
     )
     args = parser.parse_args(argv)
-    if (args.base is None) != (args.head is None) or (args.base is None) == (args.files is None):
-        parser.error("give --base with --head, or --files")
+    modes = sum(value is not None for value in (args.base, args.files, args.merge_base))
+    if modes != 1 or (args.base is None) != (args.head is None):
+        parser.error("give --base with --head, --files, or --merge-base (mutually exclusive)")
     return args
 
 
-def collect_changed(options: argparse.Namespace) -> list[str]:
+def collect_changed(options: argparse.Namespace) -> tuple[list[str], str | None]:
+    """Resolve the change range together with the tree used for deleted-file identities."""
     if options.files is not None:
         text = sys.stdin.read() if options.files == "-" else options.files
-        return parse_file_list(text)
-    return changed_files(options.root, options.base, options.head)
+        return parse_file_list(text), None
+    if options.merge_base is not None:
+        head = _git(options.root, "rev-parse", "--verify", "HEAD^{commit}").strip()
+        outgoing_head(head, options.root)
+        base = _git(options.root, "merge-base", options.merge_base, "HEAD").strip()
+        return changed_files(options.root, base, head), base
+    if options.focused:
+        _require_head_is_checkout(options.root, options.head)
+    return changed_files(options.root, options.base, options.head), options.base
+
+
+def _require_head_is_checkout(root: Path, head: str) -> None:
+    """Focused mode reads candidate tests from HEAD, so the range must end there."""
+    checkout = _git(root, "rev-parse", "--verify", "HEAD^{commit}").strip()
+    requested = _git(
+        root, "rev-parse", "--verify", "--end-of-options", f"{head}^{{commit}}"
+    ).strip()
+    if requested != checkout:
+        raise RunnerError(
+            f"--focused reads tests from HEAD {checkout}; --head {head} resolves to "
+            f"{requested}; check out the head commit or drop --focused"
+        )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Select affected tests, validate checkout identity and report execution outcomes."""
     options = parse_args(argv)
     try:
+        if not options.list:
+            verify_clean_paths(options.root, [registry_lib.MANIFEST.as_posix()])
         registry = registry_lib.load_registry(options.root)
-        affected = affected_suites(registry, collect_changed(options))
-        if options.list or not affected:
+        changed, base = collect_changed(options)
+        affected = affected_suites(registry, changed)
+        selected: dict[str, list[str]] = {}
+        unmatched: list[str] = []
+        if options.focused:
+            selected, unmatched = _focused_suite_files(
+                options.root, registry, affected, changed, base
+            )
+        elif options.list or not affected:
             return _report_list(registry, affected)
+        if options.list:
+            for name, files in selected.items():
+                print(f"{name}: " + ", ".join(files))
+            return 0
+        selected_files = {path for paths in selected.values() for path in paths}
+        if not options.focused:
+            selected_files = {
+                path for name in affected for path in suite_test_files(options.root, registry, name)
+            }
+        verify_clean_paths(options.root, [*changed, *selected_files])
         results = [
-            run_suite(options.root, registry, s, options)
+            run_suite(options.root, registry, s, options, selected.get(s.name))
             for s in registry.suites
-            if s.name in affected
+            if s.name in (selected if options.focused else affected)
         ]
-    except (RunnerError, registry_lib.RegistryError) as exc:
+    except (RunnerError, registry_lib.RegistryError, RuntimeError, OSError) as exc:
         print(f"run-affected-suites: error: {exc}", file=sys.stderr)
         return 2
-    return _report_results(results, options.strict)
+    status = _report_results(results, options.strict)
+    return 1 if options.strict and unmatched else status
 
 
 def _report_list(registry: registry_lib.Registry, affected: dict[str, list[str]]) -> int:
@@ -548,11 +847,14 @@ def _report_list(registry: registry_lib.Registry, affected: dict[str, list[str]]
 
 
 def _report_results(results: Sequence[SuiteResult], strict: bool) -> int:
+    """Keep recorded skips visible and fail them only under the strict policy."""
     failed = False
     for result in results:
         print(format_result(result), flush=True)
         for note in result.notes if result.status == "failed" else []:
             print(f"    {note}", file=sys.stderr)
+        for note in result.notes[1:] if result.status == "not-run" else []:
+            print(f"    {note}", flush=True)
         failed |= result.status == "failed" or (strict and result.status == "not-run")
     return 1 if failed else 0
 

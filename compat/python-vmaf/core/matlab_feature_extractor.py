@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 import os
-import subprocess
+import subprocess  # nosec B404 -- MATLAB argv invocation and timeout diagnostics.
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import numpy as np
 
@@ -13,6 +15,40 @@ from vmaf.tools.stats import ListStats
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
+# Not measured: MATLAB is not installed on the measuring host. One call runs a
+# whole-video MATLAB feature script, so the bound leaves room for long clips.
+SCRIPT_TIMEOUT_S = 3600
+
+
+def _matlab_output(output: str | bytes | None) -> str:
+    """Decode captured diagnostics without displaying a bytes repr or None."""
+    return output.decode("utf-8", errors="replace") if isinstance(output, bytes) else output or ""
+
+
+def _matlab_char(value: str) -> str:
+    """Quote `value` as a MATLAB character vector for a ``-r`` script.
+
+    A single quote ends a MATLAB character vector; two single quotes stand for
+    one quote inside it (MathWorks, "Text in String and Character Arrays").
+    The argv call keeps asset paths away from a shell, but MATLAB parses the
+    script itself, so an unquoted path holding a quote could end the literal
+    and add statements. A value with a control character is refused, since a
+    newline would split the one-line script.
+    """
+    if not value.isprintable():
+        raise ValueError(f"MATLAB script argument holds a control character: {value!r}")
+    return "'" + value.replace("'", "''") + "'"
+
+
+@contextmanager
+def _matlab_workspace(workspace: str) -> Iterator[None]:
+    """Restore the caller's working directory even when MATLAB fails or times out."""
+    previous = os.getcwd()
+    try:
+        os.chdir(workspace)
+        yield
+    finally:
+        os.chdir(previous)
 
 
 def _run_matlab(matlab_bin: str, matlab_script: str, log_file_path: str | None = None) -> None:
@@ -26,7 +62,9 @@ def _run_matlab(matlab_bin: str, matlab_script: str, log_file_path: str | None =
     ``>> {log_file_path}`` redirect semantics without invoking a shell.
 
     Stderr is folded into stdout so the captured/redirected log
-    matches the prior behaviour for MATLAB error diagnostics.
+    matches the prior behaviour for MATLAB error diagnostics. A failure
+    or timeout raises AssertionError chained to the subprocess error,
+    with the captured output decoded as text.
     """
     argv: list[str] = [
         matlab_bin,
@@ -45,19 +83,32 @@ def _run_matlab(matlab_bin: str, matlab_script: str, log_file_path: str | None =
     env["LANG"] = "C"
     try:
         if log_file_path is None:
-            subprocess.check_output(argv, stderr=subprocess.STDOUT, env=env, shell=False)
+            subprocess.check_output(  # noqa: S603  # nosec B603 -- configured MATLAB executable and fixed argv, no shell.
+                argv,
+                stderr=subprocess.STDOUT,
+                env=env,
+                shell=False,
+                timeout=SCRIPT_TIMEOUT_S,
+            )
         else:
             with open(log_file_path, "ab") as log_fh:
-                subprocess.run(
+                subprocess.run(  # noqa: S603  # nosec B603 -- configured MATLAB executable and fixed argv, no shell.
                     argv,
                     stdout=log_fh,
                     stderr=subprocess.STDOUT,
                     env=env,
                     shell=False,
                     check=True,
+                    timeout=SCRIPT_TIMEOUT_S,
                 )
     except subprocess.CalledProcessError as e:
-        raise AssertionError(f"Process returned {e.returncode}, cmd: {argv}, msg: {str(e.output)}")
+        raise AssertionError(
+            f"Process returned {e.returncode}, cmd: {argv}, msg: {_matlab_output(e.output)}"
+        ) from e
+    except subprocess.TimeoutExpired as e:
+        raise AssertionError(
+            f"Process timed out after {SCRIPT_TIMEOUT_S}s (SCRIPT_TIMEOUT_S), cmd: {argv}, msg: {_matlab_output(e.output)}"
+        ) from e
 
 
 class MatlabFeatureExtractor(FeatureExtractor):
@@ -96,6 +147,7 @@ class StrredFeatureExtractor(MatlabFeatureExtractor):
         ), "STRRED feature extractor only supports yuv420p for now."
 
     def _generate_result(self, asset):
+        """Generate feature scores and restore cwd after MATLAB exits or fails."""
         # routine to call the command-line executable and generate quality
         # scores in the log file.
 
@@ -112,9 +164,9 @@ class StrredFeatureExtractor(MatlabFeatureExtractor):
         quality_width, quality_height = asset.quality_width_height
 
         matlab_bin = VmafExternalConfig.get_and_assert_matlab()
-        matlab_script = "run_strred('{ref}', '{dis}', {h}, {w}); exit;".format(
-            ref=ref_procfile_path,
-            dis=dis_procfile_path,
+        matlab_script = "run_strred({ref}, {dis}, {h}, {w}); exit;".format(
+            ref=_matlab_char(ref_procfile_path),
+            dis=_matlab_char(dis_procfile_path),
             w=quality_width,
             h=quality_height,
         )
@@ -126,12 +178,11 @@ class StrredFeatureExtractor(MatlabFeatureExtractor):
                 log_file_path,
             )
 
-        os.chdir(self.MATLAB_WORKSPACE)
-        # Argv-list invocation (no shell) — fixes CWE-78 shell injection
-        # via asset paths. Log redirect is performed by `_run_matlab`
-        # opening `log_file_path` in append mode.
-        _run_matlab(matlab_bin, matlab_script, log_file_path=log_file_path)
-        os.chdir(current_dir)
+        with _matlab_workspace(self.MATLAB_WORKSPACE):
+            # Argv-list invocation (no shell) — fixes CWE-78 shell injection
+            # via asset paths. Log redirect is performed by `_run_matlab`
+            # opening `log_file_path` in append mode.
+            _run_matlab(matlab_bin, matlab_script, log_file_path=log_file_path)
 
     @classmethod
     @override(Executor)
@@ -199,6 +250,7 @@ class StrredOptFeatureExtractor(MatlabFeatureExtractor):
         ), "STRRED opt feature extractor only supports yuv420p for now."
 
     def _generate_result(self, asset):
+        """Generate feature scores and restore cwd after MATLAB exits or fails."""
         # routine to call the command-line executable and generate quality
         # scores in the log file.
 
@@ -215,9 +267,9 @@ class StrredOptFeatureExtractor(MatlabFeatureExtractor):
         quality_width, quality_height = asset.quality_width_height
 
         matlab_bin = VmafExternalConfig.get_and_assert_matlab()
-        matlab_script = "run_strred_opt('{ref}', '{dis}', {w}, {h}); exit;".format(
-            ref=ref_procfile_path,
-            dis=dis_procfile_path,
+        matlab_script = "run_strred_opt({ref}, {dis}, {w}, {h}); exit;".format(
+            ref=_matlab_char(ref_procfile_path),
+            dis=_matlab_char(dis_procfile_path),
             w=quality_width,
             h=quality_height,
         )
@@ -230,10 +282,9 @@ class StrredOptFeatureExtractor(MatlabFeatureExtractor):
                 log_file_path,
             )
 
-        os.chdir(self.MATLAB_WORKSPACE)
-        # Argv-list invocation (no shell) — fixes CWE-78 shell injection.
-        _run_matlab(matlab_bin, matlab_script, log_file_path=log_file_path)
-        os.chdir(current_dir)
+        with _matlab_workspace(self.MATLAB_WORKSPACE):
+            # Argv-list invocation (no shell) — fixes CWE-78 shell injection.
+            _run_matlab(matlab_bin, matlab_script, log_file_path=log_file_path)
 
     @classmethod
     @override(Executor)
@@ -301,6 +352,7 @@ class SpEEDMatlabFeatureExtractor(MatlabFeatureExtractor):
     MATLAB_WORKSPACE = VmafConfig.root_path("python", "vmaf", "matlab", "SpEED")
 
     def _generate_result(self, asset):
+        """Generate feature scores and restore cwd after MATLAB exits or fails."""
 
         # routine to call the command-line executable and generate quality
         # scores in the log file.
@@ -313,15 +365,13 @@ class SpEEDMatlabFeatureExtractor(MatlabFeatureExtractor):
         log_file_path = make_absolute_path(log_file_path, current_dir)
         quality_width, quality_height = asset.quality_width_height
         matlab_bin = VmafExternalConfig.get_and_assert_matlab()
-        matlab_script = (
-            "run_speed('{ref}', '{dis}', {w}, {h}, {bands}, '{yuv_type}'); exit;".format(
-                ref=ref_procfile_path,
-                dis=dis_procfile_path,
-                w=quality_width,
-                h=quality_height,
-                bands=self.scale_list,
-                yuv_type=self._get_workfile_yuv_type(asset),
-            )
+        matlab_script = "run_speed({ref}, {dis}, {w}, {h}, {bands}, {yuv_type}); exit;".format(
+            ref=_matlab_char(ref_procfile_path),
+            dis=_matlab_char(dis_procfile_path),
+            w=quality_width,
+            h=quality_height,
+            bands=self.scale_list,
+            yuv_type=_matlab_char(self._get_workfile_yuv_type(asset)),
         )
         if self.logger:
             self.logger.info(
@@ -330,10 +380,9 @@ class SpEEDMatlabFeatureExtractor(MatlabFeatureExtractor):
                 matlab_script,
                 log_file_path,
             )
-        os.chdir(self.MATLAB_WORKSPACE)
-        # Argv-list invocation (no shell) — fixes CWE-78 shell injection.
-        _run_matlab(matlab_bin, matlab_script, log_file_path=log_file_path)
-        os.chdir(current_dir)
+        with _matlab_workspace(self.MATLAB_WORKSPACE):
+            # Argv-list invocation (no shell) — fixes CWE-78 shell injection.
+            _run_matlab(matlab_bin, matlab_script, log_file_path=log_file_path)
 
     @classmethod
     @override(Executor)
@@ -386,13 +435,13 @@ class STMADFeatureExtractor(MatlabFeatureExtractor):
 
     # compile necessary functions; need to use mex from within matlab
     def _custom_init(self):
+        """Compile MATLAB helpers with exception-safe workspace restoration."""
 
         def run_stmad_mex(matlab_bin: str, mex_script: str) -> None:
-            current_dir = os.getcwd() + "/"
-            os.chdir(self.MATLAB_WORKSPACE)
-            # Argv-list invocation (no shell) — fixes CWE-78 shell injection.
-            _run_matlab(matlab_bin, mex_script)
-            os.chdir(current_dir)
+            """Compile one MEX helper while preserving the caller workspace."""
+            with _matlab_workspace(self.MATLAB_WORKSPACE):
+                # Argv-list invocation (no shell) — fixes CWE-78 shell injection.
+                _run_matlab(matlab_bin, mex_script)
 
         matlab_bin = VmafExternalConfig.get_and_assert_matlab()
         run_stmad_mex(matlab_bin, "mex ical_std.c; exit;")
@@ -406,6 +455,7 @@ class STMADFeatureExtractor(MatlabFeatureExtractor):
         ), "STMAD feature extractor only supports yuv420p for now."
 
     def _generate_result(self, asset):
+        """Generate feature scores and restore cwd after MATLAB exits or fails."""
         # routine to call the command-line executable and generate quality
         # scores in the log file.
 
@@ -422,9 +472,9 @@ class STMADFeatureExtractor(MatlabFeatureExtractor):
         quality_width, quality_height = asset.quality_width_height
 
         matlab_bin = VmafExternalConfig.get_and_assert_matlab()
-        matlab_script = "run_stmad('{ref}', '{dis}', {w}, {h}); exit;".format(
-            ref=ref_procfile_path,
-            dis=dis_procfile_path,
+        matlab_script = "run_stmad({ref}, {dis}, {w}, {h}); exit;".format(
+            ref=_matlab_char(ref_procfile_path),
+            dis=_matlab_char(dis_procfile_path),
             w=quality_width,
             h=quality_height,
         )
@@ -437,10 +487,9 @@ class STMADFeatureExtractor(MatlabFeatureExtractor):
                 log_file_path,
             )
 
-        os.chdir(self.MATLAB_WORKSPACE)
-        # Argv-list invocation (no shell) — fixes CWE-78 shell injection.
-        _run_matlab(matlab_bin, matlab_script, log_file_path=log_file_path)
-        os.chdir(current_dir)
+        with _matlab_workspace(self.MATLAB_WORKSPACE):
+            # Argv-list invocation (no shell) — fixes CWE-78 shell injection.
+            _run_matlab(matlab_bin, matlab_script, log_file_path=log_file_path)
 
     @classmethod
     @override(Executor)
@@ -494,6 +543,7 @@ class iCIDFeatureExtractor(MatlabFeatureExtractor):
         assert asset.ref_yuv_type == asset.dis_yuv_type
 
     def _generate_result(self, asset):
+        """Generate feature scores and restore cwd after MATLAB exits or fails."""
         # routine to call the command-line executable and generate quality
         # scores in the log file.
 
@@ -510,12 +560,12 @@ class iCIDFeatureExtractor(MatlabFeatureExtractor):
         quality_width, quality_height = asset.quality_width_height
 
         matlab_bin = VmafExternalConfig.get_and_assert_matlab()
-        matlab_script = "run_icid('{ref}', '{dis}', {h}, {w}, '{yuvtype}'); exit;".format(
-            ref=ref_workfile_path,
-            dis=dis_workfile_path,
+        matlab_script = "run_icid({ref}, {dis}, {h}, {w}, {yuvtype}); exit;".format(
+            ref=_matlab_char(ref_workfile_path),
+            dis=_matlab_char(dis_workfile_path),
             w=quality_width,
             h=quality_height,
-            yuvtype=asset.ref_yuv_type,
+            yuvtype=_matlab_char(asset.ref_yuv_type),
         )
         if self.logger:
             self.logger.info(
@@ -525,10 +575,9 @@ class iCIDFeatureExtractor(MatlabFeatureExtractor):
                 log_file_path,
             )
 
-        os.chdir(self.MATLAB_WORKSPACE)
-        # Argv-list invocation (no shell) — fixes CWE-78 shell injection.
-        _run_matlab(matlab_bin, matlab_script, log_file_path=log_file_path)
-        os.chdir(current_dir)
+        with _matlab_workspace(self.MATLAB_WORKSPACE):
+            # Argv-list invocation (no shell) — fixes CWE-78 shell injection.
+            _run_matlab(matlab_bin, matlab_script, log_file_path=log_file_path)
 
     @classmethod
     def _post_process_result(cls, result):

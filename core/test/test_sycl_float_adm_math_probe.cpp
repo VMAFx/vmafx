@@ -215,7 +215,7 @@ void launch_scale(sycl::queue &q, const VmafTestFadmScale &s, const ScaleBuffers
     const RowArgs rows = row_args(s, b);
     q.parallel_for(sycl::range<1>((size_t)kTermSlots * n.region_h),
                    [=](sycl::id<1> id)
-                       VMAF_SYCL_REQD_SG_SIZE(16) { vmaf_sycl_fadm::row_item(rows, id[0]); });
+                       [[VMAF_SYCL_REQD_SG_ATTR(16)]] { vmaf_sycl_fadm::row_item(rows, id[0]); });
     q.wait_and_throw();
 }
 

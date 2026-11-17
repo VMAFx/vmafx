@@ -78,7 +78,7 @@ void run_kernel(sycl::queue &q, const ProbeBuffers &host, const GainLimit &limit
     int64_t *gg_sigma = wide.get();
     q.memcpy(sigmas, host.sigmas, 3 * n * sizeof(uint32_t));
     q.wait_and_throw();
-    q.parallel_for(sycl::range<1>(n), [=](sycl::id<1> i) VMAF_SYCL_REQD_SG_SIZE(16) {
+    q.parallel_for(sycl::range<1>(n), [=](sycl::id<1> i) [[VMAF_SYCL_REQD_SG_ATTR(16)]] {
         const uint32_t *s = sigmas + 3 * i[0];
         const GainTerms terms = vmaf_sycl_ivif::gain_terms(s[0], s[1], s[2], limit);
         sv_sq[i] = terms.sv_sq;

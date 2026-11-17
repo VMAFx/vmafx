@@ -42,6 +42,9 @@ from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: 
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 from vmaf_train.op_allowlist import check_model  # noqa: E402  # type: ignore[import-not-found]
 
+# Bound = max(60, 10x the slowest measured run): validate_model_registry took 0.53 s.
+SCRIPT_TIMEOUT_S = 60
+
 
 def _check_allowlist(onnx_path: Path) -> int:
     report = check_model(onnx_path)
@@ -103,12 +106,20 @@ def _check_parity(
 
 
 def _check_registry() -> int:
-    rc = subprocess.call(
-        [
-            sys.executable,
-            str(REPO_ROOT / "ai" / "scripts" / "validate_model_registry.py"),
-        ]
-    )
+    """Run the model registry validation script and return its exit code."""
+    try:
+        rc = subprocess.call(
+            [
+                sys.executable,
+                str(REPO_ROOT / "ai" / "scripts" / "validate_model_registry.py"),
+            ],
+            timeout=SCRIPT_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        print(
+            f"[3/3] validate_model_registry.py timed out after {SCRIPT_TIMEOUT_S}s (SCRIPT_TIMEOUT_S)"
+        )
+        return 124
     print(f"[3/3] validate_model_registry.py rc={rc}")
     return rc
 

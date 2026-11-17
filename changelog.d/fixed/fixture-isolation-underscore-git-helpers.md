@@ -1,0 +1,1 @@
+- **Fixture isolation check covers underscore Git helpers.** The static fixture-isolation scan now flags repository creation through helpers such as `self._git("init")` and `run_git(["clone", url])`, which its word-boundary pattern skipped; the one fixture it newly flags gains the system-configuration barrier ([ADR-3535](docs/adr/3535-fixture-git-config-isolation.md)).

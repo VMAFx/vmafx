@@ -25,6 +25,7 @@ broken `.c` file).
 | Touching | Read first | Invariant |
 | --- | --- | --- |
 | `workflows/*.yml` | [action-sha-pins](AGENTS.d/action-sha-pins.md) | Every uses directive in workflows must reference 40-character commit SHA with version comment; no floating tags. |
+| `workflows/*.yml`, `actions/*/action.yml` | [apt-refresh](AGENTS.d/apt-refresh.md) | Hosted-runner apt refresh runs only through scripts/ci/apt-install-cached.sh refresh\|install. |
 | `workflows/tests-and-quality-gates.yml`, `workflows/lint-and-format.yml`, `/scripts/ci/test_self_hosted_runner_workflow_contract.py` | [arc-fork-guard](AGENTS.d/arc-fork-guard.md) | Every runs-on naming arc-runners carries the head-repo guard before the label; fork PRs stay hosted. |
 | `workflows/libvmaf-build-matrix.yml`, `workflows/build.yml` | [build-matrix-record](AGENTS.d/build-matrix-record.md) | Matrix lanes governed by ADR-1259; experimental lanes advisory; pass -Db_lto=false on hosted icpx/SYCL builds. |
 | `workflows/docker-publish-production.yml`, `workflows/docker-publish-operator-node.yml`, `workflows/supply-chain.yml` | [container-signing](AGENTS.d/container-signing.md) | Every container image dual-signed with cosign and attest-build-provenance; SBOM attached; smoke verifies cosign. |
@@ -39,6 +40,7 @@ broken `.c` file).
 | `workflows/libvmaf-build-matrix.yml`, `/scripts/ci/run_meson_test.py`, `/core/test/test_meson_secret_env_sanitization.py` | [meson-sanitization](AGENTS.d/meson-sanitization.md) | Every workflow step running Meson/Ninja test invokes run_meson_test.py; resolve Python before sudo. |
 | `workflows/lint-and-format.yml`, `/scripts/sync-pelorus-interop.sh` | [pelorus-mirror](AGENTS.d/pelorus-mirror.md) | Pre-Commit job verifies exact declared commit of VMAFx/pelorus before pre-commit; no moving branch or tag. |
 | `/pyproject.toml`, `/renovate.json` | [python-requirement](AGENTS.d/python-requirement.md) | Root pyproject.toml keeps requires-python >=3.14 without patch component; renovate excludes root requires-python. |
+| `workflows/readme-badges.yml` | [readme-badges](AGENTS.d/readme-badges.md) | Render job on master only; both checkouts at github.sha; publish job contents: write only; no workflow_run trigger. |
 | `workflows/release-please.yml`, `workflows/supply-chain.yml`, `/scripts/release/verify-release-version.sh`, `/dev/Containerfile` | [release-fan-out](AGENTS.d/release-fan-out.md) | Single root package draft release; release-publish environment; native release-build stage; tag-bound recovery. |
 | `/renovate.json`, `/scripts/ci/tests/test_renovate_file_patterns.py`, `/docs/development/dependency-bot.md` | [renovate-bot](AGENTS.d/renovate-bot.md) | Mend Renovate config in renovate.json; dependabot.yml disabled; RENOVATE_TOKEN repository secret. |
 | `workflows/required-aggregator.yml`, `/scripts/ci/check-aggregator-names.sh`, `/scripts/ci/plan-ci-impact.py` | [required-aggregator](AGENTS.d/required-aggregator.md) | Aggregator runs on drafts; gates route in-job without paths filters; display names <=30 chars and match aggregator. |

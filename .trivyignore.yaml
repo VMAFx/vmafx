@@ -7,7 +7,7 @@
 # One entry per rule and file, each with its reason and an expiry: an expired
 # entry stops suppressing and the scan fails again. Category D (120 days).
 misconfigurations:
-  # DS-0017: `apt-get update` without `apt-get install` in the same RUN. In
+  # DS-0017: refreshing apt package lists without `apt-get install` in the same RUN. In
   # each `*-source-fetch` stage the update feeds `apt-get source` in
   # tools/rc1-tester/image/licensing.py; only /sources leaves the stage, so
   # no stale package list reaches a published image (ADR-1503 rule 5).

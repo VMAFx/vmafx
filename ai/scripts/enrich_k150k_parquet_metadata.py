@@ -33,7 +33,6 @@ REPO_ROOT = _SCRIPT_PATHS.repo_root
 def _load_runtime_helpers() -> tuple[Any, ...]:
     """Import helpers after the direct-script bootstrap installs package roots."""
     from ai.scripts.extract_k150k_features import DEFAULT_CHUG_SPLIT_SEED, _load_jsonl_metadata
-
     from aiutils.cli_helpers import collect_cli_argv, make_argument_parser
     from aiutils.parquet_utils import write_parquet_atomic
     from aiutils.run_manifest import build_run_provenance, dumps_manifest_json, write_manifest_json

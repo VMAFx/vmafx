@@ -24,9 +24,15 @@ import json
 import sys
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
+
+from scripts.lib.safe_subprocess import (
+    CommandFailed,
+    CommandTimedOut,
+    TextCommandResult,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT_PATH = _REPO_ROOT / "ai" / "scripts" / "bvi_dvc_to_full_features.py"
@@ -280,16 +286,12 @@ def _make_fake_vmaf_json(n_frames: int = 2) -> str:
 class TestMainDirMode:
     """End-to-end test of ``main()`` with ``--bvi-dir``, subprocess mocked."""
 
-    def _mock_subprocess_run(self, cmd, **kwargs):
-        """Replace subprocess.run: write fake vmaf JSON when the vmaf binary
-        is invoked; return a no-op CompletedProcess for ffmpeg/ffprobe calls."""
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "{}"
-        mock_result.stderr = ""
-
+    def _mock_run_command(self, cmd, **kwargs):
+        """Replace run_command: write fake vmaf JSON when the vmaf binary
+        is invoked; return a TextCommandResult for ffmpeg/ffprobe calls."""
+        stdout = "{}"
         if not cmd:
-            return mock_result
+            return TextCommandResult((), 0, stdout, "")
 
         # Detect vmaf binary invocation by --output flag.
         if "--output" in cmd:
@@ -298,7 +300,7 @@ class TestMainDirMode:
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out_path.write_text(_make_fake_vmaf_json(2))
 
-        return mock_result
+        return TextCommandResult(tuple(cmd), 0, stdout, "")
 
     def test_dir_mode_two_yuv_clips(
         self, bvi_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -317,7 +319,7 @@ class TestMainDirMode:
 
         out_parquet = tmp_path / "out.parquet"
 
-        with patch("subprocess.run", side_effect=self._mock_subprocess_run):
+        with patch.object(mod, "run_command", side_effect=self._mock_run_command):
             # Call via sys.argv patching.
             monkeypatch.setattr(
                 "sys.argv",
@@ -416,3 +418,159 @@ class TestMainDirMode:
         with pytest.raises(SystemExit) as exc_info:
             mod.main()
         assert exc_info.value.code != 0
+
+
+def test_run_command_bounds_and_allowlist(tmp_path: Path) -> None:
+    """Positive test: verify run_command timeout_seconds and allowed_executables."""
+    mod = _load_module()
+    src = tmp_path / "clip.mp4"
+    src.write_bytes(b"\x00")
+    ref = tmp_path / "ref.yuv"
+    ref.write_bytes(b"\x00")
+    dis = tmp_path / "dis.yuv"
+    out_json = tmp_path / "vmaf.json"
+    binary = tmp_path / "vmaf"
+    binary.write_text("")
+
+    recorded: list[dict[str, Any]] = []
+
+    def fake_run(cmd, *, allowed_executables, timeout_seconds, **kw):
+        """Record command constraints and fake metadata or empty successful command output."""
+        recorded.append(
+            {
+                "cmd": list(cmd),
+                "allowed": allowed_executables,
+                "timeout": timeout_seconds,
+            }
+        )
+        if cmd[0] == "ffprobe":
+            return TextCommandResult(
+                tuple(cmd),
+                0,
+                json.dumps({"streams": [{"width": 480, "height": 272, "nb_frames": "2"}]}),
+                "",
+            )
+        return TextCommandResult(tuple(cmd), 0, "", "")
+
+    with patch.object(mod, "run_command", side_effect=fake_run):
+        mod._decode_yuv_10bit(src, ref)
+        mod._encode_dis_10bit(src, dis, crf=35)
+        mod._encode_dis_10bit_from_yuv(ref, dis, 480, 272, fps=30, crf=35)
+        mod._run_vmaf_full(binary, ref, dis, 480, 272, out_json, "version=vmaf_v0.6.1")
+
+    expected_calls = 5
+    assert len(recorded) == expected_calls
+    # ffprobe in _decode_yuv_10bit
+    assert recorded[0]["allowed"] == ("ffprobe",)
+    assert recorded[0]["timeout"] == mod.FFMPEG_TIMEOUT_S
+    # ffmpeg decode
+    assert recorded[1]["allowed"] == ("ffmpeg",)
+    assert recorded[1]["timeout"] == mod.TRANSCODE_TIMEOUT_S
+    # bash encode pipelines
+    assert recorded[2]["allowed"] == ("bash",)
+    assert recorded[2]["timeout"] == mod.TRANSCODE_TIMEOUT_S
+    assert recorded[3]["allowed"] == ("bash",)
+    assert recorded[3]["timeout"] == mod.TRANSCODE_TIMEOUT_S
+    # vmaf
+    vmaf_arg = mod.executable_argument(binary, Path.cwd())
+    assert recorded[4]["allowed"] == (vmaf_arg,)
+    assert recorded[4]["timeout"] == mod.VMAF_TIMEOUT_S
+
+
+def test_vmaf_step_command_failed_skips_clip(
+    bvi_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Negative test: CommandFailed from vmaf step logs FAIL and continues batch."""
+    mod = _load_module()
+
+    fake_vmaf = tmp_path / "vmaf"
+    fake_vmaf.write_bytes(b"")
+    fake_vmaf.chmod(0o755)
+    fake_model = tmp_path / "model.json"
+    fake_model.write_text("{}")
+    out_parquet = tmp_path / "out.parquet"
+
+    def fake_run(cmd, **kw):
+        """Fake command execution by raising on scoring or returning successful empty JSON."""
+        if "--output" in cmd:
+            raise CommandFailed(TextCommandResult(tuple(cmd), 1, "", "vmaf failed"))
+        return TextCommandResult(tuple(cmd), 0, "{}", "")
+
+    with patch.object(mod, "run_command", side_effect=fake_run):
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "bvi_dvc_to_full_features.py",
+                "--bvi-dir",
+                str(bvi_dir),
+                "--tier",
+                "all",
+                "--vmaf-bin",
+                str(fake_vmaf),
+                "--model",
+                str(fake_model),
+                "--out",
+                str(out_parquet),
+                "--no-cache",
+                "--max-clips",
+                "2",
+            ],
+        )
+        rc = mod.main()
+
+    assert rc == 0
+    captured = capsys.readouterr().err
+    assert "[bvi-dvc-full] FAIL" in captured
+
+
+def test_encode_step_command_timed_out_skips_clip(
+    bvi_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Boundary test: CommandTimedOut from encode step logs FAIL and batch continues."""
+    mod = _load_module()
+
+    fake_vmaf = tmp_path / "vmaf"
+    fake_vmaf.write_bytes(b"")
+    fake_vmaf.chmod(0o755)
+    fake_model = tmp_path / "model.json"
+    fake_model.write_text("{}")
+    out_parquet = tmp_path / "out.parquet"
+
+    def fake_run(cmd, **kw):
+        """Fake command execution by timing out the pipeline or returning successful empty JSON."""
+        if cmd and cmd[0] == "bash":
+            raise CommandTimedOut(tuple(cmd), 300.0, None, None)
+        return TextCommandResult(tuple(cmd), 0, "{}", "")
+
+    with patch.object(mod, "run_command", side_effect=fake_run):
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "bvi_dvc_to_full_features.py",
+                "--bvi-dir",
+                str(bvi_dir),
+                "--tier",
+                "all",
+                "--vmaf-bin",
+                str(fake_vmaf),
+                "--model",
+                str(fake_model),
+                "--out",
+                str(out_parquet),
+                "--no-cache",
+                "--max-clips",
+                "2",
+            ],
+        )
+        rc = mod.main()
+
+    assert rc == 0
+    captured = capsys.readouterr().err
+    assert "[bvi-dvc-full] FAIL" in captured
+    assert "timed out after 300s" in captured

@@ -84,11 +84,11 @@ except ModuleNotFoundError:
 
 bootstrap_ai_script(__file__, include_repo_root=True, include_ai_scripts=True)
 
-from ai.data.scores import resolve_teacher_model  # noqa: E402
-
 # Import the v3 vocab from the v2 trainer where it's documented as a
 # parallel constant (per ADR-0302's scaffold landed in PR #401).
 from train_fr_regressor_v2 import ENCODER_VOCAB_V3  # noqa: E402  # type: ignore[import-not-found]
+
+from ai.data.scores import resolve_teacher_model  # noqa: E402
 
 # Canonical-6 libvmaf feature columns (ADR-0291 / ADR-0319).
 CANONICAL_6: tuple[str, ...] = (
