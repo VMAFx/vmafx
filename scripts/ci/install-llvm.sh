@@ -29,7 +29,7 @@ fi
 packages=("clang-$major" "lldb-$major" "lld-$major" "clangd-$major" "clang-tidy-$major")
 
 if [[ $source_mode == --source=archive-first ]]; then
-  apt-get update -q
+  apt-get --error-on=any -o Acquire::Retries=3 update -q
   archive_available=1
   for package in "${packages[@]}"; do
     if ! apt-cache show "$package" >/dev/null 2>&1; then

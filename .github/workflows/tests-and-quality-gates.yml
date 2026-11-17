@@ -1004,8 +1004,6 @@ jobs:
         if: steps.impact.outputs.golden_harness == 'true'
         timeout-minutes: 35
         run: |
-          sudo rm -f /etc/apt/sources.list.d/*microsoft* \
-                     /etc/apt/sources.list.d/*azure*
           bash scripts/ci/apt-install-cached.sh install .github/apt/coverage.txt
           # ADR-0692 (design notes)
           sudo pip3 install --break-system-packages --ignore-installed --quiet --require-hashes \

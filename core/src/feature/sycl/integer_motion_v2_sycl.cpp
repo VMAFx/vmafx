@@ -13,7 +13,7 @@
  *  without storing blurred frames across submits.
  *
  *  Self-contained submit / collect — does NOT register with
- *  vmaf_sycl_graph_register because motion_v2 needs the previous
+ *  vmaf_sycl_graph_register_flags because motion_v2 needs the previous
  *  frame's raw ref pixels which the shared_frame buffer doesn't
  *  preserve across calls. Each submit reads the current ref Y plane
  *  from the shared frame, already uploaded once per frame for every

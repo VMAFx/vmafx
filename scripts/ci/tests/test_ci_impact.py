@@ -47,7 +47,13 @@ REQUIRED_CONSUMER_CONTRACTS = {
     "dev-container-build.yml": (
         "dev_container",
         ("dev-container-build-work",),
-        (("dev-container-build", "Dev Container Build", "dev-container-build-work"),),
+        (
+            (
+                "dev-container-build",
+                "Dev Container Build",
+                "dev-container-build-work, ubuntu-dev-images",
+            ),
+        ),
     ),
     "docker-image.yml": (
         "docker_image",
@@ -147,9 +153,8 @@ MSVC_LEG_SELECTORS = {"windows_msvc_sycl"}
 CONSUMER_SELECTORS = {"upstream_consumers"}
 # ADR-3390: the GStreamer element job builds and tests only when its inputs change.
 GSTREAMER_SELECTORS = {"gstreamer_element"}
-# ADR-3338: the dev-container build a light-tier pull request owes when it
-# touches the image's own inputs.
-DEV_CONTAINER_LANE_SELECTORS = {"dev_container_inputs"}
+# ADR-3338 / ADR-3545: dev-container and docker/dev Ubuntu image own-input lanes.
+DEV_CONTAINER_LANE_SELECTORS = {"dev_container_inputs", "ubuntu_dev_images"}
 OWN_PATHS_ONLY = (
     TESTER_SELECTORS
     | MSVC_LEG_SELECTORS
@@ -160,8 +165,15 @@ OWN_PATHS_ONLY = (
 )
 
 
-def _plan_for(paths: list[str], statuses: list[str] | None = None) -> ImpactPlan:
-    config = planner.load_config(CONFIG)
+def _plan_for(
+    paths: list[str],
+    statuses: list[str] | None = None,
+    *,
+    config: dict[str, object] | None = None,
+) -> ImpactPlan:
+    """Plan selected paths against the live configuration or an injected fixture."""
+    if config is None:
+        config = planner.load_config(CONFIG)
     statuses = statuses or ["M"] * len(paths)
     changes = tuple(
         planner.Change(status=s, paths=(p,)) for s, p in zip(statuses, paths, strict=True)
@@ -182,6 +194,12 @@ class ConfigContract(unittest.TestCase):
                 selector.get("patterns") or selector.get("inherits"),
                 f"selector {name} selects nothing",
             )
+
+    def test_bandit_configuration_matches_codacy_routing(self) -> None:
+        """Bandit and Codacy configuration changes select the same CI mode and jobs."""
+        bandit, codacy = _plan_for(["bandit.yml"]), _plan_for([".codacy.yml"])
+        self.assertEqual(bandit.mode, codacy.mode)
+        self.assertEqual(bandit.selectors, codacy.selectors)
 
     def test_every_top_level_repo_entry_is_known(self) -> None:
         """A path the planner cannot classify forces mode=full (fail-closed).
@@ -459,9 +477,12 @@ class GitIntegration(unittest.TestCase):
     """Drive the real CLI against a throwaway repository."""
 
     def _repo(self) -> tuple[str, GitCommand]:
+        """Create an isolated temporary Git repository and return its path and command runner."""
         tmp = tempfile.mkdtemp()
         env = {
             **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_AUTHOR_NAME": "t",
             "GIT_AUTHOR_EMAIL": "t@t",
             "GIT_COMMITTER_NAME": "t",
@@ -538,6 +559,32 @@ class GitIntegration(unittest.TestCase):
             kv["c_core"], "false", "merge-base diff must exclude master's own C change"
         )
         self.assertEqual(kv["base_sha"], base)
+
+    def test_pr_3476_release_python_base_digest_diff_selects_tester_image(self) -> None:
+        """ADR-3554: a PR touching only RELEASE_PYTHON_BASE in build-config.env and Dockerfile.tester selects tester_image."""
+        tmp, git = self._repo()
+        root = Path(tmp)
+        (root / "docker").mkdir(parents=True, exist_ok=True)
+        old_digest = "python:3.14-slim@sha256:" + "a" * 64
+        new_digest = "python:3.14-slim@sha256:" + "9" * 64
+        (root / "build-config.env").write_text(f'RELEASE_PYTHON_BASE="{old_digest}"\n')
+        (root / "docker" / "Dockerfile.tester").write_text(
+            f'ARG RELEASE_PYTHON_BASE="{old_digest}"\nFROM ${{RELEASE_PYTHON_BASE}}\n'
+        )
+        git("add", "build-config.env", "docker/Dockerfile.tester")
+        git("commit", "-q", "-m", "pin python base")
+        base = git("rev-parse", "HEAD")
+        git("checkout", "-q", "-b", "renovate/docker-digests")
+        (root / "build-config.env").write_text(f'RELEASE_PYTHON_BASE="{new_digest}"\n')
+        (root / "docker" / "Dockerfile.tester").write_text(
+            f'ARG RELEASE_PYTHON_BASE="{new_digest}"\nFROM ${{RELEASE_PYTHON_BASE}}\n'
+        )
+        git("commit", "-qam", "chore(deps): Update Docker digests")
+        head = git("rev-parse", "HEAD")
+        kv = self._run(tmp, "pull_request", base, head)
+        self.assertEqual(kv["mode"], "full")
+        self.assertEqual(kv["tester_image"], "true")
+        self.assertEqual(kv["windows_tester_zip"], "false")
 
     def test_linear_push_uses_exact_before_and_head(self) -> None:
         tmp, git = self._repo()
@@ -769,6 +816,73 @@ class DevContainerLaneRouting(unittest.TestCase):
         self.assertTrue(plan.selectors[self.SELECTOR])
 
 
+class UbuntuDevImagesRouting(unittest.TestCase):
+    """ADR-3545: `ubuntu_dev_images` follows the three Ubuntu dev images' own inputs."""
+
+    SELECTOR = "ubuntu_dev_images"
+    OWN_INPUTS = (
+        "docker/dev/ubuntu-26.04.Dockerfile",
+        "docker/dev/ubuntu-26.04-cuda.Dockerfile",
+        "docker/dev/ubuntu-26.04-sycl.Dockerfile",
+        "scripts/setup/ubuntu.sh",
+        "requirements/locks/build.txt",
+        "requirements/locks/dev-linters.txt",
+        "build-config.env",
+        ".dockerignore",
+        ".github/workflows/dev-container-build.yml",
+        "scripts/ci/install-cuda-toolkit.sh",
+        "scripts/ci/docker-hub-mirror.sh",
+        "scripts/ci/free-runner-disk.sh",
+    )
+
+    def test_all_own_inputs_select_it(self) -> None:
+        for path in self.OWN_INPUTS:
+            with self.subTest(path=path):
+                self.assertTrue(_plan_for([path]).selectors[self.SELECTOR])
+
+    def test_unrelated_and_ci_authority_changes_leave_it_off(self) -> None:
+        for path in (
+            "docs/index.md",
+            "core/src/libvmaf.c",
+            "dev/Containerfile",
+            "requirements/locks/docs-check.txt",
+            "scripts/ci/plan-ci-impact.py",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(_plan_for([path]).selectors[self.SELECTOR])
+
+    def test_unknown_change_set_selects_it_and_empty_diff_does_not(self) -> None:
+        config = planner.load_config(CONFIG)
+        unknown = planner.build_plan(config, None, "event-not-routed:schedule", "b" * 40, "h" * 40)
+        empty = planner.build_plan(config, (), None, "b" * 40, "h" * 40)
+        self.assertTrue(cast(ImpactPlan, unknown).selectors[self.SELECTOR])
+        self.assertFalse(cast(ImpactPlan, empty).selectors[self.SELECTOR])
+
+
+class TesterImageLaneRouting(unittest.TestCase):
+    """ADR-3554: `tester_image` selects the own-input lane for PR 3476's Python digest diff."""
+
+    SELECTOR = "tester_image"
+
+    def test_pr_3476_python_base_digest_paths_select_tester_image(self) -> None:
+        plan = _plan_for(["build-config.env", "docker/Dockerfile.tester"])
+        self.assertEqual(plan.mode, "full")
+        self.assertTrue(plan.selectors[self.SELECTOR])
+        self.assertFalse(plan.selectors["windows_tester_zip"])
+
+    def test_unrelated_and_ci_authority_changes_leave_it_off(self) -> None:
+        for path in ("docs/index.md", "core/src/libvmaf.c", "scripts/ci/plan-ci-impact.py"):
+            with self.subTest(path=path):
+                self.assertFalse(_plan_for([path]).selectors[self.SELECTOR])
+
+    def test_unknown_change_set_selects_it_and_empty_diff_does_not(self) -> None:
+        config = planner.load_config(CONFIG)
+        unknown = planner.build_plan(config, None, "event-not-routed:schedule", "b" * 40, "h" * 40)
+        empty = planner.build_plan(config, (), None, "b" * 40, "h" * 40)
+        self.assertTrue(cast(ImpactPlan, unknown).selectors[self.SELECTOR])
+        self.assertFalse(cast(ImpactPlan, empty).selectors[self.SELECTOR])
+
+
 class BuildWorkRouting(unittest.TestCase):
     """`build_work` runs build.yml's legs for every file their Python steps read.
 
@@ -795,6 +909,7 @@ class BuildWorkRouting(unittest.TestCase):
     )
 
     def test_the_python_steps_inputs_select_it(self) -> None:
+        """Select build legs for every input read by their Python steps."""
         for path in self.PYTHON_STEP_INPUTS:
             with self.subTest(path=path):
                 plan = _plan_for([path])
@@ -803,9 +918,11 @@ class BuildWorkRouting(unittest.TestCase):
                     self.assertFalse(plan.selectors["c_core"])
 
     def test_core_changes_still_select_it(self) -> None:
+        """Preserve build selection for core source changes."""
         self.assertTrue(_plan_for(["core/src/libvmaf.c"]).selectors[self.SELECTOR])
 
     def test_files_build_yml_does_not_read_leave_it_off(self) -> None:
+        """Keep unrelated changes out of the build selector."""
         for path in (
             "docs/index.md",
             "go.mod",
@@ -817,6 +934,7 @@ class BuildWorkRouting(unittest.TestCase):
                 self.assertFalse(_plan_for([path]).selectors[self.SELECTOR])
 
     def test_every_pytest_target_of_build_yml_selects_it(self) -> None:
+        """Select build legs for each pytest target declared by the workflow."""
         text = (CONFIG.parent / "workflows" / "build.yml").read_text(encoding="utf-8")
         targets = re.findall(r"python -m pytest (\S+\.py)", text)
         self.assertNotEqual(targets, [], "build.yml must run a pytest target")
@@ -827,6 +945,7 @@ class BuildWorkRouting(unittest.TestCase):
                 self.assertTrue(_plan_for([tracked]).selectors[self.SELECTOR])
 
     def test_every_tox_config_build_yml_runs_selects_it(self) -> None:
+        """Select build legs for every tox configuration the workflow runs."""
         text = (CONFIG.parent / "workflows" / "build.yml").read_text(encoding="utf-8")
         configs = re.findall(r"tox -c (\S+)", text)
         self.assertNotEqual(configs, [], "build.yml must run tox")
@@ -835,6 +954,7 @@ class BuildWorkRouting(unittest.TestCase):
                 self.assertTrue(_plan_for([f"{directory}/tox.ini"]).selectors[self.SELECTOR])
 
     def test_every_lock_build_yml_installs_selects_it(self) -> None:
+        """Select build legs when an installed dependency lock changes."""
         text = (CONFIG.parent / "workflows" / "build.yml").read_text(encoding="utf-8")
         locks = sorted(set(re.findall(r"-r (requirements/\S+\.txt)", text)))
         self.assertNotEqual(locks, [], "build.yml must install from a lock")
@@ -843,6 +963,7 @@ class BuildWorkRouting(unittest.TestCase):
                 self.assertTrue(_plan_for([lock]).selectors[self.SELECTOR])
 
     def test_planted_c_core_only_selector_misses_python_changes(self) -> None:
+        """Reject the old selector that omitted Python test inputs."""
         config = copy.deepcopy(planner.load_config(CONFIG))
         config["selectors"][self.SELECTOR]["patterns"] = []
         for path in ("compat/python-vmaf/tools/decorator.py", "python/test/result_test.py"):
@@ -1092,6 +1213,50 @@ class WorkflowContract(unittest.TestCase):
                             f"work={work_result} produced reason={reason!r}",
                         )
 
+    def _assert_gate_script_pair_states(
+        self,
+        filename: str,
+        check_name: str,
+        script: str,
+        pair: tuple[str, str],
+        peer_env: dict[str, str],
+    ) -> None:
+        selected_var, work_var = pair
+        for plan_result in ("success", "failure", "cancelled", "skipped"):
+            for selected in ("true", "false", ""):
+                for work_result in ("success", "skipped", "failure", "cancelled"):
+                    expected = plan_result == "success" and (
+                        selected,
+                        work_result,
+                    ) in {("true", "success"), ("false", "skipped")}
+                    result = run_command(
+                        [BASH, "-eu", "-o", "pipefail", "-c", script],
+                        allowed_executables=(BASH,),
+                        capture_output=True,
+                        text=True,
+                        env={
+                            **os.environ,
+                            **peer_env,
+                            "PLAN_RESULT": plan_result,
+                            selected_var: selected,
+                            work_var: work_result,
+                        },
+                        timeout_seconds=60,
+                    )
+                    with self.subTest(
+                        workflow=filename,
+                        gate=check_name,
+                        pair=selected_var,
+                        plan=plan_result,
+                        selected=selected,
+                        work=work_result,
+                    ):
+                        self.assertEqual(
+                            result.returncode == 0,
+                            expected,
+                            f"stdout={result.stdout!r}; stderr={result.stderr!r}",
+                        )
+
     def test_gate_scripts_accept_only_the_two_valid_state_tuples(self) -> None:
         workflow_root = REPO_ROOT / ".github" / "workflows"
         for filename, (_selector, _work_jobs, gates) in REQUIRED_CONSUMER_CONTRACTS.items():
@@ -1102,38 +1267,21 @@ class WorkflowContract(unittest.TestCase):
                     self._assert_gate_leg_result_states(filename, check_name)
                     continue
                 script = self._literal_run(block)
-                for plan_result in ("success", "failure", "cancelled", "skipped"):
-                    for selected in ("true", "false", ""):
-                        for work_result in ("success", "skipped", "failure", "cancelled"):
-                            expected = plan_result == "success" and (
-                                selected,
-                                work_result,
-                            ) in {("true", "success"), ("false", "skipped")}
-                            result = run_command(
-                                [BASH, "-eu", "-o", "pipefail", "-c", script],
-                                allowed_executables=(BASH,),
-                                capture_output=True,
-                                text=True,
-                                env={
-                                    **os.environ,
-                                    "PLAN_RESULT": plan_result,
-                                    "SELECTED": selected,
-                                    "WORK_RESULT": work_result,
-                                },
-                                timeout_seconds=60,
-                            )
-                            with self.subTest(
-                                workflow=filename,
-                                gate=check_name,
-                                plan=plan_result,
-                                selected=selected,
-                                work=work_result,
-                            ):
-                                self.assertEqual(
-                                    result.returncode == 0,
-                                    expected,
-                                    f"stdout={result.stdout!r}; stderr={result.stderr!r}",
-                                )
+                has_ubuntu = "UBUNTU_SELECTED" in script
+                peer = (
+                    {"UBUNTU_SELECTED": "false", "UBUNTU_RESULT": "skipped"} if has_ubuntu else {}
+                )
+                self._assert_gate_script_pair_states(
+                    filename, check_name, script, ("SELECTED", "WORK_RESULT"), peer
+                )
+                if has_ubuntu:
+                    self._assert_gate_script_pair_states(
+                        filename,
+                        check_name,
+                        script,
+                        ("UBUNTU_SELECTED", "UBUNTU_RESULT"),
+                        {"SELECTED": "false", "WORK_RESULT": "skipped"},
+                    )
 
 
 if __name__ == "__main__":

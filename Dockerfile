@@ -6,7 +6,7 @@
 # every container base in this repository. These defaults are mirrors kept in
 # sync by scripts/ci/check-base-image-single-source.sh; edit the config, not
 # these lines, then run that script with --write.
-ARG CUDA_BUILDER="ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c"
+ARG CUDA_BUILDER="ubuntu:26.04@sha256:065aa8626841f16057b78b027b464cd59c4fac36c204c72dcbf48d66f5fa8a96"
 
 FROM ${CUDA_BUILDER}
 
@@ -52,7 +52,7 @@ ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64
 # ---------- system dependencies ----------
 # DL3008: we install tracked security-updated versions from the Ubuntu
 # 26.04 archive; pinning every patch version would break on every
-# upstream security update. apt-get update + install happens in one
+# upstream security update. Refreshing apt lists + install happens in one
 # layer so the cache stays consistent (DL3009).
 # BuildKit cache mounts (`type=cache,target=/var/cache/apt` + `/var/lib/apt`)
 # preserve the apt package + index caches across builds so subsequent rebuilds
@@ -62,7 +62,7 @@ ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
     build-essential \
     ccache \
     ninja-build \
@@ -86,14 +86,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     if [ "$ENABLE_SYCL" = "true" ]; then \
-        apt-get update && apt-get install -y --no-install-recommends gnupg2 ca-certificates && \
+        apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends gnupg2 ca-certificates && \
         key="$(mktemp)" && \
         wget --tries=3 --retry-connrefused --retry-on-host-error -qO "$key" https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB && \
         gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg "$key" && \
         rm -f "$key" && \
         echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
             > /etc/apt/sources.list.d/oneapi.list && \
-        apt-get update && apt-get install -y --no-install-recommends \
+        apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
             intel-oneapi-compiler-dpcpp-cpp-2025.3 \
             intel-oneapi-runtime-libs-2025.3 \
             libva-dev \

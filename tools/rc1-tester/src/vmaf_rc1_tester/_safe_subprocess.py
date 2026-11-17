@@ -21,6 +21,7 @@ import ctypes
 import errno
 import locale
 import os
+import platform
 import shutil
 import signal
 import stat
@@ -31,6 +32,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, Literal, overload
 
+if sys.platform.startswith("linux") or sys.platform == "darwin":
+    import fcntl
+
 MAX_ARG_COUNT = 4096
 MAX_ARG_BYTES = 65_536
 MAX_ARGV_BYTES = 1_048_576
@@ -39,6 +43,22 @@ MAX_EXECUTABLE_WALK_STEPS = 4096
 MAX_DARWIN_ACL_ENTRIES = 128
 _DARWIN_ACL_EXTENDED_DENY = 2
 _DARWIN_ACL_TYPE_EXTENDED = 0x100
+# Apple xnu bsd/sys/stat.h; fallback values verified in Python's stat documentation.
+_DARWIN_REPLACEMENT_PROTECTION = (
+    getattr(stat, "UF_IMMUTABLE", 0x00000002)
+    | getattr(stat, "UF_APPEND", 0x00000004)
+    | getattr(stat, "SF_IMMUTABLE", 0x00020000)
+    | getattr(stat, "SF_APPEND", 0x00040000)
+    | getattr(stat, "SF_NOUNLINK", 0x00100000)
+    | getattr(stat, "SF_RESTRICTED", 0x00080000)
+)
+# Linux include/uapi/linux/fs.h: FS_IMMUTABLE_FL | FS_APPEND_FL.
+_LINUX_REPLACEMENT_PROTECTION = 0x10 | 0x20
+# uname -m spellings: arch/arm/kernel/setup.c appends the endianness letter;
+# arm64 compat reports armv8l (arch/arm64/include/asm/compat.h).
+_LINUX_GENERIC_IOCTL_MACHINES = frozenset(
+    ("x86_64", "aarch64", "riscv64", "armv6l", "armv7l", "armv8l", "i686")
+)
 DEFAULT_TIMEOUT_SECONDS = 120.0
 DEFAULT_MAX_OUTPUT_BYTES = 4 * 1_048_576
 TERMINATION_GRACE_SECONDS = 2.0
@@ -313,30 +333,94 @@ def _directory_allows_link_retargeting(directory: os.stat_result, path: Path) ->
     return not directory.st_mode & stat.S_ISVTX and bool(directory.st_mode & 0o022)
 
 
-def _executable_links_trusted(links: tuple[Path, ...]) -> bool:
-    """Preserve links only with trusted owners and inspected Linux/macOS directory rights."""
+def _darwin_entry_protected(entry: Path) -> bool | None:
+    """Read the entry's own unlink/rename protections; unreadable flags stay unknown."""
+    try:
+        flags = getattr(os.lstat(entry), "st_flags", None)  # BSD-only stat field
+    except (OSError, AttributeError):
+        return None
+    return None if flags is None else bool(flags & _DARWIN_REPLACEMENT_PROTECTION)
+
+
+def _linux_file_protected(entry: Path) -> bool | None:
+    """Read Linux inode protections on machines using the generic ioctl encoding."""
+    if platform.machine() not in _LINUX_GENERIC_IOCTL_MACHINES:
+        return None
+    # include/uapi/linux/fs.h: _IOR('f', 1, long); asm-generic/ioctl.h: _IOC_READ=2.
+    size = ctypes.sizeof(ctypes.c_long)
+    request = (2 << 30) | (size << 16) | (ord("f") << 8) | 1
+    try:
+        fd = os.open(entry, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+        try:
+            try:
+                flags = fcntl.ioctl(fd, request, bytes(size))
+            except OSError as exc:
+                if exc.errno in (errno.ENOTTY, errno.EOPNOTSUPP, errno.ENOSYS, errno.EINVAL):
+                    return False
+                return None
+        finally:
+            os.close(fd)
+    except OSError:
+        return None
+    if not isinstance(flags, bytes) or len(flags) != size:
+        return None
+    return bool(int.from_bytes(flags, sys.byteorder) & _LINUX_REPLACEMENT_PROTECTION)
+
+
+def _executable_entry_protected(entry: Path, *, symlink: bool = False) -> bool | None:
+    """Read replacement protection; Linux symlinks have no inode protection flags."""
+    if sys.platform == "darwin":
+        return _darwin_entry_protected(entry)
+    return False if symlink else _linux_file_protected(entry)
+
+
+def _executable_link_trusted(
+    link: Path,
+    resolved_directory: os.stat_result,
+    trusted_owners: tuple[int, int],
+    resolved_protected: bool | None,
+) -> bool:
+    """Check owners and rights, exempting shared directories with matching exposure."""
+    try:
+        owner = link.lstat().st_uid
+        directory = link.parent.stat()
+    except OSError:
+        return False
+    if owner not in trusted_owners or directory.st_uid not in trusted_owners:
+        return False
+    same_directory = (directory.st_dev, directory.st_ino) == (
+        resolved_directory.st_dev,
+        resolved_directory.st_ino,
+    )
+    if same_directory and (
+        resolved_protected is False
+        or (resolved_protected is True and _executable_entry_protected(link, symlink=True) is True)
+    ):
+        return True
+    return not _directory_allows_link_retargeting(directory, link.parent)
+
+
+def _executable_links_trusted(links: tuple[Path, ...], resolved: Path) -> bool:
+    """Check every link's ownership, reading resolved-file protection once per launch."""
     if not (sys.platform.startswith("linux") or sys.platform == "darwin"):
         return False
+    try:
+        resolved_directory = resolved.parent.stat()
+    except OSError:
+        return False
     trusted_owners = (0, os.getuid())
-    for link in links:
-        try:
-            owner = link.lstat().st_uid
-            directory = link.parent.stat()
-        except OSError:
-            return False
-        if (
-            owner not in trusted_owners
-            or directory.st_uid not in trusted_owners
-            or _directory_allows_link_retargeting(directory, link.parent)
-        ):
-            return False
-    return True
+    resolved_protected = _executable_entry_protected(resolved) if links else None
+    return all(
+        _executable_link_trusted(link, resolved_directory, trusted_owners, resolved_protected)
+        for link in links
+    )
 
 
 def _resolve_launch_file(launch: Path) -> tuple[Path, Path]:
-    """Select named launch only for trusted POSIX links, then resolve the checked file."""
-    trusted = hasattr(os, "getuid") and _executable_links_trusted(_executable_links(launch))
+    """Walk before strict resolution, then evaluate link trust against the resolved file."""
+    links = _executable_links(launch) if hasattr(os, "getuid") else ()
     resolved = launch.resolve(strict=True)
+    trusted = hasattr(os, "getuid") and _executable_links_trusted(links, resolved)
     return (launch if trusted else resolved), resolved
 
 

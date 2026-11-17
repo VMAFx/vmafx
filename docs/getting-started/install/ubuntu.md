@@ -14,12 +14,29 @@ ENABLE_SYCL=true bash scripts/setup/ubuntu.sh      # + Intel oneAPI DPC++ compil
 INSTALL_LINTERS=false bash scripts/setup/ubuntu.sh # skip shellcheck, shfmt and the Python linters
 ```
 
-The switches take the value `true`; any other value, `1` included, leaves the
-option off. `INSTALL_LINTERS` is on unless you set it to `false`.
+The boolean flags (`ENABLE_CUDA`, `ENABLE_SYCL`, `INSTALL_LINTERS`) accept only
+`true` or `false`; any other value (such as `1` or `0`) fails immediately with
+exit code `2`. `INSTALL_LINTERS` defaults to `true`, while `ENABLE_CUDA` and
+`ENABLE_SYCL` default to `false`.
 
-The script installs Meson and Ninja from PyPI with pinned hashes
-(`requirements/locks/build.txt`), because Ubuntu 24.04's `meson` 1.3.2 is older
-than the 1.4.0 that `core/meson.build` requires.
+The script installs Meson, Ninja, and (when `INSTALL_LINTERS=true`) the Python
+linters from PyPI with pinned hashes (`requirements/locks/build.txt` and
+`requirements/locks/dev-linters.txt`), because Ubuntu 24.04's `meson` 1.3.2 is
+older than the 1.4.0 floor in `core/meson.build` and Ubuntu 24.04/26.04 mark
+the system Python externally managed (PEP 668). All Python tools are installed
+into a dedicated virtual environment at
+`${XDG_DATA_HOME:-$HOME/.local/share}/vmafx/tools-venv` (override with
+`VMAFX_TOOLS_VENV`). Add its `bin` directory to `PATH` before building:
+
+```bash
+export PATH="${VMAFX_TOOLS_VENV:-${XDG_DATA_HOME:-$HOME/.local/share}/vmafx/tools-venv}/bin:$PATH"
+```
+
+In GitHub Actions, `ubuntu.sh` appends `$VMAFX_TOOLS_VENV/bin` to `GITHUB_PATH`
+automatically. When running `ubuntu.sh` outside a repository checkout (for
+example inside a container build), set `VMAFX_REPO_ROOT` to a directory holding
+`requirements/locks/build.txt` (and `requirements/locks/dev-linters.txt` when
+`INSTALL_LINTERS=true`).
 
 ## Manual install
 
@@ -33,10 +50,14 @@ than the 1.4.0 that `core/meson.build` requires.
         python3 python3-pip python3-venv
     ```
 
-2. Install Meson 1.4.0 or later and Ninja from the hash-pinned lock:
+2. Create a tools virtual environment and install Meson 1.4.0+ and Ninja from
+   the hash-pinned lock:
 
     ```bash
-    python3 -m pip install --user --require-hashes -r requirements/locks/build.txt
+    TOOLS_VENV="${XDG_DATA_HOME:-$HOME/.local/share}/vmafx/tools-venv"
+    python3 -m venv "$TOOLS_VENV"
+    "$TOOLS_VENV/bin/python" -m pip install --require-hashes -r requirements/locks/build.txt
+    export PATH="$TOOLS_VENV/bin:$PATH"
     ```
 
 ### CUDA (optional)

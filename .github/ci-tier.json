@@ -1,16 +1,25 @@
 {
   "schema_version": 1,
-  "description": "CI tier definition (ADR-2169). The one place that says which pull requests run which part of the suite. scripts/ci/ci_tier.py decides the tier of an event, .github/workflows/ci-tier.yml hands the decision to every workflow, and the Required Checks Aggregator reads this file to know which required contexts a tier does not owe.",
+  "description": "CI tier definition (ADR-2169, ADR-3536). The one place that says which pull requests run which part of the suite. scripts/ci/ci_tier.py decides the tier of an event, .github/workflows/ci-tier.yml hands the decision to every workflow, and the Required Checks Aggregator reads this file to know which required contexts a tier does not owe. Patterns in full_paths use Python fnmatch.fnmatchcase glob semantics (* crosses /, case-sensitive, full-string match).",
   "labels": {
     "full": "ci: full",
     "cut": "autorelease: cut"
   },
   "release_ref_prefix": "release-please--",
   "tiers": {
-    "full": "Every event that is not a pull request from this repository (master push, dispatch, schedule), every fork pull request, an own pull request labelled `ci: full`, and a release pull request labelled `autorelease: cut`. Runs the whole suite.",
-    "light": "A pull request whose head repository is this repository (Renovate included). Runs lint, format, the fast suite and the governance gates; the contexts in `full_only` are not run.",
+    "full": "Every event that is not a pull request from this repository (master push, dispatch, schedule), every fork pull request, an own pull request labelled `ci: full`, an own pull request changing this tier definition or whose changed files match `full_paths` (or whose changed files cannot be read), and a release pull request labelled `autorelease: cut`. Runs the whole suite.",
+    "light": "A pull request whose head repository is this repository (Renovate included) and whose changed files match no `full_paths` pattern. Runs lint, format, the fast suite and the governance gates; the contexts in `full_only` are not run.",
     "release-light": "The machine-generated release pull request without the cut label. Runs the contexts in `always` only."
   },
+  "full_paths": [
+    "scripts/lib/safe_subprocess.py",
+    "scripts/lib/test_safe_subprocess.py",
+    "tools/rc1-tester/src/vmaf_rc1_tester/_safe_subprocess.py",
+    "tools/rc1-tester/tests/test_safe_subprocess_copy.py",
+    "tools/rc1-tester/src/vmaf_rc1_tester/hw_facts.py",
+    "tools/rc1-tester/src/vmaf_rc1_tester/probe.py",
+    "tools/rc1-tester/src/vmaf_rc1_tester/hw_sycl.py"
+  ],
   "always": [
     "Release Script Contract",
     "Go API Compatibility",
@@ -76,9 +85,18 @@
       "workflow": "dev-container-build.yml",
       "context": "Dev Container Build",
       "selectors": [
-        "dev_container_inputs"
+        "dev_container_inputs",
+        "ubuntu_dev_images"
       ],
-      "reason": "A full-only context whose build also runs on a light-tier pull request, but only when the diff touches dev/, .dockerignore, build-config.env or a script the build job calls (selector of .github/ci-impact.json, ADR-3338): #2821 changed dev/Containerfile on the light tier, built no image, and the master push 2c0db0b99 that followed failed in the stage it added. The broad dev_container selector (core, Python, AI, Go and shell sources the image copies) still runs on the full tier and the master push."
+      "reason": "A full-only context whose build also runs on a light-tier pull request, but only when the diff touches dev/, .dockerignore, build-config.env or a script the build job calls (selector of .github/ci-impact.json, ADR-3338): #2821 changed dev/Containerfile on the light tier, built no image, and the master push 2c0db0b99 that followed failed in the stage it added. The broad dev_container selector (core, Python, AI, Go and shell sources the image copies) still runs on the full tier and the master push. The ubuntu_dev_images selector also runs docker/dev/ubuntu-26.04.Dockerfile, docker/dev/ubuntu-26.04-cuda.Dockerfile and docker/dev/ubuntu-26.04-sycl.Dockerfile under this gate when their own inputs change (ADR-3545)."
+    },
+    {
+      "workflow": "docker-publish-tester.yml",
+      "context": "Tester Image",
+      "selectors": [
+        "tester_image"
+      ],
+      "reason": "A full-only context whose amd64 build and licence check also run on a light-tier pull request, but only when the diff touches an input of the tester image (selector tester_image of .github/ci-impact.json, ADR-3554): Renovate pull request #3476 moved RELEASE_PYTHON_BASE in build-config.env and docker/Dockerfile.tester to Python 3.14.10 on the light tier, built no tester image, and master e36e898c5 went red on the missing cpython_license_rst entry. The arm64 and GPU tester images stay on the master push and dispatch."
     }
   ],
   "untiered_jobs": [
