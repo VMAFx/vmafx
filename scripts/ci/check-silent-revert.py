@@ -249,6 +249,35 @@ def generated_block_ranges_at(repo: Repo, ref: str, path: str) -> list[tuple[int
     return generated_block_ranges(proc.stdout, path)
 
 
+def hunk_start(line: str) -> tuple[int, int] | None:
+    """Old and new start line of a ``@@`` hunk header, or None when it does not parse."""
+    match = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@", line)
+    return (int(match.group(1)), int(match.group(2))) if match else None
+
+
+def count_hunk_line(
+    line: str,
+    path: str,
+    lines: tuple[int, int],
+    skip: Callable[[str, str, int], bool] | None,
+    bags: tuple[FileLines, FileLines],
+) -> tuple[int, int]:
+    """Bag one hunk line unless *skip* drops it; return the next (old, new) line numbers."""
+    old_line, new_line = lines
+    added, removed = bags
+    if line.startswith("+"):
+        if not (skip and skip(path, "new", new_line)):
+            added[path][line[1:].rstrip()] += 1
+        return old_line, new_line + 1
+    if line.startswith("-"):
+        if not (skip and skip(path, "old", old_line)):
+            removed[path][line[1:].rstrip()] += 1
+        return old_line + 1, new_line
+    if line.startswith(" "):
+        return old_line + 1, new_line + 1
+    return old_line, new_line
+
+
 def parse_diff(
     diff: str, skip: Callable[[str, str, int], bool] | None = None
 ) -> tuple[FileLines, FileLines]:
@@ -282,28 +311,16 @@ def parse_diff(
         ):
             path = line[6:]
         elif line.startswith("@@"):
-            match = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@", line)
-            if match:
-                old_line = int(match.group(1))
-                new_line = int(match.group(2))
+            start = hunk_start(line)
+            if start is not None:
+                old_line, new_line = start
                 in_hunk = True
-        elif not in_hunk:
-            # Remaining pre-hunk lines are file metadata, including a deletion's
-            # `+++ /dev/null`; only hunk lines are add/remove content.
-            continue
-        elif path is None or is_generated(path):
-            continue
-        elif line.startswith("+"):
-            if not (skip and skip(path, "new", new_line)):
-                added[path][line[1:].rstrip()] += 1
-            new_line += 1
-        elif line.startswith("-"):
-            if not (skip and skip(path, "old", old_line)):
-                removed[path][line[1:].rstrip()] += 1
-            old_line += 1
-        elif line.startswith(" "):
-            old_line += 1
-            new_line += 1
+        # Remaining pre-hunk lines are file metadata, including a deletion's
+        # `+++ /dev/null`; only hunk lines of a tracked file are content.
+        elif in_hunk and path is not None and not is_generated(path):
+            old_line, new_line = count_hunk_line(
+                line, path, (old_line, new_line), skip, (added, removed)
+            )
     return dict(added), dict(removed)
 
 
