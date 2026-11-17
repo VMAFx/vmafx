@@ -702,6 +702,17 @@ Contributed by luoye-cpu.
 - **The scoring node takes container inputs and a time window**: `.mkv`, `.mp4` and other inputs ffmpeg reads are decoded by the node's ffmpeg into a Y4M pipe and scored, with no temp file; the new job fields `window_start` and `window_duration` score a sample without decoding the whole clip ([ADR-3370](docs/adr/3370-node-container-decode.md)).
 
 
+- **Smoke-test `vmafx-node:<tag>-sycl` for `VMAFX_BACKEND=sycl` on publish.**
+  `docker-publish-operator-node.yml` now runs
+  `scripts/release/smoke-published-image.sh` with kind `node-sycl` on the
+  published `-sycl` digest after signature verification. It inspects
+  `Config.Env` of the pulled image and refuses a tag lacking the exact
+  `VMAFX_BACKEND=sycl` entry (missing or set to another value), checks the
+  `/usr/local/bin/vmafx-node` entrypoint, `--version` and the FUSE mount, and
+  prints the GPU skip reason instead of passing SYCL scoring silently
+  (`scripts/release/tests/test-smoke-published-image.sh`).
+
+
 - **`ghcr.io/vmafx/vmafx-node:<tag>-sycl` scores on Intel GPUs (ADR-3371).**
   The `node-sycl` image now carries a oneAPI build of `libvmaf` from the shared
   `scripts/ci/build-oneapi-libvmaf.sh` (the script the production oneAPI image
@@ -2951,6 +2962,9 @@ Contributed by luoye-cpu.
 - **Changes to shared `scripts/lib` helpers and `scripts/__init__.py` now run the Build workflow's Python test legs.** A test fails when a helper imported by the Python tests is missing from the selector.
 
 
+- **CI:** symbolic-link test fixtures under `scripts/ci/tests` probe the target directory via `symlink_test_support.py` and `scripts/lib/symlink-probe.sh` before creating links and skip with the probe's error on Windows volumes or hosts that reject symbolic links, enforced by `scripts/ci/tests/test_symlink_test_support.py`.
+
+
 - Windows UCRT64 CI: the MSYS2 leg installs `python-setuptools`, which the codegen suite (`test_vmafx_api_generator`) imports, instead of failing on a missing module.
 
 
@@ -3345,6 +3359,9 @@ Contributed by luoye-cpu.
   no score changes.
 
 
+- **Intel NEO and Level Zero container and CI fetches read a committed asset lock instead of querying `api.github.com` at build time.** `dev/scripts/fetch-intel-neo.py` now reads `.deb` URLs and SHA-256 digests from `dev/scripts/intel-neo-lock.json` by default (`--write-lock` refreshes it, `.github/workflows/intel-neo-lock-refresh.yml` commits updates on Renovate branches as `vmafx-release-bot[bot]`, `renovate.json` ignores that author email during branch checks, and `scripts/ci/check-dco.py` accepts that signed single-file refresh commit via `dco-bot-opener`), eliminating anonymous GitHub API rate-limit failures in the credential-free `Release Dry Run` GPU image builds ([ADR-3555](docs/adr/3555-intel-neo-lock-file.md)). `dev/Containerfile` now fetches the Level Zero loader `.deb` packages (`libze1`, `libze-dev`) through the same lock instead of unchecked `curl` downloads. `--write-lock` validates the new lock before it replaces the old one. `scripts/ci/check-dco.py --landed` also accepts the single `vmafx-release-bot[bot]` `Co-authored-by:` trailer added when GitHub squashes a `renovate[bot]` pull request that updates `dev/scripts/intel-neo-lock.json` (`dco-landed-release-bot-coauthor`).
+
+
 - Python harness: the per-content fit lines of the subjective-dataset scatter plots
   (`RegressorMixin._least_squares_line()`) no longer raise
   `ValueError: not enough values to unpack` when a group's least-squares line has a
@@ -3474,6 +3491,24 @@ Contributed by luoye-cpu.
 
 
 - CI: Renovate's CI Node.js pull request can pass the dependency-only deliverables exemption and move Node to a new major while the engine-locked documentation workflow keeps its own major until the next engine pin move.
+
+
+- **`vmafx-node` no longer dials an undeployed online-training sidecar, gates
+  `/readyz` on the sidecar when enabled, and supports node-scoped pod affinity
+  in the Helm chart
+  ([ADR-3558](docs/adr/3558-node-sidecar-readiness-gpu-affinity.md)).** The
+  sidecar feedback drainer is now opt-in via `VMAFX_SIDECAR_ENABLED`
+  (`sidecar.enabled`, chart `node.sidecar.enabled`, default `false`), stopping
+  recurring `WARN sidecar not reachable` logs on standard deployments while
+  rejecting invalid boolean values at startup. When enabled, `/readyz` reports
+  `503` unless the drainer holds a live Unix socket connection (with reconnect
+  backoff capped at 15 s so readiness recovers within 30 s). The Helm chart's
+  node `readinessProbe` now queries HTTP `/readyz` on `metrics` (backed by
+  `scorer`, loopback `grpc`, and conditional `sidecar` checks, amending
+  ADR-1094), and `node.affinity` overrides global `affinity` so heterogeneous
+  GPU pools can configure soft scheduling preferences without a hard pin. For
+  Intel Arc pools, use `gpu.intel.com/product` with `Arc_Pro_B60` preferred
+  (weight 100) and `Arc_B580` as fallback (weight 50).
 
 
 - Go tests: the `cmd/vmafx-node` tests that dial the node's listeners start the graph through `startAppWithRetry`, which picks fresh loopback ports and retries up to five times when a reserved port was taken before the graph bound it (`bind: address already in use`); other start errors fail at once.
