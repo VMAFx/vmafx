@@ -347,7 +347,10 @@ SYCL_ONLY_INPUTS = {
     "build-config.env",
     "core/src/sycl/scratch_ratchet.txt",
 }
-ADDED_TRIGGER_PATHS = {"tester_image": {"NOTICE"}, "windows_tester_zip": set()}
+ADDED_TRIGGER_PATHS = {
+    "tester_image": {"NOTICE", "dev/scripts/intel-neo-lock.json"},
+    "windows_tester_zip": set(),
+}
 
 
 class Routing(unittest.TestCase):
