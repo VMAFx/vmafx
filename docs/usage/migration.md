@@ -204,16 +204,11 @@ easyvmaf -d testdata/migration-fixture/dis.mkv -r testdata/migration-fixture/ref
 
 | Check id | Expected pooled mean | Status | Notes |
 |---|---|---|---|
-| `easyvmaf-aligned` | `94.32301` | equivalent | Pre-aligned, same-format inputs only; the tool's summary JSON mean matches the CLI row. Argument order is reversed against the CLI (distorted first, reference second). |
+| `easyvmaf-aligned` | n/a | not equivalent | easyVmaf 3.0.0's default HD mode rescales both fixtures to 1920x1080 before scoring, even when the inputs have equal dimensions; easyVmaf 4.0.0 also defaults to `vmaf_v1`, not `vmaf_v0.6.1`. The native-resolution `vmafx` CLI therefore does not preserve this scoring configuration ([easyVmaf 3.0.0 model](https://raw.githubusercontent.com/gdavila/easyVmaf/v3.0.0/easyvmaf/vmaf.py), [easyVmaf 4.0.0 model](https://raw.githubusercontent.com/gdavila/easyVmaf/v4.0.0/README.md), ADR-2165). Use an explicit FFmpeg scale/filter chain and pin the model before scoring with `vmafx`. |
 | `easyvmaf-auto-prep` | n/a | not equivalent | The automatic deinterlace/scale/sync/fps preprocessing has no VMAFx equivalent flag: the engine scores the pair it is given and warns on unpaired frames instead of aligning them ([Pairing the two inputs](ffmpeg.md#pairing-the-two-inputs), ADR-2165). Do the preprocessing in an FFmpeg chain first, then score with `vmafx`. |
 
-The VMAFx equivalent for the aligned row is again
-`cli-vmafx-default`; the check runs the tool itself where it is installed:
-
-<!-- migration-check:easyvmaf-aligned exec=wrapper -->
-```bash
-easyvmaf -d testdata/migration-fixture/dis.mkv -r testdata/migration-fixture/ref.mkv
-```
+The VMAFx equivalent for the aligned row is not the native CLI: the input must be
+scaled and the model pinned first, then scored with `cli-vmafx-default`.
 
 ## Summary of what differs
 
@@ -223,4 +218,4 @@ easyvmaf -d testdata/migration-fixture/dis.mkv -r testdata/migration-fixture/ref
 | Python harness | `run_vmaf` module path and flags | nothing to move; the `vmafx` bindings package ([Python package](python-package.md)) is the modernized C API alternative |
 | FFmpeg `libvmaf` | pad meaning, model spelling | filter renamed `vmafx`, some options renamed (mapping table), pairing defaults stricter, Vulkan dropped (ADR-0726, ADR-2166) |
 | `ffmpeg-quality-metrics` | libvmaf scores | tool drives stock FFmpeg; call `vmafx` directly instead; distorted-first order |
-| `easyVmaf` | libvmaf scores on aligned pairs | auto-preprocessing not equivalent (ADR-2125; pairing contract ADR-2165); align first, then score |
+| `easyVmaf` | libvmaf scores after explicit alignment and model pinning | default HD rescaling and `vmaf_v1` default are not preserved; auto-preprocessing not equivalent (ADR-2125; pairing contract ADR-2165); align and pin first, then score |

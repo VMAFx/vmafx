@@ -61,6 +61,7 @@ ADR_DIR = REPO_ROOT / "docs" / "adr"
 FILTER_RE = re.compile(r"\b(libvmaf|vmafx)=")
 CHECK_TABLE_HEADER = "| Check id |"
 MIN_CHECK_ROW_CELLS = 3
+MIN_EXPLANATION_WORDS = 8
 
 
 class Row(NamedTuple):
@@ -182,10 +183,9 @@ def _row_failures(
     if row.not_equivalent:
         if block is not None:
             failures.append(f"not-equivalent row {row_id} must not carry a command block")
+        notes = _row_notes(text, row_id)
         adr_numbers = list(
-            dict.fromkeys(
-                number.removeprefix("ADR-") for number in ADR_RE.findall(_row_notes(text, row_id))
-            )
+            dict.fromkeys(number.removeprefix("ADR-") for number in ADR_RE.findall(notes))
         )
         if not adr_numbers:
             failures.append(f"not-equivalent row {row_id} must link an ADR in its notes")
@@ -195,6 +195,14 @@ def _row_failures(
                     f"not-equivalent row {row_id} cites {number}, but "
                     f"docs/adr/{number}-*.md does not exist"
                 )
+        explanation = ADR_RE.sub(" ", notes)
+        explanation = re.sub(r"\[[^\]]*\]\([^)]*\)", " ", explanation)
+        explanation = re.sub(r"`[^`]*`", " ", explanation)
+        if len(re.findall(r"[A-Za-z][A-Za-z0-9_-]*", explanation)) < MIN_EXPLANATION_WORDS:
+            failures.append(
+                f"not-equivalent row {row_id} must explain why it is not equivalent, "
+                "not only cite an ADR"
+            )
     elif block is None:
         failures.append(f"equivalent row {row_id} has no migration-check block")
     elif row.expected is None or abs(row.expected - pooled_mean) > SCORE_TOLERANCE:
@@ -288,9 +296,19 @@ def _score_parsers() -> dict[str, Callable[[str], float]]:
             return _json_pooled_mean(output)
         except (ValueError, KeyError, json.JSONDecodeError):
             data = json.loads(output)
+            if isinstance(data, dict) and isinstance(data.get("vmaf"), dict):
+                score = data["vmaf"].get("vmaf_hd")
+                if isinstance(score, (int, float)):
+                    return float(score)
+            frames = data.get("vmaf") if isinstance(data, dict) else None
+            candidates = (
+                frames
+                if isinstance(frames, list)
+                else list(data.values()) if isinstance(data, dict) else []
+            )
             scores = [
                 float(value["vmaf"])
-                for value in data.values()
+                for value in candidates
                 if isinstance(value, dict) and isinstance(value.get("vmaf"), (int, float))
             ]
             if not scores:

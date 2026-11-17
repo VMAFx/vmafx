@@ -78,7 +78,7 @@ def test_real_page_ids_and_blocks_pair_up() -> None:
     rows = parse_rows(PAGE_TEXT)
     blocks = parse_blocks(PAGE_TEXT)
     assert set(rows) == EXPECTED_IDS
-    assert set(blocks) == EXPECTED_IDS - {"easyvmaf-auto-prep"}
+    assert set(blocks) == EXPECTED_IDS - {"easyvmaf-auto-prep", "easyvmaf-aligned"}
 
 
 def test_every_equivalent_row_quotes_the_snapshot_mean() -> None:
@@ -119,11 +119,26 @@ def test_equivalent_row_without_block_fails(tmp_path: Path) -> None:
 
 
 def test_not_equivalent_row_with_block_fails(tmp_path: Path) -> None:
-    block = parse_blocks(PAGE_TEXT)["easyvmaf-aligned"].command
+    block = parse_blocks(PAGE_TEXT)["fqm-vmaf"].command
     marker = "<!-- migration-check:easyvmaf-auto-prep exec=wrapper -->\n"
     page = tmp_path / "migration.md"
     page.write_text(PAGE_TEXT + f"\n{marker}```bash\n{block}```\n", encoding="utf-8")
     assert main(["--page", str(page), "--snapshot", str(SNAPSHOT)]) == EXIT_FAILURE
+
+
+def test_not_equivalent_row_with_only_an_adr_is_rejected() -> None:
+    page_text = (
+        "| Check id | Expected pooled mean | Status | Notes |\n"
+        "|---|---|---|---|\n"
+        "| `only-row` | n/a | not equivalent | ADR-2165 |\n"
+        "\n"
+        "<!-- migration-check:other exec=cli -->\n"
+        "```bash\n"
+        "vmaf --version\n"
+        "```\n"
+    )
+    failures = check_page(page_text, POOLED)
+    assert any("must explain why it is not equivalent" in failure for failure in failures)
 
 
 def test_command_block_comments_are_not_arguments() -> None:
@@ -211,6 +226,16 @@ def test_ffmpeg_parser_reads_the_json_stdout() -> None:
     assert checker._score_parsers()["ffmpeg"](payload) == pytest.approx(POOLED)
 
 
+def test_wrapper_parser_reads_fqm_frames() -> None:
+    payload = json.dumps({"vmaf": [{"vmaf": POOLED}, {"vmaf": 94.0}]})
+    assert checker._score_parsers()["wrapper"](payload) == pytest.approx((POOLED + 94.0) / 2)
+
+
+def test_wrapper_parser_reads_easyvmaf_summary() -> None:
+    payload = json.dumps({"vmaf": {"vmaf_hd": POOLED}})
+    assert checker._score_parsers()["wrapper"](payload) == pytest.approx(POOLED)
+
+
 def test_cli_row_executes_and_compares(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -225,6 +250,7 @@ def test_cli_row_executes_and_compares(
         str(tmp_path / "vmafx-stub"),
     ]
     monkeypatch.setattr(checker, "run_command", _fake_run(POOLED))
+    monkeypatch.setattr(checker, "which", lambda _name: None)
     assert main(argv) == EXIT_SUCCESS
     out = capsys.readouterr().out
     assert "OK cli-vmafx-default" in out
