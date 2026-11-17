@@ -22,6 +22,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Protocol, cast
 
+import yaml  # type: ignore[import-untyped]  # hook environments omit PyYAML stubs
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import gate_leg_result as glr
@@ -1282,6 +1284,34 @@ class WorkflowContract(unittest.TestCase):
                         ("UBUNTU_SELECTED", "UBUNTU_RESULT"),
                         {"SELECTED": "false", "WORK_RESULT": "skipped"},
                     )
+
+    def test_plan_ci_impact_action_forwards_every_consumed_selector(self) -> None:
+        """The action's outputs must stay wired to the planner and to the workflow."""
+        action_file = REPO_ROOT / ".github" / "actions" / "plan-ci-impact" / "action.yml"
+        outputs = yaml.safe_load(action_file.read_text(encoding="utf-8"))["outputs"]
+        for key, spec in outputs.items():
+            with self.subTest(output=key):
+                self.assertEqual(spec["value"], f"${{{{ steps.plan.outputs.{key} }}}}")
+
+        workflow_file = REPO_ROOT / ".github" / "workflows" / "tests-and-quality-gates.yml"
+        workflow_text = workflow_file.read_text(encoding="utf-8")
+        workflow = yaml.safe_load(workflow_text)
+        callers = [
+            job_id
+            for job_id, job in workflow["jobs"].items()
+            if any(
+                step.get("uses") == "./.github/actions/plan-ci-impact"
+                for step in job.get("steps", [])
+            )
+        ]
+        self.assertTrue(callers, "no job calls the plan-ci-impact action")
+        referenced = set(re.findall(r"steps\.impact\.outputs\.([a-z_]+)", workflow_text))
+        self.assertTrue(referenced, "the workflow reads no plan-ci-impact output")
+        self.assertLessEqual(
+            referenced,
+            set(outputs),
+            f"workflow reads undeclared outputs: {sorted(referenced - set(outputs))}",
+        )
 
 
 if __name__ == "__main__":

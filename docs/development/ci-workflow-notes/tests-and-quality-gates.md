@@ -488,7 +488,9 @@ The suite runs as four round-robin shards of one step each
 in one step (master 777647fc0, job 117249828983), above praetor's
 30-minute bound on a test step. gcov counters in the .gcda files
 add up across the four processes, so gcovr below sees the whole
-suite. Every shard keeps the unsharded command line:
+suite. Each workflow step calls `scripts/ci/run-coverage-python-shard.sh`,
+which holds the shared command line once (issue 3501). Every shard
+keeps the unsharded command line:
 - --deselect matches nothing and -m "not slow" selects everything:
   python/tox.ini makes python/ the rootdir, so node ids read
   test/command_line_test.py::…, and no test is marked slow
