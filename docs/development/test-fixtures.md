@@ -201,6 +201,29 @@ the `FIXTURES` array in `scripts/test/fetch-test-yuvs.sh`.
   [backend performance baselines](backend-perf-baselines.md).
 - `python/test/resource/yuv/` is the directory this script fills.
 
+## Symbolic-link fixtures
+
+Windows volumes or filesystem filter drivers that reject symbolic links
+(`WinError 87`) and Windows hosts without the symbolic-link privilege
+(`WinError 1314`) fail link creation with `OSError`. Under HISS-21, test
+fixtures in `scripts/ci/tests` probe the target directory before creating a
+link and skip with a reason naming the probe error when the directory rejects
+links:
+
+- **Python (`scripts/ci/tests/test_*.py`):** import
+  `from scripts.ci.tests import symlink_test_support as links` and call
+  `links.skip_without_symlinks(<dir>)` inside the function that creates the
+  link, before its first `Path.symlink_to` or `os.symlink` call, passing the
+  directory that receives the link.
+- **Shell (`scripts/ci/tests/test-*.sh`):** source
+  `scripts/lib/symlink-probe.sh` and guard each link case above `ln -s` with
+  `if reason=$(symlink_probe "<dir>"); then ... else echo "SKIP: <case name>: cannot create a symbolic link in <dir>: $reason"; fi`.
+
+The contract test `scripts/ci/tests/test_symlink_test_support.py` scans every
+`scripts/ci/tests/test_*.py` and `scripts/ci/tests/test-*.sh` file and fails on
+any unguarded symbolic-link fixture. No Windows CI leg runs `scripts/ci/tests`
+today.
+
 ## Related
 
 - [AGENTS.md](https://github.com/VMAFx/vmafx/blob/master/AGENTS.md)
