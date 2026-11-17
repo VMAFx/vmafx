@@ -14,9 +14,14 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.ci.tests import symlink_test_support as links
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "ci" / "install-cuda-toolkit.sh"
@@ -230,6 +235,7 @@ class InstallCudaToolkitTest(unittest.TestCase):
 
     def test_runtime_replaces_a_stale_cuda_current_symlink(self) -> None:
         host = FakeHost(self.tempdir)
+        links.skip_without_symlinks(host.prefix)
         (host.prefix / "cuda").symlink_to(host.prefix / "cuda-12.9")
         result = host.run("--runtime")
         self.assertEqual(result.returncode, 0, result.stderr)
