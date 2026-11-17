@@ -53,10 +53,10 @@ VmafCudaDispatchStrategy vmaf_cuda_select_strategy(const char *feature_name,
         return (VmafCudaDispatchStrategy)idx;
     }
 
-    /* Default — DIRECT for every feature. CUDA graph capture is the
-     * opt-in follow-up (see ADR-0181 § Consequences / follow-ups); the
-     * caller fails init on a non-direct strategy (ADR-1571), so removing
-     * this fallback is how graph capture lands. */
+    /* Default — DIRECT for every feature. The ADR-0181 graph-capture
+     * follow-up returns a graph strategy (above) only together with the
+     * code that runs it; until then the caller's -ENOSYS guard refuses
+     * any non-direct strategy (ADR-1571). */
     return VMAF_CUDA_DISPATCH_DIRECT;
 }
 
