@@ -831,7 +831,7 @@ jobs:
                 } else {
                   if (run.check_suite_id != null) staleSuites.add(run.check_suite_id);
                   const hasStamp = typeof run.display_title === 'string' &&
-                    run.display_title.startsWith('[');
+                    /^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\] /.test(run.display_title);
                   const createdMs = Date.parse(run.created_at || '');
                   if (
                     awaitsApproval(run) &&

@@ -682,6 +682,7 @@ class AggregatorEditedWindowTests(unittest.TestCase):
                 run = _rules_run(
                     OLD_RULES_SUITE,
                     AFTER_EDIT_S,
+                    display_title=PR_TITLE,
                     status=status,
                     conclusion=conclusion,
                 )
@@ -691,6 +692,23 @@ class AggregatorEditedWindowTests(unittest.TestCase):
                 self.assertIn("awaits maintainer approval", failures[0])
                 self.assertIn("43885542580", failures[0])
                 self.assertIn("approve or re-run it, then re-run this check", failures[0])
+                self.assertNotIn("did not start", failures[0])
+
+    def test_edited_unstamped_approval_plain_title_and_wip_title(self) -> None:
+        """A real unapproved run has the PR title; a bracketed title is not a stamp."""
+        for display_title in (PR_TITLE, f"[WIP] {PR_TITLE}"):
+            with self.subTest(display_title=display_title):
+                run = _rules_run(
+                    OLD_RULES_SUITE,
+                    AFTER_EDIT_S,
+                    display_title=display_title,
+                    conclusion="action_required",
+                )
+                run["id"] = 43885542580
+                failures = self._run_edited_suites([run])
+                self.assertEqual(len(failures), 1, failures)
+                self.assertIn("awaits maintainer approval", failures[0])
+                self.assertIn("43885542580", failures[0])
                 self.assertNotIn("did not start", failures[0])
 
     def test_edited_unstamped_success_after_edit_is_not_approval(self) -> None:
