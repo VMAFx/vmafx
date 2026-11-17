@@ -749,8 +749,10 @@ jobs:
     # Not on a pull request: three toolkit images are up to six hours of runner time
     # (ADR-1595). The push to master that merges the change runs them, and the
     # Dockerfile stage contract test checks the stages meanwhile. Not on the nightly
-    # schedule either (ADR-1701): it builds the amd64 CPU image only.
-    if: github.event_name != 'pull_request' && github.event_name != 'schedule'
+    # schedule either (ADR-1701): it builds the amd64 CPU image only. Not on a merge
+    # group either, for the same cost (ADR-3556); the push to master after the queue
+    # merges the group runs them.
+    if: github.event_name != 'pull_request' && github.event_name != 'merge_group' && github.event_name != 'schedule'
     runs-on: ubuntu-26.04
     timeout-minutes: 120
     strategy:

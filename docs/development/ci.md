@@ -519,6 +519,11 @@ for pull requests.
   and runs on the `master` push after the merge lands.
 - Publish, deploy, registry-push, release-signing, repository-write, and Pages
   steps keep their existing triggers and never run on `merge_group`.
+- Jobs a pull request skips for runner cost (the three tester GPU image builds
+  in `docker-publish-tester.yml` `build-gpu`) skip a merge group too and run on
+  the `master` push after the merge;
+  `scripts/ci/tests/test_merge_group_workflow_contract.py` refuses a guard that
+  skips `pull_request` without also skipping `merge_group`.
 - Check the aggregator `merge_group` cases and workflow trigger contract
   locally with
   `python3 -m pytest -q scripts/ci/tests/test_aggregator_event_scope.py` and

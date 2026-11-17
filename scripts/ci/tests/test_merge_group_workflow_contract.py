@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Fail closed when workflows feeding merge_group lack the merge_group trigger (ADR-3556)."""
+"""Fail closed when workflows feeding merge_group lack the merge_group trigger (ADR-3556).
+
+Also fail closed when a merge_group workflow's pull_request cost guard omits merge_group.
+"""
 
 from __future__ import annotations
 
@@ -10,8 +13,9 @@ import shutil
 import sys
 import tempfile
 import unittest
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 import yaml  # type: ignore[import-untyped]
 
@@ -35,6 +39,7 @@ PRAETOR_LOCKED_BARE_MERGE_GROUP: dict[str, str] = {
     ),
 }
 LOCAL_WORKFLOW_RE = re.compile(r"^\./\.github/workflows/([^/@]+\.ya?ml)$")
+PR_COST_GUARD_RE = re.compile(r"github\.event_name\s*!=\s*'pull_request'(?!\s*\|\|)")
 
 
 def _expand_job_names(job_id: str, job_cfg: dict[str, Any]) -> list[str]:
@@ -147,6 +152,44 @@ def _validate_merge_group_trigger(wf_name: str, on_map: dict[str, Any]) -> str |
     return None
 
 
+def _is_unadapted_pr_cost_guard(guard: object) -> TypeGuard[str]:
+    """Return True when ``guard`` skips ``pull_request`` for cost without ``merge_group``."""
+    if not isinstance(guard, str):
+        return False
+    return bool(PR_COST_GUARD_RE.search(guard)) and "merge_group" not in guard
+
+
+def _job_cost_guard_errors(wf_name: str, job_id: str, job_cfg: Mapping[str, Any]) -> list[str]:
+    """Return errors for job or step ``pull_request`` cost guards missing ``merge_group``."""
+    candidates: list[tuple[str, object]] = [("if", job_cfg.get("if"))]
+    steps = job_cfg.get("steps")
+    if isinstance(steps, list):
+        for idx, step in enumerate(steps):
+            if isinstance(step, Mapping):
+                candidates.append((f"steps[{idx}].if", step.get("if")))
+    return [
+        f"{wf_name}: job {job_id} ({loc}) skips pull_request without merge_group: {guard}"
+        for loc, guard in candidates
+        if _is_unadapted_pr_cost_guard(guard)
+    ]
+
+
+def check_merge_group_cost_guards(docs: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    """Refuse job or step ``pull_request`` cost guards on ``merge_group`` workflows."""
+    errors: list[str] = []
+    for wf_name in sorted(docs):
+        doc = docs[wf_name]
+        if "merge_group" not in wr.triggers_of(doc):
+            continue
+        jobs = doc.get("jobs")
+        if not isinstance(jobs, Mapping):
+            continue
+        for job_id, job_cfg in jobs.items():
+            if isinstance(job_cfg, Mapping):
+                errors.extend(_job_cost_guard_errors(wf_name, str(job_id), job_cfg))
+    return errors
+
+
 def check_merge_group_workflow_contract(workflows_dir: Path = WORKFLOWS_DIR) -> list[str]:
     """Return all ``merge_group`` trigger contract violations under ``workflows_dir``."""
     triples, pr_only_workflows, errors = compute_merge_group_feeding_map(workflows_dir)
@@ -164,6 +207,7 @@ def check_merge_group_workflow_contract(workflows_dir: Path = WORKFLOWS_DIR) -> 
     for forbidden_wf in sorted(forbidden):
         if "merge_group" in wr.triggers_of(docs.get(forbidden_wf, {})):
             errors.append(f"{forbidden_wf}: must not declare merge_group trigger")
+    errors.extend(check_merge_group_cost_guards(docs))
     return errors
 
 
@@ -181,6 +225,18 @@ def _mutate_workflow_copy(
     else:
         doc[on_key]["merge_group"] = merge_group_value
     target.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8", newline="\n")
+    return check_merge_group_workflow_contract(copied)
+
+
+def _replace_in_workflow_copy(tmp: str, wf_name: str, old: str, new: str) -> list[str]:
+    """Copy ``WORKFLOWS_DIR`` to ``tmp``, replace one substring in ``wf_name``, and check."""
+    copied = Path(tmp) / "workflows"
+    shutil.copytree(WORKFLOWS_DIR, copied)
+    target = copied / wf_name
+    text = target.read_text(encoding="utf-8")
+    if text.count(old) != 1:
+        raise AssertionError(f"{wf_name}: expected 1 match for {old!r}, found {text.count(old)}")
+    target.write_text(text.replace(old, new, 1), encoding="utf-8", newline="\n")
     return check_merge_group_workflow_contract(copied)
 
 
@@ -211,6 +267,62 @@ class MergeGroupWorkflowContractTests(unittest.TestCase):
             with self.subTest(workflow=wf_name), tempfile.TemporaryDirectory() as tmp:
                 errors = _mutate_workflow_copy(tmp, wf_name, valid)
                 self.assertIn(f"{wf_name}: must not declare merge_group trigger", errors)
+
+    def test_planted_cost_guard_without_merge_group_fails_closed(self) -> None:
+        """Fail when docker-publish-tester.yml build-gpu drops its merge_group exclusion."""
+        flagged = "github.event_name != 'pull_request' && github.event_name != 'schedule'"
+        with tempfile.TemporaryDirectory() as tmp:
+            errors = _replace_in_workflow_copy(
+                tmp,
+                "docker-publish-tester.yml",
+                " && github.event_name != 'merge_group'",
+                "",
+            )
+        self.assertEqual(
+            errors,
+            [
+                "docker-publish-tester.yml: job build-gpu (if) skips pull_request without "
+                f"merge_group: {flagged}"
+            ],
+        )
+
+    def test_cost_guard_boundary_cases(self) -> None:
+        """Flag only unadapted PR cost guards on merge_group workflows across jobs and steps."""
+        flagged = "github.event_name != 'pull_request' && github.event_name != 'schedule'"
+        draft = "(github.event_name != 'pull_request' || github.event.pull_request.draft == false)"
+        adapted = "github.event_name != 'pull_request' && github.event_name != 'merge_group'"
+        queued_docs: dict[str, dict[str, Any]] = {
+            "sample.yml": {
+                "on": {"merge_group": {"types": ["checks_requested"], "branches": ["master"]}},
+                "jobs": {
+                    "cost-job": {"if": flagged},
+                    "draft-job": {
+                        "if": draft,
+                        "steps": [
+                            {"name": "Draft step", "if": draft},
+                            {"name": "Cost step", "if": flagged},
+                            {"name": "Bool step", "if": True},
+                        ],
+                    },
+                    "adapted-job": {"if": adapted},
+                },
+            }
+        }
+        self.assertEqual(
+            check_merge_group_cost_guards(queued_docs),
+            [
+                f"sample.yml: job cost-job (if) skips pull_request without merge_group: {flagged}",
+                "sample.yml: job draft-job (steps[1].if) skips pull_request without "
+                f"merge_group: {flagged}",
+            ],
+        )
+        unqueued_docs: dict[str, dict[str, Any]] = {
+            "push-only.yml": {
+                "on": {"push": {"branches": ["master"]}},
+                "jobs": {"cost-job": {"if": flagged, "steps": [{"if": flagged}]}},
+            }
+        }
+        self.assertEqual(check_merge_group_cost_guards(unqueued_docs), [])
 
 
 if __name__ == "__main__":
