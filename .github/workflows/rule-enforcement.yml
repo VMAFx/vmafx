@@ -1,4 +1,7 @@
 name: Rules
+# Issue 3459 / ADR-3551, PR 3466 review: the aggregator matches this prefix to
+# its own payload to pick the Rules run of the same edit.
+run-name: "[${{ github.event.pull_request.updated_at }}] ${{ github.event.pull_request.title }}"
 
 # ADR-0124: automated enforcement of the process ADRs.
 # Three jobs — one blocking (deep-dive-checklist, ADR-0108), two
