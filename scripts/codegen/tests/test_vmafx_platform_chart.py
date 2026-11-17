@@ -34,6 +34,7 @@ KUBERNETES_TYPED = {
     "controller.nodeSelector",
     "node.nodeSelector",
     "affinity",
+    "node.affinity",
     "topologySpreadConstraints",
     "controller.topologySpreadConstraints",
     "podSecurityContext",
