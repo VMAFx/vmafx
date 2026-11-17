@@ -11,6 +11,8 @@ set -euo pipefail
 # Drop the git hook environment and the fixture identity (see the helper).
 # shellcheck source=/dev/null
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/symlink-probe.sh"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 hook="$here/../../githooks/pre-commit.sh"
 tmp="$(mktemp -d)"
@@ -74,12 +76,16 @@ git add c.sh
 # Keep the real PATH minus any shfmt: shadow it with a directory that has none.
 shadow="$tmp/noshfmt"
 mkdir -p "$shadow"
-for tool in git bash head cat printf mapfile dirname sed grep; do
-  if path="$(command -v "$tool" 2>/dev/null)" && [ -x "$path" ]; then
-    ln -sf "$path" "$shadow/$tool"
-  fi
-done
-out="$(PATH="$shadow" bash "$hook" 2>&1)" || fail "hook failed without shfmt: $out"
-case "$out" in *"shfmt: not installed"*) ;; *) fail "missing formatter not reported: $out" ;; esac
-[ "$(git show :c.sh)" = "needs-format" ] || fail "c.sh changed without a formatter"
-echo "ok   a missing formatter is skipped with a notice"
+if reason=$(symlink_probe "$shadow"); then
+  for tool in git bash head cat printf mapfile dirname sed grep; do
+    if path="$(command -v "$tool" 2>/dev/null)" && [ -x "$path" ]; then
+      ln -sf "$path" "$shadow/$tool"
+    fi
+  done
+  out="$(PATH="$shadow" bash "$hook" 2>&1)" || fail "hook failed without shfmt: $out"
+  case "$out" in *"shfmt: not installed"*) ;; *) fail "missing formatter not reported: $out" ;; esac
+  [ "$(git show :c.sh)" = "needs-format" ] || fail "c.sh changed without a formatter"
+  echo "ok   a missing formatter is skipped with a notice"
+else
+  echo "SKIP: a missing formatter is skipped with a notice: cannot create a symbolic link in $shadow: $reason"
+fi
