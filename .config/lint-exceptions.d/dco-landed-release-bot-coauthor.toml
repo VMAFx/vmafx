@@ -1,0 +1,12 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Declared exceptions to the landed release-bot co-author check of scripts/ci/check-dco.py.
+# Format and rules: scripts/ci/lint_exceptions.py.
+
+[[exception]]
+path = "dev/scripts/intel-neo-lock.json"
+category = "D"
+entered = 2026-11-17
+reason = "Category D, 120-day interval. GitHub squash merges of Renovate NEO bumps add Co-authored-by: vmafx-release-bot[bot] <340976456+vmafx-release-bot[bot]@users.noreply.github.com> for the lock-refresh commit (ADR-3555); check-dco.py --landed accepts exactly that one line on a renovate[bot]-authored commit that changes this path; remove together with dco-bot-opener.toml."
+expires = 2027-03-17

@@ -26,6 +26,9 @@
   ],
   "platformAutomerge": true,
   "commitBody": "Signed-off-by: {{{gitAuthor}}}",
+  "gitIgnoredAuthors": [
+    "340976456+vmafx-release-bot[bot]@users.noreply.github.com"
+  ],
   "osvVulnerabilityAlerts": true,
   "dependencyDashboardOSVVulnerabilitySummary": "all",
   "prCreation": "immediate",
