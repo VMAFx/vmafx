@@ -57,6 +57,7 @@ packages = ["src/vmaf_dev_llm"]
 
 
 [tool.ruff]
+extend = "../pyproject.toml"
 line-length = 100
 target-version = "py312"
 

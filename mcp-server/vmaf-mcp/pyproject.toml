@@ -95,6 +95,7 @@ markers = [
 ]
 
 [tool.ruff]
+extend = "../../pyproject.toml"
 line-length = 100
 target-version = "py312"
 
