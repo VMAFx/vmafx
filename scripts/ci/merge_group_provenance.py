@@ -44,13 +44,16 @@ def decide(response: Any, sha: str) -> tuple[bool, str]:
             oid = node["headCommit"]["oid"]
             pr = node["pullRequest"]
             cross = pr["isCrossRepository"]
+            number = pr["number"]
             if (
-                type(position) is not int
+                isinstance(position, bool)
+                or not isinstance(position, int)
                 or position < 1
                 or not isinstance(oid, str)
                 or not oid
-                or type(pr["number"]) is not int
-                or type(cross) is not bool
+                or isinstance(number, bool)
+                or not isinstance(number, int)
+                or not isinstance(cross, bool)
             ):
                 raise ValueError("invalid entry")
             positions.append((position, oid, cross))

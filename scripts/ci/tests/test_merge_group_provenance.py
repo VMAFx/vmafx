@@ -46,6 +46,22 @@ def test_queue_prefix() -> None:
     )
 
 
+def test_invalid_entry_types() -> None:
+    for field, value in [
+        ("position", True),
+        ("position", 0),
+        ("position", "1"),
+        ("number", True),
+        ("isCrossRepository", 1),
+        ("isCrossRepository", "false"),
+    ]:
+        r = response([(1, "ours", False)])
+        node = r["data"]["repository"]["mergeQueue"]["entries"]["nodes"][0]
+        target = node if field == "position" else node["pullRequest"]
+        target[field] = value
+        assert provenance.decide(r, "ours") == (False, "missing or invalid response field")
+
+
 def test_errors_fail_closed() -> None:
     missing_pull_request = {
         "data": {
