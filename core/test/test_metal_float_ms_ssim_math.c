@@ -394,7 +394,7 @@ static int frame_mismatches(const Case *c, const FrameScores *cpu, const FrameSc
             bad = 1;
         }
     }
-    if (cpu->score != twin->score) {
+    if (!vmaf_test_identical_f64(cpu->score, twin->score)) {
         report_frame(c, "score", 0, cpu->score, twin->score);
         bad = 1;
     }

@@ -48,6 +48,7 @@
  * every case compares it with itself.
  */
 
+#include "float_bits.h"
 #include "metal_twin.h"
 
 #include <stdint.h>
@@ -100,9 +101,13 @@ static bool same_default(const VmafOption *a, const VmafOption *b)
     case VMAF_OPT_TYPE_BOOL:
         return a->default_val.b == b->default_val.b;
     case VMAF_OPT_TYPE_INT:
-        return a->default_val.i == b->default_val.i && a->min == b->min && a->max == b->max;
+        return a->default_val.i == b->default_val.i &&
+               vmaf_test_identical_f64(a->min, b->min) &&
+               vmaf_test_identical_f64(a->max, b->max);
     case VMAF_OPT_TYPE_DOUBLE:
-        return a->default_val.d == b->default_val.d && a->min == b->min && a->max == b->max;
+        return vmaf_test_identical_f64(a->default_val.d, b->default_val.d) &&
+               vmaf_test_identical_f64(a->min, b->min) &&
+               vmaf_test_identical_f64(a->max, b->max);
     default:
         return (a->default_val.s == NULL) == (b->default_val.s == NULL) &&
                (!a->default_val.s || !strcmp(a->default_val.s, b->default_val.s));
