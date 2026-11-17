@@ -72,8 +72,9 @@ release and the image tag from the tester-image publish.
 
 ## Where the report goes
 
-Reports land under `docs/hardware-reports/<file name>.json`; the run prints
-the file name to use (`file name for a pull request: ...`). Open a pull
+Reports land under `docs/hardware-reports/`; the run prints the complete
+repository path to use (`file name for a pull request: ...`). Use the printed
+value as-is; do not add the directory or `.json` suffix again. Open a pull
 request with it, or use the
 [hardware report form](https://github.com/VMAFx/vmafx/issues/new?template=hardware_report.yml)
 without one — both are spelled out in
