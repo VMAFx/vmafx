@@ -471,8 +471,10 @@ does not start rebase waves outside its schedule
   its own group keyed on `github.run_id`, so no later edit (same second or not)
   replaces or cancels it; `run-name` keeps the `pull_request.updated_at` stamp
   for aggregator correlation, and same-second edits sharing that stamp fail
-  closed in the aggregator
-  ([ADR-3551](../adr/3551-aggregator-edited-window.md)). Enforced by
+  closed when an aggregator run lists both `Rules` runs
+  ([ADR-3551](../adr/3551-aggregator-edited-window.md)); the
+  [required-checks aggregator section](#required-checks-aggregator) details the
+  residual bounds. Enforced by
   `same_head_findings`, `pending_replacement_findings` and `skip_findings` in
   `scripts/ci/tests/test_master_concurrency_contract.py`.
 - `renovate.json` sets `updateNotScheduled: false`: Renovate opens and rebases
@@ -546,21 +548,31 @@ report from a current-edit run whose `display_title` starts with
 check suites on the same head SHA are excluded, and the aggregator fails closed
 when `pull_request.updated_at` is missing or when the `Rules` workflow does not
 start for the edit within the 2-minute registration grace. If two edits land in
-the same second and produce multiple `Rules` runs sharing the edit-stamp prefix
-(in any status), the aggregator fails closed at once and asks for another
+the same second and an aggregator run lists multiple `Rules` runs sharing the
+edit-stamp prefix (in any status), it fails closed at once and asks for another
 pull-request edit or a commit push. To catch a second same-second `Rules` run
 before passing on an earlier green one, an `edited` aggregator run keeps
 polling until a workflow-runs listing started after the 2-minute registration
 grace, though a duplicate registering after the grace is not seen by that
 aggregator run (its own `Rules` checks still report on the head commit).
-The later edit's aggregator run shares the aggregator concurrency group, so it
-starts its own 2-minute grace only after the earlier run leaves the group and
-fails closed when it lists both `Rules` runs. A duplicate escapes both looks
-only when it registers after that later run's grace deadline; this bounds the
-delayed-registration window rather than eliminating it (ADR-3551, ADR-3557).
+The later edit's aggregator run shares the aggregator concurrency group. If its
+pending run survives, it starts its own 2-minute grace after the earlier run
+leaves the group and fails closed when it lists both `Rules` runs. Two escape
+paths remain (ADR-3551, ADR-3557). A duplicate can register after the later run's
+grace deadline. Alternatively, edits A and B can share one stamp while A's
+aggregator runs and B's waits as pending; a third edit C with a later stamp can
+replace B's pending aggregator before A leaves the group. GitHub keeps at most
+one pending run per group, so B's second look never runs. C's aggregator
+correlates on C's stamp and misses the A/B collision even if B's `Rules` run
+registered before C's grace deadline. B's own `Rules` check runs still report on
+the head commit. The contract test
+`test_known_gap_third_edit_replaces_pending_second_look` in
+`scripts/ci/tests/test_master_concurrency_contract.py` pins this three-event
+known gap, and its documentation pin requires this test name here and in
+ADR-3557.
 `serial_second_look_findings` in
 `scripts/ci/tests/test_master_concurrency_contract.py` pins the shared group and
-non-cancelling `edited` policy that provide this serialised second look.
+non-cancelling `edited` policy that allow a surviving pending second look.
 Because `actions/runner` converts any YAML
 string containing `${{` into one expression capped at 21,000 UTF-16 code units
 after `.NET` `Char.IsWhiteSpace` expression trimming,

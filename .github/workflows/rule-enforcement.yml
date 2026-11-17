@@ -25,8 +25,9 @@ concurrency:
   # Each edited run gets its own group keyed on its run id, so no later edit
   # (same second or not) replaces or cancels it; the run-name keeps the
   # updated_at stamp for aggregator correlation, and same-second edits share
-  # that stamp so the aggregator fails closed on them (ADR-3551). Every other
-  # event shares the head group and only synchronize cancels (ADR-3557).
+  # that stamp and fail closed when an aggregator run lists both Rules runs.
+  # Bounds: docs/development/ci.md, "Required-checks aggregator" (ADR-3551).
+  # Every other event shares the head group; only synchronize cancels (ADR-3557).
   cancel-in-progress: ${{ github.event.action == 'synchronize' }}
 
 jobs:

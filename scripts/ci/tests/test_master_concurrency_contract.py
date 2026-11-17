@@ -463,6 +463,41 @@ def serial_second_look_findings(workflows: dict[str, dict[Any, Any]]) -> list[st
     return problems
 
 
+def third_edit_replacement_findings(workflows: dict[str, dict[Any, Any]]) -> list[str]:
+    """Report when the documented three-edit pending-replacement gap no longer matches."""
+    workflow = workflows.get("required-aggregator.yml", {})
+    raw = workflow.get("concurrency")
+    if not raw:
+        return [
+            "required-aggregator.yml [workflow] missing concurrency block for three-edit known gap"
+        ]
+    block = normalise(raw)
+    sha = "a" * 40
+    edit_a = pr_event(sha, "edited", STAMP_T1, run_id="run-edit-1")
+    edit_b = pr_event(sha, "edited", STAMP_T1, run_id="run-edit-2")
+    edit_c = pr_event(sha, "edited", STAMP_T2, run_id="run-edit-3")
+    problems: list[str] = []
+    if render(block["group"], edit_a) != render(block["group"], edit_b):
+        problems.append(
+            "required-aggregator.yml [workflow] edits A and B do not share a group; "
+            "the documented three-edit known gap no longer matches"
+        )
+    if render(block["group"], edit_b) != render(block["group"], edit_c):
+        problems.append(
+            "required-aggregator.yml [workflow] edit C cannot replace pending edit B; "
+            "the documented three-edit known gap no longer matches"
+        )
+    if any(
+        render(block.get("cancel-in-progress", False), event) not in (False, "false")
+        for event in (edit_b, edit_c)
+    ):
+        problems.append(
+            "required-aggregator.yml [workflow] edits B and C must not cancel running edit A; "
+            "the documented three-edit known gap no longer matches"
+        )
+    return problems
+
+
 def skip_findings(workflows: dict[str, dict[Any, Any]]) -> list[str]:
     """Skipping jobs.aggregator or its steps on an action passes branch protection."""
     aggregator = workflows.get("required-aggregator.yml")
@@ -595,6 +630,15 @@ class RepositoryWorkflows(unittest.TestCase):
     def test_same_second_edited_aggregators_keep_a_serial_second_look(self) -> None:
         self.assertEqual(serial_second_look_findings(load_all()), [])
 
+    def test_known_gap_third_edit_replaces_pending_second_look(self) -> None:
+        self.assertEqual(third_edit_replacement_findings(load_all()), [])
+
+    def test_known_gap_third_edit_replacement_is_documented(self) -> None:
+        test_name = self.test_known_gap_third_edit_replaces_pending_second_look.__name__
+        for path in ("docs/development/ci.md", "docs/adr/3557-aggregator-same-head-queue.md"):
+            with self.subTest(path=path):
+                self.assertIn(test_name, (ROOT / path).read_text(encoding="utf-8"))
+
     def test_synchronize_still_cancels_stale_gate_workflow_runs(self) -> None:
         workflows = load_all()
         gates, findings = gate_workflows(workflows)
@@ -616,6 +660,44 @@ class RepositoryWorkflows(unittest.TestCase):
 
 class Contract(unittest.TestCase):
     """Negative and boundary cases on synthetic workflows."""
+
+    def test_negative_per_stamp_aggregator_group_changes_three_edit_known_gap(self) -> None:
+        block = {
+            **AGGREGATOR_NEW,
+            "group": AGGREGATOR_NEW["group"] + "-${{ github.event.pull_request.updated_at }}",
+        }
+        agg = wf(AGGREGATOR_ON, block, aggregator_jobs())
+        self.assertEqual(
+            third_edit_replacement_findings(gate_pair(aggregator=agg)),
+            [
+                "required-aggregator.yml [workflow] edit C cannot replace pending edit B; "
+                "the documented three-edit known gap no longer matches"
+            ],
+        )
+
+    def test_negative_per_run_aggregator_group_changes_three_edit_known_gap(self) -> None:
+        block = {**AGGREGATOR_NEW, "group": AGGREGATOR_NEW["group"] + "-${{ github.run_id }}"}
+        agg = wf(AGGREGATOR_ON, block, aggregator_jobs())
+        self.assertEqual(len(third_edit_replacement_findings(gate_pair(aggregator=agg))), 2)
+
+    def test_negative_cancelling_aggregator_changes_three_edit_known_gap(self) -> None:
+        agg = wf(AGGREGATOR_ON, {**AGGREGATOR_NEW, "cancel-in-progress": True}, aggregator_jobs())
+        self.assertEqual(
+            third_edit_replacement_findings(gate_pair(aggregator=agg)),
+            [
+                "required-aggregator.yml [workflow] edits B and C must not cancel running edit A; "
+                "the documented three-edit known gap no longer matches"
+            ],
+        )
+
+    def test_boundary_missing_aggregator_block_reports_three_edit_known_gap(self) -> None:
+        agg = wf(AGGREGATOR_ON, jobs=aggregator_jobs())
+        self.assertEqual(
+            third_edit_replacement_findings(gate_pair(aggregator=agg)),
+            [
+                "required-aggregator.yml [workflow] missing concurrency block for three-edit known gap"
+            ],
+        )
 
     def test_negative_per_run_aggregator_group_loses_serial_second_look(self) -> None:
         block = {**AGGREGATOR_NEW, "group": AGGREGATOR_NEW["group"] + "-${{ github.run_id }}"}
