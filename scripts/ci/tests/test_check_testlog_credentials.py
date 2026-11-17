@@ -20,6 +20,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import check_testlog_credentials as check
+from scripts.ci.tests import symlink_test_support as links
 
 # Synthetic shapes only; none is a real credential.
 FAKE_GITHUB = "ghp_" + "A" * 36
@@ -115,10 +116,8 @@ class CheckTestlogCredentialsTest(unittest.TestCase):
             target = _write(root, "elsewhere.txt", f"X={FAKE_GITHUB}\n")
             logs = root / "build" / "meson-logs"
             logs.mkdir(parents=True)
-            try:
-                (logs / "testlog.txt").symlink_to(target)
-            except OSError as exc:
-                self.skipTest(f"symlink creation unavailable: {exc}")
+            links.skip_without_symlinks(logs)
+            (logs / "testlog.txt").symlink_to(target)
             code, output = _run(root)
         self.assertEqual(code, 2)
         self.assertIn("not a regular file", output)
