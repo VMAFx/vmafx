@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from collections.abc import Callable
 from functools import partial
@@ -2124,6 +2125,30 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
         )
 
 
+PYTEST_WARNING_CONFIGS = frozenset(
+    {".git", ".tox", ".venv", "build", "node_modules", "subprojects", "venv"}
+)
+
+
+def pytest_filterwarnings_problems(root: Path) -> list[str]:
+    """Every pyproject pytest section must turn warnings into errors (issue 3081)."""
+    problems: list[str] = []
+    for path in sorted(root.rglob("pyproject.toml")):
+        relative = path.relative_to(root)
+        if PYTEST_WARNING_CONFIGS.intersection(relative.parts):
+            continue
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        ini_options = data.get("tool", {}).get("pytest", {}).get("ini_options")
+        if not isinstance(ini_options, dict):
+            continue
+        if ini_options.get("filterwarnings") != ["error"]:
+            problems.append(
+                f"{relative.as_posix()}: [tool.pytest.ini_options] filterwarnings "
+                'must be ["error"]'
+            )
+    return problems
+
+
 class FailClosedCIContract(unittest.TestCase):
     def test_contract_is_wired_into_required_ci_and_local_hooks(self) -> None:
         """Keep the CI contract in Tooling Tests and local hooks for every tracked installation source."""
@@ -2176,6 +2201,24 @@ class FailClosedCIContract(unittest.TestCase):
         ]
         self.assertIn("depends = py314", coverage)
         self.assertNotRegex(coverage, r"(?m)^\s*coverage (?:report|xml|html) .*\s-i(?:\s|$)")
+        self.assertEqual(pytest_filterwarnings_problems(ROOT), [])
+
+    def test_pytest_filterwarnings_audit_rejects_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "pyproject.toml").write_text(
+                '[tool.pytest.ini_options]\nfilterwarnings = ["default"]\n',
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                pytest_filterwarnings_problems(root),
+                ["pyproject.toml: [tool.pytest.ini_options] filterwarnings " 'must be ["error"]'],
+            )
+            (root / "pyproject.toml").write_text(
+                '[tool.pytest.ini_options]\nfilterwarnings = ["error"]\n',
+                encoding="utf-8",
+            )
+            self.assertEqual(pytest_filterwarnings_problems(root), [])
 
     def test_cpu_coverage_records_and_reasserts_pytest_failure(self) -> None:
         workflow = (WORKFLOWS / "tests-and-quality-gates.yml").read_text(encoding="utf-8")
