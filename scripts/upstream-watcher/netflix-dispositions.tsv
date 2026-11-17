@@ -50,6 +50,6 @@ f712fa7564fe49b12991d83920b83573af2ae063	ported	every Linux leg builds with zimg
 74f930d17de8c58e7c2ce55e2b897b0030ebd8ef	ported	#2999 (287ead8eb)
 4611e47a7330cd342498dcc130e1008efbeab6e4	ported	port/netflix-4611e47a7
 a6ed0f18285cab504b779bbccb0bbaddc3bf44c2	in-fork	#3012
-684e10087ec03d780fefe9119afaf9dc577b6d30	in-fork	#414 (7ca4dcbbb, ADR-0316): parse_unsigned gets ARG_THREADS/ARG_SUBSAMPLE/ARG_CPUMASK in core/tools/cli_parse.cpp; error() bound-checked past the assert (ADR-0523, ADR-0528)
+684e10087ec03d780fefe9119afaf9dc577b6d30	in-fork	#414 (7ca4dcbbb, ADR-0316): parse_unsigned gets ARG_THREADS/ARG_SUBSAMPLE/ARG_CPUMASK in core/tools/cli_parse.cpp; error() bound-checked past the assert (#1288, ADR-0528)
 3d253a40f2264fdc1dee6a1db2c858e002b0a0a0	in-fork	#414 (7ca4dcbbb): core/test/test_cli_parse_long_only_args.c exits 1 with the "Invalid argument" line for bad --threads/--subsample/--cpumask; ADR-1088 negative/overflow cases; upstream dropped this test again in a599b2b86
 a599b2b8630b742dd52e577ab7f039b3c87114c6	in-fork	#414 (7ca4dcbbb, ADR-0316): upstream's final series shape is the 3-line option-ID fix only; the fork ships exactly that and never carried the harness this commit removes
