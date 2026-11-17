@@ -21,8 +21,11 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: rule-enforcement-${{ github.event.pull_request.number }}
-  # ADR-3557: only a synchronize (new head) cancels; same-head events queue.
+  group: rule-enforcement-${{ github.event.pull_request.number }}-${{ github.event.action == 'edited' && github.event.pull_request.updated_at || 'head' }}
+  # Each edit gets its own group keyed on the same updated_at stamp the run-name
+  # carries, so a later edit cannot replace the pending Rules run an edited
+  # aggregator reads; every other event shares the head group and only
+  # synchronize cancels (ADR-3557).
   cancel-in-progress: ${{ github.event.action == 'synchronize' }}
 
 jobs:

@@ -24,8 +24,9 @@ stale entry fails like a missing one.
 For the merge-gate workflows (`required-aggregator.yml` and every workflow in
 its `editedRerunWorkflows` array), a pull-request event that does not move the
 head (`edited`, `reopened`, `ready_for_review`) must not cancel a running run
-of the same head, and `jobs.aggregator` must not skip on the event action
-(ADR-3557); only `synchronize` cancels the superseded run.
+of the same head, no later same-head event may replace a pending `edited` run
+of a non-aggregator gate workflow, and `jobs.aggregator` must not skip on the
+event action (ADR-3557); only `synchronize` cancels the superseded run.
 """
 
 from __future__ import annotations
@@ -150,7 +151,11 @@ def master_push(sha: str) -> dict[str, str]:
     }
 
 
-def pr_push(sha: str) -> dict[str, str]:
+STAMP_T1 = "2026-11-17T06:00:00Z"
+STAMP_T2 = "2026-11-17T06:05:00Z"
+
+
+def pr_push(sha: str, updated_at: str = STAMP_T1) -> dict[str, str]:
     return {
         "github.ref": "refs/pull/7/merge",
         "github.sha": sha,
@@ -158,13 +163,14 @@ def pr_push(sha: str) -> dict[str, str]:
         "github.event.action": "synchronize",
         "github.workflow": "W",
         "github.event.pull_request.number": "7",
+        "github.event.pull_request.updated_at": updated_at,
         "github.event.number": "7",
         "github.run_id": f"run-{sha}",
     }
 
 
-def pr_event(sha: str, action: str) -> dict[str, str]:
-    return {**pr_push(sha), "github.event.action": action}
+def pr_event(sha: str, action: str, updated_at: str = STAMP_T1) -> dict[str, str]:
+    return {**pr_push(sha, updated_at), "github.event.action": action}
 
 
 def triggers(workflow: dict[Any, Any]) -> dict[str, Any]:
@@ -340,28 +346,74 @@ def pull_request_types(workflow: dict[Any, Any]) -> list[str]:
     return [raw] if isinstance(raw, str) else [str(item) for item in raw]
 
 
+def _block_same_head_findings(
+    name: str, scope: str, block: dict[str, Any], pr_types: list[str]
+) -> list[str]:
+    sha_a = "a" * 40
+    running_groups = {
+        render(block["group"], pr_event(sha_a, running, STAMP_T1)) for running in pr_types
+    }
+    checked_types = [t for t in pr_types if t not in EXEMPT_SAME_HEAD_TYPES]
+    found: list[str] = []
+    for action in checked_types:
+        event_ctx = pr_event(sha_a, action, STAMP_T2)
+        same_group = render(block["group"], event_ctx) in running_groups
+        cancel = render(block.get("cancel-in-progress", False), event_ctx)
+        if same_group and cancel in (True, "true"):
+            found.append(
+                f"{name} [{scope}] a same-head {action} run cancels the running run "
+                "of the same head"
+            )
+    return found
+
+
 def same_head_findings(workflows: dict[str, dict[Any, Any]]) -> list[str]:
     """A non-synchronize PR event must never cancel a running merge-gate run of the same head."""
     gates, problems = gate_workflows(workflows)
-    sha_a = "a" * 40
     for name in sorted(gates):
         workflow = workflows.get(name)
         if workflow is None:
             problems.append(f"{name} is listed as a gate workflow but does not exist")
             continue
-        checked_types = [t for t in pull_request_types(workflow) if t not in EXEMPT_SAME_HEAD_TYPES]
+        pr_types = pull_request_types(workflow)
         for scope, raw in concurrency_blocks(workflow).items():
-            block = normalise(raw)
-            push_group = render(block["group"], pr_push(sha_a))
-            for action in checked_types:
-                event_ctx = pr_event(sha_a, action)
-                same_group = push_group == render(block["group"], event_ctx)
-                cancel = render(block.get("cancel-in-progress", False), event_ctx)
-                if same_group and cancel in (True, "true"):
-                    problems.append(
-                        f"{name} [{scope}] a same-head {action} run cancels the running run "
-                        "of the same head"
-                    )
+            problems.extend(_block_same_head_findings(name, scope, normalise(raw), pr_types))
+    return problems
+
+
+def _block_pending_replacement_findings(
+    name: str, scope: str, block: dict[str, Any], pr_types: list[str]
+) -> list[str]:
+    sha_a = "a" * 40
+    edited_group = render(block["group"], pr_event(sha_a, "edited", STAMP_T1))
+    actions = sorted(
+        action
+        for action in set(pr_types)
+        if render(block["group"], pr_event(sha_a, action, STAMP_T2)) == edited_group
+    )
+    if not actions:
+        return []
+    return [
+        f"{name} [{scope}] an edited run shares its concurrency group with a later "
+        f"same-head {', '.join(actions)} run, which replaces it while pending"
+    ]
+
+
+def pending_replacement_findings(workflows: dict[str, dict[Any, Any]]) -> list[str]:
+    """No later same-head PR event may replace a pending edited gate run outside the aggregator."""
+    gates, problems = gate_workflows(workflows)
+    for name in sorted(gates - {"required-aggregator.yml"}):
+        workflow = workflows.get(name)
+        if workflow is None:
+            problems.append(f"{name} is listed as a gate workflow but does not exist")
+            continue
+        pr_types = pull_request_types(workflow)
+        if "edited" not in pr_types:
+            continue
+        for scope, raw in concurrency_blocks(workflow).items():
+            problems.extend(
+                _block_pending_replacement_findings(name, scope, normalise(raw), pr_types)
+            )
     return problems
 
 
@@ -424,7 +476,10 @@ AGGREGATOR_NEW: dict[str, Any] = {
     ),
 }
 RULES_NEW: dict[str, Any] = {
-    "group": "rule-enforcement-${{ github.event.pull_request.number }}",
+    "group": (
+        "rule-enforcement-${{ github.event.pull_request.number }}-"
+        "${{ github.event.action == 'edited' && github.event.pull_request.updated_at || 'head' }}"
+    ),
     "cancel-in-progress": "${{ github.event.action == 'synchronize' }}",
 }
 GATE_SCRIPT = "const editedRerunWorkflows = [\n  '.github/workflows/rule-enforcement.yml',\n];"
@@ -484,6 +539,9 @@ class RepositoryWorkflows(unittest.TestCase):
 
     def test_no_same_head_event_cancels_a_gate_workflow(self) -> None:
         self.assertEqual(same_head_findings(load_all()), [])
+
+    def test_no_later_same_head_event_replaces_a_pending_edited_gate_run(self) -> None:
+        self.assertEqual(pending_replacement_findings(load_all()), [])
 
     def test_aggregator_never_skips_on_pull_request_action(self) -> None:
         self.assertEqual(skip_findings(load_all()), [])
@@ -722,6 +780,72 @@ class Contract(unittest.TestCase):
         }
         self.assertEqual(skip_findings(pair), [])
         self.assertEqual(same_head_findings(pair), [])
+
+    def test_negative_shared_pr_group_replaces_pending_edited_rules_run(self) -> None:
+        rules = wf(
+            GATE_PR_ON,
+            {
+                "group": "rule-enforcement-${{ github.event.pull_request.number }}",
+                "cancel-in-progress": "${{ github.event.action == 'synchronize' }}",
+            },
+        )
+        self.assertEqual(
+            pending_replacement_findings(gate_pair(rules=rules)),
+            [
+                "rule-enforcement.yml [workflow] an edited run shares its concurrency group "
+                "with a later same-head edited, opened, ready_for_review, reopened, synchronize "
+                "run, which replaces it while pending"
+            ],
+        )
+
+    def test_positive_per_edit_group_isolates_pending_edited_rules_run(self) -> None:
+        pair = gate_pair()
+        self.assertEqual(pending_replacement_findings(pair), [])
+        self.assertEqual(same_head_findings(pair), [])
+
+    def test_negative_action_keyed_group_cancels_repeated_same_head_events(self) -> None:
+        group = "rules-${{ github.event.pull_request.number }}-${{ github.event.action }}"
+        cancelling = wf(GATE_PR_ON, {"group": group, "cancel-in-progress": True})
+        self.assertEqual(
+            same_head_findings(gate_pair(rules=cancelling)),
+            [
+                "rule-enforcement.yml [workflow] a same-head edited run cancels the "
+                "running run of the same head",
+                "rule-enforcement.yml [workflow] a same-head reopened run cancels the "
+                "running run of the same head",
+                "rule-enforcement.yml [workflow] a same-head ready_for_review run cancels "
+                "the running run of the same head",
+            ],
+        )
+        queued = wf(
+            GATE_PR_ON,
+            {"group": group, "cancel-in-progress": "${{ github.event.action == 'synchronize' }}"},
+        )
+        self.assertEqual(same_head_findings(gate_pair(rules=queued)), [])
+
+    def test_negative_per_edit_group_with_unconditional_cancel_flags_head_group_actions(
+        self,
+    ) -> None:
+        rules = wf(GATE_PR_ON, {"group": RULES_NEW["group"], "cancel-in-progress": True})
+        self.assertEqual(
+            same_head_findings(gate_pair(rules=rules)),
+            [
+                "rule-enforcement.yml [workflow] a same-head reopened run cancels the "
+                "running run of the same head",
+                "rule-enforcement.yml [workflow] a same-head ready_for_review run cancels "
+                "the running run of the same head",
+            ],
+        )
+
+    def test_boundary_gate_workflow_without_edited_type_needs_no_per_edit_group(self) -> None:
+        rules = wf(
+            {"pull_request": {"types": ["opened", "synchronize", "reopened"]}},
+            {
+                "group": "rule-enforcement-${{ github.event.pull_request.number }}",
+                "cancel-in-progress": "${{ github.event.action == 'synchronize' }}",
+            },
+        )
+        self.assertEqual(pending_replacement_findings(gate_pair(rules=rules)), [])
 
 
 if __name__ == "__main__":

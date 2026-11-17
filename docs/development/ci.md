@@ -466,8 +466,11 @@ does not start rebase waves outside its schedule
   the pull-request body seconds after each push, GitHub counts a cancelled
   check run in an earlier check suite on the head commit as blocking the merge
   even when a newer suite succeeds, and a pending same-head twin waits behind
-  the running run (further pending edits collapse to the newest without
-  creating check runs). Enforced by `same_head_findings` and `skip_findings` in
+  the running run (further pending aggregator edits collapse to the newest
+  without creating check runs). `rule-enforcement.yml` gives each `edited` run
+  its own group per edit stamp, so a later edit cannot replace the pending
+  `Rules` run an edited aggregator reads. Enforced by `same_head_findings`,
+  `pending_replacement_findings` and `skip_findings` in
   `scripts/ci/tests/test_master_concurrency_contract.py`.
 - `renovate.json` sets `updateNotScheduled: false`: Renovate opens and rebases
   its branches only in its Monday schedule, at most two pull requests and three
