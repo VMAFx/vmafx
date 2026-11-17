@@ -85,7 +85,10 @@
         "oneapi-src/level-zero"
       ],
       "groupName": "Intel NEO compute stack (matched set)",
-      "automerge": false
+      "automerge": false,
+      "addLabels": [
+        "hold"
+      ]
     },
     {
       "description": "Group GitHub Actions minor+patch+digest bumps; auto-merge — digest-only is mechanical and CI catches drift.",
@@ -114,7 +117,10 @@
         "major"
       ],
       "groupName": "GitHub Actions (major)",
-      "automerge": false
+      "automerge": false,
+      "addLabels": [
+        "hold"
+      ]
     },
     {
       "description": "Group pre-commit hook rev bumps; auto-merge — mechanical, lint catches drift.",
@@ -180,15 +186,30 @@
         "minor"
       ],
       "groupName": "Python (minor)",
-      "automerge": false
+      "automerge": false,
+      "addLabels": [
+        "hold"
+      ]
     },
     {
-      "description": "Group numpy across ALL managers (pep621 + pip_requirements + setuptools/setup.py) into ONE PR. numpy is pinned in ai/, mcp-server/, python/, ensemble-kit/, roi-score/ via a mix of pyproject.toml, setup.py and requirements*.txt, so the per-manager Python groups split a single numpy bump into two PRs (e.g. #1040 pep621/setup.py + #1041 pip_requirements). This package rule overrides the group for numpy so future bumps land together. Minor needs review (NaN/dtype ABI risk in the DNN + AI stack).",
+      "description": "Group numpy across Python managers (pep621 + pip_requirements + pip_setup + setup-cfg) from PyPI into ONE PR. numpy is pinned in ai/, mcp-server/, python/, ensemble-kit/, roi-score/ via a mix of pyproject.toml, setup.py and requirements*.txt, so the per-manager Python groups split a single numpy bump into two PRs (e.g. #1040 pep621/setup.py + #1041 pip_requirements). This package rule overrides the group for numpy so future bumps land together. Minor needs review (NaN/dtype ABI risk in the DNN + AI stack).",
+      "matchManagers": [
+        "pep621",
+        "pip_requirements",
+        "pip_setup",
+        "setup-cfg"
+      ],
+      "matchDatasources": [
+        "pypi"
+      ],
       "matchPackageNames": [
         "numpy"
       ],
       "groupName": "numpy (all managers)",
-      "automerge": false
+      "automerge": false,
+      "addLabels": [
+        "hold"
+      ]
     },
     {
       "description": "Group all Go minor + patch updates into one PR; auto-merge. k8s/grpc/proto patch bumps are low-risk; CI gates catch regressions.",
@@ -216,7 +237,10 @@
         "major"
       ],
       "groupName": "Go deps (major)",
-      "automerge": false
+      "automerge": false,
+      "addLabels": [
+        "hold"
+      ]
     },
     {
       "description": "Group all Cargo (Rust) minor + patch updates; auto-merge — Rust's semantic versioning is reliable and CI catches UB/breakage.",
@@ -244,7 +268,10 @@
         "major"
       ],
       "groupName": "Cargo deps (major)",
-      "automerge": false
+      "automerge": false,
+      "addLabels": [
+        "hold"
+      ]
     },
     {
       "description": "Batch every Docker base-image digest/pin refresh into one PR. Ungrouped, each image opened its own PR and its own full CI matrix run; on 2026-08-30 that fan-out starved the Required Checks Aggregator so no dependency PR could merge at all.",
@@ -269,6 +296,9 @@
       ],
       "minimumReleaseAgeBehaviour": "timestamp-optional",
       "automerge": false,
+      "addLabels": [
+        "hold"
+      ],
       "labels": [
         "dependencies",
         "cuda",
@@ -281,7 +311,10 @@
         "renovatebot/github-action"
       ],
       "groupName": "Renovate self-hosted action",
-      "automerge": false
+      "automerge": false,
+      "addLabels": [
+        "hold"
+      ]
     },
     {
       "description": "ROCm image version bump — manual review required. ROCm bumps carry KFD ioctl ABI and compiler risk; set ROCM_VERSION in build-config.env, re-check the /opt/rocm/core-<major>.<minor> paths, the prune lists (dev/Containerfile rocm-src, scripts/ci/install-rocm-from-image.sh) and tools/rc1-tester/image/hip-runtime.json, and run the HIP device suite before merging (ADR-1225, ADR-0604, ADR-0603).",
@@ -290,6 +323,9 @@
       ],
       "groupName": "ROCm (hip runtime)",
       "automerge": false,
+      "addLabels": [
+        "hold"
+      ],
       "labels": [
         "dependencies",
         "rocm",
@@ -328,6 +364,9 @@
       ],
       "groupName": "dev-image pinned deps",
       "automerge": false,
+      "addLabels": [
+        "hold"
+      ],
       "labels": [
         "dependencies",
         "dev-image"
@@ -457,7 +496,10 @@
         "rust"
       ],
       "groupName": "Rust toolchain",
-      "automerge": false
+      "automerge": false,
+      "addLabels": [
+        "hold"
+      ]
     },
     {
       "description": "ADR-3312 pattern: the nodenv manager does not update .node-version; the CI Node.js custom manager owns it, because nodenv reads another datasource and would open a second pull request that moves only this file.",
@@ -489,6 +531,9 @@
       ],
       "groupName": "CI Node.js",
       "automerge": false,
+      "addLabels": [
+        "hold"
+      ],
       "draftPR": false
     },
     {
@@ -515,6 +560,9 @@
       ],
       "minimumReleaseAge": "0 days",
       "automerge": false,
+      "addLabels": [
+        "hold"
+      ],
       "labels": [
         "dependencies",
         "dev-image",

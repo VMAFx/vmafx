@@ -235,6 +235,38 @@ dependencies change (#3045, #3047), preventing `helm lint` from rejecting a
 `scripts/ci/tests/test_renovate_file_patterns.py` enforces this option whenever
 packaged chart archives are tracked in git.
 
+### Reviewed updates carry hold
+
+Reviewed package rules (`automerge: false`) in
+[`renovate.json`](../../renovate.json) add the exact label `hold` through
+`addLabels` in the same rule object. The merge train can land dependency pull
+requests past their minimum release age unless they carry `hold`. Add the
+label once by hand to an already open reviewed pull request: Renovate applies
+labels when it creates or updates a pull request, so changing the configuration
+alone does not immediately protect existing pull requests. See Renovate's
+[label behavior](https://docs.renovatebot.com/configuration-options/#labels).
+
+Rule 0, `Other dependencies (minor + patch)`, is the exception. It also matches
+updates that later rules automerge, including GitHub Actions minor and patch
+updates. Renovate evaluates matching rules in order, so later rules can
+override `automerge`, while
+[`addLabels` merges across all matching rules](https://docs.renovatebot.com/configuration-options/#addlabels).
+Putting `hold` on that catch-all would therefore block those automerged updates.
+
+[`test_renovate_review_hold.py`](../../scripts/ci/tests/test_renovate_review_hold.py)
+checks rule overlap and later review coverage. It refuses reviewed rules
+without their own `addLabels: ["hold"]`, holds outside reviewed rules (including
+separate label-only rules), and holds that can reach a later automerged update.
+Only reviewed rules whose hold would leak are exempt from the required label;
+the checked-in configuration must have exactly the rule 0 exception.
+
+The numpy rule names its PyPI managers and datasource so the hold test can prove
+it disjoint from the Go, Cargo and Docker automerge rules.
+
+```sh
+python3 -m unittest discover -s scripts/ci/tests -p 'test_renovate_review_hold.py'
+```
+
 ### Squash message of automerged updates
 
 Renovate platform automerge (`platformAutomerge: true`) delegates merge
