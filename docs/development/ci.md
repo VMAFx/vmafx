@@ -553,6 +553,14 @@ before passing on an earlier green one, an `edited` aggregator run keeps
 polling until a workflow-runs listing started after the 2-minute registration
 grace, though a duplicate registering after the grace is not seen by that
 aggregator run (its own `Rules` checks still report on the head commit).
+The later edit's aggregator run shares the aggregator concurrency group, so it
+starts its own 2-minute grace only after the earlier run leaves the group and
+fails closed when it lists both `Rules` runs. A duplicate escapes both looks
+only when it registers after that later run's grace deadline; this bounds the
+delayed-registration window rather than eliminating it (ADR-3551, ADR-3557).
+`serial_second_look_findings` in
+`scripts/ci/tests/test_master_concurrency_contract.py` pins the shared group and
+non-cancelling `edited` policy that provide this serialised second look.
 Because `actions/runner` converts any YAML
 string containing `${{` into one expression capped at 21,000 UTF-16 code units
 after `.NET` `Char.IsWhiteSpace` expression trimming,

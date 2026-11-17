@@ -435,6 +435,34 @@ def pending_replacement_findings(workflows: dict[str, dict[Any, Any]]) -> list[s
     return problems
 
 
+def serial_second_look_findings(workflows: dict[str, dict[Any, Any]]) -> list[str]:
+    """Same-second edited aggregator runs must share a group without cancellation."""
+    workflow = workflows.get("required-aggregator.yml", {})
+    raw = workflow.get("concurrency")
+    if not raw:
+        return [
+            "required-aggregator.yml [workflow] missing concurrency block for serialised second look"
+        ]
+    block = normalise(raw)
+    edit_one = pr_event("a" * 40, "edited", STAMP_T1, run_id="run-edit-1")
+    edit_two = pr_event("a" * 40, "edited", STAMP_T1, run_id="run-edit-2")
+    problems: list[str] = []
+    if render(block["group"], edit_one) != render(block["group"], edit_two):
+        problems.append(
+            "required-aggregator.yml [workflow] same-second edited aggregator runs "
+            "do not share one group, so the later edit gets no serialised second look"
+        )
+    if any(
+        render(block.get("cancel-in-progress", False), event) in (True, "true")
+        for event in (edit_one, edit_two)
+    ):
+        problems.append(
+            "required-aggregator.yml [workflow] a same-second edited aggregator run "
+            "cancels the earlier run, so the later edit gets no serialised second look"
+        )
+    return problems
+
+
 def skip_findings(workflows: dict[str, dict[Any, Any]]) -> list[str]:
     """Skipping jobs.aggregator or its steps on an action passes branch protection."""
     aggregator = workflows.get("required-aggregator.yml")
@@ -564,6 +592,9 @@ class RepositoryWorkflows(unittest.TestCase):
     def test_aggregator_never_skips_on_pull_request_action(self) -> None:
         self.assertEqual(skip_findings(load_all()), [])
 
+    def test_same_second_edited_aggregators_keep_a_serial_second_look(self) -> None:
+        self.assertEqual(serial_second_look_findings(load_all()), [])
+
     def test_synchronize_still_cancels_stale_gate_workflow_runs(self) -> None:
         workflows = load_all()
         gates, findings = gate_workflows(workflows)
@@ -585,6 +616,61 @@ class RepositoryWorkflows(unittest.TestCase):
 
 class Contract(unittest.TestCase):
     """Negative and boundary cases on synthetic workflows."""
+
+    def test_negative_per_run_aggregator_group_loses_serial_second_look(self) -> None:
+        block = {**AGGREGATOR_NEW, "group": AGGREGATOR_NEW["group"] + "-${{ github.run_id }}"}
+        agg = wf(AGGREGATOR_ON, block, aggregator_jobs())
+        self.assertEqual(
+            serial_second_look_findings(gate_pair(aggregator=agg)),
+            [
+                "required-aggregator.yml [workflow] same-second edited aggregator runs "
+                "do not share one group, so the later edit gets no serialised second look"
+            ],
+        )
+
+    def test_negative_cancelling_aggregator_loses_serial_second_look(self) -> None:
+        block = {**AGGREGATOR_NEW, "cancel-in-progress": True}
+        agg = wf(AGGREGATOR_ON, block, aggregator_jobs())
+        self.assertEqual(
+            serial_second_look_findings(gate_pair(aggregator=agg)),
+            [
+                "required-aggregator.yml [workflow] a same-second edited aggregator run "
+                "cancels the earlier run, so the later edit gets no serialised second look"
+            ],
+        )
+
+    def test_positive_shared_aggregator_group_keeps_serial_second_look(self) -> None:
+        self.assertEqual(serial_second_look_findings(gate_pair()), [])
+
+    def test_boundary_different_head_edits_may_share_aggregator_group(self) -> None:
+        self.assertEqual(
+            render(
+                AGGREGATOR_NEW["group"],
+                pr_event("a" * 40, "edited", STAMP_T1, run_id="run-edit-1"),
+            ),
+            render(
+                AGGREGATOR_NEW["group"],
+                pr_event("b" * 40, "edited", STAMP_T1, run_id="run-edit-2"),
+            ),
+        )
+        self.assertEqual(serial_second_look_findings(gate_pair()), [])
+
+    def test_boundary_missing_aggregator_reports_missing_serial_second_look(self) -> None:
+        self.assertEqual(
+            serial_second_look_findings({}),
+            [
+                "required-aggregator.yml [workflow] missing concurrency block for serialised second look"
+            ],
+        )
+
+    def test_negative_missing_aggregator_block_loses_serial_second_look(self) -> None:
+        agg = wf(AGGREGATOR_ON, jobs=aggregator_jobs())
+        self.assertEqual(
+            serial_second_look_findings(gate_pair(aggregator=agg)),
+            [
+                "required-aggregator.yml [workflow] missing concurrency block for serialised second look"
+            ],
+        )
 
     def run_master(
         self, workflow: dict[Any, Any], serialised: dict[tuple[str, str], str] | None = None
