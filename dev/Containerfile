@@ -475,10 +475,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # derived dynamically from the release pinned as INTEL_NEO_VERSION in
 # build-config.env (ADR-1145); CI build hosts install that release's ocloc
 # through scripts/ci/install-intel-ocloc.sh, so both compile with one IGC.
+# The Level Zero loader .debs (libze1, libze-dev) come from the same lock (ADR-3555).
 # The IGC debs install into /usr/local/lib without an ldconfig trigger, hence
 # the explicit ldconfig before anything loads them.
 COPY build-config.env /opt/vmafx/build-config.env
-COPY dev/scripts/fetch-intel-neo.py /tmp/fetch-intel-neo.py
+COPY dev/scripts/fetch-intel-neo.py dev/scripts/intel-neo-lock.json /tmp/
 # hadolint ignore=DL3003,DL3008,DL3009
 RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -488,30 +489,26 @@ RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
     && mkdir -p /tmp/neo && cd /tmp/neo \
     && token_args=() \
     && if [[ -n "${GITHUB_TOKEN:-}" ]]; then token_args=(--github-token "${GITHUB_TOKEN}"); fi \
-    && python3 /tmp/fetch-intel-neo.py --neo-ver "${INTEL_NEO_VERSION}" "${token_args[@]}" \
+    && python3 /tmp/fetch-intel-neo.py --neo-ver "${INTEL_NEO_VERSION}" --level-zero-ver "${LEVEL_ZERO_VERSION}" --level-zero-dev "${token_args[@]}" \
     && apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends ./*.deb \
     && ldconfig \
-    && cd / && rm -rf /tmp/neo /tmp/fetch-intel-neo.py
+    && cd / && rm -rf /tmp/neo /tmp/fetch-intel-neo.py /tmp/intel-neo-lock.json
 
-# Verify NEO compute-runtime packages were actually installed, and that ocloc
-# is the pinned release (icpx looks for exactly `ocloc` on PATH).
+# Verify NEO compute-runtime and Level Zero loader packages were actually
+# installed, and that ocloc and libze1/libze-dev match the pinned releases
+# (icpx looks for exactly `ocloc` on PATH).
 RUN . /opt/vmafx/build-config.env \
-    && for pkg in intel-opencl-icd libze-intel-gpu1 intel-ocloc; do \
+    && for pkg in intel-opencl-icd libze-intel-gpu1 intel-ocloc libze1 libze-dev; do \
         dpkg -l "${pkg}" 2>/dev/null | grep -q "^ii" \
-            || (echo "FATAL: ${pkg} was not installed" && exit 1); \
+            || { echo "FATAL: ${pkg} was not installed"; exit 1; }; \
+    done \
+    && for pkg in libze1 libze-dev; do \
+        ver="$(dpkg-query -W -f='${Version}' "${pkg}" 2>/dev/null)" \
+        && [[ -n "${LEVEL_ZERO_VERSION}" && "${ver}" == "${LEVEL_ZERO_VERSION}"* ]] \
+            || { echo "FATAL: ${pkg} version '${ver}' does not start with ${LEVEL_ZERO_VERSION}"; exit 1; }; \
     done \
     && test "$(ocloc query OCL_DRIVER_VERSION | tail -n 1)" = "${INTEL_NEO_VERSION}"
-
-# Level Zero loader (libze_loader) for SYCL
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    . /opt/vmafx/build-config.env \
-    && curl --retry 3 --retry-all-errors -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze1_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze1.deb \
-    && curl --retry 3 --retry-all-errors -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze-dev_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze-dev.deb \
-    && apt-get --error-on=any -o Acquire::Retries=3 update \
-    && apt-get install -y --no-install-recommends /tmp/libze1.deb /tmp/libze-dev.deb \
-    && find /tmp -maxdepth 1 -name 'libze*.deb' -delete
 
 # ---------- Rust toolchain (ADR-3318) ---------------------------------------
 # The version is build-config.env's RUST_VERSION, the one rust-toolchain.toml,
