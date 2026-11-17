@@ -236,6 +236,35 @@ affinity:
               values: ["true"]
 ```
 
+For `vmafx-node` worker pools (`node.enabled: true`), `node.affinity` overrides
+the global `affinity` when non-empty and falls back to `affinity` when `{}`
+([ADR-3558](../adr/3558-node-sidecar-readiness-gpu-affinity.md)). On mixed
+client Intel Arc pools (`gpu.vendor: intel`, `gpu.intelDriver: xe`), the Intel
+GPU plugin labels each GPU node with `gpu.intel.com/product` (`Arc_Pro_B60`
+or `Arc_B580`); `gpu.intel.com/device-id.<id>.present` labels are an alternative
+key. Use soft `preferredDuringSchedulingIgnoredDuringExecution` weights with
+no `requiredDuringSchedulingIgnoredDuringExecution` term so pods prefer the
+B60 node and spill onto the B580 node when busy:
+
+```yaml
+node:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: gpu.intel.com/product
+                operator: In
+                values: ["Arc_Pro_B60"]
+        - weight: 50
+          preference:
+            matchExpressions:
+              - key: gpu.intel.com/product
+                operator: In
+                values: ["Arc_B580"]
+```
+
 ## Multi-GPU nodes
 
 To request more than one GPU per pod:

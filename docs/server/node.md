@@ -260,6 +260,7 @@ refused without starting ffmpeg. Failures name the cause:
 | `VMAFX_CONTROLLER_HEARTBEAT_INTERVAL` | `controller.heartbeat_interval` | duration | `10s` |  | Heartbeat period. |
 | `VMAFX_CONTROLLER_POLL_INTERVAL` | `controller.poll_interval` | duration | `2s` |  | Wait after an empty `PullWork`. |
 | `VMAFX_FFMPEG_BIN` | `ffmpeg.bin` | path | `ffmpeg` on `PATH` |  | `ffmpeg` of the startup encoder probe; the node image sets `/usr/local/bin/ffmpeg` ([ADR-0717](../adr/0717-vmafx-node-ffmpeg-latest.md)). |
+| `VMAFX_SIDECAR_ENABLED` | `sidecar.enabled` | bool | `false` | `node.sidecar.enabled` | Enable the online-training sidecar client and its `/readyz` check; a non-boolean value stops the node ([ADR-3558](../adr/3558-node-sidecar-readiness-gpu-affinity.md)). |
 | `VMAFX_SIDECAR_SOCKET` | `sidecar.socket` | path | `/tmp/vmafx-sidecar.sock` |  | Unix socket of the online-training sidecar ([ADR-0781](../adr/0781-sidecar-sgd-ema-online-trainer.md)). |
 | `VMAFX_STORAGE_MODE` | `storage.mode` | string | `auto` | `storage.mode` | How rclone-remote job sources are read: `http-serve`, `mount` or `auto`; anything else, or `mount` without FUSE, stops the node ([ADR-1526](../adr/1526-node-storage-streamed-inputs.md)). |
 | `VMAFX_STORAGE_MOUNT_ROOT` | `storage.mount_root` | path | temp directory | set by the chart | Parent of `mount` mode's per-job mount points; must lie under `VMAFX_EBPF_MOUNT_PREFIX` when the tracker is on. |
@@ -313,7 +314,7 @@ golusoris runtime, and serves a small HTTP listener on `VMAFX_HTTP_ADDR`
 | Path | What it answers |
 | --- | --- |
 | `/metrics` | Prometheus page: `vmafx_node_info` (backend and GPU vendor), `vmafx_node_slots`, `vmafx_node_jobs_running`, `vmafx_node_jobs_total` by backend and outcome, `vmafx_node_job_duration_seconds`, GPU memory per device (`vmafx_node_device_memory_used_bytes`, `_total_bytes`; CUDA and HIP nodes), the ScoreStream session families, `vmafx_build_info` and the Go runtime and process series. |
-| `/readyz` | 200 when the node can score (a vmaf scorer is configured), 503 otherwise. |
+| `/readyz` | 200 when a vmaf scorer is configured, the gRPC listener accepts loopback connections, and (when `VMAFX_SIDECAR_ENABLED` is true) the online-training sidecar socket is connected; 503 otherwise (`?verbose=1` lists per-check status). |
 | `/livez`, `/startupz` | Liveness and startup of the process. |
 
 ```bash
@@ -324,9 +325,10 @@ curl -s localhost:9090/metrics | grep '^vmafx_node_'
 ```
 
 Every metric is listed in the [metric reference](../observability/metrics.md).
-The Helm chart still probes the TCP listener on the configured gRPC port; gRPC
-clients can use the `VmafxScoring/Health` RPC for an application-level health
-check.
+The Helm chart uses `tcpSocket` on the gRPC port for `livenessProbe` and HTTP
+`GET /readyz` on `node.metricsPort` for `readinessProbe`
+([ADR-3558](../adr/3558-node-sidecar-readiness-gpu-affinity.md)); gRPC clients
+can also call the `VmafxScoring/Health` RPC.
 
 ## Kubernetes deployment
 
@@ -370,6 +372,40 @@ names the Secret holding the node's token (key `node.controllerToken.key`,
 default `token`); the chart mounts it read-only and sets
 `VMAFX_CONTROLLER_TOKEN_FILE`, which the node re-reads on every call, so
 updating the Secret rotates the token.
+
+`node.affinity` overrides global `affinity` when non-empty (falling back to
+`affinity` when `{}`), matching `node.nodeSelector` and `node.tolerations`
+([ADR-3558](../adr/3558-node-sidecar-readiness-gpu-affinity.md)). On
+heterogeneous client Intel Arc pools (`gpu.vendor: intel`,
+`gpu.intelDriver: xe`), the Intel GPU plugin labels each GPU node with
+`gpu.intel.com/product` (`Arc_Pro_B60` or `Arc_B580`);
+`gpu.intel.com/device-id.<id>.present` labels are an alternative key. Select
+preferred cards softly without a
+`requiredDuringSchedulingIgnoredDuringExecution` term:
+
+```yaml
+node:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: gpu.intel.com/product
+                operator: In
+                values: ["Arc_Pro_B60"]
+        - weight: 50
+          preference:
+            matchExpressions:
+              - key: gpu.intel.com/product
+                operator: In
+                values: ["Arc_B580"]
+```
+
+`node.sidecar.enabled` (default `false`) opts in to the online-training
+feedback drainer (`VMAFX_SIDECAR_ENABLED=true`) when you co-locate a sidecar
+container sharing `VMAFX_SIDECAR_SOCKET`; while enabled, `/readyz` stays `503`
+whenever the sidecar socket is unreachable.
 
 `storage.mode` becomes `VMAFX_STORAGE_MODE` (chart default `http-serve`;
 `mount` and `auto` are the other accepted values) and `storage.mountRoot`
@@ -509,7 +545,7 @@ On `SIGTERM` the node:
 1. Gracefully stops the gRPC server and drains in-flight scoring RPCs.
 2. Drains the controller client (when enabled): no new jobs, running jobs
    until the stop deadline, then reports of the jobs it had to cancel.
-3. Stops and joins the online-feedback sidecar drainer.
+3. Stops and joins the online-feedback sidecar drainer (when `VMAFX_SIDECAR_ENABLED` is true).
 4. Closes the scorer.
 
 ## Development
