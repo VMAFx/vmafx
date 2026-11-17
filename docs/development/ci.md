@@ -557,19 +557,21 @@ grace, though a duplicate registering after the grace is not seen by that
 aggregator run (its own `Rules` checks still report on the head commit).
 The later edit's aggregator run shares the aggregator concurrency group. If its
 pending run survives, it starts its own 2-minute grace after the earlier run
-leaves the group and fails closed when it lists both `Rules` runs. Two escape
-paths remain (ADR-3551, ADR-3557). A duplicate can register after the later run's
-grace deadline. Alternatively, edits A and B can share one stamp while A's
-aggregator runs and B's waits as pending; a third edit C with a later stamp can
-replace B's pending aggregator before A leaves the group. GitHub keeps at most
-one pending run per group, so B's second look never runs. C's aggregator
-correlates on C's stamp and misses the A/B collision even if B's `Rules` run
-registered before C's grace deadline. B's own `Rules` check runs still report on
-the head commit. The contract test
+leaves the group and fails closed when it lists both `Rules` runs. If the later
+run registers after that grace, or a third edit replaces the pending second
+look, the content guard in `.github/actions/edit-supersede-guard/action.yml` and
+`scripts/ci/edit_supersede_guard.py` fails an earlier `Rules` job when its event
+title, body or base differs from the live pull request. The earlier failed job
+then fails the aggregator instead of allowing a stale pass. The guard waits
+until five seconds after the event stamp, capped at 30 seconds; a pull-request
+read that lags the edit by more than the five-second settle can still return
+stale text. `test_late_registering_same_second_edit_fails_on_superseded_rules_run`
+in `scripts/ci/tests/test_aggregator_edited_window.py` covers delayed
+registration, and `test_superseded_fails` in
+`scripts/ci/tests/test_edit_supersede_guard.py` covers the guard decision.
 `test_known_gap_third_edit_replaces_pending_second_look` in
-`scripts/ci/tests/test_master_concurrency_contract.py` pins this three-event
-known gap, and its documentation pin requires this test name here and in
-ADR-3557.
+`scripts/ci/tests/test_master_concurrency_contract.py` still pins the
+three-event concurrency path: a third edit can replace the pending second look.
 `serial_second_look_findings` in
 `scripts/ci/tests/test_master_concurrency_contract.py` pins the shared group and
 non-cancelling `edited` policy that allow a surviving pending second look.

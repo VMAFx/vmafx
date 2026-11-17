@@ -8,5 +8,6 @@
   an `updated_at` stamp fail closed when an aggregator run lists both `Rules`
   runs; the later edit's own aggregator run queues behind the earlier one and
   re-lists them after its own grace unless a third edit replaces that pending
-  run, per ADR-3551 and ADR-3557), enforced by
+  run, per ADR-3551 and ADR-3557); a content guard fails superseded required
+  `Rules` jobs, enforced by
   `scripts/ci/tests/test_master_concurrency_contract.py` (ADR-3557).

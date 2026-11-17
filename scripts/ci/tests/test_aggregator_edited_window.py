@@ -910,6 +910,24 @@ class AggregatorEditedWindowTests(unittest.TestCase):
         self.assertIn("edit the pull request again", failures[0])
         self.assertIn("push a commit", failures[0])
 
+    def test_late_registering_same_second_edit_fails_on_superseded_rules_run(self) -> None:
+        """A guard failure blocks a later edit even before its Rules run registers."""
+        first_run = _rules_run(
+            CURRENT_RULES_SUITE,
+            0,
+            edit_stamp=STAMP_T2,
+            status="completed",
+            conclusion="failure",
+        )
+        failures = self._run_edited_suites(
+            [first_run],
+            later_workflow_runs=[first_run],
+            extra_checks=_rules_suite_checks(
+                CURRENT_RULES_SUITE, conclusions={BODY_GATE: "failure"}
+            ),
+        )
+        self._assert_single_failed_check(failures, f"{BODY_GATE}: failure")
+
     def test_edited_single_stamped_run_waits_out_grace_and_passes(self) -> None:
         """Wait out registration grace and pass when one green [T2] run stays unambiguous."""
         runs = [
