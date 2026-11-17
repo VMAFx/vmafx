@@ -353,20 +353,80 @@ def _builder_writes_record(path: str, builder: str, source: str) -> bool:
 
     A stage writes it either with a COPY/RUN line of its own, or by running a
     shared script that writes to the stage's dist_dir — `SCRIPT_STAGED` names
-    those, so `builder-oneapi2026` (which only runs
-    scripts/ci/build-oneapi-libvmaf.sh) is not held to a line it does not have.
+    those, and the script's own write lines are then checked for real, with
+    the script's `${dist_dir}` standing for the dist root, so `builder-oneapi2026`
+    (which only runs scripts/ci/build-oneapi-libvmaf.sh) is credited only for
+    writes the script actually makes. Whole-line comments are dropped and the
+    text after an unquoted ` #` is stripped first, so no comment satisfies a
+    write check.
     """
     staged = _stages((REPO / path).read_text(encoding="utf-8")).get(builder)
     if staged is None:
         return False
-    body = "\n".join(line for line in staged[1].splitlines() if not line.lstrip().startswith("#"))
-    root = re.escape(source.rstrip("/"))
-    writes_copyright = re.search(rf"\bcp\s+\S+/copyright\s+{root}/copyright(?=\s|$)", body)
-    writes_source = re.search(rf">\s*{root}/SOURCE(?=\s|$)", body)
-    if writes_copyright and writes_source:
+    body = _writable_body(staged[1])
+    if _writes_record_lines(body, source.rstrip("/")):
         return True
     dist = SCRIPT_STAGED.get((path, builder))
-    return bool(dist) and source.rstrip("/") == f"{dist}/doc/libzimg2"
+    if not dist or source.rstrip("/") != f"{dist}/doc/libzimg2":
+        return False
+    script = REPO / "scripts/ci/build-oneapi-libvmaf.sh"
+    if not script.is_file():
+        return False
+    return _script_writes_record(_writable_body(script.read_text(encoding="utf-8")), dist)
+
+
+def _strip_trailing_comment(line: str) -> str:
+    """The line with any text after an unquoted ` #` removed.
+
+    A trailing shell comment must not satisfy a write check: only a `#`
+    outside single or double quotes, preceded by whitespace or the line
+    start, starts one. The backslash escapes the next character outside
+    single quotes.
+    """
+    in_single = in_double = False
+    escaped = False
+    for index, char in enumerate(line):
+        if escaped:
+            escaped = False
+        elif char == "\\" and not in_single:
+            escaped = True
+        elif char == "'" and not in_double:
+            in_single = not in_single
+        elif char == '"' and not in_single:
+            in_double = not in_double
+        elif char == "#" and not in_single and not in_double and (
+            index == 0 or line[index - 1] in " \t"
+        ):
+            return line[:index]
+    return line
+
+
+def _writable_body(text: str) -> str:
+    """The text with whole-line comments and trailing comments removed."""
+    kept = []
+    for line in text.splitlines():
+        line = _strip_trailing_comment(line)
+        if line and not line.lstrip().startswith("#"):
+            kept.append(line)
+    return "\n".join(kept)
+
+
+def _writes_record_lines(body: str, root: str) -> bool:
+    """Whether the body carries both record writes against the literal root."""
+    escaped = re.escape(root)
+    writes_copyright = re.search(rf"\bcp\s+\S+/copyright\s+{escaped}/copyright(?=\s|$)", body)
+    writes_source = re.search(rf">\s*{escaped}/SOURCE(?=\s|$)", body)
+    return bool(writes_copyright and writes_source)
+
+
+def _script_writes_record(body: str, dist: str) -> bool:
+    """The script-level form of the write check: `${dist_dir}` is the dist root."""
+    var = r'"?\$\{dist_dir\}"?'
+    writes_copyright = re.search(
+        rf"\bcp\s+\S+/copyright\s+{var}/doc/libzimg2/copyright\"?(?=\s|$)", body
+    )
+    writes_source = re.search(rf">\s*{var}/doc/libzimg2/SOURCE\"?(?=\s|$)", body)
+    return bool(writes_copyright and writes_source)
 
 
 @pytest.mark.parametrize(
@@ -440,6 +500,59 @@ def test_the_record_writer_reader_needs_both_files(tmp_path: Path) -> None:
         dockerfile.write_text(f"FROM base AS b\nRUN true \\\n{body}", encoding="utf-8")
         got = _builder_writes_record(str(dockerfile), "b", "/dist/doc/libzimg2")
         assert got is expected, name
+
+
+def test_the_record_writer_refuses_a_trailing_comment(tmp_path: Path) -> None:
+    """A trailing unquoted ` #` comment cannot satisfy the two write checks."""
+    dockerfile = tmp_path / "Dockerfile.trailing"
+    dockerfile.write_text(
+        "FROM base AS b\n"
+        "RUN true # cp /usr/share/doc/libzimg2/copyright /dist/doc/libzimg2/copyright"
+        " && dpkg-query -W libzimg2 > /dist/doc/libzimg2/SOURCE\n",
+        encoding="utf-8",
+    )
+    assert _builder_writes_record(str(dockerfile), "b", "/dist/doc/libzimg2") is False
+    dockerfile.write_text(
+        "FROM base AS b\n"
+        "RUN cp /usr/share/doc/libzimg2/copyright /dist/doc/libzimg2/copyright"
+        " && dpkg-query -W libzimg2 > /dist/doc/libzimg2/SOURCE\n",
+        encoding="utf-8",
+    )
+    assert _builder_writes_record(str(dockerfile), "b", "/dist/doc/libzimg2") is True
+
+
+def test_the_oneapi_script_write_checks_run_over_the_script() -> None:
+    """SCRIPT_STAGED credits only writes the oneAPI script really makes.
+
+    The stage table alone would pass a script whose record writes were moved
+    elsewhere — `cp …/copyright /tmp/copyright` with the `dpkg-query` output
+    sent to `/dev/null` still leaves `/dist/doc/libzimg2` empty — so the same
+    two write checks run over the script with `${dist_dir}` standing for the
+    dist root, and a trailing unquoted ` #` comment cannot satisfy them.
+    """
+    script = (REPO / "scripts/ci/build-oneapi-libvmaf.sh").read_text(encoding="utf-8")
+    assert _script_writes_record(_writable_body(script), ONEAPI_DIST) is True
+
+    relocated = script.replace(
+        'cp /usr/share/doc/libzimg2/copyright "${dist_dir}/doc/libzimg2/copyright"',
+        "cp /usr/share/doc/libzimg2/copyright /tmp/copyright",
+    )
+    assert relocated != script, "the copyright write line was not found"
+    assert _script_writes_record(_writable_body(relocated), ONEAPI_DIST) is False
+
+    devnull = script.replace(
+        '>"${dist_dir}/doc/libzimg2/SOURCE"',
+        ">/dev/null",
+    )
+    assert devnull != script, "the SOURCE write line was not found"
+    assert _script_writes_record(_writable_body(devnull), ONEAPI_DIST) is False
+
+    commented = script.replace(
+        'cp /usr/share/doc/libzimg2/copyright "${dist_dir}/doc/libzimg2/copyright"',
+        "true # cp /usr/share/doc/libzimg2/copyright "
+        '"${dist_dir}/doc/libzimg2/copyright"',
+    )
+    assert _script_writes_record(_writable_body(commented), ONEAPI_DIST) is False
 
 
 def test_node_sycl_takes_the_record_with_its_libraries() -> None:
