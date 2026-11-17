@@ -169,8 +169,13 @@ def pr_push(sha: str, updated_at: str = STAMP_T1) -> dict[str, str]:
     }
 
 
-def pr_event(sha: str, action: str, updated_at: str = STAMP_T1) -> dict[str, str]:
-    return {**pr_push(sha, updated_at), "github.event.action": action}
+def pr_event(
+    sha: str, action: str, updated_at: str = STAMP_T1, run_id: str | None = None
+) -> dict[str, str]:
+    ctx = {**pr_push(sha, updated_at), "github.event.action": action}
+    if run_id is not None:
+        ctx["github.run_id"] = run_id
+    return ctx
 
 
 def triggers(workflow: dict[Any, Any]) -> dict[str, Any]:
@@ -346,20 +351,30 @@ def pull_request_types(workflow: dict[Any, Any]) -> list[str]:
     return [raw] if isinstance(raw, str) else [str(item) for item in raw]
 
 
+def _cancels_running_group(
+    block: dict[str, Any], sha: str, action: str, running_groups: set[Any]
+) -> bool:
+    for stamp in (STAMP_T1, STAMP_T2):
+        event_ctx = pr_event(sha, action, stamp, run_id="run-2")
+        if render(block["group"], event_ctx) not in running_groups:
+            continue
+        if render(block.get("cancel-in-progress", False), event_ctx) in (True, "true"):
+            return True
+    return False
+
+
 def _block_same_head_findings(
     name: str, scope: str, block: dict[str, Any], pr_types: list[str]
 ) -> list[str]:
     sha_a = "a" * 40
     running_groups = {
-        render(block["group"], pr_event(sha_a, running, STAMP_T1)) for running in pr_types
+        render(block["group"], pr_event(sha_a, running, STAMP_T1, run_id="run-1"))
+        for running in pr_types
     }
     checked_types = [t for t in pr_types if t not in EXEMPT_SAME_HEAD_TYPES]
     found: list[str] = []
     for action in checked_types:
-        event_ctx = pr_event(sha_a, action, STAMP_T2)
-        same_group = render(block["group"], event_ctx) in running_groups
-        cancel = render(block.get("cancel-in-progress", False), event_ctx)
-        if same_group and cancel in (True, "true"):
+        if _cancels_running_group(block, sha_a, action, running_groups):
             found.append(
                 f"{name} [{scope}] a same-head {action} run cancels the running run "
                 "of the same head"
@@ -385,17 +400,20 @@ def _block_pending_replacement_findings(
     name: str, scope: str, block: dict[str, Any], pr_types: list[str]
 ) -> list[str]:
     sha_a = "a" * 40
-    edited_group = render(block["group"], pr_event(sha_a, "edited", STAMP_T1))
-    actions = sorted(
-        action
-        for action in set(pr_types)
-        if render(block["group"], pr_event(sha_a, action, STAMP_T2)) == edited_group
-    )
-    if not actions:
+    edited_group = render(block["group"], pr_event(sha_a, "edited", STAMP_T1, run_id="run-edit-1"))
+    colliding: list[str] = []
+    for action in sorted(set(pr_types)):
+        later_ctx = pr_event(sha_a, action, STAMP_T2, run_id="run-edit-2")
+        same_sec_ctx = pr_event(sha_a, action, STAMP_T1, run_id="run-edit-2")
+        if render(block["group"], later_ctx) == edited_group:
+            colliding.append(action)
+        elif render(block["group"], same_sec_ctx) == edited_group:
+            colliding.append(f"same-second {action}")
+    if not colliding:
         return []
     return [
         f"{name} [{scope}] an edited run shares its concurrency group with a later "
-        f"same-head {', '.join(actions)} run, which replaces it while pending"
+        f"same-head {', '.join(colliding)} run, which replaces it while pending"
     ]
 
 
@@ -478,7 +496,7 @@ AGGREGATOR_NEW: dict[str, Any] = {
 RULES_NEW: dict[str, Any] = {
     "group": (
         "rule-enforcement-${{ github.event.pull_request.number }}-"
-        "${{ github.event.action == 'edited' && github.event.pull_request.updated_at || 'head' }}"
+        "${{ github.event.action == 'edited' && github.run_id || 'head' }}"
     ),
     "cancel-in-progress": "${{ github.event.action == 'synchronize' }}",
 }
@@ -802,6 +820,38 @@ class Contract(unittest.TestCase):
         pair = gate_pair()
         self.assertEqual(pending_replacement_findings(pair), [])
         self.assertEqual(same_head_findings(pair), [])
+
+    def test_positive_run_id_per_edit_group_separates_same_second_edits(self) -> None:
+        sha_a = "a" * 40
+        edit_one = pr_event(sha_a, "edited", STAMP_T1, run_id="run-edit-1")
+        edit_two = pr_event(sha_a, "edited", STAMP_T1, run_id="run-edit-2")
+        self.assertNotEqual(
+            render(RULES_NEW["group"], edit_one),
+            render(RULES_NEW["group"], edit_two),
+        )
+        pair = gate_pair()
+        self.assertEqual(pending_replacement_findings(pair), [])
+        self.assertEqual(same_head_findings(pair), [])
+
+    def test_negative_updated_at_per_edit_group_collides_on_same_second_edits(self) -> None:
+        rules = wf(
+            GATE_PR_ON,
+            {
+                "group": (
+                    "rule-enforcement-${{ github.event.pull_request.number }}-"
+                    "${{ github.event.action == 'edited' && "
+                    "github.event.pull_request.updated_at || 'head' }}"
+                ),
+                "cancel-in-progress": "${{ github.event.action == 'synchronize' }}",
+            },
+        )
+        self.assertEqual(
+            pending_replacement_findings(gate_pair(rules=rules)),
+            [
+                "rule-enforcement.yml [workflow] an edited run shares its concurrency group "
+                "with a later same-head same-second edited run, which replaces it while pending"
+            ],
+        )
 
     def test_negative_action_keyed_group_cancels_repeated_same_head_events(self) -> None:
         group = "rules-${{ github.event.pull_request.number }}-${{ github.event.action }}"

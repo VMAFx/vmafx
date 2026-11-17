@@ -1,1 +1,9 @@
-- **Same-head pull-request events queue instead of cancelling active merge-gate runs.** `.github/workflows/required-aggregator.yml` and `.github/workflows/rule-enforcement.yml` now enable `cancel-in-progress` only on `pull_request` `synchronize` events: same-head `edited`, `reopened`, and `ready_for_review` aggregator runs wait as pending and repeated pending aggregator runs collapse to the newest, while `Rules` runs of an `edited` event get their own concurrency group per `pull_request.updated_at` edit stamp so a later edit cannot replace the pending `Rules` run an earlier edit's aggregator reads, enforced by `scripts/ci/tests/test_master_concurrency_contract.py` (ADR-3557).
+- **Same-head pull-request events queue instead of cancelling active merge-gate
+  runs.** `.github/workflows/required-aggregator.yml` and
+  `.github/workflows/rule-enforcement.yml` now enable `cancel-in-progress` only
+  on `pull_request` `synchronize` events: same-head `edited`, `reopened`, and
+  `ready_for_review` aggregator runs wait as pending and repeated pending
+  aggregator runs collapse to the newest, while each `edited` `Rules` run gets
+  its own concurrency group keyed on `github.run_id` (same-second edits sharing
+  an `updated_at` stamp fail closed in the aggregator per ADR-3551), enforced
+  by `scripts/ci/tests/test_master_concurrency_contract.py` (ADR-3557).

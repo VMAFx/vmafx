@@ -468,9 +468,12 @@ does not start rebase waves outside its schedule
   even when a newer suite succeeds, and a pending same-head twin waits behind
   the running run (further pending aggregator edits collapse to the newest
   without creating check runs). `rule-enforcement.yml` gives each `edited` run
-  its own group per edit stamp, so a later edit cannot replace the pending
-  `Rules` run an edited aggregator reads. Enforced by `same_head_findings`,
-  `pending_replacement_findings` and `skip_findings` in
+  its own group keyed on `github.run_id`, so no later edit (same second or not)
+  replaces or cancels it; `run-name` keeps the `pull_request.updated_at` stamp
+  for aggregator correlation, and same-second edits sharing that stamp fail
+  closed in the aggregator
+  ([ADR-3551](../adr/3551-aggregator-edited-window.md)). Enforced by
+  `same_head_findings`, `pending_replacement_findings` and `skip_findings` in
   `scripts/ci/tests/test_master_concurrency_contract.py`.
 - `renovate.json` sets `updateNotScheduled: false`: Renovate opens and rebases
   its branches only in its Monday schedule, at most two pull requests and three
