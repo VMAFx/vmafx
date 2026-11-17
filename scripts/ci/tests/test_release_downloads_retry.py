@@ -92,20 +92,39 @@ def blocks(text: str) -> list[tuple[int, str]]:
     ]
 
 
+def shell_commands(block: str, offset: int) -> list[tuple[int, str]]:
+    """Split a step into logical shell commands, preserving line numbers."""
+    lines = block.splitlines(keepends=True)
+    commands: list[tuple[int, str]] = []
+    index = 0
+    while index < len(lines):
+        start = index
+        while index < len(lines) and lines[index].rstrip("\r\n").endswith("\\"):
+            index += 1
+        index += 1
+        logical = "".join(lines[start:index])
+        line = offset + start
+        for piece in re.split(r"(?:&&|\|\||;)", logical):
+            commands.append((line, piece))
+            line += piece.count("\n")
+    return commands
+
+
 def findings(path: str, text: str) -> list[tuple[int, str]]:
     """(line, reason) for direct curl/wget fetches of a release asset."""
     out: list[tuple[int, str]] = []
     declared = release_variables(text)
     for offset, block in blocks(text):
-        if not FETCH.search(block):
-            continue
-        uses_declared = any(name in declared for name in VAR_USE.findall(block))
-        if RELEASE not in block and not uses_declared:
-            continue
-        line = offset
-        if RELEASE in block:
-            line += block[: block.index(RELEASE)].count("\n")
-        out.append((line, "fetch a release asset through " + WRAPPER))
+        for command_line, command in shell_commands(block, offset):
+            if not FETCH.search(command):
+                continue
+            uses_declared = any(name in declared for name in VAR_USE.findall(command))
+            if RELEASE not in command and not uses_declared:
+                continue
+            line = command_line
+            if RELEASE in command:
+                line += command[: command.index(RELEASE)].count("\n")
+            out.append((line, "fetch a release asset through " + WRAPPER))
     return out
 
 
@@ -144,6 +163,16 @@ class ReleaseDownloadRetryTest(unittest.TestCase):
             "          TOOL_URL: https://github.com/owner/repo/releases/download/v1/tool\n"
             "        run: |\n"
             '          bash scripts/ci/download-release.sh "${TOOL_URL}" /tmp/tool\n'
+        )
+        self.assertEqual([], findings("fixture.yml", step))
+
+    def test_wrapper_call_does_not_mask_a_checksum_curl(self) -> None:
+        step = (
+            "      - name: Install tool and checksum\n"
+            "        run: |\n"
+            "          bash scripts/ci/download-release.sh \\\n"
+            "            https://github.com/owner/repo/releases/download/v1/tool /tmp/tool\n"
+            "          curl -fsSL -o /tmp/tool.sha256 https://example.org/tool.sha256\n"
         )
         self.assertEqual([], findings("fixture.yml", step))
 
