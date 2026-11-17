@@ -1,0 +1,49 @@
+{
+  "level_zero": {
+    "libze-dev": {
+      "name": "libze-dev_1.34.0+u24.04_amd64.deb",
+      "sha256": "2813bb3b06d0d8c0f3c771051defabdd74da2e454661cd654ebabcfb5ab21c01",
+      "url": "https://github.com/oneapi-src/level-zero/releases/download/v1.34.0/libze-dev_1.34.0%2Bu24.04_amd64.deb"
+    },
+    "libze1": {
+      "name": "libze1_1.34.0+u24.04_amd64.deb",
+      "sha256": "45210e4549cd965ad7b9f160eefe53cbcdba01af341bea7ac7ba0aedeeb613ba",
+      "url": "https://github.com/oneapi-src/level-zero/releases/download/v1.34.0/libze1_1.34.0%2Bu24.04_amd64.deb"
+    }
+  },
+  "level_zero_distro": "u24.04",
+  "level_zero_version": "1.34.0",
+  "neo": {
+    "gmm": {
+      "name": "libigdgmm12_22.10.0_amd64.deb",
+      "sha256": "6031a63d6e8a12ce61c14efc15f2c8e727061286e3820b8594e6d00615e04d54",
+      "url": "https://github.com/intel/compute-runtime/releases/download/26.35.39758.10/libigdgmm12_22.10.0_amd64.deb"
+    },
+    "icd": {
+      "name": "intel-opencl-icd_26.35.39758.10-0_amd64.deb",
+      "sha256": "61712caaddeba3d38e4f79e2a0fb23fea25596ca2d72c3144c6eea2331ec4301",
+      "url": "https://github.com/intel/compute-runtime/releases/download/26.35.39758.10/intel-opencl-icd_26.35.39758.10-0_amd64.deb"
+    },
+    "igc_core": {
+      "name": "intel-igc-core-2_2.41.5+22716_amd64.deb",
+      "sha256": "0a6e64a663ae65a0fa02d6912ae3b6b37cf85b90c21cc423fd9fef70aaf4f628",
+      "url": "https://github.com/intel/intel-graphics-compiler/releases/download/v2.41.5/intel-igc-core-2_2.41.5+22716_amd64.deb"
+    },
+    "igc_opencl": {
+      "name": "intel-igc-opencl-2_2.41.5+22716_amd64.deb",
+      "sha256": "779e1b9e88098eb25711e9a8f67c2752665bad22f134aa40ed5649f6e1b87058",
+      "url": "https://github.com/intel/intel-graphics-compiler/releases/download/v2.41.5/intel-igc-opencl-2_2.41.5+22716_amd64.deb"
+    },
+    "level_zero": {
+      "name": "libze-intel-gpu1_26.35.39758.10-0_amd64.deb",
+      "sha256": "c19a641b953d55aebbf1d51bec364a84bf629f985e02fbbe6dc70224c0e88470",
+      "url": "https://github.com/intel/compute-runtime/releases/download/26.35.39758.10/libze-intel-gpu1_26.35.39758.10-0_amd64.deb"
+    },
+    "ocloc": {
+      "name": "intel-ocloc_26.35.39758.10-0_amd64.deb",
+      "sha256": "c64bff586edf2bd9b49f3e4c9c2be25e05c43466e4dafa2a2c3948d498c736b7",
+      "url": "https://github.com/intel/compute-runtime/releases/download/26.35.39758.10/intel-ocloc_26.35.39758.10-0_amd64.deb"
+    }
+  },
+  "neo_version": "26.35.39758.10"
+}

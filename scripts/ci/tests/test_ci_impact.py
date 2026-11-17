@@ -765,7 +765,12 @@ class DevContainerLaneRouting(unittest.TestCase):
     SELECTOR = "dev_container_inputs"
 
     def test_the_images_own_inputs_select_it(self) -> None:
-        for path in ("dev/Containerfile", "dev/scripts/fetch-intel-neo.py", ".dockerignore"):
+        for path in (
+            "dev/Containerfile",
+            "dev/scripts/fetch-intel-neo.py",
+            "dev/scripts/intel-neo-lock.json",
+            ".dockerignore",
+        ):
             with self.subTest(path=path):
                 plan = _plan_for([path])
                 self.assertEqual(plan.mode, "impact")
