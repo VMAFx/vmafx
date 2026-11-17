@@ -602,8 +602,9 @@ def _minimal_probe_env(tmppath: Path, probe_marker: str) -> dict[str, str]:
     env.update(
         HOME=str(probe_home),
         # Python derives its per-user site directory from HOME unless PYTHONUSERBASE
-        # pins it, so the synthetic HOME alone hides a Meson installed with
-        # `pip install --user` (scripts/setup/ubuntu.sh) from its own interpreter.
+        # pins it, so the synthetic HOME alone hides a caller Meson installed with
+        # `pip install --user` from its own interpreter (scripts/setup/ubuntu.sh
+        # installs into a tools venv instead; ADR-3545).
         # Pin the base this interpreter resolved; it is a path, not a copied value.
         PYTHONUSERBASE=site.getuserbase(),
         TMPDIR=str(probe_tmp),
