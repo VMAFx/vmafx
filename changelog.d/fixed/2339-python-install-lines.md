@@ -2,5 +2,5 @@
   three distribution package-manager blocks (including the `yum` route for
   old CentOS and RHEL, which the supported install table does not cover);
   it now points Linux readers at the per-distribution getting-started
-  install guides and keeps only the Python-version requirement (issue
-  2339).
+  install guides and keeps the Python-version requirement, the `nasm`
+  2.13.02 floor and the Python headers note (issue 2339).

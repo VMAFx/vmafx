@@ -33,6 +33,11 @@ base images are Debian 13 and Ubuntu 26.04),
 are not in the supported set those guides cover. Whatever the distribution,
 make sure `nasm` is 2.13.02 or higher (check by `nasm --version`).
 
+The harness also compiles a Cython extension (`make cythonize`), which needs the
+Python development headers. The guides above do not list them: install
+`python3-dev` on Debian, Ubuntu or Alpine, or `python3-devel` on Fedora or the
+RHEL 9 family. Arch's `python` package already ships them.
+
 ### macOS
 
 First, install [Homebrew](https://brew.sh/).
