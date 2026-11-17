@@ -64,6 +64,16 @@
   names the CI check next to the hook.
 
 
+- **The toolchain probe now pairs the MinGW cross runtime with the compiler's thread model, not only its
+  presence (#3307).** The new `x86_64-w64-mingw32-gcc` entry prints the driver's `Thread model:` line, resolves
+  `libstdc++-6.dll` / `libgcc_s_seh-1.dll` with `gcc -print-file-name` (never a path rebuilt from `-dumpversion`,
+  which Debian's flavoured drivers report as `13-win32`), exits non-zero when a resolution fails, and
+  `objdump -p`-asserts the runtime's import table against the detected model — a win32-model driver next to a
+  `libwinpthread`-importing runtime refuses instead of pasting green evidence. The probe reports tool absence as
+  exit 0; only a found driver whose runtime cannot be resolved or whose flavour contradicts the model fails.
+Contributed by luoye-cpu.
+
+
 - **`adm_cuda` evaluates two viewing distances in one instance (ADR-2795).**
   With `adm_norm_view_dist_extra`, or when two models such as
   `vmaf_v1.0.16_3d0h` and `_5d0h` run on `--backend cuda`, the CUDA twin runs
@@ -655,6 +665,12 @@
 
 
 - **Per-platform install tables.** Document installation routes, commands, status, and GPU backend support per platform in Getting Started ([#2319](https://github.com/VMAFx/vmafx/issues/2319)).
+
+
+- Agents: `.config/lane-brief.yaml` makes the lane launcher refuse a vmafx review
+  brief that lacks `Write nothing in the worktree` or `return: final message only`,
+  so a review job can no longer spend its run and then end in the rc 79 worktree
+  guard (ADR-3553).
 
 
 - **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
@@ -2468,6 +2484,9 @@
   +4.2 ms is `T-SYCL-SPEED-COV-EXACT-SEQUENTIAL-COST-2026-10-06` (RC8).
 
 
+- `Tester Image` runs on light-tier pull requests that change the tester image's own inputs (`docker/Dockerfile.tester`, `tools/rc1-tester/**`, `build-config.env`, the toolkit install scripts, the licence inputs and the workflow), the Required Checks Aggregator waits while a selected own-input lane's build jobs run on the light tier, and `tools/rc1-tester/image/licensing.json` records CPython 3.14.10 for the tester and production MCP server images ([ADR-3554](docs/adr/3554-tester-image-own-input-lane.md)).
+
+
 - **The changed-files clang-tidy jobs defer to the lane that measures a file instead of failing
   on it (Q-341, Q-342).** In `Tidy Changed`, a changed file without a command in the CPU build is
   skipped only when a lane's `measured_sources` lists it, or when a live `clang-tidy-coverage`
@@ -2732,6 +2751,13 @@
 - **Credits page:** the credits check no longer lets the Netflix VMAF entry's `core/` directory cover every third-party file below it, and under `closest` REUSE precedence it reads a file's own licence header, so the two SSIMULACRA 2 headers are now credited to libjxl and the inherited speed-filter test and four inherited Python `third_party/` files to Netflix VMAF (issue 3370).
 
 
+- **The assertion-density gate now scans C and C++ files that sit directly under `core/src/`, and the `core/tools` subdirectories.**
+  The `git ls-files` pathspecs lacked `:(glob)`, so `core/src/**/*.c` skipped all 31 files directly under `core/src/` (and
+  `core/tools/*.c` pulled in subdirectories by accident). The nine functions over 20 lines in four of the skipped files
+  that had no `assert()` carry one now, and the harness plants an assert-less function directly under `core/src/`, which
+  fails on the old pathspec and is reported on the new one.
+
+
 - **Run the pinned Praetor engine in Makefile governance targets (#3468).** `verify-all`, `compile-context`, `audit`, `hiss-coverage` and `dedupe-check` called `standardsctl` from `PATH` instead of the repository pin; the `Makefile` now includes `.config/praetor/engine.mk` and invokes `$(PRAETORCTL)`, and `scripts/ci/tests/test_make_governance_engine_pin.py` rejects missing or misplaced includes and literal `standardsctl` or `praetorctl` calls.
 
 
@@ -2777,6 +2803,9 @@
 
 
 - **CI:** `Required Checks Aggregator` pins check-run producers (`github-advanced-security` for `CodeQL`, `Semgrep OSS` and `gitleaks`; `github-actions` otherwise), scopes the `minCreatedMs` age window to `github-actions` (and missing slugs on `github-actions` names), and waits through the propagation window after SARIF upload jobs so per-SHA code-scanning checks stay visible after draft transitions without masking new failures (pull request 3047, ADR-3539).
+
+
+- **Required Checks Aggregator re-runs on pull-request title and body edits without dropping earlier ready-head build results.** `.github/workflows/required-aggregator.yml` now triggers on `edited` pull-request events, anchors its 2-minute GitHub Actions check-run freshness window at the latest `ready_for_review` timeline event (or `pull_request.created_at` when never a draft), and excludes `rule-enforcement.yml` check suites whose `display_title` does not start with the `"[<pull_request.updated_at>] "` edit-stamp prefix set by `run-name:` while failing closed if `pull_request.updated_at` is missing or no current `Rules` run starts, so gates re-triggered by `rule-enforcement.yml` (`Deliverables Checklist`, `docs/state.md Gate`, `DCO Sign-off`) block merges when an edit turns them red while draft-era runs before ready-for-review remain excluded (ADR-3551). When multiple `Rules` runs share the same one-second edit stamp (in any status), the aggregator also fails closed immediately and asks for another pull-request edit or a commit push. The embedded aggregator script avoids `${{` syntax in comments so `actions/runner` does not convert the 43 KB script into an oversize expression, and `scripts/ci/check-workflow-size.py` now enforces GitHub's 21,000-character expression limit across all workflow files.
 
 
 - CI: the required-checks aggregator of a master push no longer reads the check runs of a scheduled
@@ -2917,6 +2946,9 @@
 
 
 - **Keep Codacy off the compiled agent-context files.** `CLAUDE.md`, `.windsurfrules`, `.cursor/rules/*.mdc`, `.github/copilot-instructions.md`, `.codex/rules.md` and `.gemini/GEMINI.md` are rendered from `AGENTS.md` by `praetorctl compile-context`, so a Codacy finding on them cannot be fixed in place. They are now top-level `exclude_paths` in `.codacy.yml`, and `scripts/ci/tests/test_codacy_config.py` fails when any tracked file carrying the compile marker is not excluded. Codacy's Agentlinter still reads them, because its wrapper scans the whole checkout and only filters results by file.
+
+
+- **CI:** exclude `docs/hardware-reports/index.md` by exact path from Codacy's `markdownlint` engine in `.codacy.yml` alongside `docs/hardware-reports/.markdownlint-cli2.yaml` (Codacy reads only the root `.markdownlint.json`), and fail `scripts/ci/tests/test_codacy_config.py` when nested `markdownlint-cli2` configurations and exact-path Codacy exclusions drift apart.
 
 
 - **Keep Codacy's Ruff off the trees with their own Ruff configuration.** Codacy's Ruff reads only the root `pyproject.toml`, so it reported findings in `ai/`, `dev-llm/`, `mcp-server/vmaf-mcp/`, `tools/rc1-tester/`, `tools/vmaf-roi-score/` and `tools/vmaf-tune/` that their own configurations rule out, such as `PLR2004` in tests. The `ruff-check` hook still lints those trees with their nested configurations. `.codacy.yml` now excludes them from Codacy's Ruff, and `scripts/ci/tests/test_codacy_config.py` fails when that list and the directories holding a nested Ruff configuration drift apart.

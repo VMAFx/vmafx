@@ -560,6 +560,32 @@ class GitIntegration(unittest.TestCase):
         )
         self.assertEqual(kv["base_sha"], base)
 
+    def test_pr_3476_release_python_base_digest_diff_selects_tester_image(self) -> None:
+        """ADR-3554: a PR touching only RELEASE_PYTHON_BASE in build-config.env and Dockerfile.tester selects tester_image."""
+        tmp, git = self._repo()
+        root = Path(tmp)
+        (root / "docker").mkdir(parents=True, exist_ok=True)
+        old_digest = "python:3.14-slim@sha256:" + "a" * 64
+        new_digest = "python:3.14-slim@sha256:" + "9" * 64
+        (root / "build-config.env").write_text(f'RELEASE_PYTHON_BASE="{old_digest}"\n')
+        (root / "docker" / "Dockerfile.tester").write_text(
+            f'ARG RELEASE_PYTHON_BASE="{old_digest}"\nFROM ${{RELEASE_PYTHON_BASE}}\n'
+        )
+        git("add", "build-config.env", "docker/Dockerfile.tester")
+        git("commit", "-q", "-m", "pin python base")
+        base = git("rev-parse", "HEAD")
+        git("checkout", "-q", "-b", "renovate/docker-digests")
+        (root / "build-config.env").write_text(f'RELEASE_PYTHON_BASE="{new_digest}"\n')
+        (root / "docker" / "Dockerfile.tester").write_text(
+            f'ARG RELEASE_PYTHON_BASE="{new_digest}"\nFROM ${{RELEASE_PYTHON_BASE}}\n'
+        )
+        git("commit", "-qam", "chore(deps): Update Docker digests")
+        head = git("rev-parse", "HEAD")
+        kv = self._run(tmp, "pull_request", base, head)
+        self.assertEqual(kv["mode"], "full")
+        self.assertEqual(kv["tester_image"], "true")
+        self.assertEqual(kv["windows_tester_zip"], "false")
+
     def test_linear_push_uses_exact_before_and_head(self) -> None:
         tmp, git = self._repo()
         before = git("rev-parse", "HEAD")
@@ -822,6 +848,30 @@ class UbuntuDevImagesRouting(unittest.TestCase):
             "requirements/locks/docs-check.txt",
             "scripts/ci/plan-ci-impact.py",
         ):
+            with self.subTest(path=path):
+                self.assertFalse(_plan_for([path]).selectors[self.SELECTOR])
+
+    def test_unknown_change_set_selects_it_and_empty_diff_does_not(self) -> None:
+        config = planner.load_config(CONFIG)
+        unknown = planner.build_plan(config, None, "event-not-routed:schedule", "b" * 40, "h" * 40)
+        empty = planner.build_plan(config, (), None, "b" * 40, "h" * 40)
+        self.assertTrue(cast(ImpactPlan, unknown).selectors[self.SELECTOR])
+        self.assertFalse(cast(ImpactPlan, empty).selectors[self.SELECTOR])
+
+
+class TesterImageLaneRouting(unittest.TestCase):
+    """ADR-3554: `tester_image` selects the own-input lane for PR 3476's Python digest diff."""
+
+    SELECTOR = "tester_image"
+
+    def test_pr_3476_python_base_digest_paths_select_tester_image(self) -> None:
+        plan = _plan_for(["build-config.env", "docker/Dockerfile.tester"])
+        self.assertEqual(plan.mode, "full")
+        self.assertTrue(plan.selectors[self.SELECTOR])
+        self.assertFalse(plan.selectors["windows_tester_zip"])
+
+    def test_unrelated_and_ci_authority_changes_leave_it_off(self) -> None:
+        for path in ("docs/index.md", "core/src/libvmaf.c", "scripts/ci/plan-ci-impact.py"):
             with self.subTest(path=path):
                 self.assertFalse(_plan_for([path]).selectors[self.SELECTOR])
 
