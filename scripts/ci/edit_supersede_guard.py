@@ -11,7 +11,7 @@ import sys
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import Any, Callable, Mapping
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -54,7 +54,9 @@ def decide(payload_pr: object, live_pr: object) -> list[str]:
     ]
 
 
-def _event_data(payload: dict, env: Mapping[str, str]) -> tuple[dict, int, str, str, str]:
+def _event_data(
+    payload: dict[str, Any], env: Mapping[str, str]
+) -> tuple[dict[str, Any], int, str, str, str]:
     pr = payload.get("pull_request")
     if not isinstance(pr, dict):
         raise ValueError("missing pull request")
