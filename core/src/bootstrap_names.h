@@ -29,7 +29,10 @@
  * (vmaf_score_pooled_model_collection) need to construct four score-name
  * strings of the form "<collection_name><suffix>".  The suffix set and the
  * buffer-size formula were previously duplicated verbatim in both files.
- * Extracted here to close the two TODO-dedupe markers per ADR-0480.
+ * Extracted here per ADR-0480 to replace the two `//TODO: dedupe` markers
+ * predict.c and libvmaf.c once carried; `core/test/test_bootstrap_name_contract.py`
+ * keeps both consumers on this header (restored 2026-09-24 after a layout
+ * refactor silently dropped the includes).
  *
  * Usage:
  *

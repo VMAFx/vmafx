@@ -5,8 +5,8 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND MIT
  *
  *  HIP host glue for the ciede2000 feature extractor — third
- *  kernel-template consumer (T7-10b follow-up / ADR-0259).
- *  Real kernel promotion: T7-10b batch-4 / ADR-0377.
+ *  kernel-template consumer (T7-10b / ADR-0259), promoted to a
+ *  real kernel in T7-10b batch-4 (ADR-0377).
  *
  *  Mirrors core/src/feature/cuda/integer_ciede_cuda.h. The HIP
  *  kernel artefact (`ciede_score.hip`) is compiled by hipcc to a HSACO

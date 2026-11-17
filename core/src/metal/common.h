@@ -14,7 +14,7 @@ extern "C" {
 #endif
 
 /*
- * Scaffolded by ADR-0361 / T8-1 (mirrors the HIP scaffold ADR-0212);
+ * Created by ADR-0361 / T8-1 (mirrors the HIP creation, ADR-0212);
  * common.c, picture_metal.c, dispatch_strategy.c, kernel_template.c and
  * feature/metal/<feature>_metal.c are the live Metal runtime (MetalCpp
  * wrapper, see ADR-0361).
