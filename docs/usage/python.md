@@ -54,12 +54,12 @@ Follow these steps to set up a clean virtual environment and build the binary.
     ```bash
     python3 -m pip install virtualenv
     python3 -m virtualenv .venv
-    source .venv/bin/activate
+    . .venv/bin/activate
     ```
 
     From here on, `python3` and `pip3` are relative to the virtualenv and
     isolated from the system Python. In later shell sessions, re-activate it
-    with `source .venv/bin/activate`.
+    with `. .venv/bin/activate`.
 
 2. Install the tools required to build VMAF into the virtualenv:
 
