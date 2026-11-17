@@ -22,7 +22,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Protocol, cast
 
-import yaml
+import yaml  # type: ignore[import-untyped]  # hook environments omit PyYAML stubs
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
