@@ -122,6 +122,76 @@ def test_boundary(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert "4 links checked in 1 files" in out
 
 
+def test_spaced_attribute_list_anchors(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Verify spaced and mixed attribute-list IDs anchor like the unspaced form."""
+    docs_api = tmp_path / "docs" / "api"
+    docs_api.mkdir(parents=True)
+
+    target_page = docs_api / "target.md"
+    target_page.write_text(
+        "# Target Page\n\n"
+        "Unspaced heading {#plain-id}\n\n"
+        "## Spaced heading { #spaced-id }\n\n"
+        "## Mixed heading { .class #mixed-id }\n\n"
+        "## Trailing attrs { #trailing-id .class }\n\n",
+        encoding="utf-8",
+    )
+
+    doc = docs_api / "spaced.md"
+    doc.write_text(
+        "# Spaced Attribute Lists\n\n"
+        "[Unspaced](target.md#plain-id)\n"
+        "[Spaced](target.md#spaced-id)\n"
+        "[Mixed](target.md#mixed-id)\n"
+        "[Trailing](target.md#trailing-id)\n",
+        encoding="utf-8",
+    )
+
+    rc = main(["--root", str(tmp_path), str(doc)])
+    assert rc == EXIT_SUCCESS
+    out, _ = capsys.readouterr()
+    assert "4 links checked in 1 files" in out
+
+
+def test_spaced_attribute_list_missing_anchor_reported(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Verify a planted missing spaced-form ID is still reported and the slug never leaks."""
+    docs_api = tmp_path / "docs" / "api"
+    docs_api.mkdir(parents=True)
+
+    target_page = docs_api / "target.md"
+    target_page.write_text(
+        "# Target Page\n\n"
+        "## Spaced heading { #spaced-id }\n\n"
+        "## Mixed heading { .class #mixed-id }\n\n",
+        encoding="utf-8",
+    )
+
+    doc = docs_api / "spaced.md"
+    doc.write_text(
+        "# Spaced Attribute Lists\n\n"
+        "[Bad spaced](target.md#no-such-spaced-id)\n"
+        "[Bad mixed](target.md#no-such-mixed-id)\n"
+        "[Natural slug](target.md#spaced-heading)\n"
+        "[Leaked slug](target.md#spaced-heading-spaced-id)\n",
+        encoding="utf-8",
+    )
+
+    rc = main(["--root", str(tmp_path), str(doc)])
+    assert rc == EXIT_FINDINGS
+    out, _ = capsys.readouterr()
+    assert "missing anchor target.md#no-such-spaced-id" in out
+    assert "missing anchor target.md#no-such-mixed-id" in out
+    assert any(
+        line.endswith("missing anchor target.md#spaced-heading") for line in out.splitlines()
+    )
+    assert any(
+        line.endswith("missing anchor target.md#spaced-heading-spaced-id")
+        for line in out.splitlines()
+    )
+
+
 def test_duplicate_heading_hyphen_suffix_refused(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

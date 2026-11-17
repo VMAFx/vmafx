@@ -68,7 +68,10 @@ def extract_anchors(path: Path) -> set[str]:
     masked = mask_fenced_code_blocks(text)
     anchors: set[str] = set()
 
-    for match in re.finditer(r"\{#([A-Za-z0-9_\-]+)\}", masked):
+    # Attribute-list IDs: "{#id}", "{ #id }" and mixed lists such as
+    # "{ .class #id }"; attr_list tokens are whitespace separated, so the
+    # ID may carry other attributes around it inside the braces.
+    for match in re.finditer(r"\{(?:[^{}\n]*\s)?#([A-Za-z0-9_\-]+)[^{}\n]*\}", masked):
         anchors.add(match.group(1))
     for match in re.finditer(
         r"""<[a-zA-Z0-9_\-]+(?:\s+[^>]*)?\b(?:id|name)=["']([A-Za-z0-9_\-]+)["']""",
@@ -81,7 +84,16 @@ def extract_anchors(path: Path) -> set[str]:
         heading_match = re.match(r"^[ ]{0,3}#{1,6}\s+(.*?)(?:\s+#+)?$", line)
         if not heading_match:
             continue
-        heading = re.sub(r"\{#[^}]+\}", "", heading_match.group(1)).strip()
+        # Attribute-list IDs: an explicit `#id` replaces the natural heading
+        # slug on the built site, so strip the list before slugging and skip
+        # the slug when the list carried an ID.
+        heading_raw = heading_match.group(1)
+        has_explicit_id = bool(
+            re.search(r"\{(?:[^{}\n]*\s)?#[A-Za-z0-9_\-]+[^{}\n]*\}", heading_raw)
+        )
+        heading = re.sub(r"\{(?:[^{}\n]*\s)?#[^{}\n]*\}", "", heading_raw).strip()
+        if has_explicit_id:
+            continue
         slug = slugify(heading)
         if not slug:
             continue
