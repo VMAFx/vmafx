@@ -6,7 +6,8 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause
  *
  *  HIP host glue for the float_ssim feature extractor — eighth
- *  kernel-template consumer (T7-10b follow-up / ADR-0274).
+ *  kernel-template consumer (T7-10b / ADR-0274; the kernel artefact
+ *  below is the promoted real kernel).
  *
  *  Mirrors core/src/feature/cuda/integer_ssim_cuda.h. The HIP
  *  kernel artefact (`ssim_score.hip`) is compiled by hipcc to a HSACO

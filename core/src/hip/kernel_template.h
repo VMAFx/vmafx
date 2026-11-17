@@ -13,18 +13,15 @@
  *  `hipEvent_t`, `hipMemcpyAsync` ...), so the template's shape ports
  *  one-to-one.
  *
- *  Scaffold posture: this header lands ahead of the HIP runtime
- *  (T7-10b). The struct definitions are stable C surface so consumer
+ *  Posture: the struct definitions are stable C surface so consumer
  *  TUs can compile without `<hip/hip_runtime.h>`. The lifecycle
  *  helpers `vmaf_hip_kernel_lifecycle_init/_close`,
  *  `vmaf_hip_kernel_readback_alloc/_free`,
  *  `vmaf_hip_kernel_submit_pre_launch`,
- *  `vmaf_hip_kernel_collect_wait` are declared here and stubbed in
- *  `core/src/hip/kernel_template.c`. Every helper currently returns
- *  -ENOSYS until the runtime PR replaces the bodies with real HIP
- *  calls. The consumer (`integer_psnr_hip.c`) calls them through the
- *  same call-graph the CUDA reference uses, so the runtime PR can
- *  swap bodies without touching consumers.
+ *  `vmaf_hip_kernel_collect_wait` are declared here and defined in
+ *  `core/src/hip/kernel_template.c`; since the T7-10b batch-4 runtime
+ *  promotion (ADR-0377) the bodies make real HIP calls. Consumers
+ *  call them through the same call-graph the CUDA reference uses.
  *
  *  Why a paired .c instead of inline `static inline` helpers like the
  *  CUDA template? Two reasons:
@@ -32,20 +29,18 @@
  *    1. The CUDA helpers are inline because they unwrap straight onto
  *       `cu_state->f->cuStreamCreateWithPriority` etc. — every call
  *       resolves at compile time against the `CudaFunctions` driver
- *       table. HIP has no equivalent driver-loader scaffolded yet
- *       (the runtime PR is still pending), so the helper bodies must
- *       carry a -ENOSYS check that callers cannot inline away. A real
- *       (non-inline) function gives one place to flip from -ENOSYS to
- *       a real `hipStreamCreate` call when the runtime arrives.
+ *       table. The HIP helpers receive their runtime handles as
+ *       `uintptr_t` (see the lifecycle struct below), so the bodies
+ *       call HIP directly; keeping them non-inline concentrates the
+ *       HIP calls in one place.
  *    2. Splitting declaration from definition lets the runtime PR
  *       replace the bodies without recompiling every consumer TU —
  *       the kernel-template ABI stays stable.
  *
- *  When the runtime PR (T7-10b) lands, the bodies in
- *  `kernel_template.c` flip from -ENOSYS to real HIP calls and the
- *  documentation here drops the "scaffold" caveats. The struct shape
- *  and helper signatures stay verbatim — that's the load-bearing
- *  contract this PR pins.
+ *  The T7-10b batch-4 runtime promotion (ADR-0377) replaced the
+ *  -ENOSYS bodies with real HIP calls; the struct shape and
+ *  helper signatures stayed verbatim — that's the load-bearing
+ *  contract the first-consumer PR pinned.
  *
  *  Reference implementation (CUDA): see
  *  `core/src/cuda/kernel_template.h` and
@@ -74,7 +69,7 @@ extern "C" {
  * Mirrors `VmafCudaKernelLifecycle` field-for-field. Handles cross
  * the fork's HIP scaffold ABI as `uintptr_t` so this header stays
  * free of `<hip/hip_runtime.h>` (matches the public `libvmaf_hip.h`
- * convention; see ADR-0212). The runtime PR will store
+ * convention; see ADR-0212). The runtime bodies store
  * `(hipStream_t)(uintptr_t)` casts under the covers.
  *
  * `str`       — private non-blocking stream for the readback path.

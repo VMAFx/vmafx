@@ -2,11 +2,12 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: EUPL-1.2
  *
- *  CUDA dispatch_strategy stub. Today every extractor returns
- *  DIRECT; this TU exists to expose the registry-aware decision
- *  surface so future graph-capture work for ADM (16 dispatches/
- *  frame) can land without touching the registration sites.
- *  See ADR-0181.
+ *  CUDA dispatch_strategy — the registry-aware per-feature submission
+ *  strategy selector (ADR-0181), called at every CUDA extractor's
+ *  initialisation (consult_cuda_dispatch(), ADR-1571). Today every
+ *  extractor runs DIRECT; a `<feature>:graph` request logs a warning
+ *  and falls back to direct here, and graph capture for ADM (16
+ *  dispatches/frame) is the future opt-in that removes this fallback.
  */
 #include "dispatch_strategy.h"
 #include "../gpu_dispatch_env.h"
@@ -52,8 +53,10 @@ VmafCudaDispatchStrategy vmaf_cuda_select_strategy(const char *feature_name,
         return (VmafCudaDispatchStrategy)idx;
     }
 
-    /* Stub default — DIRECT for every feature. CUDA graph capture
-     * is a follow-up PR (see ADR-0181 § Consequences / follow-ups). */
+    /* Default — DIRECT for every feature. CUDA graph capture is the
+     * opt-in follow-up (see ADR-0181 § Consequences / follow-ups); the
+     * caller fails init on a non-direct strategy (ADR-1571), so removing
+     * this fallback is how graph capture lands. */
     return VMAF_CUDA_DISPATCH_DIRECT;
 }
 

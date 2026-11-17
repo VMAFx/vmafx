@@ -14,9 +14,10 @@ extern "C" {
 #endif
 
 /*
- * Scaffolded by ADR-0212 / T7-10; common.c, picture_hip.c, dispatch_strategy.c and
- * feature/hip/<feature>_hip.c are the live HIP runtime. Without enable_hip,
- * stubs.c supplies the public entry points as -ENOSYS.
+ * Created by ADR-0212 / T7-10; common.c, picture_hip.c, the import_*.c
+ * family, shared_frame.c and feature/hip/<feature>_hip.c are the live HIP
+ * runtime. Without enable_hip, stubs.c supplies the public entry points as
+ * -ENOSYS.
  */
 
 typedef struct VmafHipContext VmafHipContext;

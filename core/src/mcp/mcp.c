@@ -5,10 +5,11 @@
  *  Embedded MCP server — v1 stdio runtime (T5-2b).
  *
  *  History: T5-2 (ADR-0209) landed every entry point as `-ENOSYS`.
- *  T5-2b (this PR — see ADR-0209 § "Status update 2026-05-08")
- *  flips `vmaf_mcp_init` + `vmaf_mcp_start_stdio` + `vmaf_mcp_stop`
+ *  T5-2b (ADR-0209 § "Status update 2026-05-08") flipped
+ *  `vmaf_mcp_init` + `vmaf_mcp_start_stdio` + `vmaf_mcp_stop`
  *  + `vmaf_mcp_close` to a working JSON-RPC 2.0 dispatcher with
- *  two tools (`list_features`, `compute_vmaf`). The UDS and SSE
+ *  two tools (`list_features`, `compute_vmaf`; the real scoring
+ *  binding lives in compute_vmaf.c since T5-2c). The UDS and SSE
  *  transports followed in T5-2c / T5-2d (see transport_uds.c,
  *  transport_sse.c). Wiring the SPSC ring drain at frame boundaries
  *  is v4 work.
