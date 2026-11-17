@@ -43,6 +43,7 @@ else
       docker/Dockerfile.production-gpu | scripts/ci/install-cuda-toolkit.sh | \
         scripts/ci/install-rocm-from-image.sh | scripts/ci/install-intel-ocloc.sh | \
         scripts/ci/install-intel-oneapi.sh | dev/scripts/fetch-intel-neo.py | \
+        dev/scripts/intel-neo-lock.json | \
         tools/rc1-tester/image/* | REUSE.toml | LICENSES/* | build-config.env | \
         .github/workflows/docker-publish-production.yml | \
         .github/workflows/release-dry-run.yml | scripts/ci/release-dry-run-plan.sh)
