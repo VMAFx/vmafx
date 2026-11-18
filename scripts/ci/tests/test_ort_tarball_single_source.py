@@ -228,6 +228,113 @@ class TestOrtGuard(unittest.TestCase):
             (1, [f"{container}:2: unpinned ORT_VERSION '1.99.0' for package 'cpu'"]),
         )
 
+    def test_container_continued_inline_version_override_refused(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        cases = (
+            (
+                "ARG ORT_VERSION=1.30.0\n"
+                "RUN ORT_VERSION=1.99.0 \\\n"
+                '    python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /usr/local\n',
+                3,
+            ),
+            (
+                "ARG ORT_VERSION=1.30.0\n"
+                "RUN true \\\n"
+                "    && ORT_VERSION=1.99.0 \\\n"
+                '    python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /usr/local\n',
+                4,
+            ),
+        )
+        for text, line_no in cases:
+            with self.subTest(line_no=line_no):
+                container.write_text(text)
+                self.assertEqual(
+                    guard.check_tarball_pins(files=[container]),
+                    (
+                        1,
+                        [f"{container}:{line_no}: unpinned ORT_VERSION '1.99.0' for package 'cpu'"],
+                    ),
+                )
+
+    def test_container_quoted_hash_before_split_release_refused(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        for step_arg in ('"step #1"', "'step #1'"):
+            with self.subTest(step_arg=step_arg):
+                container.write_text(
+                    f"RUN echo {step_arg} \\\n"
+                    "    && curl -fsSL https://github.com/microsoft/onnxruntime/releases/\\\n"
+                    "        download/v1.30.0/ort.tgz\n"
+                )
+                self.assertEqual(
+                    guard.check_tarball_pins(files=[container]),
+                    (1, [f"{container}:1: old ONNX Runtime release source forbidden"]),
+                )
+
+    def test_container_continuation_blank_line_split_release_refused(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        container.write_text(
+            "RUN set -eux \\\n"
+            "\n"
+            "    && curl -fsSL https://github.com/microsoft/onnxruntime/releases/\\\n"
+            "        download/v1.30.0/ort.tgz\n"
+        )
+        self.assertEqual(
+            guard.check_tarball_pins(files=[container]),
+            (1, [f"{container}:1: old ONNX Runtime release source forbidden"]),
+        )
+
+    def test_container_accepted_comments_and_pinned_override(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        cases = (
+            "ARG ORT_VERSION=1.30.0\n"
+            "RUN python3 scripts/ci/ort_nuget_install.py \\\n"
+            "    --package cpu \\\n"
+            "    # comment between continued lines\n"
+            '    --version "${ORT_VERSION}" --prefix /usr/local\n',
+            "# https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/ort.tgz\n"
+            "ARG ORT_VERSION=1.30.0\n"
+            'RUN python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /usr/local\n',
+            "ARG ORT_VERSION=1.30.0\n"
+            "RUN ORT_VERSION=1.30.0 \\\n"
+            '    python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /usr/local\n',
+            "ARG ORT_VERSION=1.99.0\n"
+            "RUN ORT_VERSION=1.30.0 \\\n"
+            '    python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /usr/local\n',
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                container.write_text(text)
+                self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
+
+    def test_container_first_line_and_eof_without_newline_boundaries(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        container.write_text(
+            "RUN python3 scripts/ci/ort_nuget_install.py --package cpu --version 1.30.0 --prefix /usr/local\n"
+        )
+        self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
+        container.write_text(
+            "RUN python3 scripts/ci/ort_nuget_install.py --package cpu --version 1.99.0 --prefix /usr/local\n"
+        )
+        self.assertEqual(
+            guard.check_tarball_pins(files=[container]),
+            (1, [f"{container}:1: unpinned ORT_VERSION '1.99.0' for package 'cpu'"]),
+        )
+        container.write_text(
+            "ARG ORT_VERSION=1.30.0\n"
+            "RUN python3 scripts/ci/ort_nuget_install.py --package cpu \\\n"
+            '    --version "${ORT_VERSION}" --prefix /usr/local'
+        )
+        self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
+        container.write_text(
+            "ARG ORT_VERSION=1.30.0\n"
+            "RUN ORT_VERSION=1.99.0 \\\n"
+            '    python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /usr/local'
+        )
+        self.assertEqual(
+            guard.check_tarball_pins(files=[container]),
+            (1, [f"{container}:3: unpinned ORT_VERSION '1.99.0' for package 'cpu'"]),
+        )
+
     def test_container_continuation_line_limit_boundary(self) -> None:
         container = Path(self.temp.name) / "Containerfile"
         at_limit = (

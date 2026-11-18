@@ -25,7 +25,6 @@ DEFAULT_ROOT = Path(__file__).resolve().parents[2]
 HEX_RE = re.compile(r"^[a-f0-9]{64}$")
 STEP_START_RE = re.compile(r"^(\s*)-\s+(?:name|uses|run):")
 GENERIC_STEP_RE = re.compile(r"^(\s*)-\s+")
-RUN_START_RE = re.compile(r"^\s*(?:RUN|ADD)\b")
 TAR_EXTRACT_RE = re.compile(r"\btar\b.*?(?:-[a-zA-Z0-9]*x|--extract)")
 SHA_CHECK_RE = re.compile(r"\bsha256sum\b.*?(?:--check|-c\b)")
 GPU_MARKER_RE = re.compile(r"onnxruntime-[^\s\"'/]*-gpu")
@@ -111,32 +110,33 @@ def _find_workflow_block(lines: list[str], site_idx: int) -> tuple[int, int]:
     return start_idx, end_idx
 
 
-def _container_continuation(
-    lines: list[str], start_idx: int, max_end_idx: int | None = None
-) -> tuple[list[str] | None, int]:
-    """Join a continued container instruction, skipping comments and blank lines."""
-    limit = len(lines) if max_end_idx is None else min(len(lines), max_end_idx + 1)
+def _container_instruction(lines: list[str], site_idx: int) -> tuple[int, int, str | None]:
+    """Return start index, end index and joined text for a container instruction."""
+    start_idx = site_idx
+    for j in range(site_idx - 1, max(-1, site_idx - 1 - MAX_COMMAND_LINES), -1):
+        stripped = lines[j].strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not stripped.endswith("\\"):
+            break
+        start_idx = j
+
     parts: list[str] = []
     end_idx = start_idx
-    for idx in range(start_idx, min(limit, start_idx + MAX_COMMAND_LINES)):
+    for idx in range(start_idx, min(len(lines), start_idx + MAX_COMMAND_LINES)):
         end_idx = idx
         stripped = lines[idx].strip()
         if idx > start_idx and (not stripped or stripped.startswith("#")):
             continue
         parts.append(stripped.rstrip("\\"))
         if not stripped.endswith("\\"):
-            return parts, end_idx
-    return None, end_idx
+            return start_idx, end_idx, " ".join(parts) + " " + "".join(parts)
+    return start_idx, end_idx, None
 
 
 def _find_docker_block(lines: list[str], site_idx: int) -> tuple[int, int]:
     """Find start and end line indices of container instruction and preceding ARGs/ENVs."""
-    run_idx = site_idx
-    for j in range(site_idx, max(-1, site_idx - MAX_COMMAND_LINES), -1):
-        if RUN_START_RE.match(lines[j]):
-            run_idx = j
-            break
-
+    run_idx, end_idx, _ = _container_instruction(lines, site_idx)
     start_idx = run_idx
     for j in range(run_idx - 1, max(-1, run_idx - 1 - MAX_STEP_LINES), -1):
         line = lines[j]
@@ -145,8 +145,6 @@ def _find_docker_block(lines: list[str], site_idx: int) -> tuple[int, int]:
             start_idx = j
             continue
         break
-
-    _, end_idx = _container_continuation(lines, run_idx)
     return start_idx, max(site_idx, end_idx)
 
 
@@ -322,8 +320,7 @@ def _helper_command(
 ) -> str | None:
     """Collect one shell command, rejecting excessively long continuations."""
     if not is_workflow:
-        container_parts, _ = _container_continuation(lines, site_idx, end_idx)
-        return " ".join(container_parts) if container_parts is not None else None
+        return _container_instruction(lines, site_idx)[2]
     parts: list[str] = []
     for idx in range(site_idx, min(end_idx + 1, site_idx + MAX_COMMAND_LINES)):
         line = lines[idx].strip()
@@ -424,7 +421,8 @@ def _scan_workflow_line(
     line = lines[idx] if line is None else line
     if line.lstrip().startswith("#"):
         return []
-    line = re.split(r"\s+#", line, maxsplit=1)[0]
+    if is_workflow:
+        line = re.split(r"\s+#", line, maxsplit=1)[0]
     lower = line.lower()
     findings: list[str] = []
     if "onnxruntime/releases/download" in lower:
@@ -440,16 +438,14 @@ def _scan_container_line(
 ) -> list[str]:
     """Check container instructions, including continued RUN and ADD commands."""
     line = lines[idx]
-    if line.lstrip().startswith("#"):
+    if not line.strip() or line.lstrip().startswith("#"):
         return []
-    if RUN_START_RE.match(line):
-        parts, _ = _container_continuation(lines, idx)
-        if parts is None:
+    start_idx, _, command = _container_instruction(lines, idx)
+    findings: list[str] = []
+    if idx == start_idx:
+        if command is None:
             return [f"{path}:{idx + 1}: container command continuation exceeds limit"]
-        command = " ".join(parts) + " " + "".join(parts)
         findings = _scan_workflow_line(lines, idx, path, None, False, command)
-    else:
-        findings = _scan_workflow_line(lines, idx, path, None, False)
     if "ort_nuget_install.py" in line and packages is not None:
         findings.extend(_check_helper_step(lines, idx, path, packages, False))
     return findings
