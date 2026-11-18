@@ -13,16 +13,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.ci import ci_tier
 
+MAX_QUEUE_NODES = 100
+
 QUERY = """query($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) {
     mergeQueue(branch: "master") {
-      entries(first: 100) {
+      entries(first: %d) {
         pageInfo { hasNextPage }
         nodes { position headCommit { oid } pullRequest { number isCrossRepository } }
       }
     }
   }
-}"""
+}""" % MAX_QUEUE_NODES
 
 
 def decide(response: Any, sha: str) -> tuple[bool, str]:
@@ -38,6 +40,8 @@ def decide(response: Any, sha: str) -> tuple[bool, str]:
         nodes = entries["nodes"]
         if not isinstance(more, bool) or not isinstance(nodes, list) or not sha:
             raise ValueError("invalid entries")
+        if len(nodes) > MAX_QUEUE_NODES:
+            return False, f"too many queue nodes: {len(nodes)}"
         positions = []
         for node in nodes:
             position = node["position"]
@@ -63,8 +67,10 @@ def decide(response: Any, sha: str) -> tuple[bool, str]:
         if len({position for position, _, _ in positions}) != len(positions):
             raise ValueError("duplicate position")
         if any(cross for position, _, cross in positions if position <= matches[0]):
-            return False, "cross-repository entry in queue prefix"
-        return True, "queue prefix contains only same-repository pull requests"
+            result = False, "cross-repository entry in queue prefix"
+        else:
+            result = True, "queue prefix contains only same-repository pull requests"
+        return result
     except AttributeError, KeyError, TypeError, ValueError:
         return False, "missing or invalid response field"
 

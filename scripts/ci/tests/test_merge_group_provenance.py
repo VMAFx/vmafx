@@ -46,6 +46,18 @@ def test_queue_prefix() -> None:
     )
 
 
+def test_queue_node_limit() -> None:
+    limit = provenance.MAX_QUEUE_NODES
+    entries = [(position, str(position), False) for position in range(1, limit + 1)]
+    assert f"entries(first: {limit})" in provenance.QUERY
+    assert provenance.decide(response(entries), str(limit))[0] is True
+    entries.append((limit + 1, str(limit + 1), False))
+    assert provenance.decide(response(entries), str(limit)) == (
+        False,
+        f"too many queue nodes: {limit + 1}",
+    )
+
+
 def test_invalid_entry_types() -> None:
     for field, value in [
         ("position", True),

@@ -538,8 +538,10 @@ live merge group; lookup failures fail closed.
   in `docker-publish-tester.yml` `build-gpu`) skip a merge group too and run on
   the `master` push after the merge only when that push selects `tester_image`
   (`own_paths_only` in `.github/ci-impact.json`). The workflow `validate` job
-  requires `impact.outputs.selected`, and `build` requires `validate`; a merge
-  limited to other paths, such as `core/`, builds no tester GPU image.
+  requires `impact.outputs.selected`, and `build-gpu` requires `validate`. When
+  the changed paths of the push are known, a merge limited to other paths, such
+  as `core/`, builds no tester GPU image; when the planner cannot read them, the
+  selector stays set and the images are built.
   `scripts/ci/tests/test_merge_group_workflow_contract.py` refuses a guard that
   skips `pull_request` without also skipping `merge_group`.
 - Check the aggregator `merge_group` cases and workflow trigger contract
