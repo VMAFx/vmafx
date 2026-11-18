@@ -342,11 +342,13 @@ python3 scripts/ci/check_exit_code_only_tests.py --changed-against origin/master
   least 10 characters long. An empty or shorter reason is reported as a finding.
 - **Modes and exit codes**: default mode reports all existing findings with an
   informational count and the top 5 files, and exits `0`. `--changed-against
-  <ref>` intersects each function's line span (starting at the first decorator
-  or excuse-comment line, whichever is earlier) with the changed ranges from
-  `git diff -M -U0 <ref>...` (plus working-tree changes against `HEAD`) and
-  exits `1` on findings (`0` when clean). An unreadable file, a file above 1
-  MiB, a syntax error, a bad ref, or a `git diff` failure exits `2` with the
-  path on `stderr`, never `0`.
+  <ref>` resolves `git merge-base <ref> HEAD` and intersects each function's
+  line span (starting at the first decorator or excuse-comment line, whichever
+  is earlier) with the working-tree diff from
+  `git diff --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/ -M -U0 <merge-base>`
+  (plus untracked test files), exiting `1` on findings (`0` when clean). An
+  unreadable file, a file above 1 MiB, a syntax error, a bad ref, or a
+  `git merge-base` / `git diff` failure exits `2` with the path on `stderr`,
+  never `0`.
 - **Scope limit**: the check verifies that another assertion is present; it
   does not judge whether an output assertion is strong.

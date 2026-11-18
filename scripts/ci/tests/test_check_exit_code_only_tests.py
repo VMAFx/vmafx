@@ -13,6 +13,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
@@ -433,7 +434,7 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         (self.repo / ".git" / "index").write_bytes(b"corrupt-index")
         rc_err, _out_e, err_err = self._run_checker("--changed-against", "HEAD")
         self.assertEqual(rc_err, 2)
-        self.assertIn(f"{REL_TEST_FILE}: git diff against HEAD failed:", err_err)
+        self.assertIn(f"{self.repo}: git diff against HEAD failed:", err_err)
 
     def test_weak_boolean_and_no_assertion_forms_fail(self) -> None:
         self._commit_file(REL_TEST_FILE, "import subprocess\n", "base")
@@ -535,6 +536,259 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
             f"{REL_TEST_FILE}: exceeds {checker.MAX_FILE_BYTES} byte read limit",
             err_big,
         )
+
+    def test_derived_output_values_pass_while_returncode_and_aliases_fail(self) -> None:
+        self._commit_file(REL_TEST_FILE, "import subprocess\n", "base")
+        self._commit_file(
+            REL_TEST_FILE,
+            (
+                "def test_stdout_count_zero() -> None:\n"
+                "    count = run_checker().stdout.count('ERROR')\n"
+                "    assert count == 0\n\n"
+                "def test_stdout_attr_and_len() -> None:\n"
+                "    out = run_checker().stdout\n"
+                "    err_len = len(run_checker().stderr)\n"
+                "    assert len(out) == 0\n"
+                "    assert err_len == 0\n\n"
+                "def test_rc_named_var_bound_to_output() -> None:\n"
+                "    status = run_checker().stdout.count('ERROR')\n"
+                "    assert status == 0\n\n"
+                "def test_tuple_index_one_output_boundary() -> None:\n"
+                "    second = _run_checker(['--ok'])[1]\n"
+                "    assert second == 0\n\n"
+                "def test_tuple_index_zero_rc_boundary() -> None:\n"
+                "    first = _run_checker(['--ok'])[0]\n"
+                "    assert first == 0\n\n"
+                "def test_chained_returncode_refused() -> None:\n"
+                "    rc = run_checker().returncode\n"
+                "    assert rc == 0\n\n"
+                "def test_int_callee_alias_refused() -> None:\n"
+                "    rc = main(['--ok'])\n"
+                "    alias = rc\n"
+                "    assert alias == 0\n"
+            ),
+            "derived output values vs return codes",
+        )
+        rc, _out, err = self._run_checker("--changed-against", "HEAD~1")
+        self.assertEqual(rc, 1)
+        self.assertIn("test_tuple_index_zero_rc_boundary: asserts only exit code 0", err)
+        self.assertIn("test_chained_returncode_refused: asserts only exit code 0", err)
+        self.assertIn("test_int_callee_alias_refused: asserts only exit code 0", err)
+        for clean_name in (
+            "test_stdout_count_zero",
+            "test_stdout_attr_and_len",
+            "test_rc_named_var_bound_to_output",
+            "test_tuple_index_one_output_boundary",
+        ):
+            self.assertNotIn(clean_name, err)
+
+    def test_color_always_git_config_still_reports_changed_findings(self) -> None:
+        self._git("config", "color.ui", "always")
+        self._git("config", "color.diff", "always")
+        base = (
+            "import subprocess\n\n"
+            "def test_untouched_under_color() -> None:\n"
+            "    r = subprocess.run(['true'], check=False)\n"
+            "    assert r.returncode == 0\n\n"
+            "def test_boundary_under_color() -> None:\n"
+            "    r = subprocess.run(['true'], check=False)\n"
+            "    assert r.returncode == 0\n"
+        )
+        self._commit_file(REL_TEST_FILE, base, "base under color.ui=always")
+        changed = (
+            base[:-1]
+            + "  # boundary touch on final line\n\n"
+            + "def test_weak_under_color() -> None:\n"
+            + "    r = subprocess.run(['true'], check=False)\n"
+            + "    assert r.returncode == 0\n\n"
+            + "def test_strong_under_color() -> None:\n"
+            + "    r = subprocess.run(['true'], check=False)\n"
+            + "    assert r.returncode == 0\n"
+            + "    assert r.stdout == 'ok'\n"
+        )
+        self._commit_file(REL_TEST_FILE, changed, "changes under color.ui=always")
+        rc, _out, err = self._run_checker("--changed-against", "HEAD~1")
+        self.assertEqual(rc, 1)
+        self.assertIn("test_boundary_under_color: asserts only exit code 0", err)
+        self.assertIn("test_weak_under_color: asserts only exit code 0", err)
+        self.assertNotIn("test_untouched_under_color", err)
+        self.assertNotIn("test_strong_under_color", err)
+
+    def test_noprefix_mnemonic_ext_diff_and_renames_config_neutralised(self) -> None:
+        self._git("config", "diff.noprefix", "true")
+        self._git("config", "diff.mnemonicPrefix", "true")
+        self._git("config", "diff.external", "/bin/false")
+        self._git("config", "diff.renames", "false")
+        other_old = "scripts/ci/tests/test_other_old.py"
+        other_new = "scripts/ci/tests/test_other_new.py"
+        weak_body = (
+            "import subprocess\n\n"
+            "def test_untouched_in_renamed() -> None:\n"
+            "    r = subprocess.run(['true'], check=False)\n"
+            "    assert r.returncode == 0\n"
+        )
+        self._commit_file(other_old, weak_body, "base rename source")
+        self._commit_file(REL_TEST_FILE, "import subprocess\n", "base target")
+        self._git("mv", other_old, other_new)
+        self._commit_file(
+            REL_TEST_FILE,
+            (
+                "import subprocess\n\n"
+                "def test_prefix_weak() -> None:\n"
+                "    r = subprocess.run(['true'], check=False)\n"
+                "    assert r.returncode == 0\n\n"
+                "def test_prefix_strong() -> None:\n"
+                "    r = subprocess.run(['true'], check=False)\n"
+                "    assert r.returncode == 0\n"
+                "    assert r.stdout == 'ok'\n"
+            ),
+            "rename and edit under adversarial diff config",
+        )
+        rc, _out, err = self._run_checker("--changed-against", "HEAD~1")
+        self.assertEqual(rc, 1)
+        self.assertIn("test_prefix_weak: asserts only exit code 0", err)
+        self.assertNotIn("test_prefix_strong", err)
+        self.assertNotIn("test_untouched_in_renamed", err)
+
+    def test_committed_change_with_uncommitted_lines_above_and_uncommitted_revert(self) -> None:
+        base = (
+            "import subprocess\n\n"
+            "def test_a() -> None:\n"
+            "    r = subprocess.run(['true'], check=False)\n"
+            "    assert r.returncode == 0\n\n"
+            "def test_b() -> None:\n"
+            "    r = subprocess.run(['true'], check=False)\n"
+            "    assert r.returncode == 0\n"
+        )
+        self._commit_file(REL_TEST_FILE, base, "base with a and b")
+        committed_b = base.replace(
+            "def test_b() -> None:\n    r = subprocess.run(['true'], check=False)\n",
+            "def test_b() -> None:\n    r = subprocess.run(['true', '-v'], check=False)\n",
+        )
+        target = self._commit_file(REL_TEST_FILE, committed_b, "commit change to b")
+        padding = "".join(f"# uncommitted line {i}\n" for i in range(12))
+        target.write_text(padding + committed_b, encoding="utf-8")
+        rc_shift, _out_s, err_shift = self._run_checker("--changed-against", "HEAD~1")
+        self.assertEqual(rc_shift, 1)
+        self.assertIn(f"{REL_TEST_FILE}:19: test_b: asserts only exit code 0", err_shift)
+        self.assertNotIn("test_a", err_shift)
+        target.write_text(base, encoding="utf-8")
+        rc_rev, out_rev, err_rev = self._run_checker("--changed-against", "HEAD~1")
+        self.assertEqual(rc_rev, 0, err_rev)
+        self.assertIn("0 exit-code-only test findings in changed functions", out_rev)
+
+    def test_failing_merge_base_and_bad_ref_exit_2_with_git_message(self) -> None:
+        self._commit_file(REL_TEST_FILE, "def test_ok() -> None:\n    assert 1 == 1\n", "base")
+        rc_bad, _out_b, err_bad = self._run_checker("--changed-against", "bad-ref-xyz")
+        self.assertEqual(rc_bad, 2)
+        self.assertIn("git merge-base", err_bad)
+        self.assertIn("bad-ref-xyz", err_bad)
+        blob_ref = f"HEAD:{REL_TEST_FILE}"
+        rc_blob, _out_bl, err_blob = self._run_checker("--changed-against", blob_ref)
+        self.assertEqual(rc_blob, 2)
+        self.assertIn("git merge-base", err_blob)
+        self.assertIn("blob", err_blob)
+        self._git("branch", "first-root")
+        self._git("checkout", "-q", "--orphan", "unrelated-root")
+        self._commit_file(REL_TEST_FILE, "def test_ok() -> None:\n    assert 2 == 2\n", "orphan")
+        rc_orph, _out_o, err_orph = self._run_checker("--changed-against", "first-root")
+        self.assertEqual(rc_orph, 2)
+        self.assertIn("git merge-base", err_orph)
+        self.assertIn("no merge base found", err_orph)
+
+    def test_single_git_diff_call_per_run_across_multiple_files(self) -> None:
+        rel_a = "scripts/ci/tests/test_multi_a.py"
+        rel_b = "scripts/ci/tests/test_multi_b.py"
+        rel_c = "scripts/ci/tests/test_multi_c.py"
+        rel_u = "scripts/ci/tests/test_multi_untracked.py"
+        weak_stub = (
+            "import subprocess\n\n"
+            "def test_old_weak() -> None:\n"
+            "    r = subprocess.run(['true'], check=False)\n"
+            "    assert r.returncode == 0\n"
+        )
+        self._commit_file(rel_a, weak_stub, "base a")
+        self._commit_file(rel_b, weak_stub, "base b")
+        self._commit_file(rel_c, weak_stub, "base c")
+        self._commit_file(
+            rel_a,
+            weak_stub
+            + "\ndef test_added_weak_a() -> None:\n"
+            + "    r = subprocess.run(['true'], check=False)\n"
+            + "    assert r.returncode == 0\n",
+            "edit a",
+        )
+        (self.repo / rel_b).write_text(
+            weak_stub
+            + "\ndef test_added_strong_b() -> None:\n"
+            + "    r = subprocess.run(['true'], check=False)\n"
+            + "    assert r.returncode == 0\n"
+            + "    assert r.stdout == 'ok'\n",
+            encoding="utf-8",
+        )
+        (self.repo / rel_u).write_text(
+            "import subprocess\n\n"
+            "def test_untracked_weak() -> None:\n"
+            "    r = subprocess.run(['true'], check=False)\n"
+            "    assert r.returncode == 0\n",
+            encoding="utf-8",
+        )
+        with mock.patch.object(checker, "_run_git", wraps=checker._run_git) as spy:
+            rc, _out, err = self._run_checker("--changed-against", "HEAD~1")
+        diff_calls = [c for c in spy.call_args_list if c.args[1][0] == "diff"]
+        self.assertEqual(len(diff_calls), 1)
+        self.assertEqual(rc, 1)
+        self.assertIn("test_added_weak_a: asserts only exit code 0", err)
+        self.assertIn("test_untracked_weak: asserts only exit code 0", err)
+        self.assertNotIn("test_old_weak", err)
+        self.assertNotIn("test_added_strong_b", err)
+
+    def test_deletion_hunks_last_assert_whole_middle_function_and_line_zero(self) -> None:
+        middle_block = (
+            "\ndef test_middle() -> None:\n"
+            "    r = subprocess.run(['true'], check=False)\n"
+            "    assert r.returncode == 0\n\n"
+        )
+        three_funcs = (
+            "import subprocess\n\n"
+            "def test_before() -> None:\n"
+            "    r = subprocess.run(['true'], check=False)\n"
+            "    assert r.returncode == 0\n"
+            "    assert r.stdout == 'ok'\n" + middle_block + "def test_after() -> None:\n"
+            "    r = subprocess.run(['true'], check=False)\n"
+            "    assert r.returncode == 0\n"
+        )
+        self._commit_file(REL_TEST_FILE, three_funcs, "three functions")
+        last_assert_deleted = three_funcs.replace("    assert r.stdout == 'ok'\n", "")
+        self._commit_file(REL_TEST_FILE, last_assert_deleted, "delete last assert of test_before")
+        rc_last, _out_l, err_last = self._run_checker("--changed-against", "HEAD~1")
+        self.assertEqual(rc_last, 1)
+        self.assertIn("test_before: asserts only exit code 0", err_last)
+        self.assertNotIn("test_middle", err_last)
+        for sep, ref in (("\n", "HEAD~1"), ("", "HEAD~2")):
+            self._commit_file(
+                REL_TEST_FILE, last_assert_deleted.replace(middle_block, sep), "delete middle"
+            )
+            rc_mid, out_mid, err_mid = self._run_checker("--changed-against", ref)
+            self.assertEqual(rc_mid, 0, err_mid)
+            self.assertIn("0 exit-code-only test findings in changed functions", out_mid)
+        top_file = (
+            "def test_deleted_at_zero() -> None:\n    assert 1 == 1\n\n"
+            "# exit-code-only: valid excuse at top of file\n"
+            "def test_top_surviving() -> None:\n"
+            "    r = subprocess.run(['true'], check=False)\n"
+            "    assert r.returncode == 0\n"
+        )
+        self._commit_file(REL_TEST_FILE, top_file, "top file with function and excuse")
+        top_func_deleted = top_file.split("\n\n", 1)[1]
+        self._commit_file(REL_TEST_FILE, top_func_deleted, "delete top function at +0,0")
+        rc_top0, out_top0, err_top0 = self._run_checker("--changed-against", "HEAD~1")
+        self.assertEqual(rc_top0, 0, err_top0)
+        self.assertIn("0 exit-code-only test findings in changed functions", out_top0)
+        self._commit_file(REL_TEST_FILE, top_func_deleted.split("\n", 1)[1], "delete excuse +0,0")
+        rc_exc0, _out_e0, err_exc0 = self._run_checker("--changed-against", "HEAD~1")
+        self.assertEqual(rc_exc0, 1)
+        self.assertIn(f"{REL_TEST_FILE}:1: test_top_surviving: asserts only exit code 0", err_exc0)
 
 
 if __name__ == "__main__":

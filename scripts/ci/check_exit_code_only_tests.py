@@ -11,11 +11,12 @@ the checker silently drops its input.
 
 Default mode scans `scripts/ci/tests/test_*.py`, prints all findings with an
 informational count and top 5 files, and exits 0. `--changed-against <ref>`
-checks only test functions whose line span (from the first decorator or excuse
-comment) intersects the changed ranges from `git diff -M -U0 <ref>...` (plus
-working-tree changes against `HEAD`) and exits 1 on findings. Unreadable files,
-files above 1 MiB, syntax errors, bad refs, and git diff errors exit 2 with the
-path on stderr.
+resolves `git merge-base <ref> HEAD` and checks only test functions whose line
+span (from the first decorator or excuse comment) intersects the working-tree
+diff from `git diff --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/ -M -U0 <merge-base>`
+(plus untracked test files), exiting 1 on findings. Unreadable files, files
+above 1 MiB, syntax errors, bad refs, and git errors exit 2 with the path on
+stderr.
 
 Justified cases carry `# exit-code-only: <reason>` (reason >= 10 characters)
 on the `def` line or the line immediately above it (or its first decorator); an
@@ -65,8 +66,8 @@ GIT_TIMEOUT_SECONDS = 30.0
 RC_NAMES = frozenset({"rc", "returncode", "return_code", "exit_code", "status", "code"})
 ESCAPE_RE = re.compile(r"#\s*exit-code-only(?:\s*:(.*)|$)")
 HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", re.MULTILINE)
-REMOVED_DEF_RE = re.compile(r"^-\s*(?:async\s+)?def\b", re.MULTILINE)
-REMOVED_META_RE = re.compile(r"^-(?:\s*@|.*#\s*exit-code-only(?:\s*:|$))", re.MULTILINE)
+DEF_LINE_RE = re.compile(r"^\s*(?:async\s+)?def\b")
+META_LINE_RE = re.compile(r"^(?:\s*@|.*#\s*exit-code-only(?:\s*:|$))")
 
 FuncNode: TypeAlias = ast.FunctionDef | ast.AsyncFunctionDef
 
@@ -140,20 +141,28 @@ def _body_nodes(func: FuncNode) -> list[ast.AST]:
     raise ScanError(f"{func.name}: function body exceeds {MAX_BODY_NODES} AST nodes")
 
 
-def _contains_runner_value(node: ast.AST) -> bool:
-    """True if an assigned expression invokes a runner or reads .returncode."""
-    stack: list[ast.AST] = [node]
-    for _ in range(MAX_BODY_NODES):
-        if not stack:
-            return False
-        curr = stack.pop()
-        if _is_runner_call(curr):
-            return True
-        if isinstance(curr, ast.Attribute) and curr.attr == "returncode":
-            return True
-        if not isinstance(curr, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            stack.extend(itertools.islice(ast.iter_child_nodes(curr), MAX_CALL_ARGS))
-    return False
+def _is_zero_literal(node: ast.AST) -> bool:
+    """True only for the integer literal 0 (excluding booleans)."""
+    return (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, int)
+        and not isinstance(node.value, bool)
+        and node.value == 0
+    )
+
+
+def _is_rc_expr(node: ast.AST, rc_vars: set[str]) -> bool:
+    """True when an expression represents a process or checker return code."""
+    expr = node.value if isinstance(node, ast.NamedExpr) else node
+    if _is_runner_call(expr):
+        return True
+    if isinstance(expr, ast.Attribute) and expr.attr == "returncode":
+        val = expr.value
+        return _is_runner_call(val) or (isinstance(val, ast.Name) and val.id in rc_vars)
+    if isinstance(expr, ast.Subscript) and _is_zero_literal(expr.slice):
+        val = expr.value
+        return _is_runner_call(val) or (isinstance(val, ast.Name) and val.id in rc_vars)
+    return isinstance(expr, ast.Name) and expr.id in rc_vars
 
 
 def _record_target_vars(target: ast.AST, rc_vars: set[str]) -> None:
@@ -170,43 +179,19 @@ def _record_target_vars(target: ast.AST, rc_vars: set[str]) -> None:
 
 
 def _collect_rc_vars(nodes: list[ast.AST]) -> set[str]:
-    """Return local variable names assigned from a process or checker call."""
+    """Return local variable names bound to a runner call result or return code."""
     rc_vars: set[str] = set()
     for node in nodes[:MAX_BODY_NODES]:
-        if isinstance(node, ast.Assign) and _contains_runner_value(node.value):
+        if isinstance(node, ast.Assign) and _is_rc_expr(node.value, rc_vars):
             for target in node.targets[:MAX_ASSIGN_TARGETS]:
                 _record_target_vars(target, rc_vars)
         elif (
             isinstance(node, (ast.AnnAssign, ast.NamedExpr))
             and node.value is not None
-            and _contains_runner_value(node.value)
+            and _is_rc_expr(node.value, rc_vars)
         ):
             _record_target_vars(node.target, rc_vars)
     return rc_vars
-
-
-def _is_zero_literal(node: ast.AST) -> bool:
-    """True only for the integer literal 0 (excluding booleans)."""
-    return (
-        isinstance(node, ast.Constant)
-        and isinstance(node.value, int)
-        and not isinstance(node.value, bool)
-        and node.value == 0
-    )
-
-
-def _is_rc_expr(node: ast.AST, rc_vars: set[str]) -> bool:
-    """True when an expression represents a process or checker return code."""
-    expr = node.value if isinstance(node, ast.NamedExpr) else node
-    if isinstance(expr, ast.Attribute) and expr.attr == "returncode":
-        return True
-    if _is_runner_call(expr):
-        return True
-    if isinstance(expr, ast.Subscript) and _is_zero_literal(expr.slice):
-        val = expr.value
-        if _is_runner_call(val) or (isinstance(val, ast.Name) and val.id in rc_vars):
-            return True
-    return isinstance(expr, ast.Name) and (expr.id in rc_vars or expr.id in RC_NAMES)
 
 
 def _is_rc_zero_pair(left: ast.AST, right: ast.AST, rc_vars: set[str]) -> bool:
@@ -392,29 +377,38 @@ def _run_git(root: Path, args: Sequence[str]) -> TextCommandResult:
         raise ScanError(f"{root}: git {' '.join(args[:2])} failed: {exc}") from exc
 
 
-def _verify_ref(root: Path, ref: str) -> None:
-    """Ensure `ref` resolves to a commit in `root`, raising ScanError otherwise."""
+def _resolve_merge_base(root: Path, ref: str) -> str:
+    """Resolve `git merge-base <ref> HEAD` in `root`, raising ScanError on failure."""
     if not ref or ref.startswith("-"):
         raise ScanError(f"{root}: invalid git ref {ref!r}")
-    res = _run_git(root, ["rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"])
-    if res.returncode != 0:
-        detail = res.stderr.strip() or "unknown revision"
-        raise ScanError(f"{root}: bad ref {ref!r}: {detail}")
+    res = _run_git(root, ["merge-base", "--end-of-options", ref, "HEAD"])
+    base = res.stdout.strip()
+    if res.returncode != 0 or not base:
+        detail = res.stderr.strip() or "no merge base found"
+        raise ScanError(f"{root}: git merge-base {ref!r} HEAD failed: {detail}")
+    return base
 
 
-def _file_diff_section(diff_text: str, rel_path: str) -> str:
-    """Extract the `diff --git` block(s) whose destination path is `rel_path`."""
-    if "diff --git " not in diff_text:
-        return diff_text
-    plus_header = f"+++ b/{rel_path}"
-    rename_header = f"rename to {rel_path}"
-    matched: list[str] = []
-    for block in ("\n" + diff_text).split("\ndiff --git ")[1 : MAX_TEST_FILES + 1]:
-        header = block.split("\n@@ ", 1)[0]
-        header_lines = header.splitlines()[:MAX_CALL_ARGS]
-        if plus_header in header_lines or rename_header in header_lines:
-            matched.append(block)
-    return "\n".join(matched)
+def _classify_removed_lines(body: str) -> tuple[bool, bool]:
+    """Return `(has_leading_stmt, has_trailing_meta)` for `-` lines in a hunk body."""
+    has_leading_stmt = False
+    has_trailing_meta = False
+    seen_def = False
+    for raw in body.splitlines()[:MAX_BODY_NODES]:
+        if not raw.startswith("-"):
+            continue
+        line = raw[1:]
+        if DEF_LINE_RE.match(line):
+            seen_def = True
+            has_trailing_meta = False
+            continue
+        if META_LINE_RE.match(line):
+            has_trailing_meta = True
+            continue
+        stripped = line.strip()
+        if not seen_def and stripped and not stripped.startswith("#"):
+            has_leading_stmt = True
+    return has_leading_stmt, has_trailing_meta
 
 
 def _parse_diff_hunks(diff_text: str) -> list[tuple[int, int]]:
@@ -425,32 +419,75 @@ def _parse_diff_hunks(diff_text: str) -> list[tuple[int, int]]:
         start = int(match.group(1))
         count = int(match.group(2)) if match.group(2) is not None else 1
         end_pos = matches[idx + 1].start() if idx + 1 < len(matches) else len(diff_text)
-        body = diff_text[match.end() : end_pos]
-        if REMOVED_META_RE.search(body) and not REMOVED_DEF_RE.search(body):
-            hunks.append((start + 1, 1) if count == 0 else (start, count + 1))
-        else:
-            hunks.append((start, count))
+        has_leading_stmt, has_trailing_meta = _classify_removed_lines(
+            diff_text[match.end() : end_pos]
+        )
+        if count > 0:
+            hunks.append((start, count + 1 if has_trailing_meta else count))
+            continue
+        if has_leading_stmt:
+            hunks.append((start, 0))
+        if has_trailing_meta:
+            hunks.append((start + 1, 1))
     return hunks
 
 
-def _changed_hunks(root: Path, ref: str, rel_path: str) -> list[tuple[int, int]]:
-    """Return added/modified line ranges for `rel_path` relative to `ref`."""
-    res = _run_git(root, ["diff", "-M", "-U0", f"{ref}..."])
-    if res.returncode != 0:
-        raise ScanError(f"{rel_path}: git diff against {ref!r} failed: {res.stderr.strip()}")
-    ref_section = _file_diff_section(res.stdout, rel_path)
-    hunks = _parse_diff_hunks(ref_section)
-    work = _run_git(root, ["diff", "-M", "-U0", "HEAD"])
-    if work.returncode != 0:
-        raise ScanError(f"{rel_path}: git diff against HEAD failed: {work.stderr.strip()}")
-    work_section = _file_diff_section(work.stdout, rel_path)
-    if work_section:
-        hunks.extend(_parse_diff_hunks(work_section))
-    if not hunks and not ref_section and not work_section:
-        tracked = _run_git(root, ["ls-files", "--error-unmatch", "--", rel_path])
-        if tracked.returncode != 0:
-            return [(1, MAX_AST_NODES)]
-    return hunks
+def _block_dest_path(header: str) -> str | None:
+    """Return the destination repo-relative path from a `diff --git` block header."""
+    for line in header.splitlines()[:MAX_CALL_ARGS]:
+        if line.startswith("+++ b/"):
+            return line.removeprefix("+++ b/")
+        if line.startswith("rename to "):
+            return line.removeprefix("rename to ")
+    return None
+
+
+def _parse_diff_by_path(diff_text: str) -> dict[str, list[tuple[int, int]]]:
+    """Parse a full `git diff -U0` output once into a `rel_path -> hunks` mapping."""
+    by_path: dict[str, list[tuple[int, int]]] = {}
+    if "diff --git " not in diff_text:
+        return by_path
+    for block in ("\n" + diff_text).split("\ndiff --git ")[1 : MAX_TEST_FILES + 1]:
+        header = block.split("\n@@ ", 1)[0]
+        dest = _block_dest_path(header)
+        if dest is not None:
+            existing = by_path.setdefault(dest, [])
+            remaining = max(0, MAX_DIFF_HUNKS - len(existing))
+            existing.extend(_parse_diff_hunks(block)[:remaining])
+    return by_path
+
+
+def _changed_hunks_by_path(
+    root: Path,
+    ref: str,
+    rel_paths: Sequence[str],
+) -> dict[str, list[tuple[int, int]]]:
+    """Return `rel_path -> hunks` from a single working-tree diff against merge-base."""
+    merge_base = _resolve_merge_base(root, ref)
+    diff_res = _run_git(
+        root,
+        [
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            "-M",
+            "-U0",
+            merge_base,
+        ],
+    )
+    if diff_res.returncode != 0:
+        raise ScanError(f"{root}: git diff against {ref} failed: {diff_res.stderr.strip()}")
+    by_path = _parse_diff_by_path(diff_res.stdout)
+    if rel_paths:
+        others = _run_git(root, ["ls-files", "--others", "--", *rel_paths[:MAX_TEST_FILES]])
+        if others.returncode != 0:
+            raise ScanError(f"{root}: git ls-files failed: {others.stderr.strip()}")
+        for untracked in others.stdout.splitlines()[:MAX_TEST_FILES]:
+            if untracked:
+                by_path.setdefault(untracked, [(1, MAX_AST_NODES)])
+    return by_path
 
 
 def _spans_intersect(func_start: int, func_end: int, hunks: Sequence[tuple[int, int]]) -> bool:
@@ -496,17 +533,20 @@ def scan_repository(
     explicit_paths: Sequence[str] = (),
 ) -> list[Finding]:
     """Scan test files under `root` and return all applicable findings."""
-    if changed_against is not None:
-        _verify_ref(root, changed_against)
     files = discover_test_files(root, explicit_paths)
+    hunks_by_path = (
+        _changed_hunks_by_path(root, changed_against, [rel for _, rel in files])
+        if changed_against is not None
+        else None
+    )
     findings: list[Finding] = []
     for full_path, rel_path in files[:MAX_TEST_FILES]:
         source = read_bounded_source(full_path, rel_path)
         current = file_findings(source, rel_path)
         if not current:
             continue
-        if changed_against is not None:
-            hunks = _changed_hunks(root, changed_against, rel_path)
+        if hunks_by_path is not None:
+            hunks = hunks_by_path.get(rel_path, ())
             current = [
                 f
                 for f in current
