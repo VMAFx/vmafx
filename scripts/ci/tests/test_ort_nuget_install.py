@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import io
 import json
 import zipfile
@@ -138,7 +139,7 @@ def test_cache_hit_used_without_network(tmp_path: Path) -> None:
         patch.object(ort, "PINS", pins),
         patch.object(ort, "soname", return_value="libonnxruntime.so.1"),
         patch.object(
-            ort.http.client,
+            http.client,
             "HTTPSConnection",
             side_effect=AssertionError("network must not be called on cache hit"),
         ) as net,
@@ -171,7 +172,7 @@ def test_cache_wrong_digest_deleted_and_refetched(tmp_path: Path) -> None:
     cached = cache_dir / "pkg.nupkg"
     cached.write_bytes(b"x" * len(good))
     with patch.object(
-        ort.http.client, "HTTPSConnection", return_value=Connection(Response(good))
+        http.client, "HTTPSConnection", return_value=Connection(Response(good))
     ) as net:
         out = ort.fetch_cached("https://example.test/pkg.nupkg", cache_dir, len(good), sha)
     assert net.call_count == 1
@@ -186,7 +187,7 @@ def test_print_pin_writes_nothing_under_prefix(
     sha = hashlib.sha256(data).hexdigest()
     prefix = tmp_path / "untouched-prefix"
     pins_before = ort.PINS.read_text(encoding="utf-8")
-    with patch.object(ort.http.client, "HTTPSConnection", return_value=Connection(Response(data))):
+    with patch.object(http.client, "HTTPSConnection", return_value=Connection(Response(data))):
         rc = ort.main(["--package", "gpu", "--print-pin", "1.99.0", "--prefix", str(prefix)])
     assert rc == 0
     out = json.loads(capsys.readouterr().out.strip())
@@ -203,9 +204,7 @@ def test_download_digest_and_size_refused(tmp_path: Path) -> None:
         (len(data), "0" * 64, actual),
         (len(data) + 1, actual, "size mismatch"),
     ):
-        with patch.object(
-            ort.http.client, "HTTPSConnection", return_value=Connection(Response(data))
-        ):
+        with patch.object(http.client, "HTTPSConnection", return_value=Connection(Response(data))):
             with pytest.raises(ValueError, match=error) as exc:
                 ort.download("https://example.test/package", output, size, digest)
         if size == len(data):
@@ -221,9 +220,7 @@ def test_missing_version_and_source_gone(
     with patch.object(ort, "PINS", pins):
         assert ort.main(["--version", "missing", "--prefix", str(tmp_path / "prefix")]) == 1
     assert "unknown ONNX Runtime version" in capsys.readouterr().err
-    with patch.object(
-        ort.http.client, "HTTPSConnection", return_value=Connection(Response(b"", 404))
-    ):
+    with patch.object(http.client, "HTTPSConnection", return_value=Connection(Response(b"", 404))):
         with pytest.raises(ValueError, match=r"source gone.*example\.test"):
             ort.download("https://example.test/package", tmp_path / "download", 1, "0" * 64)
 
@@ -240,7 +237,7 @@ def test_unsafe_member_and_member_limit(tmp_path: Path) -> None:
 
 
 def test_retry_limit(tmp_path: Path) -> None:
-    with patch.object(ort.http.client, "HTTPSConnection", side_effect=OSError("offline")) as conn:
+    with patch.object(http.client, "HTTPSConnection", side_effect=OSError("offline")) as conn:
         with pytest.raises(ValueError, match="after 3 attempts"):
             ort.download("https://example.test/package", tmp_path / "download", 1, "0" * 64)
     assert conn.call_count == ort.ATTEMPTS
