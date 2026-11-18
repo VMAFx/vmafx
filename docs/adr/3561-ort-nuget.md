@@ -51,10 +51,9 @@ Replace `1.30.0` with the version to measure.
 - The installer includes both upstream licence notices under its prefix.
 - `scripts/ci/check_ort_tarball_pins.py` verifies that every workflow step
   calling the helper names a pinned `ORT_VERSION` for its package.
-- Follow-up: `dev/Containerfile:749` (built by
-  `.github/workflows/dev-container-build.yml` on pull requests that touch
-  container inputs or run the full tier),
-  `dev/AGENTS.d/runtime-dependencies.md:29`, and `renovate.json:603` still
+- The development container uses the same installer; the guard checks tracked
+  container files for old sources, direct NuGet downloads, and helper version pins.
+- Follow-up: `dev/AGENTS.d/runtime-dependencies.md` and `renovate.json` still
   reference the old GitHub release tarball source.
 
 ## References

@@ -154,6 +154,29 @@ class TestOrtGuard(unittest.TestCase):
                 else:
                     self.assertEqual(findings, [])
 
+    def test_container_sources_and_pins(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        helper = (
+            "ARG ORT_VERSION={version}\n"
+            "RUN python3 scripts/ci/ort_nuget_install.py --package cpu " + chr(92) + "\n"
+            '    --version "${{ORT_VERSION}}" --prefix /usr/local\n'
+        )
+        container.write_text(helper.format(version="1.30.0"))
+        self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
+        container.write_text(helper.format(version="1.99.0"))
+        self.assertIn(
+            "unpinned ORT_VERSION", "\n".join(guard.check_tarball_pins(files=[container])[1])
+        )
+        for command in (
+            "RUN curl https://github.com/microsoft/onnxruntime/releases/download/v1/file\n",
+            "RUN curl https://github.com/microsoft/onnxruntime/releases/\\\n    download/v1/file\n",
+            "RUN curl https://api.nuget.org/v3-flatcontainer/\\\n    microsoft.ml.onnxruntime/file\n",
+        ):
+            container.write_text(command)
+            rc, findings = guard.check_tarball_pins(files=[container])
+            self.assertEqual(rc, 1, findings)
+            self.assertIn(f"{container}:1:", "\n".join(findings))
+
     def test_cba_guard(self) -> None:
         tmp_path = Path(self.temp.name)
         source = (ROOT / "dev/Containerfile").read_text(encoding="utf-8")
@@ -251,21 +274,10 @@ class TestOrtGuard(unittest.TestCase):
     def test_ort_archive_order_and_discovery(self) -> None:
         root = Path(self.temp.name)
         container = root / "Containerfile"
-        header = "ARG ORT_VERSION=1.0\nARG ORT_SHA256=" + "a" * 64 + "\n"
-        download = (
-            "RUN curl https://github.com/microsoft/onnxruntime/releases/download/v1/file \\\n"
+        container.write_text(
+            "RUN curl https://github.com/microsoft/onnxruntime/releases/download/v1/file\n"
         )
-        check = " && sha256sum --check /tmp/check \\\n"
-        extract = " && tar -xzf /tmp/file\n"
-        for text, finding in (
-            (download + check + extract, "missing ORT_SHA256"),
-            (
-                header + download + extract.rstrip() + " \\\n" + check + " && true\n",
-                "tar extraction occurs before",
-            ),
-        ):
-            container.write_text(text)
-            self.assertIn(finding, "\n".join(guard.check_tarball_pins(files=[container])[1]))
+        self.assertIn("old ONNX", "\n".join(guard.check_tarball_pins(files=[container])[1]))
         pins = root / "scripts/ci/ort-nuget-pins.json"
         pins.parent.mkdir(parents=True)
         pins.write_text((ROOT / "scripts/ci/ort-nuget-pins.json").read_text())

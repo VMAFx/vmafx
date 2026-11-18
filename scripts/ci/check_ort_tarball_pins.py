@@ -34,7 +34,7 @@ VERSION_FLAG_RE = re.compile(r"--version(?:=|\s+)[\"']?([^\"'\s#\\]+)")
 MAX_COMMAND_LINES = 256
 MAX_STEP_LINES = 10000
 BINDING_RE = re.compile(
-    r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*[\"']?([^\"'\s#\\$}]+)"
+    r"^\s*(?:(?:export|ARG|ENV)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*[\"']?([^\"'\s#\\$}]+)"
 )
 NUGET_ADDRESS_RE = re.compile(
     r"(?:api\.nuget\.org/v3-flatcontainer/|nuget\.org/api/v2/package/)"
@@ -320,9 +320,10 @@ def _check_helper_step(
     site_idx: int,
     path: Path,
     packages: dict[str, dict[str, Any]],
+    is_workflow: bool,
 ) -> list[str]:
     """Verify the package and version of a single helper invocation."""
-    start_idx, end_idx = _find_workflow_block(lines, site_idx)
+    start_idx, end_idx = find_block_for_site(lines, site_idx, is_workflow)
     call_text = _helper_command(lines, site_idx, end_idx)
     line_no = site_idx + 1
     if call_text is None:
@@ -351,7 +352,9 @@ def _check_helper_step(
     return [f"{path}:{line_no}: {message}"] if message else []
 
 
-def _check_nuget_download(lines: list[str], idx: int, path: Path, line: str) -> list[str]:
+def _check_nuget_download(
+    lines: list[str], idx: int, path: Path, line: str, is_workflow: bool
+) -> list[str]:
     """Reject direct runtime downloads and unresolved NuGet package variables."""
     lower = line.lower()
     if not any(marker in lower for marker in ("curl ", "wget ", "https://")):
@@ -362,7 +365,7 @@ def _check_nuget_download(lines: list[str], idx: int, path: Path, line: str) -> 
     if not match or not match.group(1).startswith("$"):
         return []
     name = match.group(1)[1:].strip("{}")
-    start_idx, end_idx = _find_workflow_block(lines, idx)
+    start_idx, end_idx = find_block_for_site(lines, idx, is_workflow)
     bindings = _step_bindings(lines[start_idx : end_idx + 1])
     if bindings is None:
         return [f"{path}:{idx + 1}: step binding limit exceeded"]
@@ -380,9 +383,11 @@ def _scan_workflow_line(
     idx: int,
     path: Path,
     packages: dict[str, dict[str, Any]] | None,
+    is_workflow: bool,
+    line: str | None = None,
 ) -> list[str]:
-    """Check a single workflow line for ONNX Runtime source and pin rules."""
-    line = lines[idx]
+    """Check a line or container command for ONNX Runtime source rules."""
+    line = lines[idx] if line is None else line
     if line.lstrip().startswith("#"):
         return []
     line = re.split(r"\s+#", line, maxsplit=1)[0]
@@ -390,9 +395,30 @@ def _scan_workflow_line(
     findings: list[str] = []
     if "onnxruntime/releases/download" in lower:
         findings.append(f"{path}:{idx + 1}: old ONNX Runtime release source forbidden")
-    findings.extend(_check_nuget_download(lines, idx, path, line))
+    findings.extend(_check_nuget_download(lines, idx, path, line, is_workflow))
     if "ort_nuget_install.py" in line and packages is not None:
-        findings.extend(_check_helper_step(lines, idx, path, packages))
+        findings.extend(_check_helper_step(lines, idx, path, packages, is_workflow))
+    return findings
+
+
+def _scan_container_line(
+    lines: list[str], idx: int, path: Path, packages: dict[str, dict[str, Any]] | None
+) -> list[str]:
+    """Check container instructions, including continued RUN commands."""
+    line = lines[idx]
+    if line.lstrip().startswith("#"):
+        return []
+    if RUN_START_RE.match(line):
+        command = _helper_command(lines, idx, len(lines) - 1)
+        if command is None:
+            return [f"{path}:{idx + 1}: container command continuation exceeds limit"]
+        _, end_idx = _find_docker_block(lines, idx)
+        command += " " + "".join(part.strip().rstrip("\\") for part in lines[idx : end_idx + 1])
+        findings = _scan_workflow_line(lines, idx, path, None, False, command)
+    else:
+        findings = _scan_workflow_line(lines, idx, path, None, False)
+    if "ort_nuget_install.py" in line and packages is not None:
+        findings.extend(_check_helper_step(lines, idx, path, packages, False))
     return findings
 
 
@@ -413,9 +439,11 @@ def scan_file(
 
     for i, line in enumerate(lines):
         if is_workflow:
-            findings.extend(_scan_workflow_line(lines, i, path, packages))
+            findings.extend(_scan_workflow_line(lines, i, path, packages, True))
+        else:
+            findings.extend(_scan_container_line(lines, i, path, packages))
         entry = _match_tracked_entry(line)
-        if entry is None or (is_workflow and entry.name == "ONNX Runtime"):
+        if entry is None or entry.name == "ONNX Runtime":
             continue
 
         site_line_num = i + 1
@@ -440,20 +468,20 @@ def scan_file(
 
 def _find_target_files(repo_root: Path) -> list[Path]:
     """Find all candidate files under repo_root."""
-    target_files: list[Path] = []
     patterns = [
         ".github/workflows/*.yml",
         ".github/workflows/*.yaml",
-        "dev/Containerfile",
-        "Dockerfile",
-        "Dockerfile.*",
-        "docker/Dockerfile.*",
+        "Dockerfile*",
+        "Containerfile*",
+        "**/Dockerfile*",
+        "**/Containerfile*",
     ]
+    target_files: list[Path] = []
     for pat in patterns:
-        for p in sorted(repo_root.glob(pat)):
-            if p.is_file():
-                target_files.append(p)
-    return target_files
+        for path in sorted(repo_root.glob(pat)):
+            if path.is_file():
+                target_files.append(path)
+    return sorted(set(target_files))
 
 
 def _load_pins_for_check(
