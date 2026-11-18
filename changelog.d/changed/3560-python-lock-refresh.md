@@ -1,0 +1,1 @@
+- Refresh Python dependency locks automatically on Renovate branches when their inputs change.

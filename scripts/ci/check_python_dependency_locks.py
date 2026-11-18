@@ -441,6 +441,20 @@ def load_manifest(root: Path) -> dict[str, Any]:
     return data
 
 
+def manifest_outputs(root: Path) -> list[str]:
+    """Return every lock output path the manifest names, in manifest order."""
+    return [entry["output"] for entry in load_manifest(root)["locks"]]
+
+
+def manifest_inputs(root: Path) -> list[str]:
+    """Return every input path the manifest names, once each, in first-seen order."""
+    seen: dict[str, None] = {}
+    for entry in load_manifest(root)["locks"]:
+        for path in entry["inputs"]:
+            seen.setdefault(path, None)
+    return list(seen)
+
+
 _TABLE_HEADER = re.compile(r"^\[\[?\s*([^\[\]]+?)\s*\]\]?\s*(?:#.*)?$")
 _VERSION_KEY = re.compile(r"^version\s*=")
 
@@ -2028,6 +2042,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("check")
+    subparsers.add_parser("outputs", help="print the manifest lock outputs, one per line")
+    subparsers.add_parser("inputs", help="print the manifest lock inputs, one per line")
     writer = subparsers.add_parser("write")
     writer.add_argument("--uv", default=None)
     return parser.parse_args()
@@ -2040,6 +2056,10 @@ def main() -> int:
         if args.command == "write":
             uv_bin = args.uv or find_default_uv(root)
             return write(root, uv_bin)
+        if args.command in ("outputs", "inputs"):
+            listing = manifest_outputs(root) if args.command == "outputs" else manifest_inputs(root)
+            print("\n".join(listing))
+            return 0
         return check(root)
     except (ContractError, OSError, subprocess.CalledProcessError) as error:
         print(f"ERROR: {error}", file=sys.stderr)

@@ -95,6 +95,32 @@ def clean_env() -> dict[str, str]:
     return env
 
 
+def init_bare(path: Path) -> None:
+    """Create an isolated bare repository with ``main`` as its initial branch."""
+    run(
+        [GIT, "init", "--bare", "-q", "-b", "main", str(path)],
+        allowed_executables=(GIT,),
+        env=clean_env(),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout_seconds=GIT_TIMEOUT_S,
+    )
+
+
+def clone_repo(source: Path, path: Path) -> None:
+    """Clone a repository into an isolated fixture path."""
+    run(
+        [GIT, "clone", "-q", str(source), str(path)],
+        allowed_executables=(GIT,),
+        env=clean_env(),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout_seconds=GIT_TIMEOUT_S,
+    )
+
+
 class Repo:
     """A throwaway repository with an initial commit on ``main``."""
 

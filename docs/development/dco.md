@@ -228,6 +228,20 @@ non-empty changed path list includes at least one live exception in
 Co-authored-by: vmafx-release-bot[bot] <340976456+vmafx-release-bot[bot]@users.noreply.github.com>
 ```
 
+The proposed Python lock refresh class
+([ADR-3560](../adr/3560-python-lock-refresh.md)) also permits a signed
+release-bot commit on a `renovate[bot]`-opened PR when its subject is exactly
+`chore(deps): refresh Python dependency locks` and every changed path is an
+output loaded from `requirements/locks/manifest.json`. The manifest entry in
+`.config/lint-exceptions.d/dco-python-lock-refresh.toml` is Category D, entered
+2026-11-18 and expires 2027-03-18. A missing or unreadable manifest or expired
+exception refuses this class. The existing Intel exception has no subject check.
+
+In landed mode the same live Python exception permits stripping the single exact
+release-bot co-author line when a Renovate-authored squash changes at least one
+manifest output, as for the Intel exception. This proposal awaits decision
+`vmafx-renovate-python-lock-refresh`.
+
 Every other line of the message and the `Signed-off-by:` check in
 `judge_landed` still run unchanged; a second release-bot line or any other bot
 or tool trailer is still refused.
@@ -265,7 +279,7 @@ exemption below. It refuses any non-merge commit where:
   author or the landing identity (`--landing-identity`). The committer address
   is not accepted because GitHub is the committer on every squash merge.
 
-The sole landed exemption ([ADR-3555](../adr/3555-intel-neo-lock-file.md))
+The landed exemption ([ADR-3555](../adr/3555-intel-neo-lock-file.md))
 strips one exact `RELEASE_BOT_COAUTHOR` line before the attribution scan when
 the commit author is `renovate[bot]`
 (`<29139614+renovate[bot]@users.noreply.github.com>`), that exact line appears

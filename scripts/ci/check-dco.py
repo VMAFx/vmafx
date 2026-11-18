@@ -11,6 +11,12 @@ ADR-3555 lifts only that PR-mode opener refusal for a signed release-bot commit 
 In ``--landed`` mode, ADR-3555 also strips a single exact ``vmafx-release-bot[bot]``
 ``Co-authored-by:`` line on a ``renovate[bot]`` squash commit that changes a live
 ``dco-landed-release-bot-coauthor`` exception path.
+ADR-3560 adds a second, narrower class (status Proposed): the release-bot Python lock
+refresh commit, with the exact subject ``PYTHON_LOCK_SUBJECT``, on a ``renovate[bot]`` PR,
+when every changed path is a lock output of ``requirements/locks/manifest.json`` (read
+through ``check_python_dependency_locks.load_manifest``; an unreadable manifest refuses)
+and the live ``dco-python-lock-refresh`` exception names that manifest.  ``--landed``
+strips the same single co-author line when a changed path is one of those outputs.
 
 Every non-merge commit in ``BASE..HEAD`` must end with a ``Signed-off-by: Name
 <email>`` trailer (what ``git commit -s`` writes), and the e-mail address of
@@ -82,6 +88,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.ci import check_python_dependency_locks as lock_checker
 from scripts.ci import lint_exceptions
 from scripts.lib.safe_subprocess import (
     CommandOutputLimitExceeded,
@@ -121,6 +128,11 @@ RELEASE_BOT_EMAIL = "340976456+vmafx-release-bot[bot]@users.noreply.github.com"
 RELEASE_BOT_COAUTHOR = f"Co-authored-by: {RELEASE_BOT_NAME} <{RELEASE_BOT_EMAIL}>"
 BOT_OPENER_EXCEPTION_RULE = "dco-bot-opener"
 LANDED_COAUTHOR_EXCEPTION_RULE = "dco-landed-release-bot-coauthor"
+# ADR-3560: the Python lock refresh class.  One declared exception (the manifest file
+# itself) carries the category and expiry; the path set is read from that manifest.
+PYTHON_LOCK_EXCEPTION_RULE = "dco-python-lock-refresh"
+PYTHON_LOCK_MANIFEST = "requirements/locks/manifest.json"
+PYTHON_LOCK_SUBJECT = "chore(deps): refresh Python dependency locks"
 
 # All 13 tokens equal praetor tools/planning/commit_msg_check.py BANNED_COAUTHORS;
 # both Python tuples use substring matching. Engine internal/forge/commit_message.go
@@ -322,6 +334,20 @@ def commit_changed_paths(sha: str) -> list[str]:
     return paths
 
 
+def python_lock_outputs(root: Path = DEFAULT_ROOT) -> frozenset[str]:
+    """The manifest lock outputs while ``dco-python-lock-refresh`` is live, else empty.
+
+    Fail closed: an expired or missing exception, or a manifest that cannot be loaded,
+    yields the empty set, so no path is exempt.
+    """
+    if lint_exceptions.still_read(PYTHON_LOCK_EXCEPTION_RULE, [PYTHON_LOCK_MANIFEST], root):
+        return frozenset()
+    try:
+        return frozenset(lock_checker.manifest_outputs(root))
+    except lock_checker.ContractError:
+        return frozenset()
+
+
 def is_exempt_opener_commit(
     sha: str,
     name: str,
@@ -331,14 +357,23 @@ def is_exempt_opener_commit(
     *,
     pre_push: bool = False,
     root: Path = DEFAULT_ROOT,
+    subject: str = "",
 ) -> bool:
-    """True when a Renovate PR commit is the release-bot refresh of excepted paths only."""
+    """True when a Renovate PR commit is the release-bot refresh of excepted paths only.
+
+    Two classes: every path a live ``dco-bot-opener`` exception (no subject check), or the
+    exact ``PYTHON_LOCK_SUBJECT`` with every path a manifest lock output.
+    """
     if pre_push or author != RENOVATE_BOT_LOGIN or author_type != "Bot":
         return False
     if (name, email) != (RELEASE_BOT_NAME, RELEASE_BOT_EMAIL):
         return False
     paths = commit_changed_paths(sha)
-    return bool(paths) and not lint_exceptions.still_read(BOT_OPENER_EXCEPTION_RULE, paths, root)
+    if not paths:
+        return False
+    if not lint_exceptions.still_read(BOT_OPENER_EXCEPTION_RULE, paths, root):
+        return True
+    return subject == PYTHON_LOCK_SUBJECT and set(paths) <= python_lock_outputs(root)
 
 
 def pr_attribution_reason(
@@ -362,7 +397,14 @@ def pr_attribution_reason(
         bot_author
         and not owns_branch
         and not is_exempt_opener_commit(
-            commit.sha, name, email, author, author_type, pre_push=pre_push, root=root
+            commit.sha,
+            name,
+            email,
+            author,
+            author_type,
+            pre_push=pre_push,
+            root=root,
+            subject=commit.subject,
         )
     ):
         return (
@@ -532,7 +574,8 @@ def landed_exempt_message(commit: Commit, root: Path = DEFAULT_ROOT) -> str:
         return commit.message
     paths = commit_changed_paths(commit.sha)
     unexcepted = lint_exceptions.still_read(LANDED_COAUTHOR_EXCEPTION_RULE, paths, root)
-    if not paths or len(unexcepted) >= len(paths):
+    excepted = len(unexcepted) < len(paths) or not python_lock_outputs(root).isdisjoint(paths)
+    if not paths or not excepted:
         return commit.message
     return "".join(kept)
 

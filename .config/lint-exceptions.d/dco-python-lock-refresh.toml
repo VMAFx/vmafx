@@ -1,0 +1,19 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Declared exception to the bot-opener and landed co-author checks of scripts/ci/check-dco.py
+# for the Python lock refresh commit (ADR-3560, status Proposed).
+# Format and rules: scripts/ci/lint_exceptions.py.
+#
+# One entry, not one per lock: the path names the file that defines the exempt set. The
+# exempt paths are the lock outputs of that manifest, read at run time through
+# scripts/ci/check_python_dependency_locks.py load_manifest, so a manifest change moves the
+# set with no second list to keep in step. When this entry expires the whole class stops
+# holding, exactly as an expired per-file entry does for its file.
+
+[[exception]]
+path = "requirements/locks/manifest.json"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Mend-hosted Renovate (opener renovate[bot]) blocks repository postUpgradeTasks, so .github/workflows/python-lock-refresh.yml commits regenerated hash locks to renovate/** branches as vmafx-release-bot[bot] <340976456+vmafx-release-bot[bot]@users.noreply.github.com> with the exact subject 'chore(deps): refresh Python dependency locks' (ADR-3560). check-dco.py exempts that commit only when every changed path is a lock output named by this manifest; --landed strips the single release-bot Co-authored-by line from a renovate[bot] squash that changes one of those outputs. Remove if Renovate gains a built-in lock refresh or self-hosted postUpgradeTasks; renew while Mend-hosted Renovate updates manifest inputs."
+expires = 2027-03-18

@@ -1,0 +1,122 @@
+name: python-lock-refresh
+
+# Refresh the Python hash locks of requirements/locks/manifest.json when Renovate
+# edits one of their inputs on a renovate/** branch (ADR-3560, status Proposed).
+#
+# Renovate edits a .in file, pyproject.toml or docs/requirements.txt through the
+# Mend-hosted GitHub App, where postUpgradeTasks commands stay blocked and
+# renovate.json ignores the lock outputs, so the offline `make python-locks-check`
+# fails on the PR.  On a push to renovate/** touching a manifest input, this workflow
+# regenerates every lock with `check_python_dependency_locks.py write` (the uv release
+# pinned by the manifest, installed from the hash-locked tooling lock), then mints an
+# installation token for the release-bot App (so the pushed commit triggers PR check
+# runs, ADR-1151) and lets scripts/ci/lock_refresh_publish.py commit and push the
+# manifest outputs only when they changed.  The path filter below equals the manifest
+# inputs (scripts/ci/tests/test_python_lock_refresh_workflow.py).
+
+on:
+  push:
+    branches:
+      - "renovate/**"
+    paths:
+      - "requirements/locks/build.in"
+      - "requirements/locks/tox.in"
+      - "requirements/locks/nox.in"
+      - "requirements/locks/pre-commit.in"
+      - "requirements/locks/dev-linters.in"
+      - "requirements/locks/cythonize.in"
+      - "requirements/locks/mypy.in"
+      - "requirements/locks/jsonschema.in"
+      - "requirements/locks/docs-check.in"
+      - "requirements/locks/windows-tester-zip.in"
+      - "requirements/locks/package-build.in"
+      - "requirements/locks/gcovr.in"
+      - "requirements/locks/pytest-timeout.in"
+      - "requirements/locks/tooling-tests.in"
+      - "docs/requirements.txt"
+      - "python/pyproject.toml"
+      - "python/requirements.txt"
+      - "python/test/requirements.txt"
+      - "python/requirements-test.in"
+      - "python/requirements-coverage.in"
+      - "ai/pyproject.toml"
+      - "mcp-server/vmaf-mcp/pyproject.toml"
+      - "requirements/locks/mcp-dev-overlay.in"
+      - "tools/vmaf-tune/pyproject.toml"
+      - "requirements/locks/dev-container.in"
+      - "tools/rc1-tester/pyproject.toml"
+      - "dev-llm/pyproject.toml"
+      - "tools/vmaf-roi-score/pyproject.toml"
+      - "tools/ensemble-training-kit/pyproject.toml"
+      - "requirements/locks/ensemble-kit-dev.in"
+      - "requirements/locks/twine.in"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-lock-refresh-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh-locks:
+    name: Refresh Python dependency locks
+    if: github.repository == 'VMAFx/vmafx'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.14.10"
+      - name: Refuse a non-Renovate ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/lock_refresh_publish.py refuse-non-renovate \
+            --label python-lock-refresh
+      - name: Install the pinned uv from the tooling lock
+        env:
+          TMPDIR: ${{ runner.temp }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r requirements/locks/package-build.txt
+          python -m pip install --no-build-isolation --require-hashes \
+            -r requirements/locks/tooling-tests.txt
+      - name: Regenerate the locks from the manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/check_python_dependency_locks.py write
+      - name: Mint the release-bot installation token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510  # v3.3.0
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+      - name: Push the refreshed locks when changed
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          outputs_file="$RUNNER_TEMP/python-lock-outputs.txt"
+          python3 scripts/ci/check_python_dependency_locks.py outputs >"$outputs_file"
+          mapfile -t outputs <"$outputs_file"
+          if [[ "${#outputs[@]}" -eq 0 ]]; then
+            echo "::error::python-lock-refresh: the manifest names no lock output" >&2
+            exit 1
+          fi
+          python3 scripts/ci/lock_refresh_publish.py publish \
+            --label python-lock-refresh \
+            --check-strays-when-unchanged \
+            --subject "chore(deps): refresh Python dependency locks" \
+            --body-line "Regenerate the manifest lock outputs of requirements/locks/manifest.json" \
+            --body-line "after a Renovate edit of their inputs (ADR-3560)." \
+            --current-message "python-lock-refresh: the manifest locks are already current" \
+            -- "${outputs[@]}"
