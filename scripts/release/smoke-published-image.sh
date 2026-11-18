@@ -131,7 +131,10 @@ wait_ready() {
 check_mount() {
   local inside outside
   frames="$(mktemp -d)"
+  # The mount container reads as UID 65532; mktemp -d creates mode 0700.
+  chmod 0755 "$frames"
   head -c $((576 * 324 * 3)) /dev/urandom >"$frames/ref.yuv"
+  chmod 0644 "$frames/ref.yuv"
   container="vmafx-node-mount-smoke"
   docker run --detach --name "$container" --device /dev/fuse \
     --cap-drop ALL --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH \
