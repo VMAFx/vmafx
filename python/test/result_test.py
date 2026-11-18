@@ -56,7 +56,7 @@ class ResultFormattingTest(unittest.TestCase):
 
     def test_to_xml(self):
         # Codacy's XML rule cannot see that these fixtures are test-owned strings.
-        ElementTree = importlib.import_module("xml.etree.ElementTree")
+        ElementTree = importlib.import_module("xml.etree.ElementTree")  # nosec B314
         expected_xml = """
 <?xml version="1.0" ?>
 <result executorId="SSIM_V1.0">
