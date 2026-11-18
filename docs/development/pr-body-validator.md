@@ -13,6 +13,20 @@ that drifts by one character, fails the gate. For the user-facing syntax
 [PR body sentinel guide](pr-body-sentinel-guide.md); this page covers the
 validator's internals and the hook.
 
+## Numeric claims in drafts
+
+Before posting a PR body or reply, compare its numeric tokens with one or more
+evidence files:
+
+```sh
+python3 scripts/ci/draft_claims.py draft.md evidence.md [more-evidence.md ...]
+```
+
+The check reports tokens missing from the evidence and exits 1; unreadable or
+over-1-MiB files and invalid usage exit 2. It ignores Markdown link targets and
+single digits, and normalizes thousands separators. A match confirms token
+presence only; verify that the evidence supports each claim in context.
+
 ## What it checks
 
 The hook reuses the parser in
