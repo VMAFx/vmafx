@@ -30,8 +30,17 @@ TAR_EXTRACT_RE = re.compile(r"\btar\b.*?(?:-[a-zA-Z0-9]*x|--extract)")
 SHA_CHECK_RE = re.compile(r"\bsha256sum\b.*?(?:--check|-c\b)")
 GPU_MARKER_RE = re.compile(r"onnxruntime-[^\s\"'/]*-gpu")
 PACKAGE_FLAG_RE = re.compile(r"--package(?:=|\s+)[\"']?([A-Za-z0-9_-]+)")
-ORT_VERSION_RE = re.compile(r"\bORT_VERSION\b\s*[:=]\s*[\"']?([^\"'\s#\\$}]+)[\"']?")
 VERSION_FLAG_RE = re.compile(r"--version(?:=|\s+)[\"']?([^\"'\s#\\]+)")
+MAX_COMMAND_LINES = 256
+MAX_STEP_LINES = 10000
+BINDING_RE = re.compile(
+    r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*[\"']?([^\"'\s#\\$}]+)"
+)
+NUGET_ADDRESS_RE = re.compile(
+    r"(?:api\.nuget\.org/v3-flatcontainer/|nuget\.org/api/v2/package/)"
+    r"(\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Za-z_][A-Za-z0-9_]*|[^/\s\"']+)",
+    re.I,
+)
 ORT_PACKAGE_RE = re.compile(r"microsoft\.ml\.onnxruntime(?:[.a-z0-9_-]*)", re.I)
 
 
@@ -283,33 +292,87 @@ def _validate_pin_table(pin_file: Path) -> tuple[dict[str, dict[str, Any]], list
     return valid, findings
 
 
+def _step_bindings(lines: list[str]) -> dict[str, set[str]] | None:
+    """Collect literal YAML and shell bindings, ignoring comments."""
+    if len(lines) > MAX_STEP_LINES:
+        return None
+    bindings: dict[str, set[str]] = {}
+    for line in lines:
+        match = BINDING_RE.match(line)
+        if match:
+            bindings.setdefault(match.group(1), set()).add(match.group(2))
+    return bindings
+
+
+def _helper_command(lines: list[str], site_idx: int, end_idx: int) -> str | None:
+    """Collect one shell command, rejecting excessively long continuations."""
+    parts: list[str] = []
+    for idx in range(site_idx, min(end_idx + 1, site_idx + MAX_COMMAND_LINES)):
+        line = lines[idx].strip()
+        parts.append(line.rstrip("\\"))
+        if not line.endswith("\\"):
+            return " ".join(parts)
+    return None
+
+
 def _check_helper_step(
     lines: list[str],
     site_idx: int,
     path: Path,
     packages: dict[str, dict[str, Any]],
 ) -> list[str]:
-    """Verify that a workflow step calling ort_nuget_install.py has a pinned ORT_VERSION."""
+    """Verify the package and version of a single helper invocation."""
     start_idx, end_idx = _find_workflow_block(lines, site_idx)
-    block_text = "\n".join(lines[start_idx : end_idx + 1])
-    call_text = " ".join(line.strip().rstrip("\\") for line in lines[site_idx : end_idx + 1])
+    call_text = _helper_command(lines, site_idx, end_idx)
+    line_no = site_idx + 1
+    if call_text is None:
+        return [f"{path}:{line_no}: helper command continuation exceeds limit"]
     pkg_match = PACKAGE_FLAG_RE.search(call_text)
     if "--package" in call_text and pkg_match is None:
-        return [f"{path}:{site_idx + 1}: invalid ONNX Runtime package argument"]
+        return [f"{path}:{line_no}: invalid ONNX Runtime package argument"]
     pkg_name = pkg_match.group(1) if pkg_match else "cpu"
     ver_match = VERSION_FLAG_RE.search(call_text)
-    if ver_match and ver_match.group(1) in ("$ORT_VERSION", "${ORT_VERSION}"):
-        ver_match = ORT_VERSION_RE.search(block_text)
-    line_no = site_idx + 1
+    version = ver_match.group(1) if ver_match else None
+    if version in ("$ORT_VERSION", "${ORT_VERSION}"):
+        bindings = _step_bindings(lines[start_idx : site_idx + 1])
+        if bindings is None:
+            return [f"{path}:{line_no}: step binding limit exceeded"]
+        values = bindings.get("ORT_VERSION", set())
+        if len(values) > 1:
+            return [f"{path}:{line_no}: ambiguous ORT_VERSION in step"]
+        version = next(iter(values), None)
+    message = ""
     if pkg_name not in packages:
-        return [f"{path}:{line_no}: unknown ONNX Runtime package '{pkg_name}' in step"]
-    if ver_match is None:
-        return [f"{path}:{line_no}: missing ORT_VERSION in step calling ort_nuget_install.py"]
-    version = ver_match.group(1)
-    versions = packages[pkg_name].get("versions", {})
-    if version not in versions:
-        return [f"{path}:{line_no}: unpinned ORT_VERSION '{version}' for package '{pkg_name}'"]
-    return []
+        message = f"unknown ONNX Runtime package '{pkg_name}' in step"
+    elif version is None:
+        message = "missing ORT_VERSION in step calling ort_nuget_install.py"
+    elif version not in packages[pkg_name].get("versions", {}):
+        message = f"unpinned ORT_VERSION '{version}' for package '{pkg_name}'"
+    return [f"{path}:{line_no}: {message}"] if message else []
+
+
+def _check_nuget_download(lines: list[str], idx: int, path: Path, line: str) -> list[str]:
+    """Reject direct runtime downloads and unresolved NuGet package variables."""
+    lower = line.lower()
+    if not any(marker in lower for marker in ("curl ", "wget ", "https://")):
+        return []
+    if ORT_PACKAGE_RE.search(line):
+        return [f"{path}:{idx + 1}: ONNX Runtime download must use helper"]
+    match = NUGET_ADDRESS_RE.search(line)
+    if not match or not match.group(1).startswith("$"):
+        return []
+    name = match.group(1)[1:].strip("{}")
+    start_idx, end_idx = _find_workflow_block(lines, idx)
+    bindings = _step_bindings(lines[start_idx : end_idx + 1])
+    if bindings is None:
+        return [f"{path}:{idx + 1}: step binding limit exceeded"]
+    if any(ORT_PACKAGE_RE.fullmatch(value) for values in bindings.values() for value in values):
+        return [f"{path}:{idx + 1}: ONNX Runtime download must use helper"]
+    return (
+        [f"{path}:{idx + 1}: NuGet download with unresolved package"]
+        if name not in bindings
+        else []
+    )
 
 
 def _scan_workflow_line(
@@ -327,10 +390,7 @@ def _scan_workflow_line(
     findings: list[str] = []
     if "onnxruntime/releases/download" in lower:
         findings.append(f"{path}:{idx + 1}: old ONNX Runtime release source forbidden")
-    if ORT_PACKAGE_RE.search(line) and (
-        "curl " in lower or "wget " in lower or "https://" in lower
-    ):
-        findings.append(f"{path}:{idx + 1}: ONNX Runtime download must use helper")
+    findings.extend(_check_nuget_download(lines, idx, path, line))
     if "ort_nuget_install.py" in line and packages is not None:
         findings.extend(_check_helper_step(lines, idx, path, packages))
     return findings

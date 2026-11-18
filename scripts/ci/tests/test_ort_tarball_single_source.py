@@ -98,6 +98,62 @@ class TestOrtGuard(unittest.TestCase):
                 findings
             )
 
+    def test_multiple_helper_commands_use_their_own_arguments(self) -> None:
+        workflow = Path(self.temp.name) / "commands.yml"
+        packages: dict[str, dict[str, Any]] = {
+            "cpu": {"versions": {"1.0": {}}},
+            "gpu": {"versions": {"2.0": {}}},
+        }
+        first = "    python ort_nuget_install.py --package cpu --version 1.0\n"
+        second = "    python ort_nuget_install.py --package gpu --version 2.0\n"
+        workflow.write_text("- run: |\n" + first + second)
+        self.assertEqual(guard.scan_file(workflow, packages)[0], [])
+        workflow.write_text("- run: |\n" + first + second.replace("2.0", "1.0"))
+        findings = guard.scan_file(workflow, packages)[0]
+        self.assertEqual(len(findings), 1)
+        self.assertIn(":3: unpinned ORT_VERSION '1.0' for package 'gpu'", findings[0])
+
+    def test_helper_version_bindings(self) -> None:
+        workflow = Path(self.temp.name) / "bindings.yml"
+        packages: dict[str, dict[str, Any]] = {"cpu": {"versions": {"1.0": {}}}}
+        prefix = '- name: install\n  env:\n    ORT_VERSION: "1.0"\n  run: |\n'
+        call = '    python ort_nuget_install.py --version "$ORT_VERSION"\n'
+        for assignment, expected in (
+            ("", False),
+            ("    ORT_VERSION=1.0\n", False),
+            ("    ORT_VERSION=9.0\n", True),
+            ("    # ORT_VERSION=9.0\n", False),
+        ):
+            with self.subTest(assignment=assignment):
+                workflow.write_text(prefix + assignment + call)
+                findings = guard.scan_file(workflow, packages)[0]
+                self.assertEqual(bool(findings), expected, findings)
+                if expected:
+                    self.assertIn(":6: ambiguous ORT_VERSION in step", findings[0])
+
+    def test_nuget_package_identity(self) -> None:
+        workflow = Path(self.temp.name) / "downloads.yml"
+        address = "https://api.nuget.org/v3-flatcontainer/"
+        cases = (
+            (f"curl {address}microsoft.ml.onnxruntime/file", "must use helper"),
+            (
+                f"ORT_PACKAGE: microsoft.ml.onnxruntime\n  run: curl {address}${{ORT_PACKAGE}}/file",
+                "must use helper",
+            ),
+            (f"run: wget {address}$UNKNOWN/file", "NuGet download with unresolved package"),
+            (f"run: curl {address}other.package/file", None),
+            (f"# curl {address}${{UNKNOWN}}/file", None),
+            (f"OTHER: unrelated\n  run: curl {address}$OTHER/file", None),
+        )
+        for text, expected in cases:
+            with self.subTest(text=text):
+                workflow.write_text("- name: download\n  " + text + "\n")
+                findings = guard.scan_file(workflow, {})[0]
+                if expected:
+                    self.assertIn(expected, "\n".join(findings))
+                else:
+                    self.assertEqual(findings, [])
+
     def test_cba_guard(self) -> None:
         tmp_path = Path(self.temp.name)
         source = (ROOT / "dev/Containerfile").read_text(encoding="utf-8")
