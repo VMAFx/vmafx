@@ -1075,6 +1075,14 @@ repos:
         verbose: true
         stages: [pre-push]
 
+      - id: check-exit-code-only-tests
+        name: New or modified scripts/ci/tests functions assert more than exit code 0
+        entry: python3 -B scripts/ci/check_exit_code_only_tests.py --changed-against origin/master
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-push]
+
       - id: mypy-local
         name: mypy (ai/ + scripts/, fork-added Python)
         entry: python3 scripts/git-hooks/pre-push-mypy.py
