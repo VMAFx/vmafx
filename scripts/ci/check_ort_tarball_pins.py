@@ -25,7 +25,7 @@ DEFAULT_ROOT = Path(__file__).resolve().parents[2]
 HEX_RE = re.compile(r"^[a-f0-9]{64}$")
 STEP_START_RE = re.compile(r"^(\s*)-\s+(?:name|uses|run):")
 GENERIC_STEP_RE = re.compile(r"^(\s*)-\s+")
-RUN_START_RE = re.compile(r"^\s*RUN\b")
+RUN_START_RE = re.compile(r"^\s*(?:RUN|ADD)\b")
 TAR_EXTRACT_RE = re.compile(r"\btar\b.*?(?:-[a-zA-Z0-9]*x|--extract)")
 SHA_CHECK_RE = re.compile(r"\bsha256sum\b.*?(?:--check|-c\b)")
 GPU_MARKER_RE = re.compile(r"onnxruntime-[^\s\"'/]*-gpu")
@@ -36,6 +36,7 @@ MAX_STEP_LINES = 10000
 BINDING_RE = re.compile(
     r"^\s*(?:(?:export|ARG|ENV)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*[\"']?([^\"'\s#\\$}]+)"
 )
+INLINE_BINDING_RE = re.compile(r"(?:^|[\s;&|])([A-Za-z_][A-Za-z0-9_]*)=[\"']?([^\"'\s#\\;$}]+)")
 NUGET_ADDRESS_RE = re.compile(
     r"(?:api\.nuget\.org/v3-flatcontainer/|nuget\.org/api/v2/package/)"
     r"(\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Za-z_][A-Za-z0-9_]*|[^/\s\"']+)",
@@ -110,17 +111,34 @@ def _find_workflow_block(lines: list[str], site_idx: int) -> tuple[int, int]:
     return start_idx, end_idx
 
 
+def _container_continuation(
+    lines: list[str], start_idx: int, max_end_idx: int | None = None
+) -> tuple[list[str] | None, int]:
+    """Join a continued container instruction, skipping comments and blank lines."""
+    limit = len(lines) if max_end_idx is None else min(len(lines), max_end_idx + 1)
+    parts: list[str] = []
+    end_idx = start_idx
+    for idx in range(start_idx, min(limit, start_idx + MAX_COMMAND_LINES)):
+        end_idx = idx
+        stripped = lines[idx].strip()
+        if idx > start_idx and (not stripped or stripped.startswith("#")):
+            continue
+        parts.append(stripped.rstrip("\\"))
+        if not stripped.endswith("\\"):
+            return parts, end_idx
+    return None, end_idx
+
+
 def _find_docker_block(lines: list[str], site_idx: int) -> tuple[int, int]:
-    """Find start and end line indices of Dockerfile RUN and preceding ARGs."""
-    n = len(lines)
+    """Find start and end line indices of container instruction and preceding ARGs/ENVs."""
     run_idx = site_idx
-    for j in range(site_idx, -1, -1):
+    for j in range(site_idx, max(-1, site_idx - MAX_COMMAND_LINES), -1):
         if RUN_START_RE.match(lines[j]):
             run_idx = j
             break
 
     start_idx = run_idx
-    for j in range(run_idx - 1, -1, -1):
+    for j in range(run_idx - 1, max(-1, run_idx - 1 - MAX_STEP_LINES), -1):
         line = lines[j]
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or re.match(r"^\s*(?:ARG|ENV)\b", line):
@@ -128,13 +146,8 @@ def _find_docker_block(lines: list[str], site_idx: int) -> tuple[int, int]:
             continue
         break
 
-    end_idx = site_idx
-    for j in range(run_idx, n):
-        end_idx = j
-        if not lines[j].rstrip().endswith("\\"):
-            break
-
-    return start_idx, end_idx
+    _, end_idx = _container_continuation(lines, run_idx)
+    return start_idx, max(site_idx, end_idx)
 
 
 def find_block_for_site(lines: list[str], site_idx: int, is_workflow: bool) -> tuple[int, int]:
@@ -304,8 +317,13 @@ def _step_bindings(lines: list[str]) -> dict[str, set[str]] | None:
     return bindings
 
 
-def _helper_command(lines: list[str], site_idx: int, end_idx: int) -> str | None:
+def _helper_command(
+    lines: list[str], site_idx: int, end_idx: int, is_workflow: bool = True
+) -> str | None:
     """Collect one shell command, rejecting excessively long continuations."""
+    if not is_workflow:
+        parts, _ = _container_continuation(lines, site_idx, end_idx)
+        return " ".join(parts) if parts is not None else None
     parts: list[str] = []
     for idx in range(site_idx, min(end_idx + 1, site_idx + MAX_COMMAND_LINES)):
         line = lines[idx].strip()
@@ -313,6 +331,30 @@ def _helper_command(lines: list[str], site_idx: int, end_idx: int) -> str | None
         if not line.endswith("\\"):
             return " ".join(parts)
     return None
+
+
+def _resolve_helper_version(
+    lines: list[str],
+    start_idx: int,
+    site_idx: int,
+    call_text: str,
+) -> tuple[str | None, str]:
+    """Resolve the literal or bound ORT_VERSION for a helper call."""
+    ver_match = VERSION_FLAG_RE.search(call_text)
+    version = ver_match.group(1) if ver_match else None
+    if version not in ("$ORT_VERSION", "${ORT_VERSION}"):
+        return version, ""
+    prefix = call_text.partition("ort_nuget_install.py")[0]
+    inline = dict(INLINE_BINDING_RE.findall(prefix))
+    if "ORT_VERSION" in inline:
+        return inline["ORT_VERSION"], ""
+    bindings = _step_bindings(lines[start_idx : site_idx + 1])
+    if bindings is None:
+        return None, "step binding limit exceeded"
+    values = bindings.get("ORT_VERSION", set())
+    if len(values) > 1:
+        return None, "ambiguous ORT_VERSION in step"
+    return next(iter(values), None), ""
 
 
 def _check_helper_step(
@@ -324,7 +366,7 @@ def _check_helper_step(
 ) -> list[str]:
     """Verify the package and version of a single helper invocation."""
     start_idx, end_idx = find_block_for_site(lines, site_idx, is_workflow)
-    call_text = _helper_command(lines, site_idx, end_idx)
+    call_text = _helper_command(lines, site_idx, end_idx, is_workflow)
     line_no = site_idx + 1
     if call_text is None:
         return [f"{path}:{line_no}: helper command continuation exceeds limit"]
@@ -332,17 +374,9 @@ def _check_helper_step(
     if "--package" in call_text and pkg_match is None:
         return [f"{path}:{line_no}: invalid ONNX Runtime package argument"]
     pkg_name = pkg_match.group(1) if pkg_match else "cpu"
-    ver_match = VERSION_FLAG_RE.search(call_text)
-    version = ver_match.group(1) if ver_match else None
-    if version in ("$ORT_VERSION", "${ORT_VERSION}"):
-        bindings = _step_bindings(lines[start_idx : site_idx + 1])
-        if bindings is None:
-            return [f"{path}:{line_no}: step binding limit exceeded"]
-        values = bindings.get("ORT_VERSION", set())
-        if len(values) > 1:
-            return [f"{path}:{line_no}: ambiguous ORT_VERSION in step"]
-        version = next(iter(values), None)
-    message = ""
+    version, message = _resolve_helper_version(lines, start_idx, site_idx, call_text)
+    if message:
+        return [f"{path}:{line_no}: {message}"]
     if pkg_name not in packages:
         message = f"unknown ONNX Runtime package '{pkg_name}' in step"
     elif version is None:
@@ -404,16 +438,15 @@ def _scan_workflow_line(
 def _scan_container_line(
     lines: list[str], idx: int, path: Path, packages: dict[str, dict[str, Any]] | None
 ) -> list[str]:
-    """Check container instructions, including continued RUN commands."""
+    """Check container instructions, including continued RUN and ADD commands."""
     line = lines[idx]
     if line.lstrip().startswith("#"):
         return []
     if RUN_START_RE.match(line):
-        command = _helper_command(lines, idx, len(lines) - 1)
-        if command is None:
+        parts, _ = _container_continuation(lines, idx)
+        if parts is None:
             return [f"{path}:{idx + 1}: container command continuation exceeds limit"]
-        _, end_idx = _find_docker_block(lines, idx)
-        command += " " + "".join(part.strip().rstrip("\\") for part in lines[idx : end_idx + 1])
+        command = " ".join(parts) + " " + "".join(parts)
         findings = _scan_workflow_line(lines, idx, path, None, False, command)
     else:
         findings = _scan_workflow_line(lines, idx, path, None, False)

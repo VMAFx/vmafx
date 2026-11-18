@@ -52,7 +52,9 @@ Replace `1.30.0` with the version to measure.
 - `scripts/ci/check_ort_tarball_pins.py` verifies that every workflow step
   calling the helper names a pinned `ORT_VERSION` for its package.
 - The development container uses the same installer; the guard checks tracked
-  container files for old sources, direct NuGet downloads, and helper version pins.
+  container files for old sources, direct NuGet downloads, and helper version
+  pins, refusing addresses split across `RUN` or `ADD` continuations with
+  comments and unpinned inline `ORT_VERSION` overrides.
 - Follow-up: the `renovate.json` custom manager (`renovate.json:603-617`,
   `matchStrings` at `renovate.json:610-614` matching `ORT_SHA256`) still
   references the old GitHub release tarball source.

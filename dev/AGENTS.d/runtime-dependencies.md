@@ -35,6 +35,8 @@ invariant: LD_LIBRARY_PATH includes tbb; NEO/ROCm pinned to kernel UAPI; ORT_VER
    (`python3 scripts/ci/ort_nuget_install.py --print-pin <version>`
    prints size + sha256 entry), then raise `ARG ORT_VERSION` and update
    this note; guard `scripts/ci/check_ort_tarball_pins.py` refuses
-   `ORT_VERSION` without pin in `scripts/ci/ort-nuget-pins.json`.
+   `ORT_VERSION` without pin in `scripts/ci/ort-nuget-pins.json`, inline
+   `ORT_VERSION` overrides on helper call, and old release sources split
+   across `RUN` or `ADD` continuations with comments.
    `ARG ORT_SHA256` not read by build; kept only for `renovate.json`
    dependency-update rule until rule moves (ADR-3561 follow-up).

@@ -156,17 +156,19 @@ class TestOrtGuard(unittest.TestCase):
 
     def test_container_sources_and_pins(self) -> None:
         container = Path(self.temp.name) / "Containerfile"
-        helper = (
-            "ARG ORT_VERSION={version}\n"
-            "RUN python3 scripts/ci/ort_nuget_install.py --package cpu " + chr(92) + "\n"
-            '    --version "${{ORT_VERSION}}" --prefix /usr/local\n'
-        )
-        container.write_text(helper.format(version="1.30.0"))
-        self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
-        container.write_text(helper.format(version="1.99.0"))
-        self.assertIn(
-            "unpinned ORT_VERSION", "\n".join(guard.check_tarball_pins(files=[container])[1])
-        )
+        for keyword in ("ARG", "ENV"):
+            helper = (
+                f"{keyword} ORT_VERSION={{version}}\n"
+                "RUN python3 scripts/ci/ort_nuget_install.py --package cpu " + chr(92) + "\n"
+                '    --version "${{ORT_VERSION}}" --prefix /usr/local\n'
+            )
+            container.write_text(helper.format(version="1.30.0"))
+            self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
+            container.write_text(helper.format(version="1.99.0"))
+            self.assertEqual(
+                guard.check_tarball_pins(files=[container]),
+                (1, [f"{container}:2: unpinned ORT_VERSION '1.99.0' for package 'cpu'"]),
+            )
         for command in (
             "RUN curl https://github.com/microsoft/onnxruntime/releases/download/v1/file\n",
             "RUN curl https://github.com/microsoft/onnxruntime/releases/\\\n    download/v1/file\n",
@@ -176,6 +178,75 @@ class TestOrtGuard(unittest.TestCase):
             rc, findings = guard.check_tarball_pins(files=[container])
             self.assertEqual(rc, 1, findings)
             self.assertIn(f"{container}:1:", "\n".join(findings))
+
+    def test_container_continuation_comment_helper_accepted(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        container.write_text(
+            "ARG ORT_VERSION=1.30.0\n"
+            "RUN set -eux \\\n"
+            "    # comment\n"
+            "    && python3 scripts/ci/ort_nuget_install.py --package cpu \\\n"
+            "        # comment\n"
+            '        --version "${ORT_VERSION}" --prefix /usr/local\n'
+        )
+        self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
+
+    def test_container_continuation_comment_split_release_refused(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        container.write_text(
+            "RUN set -eux \\\n"
+            "    # comment\n"
+            "    && curl -fsSL https://github.com/microsoft/onnxruntime/releases/\\\n"
+            "        download/v1.30.0/ort.tgz\n"
+        )
+        self.assertEqual(
+            guard.check_tarball_pins(files=[container]),
+            (1, [f"{container}:1: old ONNX Runtime release source forbidden"]),
+        )
+
+    def test_container_add_continuation_split_release_refused(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        container.write_text(
+            "ADD https://github.com/microsoft/onnxruntime/releases/\\\n"
+            "    # comment\n"
+            "    download/v1.30.0/ort.tgz /tmp/ort.tgz\n"
+        )
+        self.assertEqual(
+            guard.check_tarball_pins(files=[container]),
+            (1, [f"{container}:1: old ONNX Runtime release source forbidden"]),
+        )
+
+    def test_container_inline_version_override_refused(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        container.write_text(
+            "ARG ORT_VERSION=1.30.0\n"
+            "RUN ORT_VERSION=1.99.0 python3 scripts/ci/ort_nuget_install.py"
+            ' --package cpu --version "${ORT_VERSION}" --prefix /usr/local\n'
+        )
+        self.assertEqual(
+            guard.check_tarball_pins(files=[container]),
+            (1, [f"{container}:2: unpinned ORT_VERSION '1.99.0' for package 'cpu'"]),
+        )
+
+    def test_container_continuation_line_limit_boundary(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        at_limit = (
+            "RUN echo start \\\n"
+            + "    && echo step \\\n" * (guard.MAX_COMMAND_LINES - 2)
+            + "    && echo end\n"
+        )
+        container.write_text(at_limit)
+        self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
+        over_limit = (
+            "RUN echo start \\\n"
+            + "    && echo step \\\n" * (guard.MAX_COMMAND_LINES - 1)
+            + "    && echo end\n"
+        )
+        container.write_text(over_limit)
+        self.assertEqual(
+            guard.check_tarball_pins(files=[container]),
+            (1, [f"{container}:1: container command continuation exceeds limit"]),
+        )
 
     def test_cba_guard(self) -> None:
         tmp_path = Path(self.temp.name)
@@ -273,17 +344,25 @@ class TestOrtGuard(unittest.TestCase):
 
     def test_ort_archive_order_and_discovery(self) -> None:
         root = Path(self.temp.name)
+        pins = root / "scripts/ci/ort-nuget-pins.json"
+        pins.parent.mkdir(parents=True)
+        pins.write_text((ROOT / "scripts/ci/ort-nuget-pins.json").read_text())
         container = root / "Containerfile"
         container.write_text(
             "RUN curl https://github.com/microsoft/onnxruntime/releases/download/v1/file\n"
         )
-        self.assertIn("old ONNX", "\n".join(guard.check_tarball_pins(files=[container])[1]))
-        pins = root / "scripts/ci/ort-nuget-pins.json"
-        pins.parent.mkdir(parents=True)
-        pins.write_text((ROOT / "scripts/ci/ort-nuget-pins.json").read_text())
+        self.assertEqual(
+            guard.check_tarball_pins(root=root),
+            (1, [f"{container}:1: old ONNX Runtime release source forbidden"]),
+        )
+        container.unlink()
         workflows = root / ".github/workflows"
         workflows.mkdir(parents=True)
-        (workflows / "test.yaml").write_text(
+        workflow = workflows / "test.yaml"
+        workflow.write_text(
             "run: curl https://github.com/microsoft/onnxruntime/releases/download/v1/file\n"
         )
-        self.assertIn("old ONNX", "\n".join(guard.check_tarball_pins(root=root)[1]))
+        self.assertEqual(
+            guard.check_tarball_pins(root=root),
+            (1, [f"{workflow}:1: old ONNX Runtime release source forbidden"]),
+        )
