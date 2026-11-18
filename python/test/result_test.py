@@ -3,7 +3,7 @@ from __future__ import absolute_import
 
 import json
 import unittest
-import xml.etree.ElementTree as ElementTree
+import xml.etree.ElementTree as ElementTree  # nosec B314 - parses local golden XML.
 from functools import partial
 from test.testutil import set_default_576_324_videos_for_testing
 
@@ -55,7 +55,7 @@ class ResultFormattingTest(unittest.TestCase):
         pass
 
     def test_to_xml(self):
-        expected = ElementTree.fromstring("""
+        expected_xml = """
 <?xml version="1.0" ?>
 <result executorId="SSIM_V1.0">
   <asset identifier="test_0_0_checkerboard_1920_1080_10_3_0_0_1920x1080_vs_checkerboard_1920_1080_10_3_1_0_1920x1080_q_1920x1080"/>
@@ -66,8 +66,9 @@ class ResultFormattingTest(unittest.TestCase):
   </frames>
   <aggregate SSIM_feature_ssim_c_score="0.997404" SSIM_feature_ssim_l_score="0.999983" SSIM_feature_ssim_s_score="0.935802333333" SSIM_score="0.933353333333" method="mean"/>
 </result>
-        """.strip())
-        actual = ElementTree.fromstring(self.result.to_xml())
+        """.strip()
+        expected = ElementTree.fromstring(expected_xml)  # nosec B314 - local golden XML.
+        actual = ElementTree.fromstring(self.result.to_xml())  # nosec B314 - local result XML.
 
         def assert_attributes(actual_node, expected_node):
             self.assertEqual(set(actual_node.attrib), set(expected_node.attrib))
