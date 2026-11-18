@@ -1,0 +1,1 @@
+- Re-enable the `compare_two_quality_runners_on_dataset` bootstrap regression test by rounding predictions to reporting precision before resampling correlations, so last-bit float noise no longer creates spurious ranks.

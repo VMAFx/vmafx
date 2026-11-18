@@ -359,8 +359,18 @@ def _correlation_stat(
     ycol: str,
 ) -> dict:
     """PLCC and SROCC of `ycol` against `xcol`."""
-    plcc = df[ycol].corr(df[xcol], method="pearson")
-    srocc = df[ycol].corr(df[xcol], method="spearman")
+    # Resampling a four-asset dataset can repeat one asset until a prediction
+    # column is constant, or differ only in the last bits of a float.  Reporting
+    # precision is six decimals, so round there before correlating: otherwise
+    # pandas turns that floating-point noise into a spurious rank difference
+    # (and a spurious +/-1 Pearson value) instead of an undefined correlation.
+    frame = df[[xcol, ycol]].round(6)
+    x = frame[xcol]
+    y = frame[ycol]
+    if y.nunique() < 2:
+        return {"plcc": np.nan, "srocc": np.nan}
+    plcc = y.corr(x, method="pearson")
+    srocc = y.corr(x, method="spearman")
     return {"plcc": plcc, "srocc": srocc}
 
 
