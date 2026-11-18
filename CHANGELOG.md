@@ -3824,6 +3824,13 @@ Contributed by luoye-cpu.
   (`ai/sidecar/tests/test_socket_permissions.py`).
 
 
+- **Make published node image smoke-test frames readable.** The FUSE frames
+  folder was created by `mktemp -d` with mode 0700, preventing the nonroot mount
+  container from reading it and causing every `vmafx-node` and
+  `vmafx-node-...-sycl` publish smoke step to fail. The folder is now 0755, and
+  the test stub refuses unreadable folders.
+
+
 - **A stale private-state lock no longer stops every commit hook.** `scripts/githooks/state-sync.sh`
   records its owner (process id and boot id) in its lock. A lock whose owner ran in an earlier boot or
   no longer runs, or an ownerless lock older than two minutes, is taken over with a log line; before,
