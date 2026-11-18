@@ -3,6 +3,7 @@ from __future__ import absolute_import
 
 import json
 import unittest
+import xml.etree.ElementTree as ElementTree
 from functools import partial
 from test.testutil import set_default_576_324_videos_for_testing
 
@@ -54,9 +55,7 @@ class ResultFormattingTest(unittest.TestCase):
         pass
 
     def test_to_xml(self):
-        self.assertEqual(
-            self.result.to_xml().strip(),
-            """
+        expected = ElementTree.fromstring("""
 <?xml version="1.0" ?>
 <result executorId="SSIM_V1.0">
   <asset identifier="test_0_0_checkerboard_1920_1080_10_3_0_0_1920x1080_vs_checkerboard_1920_1080_10_3_1_0_1920x1080_q_1920x1080"/>
@@ -67,8 +66,31 @@ class ResultFormattingTest(unittest.TestCase):
   </frames>
   <aggregate SSIM_feature_ssim_c_score="0.997404" SSIM_feature_ssim_l_score="0.999983" SSIM_feature_ssim_s_score="0.935802333333" SSIM_score="0.933353333333" method="mean"/>
 </result>
-        """.strip(),
-        )
+        """.strip())
+        actual = ElementTree.fromstring(self.result.to_xml())
+
+        def assert_attributes(actual_node, expected_node):
+            self.assertEqual(set(actual_node.attrib), set(expected_node.attrib))
+            for name, expected_value in expected_node.attrib.items():
+                actual_value = actual_node.attrib[name]
+                if name == "frameNum":
+                    self.assertEqual(int(actual_value), int(expected_value))
+                elif name in ("method", "executorId", "identifier"):
+                    self.assertEqual(actual_value, expected_value)
+                else:
+                    # XML prints frame scores with six decimals and aggregate
+                    # scores with twelve; compare numbers, not their spelling.
+                    self.assertAlmostEqual(float(actual_value), float(expected_value), places=6)
+
+        self.assertEqual(actual.tag, expected.tag)
+        assert_attributes(actual, expected)
+        assert_attributes(actual.find("asset"), expected.find("asset"))
+        actual_frames = actual.findall("frames/frame")
+        expected_frames = expected.findall("frames/frame")
+        self.assertEqual(len(actual_frames), len(expected_frames))
+        for actual_frame, expected_frame in zip(actual_frames, expected_frames, strict=True):
+            assert_attributes(actual_frame, expected_frame)
+        assert_attributes(actual.find("aggregate"), expected.find("aggregate"))
 
     def test_to_json(self):
         self.assertEqual(

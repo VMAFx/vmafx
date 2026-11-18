@@ -444,16 +444,14 @@ class Result(BasicResult):
         frames = ElementTree.SubElement(top, "frames")
         for i, list_score in enumerate(list_scores_reordered):
             frame = ElementTree.SubElement(frames, "frame")
+            frame.set("frameNum", str(i))
             for score_key, score in zip(list_score_key, list_score):
                 frame.set(score_key, str(score))
-            frame.set("frameNum", str(i))
 
         aggregate = ElementTree.SubElement(top, "aggregate")
-        for score_key, score in zip(list_score_key, list_aggregate_score):
-            # The golden XML aggregates carry twelve decimal places; str(float)
-            # on newer Python shows the full binary expansion.
-            aggregate.set(score_key, str(round(score, 12)))
         aggregate.set("method", self.score_aggregate_method.__name__)
+        for score_key, score in zip(list_score_key, list_aggregate_score):
+            aggregate.set(score_key, str(score))
 
         return prettify(top)
 
