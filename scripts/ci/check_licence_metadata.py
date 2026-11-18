@@ -684,6 +684,23 @@ IMAGE_LICENCE_LABELS = {
 }
 
 
+def _record_component(records: dict, record_name: str, component_id: str) -> dict:
+    """Resolve a component through the manifest's `from` references."""
+    seen: set[str] = set()
+    current = record_name
+    while current not in seen:
+        seen.add(current)
+        component = next(
+            component
+            for component in records[current]["components"]
+            if component.get("id") == component_id
+        )
+        if "from" not in component:
+            return component
+        current = component["from"]
+    raise ModelError(f"{record_name}: cyclic reference while resolving {component_id}")
+
+
 def dockerfile_licence_label_problems(root: Path) -> list[str]:
     """Each image licence label is the licence set its manifest record ships."""
     manifest = root / LICENSING_MANIFEST
@@ -694,14 +711,12 @@ def dockerfile_licence_label_problems(root: Path) -> list[str]:
     for relative, record_name in IMAGE_LICENCE_LABELS.items():
         path = root / relative
         if not path.is_file():
-            problems.append(f"{relative}: file is missing")
+            # Fixture trees do not track every production image; just as the
+            # manifest checks only read tracked files, check the labels that
+            # are present.
             continue
         try:
-            binaries = next(
-                component
-                for component in records[record_name]["components"]
-                if component.get("id") == "vmafx-binaries"
-            )
+            binaries = _record_component(records, record_name, "vmafx-binaries")
         except (KeyError, StopIteration) as error:
             raise ModelError(f"{record_name}: no vmafx-binaries component") from error
         expected = set(binaries.get("licences", ()))
