@@ -73,6 +73,93 @@ class DraftClaimsTests(unittest.TestCase):
             result.stdout.splitlines(), ["missing in evidence: 29", "draft tokens 1, missing 1"]
         )
 
+    def test_parenthesized_prose_after_bracket_is_checked(self) -> None:
+        draft = self.file("draft", "[results](see (baseline) and 29)")
+        result = self.run_checker(draft, self.file("evidence", "28"))
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(
+            result.stdout.splitlines(), ["missing in evidence: 29", "draft tokens 1, missing 1"]
+        )
+
+    def test_link_destination_with_title_is_ignored(self) -> None:
+        draft = self.file(
+            "draft",
+            '[x](https://example.test/1234 "title 5678") '
+            "[y](https://example.test/2345 'title 6789') "
+            "[z](https://example.test/3456 (title 7890))",
+        )
+        result = self.run_checker(draft, self.file("evidence", "nothing"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("draft tokens 0, missing 0", result.stdout)
+
+    def test_angle_link_destination_with_space_is_ignored(self) -> None:
+        draft = self.file("draft", "[x](<a b 1234>)")
+        result = self.run_checker(draft, self.file("evidence", "nothing"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("draft tokens 0, missing 0", result.stdout)
+
+    def test_bare_destination_followed_by_prose_is_checked(self) -> None:
+        draft = self.file("draft", "[x](target and 29)")
+        result = self.run_checker(draft, self.file("evidence", "28"))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing in evidence: 29", result.stdout)
+
+    def test_tab_and_line_break_in_parentheses_are_checked(self) -> None:
+        draft = self.file("draft", "[x](target\t29) [y](target\n31)")
+        result = self.run_checker(draft, self.file("evidence", "28"))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing in evidence: 29", result.stdout)
+        self.assertIn("missing in evidence: 31", result.stdout)
+
+    def test_unclosed_title_in_link_is_checked(self) -> None:
+        draft = self.file("draft", '[x](target "open 29)')
+        result = self.run_checker(draft, self.file("evidence", "28"))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing in evidence: 29", result.stdout)
+
+    def test_escaped_space_in_bare_destination_is_checked(self) -> None:
+        draft = self.file("draft", r"[x](target\ 29)")
+        result = self.run_checker(draft, self.file("evidence", "28"))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing in evidence: 29", result.stdout)
+
+    def test_line_break_in_angle_destination_or_title_is_checked(self) -> None:
+        draft = self.file("draft", '[x](<target\n29>) [y](target "open\n31") [z](target\n"32")')
+        result = self.run_checker(draft, self.file("evidence", "28"))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing in evidence: 29", result.stdout)
+        self.assertIn("missing in evidence: 31", result.stdout)
+        self.assertIn("missing in evidence: 32", result.stdout)
+
+    def test_unclosed_single_quote_and_paren_titles_are_checked(self) -> None:
+        draft = self.file("draft", '[x](target \'open 29) [y](target (open 31) [z](target "32\\")')
+        result = self.run_checker(draft, self.file("evidence", "28"))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing in evidence: 29", result.stdout)
+        self.assertIn("missing in evidence: 31", result.stdout)
+        self.assertIn("missing in evidence: 32", result.stdout)
+
+    def test_unclosed_or_nested_angle_destination_is_checked(self) -> None:
+        draft = self.file("draft", "[x](<29) [y](<a<31>)")
+        result = self.run_checker(draft, self.file("evidence", "28"))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing in evidence: 29", result.stdout)
+        self.assertIn("missing in evidence: 31", result.stdout)
+
+    def test_prose_between_quoted_or_parenthesized_spans_is_checked(self) -> None:
+        draft = self.file("draft", '[x](target "a" 29 "b") [y](target (a) 31 (b))')
+        result = self.run_checker(draft, self.file("evidence", "28"))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing in evidence: 29", result.stdout)
+        self.assertIn("missing in evidence: 31", result.stdout)
+
+    def test_leading_whitespace_after_open_paren_is_checked(self) -> None:
+        draft = self.file("draft", '[x]( 29) [y]( "31")')
+        result = self.run_checker(draft, self.file("evidence", "28"))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing in evidence: 29", result.stdout)
+        self.assertIn("missing in evidence: 31", result.stdout)
+
     def test_escaped_parenthesis_in_link_target(self) -> None:
         draft = self.file("draft", r"[ref](https://example.test/a\)b/98765) 28")
         result = self.run_checker(draft, self.file("evidence", "28"))

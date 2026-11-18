@@ -11,12 +11,22 @@ from pathlib import Path
 
 TOKEN = re.compile(r"(?<![A-Za-z0-9.])\d[0-9A-Za-z]*(?:\.\d[0-9A-Za-z]*)*")
 THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
-# Accept up to three nested pairs inside the destination; deeper links stay visible.
-LINK_TEXT = r"(?:\\[^\n]|[^()\\])*+"
+# Strip Markdown link destinations after `](`: either a bare destination with no
+# whitespace and up to three nested or backslash-escaped parenthesis pairs, or an
+# angle-bracket destination `<...>` with no `<`, `>`, or line breaks, each followed
+# by optional horizontal whitespace and an optional single-line title in double
+# quotes, single quotes, or parentheses before `)`. Anything else stays checked.
+LINK_TEXT = r"(?:\\\S|[^()\s\\])*+"
 LINK_LEVEL_1 = rf"{LINK_TEXT}(?:\({LINK_TEXT}\){LINK_TEXT})*+"
 LINK_LEVEL_2 = rf"{LINK_TEXT}(?:\({LINK_LEVEL_1}\){LINK_TEXT})*+"
 LINK_LEVEL_3 = rf"{LINK_TEXT}(?:\({LINK_LEVEL_2}\){LINK_TEXT})*+"
-LINK = re.compile(rf"\]\({LINK_LEVEL_3}\)")
+LINK_DEST = rf"(?:<[^<>\r\n]*+>|(?![<\s)]){LINK_LEVEL_3})"
+LINK_TITLE = (
+    r'(?:"(?:\\[^\r\n]|[^"\\\r\n])*+"'
+    r"|'(?:\\[^\r\n]|[^'\\\r\n])*+'"
+    r"|\((?:\\[^\r\n]|[^()\\\r\n])*+\))"
+)
+LINK = re.compile(rf"\]\({LINK_DEST}(?: +{LINK_TITLE})?\)")
 MAX_BYTES = 1024 * 1024
 MIN_ARGS = 3
 
