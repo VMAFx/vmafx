@@ -112,7 +112,8 @@ class RustToolchainSingleSource(unittest.TestCase):
         self.assertIn("'1.85'", problems[0])
 
     def test_manifest_without_rust_version_fails(self) -> None:
-        self.write("Cargo.toml", MANIFEST.format(version="None"))
+        manifest = MANIFEST.format(version=WANT).replace(f'rust-version = "{WANT}"\n', "")
+        self.write("Cargo.toml", manifest)
         self.assertIn("rust-version is 'None'", "\n".join(self.check()))
 
     def test_release_profile_drift_fails(self) -> None:
