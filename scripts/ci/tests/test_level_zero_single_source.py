@@ -88,7 +88,10 @@ class LevelZeroSingleSource(unittest.TestCase):
             with self.subTest(status=status):
                 (self.repo / "dev/Containerfile").write_text(text)
                 result = run_command(
-                    [sys.executable, str(ROOT / "scripts/ci/check-workflow-versions.py")],
+                    [
+                        sys.executable,
+                        str(ROOT / "scripts/ci/check-workflow-versions.py"),
+                    ],
                     allowed_executables=(sys.executable,),
                     cwd=self.repo,
                     env=self.env,
@@ -120,7 +123,9 @@ class LevelZeroSingleSource(unittest.TestCase):
             self.check(readded_curl_run),
         )
 
-    def test_actual_download_command_uses_changed_config_not_inherited_value(self) -> None:
+    def test_actual_download_command_uses_changed_config_not_inherited_value(
+        self,
+    ) -> None:
         runs = [
             match.group(0)
             for match in GATE.RUN_RE.finditer(self.text)
@@ -136,7 +141,7 @@ class LevelZeroSingleSource(unittest.TestCase):
         assert mkdir_match is not None
         scratch_prefix = f"{Path(mkdir_match.group(1)).parent.as_posix()}/"
         command = command.replace(scratch_prefix, f"{scratch.as_posix()}/")
-        command = re.sub(r"\bcd\s+/(?=\s|$)", f"cd {shlex.quote(str(scratch))}", command)
+        command = re.sub(r"\bcd\s+/(?=\s|$)", lambda _: f"cd {shlex.quote(str(scratch))}", command)
         command = command.replace(GATE.LEVEL_ZERO_CONFIG, shlex.quote(str(config)))
         tools = self.repo / "bin"
         tools.mkdir()
@@ -161,7 +166,11 @@ class LevelZeroSingleSource(unittest.TestCase):
                     [BASH, "-c", command],
                     allowed_executables=(BASH,),
                     cwd=self.repo,
-                    env={"PATH": str(tools), "PROBE_LOG": str(log), "LEVEL_ZERO_VERSION": "0.0.0"},
+                    env={
+                        "PATH": str(tools),
+                        "PROBE_LOG": str(log),
+                        "LEVEL_ZERO_VERSION": "0.0.0",
+                    },
                     capture_output=True,
                     text=True,
                 )
@@ -172,6 +181,29 @@ class LevelZeroSingleSource(unittest.TestCase):
                 self.assertIn(f"--level-zero-ver {version}", python_calls[0])
                 self.assertIn("--level-zero-dev", python_calls[0])
                 self.assertNotIn("0.0.0", calls)
+
+    def test_workflow_checker_reads_helper_calls(self) -> None:
+        workflows = self.repo / ".github/workflows"
+        workflows.mkdir(parents=True)
+        workflow = workflows / "clone.yml"
+        workflow.write_text(
+            "      - run: python3 scripts/ci/git_clone_retry.py --branch v1.33.0 "
+            "https://github.com/oneapi-src/level-zero.git level-zero\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            MODULE.check_workflows(self.repo, "1.34.0", None),
+            [
+                f"{Path('.github/workflows/clone.yml')}:1 clones Level Zero v1.33.0; "
+                "build-config.env says 1.34.0"
+            ],
+        )
+        workflow.write_text(
+            "      - run: python3 scripts/ci/git_clone_retry.py --branch v1.34.0 "
+            "https://github.com/oneapi-src/level-zero.git level-zero\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(MODULE.check_workflows(self.repo, "1.34.0", None), [])
 
     def test_renovate_tracks_only_the_shared_level_zero_owner(self) -> None:
         config = json.loads((ROOT / "renovate.json").read_text())

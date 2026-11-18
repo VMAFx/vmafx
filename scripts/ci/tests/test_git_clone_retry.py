@@ -54,11 +54,27 @@ class GitCloneRetryTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     MODULE.parse_args([f"--attempts={value}", "--", "url", "dest"])
 
+    def test_timeout_is_bounded_and_returns_124(self) -> None:
+        for value in ("0", "3601", "not-a-number"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    MODULE.parse_args([f"--timeout={value}", "--", "url", "dest"])
+        with mock.patch.object(
+            MODULE.subprocess,
+            "run",
+            side_effect=subprocess.TimeoutExpired(["git", "clone"], 1),
+        ) as run:
+            self.assertEqual(
+                MODULE.main(["--attempts=1", "--delay=0", "--timeout=1", "--", "url", "dest"]),
+                124,
+            )
+        self.assertEqual(run.call_args.kwargs["timeout"], 1)
+
     def test_clone_arguments_are_preserved(self) -> None:
-        attempts, delay, arguments = MODULE.parse_args(
+        attempts, delay, timeout, arguments = MODULE.parse_args(
             ["--attempts", "4", "--delay", "2", "--", "--filter=blob:none", "url", "dest"]
         )
-        self.assertEqual((attempts, delay), (4, 2))
+        self.assertEqual((attempts, delay, timeout), (4, 2, 600))
         self.assertEqual(arguments, ["--filter=blob:none", "url", "dest"])
 
 

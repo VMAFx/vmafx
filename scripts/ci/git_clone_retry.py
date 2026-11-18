@@ -9,10 +9,12 @@ them. The clone arguments are passed through unchanged, so a caller keeps its
 branch, depth and destination exactly as before.
 
 Usage:
-    git_clone_retry.py [--attempts N] [--delay SECONDS] -- GIT_CLONE_ARGS...
+    git_clone_retry.py [--attempts N] [--delay SECONDS] [--timeout SECONDS] -- GIT_CLONE_ARGS...
 
-`--attempts` must be 1..10; `--delay` defaults to 10 seconds and may be zero.
-The exit status is the last clone's status, or 2 for a usage error.
+`--attempts` must be 1..10; `--delay` defaults to 1 second and may be zero.
+`--timeout` defaults to 600 seconds and must be 1..3600.
+The exit status is the last clone's status, 124 when a clone times out, or 2
+for a usage error.
 """
 
 from __future__ import annotations
@@ -24,54 +26,55 @@ import sys
 import time
 
 DEFAULT_ATTEMPTS = 3
-DEFAULT_DELAY = 10
+DEFAULT_DELAY = 1
+DEFAULT_TIMEOUT = 600
 MAX_ATTEMPTS = 10
+MAX_TIMEOUT = 3600
 
 
-def parse_args(argv: list[str]) -> tuple[int, int, list[str]]:
+def _option(argv: list[str], index: int) -> tuple[str, str, int]:
+    argument = argv[index]
+    if argument.startswith("--") and "=" in argument:
+        name, value = argument.split("=", 1)
+        return name, value, index + 1
+    if index + 1 >= len(argv):
+        raise ValueError(f"{argument} needs a value")
+    return argument, argv[index + 1], index + 2
+
+
+def parse_args(argv: list[str]) -> tuple[int, int, int, list[str]]:
     """Split the helper's options from the arguments passed to git."""
+    if "--" not in argv:
+        raise ValueError("no git clone arguments")
+    separator = argv.index("--")
+    helper_args = argv[:separator]
+    clone_args = argv[separator + 1 :]
+    if not clone_args:
+        raise ValueError("no git clone arguments")
     attempts = DEFAULT_ATTEMPTS
     delay = DEFAULT_DELAY
+    timeout = DEFAULT_TIMEOUT
     index = 0
-    while index < len(argv):
-        argument = argv[index]
-        if argument.startswith("--attempts="):
-            value = argument.split("=", 1)[1]
-            index += 1
-        elif argument == "--attempts":
-            if index + 1 >= len(argv):
-                raise ValueError("--attempts needs a value")
-            value = argv[index + 1]
-            index += 2
-        elif argument.startswith("--delay="):
-            value = argument.split("=", 1)[1]
-            delay = _non_negative(value, "--delay")
-            index += 1
-            continue
-        elif argument == "--delay":
-            if index + 1 >= len(argv):
-                raise ValueError("--delay needs a value")
-            delay = _non_negative(argv[index + 1], "--delay")
-            index += 2
-            continue
-        elif argument == "--":
-            index += 1
-            break
+    while index < len(helper_args):
+        name, value, index = _option(helper_args, index)
+        if name == "--attempts":
+            attempts = _bounded(value, name, MAX_ATTEMPTS)
+        elif name == "--delay":
+            delay = _non_negative(value, name)
+        elif name == "--timeout":
+            timeout = _bounded(value, name, MAX_TIMEOUT)
         else:
-            break
-        attempts = _positive(value, "--attempts")
-    if index == len(argv):
-        raise ValueError("no git clone arguments")
-    return attempts, delay, argv[index:]
+            raise ValueError(f"unknown option {name}")
+    return attempts, delay, timeout, clone_args
 
 
-def _positive(value: str, option: str) -> int:
+def _bounded(value: str, option: str, maximum: int) -> int:
     try:
         number = int(value)
     except ValueError as error:
         raise ValueError(f"{option} must be a positive integer, got {value!r}") from error
-    if number < 1 or number > MAX_ATTEMPTS:
-        raise ValueError(f"{option} must be 1..{MAX_ATTEMPTS}, got {number}")
+    if number < 1 or number > maximum:
+        raise ValueError(f"{option} must be 1..{maximum}, got {number}")
     return number
 
 
@@ -88,14 +91,23 @@ def _non_negative(value: str, option: str) -> int:
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     try:
-        attempts, delay, clone_args = parse_args(argv)
+        attempts, delay, timeout, clone_args = parse_args(argv)
     except ValueError as error:
         print(f"git_clone_retry: {error}", file=sys.stderr)
         return 2
     git = os.environ.get("GIT_BIN") or shutil.which("git") or "git"
     status = 1
     for attempt in range(1, attempts + 1):
-        status = subprocess.run([git, "clone", *clone_args], check=False).returncode  # noqa: S603
+        try:
+            status = subprocess.run(  # noqa: S603
+                [git, "clone", *clone_args], check=False, timeout=timeout
+            ).returncode
+        except subprocess.TimeoutExpired:
+            status = 124
+            print(
+                f"git_clone_retry: attempt {attempt} of {attempts} timed out after " f"{timeout}s",
+                file=sys.stderr,
+            )
         if status == 0:
             return 0
         if attempt < attempts:
@@ -108,7 +120,8 @@ def main(argv: list[str] | None = None) -> int:
             if pause:
                 time.sleep(pause)
     print(
-        f"git_clone_retry: git clone failed {attempts} times, last status {status}", file=sys.stderr
+        f"git_clone_retry: git clone failed {attempts} times, last status {status}",
+        file=sys.stderr,
     )
     return status
 

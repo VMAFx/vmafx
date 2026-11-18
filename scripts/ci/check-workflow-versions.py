@@ -88,7 +88,10 @@ def required_executable(name: str) -> str:
 
 GIT = required_executable("git")
 
-CLONE_RE = re.compile(r"git clone(?:[^\n]*\\\n)*[^\n]*")
+CLONE_RE = re.compile(
+    r"(?:git clone|python(?:3)?\s+scripts/ci/git_clone_retry\.py)"
+    r"(?:[^\n]*\\\n)*[^\n]*"
+)
 BRANCH_RE = re.compile(r'--branch\s+"?v([0-9][0-9.]*)')
 RUN_RE = re.compile(r"(?m)^RUN(?:[^\n]*\\\n)*[^\n]*")
 LEVEL_ZERO_CONFIG = "/opt/vmafx/build-config.env"
