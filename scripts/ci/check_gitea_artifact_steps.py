@@ -22,6 +22,12 @@ twin; the act runner Gitea ships sets ``GITEA_ACTIONS=true`` in the job environm
 A v3 pin anywhere else is refused, because github.com no longer serves v3.
 
 ``--write`` adds the guard and the twin to every v4+ step that has neither, in place.
+The writer uses ruamel.yaml's round-trip mode so comments, key order, folded blocks,
+quoting and anchors survive the edit; it sets ``width = 1000`` and
+``indent(mapping=2, sequence=4, offset=2)`` so a file that needs no twin is left
+byte-identical. ruamel.yaml follows YAML 1.2 for plain scalars: ``on``, ``yes`` and
+``no`` are strings, not booleans, so a ``with:`` value such as
+``if-no-files-found: yes`` compares as the same string on the step and its twin.
 
 Exit 0 when every file passes, 1 on a finding.
 """
@@ -32,10 +38,14 @@ import argparse
 import io
 import re
 import sys
+from collections.abc import MutableMapping, MutableSequence
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.scalarstring import LiteralScalarString
 
 ROOT = Path(__file__).resolve().parents[2]
 V3_PINS = {
@@ -50,7 +60,6 @@ SKIP_MARKER = "skipped on Gitea"
 OFF_GITEA = "env.GITEA_ACTIONS != 'true'"
 ON_GITEA = "env.GITEA_ACTIONS == 'true'"
 USES = re.compile(r"actions/(upload|download)-artifact@([0-9a-f]{40})")
-STEP_START = re.compile(r"^(\s*)- ")
 MAX_FILES = 512
 MAX_STEPS = 1024
 
@@ -154,18 +163,19 @@ def check_steps(label: str, steps: list[Any]) -> list[str]:
     return findings
 
 
+def _yaml(round_trip: bool = False) -> YAML:
+    """A YAML parser; ``round_trip`` keeps comments, order and quoting for writes."""
+    yaml = YAML(typ="rt" if round_trip else "safe")
+    if round_trip:
+        yaml.preserve_quotes = True
+        yaml.width = 1000
+        yaml.indent(mapping=2, sequence=4, offset=2)
+    return yaml
+
+
 def _load_yaml(text: str) -> Any:
     """Parse one YAML document with ruamel.yaml's safe constructor."""
-    return YAML(typ="safe").load(text)
-
-
-def _yaml_scalar(value: Any) -> str:
-    """Render one YAML scalar on a single line."""
-    stream = io.StringIO()
-    yaml = YAML(typ="safe")
-    yaml.width = 1000
-    yaml.dump(value, stream)
-    return stream.getvalue().strip().removesuffix("...").strip()
+    return _yaml().load(text)
 
 
 def check_file(path: Path) -> list[str]:
@@ -182,111 +192,110 @@ def check_file(path: Path) -> list[str]:
     return findings
 
 
-def _step_end(lines: list[str], start: int, indent: int) -> int:
-    end = start + 1
-    while end < len(lines):
-        line = lines[end]
-        if line.strip() and len(line) - len(line.lstrip()) <= indent:
-            break
-        end += 1
-    while end > start + 1 and not lines[end - 1].strip():
-        end -= 1
-    return end
+def _is_mapping(value: object) -> bool:
+    return isinstance(value, MutableMapping)
 
 
-def _twin_lines(block: list[str], kind: str, inputs: set[str], cond: str | None) -> list[str]:
-    head = block[0]
-    indent = len(head) - len(head.lstrip())
-    pad = " " * (indent + 2)
-    step_keys = [ln for ln in block if len(ln) - len(ln.lstrip(" -")) == indent + 2]
-    name = next(
-        (
-            ln.split("name:", 1)[1].strip()
-            for ln in step_keys
-            if ln.lstrip(" -").startswith("name:")
-        ),
-        "",
-    )
-    name = (name.strip("'\"") or f"{kind.capitalize()} artifact") + " (Gitea)"
-    out = [" " * indent + "- name: " + _yaml_scalar(name)]
-    out.append(pad + "if: " + guarded(cond, True))
+def _is_sequence(value: object) -> bool:
+    return isinstance(value, MutableSequence)
+
+
+def _step_lists(doc: Any):
+    """Every ordered step list in a workflow or composite action."""
+    if not _is_mapping(doc):
+        return
+    runs = doc.get("runs")
+    if _is_mapping(runs) and _is_sequence(runs.get("steps")):
+        yield runs["steps"]
+    jobs = doc.get("jobs")
+    if not _is_mapping(jobs):
+        return
+    for job in jobs.values():
+        if _is_mapping(job) and _is_sequence(job.get("steps")):
+            yield job["steps"]
+
+
+def _set_if(step: Any, value: str) -> None:
+    """Set ``if:`` while keeping its original position in the step mapping."""
+    if "if" in step:
+        step["if"] = value
+        return
+    position = 1 if "name" in step else 0
+    insert = getattr(step, "insert", None)
+    if insert is None:
+        step["if"] = value
+    else:
+        insert(position, "if", value)
+
+
+def _twin_step(step: Any, kind: str, base: str) -> Any:
+    """Build the Gitea twin as a mapping, not as reconstructed text."""
+    name = step.get("name")
+    label = f"{name} (Gitea)" if name else f"{kind.capitalize()} artifact (Gitea)"
+    twin = CommentedMap()
+    twin["name"] = label
+    twin["if"] = guarded(base or None, True)
+    inputs = set((step.get("with") or {}).keys())
     if inputs <= V3_INPUTS[kind]:
-        out.append(pad + "uses: " + V3_PINS[kind])
-        keep = False
-        for line in block:
-            stripped = line.strip().lstrip("- ")
-            if stripped.startswith("with:"):
-                keep = True
-            elif keep and line.strip() and len(line) - len(line.lstrip()) <= indent + 2:
-                keep = False
-            if keep:
-                out.append(line)
-        return out
-    missing = ", ".join(sorted(inputs - V3_INPUTS[kind]))
-    reason = f"::warning::artifact {kind} {SKIP_MARKER}: v4+ is GitHub-only, v3 lacks {missing}"
-    out.append(pad + "shell: bash")
-    out.append(pad + "run: |")
-    out.append(pad + "  echo '" + reason + "'")
-    return out
+        if "with" in step:
+            twin["with"] = deepcopy(step["with"])
+        twin["uses"] = V3_PINS[kind].split("#", 1)[0].strip()
+        twin.yaml_add_eol_comment(V3_PINS[kind].split("#", 1)[1].strip(), key="uses")
+    else:
+        missing = ", ".join(sorted(inputs - V3_INPUTS[kind]))
+        twin["shell"] = "bash"
+        twin["run"] = LiteralScalarString(
+            f"echo '::warning::artifact {kind} {SKIP_MARKER}: "
+            f"v4+ is GitHub-only, v3 lacks {missing}'"
+        )
+    return twin
 
 
-def _guard_block(block: list[str], cond: str | None) -> list[str]:
-    head = block[0]
-    indent = len(head) - len(head.lstrip())
-    new_if = " " * (indent + 2) + "if: " + guarded(cond, False)
-    for i, line in enumerate(block):
-        if re.match(r"^\s*(- )?if:", line):
-            if line.lstrip().startswith("- "):
-                block[i] = " " * indent + "- if: " + guarded(cond, False)
-            else:
-                block[i] = new_if
-            return block
-    return (
-        [block[0], new_if, *block[1:]]
-        if not head.strip().startswith("- uses:")
-        else [
-            " " * indent + "- if: " + guarded(cond, False),
-            " " * (indent + 2) + head.strip()[2:],
-            *block[1:],
-        ]
-    )
+def _ensure_guard_and_twin(steps: Any, idx: int, kind: str) -> tuple[bool, bool]:
+    """Guard a v4+ step and add its twin when it has neither. (changed, inserted)."""
+    step = steps[idx]
+    original = step.get("if")
+    base = _base_condition(original, on_gitea=False)
+    changed = False
+    if base is None:
+        base = str(original or "").strip()
+        _set_if(step, guarded(base or None, False))
+        changed = True
+    if idx + 1 < len(steps):
+        twin = steps[idx + 1]
+        if not _check_twin("", kind, step, twin, base):
+            return changed, False
+    steps.insert(idx + 1, _twin_step(step, kind, base))
+    return True, True
 
 
 def write_file(path: Path) -> bool:
     """Add the guard and the Gitea twin to every v4+ step in ``path`` that lacks them."""
     if not check_file(path):
         return False
-    lines = path.read_text(encoding="utf-8").split("\n")
-    out: list[str] = []
-    i = 0
+    text = path.read_text(encoding="utf-8")
+    doc = _yaml(round_trip=True).load(text)
     changed = False
-    while i < len(lines):
-        start = STEP_START.match(lines[i])
-        if start is None:
-            out.append(lines[i])
-            i += 1
-            continue
-        end = _step_end(lines, i, len(start.group(1)))
-        block = lines[i:end]
-        parsed = _load_yaml("\n".join(ln[len(start.group(1)) :] for ln in block))
-        step = (
-            parsed[0] if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict) else {}
-        )
-        cls = _classify(step.get("uses"))
-        if cls is None or cls[1] or _base_condition(step.get("if"), on_gitea=False) is not None:
-            out.extend(block)
-            i = end
-            continue
-        cond = step.get("if")
-        cond_text = None if cond is None else str(cond)
-        inputs = set((step.get("with") or {}).keys())
-        out.extend(_guard_block(list(block), cond_text))
-        out.extend(_twin_lines(block, cls[0], inputs, cond_text))
-        changed = True
-        i = end
-    if changed:
-        path.write_text("\n".join(out), encoding="utf-8")
-    return changed
+    for steps in _step_lists(doc):
+        idx = 0
+        while idx < len(steps):
+            step = steps[idx]
+            if not _is_mapping(step):
+                idx += 1
+                continue
+            cls = _classify(step.get("uses"))
+            if cls is None or cls[1]:
+                idx += 1
+                continue
+            did_change, inserted = _ensure_guard_and_twin(steps, idx, cls[0])
+            changed = changed or did_change
+            idx += 2 if inserted else 1
+    if not changed:
+        return False
+    stream = io.StringIO()
+    _yaml(round_trip=True).dump(doc, stream)
+    path.write_text(stream.getvalue(), encoding="utf-8")
+    return True
 
 
 def main(argv: list[str] | None = None) -> int:

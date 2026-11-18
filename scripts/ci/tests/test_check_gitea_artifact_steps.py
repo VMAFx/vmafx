@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 
 import yaml  # type: ignore[import-untyped]  # PyYAML ships no stubs in the hook env
+from ruamel.yaml import YAML as RuamelYAML
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts/ci/check_gitea_artifact_steps.py"
@@ -71,6 +72,38 @@ jobs:
         with:
           pattern: digest-*
           merge-multiple: true
+"""
+
+ROUND_TRIP = f"""\
+# top-level comment
+name: "Round trip"
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      # keep this comment
+      - name: "Upload log"
+        if: ${{{{ (always()) && env.GITEA_ACTIONS != 'true' }}}}
+        uses: {V7}
+        with:
+          name: "log"
+          path: build/log.txt
+      - name: Upload log (Gitea)
+        if: ${{{{ (always()) && env.GITEA_ACTIONS == 'true' }}}}
+        uses: {V3}
+        with:
+          name: "log"
+          path: build/log.txt
+      - name: Folded
+        run: >
+          echo one
+          echo two
+      - &defaults
+        name: "Anchored"
+        run: echo hi
+      - <<: *defaults
+        name: "Merged"
 """
 
 
@@ -177,6 +210,24 @@ class GiteaArtifactCheckTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0)
         self.assertEqual(self.path.read_text(encoding="utf-8"), first)
+
+    def test_write_keeps_round_trip_file_byte_stable(self) -> None:
+        result = self.run_check(ROUND_TRIP, "--write")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.path.read_text(encoding="utf-8"), textwrap.dedent(ROUND_TRIP))
+
+    def test_twin_comparison_keeps_yaml_1_2_yes_as_a_string(self) -> None:
+        text = UNGUARDED.replace(
+            "          path: build/log.txt",
+            "          path: build/log.txt\n          if-no-files-found: yes",
+        )
+        result = self.run_check(text, "--write")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        steps = RuamelYAML(typ="safe").load(self.path.read_text(encoding="utf-8"))["jobs"]["build"][
+            "steps"
+        ]
+        self.assertEqual(steps[0]["with"]["if-no-files-found"], "yes")
+        self.assertEqual(steps[1]["with"]["if-no-files-found"], "yes")
 
     def test_file_without_artifact_steps_passes(self) -> None:
         result = self.run_check("name: Empty\non: push\njobs: {}\n")

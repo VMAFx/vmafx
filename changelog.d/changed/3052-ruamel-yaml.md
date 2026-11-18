@@ -1,1 +1,1 @@
-Replace the hand-written Gitea artifact-step YAML parser with ruamel.yaml 0.19.1.
+Rewrite the Gitea artifact-step writer around ruamel.yaml 0.19.1's round-trip mode instead of regex-and-indent reconstruction, keeping comments, order, folded blocks, quoting and anchors; add byte-stability and YAML 1.2 `yes` tests.
