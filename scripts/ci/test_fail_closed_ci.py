@@ -853,7 +853,15 @@ APT_SNAPSHOT_WRITE = [
 APT_SNAPSHOT_CHECK = ["grep", "-Eqx", 'APT::Snapshot "[0-9]{8}T[0-9]{6}Z";', APT_SNAPSHOT_FILE]
 APT_CERTIFICATE_BOOTSTRAP = [
     ["apt-get", "--error-on=any", "-o", "Acquire::Retries=3", "update"],
-    ["apt-get", "install", "-y", "--no-install-recommends", "ca-certificates"],
+    [
+        "apt-get",
+        "-o",
+        "Acquire::Retries=3",
+        "install",
+        "-y",
+        "--no-install-recommends",
+        "ca-certificates",
+    ],
 ]
 
 
@@ -2267,7 +2275,8 @@ class FailClosedCIContract(unittest.TestCase):
         self.assertIn("sudo bash scripts/ci/install-llvm.sh 22", tidy_job)
         # The packages come from the job's apt list (apt archive cache).
         self.assertIn(
-            "grep -v '^#' .github/apt/clang-tidy-full.txt | xargs sudo apt-get install -y",
+            "grep -v '^#' .github/apt/clang-tidy-full.txt | xargs sudo apt-get "
+            "-o Acquire::Retries=3 install -y",
             tidy_job,
         )
         apt_list = (ROOT / ".github/apt/clang-tidy-full.txt").read_text(encoding="utf-8")
@@ -2528,7 +2537,9 @@ class InstallStepContract(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertIn("LLVM 22 from the distribution archive", stdout)
         self.assertIn(
-            "apt-get install -y -q clang-22 lldb-22 lld-22 clangd-22 clang-tidy-22", calls
+            "apt-get -o Acquire::Retries=3 install -y -q clang-22 lldb-22 lld-22 clangd-22 "
+            "clang-tidy-22",
+            calls,
         )
         self.assertFalse([call for call in calls if call.startswith("wget")])
 

@@ -1,1 +1,1 @@
-- Require a positive `Acquire::Retries` setting on every `apt-get install` in workflows, shell scripts and container recipes, and extend the fetch contract test to audit those install sites.
+- Require a positive `Acquire::Retries` setting on every `apt-get install` / `apt install` in workflows, composite actions, shell scripts and container recipes, and extend the fetch contract test to audit those install sites.

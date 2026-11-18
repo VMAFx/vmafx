@@ -97,6 +97,7 @@ def in_scope(path: str, data: str) -> bool:
         name.suffix in SHELL_SUFFIXES
         or bool(SHELL_HEADER.match(data))
         or (path.startswith(".github/workflows/") and name.suffix in (".yml", ".yaml"))
+        or (path.startswith(".github/actions/") and name.suffix in (".yml", ".yaml"))
         or bool(re.search(r"(?:^|\.)(?:Dockerfile|Containerfile)(?:\.|$)", name.name))
     )
 
@@ -444,7 +445,7 @@ def apt_errors(path: str, text: str) -> list[str]:
     verbs = {"update", "install"} if path in APT_RETRY_PATHS else {"install"}
     for line, command in logical_lines(text):
         command_text = strip_comment(command)
-        for match in re.finditer(r"(?<![\w.-])apt-get\s+", command_text):
+        for match in re.finditer(r"(?<![\w.-])apt(?:-get)?\s+", command_text):
             args = command_args(command_text[match.end() :])
             if verbs & set(args) and not apt_positive_retries(args):
                 errors.append(f"{path}:{line}: apt-get needs -o Acquire::Retries=N with N positive")
@@ -897,6 +898,23 @@ class FetchConnectRetryTests(unittest.TestCase):
         self.assertEqual(
             audit_sources([(workflow, "sudo apt-get -o Acquire::Retries=3 install -y pkg")], ()),
             [],
+        )
+        action = ".github/actions/gen-node-bpf/action.yml"
+        self.assertEqual(
+            audit_sources([(action, "sudo apt-get install -y pkg")], ()),
+            [f"{action}:1: apt-get needs -o Acquire::Retries=N with N positive"],
+        )
+        self.assertEqual(
+            audit_sources([(action, "sudo apt-get -o Acquire::Retries=3 install -y pkg")], ()),
+            [],
+        )
+        self.assertEqual(
+            audit_sources([(path, "apt -o Acquire::Retries=3 install -y pkg")], ()),
+            [],
+        )
+        self.assertEqual(
+            audit_sources([(path, "apt install -y pkg")], ()),
+            [f"{path}:1: apt-get needs -o Acquire::Retries=N with N positive"],
         )
         self.assertEqual(
             audit_sources([("scripts/ci/apt-install-cached.sh", "apt-get install -y pkg")], ()),
