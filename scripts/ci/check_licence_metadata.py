@@ -706,14 +706,15 @@ def dockerfile_licence_label_problems(root: Path) -> list[str]:
     manifest = root / LICENSING_MANIFEST
     if not manifest.is_file():
         return [f"{LICENSING_MANIFEST.as_posix()} is missing"]
-    records = licensing.load_manifest(manifest)["artifacts"]
+    # Read the raw records: `_record_component` follows `from` references and
+    # reports a cycle, while `licensing.load_manifest` expands them away.
+    records = json.loads(manifest.read_text(encoding="utf-8"))["artifacts"]
     problems: list[str] = []
     for relative, record_name in IMAGE_LICENCE_LABELS.items():
         path = root / relative
         if not path.is_file():
-            # Fixture trees do not track every production image; just as the
-            # manifest checks only read tracked files, check the labels that
-            # are present.
+            if record_name in records:
+                problems.append(f"{relative}: listed in IMAGE_LICENCE_LABELS but missing")
             continue
         try:
             binaries = _record_component(records, record_name, "vmafx-binaries")
@@ -721,7 +722,9 @@ def dockerfile_licence_label_problems(root: Path) -> list[str]:
             raise ModelError(f"{record_name}: no vmafx-binaries component") from error
         expected = set(binaries.get("licences", ()))
         labels = re.findall(
-            r'^LABEL org\.opencontainers\.image\.licenses="([^"]*)"', path.read_text(), re.MULTILINE
+            r'^LABEL org\.opencontainers\.image\.licenses="([^"]*)"',
+            path.read_text(encoding="utf-8"),
+            re.MULTILINE,
         )
         if not labels:
             problems.append(f"{relative}: no org.opencontainers.image.licenses label")

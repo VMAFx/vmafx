@@ -502,5 +502,67 @@ class NativeWheelTests(unittest.TestCase):
         self.assertIn("BSD-2-Clause-Patent", found)
 
 
+class DockerfileLabelTests(GateTestCase):
+    LICENCES = ("BSD-2-Clause", "MIT")
+    LABEL = " AND ".join(LICENCES)
+
+    def _tree(
+        self,
+        *,
+        controller_label: str | None = LABEL,
+        include_controller: bool = True,
+        cycle: bool = False,
+    ) -> None:
+        records = {
+            name: {"components": [{"id": "vmafx-binaries", "licences": list(self.LICENCES)}]}
+            for name in gate.IMAGE_LICENCE_LABELS.values()
+        }
+        if cycle:
+            records["production-controller-image"]["components"] = [
+                {"from": "production-cli-image", "id": "vmafx-binaries"}
+            ]
+            records["production-cli-image"]["components"] = [
+                {"from": "production-controller-image", "id": "vmafx-binaries"}
+            ]
+        files = _root_layout()
+        files["tools/rc1-tester/image/licensing.json"] = json.dumps({"artifacts": records})
+        for relative, record_name in gate.IMAGE_LICENCE_LABELS.items():
+            if record_name == "production-controller-image" and not include_controller:
+                continue
+            label = controller_label if record_name == "production-controller-image" else self.LABEL
+            text = "FROM scratch\n"
+            if label is not None:
+                text += f'LABEL org.opencontainers.image.licenses="{label}"\n'
+            files[relative] = text
+        _write(self.root, files)
+
+    def test_a_label_missing_one_licence_is_refused(self) -> None:
+        self._tree(controller_label="MIT")
+        problems = gate.dockerfile_licence_label_problems(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("missing ['BSD-2-Clause']", problems[0])
+
+    def test_a_dockerfile_without_a_licences_label_is_refused(self) -> None:
+        self._tree(controller_label=None)
+        problems = gate.dockerfile_licence_label_problems(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("no org.opencontainers.image.licenses label", problems[0])
+
+    def test_a_from_cycle_is_refused(self) -> None:
+        self._tree(cycle=True)
+        with self.assertRaises(gate.ModelError) as error:
+            gate.dockerfile_licence_label_problems(self.root)
+        self.assertIn("cyclic reference", str(error.exception))
+
+    def test_a_missing_dockerfile_with_a_manifest_record_is_refused(self) -> None:
+        self._tree(include_controller=False)
+        problems = gate.dockerfile_licence_label_problems(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn(
+            "docker/Dockerfile.controller: listed in IMAGE_LICENCE_LABELS but missing",
+            problems[0],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
