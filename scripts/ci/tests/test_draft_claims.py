@@ -65,6 +65,38 @@ class DraftClaimsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("draft tokens 2, missing 0", result.stdout)
 
+    def test_balanced_link_target_and_numeric_label(self) -> None:
+        draft = self.file("draft", "[29](https://example.test/a(b)/98765)")
+        result = self.run_checker(draft, self.file("evidence", "nothing"))
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(
+            result.stdout.splitlines(), ["missing in evidence: 29", "draft tokens 1, missing 1"]
+        )
+
+    def test_escaped_parenthesis_in_link_target(self) -> None:
+        draft = self.file("draft", r"[ref](https://example.test/a\)b/98765) 28")
+        result = self.run_checker(draft, self.file("evidence", "28"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_unterminated_link_keeps_following_number(self) -> None:
+        draft = self.file("draft", "[ref](unfinished text 29")
+        result = self.run_checker(draft, self.file("evidence", "nothing"))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing in evidence: 29", result.stdout)
+
+    def test_link_beyond_three_nested_levels_stays_visible(self) -> None:
+        # Four nested pairs exceed the limit: check both target and following numbers.
+        draft = self.file("draft", "[ref](a(b(c(d(98765))))) 29")
+        result = self.run_checker(draft, self.file("evidence", "nothing"))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing in evidence: 98765", result.stdout)
+        self.assertIn("missing in evidence: 29", result.stdout)
+
+    def test_link_does_not_span_evidence_files(self) -> None:
+        draft = self.file("draft", "29")
+        result = self.run_checker(draft, self.file("first", "[ref]("), self.file("second", "29)"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_multiple_evidence_files(self) -> None:
         draft = self.file("draft", "28")
         result = self.run_checker(draft, self.file("first", "nothing"), self.file("second", "28"))

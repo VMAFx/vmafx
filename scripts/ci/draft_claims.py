@@ -11,7 +11,12 @@ from pathlib import Path
 
 TOKEN = re.compile(r"(?<![A-Za-z0-9.])\d[0-9A-Za-z]*(?:\.\d[0-9A-Za-z]*)*")
 THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
-LINK = re.compile(r"\]\([^)]*\)")
+# Accept up to three nested pairs inside the destination; deeper links stay visible.
+LINK_TEXT = r"(?:\\[^\n]|[^()\\])*+"
+LINK_LEVEL_1 = rf"{LINK_TEXT}(?:\({LINK_TEXT}\){LINK_TEXT})*+"
+LINK_LEVEL_2 = rf"{LINK_TEXT}(?:\({LINK_LEVEL_1}\){LINK_TEXT})*+"
+LINK_LEVEL_3 = rf"{LINK_TEXT}(?:\({LINK_LEVEL_2}\){LINK_TEXT})*+"
+LINK = re.compile(rf"\]\({LINK_LEVEL_3}\)")
 MAX_BYTES = 1024 * 1024
 MIN_ARGS = 3
 
@@ -45,7 +50,7 @@ def main(argv: list[str]) -> int:
             print(f"{name}: {error}", file=sys.stderr)
             return 2
     draft = tokens(contents[0])
-    have = set(tokens("\n".join(contents[1:])))
+    have = {token for content in contents[1:] for token in tokens(content)}
     missing = [token for token in draft if token not in have]
     for token in missing:
         print(f"missing in evidence: {token}")
