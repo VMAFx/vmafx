@@ -23,7 +23,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
 
-python3 - "$REPO_ROOT" <<'PY'
+python3 - "${1:-$REPO_ROOT}" <<'PY'
 import json
 import re
 import sys
@@ -184,6 +184,36 @@ def validate(texts: dict[str, str]) -> None:
                 raise AssertionError(f"{path}: a default-model smoke check passes --model")
 
 
+def smoke_test_job(workflow_text: str) -> str:
+    """Active body of job smoke-test in a workflow."""
+    active = "\n".join(line.split("#", 1)[0].rstrip() for line in workflow_text.splitlines())
+    match = re.search(r"(?ms)^  smoke-test:\n(.*?)(?=^  [a-z0-9-]+:\n|\Z)", active)
+    if match is None:
+        raise AssertionError(f"{OPERATOR_NODE}: missing job smoke-test")
+    return match.group(1)
+
+
+def validate_node_sycl_smoke(texts: dict[str, str]) -> None:
+    """job smoke-test runs smoke-published-image.sh on publish-node-sycl as node-sycl."""
+    smoke_job = smoke_test_job(texts[OPERATOR_NODE])
+    sycl_step = (
+        r"(?m)^\s+- name: Smoke-test vmafx-node SYCL image\n"
+        r"\s+run: >-\n"
+        r"\s+bash scripts/release/smoke-published-image\.sh\n"
+        r'\s+"\$\{\{ env\.REGISTRY \}\}/\$\{\{ env\.NODE_IMAGE \}\}@'
+        r'\$\{\{ needs\.publish-node-sycl\.outputs\.digest \}\}"\n'
+        r'\s+node-sycl "\$\{\{ env\.PUBLISH_TAG \}\}"$'
+    )
+    if not re.search(sycl_step, smoke_job):
+        raise AssertionError(
+            f"{OPERATOR_NODE}: job smoke-test lacks the node-sycl smoke-published-image.sh step"
+        )
+    published = texts[PUBLISHED_SMOKE]
+    for required in ("node-sycl) smoke_kind=binary ;;", "VMAFX_BACKEND=sycl"):
+        if required not in published:
+            raise AssertionError(f"{PUBLISHED_SMOKE}: node-sycl lacks {required!r}")
+
+
 def validate_operator_node_scoring(texts: dict[str, str]) -> None:
     """vmafx-server and vmafx-node score with the built-in model, never --model."""
     for kind in ("server", "node"):
@@ -196,6 +226,7 @@ def validate_operator_node_scoring(texts: dict[str, str]) -> None:
         )
         if not re.search(call, texts[OPERATOR_NODE]):
             raise AssertionError(f"{OPERATOR_NODE}: vmafx-{kind} is not smoke-tested as {kind}")
+    validate_node_sycl_smoke(texts)
     published = texts[PUBLISHED_SMOKE]
     for mapping in ("server) smoke_kind=wrapped ;;", "node) smoke_kind=node ;;"):
         if mapping not in published:
@@ -364,6 +395,34 @@ drifted_rclone["build-config.env"] = drifted_rclone["build-config.env"].replace(
     'RCLONE_VERSION="v1.75.1"', 'RCLONE_VERSION="v1.75.2"'
 )
 expect_rejected("an rclone version that does not mirror build-config.env", drifted_rclone)
+
+no_sycl_smoke = deepcopy(texts)
+no_sycl_smoke[OPERATOR_NODE], removed_sycl = re.subn(
+    r"(?m)^\s+- name: Smoke-test vmafx-node SYCL image\n"
+    r"(?:\s+(?!- )\S[^\n]*\n)+",
+    "",
+    no_sycl_smoke[OPERATOR_NODE],
+    count=1,
+)
+if removed_sycl != 1:
+    raise AssertionError("node-sycl smoke removal mutation did not apply")
+expect_rejected("a missing vmafx-node SYCL smoke step", no_sycl_smoke)
+
+sycl_wrong_digest = deepcopy(texts)
+sycl_wrong_digest[OPERATOR_NODE] = sycl_wrong_digest[OPERATOR_NODE].replace(
+    "needs.publish-node-sycl.outputs.digest }}\"\n          node-sycl",
+    "needs.publish-node.outputs.digest }}\"\n          node-sycl",
+    1,
+)
+expect_rejected("a vmafx-node SYCL smoke step reading the CPU node digest", sycl_wrong_digest)
+
+sycl_wrong_kind = deepcopy(texts)
+sycl_wrong_kind[OPERATOR_NODE] = sycl_wrong_kind[OPERATOR_NODE].replace(
+    'node-sycl "${{ env.PUBLISH_TAG }}"',
+    'operator "${{ env.PUBLISH_TAG }}"',
+    1,
+)
+expect_rejected("a vmafx-node SYCL smoke step run as operator", sycl_wrong_kind)
 
 print(
     "PASS: images build their models in, the oneAPI image carries its pinned GPU runtime, "
