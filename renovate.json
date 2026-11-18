@@ -194,6 +194,14 @@
       "automerge": false
     },
     {
+      "description": "Group clang-format across pre-commit and pip after their manager groups: scripts/codegen/tests/test_vmafx_api_layout.py requires the hook rev and tooling pin to agree.",
+      "matchPackageNames": [
+        "pre-commit/mirrors-clang-format",
+        "clang-format"
+      ],
+      "groupName": "clang-format (all managers)"
+    },
+    {
       "description": "Group all Go minor + patch updates into one PR; auto-merge. k8s/grpc/proto patch bumps are low-risk; CI gates catch regressions.",
       "matchManagers": [
         "gomod"
@@ -448,6 +456,19 @@
       "description": "ADR-3318: the built-in rust-toolchain manager would move rust-toolchain.toml alone; the Rust toolchain custom manager owns that channel together with RUST_VERSION, both workspaces' rust-version and the Rust workflow's toolchain input.",
       "matchManagers": [
         "rust-toolchain"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "ADR-3318: the GitHub Actions manager also extracts the Rust toolchain input; the custom manager owns it with the other Rust pins.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepNames": [
+        "rust"
+      ],
+      "matchDepTypes": [
+        "uses-with"
       ],
       "enabled": false
     },

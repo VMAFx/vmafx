@@ -1,0 +1,1 @@
+- **Dependencies:** Renovate groups coupled clang-format pins and Rust workflow toolchain updates with their matching versions.
