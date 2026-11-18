@@ -355,6 +355,120 @@ class TestOrtGuard(unittest.TestCase):
             (1, [f"{container}:1: container command continuation exceeds limit"]),
         )
 
+    def test_container_second_helper_call_unpinned_refused(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        two_lines = (
+            "ARG ORT_VERSION=1.30.0\n"
+            'RUN python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /a \\\n'
+            " && python3 scripts/ci/ort_nuget_install.py --package cpu --version 1.99.0 --prefix /b\n"
+        )
+        one_line = (
+            "ARG ORT_VERSION=1.30.0\n"
+            'RUN python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /a'
+            " && python3 scripts/ci/ort_nuget_install.py --package cpu --version 1.99.0 --prefix /b\n"
+        )
+        for text, line_no in ((two_lines, 3), (one_line, 2)):
+            with self.subTest(line_no=line_no):
+                container.write_text(text)
+                self.assertEqual(
+                    guard.check_tarball_pins(files=[container]),
+                    (
+                        1,
+                        [f"{container}:{line_no}: unpinned ORT_VERSION '1.99.0' for package 'cpu'"],
+                    ),
+                )
+
+    def test_container_first_helper_call_unpinned_second_pinned_refused(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        container.write_text(
+            "ARG ORT_VERSION=1.30.0\n"
+            "RUN python3 scripts/ci/ort_nuget_install.py --package cpu --version 1.99.0 --prefix /a \\\n"
+            ' && python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /b\n'
+        )
+        self.assertEqual(
+            guard.check_tarball_pins(files=[container]),
+            (1, [f"{container}:2: unpinned ORT_VERSION '1.99.0' for package 'cpu'"]),
+        )
+
+    def test_container_standalone_and_export_binding_refused(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        cases = (
+            (
+                "ARG ORT_VERSION=1.30.0\n"
+                "RUN ORT_VERSION=1.99.0"
+                ' && python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /a\n',
+                2,
+            ),
+            (
+                "ARG ORT_VERSION=1.30.0\n"
+                "RUN export ORT_VERSION=1.99.0;"
+                ' python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /a\n',
+                2,
+            ),
+            (
+                "RUN ORT_VERSION=1.99.0 \\\n"
+                " && python3 scripts/ci/ort_nuget_install.py --package cpu --version 1.30.0 --prefix /a \\\n"
+                ' && python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /b\n',
+                3,
+            ),
+            (
+                "RUN export ORT_VERSION=1.99.0; \\\n"
+                " python3 scripts/ci/ort_nuget_install.py --package cpu --version 1.30.0 --prefix /a; \\\n"
+                ' python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /b\n',
+                3,
+            ),
+        )
+        for text, line_no in cases:
+            with self.subTest(text=text):
+                container.write_text(text)
+                self.assertEqual(
+                    guard.check_tarball_pins(files=[container]),
+                    (
+                        1,
+                        [f"{container}:{line_no}: unpinned ORT_VERSION '1.99.0' for package 'cpu'"],
+                    ),
+                )
+
+    def test_container_inline_assignment_first_call_only_refused(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        container.write_text(
+            "ARG ORT_VERSION=1.30.0\n"
+            "RUN ORT_VERSION=1.99.0 python3 scripts/ci/ort_nuget_install.py"
+            ' --package cpu --version "${ORT_VERSION}" --prefix /a \\\n'
+            ' && python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /b\n'
+        )
+        self.assertEqual(
+            guard.check_tarball_pins(files=[container]),
+            (1, [f"{container}:2: unpinned ORT_VERSION '1.99.0' for package 'cpu'"]),
+        )
+
+    def test_container_multiple_pinned_calls_and_continued_version_accepted(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        cases = (
+            "ARG ORT_VERSION=1.30.0\n"
+            'RUN python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /a \\\n'
+            " && python3 scripts/ci/ort_nuget_install.py --package gpu --version 1.22.0 --prefix /b\n",
+            "RUN python3 scripts/ci/ort_nuget_install.py --package cpu --version 1.30.0 \\\n"
+            "--prefix /usr/local\n",
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                container.write_text(text)
+                self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
+
+    def test_container_three_calls_middle_unpinned_refused(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        container.write_text(
+            "ARG ORT_VERSION=1.30.0\n"
+            'RUN python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /a \\\n'
+            " && python3 scripts/ci/ort_nuget_install.py --package cpu --version 1.99.0 --prefix /b \\\n"
+            " && python3 scripts/ci/ort_nuget_install.py --package gpu --version 1.22.0 --prefix /c\n"
+        )
+        self.assertEqual(
+            guard.check_tarball_pins(files=[container]),
+            (1, [f"{container}:3: unpinned ORT_VERSION '1.99.0' for package 'cpu'"]),
+        )
+
     def test_cba_guard(self) -> None:
         tmp_path = Path(self.temp.name)
         source = (ROOT / "dev/Containerfile").read_text(encoding="utf-8")
