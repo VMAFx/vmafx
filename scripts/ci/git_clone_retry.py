@@ -20,7 +20,7 @@ for a usage error.
 from __future__ import annotations
 
 import shutil
-import subprocess
+import subprocess  # nosec B404 - argv list, no shell; see the call below.
 import sys
 import time
 from pathlib import Path
@@ -119,9 +119,8 @@ def main(argv: list[str] | None = None) -> int:
     for attempt in range(1, attempts + 1):
         destination_existed = destination is not None and destination.exists()
         try:
-            # argv form, no shell: clone_args are workflow-owned git arguments,
-            # never interpolated into a command string.
-            status = subprocess.run(  # noqa: S603
+            # argv form, no shell; workflow-owned clone arguments.
+            status = subprocess.run(  # noqa: S603  # nosec B603
                 [git, "clone", *clone_args], check=False, timeout=timeout
             ).returncode
         except subprocess.TimeoutExpired:

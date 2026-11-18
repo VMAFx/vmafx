@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import importlib.util
-import subprocess
+import subprocess  # nosec B404 - CompletedProcess is the mock return type only.
 import tempfile
 import unittest
 from pathlib import Path
