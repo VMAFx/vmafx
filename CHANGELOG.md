@@ -702,6 +702,17 @@ Contributed by luoye-cpu.
 - **The scoring node takes container inputs and a time window**: `.mkv`, `.mp4` and other inputs ffmpeg reads are decoded by the node's ffmpeg into a Y4M pipe and scored, with no temp file; the new job fields `window_start` and `window_duration` score a sample without decoding the whole clip ([ADR-3370](docs/adr/3370-node-container-decode.md)).
 
 
+- **Smoke-test `vmafx-node:<tag>-sycl` for `VMAFX_BACKEND=sycl` on publish.**
+  `docker-publish-operator-node.yml` now runs
+  `scripts/release/smoke-published-image.sh` with kind `node-sycl` on the
+  published `-sycl` digest after signature verification. It inspects
+  `Config.Env` of the pulled image and refuses a tag lacking the exact
+  `VMAFX_BACKEND=sycl` entry (missing or set to another value), checks the
+  `/usr/local/bin/vmafx-node` entrypoint, `--version` and the FUSE mount, and
+  prints the GPU skip reason instead of passing SYCL scoring silently
+  (`scripts/release/tests/test-smoke-published-image.sh`).
+
+
 - **`ghcr.io/vmafx/vmafx-node:<tag>-sycl` scores on Intel GPUs (ADR-3371).**
   The `node-sycl` image now carries a oneAPI build of `libvmaf` from the shared
   `scripts/ci/build-oneapi-libvmaf.sh` (the script the production oneAPI image
@@ -2660,6 +2671,14 @@ Contributed by luoye-cpu.
 
 ### Fixed
 
+- **Docs:** the Python library page no longer walks readers through the
+  three distribution package-manager blocks (including the `yum` route for
+  old CentOS and RHEL, which the supported install table does not cover);
+  it now points Linux readers at the per-distribution getting-started
+  install guides and keeps the Python-version requirement, the `nasm`
+  2.13.02 floor and the Python headers note (issue 2339).
+
+
 - **CI:** the `FFmpeg vmafx Filter` job fails on any compiler warning and on a build log its warning scan cannot read, so the series' own C code meets the warning gate the other FFmpeg builds already enforce (issue 2477).
 
 
@@ -2729,6 +2748,16 @@ Contributed by luoye-cpu.
 - **Tag raw HDR inputs with colour transfer and primaries:** copy `-color_primaries`, `-color_trc`, `-colorspace`, and `-color_range` from encode options to input options for raw sources so FFmpeg passes colour properties to the encoder (issue 3345). User `--extra-ffmpeg-arg` colour options stay output-only.
 
 
+- **Move the `.cursor/rules/vmafx-workspace.mdc` instructions into the canonical agent documents, so `praetorctl compile-context --verify` no longer refuses an instruction file outside `AGENTS.md`.**
+  Workspace defaults (`.vscode/` tasks, clangd as the only C/C++ language server, `meson setup <build-dir> core`)
+  merge into `docs/development/ide-setup.md`, where the setup steps already live. The agent-integration and
+  hand-off rules move to a new "Agent integration contract" section of `docs/development/agent-reference.md`,
+  which section 9 of `AGENTS.md` already links. `AGENTS.md` gains one pointer line and the hand-written
+  `.mdc` is deleted, so Cursor reads the generated projection instead.
+  `scripts/ci/tests/test_cursor_rules_migration.py` checks the deletion, the canonical sentences,
+  the `AGENTS.md` pointer and the generated projection line without needing `praetorctl`.
+
+
 - **`libaom-av1` `ultrafast` maps to `-cpu-used 8`, the highest value FFmpeg accepts.**
   The adapter mapped `ultrafast` to 9, which FFmpeg's `libaom-av1` wrapper refuses
   (`Value 9.000000 for parameter 'cpu-used' out of range [0 - 8]`), so every
@@ -2759,6 +2788,24 @@ Contributed by luoye-cpu.
 
 
 - **Run the pinned Praetor engine in Makefile governance targets (#3468).** `verify-all`, `compile-context`, `audit`, `hiss-coverage` and `dedupe-check` called `standardsctl` from `PATH` instead of the repository pin; the `Makefile` now includes `.config/praetor/engine.mk` and invokes `$(PRAETORCTL)`, and `scripts/ci/tests/test_make_governance_engine_pin.py` rejects missing or misplaced includes and literal `standardsctl` or `praetorctl` calls.
+
+
+- **Forward `main()` argv and pin timeouts in `test_vmafx_rgb_math_contract`.**
+  `main(argv)` called `unittest.main()` without `argv`, parsing `sys.argv`
+  instead of its own argument list; it now passes `argv=[sys.argv[0], *args]`,
+  and the warm-up test pins `timeout=TIMEOUT` on every compiler call.
+
+
+- **Cache compiler probes, log phases and warm up compilers for
+  `test_vmafx_rgb_math_contract`.**
+  `compile_frame_import` re-ran `is_gnu_gcc` and `probe_c_std` on every call,
+  and a timed-out run reported neither which compiler step stalled nor the
+  Meson test log on the Windows ARM64 MSVC job. `is_gnu_gcc` and `probe_c_std`
+  now cache per resolved compiler executable, and every compiler subprocess
+  logs `start` and `done` phase lines to `stderr` with flushing. The
+  `windows-arm64` job warms the GNU compilers the test resolves (`--warm-up`)
+  before the fast suite and uploads `core\build\meson-logs\testlog.txt` on
+  every non-cancelled run.
 
 
 - **ADR allocator scans open pull request heads to avoid fork PR collisions.**
@@ -2913,6 +2960,9 @@ Contributed by luoye-cpu.
 
 
 - **Changes to shared `scripts/lib` helpers and `scripts/__init__.py` now run the Build workflow's Python test legs.** A test fails when a helper imported by the Python tests is missing from the selector.
+
+
+- **CI:** symbolic-link test fixtures under `scripts/ci/tests` probe the target directory via `symlink_test_support.py` and `scripts/lib/symlink-probe.sh` before creating links and skip with the probe's error on Windows volumes or hosts that reject symbolic links, enforced by `scripts/ci/tests/test_symlink_test_support.py`.
 
 
 - Windows UCRT64 CI: the MSYS2 leg installs `python-setuptools`, which the codegen suite (`test_vmafx_api_generator`) imports, instead of failing on a missing module.
@@ -3309,6 +3359,9 @@ Contributed by luoye-cpu.
   no score changes.
 
 
+- **Intel NEO and Level Zero container and CI fetches read a committed asset lock instead of querying `api.github.com` at build time.** `dev/scripts/fetch-intel-neo.py` now reads `.deb` URLs and SHA-256 digests from `dev/scripts/intel-neo-lock.json` by default (`--write-lock` refreshes it, `.github/workflows/intel-neo-lock-refresh.yml` commits updates on Renovate branches as `vmafx-release-bot[bot]`, `renovate.json` ignores that author email during branch checks, and `scripts/ci/check-dco.py` accepts that signed single-file refresh commit via `dco-bot-opener`), eliminating anonymous GitHub API rate-limit failures in the credential-free `Release Dry Run` GPU image builds ([ADR-3555](docs/adr/3555-intel-neo-lock-file.md)). `dev/Containerfile` now fetches the Level Zero loader `.deb` packages (`libze1`, `libze-dev`) through the same lock instead of unchecked `curl` downloads. `--write-lock` validates the new lock before it replaces the old one. `scripts/ci/check-dco.py --landed` also accepts the single `vmafx-release-bot[bot]` `Co-authored-by:` trailer added when GitHub squashes a `renovate[bot]` pull request that updates `dev/scripts/intel-neo-lock.json` (`dco-landed-release-bot-coauthor`).
+
+
 - Python harness: the per-content fit lines of the subjective-dataset scatter plots
   (`RegressorMixin._least_squares_line()`) no longer raise
   `ValueError: not enough values to unpack` when a group's least-squares line has a
@@ -3438,6 +3491,24 @@ Contributed by luoye-cpu.
 
 
 - CI: Renovate's CI Node.js pull request can pass the dependency-only deliverables exemption and move Node to a new major while the engine-locked documentation workflow keeps its own major until the next engine pin move.
+
+
+- **`vmafx-node` no longer dials an undeployed online-training sidecar, gates
+  `/readyz` on the sidecar when enabled, and supports node-scoped pod affinity
+  in the Helm chart
+  ([ADR-3558](docs/adr/3558-node-sidecar-readiness-gpu-affinity.md)).** The
+  sidecar feedback drainer is now opt-in via `VMAFX_SIDECAR_ENABLED`
+  (`sidecar.enabled`, chart `node.sidecar.enabled`, default `false`), stopping
+  recurring `WARN sidecar not reachable` logs on standard deployments while
+  rejecting invalid boolean values at startup. When enabled, `/readyz` reports
+  `503` unless the drainer holds a live Unix socket connection (with reconnect
+  backoff capped at 15 s so readiness recovers within 30 s). The Helm chart's
+  node `readinessProbe` now queries HTTP `/readyz` on `metrics` (backed by
+  `scorer`, loopback `grpc`, and conditional `sidecar` checks, amending
+  ADR-1094), and `node.affinity` overrides global `affinity` so heterogeneous
+  GPU pools can configure soft scheduling preferences without a hard pin. For
+  Intel Arc pools, use `gpu.intel.com/product` with `Arc_Pro_B60` preferred
+  (weight 100) and `Arc_B580` as fallback (weight 50).
 
 
 - Go tests: the `cmd/vmafx-node` tests that dial the node's listeners start the graph through `startAppWithRetry`, which picks fresh loopback ports and retries up to five times when a reserved port was taken before the graph bound it (`bind: address already in use`); other start errors fail at once.
@@ -3751,6 +3822,13 @@ Contributed by luoye-cpu.
   random on ext4. It now keeps a second link to the stale socket, so the file
   system cannot give its inode number to the server's new socket
   (`ai/sidecar/tests/test_socket_permissions.py`).
+
+
+- **Make published node image smoke-test frames readable.** The FUSE frames
+  folder was created by `mktemp -d` with mode 0700, preventing the nonroot mount
+  container from reading it and causing every `vmafx-node` and
+  `vmafx-node-...-sycl` publish smoke step to fail. The folder is now 0755, and
+  the test stub refuses unreadable folders.
 
 
 - **A stale private-state lock no longer stops every commit hook.** `scripts/githooks/state-sync.sh`
