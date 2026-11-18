@@ -3,7 +3,7 @@ paths:
   - scripts/ci/assertion-density.sh
   - scripts/ci/tests/test-assertion-density.sh
   - scripts/ci/assertion-density-exempt-paths.txt
-invariant: Every non-mirror C source is scanned; inherited/third-party files are exempt by exact path (sorted, validated, stale-listed paths fail); no name-based copyright filter.
+invariant: Every non-mirror C source is scanned; exact-path exemptions are validated and stale-checked; no copyright-name filter.
 area: tidy
 ---
 <!-- markdownlint-disable MD013 MD060 -->
