@@ -1,46 +1,43 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Verify that tracked release tarball downloads have verified sha256 pins (ADR-3334, ADR-3336).
+"""Guard ONNX Runtime workflow sources and ClangBuildAnalyzer tarball pins.
 
-Scans workflow files and Dockerfiles for tracked release tarball downloads:
-- ONNX Runtime C/C++ release tarballs (ADR-3334)
-- ClangBuildAnalyzer release tarballs (ADR-3336)
-
-For each download site, verifies that:
-1. The corresponding SHA256 variable is pinned to a valid 64-character lowercase hex digest.
-2. A `sha256sum --check` verification occurs after the download and before
-   any `tar -x` extraction.
-3. Cross-site consistency: identical (name, flavour, version) tuples share the same
-   digest everywhere. Single source of truth is the sites themselves.
-
-Exit codes:
-  0: all sites valid
-  1: verification findings detected (file:line: reason)
-  2: own error (unreadable file, I/O error, missing required directory)
+The ONNX Runtime NuGet pin table is the single source for CPU and GPU installs.
+ClangBuildAnalyzer downloads retain their existing digest and order checks.
+Exit codes: 0 success, 1 findings, 2 I/O or configuration error.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 EXIT_SUCCESS = 0
 EXIT_FINDINGS = 1
 EXIT_ERROR = 2
 
+DEFAULT_ROOT = Path(__file__).resolve().parents[2]
 HEX_RE = re.compile(r"^[a-f0-9]{64}$")
 STEP_START_RE = re.compile(r"^(\s*)-\s+(?:name|uses|run):")
 GENERIC_STEP_RE = re.compile(r"^(\s*)-\s+")
 RUN_START_RE = re.compile(r"^\s*RUN\b")
-DOCKER_INSTRUCTION_RE = re.compile(
-    r"^\s*(?:FROM|RUN|COPY|ADD|USER|WORKDIR|ENTRYPOINT|CMD|VOLUME|EXPOSE|LABEL)\b"
-)
 TAR_EXTRACT_RE = re.compile(r"\btar\b.*?(?:-[a-zA-Z0-9]*x|--extract)")
 SHA_CHECK_RE = re.compile(r"\bsha256sum\b.*?(?:--check|-c\b)")
 GPU_MARKER_RE = re.compile(r"onnxruntime-[^\s\"'/]*-gpu")
+PACKAGE_FLAG_RE = re.compile(r"--package(?:=|\s+)([A-Za-z0-9_-]+)")
+ORT_VERSION_RE = re.compile(r"\bORT_VERSION\b\s*[:=]\s*[\"']?([^\"'\s#\\$}]+)[\"']?")
+VERSION_FLAG_RE = re.compile(r"--version(?:=|\s+)[\"']?([^\"'\s#\\$}]+)[\"']?")
+FORBIDDEN_NUGET_MARKERS = (
+    "microsoft.ml.onnxruntime",
+    "onnxruntime-linux",
+    "api.nuget.org",
+    ".nupkg",
+)
 
 
 class TrackedDownload:
@@ -66,13 +63,6 @@ class TrackedDownload:
 
 
 TRACKED_DOWNLOADS: tuple[TrackedDownload, ...] = (
-    TrackedDownload(
-        name="ONNX Runtime",
-        marker="onnxruntime/releases/download",
-        sha_var="ORT_SHA256",
-        version_var="ORT_VERSION",
-        has_gpu_flavour=True,
-    ),
     TrackedDownload(
         name="ClangBuildAnalyzer",
         marker="aras-p/ClangBuildAnalyzer/archive",
@@ -231,7 +221,88 @@ def _match_tracked_entry(line: str) -> TrackedDownload | None:
     return None
 
 
-def scan_file(path: Path) -> tuple[list[str], list[tuple[str, str, str, str, Path, int]]]:
+def _check_pin_entry(pin_file: Path, pkg_name: str, version: str, pin: Any) -> list[str]:
+    """Validate a single version entry's sha256 and size."""
+    if not isinstance(pin, dict):
+        return [f"{pin_file}: malformed pin entry for {pkg_name} {version}"]
+    findings: list[str] = []
+    sha = pin.get("sha256")
+    if not isinstance(sha, str) or not HEX_RE.fullmatch(sha):
+        findings.append(f"{pin_file}: malformed sha256 pin for {pkg_name} {version}")
+    size = pin.get("size")
+    if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
+        findings.append(f"{pin_file}: invalid size pin for {pkg_name} {version}")
+    return findings
+
+
+def _validate_pin_table(pin_file: Path) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """Parse and validate ort-nuget-pins.json."""
+    raw = json.loads(pin_file.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        return {}, [f"{pin_file}: root must be an object"]
+    packages = raw.get("packages")
+    if not isinstance(packages, dict) and "versions" in raw:
+        packages = {"cpu": raw}
+    if not isinstance(packages, dict) or not packages:
+        return {}, [f"{pin_file}: missing packages table"]
+    findings: list[str] = []
+    for pkg_name, pkg_data in packages.items():
+        versions = pkg_data.get("versions") if isinstance(pkg_data, dict) else None
+        if not isinstance(versions, dict) or not versions:
+            findings.append(f"{pin_file}: missing versions for package {pkg_name}")
+            continue
+        for version, pin in versions.items():
+            findings.extend(_check_pin_entry(pin_file, pkg_name, str(version), pin))
+    return packages, findings
+
+
+def _check_helper_step(
+    lines: list[str],
+    site_idx: int,
+    path: Path,
+    packages: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Verify that a workflow step calling ort_nuget_install.py has a pinned ORT_VERSION."""
+    start_idx, end_idx = _find_workflow_block(lines, site_idx)
+    block_text = "\n".join(lines[start_idx : end_idx + 1])
+    pkg_match = PACKAGE_FLAG_RE.search(block_text)
+    pkg_name = pkg_match.group(1) if pkg_match else "cpu"
+    ver_match = ORT_VERSION_RE.search(block_text) or VERSION_FLAG_RE.search(block_text)
+    line_no = site_idx + 1
+    if pkg_name not in packages:
+        return [f"{path}:{line_no}: unknown ONNX Runtime package '{pkg_name}' in step"]
+    if ver_match is None:
+        return [f"{path}:{line_no}: missing ORT_VERSION in step calling ort_nuget_install.py"]
+    version = ver_match.group(1)
+    versions = packages[pkg_name].get("versions", {})
+    if version not in versions:
+        return [f"{path}:{line_no}: unpinned ORT_VERSION '{version}' for package '{pkg_name}'"]
+    return []
+
+
+def _scan_workflow_line(
+    lines: list[str],
+    idx: int,
+    path: Path,
+    packages: dict[str, dict[str, Any]] | None,
+) -> list[str]:
+    """Check a single workflow line for ONNX Runtime source and pin rules."""
+    line = lines[idx]
+    lower = line.lower()
+    findings: list[str] = []
+    if "onnxruntime/releases/download" in lower:
+        findings.append(f"{path}:{idx + 1}: old ONNX Runtime release source forbidden")
+    if any(m in lower for m in FORBIDDEN_NUGET_MARKERS):
+        findings.append(f"{path}:{idx + 1}: ONNX Runtime download must use helper")
+    if "ort_nuget_install.py" in line and packages is not None:
+        findings.extend(_check_helper_step(lines, idx, path, packages))
+    return findings
+
+
+def scan_file(
+    path: Path,
+    packages: dict[str, dict[str, Any]] | None = None,
+) -> tuple[list[str], list[tuple[str, str, str, str, Path, int]]]:
     """Scan a file for tracked tarball download sites."""
     try:
         content = path.read_text(encoding="utf-8")
@@ -244,6 +315,8 @@ def scan_file(path: Path) -> tuple[list[str], list[tuple[str, str, str, str, Pat
     site_records: list[tuple[str, str, str, str, Path, int]] = []
 
     for i, line in enumerate(lines):
+        if is_workflow:
+            findings.extend(_scan_workflow_line(lines, i, path, packages))
         entry = _match_tracked_entry(line)
         if entry is None:
             continue
@@ -257,11 +330,9 @@ def scan_file(path: Path) -> tuple[list[str], list[tuple[str, str, str, str, Pat
             entry, block_lines, start_idx, site_line_num, path
         )
         findings.extend(sha_findings)
-
-        order_findings = _check_verification_order(
-            entry, block_lines, start_idx, site_line_num, path
+        findings.extend(
+            _check_verification_order(entry, block_lines, start_idx, site_line_num, path)
         )
-        findings.extend(order_findings)
 
         flavour, version = _extract_site_metadata(entry, block_text)
         if sha_val and HEX_RE.match(sha_val):
@@ -287,18 +358,40 @@ def _find_target_files(repo_root: Path) -> list[Path]:
     return target_files
 
 
+def _load_pins_for_check(
+    root: Path | None, files: list[Path] | None
+) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """Resolve and validate the ONNX Runtime NuGet pin file."""
+    base = root if root is not None else DEFAULT_ROOT
+    pin_file = base / "scripts/ci/ort-nuget-pins.json"
+    if not pin_file.exists() and files is not None:
+        pin_file = DEFAULT_ROOT / "scripts/ci/ort-nuget-pins.json"
+    packages, pin_findings = _validate_pin_table(pin_file)
+    if files is None or (files and pin_file.resolve() in {f.resolve() for f in files}):
+        return packages, pin_findings
+    return packages, []
+
+
 def check_tarball_pins(
     root: Path | None = None,
     files: list[Path] | None = None,
 ) -> tuple[int, list[str]]:
     """Scan candidate files for tracked download verification."""
-    target_files = files if files else _find_target_files(root if root else Path())
+    target_files = files if files else _find_target_files(root if root else DEFAULT_ROOT)
     all_findings: list[str] = []
     all_sites: list[tuple[str, str, str, str, Path, int]] = []
 
+    try:
+        packages, pin_findings = _load_pins_for_check(root, files)
+        all_findings.extend(pin_findings)
+    except (OSError, ValueError, KeyError, TypeError) as err:
+        return EXIT_ERROR, [f"check_ort_tarball_pins: error: {err}"]
+
     for path in target_files:
+        if path.name == "ort-nuget-pins.json":
+            continue
         try:
-            findings, sites = scan_file(path)
+            findings, sites = scan_file(path, packages=packages)
             all_findings.extend(findings)
             all_sites.extend(sites)
         except OSError as err:

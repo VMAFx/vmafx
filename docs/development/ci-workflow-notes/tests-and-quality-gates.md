@@ -233,13 +233,10 @@ timeout leaves the archive directory empty, and an empty entry under
 this immutable key would be restored as a hit on every later run
 (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
 when a later step fails, so the next run skips the download.
-Pinned to 1.22.0. MS stopped publishing Linux tgz artifacts
-for patch releases (1.22.1, 1.22.2 are NuGet-only on the
-releases page), so v1.22.0 is the last 1.22 line with a
-functioning onnxruntime-linux-x64-${VERSION}.tgz. Bumping to
-1.23.x or 1.24.x is a separate decision since the dnn loader
-is version-sensitive.
-Install a pkg-config file since the tarball ships none.
+The CPU job installs ONNX Runtime 1.22.0 from the NuGet package using
+scripts/ci/ort_nuget_install.py. The helper verifies the pinned package
+size and SHA-256 before extracting headers, libraries and licence notices.
+It writes the pkg-config file needed by the DNN build; see ADR-3559.
 Both the venv and pip's staging area live under RUNNER_TEMP, not
 /tmp. On the ubuntu-26.04 image /tmp is a RAM-backed tmpfs with a
 per-user quota (systemd v258 enables one on a tmpfs /tmp), and
@@ -449,18 +446,19 @@ timeout leaves the archive directory empty, and an empty entry under
 this immutable key would be restored as a hit on every later run
 (an empty 200-byte entry was saved this way on 2026-10-22). Runs even
 when a later step fails, so the next run skips the download.
-Cache the ORT GPU .tgz so we don't re-download ~150 MB from
-github.com/microsoft/onnxruntime/releases on every Coverage Gate
-run. Key is purely the ORT version pinned in the env block of the
-next step — the artifact bytes are immutable per release. See
-Research-0089 (PR #525) §2 for the wall-clock evidence (Coverage
-Gate p50 = 13.32 min, the ORT download contributes ~30–60 s of
-that on a cold runner).
-Measured max 1.3m (2026-10-23); 10 min cap covers tarball download and setup at 1.25x.
-The GPU .tgz bundles CPU + CUDA + TensorRT execution providers in
-one package. We install it (instead of the smaller CPU-only build)
-so the coverage gate can also exercise the CUDA EP-attach success
-arms in ort_backend.c — which on a CPU-only ORT remained
+Cache the verified ORT GPU NuGet package (`microsoft.ml.onnxruntime.gpu.linux`)
+under `${RUNNER_TEMP}/ort-cache` so Coverage Gate runs do not re-download
+~227 MB on every run. `scripts/ci/ort_nuget_install.py --cache-dir` reuses a
+cached file only after verifying its pinned byte size and SHA-256 from
+`scripts/ci/ort-nuget-pins.json`; a mismatching cached file is deleted and
+fetched again once (ADR-3559).
+Measured max 1.3m (2026-10-23); 10 min cap covers package download and
+setup at 1.25x.
+The GPU NuGet package (`microsoft.ml.onnxruntime.gpu.linux`) bundles CPU +
+CUDA + TensorRT execution providers and headers under
+`buildTransitive/native/include`. We install it (instead of the smaller
+CPU-only build) so the coverage gate can also exercise the CUDA EP-attach
+success arms in ort_backend.c — which on a CPU-only ORT remained
 unreachable per ADR-0112. CUDA EP attach only requires the CUDA
 *runtime* library to load (no actual GPU driver), which is why
 libcudart12 is installed above. CreateSession then fails because
@@ -472,8 +470,8 @@ CUDA 12.x runtime — user-space libs only, no driver. Lets ORT
 dlopen libonnxruntime_providers_cuda.so → libcudart.so.12.
 libcudart12 is cached in the apt step; fall back to nvidia-cuda-toolkit
 only if libcudart12 was not installed.
-Reuse cached tarball if present (cache hit), otherwise fetch
-and populate the cache for the next run.
+Reuse the cached NuGet package when its size and SHA-256 match the pin,
+or delete and re-download it once into the cache for the next run.
 Build inside core/ so python/vmaf/__init__.py finds the CLI at
 core/build-coverage/tools/vmaf (it hardcodes that relative path).
 The suite's Go-running tests find their modules in the cache: the
