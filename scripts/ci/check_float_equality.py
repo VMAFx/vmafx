@@ -32,9 +32,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.lib.safe_subprocess import run
 
 FLOAT_EQUAL = "[-Wfloat-equal]"
+FLOAT_EQUAL_TAGS = (
+    "[-Wfloat-equal]",
+    "[-Werror=float-equal]",
+    "[-Werror,-Wfloat-equal]",
+)
 DIAGNOSTIC = re.compile(
     r"^(?P<path>.+?):(?P<line>\d+):(?P<col>\d+): (?P<level>error|warning): "
-    r"(?P<message>.*?)\[-Wfloat-equal\]\s*$"
+    r"(?P<message>.*?)(?:" + "|".join(re.escape(tag) for tag in FLOAT_EQUAL_TAGS) + r")\s*$"
 )
 LITERAL = re.compile(r"(?:0[xX][0-9A-Fa-f]+|\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)[fFlL]?(?![\w.])")
 LITERAL_COMPARE = re.compile(
