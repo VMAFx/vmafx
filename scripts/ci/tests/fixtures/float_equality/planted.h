@@ -4,9 +4,9 @@
 float vmaf_float_motion_scaler(unsigned bpc);
 
 struct TableRow {
-    unsigned bpc;
-    float expected;
-    const char *msg;
+    unsigned bpc; // cppcheck-suppress unusedStructMember
+    float expected; // cppcheck-suppress unusedStructMember
+    const char *msg; // cppcheck-suppress unusedStructMember
 };
 
 static const struct TableRow table[] = {
