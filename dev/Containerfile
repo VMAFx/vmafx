@@ -130,6 +130,10 @@ FROM ${DEV_BASE} AS build-deps
 # Declare the shell in each stage with pipelines so failures stay visible.
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
+# The retry helper is used by gpu-sdks and codec-deps below. This stage is
+# their common ancestor; release-build is a separate root and does not call it.
+COPY --chmod=0755 scripts/ci/git_clone_retry.py /usr/local/bin/git_clone_retry.py
+
 LABEL org.opencontainers.image.title="vmaf-dev-mcp-build-deps"
 LABEL org.opencontainers.image.description="Base build tools for VMAF fork dev-MCP container"
 LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
@@ -332,7 +336,6 @@ ENV PATH="/opt/python/cp314-cp314/bin:${PATH}"
 ENV CC=gcc CXX=g++
 
 COPY requirements/locks/build.txt /build/requirements/build.txt
-COPY --chmod=0755 scripts/ci/git_clone_retry.py /usr/local/bin/git_clone_retry.py
 ARG NATIVE_NASM_VERSION=3.02
 ARG NATIVE_NASM_SHA256=87336eba53b4acfe917424ab5d500d2b0054d9f5148d35c2273ccf2cfb712f0d
 # hadolint ignore=DL3041

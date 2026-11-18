@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -69,6 +70,35 @@ class GitCloneRetryTests(unittest.TestCase):
                 124,
             )
         self.assertEqual(run.call_args.kwargs["timeout"], 1)
+
+    def test_timed_out_attempt_removes_the_destination_it_created(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "clone"
+            attempts: list[object] = []
+
+            def clone(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+                attempts.append(args[0])
+                if len(attempts) == 1:
+                    destination.mkdir()
+                    raise subprocess.TimeoutExpired(args[0], 1)
+                return self.result(0)
+
+            with mock.patch.object(MODULE.subprocess, "run", side_effect=clone):
+                self.assertEqual(
+                    MODULE.main(
+                        [
+                            "--attempts=2",
+                            "--delay=0",
+                            "--timeout=1",
+                            "--",
+                            "url",
+                            str(destination),
+                        ]
+                    ),
+                    0,
+                )
+            self.assertEqual(len(attempts), 2)
+            self.assertFalse(destination.exists())
 
     def test_clone_arguments_need_no_separator(self) -> None:
         attempts, delay, timeout, arguments = MODULE.parse_args(

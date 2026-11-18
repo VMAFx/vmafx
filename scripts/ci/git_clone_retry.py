@@ -23,12 +23,15 @@ import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 DEFAULT_ATTEMPTS = 3
 DEFAULT_DELAY = 1
 DEFAULT_TIMEOUT = 600
 MAX_ATTEMPTS = 10
 MAX_TIMEOUT = 3600
+# A destination is explicit only when the URL and directory are both present.
+CLONE_POSITIONAL_MIN = 2
 HELPER_OPTIONS = frozenset({"--attempts", "--delay", "--timeout"})
 
 
@@ -87,6 +90,22 @@ def _non_negative(value: str, option: str) -> int:
     return number
 
 
+def _clone_destination(arguments: list[str]) -> Path | None:
+    """The explicit destination of a clone, if the caller supplied one."""
+    positional = [argument for argument in arguments if not argument.startswith("-")]
+    if len(positional) < CLONE_POSITIONAL_MIN:
+        return None
+    return Path(positional[-1])
+
+
+def _remove_destination(destination: Path) -> None:
+    """Remove a destination that this attempt created before the process died."""
+    if destination.is_symlink() or destination.is_file():
+        destination.unlink()
+    elif destination.is_dir():
+        shutil.rmtree(destination)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     try:
@@ -95,8 +114,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"git_clone_retry: {error}", file=sys.stderr)
         return 2
     git = shutil.which("git") or "git"
+    destination = _clone_destination(clone_args)
     status = 1
     for attempt in range(1, attempts + 1):
+        destination_existed = destination is not None and destination.exists()
         try:
             # argv form, no shell: clone_args are workflow-owned git arguments,
             # never interpolated into a command string.
@@ -111,6 +132,15 @@ def main(argv: list[str] | None = None) -> int:
             )
         if status == 0:
             return 0
+        if destination is not None and not destination_existed and destination.exists():
+            try:
+                _remove_destination(destination)
+            except OSError as error:
+                print(
+                    f"git_clone_retry: cannot remove partial destination "
+                    f"{destination}: {error}",
+                    file=sys.stderr,
+                )
         if attempt < attempts:
             pause = attempt * delay
             print(
