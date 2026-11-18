@@ -14,13 +14,21 @@ trap 'rm -rf "$tmp"' EXIT
 pass=0
 fail=0
 
+real_rm="$(command -v rm)"
+export real_rm
 mkdir -p "$tmp/bin"
+cat >"$tmp/bin/rm" <<'STUB'
+#!/usr/bin/env bash
+echo "rm $*" >>"$STUB_LOG"
+exec "$real_rm" "$@"
+STUB
+chmod +x "$tmp/bin/rm"
 cat >"$tmp/bin/sudo" <<'STUB'
 #!/usr/bin/env bash
 echo "sudo $*" >>"$STUB_LOG"
 case "$1" in
 tee) cat >>"$STUB_LOG" ;;
-rm) shift; rm "$@" ;;
+rm) shift; "$real_rm" "$@" ;;
 apt-get)
   case " $* " in
   *" update "*)
@@ -100,7 +108,7 @@ check_before() { # $1 label, $2 earlier grep pattern, $3 later grep pattern
   fi
 }
 
-rm_ms_azure_re='^sudo rm -f .*microsoft.* .*azure'
+rm_ms_azure_re='^\(sudo \)\?rm -f .*microsoft.* .*azure'
 apt_refresh_re='^sudo apt-get --error-on=any -o Acquire::Retries=3 update$'
 
 printf '# comment\npkg-a\npkg-b\n' >"$tmp/list.txt"

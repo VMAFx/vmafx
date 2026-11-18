@@ -2520,7 +2520,7 @@ class InstallStepContract(unittest.TestCase):
             calls = self.write_installer_stubs(stubs, bash, checksum)
             sources = self.write_source_stubs(stubs, source_files)
             installer = stubs / "install-llvm.sh"
-            installer.write_text(script, encoding="utf-8")
+            installer.write_text(script, encoding="utf-8", newline="\n")
             argv = [bash, str(installer), major]
             if source is not None:
                 argv.append(source)
