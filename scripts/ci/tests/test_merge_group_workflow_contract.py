@@ -308,6 +308,45 @@ def check_merge_group_workflow_contract(workflows_dir: Path = WORKFLOWS_DIR) -> 
         if "merge_group" in wr.triggers_of(docs.get(forbidden_wf, {})):
             errors.append(f"{forbidden_wf}: must not declare merge_group trigger")
     errors.extend(check_merge_group_cost_guards(docs))
+    errors.extend(check_tester_gpu_validate_contract(docs))
+    return errors
+
+
+TESTER_WORKFLOW = "docker-publish-tester.yml"
+TESTER_VALIDATE_SELECTOR = "needs.impact.outputs.selected == 'true'"
+TESTER_GPU_DOC_PATHS = (
+    "docs/development/ci.md",
+    "docs/adr/3556-merge-queue-merge-group.md",
+)
+
+
+def check_tester_gpu_validate_contract(
+    docs: Mapping[str, Mapping[str, Any]],
+    root: Path = ROOT,
+) -> list[str]:
+    """Bind docker-publish-tester.yml build-gpu -> validate -> impact.outputs.selected to docs."""
+    errors: list[str] = []
+    for rel_path in TESTER_GPU_DOC_PATHS:
+        text = (root / rel_path).read_text(encoding="utf-8")
+        if not all(token in text for token in ("`build-gpu`", "`validate`")):
+            errors.append(
+                f"{rel_path}: must document `build-gpu` and `validate` for {TESTER_WORKFLOW}"
+            )
+    jobs = docs.get(TESTER_WORKFLOW, {}).get("jobs", {})
+    validate_if = str(jobs.get("validate", {}).get("if", ""))
+    doc_list = " and ".join(TESTER_GPU_DOC_PATHS)
+    if TESTER_VALIDATE_SELECTOR not in validate_if:
+        errors.append(
+            f"{TESTER_WORKFLOW}: job validate (if) must contain {TESTER_VALIDATE_SELECTOR!r} "
+            f"(documented in {doc_list})"
+        )
+    raw_needs = jobs.get("build-gpu", {}).get("needs", [])
+    needs = [raw_needs] if isinstance(raw_needs, str) else list(raw_needs)
+    if "validate" not in needs:
+        errors.append(
+            f"{TESTER_WORKFLOW}: job build-gpu (needs) must include 'validate' "
+            f"(documented in {doc_list})"
+        )
     return errors
 
 
@@ -486,6 +525,62 @@ class MergeGroupWorkflowContractTests(unittest.TestCase):
             }
         }
         self.assertEqual(check_merge_group_cost_guards(unqueued_docs), [])
+
+    def test_tester_build_gpu_without_validate_needs_fails_closed(self) -> None:
+        """Fail when docker-publish-tester.yml build-gpu removes needs: validate."""
+        header = (
+            "  build-gpu:\n    name: Build and test the ${{ matrix.vendor }} GPU image (amd64)\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            errors = _replace_in_workflow_copy(
+                tmp,
+                TESTER_WORKFLOW,
+                f"{header}    needs: validate\n",
+                header,
+            )
+        self.assertEqual(
+            errors,
+            [
+                "docker-publish-tester.yml: job build-gpu (needs) must include 'validate' "
+                "(documented in docs/development/ci.md and docs/adr/3556-merge-queue-merge-group.md)"
+            ],
+        )
+
+    def test_tester_build_gpu_list_needs_with_validate_passes(self) -> None:
+        """Accept build-gpu needs given as a list containing validate."""
+        header = (
+            "  build-gpu:\n    name: Build and test the ${{ matrix.vendor }} GPU image (amd64)\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            errors = _replace_in_workflow_copy(
+                tmp,
+                TESTER_WORKFLOW,
+                f"{header}    needs: validate\n",
+                f"{header}    needs: [impact, validate]\n",
+            )
+        self.assertEqual(errors, [])
+
+    def test_tester_validate_without_impact_selector_fails_closed(self) -> None:
+        """Fail when docker-publish-tester.yml validate drops the impact selector condition."""
+        with tempfile.TemporaryDirectory() as tmp:
+            errors = _replace_in_workflow_copy(
+                tmp,
+                TESTER_WORKFLOW,
+                f"{TESTER_VALIDATE_SELECTOR} && ",
+                "",
+            )
+        self.assertEqual(
+            errors,
+            [
+                "docker-publish-tester.yml: job validate (if) must contain "
+                f"{TESTER_VALIDATE_SELECTOR!r} "
+                "(documented in docs/development/ci.md and docs/adr/3556-merge-queue-merge-group.md)"
+            ],
+        )
+
+    def test_tester_gpu_validate_contract_on_real_tree(self) -> None:
+        """Verify the real tree satisfies the tester GPU validate dependency contract."""
+        self.assertEqual(check_tester_gpu_validate_contract(wr.load_workflows(WORKFLOWS_DIR)), [])
 
 
 if __name__ == "__main__":

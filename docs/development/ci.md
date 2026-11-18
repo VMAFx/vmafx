@@ -543,7 +543,9 @@ live merge group; lookup failures fail closed.
   as `core/`, builds no tester GPU image; when the planner cannot read them, the
   selector stays set and the images are built.
   `scripts/ci/tests/test_merge_group_workflow_contract.py` refuses a guard that
-  skips `pull_request` without also skipping `merge_group`.
+  skips `pull_request` without also skipping `merge_group`. It also refuses a
+  `docker-publish-tester.yml` where `build-gpu` drops `validate` from `needs`
+  or `validate` drops `needs.impact.outputs.selected` from `if`.
 - Check the aggregator `merge_group` cases and workflow trigger contract
   locally with
   `python3 -m pytest -q scripts/ci/tests/test_aggregator_event_scope.py` and
