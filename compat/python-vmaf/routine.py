@@ -359,15 +359,14 @@ def _correlation_stat(
     ycol: str,
 ) -> dict:
     """PLCC and SROCC of `ycol` against `xcol`."""
-    # Resampling a four-asset dataset can repeat one asset until a prediction
-    # column is constant, or differ only in the last bits of a float.  Reporting
-    # precision is six decimals, so round the prediction there before correlating:
-    # otherwise pandas turns that floating-point noise into a spurious rank
-    # difference (and a spurious +/-1 Pearson value) instead of an undefined
-    # correlation.  Groundtruth stays unrounded so its own distinctions survive.
-    frame = df[[xcol, ycol]]
-    x = frame[xcol]
-    y = frame[ycol].round(6)
+    # The two flat assets score 97.4280426426119 and 97.4280426426108 on the
+    # tester build: a 1.1e-12 difference, far below the six-decimal reporting
+    # grid.  Resampling repeats either asset, and pandas otherwise turns that
+    # last-bit noise into a spurious rank difference and a spurious Pearson
+    # value instead of an undefined correlation.  Normalize at nine decimals:
+    # two orders below the reporting grid, so only float noise collapses.
+    x = df[xcol]
+    y = df[ycol].round(9)
     if y.nunique() < 2:
         return {"plcc": np.nan, "srocc": np.nan}
     plcc = y.corr(x, method="pearson")
