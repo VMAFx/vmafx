@@ -53,8 +53,9 @@ Replace `1.30.0` with the version to measure.
   calling the helper names a pinned `ORT_VERSION` for its package.
 - The development container uses the same installer; the guard checks tracked
   container files for old sources, direct NuGet downloads, and helper version pins.
-- Follow-up: `dev/AGENTS.d/runtime-dependencies.md` and `renovate.json` still
-  reference the old GitHub release tarball source.
+- Follow-up: the `renovate.json` custom manager (`renovate.json:603-617`,
+  `matchStrings` at `renovate.json:610-614` matching `ORT_SHA256`) still
+  references the old GitHub release tarball source.
 
 ## References
 
