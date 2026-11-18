@@ -2125,26 +2125,48 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
         )
 
 
-PYTEST_WARNING_CONFIGS = frozenset(
-    {".git", ".tox", ".venv", "build", "node_modules", "subprojects", "venv"}
-)
+PYTEST_WARNING_EXEMPT = {
+    "bindings/python/pyproject.toml": "the bindings run no pytest suite of their own",
+    "python/pyproject.toml": "pytest is configured in python/tox.ini, which sets filterwarnings",
+    "tools/ensemble-training-kit/pyproject.toml": "the kit has no pytest suite",
+}
+
+
+def _tracked_pyprojects(root: Path) -> list[Path]:
+    """List tracked pyproject files; fixtures without git fall back to rglob."""
+    if not (root / ".git").exists():
+        return sorted(root.rglob("pyproject.toml"))
+    result = run_command(
+        ["git", "-C", str(root), "ls-files", "-z"],
+        allowed_executables=("git",),
+        env=listing_git_environment(root),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
+    )
+    return sorted(
+        root / name
+        for name in result.stdout.split("\0")
+        if name and Path(name).name == "pyproject.toml"
+    )
 
 
 def pytest_filterwarnings_problems(root: Path) -> list[str]:
-    """Every pyproject pytest section must turn warnings into errors (issue 3081)."""
+    """Every tracked pyproject pytest section must turn warnings into errors (issue 3081)."""
     problems: list[str] = []
-    for path in sorted(root.rglob("pyproject.toml")):
-        relative = path.relative_to(root)
-        if PYTEST_WARNING_CONFIGS.intersection(relative.parts):
+    for path in _tracked_pyprojects(root):
+        relative = path.relative_to(root).as_posix()
+        if relative in PYTEST_WARNING_EXEMPT:
             continue
         data = tomllib.loads(path.read_text(encoding="utf-8"))
         ini_options = data.get("tool", {}).get("pytest", {}).get("ini_options")
         if not isinstance(ini_options, dict):
+            problems.append(f"{relative}: missing [tool.pytest.ini_options]")
             continue
         if ini_options.get("filterwarnings") != ["error"]:
             problems.append(
-                f"{relative.as_posix()}: [tool.pytest.ini_options] filterwarnings "
-                'must be ["error"]'
+                f"{relative}: [tool.pytest.ini_options] filterwarnings " 'must be ["error"]'
             )
     return problems
 
@@ -2219,6 +2241,25 @@ class FailClosedCIContract(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual(pytest_filterwarnings_problems(root), [])
+
+    def test_pytest_filterwarnings_audit_reports_missing_table(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "pyproject.toml").write_text(
+                '[project]\nname = "missing-pytest-table"\n', encoding="utf-8"
+            )
+            self.assertEqual(
+                pytest_filterwarnings_problems(root),
+                ["pyproject.toml: missing [tool.pytest.ini_options]"],
+            )
+            (root / "bindings/python").mkdir(parents=True)
+            (root / "bindings/python/pyproject.toml").write_text(
+                '[project]\nname = "declared-exception"\n', encoding="utf-8"
+            )
+            self.assertEqual(
+                pytest_filterwarnings_problems(root),
+                ["pyproject.toml: missing [tool.pytest.ini_options]"],
+            )
 
     def test_cpu_coverage_records_and_reasserts_pytest_failure(self) -> None:
         workflow = (WORKFLOWS / "tests-and-quality-gates.yml").read_text(encoding="utf-8")
