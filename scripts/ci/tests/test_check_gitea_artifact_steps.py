@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import difflib
 import subprocess
 import sys
 import tempfile
@@ -104,6 +105,46 @@ jobs:
         run: echo hi
       - <<: *defaults
         name: "Merged"
+"""
+
+
+ROUND_TRIP_WRITE = f"""\
+---
+# top-level comment
+name: "Round trip"
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      # keep this comment
+      - name: "Upload log"
+        uses: {V7}
+        with:
+          name: "log"
+          path: build/log.txt
+
+      - name: Folded
+        run: >
+          echo one
+          echo two
+      - &defaults
+        name: "Anchored"
+        run: echo hi
+      - <<: *defaults
+        name: "Merged"
+"""
+
+FLOW_MAPPING = f"""\
+---
+name: Flow
+on: push
+jobs:
+  build:
+    steps:
+      - name: Upload
+        uses: {V7}
+        with: {{ name: log, path: out.log }}
 """
 
 
@@ -215,6 +256,41 @@ class GiteaArtifactCheckTests(unittest.TestCase):
         result = self.run_check(ROUND_TRIP, "--write")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.path.read_text(encoding="utf-8"), textwrap.dedent(ROUND_TRIP))
+
+    def test_write_round_trip_adds_only_twin_lines(self) -> None:
+        before = textwrap.dedent(ROUND_TRIP_WRITE)
+        result = self.run_check(ROUND_TRIP_WRITE, "--write")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        after = self.path.read_text(encoding="utf-8")
+        guard = "        if: ${{ env.GITEA_ACTIONS != 'true' }}"
+        twin = (
+            "      - name: Upload log (Gitea)\n"
+            "        if: ${{ env.GITEA_ACTIONS == 'true' }}\n"
+            f"        uses: {V3}\n"
+            "        with:\n"
+            '          name: "log"\n'
+            "          path: build/log.txt"
+        )
+        expected = before.replace(
+            f'      - name: "Upload log"\n        uses: {V7}',
+            f'      - name: "Upload log"\n{guard}\n        uses: {V7}',
+        ).replace(
+            "          path: build/log.txt\n\n      - name: Folded",
+            f"          path: build/log.txt\n{twin}\n\n      - name: Folded",
+        )
+        self.assertEqual(after, expected)
+        diff = list(difflib.unified_diff(before.splitlines(), after.splitlines(), lineterm=""))
+        removed = [line[1:] for line in diff if line.startswith("-") and not line.startswith("---")]
+        self.assertEqual(removed, [])
+        self.assertTrue(after.startswith("---\n# top-level comment"))
+        self.assertIn("path: build/log.txt\n\n      - name: Folded", after)
+
+    def test_write_refuses_to_reformat_flow_mappings(self) -> None:
+        result = self.run_check(FLOW_MAPPING, "--write")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("refusing to rewrite", result.stderr)
+        self.assertIn("not guarded", result.stdout)
+        self.assertEqual(self.path.read_text(encoding="utf-8"), textwrap.dedent(FLOW_MAPPING))
 
     def test_twin_comparison_keeps_yaml_1_2_yes_as_a_string(self) -> None:
         text = UNGUARDED.replace(

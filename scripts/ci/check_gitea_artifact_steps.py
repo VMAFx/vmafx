@@ -25,9 +25,11 @@ A v3 pin anywhere else is refused, because github.com no longer serves v3.
 The writer uses ruamel.yaml's round-trip mode so comments, key order, folded blocks,
 quoting and anchors survive the edit; it sets ``width = 1000`` and
 ``indent(mapping=2, sequence=4, offset=2)`` so a file that needs no twin is left
-byte-identical. ruamel.yaml follows YAML 1.2 for plain scalars: ``on``, ``yes`` and
-``no`` are strings, not booleans, so a ``with:`` value such as
-``if-no-files-found: yes`` compares as the same string on the step and its twin.
+byte-identical. A file whose unchanged round trip is not byte-identical (for example
+flow mappings with inner spaces) is refused rather than reformatted. ruamel.yaml follows
+YAML 1.2 for plain scalars: ``on``, ``yes`` and ``no`` are strings, not booleans, so a
+``with:`` value such as ``if-no-files-found: yes`` compares as the same string on the
+step and its twin.
 
 Exit 0 when every file passes, 1 on a finding.
 """
@@ -38,7 +40,7 @@ import argparse
 import io
 import re
 import sys
-from collections.abc import MutableMapping, MutableSequence
+from collections.abc import Iterator, MutableMapping, MutableSequence
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -62,6 +64,8 @@ ON_GITEA = "env.GITEA_ACTIONS == 'true'"
 USES = re.compile(r"actions/(upload|download)-artifact@([0-9a-f]{40})")
 MAX_FILES = 512
 MAX_STEPS = 1024
+CA_POST_VALUE = 2
+TRAILING_BLANK_LINES = 2
 
 
 def find_files(root: Path) -> list[Path]:
@@ -163,12 +167,13 @@ def check_steps(label: str, steps: list[Any]) -> list[str]:
     return findings
 
 
-def _yaml(round_trip: bool = False) -> YAML:
+def _yaml(round_trip: bool = False, explicit_start: bool = False) -> YAML:
     """A YAML parser; ``round_trip`` keeps comments, order and quoting for writes."""
     yaml = YAML(typ="rt" if round_trip else "safe")
     if round_trip:
         yaml.preserve_quotes = True
         yaml.width = 1000
+        yaml.explicit_start = explicit_start
         yaml.indent(mapping=2, sequence=4, offset=2)
     return yaml
 
@@ -200,7 +205,7 @@ def _is_sequence(value: object) -> bool:
     return isinstance(value, MutableSequence)
 
 
-def _step_lists(doc: Any):
+def _step_lists(doc: Any) -> Iterator[Any]:
     """Every ordered step list in a workflow or composite action."""
     if not _is_mapping(doc):
         return
@@ -228,6 +233,51 @@ def _set_if(step: Any, value: str) -> None:
         insert(position, "if", value)
 
 
+def _last_mapping(step: Any) -> Any:
+    """The mapping whose last value carries the step's trailing blank line."""
+    with_map = step.get("with") if _is_mapping(step) else None
+    return with_map if _is_mapping(with_map) else step
+
+
+def _has_trailing_blank(step: Any) -> bool:
+    """Whether the step is followed by a blank line in the source document."""
+    node = _last_mapping(step)
+    keys = list(node.keys())
+    if not keys:
+        return False
+    item = node.ca.items.get(keys[-1])
+    token = item[CA_POST_VALUE] if item and len(item) > CA_POST_VALUE else None
+    value = getattr(token, "value", "") if token is not None else ""
+    return value.count("\n") >= TRAILING_BLANK_LINES and not value.strip()
+
+
+def _relocate_blank_after_twin(text: str, label: str, occurrence: int = 1) -> str:
+    """Move the source blank line from before the twin to after it."""
+    lines = text.splitlines(keepends=True)
+    needle = f"- name: {label}"
+    matches = [i for i, line in enumerate(lines) if line.lstrip().startswith(needle)]
+    if len(matches) < occurrence:
+        return text
+    twin_idx = matches[occurrence - 1]
+    if twin_idx > 0 and not lines[twin_idx - 1].strip():
+        del lines[twin_idx - 1]
+        twin_idx -= 1
+    indent = len(lines[twin_idx]) - len(lines[twin_idx].lstrip())
+    end = len(lines)
+    for i in range(twin_idx + 1, len(lines)):
+        line = lines[i]
+        if (
+            line.strip()
+            and len(line) - len(line.lstrip()) <= indent
+            and line.lstrip().startswith("- ")
+        ):
+            end = i
+            break
+    if end < len(lines) and (end == 0 or lines[end - 1].strip()):
+        lines.insert(end, "\n")
+    return "".join(lines)
+
+
 def _twin_step(step: Any, kind: str, base: str) -> Any:
     """Build the Gitea twin as a mapping, not as reconstructed text."""
     name = step.get("name")
@@ -237,9 +287,12 @@ def _twin_step(step: Any, kind: str, base: str) -> Any:
     twin["if"] = guarded(base or None, True)
     inputs = set((step.get("with") or {}).keys())
     if inputs <= V3_INPUTS[kind]:
-        if "with" in step:
-            twin["with"] = deepcopy(step["with"])
         twin["uses"] = V3_PINS[kind].split("#", 1)[0].strip()
+        if "with" in step:
+            with_map = CommentedMap()
+            for key, value in step["with"].items():
+                with_map[key] = deepcopy(value)
+            twin["with"] = with_map
         twin.yaml_add_eol_comment(V3_PINS[kind].split("#", 1)[1].strip(), key="uses")
     else:
         missing = ", ".join(sorted(inputs - V3_INPUTS[kind]))
@@ -274,11 +327,22 @@ def write_file(path: Path) -> bool:
     if not check_file(path):
         return False
     text = path.read_text(encoding="utf-8")
-    doc = _yaml(round_trip=True).load(text)
+    yaml = _yaml(round_trip=True, explicit_start=text.startswith("---"))
+    doc = yaml.load(text)
+    baseline = io.StringIO()
+    yaml.dump(doc, baseline)
+    if baseline.getvalue() != text:
+        print(
+            f"{path}: round-trip without edits is not byte-identical; refusing to rewrite",
+            file=sys.stderr,
+        )
+        return False
     changed = False
+    blank_labels: list[str] = []
+    seen: dict[str, int] = {}
     for steps in _step_lists(doc):
         idx = 0
-        while idx < len(steps):
+        while idx < len(steps) and idx < MAX_STEPS:
             step = steps[idx]
             if not _is_mapping(step):
                 idx += 1
@@ -287,14 +351,23 @@ def write_file(path: Path) -> bool:
             if cls is None or cls[1]:
                 idx += 1
                 continue
+            had_blank = _has_trailing_blank(step)
             did_change, inserted = _ensure_guard_and_twin(steps, idx, cls[0])
             changed = changed or did_change
+            if inserted:
+                label = steps[idx + 1].get("name")
+                if had_blank and label:
+                    blank_labels.append(str(label))
             idx += 2 if inserted else 1
     if not changed:
         return False
     stream = io.StringIO()
-    _yaml(round_trip=True).dump(doc, stream)
-    path.write_text(stream.getvalue(), encoding="utf-8")
+    yaml.dump(doc, stream)
+    output = stream.getvalue()
+    for label in blank_labels:
+        seen[label] = seen.get(label, 0) + 1
+        output = _relocate_blank_after_twin(output, label, seen[label])
+    path.write_text(output, encoding="utf-8")
     return True
 
 
