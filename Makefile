@@ -1099,24 +1099,27 @@ help:
 	@echo ""
 	@echo "Upstream targets: build, test, debug, install, clean, distclean, cythonize"
 
+# Issue 3468: governance targets run the engine the repository pins, the same one
+# lefthook and the Standards job run; never call standardsctl or praetorctl by name here.
+-include .config/praetor/engine.mk
 # cordanaLLM/praetor Governance Targets
 .PHONY: verify-all compile-context audit hiss-coverage dedupe-check
 
 verify-all:
-	@standardsctl audit && standardsctl compile-context --verify && standardsctl hiss coverage --verify
+	@$(PRAETORCTL) audit && $(PRAETORCTL) compile-context --verify && $(PRAETORCTL) hiss coverage --verify
 	@$(MAKE) --no-print-directory dedupe-check
 
 compile-context:
-	@standardsctl compile-context
+	@$(PRAETORCTL) compile-context
 
 audit:
-	@standardsctl audit
+	@$(PRAETORCTL) audit
 
 hiss-coverage:
-	@standardsctl hiss coverage --verify
+	@$(PRAETORCTL) hiss coverage --verify
 
 dedupe-check:
-	@standardsctl dedupe scan .
+	@$(PRAETORCTL) dedupe scan .
 
 # Documentation site (mkdocs.yml writes build-docs/site). docs-build is the
 # strict build the docs workflow and the pre-push MkDocs gate run; docs-serve
