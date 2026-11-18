@@ -149,12 +149,12 @@ compensated.
 ```bash
 # Release blob, verbatim from the bundle layout.
 cosign verify-blob --bundle vmaf.bundle vmaf \
-  --certificate-identity-regexp 'https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@.*' \
+  --certificate-identity-regexp '^https://github\.com/VMAFx/vmafx/\.github/workflows/supply-chain\.yml@refs/(heads/master|tags/v[0-9][0-9A-Za-z.+-]*)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # Container image, cosign route. Replace DIGEST with the actual sha256 digest.
 cosign verify ghcr.io/vmafx/vmafx@sha256:DIGEST \
-  --certificate-identity-regexp 'https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@.*' \
+  --certificate-identity-regexp '^https://github\.com/VMAFx/vmafx/\.github/workflows/docker-publish-production\.yml@refs/(heads/master|tags/v[0-9][0-9A-Za-z.+-]*)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # Container image, GitHub-native attestation, NEW.

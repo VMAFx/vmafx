@@ -31,9 +31,11 @@ test_op_allowlist = executable('test_op_allowlist',
 test_model_loader = executable('test_model_loader',
     ['../test.c', 'test_model_loader.c',
      '../../src/dnn/model_loader.c',
+     '../../src/dnn/signer_identity.c',
      '../../src/dnn/onnx_scan.c',
      '../../src/dnn/op_allowlist.c',
      '../../src/compat/path_utf8.c'],
+    objects : log_cpp23_test_objects,
     include_directories : dnn_test_inc,
     c_args : dnn_defines,
 )
@@ -41,13 +43,24 @@ test_model_loader = executable('test_model_loader',
 # T6-9 / ADR-0209 — Sigstore-bundle verification failure modes. Compiles
 # model_loader.c directly so the test binary exercises the in-tree
 # vmaf_dnn_verify_signature() implementation; does NOT require `cosign`
-# on the host because every covered branch fails before posix_spawnp().
+# on the host because spawn tests supply a fake cosign executable.
 test_tiny_model_verify = executable('test_tiny_model_verify',
     ['../test.c', 'test_tiny_model_verify.c',
      '../../src/dnn/model_loader.c',
+     '../../src/dnn/signer_identity.c',
      '../../src/dnn/onnx_scan.c',
      '../../src/dnn/op_allowlist.c',
      '../../src/compat/path_utf8.c'],
+    objects : log_cpp23_test_objects,
+    include_directories : dnn_test_inc,
+    c_args : dnn_defines,
+)
+
+# ADR-2985 — the signing certificate of a tiny-model bundle must name VMAFx's
+# supply-chain workflow and carry VMAFx's GitHub owner ID. Fixtures:
+# signer_fixtures.h, written by gen_signer_fixtures.py.
+test_signer_identity = executable('test_signer_identity',
+    ['../test.c', 'test_signer_identity.c', '../../src/dnn/signer_identity.c'],
     include_directories : dnn_test_inc,
     c_args : dnn_defines,
 )
@@ -133,6 +146,7 @@ test('test_tensor_io',       test_tensor_io,       suite : 'dnn')
 test('test_op_allowlist',    test_op_allowlist,    suite : 'dnn')
 test('test_model_loader',    test_model_loader,    suite : 'dnn')
 test('test_tiny_model_verify', test_tiny_model_verify, suite : 'dnn')
+test('test_signer_identity', test_signer_identity, suite : ['dnn', 'fast'])
 test('test_onnx_scan',       test_onnx_scan,       suite : 'dnn')
 test('test_dnn_session_api', test_dnn_session_api,
      workdir : meson.project_source_root() / '..',
