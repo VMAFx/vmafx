@@ -4,19 +4,22 @@
 """Detect Python test functions in scripts/ci/tests/ that assert only exit code 0.
 
 A test that runs a process or checker (`subprocess.run`, a helper named `run*`
-or `_run*`, or a `main(...)` call) and compares only its return code with the
-literal `0` passes even when the checker silently drops its input.
+or `_run*`, or a `main(...)` call) and compares only its return code with `0`
+(`== 0`, `assert not rc`, `assertFalse(rc)`), or makes no assertion at all
+(including only `check=True` or `proc.check_returncode()`), passes even when
+the checker silently drops its input.
 
 Default mode scans `scripts/ci/tests/test_*.py`, prints all findings with an
 informational count and top 5 files, and exits 0. `--changed-against <ref>`
-checks only test functions whose line span intersects the added or modified
-line ranges from `git diff -U0 <ref>... -- <file>` (plus any uncommitted or
-untracked working-tree lines) and exits 1 on findings. Unreadable files, files
-above 1 MiB, syntax errors, and bad refs exit 2 with the path on stderr.
+checks only test functions whose line span (from the first decorator or excuse
+comment) intersects the changed ranges from `git diff -M -U0 <ref>...` (plus
+working-tree changes against `HEAD`) and exits 1 on findings. Unreadable files,
+files above 1 MiB, syntax errors, bad refs, and git diff errors exit 2 with the
+path on stderr.
 
 Justified cases carry `# exit-code-only: <reason>` (reason >= 10 characters)
-on the `def` line or the line immediately above it; an empty or shorter reason
-is itself a finding.
+on the `def` line or the line immediately above it (or its first decorator); an
+empty or shorter reason is itself a finding.
 """
 
 from __future__ import annotations
@@ -62,6 +65,8 @@ GIT_TIMEOUT_SECONDS = 30.0
 RC_NAMES = frozenset({"rc", "returncode", "return_code", "exit_code", "status", "code"})
 ESCAPE_RE = re.compile(r"#\s*exit-code-only(?:\s*:(.*)|$)")
 HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", re.MULTILINE)
+REMOVED_DEF_RE = re.compile(r"^-\s*(?:async\s+)?def\b", re.MULTILINE)
+REMOVED_META_RE = re.compile(r"^-(?:\s*@|.*#\s*exit-code-only(?:\s*:|$))", re.MULTILINE)
 
 FuncNode: TypeAlias = ast.FunctionDef | ast.AsyncFunctionDef
 
@@ -79,6 +84,7 @@ class Finding:
     end_lineno: int
     func_name: str
     message: str
+    span_start: int | None = None
 
     def format(self) -> str:
         """Render the finding with file, line, function name, and reason."""
@@ -181,7 +187,12 @@ def _collect_rc_vars(nodes: list[ast.AST]) -> set[str]:
 
 def _is_zero_literal(node: ast.AST) -> bool:
     """True only for the integer literal 0 (excluding booleans)."""
-    return isinstance(node, ast.Constant) and type(node.value) is int and node.value == 0
+    return (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, int)
+        and not isinstance(node.value, bool)
+        and node.value == 0
+    )
 
 
 def _is_rc_expr(node: ast.AST, rc_vars: set[str]) -> bool:
@@ -214,6 +225,17 @@ def _is_rc_eq_zero_compare(node: ast.AST, rc_vars: set[str]) -> bool:
     return _is_rc_zero_pair(node.left, node.comparators[0], rc_vars)
 
 
+def _is_rc_zero_test(node: ast.AST, rc_vars: set[str]) -> bool:
+    """True when a boolean test checks `<rc> == 0`, `0 == <rc>`, or `not <rc>`."""
+    if _is_rc_eq_zero_compare(node, rc_vars):
+        return True
+    return (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, ast.Not)
+        and _is_rc_expr(node.operand, rc_vars)
+    )
+
+
 def _equal_operands(call: ast.Call) -> tuple[ast.AST, ast.AST] | None:
     """Extract the two compared expressions of an assertEqual/assertEquals call."""
     if len(call.args) >= EQUAL_OPERAND_COUNT:
@@ -239,7 +261,7 @@ def _is_pytest_raises(func: ast.AST) -> bool:
 def _classify_assertion(node: ast.AST, rc_vars: set[str]) -> str | None:
     """Return 'rc_zero' for an exit-code-0 assertion, 'other' for other assertions."""
     if isinstance(node, ast.Assert):
-        return "rc_zero" if _is_rc_eq_zero_compare(node.test, rc_vars) else "other"
+        return "rc_zero" if _is_rc_zero_test(node.test, rc_vars) else "other"
     if not isinstance(node, ast.Call):
         return None
     func = node.func
@@ -251,9 +273,21 @@ def _classify_assertion(node: ast.AST, rc_vars: set[str]) -> str | None:
     if name in ("assertEqual", "assertEquals"):
         pair = _equal_operands(node)
         return "rc_zero" if pair and _is_rc_zero_pair(pair[0], pair[1], rc_vars) else "other"
-    if name == "assertTrue" and node.args and _is_rc_eq_zero_compare(node.args[0], rc_vars):
+    if name == "assertTrue" and node.args and _is_rc_zero_test(node.args[0], rc_vars):
+        return "rc_zero"
+    if name == "assertFalse" and node.args and _is_rc_expr(node.args[0], rc_vars):
         return "rc_zero"
     return "other" if name.startswith("assert") or _is_pytest_raises(func) else None
+
+
+def _func_span_start(func: FuncNode, lines: list[str]) -> int:
+    """Return the earliest line of `func` including decorators and excuse comments."""
+    start = func.lineno
+    if func.decorator_list:
+        start = min(start, *(d.lineno for d in func.decorator_list[:MAX_DECORATORS]))
+    if 1 <= start - 1 <= len(lines) and ESCAPE_RE.search(lines[start - 2]) is not None:
+        return start - 1
+    return start
 
 
 def _escape_status(func: FuncNode, lines: list[str]) -> str:
@@ -274,6 +308,7 @@ def _escape_status(func: FuncNode, lines: list[str]) -> str:
 def _check_test_function(func: FuncNode, lines: list[str], rel_path: str) -> Finding | None:
     """Inspect one `def test_*` node and return a Finding when weak or unescaped."""
     end_lineno = func.end_lineno or func.lineno
+    span_start = _func_span_start(func, lines)
     escape = _escape_status(func, lines)
     if escape == "short":
         return Finding(
@@ -282,6 +317,7 @@ def _check_test_function(func: FuncNode, lines: list[str], rel_path: str) -> Fin
             end_lineno,
             func.name,
             f"# exit-code-only: reason must be at least {MIN_REASON_LENGTH} characters",
+            span_start,
         )
     if escape == "valid":
         return None
@@ -290,8 +326,24 @@ def _check_test_function(func: FuncNode, lines: list[str], rel_path: str) -> Fin
         return None
     rc_vars = _collect_rc_vars(nodes)
     kinds = [k for n in nodes if (k := _classify_assertion(n, rc_vars)) is not None]
-    if kinds and all(k == "rc_zero" for k in kinds):
-        return Finding(rel_path, func.lineno, end_lineno, func.name, "asserts only exit code 0")
+    if not kinds:
+        return Finding(
+            rel_path,
+            func.lineno,
+            end_lineno,
+            func.name,
+            "runs a command and asserts nothing",
+            span_start,
+        )
+    if all(k == "rc_zero" for k in kinds):
+        return Finding(
+            rel_path,
+            func.lineno,
+            end_lineno,
+            func.name,
+            "asserts only exit code 0",
+            span_start,
+        )
     return None
 
 
@@ -350,26 +402,51 @@ def _verify_ref(root: Path, ref: str) -> None:
         raise ScanError(f"{root}: bad ref {ref!r}: {detail}")
 
 
+def _file_diff_section(diff_text: str, rel_path: str) -> str:
+    """Extract the `diff --git` block(s) whose destination path is `rel_path`."""
+    if "diff --git " not in diff_text:
+        return diff_text
+    plus_header = f"+++ b/{rel_path}"
+    rename_header = f"rename to {rel_path}"
+    matched: list[str] = []
+    for block in ("\n" + diff_text).split("\ndiff --git ")[1 : MAX_TEST_FILES + 1]:
+        header = block.split("\n@@ ", 1)[0]
+        header_lines = header.splitlines()[:MAX_CALL_ARGS]
+        if plus_header in header_lines or rename_header in header_lines:
+            matched.append(block)
+    return "\n".join(matched)
+
+
 def _parse_diff_hunks(diff_text: str) -> list[tuple[int, int]]:
     """Extract (new_start, new_count) line ranges from `git diff -U0` output."""
+    matches = list(itertools.islice(HUNK_RE.finditer(diff_text), MAX_DIFF_HUNKS))
     hunks: list[tuple[int, int]] = []
-    for match in itertools.islice(HUNK_RE.finditer(diff_text), MAX_DIFF_HUNKS):
+    for idx, match in enumerate(matches[:MAX_DIFF_HUNKS]):
         start = int(match.group(1))
         count = int(match.group(2)) if match.group(2) is not None else 1
-        hunks.append((start, count))
+        end_pos = matches[idx + 1].start() if idx + 1 < len(matches) else len(diff_text)
+        body = diff_text[match.end() : end_pos]
+        if REMOVED_META_RE.search(body) and not REMOVED_DEF_RE.search(body):
+            hunks.append((start + 1, 1) if count == 0 else (start, count + 1))
+        else:
+            hunks.append((start, count))
     return hunks
 
 
 def _changed_hunks(root: Path, ref: str, rel_path: str) -> list[tuple[int, int]]:
     """Return added/modified line ranges for `rel_path` relative to `ref`."""
-    res = _run_git(root, ["diff", "-U0", f"{ref}...", "--", rel_path])
+    res = _run_git(root, ["diff", "-M", "-U0", f"{ref}..."])
     if res.returncode != 0:
         raise ScanError(f"{rel_path}: git diff against {ref!r} failed: {res.stderr.strip()}")
-    hunks = _parse_diff_hunks(res.stdout)
-    work = _run_git(root, ["diff", "-U0", "HEAD", "--", rel_path])
-    if work.returncode == 0 and work.stdout:
-        hunks.extend(_parse_diff_hunks(work.stdout))
-    if not hunks:
+    ref_section = _file_diff_section(res.stdout, rel_path)
+    hunks = _parse_diff_hunks(ref_section)
+    work = _run_git(root, ["diff", "-M", "-U0", "HEAD"])
+    if work.returncode != 0:
+        raise ScanError(f"{rel_path}: git diff against HEAD failed: {work.stderr.strip()}")
+    work_section = _file_diff_section(work.stdout, rel_path)
+    if work_section:
+        hunks.extend(_parse_diff_hunks(work_section))
+    if not hunks and not ref_section and not work_section:
         tracked = _run_git(root, ["ls-files", "--error-unmatch", "--", rel_path])
         if tracked.returncode != 0:
             return [(1, MAX_AST_NODES)]
@@ -377,13 +454,19 @@ def _changed_hunks(root: Path, ref: str, rel_path: str) -> list[tuple[int, int]]
 
 
 def _spans_intersect(func_start: int, func_end: int, hunks: Sequence[tuple[int, int]]) -> bool:
-    """True when `[func_start, func_end]` intersects any diff hunk range."""
+    """True when `[func_start, func_end]` intersects any diff hunk range.
+
+    In `git diff -U0`, a pure deletion hunk `+N,0` (`new_count == 0`) sits
+    immediately after new line `N`, so it matches `[func_start, func_end]` when
+    `func_start <= N <= func_end` (including deletion of the function's last
+    statement at `N == func_end`) without selecting a later function (`start > N`).
+    """
     for new_start, new_count in hunks[:MAX_DIFF_HUNKS]:
         if new_count > 0:
             hunk_end = new_start + new_count - 1
             if max(func_start, new_start) <= min(func_end, hunk_end):
                 return True
-        elif func_start <= new_start < func_end:
+        elif func_start <= new_start <= func_end:
             return True
     return False
 
@@ -424,7 +507,11 @@ def scan_repository(
             continue
         if changed_against is not None:
             hunks = _changed_hunks(root, changed_against, rel_path)
-            current = [f for f in current if _spans_intersect(f.lineno, f.end_lineno, hunks)]
+            current = [
+                f
+                for f in current
+                if _spans_intersect(f.span_start or f.lineno, f.end_lineno, hunks)
+            ]
         findings.extend(current)
     return findings
 

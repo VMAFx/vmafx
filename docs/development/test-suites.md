@@ -329,19 +329,24 @@ python3 scripts/ci/check_exit_code_only_tests.py --changed-against origin/master
 - **What is refused**: a `def test_*` function or method (with `subTest` blocks
   counted as part of the function) that obtains a process or checker result via
   `subprocess.run`, a helper named `run*` or `_run*`, or a `main(...)` call,
-  and in which every assertion compares only a return code with the literal `0`
+  and in which every assertion checks only that a return code is `0`
   (`assertEqual(x.returncode, 0)`, `assert rc == 0`,
-  `assertEqual(main([...]), 0)`), with no assertion on output, a file, or any
-  other value. A test that asserts a non-zero exit code checks a refusal path
-  and is not flagged.
+  `assertEqual(main([...]), 0)`, `assert not proc.returncode`,
+  `assertFalse(proc.returncode)`, `assertFalse(rc)`), with no assertion on
+  output, a file, or any other value (`asserts only exit code 0`), or that runs
+  such a command and has no assertion at all, or only `proc.check_returncode()`
+  / `check=True` (`runs a command and asserts nothing`). A test that asserts a
+  non-zero exit code checks a refusal path and is not flagged.
 - **Escape comment**: place `# exit-code-only: <reason>` on the `def` line or
-  the line immediately above it, with `<reason>` at least 10 characters long.
-  An empty or shorter reason is reported as a finding.
+  the line immediately above it (or its first decorator), with `<reason>` at
+  least 10 characters long. An empty or shorter reason is reported as a finding.
 - **Modes and exit codes**: default mode reports all existing findings with an
   informational count and the top 5 files, and exits `0`. `--changed-against
-  <ref>` intersects each function's line span with the changed ranges from
-  `git diff -U0 <ref>... -- <file>` and exits `1` on findings (`0` when clean).
-  An unreadable file, a file above 1 MiB, a syntax error, or a bad ref exits
-  `2` with the path on `stderr`, never `0`.
+  <ref>` intersects each function's line span (starting at the first decorator
+  or excuse-comment line, whichever is earlier) with the changed ranges from
+  `git diff -M -U0 <ref>...` (plus working-tree changes against `HEAD`) and
+  exits `1` on findings (`0` when clean). An unreadable file, a file above 1
+  MiB, a syntax error, a bad ref, or a `git diff` failure exits `2` with the
+  path on `stderr`, never `0`.
 - **Scope limit**: the check verifies that another assertion is present; it
   does not judge whether an output assertion is strong.
