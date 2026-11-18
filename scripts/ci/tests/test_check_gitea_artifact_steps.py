@@ -135,6 +135,51 @@ jobs:
         name: "Merged"
 """
 
+TRAILING_COMMENTS = f"""\
+---
+name: Comments
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Upload log
+        uses: {V7}
+        with:
+          name: log
+          path: build/log.txt
+      # keep this comment with the upload
+      # second line
+      - name: Next
+        run: echo next
+"""
+
+TRAILING_COMMENTS_WRITE = f"""\
+---
+name: Comments
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Upload log
+        if: ${{{{ env.GITEA_ACTIONS != 'true' }}}}
+        uses: {V7}
+        with:
+          name: log
+          path: build/log.txt
+      - name: Upload log (Gitea)
+        if: ${{{{ env.GITEA_ACTIONS == 'true' }}}}
+        uses: {V3}
+        with:
+          name: log
+          path: build/log.txt
+      # keep this comment with the upload
+      # second line
+      - name: Next
+        run: echo next
+"""
+
 FLOW_MAPPING = f"""\
 ---
 name: Flow
@@ -284,6 +329,14 @@ class GiteaArtifactCheckTests(unittest.TestCase):
         self.assertEqual(removed, [])
         self.assertTrue(after.startswith("---\n# top-level comment"))
         self.assertIn("path: build/log.txt\n\n      - name: Folded", after)
+
+    def test_write_moves_trailing_comments_after_the_twin(self) -> None:
+        result = self.run_check(TRAILING_COMMENTS, "--write")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            self.path.read_text(encoding="utf-8"),
+            textwrap.dedent(TRAILING_COMMENTS_WRITE),
+        )
 
     def test_write_refuses_to_reformat_flow_mappings(self) -> None:
         result = self.run_check(FLOW_MAPPING, "--write")

@@ -65,7 +65,6 @@ USES = re.compile(r"actions/(upload|download)-artifact@([0-9a-f]{40})")
 MAX_FILES = 512
 MAX_STEPS = 1024
 CA_POST_VALUE = 2
-TRAILING_BLANK_LINES = 2
 
 
 def find_files(root: Path) -> list[Path]:
@@ -239,43 +238,39 @@ def _last_mapping(step: Any) -> Any:
     return with_map if _is_mapping(with_map) else step
 
 
-def _has_trailing_blank(step: Any) -> bool:
-    """Whether the step is followed by a blank line in the source document."""
+def _last_key(node: Any) -> Any:
+    """The last key of a mapping, whose post token carries trailing text."""
+    keys = list(node.keys()) if _is_mapping(node) else []
+    return keys[-1] if keys else None
+
+
+def _take_trailing_post(step: Any) -> Any:
+    """Detach and return the source comment/blank token after a step."""
     node = _last_mapping(step)
-    keys = list(node.keys())
-    if not keys:
-        return False
-    item = node.ca.items.get(keys[-1])
-    token = item[CA_POST_VALUE] if item and len(item) > CA_POST_VALUE else None
-    value = getattr(token, "value", "") if token is not None else ""
-    return value.count("\n") >= TRAILING_BLANK_LINES and not value.strip()
+    key = _last_key(node)
+    item = node.ca.items.get(key) if key is not None else None
+    if not item or len(item) <= CA_POST_VALUE:
+        return None
+    token = item[CA_POST_VALUE]
+    if token is None:
+        return None
+    item[CA_POST_VALUE] = None
+    return token
 
 
-def _relocate_blank_after_twin(text: str, label: str, occurrence: int = 1) -> str:
-    """Move the source blank line from before the twin to after it."""
-    lines = text.splitlines(keepends=True)
-    needle = f"- name: {label}"
-    matches = [i for i, line in enumerate(lines) if line.lstrip().startswith(needle)]
-    if len(matches) < occurrence:
-        return text
-    twin_idx = matches[occurrence - 1]
-    if twin_idx > 0 and not lines[twin_idx - 1].strip():
-        del lines[twin_idx - 1]
-        twin_idx -= 1
-    indent = len(lines[twin_idx]) - len(lines[twin_idx].lstrip())
-    end = len(lines)
-    for i in range(twin_idx + 1, len(lines)):
-        line = lines[i]
-        if (
-            line.strip()
-            and len(line) - len(line.lstrip()) <= indent
-            and line.lstrip().startswith("- ")
-        ):
-            end = i
-            break
-    if end < len(lines) and (end == 0 or lines[end - 1].strip()):
-        lines.insert(end, "\n")
-    return "".join(lines)
+def _attach_trailing_post(step: Any, token: Any) -> None:
+    """Attach a displaced source comment/blank block after the twin."""
+    if token is None:
+        return
+    node = _last_mapping(step)
+    key = _last_key(node)
+    if key is None:
+        return
+    item = list(node.ca.items.get(key) or [None, None, None, None])
+    while len(item) <= CA_POST_VALUE:
+        item.append(None)
+    item[CA_POST_VALUE] = token
+    node.ca.items[key] = item
 
 
 def _twin_step(step: Any, kind: str, base: str) -> Any:
@@ -338,8 +333,6 @@ def write_file(path: Path) -> bool:
         )
         return False
     changed = False
-    blank_labels: list[str] = []
-    seen: dict[str, int] = {}
     for steps in _step_lists(doc):
         idx = 0
         while idx < len(steps) and idx < MAX_STEPS:
@@ -351,29 +344,29 @@ def write_file(path: Path) -> bool:
             if cls is None or cls[1]:
                 idx += 1
                 continue
-            had_blank = _has_trailing_blank(step)
             did_change, inserted = _ensure_guard_and_twin(steps, idx, cls[0])
             changed = changed or did_change
             if inserted:
-                label = steps[idx + 1].get("name")
-                if had_blank and label:
-                    blank_labels.append(str(label))
+                _attach_trailing_post(steps[idx + 1], _take_trailing_post(step))
             idx += 2 if inserted else 1
     if not changed:
         return False
     stream = io.StringIO()
     yaml.dump(doc, stream)
-    output = stream.getvalue()
-    for label in blank_labels:
-        seen[label] = seen.get(label, 0) + 1
-        output = _relocate_blank_after_twin(output, label, seen[label])
-    path.write_text(output, encoding="utf-8")
+    path.write_text(stream.getvalue(), encoding="utf-8")
     return True
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Check that every artifact step has a Gitea path.")
-    parser.add_argument("--write", action="store_true", help="add missing guards and twins")
+    parser.add_argument(
+        "--write",
+        action="store_true",
+        help=(
+            "add missing guards and twins; refuses files that cannot round-trip "
+            "(for example supply-chain.yml), which need a manual edit"
+        ),
+    )
     parser.add_argument("paths", nargs="*", type=Path, help="files to check (default: all)")
     args = parser.parse_args(argv)
     paths = args.paths or find_files(ROOT)
