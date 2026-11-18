@@ -197,12 +197,12 @@ class PushGateTest(SweepFixtureCase):
 
     def test_diff_rebased_and_unrelated_boundaries(self) -> None:
         paths, lines = gate.read_diff(self.repo, self.base, "HEAD")
-        rc, names, _ = gate.git_cmd(
+        rc, names, _ = sweep.git_cmd(
             self.repo, ["diff", "--no-renames", "--name-only", "-z", self.base, "HEAD", "--"]
         )
         self.assertEqual(rc, 0)
         self.assertEqual(paths, names.rstrip("\0").split("\0"))
-        rc, diff, _ = gate.git_cmd(
+        rc, diff, _ = sweep.git_cmd(
             self.repo,
             [
                 "diff",
