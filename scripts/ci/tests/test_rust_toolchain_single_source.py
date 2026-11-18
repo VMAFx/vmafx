@@ -13,6 +13,7 @@ config: rust-toolchain.toml, both workspaces' `rust-version`, the workflow's
 from __future__ import annotations
 
 import importlib.util
+import os
 import tempfile
 import textwrap
 import unittest
@@ -175,6 +176,10 @@ STATICLIB = importlib.util.module_from_spec(STATICLIB_SPEC)
 STATICLIB_SPEC.loader.exec_module(STATICLIB)
 
 
+@unittest.skipUnless(
+    os.name == "posix",
+    "the cargo stub is a POSIX shell script; Windows cannot execute it",
+)
 class CargoRunsWhereTheToolchainFileIs(unittest.TestCase):
     """rustup reads rust-toolchain.toml from the working directory upwards.
 

@@ -251,7 +251,8 @@ FORMATTER_PINS = {
 def precommit_rev(text: str, repo: str) -> str | None:
     """Return the `rev:` of one pre-commit repository, without a leading v."""
     match = re.search(
-        rf"(?m)^\s*-\s*repo:\s*{re.escape(repo)}\s*\n\s*rev:\s*['\"]?v?([0-9][^'\"\s]*)", text
+        rf"(?m)^\s*-\s*repo:\s*{re.escape(repo)}\s*\n\s*rev:\s*['\"]?v?([0-9][^'\"\s]*)",
+        text,
     )
     return match.group(1) if match else None
 
@@ -454,9 +455,16 @@ def _rust_manifest_problems(root: Path, rust_want: str) -> list[str]:
         release_profiles[rel] = release
 
     baseline_rel = RUST_MANIFESTS[0]
+    problems.extend(_release_profile_problems(release_profiles, baseline_rel))
+    return problems
+
+
+def _release_profile_problems(release_profiles: dict[str, dict], baseline_rel: str) -> list[str]:
+    """Compare every [profile.release] with the baseline manifest."""
     baseline = release_profiles.get(baseline_rel)
     if baseline is None:
-        return problems
+        return []
+    problems: list[str] = []
     for key in RELEASE_PROFILE_KEYS:
         expected = baseline.get(key)
         if expected is None:
@@ -599,7 +607,9 @@ def check_node_pins(root: Path, node_want: str | None) -> list[str]:
     return problems
 
 
-def _read_intel_neo_lock(lock_path: Path) -> tuple[dict[str, object] | None, str | None]:
+def _read_intel_neo_lock(
+    lock_path: Path,
+) -> tuple[dict[str, object] | None, str | None]:
     try:
         document = json.loads(lock_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
