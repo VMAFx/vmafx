@@ -19,7 +19,6 @@ for a usage error.
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import sys
@@ -95,11 +94,10 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as error:
         print(f"git_clone_retry: {error}", file=sys.stderr)
         return 2
-    git = os.environ.get("GIT_BIN") or shutil.which("git") or "git"
+    git = shutil.which("git") or "git"
     status = 1
     for attempt in range(1, attempts + 1):
         try:
-            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args
             # argv form, no shell: clone_args are workflow-owned git arguments,
             # never interpolated into a command string.
             status = subprocess.run(  # noqa: S603
