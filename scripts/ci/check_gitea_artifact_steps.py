@@ -29,12 +29,13 @@ Exit 0 when every file passes, 1 on a finding.
 from __future__ import annotations
 
 import argparse
+import io
 import re
 import sys
 from pathlib import Path
 from typing import Any
 
-import yaml  # type: ignore[import-untyped]  # PyYAML ships no stubs in the hook env, as in scripts/ci/check_composite_actions.py
+from ruamel.yaml import YAML
 
 ROOT = Path(__file__).resolve().parents[2]
 V3_PINS = {
@@ -153,9 +154,23 @@ def check_steps(label: str, steps: list[Any]) -> list[str]:
     return findings
 
 
+def _load_yaml(text: str) -> Any:
+    """Parse one YAML document with ruamel.yaml's safe constructor."""
+    return YAML(typ="safe").load(text)
+
+
+def _yaml_scalar(value: Any) -> str:
+    """Render one YAML scalar on a single line."""
+    stream = io.StringIO()
+    yaml = YAML(typ="safe")
+    yaml.width = 1000
+    yaml.dump(value, stream)
+    return stream.getvalue().strip().removesuffix("...").strip()
+
+
 def check_file(path: Path) -> list[str]:
     """Findings for one workflow or composite action."""
-    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    doc = _load_yaml(path.read_text(encoding="utf-8"))
     if not isinstance(doc, dict):
         return []
     if isinstance(doc.get("runs"), dict):
@@ -193,11 +208,7 @@ def _twin_lines(block: list[str], kind: str, inputs: set[str], cond: str | None)
         "",
     )
     name = (name.strip("'\"") or f"{kind.capitalize()} artifact") + " (Gitea)"
-    out = [
-        " " * indent
-        + "- name: "
-        + yaml.safe_dump(name, width=1000).strip().removesuffix("...").strip()
-    ]
+    out = [" " * indent + "- name: " + _yaml_scalar(name)]
     out.append(pad + "if: " + guarded(cond, True))
     if inputs <= V3_INPUTS[kind]:
         out.append(pad + "uses: " + V3_PINS[kind])
@@ -257,7 +268,7 @@ def write_file(path: Path) -> bool:
             continue
         end = _step_end(lines, i, len(start.group(1)))
         block = lines[i:end]
-        parsed = yaml.safe_load("\n".join(ln[len(start.group(1)) :] for ln in block))
+        parsed = _load_yaml("\n".join(ln[len(start.group(1)) :] for ln in block))
         step = (
             parsed[0] if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict) else {}
         )

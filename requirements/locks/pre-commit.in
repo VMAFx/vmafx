@@ -1,3 +1,4 @@
 pip==26.2.2
 pre-commit==4.7.0
 reuse[charset-normalizer]==6.2.0
+ruamel.yaml==0.19.1
