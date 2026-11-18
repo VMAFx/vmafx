@@ -210,6 +210,10 @@ jobs:
           meson compile -C build
           python3 scripts/ci/write-compile-commands.py --build-dir build
           python3 scripts/ci/gen-mex-compile-commands.py build
+      - name: Check float equality in core/test
+        if: steps.cpp-changes.outputs.any == 'true'
+        timeout-minutes: 5
+        run: python3 scripts/ci/check_float_equality.py --build-dir build
       - name: Run clang-tidy on changed files
         if: steps.cpp-changes.outputs.any == 'true'
         env:

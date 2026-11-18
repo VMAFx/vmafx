@@ -78,6 +78,13 @@ class FloatEqualityTests(unittest.TestCase):
         self.assertEqual(len(problems), 1)
         self.assertIn("planted.c:6", problems[0])
 
+    def test_check_is_wired_into_the_c_cpp_lint_job(self) -> None:
+        workflow = (ROOT / ".github/workflows/lint-and-format.yml").read_text(encoding="utf-8")
+        self.assertIn(
+            "python3 scripts/ci/check_float_equality.py --build-dir build",
+            workflow,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
