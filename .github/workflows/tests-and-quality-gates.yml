@@ -1041,7 +1041,7 @@ jobs:
           ORT_SHA256: "2a19dbfa403672ec27378c3d40a68f793ac7a6327712cd0e8240a86be2b10c55"
         run: |
           set -euo pipefail
-          dpkg -s libcudart12 >/dev/null 2>&1 || sudo apt-get install -y nvidia-cuda-toolkit
+          dpkg -s libcudart12 >/dev/null 2>&1 || sudo apt-get -o Acquire::Retries=3 install -y nvidia-cuda-toolkit
           mkdir -p "${RUNNER_TEMP}/ort-cache"
           tarball="${RUNNER_TEMP}/ort-cache/onnxruntime-linux-x64-gpu-${ORT_VERSION}.tgz"
           if [ ! -f "$tarball" ]; then

@@ -120,9 +120,9 @@ python3 "$fetcher" "${fetch_args[@]}"
 # (libc, libstdc++) are present; refresh the index only when they are not. The
 # runtime set also needs the distro's ocl-icd-libopencl1, so a fresh base image
 # takes the second branch.
-if ! $SUDO apt-get install -y --no-install-recommends "$tmp"/*.deb; then
+if ! $SUDO apt-get -o Acquire::Retries=3 install -y --no-install-recommends "$tmp"/*.deb; then
   $SUDO apt-get --error-on=any -o Acquire::Retries=3 update -qq
-  $SUDO apt-get install -y --no-install-recommends "$tmp"/*.deb
+  $SUDO apt-get -o Acquire::Retries=3 install -y --no-install-recommends "$tmp"/*.deb
 fi
 # The IGC debs put libigc.so.2 and libigdfcl.so.2 in /usr/local/lib without an
 # ldconfig trigger; until the cache is rebuilt ocloc fails with "Loading of IGC

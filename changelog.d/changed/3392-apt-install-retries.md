@@ -1,0 +1,1 @@
+- Require a positive `Acquire::Retries` setting on every `apt-get install` in workflows, shell scripts and container recipes, and extend the fetch contract test to audit those install sites.

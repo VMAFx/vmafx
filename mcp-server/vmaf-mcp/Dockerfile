@@ -17,7 +17,7 @@ FROM ubuntu:26.04@sha256:0d5255be560e2d2ddcfbfda88549e9e815ef29e7cd7fc62183d5709
 
 ENV DEBIAN_FRONTEND=noninteractive
 # hadolint ignore=DL3008
-RUN apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
         build-essential meson ninja-build pkg-config nasm \
         python3 python3-pip python3-venv \
         ca-certificates git libzimg-dev \
@@ -40,7 +40,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PATH=/opt/vmaf:$PATH
 
 # hadolint ignore=DL3008
-RUN apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
         python3 python3-pip python3-venv \
         ca-certificates libzimg2 \
     && rm -rf /var/lib/apt/lists/*

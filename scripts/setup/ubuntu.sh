@@ -66,7 +66,7 @@ $SUDO apt-get --error-on=any -o Acquire::Retries=3 update
 # `$SUDO VAR=value cmd` breaks when $SUDO is empty (running as root): bash
 # picks out assignments before expanding $SUDO, so VAR=value becomes the
 # command name. Pass the variable through `env` instead.
-$SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+$SUDO env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
   build-essential clang clang-tidy clang-format cppcheck \
   ninja-build nasm pkg-config xxd \
   python3 python3-pip python3-venv \
@@ -83,7 +83,7 @@ prepare_tools_venv "$VMAFX_TOOLS_VENV"
   -r "$REPO_ROOT/requirements/locks/build.txt"
 
 if [[ "$INSTALL_LINTERS" == "true" ]]; then
-  $SUDO apt-get install -y --no-install-recommends shellcheck
+  $SUDO apt-get -o Acquire::Retries=3 install -y --no-install-recommends shellcheck
   # shfmt from release (not in apt for older Ubuntu).
   # Pin to an explicit version URL — the /releases/latest/download/ route
   # 404s as soon as upstream tags a newer version because the filename
@@ -106,7 +106,7 @@ fi
 
 if [[ "$ENABLE_CUDA" == "true" ]]; then
   echo "--- CUDA toolkit (nvidia-cuda-toolkit via apt) ---"
-  $SUDO apt-get install -y --no-install-recommends nvidia-cuda-dev nvidia-cuda-toolkit
+  $SUDO apt-get -o Acquire::Retries=3 install -y --no-install-recommends nvidia-cuda-dev nvidia-cuda-toolkit
   echo "Note: for modern CUDA, install from https://developer.nvidia.com/cuda-downloads"
 fi
 
@@ -119,7 +119,7 @@ if [[ "$ENABLE_SYCL" == "true" ]]; then
   echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" |
     $SUDO tee /etc/apt/sources.list.d/oneapi.list >/dev/null
   $SUDO apt-get --error-on=any -o Acquire::Retries=3 update
-  $SUDO apt-get install -y --no-install-recommends \
+  $SUDO apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
     intel-oneapi-compiler-dpcpp-cpp intel-oneapi-runtime-libs \
     libva-dev libva-drm2 level-zero-dev
   echo "After this script, run:  source /opt/intel/oneapi/setvars.sh"

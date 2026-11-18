@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Audit curl/wget fetches and tidy-lane APT offline; git/other APT gap: #3392."""
+"""Audit curl/wget fetches and APT install retries offline; git gap: #3392."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
-# Curl/wget fetches + tidy-lane APT only; git clone/other APT gap: #3392.
+# Curl/wget fetches + APT install retries; git clone gap: #3392.
 # Exact path + parsed URL + reason; exemptions never skip old-curl stage checks.
 ALLOWLIST = (
     (
@@ -193,6 +193,16 @@ WGET_OPTIONS = (
     ("spider", None, False, True),
 )
 APT_RETRY_PATHS = ("scripts/dev/tidy-lane.sh",)
+# Raw install sites must carry a per-call setting; the cached-install helper
+# writes /etc/apt/apt.conf.d/80ci-retries instead.
+APT_INSTALL_EXEMPT_PATHS = frozenset(
+    {
+        "scripts/ci/apt-install-cached.sh",  # writes /etc/apt/apt.conf.d/80ci-retries
+        "scripts/dev/gen-node-bpf.sh",  # apt-get text is an install hint, not a command
+        "scripts/ci/tests/test-apt-install-cached.sh",  # fixture line echoed by the test
+        "scripts/release/tests/test-docker-image-runtime-contract.sh",  # regex fixture
+    }
+)
 # GNU Wget --tries counts total attempts, so one attempt never retries.
 WGET_MIN_TRIES = 2
 
@@ -421,15 +431,22 @@ def matching_exemptions(
 
 
 def apt_errors(path: str, text: str) -> list[str]:
-    """Require positive literal APT retry counts in the declared tidy lane only."""
+    """Require a positive literal APT retry for every install site.
+
+    The tidy lane keeps its stronger update+install rule.  Workflows, raw
+    shell scripts and container recipes must carry the setting themselves;
+    the cached-install helper writes the apt.conf.d file that covers its
+    own install.
+    """
     errors: list[str] = []
-    if path not in APT_RETRY_PATHS:
+    if path in APT_INSTALL_EXEMPT_PATHS:
         return errors
+    verbs = {"update", "install"} if path in APT_RETRY_PATHS else {"install"}
     for line, command in logical_lines(text):
         command_text = strip_comment(command)
         for match in re.finditer(r"(?<![\w.-])apt-get\s+", command_text):
             args = command_args(command_text[match.end() :])
-            if {"update", "install"} & set(args) and not apt_positive_retries(args):
+            if verbs & set(args) and not apt_positive_retries(args):
                 errors.append(f"{path}:{line}: apt-get needs -o Acquire::Retries=N with N positive")
     return errors
 
@@ -860,10 +877,31 @@ class FetchConnectRetryTests(unittest.TestCase):
         """Known gap (#3392): Git clone retries remain outside this scanner."""
         self.assertEqual(self.check_script("git clone https://example.invalid/r.git"), [])
 
-    def test_known_gap_other_apt(self) -> None:
-        """Known gap (#3392): APT outside tidy-lane remains outside this scanner."""
+    def test_apt_install_retries(self) -> None:
+        """Every raw install site must carry a positive retry; the helper is exempt."""
+        path = "scripts/ci/install-tool.sh"
+        self.assertEqual(
+            audit_sources([(path, "apt-get -o Acquire::Retries=3 install -y pkg")], ()), []
+        )
         for setting in ("", "-o Acquire::Retries=0", "-o Acquire::Retries=x"):
-            self.assertEqual(audit_sources([("other.sh", f"apt-get {setting} install x")], ()), [])
+            with self.subTest(setting=setting):
+                self.assertEqual(
+                    audit_sources([(path, f"apt-get {setting} install -y pkg")], ()),
+                    [f"{path}:1: apt-get needs -o Acquire::Retries=N with N positive"],
+                )
+        workflow = ".github/workflows/build.yml"
+        self.assertEqual(
+            audit_sources([(workflow, "sudo apt-get install -y pkg")], ()),
+            [f"{workflow}:1: apt-get needs -o Acquire::Retries=N with N positive"],
+        )
+        self.assertEqual(
+            audit_sources([(workflow, "sudo apt-get -o Acquire::Retries=3 install -y pkg")], ()),
+            [],
+        )
+        self.assertEqual(
+            audit_sources([("scripts/ci/apt-install-cached.sh", "apt-get install -y pkg")], ()),
+            [],
+        )
 
     def test_url_exemption(self) -> None:
         """Match exemptions against URLs consumed by long options."""

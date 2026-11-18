@@ -18,13 +18,13 @@ COPY requirements/locks/build.txt requirements/locks/dev-linters.txt /tmp/requir
 # DL3008: later installs resolve from APT::Snapshot; only this bootstrap is unpinned (ADR-3541).
 # hadolint ignore=DL3008
 RUN apt-get --error-on=any -o Acquire::Retries=3 update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get -o Acquire::Retries=3 install -y --no-install-recommends ca-certificates \
     && . /tmp/build-config.env \
     && printf 'APT::Snapshot "%s";\n' "$UBUNTU_APT_SNAPSHOT" > /etc/apt/apt.conf.d/50ubuntu-snapshot \
     && grep -Eqx 'APT::Snapshot "[0-9]{8}T[0-9]{6}Z";' /etc/apt/apt.conf.d/50ubuntu-snapshot \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get --error-on=any -o Acquire::Retries=3 update \
-    && apt-get install -y --no-install-recommends curl git sudo \
+    && apt-get -o Acquire::Retries=3 install -y --no-install-recommends curl git sudo \
     && bash /tmp/ubuntu.sh \
     && rm -rf /var/lib/apt/lists/* /tmp/ubuntu.sh /tmp/build-config.env /tmp/requirements
 

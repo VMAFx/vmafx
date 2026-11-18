@@ -38,7 +38,7 @@ if [[ $source_mode == --source=archive-first ]]; then
     fi
   done
   if ((archive_available)); then
-    if apt-get install -y -q "${packages[@]}"; then
+    if apt-get -o Acquire::Retries=3 install -y -q "${packages[@]}"; then
       echo "install-llvm: LLVM $major from the distribution archive"
       exit 0
     fi
@@ -67,4 +67,4 @@ if ! printf '%s  %s\n' "$LLVM_INSTALLER_SHA256" "$installer" | sha256sum --check
 fi
 bash "$installer" "$major"
 # llvm.sh's default package set omits clang-tidy.
-apt-get install -y -q "${packages[@]}"
+apt-get -o Acquire::Retries=3 install -y -q "${packages[@]}"

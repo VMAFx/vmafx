@@ -178,7 +178,7 @@ base="https://developer.download.nvidia.com/compute/cuda/repos/${distro}/x86_64"
 # Ensure prerequisites for fetching and verifying keyrings exist.
 if ! command -v curl >/dev/null 2>&1 || ! dpkg -s ca-certificates >/dev/null 2>&1; then
   $SUDO apt-get --error-on=any -o Acquire::Retries=3 update -qq
-  $SUDO apt-get install -y -qq --no-install-recommends curl ca-certificates
+  $SUDO apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends curl ca-certificates
 fi
 
 if ! curl --retry 3 --retry-all-errors -fsSI --connect-timeout 20 --max-time 60 "${base}/cuda-keyring_1.1-1_all.deb" >/dev/null; then
@@ -244,7 +244,7 @@ verify_runtime_layout() {
 
 case "$mode" in
   builder)
-    $SUDO apt-get install -y -qq --no-install-recommends \
+    $SUDO apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
       "cuda-nvcc-${series}=${CUDA_APT_NVCC_VERSION}" \
       "cuda-cudart-dev-${series}=${CUDA_APT_CUDART_VERSION}" \
       "cuda-cudart-${series}=${CUDA_APT_CUDART_VERSION}"
@@ -269,7 +269,7 @@ case "$mode" in
     ;;
 
   runtime)
-    $SUDO apt-get install -y -qq --no-install-recommends \
+    $SUDO apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
       "cuda-cudart-${series}=${CUDA_APT_CUDART_VERSION}"
     require_installed_version "cuda-cudart-${series}" "$CUDA_APT_CUDART_VERSION"
     verify_runtime_layout
@@ -285,7 +285,7 @@ case "$mode" in
     ;;
 
   full)
-    $SUDO apt-get install -y -qq --no-install-recommends \
+    $SUDO apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
       "${CUDA_APT_PACKAGE}=${CUDA_APT_TOOLKIT_VERSION}" \
       "cuda-nvcc-${series}=${CUDA_APT_NVCC_VERSION}" \
       "cuda-cudart-dev-${series}=${CUDA_APT_CUDART_VERSION}" \

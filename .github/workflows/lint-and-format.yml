@@ -174,7 +174,7 @@ jobs:
           if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
             sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
           fi
-          grep -v '^#' .github/apt/tidy-changed.txt | xargs sudo apt-get install -y
+          grep -v '^#' .github/apt/tidy-changed.txt | xargs sudo apt-get -o Acquire::Retries=3 install -y
           if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
             sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
             sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
@@ -346,7 +346,7 @@ jobs:
           if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
             sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
           fi
-          grep -v '^#' .github/apt/tidy-ratchet.txt | xargs sudo apt-get install -y
+          grep -v '^#' .github/apt/tidy-ratchet.txt | xargs sudo apt-get -o Acquire::Retries=3 install -y
           if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
             sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
             sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
@@ -507,7 +507,7 @@ jobs:
         if: steps.impact.outputs.gstreamer_element == 'true'
         run: |
           bash scripts/ci/apt-install-cached.sh refresh
-          sudo -E apt-get -yq install --no-install-recommends \
+          sudo -E apt-get -yq -o Acquire::Retries=3 install --no-install-recommends \
             nasm xxd pkg-config libglib2.0-dev libzimg-dev locales \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-bad \
@@ -665,7 +665,7 @@ jobs:
           if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
             sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
           fi
-          grep -v '^#' .github/apt/tidy-sycl.txt | xargs sudo apt-get install -y
+          grep -v '^#' .github/apt/tidy-sycl.txt | xargs sudo apt-get -o Acquire::Retries=3 install -y
           if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
             sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
             sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
@@ -775,7 +775,7 @@ jobs:
           if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
             sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
           fi
-          grep -v '^#' .github/apt/cppcheck.txt | xargs sudo apt-get install -y
+          grep -v '^#' .github/apt/cppcheck.txt | xargs sudo apt-get -o Acquire::Retries=3 install -y
           if compgen -G "/var/cache/apt/archives/*.deb" >/dev/null; then
             sudo cp -f /var/cache/apt/archives/*.deb "${RUNNER_TEMP}/apt-archives/"
             sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-archives"
