@@ -18,7 +18,7 @@ file of this directory. `Touching` paths: relative to this directory, leading
 
 | Touching | Read first | Invariant |
 | --- | --- | --- |
-| `assertion-density.sh`, `tests/test-assertion-density.sh` | [assertion-density](AGENTS.d/assertion-density.md) | Copyright grep accepts legacy and current Lusoris marker; single-literal pattern silently skips gate. |
+| `assertion-density.sh`, `tests/test-assertion-density.sh`, `assertion-density-exempt-paths.txt` | [assertion-density](AGENTS.d/assertion-density.md) | Every non-mirror C source is scanned; exact-path exemptions are validated and stale-checked; no copyright-name filter. |
 | `write_cppcheck_posix_model.py`, `cppcheck-public-entrypoints.cfg`, `tests/test_cppcheck_posix_model.py` | [cppcheck](AGENTS.d/cppcheck.md) | Both cppcheck paths load generated POSIX model, `--check-level=exhaustive` and public-entrypoint cfg. |
 | `lint-configured.py`, `write-compile-commands.py`, `tests/test_lint_configured.py`, `tests/test_write_compile_commands.py` | [native-lint](AGENTS.d/native-lint.md) | `make lint-c` lints exactly Ninja's configured commands, every variant, `--warnings-as-errors=*`; exporter fail-closed. |
 | `gen-sycl-compile-commands.py`, `clang-tidy-sycl.sh`, `test_sycl_tidy_workflow_contract.py`, `tests/test_*sycl*.py` | [sycl-tidy-lane](AGENTS.d/sycl-tidy-lane.md) | SYCL TUs reach clang-tidy only through generated compile database; `Tidy SYCL` is strict-required, always reports. |
