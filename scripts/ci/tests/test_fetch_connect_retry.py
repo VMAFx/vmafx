@@ -445,6 +445,9 @@ def apt_errors(path: str, text: str) -> list[str]:
     verbs = {"update", "install"} if path in APT_RETRY_PATHS else {"install"}
     for line, command in logical_lines(text):
         command_text = strip_comment(command)
+        # Drop quoted prose so an `echo "apt install ..."` line cannot look
+        # like an install site; the command token itself remains outside quotes.
+        command_text = re.sub(r"\"(?:\\.|[^\"\\])*\"|\'(?:\\.|[^\'\\])*\'", " ", command_text)
         for match in re.finditer(r"(?<![\w.-])apt(?:-get)?\s+", command_text):
             args = command_args(command_text[match.end() :])
             if verbs & set(args) and not apt_positive_retries(args):
@@ -918,6 +921,10 @@ class FetchConnectRetryTests(unittest.TestCase):
         )
         self.assertEqual(
             audit_sources([("scripts/ci/apt-install-cached.sh", "apt-get install -y pkg")], ()),
+            [],
+        )
+        self.assertEqual(
+            audit_sources([(path, 'echo "apt install -y pkg"')], ()),
             [],
         )
 

@@ -2456,10 +2456,26 @@ class InstallStepContract(unittest.TestCase):
     def write_installer_stubs(self, stubs: Path, bash: str, checksum: str) -> Path:
         calls = stubs / "calls"
         bodies = {
-            "apt-get": 'for arg in "$@"; do\n'
-            "  if [[ $arg == install && ! -e $STUBS/archive-attempt ]]; then\n"
-            '    : > "$STUBS/archive-attempt"\n    exit "$FAKE_ARCHIVE_INSTALL"\n  fi\n'
-            "done\n",
+            "apt-get": 'verb=""\n'
+            "skip_next=0\n"
+            'for arg in "$@"; do\n'
+            "  if [[ $skip_next -eq 1 ]]; then\n"
+            "    skip_next=0\n"
+            "    continue\n"
+            "  fi\n"
+            "  if [[ $arg == -o ]]; then\n"
+            "    skip_next=1\n"
+            "    continue\n"
+            "  fi\n"
+            "  if [[ $arg == -* ]]; then\n"
+            "    continue\n"
+            "  fi\n"
+            "  verb=$arg\n"
+            "  break\n"
+            "done\n"
+            "if [[ $verb == install && ! -e $STUBS/archive-attempt ]]; then\n"
+            '  : > "$STUBS/archive-attempt"\n  exit "$FAKE_ARCHIVE_INSTALL"\n'
+            "fi\n",
             "apt-cache": '[[ $2 != "$FAKE_MISSING" ]] || exit 100\nexit "$FAKE_APT_CACHE"\n',
             "wget": '[[ -z $FAKE_SIGNAL ]] || kill -s "$FAKE_SIGNAL" "$PPID"\n'
             'printf "%s" "$FAKE_PAYLOAD" > "$2"\nexit "$FAKE_WGET"\n',
