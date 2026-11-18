@@ -99,6 +99,9 @@ def main(argv: list[str] | None = None) -> int:
     status = 1
     for attempt in range(1, attempts + 1):
         try:
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args
+            # argv form, no shell: clone_args are workflow-owned git arguments,
+            # never interpolated into a command string.
             status = subprocess.run(  # noqa: S603
                 [git, "clone", *clone_args], check=False, timeout=timeout
             ).returncode
