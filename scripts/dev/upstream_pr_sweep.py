@@ -742,6 +742,7 @@ def push_branch(
     fork: str = "",
     *,
     base_sha: str = "upstream/master",
+    self_review: Path | None = None,
 ) -> tuple[bool, str]:
     """Push the verified ``new_sha``, never the symbolic HEAD, under a lease on ``old_sha``."""
     if fork:
@@ -757,7 +758,13 @@ def push_branch(
     )
 
     try:
-        results = run_gate(wt, base=base_sha, head=new_sha, mechanical_only="rebase-only push")
+        results = run_gate(
+            wt,
+            base=base_sha,
+            head=new_sha,
+            self_review=self_review,
+            mechanical_only="rebase-only push",
+        )
     except (OSError, ValueError, RuntimeError) as exc:
         return False, f"push refused: upstream gate could not run ({type(exc).__name__})"
     for result in results[:MAX_CLASSES]:
@@ -920,6 +927,7 @@ def _execute_build_and_push(
     push: bool,
     cuda_prefix: str,
     jobs: int,
+    self_review: Path | None = None,
 ) -> SweepRow:
     if build:
         status, detail = build_and_test(wt, target.number, target.branch, cuda_prefix, jobs)
@@ -927,7 +935,13 @@ def _execute_build_and_push(
             return SweepRow(target.number, target.branch, status, old_sha, new_sha, 0, detail)
     if push:
         push_ok, push_detail = push_branch(
-            wt, target.branch, old_sha, new_sha, fork=fork, base_sha=base_sha
+            wt,
+            target.branch,
+            old_sha,
+            new_sha,
+            fork=fork,
+            base_sha=base_sha,
+            self_review=self_review,
         )
         if not push_ok:
             return SweepRow(
@@ -951,6 +965,7 @@ def _apply_pr_changes(
     cuda_prefix: str,
     jobs: int,
     allow_foreign_authors: bool,
+    self_review: Path | None = None,
 ) -> SweepRow:
     rebase_failure, new_sha = _execute_rebase(
         repo,
@@ -983,6 +998,7 @@ def _apply_pr_changes(
         push=push,
         cuda_prefix=cuda_prefix,
         jobs=jobs,
+        self_review=self_review,
     )
 
 
@@ -999,6 +1015,7 @@ def process_pr(
     cuda_prefix: str,
     jobs: int,
     allow_foreign_authors: bool = False,
+    self_review: Path | None = None,
 ) -> SweepRow:
     candidate_wt = pr_worktree_path(worktree_root, target.number)
     with worktree_lock(candidate_wt) as (locked, lock_detail):
@@ -1035,10 +1052,19 @@ def process_pr(
             cuda_prefix=cuda_prefix,
             jobs=jobs,
             allow_foreign_authors=allow_foreign_authors,
+            self_review=self_review,
         )
 
 
 def sweep(args: argparse.Namespace) -> list[SweepRow]:
+    self_review = getattr(args, "self_review", None)
+    if self_review is not None:
+        from scripts.dev.upstream_push_gate import read_text  # noqa: PLC0415
+
+        try:
+            read_text(self_review)
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"cannot read self-review {self_review}: {exc}") from exc
     repo = Path(args.repo).resolve()
     worktree_root = Path(args.worktree_root).resolve()
     fork_owner = args.fork.split("/", maxsplit=1)[0]
@@ -1069,6 +1095,7 @@ def sweep(args: argparse.Namespace) -> list[SweepRow]:
                 cuda_prefix=args.cuda_prefix,
                 jobs=args.jobs,
                 allow_foreign_authors=allow_foreign,
+                self_review=self_review,
             )
         except Exception as exc:
             row = SweepRow(
@@ -1112,6 +1139,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--apply", action="store_true", help="apply rebases, builds, or pushes")
     parser.add_argument("--push", action="store_true", help="push rebased branches with lease")
+    parser.add_argument("--self-review", type=Path, help="file with Cxx: answer lines")
     parser.add_argument(
         "--allow-foreign-authors",
         action="store_true",

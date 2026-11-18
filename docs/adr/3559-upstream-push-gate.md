@@ -21,6 +21,9 @@ Reuse the sweep's allow-listed, timed Git runner and signature counter. Extend t
 
 The sweep calls the gate directly before pushing `base_sha..new_sha`, with `--mechanical-only "rebase-only push"`. Any FAIL refuses the push and supplies its first failing result as the row detail. A person publishing a substantive change supplies the full self-review file. Rebase mode still enforces C04 and C07; a test omission or multi-commit branch therefore needs manual review before publication.
 
+Pass `--self-review <file>` to the sweep to supply that review. The UTF-8 file
+uses `Cxx: <answer>` lines, including a C04 or C07 reason where applicable.
+
 ## Alternatives considered
 
 | Alternative | Benefit | Reason not selected |

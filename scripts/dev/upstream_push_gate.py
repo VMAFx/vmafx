@@ -231,7 +231,13 @@ def read_commits(repo: Path, base: str, head: str, attribution: Attribution) -> 
 
 
 def read_diff(repo: Path, base: str, head: str) -> tuple[list[str], list[str]]:
-    rc, names, _err = git_cmd(repo, ["diff", "--no-renames", "--name-only", "-z", base, head, "--"])
+    rc, _out, _err = git_cmd(repo, ["merge-base", base, head])
+    if rc == 1:
+        raise ValueError("commits have no merge base")
+    if rc != 0:
+        raise ValueError("cannot determine merge base")
+    revision = f"{base}...{head}"
+    rc, names, _err = git_cmd(repo, ["diff", "--no-renames", "--name-only", "-z", revision, "--"])
     paths = names.rstrip("\0").split("\0") if names else []
     if rc != 0 or len(paths) > MAX_LINES:
         raise ValueError("cannot read bounded changed paths")
@@ -246,8 +252,7 @@ def read_diff(repo: Path, base: str, head: str) -> tuple[list[str], list[str]]:
             "--unified=0",
             "--src-prefix=a/",
             "--dst-prefix=b/",
-            base,
-            head,
+            revision,
             "--",
         ],
     )

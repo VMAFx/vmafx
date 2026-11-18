@@ -225,6 +225,10 @@ A source change under `libvmaf/src/`, `libvmaf/tools/`, or `python/vmaf/` withou
 
 The sweep supplies `--mechanical-only "rebase-only push"`, which skips the six self-review classes and prints that reason. A person can use this mode for a pure rebase after reviewing the existing patch. It does not waive C04, C07, signatures, message shape, or any other mechanical check.
 
+For those cases, pass `--self-review /path/to/self-review.txt` to the sweep.
+Use the same UTF-8 `Cxx: <answer>` lines described above, including the C04
+or C07 reason as applicable. The file must be readable before the sweep starts.
+
 Commit subjects use `<subsystem>: <summary>` and at most 72 characters; conventional-commit prefixes are refused. A blank second line and a non-empty body are required. Body lines wrap at 72 columns, except bare URLs, four-space/tab-indented lines, and trailers in the final paragraph. Attribution checks share the DCO checker's attribution functions without requiring DCO sign-off. Leak diagnostics name a commit or file and line number without echoing the offending line.
 
 Inputs have byte, line, draft, token, and commit-count bounds; Git calls use the sweep's allow-listed executable and timeout. The gate needs an installed Git supporting `merge-tree --write-tree --no-messages --name-only` and signature verification configured for the contribution commits. Regression fixtures cover planted failures in disposable signed repositories.

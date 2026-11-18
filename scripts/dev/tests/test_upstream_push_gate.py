@@ -181,6 +181,50 @@ class PushGateTest(SweepFixtureCase):
         self.add_review("C04", "yes: existing regression covers this input")
         self.assertEqual(self.run_gate()[0], 0)
 
+    def test_diff_excludes_upstream_only_changes(self) -> None:
+        self.write("libvmaf/src/x.c", "initial\n")
+        (self.repo / "libvmaf/test/test_x.c").unlink()
+        self.write("libvmaf/src/upstream.c", "upstream-only marker\n")
+        git_run(self.repo, "add", "-A")
+        tree = git_run(self.repo, "write-tree")
+        upstream = git_run(self.repo, "commit-tree", "-S", tree, "-p", self.base, "-m", SUBJECT)
+        paths, lines = gate.read_diff(self.repo, upstream, "HEAD")
+        self.assertNotIn("libvmaf/src/upstream.c", paths)
+        self.assertNotIn("upstream-only marker", "\n".join(lines))
+        rc, output = self.run_gate("--base", upstream)
+        self.assertEqual(rc, 0, output)
+        self.assertIn("PASS C04 ", output)
+
+    def test_diff_rebased_and_unrelated_boundaries(self) -> None:
+        paths, lines = gate.read_diff(self.repo, self.base, "HEAD")
+        rc, names, _ = gate.git_cmd(
+            self.repo, ["diff", "--no-renames", "--name-only", "-z", self.base, "HEAD", "--"]
+        )
+        self.assertEqual(rc, 0)
+        self.assertEqual(paths, names.rstrip("\0").split("\0"))
+        rc, diff, _ = gate.git_cmd(
+            self.repo,
+            [
+                "diff",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--no-renames",
+                "--no-color",
+                "--unified=0",
+                "--src-prefix=a/",
+                "--dst-prefix=b/",
+                self.base,
+                "HEAD",
+                "--",
+            ],
+        )
+        self.assertEqual(rc, 0)
+        self.assertEqual(lines, gate.bounded_lines(diff, "diff"))
+        tree = git_run(self.repo, "rev-parse", "HEAD^{tree}")
+        unrelated = git_run(self.repo, "commit-tree", "-S", tree, "-m", SUBJECT)
+        with self.assertRaisesRegex(ValueError, "merge base"):
+            gate.read_diff(self.repo, unrelated, "HEAD")
+
     def test_c05_message_attribution_and_fork_reference(self) -> None:
         for text in ("Co-authored-by: Claude <noreply@anthropic.com>", "See VMAFx/vmafx."):
             with self.subTest(text=text):
