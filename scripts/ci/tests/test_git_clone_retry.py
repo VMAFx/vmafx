@@ -70,6 +70,13 @@ class GitCloneRetryTests(unittest.TestCase):
             )
         self.assertEqual(run.call_args.kwargs["timeout"], 1)
 
+    def test_clone_arguments_need_no_separator(self) -> None:
+        attempts, delay, timeout, arguments = MODULE.parse_args(
+            ["--attempts", "4", "--branch", "v1.34.0", "url", "dest"]
+        )
+        self.assertEqual((attempts, delay, timeout), (4, 1, 600))
+        self.assertEqual(arguments, ["--branch", "v1.34.0", "url", "dest"])
+
     def test_clone_arguments_are_preserved(self) -> None:
         attempts, delay, timeout, arguments = MODULE.parse_args(
             ["--attempts", "4", "--delay", "2", "--", "--filter=blob:none", "url", "dest"]

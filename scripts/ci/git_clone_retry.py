@@ -30,6 +30,7 @@ DEFAULT_DELAY = 1
 DEFAULT_TIMEOUT = 600
 MAX_ATTEMPTS = 10
 MAX_TIMEOUT = 3600
+HELPER_OPTIONS = frozenset({"--attempts", "--delay", "--timeout"})
 
 
 def _option(argv: list[str], index: int) -> tuple[str, str, int]:
@@ -44,28 +45,27 @@ def _option(argv: list[str], index: int) -> tuple[str, str, int]:
 
 def parse_args(argv: list[str]) -> tuple[int, int, int, list[str]]:
     """Split the helper's options from the arguments passed to git."""
-    if "--" not in argv:
-        raise ValueError("no git clone arguments")
-    separator = argv.index("--")
-    helper_args = argv[:separator]
-    clone_args = argv[separator + 1 :]
-    if not clone_args:
-        raise ValueError("no git clone arguments")
     attempts = DEFAULT_ATTEMPTS
     delay = DEFAULT_DELAY
     timeout = DEFAULT_TIMEOUT
     index = 0
-    while index < len(helper_args):
-        name, value, index = _option(helper_args, index)
+    while index < len(argv):
+        argument = argv[index]
+        if argument == "--":
+            index += 1
+            break
+        if argument.split("=", 1)[0] not in HELPER_OPTIONS:
+            break
+        name, value, index = _option(argv, index)
         if name == "--attempts":
             attempts = _bounded(value, name, MAX_ATTEMPTS)
         elif name == "--delay":
             delay = _non_negative(value, name)
-        elif name == "--timeout":
-            timeout = _bounded(value, name, MAX_TIMEOUT)
         else:
-            raise ValueError(f"unknown option {name}")
-    return attempts, delay, timeout, clone_args
+            timeout = _bounded(value, name, MAX_TIMEOUT)
+    if index == len(argv):
+        raise ValueError("no git clone arguments")
+    return attempts, delay, timeout, argv[index:]
 
 
 def _bounded(value: str, option: str, maximum: int) -> int:
