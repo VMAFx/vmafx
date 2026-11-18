@@ -146,6 +146,33 @@ class DraftClaimsTests(unittest.TestCase):
         self.assertIn("missing in evidence: 29", result.stdout)
         self.assertIn("missing in evidence: 31", result.stdout)
 
+    def test_escaped_closing_angle_in_destination_is_checked(self) -> None:
+        draft = self.file("draft", r"[x](<29\>)")
+        result = self.run_checker(draft, self.file("evidence", "28"))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing in evidence: 29", result.stdout)
+
+    def test_angle_destination_with_escapes_is_ignored(self) -> None:
+        evidence = self.file("evidence", "28")
+        for text in (
+            "[x](<https://example.test/29>)",
+            r"[x](<a\>b29>)",
+            r"[x](<29\\>)",
+        ):
+            self.assertEqual(MODULE.LINK.sub("]", text), "[x]")
+            result = self.run_checker(self.file("draft", text), evidence)
+            self.assertEqual(result.returncode, 0, f"{text}: {result.stdout}{result.stderr}")
+
+    def test_trailing_horizontal_whitespace_before_close_paren_is_ignored(self) -> None:
+        evidence = self.file("evidence", "28")
+        for text in (
+            "[x](https://example.test/98765 )",
+            '[x](https://example.test/98765  "t" )',
+            "[x](https://example.test/98765\t)",
+        ):
+            result = self.run_checker(self.file("draft", text), evidence)
+            self.assertEqual(result.returncode, 0, f"{text!r}: {result.stdout}{result.stderr}")
+
     def test_prose_between_quoted_or_parenthesized_spans_is_checked(self) -> None:
         draft = self.file("draft", '[x](target "a" 29 "b") [y](target (a) 31 (b))')
         result = self.run_checker(draft, self.file("evidence", "28"))
