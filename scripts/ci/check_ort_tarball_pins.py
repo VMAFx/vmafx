@@ -322,8 +322,8 @@ def _helper_command(
 ) -> str | None:
     """Collect one shell command, rejecting excessively long continuations."""
     if not is_workflow:
-        parts, _ = _container_continuation(lines, site_idx, end_idx)
-        return " ".join(parts) if parts is not None else None
+        container_parts, _ = _container_continuation(lines, site_idx, end_idx)
+        return " ".join(container_parts) if container_parts is not None else None
     parts: list[str] = []
     for idx in range(site_idx, min(end_idx + 1, site_idx + MAX_COMMAND_LINES)):
         line = lines[idx].strip()
