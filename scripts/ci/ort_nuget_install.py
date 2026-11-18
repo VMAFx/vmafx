@@ -9,16 +9,18 @@ import argparse
 import hashlib
 import http.client
 import json
+import os
 import re
 import shutil
 import sys
 import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, BinaryIO
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.lib.safe_subprocess import CommandFailed
 from scripts.lib.safe_subprocess import run as run_command
 
 PINS = Path(__file__).with_name("ort-nuget-pins.json")
@@ -40,15 +42,21 @@ def verify_file(path: Path, size: int, expected: str) -> bool:
     """Return True when path matches the pinned byte length and SHA-256."""
     if not path.is_file() or path.stat().st_size != size:
         return False
+    with path.open("rb") as handle:
+        return verify_handle(handle, size, expected)
+
+
+def verify_handle(handle: BinaryIO, size: int, expected: str) -> bool:
+    """Verify the same open file that will be passed to the ZIP reader."""
     digest = hashlib.sha256()
     count = 0
-    with path.open("rb") as handle:
-        for _ in range(size // CHUNK + 2):
-            data = handle.read(CHUNK)
-            if not data:
-                break
-            count += len(data)
-            digest.update(data)
+    for _ in range(size // CHUNK + 2):
+        data = handle.read(CHUNK)
+        if not data:
+            break
+        count += len(data)
+        digest.update(data)
+    handle.seek(0)
     return count == size and digest.hexdigest() == expected
 
 
@@ -84,6 +92,7 @@ def save_body(response: http.client.HTTPResponse, output: Path, size: int, expec
     """Bound the response by its pinned length and check its digest."""
     digest = hashlib.sha256()
     count = 0
+    length = getattr(response, "length", None)
     with output.open("wb") as out:
         for _ in range(size // CHUNK + 2):
             data = response.read(min(CHUNK, size + 1 - count))
@@ -94,6 +103,8 @@ def save_body(response: http.client.HTTPResponse, output: Path, size: int, expec
             digest.update(data)
             if count > size:
                 break
+    if count <= size and length is not None and count < length:
+        raise http.client.IncompleteRead(b"", length - count)
     if count != size:
         raise ValueError(f"size mismatch: expected {size}, actual {count}")
     actual = digest.hexdigest()
@@ -110,7 +121,14 @@ def fetch_cached(address: str, cache_dir: Path, size: int, expected: str) -> Pat
         if verify_file(cached, size, expected):
             return cached
         cached.unlink(missing_ok=True)
-    download(address, cached, size, expected)
+    fd, temporary = tempfile.mkstemp(prefix=".ort-", dir=cache_dir)
+    os.close(fd)
+    private = Path(temporary)
+    try:
+        download(address, private, size, expected)
+        private.replace(cached)
+    finally:
+        private.unlink(missing_ok=True)
     return cached
 
 
@@ -127,9 +145,12 @@ def measure_pin(address: str) -> tuple[str, int]:
             raise ValueError(f"HTTP {response.status}: {address}")
         digest = hashlib.sha256()
         count = 0
+        length = getattr(response, "length", None)
         for _ in range(MAX_EXPANDED // CHUNK + 2):
             data = response.read(CHUNK)
             if not data:
+                if length is not None and count < length:
+                    raise http.client.IncompleteRead(b"", length - count)
                 return digest.hexdigest(), count
             count += len(data)
             if count > MAX_EXPANDED:
@@ -184,14 +205,20 @@ def selected_members(
 
 def soname(library: Path) -> str:
     """Read the ELF SONAME and reject names that could escape lib/."""
-    result = run_command(
-        ["readelf", "-d", str(library)],
-        allowed_executables={"readelf"},
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout_seconds=30,
-    )
+    try:
+        result = run_command(
+            ["readelf", "-d", str(library)],
+            allowed_executables={"readelf"},
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout_seconds=30,
+        )
+    except CommandFailed as exc:
+        detail = exc.result.stderr
+        if isinstance(detail, bytes):
+            detail = detail.decode(errors="replace")
+        raise ValueError(f"readelf failed: {detail}") from exc
     match = re.search(r"\(SONAME\).*\[([^]]+)\]", result.stdout)
     if not match or not re.fullmatch(r"libonnxruntime\.so(?:\.[A-Za-z0-9_-]+)+", match.group(1)):
         raise ValueError("missing or unsafe libonnxruntime SONAME")
@@ -199,7 +226,7 @@ def soname(library: Path) -> str:
 
 
 def install(
-    archive_path: Path,
+    archive_path: Path | BinaryIO,
     prefix: Path,
     pkgconfig: Path,
     version: str,
@@ -262,9 +289,17 @@ def _run_install(pkg: dict[str, Any], args: argparse.Namespace) -> None:
     libraries = tuple(pkg["libraries"])
     if args.cache_dir is not None:
         package = fetch_cached(address, args.cache_dir, int(pin["size"]), pin["sha256"])
-        install(
-            package, args.prefix.resolve(), args.pkgconfig_dir, args.version, header_dir, libraries
-        )
+        with package.open("rb") as handle:
+            if not verify_handle(handle, int(pin["size"]), pin["sha256"]):
+                raise ValueError("cached package size mismatch or sha256 mismatch")
+            install(
+                handle,
+                args.prefix.resolve(),
+                args.pkgconfig_dir,
+                args.version,
+                header_dir,
+                libraries,
+            )
         return
     with tempfile.TemporaryDirectory(prefix="ort-nuget-") as tmp:
         package = Path(tmp) / "package.nupkg"
@@ -293,7 +328,14 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({version: {"sha256": sha256, "size": size}}))
             return 0
         _run_install(pkg, args)
-    except (OSError, ValueError, KeyError, zipfile.BadZipFile) as exc:
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        zipfile.BadZipFile,
+        http.client.HTTPException,
+        CommandFailed,
+    ) as exc:
         print(f"ort_nuget_install: {exc}", file=sys.stderr)
         return 1
     return 0

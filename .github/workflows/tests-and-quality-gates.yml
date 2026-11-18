@@ -1007,7 +1007,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ${{ runner.temp }}/ort-cache
-          key: ort-nuget-linux-x64-gpu-1.22.0
+          key: ort-nuget-linux-x64-gpu-${{ hashFiles('scripts/ci/ort-nuget-pins.json') }}
       - name: Install ONNX Runtime (GPU build, CPU + CUDA EPs)
         id: coverage_install_ort
         if: steps.impact.outputs.golden_harness == 'true'

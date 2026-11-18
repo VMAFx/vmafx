@@ -1,4 +1,4 @@
-# ADR-3559: Install CI ONNX Runtime from pinned NuGet packages
+# ADR-3561: Install CI ONNX Runtime from pinned NuGet packages
 
 - **Status**: Accepted
 - **Date**: 2026-11-18
@@ -40,9 +40,11 @@ Print the size and SHA-256 pin entry for a new version without writing
 files or modifying `scripts/ci/ort-nuget-pins.json`:
 
 ```bash
-python3 scripts/ci/ort_nuget_install.py --package cpu --print-pin <version>
-python3 scripts/ci/ort_nuget_install.py --package gpu --print-pin <version>
+python3 scripts/ci/ort_nuget_install.py --package cpu --print-pin 1.30.0
+python3 scripts/ci/ort_nuget_install.py --package gpu --print-pin 1.30.0
 ```
+
+Replace `1.30.0` with the version to measure.
 
 ## Consequences
 
@@ -54,3 +56,13 @@ python3 scripts/ci/ort_nuget_install.py --package gpu --print-pin <version>
   container inputs or run the full tier),
   `dev/AGENTS.d/runtime-dependencies.md:29`, and `renovate.json:603` still
   reference the old GitHub release tarball source.
+
+## References
+
+- req (paraphrased, 2026-11-18, runtime fetch source): the maintainer asked
+  for one shared helper that fetches ONNX Runtime from the NuGet package with
+  a pinned version and sha256, retries, and a named error when the source is
+  gone, with no silent fallback.
+- [Installer](../../scripts/ci/ort_nuget_install.py),
+  [pins](../../scripts/ci/ort-nuget-pins.json), and
+  [guard](../../scripts/ci/check_ort_tarball_pins.py).

@@ -10,11 +10,13 @@ import io
 import json
 import zipfile
 from pathlib import Path
+from typing import BinaryIO
 from unittest.mock import patch
 
 import pytest
 
 from scripts.ci import ort_nuget_install as ort
+from scripts.lib.safe_subprocess import CommandFailed, TextCommandResult
 
 
 def package(
@@ -40,6 +42,7 @@ class Response:
     def __init__(self, data: bytes, status: int = 200) -> None:
         self.stream = io.BytesIO(data)
         self.status = status
+        self.length: int | None = None
 
     def read(self, size: int) -> bytes:
         return self.stream.read(size)
@@ -241,3 +244,143 @@ def test_retry_limit(tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="after 3 attempts"):
             ort.download("https://example.test/package", tmp_path / "download", 1, "0" * 64)
     assert conn.call_count == ort.ATTEMPTS
+
+
+def test_incomplete_body_retries_but_complete_mismatch_is_terminal(tmp_path: Path) -> None:
+    data = b"complete body"
+    digest = hashlib.sha256(data).hexdigest()
+    partial = Response(data[:3])
+    partial.length = len(data)
+    complete = Response(data)
+    complete.length = len(data)
+    with patch.object(
+        http.client, "HTTPSConnection", side_effect=[Connection(partial), Connection(complete)]
+    ) as net:
+        ort.download("https://example.test/pkg", tmp_path / "pkg", len(data), digest)
+    assert net.call_count == len([partial, complete])
+    assert (tmp_path / "pkg").read_bytes() == data
+    complete = Response(data)
+    complete.length = len(data)
+    with patch.object(http.client, "HTTPSConnection", return_value=Connection(complete)) as net:
+        with pytest.raises(ValueError, match="size mismatch"):
+            ort.download("https://example.test/pkg", tmp_path / "pkg", len(data) + 1, digest)
+    assert net.call_count == 1
+    with patch.object(
+        http.client, "HTTPSConnection", return_value=Connection(Response(data))
+    ) as net:
+        with pytest.raises(ValueError, match="sha256 mismatch"):
+            ort.download("https://example.test/pkg", tmp_path / "pkg", len(data), "0" * 64)
+    assert net.call_count == 1
+
+
+def test_print_pin_incomplete_response_fails(capsys: pytest.CaptureFixture[str]) -> None:
+    response = Response(b"short")
+    response.length = 10
+    with patch.object(http.client, "HTTPSConnection", return_value=Connection(response)):
+        rc = ort.main(["--print-pin", "1.30.0"])
+    captured = capsys.readouterr()
+    assert rc == 1 and captured.out == ""
+    assert "ort_nuget_install:" in captured.err
+
+
+def test_readelf_failure_is_reported(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    archive = tmp_path / "package.nupkg"
+    data = package(archive)
+    pin = {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+    pkg = {
+        "source": "https://example.test/pkg",
+        "header_dir": "build/native/include",
+        "libraries": list(ort.LIBRARIES),
+        "versions": {"1": pin},
+    }
+    error = CommandFailed(TextCommandResult(("readelf",), 1, "", "bad ELF"))
+    with (
+        patch.object(ort, "_load_package", return_value=pkg),
+        patch.object(ort, "fetch_cached", return_value=archive),
+        patch.object(ort, "run_command", side_effect=error),
+    ):
+        rc = ort.main(
+            [
+                "--version",
+                "1",
+                "--prefix",
+                str(tmp_path / "prefix"),
+                "--cache-dir",
+                str(tmp_path),
+                "--pkgconfig-dir",
+                str(tmp_path / "pc"),
+            ]
+        )
+    captured = capsys.readouterr()
+    assert rc == 1 and "ort_nuget_install:" in captured.err and "bad ELF" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_replaced_cache_path_not_extracted(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    archive = tmp_path / "package.nupkg"
+    data = package(archive)
+    pin = {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+    pkg = {
+        "source": "https://example.test/pkg",
+        "header_dir": "build/native/include",
+        "libraries": list(ort.LIBRARIES),
+        "versions": {"1": pin},
+    }
+
+    def replace_cache(*args: object) -> Path:
+        archive.write_bytes(b"short")
+        return archive
+
+    with (
+        patch.object(ort, "_load_package", return_value=pkg),
+        patch.object(ort, "fetch_cached", side_effect=replace_cache),
+    ):
+        rc = ort.main(
+            ["--version", "1", "--prefix", str(tmp_path / "prefix"), "--cache-dir", str(tmp_path)]
+        )
+    assert rc == 1 and "mismatch" in capsys.readouterr().err
+    assert not (tmp_path / "prefix").exists()
+
+
+def test_cache_replaced_after_verification_keeps_verified_handle(tmp_path: Path) -> None:
+    archive = tmp_path / "package.nupkg"
+    data = package(archive)
+    pin = {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+    pkg = {
+        "source": "https://example.test/pkg",
+        "header_dir": "build/native/include",
+        "libraries": list(ort.LIBRARIES),
+        "versions": {"1": pin},
+    }
+    verify = ort.verify_handle
+
+    def replace_after_check(handle: BinaryIO, size: int, expected: str) -> bool:
+        result = verify(handle, size, expected)
+        replacement = tmp_path / "replacement"
+        replacement.write_bytes(b"short")
+        replacement.replace(archive)
+        return result
+
+    with (
+        patch.object(ort, "_load_package", return_value=pkg),
+        patch.object(ort, "fetch_cached", return_value=archive),
+        patch.object(ort, "verify_handle", side_effect=replace_after_check),
+        patch.object(ort, "soname", return_value="libonnxruntime.so.1"),
+    ):
+        rc = ort.main(
+            [
+                "--version",
+                "1",
+                "--prefix",
+                str(tmp_path / "prefix"),
+                "--cache-dir",
+                str(tmp_path),
+                "--pkgconfig-dir",
+                str(tmp_path / "pc"),
+            ]
+        )
+    assert rc == 0
+    assert archive.read_bytes() == b"short"
+    assert (tmp_path / "prefix/include/onnxruntime_c_api.h").read_text() == "header"
