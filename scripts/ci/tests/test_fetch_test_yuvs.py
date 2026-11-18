@@ -30,6 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
+from scripts.ci.tests import symlink_test_support as links  # noqa: E402
 from scripts.lib.http_stand_in import StandIn  # noqa: E402
 from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
@@ -343,6 +344,7 @@ class FetchBundleTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, StandIn(bodies=bodies) as server:
             shim = Path(tmp) / "bin"
             shim.mkdir()
+            links.skip_without_symlinks(shim)
             for tool in ("mktemp", "mkdir", "rm", "dirname", "python3", "tar", "cat"):
                 found = shutil.which(tool)
                 if found:
