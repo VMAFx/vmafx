@@ -1174,7 +1174,7 @@ repos:
         name: Test and scan failures remain observable in CI
         entry: python3 -B scripts/ci/test_fail_closed_ci.py
         language: system
-        files: '^(scripts/ci/test_fail_closed_ci\.py|python/tox\.ini|.*\.(yml|yaml|sh|bash)|.*\.(Dockerfile|Containerfile)|(.*/)?(Dockerfile|Containerfile)[^/]*)$'
+        files: '^(?:scripts/ci/test_fail_closed_ci\.py|python/tox\.ini|.*\.(yml|yaml|sh|bash)|.*\.(Dockerfile|Containerfile)|(.*/)?(Dockerfile|Containerfile)[^/]*)$|(?:^|/)pyproject\.toml$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

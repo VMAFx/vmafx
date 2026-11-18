@@ -2205,6 +2205,8 @@ class FailClosedCIContract(unittest.TestCase):
             "docker/dev/x.Containerfile",
             "scripts/ci/test_fail_closed_ci.py",
             "python/tox.ini",
+            "pyproject.toml",
+            "ai/pyproject.toml",
             ".pre-commit-config.yaml",
         ):
             with self.subTest(path=path):
