@@ -398,6 +398,30 @@ Hand-written prose outside the generated block.
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("clean", result.stdout)
 
+    def test_unrecognised_marker_family_is_not_exempt(self) -> None:
+        """An `example:begin` block in docs/credits.md stays protected prose."""
+        page = """# Credits
+
+<!-- example:begin -->
+{body}
+<!-- example:end -->
+"""
+        self.write("docs/credits.md", page.format(body=""))
+        self.write("README.md", "# fixture\n")
+        self.commit("docs: seed the credits page")
+
+        self.write("docs/credits.md", page.format(body="hand-written line"))
+        base = self.commit("docs: add hand-written prose")
+
+        git(self.repo, "checkout", "-q", "-b", "feature", base)
+        self.write("docs/credits.md", page.format(body=""))
+        head = self.commit("docs: drop hand-written prose")
+
+        result = run_gate(self.repo, base, head)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("docs/credits.md", result.stdout)
+        self.assertIn("silent revert", result.stdout.lower())
+
     def test_generated_marker_line_is_not_exempt(self) -> None:
         """Deleting a marker itself leaves an unterminated block, never a clean pass."""
         page = """# Credits

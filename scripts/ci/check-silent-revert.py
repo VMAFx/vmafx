@@ -96,12 +96,15 @@ GENERATED_PREFIXES = (
 # the generator's output; the generator input (credits.yaml, hardware-needs.json)
 # is the file the gate protects.  Marker lines themselves stay protected, and an
 # unterminated or nested block is malformed input rather than a silent clean.
+# Only the generator families above are exempt on their own path; an arbitrary
+# ``example:begin`` pair in docs/credits.md remains ordinary prose.
 GENERATED_BLOCK_START = re.compile(r"^<!--\s*([a-z0-9][a-z0-9-]*):(?:begin|table)\b.*-->$")
 GENERATED_BLOCK_END = re.compile(r"^<!--\s*([a-z0-9][a-z0-9-]*):end\s*-->\s*$")
-GENERATED_BLOCK_PATHS = (
-    "docs/credits.md",
-    "docs/usage/hardware-we-need.md",
-)
+GENERATED_BLOCK_FAMILIES = {
+    "docs/credits.md": frozenset({"credits"}),
+    "docs/usage/hardware-we-need.md": frozenset({"hardware-needs"}),
+}
+GENERATED_BLOCK_PATHS = tuple(GENERATED_BLOCK_FAMILIES)
 
 # An intended reversal is declared in the tree, not argued in a PR comment.
 # Each entry names the superseding ADR, the target commit whose hunks the merge
@@ -208,28 +211,30 @@ def generated_block_ranges(text: str, path: str) -> list[tuple[int, int]]:
     the gate may silently treat as generated.
     """
     ranges: list[tuple[int, int]] = []
+    allowed = GENERATED_BLOCK_FAMILIES.get(path, frozenset())
     open_name = ""
     start_line = 0
     for number, raw_line in enumerate(text.split("\n"), start=1):
         line = raw_line.strip()
         start = GENERATED_BLOCK_START.match(line)
         end = GENERATED_BLOCK_END.match(line)
+        start_name = start.group(1) if start and start.group(1) in allowed else ""
+        end_name = end.group(1) if end else ""
         if not open_name:
-            if start:
-                open_name = start.group(1)
+            if start_name:
+                open_name = start_name
                 start_line = number
-            elif end:
+            elif end_name in allowed:
                 raise GitError(f"{path}:{number}: generated-block end marker has no start marker")
             continue
-        if start:
+        if start_name:
             raise GitError(
-                f"{path}:{number}: nested generated block {start.group(1)!r} "
-                f"inside {open_name!r}"
+                f"{path}:{number}: nested generated block {start_name!r} " f"inside {open_name!r}"
             )
-        if end:
-            if end.group(1) != open_name:
+        if end_name:
+            if end_name != open_name:
                 raise GitError(
-                    f"{path}:{number}: generated-block end marker {end.group(1)!r} "
+                    f"{path}:{number}: generated-block end marker {end_name!r} "
                     f"does not match {open_name!r}"
                 )
             ranges.append((start_line + 1, number - 1))
