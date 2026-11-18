@@ -1,7 +1,7 @@
 name: python-lock-refresh
 
 # Refresh the Python hash locks of requirements/locks/manifest.json when Renovate
-# edits one of their inputs on a renovate/** branch (ADR-3560, status Proposed).
+# edits one of their inputs on a renovate/** branch (ADR-3560).
 #
 # Renovate edits a .in file, pyproject.toml or docs/requirements.txt through the
 # Mend-hosted GitHub App, where postUpgradeTasks commands stay blocked and

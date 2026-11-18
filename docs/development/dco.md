@@ -86,8 +86,8 @@ refuses an author name ending in `[bot]` or author email ending in
 removal, and lowercasing, unless the commit belongs to the branch opener.
 In PR mode, the opener must have type `Bot` and the commit
 email must end in `+<opener-login>@users.noreply.github.com` (except for the
-single conditional `dco-bot-opener` lock-refresh exemption documented under
-[Exemptions](#exemptions)); membership in the
+conditional `dco-bot-opener` and `dco-python-lock-refresh` exemptions documented
+under [Exemptions](#exemptions)); membership in the
 sign-off exemption list is not required. In pre-push mode, the oldest outgoing
 non-merge author counts as opener only if human or its normalized email matches
 a `BOT_LOGINS` noreply suffix; other bots establish no opener and every
@@ -95,12 +95,13 @@ bot-authored commit in that range is refused. Ownership compares normalized
 author names and emails. This preserves listed bots' branches after signed
 human updates. A human
 sign-off, release exemption, or grandfathered PR cannot bypass bot-author
-refusal: apart from the single `dco-landed-release-bot-coauthor` lock-refresh
-case documented below, a squash landing would add a bot `Co-authored-by:`
-trailer that the landed gate refuses. Re-author the refused commit with
-`git commit --amend --reset-author --no-edit` on that commit, retaining the
-required sign-off, or drop it; for an earlier commit, stop on it during an
-interactive rebase before amending. Landed mode keeps its existing rules.
+refusal: apart from the `dco-landed-release-bot-coauthor` and
+`dco-python-lock-refresh` cases documented below, a squash landing would add a
+bot `Co-authored-by:` trailer that the landed gate refuses. Re-author the
+refused commit with `git commit --amend --reset-author --no-edit` on that
+commit, retaining the required sign-off, or drop it; for an earlier commit,
+stop on it during an interactive rebase before amending. Landed mode keeps its
+existing rules.
 The same message-line rules reject `Co-authored-by:`
 lines with a banned token, generated or created attribution footers, and the
 robot emoji. Pull request mode applies those line rules to the body as well.
@@ -230,7 +231,7 @@ Co-authored-by: vmafx-release-bot[bot] <340976456+vmafx-release-bot[bot]@users.n
 
 The Python lock refresh class ([ADR-3560](../adr/3560-python-lock-refresh.md))
 permits a signed release-bot commit with the exact refresh subject when every
-changed path has a live entry in
+changed path has a live entry among the 30 exact paths in
 `.config/lint-exceptions.d/dco-python-lock-refresh.toml`. Each entry is Category
 D, entered 2026-11-18 and expires 2027-03-18. An absent or expired entry refuses
 the path. A new lock output needs a new operator grant before an entry is added.
@@ -264,8 +265,8 @@ failure indicates an invalid squash body landed on `master`; published history
 is not rewritten.
 
 The `--landed` mode disables all exemptions (bot logins, `--release-pr`, and
-the cutoff date), except for the single conditional release-bot co-author
-exemption below. It refuses any non-merge commit where:
+the cutoff date), except for the conditional release-bot co-author
+exemptions below. It refuses any non-merge commit where:
 
 - A `Co-authored-by:` line names a bot or automated tool (such as Renovate or
   coding assistants).
@@ -288,6 +289,11 @@ once, and the commit changes a live exception path in
 ```text
 Co-authored-by: vmafx-release-bot[bot] <340976456+vmafx-release-bot[bot]@users.noreply.github.com>
 ```
+
+The Python lock refresh class ([ADR-3560](../adr/3560-python-lock-refresh.md))
+also strips that exact line under the same author and single-line conditions
+when the non-empty changed path list contains only live Python lock refresh
+exceptions.
 
 The check examines non-merge commits in the range `BASE_SHA..HEAD_SHA`. If
 the base SHA is all zeros (initial push) or not an ancestor-reachable commit,

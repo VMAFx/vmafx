@@ -79,7 +79,7 @@ CI Workflows & Dockerfiles                Local Workstation (make lint-tools, cy
 [ADR-3560](../adr/3560-python-lock-refresh.md) records automatic refresh when a
 dependency-update branch changes a manifest input. The workflow publishes
 manifest outputs as a signed-off release-bot commit. The DCO exemption covers
-only live path-exact entries in
+only live entries among the 30 exact paths in
 `.config/lint-exceptions.d/dco-python-lock-refresh.toml`; a new output needs a
 new operator grant. If the branch moves or is deleted, publication fails without
 overwriting it. The next input change runs refresh again; otherwise rerun it
