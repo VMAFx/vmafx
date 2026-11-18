@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 from __future__ import absolute_import
 
-import importlib
 import json
 import unittest
 from functools import partial
 from test.testutil import set_default_576_324_videos_for_testing
 
 import numpy as np
+from defusedxml import ElementTree
 
 from vmaf.config import VmafConfig
 from vmaf.core.asset import Asset
@@ -55,8 +55,6 @@ class ResultFormattingTest(unittest.TestCase):
         pass
 
     def test_to_xml(self):
-        # Codacy's XML rule cannot see that these fixtures are test-owned strings.
-        ElementTree = importlib.import_module(".".join(("xml", "etree", "ElementTree")))
         expected_xml = """
 <?xml version="1.0" ?>
 <result executorId="SSIM_V1.0">
@@ -69,8 +67,8 @@ class ResultFormattingTest(unittest.TestCase):
   <aggregate SSIM_feature_ssim_c_score="0.997404" SSIM_feature_ssim_l_score="0.999983" SSIM_feature_ssim_s_score="0.935802333333" SSIM_score="0.933353333333" method="mean"/>
 </result>
         """.strip()
-        expected = ElementTree.fromstring(expected_xml)  # nosec B314 - local golden XML.
-        actual = ElementTree.fromstring(self.result.to_xml())  # nosec B314 - local result XML.
+        expected = ElementTree.fromstring(expected_xml)
+        actual = ElementTree.fromstring(self.result.to_xml())
 
         def assert_attributes(actual_node, expected_node):
             self.assertEqual(set(actual_node.attrib), set(expected_node.attrib))
