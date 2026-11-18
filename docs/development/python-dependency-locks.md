@@ -74,9 +74,16 @@ CI Workflows & Dockerfiles                Local Workstation (make lint-tools, cy
 | `make cythonize-deps` | Installs C-extension build dependencies (`Cython`, `numpy`, `setuptools`, `packaging`) from `requirements/locks/cythonize.txt` using `--require-hashes`. |
 | `python3 -m pip install --require-hashes -r requirements/locks/nox.txt` | Installs the reviewed Nox release and its transitive dependencies before running local package sessions. |
 
-## Proposed Renovate refresh
+## Automatic lock refresh
 
-[ADR-3560](../adr/3560-python-lock-refresh.md) proposes refreshing manifest outputs automatically when a Renovate branch changes a manifest input. The workflow uses the existing write mode and publishes only manifest outputs as a signed-off release-bot commit. If the branch moves or is deleted during a refresh, publication fails without overwriting it. The next branch push affecting a manifest input runs the refresh again; otherwise rerun it against the current tip. The proposal awaits decision `vmafx-renovate-python-lock-refresh` and must not land before that decision.
+[ADR-3560](../adr/3560-python-lock-refresh.md) records automatic refresh when a
+dependency-update branch changes a manifest input. The workflow publishes
+manifest outputs as a signed-off release-bot commit. The DCO exemption covers
+only live path-exact entries in
+`.config/lint-exceptions.d/dco-python-lock-refresh.toml`; a new output needs a
+new operator grant. If the branch moves or is deleted, publication fails without
+overwriting it. The next input change runs refresh again; otherwise rerun it
+against the current tip.
 
 ## How to add or update a dependency
 

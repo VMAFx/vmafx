@@ -69,7 +69,7 @@ def git_env(ident: tuple[str, str], committer: tuple[str, str] | None = None) ->
         GIT_COMMITTER_NAME=committer[0],
         GIT_COMMITTER_EMAIL=committer[1],
         GIT_CONFIG_GLOBAL="/dev/null",
-        GIT_CONFIG_SYSTEM="/dev/null",
+        GIT_CONFIG_NOSYSTEM="1",
     )
     return env
 
@@ -91,7 +91,7 @@ def clean_env() -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     for key in drop:
         env.pop(key, None)
-    env.update(GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null")
+    env.update(GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1")
     return env
 
 

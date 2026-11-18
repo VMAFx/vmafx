@@ -228,19 +228,16 @@ non-empty changed path list includes at least one live exception in
 Co-authored-by: vmafx-release-bot[bot] <340976456+vmafx-release-bot[bot]@users.noreply.github.com>
 ```
 
-The proposed Python lock refresh class
-([ADR-3560](../adr/3560-python-lock-refresh.md)) also permits a signed
-release-bot commit on a `renovate[bot]`-opened PR when its subject is exactly
-`chore(deps): refresh Python dependency locks` and every changed path is an
-output loaded from `requirements/locks/manifest.json`. The manifest entry in
-`.config/lint-exceptions.d/dco-python-lock-refresh.toml` is Category D, entered
-2026-11-18 and expires 2027-03-18. A missing or unreadable manifest or expired
-exception refuses this class. The existing Intel exception has no subject check.
+The Python lock refresh class ([ADR-3560](../adr/3560-python-lock-refresh.md))
+permits a signed release-bot commit with the exact refresh subject when every
+changed path has a live entry in
+`.config/lint-exceptions.d/dco-python-lock-refresh.toml`. Each entry is Category
+D, entered 2026-11-18 and expires 2027-03-18. An absent or expired entry refuses
+the path. A new lock output needs a new operator grant before an entry is added.
 
-In landed mode the same live Python exception permits stripping the single exact
-release-bot co-author line when a Renovate-authored squash changes at least one
-manifest output, as for the Intel exception. This proposal awaits decision
-`vmafx-renovate-python-lock-refresh`.
+In landed mode, the same class strips the single release-bot co-author line only
+when every changed path has a live entry. The asset lock class retains its own
+rules.
 
 Every other line of the message and the `Signed-off-by:` check in
 `judge_landed` still run unchanged; a second release-bot line or any other bot
