@@ -171,6 +171,12 @@ class DraftClaimsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("missing in evidence: 29", result.stdout)
 
+    def test_link_with_two_and_three_nested_levels_is_ignored(self) -> None:
+        draft = self.file("draft", "[x](a(b(12345))) [y](a(b(c(67890))))")
+        result = self.run_checker(draft, self.file("evidence", "nothing"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("draft tokens 0, missing 0", result.stdout)
+
     def test_link_beyond_three_nested_levels_stays_visible(self) -> None:
         # Four nested pairs exceed the limit: check both target and following numbers.
         draft = self.file("draft", "[ref](a(b(c(d(98765))))) 29")
@@ -217,6 +223,21 @@ class DraftClaimsTests(unittest.TestCase):
 
     def test_no_arguments(self) -> None:
         self.assertEqual(self.run_checker().returncode, 2)
+
+    def test_draft_only_argument(self) -> None:
+        result = self.run_checker(self.file("draft", "28"))
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(
+            result.stderr,
+            "usage: draft_claims.py <draft.md> <evidence.md> [<evidence.md> ...]\n",
+        )
+
+    def test_two_file_arguments_boundary(self) -> None:
+        draft = self.file("draft", "28")
+        passing = self.run_checker(draft, self.file("evidence_ok", "28"))
+        failing = self.run_checker(draft, self.file("evidence_miss", "29"))
+        self.assertEqual(passing.returncode, 0)
+        self.assertEqual(failing.returncode, 1)
 
 
 if __name__ == "__main__":

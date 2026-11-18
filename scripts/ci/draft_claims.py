@@ -33,7 +33,7 @@ MIN_ARGS = 3
 
 def tokens(text: str) -> list[str]:
     """Return distinct numeric tokens in their first-seen order."""
-    normalized = THOUSANDS.sub("", LINK.sub("]", text)).replace("_", " ")
+    normalized = THOUSANDS.sub("", LINK.sub("]", text))
     return list(dict.fromkeys(token for token in TOKEN.findall(normalized) if len(token) > 1))
 
 
