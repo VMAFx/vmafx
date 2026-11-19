@@ -304,8 +304,8 @@ def _classify_assertion(node: ast.AST, rc_vars: set[str]) -> str | None:
     return "other" if name.startswith("assert") or _is_pytest_raises(func) else None
 
 
-def _escape_status(func: FuncNode, comments: dict[int, tuple[str, int, bool]]) -> str:
-    """Return 'valid', 'short', or 'none' for an `# exit-code-only:` comment."""
+def _escape_candidates(func: FuncNode) -> list[tuple[int, bool, int]]:
+    """Return the positions where an escape comment can apply to a function."""
     if len(func.decorator_list) > MAX_DECORATORS:
         raise ScanError(f"{func.name}: function exceeds {MAX_DECORATORS} decorators")
     candidates = [(func.lineno, False, func.col_offset), (func.lineno - 1, True, func.col_offset)]
@@ -317,7 +317,12 @@ def _escape_status(func: FuncNode, comments: dict[int, tuple[str, int, bool]]) -
                 (first.lineno - 1, True, first.col_offset - 1),
             ]
         )
-    for line_no, standalone, column in sorted(candidates):
+    return sorted(candidates)
+
+
+def _escape_status(func: FuncNode, comments: dict[int, tuple[str, int, bool]]) -> str:
+    """Return 'valid', 'short', or 'none' for an `# exit-code-only:` comment."""
+    for line_no, standalone, column in _escape_candidates(func):
         comment = comments.get(line_no)
         if comment is None:
             continue
@@ -499,10 +504,34 @@ def _function_touched(
     return any(a <= end and start_line <= b for a, b in spans for start_line, end in hunks)
 
 
+def _marker_touched(
+    func: FuncNode,
+    comments: dict[int, tuple[str, int, bool]],
+    hunks: list[tuple[int, int]],
+    removed: dict[tuple[int, int], str],
+) -> bool:
+    """Select changed eligible standalone markers on either side of a diff."""
+    for line, standalone, _ in _escape_candidates(func):
+        if not standalone:
+            continue
+        for start, end in hunks:
+            if not start <= line <= end:
+                continue
+            if _escape_status(func, {line: comments[line]} if line in comments else {}) != "none":
+                return True
+            text = removed.get((start, end), "")
+            if text.lstrip().startswith("#"):
+                column = len(text) - len(text.lstrip())
+                if _escape_status(func, {line: (text.lstrip(), column, True)}) != "none":
+                    return True
+    return False
+
+
 def file_findings(
     source: str,
     rel_path: str,
     hunks: list[tuple[int, int]] | None = None,
+    removed: dict[tuple[int, int], str] | None = None,
 ) -> list[Finding]:
     """Parse one Python test file and return exit-code-only findings in (changed) functions."""
     try:
@@ -523,7 +552,10 @@ def file_findings(
     findings: list[Finding] = []
     # len(funcs) <= MAX_AST_NODES is enforced by _extract_test_functions.
     for func, parents, end in funcs[:MAX_AST_NODES]:
-        if hunks is not None and not _function_touched(func, parents, end, hunks):
+        if hunks is not None and not (
+            _function_touched(func, parents, end, hunks)
+            or _marker_touched(func, comments, hunks, removed or {})
+        ):
             continue
         finding = _check_test_function(func, comments, rel_path)
         if finding is not None:
@@ -696,7 +728,7 @@ def _changed_files_by_path(
 
 def _changed_hunks(
     root: Path, merge_base: str, old_path: str, new_path: str, outgoing: str = ""
-) -> list[tuple[int, int]]:
+) -> tuple[list[tuple[int, int]], dict[tuple[int, int], str]]:
     """Read new-side zero-context hunk ranges for one changed or renamed file."""
     res = _run_git(
         root,
@@ -725,6 +757,7 @@ def _changed_hunks(
     if len(lines) > MAX_AST_NODES:
         raise ScanError(f"{new_path}: diff exceeds {MAX_AST_NODES} lines")
     hunks: list[tuple[int, int]] = []
+    removed: dict[tuple[int, int], str] = {}
     for line in lines[:MAX_AST_NODES]:
         if line.startswith("@@"):
             match = HUNK_RE.fullmatch(line)
@@ -733,7 +766,9 @@ def _changed_hunks(
             start = int(match.group(1))
             count = int(match.group(2)) if match.group(2) is not None else 1
             hunks.append((start, start + count - 1 if count else start + 1))
-    return hunks
+        elif hunks and line.startswith("-") and not line.startswith("---"):
+            removed[hunks[-1]] = line[1:]
+    return hunks, removed
 
 
 def _normalise_explicit_path(root: Path, root_resolved: Path, raw: str) -> tuple[Path, str]:
@@ -860,10 +895,12 @@ def scan_repository(
             continue
         else:
             old_rel = changes[rel_path]
-            hunks = (
-                _changed_hunks(root, merge_base, old_rel, rel_path, outgoing) if old_rel else None
+            hunks, removed = (
+                _changed_hunks(root, merge_base, old_rel, rel_path, outgoing)
+                if old_rel
+                else (None, {})
             )
-            current = file_findings(source, rel_path, hunks)
+            current = file_findings(source, rel_path, hunks, removed)
         if len(findings) + len(current) > MAX_AST_NODES:
             raise ScanError(f"{root}: exceeds {MAX_AST_NODES} findings")
         findings.extend(current)

@@ -54,8 +54,8 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         )
         self._git("init", "-q")
 
-    def _git(self, *args: str) -> None:
-        run_command(
+    def _git(self, *args: str) -> str:
+        result = run_command(
             [
                 self.git_bin,
                 "-C",
@@ -73,6 +73,7 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
             check=True,
             timeout_seconds=GIT_TIMEOUT_S,
         )
+        return result.stdout.strip()
 
     def _commit_file(self, rel_path: str, content: str, message: str = "test commit") -> Path:
         target = self.repo / rel_path
@@ -86,6 +87,7 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         out = io.StringIO()
         err = io.StringIO()
 
+        # Git env builders strip GIT_*; inject isolation at the subprocess boundary.
         def isolated_run(original, *args, **kwargs):
             kwargs["env"].update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
             return original(*args, **kwargs)
@@ -93,11 +95,6 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         with contextlib.ExitStack() as stack:
             stack.enter_context(contextlib.redirect_stdout(out))
             stack.enter_context(contextlib.redirect_stderr(err))
-            stack.enter_context(
-                mock.patch.dict(
-                    os.environ, {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
-                )
-            )
             for module in (checker, new_scanner_findings):
                 original = module.run_command
                 stack.enter_context(
@@ -1388,16 +1385,63 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         self.assertEqual(rc, 0, err)
         self.assertIn("0 exit-code-only test findings", out)
 
+    def test_changed_escape_marker_selects_weak_test(self) -> None:
+        weak = "def test_x():\n    rc = run_checker()\n    assert rc == 0\n"
+        for decorator in ("", "@decorator\n"):
+            with self.subTest(decorator=decorator):
+                target = self._commit_file(
+                    REL_TEST_FILE, "# exit-code-only: silent status probe\n" + decorator + weak
+                )
+                target.write_text("# smoke test\n" + decorator + weak, encoding="utf-8")
+                rc, _, err = self._run_checker("--changed-against", "HEAD")
+                self.assertEqual(rc, 1, err)
+                self.assertIn("test_x", err)
+
+    def test_changed_unrelated_comment_does_not_select_weak_test(self) -> None:
+        weak = "def test_x():\n    rc = run_checker()\n    assert rc == 0\n"
+        target = self._commit_file(REL_TEST_FILE, "# old\n# adjacent\n" + weak)
+        target.write_text("# new\n# adjacent\n" + weak, encoding="utf-8")
+        rc, out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 0, err)
+        self.assertIn("0 exit-code-only test findings", out)
+
+    def test_changed_marker_deletion_and_short_addition(self) -> None:
+        weak = "def test_x():\n    rc = run_checker()\n    assert rc == 0\n"
+        marker = "# exit-code-only: silent status probe\n"
+        target = self._commit_file(REL_TEST_FILE, marker + weak)
+        for replacement in ("", "# exit-code-only: x\n"):
+            with self.subTest(replacement=replacement):
+                target.write_text(replacement + weak, encoding="utf-8")
+                rc, _, err = self._run_checker("--changed-against", "HEAD")
+                self.assertEqual(rc, 1, err)
+                self.assertIn("test_x", err)
+        self._commit_file(REL_TEST_FILE, weak)
+        target.write_text("# exit-code-only: x\n" + weak, encoding="utf-8")
+        rc, _, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 1, err)
+        self.assertIn("test_x", err)
+
+    def test_changed_nonadjacent_marker_does_not_select_weak_test(self) -> None:
+        weak = "def test_x():\n    rc = run_checker()\n    assert rc == 0\n"
+        target = self._commit_file(
+            REL_TEST_FILE, "# exit-code-only: silent status probe\n# old\n" + weak
+        )
+        target.write_text("# ordinary\n# new\n" + weak, encoding="utf-8")
+        rc, out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 0, err)
+        self.assertIn("0 exit-code-only test findings", out)
+
     def test_outgoing_weak_commit_ignores_strong_worktree(self) -> None:
         strong = (
             "def test_x():\n    rc = run_checker()\n    assert rc == 0\n    assert output == 'ok'\n"
         )
         weak = strong.replace("    assert output == 'ok'\n", "")
-        target = self._commit_file(REL_TEST_FILE, strong)
+        self._commit_file(REL_TEST_FILE, strong)
         self._commit_file(REL_TEST_FILE, weak)
-        target.write_text(strong, encoding="utf-8")
-        with mock.patch.dict(os.environ, {"PRE_COMMIT_TO_REF": "HEAD"}):
-            rc, _, err = self._run_checker("--changed-against", "HEAD~1")
+        weak_ref = self._git("rev-parse", "HEAD")
+        self._commit_file(REL_TEST_FILE, strong)
+        with mock.patch.dict(os.environ, {"PRE_COMMIT_TO_REF": weak_ref}):
+            rc, _, err = self._run_checker("--changed-against", "HEAD~2")
         self.assertEqual(rc, 1, err)
         self.assertIn("test_x", err)
 
