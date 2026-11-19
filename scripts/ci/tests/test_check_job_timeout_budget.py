@@ -106,6 +106,22 @@ class JobTimeoutBudgetTest(unittest.TestCase):
         text = job("75", "", "") + "      - run: sudo apt-get install -y libcudart12\n"
         self.assertEqual(self.run_on(text), 1)
 
+    def test_apt_install_behind_option_is_refused(self) -> None:
+        # The retry option sits between apt-get and its install verb.
+        text = (
+            job("75", "", "")
+            + "      - run: sudo apt-get -o Acquire::Retries=3 install -y libcudart12\n"
+        )
+        self.assertEqual(self.run_on(text), 1)
+
+    def test_apt_install_without_option_is_still_found(self) -> None:
+        text = job("75", "", "") + "      - run: sudo apt-get install -y libcudart12\n"
+        self.assertEqual(self.run_on(text), 1)
+
+    def test_apt_update_is_not_an_install(self) -> None:
+        text = job("75", "", "") + "      - run: sudo apt-get -o Acquire::Retries=3 update\n"
+        self.assertEqual(self.run_on(text), 0)
+
     def test_capped_apt_step_passes(self) -> None:
         text = (
             job("75", "")

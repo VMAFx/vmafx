@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,10 @@ GITHUB_DEFAULT_JOB_MINUTES = 360
 # expiry entry date plus 3 days. Remove a line when its file is capped.
 UNCAPPED_APT_EXCEPTIONS: dict[str, datetime.date] = {}
 
+APT_GET = re.compile(r"\bapt-get\b")
+APT_WORD = re.compile(r"[^\s;&|]+")
+APT_OPTION_WITH_ARGUMENT = {"-o", "--option"}
+
 
 class LimitError(ValueError):
     """A ``timeout-minutes`` value that is not a whole number of minutes."""
@@ -60,9 +65,31 @@ def minutes(value: Any, where: str) -> int:
 
 
 def runs_apt_install(step: dict[str, Any]) -> bool:
-    """True when a step's shell script installs apt packages."""
+    """True when a step's shell script installs apt packages.
+
+    The install verb may follow options, as in
+    ``apt-get -o Acquire::Retries=3 install``. Options such as ``-o`` carry a
+    separate argument, so the scan skips one word after them.
+    """
     run = step.get("run")
-    return isinstance(run, str) and "apt-get install" in run
+    if not isinstance(run, str):
+        return False
+    run = run.replace("\\\n", " ")
+    for match in APT_GET.finditer(run):
+        words = APT_WORD.findall(run[match.end() :])
+        index = 0
+        while index < len(words):
+            word = words[index]
+            if word in APT_OPTION_WITH_ARGUMENT:
+                index += 2
+                continue
+            if word.startswith("-"):
+                index += 1
+                continue
+            if word == "install":
+                return True
+            break
+    return False
 
 
 def apt_exempt(workflow: str, today: datetime.date) -> bool:

@@ -143,6 +143,7 @@ jobs:
           python-version: 3.14.10
       - name: Install build tools
         if: steps.impact.outputs.mode == 'full' || steps.impact.outputs.c_core == 'true' || steps.impact.outputs.actions == 'true'
+        timeout-minutes: 15
         run: |
           python -m pip install --require-hashes -r requirements/locks/build.txt
           bash scripts/ci/apt-install-cached.sh refresh
