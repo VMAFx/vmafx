@@ -64,23 +64,6 @@ from scripts.dev import upstream_parity_matrix as matrix_data  # noqa: E402
 from scripts.lib.safe_subprocess import CommandTimedOut  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
-
-def _netflix_upstream_url() -> str:
-    """The shared Netflix URL, with ``NETFLIX_VMAF_URL`` as an explicit mirror override."""
-    override = os.environ.get("NETFLIX_VMAF_URL")
-    if override:
-        return override
-    config = REPO / "build-config.env"
-    if not config.is_file():
-        raise RuntimeError(f"{config} declares no NETFLIX_VMAF_URL")
-    prefix = 'NETFLIX_VMAF_URL="'
-    for line in config.read_text(encoding="utf-8").splitlines():
-        if line.startswith(prefix) and line.endswith('"'):
-            return line[len(prefix) : -1]
-    raise RuntimeError(f"{config} declares no NETFLIX_VMAF_URL")
-
-
-UPSTREAM_URL = _netflix_upstream_url()
 HARNESS_SOURCE = Path(__file__).with_name("upstream_parity_harness.c")
 CONSUMER_SOURCE = Path(__file__).with_name("compat_abi_consumer.c")
 PLANT_SOURCE = Path(__file__).with_name("compat_abi_plant.c")
@@ -551,11 +534,12 @@ def resolve_pin(repo: Path = REPO, fetch: bool = True) -> str:
 
     try:
         pin = pin_reader.recorded_pin((repo / pin_reader.RECORD).read_text(encoding="utf-8"))
+        upstream_url = pin_reader.upstream_url(repo)
         runner = pin_reader.git_runner(repo)
         if fetch:
-            status, _ = runner(["fetch", "--no-tags", "--quiet", UPSTREAM_URL, "master"])
+            status, _ = runner(["fetch", "--no-tags", "--quiet", upstream_url, "master"])
             if status != 0:
-                raise CannotRun(f"git fetch {UPSTREAM_URL} master failed")
+                raise CannotRun(f"git fetch {upstream_url} master failed")
         return pin_reader.resolve(pin, "FETCH_HEAD", runner)
     except (OSError, pin_reader.PinError) as error:
         raise CannotRun(f"upstream parity pin: {error}") from error
@@ -564,13 +548,17 @@ def resolve_pin(repo: Path = REPO, fetch: bool = True) -> str:
 def resolve_ref(ref: str, repo: Path = REPO) -> str:
     """The full id of *ref* (a tag, branch or commit of Netflix/vmaf), fetched."""
 
+    try:
+        upstream_url = pin_reader.upstream_url(repo)
+    except pin_reader.PinError as error:
+        raise CannotRun(f"upstream parity pin: {error}") from error
     runner = pin_reader.git_runner(repo)
-    status, _ = runner(["fetch", "--no-tags", "--quiet", UPSTREAM_URL, ref])
+    status, _ = runner(["fetch", "--no-tags", "--quiet", upstream_url, ref])
     if status != 0:
-        raise CannotRun(f"git fetch {UPSTREAM_URL} {ref} failed")
+        raise CannotRun(f"git fetch {upstream_url} {ref} failed")
     status, commit = runner(["rev-parse", "--verify", "--quiet", "FETCH_HEAD^{commit}"])
     if status != 0:
-        raise CannotRun(f"{ref} does not name a commit of {UPSTREAM_URL}")
+        raise CannotRun(f"{ref} does not name a commit of {upstream_url}")
     return commit
 
 

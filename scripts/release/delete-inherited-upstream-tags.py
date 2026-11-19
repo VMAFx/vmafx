@@ -23,11 +23,11 @@ from typing import Callable, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.ci import upstream_parity_pin as pin_reader
 from scripts.lib.safe_subprocess import CommandFailed
 from scripts.lib.safe_subprocess import run as run_command
 
 REPO = "VMAFx/vmafx"
-UPSTREAM_URL = "https://github.com/Netflix/vmaf"
 TIMEOUT_SECONDS = 120
 PEELED_SUFFIX = "^{}"
 TAG_PREFIX = "refs/tags/"
@@ -132,7 +132,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--apply", action="store_true", help="delete (default: dry run)")
     parser.add_argument("--fork-remote", default="origin")
-    parser.add_argument("--upstream-url", default=UPSTREAM_URL)
+    parser.add_argument("--upstream-url", default=None)
     return parser.parse_args(argv)
 
 
@@ -140,9 +140,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(list(sys.argv[1:] if argv is None else argv))
     try:
         fork = _git_ls_remote(args.fork_remote)
-        upstream = _git_ls_remote(args.upstream_url)
+        upstream_url = args.upstream_url or pin_reader.upstream_url()
+        upstream = _git_ls_remote(upstream_url)
         return run(fork, upstream, args.apply)
-    except CommandFailed as error:
+    except (CommandFailed, pin_reader.PinError) as error:
         print(f"delete-inherited-upstream-tags: {error}", file=sys.stderr)
         return 1
 

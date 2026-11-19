@@ -166,7 +166,9 @@ scripts/dev/upstream_parity.py --unpinned                      # on the host: ad
 | 1 | a difference is not covered or is above its bound, a fragment is stale, this tree's harness crashed, or (heap check) an output of this tree depends on the heap or a finite bound covers an undefined upstream value |
 | 2 | the comparison could not be made: no recorded head, a required fixture missing, a failed fetch or build, a malformed fragment, outside the pinned environment without `--unpinned`, documents from two environments |
 
-The guard fetches `master` of `https://github.com/Netflix/vmaf.git` into
+The guard fetches `master` of `NETFLIX_VMAF_URL` (default
+`https://github.com/Netflix/vmaf.git` in `build-config.env`; an exported
+`NETFLIX_VMAF_URL` overrides it) into
 `FETCH_HEAD` (`--no-fetch` reuses the one present), exports the recorded
 commit, and builds under `build-upstream-parity/` (ignored by git). Run
 results are cached there per harness binary, environment and heap fill, so a

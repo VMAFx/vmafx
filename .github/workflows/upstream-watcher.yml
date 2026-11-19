@@ -127,12 +127,8 @@ jobs:
 
       - name: Fetch upstream Netflix/vmaf
         run: |
-          if [ -z "${NETFLIX_VMAF_URL:-}" ]; then
-            set -a
-            . ./build-config.env
-            set +a
-          fi
-          git remote add --no-tags upstream "${NETFLIX_VMAF_URL}"
+          url="$(python3 scripts/ci/upstream_parity_pin.py --url)"
+          git remote add --no-tags upstream "${url}"
           git fetch --no-tags upstream master
 
       - name: Probe unported Netflix/vmaf commits

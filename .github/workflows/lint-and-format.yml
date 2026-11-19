@@ -1037,12 +1037,8 @@ jobs:
       - name: Fetch Netflix/vmaf with its full history
         shell: bash
         run: |
-          if [ -z "${NETFLIX_VMAF_URL:-}" ]; then
-            set -a
-            . ./build-config.env
-            set +a
-          fi
-          git fetch --no-tags --quiet "${NETFLIX_VMAF_URL}" master
+          url="$(python3 scripts/ci/upstream_parity_pin.py --url)"
+          git fetch --no-tags --quiet "${url}" master
       - name: Resolve the recorded upstream head
         id: upstream
         shell: bash

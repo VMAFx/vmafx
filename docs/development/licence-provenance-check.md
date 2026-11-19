@@ -57,12 +57,8 @@ notice and the SPDX licence identifier intact.
 
 ```bash
 # An already exported NETFLIX_VMAF_URL overrides the shared default.
-if [ -z "${NETFLIX_VMAF_URL:-}" ]; then
-  set -a
-  . ./build-config.env
-  set +a
-fi
-git remote add --no-tags upstream "${NETFLIX_VMAF_URL}"   # once
+url="$(python3 scripts/ci/upstream_parity_pin.py --url)"
+git remote add --no-tags upstream "${url}"   # once
 git fetch upstream
 pin="$(python3 scripts/ci/upstream_parity_pin.py --within upstream/master)"
 python3 scripts/dev/relicense_fork_files.py --check --upstream-ref "$pin"
