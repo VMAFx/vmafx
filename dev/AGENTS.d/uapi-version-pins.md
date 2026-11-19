@@ -17,28 +17,39 @@ silently falls back to CPU. Two hard pins live in
 - **Shared `INTEL_NEO_VERSION`** and shared `LEVEL_ZERO_VERSION`.
   Pinned via GitHub releases: Intel's `noble/unified` APT repo's
   newest as of 2026-05-18 = `25.18.x`, too old for kernel ≥ 7.0.
-  Level Zero loader comes from `oneapi-src/level-zero`. NEO and
-  Level Zero `RUN`s source copied root `build-config.env` from
-  `/opt/vmafx/`; both Level Zero download URL components use
-  `LEVEL_ZERO_VERSION`. Do not reintroduce separate
+  Level Zero loader comes from `oneapi-src/level-zero`. NEO `RUN`
+  sources copied root `build-config.env` from `/opt/vmafx/` and
+  passes `--level-zero-ver "${LEVEL_ZERO_VERSION}" --level-zero-dev`
+  to `fetch-intel-neo.py`; never download Level Zero `.deb` files
+  outside lock-verified fetcher. Do not reintroduce separate
   `LEVEL_ZERO_VER`/`LEVEL_ZERO_VERSION` ARG or literal version.
   `scripts/ci/check-workflow-versions.py` and single-source fixture
   gate protect this consumer. Renovate owns setting only in
-  `build-config.env`. **Invariant (ADR-1145, ADR-1360)**:
+  `build-config.env`. **Invariant (ADR-1145, ADR-1360, ADR-3555)**:
   `INTEL_NEO_VERSION` in `build-config.env` = only pinned Intel NEO
   version; never reintroduce `ARG NEO_VER`, `GMMLIB_VER` or `IGC_VER`.
-  Matching `gmmlib`, `IGC` and `intel-ocloc` debs dynamically derived,
-  verified against published sha256 checksums at build time by
-  `dev/scripts/fetch-intel-neo.py`. CI SYCL build hosts install same
+  Matching `gmmlib`, `IGC`, `intel-ocloc` + Level Zero debs, `github.com`
+  asset URLs + `sha256` digests pinned in `dev/scripts/intel-neo-lock.json`
+  (derived at `--write-lock` refresh time, ADR-1145 + ADR-3555); default
+  `dev/scripts/fetch-intel-neo.py` reads lock, zero `api.github.com` calls,
+  ignores token, fails closed on missing/corrupt lock, bad host/digest or
+  version mismatch. Refresh lock on version bump:
+  `bash -c '. ./build-config.env && python3 dev/scripts/fetch-intel-neo.py --neo-ver "$INTEL_NEO_VERSION" --level-zero-ver "$LEVEL_ZERO_VERSION" --write-lock dev/scripts/intel-neo-lock.json'`;
+  `.github/workflows/intel-neo-lock-refresh.yml` refreshes lock on `push`
+  to `renovate/**` touching `build-config.env`;
+  `scripts/ci/check-workflow-versions.py` fails closed on lock/config
+  version drift. CI SYCL build hosts install same
   release's ocloc via `scripts/ci/install-intel-ocloc.sh`
   (`--components ocloc`); oneAPI release image uses same script with
-  `--components build` / `runtime` (ADR-1368) = same fetcher, same package
-  set as this Containerfile. `intel-ocloc` load-bearing: icpx runs `ocloc`
-  for SYCL `spir64_gen` AOT; no ocloc -> `meson setup` refuses. IGC debs
-  land in `/usr/local/lib`, no ldconfig trigger -> keep `ldconfig` after
-  NEO install.
-  **GitHub credential transport (ADR-1271):** optional API token is   BuildKit secret `github_token`, exposed as `GITHUB_TOKEN` only to NEO
-  fetch `RUN`. Never reintroduce `ARG GITHUB_TOKEN`, `ENV GITHUB_TOKEN`, or   token-valued `--build-arg`. Raw anonymous builds omit `--secret`; Compose
+  `--components build` / `runtime` (ADR-1368) = same fetcher + lock, same
+  package set as this Containerfile. `intel-ocloc` load-bearing: icpx runs
+  `ocloc` for SYCL `spir64_gen` AOT; no ocloc -> `meson setup` refuses. IGC
+  debs land in `/usr/local/lib`, no ldconfig trigger -> keep `ldconfig`
+  after NEO install.
+  **GitHub credential transport (ADR-1271, ADR-3555):** optional API token =
+  BuildKit secret `github_token`, exposed as `GITHUB_TOKEN` only to NEO
+  fetch `RUN` (kept for compatibility; lock mode ignores token, `--write-lock`
+  sends token only to `api.github.com`). Never reintroduce `ARG GITHUB_TOKEN`, `ENV GITHUB_TOKEN`, or   token-valued `--build-arg`. Raw anonymous builds omit `--secret`; Compose
   maps host variable and treats unset or empty input as anonymous. Keep
   `scripts/ci/check-dev-container-build-secret.py`, its fixture tests, and   Docker/Compose `--check` workflow steps wired together.
 - **Digest-pinned `rocm-src` stage**
