@@ -7,7 +7,7 @@ paths:
   - scripts/ci/tests/test_rust_toolchain_single_source.py
   - scripts/ci/tests/test_vmaf_resource_commit_single_source.py
   - rust-toolchain.toml
-invariant: Level Zero, ruff / black, mypy `python_version`, Rust toolchain and VMAF_RESOURCE_COMMIT: one owner each plus checked mirrors.
+invariant: Level Zero, ruff / black, mypy `python_version`, Rust toolchain, VMAF_RESOURCE_COMMIT: one owner each, checked mirrors.
 area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
