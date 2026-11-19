@@ -333,31 +333,50 @@ def _check_test_function(func: FuncNode, lines: list[str], rel_path: str) -> Fin
     return None
 
 
+def _statement_start(node: ast.stmt) -> int:
+    """Return the first decorator or statement line."""
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return min((dec.lineno for dec in node.decorator_list[:MAX_AST_NODES]), default=node.lineno)
+    return node.lineno
+
+
+def _bounded_children(node: ast.AST, end: int, rel_path: str) -> list[tuple[ast.AST, int]]:
+    """Assign each statement its next sibling's start or its parent's end."""
+    children = list(itertools.islice(ast.iter_child_nodes(node), MAX_AST_NODES + 1))
+    if len(children) > MAX_AST_NODES:
+        raise ScanError(f"{rel_path}: exceeds {MAX_AST_NODES} AST nodes")
+    bounds = dict.fromkeys(children, end)
+    for _, value in ast.iter_fields(node):
+        if isinstance(value, list):
+            statements = [item for item in value if isinstance(item, ast.stmt)]
+            for current, following in itertools.pairwise(statements):
+                bounds[current] = _statement_start(following) - 1
+    return [(child, bounds[child]) for child in children]
+
+
 def _extract_test_functions(
-    tree: ast.AST, rel_path: str
-) -> list[tuple[FuncNode, tuple[DefNode, ...]]]:
+    tree: ast.AST, rel_path: str, file_end: int
+) -> list[tuple[FuncNode, tuple[DefNode, ...], int]]:
     """Return test functions with their enclosing definitions in source order."""
-    stack: list[tuple[ast.AST, tuple[DefNode, ...]]] = [(tree, ())]
-    funcs: list[tuple[FuncNode, tuple[DefNode, ...]]] = []
+    stack: list[tuple[ast.AST, tuple[DefNode, ...], int]] = [(tree, (), file_end)]
+    funcs: list[tuple[FuncNode, tuple[DefNode, ...], int]] = []
     for _ in range(MAX_AST_NODES + 1):
         if not stack:
             funcs.sort(key=lambda item: (item[0].lineno, item[0].col_offset))
             return funcs
-        curr, scope_chain = stack.pop()
+        curr, scope_chain, end = stack.pop()
         if isinstance(curr, (ast.FunctionDef, ast.AsyncFunctionDef)) and curr.name.startswith(
             "test_"
         ):
-            funcs.append((curr, scope_chain))
+            funcs.append((curr, scope_chain, end))
         next_chain = (
             (*scope_chain, curr)
             if isinstance(curr, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
             else scope_chain
         )
-        children = list(itertools.islice(ast.iter_child_nodes(curr), MAX_AST_NODES + 1))
-        if len(children) > MAX_AST_NODES:
-            raise ScanError(f"{rel_path}: exceeds {MAX_AST_NODES} AST nodes")
-        for child in reversed(children[:MAX_AST_NODES]):
-            stack.append((child, next_chain))
+        children = _bounded_children(curr, end, rel_path)
+        for child, child_end in reversed(children[:MAX_AST_NODES]):
+            stack.append((child, next_chain, child_end))
     raise ScanError(f"{rel_path}: exceeds {MAX_AST_NODES} AST nodes")
 
 
@@ -371,11 +390,11 @@ def _definition_lines(node: DefNode) -> list[tuple[int, int]]:
 
 
 def _function_touched(
-    func: FuncNode, parents: tuple[DefNode, ...], hunks: list[tuple[int, int]]
+    func: FuncNode, parents: tuple[DefNode, ...], end: int, hunks: list[tuple[int, int]]
 ) -> bool:
     """Match a function span or an enclosing definition header against hunks."""
     start = min(line for line, _ in _definition_lines(func))
-    spans = [(start, func.end_lineno or func.lineno)]
+    spans = [(start, end)]
     for parent in parents[:MAX_AST_NODES]:
         spans.extend(_definition_lines(parent))
     return any(a <= end and start_line <= b for a, b in spans for start_line, end in hunks)
@@ -392,11 +411,11 @@ def file_findings(
     except SyntaxError as exc:
         raise ScanError(f"{rel_path}:{exc.lineno or 1}: syntax error: {exc.msg}") from exc
     lines = source.splitlines()
-    funcs = _extract_test_functions(tree, rel_path)
+    funcs = _extract_test_functions(tree, rel_path, len(lines))
     findings: list[Finding] = []
     # len(funcs) <= MAX_AST_NODES is enforced by _extract_test_functions.
-    for func, parents in funcs[:MAX_AST_NODES]:
-        if hunks is not None and not _function_touched(func, parents, hunks):
+    for func, parents, end in funcs[:MAX_AST_NODES]:
+        if hunks is not None and not _function_touched(func, parents, end, hunks):
             continue
         finding = _check_test_function(func, lines, rel_path)
         if finding is not None:

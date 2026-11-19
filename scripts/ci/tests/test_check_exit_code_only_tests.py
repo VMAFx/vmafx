@@ -161,7 +161,7 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         self.assertEqual(rc, 0, err)
         self.assertEqual(err, "")
 
-    def test_unchanged_old_weak_test_outside_diff_passes_changed_and_counts_default(self) -> None:
+    def test_added_separator_touches_old_weak_and_counts_default(self) -> None:
         base_code = (
             "import subprocess\n"
             "import unittest\n\n"
@@ -179,8 +179,8 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         )
         self._commit_file(REL_TEST_FILE, added_strong, "add strong test below")
         rc_changed, _out_changed, err_changed = self._run_checker("--changed-against", "HEAD~1")
-        self.assertEqual(rc_changed, 0, err_changed)
-        self.assertEqual(err_changed, "")
+        self.assertEqual(rc_changed, 1, err_changed)
+        self.assertIn("test_old_weak:", err_changed)
         rc_default, out_default, err_default = self._run_checker()
         self.assertEqual(rc_default, 0, err_default)
         self.assertIn(f"{REL_TEST_FILE}:5: test_old_weak:", out_default)
@@ -241,7 +241,7 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         self.assertIn(str(self.repo), err)
         self.assertIn("nonexistent-ref-name", err)
 
-    def test_boundary_function_span_touching_diff_by_one_line(self) -> None:
+    def test_boundary_function_span_includes_trailing_comment(self) -> None:
         base_lines = (
             "import subprocess\n"
             "import unittest\n\n"
@@ -249,16 +249,16 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
             "    def test_span_boundary(self) -> None:\n"
             "        res = subprocess.run(['true'], check=False)\n"
             "        self.assertEqual(res.returncode, 0)\n"
-            "# line 8 outside function span (5..7)\n"
+            "# line 8 after last statement\n"
         )
         self._commit_file(REL_TEST_FILE, base_lines, "base")
         outside_edit = base_lines.replace(
-            "# line 8 outside function span (5..7)\n",
-            "# line 8 edited just outside function span\n",
+            "# line 8 after last statement\n",
+            "# line 8 edited after last statement\n",
         )
         self._commit_file(REL_TEST_FILE, outside_edit, "edit line 8 outside span")
         rc_outside, _out_o, err_outside = self._run_checker("--changed-against", "HEAD~1")
-        self.assertEqual(rc_outside, 0, err_outside)
+        self.assertEqual(rc_outside, 1, err_outside)
         touching_last_line = outside_edit.replace(
             "        self.assertEqual(res.returncode, 0)\n",
             "        self.assertEqual(res.returncode, 0, 'touched line 7')\n",
@@ -743,7 +743,7 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("test_added_weak_a: asserts only exit code 0", err)
         self.assertIn("test_untracked_weak: asserts only exit code 0", err)
-        self.assertNotIn("test_old_weak", err)
+        self.assertIn("test_old_weak", err)
         self.assertNotIn("test_added_strong_b", err)
 
     def test_deletion_hunks_last_assert_whole_middle_function_and_line_zero(self) -> None:
@@ -926,8 +926,8 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         )
         target = self._commit_file(REL_TEST_FILE, base_comment, "base with comment")
         for edited, expected in (
-            (base_comment.replace('    assert out == "ok"\n', ""), 0),
-            (base_comment.replace('    assert out == "ok"\n', '    # assert out == "ok"\n'), 0),
+            (base_comment.replace('    assert out == "ok"\n', ""), 1),
+            (base_comment.replace('    assert out == "ok"\n', '    # assert out == "ok"\n'), 1),
         ):
             target.write_text(edited, encoding="utf-8")
             rc, _out, err = self._run_checker("--changed-against", "HEAD")
@@ -1000,6 +1000,40 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         self.assertEqual(rc, expected, err)
         if expected == 1:
             self.assertIn("test_a:", err)
+
+    def test_deleted_final_assertion_after_comments_is_reported(self) -> None:
+        cases = (
+            ("", "", "\ndef test_next():\n    assert True\n"),
+            ("", "", ""),
+            ("class Suite:\n", "    ", "\ndef after():\n    pass\n"),
+            ("def helper():\n", "    ", "\ndef after():\n    pass\n"),
+        )
+        for prefix, indent, suffix in cases:
+            with self.subTest(prefix=prefix, suffix=suffix):
+                base = (
+                    prefix
+                    + indent
+                    + "def test_a():\n"
+                    + indent
+                    + "    rc = run_helper()\n"
+                    + indent
+                    + "    assert rc == 0\n"
+                    + indent
+                    + "    # explanation\n\n"
+                    + indent
+                    + '    assert output == "ok"\n'
+                    + suffix
+                )
+                self._check_hunk_case(
+                    base, base.replace(indent + '    assert output == "ok"\n', ""), 1
+                )
+
+    def test_comment_between_tests_touches_upper_test(self) -> None:
+        base = (
+            "def test_a():\n    rc = run_helper()\n    assert rc == 0\n"
+            "# old comment\n\ndef test_next():\n    assert True\n"
+        )
+        self._check_hunk_case(base, base.replace("old comment", "new comment"), 1)
 
     def test_enclosing_class_becomes_function(self) -> None:
         body = "    def test_a():\n        rc = run_helper()\n        assert rc == 0\n"
@@ -1127,7 +1161,8 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         rc, _out, err = self._run_checker("--changed-against", "HEAD")
         self.assertEqual(rc, 1)
         self.assertIn(f"{REL_TEST_FILE}:6: test_a:", err)
-        self.assertEqual(err.count(f"{REL_TEST_FILE}:"), 1)
+        self.assertIn(f"{REL_TEST_FILE}:2: test_a:", err)
+        self.assertEqual(err.count(f"{REL_TEST_FILE}:"), 2)
 
     def test_weak_top_level_moved_into_async_helper_is_reported(self) -> None:
         weak = "def test_a():\n    rc = run_helper()\n    assert rc == 0\n"
@@ -1177,7 +1212,7 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         self.assertIn("0 exit-code-only test findings", out)
         self.assertNotIn("test_a:", err)
 
-    def test_duplicate_added_weak_is_reported_once(self) -> None:
+    def test_duplicate_added_weak_and_preceding_separator_are_reported(self) -> None:
         strong = (
             'def test_a():\n    rc = run_helper()\n    assert rc == 0\n    assert output == "ok"\n'
         )
@@ -1187,7 +1222,8 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         rc, _out, err = self._run_checker("--changed-against", "HEAD")
         self.assertEqual(rc, 1)
         self.assertIn(f"{REL_TEST_FILE}:10: test_a:", err)
-        self.assertEqual(err.count(f"{REL_TEST_FILE}:"), 1)
+        self.assertIn(f"{REL_TEST_FILE}:6: test_a:", err)
+        self.assertEqual(err.count(f"{REL_TEST_FILE}:"), 2)
 
     def test_duplicate_removal_touches_old_weak(self) -> None:
         strong = (

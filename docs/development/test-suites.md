@@ -350,9 +350,11 @@ python3 scripts/ci/check_exit_code_only_tests.py --changed-against origin/master
   weak tests when a zero-context diff hunk touches their span (including
   decorators), or a definition or decorator line of an enclosing function or
   class. A pure deletion touches its new-side start and the next line. A comment
-  edit inside an old weak test therefore reports it. The span ends at the last
-  AST statement: a deleted final assertion after trailing comments can lie
-  outside that span and go unreported. Added, type-changed, and
+  edit inside an old weak test therefore reports it. A test's span extends to
+  the line before the next statement in its enclosing body, or to the end of
+  its enclosing definition's extended span (file end at top level). Consequently,
+  editing a comment between tests reports an upper test that is already weak.
+  Added, type-changed, and
   untracked files, and files renamed from outside `<pathspec>`, are checked in
   full; a pure rename within the pathspec has no hunks and reports nothing.
   The check exits `1` on findings (`0` when clean). An
