@@ -100,6 +100,13 @@ LEVEL_ZERO_FETCHER_CALL_RE = re.compile(
 
 
 PYTHON_RE = re.compile(r'python-version:\s*[\'"]?([0-9]+\.[0-9]+\.[0-9]+)[\'"]?')
+RESOURCE_ARG_RE = re.compile(r"(?m)^ARG\s+VMAF_RESOURCE_COMMIT=([^\s#]+)")
+RESOURCE_ENV_RE = re.compile(r"(?m)^\s*VMAF_RESOURCE_COMMIT:\s*([^\s#]+)")
+RESOURCE_MIRRORS = (
+    ("docker/Dockerfile.tester", RESOURCE_ARG_RE),
+    (".github/workflows/macos-tester-bundle.yml", RESOURCE_ENV_RE),
+    (".github/workflows/windows-tester-bundle.yml", RESOURCE_ENV_RE),
+)
 
 
 def load_config(root: Path) -> dict[str, str]:
@@ -183,6 +190,33 @@ def check_level_zero_container(root: Path) -> list[str]:
         return problems
     run, call, normalized = calls[0]
     problems.extend(_check_level_zero_fetcher_run(copy, run, call, normalized))
+    return problems
+
+
+def check_vmaf_resource_commit(root: Path, want: str | None) -> list[str]:
+    """The fixture source commit is declared once and mirrored where parse time forbids sourcing.
+
+    GitHub Actions and Dockerfile ``ARG`` defaults cannot read
+    ``build-config.env`` before the workflow or image is parsed, so the tester
+    image and the two tester-bundle workflows repeat the commit. This gate makes
+    that repetition exact: missing, duplicated or differing mirrors fail.
+    """
+    if not want:
+        return ["build-config.env defines no VMAF_RESOURCE_COMMIT"]
+    problems: list[str] = []
+    for rel, pattern in RESOURCE_MIRRORS:
+        path = root / rel
+        if not path.is_file():
+            problems.append(f"{rel} is missing its VMAF_RESOURCE_COMMIT mirror")
+            continue
+        values = pattern.findall(path.read_text(encoding="utf-8"))
+        if len(values) != 1:
+            problems.append(f"{rel} must declare VMAF_RESOURCE_COMMIT exactly once")
+            continue
+        if values[0] != want:
+            problems.append(
+                f"{rel} pins VMAF_RESOURCE_COMMIT {values[0]}; build-config.env says {want}"
+            )
     return problems
 
 
@@ -632,10 +666,12 @@ def main() -> int:
     ver_want = cfg.get("VMAFX_VERSION")
     rust_want = cfg.get("RUST_VERSION")
     node_want = cfg.get("NODE_VERSION")
+    resource_want = cfg.get("VMAF_RESOURCE_COMMIT")
 
     problems: list[str] = []
     problems.extend(check_level_zero_container(root))
     problems.extend(check_workflows(root, lz_want, py_want))
+    problems.extend(check_vmaf_resource_commit(root, resource_want))
     problems.extend(check_vmafx_version(root, ver_want))
     problems.extend(check_formatter_pins(root))
     problems.extend(check_makefile_venv_paths(root))
@@ -654,7 +690,8 @@ def main() -> int:
         return 1
     print(
         f"check-workflow-versions: OK (Level Zero {lz_want}, Python CI {py_want}, "
-        f"Rust {rust_want}, Node {node_want}, VMAFx {ver_want})"
+        f"Rust {rust_want}, Node {node_want}, VMAFx {ver_want}, "
+        f"resource {resource_want})"
     )
     return 0
 
