@@ -116,10 +116,11 @@ Update note on merge: final UID + container-scope seccompProfile set.
 - **node Deployment strategy**: `templates/node.yaml` requires explicit
   `spec.strategy` (`node.strategy`). K8s defaults 25%/25% evict GPU pods
   before replacement, dropping scoring jobs. Never drop `strategy:` block.
-- **node probes use tcpSocket, not httpGet**: vmafx-node exposes gRPC server
-  only; no HTTP listener. Probes use `tcpSocket` on `port: grpc`
-  (`node.grpcPort`, default 50052). If PR adds HTTP metrics/health endpoint,
-  upgrade to `httpGet` after verifying endpoint in image.
+- **node probes (ADR-1094, amended ADR-3558)**: `livenessProbe` = `tcpSocket`
+  on `port: grpc` (`node.grpcPort`, default 50052). `readinessProbe` =
+  `httpGet` `/readyz` on `port: metrics` (`node.metricsPort`, default 9090;
+  node checks `scorer`, loopback `grpc`, plus `sidecar` when
+  `node.sidecar.enabled`).
 - **terminationGracePeriodSeconds must be set on all pod specs**: templates
   (`deployment.yaml`, `statefulset.yaml`, `node.yaml`) set `terminationGracePeriodSeconds`
   from `.Values.terminationGracePeriodSeconds`. New templates must match;
@@ -280,6 +281,7 @@ scheduling docs on rebase.
 - [ADR-0726](../../../docs/adr/0726-drop-vulkan-backend.md) — Vulkan backend removal
 - [ADR-1353](../../../docs/adr/1353-helm-server-component-selector.md) — server workload component selector, rc.1 upgrade path
 - [ADR-1519](../../../docs/adr/1519-controller-tenant-registry.md) — controller tenant registry, chart auth guards
+- [ADR-3558](../../../docs/adr/3558-node-sidecar-readiness-gpu-affinity.md) — node opt-in sidecar, HTTP `/readyz` readiness probe, `node.affinity`
 
 ## Invariants (ADR-1524)
 
@@ -314,3 +316,17 @@ scheduling docs on rebase.
   `allow-controller-from-mcp`; keys `networkPolicy.allow.mcpIngress` /
   `mcpToController`.
 - Guard: `scripts/ci/tests/test_helm_mcp.py` (helm-chart workflow).
+
+## Invariants (ADR-3558)
+
+- `node.sidecar.enabled` default `false`; `VMAFX_SIDECAR_ENABLED: "true"` in
+  `vmafx.env.node` only when `true`.
+- `node.affinity` (`k8s:io.k8s.api.core.v1.Affinity`, default `{}`): overrides
+  global `affinity` when non-empty, else falls back to `.Values.affinity`.
+  Intel GPU plugin labels each GPU node with `gpu.intel.com/product`
+  (`Arc_Pro_B60`, `Arc_B580`); `gpu.intel.com/device-id.<id>.present` =
+  alternative key. `preferredDuringSchedulingIgnoredDuringExecution`:
+  `Arc_Pro_B60` weight 100, `Arc_B580` weight 50; no
+  `requiredDuringScheduling` pin.
+- Guard: `scripts/ci/tests/test_helm_node_contract.py` (`NodeProbesAndSidecar`,
+  `NodeAffinity`).

@@ -478,7 +478,7 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 65535,
-          "description": "gRPC listen port for the vmafx-node server. Must match VMAFX_GRPC_LISTEN env var (default 50052). Used for tcpSocket liveness/readiness probes and the node ClusterIP Service."
+          "description": "gRPC listen port for the vmafx-node server. Must match VMAFX_GRPC_LISTEN env var (default 50052). Used for the tcpSocket liveness probe, the statuspage grpc readiness check, and the node ClusterIP Service."
         },
         "image": {
           "type": "object",
@@ -494,10 +494,11 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 65535,
-          "description": "Prometheus scrape port exposed by vmafx-node. Updates the Deployment containerPort, the node-metrics Service port, and the NetworkPolicy allow rule. Default: 9090."
+          "description": "HTTP port exposed by vmafx-node for Prometheus /metrics and the /livez, /readyz, /startupz probes. Updates the Deployment containerPort, the node Service port, and the NetworkPolicy allow rule. Default: 9090."
         },
         "resources": {"$ref": "#/$defs/resourceSpec"},
         "nodeSelector": {"type": "object", "additionalProperties": {"type": "string"}},
+        "affinity": {"$ref": "#/$defs/io.k8s.api.core.v1.Affinity"},
         "tolerations": {
           "type": "array",
           "items": {"$ref": "#/$defs/io.k8s.api.core.v1.Toleration"}
@@ -541,6 +542,12 @@
               "description": "VMAFX_EBPF_MOUNT_PREFIX: absolute path whose opens are recorded; storage.mountRoot must lie under it and defaults to it."
             }
           }
+        },
+        "sidecar": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Online-training sidecar feedback client on vmafx-node (VMAFX_SIDECAR_ENABLED, ADR-0781, ADR-3558). Disabled by default; when enabled, /readyz requires a live connection to VMAFX_SIDECAR_SOCKET.",
+          "properties": {"enabled": {"type": "boolean"}}
         }
       }
     },

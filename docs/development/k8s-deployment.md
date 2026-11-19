@@ -624,7 +624,7 @@ name the key:
 | Key | Now refused |
 | --- | --- |
 | `tolerations`, `controller.tolerations`, `node.tolerations` | A list item that is not a toleration, or a toleration field of another type, such as `tolerationSeconds: "60"` (a number is required) |
-| `affinity` | A value that is not an `Affinity`: a list where a term mapping belongs, a node selector term without `nodeSelectorTerms`, a pod affinity term without `topologyKey` |
+| `affinity`, `node.affinity` | A value that is not an `Affinity`: a list where a term mapping belongs, a node selector term without `nodeSelectorTerms`, a pod affinity term without `topologyKey` |
 | `topologySpreadConstraints`, `controller.topologySpreadConstraints` | A constraint without `maxSkew`, `topologyKey` or `whenUnsatisfiable`, or with a field of another type |
 | `podSecurityContext` | A field of another type, such as `runAsUser: root` (a user ID is a number) |
 | `securityContext` | A field of another type, such as `capabilities: {drop: ALL}` (`drop` is a list) |

@@ -4,7 +4,7 @@
 #
 # Usage: smoke-published-image.sh IMAGE KIND VERSION
 #   IMAGE    the published image reference, by digest (it is pulled)
-#   KIND     operator | server | controller | node
+#   KIND     operator | server | controller | node | node-sycl
 #   VERSION  what the entrypoint's `--version` must print (the release tag)
 #
 # Checks the entrypoint (and the nonroot user of server and controller), then
@@ -18,6 +18,10 @@
 #               util-linux mount it runs mount an rclone remote; a file reads
 #               back through FUSE and unmounts. AppArmor (on the runner)
 #               denies mount under Docker's default profile.
+#   node-sycl   checks Config.Env holds exact VMAFX_BACKEND=sycl, checks the
+#               vmafx-node entrypoint, --version and the FUSE mount, and skips
+#               SYCL scoring with an explicit reason (no Intel GPU on the
+#               hosted runner).
 #
 # Exit status: 0 = every check passed, 1 = a check failed, 64 = bad usage.
 #
@@ -41,8 +45,9 @@ case "$kind" in
   operator | controller) smoke_kind=binary ;;
   server) smoke_kind=wrapped ;;
   node) smoke_kind=node ;;
+  node-sycl) smoke_kind=binary ;;
   *)
-    printf 'ERROR: unknown KIND %s (operator, server, controller or node)\n' "$kind" >&2
+    printf 'ERROR: unknown KIND %s (operator, server, controller, node or node-sycl)\n' "$kind" >&2
     exit 64
     ;;
 esac
@@ -67,13 +72,32 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# check_config: the image's entrypoint is vmafx-KIND; server and controller
-# run as the nonroot UID.
+# check_sycl_env: Config.Env holds exact entry VMAFX_BACKEND=sycl (and no
+# conflicting VMAFX_BACKEND= entry).
+check_sycl_env() {
+  local env_json found
+  env_json="$(docker image inspect --format '{{json .Config.Env}}' "$image")" ||
+    fail "$image: could not inspect Config.Env"
+  if jq -e '(. // []) | map(select(startswith("VMAFX_BACKEND="))) == ["VMAFX_BACKEND=sycl"]' \
+    <<<"$env_json" >/dev/null; then
+    return 0
+  fi
+  found="$(jq -r '(. // []) | map(select(startswith("VMAFX_BACKEND="))) | if length == 0 then "none" else join(", ") end' \
+    <<<"$env_json")" || found="invalid"
+  fail "$image: env lacks exact entry VMAFX_BACKEND=sycl (found: $found)"
+}
+
+# check_config: the image's entrypoint is vmafx-KIND (vmafx-node for node-sycl,
+# after checking VMAFX_BACKEND=sycl); server and controller run as the nonroot UID.
 check_config() {
-  local entrypoint user
+  local entrypoint user expected_bin="vmafx-$kind"
+  if [[ "$kind" == node-sycl ]]; then
+    check_sycl_env
+    expected_bin="vmafx-node"
+  fi
   entrypoint="$(docker image inspect --format '{{json .Config.Entrypoint}}' "$image")"
-  [[ "$entrypoint" == "[\"/usr/local/bin/vmafx-$kind\"]" ]] ||
-    fail "$image: entrypoint is $entrypoint, expected /usr/local/bin/vmafx-$kind"
+  [[ "$entrypoint" == "[\"/usr/local/bin/$expected_bin\"]" ]] ||
+    fail "$image: entrypoint is $entrypoint, expected /usr/local/bin/$expected_bin"
   if [[ "$kind" == server || "$kind" == controller ]]; then
     user="$(docker image inspect --format '{{.Config.User}}' "$image")"
     [[ "$user" == 65532:65532 ]] || fail "$image: runs as '$user', expected 65532:65532"
@@ -107,7 +131,10 @@ wait_ready() {
 check_mount() {
   local inside outside
   frames="$(mktemp -d)"
+  # The mount container reads as UID 65532; mktemp -d creates mode 0700.
+  chmod 0755 "$frames"
   head -c $((576 * 324 * 3)) /dev/urandom >"$frames/ref.yuv"
+  chmod 0644 "$frames/ref.yuv"
   container="vmafx-node-mount-smoke"
   docker run --detach --name "$container" --device /dev/fuse \
     --cap-drop ALL --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH \
@@ -132,6 +159,10 @@ case "$kind" in
   server) wait_ready /healthz /readyz ;;
   controller) wait_ready /readyz ;;
   node) check_mount ;;
+  node-sycl)
+    check_mount
+    printf 'SKIP: SYCL scoring needs an Intel GPU; the hosted runner has none; device evidence comes from the cluster node log\n'
+    ;;
   operator) ;;
 esac
 printf 'OK: published %s (%s)\n' "$image" "$kind"
