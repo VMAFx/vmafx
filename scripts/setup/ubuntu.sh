@@ -84,15 +84,47 @@ prepare_tools_venv "$VMAFX_TOOLS_VENV"
 
 if [[ "$INSTALL_LINTERS" == "true" ]]; then
   $SUDO apt-get install -y --no-install-recommends shellcheck
-  # shfmt from release (not in apt for older Ubuntu).
-  # Pin to an explicit version URL — the /releases/latest/download/ route
-  # 404s as soon as upstream tags a newer version because the filename
-  # contains the version string.
+  # shfmt from release (not in apt for older Ubuntu). Pin to an explicit
+  # version URL -- the /releases/latest/download/ route 404s as soon as
+  # upstream tags a newer version because the filename contains the version
+  # string. Select the asset for this machine's architecture and verify the
+  # published digest before installing it.
   if ! command -v shfmt >/dev/null; then
     SHFMT_VERSION="v3.13.1"
-    $SUDO curl --retry 3 --retry-all-errors -fsSL -o /usr/local/bin/shfmt \
-      "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64"
-    $SUDO chmod +x /usr/local/bin/shfmt
+    case "$(uname -m)" in
+      x86_64 | amd64)
+        SHFMT_ARCH="amd64"
+        SHFMT_SHA256="fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1"
+        ;;
+      aarch64 | arm64)
+        SHFMT_ARCH="arm64"
+        SHFMT_SHA256="32d92acaa5cd8abb29fc49dac123dc412442d5713967819d8af2c29f1b3857c7"
+        ;;
+      armv6l | armv7l)
+        SHFMT_ARCH="arm"
+        SHFMT_SHA256="f6c23b95971bcc5ebf86411bccefb79f1e99f8efe7c722d980a3f244838b1398"
+        ;;
+      i386 | i686)
+        SHFMT_ARCH="386"
+        SHFMT_SHA256="5f9a2c46249dab66d7767df676083ea6a3313831ca9f4bc29e4c21af87bd4f5e"
+        ;;
+      *)
+        echo "ubuntu.sh: no pinned shfmt asset for architecture $(uname -m)" >&2
+        exit 2
+        ;;
+    esac
+    shfmt_tmp="$(mktemp)"
+    trap 'rm -f "$shfmt_tmp"' EXIT
+    $SUDO curl --retry 3 --retry-all-errors -fsSL -o "$shfmt_tmp" \
+      "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_${SHFMT_ARCH}"
+    actual="$(sha256sum "$shfmt_tmp" | awk '{print $1}')"
+    if [[ "$actual" != "$SHFMT_SHA256" ]]; then
+      echo "ubuntu.sh: shfmt ${SHFMT_VERSION} digest mismatch: got ${actual}, want ${SHFMT_SHA256}" >&2
+      exit 1
+    fi
+    $SUDO install -m 0755 "$shfmt_tmp" /usr/local/bin/shfmt
+    rm -f "$shfmt_tmp"
+    trap - EXIT
   fi
   # Python linters in the tools venv (no sudo pip). isort was retired in
   # ADR-1126; ruff's `I` ruleset is the only import sorter now.
