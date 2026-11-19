@@ -85,6 +85,7 @@ def clean_env() -> dict[str, str]:
         "DCO_RELEASE_PR",
         "LANDING_IDENTITY",
         "PR_BODY",
+        "PRE_COMMIT_TO_REF",
     )
     env = git_env_lib.hermetic()
     for key in drop:

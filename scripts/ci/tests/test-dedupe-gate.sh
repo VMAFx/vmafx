@@ -30,7 +30,7 @@ grep -Fq '# required-aggregator: Standards & Invariant Verification Gate' \
   "$repo_root/.github/workflows/standards-gate.yml" ||
   report_failure "Standards job is not marked for the required aggregator"
 
-grep -Fq $'dedupe-check:\n\t@standardsctl dedupe scan .' "$repo_root/Makefile" ||
+grep -Fq $'dedupe-check:\n\t@$(PRAETORCTL) dedupe scan .' "$repo_root/Makefile" ||
   report_failure "Make dedupe-check target is missing"
 grep -Fq $'\t@$(MAKE) --no-print-directory dedupe-check' "$repo_root/Makefile" ||
   report_failure "make verify-all does not invoke dedupe-check"
@@ -50,8 +50,8 @@ grep -Fqx 'scripts/ci/tests/test-dedupe-gate.sh' <<<"$tooling_suite" ||
 grep -Fq 'id: dedupe-gate-contract' "$repo_root/.pre-commit-config.yaml" ||
   report_failure "contract test is not wired into local hooks"
 
-# HISS-21: a native Windows make resolves standardsctl itself and cannot run the
-# POSIX stub below, so the replay would exercise the real engine instead.
+# HISS-21: a native Windows make cannot execute the POSIX stub passed via
+# PRAETORCTL (or the node stub on PATH) below, so the replay cannot run under it.
 if make --version 2>/dev/null | grep -Eqi 'windows32|mingw'; then
   echo "dedupe-gate-contract: skipped the make verify-all replay: $(command -v make) is a" \
     "native Windows make; the Linux Deliverables Checklist job in rule-enforcement.yml runs it" >&2
@@ -79,7 +79,7 @@ export PATH="$tmp_dir:$PATH"
 export DEDUPE_INVOCATION_LOG="$tmp_dir/invocations.log"
 unset MAKEFLAGS
 
-DEDUPE_EXIT=0 make --no-print-directory -C "$repo_root" verify-all >/dev/null
+DEDUPE_EXIT=0 make --no-print-directory -C "$repo_root" PRAETORCTL="$tmp_dir/standardsctl" verify-all >/dev/null
 expected_invocations=$'audit\ncompile-context --verify\nhiss coverage --verify\ndedupe scan .'
 actual_invocations="$(<"$DEDUPE_INVOCATION_LOG")"
 if [[ "$actual_invocations" != "$expected_invocations" ]]; then
@@ -87,7 +87,7 @@ if [[ "$actual_invocations" != "$expected_invocations" ]]; then
 fi
 
 : >"$DEDUPE_INVOCATION_LOG"
-if DEDUPE_EXIT=23 make --no-print-directory -C "$repo_root" verify-all \
+if DEDUPE_EXIT=23 make --no-print-directory -C "$repo_root" PRAETORCTL="$tmp_dir/standardsctl" verify-all \
   >"$tmp_dir/failing.stdout" 2>"$tmp_dir/failing.stderr"; then
   report_failure "make verify-all ignored a failing clone scan"
 fi

@@ -21,6 +21,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.ci.tests import symlink_test_support as links
 from scripts.lib import git_env
 from scripts.lib.safe_subprocess import CommandFailed, CommandResult
 from scripts.lib.safe_subprocess import run as run_command
@@ -537,6 +538,7 @@ class SourceBindingTests(unittest.TestCase):
             gate.source_identity(self.root, self.sha)
 
     def test_literal_symlink_target_is_not_path_normalized(self) -> None:
+        links.skip_without_symlinks(self.root)
         (self.root / "link").symlink_to("./input")
         self.command("add", "link")
         self.command("commit", "-qm", "literal symlink")
@@ -544,6 +546,7 @@ class SourceBindingTests(unittest.TestCase):
         self.assertEqual(gate.source_identity(self.root, sha)["files"], 3)
 
     def test_metadata_untracked_escaping_and_cyclic_symlink_targets_rejected(self) -> None:
+        links.skip_without_symlinks(self.root)
         for target in [
             ".git/hidden-input",
             "ignored",
@@ -567,6 +570,7 @@ class SourceBindingTests(unittest.TestCase):
                 self.command("commit", "-qm", "remove links")
 
     def test_tracked_directory_and_file_link_chains_remain_supported(self) -> None:
+        links.skip_without_symlinks(self.root)
         (self.root / "nested").mkdir()
         (self.root / "nested/file").write_text("tracked\n")
         (self.root / "dir-link").symlink_to("nested")
@@ -588,6 +592,7 @@ class SourceBindingTests(unittest.TestCase):
         (self.root / "ignored").write_text("unmeasured")
         with self.assertRaises(gate.InvalidReport):
             gate.source_identity(self.root, self.sha)
+        links.skip_without_symlinks(self.root)
         (self.root / "ignored").unlink()
         (self.root / "input").unlink()
         (self.root / "input").symlink_to(".gitignore")

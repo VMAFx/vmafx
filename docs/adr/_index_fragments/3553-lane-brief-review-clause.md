@@ -1,0 +1,1 @@
+| [ADR-3553](3553-lane-brief-review-clause.md) | Require the read-only and final-message clauses in vmafx review lane briefs through `.config/lane-brief.yaml`, so the lane launcher refuses a brief that would end in the rc 79 review guard before the job starts | Accepted | agents, process, ci, fork-local |

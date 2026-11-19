@@ -703,6 +703,11 @@ other than the caller's (a scratch repository, a clone into a temporary director
     is not a test. A file isolated in a way the check cannot see is named in
     `ISOLATION_EXCEPTIONS` with its reason (excusing only the `GIT_*` drop
     marker, never Python fixture configuration barriers); the list expires.
+    The code scan also recognizes helper names with an underscore before `git`,
+    including `self._git("init")`, `self.run_git("init", "-q")` and
+    `run_git(["clone", url])`. Read-only calls such as `self._git("status")`
+    and unrelated names such as `digit("init")` do not trigger the rule:
+    `git` must start at a word boundary or immediately follow an underscore.
     Python files are parsed with `ast.parse()`: markers must be executable
     calls (`startswith` on a `GIT_` prefix or `clean_git_environment` /
     `git_environment`), and every comprehension or `filter(...)` call over

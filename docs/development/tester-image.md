@@ -326,7 +326,7 @@ tracked files other than a commit trailer the person asked for.
 
 | Pin | Where | Rule |
 | :--- | :--- | :--- |
-| Base images | `build-config.env` (`RELEASE_BUILDER_BASE`, `RELEASE_PYTHON_BASE`), mirrored in `docker/Dockerfile.tester` | `scripts/ci/check-base-image-single-source.sh --write` |
+| Base images | `build-config.env` (`RELEASE_BUILDER_BASE`, `RELEASE_PYTHON_BASE`), mirrored in `docker/Dockerfile.tester` | `scripts/ci/check-base-image-single-source.sh --write`; when `RELEASE_PYTHON_BASE` moves to a newer CPython patch release, record its `Doc/license.rst` in `cpython_license_rst` and bump `python.version` on `artifacts.image` and `artifacts.production-server-image` in `tools/rc1-tester/image/licensing.json` (`Tester Image` runs on light-tier pull requests when `tester_image` selects `build-config.env` or `docker/Dockerfile.tester`, [ADR-3554](../adr/3554-tester-image-own-input-lane.md)) |
 | Python test stack | `python/requirements-test-lock.txt` | `make python-locks-write` |
 | Fixtures | `tools/rc1-tester/image/fixtures.sha256`, `VMAF_RESOURCE_COMMIT` | change both together; the build checks every SHA-256 |
 | macOS interpreter | `PBS_URL`, `PBS_SHA256`, `PBS_FULL_URL`, `PBS_FULL_SHA256` in `macos-tester-bundle.yml` | the `install_only_stripped` archive and the `pgo+lto-full` archive of the same release (its licence texts); take both hashes from the release's `SHA256SUMS` |
