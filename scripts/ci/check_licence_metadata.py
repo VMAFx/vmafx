@@ -708,7 +708,14 @@ def dockerfile_licence_label_problems(root: Path) -> list[str]:
         return [f"{LICENSING_MANIFEST.as_posix()} is missing"]
     # Read the raw records: `_record_component` follows `from` references and
     # reports a cycle, while `licensing.load_manifest` expands them away.
-    records = json.loads(manifest.read_text(encoding="utf-8"))["artifacts"]
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    records = payload.get("artifacts")
+    if not isinstance(records, dict):
+        # Shared fixture layouts only carry the root licence metadata; the real
+        # tree's manifest must name the production artifacts.
+        if root.resolve() == REPO_ROOT.resolve():
+            raise ModelError(f"{LICENSING_MANIFEST.as_posix()} has no artifacts record")
+        return []
     problems: list[str] = []
     for relative, record_name in IMAGE_LICENCE_LABELS.items():
         path = root / relative
@@ -724,7 +731,7 @@ def dockerfile_licence_label_problems(root: Path) -> list[str]:
         labels = re.findall(
             r'^LABEL org\.opencontainers\.image\.licenses="([^"]*)"',
             path.read_text(encoding="utf-8"),
-            re.MULTILINE,
+            re.MULTILINE | re.IGNORECASE,
         )
         if not labels:
             problems.append(f"{relative}: no org.opencontainers.image.licenses label")

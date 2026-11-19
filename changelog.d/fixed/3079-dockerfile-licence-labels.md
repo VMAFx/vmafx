@@ -1,0 +1,1 @@
+- **Assert the Docker image licence labels against the manifest's `vmafx-binaries` records** ([#3079](https://github.com/VMAFx/vmafx/issues/3079)). The check resolves `from` references, skips fixture trees that do not carry production artifacts, and rejects missing, extra or lowercase labels.

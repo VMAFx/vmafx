@@ -548,6 +548,18 @@ class DockerfileLabelTests(GateTestCase):
         self.assertEqual(len(problems), 1)
         self.assertIn("no org.opencontainers.image.licenses label", problems[0])
 
+    def test_a_label_with_an_extra_licence_is_refused(self) -> None:
+        self._tree(controller_label=self.LABEL + " AND Apache-2.0")
+        problems = gate.dockerfile_licence_label_problems(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("extra ['Apache-2.0']", problems[0])
+
+    def test_a_lowercase_label_instruction_is_read(self) -> None:
+        self._tree(controller_label=None)
+        with (self.root / "docker/Dockerfile.controller").open("a", encoding="utf-8") as handle:
+            handle.write(f'label org.opencontainers.image.licenses="{self.LABEL}"\n')
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
     def test_a_from_cycle_is_refused(self) -> None:
         self._tree(cycle=True)
         with self.assertRaises(gate.ModelError) as error:
