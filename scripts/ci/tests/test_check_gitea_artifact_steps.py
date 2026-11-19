@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import difflib
 import importlib.util
+import io
 import subprocess
 import sys
 import tempfile
@@ -277,7 +278,7 @@ jobs:
       - name: Download digests (Gitea)
         if: ${{{{ env.GITEA_ACTIONS == 'true' }}}}
         shell: bash
-        run: |-
+        run: |
           echo '::warning::artifact download skipped on Gitea: v4+ is GitHub-only, v3 lacks merge-multiple, pattern'
 
       # keep this comment
@@ -513,6 +514,67 @@ class GiteaArtifactCheckTests(unittest.TestCase):
             timeout=120,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_write_replays_every_deleted_twin(self) -> None:
+        """Delete each twin from the tracked tree, then write it back byte-for-byte."""
+        module = load_checker_module()
+        parser = RuamelYAML(typ="rt")
+        parser.preserve_quotes = True
+        parser.width = 1000
+        parser.indent(mapping=2, sequence=4, offset=2)
+        replayed = 0
+        for path in module.find_files(ROOT):
+            original = path.read_text(encoding="utf-8")
+            document = parser.load(original)
+            stream = io.StringIO()
+            parser.explicit_start = original.startswith("---")
+            parser.dump(document, stream)
+            if stream.getvalue() != original:
+                # The writer refuses these files; they need a manual edit.
+                continue
+            starts: list[int] = []
+            for steps in module._step_lists(document):
+                for index, step in enumerate(steps):
+                    if index == 0 or not isinstance(step, dict):
+                        continue
+                    source = steps[index - 1]
+                    kind = module._classify(source.get("uses"))
+                    twin = module._classify(step.get("uses"))
+                    if kind and not kind[1] and twin and twin[1]:
+                        starts.append(step.lc.line)
+            if not starts:
+                continue
+            lines = original.splitlines(keepends=True)
+            for start in starts:
+                indent = len(lines[start]) - len(lines[start].lstrip())
+                end = start + 1
+                while end < len(lines):
+                    line = lines[end]
+                    if not line.strip():
+                        break
+                    leading = len(line) - len(line.lstrip())
+                    if leading < indent:
+                        break
+                    if leading == indent and (
+                        line.lstrip().startswith("#") or line.lstrip().startswith("- ")
+                    ):
+                        break
+                    end += 1
+                broken = "".join(lines[:start] + lines[end:])
+                with tempfile.TemporaryDirectory() as tmp:
+                    candidate = Path(tmp) / "workflow.yml"
+                    candidate.write_text(broken, encoding="utf-8")
+                    result = subprocess.run(  # noqa: S603 -- fixed interpreter and script argv
+                        [sys.executable, str(SCRIPT), "--write", str(candidate)],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        timeout=120,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(candidate.read_text(encoding="utf-8"), original, path)
+                    replayed += 1
+        self.assertGreater(replayed, 0)
 
 
 if __name__ == "__main__":

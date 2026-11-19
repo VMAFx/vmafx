@@ -47,6 +47,7 @@ from typing import Any
 
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.error import StringMark
 from ruamel.yaml.scalarstring import LiteralScalarString
 from ruamel.yaml.tokens import CommentToken
 
@@ -284,7 +285,42 @@ def _take_trailing_post(step: Any) -> Any:
     return tail
 
 
-def _attach_trailing_post(step: Any, token: Any) -> None:
+def _attach_trailing_pre(step: Any, token: Any) -> None:
+    """Move a displaced source comment block before the step after the twin."""
+    if token is None:
+        return
+    value = getattr(token, "value", None)
+    if isinstance(value, str):
+        # The post token starts with the line break that ended the source step.
+        # Drop it, and the indentation the source line carried, so the pre
+        # comment is indented from its own start mark at the step's column.
+        if value.startswith("\n"):
+            value = value[1:]
+        if not value.startswith("\n"):
+            value = value.lstrip(" ")
+        token = CommentToken(
+            value,
+            start_mark=getattr(token, "start_mark", None),
+            end_mark=getattr(token, "end_mark", None),
+        )
+    comment = list(getattr(step.ca, "comment", None) or [None, None])
+    pre = list(comment[1] or [])
+    pre.append(token)
+    comment[1] = pre
+    step.ca.comment = comment
+
+
+def _comment_token(token: Any, value: str, column: int) -> CommentToken:
+    """A comment token whose start mark carries the column the emitter indents from."""
+    mark = getattr(token, "start_mark", None)
+    if mark is None:
+        mark = StringMark("<generated>", 0, 0, column, None, None)
+    else:
+        mark = StringMark(mark.name, mark.index, mark.line, column, mark.buffer, mark.pointer)
+    return CommentToken(value, start_mark=mark)
+
+
+def _attach_trailing_post(step: Any, token: Any, indent: int = 0) -> None:
     """Attach a displaced source comment/blank block after the twin."""
     if token is None:
         return
@@ -303,12 +339,7 @@ def _attach_trailing_post(step: Any, token: Any) -> None:
         trimmed = value[1:]
         if not trimmed:
             return
-        token = CommentToken(
-            trimmed,
-            start_mark=getattr(token, "start_mark", None),
-            end_mark=getattr(token, "end_mark", None),
-            column=getattr(token, "_column", 0),
-        )
+        token = _comment_token(token, trimmed, indent)
     item = list(node.ca.items.get(key) or [None, None, None, None])
     item[CA_POST_VALUE] = token
     node.ca.items[key] = item
@@ -335,7 +366,7 @@ def _twin_step(step: Any, kind: str, base: str) -> Any:
         twin["shell"] = "bash"
         twin["run"] = LiteralScalarString(
             f"echo '::warning::artifact {kind} {SKIP_MARKER}: "
-            f"v4+ is GitHub-only, v3 lacks {missing}'"
+            f"v4+ is GitHub-only, v3 lacks {missing}'\n"
         )
     return twin
 
@@ -388,7 +419,13 @@ def write_file(path: Path) -> bool:
             did_change, inserted = _ensure_guard_and_twin(steps, idx, cls[0])
             changed = changed or did_change
             if inserted:
-                _attach_trailing_post(steps[idx + 1], _take_trailing_post(step))
+                trailing = _take_trailing_post(step)
+                next_idx = idx + 2
+                if next_idx < len(steps):
+                    _attach_trailing_pre(steps[next_idx], trailing)
+                else:
+                    indent = getattr(getattr(step, "lc", None), "col", 8) - 2
+                    _attach_trailing_post(steps[idx + 1], trailing, max(indent, 0))
             idx += 2 if inserted else 1
     if not changed:
         return False
