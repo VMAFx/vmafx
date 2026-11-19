@@ -251,12 +251,12 @@ download() { # download URL DESTINATION
       ;;
     https://*)
       if command -v curl >/dev/null 2>&1; then
-        run_with_deadline "$DOWNLOAD_SECONDS" curl --fail --silent --show-error --location --retry 3 \
+        run_with_deadline "$DOWNLOAD_SECONDS" curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
           --max-time "$DOWNLOAD_SECONDS" --output "$destination" "$url" ||
           release_fallback "$url" "$destination" ||
           die 1 "download failed: $url"
       elif command -v wget >/dev/null 2>&1; then
-        run_with_deadline "$DOWNLOAD_SECONDS" wget --quiet --tries=3 --timeout="$DOWNLOAD_SECONDS" --output-document="$destination" "$url" ||
+        run_with_deadline "$DOWNLOAD_SECONDS" wget --quiet --tries=3 --retry-connrefused --retry-on-host-error --timeout="$DOWNLOAD_SECONDS" --output-document="$destination" "$url" ||
           release_fallback "$url" "$destination" ||
           die 1 "download failed: $url"
       else

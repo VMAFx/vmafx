@@ -22,6 +22,7 @@ Three nets, because each one misses what another catches:
 
 from __future__ import annotations
 
+import ast
 import concurrent.futures
 import datetime
 import json
@@ -34,7 +35,7 @@ import unittest
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 try:  # the hooks run this file with plain `python3`; only the tooling suite brings pytest
     import pytest
@@ -102,18 +103,38 @@ SHELL_GIT_WRITE = re.compile(
     r"|config\s+(?!--" + _READ_ONLY + r"\b)"
     r"(?:--(?:local|global|worktree|system|add|replace-all|file\s+\S+)\s+)*[\w.-]+\.[\w.-]+[ \t]+\S)"
 )
+# Before the subcommand, a Git call may hold code, option literals ("-q", or "-C"/"-c" and
+# their value) and strings inside an expression (root / "repo", "repo-%d" % n, Path("repo"),
+# f"{root}/repo"), never a standalone string: in git("commit", "-m", "init") the subcommand is
+# commit.
+_QUOTED = r"""["'][^"'\n]*["']"""
+_CODE_GIT_PREFIX = (
+    r"""(?:[^"'\n]"""
+    + rf"""|["']-[cC]["']\s*,\s*{_QUOTED}"""
+    + r"""|["']-[^"'\n]*["']"""
+    + rf"""|[/+%]\s*{_QUOTED}|{_QUOTED}\s*[/+%]"""
+    + rf"""|\w\(\s*{_QUOTED}\s*\)"""
+    + rf"""|\b[rRbB]?[fF][rR]?{_QUOTED})"""
+)
+# Match git at a word boundary or after an underscore (e.g. run_git), never inside digit.
 CODE_GIT_WRITE = re.compile(
-    r"""(?im)^(?!\s*(?:#|//))[^\n]*\bgit\w*[^\n]{0,80}?["'](?:init|clone)["']\s*[,)\]]"""
+    r"""(?im)^(?!\s*(?:#|//))[^\n]*(?:\b|_)git\w*["']?"""
+    + _CODE_GIT_PREFIX
+    + r"""{0,80}?["'](?:init|clone)["']\s*[,)\]]"""
     r"""|["']config["']\s*,\s*(?:["']--(?:local|global|worktree|system|add|replace-all)["']\s*,\s*)*"""
     r"""["'][\w.-]+\.[\w.-]+["']\s*,\s*\S"""
 )
-# What counts as dropping the caller's variables: the two shell helpers (or their loop), and a
-# filter on the GIT_ prefix in Python, Node and Go.
+# What counts as dropping the caller's variables in shell, Node and Go; Python uses AST checks.
 ISOLATION_MARKER = re.compile(
     r"""(?:clean|drop)-git-env\.sh|compgen -A variable GIT_"""
-    r"""|startswith\(\s*\(?\s*["']GIT_|startsWith\(\s*["']GIT_|HasPrefix\([^)\n]*"GIT_"""
-    r"""|clean_git_environment\(|\bgit_environment\("""
+    r"""|startsWith\(\s*["']GIT_|HasPrefix\([^)\n]*"GIT_"""
 )
+PYTHON_HELPERS = ("clean_git_environment", "git_environment")
+COMPREHENSION_NODES = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+FILTER_NODES = (*COMPREHENSION_NODES, ast.Call)
+BARRIER_NULL_KEYS = ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM")
+BARRIER_KEYS = (*BARRIER_NULL_KEYS, "GIT_CONFIG_NOSYSTEM")
+PAIR_LENGTH = 2
 # One file, one reason, one expiry: a file whose git runs isolated in a way the marker cannot
 # see, with the place that does it. The sentinel run covers every test script among them.
 ISOLATION_EXCEPTION_EXPIRY = "2026-12-31"
@@ -122,8 +143,9 @@ ISOLATION_EXCEPTIONS = {
     "scripts/ci/tests/test_research_digest_ids.py": (
         "git runs through check-research-digest-ids._git, which drops GIT_*"
     ),
-    "scripts/dev/tests/test_install_merge_train_guard.py": (
-        "git runs through install_merge_train_guard.git, which drops GIT_*"
+    "scripts/ci/tests/test_pr_time_verify_workflows.py": (
+        "run_validate() builds env_base from a fixed allow-list, never caller GIT_* "
+        "(scripts/ci/tests/test_pr_time_verify_workflows.py:95)"
     ),
     "scripts/dev/tests/test_merge_train_guard.py": (
         "git runs through merge_train_guard.environment(), which drops GIT_*"
@@ -144,13 +166,555 @@ ISOLATION_EXCEPTIONS = {
 }
 
 
+def is_str_constant(node: ast.AST | None, expected: str | None = None) -> bool:
+    """True when node is a str Constant, optionally equal to expected."""
+    if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+        return False
+    return expected is None or node.value == expected
+
+
+def is_os_attr(node: ast.AST, attr: str) -> bool:
+    """True when node is the attribute expression os.<attr>."""
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == attr
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "os"
+    )
+
+
+def is_environ_copy(node: ast.expr) -> bool:
+    """True when node is os.environ.copy()."""
+    return (
+        isinstance(node, ast.Call)
+        and not node.args
+        and not node.keywords
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "copy"
+        and is_os_attr(node.func.value, "environ")
+    )
+
+
+def is_environ_dict_arg(node: ast.expr) -> bool:
+    """True when node is os.environ, os.environ.copy() or .items() on either."""
+    if is_os_attr(node, "environ") or is_environ_copy(node):
+        return True
+    return (
+        isinstance(node, ast.Call)
+        and not node.args
+        and not node.keywords
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "items"
+        and (is_os_attr(node.func.value, "environ") or is_environ_copy(node.func.value))
+    )
+
+
+def is_environ_mapping(node: ast.expr) -> bool:
+    """True when node evaluates to os.environ, os.environ.copy() or dict(os.environ)."""
+    if is_os_attr(node, "environ") or is_environ_copy(node):
+        return True
+    if not (
+        isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "dict"
+    ):
+        return False
+    if len(node.args) == 1 and is_environ_dict_arg(node.args[0]):
+        return True
+    return any(
+        kw.arg is None and (is_os_attr(kw.value, "environ") or is_environ_copy(kw.value))
+        for kw in node.keywords
+    )
+
+
+def environ_iterable_kind(node: ast.expr) -> str | None:
+    """Classify an iterable derived from os.environ, or None when unrelated."""
+    if is_environ_mapping(node):
+        return "mapping"
+    if (
+        isinstance(node, ast.Call)
+        and not node.args
+        and not node.keywords
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in ("items", "keys", "values")
+        and is_environ_mapping(node.func.value)
+    ):
+        return node.func.attr
+    return None
+
+
+def startswith_prefix_arg(node: ast.expr, receiver: str | None = None) -> ast.expr | None:
+    """Return the sole prefix argument of <receiver>.startswith(arg), else None."""
+    if not (isinstance(node, ast.Call) and len(node.args) == 1 and not node.keywords):
+        return None
+    if not (isinstance(node.func, ast.Attribute) and node.func.attr == "startswith"):
+        return None
+    if receiver is not None and not (
+        isinstance(node.func.value, ast.Name) and node.func.value.id == receiver
+    ):
+        return None
+    return node.args[0]
+
+
+def is_canonical_prefix(arg: ast.expr) -> bool:
+    """True for 'GIT_' or a tuple of str constants starting with 'GIT_'."""
+    if is_str_constant(arg, "GIT_"):
+        return True
+    return (
+        isinstance(arg, ast.Tuple)
+        and bool(arg.elts)
+        and all(is_str_constant(elt) for elt in arg.elts)
+        and is_str_constant(arg.elts[0], "GIT_")
+    )
+
+
+def is_canonical_exclusion(cond: ast.expr, key: str) -> bool:
+    """True when cond is exclusively `not <key>.startswith('GIT_' | ('GIT_', ...))`."""
+    if not (isinstance(cond, ast.UnaryOp) and isinstance(cond.op, ast.Not)):
+        return False
+    prefix = startswith_prefix_arg(cond.operand, key)
+    return prefix is not None and is_canonical_prefix(prefix)
+
+
+def is_config_key_slice(elt: ast.expr, key: str) -> bool:
+    """True when elt is `<key>[len('GIT_CONFIG_KEY_'):]`."""
+    if not (
+        isinstance(elt, ast.Subscript)
+        and isinstance(elt.value, ast.Name)
+        and elt.value.id == key
+        and isinstance(elt.slice, ast.Slice)
+        and elt.slice.upper is None
+        and elt.slice.step is None
+    ):
+        return False
+    lower = elt.slice.lower
+    return (
+        isinstance(lower, ast.Call)
+        and isinstance(lower.func, ast.Name)
+        and lower.func.id == "len"
+        and len(lower.args) == 1
+        and not lower.keywords
+        and is_str_constant(lower.args[0], "GIT_CONFIG_KEY_")
+    )
+
+
+def is_config_key_lookup(elt: ast.expr, cond: ast.expr, key: str, value: str) -> bool:
+    """Allow extracting one planted GIT_CONFIG_KEY_* suffix by exact value match."""
+    if not is_config_key_slice(elt, key):
+        return False
+    if not (
+        isinstance(cond, ast.BoolOp)
+        and isinstance(cond.op, ast.And)
+        and len(cond.values) == PAIR_LENGTH
+    ):
+        return False
+    prefix = startswith_prefix_arg(cond.values[0], key)
+    compare = cond.values[1]
+    return (
+        prefix is not None
+        and is_str_constant(prefix, "GIT_CONFIG_KEY_")
+        and isinstance(compare, ast.Compare)
+        and isinstance(compare.left, ast.Name)
+        and compare.left.id == value
+        and len(compare.ops) == 1
+        and isinstance(compare.ops[0], ast.Eq)
+        and len(compare.comparators) == 1
+        and is_str_constant(compare.comparators[0])
+    )
+
+
+def comprehension_targets(target: ast.expr, kind: str) -> tuple[str | None, str | None]:
+    """Extract (key_name, value_name) bound by an os.environ comprehension target."""
+    if kind in ("mapping", "keys") and isinstance(target, ast.Name):
+        return target.id, None
+    if (
+        kind == "items"
+        and isinstance(target, (ast.Tuple, ast.List))
+        and len(target.elts) == PAIR_LENGTH
+        and isinstance(target.elts[0], ast.Name)
+        and isinstance(target.elts[1], ast.Name)
+    ):
+        return target.elts[0].id, target.elts[1].id
+    return None, None
+
+
+def comprehension_violation(
+    name: str,
+    text: str,
+    node: ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp,
+) -> str:
+    """Validate any comprehension iterating over an os.environ-derived iterable."""
+    kinds = [environ_iterable_kind(gen.iter) for gen in node.generators]
+    if not any(kind is not None for kind in kinds):
+        return ""
+    gen = node.generators[0]
+    if len(node.generators) != 1 or gen.is_async or len(gen.ifs) != 1 or kinds[0] is None:
+        segment = ast.get_source_segment(text, node) or ""
+        return f"{name}:{node.lineno}: noncanonical environment filter: {segment}"
+    cond = gen.ifs[0]
+    key_name, value_name = comprehension_targets(gen.target, kinds[0])
+    allowed = key_name is not None and (
+        is_canonical_exclusion(cond, key_name)
+        or (
+            not isinstance(node, ast.DictComp)
+            and value_name is not None
+            and is_config_key_lookup(node.elt, cond, key_name, value_name)
+        )
+    )
+    if allowed:
+        return ""
+    segment = ast.get_source_segment(text, cond) or ""
+    return f"{name}:{cond.lineno}: noncanonical environment condition: {segment}"
+
+
+def is_filter_call(node: ast.Call) -> bool:
+    """True when node calls builtin filter(...)."""
+    if isinstance(node.func, ast.Name):
+        return node.func.id == "filter"
+    return (
+        isinstance(node.func, ast.Attribute)
+        and node.func.attr == "filter"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "builtins"
+    )
+
+
+def plain_lambda_parameter(node: ast.expr) -> str | None:
+    """Return the sole parameter name of a plain single-argument lambda, else None."""
+    if not isinstance(node, ast.Lambda):
+        return None
+    params = node.args
+    if (
+        len(params.args) != 1
+        or params.posonlyargs
+        or params.kwonlyargs
+        or params.vararg is not None
+        or params.kwarg is not None
+        or params.defaults
+        or params.kw_defaults
+    ):
+        return None
+    return params.args[0].arg
+
+
+def filter_call_violation(name: str, text: str, node: ast.Call) -> str:
+    """Validate filter(...) calls whose iterable derives from os.environ."""
+    if not is_filter_call(node):
+        return ""
+    kinds = [environ_iterable_kind(arg) for arg in node.args]
+    kw_environ = any(environ_iterable_kind(kw.value) is not None for kw in node.keywords)
+    if not any(kind is not None for kind in kinds) and not kw_environ:
+        return ""
+    key_name = plain_lambda_parameter(node.args[0]) if node.args else None
+    if (
+        len(node.args) == PAIR_LENGTH
+        and not node.keywords
+        and kinds[1] in ("mapping", "keys")
+        and key_name is not None
+        and isinstance(node.args[0], ast.Lambda)
+        and is_canonical_exclusion(node.args[0].body, key_name)
+    ):
+        return ""
+    focus: ast.AST = node
+    if node.args:
+        focus = node.args[0].body if isinstance(node.args[0], ast.Lambda) else node.args[0]
+    line = getattr(focus, "lineno", node.lineno)
+    segment = ast.get_source_segment(text, focus) or ""
+    return f"{name}:{line}: noncanonical environment condition: {segment}"
+
+
+def python_filter_violation(name: str, text: str, tree: ast.AST) -> str:
+    """Allow only complete canonical GIT_* exclusion filters over os.environ."""
+    candidates = sorted(
+        (node for node in ast.walk(tree) if isinstance(node, FILTER_NODES)),
+        key=lambda node: (node.lineno, node.col_offset),
+    )
+    for node in candidates:
+        violation = (
+            filter_call_violation(name, text, node)
+            if isinstance(node, ast.Call)
+            else comprehension_violation(name, text, node)
+        )
+        if violation:
+            return violation
+    return ""
+
+
+def is_marker_prefix(arg: ast.expr) -> bool:
+    """True when arg is a GIT_* str constant or a tuple containing one."""
+    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+        return arg.value.startswith("GIT_")
+    return isinstance(arg, ast.Tuple) and any(
+        isinstance(elt, ast.Constant)
+        and isinstance(elt.value, str)
+        and elt.value.startswith("GIT_")
+        for elt in arg.elts
+    )
+
+
+def has_python_marker(tree: ast.AST) -> bool:
+    """True when tree calls an environment helper or startswith('GIT_*')."""
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name) and node.func.id in PYTHON_HELPERS:
+            return True
+        if isinstance(node.func, ast.Attribute) and node.func.attr in PYTHON_HELPERS:
+            return True
+        prefix = startswith_prefix_arg(node)
+        if prefix is not None and is_marker_prefix(prefix):
+            return True
+    return False
+
+
+def is_barrier_value(key: str, value: ast.expr) -> bool:
+    """True when value assigns the accepted barrier target for key."""
+    if key in BARRIER_NULL_KEYS:
+        return is_os_attr(value, "devnull") or is_str_constant(value, "/dev/null")
+    if key == "GIT_CONFIG_NOSYSTEM":
+        return is_str_constant(value, "1")
+    return False
+
+
+def is_mapping_call(node: ast.AST) -> TypeGuard[ast.Call]:
+    """True when node is a dict(...) or <mapping>.update(...) call."""
+    if not isinstance(node, ast.Call):
+        return False
+    return (isinstance(node.func, ast.Name) and node.func.id == "dict") or (
+        isinstance(node.func, ast.Attribute) and node.func.attr == "update"
+    )
+
+
+def subscript_str_key(target: ast.AST) -> str | None:
+    """Return the string constant slice of target['KEY'], else None."""
+    if not isinstance(target, ast.Subscript):
+        return None
+    if isinstance(target.slice, ast.Constant) and isinstance(target.slice.value, str):
+        return target.slice.value
+    return None
+
+
+def unpack_mapping_item(
+    value: ast.expr,
+) -> ast.Dict | ast.Call | tuple[str | None, ast.expr]:
+    """Expand nested dict displays or mapping calls; keep environ or opaque unpacks."""
+    if isinstance(value, ast.Dict):
+        return value
+    if is_mapping_call(value):
+        return (None, value) if not value.keywords and is_environ_mapping(value) else value
+    return (None, value)
+
+
+def positional_mapping_item(
+    arg: ast.expr,
+) -> ast.Dict | ast.Call | tuple[str | None, ast.expr] | None:
+    """Classify a positional mapping-call argument for ordered entry extraction."""
+    if (
+        isinstance(arg, ast.Dict)
+        or is_mapping_call(arg)
+        or is_environ_mapping(arg)
+        or is_environ_dict_arg(arg)
+    ):
+        return unpack_mapping_item(arg)
+    return None
+
+
+def push_dict_display_children(
+    node: ast.Dict,
+    stack: list[ast.Dict | ast.Call | tuple[str | None, ast.expr]],
+) -> None:
+    """Push dict display pairs and nested **unpacks onto stack in reverse evaluation order."""
+    for key, val in zip(reversed(node.keys), reversed(node.values), strict=True):
+        if key is None:
+            stack.append(unpack_mapping_item(val))
+        elif isinstance(key, ast.Constant) and isinstance(key.value, str):
+            stack.append((key.value, val))
+
+
+def push_mapping_call_children(
+    call: ast.Call,
+    stack: list[ast.Dict | ast.Call | tuple[str | None, ast.expr]],
+) -> None:
+    """Push call's positional and keyword entries onto stack in reverse evaluation order."""
+    for kw in reversed(call.keywords):
+        stack.append(unpack_mapping_item(kw.value) if kw.arg is None else (kw.arg, kw.value))
+    for arg in reversed(call.args):
+        item = positional_mapping_item(arg)
+        if item is not None:
+            stack.append(item)
+
+
+def node_mapping_entries(node: ast.AST) -> list[tuple[str | None, ast.expr]]:
+    """Ordered (key, value) entries for a dict display or dict/update call; None marks **unpack."""
+    if not (isinstance(node, ast.Dict) or is_mapping_call(node)):
+        return []
+    entries: list[tuple[str | None, ast.expr]] = []
+    stack: list[ast.Dict | ast.Call | tuple[str | None, ast.expr]] = [node]
+    for _ in range(len(list(ast.walk(node)))):
+        if not stack:
+            break
+        current = stack.pop()
+        if isinstance(current, tuple):
+            entries.append(current)
+        elif isinstance(current, ast.Dict):
+            push_dict_display_children(current, stack)
+        else:
+            push_mapping_call_children(current, stack)
+    return entries
+
+
+def node_barrier_pairs(node: ast.AST) -> list[tuple[str, ast.expr]]:
+    """Extract executable (key, value) candidate assignments from one AST node."""
+    if isinstance(node, ast.Dict) or is_mapping_call(node):
+        return [(key, val) for key, val in node_mapping_entries(node) if key is not None]
+    if isinstance(node, ast.Assign):
+        return [
+            (key, node.value)
+            for target in node.targets
+            if (key := subscript_str_key(target)) is not None
+        ]
+    if isinstance(node, ast.AnnAssign) and node.value is not None:
+        key = subscript_str_key(node.target)
+        return [(key, node.value)] if key is not None else []
+    return []
+
+
+def mapping_expression_nodes(tree: ast.AST) -> list[ast.Dict | ast.Call]:
+    """Return dict displays and dict/update calls in tree ordered by source position."""
+    return sorted(
+        (node for node in ast.walk(tree) if isinstance(node, ast.Dict) or is_mapping_call(node)),
+        key=lambda node: (node.lineno, node.col_offset),
+    )
+
+
+def post_barrier_unpack_line(node: ast.AST) -> int | None:
+    """Line of the first **os.environ unpack placed after a barrier key in node, else None."""
+    seen_barrier = False
+    for key, value in node_mapping_entries(node):
+        if key is not None and is_barrier_value(key, value):
+            seen_barrier = True
+        elif (
+            key is None
+            and seen_barrier
+            and (is_environ_mapping(value) or is_environ_dict_arg(value))
+        ):
+            return value.lineno
+    return None
+
+
+def overridden_barrier_entry(node: ast.AST) -> tuple[str, int] | None:
+    """First barrier key set and later overridden by a non-barrier in node, with line."""
+    seen_barrier: set[str] = set()
+    overridden: dict[str, int] = {}
+    for key, value in node_mapping_entries(node):
+        if key is None or key not in BARRIER_KEYS:
+            continue
+        if is_barrier_value(key, value):
+            seen_barrier.add(key)
+            overridden.pop(key, None)
+        elif key in seen_barrier:
+            overridden[key] = value.lineno
+    return next(iter(overridden.items()), None)
+
+
+def barrier_order_violation(name: str, tree: ast.AST) -> str:
+    """Refuse **os.environ unpacking placed after GIT_CONFIG_* barrier keys."""
+    for node in mapping_expression_nodes(tree):
+        lineno = post_barrier_unpack_line(node)
+        if lineno is not None:
+            return (
+                f"{name}:{lineno}: **os.environ after GIT_CONFIG_* barrier keys "
+                "lets the caller override them; place the expansion first"
+            )
+    return ""
+
+
+def barrier_override_violation(name: str, tree: ast.AST) -> str:
+    """Refuse barrier keys set and then overridden by a non-barrier in one expression."""
+    for node in mapping_expression_nodes(tree):
+        overridden = overridden_barrier_entry(node)
+        if overridden is not None:
+            key, lineno = overridden
+            return (
+                f"{name}:{lineno}: {key} is set to a barrier and then overridden "
+                "in the same expression; keep the barrier value last"
+            )
+    return ""
+
+
+def barrier_expression_violation(name: str, tree: ast.AST) -> str:
+    """First barrier order or same-expression override violation in tree, else empty."""
+    return barrier_order_violation(name, tree) or barrier_override_violation(name, tree)
+
+
+def fixture_config_violation(name: str, tree: ast.AST) -> str:
+    """Require explicit global and system config isolation in Python fixture files."""
+    path = Path(name)
+    fixture = TEST_SCRIPT.search(name) or "tests" in path.parts or "fixture" in path.name
+    if not fixture:
+        return ""
+    barrier_violation = barrier_expression_violation(name, tree)
+    if barrier_violation:
+        return barrier_violation
+    assigned = {
+        key
+        for node in ast.walk(tree)
+        for key, value in node_barrier_pairs(node)
+        if is_barrier_value(key, value)
+    }
+    if "GIT_CONFIG_GLOBAL" not in assigned:
+        return f"{name}: missing GIT_CONFIG_GLOBAL assignment to os.devnull"
+    if not assigned.intersection(("GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM")):
+        return f"{name}: missing GIT_CONFIG_SYSTEM=os.devnull or GIT_CONFIG_NOSYSTEM=1 assignment"
+    return ""
+
+
+def python_isolation_violation(name: str, text: str, *, require_marker: bool = True) -> str:
+    """Validate Python syntax, os.environ filters, isolation markers and fixture barriers."""
+    try:
+        tree = ast.parse(text, filename=name)
+    except SyntaxError as error:
+        return f"{name}:{error.lineno or 1}: cannot parse Python source: {error.msg}"
+    found = CODE_GIT_WRITE.search(text)
+    if found is None:
+        return ""
+    violation = python_filter_violation(name, text, tree)
+    if violation:
+        return violation
+    if require_marker and not has_python_marker(tree):
+        return found.group(0).strip()[:100]
+    return fixture_config_violation(name, tree)
+
+
 def unisolated_git(name: str, text: str) -> str:
-    """The first repository-creating or config-writing git call of an unisolated script, or ""."""
-    shell = name.endswith(SHELL_SUFFIXES)
-    found = (SHELL_GIT_WRITE if shell else CODE_GIT_WRITE).search(text)
+    """Return the first unsafe Git write, filter condition or missing fixture config key."""
+    if name.endswith(".py"):
+        return python_isolation_violation(name, text)
+    found = (SHELL_GIT_WRITE if name.endswith(SHELL_SUFFIXES) else CODE_GIT_WRITE).search(text)
     if found is None or ISOLATION_MARKER.search(text):
         return ""
     return found.group(0).strip()[:100]
+
+
+def unisolated_offenders(root: Path, names: list[str], today: str) -> list[str]:
+    """Diagnostics for every listed script under root that writes Git state unisolated."""
+    offenders = []
+    for name in names:
+        if not name.endswith(SUFFIXES) or name == "scripts/ci/test_git_fixture_isolation.py":
+            continue
+        path = root / name
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        excepted = name in ISOLATION_EXCEPTIONS and today <= ISOLATION_EXCEPTION_EXPIRY
+        if excepted and not name.endswith(".py"):
+            continue
+        sample = (
+            python_isolation_violation(name, text, require_marker=not excepted)
+            if name.endswith(".py")
+            else unisolated_git(name, text)
+        )
+        if sample:
+            offenders.append(sample if sample.startswith(name + ":") else f"{name}: {sample}")
+    return offenders
 
 
 # The sentinel run is split into shards, one test method each: the tooling suite stops a
@@ -617,17 +1181,9 @@ class GitFixtureIsolation(unittest.TestCase):
             self.assertEqual(sentinel_damage(str(script), root), [])
 
     def test_no_script_creates_or_configures_a_repository_unisolated(self) -> None:
+        self.check_python_isolation_controls()
         today = datetime.date.today().isoformat()
-        offenders = []
-        for name in tracked_files():
-            if not name.endswith(SUFFIXES) or name == "scripts/ci/test_git_fixture_isolation.py":
-                continue
-            path = ROOT / name
-            if not path.is_file():
-                continue
-            sample = unisolated_git(name, path.read_text(encoding="utf-8", errors="replace"))
-            if sample and (name not in ISOLATION_EXCEPTIONS or today > ISOLATION_EXCEPTION_EXPIRY):
-                offenders.append(f"{name}: {sample}")
+        offenders = unisolated_offenders(ROOT, tracked_files(), today)
         self.assertEqual(
             offenders,
             [],
@@ -635,6 +1191,325 @@ class GitFixtureIsolation(unittest.TestCase):
             "scripts/lib/clean-git-env.sh (or drop-git-env.sh), or build the environment "
             'without keys that start with "GIT_":\n' + "\n".join(offenders),
         )
+
+    def check_python_isolation_controls(self) -> None:
+        """Replay rejected filters, required config keys and accepted fixture forms."""
+        self.test_isolation_rule_refuses_underscore_git_helpers()
+        self.test_isolation_rule_ignores_read_only_and_unrelated_helpers()
+        name = "tests/test_fixture.py"
+        create = 'git("init", "-q")\n'
+        canonical = '{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}'
+        config = 'env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")\n'
+        for condition in (
+            'not k.startswith("GIT_") or k.startswith("GIT_CONFIG_")',
+            'not k.startswith("GIT_") and not k.startswith("GIT_CONFIG")',
+            'k.startswith("GIT_CONFIG_")',
+            'not k.startswith("GIT_CONFIG_")',
+        ):
+            for expression in (
+                canonical.replace('not k.startswith("GIT_")', condition),
+                f"filter(lambda k: {condition}, os.environ)",
+                f"[k for k in os.environ if {condition}]",
+                f"(k for k in os.environ if {condition})",
+            ):
+                text = "env = " + expression + "\n"
+                with self.subTest(condition=condition, expression=expression):
+                    diagnostic = unisolated_git(name, text + config + create)
+                    self.assertIn(f"{name}:1", diagnostic)
+                    self.assertIn(condition, diagnostic)
+                    self.assertIn(
+                        f"{name}:2", unisolated_git(name, canonical + "\n" + text + create)
+                    )
+        for config_text, missing in (
+            ('env.update(GIT_CONFIG_NOSYSTEM="1")\n', "GIT_CONFIG_GLOBAL"),
+            ("env.update(GIT_CONFIG_GLOBAL=os.devnull)\n", "GIT_CONFIG_SYSTEM"),
+        ):
+            with self.subTest(missing=missing):
+                diagnostic = unisolated_git(
+                    name, "env = " + canonical + "\n" + config_text + create
+                )
+                self.assertIn(name, diagnostic)
+                self.assertIn(missing, diagnostic)
+        self.test_python_ast_barrier_refuses_non_executable_forms()
+        self.test_python_ast_barrier_refuses_post_barrier_environ_unpack()
+        self.test_python_ast_barrier_refuses_same_expression_override()
+        self.test_python_ast_marker_refuses_comments_and_strings()
+        self.test_python_ast_comprehension_and_filter_allowlist()
+        self.check_accepted_python_isolation(canonical, create)
+        self.check_planted_python_isolation()
+
+    def test_python_ast_barrier_refuses_non_executable_forms(self) -> None:
+        """Refuse barriers appearing only in strings, comments, docstrings or setdefault."""
+        name = "tests/test_fixture.py"
+        canonical = 'env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}\n'
+        create = 'git("init", "-q")\n'
+        for header in (
+            '"""env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")"""\n',
+            '# env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")\n',
+            "note = 'env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM=\"1\")'\n",
+            'env.setdefault("GIT_CONFIG_GLOBAL", os.devnull)\n'
+            'env.setdefault("GIT_CONFIG_NOSYSTEM", "1")\n',
+        ):
+            with self.subTest(header=header):
+                diagnostic = unisolated_git(name, header + canonical + create)
+                self.assertIn("missing GIT_CONFIG_GLOBAL", diagnostic)
+
+    def test_python_ast_barrier_refuses_post_barrier_environ_unpack(self) -> None:
+        """Accept pre-barrier **os.environ and refuse post-barrier or mid-barrier unpacks."""
+        name = "tests/test_fixture.py"
+        canonical = 'env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}\n'
+        create = 'git("init", "-q")\n'
+        barriers = '"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"'
+        kw_barriers = 'GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1"'
+        for accepted in (
+            f"{{**os.environ, {barriers}}}",
+            f"dict(**os.environ, {kw_barriers})",
+            f"dict(os.environ, {kw_barriers})",
+            f"dict({{**os.environ}}, {kw_barriers})",
+            f"{{**os.environ, **{{{barriers}}}}}",
+            f"dict(**os.environ, **{{{barriers}}})",
+        ):
+            with self.subTest(accepted=accepted):
+                self.assertEqual(
+                    unisolated_git(name, canonical + f"out = {accepted}\n" + create), ""
+                )
+        expected = (
+            f"{name}:2: **os.environ after GIT_CONFIG_* barrier keys "
+            "lets the caller override them; place the expansion first"
+        )
+        for rejected in (
+            f"{{{barriers}, **os.environ}}",
+            f"{{{barriers}, **dict(os.environ)}}",
+            f"{{{barriers}, **os.environ.copy()}}",
+            '{"GIT_CONFIG_GLOBAL": os.devnull, **os.environ, "GIT_CONFIG_NOSYSTEM": "1"}',
+            '{"GIT_CONFIG_NOSYSTEM": "1", **os.environ, "GIT_CONFIG_GLOBAL": os.devnull}',
+            f"dict({kw_barriers}, **os.environ)",
+            f"env.update({kw_barriers}, **os.environ.copy())",
+            f"dict({{{barriers}}}, **os.environ)",
+            f"env.update({{{barriers}}}, **os.environ.copy())",
+            f"dict(dict({kw_barriers}), **os.environ)",
+            f"{{**{{{barriers}}}, **os.environ}}",
+            f"dict(**{{{barriers}}}, **os.environ)",
+            f"{{**dict({kw_barriers}), **os.environ}}",
+            f"{{**{{**{{{barriers}}}}}, **os.environ}}",
+        ):
+            with self.subTest(rejected=rejected):
+                self.assertEqual(
+                    unisolated_git(name, canonical + f"out = {rejected}\n" + create), expected
+                )
+        two_displays = (
+            canonical
+            + 'first = {"GIT_CONFIG_GLOBAL": os.devnull, **os.environ}\n'
+            + 'second = {"GIT_CONFIG_NOSYSTEM": "1", **os.environ}\n'
+            + create
+        )
+        self.assertEqual(unisolated_git(name, two_displays), expected)
+        create_env = 'git("init", "-q", env=out)\n'
+        with self.subTest(call=create_env):
+            bad_call = f"out = dict({{{barriers}}}, **os.environ)\n"
+            good_call = f"out = dict(os.environ, {kw_barriers})\n"
+            self.assertEqual(unisolated_git(name, canonical + bad_call + create_env), expected)
+            self.assertEqual(unisolated_git(name, canonical + good_call + create_env), "")
+
+    def test_python_ast_barrier_refuses_same_expression_override(self) -> None:
+        """Refuse barrier keys overridden later in the same expression unless by a barrier."""
+        prefix = 'env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}\n'
+        suffix = '\ngit("init", "-q")\n'
+        barriers = '{"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}'
+        fallback = 'os.environ.get("GIT_CONFIG_GLOBAL", os.devnull)'
+        for key, expr in (
+            ("GIT_CONFIG_GLOBAL", f"dict({barriers}, GIT_CONFIG_GLOBAL={fallback})"),
+            (
+                "GIT_CONFIG_GLOBAL",
+                '{"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", '
+                '"GIT_CONFIG_GLOBAL": os.environ["X"]}',
+            ),
+            ("GIT_CONFIG_GLOBAL", f'{{**{barriers}, "GIT_CONFIG_GLOBAL": os.environ["X"]}}'),
+            ("GIT_CONFIG_NOSYSTEM", f'dict({barriers}, GIT_CONFIG_NOSYSTEM="0")'),
+            (
+                "GIT_CONFIG_SYSTEM",
+                'env.update({"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull}, '
+                'GIT_CONFIG_SYSTEM=os.environ["X"])',
+            ),
+        ):
+            with self.subTest(rejected=expr):
+                expected = (
+                    f"tests/test_override.py:2: {key} is set to a barrier and then overridden "
+                    "in the same expression; keep the barrier value last"
+                )
+                self.assertEqual(
+                    unisolated_git("tests/test_override.py", f"{prefix}out = {expr}{suffix}"),
+                    expected,
+                )
+        for valid in (
+            f'dict({barriers}, GIT_CONFIG_GLOBAL="/dev/null")',
+            '{"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", '
+            '"GIT_CONFIG_GLOBAL": "/dev/null"}',
+            '{"GIT_CONFIG_GLOBAL": os.environ["X"], "GIT_CONFIG_GLOBAL": os.devnull, '
+            '"GIT_CONFIG_NOSYSTEM": "1"}',
+            '{"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_GLOBAL": os.environ["X"], '
+            '"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}',
+        ):
+            with self.subTest(accepted=valid):
+                self.assertEqual(
+                    unisolated_git("tests/test_override.py", f"{prefix}out = {valid}{suffix}"),
+                    "",
+                )
+
+    def test_python_ast_marker_refuses_comments_and_strings(self) -> None:
+        """Require AST call markers, check helper-marked fixtures, and report syntax lines."""
+        name = "tests/test_fixture.py"
+        config = 'env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")\n'
+        create = 'git("init", "-q")\n'
+        for fake_marker in (
+            '"""k.startswith("GIT_") and clean_git_environment()"""\n',
+            '# not k.startswith("GIT_") clean_git_environment()\n',
+            "text = 'clean_git_environment() k.startswith(\"GIT_\")'\n",
+        ):
+            with self.subTest(fake_marker=fake_marker):
+                self.assertEqual(unisolated_git(name, fake_marker + config + create), 'git("init",')
+        for helper_call in ("env = clean_git_environment()\n", "env = mod.git_environment()\n"):
+            with self.subTest(helper_call=helper_call):
+                self.assertIn(
+                    "missing GIT_CONFIG_GLOBAL", unisolated_git(name, helper_call + create)
+                )
+        broken = unisolated_git("tests/test_broken.py", create + "def broken(\n")
+        self.assertIn("tests/test_broken.py:2:", broken)
+        self.assertIn("cannot parse Python source", broken)
+        self.assertIn("tests/test_broken.py:1:", unisolated_git("tests/test_broken.py", "def f(\n"))
+        self.assertEqual(unisolated_git(name, ""), "")
+
+    def test_python_ast_comprehension_and_filter_allowlist(self) -> None:
+        """Fail closed on noncanonical conditions, copied os.environ sources and extra clauses."""
+        name = "tests/test_fixture.py"
+        config = 'env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")\n'
+        create = 'git("init", "-q")\n'
+        for expression in (
+            "{k: v for k, v in os.environ.items() if k not in drop}",
+            "{k: v for k, v in os.environ.items() if not k.startswith(PREFIX)}",
+            '{k: v for k, v in os.environ.items() if not k.startswith("GIT" + "_")}',
+            '{k: v for k, v in os.environ.items() if not k.startswith("GIT" "_")'
+            ' or k.startswith("GIT" "_CONFIG_")}',
+            '{k: v for k, v in os.environ.copy().items() if not k.startswith("GIT_")'
+            ' or k.startswith("GIT_CONFIG_")}',
+            '{k: v for k, v in dict(os.environ).items() if not k.startswith("GIT_CONFIG_")}',
+            "[k for k in os.environ.copy() if keep(k)]",
+            'filter(lambda k: not k.startswith("GIT_") or flag, dict(os.environ).keys())',
+            '{k: v for k, v in os.environ.items() for _ in (0,) if not k.startswith("GIT_")'
+            ' or k.startswith("GIT_CONFIG_")}',
+            '{k: v for k, v in os.environ.items() if not k.startswith("GIT_") if keep(k)}',
+            "{k: v for k, v in os.environ.items()}",
+            "filter(keep_env, os.environ)",
+            "filter(lambda k: helper(k), os.environ)",
+        ):
+            with self.subTest(expression=expression):
+                diagnostic = unisolated_git(name, f"env = {expression}\n" + config + create)
+                self.assertIn(f"{name}:1:", diagnostic)
+
+    def check_accepted_python_isolation(self, canonical: str, create: str) -> None:
+        """Accept config assignment styles, tuple prefixes and caller-poison selection."""
+        for config in (
+            'env = {**env, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": "/dev/null"}\n',
+            'env = dict(env, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1")\n',
+            'env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")\n',
+            'env["GIT_CONFIG_GLOBAL"] = os.devnull\nenv["GIT_CONFIG_NOSYSTEM"] = "1"\n',
+        ):
+            for expression in (
+                canonical,
+                canonical.replace('"GIT_"', '("GIT_", "X_")'),
+                canonical.replace("os.environ.items()", "os.environ.copy().items()"),
+                canonical.replace("os.environ.items()", "dict(os.environ).items()"),
+                'filter(lambda k: not k.startswith("GIT_"), os.environ)',
+                'filter(lambda k: not k.startswith("GIT_"), os.environ.copy())',
+                "clean_git_environment()",
+            ):
+                with self.subTest(config=config, expression=expression):
+                    text = "env = " + expression + "\n" + config + create
+                    self.assertEqual(unisolated_git("tests/test_fixture.py", text), "")
+        poison = (
+            'caller = dict(env, GIT_CONFIG_PARAMETERS="poison")\n'
+            'index = next(key[len("GIT_CONFIG_KEY_"):] for key, value in os.environ.items()\n'
+            '    if key.startswith("GIT_CONFIG_KEY_") and value == "gpg.ssh.allowedSignersFile")\n'
+        )
+        config = 'env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")\n'
+        self.assertEqual(
+            unisolated_git(
+                "tests/test_poison.py", "env = " + canonical + "\n" + config + poison + create
+            ),
+            "",
+        )
+        self.assertEqual(unisolated_git("tools/product.py", canonical + "\n" + create), "")
+
+    def check_planted_python_isolation(self) -> None:
+        """A temporary fixture copy fails the static check after re-admission; restore passes."""
+        name = "scripts/ci/tests/test_ci_impact.py"
+        original = (ROOT / name).read_text(encoding="utf-8")
+        old = 'if not k.startswith("GIT_")'
+        planted = original.replace(old, old + ' or k.startswith("GIT_CONFIG_")', 1)
+        self.assertNotEqual(original, planted)
+        today = datetime.date.today().isoformat()
+        with tempfile.TemporaryDirectory(prefix="git-filter-planted-") as directory:
+            root = Path(directory)
+            path = root / name
+            path.parent.mkdir(parents=True)
+            path.write_text(planted, encoding="utf-8")
+            rejected = unisolated_offenders(root, [name], today)
+            self.assertEqual(len(rejected), 1, rejected)
+            self.assertTrue(rejected[0].startswith(name + ":"), rejected)
+            self.assertIn('k.startswith("GIT_CONFIG_")', rejected[0])
+            path.write_text(original, encoding="utf-8")
+            self.assertEqual(unisolated_offenders(root, [name], today), [])
+        self.test_isolation_exceptions_enforce_python_fixture_barriers()
+
+    def test_isolation_exceptions_enforce_python_fixture_barriers(self) -> None:
+        """ISOLATION_EXCEPTIONS excuses the GIT_* marker only, not Python fixture barriers."""
+        name = "scripts/dev/tests/test_merge_train_guard.py"
+        self.assertIn(name, ISOLATION_EXCEPTIONS)
+        original = (ROOT / name).read_text(encoding="utf-8")
+        stripped = original.replace("GIT_CONFIG_GLOBAL=os.devnull, ", "", 1)
+        self.assertNotEqual(original, stripped)
+        today = datetime.date.today().isoformat()
+        with tempfile.TemporaryDirectory(prefix="git-exception-barrier-") as directory:
+            root = Path(directory)
+            path = root / name
+            path.parent.mkdir(parents=True)
+            path.write_text(stripped, encoding="utf-8")
+            rejected = unisolated_offenders(root, [name], today)
+            self.assertEqual(len(rejected), 1, rejected)
+            self.assertTrue(rejected[0].startswith(name + ":"), rejected)
+            self.assertIn("missing GIT_CONFIG_GLOBAL", rejected[0])
+            path.write_text(original, encoding="utf-8")
+            self.assertEqual(unisolated_offenders(root, [name], today), [])
+
+    def test_known_gap_python_imperative_environment_mutation(self) -> None:
+        """Known gap: imperative mutation after copying os.environ is not data-flow tracked."""
+        name = "tests/test_fixture.py"
+        setup = (
+            'clean = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}\n'
+            'clean.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")\n'
+        )
+        for mutation in (
+            'env = os.environ.copy()\nenv["GIT_DIR"] = "/tmp/caller"\ngit("init", "-q")\n',
+            'env = os.environ.copy()\nfor k in list(env):\n    if k == "GIT_DIR":\n'
+            '        env.pop(k)\ngit("init", "-q")\n',
+        ):
+            with self.subTest(mutation=mutation):
+                self.assertEqual(unisolated_git(name, setup + mutation), "")
+
+    def test_known_gap_node_and_go_environment_readmission(self) -> None:
+        """Known gap: Node and Go marker checks do not inspect filter re-admission or mutation."""
+        node_fixture = (
+            'const keep = Object.keys(process.env).filter((k) => !k.startsWith("GIT_")'
+            ' || k.startsWith("GIT_CONFIG_"));\n'
+            'command("git", ["init", "--quiet"], { cwd: fixture });\n'
+        )
+        go_fixture = (
+            '\tif !strings.HasPrefix(entry, "GIT_") || strings.HasPrefix(entry, "GIT_CONFIG_") {\n'
+            "\t\tenv = append(env, entry)\n\t}\n"
+            '\trunTool(ctx, repo, "git", "init", "--quiet")\n'
+        )
+        self.assertEqual(unisolated_git("tests/fixture.mjs", node_fixture), "")
+        self.assertEqual(unisolated_git("tools/fixture_test.go", go_fixture), "")
 
     def test_isolation_exceptions_are_live_and_needed(self) -> None:
         self.assertGreaterEqual(
@@ -646,7 +1521,42 @@ class GitFixtureIsolation(unittest.TestCase):
                 text = (ROOT / name).read_text(encoding="utf-8", errors="replace")
                 self.assertTrue(unisolated_git(name, text), "no longer needed: remove it")
 
+    def test_isolation_rule_refuses_underscore_git_helpers(self) -> None:
+        """Underscore-prefixed Git helpers must trigger the isolation check."""
+        for text in (
+            'self._git("init")\n',
+            'self.run_git("init", "-q")\n',
+            'run_git(["clone", url])\n',
+            'subprocess.run(["git", "-C", str(path), "init"])\n',
+            'git("-c", "init.defaultBranch=main", "init")\n',
+            'run_git(root / "scratch", "init", environment=os.environ.copy())\n',
+            'git(root / "scratch", "init")\n',
+            'self._git("repo-%d" % index, "init")\n',
+            'self._git(Path("scratch"), "init")\n',
+            'run_git(f"{root}/scratch", "clone", url)\n',
+        ):
+            with self.subTest(text=text):
+                self.assertIsNotNone(CODE_GIT_WRITE.search(text))
+                self.assertTrue(unisolated_git("tests/test_fixture.py", text))
+
+    def test_isolation_rule_ignores_read_only_and_unrelated_helpers(self) -> None:
+        """Only init or clone as the subcommand counts; digit is unrelated to git."""
+        for text in (
+            'self._git("status")\n',
+            'self.run_git("status", "--short")\n',
+            'self._git("status", "init")\n',
+            '_git(temp_dir, "commit", "-q", "-m", "init")\n',
+            '_git(root / "scratch", "commit", "-m", "init")\n',
+            'run_git(Path("scratch"), "status", "init")\n',
+            'digit("init")\n',
+            'self.digit("clone", url)\n',
+        ):
+            with self.subTest(text=text):
+                self.assertIsNone(CODE_GIT_WRITE.search(text))
+                self.assertEqual(unisolated_git("tests/test_fixture.py", text), "")
+
     def test_isolation_rule_refuses_planted_unisolated_fixtures(self) -> None:
+        """Verify unisolated_git flags unisolated code and passes isolated or harmless snippets."""
         planted = {
             "t.sh": (
                 'cd "$tmp"\ngit init -q\n',
@@ -660,6 +1570,7 @@ class GitFixtureIsolation(unittest.TestCase):
                 '    git("config", "uploadpack.allowAnySHA1InWant", "true")\n',
                 '    run_git(root, "config", "core.bare", "true")\n',
                 '    run((git, "clone", "--bare", str(src), str(dst)))\n',
+                '# k.startswith("GIT_")\nself.git("init", "-q")\n',
             ),
             "t.mjs": ('  command("git", ["init", "--quiet"], { cwd: fixture });\n',),
             "t.go": ('\trunTool(ctx, repo, "git", "init", "--quiet")\n',),
@@ -691,6 +1602,7 @@ class GitFixtureIsolation(unittest.TestCase):
                 'git -C "$repo" log --oneline\n',
             ),
             "t.py": (
+                "",
                 'value = git("config", "--get", "user.email")\n',
                 'state = registration.get("init", "")\n',
                 '# self.git("init") is what the fixture used to do\n',

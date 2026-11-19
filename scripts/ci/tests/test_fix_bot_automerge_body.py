@@ -127,6 +127,40 @@ class TestCallMutation:
         assert rc == 0
         assert body == signoff
 
+    def test_metacharacter_headline_reaches_the_mutation_unchanged(self) -> None:
+        """Issue #3348: a title with quoting or shell metacharacters reaches the
+        mutation verbatim. The headline travels as one gh argv element, never
+        through a shell, and a trailing newline survives.
+        """
+        mod = _load_module()
+        title = 'chore(deps): update "lock" `pin` $(echo pwned) \\ end\n'
+        signoff = "Signed-off-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>"
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = self._make_response(signoff)
+        mock_result.stderr = ""
+        bot_env = {
+            "PR_NUMBER": "3047",
+            "PR_NODE_ID": "PR_fakenode123",
+            "PR_TITLE": title,
+            "PR_AUTHOR": "renovate[bot]",
+            "PR_AUTHOR_TYPE": "Bot",
+            "PR_AUTHOR_ID": "29139614",
+            "AUTO_MERGE_BODY": "",
+        }
+        with (
+            patch.object(subprocess, "run", return_value=mock_result) as run,
+            patch.dict(os.environ, bot_env),
+        ):
+            rc = mod.main()
+        assert rc == 0
+        argv = run.call_args.args[0]
+        assert isinstance(argv, list), "gh must run from an argv list, not a shell string"
+        assert not run.call_args.kwargs.get("shell", False)
+        field = f"headline={title} (#3047)"
+        assert field in argv
+        assert argv[argv.index(field) - 1] == "-f"
+
     def test_gh_nonzero_exit(self) -> None:
         mod = _load_module()
         mock_result = MagicMock()

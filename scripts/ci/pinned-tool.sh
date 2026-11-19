@@ -59,7 +59,7 @@ dir="${XDG_CACHE_HOME:-$HOME/.cache}/vmafx-tools/$tool/$version"
 tarball="$dir/$tool.tar.gz"
 mkdir -p "$dir"
 if [[ ! -f "$tarball" ]]; then
-  curl -sSfL --retry 3 --max-time 300 -o "$tarball.part" "$url"
+  curl -sSfL --retry 3 --retry-all-errors --max-time 300 -o "$tarball.part" "$url"
   mv "$tarball.part" "$tarball"
 fi
 if ! echo "$sha  $tarball" | sha256sum --check --status; then

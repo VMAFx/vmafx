@@ -6,6 +6,7 @@ import threading
 import time
 import unittest
 import warnings
+from multiprocessing.util import Finalize
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -80,6 +81,15 @@ class FailingNorefFifoExecutor(NorefExecutorMixin, FailingFifoExecutor):
         raise RuntimeError("distorted procfile child failed before FIFO readiness")
 
 
+class DelayedExitFifoExecutor(FailingFifoExecutor):
+    TYPE = "DelayedExitFifo"
+
+    def _open_ref_workfile(self, asset, fifo_mode, open_sem=None):
+        # Run after _run_fifo_worker sends the traceback and re-raises.
+        Finalize(None, time.sleep, args=(self.optional_dict2["exit_delay"],), exitpriority=0)
+        raise RuntimeError("reference workfile child failed with delayed exit")
+
+
 class NeverReadyFifoExecutor(FailingFifoExecutor):
 
     TYPE = "NeverReadyFifo"
@@ -125,6 +135,28 @@ def _run_fifo_timeout_helper(sender):
         sender.send((type(exc).__name__, str(exc)))
     else:
         sender.send((None, "FIFO helper returned despite producers never becoming ready"))
+    finally:
+        sender.close()
+
+
+def _run_fifo_exit_wait_helper(sender, child_delay, exit_wait_seconds):
+    if exit_wait_seconds is not None:
+        executor_module._FIFO_FAILED_CHILD_EXIT_SECONDS = exit_wait_seconds
+    executor = DelayedExitFifoExecutor([], None, optional_dict2={"exit_delay": child_delay})
+    started = time.monotonic()
+    try:
+        executor._open_workfiles_in_fifo_mode(_fifo_asset())
+    except Exception as exc:
+        sender.send(
+            (
+                type(exc).__name__,
+                str(exc),
+                time.monotonic() - started,
+                [child.pid for child in multiprocessing.active_children()],
+            )
+        )
+    else:
+        sender.send((None, "FIFO helper returned despite a failed child", 0, []))
     finally:
         sender.close()
 
@@ -232,6 +264,49 @@ class ExecutorTest(unittest.TestCase):
                 parent.terminate()
             parent.join(5)
             receiver.close()
+
+    def _fifo_exit_wait_result(self, child_delay, exit_wait_seconds=None):
+        context = multiprocessing.get_context("spawn")
+        receiver, sender = context.Pipe(duplex=False)
+        parent = context.Process(
+            target=_run_fifo_exit_wait_helper,
+            args=(sender, child_delay, exit_wait_seconds),
+        )
+        parent.start()
+        sender.close()
+        try:
+            self.assertTrue(receiver.poll(8), "FIFO failure reporter exceeded its deadline")
+            result = receiver.recv()
+            parent.join(5)
+            self.assertFalse(parent.is_alive(), "FIFO failure reporter did not exit")
+            self.assertEqual(parent.exitcode, 0)
+            return result
+        finally:
+            if parent.is_alive():
+                parent.terminate()
+            parent.join(5)
+            receiver.close()
+
+    def test_fifo_helpers_report_delayed_child_exit_code(self):
+        # The child exits 1.5 s after reporting: past the old 1 s join, well inside
+        # the 5 s wait this test sets, so runner load cannot turn it into a timeout.
+        error_type, message, _elapsed, live_children = self._fifo_exit_wait_result(1.5, 5.0)
+        self.assertEqual(error_type, "RuntimeError")
+        self.assertIn("exit code 1", message)
+        self.assertIn("RuntimeError: reference workfile child failed with delayed exit", message)
+        self.assertEqual(live_children, [])
+
+    def test_fifo_helpers_bound_failed_child_exit_wait(self):
+        exit_wait_seconds = 0.1
+        error_type, message, elapsed, live_children = self._fifo_exit_wait_result(
+            30.0, exit_wait_seconds
+        )
+        self.assertEqual(error_type, "RuntimeError")
+        self.assertIn("exit code unavailable after 0.1s", message)
+        self.assertNotIn("exit code None", message)
+        self.assertIn("RuntimeError: reference workfile child failed with delayed exit", message)
+        self.assertLess(elapsed, exit_wait_seconds + 5.0)
+        self.assertEqual(live_children, [])
 
     @unittest.skipUnless(
         os.name == "posix",
@@ -499,6 +574,39 @@ class ExecutorTest(unittest.TestCase):
             "reference workfile child exited before signaling readiness", str(cm.exception)
         )
         self.assertIn("exit code 0", str(cm.exception))
+
+    @staticmethod
+    def _failed_fifo_worker(signals_before_failure):
+        class Permit:
+            available = signals_before_failure
+
+            def acquire(self, block=True, timeout=None):
+                taken, self.available = self.available, False
+                return taken
+
+        process = SimpleNamespace(exitcode=None, join=MagicMock())
+        receiver = MagicMock()
+        receiver.poll.return_value = True
+        receiver.recv.return_value = "RuntimeError: reference workfile child failed"
+        return ("reference workfile", process, Permit(), receiver)
+
+    def test_wait_for_fifo_workers_does_not_join_child_that_signaled_then_failed(self):
+        worker = self._failed_fifo_worker(signals_before_failure=True)
+        self.assertIsNone(executor_module._wait_for_fifo_workers([worker], None, "unused warning"))
+        worker[1].join.assert_not_called()
+
+    def test_wait_for_fifo_workers_joins_failed_child_without_readiness(self):
+        worker = self._failed_fifo_worker(signals_before_failure=False)
+        with self.assertRaises(RuntimeError) as cm:
+            executor_module._wait_for_fifo_workers([worker], None, "unused warning")
+        self.assertIn(
+            "reference workfile child exited before signaling readiness", str(cm.exception)
+        )
+        self.assertIn("exit code unavailable after 3s", str(cm.exception))
+        self.assertIn("RuntimeError: reference workfile child failed", str(cm.exception))
+        worker[1].join.assert_called_once_with(
+            timeout=executor_module._FIFO_FAILED_CHILD_EXIT_SECONDS
+        )
 
     def _check_default_and_reference_types(self):
         asset = Asset(

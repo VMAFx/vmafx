@@ -213,14 +213,20 @@ ensure_clang_tidy() {
   local key=/etc/apt/trusted.gpg.d/apt.llvm.org.asc codename
   # shellcheck disable=SC1091  # the image's own os-release
   codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
-  curl -fsSL --retry 3 --max-time 60 "$LLVM_APT_SIGNER_URL" -o "$key"
+  # A GitHub runner's measured connection refusal outlasted the old 7 s window.
+  # Constant 15 s delays spread eight retries over ~2 min; exhaustion still dies.
+  curl -fsSL --retry 8 --retry-delay 15 --retry-all-errors --connect-timeout 20 --max-time 60 \
+    "$LLVM_APT_SIGNER_URL" -o "$key" ||
+    die "apt.llvm.org key download failed; refusing to install"
   printf '%s  %s\n' "$LLVM_APT_SIGNER_SHA256" "$key" | sha256sum --check --status ||
     die "apt.llvm.org key does not match the pinned SHA-256; refusing to install"
   printf 'deb [signed-by=%s] https://apt.llvm.org/%s/ llvm-toolchain-%s-%s main\n' \
     "$key" "$codename" "$codename" "$CLANG_TIDY_MAJOR" >/etc/apt/sources.list.d/llvm-tidy.list
-  DEBIAN_FRONTEND=noninteractive apt-get update -qq
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-    "clang-tidy-${CLANG_TIDY_MAJOR}" >/dev/null
+  DEBIAN_FRONTEND=noninteractive apt-get --error-on=any -o Acquire::Retries=3 update -qq ||
+    die "apt.llvm.org package list refresh failed; refusing to install from stale package lists"
+  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
+    "clang-tidy-${CLANG_TIDY_MAJOR}" >/dev/null ||
+    die "clang-tidy ${CLANG_TIDY_MAJOR} did not install"
   "$CLANG_TIDY_BIN_PATH" --version | grep -qF "LLVM version ${CLANG_TIDY_MAJOR}." ||
     die "clang-tidy ${CLANG_TIDY_MAJOR} did not install"
 }
@@ -234,9 +240,11 @@ ensure_clang_compiler() {
     ls /usr/lib/llvm-${CLANG_TIDY_MAJOR}/lib/clang/*/lib/linux/libclang_rt.fuzzer-*.a >/dev/null 2>&1; then
     return 0
   fi
-  DEBIAN_FRONTEND=noninteractive apt-get update -qq
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-    "clang-${CLANG_TIDY_MAJOR}" "libclang-rt-${CLANG_TIDY_MAJOR}-dev" >/dev/null
+  DEBIAN_FRONTEND=noninteractive apt-get --error-on=any -o Acquire::Retries=3 update -qq ||
+    die "clang-${CLANG_TIDY_MAJOR} package list refresh failed; refusing to install from stale package lists"
+  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
+    "clang-${CLANG_TIDY_MAJOR}" "libclang-rt-${CLANG_TIDY_MAJOR}-dev" >/dev/null ||
+    die "clang-${CLANG_TIDY_MAJOR} did not install"
   command -v "clang-${CLANG_TIDY_MAJOR}" >/dev/null ||
     die "clang-${CLANG_TIDY_MAJOR} did not install"
 }
@@ -249,10 +257,12 @@ have_cross_toolchain() {
 # skips the download.
 ensure_cross_toolchain() {
   have_cross_toolchain && return 0
-  DEBIAN_FRONTEND=noninteractive apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get --error-on=any -o Acquire::Retries=3 update -qq ||
+    die "aarch64 cross toolchain package list refresh failed; refusing to install from stale package lists"
   # shellcheck disable=SC2086  # a fixed list of package names
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-    $CROSS_PACKAGES >/dev/null
+  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
+    $CROSS_PACKAGES >/dev/null ||
+    die "the aarch64 cross toolchain did not install"
   have_cross_toolchain || die "the aarch64 cross toolchain did not install"
 }
 
@@ -266,10 +276,12 @@ have_gstreamer_dev() {
 # image that carries them skips the download.
 ensure_gstreamer_dev() {
   have_gstreamer_dev && return 0
-  DEBIAN_FRONTEND=noninteractive apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get --error-on=any -o Acquire::Retries=3 update -qq ||
+    die "GStreamer package list refresh failed; refusing to install from stale package lists"
   # shellcheck disable=SC2086  # a fixed list of package names
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-    $GSTREAMER_PACKAGES >/dev/null
+  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
+    $GSTREAMER_PACKAGES >/dev/null ||
+    die "the GStreamer development files did not install"
   have_gstreamer_dev || die "the GStreamer development files did not install"
 }
 
@@ -278,10 +290,12 @@ ensure_gstreamer_dev() {
 # its cross sysroot has no arm64 zimg.
 ensure_zimg_dev() {
   pkg-config --exists 'zimg >= 2.7' && return 0
-  DEBIAN_FRONTEND=noninteractive apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get --error-on=any -o Acquire::Retries=3 update -qq ||
+    die "zimg package list refresh failed; refusing to install from stale package lists"
   # shellcheck disable=SC2086  # a fixed list of package names
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-    $ZIMG_PACKAGES >/dev/null
+  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
+    $ZIMG_PACKAGES >/dev/null ||
+    die "zimg's development files did not install"
   pkg-config --exists 'zimg >= 2.7' || die "zimg's development files did not install"
 }
 
@@ -308,9 +322,11 @@ ensure_rust_toolchain() {
   export PATH="$CARGO_HOME/bin:$PATH" RUSTUP_TOOLCHAIN="$version"
   have_rust_toolchain "$version" && return 0
   if ! command -v rustup >/dev/null; then
-    DEBIAN_FRONTEND=noninteractive apt-get update -qq
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-      rustup >/dev/null
+    DEBIAN_FRONTEND=noninteractive apt-get --error-on=any -o Acquire::Retries=3 update -qq ||
+      die "rustup package list refresh failed; refusing to install from stale package lists"
+    DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends \
+      rustup >/dev/null ||
+      die "rustup did not install"
   fi
   rustup toolchain install "$version" --profile minimal >/dev/null
   have_rust_toolchain "$version" || die "the Rust $version toolchain did not install"
@@ -320,21 +336,24 @@ ensure_rust_toolchain() {
 # the arm64 lane needs its cross toolchain, the clang lane its compiler, the
 # integrations lane GStreamer's development files and the rust lane cargo.
 lane_environment() {
-  [ "$1" = arm64 ] || ensure_zimg_dev
-  [ "$1" != arm64 ] || ensure_cross_toolchain
-  [ "$1" != clang ] || ensure_clang_compiler
-  [ "$1" != integrations ] || ensure_gstreamer_dev
-  [ "$1" != rust ] || ensure_rust_toolchain
+  if [ "$1" != arm64 ]; then ensure_zimg_dev || return 1; fi
+  if [ "$1" = arm64 ]; then ensure_cross_toolchain || return 1; fi
+  if [ "$1" = clang ]; then ensure_clang_compiler || return 1; fi
+  if [ "$1" = integrations ]; then ensure_gstreamer_dev || return 1; fi
+  if [ "$1" = rust ]; then ensure_rust_toolchain || return 1; fi
   [ "$1" = sycl ] || return 0
   set +u
   # shellcheck disable=SC1091  # provided by the image
-  . /opt/intel/oneapi/setvars.sh --force >/dev/null
+  if ! . /opt/intel/oneapi/setvars.sh --force >/dev/null; then
+    set -u
+    return 1
+  fi
   set -u
 }
 
 # Configure and build one lane: compile_commands.json and the generated headers.
 build_lane() {
-  lane_environment "$1"
+  lane_environment "$1" || return 1
   make tidy-ratchet-build LANE="$1" TIDY_RATCHET_BUILD_DIR="$WORK/build-$1" \
     TIDY_RATCHET_JOBS="$JOBS"
 }
@@ -343,7 +362,7 @@ build_lane() {
 measure_lane() {
   local target=tidy-ratchet
   [ "$WRITE" -eq 1 ] && target=tidy-ratchet-write
-  lane_environment "$1"
+  lane_environment "$1" || return 1
   make "$target" LANE="$1" TIDY_RATCHET_BUILD_DIR="$WORK/build-$1" \
     CLANG_TIDY_BIN="$CLANG_TIDY_BIN_PATH" \
     TIDY_RATCHET_ARGS="--jobs $JOBS --report $WORK/out/tidy-ratchet-$1.json ${ONLY[*]}"

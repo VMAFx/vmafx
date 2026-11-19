@@ -122,7 +122,7 @@ fi
 
 if ! command -v curl >/dev/null 2>&1 || ! command -v gpg >/dev/null 2>&1 ||
   ! dpkg -s ca-certificates >/dev/null 2>&1; then
-  $SUDO apt-get update -qq
+  $SUDO apt-get --error-on=any -o Acquire::Retries=3 update -qq
   $SUDO apt-get install -y -qq --no-install-recommends ca-certificates curl gpg
 fi
 
@@ -132,7 +132,7 @@ trap 'rm -rf "$tmp"' EXIT
 # --- repository key: keep exactly the pinned key --------------------------
 key_url="https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB"
 keyring=/usr/share/keyrings/intel-oneapi-archive-keyring.gpg
-curl -fsSL --connect-timeout 20 --max-time 120 --proto '=https' --tlsv1.2 -o "$tmp/intel.pub" "$key_url"
+curl --retry 3 --retry-all-errors -fsSL --connect-timeout 20 --max-time 120 --proto '=https' --tlsv1.2 -o "$tmp/intel.pub" "$key_url"
 export GNUPGHOME="$tmp/gnupg"
 mkdir -m 0700 "$GNUPGHOME"
 # Without gpg-agent (a Recommends of gpg) the import still stores the public
@@ -163,7 +163,7 @@ Package: intel-oneapi-umf intel-oneapi-umf-*
 Pin: version $ONEAPI_UMF_APT_VERSION
 Pin-Priority: 1001
 EOF
-$SUDO apt-get update -qq
+$SUDO apt-get --error-on=any -o Acquire::Retries=3 update -qq
 
 operands=()
 case "$mode" in

@@ -7,7 +7,7 @@ FROM vmaf@sha256:${VMAF_IMAGE_DIGEST}
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends pkg-config && \
+RUN apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends pkg-config && \
     rm -rf /var/lib/apt/lists/*
 
 ARG FFMPEG_TAG=n9.0.2
@@ -17,7 +17,7 @@ ARG FFMPEG_REMOTE=https://github.com/FFmpeg/FFmpeg.git
 ARG NVCC_FLAGS="-gencode arch=compute_75,code=sm_75 -gencode arch=compute_80,code=sm_80 -gencode arch=compute_90,code=sm_90 -gencode arch=compute_120,code=sm_120 -gencode arch=compute_120,code=compute_120 -O2"
 
 # get ffmpeg
-RUN wget -q "${FFMPEG_REMOTE%.git}/archive/${FFMPEG_TAG}.zip" && \
+RUN wget --tries=3 --retry-connrefused --retry-on-host-error -q "${FFMPEG_REMOTE%.git}/archive/${FFMPEG_TAG}.zip" && \
     unzip -q "${FFMPEG_TAG}.zip"
 
 # Apply the same cumulative patch series as every other FFmpeg image: the

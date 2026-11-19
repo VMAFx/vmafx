@@ -311,10 +311,14 @@ jobs:
             ccache-v2-${{ matrix.os }}-
 
       - name: Setup python
-        if: steps.impact.outputs.c_core == 'true'
+        if: steps.impact.outputs.c_core == 'true' || matrix.os == 'macos-latest'
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: 3.14.10
+
+      - name: Test macOS executable link ACLs
+        if: matrix.os == 'macos-latest'
+        run: python -m unittest -v scripts.lib.test_safe_subprocess.DarwinAclLinkTests
 
       - name: Install meson and ninja
         if: steps.impact.outputs.c_core == 'true'
@@ -323,7 +327,7 @@ jobs:
       - name: Install dependencies (ubuntu)
         if: ${{ (startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
         run: |
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           sudo -E apt-get -yq install ccache ninja-build nasm libomp-dev pkg-config
           # ADR-0692 (design notes)
           case "$CC" in
@@ -366,33 +370,11 @@ jobs:
         if: ${{ (matrix.dnn && startsWith(matrix.os, 'ubuntu')) && steps.impact.outputs.c_core == 'true' }}
         env:
           ORT_VERSION: "1.22.0"
-          ORT_SHA256: "8344d55f93d5bc5021ce342db50f62079daf39aaafb5d311a451846228be49b3"
         run: |
           set -euo pipefail
-          ort_name="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
-          ort_archive="${RUNNER_TEMP}/${ort_name}"
-          ort_url="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${ort_name}"
-          curl -fSL --retry 5 --retry-delay 5 --retry-all-errors --remove-on-error \
-            --output "${ort_archive}" \
-            "${ort_url}"
-          printf '%s  %s\n' "${ORT_SHA256}" "${ort_archive}" \
-            | sha256sum --check --strict
-          sudo tar -xzf "${ort_archive}" -C /opt/
-          sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
-          sudo install -d /usr/local/lib/pkgconfig
-          cat <<EOF | sudo tee /usr/local/lib/pkgconfig/libonnxruntime.pc >/dev/null
-          prefix=/opt/onnxruntime
-          exec_prefix=\${prefix}
-          libdir=\${exec_prefix}/lib
-          includedir=\${prefix}/include
-
-          Name: libonnxruntime
-          Description: ONNX Runtime C API
-          Version: ${ORT_VERSION}
-          Libs: -L\${libdir} -lonnxruntime
-          Cflags: -I\${includedir}
-          EOF
-          sudo sed -i 's/^          //' /usr/local/lib/pkgconfig/libonnxruntime.pc
+          sudo install -d -o "$(id -u)" /opt/onnxruntime /usr/local/lib/pkgconfig
+          python3 scripts/ci/ort_nuget_install.py --version "${ORT_VERSION}" \
+            --prefix /opt/onnxruntime
           echo "/opt/onnxruntime/lib" | sudo tee /etc/ld.so.conf.d/onnxruntime.conf
           sudo ldconfig
 
@@ -410,15 +392,17 @@ jobs:
           CXX: g++
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           sudo -E apt-get -yq install ccache ninja-build nasm gcc g++ gpg-agent pkg-config libzimg-dev
           # ADR-1360 (design notes)
           bash scripts/ci/install-intel-ocloc.sh
-          wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
-            | sudo gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg
+          wget --tries=3 --retry-connrefused --retry-on-host-error -qO "$RUNNER_TEMP/oneapi-key.asc" \
+            https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+          sudo gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg "$RUNNER_TEMP/oneapi-key.asc"
+          rm -f "$RUNNER_TEMP/oneapi-key.asc"
           echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           set -a; . ./build-config.env; set +a
           sudo -E apt-get -yq install "${ONEAPI_APT_PACKAGE}" cmake
           # ADR-1231 (design notes)
@@ -448,14 +432,14 @@ jobs:
       - name: Install base deps for CUDA-only builds
         if: ${{ (matrix.cuda && !matrix.sycl) && steps.impact.outputs.c_core == 'true' }}
         run: |
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           sudo -E apt-get -yq install ccache ninja-build nasm gcc g++ pkg-config libzimg-dev
 
       # ADR-1225 (design notes)
       - name: Install ROCm / HIP toolchain
         if: ${{ (matrix.hip) && steps.impact.outputs.c_core == 'true' }}
         run: |
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           sudo -E apt-get -yq install --no-install-recommends \
             ccache ninja-build nasm libomp-dev pkg-config gcc g++ jq libzimg-dev
           # ADR-1231 (design notes)
@@ -948,7 +932,7 @@ jobs:
           WINDOWS_BASEKIT_URL: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/1f18901e-877d-469d-a41a-a10f11b39336/intel-oneapi-base-toolkit-2025.3.0.372_offline.exe
           WINDOWS_DPCPP_COMPONENTS: intel.oneapi.win.cpp-dpcpp-common
         run: |
-          curl.exe --output %TEMP%\webimage.exe --url %WINDOWS_BASEKIT_URL% --retry 5 --retry-delay 5
+          curl.exe --output %TEMP%\webimage.exe --url %WINDOWS_BASEKIT_URL% --retry 5 --retry-all-errors --retry-delay 5
           start /b /wait %TEMP%\webimage.exe -s -x -f webimage_extracted --log extract.log
           del %TEMP%\webimage.exe
           webimage_extracted\bootstrapper.exe -s --action install --components=%WINDOWS_DPCPP_COMPONENTS% --eula=accept -p=NEED_VS2017_INTEGRATION=0 -p=NEED_VS2019_INTEGRATION=0 -p=NEED_VS2022_INTEGRATION=0 --log-dir=.
@@ -1175,11 +1159,33 @@ jobs:
         shell: cmd
         run: python scripts\ci\prefetch_go_modules.py
 
+      # Issue 3481: the first GNU gcc/cc run on this runner takes 9-13 s and the
+      # next under 1 s; warm the compilers the RGB math contract test resolves so
+      # first-run cost stays outside its 28 s cap.
+      - name: Warm up test compilers
+        shell: cmd
+        run: python core\test\test_vmafx_rgb_math_contract.py --warm-up
+
       - name: Run fast unit suite
         shell: cmd
         run: >-
           python scripts\ci\run_meson_test.py --
           -C core\build --suite fast --print-errorlogs
+
+      - name: Upload meson testlog
+        if: ${{ (!cancelled()) && env.GITEA_ACTIONS != 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: windows-arm64-msvc-testlog
+          path: core\build\meson-logs\testlog.txt
+          if-no-files-found: warn
+      - name: Upload meson testlog (Gitea)
+        if: ${{ (!cancelled()) && env.GITEA_ACTIONS == 'true' }}
+        uses: actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2
+        with:
+          name: windows-arm64-msvc-testlog
+          path: core\build\meson-logs\testlog.txt
+          if-no-files-found: warn
 
       - name: Upload vmaf.exe artifact
         if: ${{ env.GITEA_ACTIONS != 'true' }}

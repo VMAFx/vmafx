@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1439), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1459), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5767,3 +5767,83 @@ Every ADR, one heading each (1439), so the site search finds an ADR by its title
 ## ADR-3403: Shared FFmpeg fix series forge API download fallback
 
 [3403-ffmpeg-series-forge-api-fallback](3403-ffmpeg-series-forge-api-fallback.md)
+
+## ADR-3519: Render the README status badges in one style onto a `badges` branch
+
+[3519-readme-badges-rendered-branch](3519-readme-badges-rendered-branch.md)
+
+## ADR-3530: Reject new Bandit findings against the merge base
+
+[3530-bandit-new-merge-base-gate](3530-bandit-new-merge-base-gate.md)
+
+## ADR-3531: Refuse tool attribution in pull request commits and bodies
+
+[3531-dco-attribution-identity-refusal](3531-dco-attribution-identity-refusal.md)
+
+## ADR-3532: Preserve trusted executable launch links
+
+[3532-trusted-executable-launch-links](3532-trusted-executable-launch-links.md)
+
+## ADR-3533: Install the tidy compiler from the Ubuntu archive
+
+[3533-tidy-gcc-from-ubuntu-archive](3533-tidy-gcc-from-ubuntu-archive.md)
+
+## ADR-3534: Preserve executable links in the resolved file's directory
+
+[3534-same-directory-launch-link-trust](3534-same-directory-launch-link-trust.md)
+
+## ADR-3535: Isolate fixture repositories from inherited Git configuration
+
+[3535-fixture-git-config-isolation](3535-fixture-git-config-isolation.md)
+
+## ADR-3536: Escalate own pull requests touching platform launch paths to full CI
+
+[3536-ci-tier-full-paths](3536-ci-tier-full-paths.md)
+
+## ADR-3537: Fail closed and retry on APT package index refreshes
+
+[3537-apt-update-fail-closed](3537-apt-update-fail-closed.md)
+
+## ADR-3539: Count non-Actions app check runs outside the aggregator run window
+
+[3539-aggregator-app-checks-outside-run-window](3539-aggregator-app-checks-outside-run-window.md)
+
+## ADR-3541: Pin Ubuntu development packages to one archive snapshot
+
+[3541-dev-image-apt-snapshot](3541-dev-image-apt-snapshot.md)
+
+## ADR-3544: Refuse bot-authored commits outside the bot's own branch
+
+[3544-dco-refuse-bot-authored-commits](3544-dco-refuse-bot-authored-commits.md)
+
+## ADR-3545: Tools virtual environment and CI gate for Ubuntu dev images
+
+[3545-dev-image-tools-venv-ci](3545-dev-image-tools-venv-ci.md)
+
+## ADR-3551: Anchor edited pull-request aggregator runs at ready-for-review
+
+[3551-aggregator-edited-window](3551-aggregator-edited-window.md)
+
+## ADR-3552: Run the render pull request workflow on every master push
+
+[3552-docs-render-on-master-push](3552-docs-render-on-master-push.md)
+
+## ADR-3553: Require the read-only and final-message clauses in vmafx review lane briefs
+
+[3553-lane-brief-review-clause](3553-lane-brief-review-clause.md)
+
+## ADR-3554: Tester Image runs on light-tier pull requests that change the image's own inputs
+
+[3554-tester-image-own-input-lane](3554-tester-image-own-input-lane.md)
+
+## ADR-3555: Pin Intel NEO and Level Zero release asset URLs and SHA-256 digests in a lock file
+
+[3555-intel-neo-lock-file](3555-intel-neo-lock-file.md)
+
+## ADR-3558: Opt-in node sidecar feedback client, HTTP /readyz readiness probe, and soft per-node affinity
+
+[3558-node-sidecar-readiness-gpu-affinity](3558-node-sidecar-readiness-gpu-affinity.md)
+
+## ADR-3561: Install CI ONNX Runtime from pinned NuGet packages
+
+[3561-ort-nuget](3561-ort-nuget.md)

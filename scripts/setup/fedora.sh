@@ -39,7 +39,7 @@ if [[ "$INSTALL_LINTERS" == "true" ]]; then
     # Pin the explicit version URL — /releases/latest/download/ 404s once
     # upstream tags a newer version since the filename embeds the version.
     SHFMT_VERSION="v3.13.1"
-    $SUDO curl -fsSL -o /usr/local/bin/shfmt \
+    $SUDO curl --retry 3 --retry-all-errors -fsSL -o /usr/local/bin/shfmt \
       "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64"
     $SUDO chmod +x /usr/local/bin/shfmt
   fi
