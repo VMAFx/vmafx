@@ -133,6 +133,11 @@ class BaseImageGate(unittest.TestCase):
         self.assertEqual(result.returncode, expected, output)
         return output
 
+    def test_root_containerfile_is_in_scope(self) -> None:
+        output = self.check("FROM alpine:latest\n", 1, "Containerfile.vmafx")
+        self.assertIn("Containerfile.vmafx", output)
+        self.assertIn("hardcodes a base image", output)
+
     def test_external_from_is_rejected_with_or_without_digest(self) -> None:
         for ref in ("alpine", "alpine:latest", "registry.example/base:1", self.pin):
             with self.subTest(ref=ref):

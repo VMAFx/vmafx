@@ -27,7 +27,6 @@ func TestGoAndPythonArgvParity(t *testing.T) {
 	if pythonBin == "" {
 		candidates := []string{
 			repoRoot + "/.claude/worktrees/tmp-mcpvenv/bin/python3",
-			"/home/kilian/dev/vmaf/.claude/worktrees/tmp-mcpvenv/bin/python3",
 			"python3",
 		}
 		for _, c := range candidates {
