@@ -1,0 +1,42 @@
+{
+  "packages": {
+    "cpu": {
+      "source": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/{version}/microsoft.ml.onnxruntime.{version}.nupkg",
+      "header_dir": "build/native/include",
+      "libraries": [
+        "libonnxruntime.so",
+        "libonnxruntime_providers_shared.so"
+      ],
+      "versions": {
+        "1.22.0": {
+          "sha256": "d571e63a2329baacb713f441e65ad75284de354db6e1ac435fe4bebbb417986a",
+          "size": 121402697
+        },
+        "1.29.0": {
+          "sha256": "4557021fec4da3924e2e12ff44b1cc50b176de0d2c5c7daa89ab11c208b3a454",
+          "size": 155008437
+        },
+        "1.30.0": {
+          "sha256": "30df119bd9164eaa187666d93147448fdd4a9a1a3caf83f1505daf7af2d1c5d2",
+          "size": 157230753
+        }
+      }
+    },
+    "gpu": {
+      "source": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.gpu.linux/{version}/microsoft.ml.onnxruntime.gpu.linux.{version}.nupkg",
+      "header_dir": "buildTransitive/native/include",
+      "libraries": [
+        "libonnxruntime.so",
+        "libonnxruntime_providers_shared.so",
+        "libonnxruntime_providers_cuda.so",
+        "libonnxruntime_providers_tensorrt.so"
+      ],
+      "versions": {
+        "1.22.0": {
+          "sha256": "d3dabd8235b7a04a67838a3b93437420f1a709528a8d8611e08bedbb08206d1d",
+          "size": 227384342
+        }
+      }
+    }
+  }
+}

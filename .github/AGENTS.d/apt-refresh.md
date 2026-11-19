@@ -10,6 +10,9 @@ Workflows and composite actions refresh APT package lists only via
 `scripts/ci/apt-install-cached.sh` (`install` for cached package sets, `refresh`
 before custom `apt-get install` steps after `actions/checkout`):
 
+LLVM installer runs first in some jobs: `install-llvm.sh` calls
+`apt-install-cached.sh drop-sources` before either source mode refreshes.
+
 ```yaml
 bash scripts/ci/apt-install-cached.sh refresh
 ```
