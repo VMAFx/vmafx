@@ -42,8 +42,8 @@ fail=0
 #   error: the script exits 2 (its source listing failed); FILTER=broken
 #          puts a mirror filter that exits 3 into the fixture repo
 # make_repo <dir> <file>... — a committed fixture repo holding the files under
-# core/src/feature/ (the gate globs 'core/src/**/*.c', which needs one
-# subdirectory level under core/src/) and the gate's mirror filter;
+# core/src/feature/ (the gate globs 'core/src/**/*.c'), or directly under
+# core/src/ when TOPLEVEL=1, and the gate's mirror filter;
 # FILTER=broken replaces the filter with one that exits 3.
 make_repo() {
   local repo="$1" relpath i=0
@@ -51,7 +51,11 @@ make_repo() {
   git -C "$repo" init -q
   mkdir -p "$repo/core/src/feature" "$repo/scripts/ci"
   for src_path in "$@"; do
-    relpath="core/src/feature/fixture_${i}.c"
+    if [[ "${TOPLEVEL:-0}" == 1 ]]; then
+      relpath="core/src/fixture_${i}.c"
+    else
+      relpath="core/src/feature/fixture_${i}.c"
+    fi
     cp "$src_path" "$repo/$relpath"
     git -C "$repo" add "$relpath"
     i=$((i + 1))
@@ -70,6 +74,7 @@ verdict() {
   case "$mode" in
     error) [[ "$rc" -eq 2 && "$skipped" -eq 0 ]] ;;
     skip) [[ "$rc" -eq 0 && "$skipped" -eq 1 ]] ;;
+    finding) [[ "$rc" -eq 1 && "$skipped" -eq 0 ]] ;;
     match) [[ "$rc" -le 1 && "$skipped" -eq 0 ]] ;;
     *)
       printf 'ERROR: unknown mode %s\n' "$mode" >&2
@@ -145,6 +150,40 @@ int bare_func(int x) {
 }
 EOF
 
+# Fixture: a file directly under core/src/ with a function over the line
+# threshold and no assert. The old pathspec ('core/src/**/*.c' without
+# :(glob)) never listed it, so the gate read as "skipping" and passed.
+toplevel_no_assert_file="$TMPDIR_TESTS/toplevel_no_assert.c"
+cat >"$toplevel_no_assert_file" <<'EOF'
+// Copyright 2026 Lusoris
+// SPDX-License-Identifier: BSD-2-Clause-Patent
+
+int top_level_without_assert(int x) {
+    int y = x;
+    y += 1;
+    y *= 2;
+    y -= 3;
+    y += 4;
+    y *= 5;
+    y -= 6;
+    y += 7;
+    y *= 8;
+    y -= 9;
+    y += 10;
+    y *= 11;
+    y -= 12;
+    y += 13;
+    y *= 14;
+    y -= 15;
+    y += 16;
+    y *= 17;
+    y -= 18;
+    y += 19;
+    y *= 20;
+    return y;
+}
+EOF
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -173,6 +212,11 @@ run_test "Lusoris + Netflix mix — Lusoris file found" match "$new_header_file"
 
 # T7: a mirror filter that fails must fail the gate, not read as "no files".
 FILTER=broken run_test "a failing mirror filter fails the gate" error "$new_header_file"
+
+# T8: a file directly under core/src/ is in scope. With the old pathspec the
+# gate found no files and skipped; with ':(glob)' it must report the function.
+TOPLEVEL=1 run_test "an assert-less function directly under core/src/ is a finding" \
+  finding "$toplevel_no_assert_file"
 
 # ---------------------------------------------------------------------------
 # Summary

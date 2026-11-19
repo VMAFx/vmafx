@@ -175,7 +175,7 @@ vmafx.env.node — the vmafx-node container (templates/node.yaml).
 {{- end }}
             # The binary defaults grpc.listen to :50052 for standalone use.
             # Pin it explicitly to deploy's configurable grpcPort so the
-            # ClusterIP Service and tcpSocket probes always follow chart values.
+            # ClusterIP Service and tcpSocket liveness probe always follow chart values.
             - name: VMAFX_GRPC_LISTEN
               value: ":{{ .Values.node.grpcPort | default 50052 }}"
             # The HTTP listener of /metrics and the probe endpoints; pinned to
@@ -206,6 +206,12 @@ vmafx.env.node — the vmafx-node container (templates/node.yaml).
 {{- if .Values.node.ebpf.enabled }}
             - name: VMAFX_EBPF_MOUNT_PREFIX
               value: {{ .Values.node.ebpf.mountPrefix | quote }}
+{{- end }}
+{{- if .Values.node.sidecar.enabled }}
+            # Online-training sidecar client (ADR-3558); rendered only when enabled
+            # so pods without a co-located sidecar never dial /tmp/vmafx-sidecar.sock.
+            - name: VMAFX_SIDECAR_ENABLED
+              value: "true"
 {{- end }}
 {{- if .Values.storage.rclone.config }}
             # Only with the rclone Secret mounted below; without it rclone uses
