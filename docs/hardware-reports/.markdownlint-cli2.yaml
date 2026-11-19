@@ -1,0 +1,14 @@
+---
+# The generated index page is one HTML row per line (markdownlint MD013) made
+# of inline HTML by design (MD033); both rules are off for this directory only.
+# The generated output is never hand-formatted to satisfy lint.
+config:
+  default: true
+  MD013: false
+  MD024:
+    siblings_only: true
+  MD025:
+    front_matter_title: ""
+  MD033: false
+  MD041:
+    allow_preamble: true

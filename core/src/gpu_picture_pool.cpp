@@ -23,6 +23,7 @@
  * `cuda/ring_buffer.c` — same callback-based round-robin shape, now
  * shared between CUDA, SYCL, HIP, and Metal backends. */
 
+#include <cassert>
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
@@ -54,6 +55,8 @@ namespace
  * completes, so a rollback callback failure remains best effort (ADR-1336). */
 int alloc_pictures(VmafGpuPicturePool *p)
 {
+    assert(p->pic != nullptr);
+    assert(p->cfg.pic_cnt > 0);
     unsigned alloc_cnt = 0;
     int err = 0;
 
@@ -104,7 +107,6 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
         return -EINVAL;
 
     int err = 0;
-
     /* Publish to caller's *pool before any later failure path.  Set *pool = NULL
      * on every failure path so the caller can treat a non-zero return as
      * "pool not constructed" — prevents UAF via vmaf_gpu_picture_pool_close()
@@ -131,6 +133,9 @@ int vmaf_gpu_picture_pool_init(VmafGpuPicturePool **pool, VmafGpuPicturePoolConf
         return -ENOMEM;
     }
     p->released = reinterpret_cast<bool *>(p->pic + p->cfg.pic_cnt);
+    /* The flag region shares p->pic's malloc block and must end inside it. */
+    assert(reinterpret_cast<char *>(p->released + p->cfg.pic_cnt) <=
+           reinterpret_cast<char *>(p->pic) + slot_bytes * p->cfg.pic_cnt);
     memset(p->released, 0, sizeof(*p->released) * p->cfg.pic_cnt);
 
     err = pthread_mutex_init(&p->busy, nullptr);
@@ -160,7 +165,7 @@ int vmaf_gpu_picture_pool_close(VmafGpuPicturePool *pool)
     int err = pthread_mutex_lock(&pool->busy);
     if (err)
         return negative_errno(err);
-
+    assert(pool->pic != nullptr);
     int first_free_err = 0;
     for (unsigned i = 0; i < pool->cfg.pic_cnt; i++) {
         if (pool->released[i])
@@ -209,6 +214,7 @@ int vmaf_gpu_picture_pool_fetch(VmafGpuPicturePool *pool, VmafPicture *pic)
     int err = pthread_mutex_lock(&pool->busy);
     if (err)
         return err;
+    assert(pool->curr_idx < pool->cfg.pic_cnt);
     const unsigned pic_idx = pool->curr_idx;
     pool->curr_idx = (pool->curr_idx + 1) % pool->cfg.pic_cnt;
     err |= pthread_mutex_unlock(&pool->busy);

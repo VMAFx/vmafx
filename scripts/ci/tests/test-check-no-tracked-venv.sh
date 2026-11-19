@@ -9,6 +9,8 @@ set -euo pipefail
 # Drop the git hook environment and the fixture identity (see the helper).
 # shellcheck source=/dev/null
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/clean-git-env.sh"
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/symlink-probe.sh"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 script="$here/../check-no-tracked-venv.sh"
 # Physical path: `make -C` resolves a symbolic link in TMPDIR (macOS /var), and
@@ -45,11 +47,15 @@ git -C "$tmp" rm -q --cached .venv-linux/bin/python
 mk venv/lib/site.py
 expect "file inside venv/ flagged" 1
 git -C "$tmp" rm -q --cached venv/lib/site.py
-ln -s /nonexistent "$tmp/.venv"
-git -C "$tmp" add .venv
-expect ".venv symlink flagged" 1
-git -C "$tmp" rm -q --cached .venv
-rm "$tmp/.venv"
+if reason=$(symlink_probe "$tmp"); then
+  ln -s /nonexistent "$tmp/.venv"
+  git -C "$tmp" add .venv
+  expect ".venv symlink flagged" 1
+  git -C "$tmp" rm -q --cached .venv
+  rm "$tmp/.venv"
+else
+  echo "SKIP: .venv symlink flagged: cannot create a symbolic link in $tmp: $reason"
+fi
 
 # Untracked strays in the worktree root (a bundled uv drops both).
 mkdir -p "$tmp/.venv/bin"
@@ -64,9 +70,13 @@ expect "stray Windows-shaped root .venv without Scripts/pip.exe flagged" 1
 touch "$tmp/.venv/Scripts/pip.exe"
 expect "Windows root .venv (Scripts/pip.exe) passes" 0
 rm -r "$tmp/.venv"
-ln -s /nonexistent "$tmp/.venv"
-expect "untracked dangling root .venv symlink flagged" 1
-rm "$tmp/.venv"
+if reason=$(symlink_probe "$tmp"); then
+  ln -s /nonexistent "$tmp/.venv"
+  expect "untracked dangling root .venv symlink flagged" 1
+  rm "$tmp/.venv"
+else
+  echo "SKIP: untracked dangling root .venv symlink flagged: cannot create a symbolic link in $tmp: $reason"
+fi
 mkdir -p "$tmp/.venv/bin"
 touch "$tmp/.venv/bin/pip"
 printf '[[package]]\nname = "vmafx-tooling"\nsource = { virtual = "." }\n' >"$tmp/uv.lock"
@@ -131,16 +141,20 @@ case "$got" in
     ;;
 esac
 # A dangling .venv symlink stays off PATH: on PATH it makes execvp fail (ELOOP).
-ln -s .venv "$tmp/.venv"
-got=$(probe probe-path) || exit 1
-case "$got" in
-  "$tmp/.venv/bin")
-    echo "FAIL dangling .venv symlink goes first on PATH" >&2
-    exit 1
-    ;;
-  *) echo "ok   dangling .venv symlink stays off PATH" ;;
-esac
-rm "$tmp/.venv"
+if reason=$(symlink_probe "$tmp"); then
+  ln -s .venv "$tmp/.venv"
+  got=$(probe probe-path) || exit 1
+  case "$got" in
+    "$tmp/.venv/bin")
+      echo "FAIL dangling .venv symlink goes first on PATH" >&2
+      exit 1
+      ;;
+    *) echo "ok   dangling .venv symlink stays off PATH" ;;
+  esac
+  rm "$tmp/.venv"
+else
+  echo "SKIP: dangling .venv symlink stays off PATH: cannot create a symbolic link in $tmp: $reason"
+fi
 # A checkout path with an apostrophe never becomes shell text.
 quoted="$tmp/it's"
 mkdir "$quoted"

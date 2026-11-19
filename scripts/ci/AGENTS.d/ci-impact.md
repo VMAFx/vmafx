@@ -111,6 +111,15 @@ area: gates
   work job calls, install-cuda-toolkit.sh. Broad selector stays full tier + master push =
   second barrier. Never fold narrow into broad, never move `impact`/gate/pick back to
   `outputs.full`; `test_ci_routing_contract.py` plants all three.
+- **Fourth own-input lane: `Tester Image` (ADR-3554).** `docker-publish-tester.yml`
+  `impact` + `tester-image` gate on `outputs.light`; selector `tester_image`
+  (`own_paths_only`, unchanged) feeds both tiers; `validate`, `refs-x86`, `build`
+  gated on `needs.impact.outputs.selected == 'true'`; GPU + publish jobs off pull
+  requests. `required-aggregator.yml` `delayedMissing` filters non-`eventExempt`
+  required gates (ignoring skipped dependencies of `notOwed` contexts) -> light PR
+  waits while own-input lane work runs. Never move `impact` or `tester-image` back to
+  `outputs.full`; `test_ci_routing_contract.py` + `test_ci_aggregator_tier.py` plant
+  both regressions.
 - **`build_work` = `c_core` + `python/**`, `compat/**`, build / pytest-timeout / tox
   locks, prune script.** `build.yml` work job (`Linux Intel LLVM`, `macOS Clang+Metal`,
   `Windows MSVC+CUDA (full)`) runs `compat/vmaf/tests/test_decorator_extended.py`
