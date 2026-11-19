@@ -41,6 +41,11 @@ SERIALISED: dict[tuple[str, str], str] = {
         "publishes the dev container image to the registry; two publishes must not "
         "interleave, and a pending publish replaced by a newer one is fine (latest wins)"
     ),
+    ("docs-render-pr.yml", "workflow"): (
+        "one render branch and pull request per repository (ADR-3373, ADR-3552); "
+        "cancel-in-progress is false so one run finishes and one pending run "
+        "renders the latest master tip"
+    ),
     ("docs.yml", "deploy"): (
         "one Pages deployment per repository (ADR-1294); cancelling one mid-write is worse"
     ),

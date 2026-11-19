@@ -1,0 +1,1 @@
+| [ADR-3537](3537-apt-update-fail-closed.md) | Require `--error-on=any` and `-o Acquire::Retries=3` on every `apt-get update` invocation across tracked YAML, shell and container sources, enforced by `AptUpdateFailClosedContract` in `scripts/ci/test_fail_closed_ci.py`. | Accepted | ci, build, docker, tooling |

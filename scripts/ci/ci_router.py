@@ -168,6 +168,7 @@ def tier_decision(event: SyntheticEvent, config_path: Path) -> ci_tier.Decision:
         facts,
         config,
         release_exempt=lambda: ci_tier.release_exempt_from_script(facts, event.paths),
+        changed_paths=lambda: event.paths,
     )
 
 

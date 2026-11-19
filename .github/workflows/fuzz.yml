@@ -105,14 +105,12 @@ jobs:
         # Tidy Ratchet run passed 5.2m); 10 min is at least 1.25x the slowest.
         timeout-minutes: 10
         run: |
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
           # clang from apt.llvm.org: ubuntu-24.04's clang 18 reports
           # __cpp_concepts=201907L and libstdc++ gates <expected> on >= 202002L
           # (raised in clang 19), so core/src/dict.cpp cannot compile with the
           # distro clang at any -std= level.
           sudo bash scripts/ci/install-llvm.sh 22
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           mkdir -p "${RUNNER_TEMP}/apt-archives"
           if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
             sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/

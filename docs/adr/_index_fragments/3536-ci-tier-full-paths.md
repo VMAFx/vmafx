@@ -1,0 +1,1 @@
+| [ADR-3536](3536-ci-tier-full-paths.md) | Escalate own pull requests whose changed paths match `.github/ci-tier.json` `full_paths` (`fnmatch.fnmatchcase`) to the `full` tier, fail closed when changed paths are unavailable, and enforce `git ls-files` drift via `--check-full-paths`. | Accepted (amends [ADR-2169](2169-ci-fewer-runs.md)) | ci, testing |

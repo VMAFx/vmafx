@@ -1,0 +1,1 @@
+- Preserve macOS framework virtual environments when an owned interpreter link shares the resolved executable's directory; retain link and directory ownership checks and the existing protections for every other link.

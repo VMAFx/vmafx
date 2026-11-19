@@ -24,6 +24,11 @@ pre-commit run --all-files  # if .pre-commit-config.yaml hooks are installed
 The format-check and pre-commit pair catches roughly the same surface as the
 `pre-commit` job of `lint-and-format.yml`.
 
+The Makefile governance targets (`verify-all`, `compile-context`, `audit`,
+`hiss-coverage`, `dedupe-check`) run the engine the repository pins through
+`.config/praetor/engine.mk` (`make praetor-engine-path` prints its path), never
+the binary on `PATH` (issue 3468).
+
 The duplicate scan is deliberately separate from `standardsctl audit`: the audit
 baseline does not include AST clones. `make verify-all`, pre-commit, pre-push
 and the required Standards job therefore invoke `standardsctl dedupe scan .`
@@ -180,6 +185,24 @@ GPU builds, coverage, sanitizers, the dev container, docker image, FFmpeg
 integration, tester and release dry-run lanes, and the self-hosted hardware lanes.
 Those run on the master push, so a break in them is found there, after the merge
 train landed the change. To see one on a pull request, add the label `ci: full`.
+
+An own pull request also escalates to the `full` tier automatically when any
+changed file matches `full_paths` in `.github/ci-tier.json`, when that tier
+definition changes, or when changed paths cannot be read from the API
+([audit](../research/3536-ci-tier-full-paths.md);
+[ADR-3536](../adr/3536-ci-tier-full-paths.md)). Patterns use Python
+`fnmatch.fnmatchcase` (`*` crosses `/`, case-sensitive, full-string match), and
+`scripts/ci/ci_tier.py --check-full-paths` verifies in pre-commit and pre-push
+that every entry matches at least one tracked file. To add a path, append the
+explicit repository-relative path to `full_paths` in `.github/ci-tier.json` and
+verify with `python3 -B scripts/ci/ci_tier.py --check-full-paths` and
+`python3 -B scripts/ci/tests/test_ci_tier.py`.
+
+Changing the tier definition owes full CI even when the change removes the
+last pattern, and that rule holds for exempt release pull requests too: a
+release branch touching `.github/ci-tier.json` runs the full tier even without
+`autorelease: cut`. Release branches also owe full CI when their changed paths
+cannot be fetched; an unavailable diff never earns the release exemption.
 
 What a contributor sees:
 
@@ -361,7 +384,7 @@ the selectors declared in `.github/ci-impact.json`. There are 27 selectors:
 | `dev_container` | `c_core`, `python`, `ai`, `go`, `shell` plus `dev/` | Dev container build |
 | `doxygen` | `core/include/libvmaf/`, the public-API Doxyfile | Doxygen public API |
 | `helm` | `deploy/helm/` | Helm chart |
-| `tester_image` | `docker/Dockerfile.tester`, `tools/rc1-tester/`, the toolkit install scripts, `build-config.env`, the licence inputs; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Tester Image` ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)) |
+| `tester_image` | `docker/Dockerfile.tester`, `tools/rc1-tester/`, the toolkit install scripts, `build-config.env`, the licence inputs; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Tester Image` on full-tier and light-tier pull requests ([ADR-1687](../adr/1687-required-release-dry-run-legs.md), [ADR-3554](../adr/3554-tester-image-own-input-lane.md)) |
 | `windows_tester_zip` | The Windows zip build scripts, its lock file and the Windows inputs under `tools/rc1-tester/image/`; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Windows Tester Zip` ([ADR-1687](../adr/1687-required-release-dry-run-legs.md)) |
 | `windows_tester_zip_sycl` | Everything `windows_tester_zip` owns, plus `sycl-rows.json`, `prepare_build.py`, `build-config.env` and the SYCL scratch ratchet list; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | The x64 SYCL zip of `Windows Tester Zip` ([ADR-2198](../adr/2198-windows-sycl-leg-and-cut-check.md)) |
 | `windows_msvc_sycl` | C, C++ and header files under `core/` (`*.c`, `*.h`, `*.cpp`, `*.inc`, `*.h.in`), the Meson files under `core/`, `libvmaf-build-matrix.yml`, `werror-args.sh`, `check_msvc_library_names.py`, `run_meson_test.py` and the build lock file; own paths only ([ADR-1700](../adr/1700-tester-selectors-own-paths-only.md)) | `Windows MSVC+SYCL` on a light-tier pull request ([ADR-3279](../adr/3279-msvc-sycl-leg-on-light-tier.md)) |
@@ -486,8 +509,37 @@ check missing from it can be red while the merge button stays green
 
 It runs on every PR and master push. Draft PRs fail immediately; ready PRs poll
 for the named sibling check runs to reach a terminal state and accept
-`success`, `skipped` or `neutral` per check. Results predating the current run
-are excluded, so skipped draft-era checks cannot mask ready validation.
+`success`, `skipped` or `neutral` per check. GitHub Actions check runs older
+than a 2-minute margin before the window anchor are excluded, so skipped
+draft-era checks cannot mask ready validation
+([ADR-3551](../adr/3551-aggregator-edited-window.md)): on `pull_request`
+`edited` events, where a title or body edit re-runs only the
+`rule-enforcement.yml` gates and leaves earlier build and test runs untouched,
+the anchor is the latest `ready_for_review` timeline event (or
+`pull_request.created_at` when never a draft); on every other event, the anchor
+is the aggregator run's own `created_at`. On `edited` events, workflows listed
+in `editedRerunWorkflows` (`.github/workflows/rule-enforcement.yml`) must also
+report from a current-edit run whose `display_title` starts with
+`"[<pull_request.updated_at>] "` (set via top-level `run-name:`): other `Rules`
+check suites on the same head SHA are excluded, and the aggregator fails closed
+when `pull_request.updated_at` is missing or when the `Rules` workflow does not
+start for the edit within the 2-minute registration grace. If two edits land in
+the same second and produce multiple `Rules` runs sharing the edit-stamp prefix
+(in any status), the aggregator fails closed at once and asks for another
+pull-request edit or a commit push. To catch a second same-second `Rules` run
+before passing on an earlier green one, an `edited` aggregator run keeps
+polling until a workflow-runs listing started after the 2-minute registration
+grace, though a duplicate registering after the grace is not seen by that
+aggregator run (its own `Rules` checks still report on the head commit).
+Because `actions/runner` converts any YAML
+string containing `${{` into one expression capped at 21,000 UTF-16 code units
+after `.NET` `Char.IsWhiteSpace` expression trimming,
+`scripts/ci/check-workflow-size.py` also checks every workflow scalar against
+that runner expression bound (`scripts/ci/tests/test_check_workflow_size.py`)
+alongside the 64 KiB file limit.
+`scripts/ci/tests/test_aggregator_edited_window.py` runs the embedded script
+across the edited-event window, stale-suite exclusion, boundary, draft-era
+exclusion and fail-closed API paths.
 
 On a master push the aggregator reads only the push's own check runs: a check
 run whose check suite belongs to a pull-request workflow run on the same commit
@@ -516,10 +568,11 @@ absent or skipped, never failed: the names the run's CI tier does not owe, the
 operator switch is off. `scripts/ci/tests/test_aggregator_absent_fails.py`
 runs the embedded script against both rules.
 
-The aggregator's GitHub API calls (`getWorkflowRun`, `listAllCheckRuns`,
-`pullRequestSuites`) retry HTTP 5xx answers for 15 minutes. If the API still
-answers 5xx, the job fails with `Transient GitHub API failure:`, the call and
-the status, and judges no check: rerun the job, because the code did not fail.
+The aggregator's GitHub API calls (`getWorkflowRun`, `listEventsForTimeline`,
+`listAllCheckRuns`, `pullRequestSuites`) retry HTTP 5xx answers for 15 minutes.
+If the API still answers 5xx, the job fails with `Transient GitHub API failure:`,
+the call and the status, and judges no check: rerun the job, because the code
+did not fail.
 Any other API error ends the job at once.
 `scripts/ci/tests/test_ci_aggregator_tier.py` runs both paths against a stub.
 
@@ -557,11 +610,26 @@ Python, AI, MCP and Go sources the image copies, `supply-chain.yml` and
 `build-native-release-artifacts.sh`. Add the label `ci: full` when a pull
 request changes one of those and needs the image built before it lands.
 
-These are full-tier contexts, with one declared exception
-([ADR-2198](../adr/2198-windows-sycl-leg-and-cut-check.md)): `Windows Tester
-Zip` is an **own-input lane** (`own_input_lanes` of `.github/ci-tier.json`), so
-a pull request from this repository also runs it, but its planner builds only
-what the diff touches. Selector `windows_tester_zip` builds the x64 zip;
+`Tester Image` of `docker-publish-tester.yml` is the fourth own-input lane
+([ADR-3554](../adr/3554-tester-image-own-input-lane.md)). On a light-tier pull
+request (Renovate digest updates included) its `impact` planner and
+`Tester Image` gate run on `needs.tier.outputs.light == 'true'`, reading the
+`own_paths_only` selector `tester_image` (`docker/Dockerfile.tester`,
+`tools/rc1-tester/`, `build-config.env`, the toolkit install scripts, the
+licence inputs and the workflow). When selected, the amd64 tester image builds
+(including `licence-texts`, `notices` and `licence-check`) and runs its report
+before merging; otherwise the gate reports `success` with a skip notice. The
+Required Checks Aggregator also waits while any non-skipped
+`delayedStrictDependencies` work job of an own-input lane runs on the light
+tier, so a fast light-tier run cannot pass before a selected `Tester Image`
+build registers its gate check.
+
+These three release-leg contexts live in `full_only`, with two declared
+own-input-lane exceptions (`own_input_lanes` of `.github/ci-tier.json`):
+`Windows Tester Zip` ([ADR-2198](../adr/2198-windows-sycl-leg-and-cut-check.md))
+and `Tester Image` ([ADR-3554](../adr/3554-tester-image-own-input-lane.md)), so
+a pull request from this repository also runs both, while each planner builds
+only what the diff touches. Selector `windows_tester_zip` builds the x64 zip;
 selector `windows_tester_zip_sycl` (everything the x64 zip reads, plus
 `sycl-rows.json`, `prepare_build.py`, `build-config.env` and the SYCL scratch
 ratchet list) adds the x64 SYCL zip. The arm64 and CUDA zips, `Tester Image`'s

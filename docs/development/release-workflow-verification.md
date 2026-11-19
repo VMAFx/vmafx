@@ -62,7 +62,7 @@ and the build runs only when its selector in
 
 | Selector | Inputs |
 | --- | --- |
-| `tester_image` | `docker/Dockerfile.tester`, `tools/rc1-tester/`, the oneAPI ocloc, CUDA and ROCm install scripts, `build-config.env`, `dev/scripts/fetch-intel-neo.py`, `python/requirements-test-lock.txt`, `REUSE.toml`, `LICENSES/`, `docs/hardware-reports/report.schema.json`, the workflow |
+| `tester_image` | `docker/Dockerfile.tester`, `tools/rc1-tester/`, the oneAPI ocloc, CUDA and ROCm install scripts, `build-config.env`, `dev/scripts/fetch-intel-neo.py`, `dev/scripts/intel-neo-lock.json`, `python/requirements-test-lock.txt`, `REUSE.toml`, `LICENSES/`, `docs/hardware-reports/report.schema.json`, the workflow |
 | `windows_tester_zip` | `scripts/ci/build-windows-tester-bundle.py`, `scripts/ci/check-windows-bundle-imports.py`, `requirements/locks/windows-tester-zip.txt`, `tools/rc1-tester/image/windows/`, the unit, CUDA and SYCL test lists and `sycl-runtime-windows.json` under `tools/rc1-tester/image/`, the workflow |
 
 These are the path lists the two workflows' triggers carried before ADR-1687,

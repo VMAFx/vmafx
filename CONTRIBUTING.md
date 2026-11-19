@@ -95,9 +95,11 @@ files it touches. There is no contributor licence agreement. The required
 check **DCO Sign-off** fails a pull request with an unsigned commit; fix a
 branch with `git rebase --signoff origin/master`, then
 `git push --force-with-lease`. Bot commits (Renovate, release automation) are
-exempt. The check applies to pull requests created on or after
-2026-10-09 (the cutoff in `scripts/ci/dco-cutoff.txt`); earlier pull requests
-are grandfathered. Details, the check command and the exact exemptions:
+exempt from sign-off. The sign-off requirement applies to pull requests
+created on or after 2026-10-09 (the cutoff in `scripts/ci/dco-cutoff.txt`);
+earlier pull requests are grandfathered for sign-off, while model and coding
+tool attribution checks run on every pull request. Details, the check command
+and the exact exemptions:
 [DCO sign-off](docs/development/dco.md).
 
 ## Branch naming

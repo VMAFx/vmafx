@@ -108,6 +108,7 @@
     "SECURITY.md",
     "SPONSORS.md",
     "SUPPORT.md",
+    "bandit.yml",
     "buf.gen.yaml",
     "buf.yaml",
     "clippy.toml",
@@ -313,6 +314,7 @@
         "LICENSES/**",
         ".markdownlint.json",
         ".codacy.yml",
+        "bandit.yml",
         ".codespellrc"
       ]
     },
@@ -418,6 +420,7 @@
         "scripts/ci/install-rocm-from-image.sh",
         "build-config.env",
         "dev/scripts/fetch-intel-neo.py",
+        "dev/scripts/intel-neo-lock.json",
         "python/requirements-test-lock.txt",
         "REUSE.toml",
         "NOTICE",
@@ -497,7 +500,12 @@
         "requirements/locks/build.txt",
         "requirements/locks/pytest-timeout.txt",
         "requirements/locks/tox.txt",
-        "scripts/ci/prune-corrupt-fixtures.sh"
+        "scripts/__init__.py",
+        "scripts/ci/prune-corrupt-fixtures.sh",
+        "scripts/lib/__init__.py",
+        "scripts/lib/http_stand_in.py",
+        "scripts/lib/safe_subprocess.py",
+        "scripts/lib/vmaftest.py"
       ]
     },
     "tiny_ai": {
@@ -722,6 +730,23 @@
         "scripts/ci/upstream-*.sh",
         "scripts/ci/upstream_consumer_scores.py",
         ".github/workflows/ffmpeg-integration.yml"
+      ]
+    },
+    "ubuntu_dev_images": {
+      "own_paths_only": true,
+      "patterns": [
+        "docker/dev/ubuntu-26.04.Dockerfile",
+        "docker/dev/ubuntu-26.04-cuda.Dockerfile",
+        "docker/dev/ubuntu-26.04-sycl.Dockerfile",
+        "scripts/setup/ubuntu.sh",
+        "requirements/locks/build.txt",
+        "requirements/locks/dev-linters.txt",
+        "build-config.env",
+        ".dockerignore",
+        ".github/workflows/dev-container-build.yml",
+        "scripts/ci/install-cuda-toolkit.sh",
+        "scripts/ci/docker-hub-mirror.sh",
+        "scripts/ci/free-runner-disk.sh"
       ]
     }
   }
