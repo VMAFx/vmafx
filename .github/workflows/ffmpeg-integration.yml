@@ -57,7 +57,9 @@ jobs:
 
   ffmpeg-work:
     needs: impact
-    if: needs.impact.outputs.selected == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    if: >-
+      (needs.impact.outputs.selected == 'true' || needs.impact.outputs.consumers == 'true') &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     strategy:
       fail-fast: false
       matrix:
@@ -150,10 +152,17 @@ jobs:
           fi
           sudo make install
 
+      - name: Execute the migration guide's FFmpeg filter and CLI rows
+        env:
+          VMAF_BIN: ${{ github.workspace }}/core/build/tools/vmaf
+        run: python3 scripts/docs/check_migration_equivalence.py --execute
+
   # Build-only: FFmpeg with SYCL patch (no GPU hardware on runners)
   ffmpeg-sycl-work:
     needs: impact
-    if: needs.impact.outputs.selected == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    if: >-
+      (needs.impact.outputs.selected == 'true' || needs.impact.outputs.consumers == 'true') &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     # ADR-1297 — required. Build-only FFmpeg with the SYCL patch applied; no
     # other leg links that patch-stack surface.
     name: FFmpeg SYCL work
@@ -268,10 +277,11 @@ jobs:
               exit 1
             fi
           done < ../ffmpeg-patches/series.txt
-          # No patch in the series adds an `--enable-libvmaf-sycl` flag, so
-          # there is none to pass.
+          # Both filters are exercised below: libvmaf for the upstream row and
+          # libvmafx for the fork row, so configure enables both.
           PKG_CONFIG_PATH="/usr/local/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH" \
           ./configure --fatal-warnings --enable-version3 --enable-libvmaf \
+            --enable-libvmafx \
             --enable-libvpl --disable-indevs --cc="$CC" --cxx="$CXX" \
             || { tail -50 ffbuild/config.log; exit 1; }
           make -j "$(nproc)" build 2>&1 | tee /tmp/ffmpeg-build.log
@@ -291,6 +301,9 @@ jobs:
           fi
           sudo make install
           echo "FFmpeg with SYCL support built successfully"
+
+      - name: Execute the migration guide's FFmpeg filter rows
+        run: python3 scripts/docs/check_migration_equivalence.py --execute
 
   # ADR-2783 (upstream 3e1385bed, Q-300): the configured FFmpeg release with
   # the whole patch series, compiled by cl.exe through FFmpeg's own configure
@@ -458,7 +471,7 @@ jobs:
       - name: Require selected FFmpeg matrix work
         env:
           PLAN_RESULT: ${{ needs.impact.result }}
-          SELECTED: ${{ needs.impact.outputs.selected }}
+          SELECTED: ${{ needs.impact.outputs.selected == 'true' || needs.impact.outputs.consumers == 'true' }}
           GH_TOKEN: ${{ github.token }}
         run: |
           # Judge this leg's own job: the matrix job's aggregate result covers every leg.
@@ -484,7 +497,7 @@ jobs:
       - name: Require selected FFmpeg matrix work
         env:
           PLAN_RESULT: ${{ needs.impact.result }}
-          SELECTED: ${{ needs.impact.outputs.selected }}
+          SELECTED: ${{ needs.impact.outputs.selected == 'true' || needs.impact.outputs.consumers == 'true' }}
           GH_TOKEN: ${{ github.token }}
         run: |
           # Judge this leg's own job: the matrix job's aggregate result covers every leg.
@@ -502,7 +515,7 @@ jobs:
       - name: Require selected FFmpeg SYCL work
         env:
           PLAN_RESULT: ${{ needs.impact.result }}
-          SELECTED: ${{ needs.impact.outputs.selected }}
+          SELECTED: ${{ needs.impact.outputs.selected == 'true' || needs.impact.outputs.consumers == 'true' }}
           WORK_RESULT: ${{ needs.ffmpeg-sycl-work.result }}
         run: |
           if [ "$PLAN_RESULT" != success ]; then
