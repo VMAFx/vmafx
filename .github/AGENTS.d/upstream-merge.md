@@ -10,7 +10,7 @@ Netflix/vmaf ships its own workflows under `.github/workflows/`
 (CI, release, etc.). Fork's workflows live alongside them; file
 collisions are rare because fork-added workflow names
 (`rule-enforcement.yml`, `nightly-bisect.yml`, `supply-chain.yml`,
-`renovate.yml`, etc.) don't clash with upstream's names. On sync:
+etc.) don't clash with upstream's names. On sync:
 
 1. Preserve every fork-added workflow verbatim unless ADR that
    introduced it is superseded.
