@@ -30,6 +30,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -63,9 +64,9 @@ const (
 	// (ADR-1049 — replaces the old fixed feedbackRetryInterval constant).
 	feedbackRetryBase = 2 * time.Second
 
-	// feedbackRetryMax caps the exponential backoff to avoid log noise during
-	// extended sidecar outages (e.g. rolling restarts).
-	feedbackRetryMax = 2 * time.Minute
+	// feedbackRetryMax caps the exponential backoff so an enabled sidecar
+	// recovers readiness within 30 s of its Unix socket appearing (ADR-3558).
+	feedbackRetryMax = 15 * time.Second
 )
 
 // FeedbackMessage is the JSON envelope sent to the sidecar.
@@ -110,13 +111,20 @@ const (
 // so its lifetime is governed entirely by the Start/Close pair and no goroutine
 // leaks past Close().
 type FeedbackClient struct {
+	enabled    bool
 	socketPath string
 	queue      chan *FeedbackMessage
 	log        *slog.Logger
 
+	// dialFn, retryBase and retryMax allow unit tests to count dial attempts
+	// and tighten retry intervals without altering production defaults.
+	dialFn    func(ctx context.Context, socketPath string) (net.Conn, error)
+	retryBase time.Duration
+	retryMax  time.Duration
+
 	// drainCtx / cancel own the drainer goroutine's lifetime. cancel is wired
-	// in Start() and fired by Close() to stop the drainer after the current
-	// in-flight message completes.
+	// in newFeedbackClient() and fired by Close() to stop the drainer after the
+	// current in-flight message completes.
 	drainCtx context.Context
 	cancel   context.CancelFunc
 
@@ -125,6 +133,11 @@ type FeedbackClient struct {
 	startOnce sync.Once
 	closeOnce sync.Once
 	started   atomic.Bool
+
+	// connected and lastErr expose drainer connection state to the node's
+	// readiness check without dialing from /readyz (ADR-3558).
+	connected atomic.Bool
+	lastErr   atomic.Pointer[string]
 
 	// done is closed when the drainer goroutine has returned.  Close blocks
 	// on this so callers see a synchronous shutdown.
@@ -135,36 +148,95 @@ type FeedbackClient struct {
 	delivered atomic.Int64
 }
 
-// NewFeedbackClient creates a FeedbackClient. It does NOT start the background
-// drainer — call Start() (typically from an fx OnStart hook) to launch it. The
-// queue is live immediately, so Send() may be called before Start(); enqueued
-// messages drain once the drainer runs.
+// ackReadResult carries one newline-delimited ACK (or read failure) from the
+// connection's background reader to pump.
+type ackReadResult struct {
+	line []byte
+	err  error
+}
+
+// NewFeedbackClient creates an enabled FeedbackClient. It does NOT start the
+// background drainer — call Start() (typically from an fx OnStart hook) to
+// launch it. The queue is live immediately, so Send() may be called before
+// Start(); enqueued messages drain once the drainer runs.
 func NewFeedbackClient(log *slog.Logger) *FeedbackClient {
+	return newFeedbackClient(log, true)
+}
+
+// newFeedbackClient builds a FeedbackClient whose drainer and queue are active
+// only when enabled is true. When disabled, Start is a no-op and Send counts a
+// local drop without allocating or dialing (ADR-3558).
+func newFeedbackClient(log *slog.Logger, enabled bool) *FeedbackClient {
 	path := os.Getenv(feedbackSocketEnv)
 	if path == "" {
 		path = feedbackSocketDefault
 	}
-	// Guard against a nil logger so callers (and tests) cannot accidentally
-	// trigger a panic deep inside the drainer.
 	if log == nil {
 		log = slog.Default()
 	}
 	drainCtx, cancel := context.WithCancel(context.Background())
+	var q chan *FeedbackMessage
+	if enabled {
+		q = make(chan *FeedbackMessage, feedbackQueueCap)
+	}
 	return &FeedbackClient{
+		enabled:    enabled,
 		socketPath: path,
-		queue:      make(chan *FeedbackMessage, feedbackQueueCap),
+		queue:      q,
 		log:        log,
+		retryBase:  feedbackRetryBase,
+		retryMax:   feedbackRetryMax,
 		drainCtx:   drainCtx,
 		cancel:     cancel,
 		done:       make(chan struct{}),
 	}
 }
 
-// Start launches the background drainer goroutine. It is safe to call multiple
-// times; only the first call starts the drainer. Calling Start after Close is a
-// no-op (the internal context is already cancelled, so a drainer would exit
-// immediately — but it is not launched to avoid closing fc.done twice).
+// Enabled reports whether the sidecar feedback client is enabled.
+func (fc *FeedbackClient) Enabled() bool { return fc.enabled }
+
+// ReadinessErr returns nil while the drainer holds a live connection to the
+// sidecar socket, or an error naming the socket path and last dial/transport
+// error otherwise (ADR-3558).
+func (fc *FeedbackClient) ReadinessErr() error {
+	if fc.connected.Load() {
+		return nil
+	}
+	if last := fc.lastErr.Load(); last != nil && *last != "" {
+		return fmt.Errorf("sidecar socket %s unreachable: %s", fc.socketPath, *last)
+	}
+	return fmt.Errorf("sidecar socket %s not yet connected", fc.socketPath)
+}
+
+func (fc *FeedbackClient) recordErr(err error) {
+	if err == nil {
+		return
+	}
+	msg := err.Error()
+	fc.lastErr.Store(&msg)
+}
+
+func (fc *FeedbackClient) effectiveRetryBase() time.Duration {
+	if fc.retryBase > 0 {
+		return fc.retryBase
+	}
+	return feedbackRetryBase
+}
+
+func (fc *FeedbackClient) effectiveRetryMax() time.Duration {
+	if fc.retryMax > 0 {
+		return fc.retryMax
+	}
+	return feedbackRetryMax
+}
+
+// Start launches the background drainer goroutine when enabled. It is safe to
+// call multiple times; only the first call starts the drainer. Calling Start
+// on a disabled client or after Close is a no-op.
 func (fc *FeedbackClient) Start() {
+	if !fc.enabled {
+		return
+	}
 	fc.startOnce.Do(func() {
 		// If Close already cancelled the context (Start-after-Close), do not
 		// launch a goroutine; close done so Close's wait remains correct.
@@ -175,6 +247,7 @@ func (fc *FeedbackClient) Start() {
 		fc.started.Store(true)
 		go func() {
 			defer close(fc.done)
+			defer fc.connected.Store(false)
 			fc.drainLoop(fc.drainCtx)
 		}()
 	})
@@ -191,6 +264,7 @@ func (fc *FeedbackClient) Start() {
 // in the package header).
 func (fc *FeedbackClient) Close() {
 	fc.cancel()
+	fc.connected.Store(false)
 	fc.closeOnce.Do(func() {
 		if fc.started.Load() {
 			<-fc.done
@@ -199,10 +273,14 @@ func (fc *FeedbackClient) Close() {
 }
 
 // Send enqueues a feedback message for async delivery.
-// It never blocks: if the queue is full the message is dropped and the
-// drop counter is incremented.  Returns true when the message was enqueued,
-// false when it was dropped.
+// It never blocks: when disabled or when the queue is full, the message is
+// dropped and the drop counter is incremented. Returns true when the message
+// was enqueued, false when it was dropped.
 func (fc *FeedbackClient) Send(msg *FeedbackMessage) bool {
+	if !fc.enabled {
+		fc.dropped.Add(1)
+		return false
+	}
 	select {
 	case fc.queue <- msg:
 		return true
@@ -221,47 +299,56 @@ func (fc *FeedbackClient) Dropped() int64 { return fc.dropped.Load() }
 // Delivered returns the total number of messages successfully sent to the sidecar.
 func (fc *FeedbackClient) Delivered() int64 { return fc.delivered.Load() }
 
+func sleepWithContext(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
 // drainLoop connects to the sidecar and forwards queued messages.
 // On connection failure it waits with exponential backoff (feedbackRetryBase …
-// feedbackRetryMax) before retrying.  A successful connection resets the
-// backoff to the base interval (ADR-1049).
-// It exits when ctx is cancelled, which is the loop's exit condition; the inner
-// ctx.Err() checks are the same test applied after a step that may have blocked.
+// feedbackRetryMax) before retrying. A successful connection resets the
+// backoff to the base interval (ADR-1049) and marks the client connected for
+// /readyz (ADR-3558).
 func (fc *FeedbackClient) drainLoop(ctx context.Context) {
-	backoff := feedbackRetryBase
+	backoff := fc.effectiveRetryBase()
+	maxBackoff := fc.effectiveRetryMax()
 	var pending *FeedbackMessage
 	for ctx.Err() == nil {
 		conn, err := fc.dial(ctx)
 		if err != nil {
+			fc.connected.Store(false)
 			if ctx.Err() != nil {
 				return
 			}
+			fc.recordErr(err)
 			fc.log.Warn("sidecar not reachable — retrying",
 				slog.String("socket", fc.socketPath),
 				slog.String("err", err.Error()),
 				slog.Duration("retry_in", backoff),
 			)
-			select {
-			case <-ctx.Done():
+			if !sleepWithContext(ctx, backoff) {
 				return
-			case <-time.After(backoff):
 			}
-			// Double backoff, cap at feedbackRetryMax.
-			backoff *= 2
-			if backoff > feedbackRetryMax {
-				backoff = feedbackRetryMax
-			}
+			backoff = min(backoff*2, maxBackoff)
 			continue
 		}
-		// Successful connection — reset backoff.
-		backoff = feedbackRetryBase
+		backoff = fc.effectiveRetryBase()
+		fc.connected.Store(true)
 		fc.log.Info("sidecar connected", slog.String("socket", fc.socketPath))
 		pending, err = fc.pump(ctx, conn, pending)
+		fc.connected.Store(false)
 		if err != nil {
 			if ctx.Err() != nil {
 				fc.closeConn(conn)
 				return
 			}
+			fc.recordErr(err)
 			fc.log.Warn("sidecar connection lost — reconnecting",
 				slog.String("err", err.Error()))
 		}
@@ -275,7 +362,7 @@ func (fc *FeedbackClient) drainLoop(ctx context.Context) {
 // it could act on; leaving it unreported would hide a socket that the kernel refused to
 // release, which is exactly the shape that shows up later as fd exhaustion.
 func (fc *FeedbackClient) closeConn(conn net.Conn) {
-	if err := conn.Close(); err != nil {
+	if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 		fc.log.Warn("closing sidecar connection failed",
 			slog.String("socket", fc.socketPath),
 			slog.String("err", err.Error()))
@@ -284,101 +371,163 @@ func (fc *FeedbackClient) closeConn(conn net.Conn) {
 
 // dial opens a Unix domain socket connection to the sidecar.
 func (fc *FeedbackClient) dial(ctx context.Context) (net.Conn, error) {
+	dialCtx, cancel := context.WithTimeout(ctx, feedbackDialTimeout)
+	defer cancel()
+	if fc.dialFn != nil {
+		return fc.dialFn(dialCtx, fc.socketPath)
+	}
 	dialer := net.Dialer{Timeout: feedbackDialTimeout}
-	return dialer.DialContext(ctx, "unix", fc.socketPath)
+	return dialer.DialContext(dialCtx, "unix", fc.socketPath)
+}
+
+// startAckReader reads newline-delimited frames from conn in the background so
+// pump observes peer EOF immediately even while fc.queue is idle. The returned
+// stop function interrupts any blocked read and joins the goroutine.
+func (fc *FeedbackClient) startAckReader(ctx context.Context, conn net.Conn) (<-chan ackReadResult, func()) {
+	ackCh := make(chan ackReadResult, 1)
+	stopCh := make(chan struct{})
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(doneCh)
+		reader := bufio.NewReader(conn)
+		for ctx.Err() == nil {
+			line, readErr := reader.ReadBytes('\n')
+			select {
+			case <-stopCh:
+				return
+			case ackCh <- ackReadResult{line: line, err: readErr}:
+			}
+			if readErr != nil {
+				return
+			}
+		}
+	}()
+	stop := func() {
+		close(stopCh)
+		if err := conn.SetReadDeadline(time.Now()); err != nil && !errors.Is(err, net.ErrClosed) {
+			fc.log.Debug("setting sidecar read deadline on reader stop failed",
+				slog.String("socket", fc.socketPath),
+				slog.String("err", err.Error()))
+		}
+		<-doneCh
+	}
+	return ackCh, stop
 }
 
 // pump writes pending first, then reads messages from the queue and writes them
 // to conn. It returns the in-flight message on a transport failure or explicit
 // retryable rejection so drainLoop can preserve it across reconnects without
 // competing with concurrent producers for a queue slot.
-//
-// A returned pending message means the connection must be replaced. A nil
-// pending message and nil error mean ctx was cancelled; queued feedback is
-// intentionally discarded by the Close contract.
-//
-// Cancellation is the loop's exit condition and is stated twice on purpose: ctx.Err()
-// ends the loop between messages, and the ctx.Done() arm of the select ends it while the
-// goroutine is parked waiting for the next queued message.
 func (fc *FeedbackClient) pump(
 	ctx context.Context,
 	conn net.Conn,
 	pending *FeedbackMessage,
 ) (*FeedbackMessage, error) {
-	reader := bufio.NewReader(conn)
+	ackCh, stopReader := fc.startAckReader(ctx, conn)
+	defer stopReader()
+
 	for ctx.Err() == nil {
 		msg := pending
 		if msg == nil {
 			select {
 			case <-ctx.Done():
 				return nil, nil
+			case res := <-ackCh:
+				if res.err != nil {
+					return nil, fmt.Errorf("sidecar closed connection: %w", res.err)
+				}
+				return nil, errors.New("unexpected unsolicited sidecar frame")
 			case msg = <-fc.queue:
 			}
 		}
 
-		disposition, err := fc.sendOne(conn, reader, msg)
-		switch disposition {
-		case feedbackSendRetry:
-			if err == nil {
-				err = fmt.Errorf("retry disposition without cause")
-			}
-			return msg, fmt.Errorf("send: %w", err)
-		case feedbackSendDropped:
-			fc.dropped.Add(1)
-			if err != nil {
-				fc.log.Warn("sidecar feedback message cannot be encoded — message dropped",
-					slog.String("job_id", msg.JobID),
-					slog.String("err", err.Error()))
-			} else {
-				fc.log.Warn("sidecar feedback message dropped without a specific cause",
-					slog.String("job_id", msg.JobID))
-			}
-		case feedbackSendAccepted:
-			fc.delivered.Add(1)
-		case feedbackSendRejected:
-			// The sidecar answered terminally; preserve the existing accounting
-			// contract by counting neither a delivery nor a local drop.
-		default:
-			return msg, fmt.Errorf("send: invalid disposition %d", disposition)
+		disposition, err := fc.sendOneOnPump(ctx, conn, ackCh, msg)
+		if done, retMsg, retErr := fc.recordDisposition(msg, disposition, err); done {
+			return retMsg, retErr
 		}
 		pending = nil
 	}
 	return pending, nil
 }
 
-// sendOne serialises msg as JSON, writes it to conn, and reads the ACK. Only a
-// retry disposition keeps msg pending; a dropped disposition is a permanent
-// local failure, while accepted and rejected dispositions are terminal.
-func (fc *FeedbackClient) sendOne(
-	conn net.Conn,
-	reader *bufio.Reader,
+// recordDisposition updates delivery/drop counters for sendOneOnPump's outcome and
+// reports whether pump must exit to reconnect.
+func (fc *FeedbackClient) recordDisposition(
 	msg *FeedbackMessage,
-) (feedbackSendDisposition, error) {
+	disposition feedbackSendDisposition,
+	err error,
+) (bool, *FeedbackMessage, error) {
+	switch disposition {
+	case feedbackSendRetry:
+		if err == nil {
+			err = errors.New("retry disposition without cause")
+		}
+		return true, msg, fmt.Errorf("send: %w", err)
+	case feedbackSendDropped:
+		fc.dropped.Add(1)
+		if err != nil {
+			fc.log.Warn("sidecar feedback message cannot be encoded — message dropped",
+				slog.String("job_id", msg.JobID),
+				slog.String("err", err.Error()))
+		} else {
+			fc.log.Warn("sidecar feedback message dropped without a specific cause",
+				slog.String("job_id", msg.JobID))
+		}
+	case feedbackSendAccepted:
+		fc.delivered.Add(1)
+	case feedbackSendRejected:
+		// Terminal sidecar answer: count neither delivery nor local drop.
+	default:
+		return true, msg, fmt.Errorf("send: invalid disposition %d", disposition)
+	}
+	return false, nil, nil
+}
+
+func writeFeedbackPayload(conn net.Conn, msg *FeedbackMessage) (feedbackSendDisposition, error) {
 	payload, err := json.Marshal(msg)
 	if err != nil {
 		return feedbackSendDropped, fmt.Errorf("marshal: %w", err)
 	}
 	payload = append(payload, '\n')
-
 	if err := conn.SetWriteDeadline(time.Now().Add(feedbackWriteTimeout)); err != nil {
 		return feedbackSendRetry, fmt.Errorf("set write deadline: %w", err)
 	}
 	if _, err := conn.Write(payload); err != nil {
 		return feedbackSendRetry, fmt.Errorf("write: %w", err)
 	}
+	return feedbackSendInvalid, nil
+}
 
-	// Read ACK (optional — sidecar always sends one per message).
-	if err := conn.SetReadDeadline(time.Now().Add(feedbackWriteTimeout)); err != nil {
-		return feedbackSendRetry, fmt.Errorf("set read deadline: %w", err)
+func (fc *FeedbackClient) sendOneOnPump(
+	ctx context.Context,
+	conn net.Conn,
+	ackCh <-chan ackReadResult,
+	msg *FeedbackMessage,
+) (feedbackSendDisposition, error) {
+	if disp, err := writeFeedbackPayload(conn, msg); disp != feedbackSendInvalid {
+		return disp, err
 	}
-	line, err := reader.ReadBytes('\n')
-	if err != nil {
-		return feedbackSendRetry, fmt.Errorf("read ack: %w", err)
+	timer := time.NewTimer(feedbackWriteTimeout)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return feedbackSendRetry, fmt.Errorf("read ack: %w", ctx.Err())
+	case <-timer.C:
+		return feedbackSendRetry, fmt.Errorf("read ack: %w", os.ErrDeadlineExceeded)
+	case res := <-ackCh:
+		if res.err != nil {
+			return feedbackSendRetry, fmt.Errorf("read ack: %w", res.err)
+		}
+		return fc.decodeAck(msg, res.line)
 	}
+}
 
+func (fc *FeedbackClient) decodeAck(
+	msg *FeedbackMessage,
+	line []byte,
+) (feedbackSendDisposition, error) {
 	var ack feedbackAck
 	if jsonErr := json.Unmarshal(line, &ack); jsonErr != nil {
-		// Non-fatal: ACK parse failure does not break the connection.
 		fc.log.Debug("sidecar ACK parse error",
 			slog.String("raw", string(line)),
 			slog.String("err", jsonErr.Error()))

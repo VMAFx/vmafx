@@ -1,293 +1,277 @@
-#!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Unit tests for tracked release tarball SHA-256 pin verification (ADR-3334, ADR-3336)."""
+"""Check ONNX source restrictions and the ClangBuildAnalyzer guard."""
 
 from __future__ import annotations
 
-import subprocess
-import sys
+import json
 import tempfile
-import textwrap
 import unittest
 from pathlib import Path
+from typing import Any
+
+from scripts.ci import check_ort_tarball_pins as guard
 
 ROOT = Path(__file__).resolve().parents[3]
-SCRIPT = ROOT / "scripts/ci/check_ort_tarball_pins.py"
-SCRIPT_TIMEOUT_S = 60
 
 
-class OrtTarballSingleSourceTest(unittest.TestCase):
-    def run_check(
-        self, *args: str | Path, cwd: Path | None = None
-    ) -> subprocess.CompletedProcess[str]:
-        """Run the check_ort_tarball_pins script with the given arguments."""
-        cmd = [sys.executable, str(SCRIPT)] + [str(a) for a in args]
-        return subprocess.run(  # noqa: S603
-            cmd,
-            cwd=cwd or ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=SCRIPT_TIMEOUT_S,
+class TestOrtGuard(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+
+    def test_old_source_and_direct_nuget_refused(self) -> None:
+        tmp_path = Path(self.temp.name)
+        workflow = tmp_path / "test.yml"
+        for source, message in (
+            ("https://github.com/microsoft/onnxruntime/releases/download/v1/file", "old ONNX"),
+            (
+                "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/file",
+                "must use helper",
+            ),
+        ):
+            workflow.write_text(f"run: curl {source}\n", encoding="utf-8")
+            rc, findings = guard.check_tarball_pins(files=[workflow])
+            assert rc == 1
+            assert message in "\n".join(findings)
+
+    def test_bad_pin_refused(self) -> None:
+        tmp_path = Path(self.temp.name)
+        pins = tmp_path / "scripts/ci/ort-nuget-pins.json"
+        pins.parent.mkdir(parents=True)
+        for bad_entry, message in (
+            ({"sha256": "a" * 63, "size": 10}, "malformed sha256"),
+            ({"sha256": "a" * 64, "size": 0}, "invalid size"),
+            ({"sha256": "a" * 64, "size": -5}, "invalid size"),
+        ):
+            pins.write_text(
+                json.dumps({"packages": {"cpu": {"versions": {"1.0": bad_entry}}}}),
+                encoding="utf-8",
+            )
+            rc, findings = guard.check_tarball_pins(root=tmp_path)
+            assert rc == 1
+            assert message in "\n".join(findings)
+
+    def test_workflow_helper_version_pin_positive_and_negative(self) -> None:
+        tmp_path = Path(self.temp.name)
+        workflow = tmp_path / "workflow.yml"
+        workflow.write_text(
+            "jobs:\n"
+            "  build:\n"
+            "    steps:\n"
+            "      - name: Install CPU ORT\n"
+            "        env:\n"
+            '          ORT_VERSION: "1.29.0"\n'
+            "        run: |\n"
+            '          python3 scripts/ci/ort_nuget_install.py --version "${ORT_VERSION}" \\\n'
+            "            --prefix /opt/onnxruntime\n"
+            "      - name: Install GPU ORT\n"
+            "        env:\n"
+            '          ORT_VERSION: "1.22.0"\n'
+            "        run: |\n"
+            '          python3 scripts/ci/ort_nuget_install.py --package gpu --version "${ORT_VERSION}" \\\n'
+            "            --prefix /opt/onnxruntime\n",
+            encoding="utf-8",
+        )
+        rc, findings = guard.check_tarball_pins(files=[workflow])
+        assert rc == 0, findings
+
+        for pkg_arg, unpinned_ver, pkg_label in (
+            ("", "1.99.0", "cpu"),
+            ("--package gpu ", "1.29.0", "gpu"),
+        ):
+            workflow.write_text(
+                "jobs:\n"
+                "  build:\n"
+                "    steps:\n"
+                "      - name: Install ORT\n"
+                "        env:\n"
+                f'          ORT_VERSION: "{unpinned_ver}"\n'
+                "        run: |\n"
+                f'          python3 scripts/ci/ort_nuget_install.py {pkg_arg}--version "${{ORT_VERSION}}" \\\n'
+                "            --prefix /opt/onnxruntime\n",
+                encoding="utf-8",
+            )
+            rc, findings = guard.check_tarball_pins(files=[workflow])
+            assert rc == 1
+            assert f"unpinned ORT_VERSION '{unpinned_ver}' for package '{pkg_label}'" in "\n".join(
+                findings
+            )
+
+    def test_multiple_helper_commands_use_their_own_arguments(self) -> None:
+        workflow = Path(self.temp.name) / "commands.yml"
+        packages: dict[str, dict[str, Any]] = {
+            "cpu": {"versions": {"1.0": {}}},
+            "gpu": {"versions": {"2.0": {}}},
+        }
+        first = "    python ort_nuget_install.py --package cpu --version 1.0\n"
+        second = "    python ort_nuget_install.py --package gpu --version 2.0\n"
+        workflow.write_text("- run: |\n" + first + second)
+        self.assertEqual(guard.scan_file(workflow, packages)[0], [])
+        workflow.write_text("- run: |\n" + first + second.replace("2.0", "1.0"))
+        findings = guard.scan_file(workflow, packages)[0]
+        self.assertEqual(len(findings), 1)
+        self.assertIn(":3: unpinned ORT_VERSION '1.0' for package 'gpu'", findings[0])
+
+    def test_helper_version_bindings(self) -> None:
+        workflow = Path(self.temp.name) / "bindings.yml"
+        packages: dict[str, dict[str, Any]] = {"cpu": {"versions": {"1.0": {}}}}
+        prefix = '- name: install\n  env:\n    ORT_VERSION: "1.0"\n  run: |\n'
+        call = '    python ort_nuget_install.py --version "$ORT_VERSION"\n'
+        for assignment, expected in (
+            ("", False),
+            ("    ORT_VERSION=1.0\n", False),
+            ("    ORT_VERSION=9.0\n", True),
+            ("    # ORT_VERSION=9.0\n", False),
+        ):
+            with self.subTest(assignment=assignment):
+                workflow.write_text(prefix + assignment + call)
+                findings = guard.scan_file(workflow, packages)[0]
+                self.assertEqual(bool(findings), expected, findings)
+                if expected:
+                    self.assertIn(":6: ambiguous ORT_VERSION in step", findings[0])
+
+    def test_nuget_package_identity(self) -> None:
+        workflow = Path(self.temp.name) / "downloads.yml"
+        address = "https://api.nuget.org/v3-flatcontainer/"
+        cases = (
+            (f"curl {address}microsoft.ml.onnxruntime/file", "must use helper"),
+            (
+                f"ORT_PACKAGE: microsoft.ml.onnxruntime\n  run: curl {address}${{ORT_PACKAGE}}/file",
+                "must use helper",
+            ),
+            (f"run: wget {address}$UNKNOWN/file", "NuGet download with unresolved package"),
+            (f"run: curl {address}other.package/file", None),
+            (f"# curl {address}${{UNKNOWN}}/file", None),
+            (f"OTHER: unrelated\n  run: curl {address}$OTHER/file", None),
+        )
+        for text, expected in cases:
+            with self.subTest(text=text):
+                workflow.write_text("- name: download\n  " + text + "\n")
+                findings = guard.scan_file(workflow, {})[0]
+                if expected:
+                    self.assertIn(expected, "\n".join(findings))
+                else:
+                    self.assertEqual(findings, [])
+
+    def test_cba_guard(self) -> None:
+        tmp_path = Path(self.temp.name)
+        source = (ROOT / "dev/Containerfile").read_text(encoding="utf-8")
+        container = tmp_path / "Containerfile"
+        container.write_text(source, encoding="utf-8")
+        assert guard.check_tarball_pins(files=[container])[0] == 0
+
+    def test_cba_digest_and_order_boundaries(self) -> None:
+        tmp_path = Path(self.temp.name)
+        container = tmp_path / "Containerfile"
+        pin = "a" * 64
+        check = "    && sha256sum --check /tmp/check \\\n"
+        extract = "    && tar -xzf /tmp/cba.tar.gz \\\n"
+        source = (
+            f"ARG CLANGBUILDANALYZER_SHA256={pin}\n"
+            "RUN curl https://github.com/aras-p/ClangBuildAnalyzer/archive/v1.tar.gz \\\n"
+            + check
+            + extract
+            + "    && true\n"
+        )
+        for mutated, finding in (
+            (
+                source.replace("CLANGBUILDANALYZER_SHA256=", "REMOVED="),
+                "missing CLANGBUILDANALYZER_SHA256",
+            ),
+            (source.replace(pin, "a" * 63), "malformed CLANGBUILDANALYZER_SHA256"),
+            (source.replace(check, ""), "missing sha256sum --check"),
+            (source.replace(check + extract, extract + check), "tar extraction occurs before"),
+        ):
+            container.write_text(mutated, encoding="utf-8")
+            rc, findings = guard.check_tarball_pins(files=[container])
+            assert rc == 1
+            assert finding in "\n".join(findings)
+
+    def test_package_argument_forms_and_literal_version(self) -> None:
+        workflow = Path(self.temp.name) / "test.yml"
+        for arg in ('--package "gpu"', "--package 'gpu'", "--package gpu", "--package=gpu"):
+            workflow.write_text(
+                f'- name: install\n  env:\n    ORT_VERSION: "1.29.0"\n'
+                f'  run: python3 scripts/ci/ort_nuget_install.py {arg} --version "${{ORT_VERSION}}"\n'
+            )
+            rc, findings = guard.check_tarball_pins(files=[workflow])
+            self.assertEqual(rc, 1)
+            self.assertIn("package 'gpu'", "\n".join(findings))
+        workflow.write_text(
+            '- name: install\n  env:\n    ORT_VERSION: "1.29.0"\n'
+            "  run: python3 scripts/ci/ort_nuget_install.py --version 1.99.0\n"
+        )
+        self.assertIn("1.99.0", "\n".join(guard.check_tarball_pins(files=[workflow])[1]))
+
+    def test_pin_schema_and_targeted_scan(self) -> None:
+        root = Path(self.temp.name)
+        pins = root / "scripts/ci/ort-nuget-pins.json"
+        pins.parent.mkdir(parents=True)
+        workflow = root / "test.yaml"
+        workflow.write_text("- run: python3 scripts/ci/ort_nuget_install.py --version 1.0\n")
+        pkg: dict[str, Any] = {
+            "source": "https://example.test",
+            "header_dir": "headers",
+            "libraries": ["lib"],
+            "versions": {"1.0": {"sha256": "a" * 64, "size": 1}},
+        }
+        for field in ("source", "header_dir", "libraries", "versions"):
+            broken = dict(pkg)
+            broken.pop(field)
+            pins.write_text(json.dumps({"packages": {"cpu": broken}}))
+            rc, findings = guard.check_tarball_pins(root=root, files=[workflow])
+            self.assertEqual(rc, 1)
+            self.assertIn(field, "\n".join(findings))
+        pins.write_text(json.dumps({"packages": None, "versions": pkg["versions"]}))
+        rc, findings = guard.check_tarball_pins(root=root, files=[workflow])
+        self.assertEqual(rc, 1)
+        self.assertIn("missing packages table", "\n".join(findings))
+        invalid_values: tuple[Any, ...] = (None, [], "bad")
+        for invalid in invalid_values:
+            broken = dict(pkg, versions=invalid)
+            pins.write_text(json.dumps({"packages": {"cpu": broken}}))
+            rc, findings = guard.check_tarball_pins(root=root, files=[workflow])
+            self.assertEqual(rc, 1)
+            self.assertIn("missing versions", "\n".join(findings))
+        pkg["versions"]["1.0"]["size"] = 0
+        pins.write_text(json.dumps({"packages": {"cpu": pkg}}))
+        self.assertIn(
+            "invalid size", "\n".join(guard.check_tarball_pins(root=root, files=[workflow])[1])
         )
 
-    def test_repo_tree_passes(self) -> None:
-        """Case 1: Live repository tree passes all ORT tarball checks."""
-        proc = self.run_check()
-        self.assertEqual(
-            proc.returncode,
-            0,
-            f"Expected exit 0 for repo tree, got {proc.returncode}.\nStdout:\n{proc.stdout}\nStderr:\n{proc.stderr}",
+    def test_comments_and_unrelated_packages(self) -> None:
+        workflow = Path(self.temp.name) / "test.yml"
+        workflow.write_text(
+            "# curl https://example.test/microsoft.ml.onnxruntime.nupkg\n"
+            "run: curl https://example.test/unrelated.nupkg # microsoft.ml.onnxruntime\n"
         )
-        self.assertEqual(proc.stdout.strip(), "")
+        self.assertEqual(guard.check_tarball_pins(files=[workflow])[0], 0)
 
-    def test_planted_site_without_sha256(self) -> None:
-        """Case 2: Planted site without ORT_SHA256 fails with exit 1."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            wf = Path(tmpdir) / ".github/workflows/test.yml"
-            wf.parent.mkdir(parents=True, exist_ok=True)
-            wf.write_text(
-                textwrap.dedent("""\
-                    jobs:
-                      build:
-                        steps:
-                          - name: Install ORT
-                            env:
-                              ORT_VERSION: "1.30.0"
-                            run: |
-                              set -euo pipefail
-                              curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" -o /tmp/ort.tgz
-                              echo "a5ed5a3cac51fbb2e90da632ae43d19212faaa20e76484e62bcb7c23ddb3b3fd  /tmp/ort.tgz" | sha256sum --check --strict -
-                              sudo tar -xzf /tmp/ort.tgz -C /opt/
-                    """),
-                encoding="utf-8",
-            )
-            proc = self.run_check(wf)
-            self.assertEqual(proc.returncode, 1)
-            self.assertIn("missing ORT_SHA256", proc.stdout)
-
-    def test_planted_tar_before_check(self) -> None:
-        """Case 3: Planted tar -x before sha256sum --check fails with exit 1."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            wf = Path(tmpdir) / ".github/workflows/test.yml"
-            wf.parent.mkdir(parents=True, exist_ok=True)
-            wf.write_text(
-                textwrap.dedent("""\
-                    jobs:
-                      build:
-                        steps:
-                          - name: Install ORT
-                            env:
-                              ORT_VERSION: "1.30.0"
-                              ORT_SHA256: "a5ed5a3cac51fbb2e90da632ae43d19212faaa20e76484e62bcb7c23ddb3b3fd"
-                            run: |
-                              set -euo pipefail
-                              curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" -o /tmp/ort.tgz
-                              sudo tar -xzf /tmp/ort.tgz -C /opt/
-                              printf '%s  %s\\n' "${ORT_SHA256}" /tmp/ort.tgz | sha256sum --check --strict
-                    """),
-                encoding="utf-8",
-            )
-            proc = self.run_check(wf)
-            self.assertEqual(proc.returncode, 1)
-            self.assertIn("tar extraction occurs before sha256sum --check", proc.stdout)
-
-    def test_planted_two_sites_same_version_different_sha(self) -> None:
-        """Case 4: Two sites with same flavour and version but different sha fail with exit 1."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            wf1 = Path(tmpdir) / ".github/workflows/wf1.yml"
-            wf2 = Path(tmpdir) / ".github/workflows/wf2.yml"
-            wf1.parent.mkdir(parents=True, exist_ok=True)
-            wf1.write_text(
-                textwrap.dedent("""\
-                    jobs:
-                      build:
-                        steps:
-                          - name: Install ORT
-                            env:
-                              ORT_VERSION: "1.30.0"
-                              ORT_SHA256: "a5ed5a3cac51fbb2e90da632ae43d19212faaa20e76484e62bcb7c23ddb3b3fd"
-                            run: |
-                              set -euo pipefail
-                              curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" -o /tmp/ort.tgz
-                              printf '%s  %s\\n' "${ORT_SHA256}" /tmp/ort.tgz | sha256sum --check --strict
-                              sudo tar -xzf /tmp/ort.tgz -C /opt/
-                    """),
-                encoding="utf-8",
-            )
-            wf2.write_text(
-                textwrap.dedent("""\
-                    jobs:
-                      build:
-                        steps:
-                          - name: Install ORT
-                            env:
-                              ORT_VERSION: "1.30.0"
-                              ORT_SHA256: "1111111111111111111111111111111111111111111111111111111111111111"
-                            run: |
-                              set -euo pipefail
-                              curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" -o /tmp/ort.tgz
-                              printf '%s  %s\\n' "${ORT_SHA256}" /tmp/ort.tgz | sha256sum --check --strict
-                              sudo tar -xzf /tmp/ort.tgz -C /opt/
-                    """),
-                encoding="utf-8",
-            )
-            proc = self.run_check(wf1, wf2)
-            self.assertEqual(proc.returncode, 1)
-            self.assertIn("conflicting sha256 for (cpu, 1.30.0)", proc.stdout)
-
-    def test_planted_malformed_hex(self) -> None:
-        """Case 5: Planted malformed hex digest in ORT_SHA256 fails with exit 1."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            wf = Path(tmpdir) / ".github/workflows/test.yml"
-            wf.parent.mkdir(parents=True, exist_ok=True)
-            wf.write_text(
-                textwrap.dedent("""\
-                    jobs:
-                      build:
-                        steps:
-                          - name: Install ORT
-                            env:
-                              ORT_VERSION: "1.30.0"
-                              ORT_SHA256: "not-a-valid-sha256-hex"
-                            run: |
-                              set -euo pipefail
-                              curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" -o /tmp/ort.tgz
-                              printf '%s  %s\\n' "${ORT_SHA256}" /tmp/ort.tgz | sha256sum --check --strict
-                              sudo tar -xzf /tmp/ort.tgz -C /opt/
-                    """),
-                encoding="utf-8",
-            )
-            proc = self.run_check(wf)
-            self.assertEqual(proc.returncode, 1)
-            self.assertIn("malformed ORT_SHA256", proc.stdout)
-
-    def test_unreadable_path(self) -> None:
-        """Case 6: Unreadable or missing path fails with exit 2."""
-        proc = self.run_check(Path("/nonexistent/file/path/here.yml"))
-        self.assertEqual(proc.returncode, 2)
-        self.assertIn("check_ort_tarball_pins: error:", proc.stderr)
-
-    def test_boundary_gpu_cpu_same_version_different_sha(self) -> None:
-        """Case 7: Boundary: GPU and CPU of same version with different sha pass with exit 0."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            wf_cpu = Path(tmpdir) / ".github/workflows/cpu.yml"
-            wf_gpu = Path(tmpdir) / ".github/workflows/gpu.yml"
-            wf_cpu.parent.mkdir(parents=True, exist_ok=True)
-            wf_cpu.write_text(
-                textwrap.dedent("""\
-                    jobs:
-                      build:
-                        steps:
-                          - name: Install ORT CPU
-                            env:
-                              ORT_VERSION: "1.22.0"
-                              ORT_SHA256: "8344d55f93d5bc5021ce342db50f62079daf39aaafb5d311a451846228be49b3"
-                            run: |
-                              set -euo pipefail
-                              curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" -o /tmp/ort.tgz
-                              printf '%s  %s\\n' "${ORT_SHA256}" /tmp/ort.tgz | sha256sum --check --strict
-                              sudo tar -xzf /tmp/ort.tgz -C /opt/
-                    """),
-                encoding="utf-8",
-            )
-            wf_gpu.write_text(
-                textwrap.dedent("""\
-                    jobs:
-                      build:
-                        steps:
-                          - name: Install ORT GPU
-                            env:
-                              ORT_VERSION: "1.22.0"
-                              ORT_SHA256: "2a19dbfa403672ec27378c3d40a68f793ac7a6327712cd0e8240a86be2b10c55"
-                            run: |
-                              set -euo pipefail
-                              curl -fsSL "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-gpu-${ORT_VERSION}.tgz" -o /tmp/ort-gpu.tgz
-                              printf '%s  %s\\n' "${ORT_SHA256}" /tmp/ort-gpu.tgz | sha256sum --check --strict
-                              sudo tar -xzf /tmp/ort-gpu.tgz -C /opt/
-                    """),
-                encoding="utf-8",
-            )
-            proc = self.run_check(wf_cpu, wf_gpu)
-            self.assertEqual(
-                proc.returncode,
-                0,
-                f"Expected exit 0 for CPU+GPU of same version, got {proc.returncode}.\nStdout:\n{proc.stdout}\nStderr:\n{proc.stderr}",
-            )
-
-    def test_cba_live_containerfile_passes(self) -> None:
-        """Case 8: Positive: live dev/Containerfile CBA block passes."""
-        proc = self.run_check(ROOT / "dev/Containerfile")
-        self.assertEqual(proc.returncode, 0, f"Expected 0, got {proc.returncode}: {proc.stderr}")
-        self.assertEqual(proc.stdout.strip(), "")
-
-    def test_cba_negative_sha_removed(self) -> None:
-        """Case 9: Negative: CBA with missing CLANGBUILDANALYZER_SHA256 fails exit 1 naming ClangBuildAnalyzer."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cfile = Path(tmpdir) / "Containerfile"
-            text = (ROOT / "dev/Containerfile").read_text(encoding="utf-8")
-            self.assertIn("ARG CLANGBUILDANALYZER_SHA256=", text)
-            mutated = "\n".join(
-                line
-                for line in text.splitlines()
-                if not line.startswith("ARG CLANGBUILDANALYZER_SHA256=")
-            )
-            cfile.write_text(mutated + "\n", encoding="utf-8")
-            proc = self.run_check(cfile)
-            self.assertEqual(proc.returncode, 1)
-            self.assertIn("ClangBuildAnalyzer", proc.stdout)
-            self.assertIn("missing CLANGBUILDANALYZER_SHA256", proc.stdout)
-
-    def test_cba_boundary_63_hex(self) -> None:
-        """Case 10: Boundary: CBA with 63-hex SHA-256 digest fails exit 1 naming ClangBuildAnalyzer."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cfile = Path(tmpdir) / "Containerfile"
-            text = (ROOT / "dev/Containerfile").read_text(encoding="utf-8")
-            target = "ARG CLANGBUILDANALYZER_SHA256=868a8d34ecb9b65da4e5874342062a12c081ce4385c7ddd6ce7d557a0c5c292d"
-            self.assertIn(target, text)
-            cfile.write_text(
-                text.replace(target, f"ARG CLANGBUILDANALYZER_SHA256={'a' * 63}"),
-                encoding="utf-8",
-            )
-            proc = self.run_check(cfile)
-            self.assertEqual(proc.returncode, 1)
-            self.assertIn("ClangBuildAnalyzer", proc.stdout)
-            self.assertIn("malformed CLANGBUILDANALYZER_SHA256", proc.stdout)
-
-    def test_cba_negative_dropped_sha256sum(self) -> None:
-        """Case 11: Negative: CBA with dropped sha256sum line fails exit 1 naming ClangBuildAnalyzer."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cfile = Path(tmpdir) / "Containerfile"
-            text = (ROOT / "dev/Containerfile").read_text(encoding="utf-8")
-            target = (
-                '    && echo "${CLANGBUILDANALYZER_SHA256}  /tmp/cba.tar.gz" | sha256sum -c - \\\n'
-            )
-            self.assertIn(target, text)
-            cfile.write_text(text.replace(target, ""), encoding="utf-8")
-            proc = self.run_check(cfile)
-            self.assertEqual(proc.returncode, 1)
-            self.assertIn("ClangBuildAnalyzer", proc.stdout)
-            self.assertIn("missing sha256sum --check in block", proc.stdout)
-
-    def test_cba_negative_tar_before_check(self) -> None:
-        """Case 12: Negative: CBA with tar extraction before sha256sum fails exit 1 naming ClangBuildAnalyzer."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cfile = Path(tmpdir) / "Containerfile"
-            text = (ROOT / "dev/Containerfile").read_text(encoding="utf-8")
-            sha_line = (
-                '    && echo "${CLANGBUILDANALYZER_SHA256}  /tmp/cba.tar.gz" | sha256sum -c - \\\n'
-            )
-            tar_line = "    && tar -xzf /tmp/cba.tar.gz -C /tmp \\\n"
-            self.assertIn(sha_line + tar_line, text)
-            cfile.write_text(
-                text.replace(sha_line + tar_line, tar_line + sha_line), encoding="utf-8"
-            )
-            proc = self.run_check(cfile)
-            self.assertEqual(proc.returncode, 1)
-            self.assertIn("ClangBuildAnalyzer", proc.stdout)
-            self.assertIn("tar extraction occurs before sha256sum --check", proc.stdout)
-
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_ort_archive_order_and_discovery(self) -> None:
+        root = Path(self.temp.name)
+        container = root / "Containerfile"
+        header = "ARG ORT_VERSION=1.0\nARG ORT_SHA256=" + "a" * 64 + "\n"
+        download = (
+            "RUN curl https://github.com/microsoft/onnxruntime/releases/download/v1/file \\\n"
+        )
+        check = " && sha256sum --check /tmp/check \\\n"
+        extract = " && tar -xzf /tmp/file\n"
+        for text, finding in (
+            (download + check + extract, "missing ORT_SHA256"),
+            (
+                header + download + extract.rstrip() + " \\\n" + check + " && true\n",
+                "tar extraction occurs before",
+            ),
+        ):
+            container.write_text(text)
+            self.assertIn(finding, "\n".join(guard.check_tarball_pins(files=[container])[1]))
+        pins = root / "scripts/ci/ort-nuget-pins.json"
+        pins.parent.mkdir(parents=True)
+        pins.write_text((ROOT / "scripts/ci/ort-nuget-pins.json").read_text())
+        workflows = root / ".github/workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "test.yaml").write_text(
+            "run: curl https://github.com/microsoft/onnxruntime/releases/download/v1/file\n"
+        )
+        self.assertIn("old ONNX", "\n".join(guard.check_tarball_pins(root=root)[1]))
