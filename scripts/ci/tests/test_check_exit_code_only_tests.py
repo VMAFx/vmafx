@@ -1031,6 +1031,63 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         self.assertIn(f"{REL_TEST_FILE}:1: test_now_valid_weak: asserts only exit code 0", err)
         self.assertNotIn("test_now_valid_strong", err)
 
+    def test_weak_top_level_moved_into_helper_is_reported(self) -> None:
+        weak = "def test_a():\n    rc = run_helper()\n    assert rc == 0\n"
+        target = self._commit_file(REL_TEST_FILE, weak)
+        target.write_text(
+            "def helper():\n    def test_a():\n        rc = run_helper()\n        assert rc == 0\n",
+            encoding="utf-8",
+        )
+        rc, _out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 1)
+        self.assertIn(f"{REL_TEST_FILE}:2: test_a:", err)
+        self.assertEqual(err.count(f"{REL_TEST_FILE}:"), 1)
+
+    def test_unchanged_nested_weak_is_not_reported(self) -> None:
+        base = (
+            "def helper():\n    def test_a():\n        rc = run_helper()\n        assert rc == 0\n"
+        )
+        target = self._commit_file(REL_TEST_FILE, base)
+        target.write_text("# unchanged test\n" + base, encoding="utf-8")
+        rc, out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 0, err)
+        self.assertIn("0 exit-code-only test findings", out)
+        self.assertNotIn("test_a:", err)
+
+    def test_weak_moved_between_helpers_is_reported(self) -> None:
+        base = "def helper_one():\n    def test_a():\n        rc = run_helper()\n        assert rc == 0\n"
+        target = self._commit_file(REL_TEST_FILE, base)
+        target.write_text(base.replace("helper_one", "helper_two"), encoding="utf-8")
+        rc, _out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 1)
+        self.assertIn(f"{REL_TEST_FILE}:2: test_a:", err)
+        self.assertEqual(err.count(f"{REL_TEST_FILE}:"), 1)
+
+    def test_new_top_level_weak_matching_method_is_reported(self) -> None:
+        base = (
+            "class Suite:\n    def test_a():\n        rc = run_helper()\n        assert rc == 0\n"
+        )
+        target = self._commit_file(REL_TEST_FILE, base)
+        target.write_text(
+            base + "\ndef test_a():\n    rc = run_helper()\n    assert rc == 0\n", encoding="utf-8"
+        )
+        rc, _out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 1)
+        self.assertIn(f"{REL_TEST_FILE}:6: test_a:", err)
+        self.assertEqual(err.count(f"{REL_TEST_FILE}:"), 1)
+
+    def test_weak_top_level_moved_into_async_helper_is_reported(self) -> None:
+        weak = "def test_a():\n    rc = run_helper()\n    assert rc == 0\n"
+        target = self._commit_file(REL_TEST_FILE, weak)
+        target.write_text(
+            "async def helper():\n    def test_a():\n        rc = run_helper()\n        assert rc == 0\n",
+            encoding="utf-8",
+        )
+        rc, _out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 1)
+        self.assertIn(f"{REL_TEST_FILE}:2: test_a:", err)
+        self.assertEqual(err.count(f"{REL_TEST_FILE}:"), 1)
+
     def test_duplicate_first_weakened_is_reported(self) -> None:
         strong = (
             'def test_a():\n    rc = run_helper()\n    assert rc == 0\n    assert output == "ok"\n'

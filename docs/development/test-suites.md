@@ -348,7 +348,7 @@ python3 scripts/ci/check_exit_code_only_tests.py --changed-against origin/master
   `git diff --name-status -z -M --no-color --no-ext-diff <merge-base> -- <pathspec>`
   and `git ls-files -z --others --exclude-standard -- <pathspec>`, and checks
   test functions without a matching merge-base AST (`ast.dump`, including
-  decorators) for the same class chain and function name, using
+  decorators) for the same enclosing definition chain and function name, using
   `git show <merge-base>:<old-path>`. Each old AST matches at most one current
   function, in source order. When
   the old version has a syntax error, or for added, type-changed, or untracked

@@ -17,7 +17,7 @@ root-relative explicit paths) with
 `git diff --name-status -z -M --no-color --no-ext-diff <merge-base> -- <pathspec>`
 and `git ls-files -z --others --exclude-standard -- <pathspec>`, and checks
 only test functions without a matching merge-base AST (`ast.dump`, including
-decorators) for the same class chain and function name. Each old AST matches
+decorators) for the same enclosing definition chain and function name. Each old AST matches
 at most one current function, in source order. Findings exit 1. If the old
 file does not parse, or for added, type-changed, and untracked files, every
 function in the file counts as changed. Unreadable files, files above 1 MiB,
@@ -340,12 +340,16 @@ def _extract_test_functions(tree: ast.AST, rel_path: str) -> list[tuple[str, Fun
         if not stack:
             funcs.sort(key=lambda item: (item[1].lineno, item[1].col_offset))
             return funcs
-        curr, class_chain = stack.pop()
+        curr, scope_chain = stack.pop()
         if isinstance(curr, (ast.FunctionDef, ast.AsyncFunctionDef)) and curr.name.startswith(
             "test_"
         ):
-            funcs.append((".".join((*class_chain, curr.name)), curr))
-        next_chain = (*class_chain, curr.name) if isinstance(curr, ast.ClassDef) else class_chain
+            funcs.append((".".join((*scope_chain, curr.name)), curr))
+        next_chain = (
+            (*scope_chain, curr.name)
+            if isinstance(curr, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            else scope_chain
+        )
         children = list(itertools.islice(ast.iter_child_nodes(curr), MAX_AST_NODES + 1))
         if len(children) > MAX_AST_NODES:
             raise ScanError(f"{rel_path}: exceeds {MAX_AST_NODES} AST nodes")
