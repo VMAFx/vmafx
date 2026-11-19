@@ -347,11 +347,10 @@ python3 scripts/ci/check_exit_code_only_tests.py --changed-against origin/master
   normalised root-relative explicit paths otherwise) via
   `git diff --name-status -z -M --no-color --no-ext-diff <merge-base> -- <pathspec>`
   and `git ls-files -z --others --exclude-standard -- <pathspec>`, and checks
-  test functions that are new or whose AST (`ast.dump`, including decorators,
-  matched by class chain and function name, then by position among functions
-  with that name, against `git show <merge-base>:<old-path>`) differs from the
-  merge-base version. If the count of a name changes, all functions with that
-  name count as modified. When
+  test functions without a matching merge-base AST (`ast.dump`, including
+  decorators) for the same class chain and function name, using
+  `git show <merge-base>:<old-path>`. Each old AST matches at most one current
+  function, in source order. When
   the old version has a syntax error, or for added, type-changed, or untracked
   files, or a file renamed from outside `<pathspec>`, every function in the
   file counts as changed. The check exits `1` on findings (`0` when clean). An

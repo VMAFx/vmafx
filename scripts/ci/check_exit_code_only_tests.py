@@ -16,10 +16,9 @@ resolves `git merge-base <ref> HEAD`, lists changed and untracked files under
 root-relative explicit paths) with
 `git diff --name-status -z -M --no-color --no-ext-diff <merge-base> -- <pathspec>`
 and `git ls-files -z --others --exclude-standard -- <pathspec>`, and checks
-only test functions that are new or whose AST (`ast.dump`, including
-decorators, matched by class chain, function name, and position among duplicates
-against `git show <merge-base>:<old-path>`) changed, exiting 1 on findings.
-When the count of a qualified name changes, all its functions count as changed. If the old
+only test functions without a matching merge-base AST (`ast.dump`, including
+decorators) for the same class chain and function name. Each old AST matches
+at most one current function, in source order. Findings exit 1. If the old
 file does not parse, or for added, type-changed, and untracked files, every
 function in the file counts as changed. Unreadable files, files above 1 MiB,
 paths outside the repository root, changed or untracked Python paths inside
@@ -367,15 +366,16 @@ def file_findings(
         raise ScanError(f"{rel_path}:{exc.lineno or 1}: syntax error: {exc.msg}") from exc
     lines = source.splitlines()
     funcs = _extract_test_functions(tree, rel_path)
-    counts = Counter(name for name, _ in funcs[:MAX_AST_NODES])
-    positions: Counter[str] = Counter()
+    previous = {
+        name: Counter(dumps[:MAX_AST_NODES])
+        for name, dumps in itertools.islice((old_dumps or {}).items(), MAX_AST_NODES)
+    }
     findings: list[Finding] = []
     # len(funcs) <= MAX_AST_NODES is enforced by _extract_test_functions.
     for qualname, func in funcs[:MAX_AST_NODES]:
-        position = positions[qualname]
-        positions[qualname] += 1
-        previous = old_dumps.get(qualname, []) if old_dumps is not None else []
-        if len(previous) == counts[qualname] and previous[position] == ast.dump(func):
+        dump = ast.dump(func)
+        if qualname in previous and previous[qualname][dump] > 0:
+            previous[qualname][dump] -= 1
             continue
         finding = _check_test_function(func, lines, rel_path)
         if finding is not None:
