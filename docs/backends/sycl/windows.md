@@ -29,9 +29,8 @@ the container
     The `Windows MSVC+SYCL` CI leg in `libvmaf-build-matrix.yml` pins oneAPI
     2026.2.0.661 (`intel-oneapi-toolkit-2026.2.0.661_offline.exe`,
     [ADR-3567](../../adr/3567-windows-sycl-oneapi-2026-2.md)); the installer
-    lists Clang 23 resources (measured on 2026-11-19; see ADR-3567). The first
-    CI run tests whether `icx-cl` satisfies MSVC 14.52's Clang 22+ STL check
-    (`STL1000`). The Windows SYCL
+    lists Clang 23 resources (measured on 2026-11-19; see ADR-3567). Builds
+    run `44499808688` passed with no `STL1000` log lines. The Windows SYCL
     tester zip still reads `ONEAPI_WINDOWS_VERSION` (`2025.3.0.372`) from
     `build-config.env`. Linux builds and images use oneAPI 2026.1
     (`ONEAPI_VERSION`).
@@ -93,8 +92,9 @@ CI build with oneAPI 2026.2.0.661 rejected `tgllp` at AOT link. Builds run
 and passes the accepted list to Meson only if the refused set matches those
 six. Xe-LP, Alder Lake and Raptor Lake integrated devices get no AOT image
 from the Windows CI build. By design, they fall back to the [`spir64` image
-compiled at run time](aot.md#default-target-list). The build with the 13 accepted
-targets and this fallback on Windows remain unmeasured.
+compiled at run time](aot.md#default-target-list). Builds run `44499808688`
+passed with the 13 accepted targets; runtime fallback on the six refused
+families remains unmeasured.
 
 If `ocloc` rejects a target:
 

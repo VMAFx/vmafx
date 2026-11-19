@@ -42,7 +42,10 @@ ocloc 26.35.39758.10 and the same default list.
    `2026.2.0.661`.** The `Install Intel oneAPI (windows)` step now downloads
    the unified Intel oneAPI Toolkit offline installer
    `https://registrationcenter-download.intel.com/akdlm/IRC_NAS/728c4418-1b40-47a9-ad51-31530fb27c94/intel-oneapi-toolkit-2026.2.0.661_offline.exe`
-   (`2,402,678,488` bytes, `Last-Modified: 2026-10-16`). On 2026-11-19,
+   (`2,402,678,488` bytes, `Last-Modified: 2026-10-16`). The step verifies
+   the pinned size and SHA-256
+   `e5774d5435835b66b16c4369a6c9704720fe2df9d67cdc48922c93782c152ee0`
+   before extraction. On 2026-11-19,
    its central directory contained package
    `packages/intel.oneapi.win.cpp-dpcpp-common,v=2026.2.0+864/`, whose
    `cupPayload.cup/filelist.json` lists
@@ -68,7 +71,10 @@ ocloc 26.35.39758.10 and the same default list.
    probe error, or empty accepted list fails the leg. Xe-LP, Alder Lake and
    Raptor Lake integrated devices get no AOT image from the Windows CI build.
    By design, they fall back to the [`spir64` image compiled at run time](../backends/sycl/aot.md#default-target-list).
-   The build with the 13 accepted targets and this fallback on Windows remain
+   Builds run `44499808688`, job `135476883933`, on head `f56947e1b5`,
+   accepted 13 targets and refused the declared six; its 2,757-step build and
+   `test_sycl_kernel_registration` and `test_sycl_coff_anchor` passed, with
+   zero `STL1000` log lines. Runtime fallback on the six families remains
    unmeasured.
 
 ## How the installer facts were read
@@ -87,14 +93,14 @@ executed or inspected.
 
 | Option | Pros | Cons | Why not chosen |
 | --- | --- | --- | --- |
-| **Raise the Windows SYCL CI pin to oneAPI `2026.2.0.661`** (chosen) | The installer lists Clang 23 resources; the CI build will test compiler compatibility | `windows-tester-bundle.yml` remains on `ONEAPI_WINDOWS_VERSION` (`2025.3.0.372`) until its redistributable runtime spec is refreshed | — |
+| **Raise the Windows SYCL CI pin to oneAPI `2026.2.0.661`** (chosen) | The installer lists Clang 23 resources; Builds run `44499808688` built the leg with zero `STL1000` log lines | `windows-tester-bundle.yml` remains on `ONEAPI_WINDOWS_VERSION` (`2025.3.0.372`) until its redistributable runtime spec is refreshed | — |
 | Select MSVC toolset `14.51` via `TheMrMilchmann/setup-msvc-dev` `toolset: 14.51` | Would keep oneAPI `2025.3.0.372` unchanged | Image `win25-vs2026` `20261116.315` does not carry `14.51` side by side (`Windows2025-VS2026-Readme.md` lists only `14.52.37025`, `14.44`, and `14.29`), so `-vcvars_ver=14.51` fails in `vcvarsall.bat` | Toolset `14.51` is absent from the runner image |
 | Define `_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH` | No installer change | Disables `yvals_core.h` compiler version checks (`STL1000`, `STL1001`, `STL1002`); unsupported by Microsoft STL after compiler bug workarounds for Clang < 22 are removed | Unsupported escape hatch |
 
 ## Consequences
 
 - **Positive**: `Configure libvmaf (SYCL)` on `windows-2025` (`win25-vs2026`)
-  is intended to compile against MSVC 14.52's STL headers;
+  compiles against MSVC 14.52's STL headers (Builds run `44499808688`);
   `scripts/ci/test_windows_sycl_toolset_contract.py` checks the workflow pin.
 - **Negative**: `libvmaf-build-matrix.yml` pins `2026.2.0.661` while
   `build-config.env`'s `ONEAPI_WINDOWS_VERSION` (`2025.3.0.372`, consumed by
@@ -107,6 +113,7 @@ executed or inspected.
 
 ## References
 
+- req: the Windows MSVC+SYCL leg is red on master since the hosted runner image moved to Visual Studio 2026; make it build again (paraphrased; repository health finding, 2026-11-18)
 - [ADR-0121](0121-windows-gpu-build-only-legs.md) — Windows GPU build-only
   matrix legs (initial `2025.3.0.372` pin).
 - [ADR-1566](1566-windows-sycl-tester-zip.md) — Windows SYCL tester zip

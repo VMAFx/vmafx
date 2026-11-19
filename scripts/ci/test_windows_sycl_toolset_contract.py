@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 import sys
 import unittest
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -33,11 +34,20 @@ OLD_WINDOWS_BASEKIT_URL = (
 EXPECTED_DPCPP_COMPONENT = "intel.oneapi.win.cpp-dpcpp-common"
 EXPECTED_AOT_REFUSED = "tgllp,adl-s,adl-p,adl-n,rpl-s,rpl-p"
 EXPECTED_SYCL_STEP_IF = "steps.leg.outputs.run == 'true' && matrix.backend == 'sycl'"
+APPROVED_STEP_CONDITIONS = {
+    "steps.leg.outputs.run == 'true'",
+    EXPECTED_SYCL_STEP_IF,
+    "steps.leg.outputs.run == 'true' && matrix.backend == 'cuda'",
+    "steps.leg.outputs.run == 'true' && runner.os == 'Windows'",
+}
+EXPECTED_INSTALLER_SIZE = "2402678488"
+EXPECTED_INSTALLER_SHA256 = "e5774d5435835b66b16c4369a6c9704720fe2df9d67cdc48922c93782c152ee0"
 BANNED_STL_MISMATCH_MACRO = "_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"
 MIN_ONEAPI_MAJOR = 2026
 
 MAX_MATRIX_ROWS = 16
 MAX_JOB_STEPS = 64
+MAX_SCRIPT_LINES = 128
 ONEAPI_URL_VERSION_RE = re.compile(
     r"intel-oneapi-(?:base-)?toolkit-(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)\.(?P<build>\d+)_offline\.exe$"
 )
@@ -64,6 +74,8 @@ def _validate_matrix_backends(job: dict[str, Any]) -> None:
     include = job.get("strategy", {}).get("matrix", {}).get("include")
     if not isinstance(include, list) or not include:
         raise AssertionError(f"job '{WINDOWS_GPU_JOB_ID}' missing strategy.matrix.include")
+    if len(include) > MAX_MATRIX_ROWS:
+        raise AssertionError("matrix exceeds row limit")
     backends: set[str] = set()
     for row in include[:MAX_MATRIX_ROWS]:
         if not isinstance(row, dict):
@@ -88,7 +100,7 @@ def _validate_step_if_conditions(steps: list[dict[str, Any]]) -> None:
         if uses.startswith("actions/checkout@"):
             continue
         condition = step.get("if")
-        if not isinstance(condition, str) or "steps.leg.outputs.run == 'true'" not in condition:
+        if not isinstance(condition, str) or condition not in APPROVED_STEP_CONDITIONS:
             raise AssertionError(f"step '{name}' must keep its steps.leg.outputs.run if: guard")
 
 
@@ -136,13 +148,46 @@ def _validate_oneapi_step(steps: list[dict[str, Any]]) -> None:
         raise AssertionError(f"WINDOWS_DPCPP_COMPONENTS must equal {EXPECTED_DPCPP_COMPONENT!r}")
     if env.get("WINDOWS_AOT_EXPECT_REFUSED") != EXPECTED_AOT_REFUSED:
         raise AssertionError(f"WINDOWS_AOT_EXPECT_REFUSED must equal {EXPECTED_AOT_REFUSED!r}")
-    run_script = str(step.get("run", ""))
-    if "-p=NEED_VS2026_INTEGRATION=0" not in run_script:
+    _validate_oneapi_script(env, str(step.get("run", "")))
+
+
+def _validate_oneapi_script(env: dict[str, Any], run_script: str) -> None:
+    lines = run_script.splitlines()
+    if len(lines) > MAX_SCRIPT_LINES:
+        raise AssertionError("installer script exceeds line limit")
+    bootstrap = [
+        line.strip()
+        for line in lines[:MAX_SCRIPT_LINES]
+        if line.strip().startswith("webimage_extracted\\bootstrapper.exe ")
+    ]
+    if len(bootstrap) != 1 or "-p=NEED_VS2026_INTEGRATION=0" not in bootstrap[0].split():
         raise AssertionError(
             f"'{ONEAPI_STEP_NAME}' must pass -p=NEED_VS2026_INTEGRATION=0 on VS 2026 runners"
         )
     if "exit /b %installer_exit_code%" not in run_script:
         raise AssertionError(f"'{ONEAPI_STEP_NAME}' must propagate %installer_exit_code%")
+    _validate_installer_integrity(env, run_script)
+
+
+def _validate_installer_integrity(env: dict[str, Any], script: str) -> None:
+    if str(env.get("WINDOWS_BASEKIT_SIZE", "")) != EXPECTED_INSTALLER_SIZE:
+        raise AssertionError("installer size pin missing or changed")
+    if env.get("WINDOWS_BASEKIT_SHA256") != EXPECTED_INSTALLER_SHA256:
+        raise AssertionError("installer SHA-256 pin missing or changed")
+    lines = [line.strip() for line in script.splitlines()[:MAX_SCRIPT_LINES] if line.strip()]
+    checks = (
+        "curl.exe --fail --output %TEMP%\\webimage.exe --url %WINDOWS_BASEKIT_URL%",
+        "powershell.exe -NoProfile -Command \"$ErrorActionPreference='Stop'; if ((Get-Item (Join-Path $env:TEMP 'webimage.exe')).Length -ne [int64]$env:WINDOWS_BASEKIT_SIZE) { exit 1 }\"",
+        "powershell.exe -NoProfile -Command \"$ErrorActionPreference='Stop'; if ((Get-FileHash -Algorithm SHA256 (Join-Path $env:TEMP 'webimage.exe')).Hash -ne $env:WINDOWS_BASEKIT_SHA256) { exit 1 }\"",
+        "start /b /wait %TEMP%\\webimage.exe -s -x",
+    )
+    positions = [
+        next((i for i, line in enumerate(lines) if line.startswith(check)), -1) for check in checks
+    ]
+    if -1 in positions or positions != sorted(set(positions)):
+        raise AssertionError("installer download, size and hash checks must precede extraction")
+    if any(lines[i + 1] != "if errorlevel 1 exit /b 1" for i in positions[:3]):
+        raise AssertionError("installer download and checks must fail closed")
 
 
 def validate_windows_sycl_toolset_contract(workflow_text: str) -> None:
@@ -152,6 +197,8 @@ def validate_windows_sycl_toolset_contract(workflow_text: str) -> None:
     raw_steps = job.get("steps")
     if not isinstance(raw_steps, list) or not raw_steps:
         raise AssertionError(f"job '{WINDOWS_GPU_JOB_ID}' has no steps")
+    if len(raw_steps) > MAX_JOB_STEPS:
+        raise AssertionError("job exceeds step limit")
     steps = [s for s in raw_steps[:MAX_JOB_STEPS] if isinstance(s, dict)]
     _validate_step_if_conditions(steps)
     _validate_msvc_step(steps)
@@ -177,6 +224,61 @@ def _validate_aot_probe(steps: list[dict[str, Any]]) -> None:
 
 class WindowsSyclToolsetContractTest(unittest.TestCase):
     """Positive, negative, and boundary contract tests for Windows MSVC+SYCL toolchain pin."""
+
+    def test_planted_bounds_and_guard_rejected(self) -> None:
+        workflow = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
+        for kind in ("rows", "steps", "guard"):
+            planted = deepcopy(workflow)
+            job = planted["jobs"][WINDOWS_GPU_JOB_ID]
+            if kind == "rows":
+                job["strategy"]["matrix"]["include"].extend([{"backend": "sycl"}] * MAX_MATRIX_ROWS)
+            elif kind == "steps":
+                job["steps"].extend(
+                    [{"name": "extra", "if": "steps.leg.outputs.run == 'true'"}] * MAX_JOB_STEPS
+                )
+            else:
+                guarded = next(s for s in job["steps"] if isinstance(s.get("if"), str))
+                guarded["if"] += " || always()"
+            with self.subTest(kind=kind), self.assertRaises(AssertionError):
+                validate_windows_sycl_toolset_contract(yaml.safe_dump(planted))
+
+    def test_planted_switch_only_in_comment_rejected(self) -> None:
+        text = WORKFLOW_PATH.read_text(encoding="utf-8")
+        switch = "-p=NEED_VS2026_INTEGRATION=0"
+        planted = text.replace(switch, "", 1).replace(
+            "          webimage_extracted\\bootstrapper.exe",
+            f"          rem {switch}\n" "          webimage_extracted\\bootstrapper.exe",
+            1,
+        )
+        with self.assertRaises(AssertionError):
+            validate_windows_sycl_toolset_contract(planted)
+
+    def test_planted_installer_integrity_failures(self) -> None:
+        workflow = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
+        for kind in ("size", "sha256", "late_size", "late_sha256", "curl", "exit", "length"):
+            planted = deepcopy(workflow)
+            target = next(
+                s
+                for s in planted["jobs"][WINDOWS_GPU_JOB_ID]["steps"]
+                if s.get("name") == ONEAPI_STEP_NAME
+            )
+            if kind in ("size", "sha256"):
+                del target["env"]["WINDOWS_BASEKIT_" + kind.upper()]
+            elif kind == "curl":
+                target["run"] = target["run"].replace("--fail", "", 1)
+            elif kind == "exit":
+                target["run"] = target["run"].replace("if errorlevel 1 exit /b 1", "rem ignored", 1)
+            elif kind == "length":
+                target["run"] += "\nrem extra" * MAX_SCRIPT_LINES
+            else:
+                marker = "WINDOWS_BASEKIT_SIZE" if kind == "late_size" else "Get-FileHash"
+                lines = target["run"].splitlines()
+                line = next(line for line in lines if marker in line)
+                lines.remove(line)
+                lines.append(line)
+                target["run"] = "\n".join(lines)
+            with self.subTest(kind=kind), self.assertRaises(AssertionError):
+                validate_windows_sycl_toolset_contract(yaml.safe_dump(planted))
 
     def test_live_workflow_satisfies_windows_sycl_toolset_contract(self) -> None:
         workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")

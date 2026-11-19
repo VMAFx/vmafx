@@ -932,10 +932,17 @@ jobs:
         shell: cmd
         env:
           WINDOWS_BASEKIT_URL: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/728c4418-1b40-47a9-ad51-31530fb27c94/intel-oneapi-toolkit-2026.2.0.661_offline.exe
+          WINDOWS_BASEKIT_SIZE: '2402678488'
+          WINDOWS_BASEKIT_SHA256: e5774d5435835b66b16c4369a6c9704720fe2df9d67cdc48922c93782c152ee0
           WINDOWS_AOT_EXPECT_REFUSED: tgllp,adl-s,adl-p,adl-n,rpl-s,rpl-p
           WINDOWS_DPCPP_COMPONENTS: intel.oneapi.win.cpp-dpcpp-common
         run: |
-          curl.exe --output %TEMP%\webimage.exe --url %WINDOWS_BASEKIT_URL% --retry 5 --retry-all-errors --retry-delay 5
+          curl.exe --fail --output %TEMP%\webimage.exe --url %WINDOWS_BASEKIT_URL% --retry 5 --retry-all-errors --retry-delay 5
+          if errorlevel 1 exit /b 1
+          powershell.exe -NoProfile -Command "$ErrorActionPreference='Stop'; if ((Get-Item (Join-Path $env:TEMP 'webimage.exe')).Length -ne [int64]$env:WINDOWS_BASEKIT_SIZE) { exit 1 }"
+          if errorlevel 1 exit /b 1
+          powershell.exe -NoProfile -Command "$ErrorActionPreference='Stop'; if ((Get-FileHash -Algorithm SHA256 (Join-Path $env:TEMP 'webimage.exe')).Hash -ne $env:WINDOWS_BASEKIT_SHA256) { exit 1 }"
+          if errorlevel 1 exit /b 1
           start /b /wait %TEMP%\webimage.exe -s -x -f webimage_extracted --log extract.log
           del %TEMP%\webimage.exe
           webimage_extracted\bootstrapper.exe -s --action install --components=%WINDOWS_DPCPP_COMPONENTS% --eula=accept -p=NEED_VS2017_INTEGRATION=0 -p=NEED_VS2019_INTEGRATION=0 -p=NEED_VS2022_INTEGRATION=0 -p=NEED_VS2026_INTEGRATION=0 --log-dir=.
