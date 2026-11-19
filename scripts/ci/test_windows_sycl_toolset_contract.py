@@ -124,7 +124,7 @@ def _validate_oneapi_step(steps: list[dict[str, Any]]) -> None:
     match = ONEAPI_URL_VERSION_RE.search(url)
     if match is None or int(match.group("major")) < MIN_ONEAPI_MAJOR:
         raise AssertionError(
-            f"WINDOWS_BASEKIT_URL must pin oneAPI >= {MIN_ONEAPI_MAJOR} (Clang 22+ for MSVC 14.52 STL1000), "
+            f"WINDOWS_BASEKIT_URL must pin oneAPI >= {MIN_ONEAPI_MAJOR} (MSVC 14.52 STL1000, ADR-3567), "
             f"found {url!r}"
         )
     if url != EXPECTED_WINDOWS_BASEKIT_URL:
