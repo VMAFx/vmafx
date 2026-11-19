@@ -105,7 +105,7 @@ def _validate_msvc_step(steps: list[dict[str, Any]]) -> None:
 
 
 def _validate_oneapi_step(steps: list[dict[str, Any]]) -> None:
-    """Verify the SYCL leg pins the Clang-22+ oneAPI 2026.2 offline installer."""
+    """Verify the SYCL leg pins the oneAPI 2026.2.0.661 offline installer."""
     oneapi_steps = [s for s in steps[:MAX_JOB_STEPS] if s.get("name") == ONEAPI_STEP_NAME]
     if len(oneapi_steps) != 1:
         raise AssertionError(f"expected exactly one '{ONEAPI_STEP_NAME}' step")

@@ -18,7 +18,7 @@ the container
 | Tool | Where it comes from | Why |
 | --- | --- | --- |
 | Visual Studio 2022 or 2026, "Desktop development with C++" workload | Visual Studio installer | MSVC linker, headers and libraries, Windows SDK |
-| Intel oneAPI Toolkit, DPC++/C++ compiler | Intel offline installer (CI pins 2026.2.0.661; 2025.x works with MSVC 14.51 or older) | `icx-cl`, `icpx`, the SYCL runtime and `ocloc`, which the Windows compiler ships |
+| Intel oneAPI Toolkit, DPC++/C++ compiler | Intel offline installer (CI pins 2026.2.0.661; 2025.3.0.372 was pinned while the runner image carried MSVC toolset 14.51) | `icx-cl`, `icpx`, the SYCL runtime and `ocloc`, which the Windows compiler ships |
 | Intel GPU driver | Intel Arc / Graphics driver | Level Zero runtime (`ze_loader.dll` in `System32`) |
 | Python 3.14, Meson and Ninja | `python -m pip install --require-hashes -r requirements/locks/build.txt` | build system |
 | CMake | `python -m pip install cmake` | builds the Level Zero loader below |
