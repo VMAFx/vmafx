@@ -16,11 +16,10 @@ resolves `git merge-base <ref> HEAD`, lists changed and untracked files under
 root-relative explicit paths) with
 `git diff --name-status -z -M --no-color --no-ext-diff <merge-base> -- <pathspec>`
 and `git ls-files -z --others --exclude-standard -- <pathspec>`, and checks
-only test functions without a matching merge-base AST (`ast.dump`, including
-decorators) for the same enclosing definition chain and function name. Each old AST matches
-at most one current function, in source order. Findings exit 1. If the old
-file does not parse, or for added, type-changed, and untracked files, every
-function in the file counts as changed. Unreadable files, files above 1 MiB,
+weak tests touched by a zero-context diff hunk, including their decorators and
+enclosing definition headers. Pure deletions touch the new-side start and next
+line. Findings exit 1. Added, type-changed, and untracked files are checked in
+full. Unreadable files, files above 1 MiB,
 paths outside the repository root, changed or untracked Python paths inside
 `<pathspec>` not in the discovered test files, unsupported diff status letters,
 exceeded AST or file bounds, syntax errors, bad refs, and git errors exit 2
@@ -74,8 +73,10 @@ GIT_TIMEOUT_SECONDS = 30.0
 RC_NAMES = frozenset({"rc", "returncode", "return_code", "exit_code", "status", "code"})
 ALLOWED_SIMPLE_STATUSES = frozenset({"A", "M", "D", "T"})
 ESCAPE_RE = re.compile(r"#\s*exit-code-only(?:\s*:(.*)|$)")
+HUNK_RE = re.compile(r"@@ -[0-9]+(?:,[0-9]+)? \+([0-9]+)(?:,([0-9]+))? @@(?: .*)?")
 
 FuncNode: TypeAlias = ast.FunctionDef | ast.AsyncFunctionDef
+DefNode: TypeAlias = ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
 
 
 class ScanError(Exception):
@@ -332,21 +333,23 @@ def _check_test_function(func: FuncNode, lines: list[str], rel_path: str) -> Fin
     return None
 
 
-def _extract_test_functions(tree: ast.AST, rel_path: str) -> list[tuple[str, FuncNode]]:
-    """Return `(qualname, node)` in source order for all `def test_*` nodes in `tree`."""
-    stack: list[tuple[ast.AST, tuple[str, ...]]] = [(tree, ())]
-    funcs: list[tuple[str, FuncNode]] = []
+def _extract_test_functions(
+    tree: ast.AST, rel_path: str
+) -> list[tuple[FuncNode, tuple[DefNode, ...]]]:
+    """Return test functions with their enclosing definitions in source order."""
+    stack: list[tuple[ast.AST, tuple[DefNode, ...]]] = [(tree, ())]
+    funcs: list[tuple[FuncNode, tuple[DefNode, ...]]] = []
     for _ in range(MAX_AST_NODES + 1):
         if not stack:
-            funcs.sort(key=lambda item: (item[1].lineno, item[1].col_offset))
+            funcs.sort(key=lambda item: (item[0].lineno, item[0].col_offset))
             return funcs
         curr, scope_chain = stack.pop()
         if isinstance(curr, (ast.FunctionDef, ast.AsyncFunctionDef)) and curr.name.startswith(
             "test_"
         ):
-            funcs.append((".".join((*scope_chain, curr.name)), curr))
+            funcs.append((curr, scope_chain))
         next_chain = (
-            (*scope_chain, curr.name)
+            (*scope_chain, curr)
             if isinstance(curr, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
             else scope_chain
         )
@@ -358,10 +361,30 @@ def _extract_test_functions(tree: ast.AST, rel_path: str) -> list[tuple[str, Fun
     raise ScanError(f"{rel_path}: exceeds {MAX_AST_NODES} AST nodes")
 
 
+def _definition_lines(node: DefNode) -> list[tuple[int, int]]:
+    """Return the definition line and all lines occupied by its decorators."""
+    if len(node.decorator_list) > MAX_DECORATORS:
+        raise ScanError(f"{node.name}: definition exceeds {MAX_DECORATORS} decorators")
+    return [(node.lineno, node.lineno)] + [
+        (dec.lineno, dec.end_lineno or dec.lineno) for dec in node.decorator_list[:MAX_DECORATORS]
+    ]
+
+
+def _function_touched(
+    func: FuncNode, parents: tuple[DefNode, ...], hunks: list[tuple[int, int]]
+) -> bool:
+    """Match a function span or an enclosing definition header against hunks."""
+    start = min(line for line, _ in _definition_lines(func))
+    spans = [(start, func.end_lineno or func.lineno)]
+    for parent in parents[:MAX_AST_NODES]:
+        spans.extend(_definition_lines(parent))
+    return any(a <= end and start_line <= b for a, b in spans for start_line, end in hunks)
+
+
 def file_findings(
     source: str,
     rel_path: str,
-    old_dumps: dict[str, list[str]] | None = None,
+    hunks: list[tuple[int, int]] | None = None,
 ) -> list[Finding]:
     """Parse one Python test file and return exit-code-only findings in (changed) functions."""
     try:
@@ -370,16 +393,10 @@ def file_findings(
         raise ScanError(f"{rel_path}:{exc.lineno or 1}: syntax error: {exc.msg}") from exc
     lines = source.splitlines()
     funcs = _extract_test_functions(tree, rel_path)
-    previous = {
-        name: Counter(dumps[:MAX_AST_NODES])
-        for name, dumps in itertools.islice((old_dumps or {}).items(), MAX_AST_NODES)
-    }
     findings: list[Finding] = []
     # len(funcs) <= MAX_AST_NODES is enforced by _extract_test_functions.
-    for qualname, func in funcs[:MAX_AST_NODES]:
-        dump = ast.dump(func)
-        if qualname in previous and previous[qualname][dump] > 0:
-            previous[qualname][dump] -= 1
+    for func, parents in funcs[:MAX_AST_NODES]:
+        if hunks is not None and not _function_touched(func, parents, hunks):
             continue
         finding = _check_test_function(func, lines, rel_path)
         if finding is not None:
@@ -537,25 +554,41 @@ def _changed_files_by_path(
     return merge_base, changes
 
 
-def _old_function_dumps(root: Path, merge_base: str, old_path: str) -> dict[str, list[str]] | None:
-    """Return ordered dumps per qualified name, or None on SyntaxError."""
-    spec = f"{merge_base}:{old_path}"
-    res = _run_git(root, ["show", spec])
+def _changed_hunks(
+    root: Path, merge_base: str, old_path: str, new_path: str
+) -> list[tuple[int, int]]:
+    """Read new-side zero-context hunk ranges for one changed or renamed file."""
+    res = _run_git(
+        root,
+        [
+            "diff",
+            "--unified=0",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--text",
+            "-M",
+            merge_base,
+            "--",
+            old_path,
+            new_path,
+        ],
+    )
     if res.returncode != 0:
-        detail = res.stderr.strip() or "git show failed"
-        raise ScanError(f"{root}: git show {spec} failed: {detail}")
-    if len(res.stdout.encode("utf-8")) > MAX_FILE_BYTES:
-        raise ScanError(f"{old_path}: old version exceeds {MAX_FILE_BYTES} byte read limit")
-    try:
-        tree = ast.parse(res.stdout, filename=old_path)
-    except SyntaxError:
-        return None
-    funcs = _extract_test_functions(tree, old_path)
-    # len(funcs) <= MAX_AST_NODES is enforced by _extract_test_functions.
-    dumps: dict[str, list[str]] = {}
-    for qualname, node in funcs[:MAX_AST_NODES]:
-        dumps.setdefault(qualname, []).append(ast.dump(node))
-    return dumps
+        raise ScanError(f"{root}: git diff hunks for {new_path} failed: {res.stderr.strip()}")
+    lines = res.stdout.splitlines()
+    if len(lines) > MAX_AST_NODES:
+        raise ScanError(f"{new_path}: diff exceeds {MAX_AST_NODES} lines")
+    hunks: list[tuple[int, int]] = []
+    for line in lines[:MAX_AST_NODES]:
+        if line.startswith("@@"):
+            match = HUNK_RE.fullmatch(line)
+            if match is None:
+                raise ScanError(f"{new_path}: malformed git diff hunk header")
+            start = int(match.group(1))
+            count = int(match.group(2)) if match.group(2) is not None else 1
+            hunks.append((start, start + count - 1 if count else start + 1))
+    return hunks
 
 
 def _normalise_explicit_path(root: Path, root_resolved: Path, raw: str) -> tuple[Path, str]:
@@ -620,10 +653,8 @@ def scan_repository(
             continue
         else:
             old_rel = changes[rel_path]
-            old_dumps = (
-                _old_function_dumps(root, merge_base, old_rel) if old_rel is not None else None
-            )
-            current = file_findings(source, rel_path, old_dumps)
+            hunks = _changed_hunks(root, merge_base, old_rel, rel_path) if old_rel else None
+            current = file_findings(source, rel_path, hunks)
         if len(findings) + len(current) > MAX_AST_NODES:
             raise ScanError(f"{root}: exceeds {MAX_AST_NODES} findings")
         findings.extend(current)

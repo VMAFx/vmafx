@@ -347,18 +347,20 @@ python3 scripts/ci/check_exit_code_only_tests.py --changed-against origin/master
   normalised root-relative explicit paths otherwise) via
   `git diff --name-status -z -M --no-color --no-ext-diff <merge-base> -- <pathspec>`
   and `git ls-files -z --others --exclude-standard -- <pathspec>`, and checks
-  test functions without a matching merge-base AST (`ast.dump`, including
-  decorators) for the same enclosing definition chain and function name, using
-  `git show <merge-base>:<old-path>`. Each old AST matches at most one current
-  function, in source order. When
-  the old version has a syntax error, or for added, type-changed, or untracked
-  files, or a file renamed from outside `<pathspec>`, every function in the
-  file counts as changed. The check exits `1` on findings (`0` when clean). An
+  weak tests when a zero-context diff hunk touches their span (including
+  decorators), or a definition or decorator line of an enclosing function or
+  class. A pure deletion touches its new-side start and the next line. A comment
+  edit inside an old weak test therefore reports it. The span ends at the last
+  AST statement: a deleted final assertion after trailing comments can lie
+  outside that span and go unreported. Added, type-changed, and
+  untracked files, and files renamed from outside `<pathspec>`, are checked in
+  full; a pure rename within the pathspec has no hunks and reports nothing.
+  The check exits `1` on findings (`0` when clean). An
   unreadable file, a file above 1 MiB, an explicit path outside the repository
   root, a changed or untracked Python path inside `<pathspec>` that is not one
   of the discovered test files, an unsupported diff status letter, an exceeded
   file or AST bound, a syntax error in a current test file, a bad ref, or a
-  `git merge-base` / `git diff` / `git ls-files` / `git show` failure exits `2`
+  `git merge-base` / `git diff` / `git ls-files` failure exits `2`
   with the cause on `stderr`, never `0`.
 - **Scope limit**: the check verifies that another assertion is present; it
   does not judge whether an output assertion is strong.
