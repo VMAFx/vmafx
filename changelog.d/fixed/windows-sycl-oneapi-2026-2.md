@@ -4,4 +4,5 @@
   `adl-p`, `adl-n`, `rpl-s`, `rpl-p`). Xe-LP, Alder Lake and Raptor Lake
   integrated devices get no AOT image from the Windows CI build and, by design,
   fall back to the [`spir64` image compiled at run time](docs/backends/sycl/aot.md#default-target-list).
-  The build with 13 accepted targets and this fallback on Windows remain unmeasured.
+  Builds run `44499808688` built the leg with the 13 accepted targets; the
+  run-time fallback on the six refused families remains unmeasured.
