@@ -682,6 +682,20 @@ IMAGE_LICENCE_LABELS = {
     "docker/Dockerfile.production": "production-cli-image",
     "docker/Dockerfile.production-gpu": "production-cuda-image",
 }
+IMAGE_TARGET_STAGES = {
+    "docker/Dockerfile.controller": ("controller",),
+    "docker/Dockerfile.production": ("cli", "server"),
+    "docker/Dockerfile.production-gpu": (
+        "final-cuda13",
+        "final-rocm10",
+        "final-oneapi2026",
+        "final-oneapi2025",
+    ),
+}
+FROM_RE = re.compile(r"^FROM\s+(\S+)(?:\s+AS\s+(\S+))?", re.IGNORECASE)
+LABEL_RE = re.compile(r'^\s*LABEL\s+org\.opencontainers\.image\.licenses="([^"]*)"', re.IGNORECASE)
+SPDX_TOKEN = re.compile(r"^[A-Za-z0-9.+-]+$")
+LICENCES_KEY = "org.opencontainers.image.licenses"
 
 
 def _record_component(records: dict, record_name: str, component_id: str) -> dict:
@@ -701,8 +715,128 @@ def _record_component(records: dict, record_name: str, component_id: str) -> dic
     raise ModelError(f"{record_name}: cyclic reference while resolving {component_id}")
 
 
+def _component_licences(component: dict) -> set[str]:
+    """The label terms one resolved component carries.
+
+    ``licence`` may hold a full sentence rather than an SPDX term (the NVIDIA
+    EULA text). OCI's ``licenses`` value is an SPDX expression, so only
+    single-token terms belong there; the full text stays in the notices.
+    """
+    found: set[str] = set()
+    for value in component.get("licences", ()):
+        found.add(str(value))
+    licence = component.get("licence")
+    if isinstance(licence, str):
+        for raw in licence.split(" AND "):
+            term = raw.strip()
+            if SPDX_TOKEN.fullmatch(term):
+                found.add(term)
+    return found
+
+
+def _record_label_licences(records: dict, record_name: str) -> set[str]:
+    """The licence labels of every component in a licensing record."""
+    found: set[str] = set()
+    for component in records[record_name].get("components", []):
+        resolved = _record_component(records, record_name, component["id"])
+        found |= _component_licences(resolved)
+    return found
+
+
+def _dockerfile_stages(text: str) -> list[dict]:
+    """Every build stage with the labels declared directly in it."""
+    stages: list[dict] = []
+    for line in text.splitlines():
+        match = FROM_RE.match(line)
+        if match:
+            stages.append({"base": match.group(1), "name": match.group(2), "labels": {}})
+            continue
+        label = LABEL_RE.match(line)
+        if label and stages:
+            stages[-1]["labels"][LICENCES_KEY] = label.group(1)
+    return stages
+
+
+def _stage_index(stages: list[dict], reference: str) -> int | None:
+    """The index of the stage a ``FROM`` reference names, or None for an external base."""
+    wanted = reference.lower()
+    for index, stage in enumerate(stages):
+        if stage.get("name") and stage["name"].lower() == wanted:
+            return index
+    if reference.isdigit():
+        index = int(reference) - 1
+        return index if 0 <= index < len(stages) else None
+    return None
+
+
+def _effective_labels(
+    stages: list[dict], index: int, seen: set[int] | None = None
+) -> dict[str, str]:
+    """The labels a stage inherits from its parent plus its own declarations."""
+    seen = set() if seen is None else seen
+    if index in seen:
+        raise ModelError("Dockerfile stage cycle")
+    seen.add(index)
+    parent = _stage_index(stages, stages[index]["base"])
+    inherited = _effective_labels(stages, parent, seen) if parent is not None else {}
+    return {**inherited, **stages[index]["labels"]}
+
+
+def _image_stage_labels(path: Path, relative: str) -> list[tuple[str, str | None]]:
+    """The effective licence label of each published stage in one Dockerfile."""
+    stages = _dockerfile_stages(path.read_text(encoding="utf-8"))
+    if not stages:
+        return []
+    targets = IMAGE_TARGET_STAGES.get(relative)
+    if targets:
+        selected = [(name, _stage_index(stages, name)) for name in targets]
+        found = [(name, index) for name, index in selected if index is not None]
+        if found:
+            return [
+                (name, _effective_labels(stages, index).get(LICENCES_KEY))
+                for name, index in found
+                if index is not None
+            ]
+    last = len(stages) - 1
+    return [
+        (
+            stages[last].get("name") or f"stage {last + 1}",
+            _effective_labels(stages, last).get(LICENCES_KEY),
+        )
+    ]
+
+
+def _dockerfile_label_problems(
+    root: Path, records: dict, relative: str, record_name: str
+) -> list[str]:
+    """The label problems of one Dockerfile and its manifest record."""
+    path = root / relative
+    if not path.is_file():
+        if record_name in records:
+            return [f"{relative}: listed in IMAGE_LICENCE_LABELS but missing"]
+        return []
+    try:
+        expected = _record_label_licences(records, record_name)
+    except (KeyError, StopIteration) as error:
+        raise ModelError(f"{record_name}: no licensing record") from error
+    problems: list[str] = []
+    for stage, label in _image_stage_labels(path, relative):
+        if label is None:
+            problems.append(f"{relative} stage {stage}: no org.opencontainers.image.licenses label")
+            continue
+        found = {term.strip() for term in label.split(" AND ")}
+        if found != expected:
+            missing = sorted(expected - found)
+            extra = sorted(found - expected)
+            problems.append(
+                f"{relative} stage {stage}: licences label differs from {record_name}: "
+                f"missing {missing}, extra {extra}"
+            )
+    return problems
+
+
 def dockerfile_licence_label_problems(root: Path) -> list[str]:
-    """Each image licence label is the licence set its manifest record ships."""
+    """Each published image stage's licence label is its manifest record's union."""
     manifest = root / LICENSING_MANIFEST
     if not manifest.is_file():
         return [f"{LICENSING_MANIFEST.as_posix()} is missing"]
@@ -718,33 +852,7 @@ def dockerfile_licence_label_problems(root: Path) -> list[str]:
         return []
     problems: list[str] = []
     for relative, record_name in IMAGE_LICENCE_LABELS.items():
-        path = root / relative
-        if not path.is_file():
-            if record_name in records:
-                problems.append(f"{relative}: listed in IMAGE_LICENCE_LABELS but missing")
-            continue
-        try:
-            binaries = _record_component(records, record_name, "vmafx-binaries")
-        except (KeyError, StopIteration) as error:
-            raise ModelError(f"{record_name}: no vmafx-binaries component") from error
-        expected = set(binaries.get("licences", ()))
-        labels = re.findall(
-            r'^LABEL org\.opencontainers\.image\.licenses="([^"]*)"',
-            path.read_text(encoding="utf-8"),
-            re.MULTILINE | re.IGNORECASE,
-        )
-        if not labels:
-            problems.append(f"{relative}: no org.opencontainers.image.licenses label")
-            continue
-        for label in labels:
-            found = {term.strip() for term in label.split(" AND ")}
-            if found != expected:
-                missing = sorted(expected - found)
-                extra = sorted(found - expected)
-                problems.append(
-                    f"{relative}: licences label differs from {record_name}: "
-                    f"missing {missing}, extra {extra}"
-                )
+        problems += _dockerfile_label_problems(root, records, relative, record_name)
     return problems
 
 

@@ -560,6 +560,50 @@ class DockerfileLabelTests(GateTestCase):
             handle.write(f'label org.opencontainers.image.licenses="{self.LABEL}"\n')
         self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
 
+    def test_a_fixed_component_licence_is_required(self) -> None:
+        self._tree()
+        manifest = self.root / "tools/rc1-tester/image/licensing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["artifacts"]["production-controller-image"]["components"].append(
+            {"id": "zimg", "kind": "fixed", "licence": "WTFPL"}
+        )
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        problems = gate.dockerfile_licence_label_problems(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("missing ['WTFPL']", problems[0])
+
+    def test_a_fixed_component_licence_in_the_label_passes(self) -> None:
+        self._tree(controller_label=self.LABEL + " AND WTFPL")
+        manifest = self.root / "tools/rc1-tester/image/licensing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["artifacts"]["production-controller-image"]["components"].append(
+            {"id": "zimg", "kind": "fixed", "licence": "WTFPL"}
+        )
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
+    def test_a_label_before_the_published_from_is_not_inherited(self) -> None:
+        self._tree(controller_label=None)
+        (self.root / "docker/Dockerfile.controller").write_text(
+            "FROM scratch AS builder\n"
+            f'LABEL org.opencontainers.image.licenses="{self.LABEL}"\n'
+            "FROM scratch AS controller\n",
+            encoding="utf-8",
+        )
+        problems = gate.dockerfile_licence_label_problems(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("stage controller: no org.opencontainers.image.licenses label", problems[0])
+
+    def test_a_label_on_the_parent_stage_is_inherited(self) -> None:
+        self._tree(controller_label=None)
+        (self.root / "docker/Dockerfile.controller").write_text(
+            "FROM scratch AS builder\n"
+            f'LABEL org.opencontainers.image.licenses="{self.LABEL}"\n'
+            "FROM builder AS controller\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
     def test_a_from_cycle_is_refused(self) -> None:
         self._tree(cycle=True)
         with self.assertRaises(gate.ModelError) as error:
