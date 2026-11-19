@@ -131,4 +131,10 @@ VmafxStatus vmafx_hip_gl_export(const VmafxReport *report, const VmafxHipDevice 
 /* Close the exported descriptors of `dmabuf` (the import duplicated them). */
 void vmafx_hip_gl_close(VmafxFrameImport *dmabuf, uint32_t n_planes);
 
+#ifdef HAVE_HIPCC
+/* The conversion kernels (import_convert.hip, embedded by xxd). */
+/* Match xxd -i object types exactly; keep read-only access at use sites. */
+extern unsigned char import_convert_hsaco[];
+#endif
+
 #endif /* VMAF_SRC_HIP_VMAFX_HIP_INTERNAL_H_ */

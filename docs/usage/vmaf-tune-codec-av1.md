@@ -34,7 +34,7 @@ carries SVT-AV1's integer (`-preset 7`).
 | Quality knob | `-crf` | `-crf` |
 | CRF accepted | 0..63 | 20..50 |
 | Default CRF | 35 | 35 |
-| Speed knob | `-cpu-used` 0..9 | `-preset` 0..13 |
+| Speed knob | `-cpu-used` 0..8 | `-preset` 0..13 |
 | Preset names accepted | 10 (`placebo` ... `ultrafast`) | 8 (`placebo` ... `veryfast`) |
 | Two-pass | yes | no (CRF mode) |
 | Saliency ROI | patched `-qpfile` bridge | patched `-qpfile` bridge ([ADR-3386](../adr/3386-encoder-roi-channels-measured.md)) |
@@ -59,7 +59,7 @@ Both adapters accept the shared x264-style names and translate them:
 | `faster` | 6 | 11 |
 | `veryfast` | 7 | 13 (fastest) |
 | `superfast` | 8 | not accepted |
-| `ultrafast` | 9 (fastest) | not accepted |
+| `ultrafast` | 8 (fastest) | not accepted |
 
 The SVT-AV1 map is closed and order-stable
 ([ADR-0294](../adr/0294-vmaf-tune-codec-adapter-svtav1.md)).

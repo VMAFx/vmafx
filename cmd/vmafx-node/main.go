@@ -30,6 +30,7 @@
 //	VMAFX_VMAF_BINARY     -> vmaf.binary      Path to the vmaf CLI binary (default: FindBinary()).
 //	VMAFX_MODEL_DIR       -> model.dir        Directory containing VMAF .json model files.
 //	VMAFX_BACKEND         -> backend          Scoring backend label for the executor (default "cpu").
+//	VMAFX_SIDECAR_ENABLED -> sidecar.enabled  Enable the online-training sidecar client and its /readyz check (default false).
 //	VMAFX_SIDECAR_SOCKET  -> sidecar.socket   Online-training sidecar Unix socket (default /tmp/vmafx-sidecar.sock).
 //	VMAFX_CONTROLLER_*, VMAFX_NODE_ID, VMAFX_NODE_SLOTS
 //	                      -> controller.* / node.*  Controller client (controller_config.go).
@@ -57,6 +58,7 @@
 // ADR-0782: OpenTelemetry tracing and metrics.
 // ADR-0933: in-memory per-frame ScoreStream.
 // ADR-1119: golusoris fx framework adoption.
+// ADR-3558: opt-in sidecar client, HTTP /readyz probe and gRPC readiness check.
 
 //go:build cgo
 
@@ -66,6 +68,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -293,36 +296,98 @@ func provideStatusRegistry(clk clock.Clock) *statuspage.Registry {
 	return statuspage.NewRegistry(clk)
 }
 
-// mountNodeHealth registers the node's readiness check on the status registry
-// and logs the served health contract. The VmafxScoring Health RPC stays
-// available even without a scorer; the statuspage check below records whether
-// scoring is actually usable (scorer present), which /readyz (mountNodeHTTP)
-// reports — without it, k8s would mark a scorer-less node ready and route
-// un-servable Score RPCs to it.
-//
-// Consuming *grpc.Server here is not required for the listener to bind (the
-// standalone lazy-provider guard invoke in main does that); it is taken so this
-// invoke is ordered after the gRPC registration and reads as "health depends on
-// the server being wired".
-func mountNodeHealth(
-	reg *statuspage.Registry,
-	scorer *libvmaf.Scorer,
-	inv *probe.Inventory,
-	log *slog.Logger,
-) {
-	reg.Register(statuspage.Check{
+// grpcReadinessTimeout bounds the loopback dial of the gRPC readiness check
+// so a wedged listener fails /readyz inside the statuspage 2 s budget (ADR-3558).
+const grpcReadinessTimeout = time.Second
+
+// grpcLoopbackAddr resolves a configured grpc.listen address into a dialable
+// loopback host:port for the statuspage grpc readiness check.
+func grpcLoopbackAddr(listen string) (string, error) {
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return "", fmt.Errorf("parse grpc.listen %q: %w", listen, err)
+	}
+	if port == "" || port == "0" {
+		return "", fmt.Errorf("grpc.listen %q has no fixed port to probe", listen)
+	}
+	switch host {
+	case "", "0.0.0.0":
+		host = "127.0.0.1"
+	case "::":
+		host = "::1"
+	}
+	return net.JoinHostPort(host, port), nil
+}
+
+// probeGRPCListener confirms the node's gRPC TCP listener is accepting
+// connections within grpcReadinessTimeout (ADR-3558).
+func probeGRPCListener(ctx context.Context, listen string) error {
+	target, err := grpcLoopbackAddr(listen)
+	if err != nil {
+		return err
+	}
+	dialCtx, cancel := context.WithTimeout(ctx, grpcReadinessTimeout)
+	defer cancel()
+	var dialer net.Dialer
+	conn, err := dialer.DialContext(dialCtx, "tcp", target)
+	if err != nil {
+		return fmt.Errorf("grpc listener %s not accepting: %w", target, err)
+	}
+	if closeErr := conn.Close(); closeErr != nil {
+		return fmt.Errorf("close grpc readiness probe %s: %w", target, closeErr)
+	}
+	return nil
+}
+
+// nodeHealthParams groups the dependencies of mountNodeHealth.
+type nodeHealthParams struct {
+	fx.In
+	Registry *statuspage.Registry
+	Scorer   *libvmaf.Scorer
+	Inv      *probe.Inventory
+	GRPC     grpcmod.Config
+	Sidecar  *FeedbackClient
+	Log      *slog.Logger
+}
+
+// mountNodeHealth registers the node's readiness checks on the status registry
+// and logs the served health contract (ADR-3558):
+//   - scorer (readiness + startup): scoring binary usable;
+//   - grpc (readiness): gRPC listener accepting loopback connections;
+//   - sidecar (readiness only, when sidecar.enabled is true): drainer holds a
+//     live connection to the sidecar Unix socket.
+func mountNodeHealth(p nodeHealthParams) {
+	p.Registry.Register(statuspage.Check{
 		Name: "scorer",
 		Tags: []string{health.TagReadiness, health.TagStartup},
 		Fn: func(_ context.Context) error {
-			if scorer == nil {
+			if p.Scorer == nil {
 				return fmt.Errorf("scorer not initialised")
 			}
 			return nil
 		},
 	})
-	log.Info("node health surface mounted",
-		"probe", "grpc:VmafxScoring/Health",
-		"scoring_enabled", scorer != nil,
-		"encoders_available", len(inv.Available),
+	p.Registry.Register(statuspage.Check{
+		Name: "grpc",
+		Tags: []string{health.TagReadiness},
+		Fn: func(ctx context.Context) error {
+			return probeGRPCListener(ctx, p.GRPC.Listen)
+		},
+	})
+	sidecarEnabled := p.Sidecar != nil && p.Sidecar.Enabled()
+	if sidecarEnabled {
+		p.Registry.Register(statuspage.Check{
+			Name: "sidecar",
+			Tags: []string{health.TagReadiness},
+			Fn: func(_ context.Context) error {
+				return p.Sidecar.ReadinessErr()
+			},
+		})
+	}
+	p.Log.Info("node health surface mounted",
+		"probe", "http:/readyz",
+		"scoring_enabled", p.Scorer != nil,
+		"sidecar_enabled", sidecarEnabled,
+		"encoders_available", len(p.Inv.Available),
 	)
 }

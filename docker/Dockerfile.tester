@@ -26,7 +26,7 @@
 
 # Base images come from build-config.env (single source, ADR-1129).
 ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2"
-ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170"
+ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f"
 ARG ONEAPI_BUILDER="debian:13-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2"
 ARG ONEAPI_RUNTIME="debian:13-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2"
 ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.1.0-full@sha256:4f5ed1bf6532a4b9920400401b0ad0f706af356dae61e40afefbfd6c8073f0ce"
@@ -214,7 +214,7 @@ RUN apt-get --error-on=any -o Acquire::Retries=3 update \
     && rm -rf /var/lib/apt/lists/*
 COPY build-config.env /tmp/vmafx/build-config.env
 COPY scripts/ci/install-intel-oneapi.sh scripts/ci/install-intel-ocloc.sh /tmp/vmafx/scripts/ci/
-COPY dev/scripts/fetch-intel-neo.py /tmp/vmafx/dev/scripts/fetch-intel-neo.py
+COPY dev/scripts/fetch-intel-neo.py dev/scripts/intel-neo-lock.json /tmp/vmafx/dev/scripts/
 # hadolint ignore=DL3008
 RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
     bash /tmp/vmafx/scripts/ci/install-intel-oneapi.sh --mode=builder /tmp/vmafx \
@@ -307,7 +307,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY build-config.env /tmp/vmafx/build-config.env
 COPY scripts/ci/install-intel-ocloc.sh /tmp/vmafx/scripts/ci/install-intel-ocloc.sh
-COPY dev/scripts/fetch-intel-neo.py /tmp/vmafx/dev/scripts/fetch-intel-neo.py
+COPY dev/scripts/fetch-intel-neo.py dev/scripts/intel-neo-lock.json /tmp/vmafx/dev/scripts/
 # The installer runs in /tmp/vmafx (its `ocloc query` writes a file into the
 # working directory); the byte code Debian's Python compiles at install time is
 # a cache the report never writes again (PYTHONDONTWRITEBYTECODE).

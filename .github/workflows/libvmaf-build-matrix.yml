@@ -370,33 +370,11 @@ jobs:
         if: ${{ (matrix.dnn && startsWith(matrix.os, 'ubuntu')) && steps.impact.outputs.c_core == 'true' }}
         env:
           ORT_VERSION: "1.22.0"
-          ORT_SHA256: "8344d55f93d5bc5021ce342db50f62079daf39aaafb5d311a451846228be49b3"
         run: |
           set -euo pipefail
-          ort_name="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
-          ort_archive="${RUNNER_TEMP}/${ort_name}"
-          ort_url="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${ort_name}"
-          curl -fSL --retry 5 --retry-delay 5 --retry-all-errors --remove-on-error \
-            --output "${ort_archive}" \
-            "${ort_url}"
-          printf '%s  %s\n' "${ORT_SHA256}" "${ort_archive}" \
-            | sha256sum --check --strict
-          sudo tar -xzf "${ort_archive}" -C /opt/
-          sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
-          sudo install -d /usr/local/lib/pkgconfig
-          cat <<EOF | sudo tee /usr/local/lib/pkgconfig/libonnxruntime.pc >/dev/null
-          prefix=/opt/onnxruntime
-          exec_prefix=\${prefix}
-          libdir=\${exec_prefix}/lib
-          includedir=\${prefix}/include
-
-          Name: libonnxruntime
-          Description: ONNX Runtime C API
-          Version: ${ORT_VERSION}
-          Libs: -L\${libdir} -lonnxruntime
-          Cflags: -I\${includedir}
-          EOF
-          sudo sed -i 's/^          //' /usr/local/lib/pkgconfig/libonnxruntime.pc
+          sudo install -d -o "$(id -u)" /opt/onnxruntime /usr/local/lib/pkgconfig
+          python3 scripts/ci/ort_nuget_install.py --version "${ORT_VERSION}" \
+            --prefix /opt/onnxruntime
           echo "/opt/onnxruntime/lib" | sudo tee /etc/ld.so.conf.d/onnxruntime.conf
           sudo ldconfig
 
@@ -1214,11 +1192,33 @@ jobs:
         shell: cmd
         run: python scripts\ci\prefetch_go_modules.py
 
+      # Issue 3481: the first GNU gcc/cc run on this runner takes 9-13 s and the
+      # next under 1 s; warm the compilers the RGB math contract test resolves so
+      # first-run cost stays outside its 28 s cap.
+      - name: Warm up test compilers
+        shell: cmd
+        run: python core\test\test_vmafx_rgb_math_contract.py --warm-up
+
       - name: Run fast unit suite
         shell: cmd
         run: >-
           python scripts\ci\run_meson_test.py --
           -C core\build --suite fast --print-errorlogs
+
+      - name: Upload meson testlog
+        if: ${{ (!cancelled()) && env.GITEA_ACTIONS != 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: windows-arm64-msvc-testlog
+          path: core\build\meson-logs\testlog.txt
+          if-no-files-found: warn
+      - name: Upload meson testlog (Gitea)
+        if: ${{ (!cancelled()) && env.GITEA_ACTIONS == 'true' }}
+        uses: actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2
+        with:
+          name: windows-arm64-msvc-testlog
+          path: core\build\meson-logs\testlog.txt
+          if-no-files-found: warn
 
       - name: Upload vmaf.exe artifact
         if: ${{ env.GITEA_ACTIONS != 'true' }}
