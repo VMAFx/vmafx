@@ -162,6 +162,24 @@ class WindowsSyclToolsetContractTest(unittest.TestCase):
         workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
         validate_windows_sycl_toolset_contract(workflow_text)
 
+    def assert_windows_pin_documentation(self, text: str) -> None:
+        self.assertIn("lane pins its own release (2026.2.0.661, ADR-3567)", text)
+        self.assertIn("tester zip keeps the build-config.env release (ADR-1566)", text)
+
+    def test_windows_pin_documentation(self) -> None:
+        for path in ("build-config.env", "docs/development/tester-image.md"):
+            self.assert_windows_pin_documentation((REPO_ROOT / path).read_text(encoding="utf-8"))
+
+    def test_negative_planted_shared_release_rejected(self) -> None:
+        for path in ("build-config.env", "docs/development/tester-image.md"):
+            text = (REPO_ROOT / path).read_text(encoding="utf-8")
+            for marker in (
+                "lane pins its own release (2026.2.0.661, ADR-3567)",
+                "tester zip keeps the build-config.env release (ADR-1566)",
+            ):
+                with self.assertRaises(AssertionError):
+                    self.assert_windows_pin_documentation(text.replace(marker, "shared release"))
+
     def test_contract_registered_in_tooling_suite(self) -> None:
         sys.path.insert(0, str(REPO_ROOT))
         from scripts.ci.suite_registry import load_registry, suite_files  # noqa: PLC0415

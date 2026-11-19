@@ -28,8 +28,10 @@ the container
 !!! note
     The `Windows MSVC+SYCL` CI leg in `libvmaf-build-matrix.yml` pins oneAPI
     2026.2.0.661 (`intel-oneapi-toolkit-2026.2.0.661_offline.exe`,
-    [ADR-3567](../../adr/3567-windows-sycl-oneapi-2026-2.md)) so `icx-cl`
-    satisfies MSVC 14.52's Clang 22+ STL check (`STL1000`). The Windows SYCL
+    [ADR-3567](../../adr/3567-windows-sycl-oneapi-2026-2.md)); the installer
+    lists Clang 23 resources (measured on 2026-11-19; see ADR-3567). The first
+    CI run tests whether `icx-cl` satisfies MSVC 14.52's Clang 22+ STL check
+    (`STL1000`). The Windows SYCL
     tester zip still reads `ONEAPI_WINDOWS_VERSION` (`2025.3.0.372`) from
     `build-config.env`. Linux builds and images use oneAPI 2026.1
     (`ONEAPI_VERSION`).

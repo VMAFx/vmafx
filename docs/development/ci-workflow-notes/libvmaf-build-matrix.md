@@ -322,9 +322,10 @@ extract + run bootstrapper with `-p=NEED_VS20{17,19,22,26}_INTEGRATION=0`).
 We tried `rscohn2/setup-oneapi@v0` first (Linux-only — all install URLs
 `.sh`) and Chocolatey's `intel-oneapi-basekit` (not on the community
 feed); neither works on `windows-2025`. Pinned to oneAPI 2026.2.0.661
-(`intel-oneapi-toolkit-2026.2.0.661_offline.exe`, ADR-3567) so `icx-cl`
-reports a Clang 22+ front end (Clang 23) as required by MSVC 14.52's
-`yvals_core.h` `STL1000` check on `win25-vs2026`.
+(`intel-oneapi-toolkit-2026.2.0.661_offline.exe`, ADR-3567), whose package
+file list contains Clang 23 resources (measured from the installer on
+2026-11-19; see ADR-3567). The first pull request run tests whether `icx-cl`
+satisfies MSVC 14.52's `STL1000` check on `win25-vs2026`.
 The CUDA leg additionally injects `/experimental:c11atomics` into
 `CFLAGS` / `CXXFLAGS` because libvmaf uses C11 atomics that
 MSVC's `<stdatomic.h>` refuses without that flag; icx-cl (SYCL leg)
