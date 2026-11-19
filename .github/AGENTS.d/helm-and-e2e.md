@@ -10,14 +10,18 @@ invariant: ORT/Helm version+SHA together; E2E targets; kuttl outcome checked; do
 
 ## ONNX Runtime release version and digest stay coupled
 
-All sites downloading ONNX Runtime C/C++ release archives—[`dev/Containerfile`](../../dev/Containerfile),
+All sites installing Linux ONNX Runtime C/C++ packages—[`dev/Containerfile`](../../dev/Containerfile),
 [`workflows/go-ci.yml`](../workflows/go-ci.yml), [`workflows/build.yml`](../workflows/build.yml),
 [`workflows/libvmaf-build-matrix.yml`](../workflows/libvmaf-build-matrix.yml), and
-[`workflows/tests-and-quality-gates.yml`](../workflows/tests-and-quality-gates.yml) (CPU and GPU legs)—pair
-`ORT_VERSION` with pinned `ORT_SHA256`, verifying download with `sha256sum --check --strict`
-before extraction. In `tests-and-quality-gates.yml`, cached GPU archive re-verifies every run,
+[`workflows/tests-and-quality-gates.yml`](../workflows/tests-and-quality-gates.yml) (CPU and GPU legs)—call
+`scripts/ci/ort_nuget_install.py` with `ORT_VERSION` (`--package cpu` or `--package gpu`),
+verifying NuGet archive byte size and SHA-256 against `scripts/ci/ort-nuget-pins.json`
+before extracting allow-listed files (ADR-3561). In `tests-and-quality-gates.yml`,
+`--cache-dir` re-verifies cached GPU package size and SHA-256 every run,
 purging cache file on mismatch. Static checker `scripts/ci/check_ort_tarball_pins.py`
-verifies digest presence, extraction order, cross-site consistency across all sites (ADR-3334).
+rejects GitHub release tarball downloads and direct NuGet URLs, checks helper
+`ORT_VERSION` pins against `scripts/ci/ort-nuget-pins.json`, and verifies digest
+presence, extraction order, cross-site consistency on tracked tarball downloads (ADR-3334, ADR-3561).
 Never pipe retrying `curl` transfer directly into `tar`: retries require file-backed
 output; privileged extraction never touches unverified bytes.
 
