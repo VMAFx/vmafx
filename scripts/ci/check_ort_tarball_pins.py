@@ -25,7 +25,6 @@ DEFAULT_ROOT = Path(__file__).resolve().parents[2]
 HEX_RE = re.compile(r"^[a-f0-9]{64}$")
 STEP_START_RE = re.compile(r"^(\s*)-\s+(?:name|uses|run):")
 GENERIC_STEP_RE = re.compile(r"^(\s*)-\s+")
-RUN_START_RE = re.compile(r"^\s*RUN\b")
 TAR_EXTRACT_RE = re.compile(r"\btar\b.*?(?:-[a-zA-Z0-9]*x|--extract)")
 SHA_CHECK_RE = re.compile(r"\bsha256sum\b.*?(?:--check|-c\b)")
 GPU_MARKER_RE = re.compile(r"onnxruntime-[^\s\"'/]*-gpu")
@@ -34,8 +33,36 @@ VERSION_FLAG_RE = re.compile(r"--version(?:=|\s+)[\"']?([^\"'\s#\\]+)")
 MAX_COMMAND_LINES = 256
 MAX_STEP_LINES = 10000
 BINDING_RE = re.compile(
-    r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*[\"']?([^\"'\s#\\$}]+)"
+    r"^\s*(?:(?:export|ARG|ENV)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*[\"']?([^\"'\s#\\$}]+)"
 )
+INLINE_BINDING_RE = re.compile(r"(?:^|[\s;&|])([A-Za-z_][A-Za-z0-9_]*)=[\"']?([^\"'\s#\\;$}]+)")
+HELPER_FLAGS: frozenset[str] = frozenset(
+    {
+        "--package",
+        "--version",
+        "--prefix",
+        "--pkgconfig-dir",
+        "--cache-dir",
+        "--print-pin",
+    }
+)
+MAX_HELPER_FLAGS = len(HELPER_FLAGS)
+CONTAINER_SHAPE_FINDING = "container ort_nuget_install.py instruction violates canonical RUN shape"
+CONTAINER_RUN_RE = re.compile(r"^RUN\s+(?!-|\s*\[)(.+)$", re.I)
+CONTAINER_FORBIDDEN_RE = re.compile(
+    r"[\"'`;|(){}]|<<|\$\(|(?<!&)&(?!&)|\beval\b|\b(?:sh|bash)\s+-[A-Za-z]*c\b|\benv\s"
+)
+CONTAINER_ORT_ASSIGN_RE = re.compile(r"^(?:export\s+)?ORT_VERSION=([0-9]+(?:\.[0-9]+)+)$")
+CONTAINER_HELPER_CMD_RE = re.compile(
+    r"^(?:ORT_VERSION=([0-9]+(?:\.[0-9]+)+)\s+)?"
+    r"python3\s+(?:/build/vmaf/)?scripts/ci/ort_nuget_install\.py"
+    r"((?:\s+--[a-z-]+(?:=|\s+)(?!-)\S+)+)$"
+)
+CONTAINER_FLAG_PAIR_RE = re.compile(r"(--[a-z-]+)(?:=|\s+)((?!-)\S+)")
+CONTAINER_VERSION_ARG_RE = re.compile(
+    r'^(?:[0-9]+(?:\.[0-9]+)+|\$ORT_VERSION|\$\{ORT_VERSION\}|"\$ORT_VERSION"|"\$\{ORT_VERSION\}")$'
+)
+CONTAINER_FLAG_VALUE_RE = re.compile(r"^[A-Za-z0-9_./][A-Za-z0-9_./-]*$")
 NUGET_ADDRESS_RE = re.compile(
     r"(?:api\.nuget\.org/v3-flatcontainer/|nuget\.org/api/v2/package/)"
     r"(\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Za-z_][A-Za-z0-9_]*|[^/\s\"']+)",
@@ -110,31 +137,44 @@ def _find_workflow_block(lines: list[str], site_idx: int) -> tuple[int, int]:
     return start_idx, end_idx
 
 
-def _find_docker_block(lines: list[str], site_idx: int) -> tuple[int, int]:
-    """Find start and end line indices of Dockerfile RUN and preceding ARGs."""
-    n = len(lines)
-    run_idx = site_idx
-    for j in range(site_idx, -1, -1):
-        if RUN_START_RE.match(lines[j]):
-            run_idx = j
+def _container_instruction(
+    lines: list[str], site_idx: int
+) -> tuple[int, int, str | None, str | None]:
+    """Return start index, end index, spaced text and fused text for an instruction."""
+    start_idx = site_idx
+    for j in range(site_idx - 1, max(-1, site_idx - 2 - MAX_COMMAND_LINES), -1):
+        stripped = lines[j].strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not stripped.endswith("\\"):
             break
+        start_idx = j
 
+    parts: list[str] = []
+    end_idx = start_idx
+    for idx in range(start_idx, min(len(lines), start_idx + MAX_COMMAND_LINES)):
+        end_idx = idx
+        stripped = lines[idx].strip()
+        if idx > start_idx and (not stripped or stripped.startswith("#")):
+            continue
+        parts.append(stripped.rstrip("\\"))
+        if not stripped.endswith("\\"):
+            return start_idx, end_idx, " ".join(parts), "".join(parts)
+    return start_idx, end_idx, None, None
+
+
+def _find_docker_block(lines: list[str], site_idx: int) -> tuple[int, int]:
+    """Find start and end line indices of container instruction and preceding ARGs/ENVs."""
+    run_idx, end_idx, _, _ = _container_instruction(lines, site_idx)
     start_idx = run_idx
-    for j in range(run_idx - 1, -1, -1):
+    for j in range(run_idx - 1, max(-1, run_idx - 1 - MAX_STEP_LINES), -1):
         line = lines[j]
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or re.match(r"^\s*(?:ARG|ENV)\b", line):
             start_idx = j
             continue
         break
-
-    end_idx = site_idx
-    for j in range(run_idx, n):
-        end_idx = j
-        if not lines[j].rstrip().endswith("\\"):
-            break
-
-    return start_idx, end_idx
+    return start_idx, max(site_idx, end_idx)
 
 
 def find_block_for_site(lines: list[str], site_idx: int, is_workflow: bool) -> tuple[int, int]:
@@ -304,15 +344,164 @@ def _step_bindings(lines: list[str]) -> dict[str, set[str]] | None:
     return bindings
 
 
-def _helper_command(lines: list[str], site_idx: int, end_idx: int) -> str | None:
-    """Collect one shell command, rejecting excessively long continuations."""
+def _valid_container_helper_flags(flags_tail: str) -> bool:
+    """Return True when every helper flag is known, unique, and has an allowed value."""
+    pairs = CONTAINER_FLAG_PAIR_RE.findall(flags_tail)
+    if not pairs or len(pairs) > MAX_HELPER_FLAGS:
+        return False
+    seen: set[str] = set()
+    for flag, value in pairs[:MAX_HELPER_FLAGS]:
+        if flag not in HELPER_FLAGS or flag in seen:
+            return False
+        seen.add(flag)
+        if flag == "--version":
+            if CONTAINER_VERSION_ARG_RE.fullmatch(value) is None:
+                return False
+        elif CONTAINER_FLAG_VALUE_RE.fullmatch(value) is None or "ORT_VERSION" in value:
+            return False
+    return True
+
+
+def _parse_container_segment(raw_seg: str, persistent: list[str], calls: list[str]) -> bool:
+    """Validate one &&-separated simple command in a container helper instruction."""
+    seg = raw_seg.strip()
+    if not seg or "&" in seg:
+        return False
+    if "ort_nuget_install.py" in seg:
+        cmd_match = CONTAINER_HELPER_CMD_RE.fullmatch(seg)
+        if cmd_match is None or not _valid_container_helper_flags(cmd_match.group(2)):
+            return False
+        calls.append(" ".join([*persistent, seg]))
+        return True
+    if "ORT_VERSION" in seg:
+        if CONTAINER_ORT_ASSIGN_RE.fullmatch(seg) is None:
+            return False
+        persistent.append(seg)
+    return True
+
+
+def _parse_container_helper_instruction(command: str, fused: str) -> list[str] | None:
+    """Validate canonical container RUN shape and return helper calls with active bindings."""
+    token_count = command.count("ort_nuget_install.py")
+    if token_count == 0 or fused.count("ort_nuget_install.py") != token_count:
+        return None
+    run_match = CONTAINER_RUN_RE.fullmatch(command.strip())
+    if run_match is None:
+        return None
+    body = run_match.group(1)
+    normalized = (
+        body.replace('"${ORT_VERSION}"', "$ORT_VERSION")
+        .replace('"$ORT_VERSION"', "$ORT_VERSION")
+        .replace("${ORT_VERSION}", "$ORT_VERSION")
+    )
+    if CONTAINER_FORBIDDEN_RE.search(normalized):
+        return None
+    raw_segments = body.split("&&", MAX_COMMAND_LINES + 1)
+    if len(raw_segments) > MAX_COMMAND_LINES:
+        return None
+    persistent: list[str] = []
+    calls: list[str] = []
+    for raw_seg in raw_segments[:MAX_COMMAND_LINES]:
+        if not _parse_container_segment(raw_seg, persistent, calls):
+            return None
+    return calls if len(calls) == token_count else None
+
+
+def _container_helper_calls(lines: list[str], site_idx: int) -> list[str] | None:
+    """Extract allow-listed helper calls in a container instruction whose token is on site_idx.
+
+    Canonical grammar for a container instruction holding ort_nuget_install.py:
+    - RUN <cmd> (no RUN flags, no exec form RUN [, no heredoc <<), joined across <= 256 lines
+    - <cmd> splits on && only (<= 256 simple commands); refuses ;, ||, |, &, (, ), `, $(,
+      { or } outside ${ORT_VERSION}, eval, sh -c, bash -c, env , and quotes outside
+      "${ORT_VERSION}" or "$ORT_VERSION"
+    - helper simple command matches fullmatch:
+      [ORT_VERSION=<literal>] python3 [/build/vmaf/]scripts/ci/ort_nuget_install.py <flags>
+      (/build/vmaf/ allowed for dev/Containerfile:745), with flags from ort_nuget_install.py
+      (--package, --version, --prefix, --pkgconfig-dir, --cache-dir, --print-pin), each at
+      most once, and --version in {<literal>, $ORT_VERSION, ${ORT_VERSION}, "${ORT_VERSION}",
+      "$ORT_VERSION"}
+    - non-helper simple command naming ORT_VERSION matches fullmatch:
+      [export ]ORT_VERSION=<literal>
+    - any non-canonical instruction is refused once with CONTAINER_SHAPE_FINDING
+    """
+    run_idx, _, command, fused = _container_instruction(lines, site_idx)
+    if command is None or fused is None:
+        return None
+    prior = sum(
+        lines[j].count("ort_nuget_install.py")
+        for j in range(run_idx, min(site_idx, run_idx + MAX_COMMAND_LINES))
+        if not lines[j].lstrip().startswith("#")
+    )
+    calls = _parse_container_helper_instruction(command, fused)
+    if calls is None:
+        return None if prior == 0 else []
+    count = lines[site_idx].count("ort_nuget_install.py")
+    selected = calls[prior : prior + count]
+    return selected if len(selected) == count else None
+
+
+def _helper_command(
+    lines: list[str], site_idx: int, end_idx: int, is_workflow: bool = True
+) -> list[str] | None:
+    """Collect shell helper call(s) at site_idx, rejecting excessively long continuations."""
+    if not is_workflow:
+        return _container_helper_calls(lines, site_idx)
     parts: list[str] = []
     for idx in range(site_idx, min(end_idx + 1, site_idx + MAX_COMMAND_LINES)):
         line = lines[idx].strip()
         parts.append(line.rstrip("\\"))
         if not line.endswith("\\"):
-            return " ".join(parts)
+            return [" ".join(parts)]
     return None
+
+
+def _resolve_helper_version(
+    lines: list[str],
+    start_idx: int,
+    site_idx: int,
+    call_text: str,
+) -> tuple[str | None, str]:
+    """Resolve the literal or bound ORT_VERSION for a helper call."""
+    ver_match = VERSION_FLAG_RE.search(call_text)
+    version = ver_match.group(1) if ver_match else None
+    if version not in ("$ORT_VERSION", "${ORT_VERSION}"):
+        return version, ""
+    prefix = call_text.partition("ort_nuget_install.py")[0]
+    inline = dict(INLINE_BINDING_RE.findall(prefix))
+    if "ORT_VERSION" in inline:
+        return inline["ORT_VERSION"], ""
+    bindings = _step_bindings(lines[start_idx : site_idx + 1])
+    if bindings is None:
+        return None, "step binding limit exceeded"
+    values = bindings.get("ORT_VERSION", set())
+    if len(values) > 1:
+        return None, "ambiguous ORT_VERSION in step"
+    return next(iter(values), None), ""
+
+
+def _check_helper_call(
+    lines: list[str],
+    start_idx: int,
+    bound_end: int,
+    call_text: str,
+    packages: dict[str, dict[str, Any]],
+) -> str:
+    """Verify the package and version of a single helper invocation."""
+    pkg_match = PACKAGE_FLAG_RE.search(call_text)
+    if "--package" in call_text and pkg_match is None:
+        return "invalid ONNX Runtime package argument"
+    pkg_name = pkg_match.group(1) if pkg_match else "cpu"
+    version, message = _resolve_helper_version(lines, start_idx, bound_end, call_text)
+    if message:
+        return message
+    if pkg_name not in packages:
+        return f"unknown ONNX Runtime package '{pkg_name}' in step"
+    if version is None:
+        return "missing ORT_VERSION in step calling ort_nuget_install.py"
+    if version not in packages[pkg_name].get("versions", {}):
+        return f"unpinned ORT_VERSION '{version}' for package '{pkg_name}'"
+    return ""
 
 
 def _check_helper_step(
@@ -320,38 +509,29 @@ def _check_helper_step(
     site_idx: int,
     path: Path,
     packages: dict[str, dict[str, Any]],
+    is_workflow: bool,
 ) -> list[str]:
-    """Verify the package and version of a single helper invocation."""
-    start_idx, end_idx = _find_workflow_block(lines, site_idx)
-    call_text = _helper_command(lines, site_idx, end_idx)
+    """Verify helper invocation(s) whose token is on site_idx."""
+    start_idx, end_idx = find_block_for_site(lines, site_idx, is_workflow)
+    calls = _helper_command(lines, site_idx, end_idx, is_workflow)
     line_no = site_idx + 1
-    if call_text is None:
-        return [f"{path}:{line_no}: helper command continuation exceeds limit"]
-    pkg_match = PACKAGE_FLAG_RE.search(call_text)
-    if "--package" in call_text and pkg_match is None:
-        return [f"{path}:{line_no}: invalid ONNX Runtime package argument"]
-    pkg_name = pkg_match.group(1) if pkg_match else "cpu"
-    ver_match = VERSION_FLAG_RE.search(call_text)
-    version = ver_match.group(1) if ver_match else None
-    if version in ("$ORT_VERSION", "${ORT_VERSION}"):
-        bindings = _step_bindings(lines[start_idx : site_idx + 1])
-        if bindings is None:
-            return [f"{path}:{line_no}: step binding limit exceeded"]
-        values = bindings.get("ORT_VERSION", set())
-        if len(values) > 1:
-            return [f"{path}:{line_no}: ambiguous ORT_VERSION in step"]
-        version = next(iter(values), None)
-    message = ""
-    if pkg_name not in packages:
-        message = f"unknown ONNX Runtime package '{pkg_name}' in step"
-    elif version is None:
-        message = "missing ORT_VERSION in step calling ort_nuget_install.py"
-    elif version not in packages[pkg_name].get("versions", {}):
-        message = f"unpinned ORT_VERSION '{version}' for package '{pkg_name}'"
-    return [f"{path}:{line_no}: {message}"] if message else []
+    if calls is None:
+        msg = (
+            "helper command continuation exceeds limit" if is_workflow else CONTAINER_SHAPE_FINDING
+        )
+        return [f"{path}:{line_no}: {msg}"]
+    bound_end = site_idx if is_workflow else _container_instruction(lines, site_idx)[0] - 1
+    findings: list[str] = []
+    for call_text in calls:
+        message = _check_helper_call(lines, start_idx, bound_end, call_text, packages)
+        if message:
+            findings.append(f"{path}:{line_no}: {message}")
+    return findings
 
 
-def _check_nuget_download(lines: list[str], idx: int, path: Path, line: str) -> list[str]:
+def _check_nuget_download(
+    lines: list[str], idx: int, path: Path, line: str, is_workflow: bool
+) -> list[str]:
     """Reject direct runtime downloads and unresolved NuGet package variables."""
     lower = line.lower()
     if not any(marker in lower for marker in ("curl ", "wget ", "https://")):
@@ -362,7 +542,7 @@ def _check_nuget_download(lines: list[str], idx: int, path: Path, line: str) -> 
     if not match or not match.group(1).startswith("$"):
         return []
     name = match.group(1)[1:].strip("{}")
-    start_idx, end_idx = _find_workflow_block(lines, idx)
+    start_idx, end_idx = find_block_for_site(lines, idx, is_workflow)
     bindings = _step_bindings(lines[start_idx : end_idx + 1])
     if bindings is None:
         return [f"{path}:{idx + 1}: step binding limit exceeded"]
@@ -380,19 +560,48 @@ def _scan_workflow_line(
     idx: int,
     path: Path,
     packages: dict[str, dict[str, Any]] | None,
+    is_workflow: bool,
+    line: str | None = None,
 ) -> list[str]:
-    """Check a single workflow line for ONNX Runtime source and pin rules."""
-    line = lines[idx]
+    """Check a line or container command for ONNX Runtime source rules."""
+    line = lines[idx] if line is None else line
     if line.lstrip().startswith("#"):
         return []
-    line = re.split(r"\s+#", line, maxsplit=1)[0]
+    if is_workflow:
+        line = re.split(r"\s+#", line, maxsplit=1)[0]
     lower = line.lower()
     findings: list[str] = []
     if "onnxruntime/releases/download" in lower:
         findings.append(f"{path}:{idx + 1}: old ONNX Runtime release source forbidden")
-    findings.extend(_check_nuget_download(lines, idx, path, line))
+    findings.extend(_check_nuget_download(lines, idx, path, line, is_workflow))
     if "ort_nuget_install.py" in line and packages is not None:
-        findings.extend(_check_helper_step(lines, idx, path, packages))
+        findings.extend(_check_helper_step(lines, idx, path, packages, is_workflow))
+    return findings
+
+
+def _scan_container_line(
+    lines: list[str], idx: int, path: Path, packages: dict[str, dict[str, Any]] | None
+) -> list[str]:
+    """Check container instructions, including continued RUN and ADD commands."""
+    line = lines[idx]
+    if not line.strip() or line.lstrip().startswith("#"):
+        return []
+    start_idx, _, command, fused = _container_instruction(lines, idx)
+    if command is None or fused is None:
+        if idx == start_idx:
+            return [f"{path}:{idx + 1}: container command continuation exceeds limit"]
+        return []
+    findings: list[str] = []
+    if idx == start_idx:
+        findings = _scan_workflow_line(lines, idx, path, None, False, f"{command} {fused}")
+        if (
+            packages is not None
+            and "ort_nuget_install.py" in fused
+            and "ort_nuget_install.py" not in command
+        ):
+            findings.append(f"{path}:{idx + 1}: {CONTAINER_SHAPE_FINDING}")
+    if "ort_nuget_install.py" in line and packages is not None:
+        findings.extend(_check_helper_step(lines, idx, path, packages, False))
     return findings
 
 
@@ -413,9 +622,11 @@ def scan_file(
 
     for i, line in enumerate(lines):
         if is_workflow:
-            findings.extend(_scan_workflow_line(lines, i, path, packages))
+            findings.extend(_scan_workflow_line(lines, i, path, packages, True))
+        else:
+            findings.extend(_scan_container_line(lines, i, path, packages))
         entry = _match_tracked_entry(line)
-        if entry is None or (is_workflow and entry.name == "ONNX Runtime"):
+        if entry is None or entry.name == "ONNX Runtime":
             continue
 
         site_line_num = i + 1
@@ -440,20 +651,20 @@ def scan_file(
 
 def _find_target_files(repo_root: Path) -> list[Path]:
     """Find all candidate files under repo_root."""
-    target_files: list[Path] = []
     patterns = [
         ".github/workflows/*.yml",
         ".github/workflows/*.yaml",
-        "dev/Containerfile",
-        "Dockerfile",
-        "Dockerfile.*",
-        "docker/Dockerfile.*",
+        "Dockerfile*",
+        "Containerfile*",
+        "**/Dockerfile*",
+        "**/Containerfile*",
     ]
+    target_files: list[Path] = []
     for pat in patterns:
-        for p in sorted(repo_root.glob(pat)):
-            if p.is_file():
-                target_files.append(p)
-    return target_files
+        for path in sorted(repo_root.glob(pat)):
+            if path.is_file():
+                target_files.append(path)
+    return sorted(set(target_files))
 
 
 def _load_pins_for_check(
