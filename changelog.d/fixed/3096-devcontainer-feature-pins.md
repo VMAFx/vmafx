@@ -1,4 +1,5 @@
-- **Dev container:** the common-utils, nix and rust features are pinned to
-  exact releases (2.7.1, 1.4.1 and 1.6.1); Renovate now tracks them,
-  `check-base-image-single-source.sh` refuses a mutable major tag, and a digest
-  remains an accepted exact form (issue 3096).
+- **Dev container:** the generated `.devcontainer/devcontainer.json` keeps its
+  major feature tags, while `.devcontainer/devcontainer-lock.json` records the
+  exact versions (`2.7.1`, `1.4.1`, `1.6.1`) and `@sha256` digests for
+  common-utils, nix and rust. `check-base-image-single-source.sh` rule 5 refuses
+  a feature with no lock record or a mutable version/digest (issue 3096).

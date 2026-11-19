@@ -5,12 +5,12 @@
     "context": "."
   },
   "features": {
-    "ghcr.io/devcontainers/features/common-utils:2.7.1": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
       "installZsh": false,
       "upgradePackages": true
     },
-    "ghcr.io/devcontainers/features/nix:1.4.1": {},
-    "ghcr.io/devcontainers/features/rust:1.6.1": {}
+    "ghcr.io/devcontainers/features/nix:1": {},
+    "ghcr.io/devcontainers/features/rust:1": {}
   },
   "customizations": {
     "praetor": {

@@ -21,8 +21,9 @@
 #   3. Every pinned image tag must actually carry the version its knob claims,
 #      so RELEASE_DEBIAN=13 cannot sit above a debian:12 pin.
 #   4. Workflows must not hardcode versions that build-config.env owns.
-#   5. Dev Container features use exact releases or digests, never a mutable
-#      major tag.
+#   5. Dev Container features resolve through devcontainer-lock.json: every
+#      generated feature reference needs an exact version and @sha256 digest,
+#      never a mutable major tag.
 #
 # Rule 3 is what would have caught the drift that prompted this file:
 # Dockerfile.controller and Dockerfile.operator were still on Debian 12 and
@@ -211,10 +212,10 @@ if ! python3 scripts/ci/check-workflow-versions.py; then
   fail=1
 fi
 
-# ------------------------- rule 5: devcontainer feature pins are exact --
-# A feature tag like `common-utils:2` moves under the container without a
-# review. Exact releases are immutable enough for the build and Renovate's
-# devcontainer manager tracks them; a digest is the other exact form.
+# ------------------------- rule 5: devcontainer features resolve the lock --
+# `.devcontainer/devcontainer.json` is generated and keeps its major tags; exact
+# releases and digests live in `devcontainer-lock.json`, which the Dev Containers
+# CLI writes and this gate requires for every generated feature.
 if ! python3 scripts/ci/check_devcontainer_feature_pins.py; then
   fail=1
 fi

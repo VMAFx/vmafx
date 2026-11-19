@@ -40,7 +40,8 @@
     "python/test/resource/**",
     "build_artifacts/**",
     "model/**",
-    "ai/**/runs/**"
+    "ai/**/runs/**",
+    ".devcontainer/**"
   ],
   "pip_requirements": {
     "managerFilePatterns": [
@@ -62,18 +63,6 @@
       ],
       "groupName": "Other dependencies (minor + patch)",
       "automerge": false
-    },
-    {
-      "description": "Dev Container feature pins are exact releases; Renovate tracks their patch updates from .devcontainer/devcontainer.json (issue 3096).",
-      "matchManagers": [
-        "devcontainer"
-      ],
-      "matchDepTypes": [
-        "feature"
-      ],
-      "groupName": "devcontainer features",
-      "semanticCommitType": "chore",
-      "semanticCommitScope": "devcontainer"
     },
     {
       "description": "ADR-1354: the Verify Linux runtime job in supply-chain.yml stays on ubuntu-24.04, the oldest hosted image whose glibc (2.39) loads the native bundle. Moving it to a newer image would stop proving the documented glibc floor, so only this pin is frozen; other runner labels in the file still update.",
@@ -398,6 +387,7 @@
         ".github/workflows/praetor-api.yml",
         "tools/apicompat/gate/main.go",
         "tools/apicompat/gate/placeholder.go",
+        ".devcontainer/devcontainer.json",
         ".devcontainer/Dockerfile.praetor"
       ],
       "enabled": false
