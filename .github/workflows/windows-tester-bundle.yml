@@ -261,6 +261,13 @@ jobs:
           git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD -- tools/rc1-tester scripts/ci docs/hardware-reports \
             requirements/locks/windows-tester-zip.txt
+          commit=$(git show FETCH_HEAD:build-config.env \
+            | sed -n 's/^VMAF_RESOURCE_COMMIT="\([0-9a-f]\{40\}\)"$/\1/p')
+          if [[ -z $commit ]]; then
+            echo "::error::no VMAF_RESOURCE_COMMIT in the recipe's build-config.env" >&2
+            exit 1
+          fi
+          echo "VMAF_RESOURCE_COMMIT=$commit" >> "$GITHUB_ENV"
       - name: Setup python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
@@ -393,12 +400,6 @@ jobs:
         env:
           ZIMG_TRIPLET: ${{ matrix.gpu == 'sycl' && 'x64-windows-static-md' || format('{0}-windows-static', matrix.arch) }}
         run: pwsh -File scripts/ci/setup-zimg-windows.ps1 -Triplet $env:ZIMG_TRIPLET
-      - name: Load VMAF resource commit
-        shell: pwsh
-        run: |
-          $line = Select-String -Path build-config.env -Pattern '^VMAF_RESOURCE_COMMIT="([0-9a-f]{40})"$' | Select-Object -First 1
-          if (-not $line) { throw 'no VMAF_RESOURCE_COMMIT in build-config.env' }
-          "VMAF_RESOURCE_COMMIT=$($line.Matches[0].Groups[1].Value)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Build the zip
         if: matrix.gpu != 'sycl'
         shell: pwsh

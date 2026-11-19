@@ -147,6 +147,13 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD -- tools/rc1-tester scripts/ci docs/hardware-reports
+          commit=$(git show FETCH_HEAD:build-config.env \
+            | sed -n 's/^VMAF_RESOURCE_COMMIT="\([0-9a-f]\{40\}\)"$/\1/p')
+          if [[ -z $commit ]]; then
+            echo "::error::no VMAF_RESOURCE_COMMIT in the recipe's build-config.env" >&2
+            exit 1
+          fi
+          echo "VMAF_RESOURCE_COMMIT=$commit" >> "$GITHUB_ENV"
       - name: Build tools (build time only; none of them is linked into the bundle)
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
@@ -164,8 +171,6 @@ jobs:
             echo "ERROR: the Metal compiler is still missing after xcodebuild -downloadComponent MetalToolchain" >&2
             exit 1
           fi
-      - name: Load build config
-        run: bash scripts/ci/load-build-config.sh >> "$GITHUB_ENV"
       - name: Build the bundle
         env:
           VMAFX_SOURCE_COMMIT: ${{ needs.validate.outputs.source-sha }}

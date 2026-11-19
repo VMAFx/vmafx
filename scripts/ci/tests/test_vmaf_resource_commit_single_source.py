@@ -111,6 +111,13 @@ class VmafResourceCommitSingleSource(unittest.TestCase):
             CHECK(self.repo, None), ["build-config.env defines no VMAF_RESOURCE_COMMIT"]
         )
 
+    def test_bundle_workflows_read_the_recipe_value(self) -> None:
+        for name in ("macos-tester-bundle.yml", "windows-tester-bundle.yml"):
+            with self.subTest(workflow=name):
+                text = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+                self.assertIn("git show FETCH_HEAD:build-config.env", text)
+                self.assertIn('VMAF_RESOURCE_COMMIT=$commit"', text)
+
 
 if __name__ == "__main__":
     unittest.main()
