@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1459), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1460), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5847,3 +5847,7 @@ Every ADR, one heading each (1459), so the site search finds an ADR by its title
 ## ADR-3561: Install CI ONNX Runtime from pinned NuGet packages
 
 [3561-ort-nuget](3561-ort-nuget.md)
+
+## ADR-3567: Raise the Windows MSVC+SYCL CI oneAPI pin to 2026.2.0.661 for MSVC 14.52 STL1000 compatibility
+
+[3567-windows-sycl-oneapi-2026-2](3567-windows-sycl-oneapi-2026-2.md)
