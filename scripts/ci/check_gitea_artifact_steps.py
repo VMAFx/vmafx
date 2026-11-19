@@ -336,7 +336,9 @@ def _attach_trailing_post(step: Any, token: Any, indent: int = 0) -> None:
     ):
         # A literal block already ends its line; its post token must not add
         # a second line break before the first following comment or blank.
-        trimmed = value[1:]
+        # The source line carried the step's own indentation, but this token
+        # is emitted from the twin at the step-list level, so drop it.
+        trimmed = value[1:].lstrip(" ")
         if not trimmed:
             return
         token = _comment_token(token, trimmed, indent)

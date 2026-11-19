@@ -30,6 +30,42 @@ def load_checker_module():
     return module
 
 
+def find_twin_start_lines(module, document) -> list[int]:
+    """Line numbers of every accepted twin, including skip twins."""
+    starts: list[int] = []
+    for steps in module._step_lists(document):
+        for index in range(1, len(steps)):
+            source, twin = steps[index - 1], steps[index]
+            if not isinstance(source, dict) or not isinstance(twin, dict):
+                continue
+            kind = module._classify(source.get("uses"))
+            if not kind or kind[1]:
+                continue
+            base = module._base_condition(source.get("if"), on_gitea=False)
+            if base is None:
+                continue
+            if not module._check_twin("", kind[0], source, twin, base):
+                starts.append(twin.lc.line)
+    return starts
+
+
+def cut_twin(lines: list[str], start: int) -> str:
+    """Delete one whole step beginning at ``start`` from ``lines``."""
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    end = start + 1
+    while end < len(lines):
+        line = lines[end]
+        if not line.strip():
+            break
+        leading = len(line) - len(line.lstrip())
+        if leading < indent:
+            break
+        if leading == indent and (line.lstrip().startswith("#") or line.lstrip().startswith("- ")):
+            break
+        end += 1
+    return "".join(lines[:start] + lines[end:])
+
+
 V7 = "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2"
 V3 = "actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2"
 DL8 = "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2"
@@ -298,6 +334,90 @@ jobs:
         with: {{ name: log, path: out.log }}
 """
 
+LAST_STEP_COMMENT = f"""\
+---
+name: Last step
+on: push
+jobs:
+  a:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download digests
+        uses: {DL8}
+        with:
+          pattern: digest-*
+          merge-multiple: true
+      # MARKER after the last step
+  b:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo b
+"""
+
+LAST_STEP_COMMENT_WRITE = f"""\
+---
+name: Last step
+on: push
+jobs:
+  a:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download digests
+        if: ${{{{ env.GITEA_ACTIONS != 'true' }}}}
+        uses: {DL8}
+        with:
+          pattern: digest-*
+          merge-multiple: true
+      - name: Download digests (Gitea)
+        if: ${{{{ env.GITEA_ACTIONS == 'true' }}}}
+        shell: bash
+        run: |
+          echo '::warning::artifact download skipped on Gitea: v4+ is GitHub-only, v3 lacks merge-multiple, pattern'
+      # MARKER after the last step
+  b:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo b
+"""
+
+LAST_STEP_COMMENT_EOF = f"""\
+---
+name: Last step
+on: push
+jobs:
+  a:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download digests
+        uses: {DL8}
+        with:
+          pattern: digest-*
+          merge-multiple: true
+      # MARKER at the end of the file
+"""
+
+LAST_STEP_COMMENT_EOF_WRITE = f"""\
+---
+name: Last step
+on: push
+jobs:
+  a:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download digests
+        if: ${{{{ env.GITEA_ACTIONS != 'true' }}}}
+        uses: {DL8}
+        with:
+          pattern: digest-*
+          merge-multiple: true
+      - name: Download digests (Gitea)
+        if: ${{{{ env.GITEA_ACTIONS == 'true' }}}}
+        shell: bash
+        run: |
+          echo '::warning::artifact download skipped on Gitea: v4+ is GitHub-only, v3 lacks merge-multiple, pattern'
+      # MARKER at the end of the file
+"""
+
 
 class GiteaArtifactCheckTests(unittest.TestCase):
     """Run the checker against throw-away workflow files."""
@@ -460,6 +580,16 @@ class GiteaArtifactCheckTests(unittest.TestCase):
             textwrap.dedent(SKIP_TRAILING_BLOCK_WRITE),
         )
 
+    def test_write_keeps_last_step_comment_out_of_the_skip_twin(self) -> None:
+        for fixture, expected in (
+            (LAST_STEP_COMMENT, LAST_STEP_COMMENT_WRITE),
+            (LAST_STEP_COMMENT_EOF, LAST_STEP_COMMENT_EOF_WRITE),
+        ):
+            with self.subTest(fixture=fixture.splitlines()[1]):
+                result = self.run_check(fixture, "--write")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(self.path.read_text(encoding="utf-8"), textwrap.dedent(expected))
+
     def test_write_comment_cases_are_idempotent(self) -> None:
         for fixture in (SAME_LINE_COMMENTS, SKIP_TRAILING_BLOCK):
             with self.subTest(fixture=fixture.splitlines()[1]):
@@ -532,35 +662,12 @@ class GiteaArtifactCheckTests(unittest.TestCase):
             if stream.getvalue() != original:
                 # The writer refuses these files; they need a manual edit.
                 continue
-            starts: list[int] = []
-            for steps in module._step_lists(document):
-                for index, step in enumerate(steps):
-                    if index == 0 or not isinstance(step, dict):
-                        continue
-                    source = steps[index - 1]
-                    kind = module._classify(source.get("uses"))
-                    twin = module._classify(step.get("uses"))
-                    if kind and not kind[1] and twin and twin[1]:
-                        starts.append(step.lc.line)
+            starts = find_twin_start_lines(module, document)
             if not starts:
                 continue
             lines = original.splitlines(keepends=True)
             for start in starts:
-                indent = len(lines[start]) - len(lines[start].lstrip())
-                end = start + 1
-                while end < len(lines):
-                    line = lines[end]
-                    if not line.strip():
-                        break
-                    leading = len(line) - len(line.lstrip())
-                    if leading < indent:
-                        break
-                    if leading == indent and (
-                        line.lstrip().startswith("#") or line.lstrip().startswith("- ")
-                    ):
-                        break
-                    end += 1
-                broken = "".join(lines[:start] + lines[end:])
+                broken = cut_twin(lines, start)
                 with tempfile.TemporaryDirectory() as tmp:
                     candidate = Path(tmp) / "workflow.yml"
                     candidate.write_text(broken, encoding="utf-8")
