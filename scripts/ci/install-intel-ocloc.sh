@@ -11,8 +11,9 @@
 # intel-ocloc and the two IGC packages it loads at run time from the
 # intel/compute-runtime release pinned as INTEL_NEO_VERSION in build-config.env,
 # the release dev/Containerfile takes the GPU runtime from. The download goes
-# through dev/scripts/fetch-intel-neo.py, which checks every deb against the
-# SHA-256 sums the release publishes.
+# through dev/scripts/fetch-intel-neo.py reading dev/scripts/intel-neo-lock.json
+# (ADR-3555), which checks every deb against its locked SHA-256 digest without
+# GitHub API calls.
 #
 # --components picks the package set (ADR-1368):
 #   ocloc    (default) ocloc + IGC: a CI host that builds the AOT images and
@@ -27,8 +28,7 @@
 #            stage uses it; an older NEO there crashed on Arc B580 (ADR-1368).
 #
 # Debian / Ubuntu x86-64 only: the releases publish amd64 debs. Root containers
-# run it directly; CI runners run it through sudo. Set GITHUB_TOKEN to lift the
-# anonymous GitHub API rate limit shared by hosted runners.
+# run it directly; CI runners run it through sudo.
 #
 # Usage: install-intel-ocloc.sh [--components ocloc|build|runtime] [repo-root]
 
@@ -76,9 +76,10 @@ esac
 repo_root="${repo_root:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)}"
 config="$repo_root/build-config.env"
 fetcher="$repo_root/dev/scripts/fetch-intel-neo.py"
+lock="$repo_root/dev/scripts/intel-neo-lock.json"
 
-if [ ! -f "$config" ] || [ ! -f "$fetcher" ]; then
-  echo "::error::install-intel-ocloc: $config or $fetcher not found" >&2
+if [ ! -f "$config" ] || [ ! -f "$fetcher" ] || [ ! -f "$lock" ]; then
+  echo "::error::install-intel-ocloc: $config, $fetcher or $lock not found" >&2
   exit 2
 fi
 # shellcheck disable=SC1090  # path is computed, and the file is repo-owned
@@ -108,7 +109,7 @@ fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-fetch_args=(--neo-ver "$INTEL_NEO_VERSION" --output-dir "$tmp")
+fetch_args=(--lock "$lock" --neo-ver "$INTEL_NEO_VERSION" --output-dir "$tmp")
 case "$components" in
   ocloc) fetch_args+=(--components ocloc) ;;
   build) fetch_args+=(--components ocloc --level-zero-ver "$LEVEL_ZERO_VERSION" --level-zero-dev) ;;
@@ -120,7 +121,7 @@ python3 "$fetcher" "${fetch_args[@]}"
 # runtime set also needs the distro's ocl-icd-libopencl1, so a fresh base image
 # takes the second branch.
 if ! $SUDO apt-get install -y --no-install-recommends "$tmp"/*.deb; then
-  $SUDO apt-get update -qq
+  $SUDO apt-get --error-on=any -o Acquire::Retries=3 update -qq
   $SUDO apt-get install -y --no-install-recommends "$tmp"/*.deb
 fi
 # The IGC debs put libigc.so.2 and libigdfcl.so.2 in /usr/local/lib without an

@@ -629,13 +629,15 @@ them next to any other file. The outputs are written by one command,
   master moves under it, rebase the branch and run `make docs-render` again;
   never resolve a conflict in a rendered file by hand. It merges when the
   forge reports it CLEAN, like every other pull request. Nobody has to open it:
-  the hourly `docs-render-pr` workflow runs
+  the `docs-render-pr` workflow runs on every push to `master` and hourly as a
+  fallback (since GitHub drops scheduled runs), calling
   `scripts/ci/check_render_on_master.py --open-after-hours 6`, and once a
   render has been owed on master for 6 hours `scripts/ci/open-render-pr.sh`
   renders the master tip on branch `chore/docs-render-auto`, opens the pull
   request as the release bot and arms auto-merge; when master moves it renders
   again, and when master's render is current it closes its own pull request
-  ([ADR-3373](../adr/3373-scheduled-render-pull-request.md)). To run it at
+  ([ADR-3373](../adr/3373-scheduled-render-pull-request.md),
+  [ADR-3552](../adr/3552-docs-render-on-master-push.md)). To run it at
   once: `gh workflow run docs-render-pr.yml`. To see what it would decide:
   `python3 scripts/ci/check_render_on_master.py --open-after-hours 6`;
 - **at the release cut:** see
@@ -932,7 +934,12 @@ After that:
 - the Go-service workflow starts the Go scoring server and probes
   `/healthz` plus `/readyz`;
 - it also checks the operator version and executes `vmaf --version` plus
-  `ffmpeg -version` from the node image.
+  `ffmpeg -version` from the node image;
+- for `ghcr.io/vmafx/vmafx-node:<tag>-sycl`, `smoke-published-image.sh` with
+  kind `node-sycl` refuses an image whose `Config.Env` lacks the exact
+  `VMAFX_BACKEND=sycl` entry (missing or another value), a wrong entrypoint, a
+  mismatched `--version` or a broken FUSE mount, and prints the GPU skip reason
+  instead of passing SYCL scoring silently.
 
 A signature or runtime-linkage gap fails the release rather than silently
 shipping a broken image.

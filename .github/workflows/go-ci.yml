@@ -114,16 +114,7 @@ jobs:
         # Measured max 6.6m (2026-10-23); 9 min is at least 1.25x the slowest healthy run.
         timeout-minutes: 9
         run: |
-          # The hosted runner ships pre-provisioned Microsoft/Azure apt
-          # sources (packages.microsoft.com) that intermittently 403 /
-          # "no longer signed", failing `apt-get update` with exit 100.
-          # vmaf needs none of them — drop them first. See
-          # T-CI-APT-MS-REPO-FLAKE (same fix as the Coverage Gate).
-          sudo rm -f /etc/apt/sources.list.d/*microsoft* \
-                     /etc/apt/sources.list.d/*azure*
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAPT::Keep-Downloaded-Packages "true";\n' \
-            | sudo tee /etc/apt/apt.conf.d/80ci-retries >/dev/null
-          sudo apt-get update
+          bash scripts/ci/apt-install-cached.sh refresh
           mkdir -p "${RUNNER_TEMP}/apt-archives"
           if compgen -G "${RUNNER_TEMP}/apt-archives/*.deb" >/dev/null; then
             sudo cp -f "${RUNNER_TEMP}/apt-archives"/*.deb /var/cache/apt/archives/
@@ -155,34 +146,16 @@ jobs:
       # session API, so this job builds libvmaf WITH ONNX Runtime: the
       # runner's smoke test and the real-ORT branches of pkg/libvmaf's
       # dnn_test.go then run for real instead of only the -ENOSYS stub.
-      # Same tarball + pkg-config recipe as dev/Containerfile (ORT_VERSION
-      # is tracked by renovate in both places).
+      # Install the pinned CPU package and its pkg-config metadata.
       - name: Install ONNX Runtime (CPU)
         if: steps.impact.outputs.go_checks == 'true'
         env:
           ORT_VERSION: "1.30.0"
-          ORT_SHA256: "a5ed5a3cac51fbb2e90da632ae43d19212faaa20e76484e62bcb7c23ddb3b3fd"
         run: |
           set -euo pipefail
-          ort_name="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
-          ort_archive="${RUNNER_TEMP}/${ort_name}"
-          ort_url="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${ort_name}"
-          curl -fSL --retry 5 --retry-delay 5 --retry-all-errors --remove-on-error \
-            --max-time 300 \
-            --output "${ort_archive}" \
-            "${ort_url}"
-          printf '%s  %s\n' "${ORT_SHA256}" "${ort_archive}" \
-            | sha256sum --check --strict
-          sudo tar -xzf "${ort_archive}" -C /opt/
-          sudo ln -sfn "/opt/onnxruntime-linux-x64-${ORT_VERSION}" /opt/onnxruntime
-          # The tarball ships no pkg-config file; meson's enable_dnn needs one.
-          sudo install -d /usr/local/lib/pkgconfig
-          # prefix/exec_prefix/libdir/includedir are pkg-config template
-          # variables that must reach the .pc file literally, so their dollars
-          # are escaped inside a double-quoted format (same recipe as
-          # dev/Containerfile) rather than hidden in single quotes.
-          printf "prefix=/opt/onnxruntime\nexec_prefix=\${prefix}\nlibdir=\${exec_prefix}/lib\nincludedir=\${prefix}/include\n\nName: libonnxruntime\nDescription: ONNX Runtime C API\nVersion: %s\nLibs: -L\${libdir} -lonnxruntime\nCflags: -I\${includedir}\n" "${ORT_VERSION}" \
-            | sudo tee /usr/local/lib/pkgconfig/libonnxruntime.pc >/dev/null
+          sudo install -d -o "$(id -u)" /opt/onnxruntime /usr/local/lib/pkgconfig
+          python3 scripts/ci/ort_nuget_install.py --version "${ORT_VERSION}" \
+            --prefix /opt/onnxruntime
           echo "/opt/onnxruntime/lib" | sudo tee /etc/ld.so.conf.d/onnxruntime.conf
           sudo ldconfig
           pkg-config --modversion libonnxruntime

@@ -9,6 +9,7 @@ import base64
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import shutil
 import struct
@@ -685,11 +686,12 @@ def source_repo(tmp: Path) -> tuple[Path, str]:
     """A local git repository with one commit (the test stand-in for TheRock)."""
     repo = tmp / "upstream"
     write(repo / "patches/numactl/0001.patch", "patch\n")
+    environment = dict(lic.git_environment(), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
 
     def git(*argv: str) -> str:  # never the caller's repository, even under a git hook
         """Run a git command in the upstream test repository and return stripped stdout."""
         done = subprocess.run(["git", *argv], cwd=repo, check=True, capture_output=True, text=True,
-                              env=lic.git_environment(), timeout=GIT_TIMEOUT_S)  # fmt: skip
+                              env=environment, timeout=GIT_TIMEOUT_S)  # fmt: skip
         return done.stdout.strip()
 
     git("init", "-q")
@@ -786,6 +788,29 @@ def test_every_artifact_records_its_interpreter_and_core_components() -> None:
             assert "python-dist" in kinds, kind
         elif not shape.startswith("release-"):  # an image: its distribution's packages
             assert "dpkg" in kinds, kind
+
+
+def test_cpython_31410_is_recorded_for_tester_and_production_server_images(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data = lic.load_manifest()
+    assert data["artifacts"]["image"]["python"]["version"] == "3.14.10"
+    assert data["artifacts"]["production-server-image"]["python"]["version"] == "3.14.10"
+    assert data["artifacts"]["published-rc-server-image"]["python"]["version"] == "3.14.7"
+    calls: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(lic, "download", lambda url, dest, sha: calls.append((url, dest.name, sha)))
+    args = argparse.Namespace(artifact="image", python_version="3.14.10", out=str(tmp_path / "out"))
+    lic.fetch_texts(args, data)
+    assert (
+        "https://raw.githubusercontent.com/python/cpython/v3.14.10/Doc/license.rst",
+        "cpython-license.rst",
+        "8a7329b25131f64b2bea284155f0824876b1af9f4a2f970e6335751d97dfa6dd",
+    ) in calls
+    unrecorded = argparse.Namespace(
+        artifact="image", python_version="3.14.99", out=str(tmp_path / "bad")
+    )
+    with pytest.raises(lic.LicensingError, match="no cpython_license_rst entry for Python 3.14.99"):
+        lic.fetch_texts(unrecorded, data)
 
 
 def test_the_record_allows_every_licence_the_repo_files_declare() -> None:

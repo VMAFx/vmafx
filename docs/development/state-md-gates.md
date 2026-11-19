@@ -181,7 +181,7 @@ over two minutes, past the job's 120 s budget per lint process
 (`T-STATE-MD-UNPAIRED-CODE-SPAN-LINT-TIMEOUT-2026-10-06`). To fix a hit:
 
 - write a backtick that belongs to the text inside a longer run, for example
-  ``` `` mod`close `` ``` for a debugger frame name that joins module and
+  use ``` `` mod`close `` ``` for a debugger frame name that joins module and
   function with a backtick;
 - put a `[` that has no `]` into a code span, or escape it as `\[`.
 

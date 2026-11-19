@@ -16,6 +16,20 @@ top-level `exclude_paths` glob. The check finds the outputs by their compile mar
 not by a list. The exclude does not stop Codacy's Agentlinter from reading them: its
 wrapper scans the whole checkout and only filters results, so a duplicate between a
 compiled file and `AGENTS.md` is still reported on `AGENTS.md`.
+
+Codacy's Ruff reads only the root `pyproject.toml`, while the `ruff-check` hook lints
+each tree that carries its own Ruff configuration with that nested configuration. The
+Ruff `exclude_paths` of `.codacy.yml` must name exactly those trees: a new nested
+configuration without a Codacy glob turns its per-file ignores into Codacy findings,
+and a glob whose configuration is gone hides a tree from Codacy for no reason.
+
+Codacy's markdownlint likewise reads only the root `.markdownlint.json`, while the
+`markdownlint-cli2` hook honours nested directory configurations. The markdownlint
+`exclude_paths` of `.codacy.yml` must list by exact path every non-hook-excluded
+Markdown file governed by a nested configuration: a nested configuration without a
+matching exact Codacy entry turns its local rule overrides into Codacy findings, and
+an exact Codacy entry without a nested configuration hides a file from Codacy for no
+reason.
 """
 
 from __future__ import annotations
@@ -23,7 +37,9 @@ from __future__ import annotations
 import re
 import shutil
 import sys
+import tomllib
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 
 import yaml  # type: ignore[import-untyped]  # no PyYAML stubs in the hook environment
@@ -52,13 +68,18 @@ PROBES = (
 )
 
 
-def codacy_markdownlint_excludes(text: str) -> list[str]:
-    """The markdownlint exclude_paths of a Codacy configuration file."""
+def codacy_engine_excludes(text: str, engine: str) -> list[str]:
+    """The exclude_paths one engine of a Codacy configuration file declares."""
     if not text.startswith("---\n"):
         raise ValueError(".codacy.yml must start with a '---' line")
     config = yaml.safe_load(text) or {}
-    engine = (config.get("engines") or {}).get("markdownlint") or {}
-    return [str(glob) for glob in engine.get("exclude_paths") or []]
+    settings = (config.get("engines") or {}).get(engine) or {}
+    return [str(glob) for glob in settings.get("exclude_paths") or []]
+
+
+def codacy_markdownlint_excludes(text: str) -> list[str]:
+    """The markdownlint exclude_paths of a Codacy configuration file."""
+    return codacy_engine_excludes(text, "markdownlint")
 
 
 def glob_regex(glob: str) -> re.Pattern[str]:
@@ -84,13 +105,23 @@ def precommit_markdownlint_exclude(text: str) -> re.Pattern[str]:
     raise ValueError("no markdownlint-cli2 hook in .pre-commit-config.yaml")
 
 
-def drift(codacy_text: str, precommit_text: str, paths: list[str]) -> list[str]:
-    """Paths one exclusion list skips and the other lints, as 'hook-only:' / 'codacy-only:'."""
+def drift(
+    codacy_text: str,
+    precommit_text: str,
+    paths: list[str],
+    *,
+    nested: frozenset[str] = frozenset(),
+) -> list[str]:
+    """Paths one exclusion list skips and the other lints, as 'hook-only:' / 'codacy-only:'.
+
+    A path in nested counts as expected-excluded on the hook side so its exact Codacy
+    entry is not reported as codacy-only.
+    """
     hook = precommit_markdownlint_exclude(precommit_text)
     globs = [glob_regex(glob) for glob in codacy_markdownlint_excludes(codacy_text)]
     out = []
     for path in sorted(set(paths)):
-        by_hook = hook.search(path) is not None
+        by_hook = hook.search(path) is not None or path in nested
         by_codacy = any(glob.match(path) for glob in globs)
         if by_hook != by_codacy:
             out.append(f"{'hook-only' if by_hook else 'codacy-only'}: {path}")
@@ -108,20 +139,25 @@ def codacy_global_excludes(text: str) -> list[str]:
     return [str(glob) for glob in config.get("exclude_paths") or []]
 
 
-def compiled_context_files() -> list[str]:
-    """Tracked files whose first 512 bytes carry the compile-context marker."""
+def tracked_files(*pathspecs: str) -> list[str]:
+    """Tracked paths, optionally limited to the given pathspecs."""
     listed = run_command(
-        [GIT, "-C", str(ROOT), "ls-files", "-z"],
+        [GIT, "-C", str(ROOT), "ls-files", "-z", "--", *pathspecs],
         allowed_executables=(GIT,),
         capture_output=True,
         text=True,
         check=True,
         timeout_seconds=60,
     ).stdout.split("\0")
+    return [path for path in listed if path]
+
+
+def compiled_context_files() -> list[str]:
+    """Tracked files whose first 512 bytes carry the compile-context marker."""
     out = []
-    for path in listed:
+    for path in tracked_files():
         target = ROOT / path
-        if not path or target.is_symlink() or not target.is_file():
+        if target.is_symlink() or not target.is_file():
             continue
         with target.open("rb") as handle:
             if COMPILED_MARKER in handle.read(512):
@@ -147,21 +183,111 @@ def without_glob(codacy_text: str, glob: str) -> str:
 
 def tracked_markdown() -> list[str]:
     """Every tracked Markdown file (.md and .markdown, as the hook takes), plus the probes."""
-    listed = run_command(
-        [GIT, "-C", str(ROOT), "ls-files", "-z", "--", "*.md", "*.markdown"],
-        allowed_executables=(GIT,),
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout_seconds=60,
-    ).stdout.split("\0")
-    return [path for path in listed if path] + list(PROBES)
+    return tracked_files("*.md", "*.markdown") + list(PROBES)
+
+
+MARKDOWNLINT_FILES = (
+    ".markdownlint-cli2.jsonc",
+    ".markdownlint-cli2.yaml",
+    ".markdownlint-cli2.cjs",
+    ".markdownlint-cli2.mjs",
+    ".markdownlint.jsonc",
+    ".markdownlint.json",
+    ".markdownlint.yaml",
+    ".markdownlint.yml",
+    ".markdownlint.cjs",
+    ".markdownlint.mjs",
+)
+GLOB_META = frozenset("*?[{")
+
+
+def nested_markdownlint_files(paths: list[str]) -> list[str]:
+    """Tracked .md and .markdown paths governed by a nested markdownlint config."""
+    config_dirs = set()
+    for path in paths:
+        if "/" in path:
+            parent, name = path.rsplit("/", 1)
+            if parent and name in MARKDOWNLINT_FILES:
+                config_dirs.add(parent)
+    prefixes = tuple(f"{d}/" for d in config_dirs)
+    return sorted(
+        {
+            path
+            for path in paths
+            if path.endswith((".md", ".markdown")) and path.startswith(prefixes)
+        }
+    )
+
+
+def markdownlint_nested_drift(codacy_text: str, precommit_text: str, paths: list[str]) -> list[str]:
+    """Nested-config Markdown files Codacy lints ('missing:') and exact entries without one ('stale:')."""
+    hook = precommit_markdownlint_exclude(precommit_text)
+    want = {path for path in nested_markdownlint_files(paths) if hook.search(path) is None}
+    have = {
+        entry
+        for entry in codacy_markdownlint_excludes(codacy_text)
+        if GLOB_META.isdisjoint(entry) and hook.search(entry) is None
+    }
+    return [f"missing: {p}" for p in sorted(want - have)] + [
+        f"stale: {p}" for p in sorted(have - want)
+    ]
+
+
+RUFF_FILES = ("ruff.toml", ".ruff.toml")
+
+
+def holds_ruff_config(path: str, read: Callable[[str], str]) -> bool:
+    """Whether Ruff takes this file as configuration (a pyproject.toml needs [tool.ruff])."""
+    name = path.rsplit("/", 1)[-1]
+    if name in RUFF_FILES:
+        return True
+    if name != "pyproject.toml":
+        return False
+    return "ruff" in (tomllib.loads(read(path)).get("tool") or {})
+
+
+def ruff_config_dirs(paths: list[str], read: Callable[[str], str]) -> list[str]:
+    """Directories below the root whose Ruff configuration governs a tracked Python file.
+
+    A ruff.toml beside no Python file (the declared-exceptions list) configures nothing.
+    """
+    py_dirs = [path.rsplit("/", 1)[0] for path in paths if path.endswith((".py", ".pyi"))]
+    out = set()
+    for path in paths:
+        if "/" not in path or not holds_ruff_config(path, read):
+            continue
+        parent = path.rsplit("/", 1)[0]
+        if any(d == parent or d.startswith(parent + "/") for d in py_dirs):
+            out.add(parent)
+    return sorted(out)
+
+
+def ruff_drift(codacy_text: str, dirs: list[str]) -> list[str]:
+    """Nested-config trees Codacy's Ruff lints ('missing:') and globs without one ('stale:')."""
+    have = set(codacy_engine_excludes(codacy_text, "ruff"))
+    want = {f"{d}/**" for d in dirs}
+    return [f"missing: {g}" for g in sorted(want - have)] + [
+        f"stale: {g}" for g in sorted(have - want)
+    ]
+
+
+def read_tracked(path: str) -> str:
+    """A tracked file's text."""
+    return (ROOT / path).read_text(encoding="utf-8")
 
 
 class CodacyConfig(unittest.TestCase):
     def test_repository_lists_agree(self) -> None:
         """Positive: Codacy and the hook skip the same tracked Markdown files."""
-        self.assertEqual(drift(CODACY.read_text(), PRECOMMIT.read_text(), tracked_markdown()), [])
+        self.assertEqual(
+            drift(
+                CODACY.read_text(encoding="utf-8"),
+                PRECOMMIT.read_text(encoding="utf-8"),
+                tracked_markdown(),
+                nested=frozenset(nested_markdownlint_files(tracked_files())),
+            ),
+            [],
+        )
 
     def test_config_without_changelog_tree_fails(self) -> None:
         """Negative: a planted config that drops changelog.d is reported."""
@@ -217,6 +343,49 @@ class CodacyConfig(unittest.TestCase):
             [".gemini/GEMINI.md", "CLAUDE.md"],
         )
 
+    def test_ruff_skips_exactly_the_nested_config_trees(self) -> None:
+        """Positive: Codacy's Ruff skips each tree that carries its own Ruff configuration."""
+        dirs = ruff_config_dirs(tracked_files(), read_tracked)
+        self.assertIn("tools/vmaf-tune", dirs)
+        self.assertNotIn(".config/lint-exceptions.d", dirs)
+        self.assertEqual(ruff_drift(CODACY.read_text(), dirs), [])
+
+    def test_config_without_nested_tree_fails(self) -> None:
+        """Negative: a planted config that drops tools/vmaf-tune/** is reported."""
+        config = yaml.safe_load(CODACY.read_text())
+        config["engines"]["ruff"]["exclude_paths"].remove("tools/vmaf-tune/**")
+        planted = "---\n" + str(yaml.safe_dump(config, sort_keys=False))
+        dirs = ruff_config_dirs(tracked_files(), read_tracked)
+        self.assertEqual(ruff_drift(planted, dirs), ["missing: tools/vmaf-tune/**"])
+
+    def test_new_nested_config_without_glob_fails(self) -> None:
+        """Negative: a new tree with [tool.ruff] and Python files needs a Codacy glob."""
+        files = {
+            "pyproject.toml": "[tool.ruff]\n",
+            "tools/new/pyproject.toml": "[tool.ruff.lint]\nselect = ['E']\n",
+            "tools/new/src/x.py": "",
+        }
+        dirs = ruff_config_dirs(list(files), files.__getitem__)
+        self.assertEqual(dirs, ["tools/new"])
+        self.assertIn("missing: tools/new/**", ruff_drift(CODACY.read_text(), dirs))
+
+    def test_config_without_python_or_ruff_table_is_not_a_tree(self) -> None:
+        """Boundary: no [tool.ruff] table, or no Python file below, configures nothing."""
+        files = {
+            "python/pyproject.toml": "[project]\nname = 'x'\n",
+            "python/x.py": "",
+            "notes/ruff.toml": "line-length = 90\n",
+            "notes/README.md": "",
+        }
+        self.assertEqual(ruff_config_dirs(list(files), files.__getitem__), [])
+
+    def test_glob_without_nested_config_is_stale(self) -> None:
+        """Boundary: a Ruff glob whose nested configuration is gone is reported."""
+        self.assertEqual(
+            ruff_drift("---\nengines:\n  ruff:\n    exclude_paths: ['old/**']\n", []),
+            ["stale: old/**"],
+        )
+
     def test_glob_boundaries(self) -> None:
         """Boundary: * stays in one directory, ** crosses them, **/ needs one directory."""
         self.assertTrue(glob_regex("**/testdata/**").match("a/b/testdata/x.md"))
@@ -224,6 +393,84 @@ class CodacyConfig(unittest.TestCase):
         self.assertTrue(glob_regex("testdata/**").match("testdata/x.md"))
         self.assertFalse(glob_regex("docs/*.md").match("docs/adr/x.md"))
         self.assertFalse(glob_regex("docs/adr/README.md").match("docs/adr/README.mdx"))
+
+    def test_markdownlint_skips_nested_config_files_by_exact_path(self) -> None:
+        """Positive: Codacy's markdownlint lists each nested-config Markdown file."""
+        paths = tracked_files()
+        self.assertIn("docs/hardware-reports/index.md", nested_markdownlint_files(paths))
+        self.assertEqual(
+            markdownlint_nested_drift(
+                CODACY.read_text(encoding="utf-8"),
+                PRECOMMIT.read_text(encoding="utf-8"),
+                paths,
+            ),
+            [],
+        )
+
+    def test_nested_markdownlint_file_without_codacy_entry_fails(self) -> None:
+        """Negative: a planted config that drops docs/hardware-reports/index.md is reported."""
+        planted = without_glob(CODACY.read_text(encoding="utf-8"), "docs/hardware-reports/index.md")
+        self.assertEqual(
+            markdownlint_nested_drift(
+                planted, PRECOMMIT.read_text(encoding="utf-8"), tracked_files()
+            ),
+            ["missing: docs/hardware-reports/index.md"],
+        )
+
+    def test_exact_codacy_entry_without_nested_config_is_stale(self) -> None:
+        """Negative: an exact Codacy entry whose nested markdownlint config is gone is stale."""
+        paths = [p for p in tracked_files() if p != "docs/hardware-reports/.markdownlint-cli2.yaml"]
+        self.assertEqual(
+            markdownlint_nested_drift(
+                CODACY.read_text(encoding="utf-8"),
+                PRECOMMIT.read_text(encoding="utf-8"),
+                paths,
+            ),
+            ["stale: docs/hardware-reports/index.md"],
+        )
+
+    def test_nested_markdownlint_glob_instead_of_exact_path_fails(self) -> None:
+        """Negative: replacing the exact Codacy entry with a directory glob still fails."""
+        config = yaml.safe_load(CODACY.read_text(encoding="utf-8"))
+        excludes = config["engines"]["markdownlint"]["exclude_paths"]
+        excludes[excludes.index("docs/hardware-reports/index.md")] = "docs/hardware-reports/**"
+        planted = "---\n" + str(yaml.safe_dump(config, sort_keys=False))
+        self.assertEqual(
+            markdownlint_nested_drift(
+                planted, PRECOMMIT.read_text(encoding="utf-8"), tracked_files()
+            ),
+            ["missing: docs/hardware-reports/index.md"],
+        )
+
+    def test_nested_markdownlint_discovery_and_hook_boundaries(self) -> None:
+        """Boundary: root config is not nested, subtrees apply, hook-excluded paths skip."""
+        self.assertEqual(nested_markdownlint_files([".markdownlint.json", "README.md"]), [])
+        self.assertEqual(
+            nested_markdownlint_files(["a/.markdownlint-cli2.jsonc", "a/b/c.md", "b/d.md"]),
+            ["a/b/c.md"],
+        )
+        self.assertEqual(nested_markdownlint_files(["a/.markdownlint.mjs", "a/data.json"]), [])
+        self.assertEqual(
+            markdownlint_nested_drift(
+                "---\nengines: {}\n",
+                PRECOMMIT.read_text(encoding="utf-8"),
+                ["changelog.d/.markdownlint.yaml", "changelog.d/fixed/x.md"],
+            ),
+            [],
+        )
+
+    def test_drift_treats_nested_files_as_hook_excluded(self) -> None:
+        """Boundary: drift() allows a Codacy entry for a nested-config file only via nested."""
+        codacy = "---\nengines:\n  markdownlint:\n    exclude_paths:\n      - 'x/y.md'\n"
+        precommit = PRECOMMIT.read_text(encoding="utf-8")
+        self.assertEqual(
+            drift(codacy, precommit, ["x/y.md"], nested=frozenset({"x/y.md"})),
+            [],
+        )
+        self.assertEqual(
+            drift(codacy, precommit, ["x/y.md"]),
+            ["codacy-only: x/y.md"],
+        )
 
 
 if __name__ == "__main__":

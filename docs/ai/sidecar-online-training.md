@@ -12,7 +12,10 @@ scoring model.
 
     - No production scoring or executor path calls `FeedbackClient.Send`.
     - The Helm chart does not deploy the Python server: it has no trainer
-      container, and `values.schema.json` rejects `sidecar.*` values. There is
+      container, and top-level `sidecar.*` values remain rejected (`node.sidecar.enabled`
+      only opts `vmafx-node` into dialing `VMAFX_SIDECAR_SOCKET` and checking
+      it on `/readyz`, default `false`;
+      [ADR-3558](../adr/3558-node-sidecar-readiness-gpu-affinity.md)). There is
       no supported Helm quick start.
     - `vmafx-node` does not consume the checkpoints the server exports.
 
@@ -224,8 +227,11 @@ checkpoint into a scoring model is an external, manual integration step today.
 ## Kubernetes status
 
 The chart has no trainer container. An unused `sidecar-trainer.yaml` helper,
-which no workload included, was removed; the values schema exposes no
-`sidecar.*` configuration.
+which no workload included, was removed; top-level `sidecar.*` remains absent
+from `values.schema.json`. `node.sidecar.enabled` (default `false`) sets
+`VMAFX_SIDECAR_ENABLED=true` on `vmafx-node` when an operator supplies a
+co-located sidecar container, gating the node's `/readyz` probe on a live
+socket connection ([ADR-3558](../adr/3558-node-sidecar-readiness-gpu-affinity.md)).
 
 The `VmafxModelTraining` CRD and an operator-side status mapper also exist. The
 mapper polls an HTTP `/status` service that this Python server does not provide,

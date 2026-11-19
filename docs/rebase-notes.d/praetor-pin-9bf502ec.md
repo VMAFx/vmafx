@@ -5,6 +5,10 @@ rebase or sync keeps `PRAETOR_REF` at `9bf502ec6ce5...` in `.github/workflows/st
 and keeps the seven governance jobs of `lefthook.yml`, `scripts/git-hooks/hiss-audit.sh` and
 `scripts/githooks/state-sync.sh` on `sh .config/lefthook/engine.sh <arguments>`: a side of a
 conflict that calls `praetorctl` or `standardsctl` directly brings back the engine from `PATH`.
+The `Makefile` governance targets (`verify-all`, `compile-context`, `audit`, `hiss-coverage`,
+`dedupe-check`) likewise keep `-include .config/praetor/engine.mk` and `$(PRAETORCTL)`: a side of a
+conflict that calls `standardsctl` there brings back the `PATH` engine, and
+`scripts/ci/tests/test_make_governance_engine_pin.py` fails on it (issue 3468).
 `.config/lefthook/engine.sh` and `.config/praetor/engine.mk` are praetor's text. `praetorctl adopt`
 refreshes each only while it is unedited, so never edit or format them: take them from one side of a
 conflict, or regenerate them with `adopt --lock-source-root=<praetor clone at the pin>` in a

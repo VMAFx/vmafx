@@ -125,6 +125,7 @@ struct Ss2hCombineArgs {
     unsigned pad_;
 };
 
-extern const unsigned char ssimulacra2_device_hsaco[];
+/* Match xxd -i object types exactly; keep read-only access at use sites. */
+extern unsigned char ssimulacra2_device_hsaco[];
 
 #endif /* FEATURE_SSIMULACRA2_HIP_H_ */

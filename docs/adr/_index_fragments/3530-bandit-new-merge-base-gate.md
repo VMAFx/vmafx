@@ -1,0 +1,1 @@
+| [ADR-3530](3530-bandit-new-merge-base-gate.md) | Reject new Bandit findings against the merge base using each revision's configuration and outgoing commit blobs; scan all tracked Python sources when the configuration changes | Accepted | ci, security, agents |

@@ -34,10 +34,12 @@ bad() {
 }
 
 mkdir -p "$scratch/bin"
-# Stub docker. SHIM_KIND names the image's binary (vmafx-SHIM_KIND);
-# SHIM_ENTRY / SHIM_USER override the inspected config; SHIM_VERSION is what
+# Stub docker. SHIM_KIND names the image's binary (vmafx-SHIM_KIND, or
+# vmafx-node for node-sycl); SHIM_ENTRY / SHIM_ENV / SHIM_USER override the
+# inspected config; SHIM_VERSION is what
 # --version prints; SHIM_EXITED=1 reports the server container stopped;
 # SHIM_MD5 is what the FUSE read-back hashes to (default: the real file's);
+# The FUSE read-back refuses folders or files inaccessible to others.
 # SHIM_FAIL_EXEC fails the `docker exec` whose arguments contain it;
 # SHIM_RUN_ENV_LOG records the environment arguments of a detached run.
 cat >"$scratch/bin/docker" <<'STUB'
@@ -48,7 +50,9 @@ case "$1" in
   port) printf '127.0.0.1:49153\n'; exit 0 ;;
   image)
     if [[ "$args" == *Entrypoint* ]]; then
-      printf '%s\n' "${SHIM_ENTRY:-[\"/usr/local/bin/vmafx-$SHIM_KIND\"]}"
+      printf '%s\n' "${SHIM_ENTRY:-[\"/usr/local/bin/vmafx-${SHIM_KIND%-sycl}\"]}"
+    elif [[ "$args" == *Config.Env* ]]; then
+      printf '%s\n' "${SHIM_ENV-[\"PATH=/usr/local/bin:/usr/bin\"]}"
     else
       printf '%s\n' "${SHIM_USER-65532:65532}"
     fi
@@ -61,6 +65,11 @@ case "$1" in
     ;;
   exec)
     if [[ "$args" == *md5sum* ]]; then
+      frames="$(cat "$SHIM_STATE/frames")"
+      if [[ -z "$(find "$frames" -prune -perm -005)" || -z "$(find "$frames/ref.yuv" -perm -004)" ]]; then
+        printf 'ERROR : error listing: directory not found\n' >&2
+        exit 3
+      fi
       printf '%s  /tmp/m/ref.yuv\n' "${SHIM_MD5:-$(md5sum "$(cat "$SHIM_STATE/frames")/ref.yuv" | cut -d' ' -f1)}"
     elif [[ -n "${SHIM_FAIL_EXEC:-}" && "$args" == *"$SHIM_FAIL_EXEC"* ]]; then
       exit 5
@@ -92,6 +101,19 @@ exit 0
 STUB
 chmod +x "$scratch/bin/docker" "$scratch/bin/curl"
 
+mkdir -p "$scratch/state" "$scratch/private-frames"
+chmod 0700 "$scratch/private-frames"
+touch "$scratch/private-frames/ref.yuv"
+printf '%s\n' "$scratch/private-frames" >"$scratch/state/frames"
+rc=0
+SHIM_STATE="$scratch/state" "$scratch/bin/docker" exec container rclone md5sum /tmp/m/ref.yuv \
+  >"$scratch/out" 2>"$scratch/err" || rc=$?
+if [[ "$rc" -eq 3 ]]; then
+  ok "the docker stub refuses a frames folder others cannot read"
+else
+  bad "the docker stub refuses a frames folder others cannot read (exit $rc, wanted 3)"
+fi
+
 # smoke EXPECTED_RC DESCRIPTION KIND [ENV=VALUE...]
 smoke() {
   local want="$1" description="$2" kind="$3" rc=0
@@ -113,6 +135,45 @@ smoke 1 "refuses a node image whose rclone mount fails" node SHIM_FAIL_EXEC="rcl
 smoke 1 "refuses a node image whose fusermount3 cannot unmount" node SHIM_FAIL_EXEC=fusermount3
 smoke 1 "refuses a node image with another entrypoint" node SHIM_ENTRY='["/usr/local/bin/vmafx-operator"]'
 smoke 1 "refuses a node image that prints another version" node SHIM_VERSION=dev
+smoke 0 "accepts a healthy node-sycl image" node-sycl \
+  'SHIM_ENV=["PATH=/usr/local/bin:/usr/bin","VMAFX_BACKEND=sycl"]'
+if grep -Fq 'SYCL scoring needs an Intel GPU; the hosted runner has none; device evidence comes from the cluster node log' "$scratch/out"; then
+  ok "prints the node-sycl GPU skip reason"
+else
+  bad "node-sycl did not print the GPU skip reason"
+fi
+smoke 1 "refuses a node-sycl image without any VMAFX_BACKEND entry" node-sycl \
+  'SHIM_ENV=["PATH=/usr/local/bin:/usr/bin"]'
+if grep -Fq 'VMAFX_BACKEND=sycl' "$scratch/err" && grep -Fq 'none' "$scratch/err"; then
+  ok "missing VMAFX_BACKEND message names VMAFX_BACKEND=sycl and none"
+else
+  bad "missing VMAFX_BACKEND message: $(cat "$scratch/err")"
+fi
+smoke 1 "refuses a node-sycl image with VMAFX_BACKEND=cuda" node-sycl \
+  'SHIM_ENV=["PATH=/usr/local/bin:/usr/bin","VMAFX_BACKEND=cuda"]'
+if grep -Fq 'VMAFX_BACKEND=sycl' "$scratch/err" && grep -Fq 'VMAFX_BACKEND=cuda' "$scratch/err"; then
+  ok "VMAFX_BACKEND=cuda refusal names VMAFX_BACKEND=sycl and VMAFX_BACKEND=cuda"
+else
+  bad "VMAFX_BACKEND=cuda message: $(cat "$scratch/err")"
+fi
+smoke 1 "refuses a node-sycl image with VMAFX_BACKEND=sycl2" node-sycl \
+  'SHIM_ENV=["PATH=/usr/local/bin:/usr/bin","VMAFX_BACKEND=sycl2"]'
+if grep -Fq 'VMAFX_BACKEND=sycl2' "$scratch/err"; then
+  ok "VMAFX_BACKEND=sycl2 refusal names VMAFX_BACKEND=sycl2"
+else
+  bad "VMAFX_BACKEND=sycl2 message: $(cat "$scratch/err")"
+fi
+smoke 1 "refuses a node-sycl image with null Config.Env" node-sycl SHIM_ENV=null
+smoke 1 "refuses a node-sycl image with prefixed OTHER_VMAFX_BACKEND=sycl" node-sycl \
+  'SHIM_ENV=["OTHER_VMAFX_BACKEND=sycl"]'
+smoke 1 "refuses a node-sycl image with conflicting VMAFX_BACKEND entries" node-sycl \
+  'SHIM_ENV=["VMAFX_BACKEND=sycl","VMAFX_BACKEND=cpu"]'
+smoke 1 "refuses a node-sycl image with another entrypoint" node-sycl \
+  'SHIM_ENV=["VMAFX_BACKEND=sycl"]' 'SHIM_ENTRY=["/usr/local/bin/vmafx-operator"]'
+smoke 1 "refuses a node-sycl image that prints another version" node-sycl \
+  'SHIM_ENV=["VMAFX_BACKEND=sycl"]' SHIM_VERSION=dev
+smoke 1 "refuses a node-sycl image whose rclone mount fails" node-sycl \
+  'SHIM_ENV=["VMAFX_BACKEND=sycl"]' SHIM_FAIL_EXEC="rclone mount"
 smoke 1 "refuses an operator image with another entrypoint" operator SHIM_ENTRY='["/bin/sh"]'
 smoke 1 "refuses a server image that runs as root" server SHIM_USER=0:0
 smoke 1 "refuses a controller image that runs as root" controller SHIM_USER=

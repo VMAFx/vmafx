@@ -14,13 +14,30 @@ trap 'rm -rf "$tmp"' EXIT
 pass=0
 fail=0
 
+real_rm="$(command -v rm)"
+export real_rm
 mkdir -p "$tmp/bin"
+cat >"$tmp/bin/rm" <<'STUB'
+#!/usr/bin/env bash
+echo "rm $*" >>"$STUB_LOG"
+exec "$real_rm" "$@"
+STUB
+chmod +x "$tmp/bin/rm"
 cat >"$tmp/bin/sudo" <<'STUB'
 #!/usr/bin/env bash
 echo "sudo $*" >>"$STUB_LOG"
 case "$1" in
 tee) cat >>"$STUB_LOG" ;;
+rm) shift; "$real_rm" "$@" ;;
 apt-get)
+  case " $* " in
+  *" update "*)
+    if [ -e "$APT_SOURCES_DIR/microsoft-prod.list" ] || [ -e "$APT_SOURCES_DIR/azure-cli.sources" ]; then
+      echo "refusing refresh: Microsoft/Azure sources remain" >&2
+      exit 91
+    fi
+    if [ -n "${STUB_APT_UPDATE_FAIL:-}" ]; then exit 100; fi ;;
+  esac
   if [ "$2" = install ] && [ -n "${STUB_APT_FAIL:-}" ]; then exit 100; fi
   if [ "$2" = install ]; then : >"$APT_ARCHIVE_DIR/fresh.deb"; fi
   ;;
@@ -32,8 +49,8 @@ STUB
 chmod +x "$tmp/bin/sudo"
 
 reset() {
-  rm -rf "$tmp/runner" "$tmp/archives" "$tmp/log"
-  mkdir -p "$tmp/runner" "$tmp/archives"
+  rm -rf "$tmp/runner" "$tmp/archives" "$tmp/log" "$tmp/sources"
+  mkdir -p "$tmp/runner" "$tmp/archives" "$tmp/sources"
   : >"$tmp/log"
 }
 
@@ -41,7 +58,7 @@ run() { # $1 label, $2 expected rc, rest: script args
   local label="$1" want="$2" rc=0
   shift 2
   PATH="$tmp/bin:$PATH" STUB_LOG="$tmp/log" RUNNER_TEMP="$tmp/runner" \
-    APT_ARCHIVE_DIR="$tmp/archives" bash "$script" "$@" >/dev/null 2>&1 || rc=$?
+    APT_ARCHIVE_DIR="$tmp/archives" APT_SOURCES_DIR="$tmp/sources" bash "$script" "$@" >/dev/null 2>&1 || rc=$?
   if [ "$rc" -eq "$want" ]; then
     echo "ok   $label (rc=$rc)"
     pass=$((pass + 1))
@@ -71,15 +88,47 @@ refute() { # $1 label, $2 grep pattern that must not be in the log
   fi
 }
 
+first_line() { # $1 grep pattern; prints the first matching log line number, nothing when absent
+  local hit
+  if hit="$(grep -n -m 1 -- "$1" "$tmp/log")"; then
+    printf '%s\n' "${hit%%:*}"
+  fi
+}
+
+check_before() { # $1 label, $2 earlier grep pattern, $3 later grep pattern
+  local first second
+  first="$(first_line "$2")"
+  second="$(first_line "$3")"
+  if [ -n "$first" ] && [ -n "$second" ] && [ "$first" -lt "$second" ]; then
+    echo "ok   $1"
+    pass=$((pass + 1))
+  else
+    echo "FAIL $1: '$2' (line ${first:-none}) not before '$3' (line ${second:-none})" >&2
+    fail=$((fail + 1))
+  fi
+}
+
+rm_ms_azure_re='^\(sudo \)\?rm -f .*microsoft.* .*azure'
+apt_refresh_re='^sudo apt-get --error-on=any -o Acquire::Retries=3 update$'
+
 printf '# comment\npkg-a\npkg-b\n' >"$tmp/list.txt"
 
 # Positive: list installed with extra args, cache restored and saved back.
 reset
+touch "$tmp/sources/microsoft-prod.list" "$tmp/sources/azure-cli.sources" "$tmp/sources/oneAPI.list" "$tmp/sources/ubuntu.sources"
 mkdir -p "$tmp/runner/apt-archives"
 : >"$tmp/runner/apt-archives/cached.deb"
 run "install with warm cache" 0 install "$tmp/list.txt" --no-install-recommends
 check "retry config written" 'Acquire::Retries "3"'
-check "apt-get update ran" '^sudo apt-get update$'
+check_before "install drops Microsoft/Azure sources before refresh" "$rm_ms_azure_re" "$apt_refresh_re"
+check "apt index refresh ran" "$apt_refresh_re"
+if [ -f "$tmp/sources/oneAPI.list" ] && [ -f "$tmp/sources/ubuntu.sources" ]; then
+  echo "ok   unrelated sources retained"
+  pass=$((pass + 1))
+else
+  echo "FAIL unrelated sources removed" >&2
+  fail=$((fail + 1))
+fi
 check "packages and args reach apt" '^sudo apt-get install -y --no-install-recommends pkg-a pkg-b$'
 refute "comment line not installed" 'install.*# comment'
 check "cache restored before install" "^sudo cp -f $tmp/runner/apt-archives/cached.deb $tmp/archives/$"
@@ -103,6 +152,13 @@ run "configure only" 0 configure
 check "configure writes retry config" '80ci-retries'
 refute "configure does not touch apt" 'apt-get'
 
+# refresh writes retry config, drops Microsoft/Azure sources, and refreshes indices.
+reset
+run "refresh only" 0 refresh
+check "refresh writes retry config" 'Acquire::Retries "3"'
+check_before "refresh drops Microsoft/Azure sources before refresh" "$rm_ms_azure_re" "$apt_refresh_re"
+refute "refresh does not install packages" 'apt-get install'
+
 # Negative cases.
 reset
 run "missing list" 66 install "$tmp/nope.txt"
@@ -111,11 +167,15 @@ run "no arguments" 64
 run "unknown subcommand" 64 upgrade
 run "install without list" 64 install
 run "configure with extra argument" 64 configure extra
+run "refresh with extra argument" 64 refresh extra
+run "drop-sources with extra argument" 64 drop-sources extra
+reset
+STUB_APT_UPDATE_FAIL=1 run "refresh index failure fails the step" 100 refresh
 reset
 STUB_APT_FAIL=1 run "apt install failure fails the step (xargs 123)" 123 install "$tmp/list.txt"
 reset
 rc=0
-PATH="$tmp/bin:$PATH" STUB_LOG="$tmp/log" APT_ARCHIVE_DIR="$tmp/archives" \
+PATH="$tmp/bin:$PATH" STUB_LOG="$tmp/log" APT_ARCHIVE_DIR="$tmp/archives" APT_SOURCES_DIR="$tmp/sources" \
   env -u RUNNER_TEMP bash "$script" install "$tmp/list.txt" >/dev/null 2>&1 || rc=$?
 if [ "$rc" -ne 0 ]; then
   echo "ok   unset RUNNER_TEMP fails (rc=$rc)"
