@@ -419,6 +419,53 @@ jobs:
 """
 
 
+LAST_STEP_COMMENT_NEXT_JOB = f"""\
+---
+name: Next job comment
+on: push
+jobs:
+  a:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download digests
+        uses: {DL8}
+        with:
+          pattern: digest-*
+          merge-multiple: true
+# MARKER before the next job
+  b:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo b
+"""
+
+LAST_STEP_COMMENT_NEXT_JOB_WRITE = f"""\
+---
+name: Next job comment
+on: push
+jobs:
+  a:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download digests
+        if: ${{{{ env.GITEA_ACTIONS != 'true' }}}}
+        uses: {DL8}
+        with:
+          pattern: digest-*
+          merge-multiple: true
+      - name: Download digests (Gitea)
+        if: ${{{{ env.GITEA_ACTIONS == 'true' }}}}
+        shell: bash
+        run: |
+          echo '::warning::artifact download skipped on Gitea: v4+ is GitHub-only, v3 lacks merge-multiple, pattern'
+# MARKER before the next job
+  b:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo b
+"""
+
+
 class GiteaArtifactCheckTests(unittest.TestCase):
     """Run the checker against throw-away workflow files."""
 
@@ -584,6 +631,7 @@ class GiteaArtifactCheckTests(unittest.TestCase):
         for fixture, expected in (
             (LAST_STEP_COMMENT, LAST_STEP_COMMENT_WRITE),
             (LAST_STEP_COMMENT_EOF, LAST_STEP_COMMENT_EOF_WRITE),
+            (LAST_STEP_COMMENT_NEXT_JOB, LAST_STEP_COMMENT_NEXT_JOB_WRITE),
         ):
             with self.subTest(fixture=fixture.splitlines()[1]):
                 result = self.run_check(fixture, "--write")

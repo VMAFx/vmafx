@@ -336,12 +336,15 @@ def _attach_trailing_post(step: Any, token: Any, indent: int = 0) -> None:
     ):
         # A literal block already ends its line; its post token must not add
         # a second line break before the first following comment or blank.
-        # The source line carried the step's own indentation, but this token
-        # is emitted from the twin at the step-list level, so drop it.
+        # Keep the source column when the comment is not deeper than the
+        # step-list indentation; deeper comments would enter the script text,
+        # so those are clamped to the step-list level.
+        source_column = getattr(getattr(token, "start_mark", None), "column", indent)
+        column = source_column if source_column <= indent else indent
         trimmed = value[1:].lstrip(" ")
         if not trimmed:
             return
-        token = _comment_token(token, trimmed, indent)
+        token = _comment_token(token, trimmed, column)
     item = list(node.ca.items.get(key) or [None, None, None, None])
     item[CA_POST_VALUE] = token
     node.ca.items[key] = item
