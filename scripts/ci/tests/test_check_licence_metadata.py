@@ -700,6 +700,20 @@ class DockerfileLabelTests(GateTestCase):
         data = json.loads(manifest.read_text(encoding="utf-8"))
         data["artifacts"]["production-controller-image"]["components"].append(
             {
+                "id": "nvidia-cuda-device-code",
+                "kind": "fixed",
+                "licence": "LicenseRef-NVIDIA-CUDA-EULA (Attachment A prose)",
+            }
+        )
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
+    def test_a_with_expression_is_one_label_term(self) -> None:
+        self._tree(controller_label=self.LABEL + " AND Apache-2.0 WITH LLVM-exception")
+        manifest = self.root / "tools/rc1-tester/image/licensing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["artifacts"]["production-controller-image"]["components"].append(
+            {
                 "id": "rocm-comgr",
                 "kind": "fixed",
                 "licence": "Apache-2.0 WITH LLVM-exception",
@@ -707,6 +721,22 @@ class DockerfileLabelTests(GateTestCase):
         )
         manifest.write_text(json.dumps(data), encoding="utf-8")
         self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
+    def test_an_unused_notice_only_component_is_reported(self) -> None:
+        self._tree()
+        records = json.loads(
+            (self.root / "tools/rc1-tester/image/licensing.json").read_text(encoding="utf-8")
+        )["artifacts"]
+        with mock.patch.object(
+            gate,
+            "NOTICE_ONLY_COMPONENTS",
+            {"vmafx-binaries": "used", "ghost": "never resolved"},
+        ):
+            problems = gate._unused_notice_only_problems(records)
+        self.assertEqual(
+            problems,
+            ["NOTICE_ONLY_COMPONENTS entry ghost is not used by any checked record"],
+        )
 
     def test_an_unlisted_complex_licence_is_a_model_error(self) -> None:
         self._tree()

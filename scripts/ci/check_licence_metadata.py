@@ -695,20 +695,10 @@ IMAGE_STAGE_RECORDS = {
 # naming the component here makes the omission visible in review.
 NOTICE_ONLY_COMPONENTS = {
     "cpython": "prose in the PSF-2.0 sentence",
-    "debian-libgomp1": "toolchain runtime, GPL-3.0-or-later WITH GCC-exception-3.1",
     "intel-gpu-stack": "compound MIT/LLVM sentence",
-    "intel-gpu-stack-apt": "compound per-package sentence",
     "intel-oneapi-dpcpp-runtime": "Intel EULA reference with prose",
-    "intel-oneapi-runtime": "compound Intel EULA/ISSL/Apache-2.0 expression",
     "intel-oneapi-tcm-hwloc": "BSD-3-Clause plus Intel Simplified Software License prose",
-    "intel-oneapi-umf": "Apache-2.0 WITH LLVM-exception, kept in notices",
-    "microsoft-linked-runtime": "Visual Studio runtime reference with prose",
-    "microsoft-static-runtime": "Visual Studio runtime reference with prose",
-    "microsoft-vc-runtime": "Visual C++ runtime reference with prose",
-    "microsoft-vc-runtime-programs": "Visual C++ runtime reference with prose",
     "nvidia-cuda-device-code": "NVIDIA CUDA EULA with Attachment A prose",
-    "rocm-comgr": "Apache-2.0 WITH LLVM-exception, kept in notices",
-    "rocm-llvm": "Apache-2.0 WITH LLVM-exception, kept in notices",
     "rocm-sysdeps": "compound LGPL/GPL/MIT/Zlib/BSD expression",
 }
 FROM_RE = re.compile(r"^FROM\s+(\S+)(?:\s+AS\s+(\S+))?", re.IGNORECASE)
@@ -768,6 +758,31 @@ def _record_label_licences(records: dict, record_name: str) -> set[str]:
         resolved = _record_component(records, record_name, component["id"])
         found |= _component_licences(resolved)
     return found
+
+
+def _checked_component_ids(records: dict) -> set[str]:
+    """Every component id the published-image records resolve to."""
+    found: set[str] = set()
+    for record_name in {
+        record
+        for stage_records in IMAGE_STAGE_RECORDS.values()
+        for record in stage_records.values()
+    }:
+        if record_name not in records:
+            continue
+        for component in records[record_name].get("components", []):
+            found.add(component["id"])
+            found.add(_record_component(records, record_name, component["id"])["id"])
+    return found
+
+
+def _unused_notice_only_problems(records: dict) -> list[str]:
+    """Entries in NOTICE_ONLY_COMPONENTS that no checked record resolves to."""
+    used = _checked_component_ids(records)
+    return [
+        f"NOTICE_ONLY_COMPONENTS entry {component_id} is not used by any checked record"
+        for component_id in sorted(set(NOTICE_ONLY_COMPONENTS) - used)
+    ]
 
 
 def _logical_lines(text: str) -> list[str]:
@@ -898,6 +913,8 @@ def dockerfile_licence_label_problems(root: Path) -> list[str]:
             raise ModelError(f"{LICENSING_MANIFEST.as_posix()} has no artifacts record")
         return []
     problems: list[str] = []
+    if root.resolve() == REPO_ROOT.resolve():
+        problems += _unused_notice_only_problems(records)
     for relative, stage_records in IMAGE_STAGE_RECORDS.items():
         problems += _dockerfile_label_problems(root, records, relative, stage_records)
     return problems
