@@ -94,6 +94,14 @@ class ScanError(Exception):
     """Raised when a file, syntax tree, or git reference cannot be checked."""
 
 
+class _SnapshotBoundary(ast.AST):
+    """Mark the beginning or end of a try body's binding snapshots."""
+
+    def __init__(self, snapshot: set[str], *, begin: bool) -> None:
+        self.snapshot = snapshot
+        self.begin = begin
+
+
 @dataclass(frozen=True)
 class Finding:
     """One test function that asserts only exit code 0 or has an invalid escape."""
@@ -367,15 +375,24 @@ def _try_flow(node: ast.Try | ast.TryStar, bindings: set[str]) -> list[Traversal
     """Join normal and handler paths before executing finally."""
     body: set[str] = set()
     otherwise: set[str] = set()
-    steps: list[TraversalStep] = [([bindings], body)]
+    snapshot: set[str] = set()
+    steps: list[TraversalStep] = [
+        ([bindings], body),
+        (_SnapshotBoundary(snapshot, begin=True), body),
+    ]
     steps.extend((stmt, body) for stmt in node.body)
+    steps.append((_SnapshotBoundary(snapshot, begin=False), body))
     steps.append(([body], otherwise))
     steps.extend((stmt, otherwise) for stmt in node.orelse)
     states = [otherwise]
     for handler in node.handlers:
         state: set[str] = set()
         states.append(state)
-        steps.append(([bindings, body], state))
+        entry: set[str] = set()
+        steps.append(([bindings, snapshot], entry))
+        steps.append(([entry], state))
+        if node.finalbody:
+            states.append(entry)
         steps.extend((stmt, state) for stmt in handler.body)
     steps.append((states, bindings))
     steps.extend((stmt, bindings) for stmt in node.finalbody)
@@ -412,11 +429,30 @@ def _push_children(node: ast.AST, bindings: set[str], stack: list[TraversalStep]
     stack.extend((child, bindings) for child in reversed(children))
 
 
+def _capture_bindings(bindings: set[str], snapshots: list[set[str]]) -> None:
+    """Record a state in every enclosing try body."""
+    for snapshot in snapshots:
+        snapshot.update(bindings)
+
+
+def _apply_boundary(node: ast.AST, bindings: set[str], snapshots: list[set[str]]) -> bool:
+    """Enter or leave a try body, returning whether this node was a boundary."""
+    if not isinstance(node, _SnapshotBoundary):
+        return False
+    if node.begin:
+        snapshots.append(node.snapshot)
+        node.snapshot.update(bindings)
+    else:
+        snapshots.pop()
+    return True
+
+
 def _assertion_kinds(func: FuncNode) -> list[str]:
     """Inspect assertions using independent branch bindings and conservative joins."""
     initial: set[str] = set()
     stack: list[TraversalStep] = [(node, initial) for node in reversed(func.body)]
     kinds: list[str] = []
+    snapshots: list[set[str]] = []
     for _ in range(MAX_BODY_NODES * 10):
         if not stack:
             return kinds
@@ -425,11 +461,15 @@ def _assertion_kinds(func: FuncNode) -> list[str]:
             bindings.clear()
             for branch in item:
                 bindings.update(branch)
+            _capture_bindings(bindings, snapshots)
             continue
         node = item
         if not isinstance(node, ast.AST):
             raise ScanError(f"{func.name}: invalid traversal node")
+        if _apply_boundary(node, bindings, snapshots):
+            continue
         _update_rc_vars(node, bindings)
+        _capture_bindings(bindings, snapshots)
         kind = _classify_assertion(node, bindings)
         if kind is not None:
             kinds.append(kind)

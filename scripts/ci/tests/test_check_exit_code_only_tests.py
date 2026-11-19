@@ -1523,6 +1523,89 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
                 source = "async def test_case(x):\n" + body
                 self.assertEqual(len(checker.file_findings(source, REL_TEST_FILE)), 1)
 
+    def _check_handler_source(self, body: str, expected: int) -> None:
+        target = self._commit_file(REL_TEST_FILE, "# base\n")
+        target.write_text("def test_x():\n" + body, encoding="utf-8")
+        rc, out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, expected, err)
+        if expected:
+            self.assertIn("asserts only exit code 0", err)
+        else:
+            self.assertIn("0 exit-code-only test findings", out)
+            self.assertNotIn("test_x", err)
+
+    def test_handler_sees_intermediate_binding(self) -> None:
+        self._check_handler_source(
+            "    try:\n        rc = run_checker()\n        might_raise()\n        rc = 3\n"
+            "    except ValueError:\n        assert rc == 0\n",
+            1,
+        )
+
+    def test_handler_sees_nested_intermediate_binding(self) -> None:
+        self._check_handler_source(
+            "    try:\n        with ctx():\n            rc = run_checker()\n"
+            "            might_raise()\n            rc = 3\n"
+            "    except ValueError:\n        assert rc == 0\n",
+            1,
+        )
+
+    def test_exception_group_handler_sees_intermediate_binding(self) -> None:
+        self._check_handler_source(
+            "    try:\n        rc = run_checker()\n        might_raise()\n        rc = 3\n"
+            "    except* ValueError:\n        assert rc == 0\n",
+            1,
+        )
+
+    def test_handler_sees_bindings_in_nested_control_flow(self) -> None:
+        prefixes = (
+            "if flag:",
+            "for item in items:",
+            "while flag:",
+            "match flag:\n            case True:",
+            "try:",
+        )
+        for prefix in prefixes:
+            with self.subTest(prefix=prefix):
+                indent = "                " if prefix.startswith("match") else "            "
+                suffix = (
+                    "        except ValueError:\n            pass\n" if prefix == "try:" else ""
+                )
+                source = (
+                    "def test_x():\n    try:\n        "
+                    + prefix
+                    + "\n"
+                    + indent
+                    + "rc = run_checker()\n"
+                    + indent
+                    + "might_raise()\n"
+                    + indent
+                    + "rc = 3\n"
+                    + suffix
+                    + "    except ValueError:\n        assert rc == 0\n"
+                )
+                self.assertEqual(len(checker.file_findings(source, REL_TEST_FILE)), 1)
+
+    def test_handler_excludes_binding_replaced_before_try(self) -> None:
+        self._check_handler_source(
+            "    rc = run_checker()\n    rc = 3\n    try:\n        might_raise()\n"
+            "    except ValueError:\n        assert rc == 0\n",
+            0,
+        )
+
+    def test_handler_other_assertion_is_strong(self) -> None:
+        self._check_handler_source(
+            "    try:\n        out = run_checker()\n        rc = run_checker()\n"
+            "        assert rc == 0\n    except ValueError:\n        assert out.stdout == 'x'\n",
+            0,
+        )
+
+    def test_finally_sees_handler_entry_bindings(self) -> None:
+        source = (
+            "def test_x():\n    try:\n        rc = run_checker()\n        rc = 3\n"
+            "    except ValueError:\n        rc = 3\n    finally:\n        assert rc == 0\n"
+        )
+        self.assertEqual(len(checker.file_findings(source, REL_TEST_FILE)), 1)
+
     def test_compound_paths_replace_bindings(self) -> None:
         cases = (
             "    try:\n        rc = 1\n    except ValueError:\n        rc = 2\n    assert rc == 0\n",
