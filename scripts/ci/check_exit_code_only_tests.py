@@ -13,10 +13,12 @@ Default mode scans `scripts/ci/tests/test_*.py`, prints all findings with an
 informational count and top 5 files, and exits 0. `--changed-against <ref>`
 resolves `git merge-base <ref> HEAD` and checks only test functions whose line
 span (from the first decorator or excuse comment) intersects the working-tree
-diff from `git diff --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/ -M -U0 <merge-base>`
-(plus untracked test files), exiting 1 on findings. Unreadable files, files
-above 1 MiB, syntax errors, bad refs, and git errors exit 2 with the path on
-stderr.
+diff from `git diff --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/ -M -U0 <merge-base> -- <pathspec>`
+(where `<pathspec>` is `scripts/ci/tests` in default discovery or the explicit
+paths; a test file renamed from outside `<pathspec>` shows as a new file with
+all functions selected, plus untracked test files), exiting 1 on findings.
+Unreadable files, files above 1 MiB, exceeded file-block or hunk bounds, syntax
+errors, bad refs, and git errors exit 2 with the path or bound on stderr.
 
 Justified cases carry `# exit-code-only: <reason>` (reason >= 10 characters)
 on the `def` line or the line immediately above it (or its first decorator); an
@@ -391,10 +393,13 @@ def _resolve_merge_base(root: Path, ref: str) -> str:
 
 def _classify_removed_lines(body: str) -> tuple[bool, bool]:
     """Return `(has_leading_stmt, has_trailing_meta)` for `-` lines in a hunk body."""
+    lines = body.splitlines()
+    if len(lines) > MAX_BODY_NODES:
+        raise ScanError(f"git diff hunk exceeds {MAX_BODY_NODES} lines")
     has_leading_stmt = False
     has_trailing_meta = False
     seen_def = False
-    for raw in body.splitlines()[:MAX_BODY_NODES]:
+    for raw in lines[:MAX_BODY_NODES]:
         if not raw.startswith("-"):
             continue
         line = raw[1:]
@@ -413,7 +418,9 @@ def _classify_removed_lines(body: str) -> tuple[bool, bool]:
 
 def _parse_diff_hunks(diff_text: str) -> list[tuple[int, int]]:
     """Extract (new_start, new_count) line ranges from `git diff -U0` output."""
-    matches = list(itertools.islice(HUNK_RE.finditer(diff_text), MAX_DIFF_HUNKS))
+    matches = list(itertools.islice(HUNK_RE.finditer(diff_text), MAX_DIFF_HUNKS + 1))
+    if len(matches) > MAX_DIFF_HUNKS:
+        raise ScanError(f"git diff exceeds {MAX_DIFF_HUNKS} hunks")
     hunks: list[tuple[int, int]] = []
     for idx, match in enumerate(matches[:MAX_DIFF_HUNKS]):
         start = int(match.group(1))
@@ -429,12 +436,17 @@ def _parse_diff_hunks(diff_text: str) -> list[tuple[int, int]]:
             hunks.append((start, 0))
         if has_trailing_meta:
             hunks.append((start + 1, 1))
+    if len(hunks) > MAX_DIFF_HUNKS:
+        raise ScanError(f"git diff exceeds {MAX_DIFF_HUNKS} hunks")
     return hunks
 
 
 def _block_dest_path(header: str) -> str | None:
     """Return the destination repo-relative path from a `diff --git` block header."""
-    for line in header.splitlines()[:MAX_CALL_ARGS]:
+    lines = header.splitlines()
+    if len(lines) > MAX_CALL_ARGS:
+        raise ScanError(f"git diff header exceeds {MAX_CALL_ARGS} lines")
+    for line in lines[:MAX_CALL_ARGS]:
         if line.startswith("+++ b/"):
             return line.removeprefix("+++ b/")
         if line.startswith("rename to "):
@@ -443,17 +455,22 @@ def _block_dest_path(header: str) -> str | None:
 
 
 def _parse_diff_by_path(diff_text: str) -> dict[str, list[tuple[int, int]]]:
-    """Parse a full `git diff -U0` output once into a `rel_path -> hunks` mapping."""
+    """Parse a `git diff -U0` output once into a `rel_path -> hunks` mapping."""
     by_path: dict[str, list[tuple[int, int]]] = {}
     if "diff --git " not in diff_text:
         return by_path
-    for block in ("\n" + diff_text).split("\ndiff --git ")[1 : MAX_TEST_FILES + 1]:
+    blocks = ("\n" + diff_text).split("\ndiff --git ", MAX_TEST_FILES + 2)[1:]
+    if len(blocks) > MAX_TEST_FILES:
+        raise ScanError(f"git diff exceeds {MAX_TEST_FILES} file blocks")
+    for block in blocks[:MAX_TEST_FILES]:
         header = block.split("\n@@ ", 1)[0]
         dest = _block_dest_path(header)
         if dest is not None:
             existing = by_path.setdefault(dest, [])
-            remaining = max(0, MAX_DIFF_HUNKS - len(existing))
-            existing.extend(_parse_diff_hunks(block)[:remaining])
+            block_hunks = _parse_diff_hunks(block)
+            if len(existing) + len(block_hunks) > MAX_DIFF_HUNKS:
+                raise ScanError(f"{dest}: git diff exceeds {MAX_DIFF_HUNKS} hunks")
+            existing.extend(block_hunks[:MAX_DIFF_HUNKS])
     return by_path
 
 
@@ -461,8 +478,12 @@ def _changed_hunks_by_path(
     root: Path,
     ref: str,
     rel_paths: Sequence[str],
+    diff_pathspecs: Sequence[str] = (),
 ) -> dict[str, list[tuple[int, int]]]:
     """Return `rel_path -> hunks` from a single working-tree diff against merge-base."""
+    pathspecs = diff_pathspecs or (TESTS_REL_DIR.as_posix(),)
+    if len(pathspecs) > MAX_TEST_FILES:
+        raise ScanError(f"{root}: exceeds {MAX_TEST_FILES} test files")
     merge_base = _resolve_merge_base(root, ref)
     diff_res = _run_git(
         root,
@@ -475,6 +496,8 @@ def _changed_hunks_by_path(
             "-M",
             "-U0",
             merge_base,
+            "--",
+            *pathspecs[:MAX_TEST_FILES],
         ],
     )
     if diff_res.returncode != 0:
@@ -484,7 +507,10 @@ def _changed_hunks_by_path(
         others = _run_git(root, ["ls-files", "--others", "--", *rel_paths[:MAX_TEST_FILES]])
         if others.returncode != 0:
             raise ScanError(f"{root}: git ls-files failed: {others.stderr.strip()}")
-        for untracked in others.stdout.splitlines()[:MAX_TEST_FILES]:
+        untracked_lines = others.stdout.splitlines()
+        if len(untracked_lines) > MAX_TEST_FILES:
+            raise ScanError(f"{root}: git ls-files exceeds {MAX_TEST_FILES} untracked files")
+        for untracked in untracked_lines[:MAX_TEST_FILES]:
             if untracked:
                 by_path.setdefault(untracked, [(1, MAX_AST_NODES)])
     return by_path
@@ -511,6 +537,8 @@ def _spans_intersect(func_start: int, func_end: int, hunks: Sequence[tuple[int, 
 def discover_test_files(root: Path, explicit_paths: Sequence[str]) -> list[tuple[Path, str]]:
     """Return `(abs_path, rel_posix)` pairs for test files under `scripts/ci/tests/`."""
     if explicit_paths:
+        if len(explicit_paths) > MAX_TEST_FILES:
+            raise ScanError(f"{root}: exceeds {MAX_TEST_FILES} test files")
         pairs: list[tuple[Path, str]] = []
         for raw in explicit_paths[:MAX_TEST_FILES]:
             candidate = Path(raw)
@@ -534,8 +562,10 @@ def scan_repository(
 ) -> list[Finding]:
     """Scan test files under `root` and return all applicable findings."""
     files = discover_test_files(root, explicit_paths)
+    rel_paths = [rel for _, rel in files]
+    diff_pathspecs: Sequence[str] = rel_paths if explicit_paths else (TESTS_REL_DIR.as_posix(),)
     hunks_by_path = (
-        _changed_hunks_by_path(root, changed_against, [rel for _, rel in files])
+        _changed_hunks_by_path(root, changed_against, rel_paths, diff_pathspecs)
         if changed_against is not None
         else None
     )

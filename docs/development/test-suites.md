@@ -345,10 +345,13 @@ python3 scripts/ci/check_exit_code_only_tests.py --changed-against origin/master
   <ref>` resolves `git merge-base <ref> HEAD` and intersects each function's
   line span (starting at the first decorator or excuse-comment line, whichever
   is earlier) with the working-tree diff from
-  `git diff --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/ -M -U0 <merge-base>`
-  (plus untracked test files), exiting `1` on findings (`0` when clean). An
-  unreadable file, a file above 1 MiB, a syntax error, a bad ref, or a
-  `git merge-base` / `git diff` failure exits `2` with the path on `stderr`,
-  never `0`.
+  `git diff --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/ -M -U0 <merge-base> -- <pathspec>`
+  where `<pathspec>` is `scripts/ci/tests` in default discovery and the explicit
+  paths otherwise (with `-M` and a pathspec, a test file renamed from outside
+  `<pathspec>` shows as a new file with all functions selected, plus untracked
+  test files), exiting `1` on findings (`0` when clean). An unreadable file, a
+  file above 1 MiB, an exceeded file-block or hunk bound, a syntax error, a bad
+  ref, or a `git merge-base` / `git diff` failure exits `2` with the path or
+  bound on `stderr`, never `0`.
 - **Scope limit**: the check verifies that another assertion is present; it
   does not judge whether an output assertion is strong.

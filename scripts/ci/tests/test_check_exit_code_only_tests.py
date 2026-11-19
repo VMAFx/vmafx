@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import io
 import os
 import shutil
@@ -25,6 +26,7 @@ from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 GIT = shutil.which("git")
 GIT_TIMEOUT_S = 30.0
 REL_TEST_FILE = "scripts/ci/tests/test_sample.py"
+UNRELATED_OVER_BOUND_COUNT = 2_100
 
 
 class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
@@ -789,6 +791,98 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         rc_exc0, _out_e0, err_exc0 = self._run_checker("--changed-against", "HEAD~1")
         self.assertEqual(rc_exc0, 1)
         self.assertIn(f"{REL_TEST_FILE}:1: test_top_surviving: asserts only exit code 0", err_exc0)
+
+    def test_unrelated_files_over_max_test_files_do_not_hide_weak_test(self) -> None:
+        self._commit_file(REL_TEST_FILE, "import subprocess\n", "base")
+        aaa_dir = self.repo / "aaa"
+        aaa_dir.mkdir(parents=True, exist_ok=True)
+        for idx in range(UNRELATED_OVER_BOUND_COUNT):
+            (aaa_dir / f"unrelated_{idx:04d}.txt").write_text("x\n", encoding="utf-8")
+        self._git("add", "--", "aaa")
+        (self.repo / REL_TEST_FILE).write_text(
+            "import subprocess\n\n"
+            "def test_weak_after_unrelated_flood() -> None:\n"
+            "    rc = run_checker().returncode\n"
+            "    assert rc == 0\n",
+            encoding="utf-8",
+        )
+        rc, _out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 1)
+        self.assertIn(
+            f"{REL_TEST_FILE}:3: test_weak_after_unrelated_flood: asserts only exit code 0",
+            err,
+        )
+
+    def test_unrelated_large_diff_above_output_limit_is_ignored(self) -> None:
+        self._commit_file(REL_TEST_FILE, "import subprocess\n", "base")
+        snap = self._commit_file("testdata/snapshot.json", "{\n}\n", "base snapshot")
+        snap.write_text("{\n" + ('  "score": 1,\n' * 1024) + "}\n", encoding="utf-8")
+        self._git("add", "--", "testdata/snapshot.json")
+        (self.repo / REL_TEST_FILE).write_text(
+            "import subprocess\n\n"
+            "def test_strong_with_large_unrelated_diff() -> None:\n"
+            "    res = subprocess.run(['true'], check=False)\n"
+            "    assert res.returncode == 0\n"
+            "    assert res.stdout == 'ok'\n",
+            encoding="utf-8",
+        )
+        small_limit_run = functools.partial(run_command, max_output_bytes=4096)
+        with mock.patch.object(checker, "run_command", side_effect=small_limit_run):
+            rc, out, err = self._run_checker("--changed-against", "HEAD~1")
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(err, "")
+        self.assertIn("0 exit-code-only test findings in changed functions", out)
+
+    def test_over_bound_file_blocks_and_hunks_inside_pathspec_exit_2(self) -> None:
+        helper_a = self._commit_file("scripts/ci/tests/helper_a.py", "A = 1\n", "helper a")
+        helper_b = self._commit_file("scripts/ci/tests/helper_b.py", "B = 1\n", "helper b")
+        target = self._commit_file(
+            REL_TEST_FILE,
+            (
+                "def test_one() -> None:\n    assert 1 == 1\n\n"
+                "def test_two() -> None:\n    assert 2 == 2\n"
+            ),
+            "base test",
+        )
+        helper_a.write_text("A = 2\n", encoding="utf-8")
+        helper_b.write_text("B = 2\n", encoding="utf-8")
+        target.write_text(
+            "def test_one() -> None:\n    assert 1 == 10\n\n"
+            "def test_two() -> None:\n    assert 2 == 20\n",
+            encoding="utf-8",
+        )
+        with mock.patch.object(checker, "MAX_TEST_FILES", 2):
+            rc_blk, _out_blk, err_blk = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc_blk, 2)
+        self.assertIn("exceeds 2 file blocks", err_blk)
+        with mock.patch.object(checker, "MAX_DIFF_HUNKS", 1):
+            rc_hnk, _out_hnk, err_hnk = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc_hnk, 2)
+        self.assertIn("exceeds 1 hunks", err_hnk)
+
+    def test_rename_from_outside_pathspec_into_tests_dir_checks_all_functions(self) -> None:
+        outside_rel = "scripts/ci/legacy_moved_test.py"
+        dest_rel = "scripts/ci/tests/test_moved_into_suite.py"
+        self._commit_file(
+            outside_rel,
+            (
+                "import subprocess\n\n"
+                "def test_moved_weak() -> None:\n"
+                "    res = subprocess.run(['true'], check=False)\n"
+                "    assert res.returncode == 0\n\n"
+                "def test_moved_strong() -> None:\n"
+                "    res = subprocess.run(['true'], check=False)\n"
+                "    assert res.returncode == 0\n"
+                "    assert res.stdout == 'ok'\n"
+            ),
+            "base outside tests dir",
+        )
+        self._git("mv", outside_rel, dest_rel)
+        self._git("commit", "-q", "-m", "move into scripts/ci/tests")
+        rc, _out, err = self._run_checker("--changed-against", "HEAD~1")
+        self.assertEqual(rc, 1)
+        self.assertIn(f"{dest_rel}:3: test_moved_weak: asserts only exit code 0", err)
+        self.assertNotIn("test_moved_strong", err)
 
 
 if __name__ == "__main__":
