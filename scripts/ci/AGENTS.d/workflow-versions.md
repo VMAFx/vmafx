@@ -5,12 +5,24 @@ paths:
   - scripts/ci/tests/test_formatter_pins_single_source.py
   - scripts/ci/tests/test_mypy_python_version_single_source.py
   - scripts/ci/tests/test_rust_toolchain_single_source.py
+  - scripts/ci/tests/test_vmaf_resource_commit_single_source.py
   - rust-toolchain.toml
-invariant: Level Zero, ruff / black, mypy `python_version`, Rust toolchain: one owner each plus checked mirrors.
+invariant: Level Zero, ruff / black, mypy `python_version`, Rust toolchain and VMAF_RESOURCE_COMMIT: one owner each plus checked mirrors.
 area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # Version pins checked by `check-workflow-versions.py`
+
+## VMAF resource commit (ADR-1231)
+
+`VMAF_RESOURCE_COMMIT` in `build-config.env` owns the Netflix/vmaf_resource
+fixture commit. `docker/Dockerfile.tester` keeps an `ARG` mirror because an
+image build cannot source the config at parse time. The macOS and Windows
+tester-bundle workflows read the value at run time (`load-build-config.sh`
+for macOS; a `Select-String` step writing `$GITHUB_ENV` for Windows), so they
+carry no parse-time mirror. The seven fixture `source` records in
+`tools/rc1-tester/image/licensing.json` name the same commit and are checked.
+Fixture: `tests/test_vmaf_resource_commit_single_source.py`.
 
 ## Level Zero version consumption (ADR-1231)
 

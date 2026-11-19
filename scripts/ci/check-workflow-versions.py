@@ -101,12 +101,12 @@ LEVEL_ZERO_FETCHER_CALL_RE = re.compile(
 
 PYTHON_RE = re.compile(r'python-version:\s*[\'"]?([0-9]+\.[0-9]+\.[0-9]+)[\'"]?')
 RESOURCE_ARG_RE = re.compile(r"(?m)^ARG\s+VMAF_RESOURCE_COMMIT=([^\s#]+)")
-RESOURCE_ENV_RE = re.compile(r"(?m)^\s*VMAF_RESOURCE_COMMIT:\s*([^\s#]+)")
-RESOURCE_MIRRORS = (
-    ("docker/Dockerfile.tester", RESOURCE_ARG_RE),
-    (".github/workflows/macos-tester-bundle.yml", RESOURCE_ENV_RE),
-    (".github/workflows/windows-tester-bundle.yml", RESOURCE_ENV_RE),
+RESOURCE_RECORD_RE = re.compile(
+    r'"source":\s*"https://github\.com/Netflix/vmaf_resource/tree/([0-9a-f]{40})/'
 )
+RESOURCE_RECORD_FILE = "tools/rc1-tester/image/licensing.json"
+RESOURCE_RECORD_COUNT = 7
+RESOURCE_MIRRORS = (("docker/Dockerfile.tester", RESOURCE_ARG_RE),)
 
 
 def load_config(root: Path) -> dict[str, str]:
@@ -194,12 +194,13 @@ def check_level_zero_container(root: Path) -> list[str]:
 
 
 def check_vmaf_resource_commit(root: Path, want: str | None) -> list[str]:
-    """The fixture source commit is declared once and mirrored where parse time forbids sourcing.
+    """The fixture source commit is owned by build-config.env and checked everywhere.
 
-    GitHub Actions and Dockerfile ``ARG`` defaults cannot read
-    ``build-config.env`` before the workflow or image is parsed, so the tester
-    image and the two tester-bundle workflows repeat the commit. This gate makes
-    that repetition exact: missing, duplicated or differing mirrors fail.
+    `docker/Dockerfile.tester` keeps an `ARG` mirror because an image build
+    cannot read `build-config.env` at parse time. The tester-bundle workflows
+    load the value at run time. The seven fixture records in
+    `tools/rc1-tester/image/licensing.json` name the same commit and are compared
+    here, so missing, duplicated or differing values fail.
     """
     if not want:
         return ["build-config.env defines no VMAF_RESOURCE_COMMIT"]
@@ -216,6 +217,22 @@ def check_vmaf_resource_commit(root: Path, want: str | None) -> list[str]:
         if values[0] != want:
             problems.append(
                 f"{rel} pins VMAF_RESOURCE_COMMIT {values[0]}; build-config.env says {want}"
+            )
+    records = root / RESOURCE_RECORD_FILE
+    if not records.is_file():
+        problems.append(f"{RESOURCE_RECORD_FILE} is missing")
+        return problems
+    values = RESOURCE_RECORD_RE.findall(records.read_text(encoding="utf-8"))
+    if len(values) != RESOURCE_RECORD_COUNT:
+        problems.append(
+            f"{RESOURCE_RECORD_FILE} names VMAF_RESOURCE_COMMIT in {len(values)} "
+            f"records; expected {RESOURCE_RECORD_COUNT}"
+        )
+    for value in values:
+        if value != want:
+            problems.append(
+                f"{RESOURCE_RECORD_FILE} names VMAF_RESOURCE_COMMIT {value}; "
+                f"build-config.env says {want}"
             )
     return problems
 

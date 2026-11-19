@@ -58,8 +58,6 @@ env:
   # PYTHON.json): the install_only archive holds none (ADR-1503). SHA-256 from SHA256SUMS.
   PBS_FULL_URL: https://github.com/astral-sh/python-build-standalone/releases/download/20261001/cpython-3.13.16%2B20261001-aarch64-apple-darwin-pgo%2Blto-full.tar.zst
   PBS_FULL_SHA256: 7d58416593597f4ef0226c24cfe53cd09b65d04b5606c1ab8005f5ae1a25ef75
-  # Netflix/vmaf_resource commit the fixtures are fetched from.
-  VMAF_RESOURCE_COMMIT: c0ab6adbd7e41bb354f14686ed08500530622bc3
   TAG: ${{ github.event.inputs.tag }}
   REF: ${{ github.event.inputs.ref }}
 
@@ -166,6 +164,8 @@ jobs:
             echo "ERROR: the Metal compiler is still missing after xcodebuild -downloadComponent MetalToolchain" >&2
             exit 1
           fi
+      - name: Load build config
+        run: bash scripts/ci/load-build-config.sh >> "$GITHUB_ENV"
       - name: Build the bundle
         env:
           VMAFX_SOURCE_COMMIT: ${{ needs.validate.outputs.source-sha }}

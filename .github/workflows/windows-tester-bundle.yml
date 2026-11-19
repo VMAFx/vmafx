@@ -89,8 +89,6 @@ env:
   PBS_X64_FULL_SHA256: fbccab8d1487f327874956eb2d0e979612c133f3619b6e86e4ec250cb0191b55
   PBS_ARM64_FULL_URL: https://github.com/astral-sh/python-build-standalone/releases/download/20261001/cpython-3.13.16%2B20261001-aarch64-pc-windows-msvc-pgo-full.tar.zst
   PBS_ARM64_FULL_SHA256: d88129f3600d12887a9fee50847d71eac7127b9be20785fa759e4459b9c1bee8
-  # Netflix/vmaf_resource commit the fixtures are fetched from.
-  VMAF_RESOURCE_COMMIT: c0ab6adbd7e41bb354f14686ed08500530622bc3
   # The SYCL zip's compiler (ADR-1566): only the DPC++/C++ component of the oneAPI
   # installer build-config.env pins (ONEAPI_WINDOWS_VERSION, INTEL_BASEKIT_WINDOWS_*);
   # its required packages bring the runtime, UMF 1.0.2 and TCM 1.4.1.
@@ -395,6 +393,12 @@ jobs:
         env:
           ZIMG_TRIPLET: ${{ matrix.gpu == 'sycl' && 'x64-windows-static-md' || format('{0}-windows-static', matrix.arch) }}
         run: pwsh -File scripts/ci/setup-zimg-windows.ps1 -Triplet $env:ZIMG_TRIPLET
+      - name: Load VMAF resource commit
+        shell: pwsh
+        run: |
+          $line = Select-String -Path build-config.env -Pattern '^VMAF_RESOURCE_COMMIT="([0-9a-f]{40})"$' | Select-Object -First 1
+          if (-not $line) { throw 'no VMAF_RESOURCE_COMMIT in build-config.env' }
+          "VMAF_RESOURCE_COMMIT=$($line.Matches[0].Groups[1].Value)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Build the zip
         if: matrix.gpu != 'sycl'
         shell: pwsh
