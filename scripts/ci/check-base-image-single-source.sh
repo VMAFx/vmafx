@@ -103,12 +103,27 @@ for f in "${files[@]}"; do
       [ "$got" = "$want" ] && continue
       if [ "$write" -eq 1 ]; then
         python3 - "$f" "$lineno" "$key" "$want" <<'PY'
+import os
 import sys
+import tempfile
+
 path, lineno, key, want = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
-lines = open(path).read().splitlines(keepends=True)
+with open(path, encoding="utf-8") as stream:
+    lines = stream.read().splitlines(keepends=True)
 indent = lines[lineno - 1][: len(lines[lineno - 1]) - len(lines[lineno - 1].lstrip())]
 lines[lineno - 1] = f'{indent}ARG {key}="{want}"\n'
-open(path, "w").writelines(lines)
+directory = os.path.dirname(os.path.abspath(path))
+fd, temporary = tempfile.mkstemp(prefix=os.path.basename(path) + ".", dir=directory)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        stream.writelines(lines)
+    os.chmod(temporary, os.stat(path).st_mode)
+    os.replace(temporary, path)
+finally:
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
 PY
         note "rewrote $f:$lineno $key"
       else

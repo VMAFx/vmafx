@@ -212,6 +212,14 @@ class BaseImageGate(unittest.TestCase):
                 self.check(text, 0, write=True)
                 self.assertIn(self.pin, (self.repo / "Dockerfile").read_text())
 
+    def test_write_leaves_no_temporary_containerfile(self) -> None:
+        text = BASE.format(pin="debian:wrong")
+        self.check(text, 0, write=True)
+        leftovers = [
+            path.name for path in self.repo.iterdir() if path.name.startswith("Dockerfile.")
+        ]
+        self.assertEqual(leftovers, [])
+
     def test_write_cannot_legitimize_a_hardcoded_external_image(self) -> None:
         self.check("FROM alpine:latest\n", 1, write=True)
         self.assertEqual((self.repo / "Dockerfile").read_text(), "FROM alpine:latest\n")
