@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -69,6 +71,35 @@ class ShfmtSetup(unittest.TestCase):
         result = resolve("riscv64")
         self.assertEqual(result.returncode, 2)
         self.assertIn("go install mvdan.cc/sh/v3/cmd/shfmt@v3.13.1", result.stderr)
+
+    def test_an_installed_shfmt_skips_the_architecture_check(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="shfmt-installed-") as directory:
+            temporary = Path(directory)
+            binary = temporary / "bin"
+            binary.mkdir()
+            (binary / "shfmt").write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+            (binary / "shfmt").chmod(0o755)
+            marker = temporary / "curl-called"
+            (binary / "curl").write_text(
+                f"#!/usr/bin/env sh\n: > {posix(marker)}\nexit 1\n", encoding="utf-8"
+            )
+            (binary / "curl").chmod(0o755)
+            env = {
+                "PATH": f"{posix(binary)}:/usr/bin:/bin",
+                "HOME": os.environ.get("HOME", str(temporary)),
+                "VMAFX_REPO_ROOT": posix(ROOT),
+            }
+            result = subprocess.run(  # noqa: S603 - fixed local bash and script paths
+                [str(BASH), posix(INSTALL), "riscv64"],
+                capture_output=True,
+                text=True,
+                errors="replace",
+                check=False,
+                env=env,
+                cwd=temporary,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(marker.exists())
 
     def test_both_setup_scripts_call_the_shared_installer(self) -> None:
         for script in (UBUNTU, FEDORA):

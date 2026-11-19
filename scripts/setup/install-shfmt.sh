@@ -30,6 +30,13 @@ if [[ "${1:-}" == "--resolve" ]]; then
 fi
 machine="${1:-$(uname -m)}"
 
+# An existing shfmt wins over the pin in install mode: a machine without a
+# release asset (or an offline one) must not stop setup when the tool is
+# already on PATH. --resolve still maps every machine.
+if [[ "$mode" == install ]] && command -v shfmt >/dev/null; then
+  exit 0
+fi
+
 case "$machine" in
   x86_64 | amd64)
     asset=amd64
@@ -61,10 +68,6 @@ url="https://github.com/mvdan/sh/releases/download/${version}/shfmt_${version}_l
 
 if [[ "$mode" == resolve ]]; then
   printf '%s %s\n' "$asset" "$digest"
-  exit 0
-fi
-
-if command -v shfmt >/dev/null; then
   exit 0
 fi
 
