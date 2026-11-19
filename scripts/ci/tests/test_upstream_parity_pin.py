@@ -25,6 +25,7 @@ HEADING = "## Upstream head the fork is at parity with"
 FULL = "cea2b4d832a105116a3f16f56d6f5d953421952c"
 JOB_NAME = "Licence Provenance"
 URL = "https://github.com/Netflix/vmaf.git"
+URL_LITERAL = re.compile(r"https://github\.com/Netflix/vmaf(\.git)?(?=[\"'\s]|$)")
 
 
 def document(*headings: str) -> str:
@@ -139,11 +140,26 @@ class SharedUpstreamUrl(unittest.TestCase):
         with mock.patch.dict(os.environ, {"NETFLIX_VMAF_URL": mirror}, clear=False):
             self.assertEqual(pin.upstream_url(), mirror)
 
-    def test_a_config_without_the_value_is_refused(self) -> None:
+    def test_a_config_that_lacks_the_value_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            (Path(temporary) / "build-config.env").write_text(
+                'SOME_OTHER_KEY="value"\n', encoding="utf-8"
+            )
+            with mock.patch.dict(os.environ, {}, clear=True):
+                with self.assertRaisesRegex(pin.PinError, "declares no NETFLIX_VMAF_URL"):
+                    pin.upstream_url(Path(temporary))
+
+    def test_a_missing_config_is_refused(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             with mock.patch.dict(os.environ, {}, clear=True):
                 with self.assertRaisesRegex(pin.PinError, "not found"):
                     pin.upstream_url(Path(temporary))
+
+    def test_url_and_within_are_mutually_exclusive(self) -> None:
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as raised:
+                pin.main(["--url", "--within", "FETCH_HEAD"])
+        self.assertEqual(raised.exception.code, 2)
 
     def test_url_option_prints_the_url(self) -> None:
         stdout = io.StringIO()
@@ -160,14 +176,20 @@ class NoLiteralCopies(unittest.TestCase):
     def test_workflows_do_not_repeat_the_literal(self) -> None:
         for path in (ROOT / ".github/workflows").glob("*.yml"):
             with self.subTest(workflow=path.name):
-                self.assertNotIn(URL, path.read_text(encoding="utf-8"))
+                self.assertIsNone(
+                    URL_LITERAL.search(path.read_text(encoding="utf-8")),
+                    f"{path.name} repeats the Netflix URL",
+                )
 
     def test_scripts_outside_tests_do_not_repeat_the_literal(self) -> None:
         for path in (ROOT / "scripts").rglob("*.py"):
             if "tests" in path.parts or path.name.startswith("test_"):
                 continue
             with self.subTest(script=str(path.relative_to(ROOT))):
-                self.assertNotIn(URL, path.read_text(encoding="utf-8"))
+                self.assertIsNone(
+                    URL_LITERAL.search(path.read_text(encoding="utf-8")),
+                    f"{path.relative_to(ROOT)} repeats the Netflix URL",
+                )
 
 
 class Workflow(unittest.TestCase):

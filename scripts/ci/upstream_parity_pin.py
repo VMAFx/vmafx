@@ -125,10 +125,11 @@ def upstream_url(repo: Path = REPO) -> str:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n", 1)[0])
     parser.add_argument("--repo", type=Path, default=REPO, help="checkout (default: this one)")
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--within", metavar="REF", help="resolve the id and require REF to contain the commit"
     )
-    parser.add_argument(
+    mode.add_argument(
         "--url", action="store_true", help="print the shared Netflix URL instead of the pin"
     )
     args = parser.parse_args(argv)
