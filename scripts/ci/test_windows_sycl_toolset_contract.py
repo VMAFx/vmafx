@@ -31,6 +31,7 @@ OLD_WINDOWS_BASEKIT_URL = (
     "intel-oneapi-base-toolkit-2025.3.0.372_offline.exe"
 )
 EXPECTED_DPCPP_COMPONENT = "intel.oneapi.win.cpp-dpcpp-common"
+EXPECTED_AOT_REFUSED = "tgllp,adl-s,adl-p,adl-n,rpl-s,rpl-p"
 EXPECTED_SYCL_STEP_IF = "steps.leg.outputs.run == 'true' && matrix.backend == 'sycl'"
 BANNED_STL_MISMATCH_MACRO = "_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"
 MIN_ONEAPI_MAJOR = 2026
@@ -133,6 +134,8 @@ def _validate_oneapi_step(steps: list[dict[str, Any]]) -> None:
         )
     if env.get("WINDOWS_DPCPP_COMPONENTS") != EXPECTED_DPCPP_COMPONENT:
         raise AssertionError(f"WINDOWS_DPCPP_COMPONENTS must equal {EXPECTED_DPCPP_COMPONENT!r}")
+    if env.get("WINDOWS_AOT_EXPECT_REFUSED") != EXPECTED_AOT_REFUSED:
+        raise AssertionError(f"WINDOWS_AOT_EXPECT_REFUSED must equal {EXPECTED_AOT_REFUSED!r}")
     run_script = str(step.get("run", ""))
     if "-p=NEED_VS2026_INTEGRATION=0" not in run_script:
         raise AssertionError(
@@ -178,6 +181,12 @@ class WindowsSyclToolsetContractTest(unittest.TestCase):
     def test_live_workflow_satisfies_windows_sycl_toolset_contract(self) -> None:
         workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
         validate_windows_sycl_toolset_contract(workflow_text)
+
+    def test_planted_refused_targets_rejected(self) -> None:
+        text = WORKFLOW_PATH.read_text(encoding="utf-8")
+        for planted in ("tgllp", EXPECTED_AOT_REFUSED + ",bmg-g31", ""):
+            with self.subTest(planted=planted), self.assertRaises(AssertionError):
+                validate_windows_sycl_toolset_contract(text.replace(EXPECTED_AOT_REFUSED, planted))
 
     def assert_windows_pin_documentation(self, text: str) -> None:
         self.assertIn("lane pins its own release (2026.2.0.661, ADR-3567)", text)

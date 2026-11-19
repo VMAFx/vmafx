@@ -85,18 +85,23 @@ The build needs `ocloc` for the default ahead-of-time targets
 ([AOT targets](overview.md#aot-targets-default-adr-0568)). On Windows it comes
 with oneAPI (`where ocloc`). An older `ocloc` may not know every default
 target; oneAPI 2025.1.1's rejects `bmg-g31` with `Unknown acronym`. The Windows
-CI build with oneAPI 2026.2.0.661 rejected `tgllp` at AOT link. CI checks
-each default target with `ocloc ids`, reports the dropped targets, and passes
-the accepted list to Meson only if the refused set is exactly `tgllp`. The
-remaining targets and the `ocloc ids tgllp` result have not yet been measured.
+CI build with oneAPI 2026.2.0.661 rejected `tgllp` at AOT link. Builds run
+`44487361326` measured six refusals with `ocloc ids`: `tgllp`, `adl-s`,
+`adl-p`, `adl-n`, `rpl-s` and `rpl-p`. It accepted 13: `dg2-g10`, `dg2-g11`,
+`acm-g10`, `acm-g11`, `acm-g12`, `mtl-h`, `mtl-u`, `arl-h`, `arl-s`,
+`arl-u`, `lnl-m`, `bmg-g21` and `bmg-g31`. CI reports the dropped targets
+and passes the accepted list to Meson only if the refused set matches those
+six. Xe-LP, Alder Lake and Raptor Lake integrated devices get no AOT image
+from the Windows CI build and use the `spir64` image at run time. The build
+with the 13 accepted targets and its runtime behavior remain unmeasured.
 
 If `ocloc` rejects a target:
 
 1. Check each target with `ocloc ids <target>`.
-2. Drop the unknown ones from the list:
+2. Drop the unknown ones from the list. For the CI measurement above:
 
     ```bat
-    meson configure build -Dsycl_icpx_aot_targets=dg2-g10,dg2-g11,acm-g10,acm-g11,acm-g12,tgllp,adl-s,adl-p,adl-n,rpl-s,rpl-p,mtl-h,mtl-u,arl-h,arl-s,arl-u,lnl-m,bmg-g21
+    meson configure build -Dsycl_icpx_aot_targets=dg2-g10,dg2-g11,acm-g10,acm-g11,acm-g12,mtl-h,mtl-u,arl-h,arl-s,arl-u,lnl-m,bmg-g21,bmg-g31
     ```
 
 `-Dsycl_icpx_aot_targets=` (empty) builds SPIR-V only: every run then

@@ -932,7 +932,7 @@ jobs:
         shell: cmd
         env:
           WINDOWS_BASEKIT_URL: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/728c4418-1b40-47a9-ad51-31530fb27c94/intel-oneapi-toolkit-2026.2.0.661_offline.exe
-          WINDOWS_AOT_EXPECT_REFUSED: tgllp
+          WINDOWS_AOT_EXPECT_REFUSED: tgllp,adl-s,adl-p,adl-n,rpl-s,rpl-p
           WINDOWS_DPCPP_COMPONENTS: intel.oneapi.win.cpp-dpcpp-common
         run: |
           curl.exe --output %TEMP%\webimage.exe --url %WINDOWS_BASEKIT_URL% --retry 5 --retry-all-errors --retry-delay 5

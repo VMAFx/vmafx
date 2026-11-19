@@ -29,9 +29,12 @@ baseline; the installer resource path discussed below is a separate observation.
 
 Builds run `44475666625`, job `135395829372`, on head `e9133a6bea`
 installed oneAPI 2026.2.0.661 and configured successfully, then its AOT link
-rejected `tgllp`. The link stopped at the first rejected target; the full
-refused set and the result of `ocloc ids tgllp` remain unmeasured. Ubuntu SYCL
-passed with ocloc 26.35.39758.10 and the same default list.
+rejected `tgllp`. The link stopped at the first rejected target. Builds run
+`44487361326` subsequently measured six refusals with `ocloc ids`: `tgllp`,
+`adl-s`, `adl-p`, `adl-n`, `rpl-s` and `rpl-p`. It accepted 13: `dg2-g10`,
+`dg2-g11`, `acm-g10`, `acm-g11`, `acm-g12`, `mtl-h`, `mtl-u`, `arl-h`,
+`arl-s`, `arl-u`, `lnl-m`, `bmg-g21` and `bmg-g31`. Ubuntu SYCL passed with
+ocloc 26.35.39758.10 and the same default list.
 
 ## Decision
 
@@ -59,11 +62,13 @@ passed with ocloc 26.35.39758.10 and the same default list.
    moved to the CUDA leg only.
 
 4. **Probe the default AOT targets before Windows SYCL configuration.** The
-   CI leg checks each target with `ocloc ids`, expects only `tgllp` to be
-   refused, reports every dropped target, and passes the accepted list to
-   Meson. A different refused set, probe error, or empty accepted list fails
-   the leg. Affected Xe-LP devices obtain kernels from the `spir64` image at
-   run time. The revised Windows build and runtime behavior remain unmeasured.
+   CI leg checks each target with `ocloc ids`, expects the six refusals
+   measured in run `44487361326`, reports every dropped target, and passes
+   the 13 accepted targets listed above to Meson. A different refused set,
+   probe error, or empty accepted list fails the leg. Xe-LP, Alder Lake and
+   Raptor Lake integrated devices get no AOT image from the Windows CI build
+   and use the `spir64` image at run time. The build with the 13 accepted
+   targets and its runtime behavior remain unmeasured.
 
 ## How the installer facts were read
 
