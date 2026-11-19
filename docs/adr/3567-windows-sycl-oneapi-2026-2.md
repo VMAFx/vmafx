@@ -23,6 +23,10 @@ remained pinned to Intel oneAPI Base Toolkit `2025.3.0.372`
 `<expected>` probe in `Configure libvmaf (SYCL)` failed with `error STL1000`
 and aborted configuration.
 
+Intel's 2026 release notes identify Clang 22 as the C and C++ front end from
+compiler release 2026.0.0, providing the source for the Clang 22-or-later
+baseline; the installer resource path discussed below is a separate observation.
+
 ## Decision
 
 1. **Raise `WINDOWS_BASEKIT_URL` in `libvmaf-build-matrix.yml` to oneAPI
@@ -91,10 +95,13 @@ executed or inspected.
 - [ADR-0121](0121-windows-gpu-build-only-legs.md) — Windows GPU build-only
   matrix legs (initial `2025.3.0.372` pin).
 - [ADR-1566](1566-windows-sycl-tester-zip.md) — Windows SYCL tester zip
-  (`ONEAPI_WINDOWS_VERSION` in `build-config.env`).
+  (`ONEAPI_WINDOWS_VERSION` in `build-config.env`); its lane pin is superseded
+  in part by this ADR, while the tester zip pin stays.
 - Intel oneAPI DPC++/C++ Compiler 2026 Release Notes
-  (`https://www.intel.com/content/www/us/en/developer/articles/release-notes/oneapi-dpcpp/2026.html`)
-  and Intel oneAPI Toolkit Installation Guide for Windows 2026.2
+  (<https://www.intel.com/content/www/us/en/developer/articles/release-notes/oneapi-dpcpp/2026.html>):
+  version 2026.0.0 supports the C and C++ standards through the Clang 22 front
+  end (checked 2026-11-19; source statement supplied with this change).
+- Intel oneAPI Toolkit Installation Guide for Windows 2026.2
   (`https://www.intel.com/content/www/us/en/docs/oneapi-toolkit/installation-guide-windows/latest/install-oneapi-toolkit-with-installer.html`,
   published `2026-10-15`, modified `2026-10-27`).
 - `actions/runner-images` `win25-vs2026/20261116.315`
