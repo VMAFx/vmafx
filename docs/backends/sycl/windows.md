@@ -92,8 +92,9 @@ CI build with oneAPI 2026.2.0.661 rejected `tgllp` at AOT link. Builds run
 `arl-u`, `lnl-m`, `bmg-g21` and `bmg-g31`. CI reports the dropped targets
 and passes the accepted list to Meson only if the refused set matches those
 six. Xe-LP, Alder Lake and Raptor Lake integrated devices get no AOT image
-from the Windows CI build and use the `spir64` image at run time. The build
-with the 13 accepted targets and its runtime behavior remain unmeasured.
+from the Windows CI build. By design, they fall back to the [`spir64` image
+compiled at run time](aot.md#default-target-list). The build with the 13 accepted
+targets and this fallback on Windows remain unmeasured.
 
 If `ocloc` rejects a target:
 

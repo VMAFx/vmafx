@@ -382,9 +382,10 @@ After oneAPI setup, the SYCL leg probes every default Meson AOT target with
 `arl-u`, `lnl-m`, `bmg-g21` and `bmg-g31`. The step fails if the refused
 set differs from those six or if no targets are accepted. Configure receives
 the accepted list; dropped targets appear in a notice. Xe-LP, Alder Lake and
-Raptor Lake integrated devices get no AOT image from the Windows CI build and
-use the `spir64` image at run time. The build with the 13 accepted targets and
-its runtime behavior remain unmeasured.
+Raptor Lake integrated devices get no AOT image from the Windows CI build. By
+design, they fall back to the `spir64` image compiled at run time; see
+docs/backends/sycl/aot.md#default-target-list. The build with the 13 accepted
+targets and this fallback on Windows remain unmeasured.
 ---------- Build ----------
 CFLAGS/CXXFLAGS carry `/experimental:c11atomics` — without
 that flag MSVC's `<stdatomic.h>` errors with "C atomic

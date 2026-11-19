@@ -66,9 +66,10 @@ ocloc 26.35.39758.10 and the same default list.
    measured in run `44487361326`, reports every dropped target, and passes
    the 13 accepted targets listed above to Meson. A different refused set,
    probe error, or empty accepted list fails the leg. Xe-LP, Alder Lake and
-   Raptor Lake integrated devices get no AOT image from the Windows CI build
-   and use the `spir64` image at run time. The build with the 13 accepted
-   targets and its runtime behavior remain unmeasured.
+   Raptor Lake integrated devices get no AOT image from the Windows CI build.
+   By design, they fall back to the [`spir64` image compiled at run time](../backends/sycl/aot.md#default-target-list).
+   The build with the 13 accepted targets and this fallback on Windows remain
+   unmeasured.
 
 ## How the installer facts were read
 
