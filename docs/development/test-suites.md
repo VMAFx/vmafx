@@ -7,6 +7,12 @@ suite is run by one or more required CI checks.
 mappings, and the required `Tooling Tests` job fails when a test file is not
 in any suite ([ADR-1528](../adr/1528-test-suite-registry.md)).
 
+A suite's `install` object inherits `PYTHON_CI_VERSION` from
+[`build-config.env`](../../build-config.env). Omit `install.python` for the
+shared CI interpreter; set it only when a suite genuinely needs another
+version. `scripts/ci/check-workflow-versions.py` rejects an install that
+repeats the default and requires at least one suite to inherit it.
+
 ## Adding a test
 
 - **To an existing suite** (a new `test_*.py` under `tools/vmaf-tune/tests/`,

@@ -53,6 +53,7 @@ from scripts.lib.safe_subprocess import run as run_command
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = Path(".github/test-suites.json")
+BUILD_CONFIG = Path("build-config.env")
 AGGREGATOR = Path(".github/workflows/required-aggregator.yml")
 GIT_TIMEOUT_SECONDS = 60.0
 SHELL_TEST_TIMEOUT_SECONDS = 600.0
@@ -116,22 +117,37 @@ def _strings(value: Any, label: str) -> tuple[str, ...]:
     return tuple(value)
 
 
-def _install(value: Any, label: str) -> Install:
-    if not isinstance(value, dict) or not isinstance(value.get("python"), str):
-        raise RegistryError(f"{label} must be an object with a string python version")
+def _install(value: Any, label: str, root: Path) -> Install:
+    if not isinstance(value, dict):
+        raise RegistryError(f"{label} must be an object")
+    python = value["python"] if "python" in value else default_python(root)
+    if not isinstance(python, str) or not python:
+        raise RegistryError(f"{label}.python must be a non-empty string")
     venv_of = value.get("venv_of")
     if venv_of is not None:
         if not isinstance(venv_of, str) or "locks" in value or "editable" in value:
             raise RegistryError(f"{label}: venv_of is a suite name and excludes locks/editable")
-        return Install(python=value["python"], venv_of=venv_of)
+        return Install(python=python, venv_of=venv_of)
     editable = value.get("editable", [])
     if editable:
         _strings(editable, f"{label}.editable")
     return Install(
-        python=value["python"],
+        python=python,
         locks=_strings(value.get("locks"), f"{label}.locks"),
         editable=tuple(editable),
     )
+
+
+def default_python(root: Path) -> str:
+    """The registry-wide Python version, from build-config.env's PYTHON_CI_VERSION."""
+    try:
+        text = (root / BUILD_CONFIG).read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RegistryError(f"cannot read {BUILD_CONFIG}: {exc}") from exc
+    match = re.search(r'(?m)^PYTHON_CI_VERSION="([^"]+)"\s*$', text)
+    if match is None:
+        raise RegistryError(f"{BUILD_CONFIG} defines no PYTHON_CI_VERSION")
+    return match.group(1)
 
 
 PYTEST_REWRITE_PARTS = 2
@@ -157,14 +173,14 @@ def _pytest_fields(pytest_cfg: Any, label: str) -> dict[str, Any]:
     return fields
 
 
-def _suite_run_fields(entry: dict[str, Any], label: str) -> dict[str, Any]:
+def _suite_run_fields(entry: dict[str, Any], label: str, root: Path) -> dict[str, Any]:
     """The fields run_affected_suites.py reads: how a suite installs and runs locally."""
     has_install, has_reason = "install" in entry, "not_local" in entry
     if has_install == has_reason:
         raise RegistryError(f"{label}: give exactly one of install and not_local (a reason)")
     fields: dict[str, Any] = {}
     if has_install:
-        fields["install"] = _install(entry["install"], f"{label}.install")
+        fields["install"] = _install(entry["install"], f"{label}.install", root)
     elif not isinstance(entry["not_local"], str) or not entry["not_local"]:
         raise RegistryError(f"{label}.not_local must be a non-empty reason string")
     else:
@@ -181,7 +197,7 @@ def _suite_run_fields(entry: dict[str, Any], label: str) -> dict[str, Any]:
     return fields
 
 
-def _suite(entry: Any, index: int) -> Suite:
+def _suite(entry: Any, index: int, root: Path) -> Suite:
     if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
         raise RegistryError(f"suites[{index}] must be an object with a string name")
     label = f"suites[{index}] ({entry['name']})"
@@ -189,7 +205,7 @@ def _suite(entry: Any, index: int) -> Suite:
         name=entry["name"],
         paths=_strings(entry.get("paths"), f"{label}.paths"),
         checks=_strings(entry.get("checks"), f"{label}.checks"),
-        **_suite_run_fields(entry, label),
+        **_suite_run_fields(entry, label, root),
     )
 
 
@@ -202,7 +218,7 @@ def load_registry(root: Path) -> Registry:
         raise RegistryError(f"cannot read {MANIFEST}: {exc}") from exc
     if data.get("schema_version") != 1:
         raise RegistryError(f"{MANIFEST}: schema_version must be 1")
-    suites = tuple(_suite(entry, i) for i, entry in enumerate(data.get("suites") or []))
+    suites = tuple(_suite(entry, i, root) for i, entry in enumerate(data.get("suites") or []))
     names = [suite.name for suite in suites]
     if not suites or len(set(names)) != len(names):
         raise RegistryError(f"{MANIFEST}: suites must be non-empty with unique names")
