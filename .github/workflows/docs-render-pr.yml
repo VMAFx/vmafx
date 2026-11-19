@@ -1,16 +1,20 @@
 name: docs-render-pr
 
-# Scheduled render pull request (ADR-3373, follow-up of ADR-3295).
+# Master-push and scheduled render pull request (ADR-3373, ADR-3552; follow-up
+# of ADR-3295).
 # The master-push Docs job is red once a render has been owed for 24 hours;
 # every render pull request before this workflow was opened by hand, and master
-# went red twice when nobody did. Every hour this workflow asks
-# scripts/ci/check_render_on_master.py whether a render has been owed for
-# OPEN_AFTER_HOURS or more and, if so, opens or refreshes the render-only pull
-# request as the release-bot App (a pull request opened with GITHUB_TOKEN gets
-# no check runs, ADR-1151) and arms auto-merge, so the forge merges it once its
-# required checks pass, well inside the bound.
+# went red twice when nobody did. On every push to master, and hourly as a
+# fallback because GitHub drops scheduled runs (issue 3462, ADR-3552), this
+# workflow asks scripts/ci/check_render_on_master.py whether a render has been
+# owed for OPEN_AFTER_HOURS or more and, if so, opens or refreshes the
+# render-only pull request as the release-bot App (a pull request opened with
+# GITHUB_TOKEN gets no check runs, ADR-1151) and arms auto-merge, so the forge
+# merges it once its required checks pass, well inside the bound.
 
 on:
+  push:
+    branches: [master]
   schedule:
     - cron: "23 * * * *"
   workflow_dispatch:

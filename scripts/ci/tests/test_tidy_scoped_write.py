@@ -18,6 +18,10 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.ci.tests import symlink_test_support as links
+
 SPEC = importlib.util.spec_from_file_location(
     "tidy_scoped_module", Path(__file__).resolve().parents[1] / "tidy-ratchet.py"
 )
@@ -217,6 +221,7 @@ class ScopedWriter(ScopedFixture):
                 self.assertEqual(self.baseline.read_text(), text)
 
     def test_report_aliases_are_rejected_before_measurement_or_output(self) -> None:
+        links.skip_without_symlinks(self.root)
         symlink = self.root / "symlink.json"
         symlink.symlink_to(self.baseline)
         hardlink = self.root / "hardlink.json"
@@ -228,6 +233,7 @@ class ScopedWriter(ScopedFixture):
                 self.assertEqual(self.baseline.read_bytes(), self.before)
 
     def test_baseline_symlink_preserves_link_and_atomically_updates_target(self) -> None:
+        links.skip_without_symlinks(self.root)
         link = self.root / "baseline-link.json"
         link.symlink_to(self.baseline)
         self.assertEqual(ratchet.write_scoped_baseline(link, self.measurement(), [self.key]), 0)

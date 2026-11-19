@@ -10,7 +10,10 @@ the secret when it, a stage it is built FROM, or a stage it copies from
 mounts it, transitively. The shared stage
 builder (ADR-0819, ADR-1346, ADR-1354) must forward the secret for exactly those
 targets, and every workflow step that calls the builder must hand it
-GITHUB_TOKEN exactly when its target consumes the secret.
+GITHUB_TOKEN exactly when its target consumes the secret. Raw ``docker build``
+calls without ``--check`` are permitted only for the standalone
+``docker/dev/ubuntu-26.04*.Dockerfile`` images with no BuildKit secret or
+``GITHUB_TOKEN`` build argument (ADR-3545).
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ import importlib.util
 import re
 import shlex
 import sys
+from itertools import dropwhile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -180,10 +184,68 @@ def _validate_builder_arms(code: str, containerfile: str) -> list[str]:
     return errors
 
 
+# PR 3458 review (path-qualified Docker executables).
+def _is_docker_word(word: str) -> bool:
+    return word == "docker" or word.endswith("/docker")
+
+
+def _is_docker_path_word(word: str) -> bool:
+    if _is_docker_word(word) or DOCKER_PATH_WORD_RE.fullmatch(word) is None:
+        return False
+    last = word.rpartition("/")[2]
+    return "docker" not in last or DOCKER_FILE_COMPONENT_RE.fullmatch(last) is not None
+
+
+def _has_hidden_docker_word(words: list[str]) -> bool:
+    return any("docker" in word and not _is_docker_path_word(word) for word in words)
+
+
+def _consume_env_option(words: list[str], index: int) -> int:
+    word = words[index]
+    if word in ENV_NO_ARG_FLAGS or ENV_ASSIGNMENT_RE.match(word) is not None:
+        return 1
+    if word.startswith("--unset="):
+        return int(ENV_NAME_RE.fullmatch(word.removeprefix("--unset=")) is not None)
+    if word == "-u" and index + 1 < len(words):
+        return 2 if ENV_NAME_RE.fullmatch(words[index + 1]) is not None else 0
+    return 0
+
+
+# PR 3458 review (wrapped Docker executables).
+def _command_words(words: list[str]) -> list[str]:
+    trimmed = list(dropwhile(lambda word: ENV_ASSIGNMENT_RE.match(word) is not None, words))
+    if trimmed[:1] != ["env"]:
+        return trimmed
+    index = 1
+    limit = len(trimmed)
+    while index < limit:
+        if trimmed[index] == "--":
+            index += 1
+            break
+        step = _consume_env_option(trimmed, index)
+        if step == 0:
+            break
+        index += step
+    rest = list(dropwhile(lambda word: ENV_ASSIGNMENT_RE.match(word) is not None, trimmed[index:]))
+    return trimmed if rest and rest[0].startswith("-") else rest
+
+
+def _is_builder_docker_build(line: str) -> bool:
+    # A parameter or env-wrapped command word (`env "$DOCKER" build`) and any
+    # wrapped `docker build` (`bash -c 'docker build ...'`) count as builds too.
+    words = [word.strip("\"'") for word in line.split()]
+    executable, *rest = _command_words(words) or [""]
+    if rest[:1] == ["build"] and (_is_docker_word(executable) or "$" in executable):
+        return True
+    if not _is_docker_word(executable) and _has_hidden_docker_word(words):
+        return True
+    return RAW_DOCKER_BUILD_RE.search(line) is not None
+
+
 def _validate_builder_command(code: str) -> list[str]:
     """One docker build, fed the target and the arm's secret, and nothing shared."""
     errors: list[str] = []
-    builds = [line for line in _joined_commands(code) if line.startswith("docker build")]
+    builds = [line for line in _joined_commands(code) if _is_builder_docker_build(line)]
     if len(builds) != 1:
         errors.append("the stage build script must run exactly one docker build")
     for build in builds:
@@ -252,6 +314,298 @@ def _validate_caller_steps(
     return errors
 
 
+ALLOWED_RAW_DOCKERFILES = frozenset(
+    {
+        "docker/dev/ubuntu-26.04${SUFFIX}.Dockerfile",
+        "docker/dev/ubuntu-26.04.Dockerfile",
+        "docker/dev/ubuntu-26.04-cuda.Dockerfile",
+        "docker/dev/ubuntu-26.04-sycl.Dockerfile",
+    }
+)
+ALLOWED_RAW_BUILD_TAGS = frozenset({"vmafx-dev-ubuntu:${VARIANT}"})
+# PR 3458 review (brace expansion, globs, tilde, parameter expansion):
+# character allow-list for raw-build words after quote and escape stripping.
+RAW_BUILD_WORD = re.compile(r"[A-Za-z0-9._/:@+=-]+")
+ENV_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+ENV_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+ENV_NO_ARG_FLAGS = frozenset({"-i", "--ignore-environment"})
+SHELL_CLAUSE_CHARS = frozenset(";&|()")
+DOUBLE_QUOTE_ESCAPES = frozenset({"\\", '"', "$", "`"})
+SUBSTITUTION_MARKERS = ("$(", "`", "<(", ">(")
+DOCKER_EXEC_PATTERN = r"(?:[^\s;&|()\"'`]*/)?docker"
+NON_BUILD_DOCKER_RE = re.compile(rf"^\s*{DOCKER_EXEC_PATTERN}\s+(?:compose|run|rmi)(?:\s|$)")
+DOCKER_TOKEN_RE = re.compile(rf"(?:^|[\s;&|()\"'`]){DOCKER_EXEC_PATTERN}(?=$|[\s;&|()\"'`])")
+RAW_DOCKER_BUILD_RE = re.compile(
+    rf"(?:^|[\s;&|()\"'`]){DOCKER_EXEC_PATTERN}[\"'`]*\s+[\"'`]*build(?=$|[\s;&|()\"'`])"
+)
+STANDALONE_BUILD_RE = re.compile(r"(?:^|[\s;&|()\"'`])build(?=$|[\s;&|()\"'`])")
+# PR 3458 review (wrapped Docker executables): allow-list for a word that names
+# docker anywhere except as the clause's command word. It must be a plain path
+# whose last component, when it names docker, is a data or script file such as
+# dev/docker-compose.yml. Anything else (`sudo docker`, `env -Sdocker`, a quoted
+# command string, `docker-buildx`, `docker.exe`) counts as a hidden Docker call.
+DOCKER_PATH_WORD_RE = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9_./-]*")
+DOCKER_FILE_COMPONENT_RE = re.compile(
+    r"[A-Za-z0-9_-]*docker[-_][A-Za-z0-9_.-]*\.(?:ya?ml|sh|json|md|txt|env|toml)"
+)
+# Allow-list derived from the checked workflows' raw `docker build` calls:
+#   dev-container-build.yml: `--check --file ... --target ... .`
+#   dev-container-build.yml: `--progress=plain -f ... -t ... .`
+RAW_BUILD_FLAGS = frozenset({"--check"})
+RAW_BUILD_VALUE_OPTIONS = frozenset({"-f", "--file", "-t", "--progress", "--target"})
+
+
+def _has_disallowed_substitution(command: str) -> bool:
+    if not any(marker in command for marker in SUBSTITUTION_MARKERS):
+        return False
+    match = NON_BUILD_DOCKER_RE.match(command)
+    if match is None:
+        return True
+    rest = command[match.end() :]
+    return DOCKER_TOKEN_RE.search(rest) is not None or any(sep in command for sep in ";&|")
+
+
+def _flush_word(clause: list[str], buf: list[str], has_word: bool) -> bool:
+    if has_word:
+        clause.append("".join(buf))
+        buf.clear()
+    return False
+
+
+def _comment_end(command: str, index: int) -> int:
+    end = command.find("\n", index)
+    return len(command) if end < 0 else end
+
+
+def _scan_quoted_char(
+    command: str, index: int, quote: str, buf: list[str]
+) -> tuple[int, str] | None:
+    ch = command[index]
+    if ch == quote:
+        return index + 1, ""
+    if quote == '"' and ch == "\\":
+        if index + 1 >= len(command):
+            return None
+        nxt = command[index + 1]
+        if nxt != "\n":
+            if nxt not in DOUBLE_QUOTE_ESCAPES:
+                buf.append("\\")
+            buf.append(nxt)
+        return index + 2, quote
+    buf.append(ch)
+    return index + 1, quote
+
+
+def _scan_unquoted_char(
+    command: str,
+    index: int,
+    buf: list[str],
+    has_word: bool,
+    clause: list[str],
+    clauses: list[list[str]],
+) -> tuple[int, str, bool] | None:
+    ch = command[index]
+    quote = ""
+    step = 1
+    if ch in " \t\r\n":
+        has_word = _flush_word(clause, buf, has_word)
+    elif ch == "#" and not has_word:
+        step = _comment_end(command, index) - index
+    elif ch in SHELL_CLAUSE_CHARS:
+        has_word = _flush_word(clause, buf, has_word)
+        if clause:
+            clauses.append(clause.copy())
+            clause.clear()
+    elif ch in ("'", '"'):
+        quote = ch
+        has_word = True
+    elif ch == "\\":
+        if index + 1 >= len(command):
+            return None
+        buf.append(command[index + 1])
+        has_word = True
+        step = 2
+    else:
+        buf.append(ch)
+        has_word = True
+    return index + step, quote, has_word
+
+
+def _shell_clauses(command: str) -> list[list[str]] | None:
+    clauses: list[list[str]] = []
+    clause: list[str] = []
+    buf: list[str] = []
+    quote = ""
+    has_word = False
+    index = 0
+    limit = len(command)
+    while index < limit:
+        if quote:
+            quoted = _scan_quoted_char(command, index, quote, buf)
+            if quoted is None:
+                return None
+            index, quote = quoted
+        else:
+            unquoted = _scan_unquoted_char(command, index, buf, has_word, clause, clauses)
+            if unquoted is None:
+                return None
+            index, quote, has_word = unquoted
+    if quote:
+        return None
+    _flush_word(clause, buf, has_word)
+    if clause:
+        clauses.append(clause)
+    return clauses
+
+
+def _has_param_build_command(words: list[str]) -> bool:
+    return bool(words) and "$" in words[0] and "build" in words[1:]
+
+
+def _docker_clause_build_args(sub: list[str]) -> tuple[list[str] | None, bool]:
+    if sub[:1] == ["build"]:
+        return sub[1:], False
+    # A nested Docker call (`docker run img sh -c 'docker build ...'`) is hidden.
+    hidden = _has_hidden_docker_word(sub)
+    if not sub or sub[0] in ("compose", "run", "rmi"):
+        return None, hidden
+    return None, hidden or "build" in sub
+
+
+def _clause_raw_build_args(clause: list[str]) -> tuple[list[str] | None, bool]:
+    words = _command_words(clause)
+    if _has_param_build_command(words):
+        return None, True
+    if words and _is_docker_word(words[0]):
+        return _docker_clause_build_args(words[1:])
+    text = " ".join(clause)
+    invalid = _has_hidden_docker_word(clause) or (
+        "$" in text and STANDALONE_BUILD_RE.search(text) is not None
+    )
+    return None, invalid
+
+
+def _may_contain_raw_build(command: str) -> bool:
+    return "docker" in command or (
+        "$" in command and STANDALONE_BUILD_RE.search(command) is not None
+    )
+
+
+def _raw_build_args_list(command: str) -> list[list[str]] | None:
+    if not _may_contain_raw_build(command):
+        return []
+    if _has_disallowed_substitution(command):
+        return None
+    clauses = _shell_clauses(command)
+    if clauses is None:
+        return None
+    builds: list[list[str]] = []
+    for clause in clauses:
+        args, invalid = _clause_raw_build_args(clause)
+        if invalid:
+            return None
+        if args is not None:
+            builds.append(args)
+    return builds
+
+
+def _has_forbidden_build_flag(args: list[str]) -> bool:
+    for index, arg in enumerate(args):
+        if arg.partition("=")[0] == "--secret":
+            return True
+        if arg == "--build-arg":
+            value = args[index + 1] if index + 1 < len(args) else "GITHUB_TOKEN"
+            if value.partition("=")[0] == "GITHUB_TOKEN":
+                return True
+        if arg.startswith("--build-arg="):
+            if arg.split("=", 1)[1].partition("=")[0] == "GITHUB_TOKEN":
+                return True
+    return False
+
+
+def _consume_build_option(args: list[str], index: int) -> tuple[str, str, int] | None:
+    arg = args[index]
+    if arg in RAW_BUILD_FLAGS:
+        return arg, "", index + 1
+    if arg in RAW_BUILD_VALUE_OPTIONS:
+        if index + 1 >= len(args) or not args[index + 1]:
+            return None
+        return arg, args[index + 1], index + 2
+    if arg.startswith("--") and "=" in arg:
+        opt, _, value = arg.partition("=")
+        if opt in RAW_BUILD_VALUE_OPTIONS and value:
+            return opt, value, index + 1
+    return None
+
+
+def _is_allowed_build_value(opt: str, value: str) -> bool:
+    if opt in RAW_BUILD_FLAGS:
+        return not value
+    if opt in ("-f", "--file") and value in ALLOWED_RAW_DOCKERFILES:
+        return True
+    if opt == "-t" and value in ALLOWED_RAW_BUILD_TAGS:
+        return True
+    return RAW_BUILD_WORD.fullmatch(value) is not None
+
+
+def _parse_raw_build_args(args: list[str]) -> tuple[bool, list[str], list[str]] | None:
+    has_check = False
+    files: list[str] = []
+    operands: list[str] = []
+    index = 0
+    limit = len(args)
+    while index < limit:
+        arg = args[index]
+        if arg == "-" or not arg.startswith("-"):
+            if not _is_allowed_build_value("", arg):
+                return None
+            operands.append(arg)
+            index += 1
+            continue
+        parsed = _consume_build_option(args, index)
+        if parsed is None:
+            return None
+        opt, value, index = parsed
+        if not _is_allowed_build_value(opt, value):
+            return None
+        if opt == "--check":
+            has_check = True
+        elif opt in ("-f", "--file"):
+            files.append(value)
+    return has_check, files, operands
+
+
+def _single_dockerfile_operand(args: list[str]) -> str | None:
+    parsed = _parse_raw_build_args(args)
+    if parsed is None:
+        return None
+    _, files, operands = parsed
+    return files[0] if len(files) == 1 and operands == ["."] else None
+
+
+def _is_allowed_docker_build_args(args: list[str]) -> bool:
+    if any(SHELL_CLAUSE_CHARS.intersection(arg) for arg in args):
+        return False
+    if _has_forbidden_build_flag(args):
+        return False
+    parsed = _parse_raw_build_args(args)
+    if parsed is None:
+        return False
+    has_check, files, operands = parsed
+    if operands != ["."] or len(files) > 1:
+        return False
+    if has_check:
+        return True
+    return _single_dockerfile_operand(args) in ALLOWED_RAW_DOCKERFILES
+
+
+def _has_disallowed_raw_build(command: str) -> bool:
+    builds = _raw_build_args_list(command)
+    if builds is None:
+        return True
+    return any(not _is_allowed_docker_build_args(args) for args in builds)
+
+
 def validate_stage_caller(
     workflow: str, label: str, expected: tuple[str, ...], containerfile: str
 ) -> list[str]:
@@ -263,7 +617,7 @@ def validate_stage_caller(
         if key and len(key.group("indent")) <= MAX_SHARED_ENV_INDENT:
             errors.append(f"the {label} workflow must not set GITHUB_TOKEN for a whole job")
     for command in _joined_commands(workflow):
-        if "docker build" in command and "--check" not in command:
+        if _has_disallowed_raw_build(command):
             errors.append(f"the {label} workflow must build stage images only via {STAGE_BUILDER}")
     return errors
 

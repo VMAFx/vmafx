@@ -7,10 +7,15 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from typing import ClassVar
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.ci.tests import symlink_test_support as links
 
 ROOT = Path(__file__).resolve().parent.parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
@@ -202,6 +207,7 @@ class GoldenArm64PreflightTest(unittest.TestCase):
     ) -> dict[str, str]:
         bin_dir = root / "bin"
         bin_dir.mkdir()
+        links.skip_without_symlinks(bin_dir)
         # The two utilities the script calls, and nothing else of the host: a
         # real cross compiler in /usr/bin must not satisfy a fixture without one.
         for utility in ("head", "grep"):

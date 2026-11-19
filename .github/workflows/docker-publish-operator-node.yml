@@ -1536,6 +1536,12 @@ jobs:
           "${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ needs.publish-node.outputs.digest }}"
           node "${{ env.PUBLISH_TAG }}"
 
+      - name: Smoke-test vmafx-node SYCL image
+        run: >-
+          bash scripts/release/smoke-published-image.sh
+          "${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ needs.publish-node-sycl.outputs.digest }}"
+          node-sycl "${{ env.PUBLISH_TAG }}"
+
   # -------------------------------------------------------------------------
   # Summary gate — CI shows a single green/red status
   # -------------------------------------------------------------------------

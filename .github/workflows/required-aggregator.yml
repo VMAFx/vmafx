@@ -16,7 +16,7 @@ name: CI
 on:
   pull_request:
     branches: [master]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, edited, synchronize, reopened, ready_for_review]
   push:
     branches: [master]
   workflow_dispatch:
@@ -613,8 +613,89 @@ jobs:
               })
             );
             if (!currentRun) return;
-            const runCreatedMs = Date.parse(currentRun.data.created_at);
-            const minCreatedMs = runCreatedMs - 2 * 60 * 1000;
+            const ownCreatedAt = currentRun.data && currentRun.data.created_at;
+            const ownCreatedMs = Date.parse(ownCreatedAt || '');
+            if (!Number.isFinite(ownCreatedMs)) {
+              core.setFailed('Cannot derive window anchor: workflow run created_at is invalid.');
+              return;
+            }
+            const isEditedPullRequest =
+              context.eventName === 'pull_request' && context.payload.action === 'edited';
+            const rawEditStamp =
+              isEditedPullRequest && context.payload.pull_request
+                ? context.payload.pull_request.updated_at
+                : '';
+            const ownEditStamp = typeof rawEditStamp === 'string' ? rawEditStamp.trim() : '';
+            if (isEditedPullRequest && ownEditStamp === '') {
+              core.setFailed(
+                'Cannot correlate edited pull-request workflow runs: ' +
+                'pull_request.updated_at is missing.'
+              );
+              return;
+            }
+            const editStampPrefix = isEditedPullRequest
+              ? `[${context.payload.pull_request.updated_at}] `
+              : '';
+            // Issue 3459 / ADR-3551 — on pull_request `edited` events, only
+            // rule-enforcement.yml gates re-run while earlier build/test checks
+            // keep their ready-head timestamps. Anchor the 2-minute window at the
+            // latest `ready_for_review` timeline event (or pull_request.created_at
+            // when never a draft), and keep the own-run anchor on every other event.
+            async function windowAnchorMs() {
+              if (!isEditedPullRequest) {
+                core.info(`window anchor: own run created at ${ownCreatedAt}`);
+                return ownCreatedMs;
+              }
+              const pr = context.payload.pull_request || {};
+              if (!Number.isInteger(pr.number) || pr.number <= 0) {
+                core.setFailed('Cannot derive window anchor: pull_request.number is missing.');
+                return null;
+              }
+              let latestReadyAt = null;
+              let latestReadyMs = Number.NaN;
+              for (let page = 1; page <= 10; page += 1) {
+                const response = await withApiBackoff('listEventsForTimeline', () =>
+                  github.rest.issues.listEventsForTimeline({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: pr.number,
+                    per_page: 100,
+                    page,
+                  })
+                );
+                if (!response) return null;
+                for (const item of response.data) {
+                  if (!item || item.event !== 'ready_for_review') continue;
+                  const eventMs = Date.parse(item.created_at || '');
+                  if (!Number.isFinite(eventMs)) {
+                    core.setFailed('Cannot derive window anchor: invalid ready_for_review date.');
+                    return null;
+                  }
+                  if (!Number.isFinite(latestReadyMs) || eventMs >= latestReadyMs) {
+                    latestReadyMs = eventMs;
+                    latestReadyAt = item.created_at;
+                  }
+                }
+                if (response.data.length < 100) {
+                  if (Number.isFinite(latestReadyMs)) {
+                    core.info(`window anchor: ready_for_review at ${latestReadyAt}`);
+                    return latestReadyMs;
+                  }
+                  const prMs = Date.parse(pr.created_at || '');
+                  if (!Number.isFinite(prMs)) {
+                    core.setFailed('Cannot derive window anchor: missing pull_request.created_at.');
+                    return null;
+                  }
+                  core.info(`window anchor: pull request created at ${pr.created_at}`);
+                  return prMs;
+                }
+              }
+              core.setFailed('Cannot derive window anchor: more than 1000 timeline events.');
+              return null;
+            }
+            const anchorMs = await windowAnchorMs();
+            if (anchorMs === null) return;
+            const minCreatedMs = anchorMs - 2 * 60 * 1000;
             const registrationGraceDeadline = Date.now() + 2 * 60 * 1000;
             const registrationPropagationMs = 2 * 60 * 1000;
             const activeStatuses = new Set([
@@ -664,9 +745,8 @@ jobs:
               return ownBranch !== '' && run.head_branch !== ownBranch;
             }
 
-            async function pullRequestSuites() {
-              const suites = new Set();
-              if (pullRequestEvents.has(context.eventName)) return suites;
+            async function listWorkflowRunsForSha() {
+              const runs = [];
               for (let page = 1; page <= 10; page += 1) {
                 const { data } = await github.rest.actions.listWorkflowRunsForRepo({
                   owner: context.repo.owner,
@@ -675,12 +755,20 @@ jobs:
                   per_page: 100,
                   page,
                 });
-                for (const run of data.workflow_runs) {
-                  if (foreignRun(run)) suites.add(run.check_suite_id);
-                }
-                if (data.workflow_runs.length < 100) return suites;
+                runs.push(...data.workflow_runs);
+                if (data.workflow_runs.length < 100) return runs;
               }
               throw new Error('more than 1000 workflow runs reported for one SHA');
+            }
+
+            async function pullRequestSuites() {
+              const suites = new Set();
+              if (pullRequestEvents.has(context.eventName)) return suites;
+              const runs = await listWorkflowRunsForSha();
+              for (const run of runs) {
+                if (foreignRun(run)) suites.add(run.check_suite_id);
+              }
+              return suites;
             }
 
             // ADR-3539 — converting a pull request to draft and marking it
@@ -700,6 +788,48 @@ jobs:
               "Semgrep OSS": "github-advanced-security",
               "gitleaks": "github-advanced-security"
             };
+            // Issue 3459 / ADR-3551, PR 3466 review — workflows whose pull_request
+            // trigger includes `edited` and that produce required checks. Each
+            // listed workflow sets a top-level `run-name` starting with the edit
+            // stamp `[<pull_request.updated_at>] `; on an `edited` event, only runs
+            // whose `display_title` starts with editStampPrefix belong to this
+            // edit. Every other run of those workflows is excluded as stale so an
+            // earlier edit (even seconds prior) cannot satisfy or mask the current
+            // edit, each listed workflow must start a current run within the grace
+            // window, and multiple runs sharing editStampPrefix (same-second edits)
+            // fail closed.
+            const editedRerunWorkflows = [
+              '.github/workflows/rule-enforcement.yml',
+            ];
+
+            function hasCurrentEditStamp(run) {
+              return editStampPrefix !== '' &&
+                typeof run.display_title === 'string' &&
+                run.display_title.startsWith(editStampPrefix);
+            }
+
+            function classifyEditedRerunSuites(workflowRuns) {
+              const staleSuites = new Set();
+              // Distinct current runs per workflow: a run listed twice (a new run
+              // shifting the newest-first listing between pages) counts once.
+              const currentRuns = new Map(editedRerunWorkflows.map(p => [p, new Set()]));
+              for (const run of workflowRuns) {
+                if (!run || !currentRuns.has(run.path)) continue;
+                if (hasCurrentEditStamp(run)) {
+                  currentRuns.get(run.path).add(run.id ?? run.check_suite_id ?? Symbol('run'));
+                } else if (run.check_suite_id != null) {
+                  staleSuites.add(run.check_suite_id);
+                }
+              }
+              const missingWorkflows = editedRerunWorkflows.filter(
+                workflowPath => currentRuns.get(workflowPath).size === 0
+              );
+              const ambiguousWorkflows = editedRerunWorkflows.filter(
+                workflowPath => currentRuns.get(workflowPath).size > 1
+              );
+              return { staleSuites, missingWorkflows, ambiguousWorkflows };
+            }
+
             // SARIF upload jobs in security-scans.yml that feed the external
             // code-scanning checks above. Keep polling while any upload job of
             // an owed external check is active or completed within
@@ -775,6 +905,7 @@ jobs:
                 const run = byName[dependency];
                 if (!run) return false;
                 if (activeStatuses.has(run.status)) return true;
+                if (notOwed.has(name) && run.conclusion === 'skipped') return false;
                 const completedMs = Date.parse(run.completed_at || 0);
                 return Number.isFinite(completedMs) &&
                   nowMs - completedMs <= registrationPropagationMs;
@@ -814,11 +945,36 @@ jobs:
             // than compute; the hosted-runner hard cap is 360 minutes.
             const deadline = Date.now() + 240 * 60 * 1000;
             let byName = {};
+            let missingEditedWorkflows = [];
+            let lastExcludedEditedSuites = 0;
+            let editedListedAfterGrace = !isEditedPullRequest;
             while (Date.now() < deadline) {
               const check_runs = await withApiBackoff('listAllCheckRuns', () => listAllCheckRuns());
               if (!check_runs) return;
               const suites = await withApiBackoff('pullRequestSuites', () => pullRequestSuites());
               if (!suites) return;
+              if (isEditedPullRequest) {
+                const editedListingStartMs = Date.now();
+                editedListedAfterGrace = editedListingStartMs > registrationGraceDeadline;
+                const workflowRuns = await withApiBackoff('listWorkflowRunsForRepo', () =>
+                  listWorkflowRunsForSha()
+                );
+                if (!workflowRuns) return;
+                const editedState = classifyEditedRerunSuites(workflowRuns);
+                if (editedState.ambiguousWorkflows.length > 0) {
+                  core.setFailed(
+                    'Ambiguous edited-event workflow runs share edit stamp ' +
+                    `${editStampPrefix.trim()}: ${editedState.ambiguousWorkflows.join(', ')}. ` +
+                    'Multiple edits landed in the same second so their runs cannot be told apart; ' +
+                    'edit the pull request again (any title or body change re-stamps it) ' +
+                    'or push a commit.'
+                  );
+                  return;
+                }
+                for (const suiteId of editedState.staleSuites) suites.add(suiteId);
+                missingEditedWorkflows = editedState.missingWorkflows;
+                lastExcludedEditedSuites = editedState.staleSuites.size;
+              }
               byName = newestByName(check_runs, suites);
               const missing = required.filter(n => !byName[n] && !notOwed.has(n) && !eventExempt.has(n));
               const stillRunning = required.filter(n => {
@@ -826,18 +982,36 @@ jobs:
                 return run && activeStatuses.has(run.status);
               });
               const nowMs = Date.now();
-              const delayedMissing = missing.filter(name =>
+              // ADR-3554 — own-input lanes stay in CI_TIER_FULL_ONLY (notOwed on
+              // the light tier), yet GitHub creates their gate check run only once
+              // their planner and work jobs complete; wait while those dependencies
+              // run so a light-tier PR cannot pass before a selected lane finishes.
+              const delayedMissing = required.filter(name =>
+                !byName[name] && !eventExempt.has(name) &&
                 delayedRegistrationStillExpected(delayedStrictDependencies, name, nowMs));
               const uploadPending = required.filter(name =>
                 !notOwed.has(name) && !eventExempt.has(name) &&
                 delayedRegistrationStillExpected(externalCheckUploadJobs, name, nowMs));
               const tierPending = tierDecisionPending(nowMs);
+              const graceExpired = nowMs > registrationGraceDeadline;
               if (stillRunning.length === 0 && delayedMissing.length === 0 && !tierPending &&
                   uploadPending.length === 0 &&
-                  (missing.length === 0 || nowMs > registrationGraceDeadline)) {
+                  (missing.length === 0 || graceExpired) &&
+                  (missingEditedWorkflows.length === 0 || graceExpired) &&
+                  editedListedAfterGrace) {
                 break;
               }
               if (tierPending) core.info('Waiting for the CI tier decisions of the workflows');
+              if (missingEditedWorkflows.length > 0 && !graceExpired) {
+                core.info(
+                  `Waiting for edited-event workflow run: ${missingEditedWorkflows.join(', ')}`
+                );
+              }
+              if (isEditedPullRequest && !editedListedAfterGrace) {
+                core.info(
+                  'Waiting out edited-event registration grace before trusting the edit-stamped run'
+                );
+              }
               core.info(`Waiting on: ${stillRunning.slice(0, 3).join(', ')}` +
                         (stillRunning.length > 3 ? ` (+${stillRunning.length - 3} more)` : ''));
               if (delayedMissing.length > 0) {
@@ -857,6 +1031,17 @@ jobs:
                           (missing.length > 3 ? ` (+${missing.length - 3} more)` : ''));
               }
               await new Promise(r => setTimeout(r, 30000));
+            }
+            if (isEditedPullRequest) {
+              core.info(`Excluded ${lastExcludedEditedSuites} stale edited-rerun check suite(s)`);
+              if (missingEditedWorkflows.length > 0) {
+                core.setFailed(
+                  'Edited-event required workflow did not start within registration grace: ' +
+                  `${missingEditedWorkflows.join(', ')} ` +
+                  '(the Rules workflow did not start for this edit).'
+                );
+                return;
+              }
             }
             const ignoredNames = Array.from(ignoredForeignNames);
             const maxLoggedForeignNames = 20;

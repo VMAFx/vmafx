@@ -21,6 +21,8 @@
   setuid fusermount3 needs) and node.ebpf (VMAFX_EBPF_BYPASS, UID 0 with
   BPF / PERFMON / SYS_ADMIN, /sys/kernel/tracing read-only);
   templates/node-validate.yaml refuses combinations the node cannot run.
+  ADR-3558: opt-in node.sidecar.enabled (VMAFX_SIDECAR_ENABLED), HTTP /readyz
+  readiness probe on metrics, and per-component node.affinity override.
 
   Note: this template superseded the legacy templates/node-deployment.yaml,
   which rendered a duplicate Deployment under the same name and blocked
@@ -77,9 +79,12 @@ spec:
       nodeSelector:
         {{- toYaml .Values.nodeSelector | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- if .Values.node.affinity }}
       affinity:
-        {{- toYaml . | nindent 8 }}
+        {{- toYaml .Values.node.affinity | nindent 8 }}
+      {{- else if .Values.affinity }}
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}
       {{- end }}
       {{- if .Values.node.tolerations }}
       tolerations:
@@ -126,10 +131,10 @@ spec:
               {{- toYaml $nodeResources.requests | nindent 14 }}
           securityContext:
             {{- include "vmafx.nodeSecurityContext" . | nindent 12 }}
-          # tcpSocket probes verify the gRPC listener is accepting connections
-          # (ADR-1094). The node also serves /metrics and its probe endpoints
-          # over HTTP on node.metricsPort (VMAFX_HTTP_ADDR); the probes stay
-          # on the gRPC listener, which is what the controller dispatches to.
+          # Liveness uses tcpSocket on the gRPC listener (ADR-1094). Readiness
+          # queries HTTP /readyz on node.metricsPort (VMAFX_HTTP_ADDR; ADR-3558,
+          # amending ADR-1094), which verifies the scorer, the gRPC listener, and
+          # — when node.sidecar.enabled is true — the online-training sidecar.
           livenessProbe:
             tcpSocket:
               port: grpc
@@ -137,8 +142,9 @@ spec:
             periodSeconds: 30
             failureThreshold: 3
           readinessProbe:
-            tcpSocket:
-              port: grpc
+            httpGet:
+              path: /readyz
+              port: metrics
             initialDelaySeconds: 5
             periodSeconds: 10
             failureThreshold: 3
