@@ -17,8 +17,9 @@ root-relative explicit paths) with
 `git diff --name-status -z -M --no-color --no-ext-diff <merge-base> -- <pathspec>`
 and `git ls-files -z --others --exclude-standard -- <pathspec>`, and checks
 only test functions that are new or whose AST (`ast.dump`, including
-decorators, matched by class chain + function name against
-`git show <merge-base>:<old-path>`) changed, exiting 1 on findings. If the old
+decorators, matched by class chain, function name, and position among duplicates
+against `git show <merge-base>:<old-path>`) changed, exiting 1 on findings.
+When the count of a qualified name changes, all its functions count as changed. If the old
 file does not parse, or for added, type-changed, and untracked files, every
 function in the file counts as changed. Unreadable files, files above 1 MiB,
 paths outside the repository root, changed or untracked Python paths inside
@@ -65,6 +66,7 @@ MAX_BODY_NODES = 50_000
 MAX_CALL_ARGS = 64
 MAX_DECORATORS = 32
 MAX_ASSIGN_TARGETS = 32
+MAX_ENV_VARS = 4_096
 MIN_REASON_LENGTH = 10
 TOP_FILES_LIMIT = 5
 EQUAL_OPERAND_COUNT = 2
@@ -356,7 +358,7 @@ def _extract_test_functions(tree: ast.AST, rel_path: str) -> list[tuple[str, Fun
 def file_findings(
     source: str,
     rel_path: str,
-    old_dumps: dict[str, str] | None = None,
+    old_dumps: dict[str, list[str]] | None = None,
 ) -> list[Finding]:
     """Parse one Python test file and return exit-code-only findings in (changed) functions."""
     try:
@@ -365,10 +367,15 @@ def file_findings(
         raise ScanError(f"{rel_path}:{exc.lineno or 1}: syntax error: {exc.msg}") from exc
     lines = source.splitlines()
     funcs = _extract_test_functions(tree, rel_path)
+    counts = Counter(name for name, _ in funcs[:MAX_AST_NODES])
+    positions: Counter[str] = Counter()
     findings: list[Finding] = []
     # len(funcs) <= MAX_AST_NODES is enforced by _extract_test_functions.
     for qualname, func in funcs[:MAX_AST_NODES]:
-        if old_dumps is not None and old_dumps.get(qualname) == ast.dump(func):
+        position = positions[qualname]
+        positions[qualname] += 1
+        previous = old_dumps.get(qualname, []) if old_dumps is not None else []
+        if len(previous) == counts[qualname] and previous[position] == ast.dump(func):
             continue
         finding = _check_test_function(func, lines, rel_path)
         if finding is not None:
@@ -381,7 +388,13 @@ def _run_git(root: Path, args: Sequence[str]) -> TextCommandResult:
     git = shutil.which("git")
     if git is None:
         raise ScanError(f"{root}: git executable not found on PATH")
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    if len(os.environ) > MAX_ENV_VARS:
+        raise ScanError(f"environment exceeds {MAX_ENV_VARS} variables")
+    env = {
+        k: v
+        for k, v in itertools.islice(os.environ.items(), MAX_ENV_VARS)
+        if not k.startswith("GIT_")
+    }
     try:
         return run_command(
             [git, *args],
@@ -520,8 +533,8 @@ def _changed_files_by_path(
     return merge_base, changes
 
 
-def _old_function_dumps(root: Path, merge_base: str, old_path: str) -> dict[str, str] | None:
-    """Return `qualname -> ast.dump(node)` from `<merge_base>:<old_path>`, or None on SyntaxError."""
+def _old_function_dumps(root: Path, merge_base: str, old_path: str) -> dict[str, list[str]] | None:
+    """Return ordered dumps per qualified name, or None on SyntaxError."""
     spec = f"{merge_base}:{old_path}"
     res = _run_git(root, ["show", spec])
     if res.returncode != 0:
@@ -535,7 +548,10 @@ def _old_function_dumps(root: Path, merge_base: str, old_path: str) -> dict[str,
         return None
     funcs = _extract_test_functions(tree, old_path)
     # len(funcs) <= MAX_AST_NODES is enforced by _extract_test_functions.
-    return {qualname: ast.dump(node) for qualname, node in funcs[:MAX_AST_NODES]}
+    dumps: dict[str, list[str]] = {}
+    for qualname, node in funcs[:MAX_AST_NODES]:
+        dumps.setdefault(qualname, []).append(ast.dump(node))
+    return dumps
 
 
 def _normalise_explicit_path(root: Path, root_resolved: Path, raw: str) -> tuple[Path, str]:

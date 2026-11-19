@@ -1031,6 +1031,68 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         self.assertIn(f"{REL_TEST_FILE}:1: test_now_valid_weak: asserts only exit code 0", err)
         self.assertNotIn("test_now_valid_strong", err)
 
+    def test_duplicate_first_weakened_is_reported(self) -> None:
+        strong = (
+            'def test_a():\n    rc = run_helper()\n    assert rc == 0\n    assert output == "ok"\n'
+        )
+        weak = "def test_a():\n    rc = run_helper()\n    assert rc == 0\n"
+        target = self._commit_file(REL_TEST_FILE, strong + "\n" + weak)
+        target.write_text(weak + "\n" + weak, encoding="utf-8")
+        rc, _out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 1)
+        self.assertIn(f"{REL_TEST_FILE}:1: test_a:", err)
+        self.assertNotIn(f"{REL_TEST_FILE}:5: test_a:", err)
+
+    def test_duplicate_second_weakened_is_reported(self) -> None:
+        strong = (
+            'def test_a():\n    rc = run_helper()\n    assert rc == 0\n    assert output == "ok"\n'
+        )
+        weak = "def test_a():\n    rc = run_helper()\n    assert rc == 0\n"
+        target = self._commit_file(REL_TEST_FILE, strong + "\n" + strong)
+        target.write_text(strong + "\n" + weak, encoding="utf-8")
+        rc, _out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 1)
+        self.assertIn(f"{REL_TEST_FILE}:6: test_a:", err)
+        self.assertNotIn(f"{REL_TEST_FILE}:1: test_a:", err)
+
+    def test_duplicates_unchanged_are_not_reported(self) -> None:
+        strong = (
+            'def test_a():\n    rc = run_helper()\n    assert rc == 0\n    assert output == "ok"\n'
+        )
+        weak = "def test_a():\n    rc = run_helper()\n    assert rc == 0\n"
+        target = self._commit_file(REL_TEST_FILE, strong + "\n" + weak)
+        target.write_text("# comment\n" + strong + "\n" + weak, encoding="utf-8")
+        rc, out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 0, err)
+        self.assertIn("0 exit-code-only test findings", out)
+        self.assertNotIn("test_a:", err)
+
+    def test_duplicate_count_change_marks_all_modified(self) -> None:
+        weak = "def test_a():\n    rc = run_helper()\n    assert rc == 0\n"
+        target = self._commit_file(REL_TEST_FILE, weak)
+        target.write_text(weak + "\n" + weak, encoding="utf-8")
+        rc, _out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 1)
+        self.assertIn(f"{REL_TEST_FILE}:1: test_a:", err)
+        self.assertIn(f"{REL_TEST_FILE}:5: test_a:", err)
+
+    def test_duplicate_method_first_weakened_is_reported(self) -> None:
+        strong = '    def test_a(self):\n        rc = run_helper()\n        assert rc == 0\n        assert output == "ok"\n'
+        weak = "    def test_a(self):\n        rc = run_helper()\n        assert rc == 0\n"
+        target = self._commit_file(REL_TEST_FILE, "class Suite:\n" + strong + "\n" + weak)
+        target.write_text("class Suite:\n" + weak + "\n" + weak, encoding="utf-8")
+        rc, _out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 1)
+        self.assertIn(f"{REL_TEST_FILE}:2: test_a:", err)
+        self.assertNotIn(f"{REL_TEST_FILE}:6: test_a:", err)
+
+    def test_environment_over_bound_exits_2(self) -> None:
+        self._commit_file(REL_TEST_FILE, "# base\n")
+        with mock.patch.object(checker, "MAX_ENV_VARS", 0):
+            rc, _out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 2)
+        self.assertIn("environment exceeds 0 variables", err)
+
     def test_ast_slice_bounds_exit_2(self) -> None:
         self._commit_file(REL_TEST_FILE, "# base\n", "base")
         cases = (
