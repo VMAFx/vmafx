@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import difflib
+import importlib.util
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,17 @@ from ruamel.yaml import YAML as RuamelYAML
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts/ci/check_gitea_artifact_steps.py"
+
+
+def load_checker_module():
+    """Load the checker script for direct helper tests."""
+    spec = importlib.util.spec_from_file_location("check_gitea_artifact_steps_test", SCRIPT)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 V7 = "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2"
 V3 = "actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf  # v3.2.2"
 DL8 = "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2"
@@ -180,6 +192,99 @@ jobs:
         run: echo next
 """
 
+SAME_LINE_COMMENTS = f"""\
+---
+name: Same line
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download all
+        uses: {V7}
+      - name: Upload
+        uses: {V7}
+        with:
+          name: log
+          path: build/log.txt  # eol comment on path
+      - name: Next
+        run: echo next
+"""
+
+SAME_LINE_COMMENTS_WRITE = f"""\
+---
+name: Same line
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download all
+        if: ${{{{ env.GITEA_ACTIONS != 'true' }}}}
+        uses: {V7}
+      - name: Download all (Gitea)
+        if: ${{{{ env.GITEA_ACTIONS == 'true' }}}}
+        uses: {V3}
+      - name: Upload
+        if: ${{{{ env.GITEA_ACTIONS != 'true' }}}}
+        uses: {V7}
+        with:
+          name: log
+          path: build/log.txt  # eol comment on path
+      - name: Upload (Gitea)
+        if: ${{{{ env.GITEA_ACTIONS == 'true' }}}}
+        uses: {V3}
+        with:
+          name: log
+          path: build/log.txt
+      - name: Next
+        run: echo next
+"""
+
+SKIP_TRAILING_BLOCK = f"""\
+---
+name: Skip
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download digests
+        uses: {DL8}
+        with:
+          pattern: digest-*
+          merge-multiple: true
+
+      # keep this comment
+      - name: Next
+        run: echo next
+"""
+
+SKIP_TRAILING_BLOCK_WRITE = f"""\
+---
+name: Skip
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download digests
+        if: ${{{{ env.GITEA_ACTIONS != 'true' }}}}
+        uses: {DL8}
+        with:
+          pattern: digest-*
+          merge-multiple: true
+      - name: Download digests (Gitea)
+        if: ${{{{ env.GITEA_ACTIONS == 'true' }}}}
+        shell: bash
+        run: |-
+          echo '::warning::artifact download skipped on Gitea: v4+ is GitHub-only, v3 lacks merge-multiple, pattern'
+
+      # keep this comment
+      - name: Next
+        run: echo next
+"""
+
 FLOW_MAPPING = f"""\
 ---
 name: Flow
@@ -337,6 +442,43 @@ class GiteaArtifactCheckTests(unittest.TestCase):
             self.path.read_text(encoding="utf-8"),
             textwrap.dedent(TRAILING_COMMENTS_WRITE),
         )
+
+    def test_write_keeps_same_line_comments_on_source(self) -> None:
+        result = self.run_check(SAME_LINE_COMMENTS, "--write")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            self.path.read_text(encoding="utf-8"),
+            textwrap.dedent(SAME_LINE_COMMENTS_WRITE),
+        )
+
+    def test_write_keeps_one_blank_line_after_skip_twin(self) -> None:
+        result = self.run_check(SKIP_TRAILING_BLOCK, "--write")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            self.path.read_text(encoding="utf-8"),
+            textwrap.dedent(SKIP_TRAILING_BLOCK_WRITE),
+        )
+
+    def test_write_comment_cases_are_idempotent(self) -> None:
+        for fixture in (SAME_LINE_COMMENTS, SKIP_TRAILING_BLOCK):
+            with self.subTest(fixture=fixture.splitlines()[1]):
+                self.run_check(fixture, "--write")
+                first = self.path.read_text(encoding="utf-8")
+                result = subprocess.run(  # noqa: S603 -- fixed interpreter and script argv
+                    [sys.executable, str(SCRIPT), "--write", str(self.path)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=120,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(self.path.read_text(encoding="utf-8"), first)
+
+    def test_take_trailing_post_returns_none_for_none_token(self) -> None:
+        module = load_checker_module()
+        step = RuamelYAML(typ="rt").load("uses: x\n")
+        step.ca.items["uses"] = [None, None, None, None]
+        self.assertIsNone(module._take_trailing_post(step))
 
     def test_write_refuses_to_reformat_flow_mappings(self) -> None:
         result = self.run_check(FLOW_MAPPING, "--write")

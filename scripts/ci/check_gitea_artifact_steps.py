@@ -48,6 +48,7 @@ from typing import Any
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.scalarstring import LiteralScalarString
+from ruamel.yaml.tokens import CommentToken
 
 ROOT = Path(__file__).resolve().parents[2]
 V3_PINS = {
@@ -244,6 +245,28 @@ def _last_key(node: Any) -> Any:
     return keys[-1] if keys else None
 
 
+def _split_post_token(token: Any) -> tuple[Any, Any]:
+    """Split a post-value token at its first line break.
+
+    The part on the value's own line is an end-of-line comment and stays with
+    the source step. The remaining comment or blank block belongs after the
+    twin. A token with no second line stays with the source.
+    """
+    value = getattr(token, "value", None)
+    if not isinstance(value, str):
+        return token, None
+    head, sep, tail = value.partition("\n")
+    if not sep or not tail:
+        return token, None
+    column = getattr(token, "_column", 0)
+    start = getattr(token, "start_mark", None)
+    end = getattr(token, "end_mark", None)
+    return (
+        CommentToken(head + sep, start_mark=start, end_mark=end, column=column) if head else None,
+        CommentToken(sep + tail, start_mark=start, end_mark=end, column=column),
+    )
+
+
 def _take_trailing_post(step: Any) -> Any:
     """Detach and return the source comment/blank token after a step."""
     node = _last_mapping(step)
@@ -254,8 +277,11 @@ def _take_trailing_post(step: Any) -> Any:
     token = item[CA_POST_VALUE]
     if token is None:
         return None
-    item[CA_POST_VALUE] = None
-    return token
+    head, tail = _split_post_token(token)
+    if tail is None:
+        return None
+    item[CA_POST_VALUE] = head
+    return tail
 
 
 def _attach_trailing_post(step: Any, token: Any) -> None:
@@ -266,9 +292,24 @@ def _attach_trailing_post(step: Any, token: Any) -> None:
     key = _last_key(node)
     if key is None:
         return
+    value = getattr(token, "value", None)
+    if (
+        isinstance(value, str)
+        and value.startswith("\n")
+        and isinstance(node[key], LiteralScalarString)
+    ):
+        # A literal block already ends its line; its post token must not add
+        # a second line break before the first following comment or blank.
+        trimmed = value[1:]
+        if not trimmed:
+            return
+        token = CommentToken(
+            trimmed,
+            start_mark=getattr(token, "start_mark", None),
+            end_mark=getattr(token, "end_mark", None),
+            column=getattr(token, "_column", 0),
+        )
     item = list(node.ca.items.get(key) or [None, None, None, None])
-    while len(item) <= CA_POST_VALUE:
-        item.append(None)
     item[CA_POST_VALUE] = token
     node.ca.items[key] = item
 
