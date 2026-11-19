@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
 
 from scripts.ci import check_exit_code_only_tests as checker  # noqa: E402
 from scripts.ci.tests.scanner_test_support import isolate_pre_commit_environment  # noqa: E402
+from scripts.lib import new_scanner_findings  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 GIT = shutil.which("git")
@@ -84,7 +85,26 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
     def _run_checker(self, *args: str) -> tuple[int, str, str]:
         out = io.StringIO()
         err = io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+
+        def isolated_run(original, *args, **kwargs):
+            kwargs["env"].update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+            return original(*args, **kwargs)
+
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(contextlib.redirect_stdout(out))
+            stack.enter_context(contextlib.redirect_stderr(err))
+            stack.enter_context(
+                mock.patch.dict(
+                    os.environ, {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+                )
+            )
+            for module in (checker, new_scanner_findings):
+                original = module.run_command
+                stack.enter_context(
+                    mock.patch.object(
+                        module, "run_command", functools.partial(isolated_run, original)
+                    )
+                )
             rc = checker.main(["--root", str(self.repo), *args])
         return rc, out.getvalue(), err.getvalue()
 
@@ -831,7 +851,7 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         self.assertEqual(err, "")
         self.assertIn("0 exit-code-only test findings in changed functions", out)
 
-    def test_over_bound_diff_records_and_undiscovered_python_path_exit_2(self) -> None:
+    def test_over_bound_diff_records_and_unrelated_python_path(self) -> None:
         shell_a = self._commit_file("scripts/ci/tests/test-a.sh", "echo 1\n", "shell a")
         shell_b = self._commit_file("scripts/ci/tests/test-b.sh", "echo 1\n", "shell b")
         target = self._commit_file(
@@ -849,8 +869,8 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         helper_py = self.repo / "scripts/ci/tests/helper_not_a_test.py"
         helper_py.write_text("X = 1\n", encoding="utf-8")
         rc_py, _out_py, err_py = self._run_checker("--changed-against", "HEAD")
-        self.assertEqual(rc_py, 2)
-        self.assertIn("scripts/ci/tests/helper_not_a_test.py", err_py)
+        self.assertEqual(rc_py, 0, err_py)
+        self.assertIn("0 exit-code-only", _out_py)
 
     def test_rename_from_outside_pathspec_into_tests_dir_checks_all_functions(self) -> None:
         outside_rel = "scripts/ci/legacy_moved_test.py"
@@ -1392,6 +1412,96 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
             rc, out, err = self._run_checker("--changed-against", "HEAD~1")
         self.assertEqual(rc, 0, err)
         self.assertIn("0 exit-code-only test findings", out)
+
+    def test_inline_escape_does_not_exempt_next_definition(self) -> None:
+        source = (
+            "def test_first(): pass  # exit-code-only: silent status probe\n"
+            "def test_second():\n    rc = run_checker()\n    assert rc == 0\n"
+        )
+        self.assertEqual(
+            [f.func_name for f in checker.file_findings(source, REL_TEST_FILE)], ["test_second"]
+        )
+
+    def test_branch_bindings_are_independent_and_merge(self) -> None:
+        source = (
+            "def test_branch(x):\n    proc = run_checker()\n    value = proc.returncode\n"
+            "    if x:\n        value = len(proc.stdout)\n    else:\n        assert value == 0\n"
+            "def test_straight():\n    proc = run_checker()\n    value = proc.returncode\n"
+            "    value = len(proc.stdout)\n    assert value == 0\n"
+        )
+        self.assertEqual(
+            [f.func_name for f in checker.file_findings(source, REL_TEST_FILE)], ["test_branch"]
+        )
+
+    def test_branch_join_and_compound_statements(self) -> None:
+        prefix = "def test_case(x):\n    proc = run_checker()\n    value = proc.returncode\n"
+        cases = (
+            "    if x:\n        value = len(proc.stdout)\n    else:\n        value = len(proc.stdout)\n    assert value == 0\n",
+            "    try:\n        value = len(proc.stdout)\n    except ValueError:\n        assert value == 0\n",
+            "    match x:\n        case 1:\n            value = len(proc.stdout)\n        case _:\n            assert value == 0\n",
+            "    for x in ():\n        value = len(proc.stdout)\n    else:\n        assert value == 0\n",
+            "    while x:\n        value = len(proc.stdout)\n    else:\n        assert value == 0\n",
+            "    with context():\n        value = len(proc.stdout)\n    assert value == 0\n",
+        )
+        for index, body in enumerate(cases):
+            with self.subTest(case=index):
+                findings = checker.file_findings(prefix + body, REL_TEST_FILE)
+                self.assertEqual(bool(findings), index != 0)
+
+    def test_changed_multiline_class_header_selects_method(self) -> None:
+        source = "class TestX(\n    Base,\n):\n    def test_weak(self):\n        rc = run_checker()\n        assert rc == 0\n"
+        target = self._commit_file(REL_TEST_FILE, source)
+        target.write_text(source.replace("Base,", "Other,"), encoding="utf-8")
+        rc, _, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 1, err)
+        self.assertIn("test_weak", err)
+
+    def test_changed_support_module_is_ignored_but_bad_candidate_fails(self) -> None:
+        self._commit_file(REL_TEST_FILE, "# test\n")
+        support = self._commit_file("scripts/ci/tests/scanner_test_support.py", "# base\n")
+        support.write_text("# changed\n", encoding="utf-8")
+        rc, out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 0, err)
+        self.assertIn("0 exit-code-only", out)
+        (self.repo / "scripts/ci/tests/test_bad.py").symlink_to("missing")
+        rc, _, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 2, err)
+        self.assertIn("test_bad.py", err)
+
+    def test_outgoing_runner_failures_are_scan_errors(self) -> None:
+        self._commit_file(REL_TEST_FILE, "# base\n")
+        for attr in ("revision_modes", "revision_bytes"):
+            for exc in (
+                checker.CommandTimedOut(("git",), 1, None, None),
+                checker.CommandOutputLimitExceeded(("git",), 1, None, None),
+            ):
+                with (
+                    self.subTest(boundary=attr, error=type(exc).__name__),
+                    mock.patch.dict(os.environ, {"PRE_COMMIT_TO_REF": "HEAD"}),
+                    mock.patch.object(checker, attr, side_effect=exc),
+                ):
+                    rc, _, err = self._run_checker("--changed-against", "HEAD")
+                    self.assertEqual(rc, 2, err)
+                    self.assertIn("check_exit_code_only_tests: error:", err)
+                    self.assertNotIn("Traceback", err)
+
+    def test_checker_git_calls_isolate_ambient_global_config(self) -> None:
+        self._commit_file(REL_TEST_FILE, "# base\n")
+        (self.repo / REL_TEST_FILE).write_text(
+            "def test_weak():\n    rc = run_checker()\n    assert rc == 0\n", encoding="utf-8"
+        )
+        original = checker.run_command
+
+        def ambient_order_file(*args, **kwargs):
+            env = kwargs["env"]
+            if env.get("GIT_CONFIG_GLOBAL") != os.devnull or env.get("GIT_CONFIG_NOSYSTEM") != "1":
+                raise OSError("global diff.orderFile missing in fixture")
+            return original(*args, **kwargs)
+
+        with mock.patch.object(checker, "run_command", side_effect=ambient_order_file):
+            rc, _, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 1, err)
+        self.assertIn("test_weak", err)
 
     def test_helper_assertion_requires_inline_output_assertion(self) -> None:
         docs = (ROOT / "docs/development/test-suites.md").read_text(encoding="utf-8")

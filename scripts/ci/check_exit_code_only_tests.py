@@ -20,7 +20,7 @@ weak tests touched by a zero-context diff hunk, including their decorators and
 enclosing definition headers. Pure deletions touch the new-side start and next
 line. Findings exit 1. Added, type-changed, and untracked files are checked in
 full. Unreadable files, files above 1 MiB,
-paths outside the repository root, changed or untracked Python paths inside
+paths outside the repository root, changed or untracked test candidates inside
 `<pathspec>` not in the discovered test files, unsupported diff status letters,
 exceeded AST or file bounds, syntax errors, bad refs, and git errors exit 2
 with the cause on stderr.
@@ -304,25 +304,102 @@ def _classify_assertion(node: ast.AST, rc_vars: set[str]) -> str | None:
     return "other" if name.startswith("assert") or _is_pytest_raises(func) else None
 
 
-def _escape_status(func: FuncNode, comments: dict[int, str]) -> str:
+def _escape_status(func: FuncNode, comments: dict[int, tuple[str, int, bool]]) -> str:
     """Return 'valid', 'short', or 'none' for an `# exit-code-only:` comment."""
     if len(func.decorator_list) > MAX_DECORATORS:
         raise ScanError(f"{func.name}: function exceeds {MAX_DECORATORS} decorators")
-    candidate_lines = [func.lineno - 1, func.lineno]
+    candidates = [(func.lineno, False, func.col_offset), (func.lineno - 1, True, func.col_offset)]
     if func.decorator_list:
-        first_dec = min(d.lineno for d in func.decorator_list[:MAX_DECORATORS])
-        candidate_lines.extend([first_dec - 1, first_dec])
-    # len(candidate_lines) <= 4 <= MAX_DECORATORS.
-    for line_no in sorted(set(candidate_lines))[:MAX_DECORATORS]:
-        if line_no in comments:
-            match = ESCAPE_RE.search(comments[line_no])
-            if match is not None:
-                reason = (match.group(1) or "").strip()
-                return "valid" if len(reason) >= MIN_REASON_LENGTH else "short"
+        first = min(func.decorator_list[:MAX_DECORATORS], key=lambda dec: dec.lineno)
+        candidates.extend(
+            [
+                (first.lineno, False, first.col_offset - 1),
+                (first.lineno - 1, True, first.col_offset - 1),
+            ]
+        )
+    for line_no, standalone, column in sorted(candidates):
+        comment = comments.get(line_no)
+        if comment is None:
+            continue
+        text, col, is_standalone = comment
+        if standalone and (not is_standalone or col != column):
+            continue
+        match = ESCAPE_RE.search(text)
+        if match is not None:
+            reason = (match.group(1) or "").strip()
+            return "valid" if len(reason) >= MIN_REASON_LENGTH else "short"
     return "none"
 
 
-def _check_test_function(func: FuncNode, comments: dict[int, str], rel_path: str) -> Finding | None:
+def _branch_bodies(node: ast.AST) -> tuple[list[list[ast.stmt]], list[ast.stmt]]:
+    """Separate alternatives and final statements for compound control flow."""
+    if isinstance(node, (ast.If, ast.For, ast.AsyncFor, ast.While)):
+        return [node.body, node.orelse], []
+    if isinstance(node, (ast.With, ast.AsyncWith)):
+        return [node.body, []], []
+    if isinstance(node, (ast.Try, ast.TryStar)):
+        return [
+            node.body,
+            node.orelse,
+            *(handler.body for handler in node.handlers),
+            [],
+        ], node.finalbody
+    if isinstance(node, ast.Match):
+        return [*(case.body for case in node.cases), []], []
+    return [], []
+
+
+def _push_children(node: ast.AST, bindings: set[str], stack: list[tuple[object, set[str]]]) -> None:
+    """Schedule control-flow alternatives and their join without recursive calls."""
+    branches, final = _branch_bodies(node)
+    if not branches:
+        stack.extend((child, bindings) for child in reversed(list(ast.iter_child_nodes(node))))
+        return
+    branch_sets = [set(bindings) for _ in branches]
+    stack.extend((stmt, bindings) for stmt in reversed(final))
+    stack.append((branch_sets, bindings))
+    for body, branch_vars in reversed(list(zip(branches, branch_sets, strict=True))):
+        stack.extend((stmt, branch_vars) for stmt in reversed(body))
+    excluded = {id(stmt) for body in branches for stmt in body}
+    excluded.update(id(stmt) for stmt in final)
+    children = [
+        child
+        for child in ast.iter_child_nodes(node)
+        if id(child) not in excluded and not isinstance(child, (ast.ExceptHandler, ast.match_case))
+    ]
+    stack.extend((child, bindings) for child in reversed(children))
+
+
+def _assertion_kinds(func: FuncNode) -> list[str]:
+    """Inspect assertions using independent branch bindings and conservative joins."""
+    initial: set[str] = set()
+    stack: list[tuple[object, set[str]]] = [(node, initial) for node in reversed(func.body)]
+    kinds: list[str] = []
+    for _ in range(MAX_BODY_NODES * 3):
+        if not stack:
+            return kinds
+        item, bindings = stack.pop()
+        if isinstance(item, list):
+            bindings.clear()
+            for branch in item:
+                bindings.update(branch)
+            continue
+        node = item
+        if not isinstance(node, ast.AST):
+            raise ScanError(f"{func.name}: invalid traversal node")
+        _update_rc_vars(node, bindings)
+        kind = _classify_assertion(node, bindings)
+        if kind is not None:
+            kinds.append(kind)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        _push_children(node, bindings, stack)
+    raise ScanError(f"{func.name}: function body exceeds {MAX_BODY_NODES} AST nodes")
+
+
+def _check_test_function(
+    func: FuncNode, comments: dict[int, tuple[str, int, bool]], rel_path: str
+) -> Finding | None:
     """Inspect one `def test_*` node and return a Finding when weak or unescaped."""
     escape = _escape_status(func, comments)
     if escape == "short":
@@ -337,13 +414,7 @@ def _check_test_function(func: FuncNode, comments: dict[int, str], rel_path: str
     nodes = _body_nodes(func)
     if not any(_is_runner_call(n) for n in nodes):
         return None
-    rc_vars: set[str] = set()
-    kinds = []
-    for node in nodes[:MAX_BODY_NODES]:
-        _update_rc_vars(node, rc_vars)
-        kind = _classify_assertion(node, rc_vars)
-        if kind is not None:
-            kinds.append(kind)
+    kinds = _assertion_kinds(func)
     if not kinds:
         return Finding(
             rel_path,
@@ -412,7 +483,7 @@ def _definition_lines(node: DefNode) -> list[tuple[int, int]]:
     """Return the definition line and all lines occupied by its decorators."""
     if len(node.decorator_list) > MAX_DECORATORS:
         raise ScanError(f"{node.name}: definition exceeds {MAX_DECORATORS} decorators")
-    return [(node.lineno, node.lineno)] + [
+    return [(node.lineno, max(node.lineno, _statement_start(node.body[0]) - 1))] + [
         (dec.lineno, dec.end_lineno or dec.lineno) for dec in node.decorator_list[:MAX_DECORATORS]
     ]
 
@@ -440,7 +511,11 @@ def file_findings(
         raise ScanError(f"{rel_path}:{exc.lineno or 1}: syntax error: {exc.msg}") from exc
     lines = source.split("\n")
     comments = {
-        token.start[0]: token.string
+        token.start[0]: (
+            token.string,
+            token.start[1],
+            not lines[token.start[0] - 1][: token.start[1]].strip(),
+        )
         for token in tokenize.generate_tokens(io.StringIO(source).readline)
         if token.type == tokenize.COMMENT
     }
@@ -556,6 +631,12 @@ def _add_untracked_files(
             changes.setdefault(untracked, None)
 
 
+def _is_test_candidate(path: str) -> bool:
+    """Match the default direct-child test discovery pattern."""
+    candidate = Path(path)
+    return candidate.parent == TESTS_REL_DIR and candidate.match("test_*.py")
+
+
 def _changed_files_by_path(
     root: Path,
     ref: str,
@@ -604,7 +685,9 @@ def _changed_files_by_path(
         _add_untracked_files(root, others.stdout, changes)
     # len(changes) <= 2 * MAX_TEST_FILES is enforced by _parse_name_status_z and _add_untracked_files.
     for changed_path in list(changes)[: 2 * MAX_TEST_FILES]:
-        if changed_path.endswith(".py") and changed_path not in discovered_rels:
+        if (
+            _is_test_candidate(changed_path) or _is_test_candidate(changes[changed_path] or "")
+        ) and changed_path not in discovered_rels:
             raise ScanError(
                 f"{changed_path}: changed or untracked Python path is not in discovered test files"
             )
@@ -695,7 +778,7 @@ def _outgoing_files(
         raise ScanError("git executable not found on PATH")
     try:
         modes = revision_modes(git, root, outgoing)
-    except ToolError as exc:
+    except (ToolError, CommandTimedOut, CommandOutputLimitExceeded) as exc:
         raise ScanError(str(exc)) from exc
     root_abs = Path(os.path.abspath(root))  # noqa: PTH100 -- lexical, no worktree reads
     if explicit_paths:
@@ -734,7 +817,7 @@ def _outgoing_source(root: Path, outgoing: str, rel: str, modes: dict[str, str])
         if len(raw) > MAX_FILE_BYTES:
             raise ScanError(f"{rel}: exceeds {MAX_FILE_BYTES} byte read limit")
         return raw.decode("utf-8")
-    except (ToolError, UnicodeDecodeError) as exc:
+    except (ToolError, CommandTimedOut, CommandOutputLimitExceeded, UnicodeDecodeError) as exc:
         raise ScanError(f"{rel}: {exc}") from exc
 
 
