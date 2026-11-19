@@ -43,6 +43,9 @@ fail closed too; reword comments to `apt index refresh`. Subcommand
 `scripts/ci/apt-install-cached.sh refresh` writes `80ci-retries`, deletes runner
 `*microsoft*` and `*azure*` source lists, and runs `sudo apt-get --error-on=any
 -o Acquire::Retries=3 update`.
+`install-llvm.sh` calls the shared `drop-sources` subcommand before archive
+refresh or `llvm.sh`; root runs removal directly. `APT_SOURCES_DIR` overrides
+the sources directory for isolated tests.
 
 - `sudo` -> `bash`/`sh`/`dash`/`zsh`/`ksh` clause: nested `-c` inherits `sudo`.
 - `env` `-S` / `--split-string` (`-SX`, `-iS` clusters): expanded once per `env`
