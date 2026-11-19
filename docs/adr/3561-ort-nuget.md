@@ -51,11 +51,23 @@ Replace `1.30.0` with the version to measure.
 - The installer includes both upstream licence notices under its prefix.
 - `scripts/ci/check_ort_tarball_pins.py` verifies that every workflow step
   calling the helper names a pinned `ORT_VERSION` for its package.
-- Follow-up: `dev/Containerfile:749` (built by
-  `.github/workflows/dev-container-build.yml` on pull requests that touch
-  container inputs or run the full tier),
-  `dev/AGENTS.d/runtime-dependencies.md:29`, and `renovate.json:603` still
-  reference the old GitHub release tarball source.
+- The development container uses the same installer; the guard checks tracked
+  container files for old sources, direct NuGet downloads, and helper version
+  pins, refusing addresses split across `RUN` or `ADD` continuations with
+  comments and allowing container `ort_nuget_install.py` instructions only in
+  the canonical `RUN` grammar (`RUN` without flags, exec form `RUN [`, or
+  heredoc `<<`; continuation-joined body split on `&&` only; refusing `;`,
+  `||`, `|`, `&`, `(`, `)`, `` ` ``, `$(`, `{` or `}` outside
+  `${ORT_VERSION}`, `eval`, `sh -c`, `bash -c`, `env`, and quotes enclosing
+  the helper token; each helper command matching `[ORT_VERSION=<literal>]`
+  followed by `python3 [/build/vmaf/]scripts/ci/ort_nuget_install.py <flags>`
+  with `/build/vmaf/` permitted for `dev/Containerfile:745`, unique helper
+  argument-parser flags, and `--version` in `<literal>`, `$ORT_VERSION`,
+  `${ORT_VERSION}`, `"${ORT_VERSION}"`, or `"$ORT_VERSION"`; and any
+  non-helper `ORT_VERSION` segment matching `[export ]ORT_VERSION=<literal>`).
+- Follow-up: the `renovate.json` custom manager (`renovate.json:603-617`,
+  `matchStrings` at `renovate.json:610-614` matching `ORT_SHA256`) still
+  references the old GitHub release tarball source.
 
 ## References
 
