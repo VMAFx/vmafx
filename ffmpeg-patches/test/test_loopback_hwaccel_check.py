@@ -64,9 +64,15 @@ if value("-hwaccel_output_format").startswith("no-such"):
     fail("Unrecognised hwaccel output format: " + value("-hwaccel_output_format"))
 
 if value("-hwaccel_device").startswith("/no/such"):
+    if os.environ.get("STUB_BAD_DEVICE_SIGNAL"):
+        sys.stderr.write("Device creation failed: -2.\\n")
+        os.kill(os.getpid(), 11)
     fail(os.environ.get("STUB_BAD_DEVICE_TEXT", "Device creation failed: -2."))
 
 if "hwdownload" in value("-filter_complex"):
+    if os.environ.get("STUB_HWDOWNLOAD_SIGNAL"):
+        sys.stderr.write("Impossible to convert between the formats\\n")
+        os.kill(os.getpid(), 11)
     fail(os.environ.get("STUB_HWDOWNLOAD_TEXT", "Impossible to convert between the formats"))
 
 frames = os.environ.get("STUB_LOOPBACK_FRAMES", "6")
@@ -156,6 +162,11 @@ class LoopbackHwaccelCheckTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("FAIL software loopback frames are refused by hwdownload", result.stdout)
 
+    def test_hwdownload_signal_death_is_a_fail(self) -> None:
+        result = self.run_checker(env={"STUB_HWDOWNLOAD_SIGNAL": "1"})
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("FAIL software loopback frames are refused by hwdownload", result.stdout)
+
     def test_missing_fixture_is_a_fail_row(self) -> None:
         (self.yuv / "src01_hrc01_576x324.yuv").unlink()
         result = self.run_checker()
@@ -178,6 +189,12 @@ class LoopbackHwaccelCheckTest(unittest.TestCase):
 
     def test_bogus_device_needs_the_device_diagnostic(self) -> None:
         env = {"STUB_GPU": "1", "STUB_BAD_DEVICE_TEXT": "Error opening output file"}
+        result = self.run_checker(None, "--require-gpu", env=env)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("FAIL loopback refuses a bogus -hwaccel_device", result.stdout)
+
+    def test_bogus_device_signal_death_is_a_fail(self) -> None:
+        env = {"STUB_GPU": "1", "STUB_BAD_DEVICE_SIGNAL": "1"}
         result = self.run_checker(None, "--require-gpu", env=env)
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("FAIL loopback refuses a bogus -hwaccel_device", result.stdout)

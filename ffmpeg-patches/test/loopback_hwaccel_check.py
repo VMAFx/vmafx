@@ -200,7 +200,7 @@ def check_hwdownload(args: argparse.Namespace, enc: Path, rows: list[tuple[str, 
     hwdown = run(args, loopback_cmd(args.ffmpeg, enc, [], "[dec:0]hwdownload[f]"))
     rows.append(
         (
-            "ok" if hwdown.returncode != 0 and NEEDLE_HWDOWNLOAD in hwdown.stderr else "FAIL",
+            "ok" if hwdown.returncode > 0 and NEEDLE_HWDOWNLOAD in hwdown.stderr else "FAIL",
             "software loopback frames are refused by hwdownload",
             hwdown.stderr[-300:],
         )
@@ -222,9 +222,7 @@ def check_software_round_trip(
     return sw_frames
 
 
-def check_gpu_branch(
-    args: argparse.Namespace, enc: Path, rows: list[tuple[str, str, str]], sw_frames: int
-) -> str:
+def probe_gpu_device(args: argparse.Namespace, rows: list[tuple[str, str, str]]) -> str:
     probe = run(
         args,
         [
@@ -261,7 +259,12 @@ def check_gpu_branch(
                 )
             )
         return "unavailable"
+    return "ok"
 
+
+def check_gpu_round_trip(
+    args: argparse.Namespace, enc: Path, rows: list[tuple[str, str, str]], sw_frames: int
+) -> None:
     gpu = run(
         args,
         loopback_cmd(
@@ -279,6 +282,9 @@ def check_gpu_branch(
             f"returncode={gpu.returncode}, frames={gpu_frames}, want={sw_frames}",
         )
     )
+
+
+def check_bad_device(args: argparse.Namespace, enc: Path, rows: list[tuple[str, str, str]]) -> None:
     bad_dev = run(
         args,
         loopback_cmd(
@@ -297,14 +303,27 @@ def check_gpu_branch(
     )
     rows.append(
         (
-            "ok"
-            if bad_dev.returncode not in (0, 124, 127)
-            and any(needle in bad_dev.stderr for needle in NEEDLES_BAD_DEVICE)
-            else "FAIL",
+            (
+                "ok"
+                if bad_dev.returncode > 0
+                and bad_dev.returncode not in (124, 127)
+                and any(needle in bad_dev.stderr for needle in NEEDLES_BAD_DEVICE)
+                else "FAIL"
+            ),
             "loopback refuses a bogus -hwaccel_device",
             bad_dev.stderr[-300:],
         )
     )
+
+
+def check_gpu_branch(
+    args: argparse.Namespace, enc: Path, rows: list[tuple[str, str, str]], sw_frames: int
+) -> str:
+    state = probe_gpu_device(args, rows)
+    if state != "ok":
+        return state
+    check_gpu_round_trip(args, enc, rows, sw_frames)
+    check_bad_device(args, enc, rows)
     return "ok"
 
 
