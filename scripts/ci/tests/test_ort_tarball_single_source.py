@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from scripts.ci import check_ort_tarball_pins as guard
 
@@ -227,7 +228,7 @@ class TestOrtGuard(unittest.TestCase):
         )
         self.assertEqual(
             guard.check_tarball_pins(files=[container]),
-            (1, [f"{container}:2: unpinned ORT_VERSION '1.99.0' for package 'cpu'"]),
+            (1, [f"{container}:2: {SHAPE_FINDING}"]),
         )
 
     def test_container_continued_inline_version_override_refused(self) -> None:
@@ -237,14 +238,14 @@ class TestOrtGuard(unittest.TestCase):
                 "ARG ORT_VERSION=1.30.0\n"
                 "RUN ORT_VERSION=1.99.0 \\\n"
                 '    python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /usr/local\n',
-                3,
+                2,
             ),
             (
                 "ARG ORT_VERSION=1.30.0\n"
                 "RUN true \\\n"
                 "    && ORT_VERSION=1.99.0 \\\n"
                 '    python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /usr/local\n',
-                4,
+                2,
             ),
         )
         for text, line_no in cases:
@@ -252,10 +253,7 @@ class TestOrtGuard(unittest.TestCase):
                 container.write_text(text)
                 self.assertEqual(
                     guard.check_tarball_pins(files=[container]),
-                    (
-                        1,
-                        [f"{container}:{line_no}: unpinned ORT_VERSION '1.99.0' for package 'cpu'"],
-                    ),
+                    (1, [f"{container}:{line_no}: {SHAPE_FINDING}"]),
                 )
 
     def test_container_quoted_hash_before_split_release_refused(self) -> None:
@@ -285,7 +283,7 @@ class TestOrtGuard(unittest.TestCase):
             (1, [f"{container}:1: old ONNX Runtime release source forbidden"]),
         )
 
-    def test_container_accepted_comments_and_pinned_override(self) -> None:
+    def test_container_accepted_comments_and_arg_version(self) -> None:
         container = Path(self.temp.name) / "Containerfile"
         cases = (
             "ARG ORT_VERSION=1.30.0\n"
@@ -296,17 +294,32 @@ class TestOrtGuard(unittest.TestCase):
             "# https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/ort.tgz\n"
             "ARG ORT_VERSION=1.30.0\n"
             'RUN python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /usr/local\n',
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                container.write_text(text)
+                self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
+
+    def test_container_inline_override_is_a_shape_finding(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        cases = (
             "ARG ORT_VERSION=1.30.0\n"
             "RUN ORT_VERSION=1.30.0 \\\n"
             '    python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /usr/local\n',
             "ARG ORT_VERSION=1.99.0\n"
             "RUN ORT_VERSION=1.30.0 \\\n"
             '    python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /usr/local\n',
+            "ARG ORT_VERSION=1.30.0\n"
+            "RUN ORT_VERSION=1.30.0"
+            ' && python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /usr/local\n',
         )
         for text in cases:
             with self.subTest(text=text):
                 container.write_text(text)
-                self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
+                self.assertEqual(
+                    guard.check_tarball_pins(files=[container]),
+                    (1, [f"{container}:2: {SHAPE_FINDING}"]),
+                )
 
     def test_container_first_line_and_eof_without_newline_boundaries(self) -> None:
         container = Path(self.temp.name) / "Containerfile"
@@ -334,19 +347,19 @@ class TestOrtGuard(unittest.TestCase):
         )
         self.assertEqual(
             guard.check_tarball_pins(files=[container]),
-            (1, [f"{container}:3: unpinned ORT_VERSION '1.99.0' for package 'cpu'"]),
+            (1, [f"{container}:2: {SHAPE_FINDING}"]),
         )
 
     def test_container_continuation_line_limit_boundary(self) -> None:
         container = Path(self.temp.name) / "Containerfile"
         call = "    && python3 scripts/ci/ort_nuget_install.py --package cpu --version 1.30.0 --prefix /usr/local\n"
         at_limit = (
-            "RUN echo start \\\n" + "    && echo step \\\n" * (guard.MAX_COMMAND_LINES - 2) + call
+            "RUN ldconfig \\\n" + "    && ldconfig \\\n" * (guard.MAX_COMMAND_LINES - 2) + call
         )
         container.write_text(at_limit)
         self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
         over_limit = (
-            "RUN echo start \\\n" + "    && echo step \\\n" * (guard.MAX_COMMAND_LINES - 1) + call
+            "RUN ldconfig \\\n" + "    && ldconfig \\\n" * (guard.MAX_COMMAND_LINES - 1) + call
         )
         container.write_text(over_limit)
         self.assertEqual(
@@ -397,35 +410,36 @@ class TestOrtGuard(unittest.TestCase):
                 "RUN ORT_VERSION=1.99.0"
                 ' && python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /a\n',
                 2,
+                SHAPE_FINDING,
             ),
             (
                 "ARG ORT_VERSION=1.30.0\n"
                 "RUN export ORT_VERSION=1.99.0"
                 ' && python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /a\n',
                 2,
+                "unpinned ORT_VERSION '1.99.0' for package 'cpu'",
             ),
             (
                 "RUN ORT_VERSION=1.99.0 \\\n"
                 " && python3 scripts/ci/ort_nuget_install.py --package cpu --version 1.30.0 --prefix /a \\\n"
                 ' && python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /b\n',
-                3,
+                1,
+                SHAPE_FINDING,
             ),
             (
                 "RUN export ORT_VERSION=1.99.0 \\\n"
                 " && python3 scripts/ci/ort_nuget_install.py --package cpu --version 1.30.0 --prefix /a \\\n"
                 ' && python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /b\n',
                 3,
+                "unpinned ORT_VERSION '1.99.0' for package 'cpu'",
             ),
         )
-        for text, line_no in cases:
+        for text, line_no, message in cases:
             with self.subTest(text=text):
                 container.write_text(text)
                 self.assertEqual(
                     guard.check_tarball_pins(files=[container]),
-                    (
-                        1,
-                        [f"{container}:{line_no}: unpinned ORT_VERSION '1.99.0' for package 'cpu'"],
-                    ),
+                    (1, [f"{container}:{line_no}: {message}"]),
                 )
 
     def test_container_measured_bypass_shapes_refused(self) -> None:
@@ -454,7 +468,7 @@ class TestOrtGuard(unittest.TestCase):
                 "RUN --mount=type=cache,target=/tmp/cache ORT_VERSION=1.99.0 \\\n"
                 "&& python3 scripts/ci/ort_nuget_install.py --package cpu"
                 ' --version "${ORT_VERSION}" --prefix /usr/local\n',
-                3,
+                2,
             ),
             (
                 "ARG ORT_VERSION=1.30.0\n"
@@ -488,7 +502,7 @@ class TestOrtGuard(unittest.TestCase):
                 1,
             ),
             (f"RUN <<EOF\n{cmd} --version 1.30.0 --prefix /usr/local\nEOF\n", 2),
-            (f"RUN <<EOF \\\n{cmd} --version 1.30.0 --prefix /usr/local\n", 2),
+            (f"RUN <<EOF \\\n{cmd} --version 1.30.0 --prefix /usr/local\n", 1),
             (
                 f'ARG ORT_VERSION=1.30.0\nRUN false || {cmd} --version "${{ORT_VERSION}}" --prefix /usr/local\n',
                 2,
@@ -532,7 +546,11 @@ class TestOrtGuard(unittest.TestCase):
             "--print-pin": "1.30.0",
         }
         self.assertEqual(set(sample_values), installer_flags)
-        all_flags = " ".join(f"{flag} {sample_values[flag]}" for flag in sorted(installer_flags))
+        all_flags = " ".join(
+            f"{flag} {sample_values[flag]}"
+            for flag in sorted(installer_flags)
+            if flag != "--print-pin"
+        )
         container = Path(self.temp.name) / "Containerfile"
         positives = (
             "ARG ORT_VERSION=1.30.0\n"
@@ -542,8 +560,6 @@ class TestOrtGuard(unittest.TestCase):
             '    --version "${ORT_VERSION}" --prefix /usr/local\n',
             "RUN python3 scripts/ci/ort_nuget_install.py --package cpu --version 1.30.0 --prefix /usr/local\n",
             "RUN python3 scripts/ci/ort_nuget_install.py --version 1.30.0 --package cpu --prefix /usr/local\n",
-            "RUN ORT_VERSION=1.30.0"
-            ' && python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /usr/local\n',
             "RUN export ORT_VERSION=1.30.0"
             ' && python3 scripts/ci/ort_nuget_install.py --package cpu --version "${ORT_VERSION}" --prefix /usr/local\n',
             "ARG ORT_VERSION=1.30.0\n"
@@ -559,6 +575,17 @@ class TestOrtGuard(unittest.TestCase):
             with self.subTest(text=text):
                 container.write_text(text)
                 self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
+
+    def test_container_print_pin_is_a_shape_finding(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        container.write_text(
+            "RUN python3 scripts/ci/ort_nuget_install.py --package cpu "
+            "--version 1.30.0 --prefix /usr/local --print-pin 1.30.0\n"
+        )
+        self.assertEqual(
+            guard.check_tarball_pins(files=[container]),
+            (1, [f"{container}:1: {SHAPE_FINDING}"]),
+        )
 
     def test_container_comment_with_helper_token_before_call(self) -> None:
         container = Path(self.temp.name) / "Containerfile"
@@ -590,7 +617,7 @@ class TestOrtGuard(unittest.TestCase):
         )
         self.assertEqual(
             guard.check_tarball_pins(files=[container]),
-            (1, [f"{container}:2: unpinned ORT_VERSION '1.99.0' for package 'cpu'"]),
+            (1, [f"{container}:2: {SHAPE_FINDING}"]),
         )
 
     def test_container_multiple_pinned_calls_and_continued_version_accepted(self) -> None:
@@ -619,6 +646,100 @@ class TestOrtGuard(unittest.TestCase):
             guard.check_tarball_pins(files=[container]),
             (1, [f"{container}:3: unpinned ORT_VERSION '1.99.0' for package 'cpu'"]),
         )
+
+    def test_container_helper_token_in_flag_value_is_shape(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        container.write_text(
+            "RUN python3 scripts/ci/ort_nuget_install.py --package cpu "
+            "--version 1.30.0 --prefix /usr/local --cache-dir /tmp/scripts/ci/ort_nuget_install.py\n"
+        )
+        self.assertEqual(
+            guard.check_tarball_pins(files=[container]),
+            (1, [f"{container}:1: {SHAPE_FINDING}"]),
+        )
+
+    def test_container_dot_and_source_commands_refused(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        for prologue in (". /vars", "source /vars"):
+            container.write_text(
+                "ARG ORT_VERSION=1.30.0\n"
+                f"RUN {prologue} && python3 scripts/ci/ort_nuget_install.py "
+                '--package cpu --version "${ORT_VERSION}" --prefix /usr/local\n'
+            )
+            self.assertEqual(
+                guard.check_tarball_pins(files=[container]),
+                (1, [f"{container}:2: {SHAPE_FINDING}"]),
+            )
+
+    def test_container_module_form_without_pin_refused(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        container.write_text(
+            "RUN python3 -m scripts.ci.ort_nuget_install --package cpu "
+            "--version 1.99.0 --prefix /usr/local\n"
+        )
+        self.assertEqual(
+            guard.check_tarball_pins(files=[container]),
+            (1, [f"{container}:1: unpinned ORT_VERSION '1.99.0' for package 'cpu'"]),
+        )
+
+    def test_container_package_suffix_and_missing_prefix_refused(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        cases = (
+            "RUN python3 scripts/ci/ort_nuget_install.py --package cpu.extra "
+            "--version 1.30.0 --prefix /usr/local\n",
+            "RUN python3 scripts/ci/ort_nuget_install.py --package cpu --version 1.30.0\n",
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                container.write_text(text)
+                self.assertEqual(
+                    guard.check_tarball_pins(files=[container]),
+                    (1, [f"{container}:1: {SHAPE_FINDING}"]),
+                )
+
+    def test_container_arg_survives_workdir_and_unrelated_nuget_variable(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        container.write_text(
+            "FROM base\n"
+            "ARG ORT_VERSION=1.30.0\n"
+            "WORKDIR /build\n"
+            "RUN python3 scripts/ci/ort_nuget_install.py --package cpu "
+            '--version "${ORT_VERSION}" --prefix /usr/local\n'
+            "ARG NUGET_PACKAGE=some.other.package\n"
+            "RUN curl https://api.nuget.org/v3-flatcontainer/${NUGET_PACKAGE}/file\n"
+        )
+        self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
+
+    def test_container_long_unrelated_run_is_ignored(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        container.write_text(
+            "RUN echo start \\\n"
+            + "    && echo step \\\n" * (guard.MAX_COMMAND_LINES + 20)
+            + "    && echo end\n"
+        )
+        self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
+
+    def test_container_yaml_suffix_uses_container_parser(self) -> None:
+        container = Path(self.temp.name) / "Containerfile.yaml"
+        container.write_text(
+            "RUN curl https://api.nuget.org/v3-flatcontainer/\\\n"
+            "    microsoft.ml.onnxruntime/file\n"
+        )
+        self.assertEqual(
+            guard.check_tarball_pins(files=[container]),
+            (1, [f"{container}:1: ONNX Runtime download must use helper"]),
+        )
+
+    def test_tracked_discovery_skips_untracked_backup(self) -> None:
+        root = Path(self.temp.name)
+        tracked = root / "Containerfile"
+        tracked.write_text("FROM base\n")
+        backup = root / "Containerfile.bak"
+        backup.write_text(
+            "RUN curl https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/file\n"
+        )
+        with mock.patch.object(guard, "_tracked_files", return_value=[tracked]):
+            self.assertEqual(guard._find_target_files(root), [tracked])
 
     def test_cba_guard(self) -> None:
         tmp_path = Path(self.temp.name)

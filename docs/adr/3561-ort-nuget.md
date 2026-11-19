@@ -53,18 +53,24 @@ Replace `1.30.0` with the version to measure.
   calling the helper names a pinned `ORT_VERSION` for its package.
 - The development container uses the same installer; the guard checks tracked
   container files for old sources, direct NuGet downloads, and helper version
-  pins, refusing addresses split across `RUN` or `ADD` continuations with
-  comments and allowing container `ort_nuget_install.py` instructions only in
-  the canonical `RUN` grammar (`RUN` without flags, exec form `RUN [`, or
-  heredoc `<<`; continuation-joined body split on `&&` only; refusing `;`,
-  `||`, `|`, `&`, `(`, `)`, `` ` ``, `$(`, `{` or `}` outside
-  `${ORT_VERSION}`, `eval`, `sh -c`, `bash -c`, `env`, and quotes enclosing
-  the helper token; each helper command matching `[ORT_VERSION=<literal>]`
-  followed by `python3 [/build/vmaf/]scripts/ci/ort_nuget_install.py <flags>`
-  with `/build/vmaf/` permitted for `dev/Containerfile:745`, unique helper
-  argument-parser flags, and `--version` in `<literal>`, `$ORT_VERSION`,
-  `${ORT_VERSION}`, `"${ORT_VERSION}"`, or `"$ORT_VERSION"`; and any
-  non-helper `ORT_VERSION` segment matching `[export ]ORT_VERSION=<literal>`).
+  pins. A container instruction that names the helper is accepted only as a
+  plain `RUN` (no flags, exec form, or heredoc) whose continuation-joined body
+  splits on `&&` into allow-listed simple commands: a helper call, an
+  `export ORT_VERSION=<literal>` assignment, `set -e`/`set -eux`/`set -o
+  pipefail`, or `ldconfig`. Every other command, including bare
+  `ORT_VERSION=<literal>`, `.`/`source`, `--print-pin`, and inline overrides,
+  is a shape finding at the instruction start.
+- Helper calls may use `python3 <path>/scripts/ci/ort_nuget_install.py` or
+  `python3 -m scripts.ci.ort_nuget_install`. Each helper flag may appear once;
+  `--package` accepts `[A-Za-z0-9_-]+`, `--prefix` is required, and
+  `--version` is a literal or `$ORT_VERSION`/`${ORT_VERSION}`. An
+  `ORT_VERSION` exported in the same `RUN` wins; otherwise the guard reads
+  `ARG`/`ENV` literals across the whole build stage up to the previous `FROM`,
+  so a `WORKDIR` between the binding and the call no longer hides it.
+- The guard reads tracked files only, so an untracked `Containerfile.bak` is
+  outside the check. It does not follow a script that the image copies and
+  runs (`COPY install.sh /install.sh`, `RUN sh /install.sh`); the installer
+  still enforces its own pin and digest checks in that path.
 - Follow-up: the `renovate.json` custom manager (`renovate.json:603-617`,
   `matchStrings` at `renovate.json:610-614` matching `ORT_SHA256`) still
   references the old GitHub release tarball source.

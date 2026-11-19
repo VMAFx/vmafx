@@ -36,7 +36,12 @@ invariant: LD_LIBRARY_PATH includes tbb; NEO/ROCm pinned to kernel UAPI; ORT_VER
    prints size + sha256 entry), then raise `ARG ORT_VERSION` and update
    this note; guard `scripts/ci/check_ort_tarball_pins.py` refuses
    `ORT_VERSION` without pin in `scripts/ci/ort-nuget-pins.json`, inline
-   `ORT_VERSION` overrides on helper call, and old release sources split
-   across `RUN` or `ADD` continuations with comments.
+   `ORT_VERSION` overrides on helper call, `.`/`source` prologues,
+   `--print-pin` inside a container `RUN`, and old release sources split
+   across `RUN` or `ADD` continuations with comments. It accepts a container
+   helper `RUN` only when every `&&`-separated simple command is the helper,
+   `export ORT_VERSION=<literal>`, `set -e`/`set -eux`/`set -o pipefail`, or
+   `ldconfig`; `ARG`/`ENV` bindings are read across the build stage. Limit:
+   a script copied and run as `RUN sh /install.sh` is not read.
    `ARG ORT_SHA256` not read by build; kept only for `renovate.json`
    dependency-update rule until rule moves (ADR-3561 follow-up).
