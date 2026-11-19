@@ -2808,6 +2808,9 @@ Contributed by luoye-cpu.
   every non-cancelled run.
 
 
+- **CI:** Install Linux CPU and GPU ONNX Runtime from pinned NuGet packages.
+
+
 - **ADR allocator scans open pull request heads to avoid fork PR collisions.**
   In claim mode, `scripts/adr/next-free.sh` queries `gh` for open pull request
   head commit SHAs and scans their `docs/adr` trees alongside origin branches.
@@ -3385,6 +3388,9 @@ Contributed by luoye-cpu.
   lacks one.
 
 
+- LLVM installation removes the hosted runner's Microsoft and Azure apt sources before refreshing package lists, avoiding failures when those unrelated repositories rate-limit requests. Both distribution archive and apt.llvm.org installs use the same cleanup as cached apt installs.
+
+
 - CI: the Python lock checker no longer refuses a step before `actions/checkout` that runs
   `jq -c`, `bash -c` or another tool's own `-c` / `-r` / `-e` flag; it reads those flags as a
   requirements file or an editable target only in a pip-like command
@@ -3822,6 +3828,13 @@ Contributed by luoye-cpu.
   random on ext4. It now keeps a second link to the stale socket, so the file
   system cannot give its inode number to the server's new socket
   (`ai/sidecar/tests/test_socket_permissions.py`).
+
+
+- **Make published node image smoke-test frames readable.** The FUSE frames
+  folder was created by `mktemp -d` with mode 0700, preventing the nonroot mount
+  container from reading it and causing every `vmafx-node` and
+  `vmafx-node-...-sycl` publish smoke step to fail. The folder is now 0755, and
+  the test stub refuses unreadable folders.
 
 
 - **A stale private-state lock no longer stops every commit hook.** `scripts/githooks/state-sync.sh`
