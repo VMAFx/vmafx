@@ -22,6 +22,7 @@ from scripts.lib.safe_subprocess import run as run_command
 SCRIPT = Path(__file__).with_name("pre-push-mypy.py").resolve()
 HELPER = SCRIPT.parents[1] / "lib/safe_subprocess.py"
 PUSH_HEAD = SCRIPT.parents[1] / "lib/push_head.py"
+GIT_ENV = SCRIPT.parents[1] / "lib/git_env.py"
 CONFIG = SCRIPT.parents[2] / ".pre-commit-config.yaml"
 ROOT = SCRIPT.parents[2]
 GIT = shutil.which("git") or "/usr/bin/git"
@@ -284,6 +285,7 @@ class MypyScope(unittest.TestCase):
         hook = hook_config("mypy-local")
         self.write("scripts/git-hooks/pre-push-mypy.py", SCRIPT.read_text())
         self.write("scripts/lib/safe_subprocess.py", HELPER.read_text())
+        self.write("scripts/lib/git_env.py", GIT_ENV.read_text())
         self.write("scripts/lib/push_head.py", PUSH_HEAD.read_text())
         self.write(
             ".pre-commit-config.yaml",
@@ -305,6 +307,7 @@ class MypyScope(unittest.TestCase):
             json.loads(self.receipt.read_text()),
             [
                 "scripts/git-hooks/pre-push-mypy.py",
+                "scripts/lib/git_env.py",
                 "scripts/lib/push_head.py",
                 "scripts/lib/safe_subprocess.py",
                 "scripts/owned.py",

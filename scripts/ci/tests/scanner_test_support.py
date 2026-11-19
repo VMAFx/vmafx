@@ -65,6 +65,7 @@ def run_push_entry(
     paths = (
         "scripts/__init__.py",
         "scripts/lib/safe_subprocess.py",
+        "scripts/lib/git_env.py",
         "scripts/lib/new_scanner_findings.py",
         f"scripts/ci/check_{scanner}_new.py",
     )

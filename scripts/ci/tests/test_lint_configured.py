@@ -230,6 +230,8 @@ class ConfiguredLintTests(unittest.TestCase):
         helper = self.root / "scripts/lib/safe_subprocess.py"
         helper.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / "scripts/lib/safe_subprocess.py", helper)
+        git_helper = self.root / "scripts/lib/git_env.py"
+        shutil.copy2(ROOT / "scripts/lib/git_env.py", git_helper)
         self.cppcheck_filesdir = self.root / "cppcheck-data"
         posix_model = self.cppcheck_filesdir / "cfg/posix.cfg"
         posix_model.parent.mkdir(parents=True)
@@ -576,6 +578,8 @@ class ConfiguredLintTests(unittest.TestCase):
         helper = self.root / "scripts/lib/safe_subprocess.py"
         helper.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / "scripts/lib/safe_subprocess.py", helper)
+        git_helper = self.root / "scripts/lib/git_env.py"
+        shutil.copy2(ROOT / "scripts/lib/git_env.py", git_helper)
         original = self.database.read_bytes()
         (self.root / "native-database.json").write_bytes(original)
         if polluted:
