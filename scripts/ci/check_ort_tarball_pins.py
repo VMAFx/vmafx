@@ -36,7 +36,33 @@ BINDING_RE = re.compile(
     r"^\s*(?:(?:export|ARG|ENV)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*[\"']?([^\"'\s#\\$}]+)"
 )
 INLINE_BINDING_RE = re.compile(r"(?:^|[\s;&|])([A-Za-z_][A-Za-z0-9_]*)=[\"']?([^\"'\s#\\;$}]+)")
-COMMAND_SEP_RE = re.compile(r"&&|\|\||;|\|")
+HELPER_FLAGS: frozenset[str] = frozenset(
+    {
+        "--package",
+        "--version",
+        "--prefix",
+        "--pkgconfig-dir",
+        "--cache-dir",
+        "--print-pin",
+    }
+)
+MAX_HELPER_FLAGS = len(HELPER_FLAGS)
+CONTAINER_SHAPE_FINDING = "container ort_nuget_install.py instruction violates canonical RUN shape"
+CONTAINER_RUN_RE = re.compile(r"^RUN\s+(?!-|\s*\[)(.+)$", re.I)
+CONTAINER_FORBIDDEN_RE = re.compile(
+    r"[\"'`;|(){}]|<<|\$\(|(?<!&)&(?!&)|\beval\b|\b(?:sh|bash)\s+-[A-Za-z]*c\b|\benv\s"
+)
+CONTAINER_ORT_ASSIGN_RE = re.compile(r"^(?:export\s+)?ORT_VERSION=([0-9]+(?:\.[0-9]+)+)$")
+CONTAINER_HELPER_CMD_RE = re.compile(
+    r"^(?:ORT_VERSION=([0-9]+(?:\.[0-9]+)+)\s+)?"
+    r"python3\s+(?:/build/vmaf/)?scripts/ci/ort_nuget_install\.py"
+    r"((?:\s+--[a-z-]+(?:=|\s+)(?!-)\S+)+)$"
+)
+CONTAINER_FLAG_PAIR_RE = re.compile(r"(--[a-z-]+)(?:=|\s+)((?!-)\S+)")
+CONTAINER_VERSION_ARG_RE = re.compile(
+    r'^(?:[0-9]+(?:\.[0-9]+)+|\$ORT_VERSION|\$\{ORT_VERSION\}|"\$ORT_VERSION"|"\$\{ORT_VERSION\}")$'
+)
+CONTAINER_FLAG_VALUE_RE = re.compile(r"^[A-Za-z0-9_./][A-Za-z0-9_./-]*$")
 NUGET_ADDRESS_RE = re.compile(
     r"(?:api\.nuget\.org/v3-flatcontainer/|nuget\.org/api/v2/package/)"
     r"(\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Za-z_][A-Za-z0-9_]*|[^/\s\"']+)",
@@ -116,7 +142,7 @@ def _container_instruction(
 ) -> tuple[int, int, str | None, str | None]:
     """Return start index, end index, spaced text and fused text for an instruction."""
     start_idx = site_idx
-    for j in range(site_idx - 1, max(-1, site_idx - 1 - MAX_COMMAND_LINES), -1):
+    for j in range(site_idx - 1, max(-1, site_idx - 2 - MAX_COMMAND_LINES), -1):
         stripped = lines[j].strip()
         if not stripped or stripped.startswith("#"):
             continue
@@ -318,36 +344,101 @@ def _step_bindings(lines: list[str]) -> dict[str, set[str]] | None:
     return bindings
 
 
-def _container_helper_calls(lines: list[str], site_idx: int) -> list[str] | None:
-    """Extract helper calls in a container instruction whose token is on site_idx.
+def _valid_container_helper_flags(flags_tail: str) -> bool:
+    """Return True when every helper flag is known, unique, and has an allowed value."""
+    pairs = CONTAINER_FLAG_PAIR_RE.findall(flags_tail)
+    if not pairs or len(pairs) > MAX_HELPER_FLAGS:
+        return False
+    seen: set[str] = set()
+    for flag, value in pairs[:MAX_HELPER_FLAGS]:
+        if flag not in HELPER_FLAGS or flag in seen:
+            return False
+        seen.add(flag)
+        if flag == "--version":
+            if CONTAINER_VERSION_ARG_RE.fullmatch(value) is None:
+                return False
+        elif CONTAINER_FLAG_VALUE_RE.fullmatch(value) is None or "ORT_VERSION" in value:
+            return False
+    return True
 
-    - a call's arguments end at the next command separator (&&, ||, ;, |) or at the end of the instruction
-    - an inline assignment in the same simple command before the call (ORT_VERSION=1.99.0 python3 ...) applies to that call only
-    - a standalone assignment or export earlier in the same instruction (ORT_VERSION=1.99.0 && python3 ..., export ORT_VERSION=1.99.0; python3 ...) applies to every later call in the instruction
-    - one finding per failing call, reported at the physical line that holds the call's ort_nuget_install.py token
-    """
-    run_idx, _, command, _ = _container_instruction(lines, site_idx)
-    if command is None:
+
+def _parse_container_segment(raw_seg: str, persistent: list[str], calls: list[str]) -> bool:
+    """Validate one &&-separated simple command in a container helper instruction."""
+    seg = raw_seg.strip()
+    if not seg or "&" in seg:
+        return False
+    if "ort_nuget_install.py" in seg:
+        cmd_match = CONTAINER_HELPER_CMD_RE.fullmatch(seg)
+        if cmd_match is None or not _valid_container_helper_flags(cmd_match.group(2)):
+            return False
+        calls.append(" ".join([*persistent, seg]))
+        return True
+    if "ORT_VERSION" in seg:
+        if CONTAINER_ORT_ASSIGN_RE.fullmatch(seg) is None:
+            return False
+        persistent.append(seg)
+    return True
+
+
+def _parse_container_helper_instruction(command: str, fused: str) -> list[str] | None:
+    """Validate canonical container RUN shape and return helper calls with active bindings."""
+    token_count = command.count("ort_nuget_install.py")
+    if token_count == 0 or fused.count("ort_nuget_install.py") != token_count:
         return None
-    body = re.sub(r"^\s*RUN\s+", "", command, flags=re.I)
+    run_match = CONTAINER_RUN_RE.fullmatch(command.strip())
+    if run_match is None:
+        return None
+    body = run_match.group(1)
+    normalized = (
+        body.replace('"${ORT_VERSION}"', "$ORT_VERSION")
+        .replace('"$ORT_VERSION"', "$ORT_VERSION")
+        .replace("${ORT_VERSION}", "$ORT_VERSION")
+    )
+    if CONTAINER_FORBIDDEN_RE.search(normalized):
+        return None
+    raw_segments = body.split("&&", MAX_COMMAND_LINES + 1)
+    if len(raw_segments) > MAX_COMMAND_LINES:
+        return None
     persistent: list[str] = []
     calls: list[str] = []
-    for raw_seg in COMMAND_SEP_RE.split(body, maxsplit=MAX_COMMAND_LINES):
-        seg = raw_seg.strip()
-        assign_body = re.sub(r"^export\s+", "", seg)
-        if INLINE_BINDING_RE.search(assign_body) and not INLINE_BINDING_RE.sub(
-            "", assign_body
-        ).strip("\"' \t"):
-            persistent.append(seg)
-        elif "ort_nuget_install.py" in seg:
-            calls.append(" ".join([*persistent, seg]))
+    for raw_seg in raw_segments[:MAX_COMMAND_LINES]:
+        if not _parse_container_segment(raw_seg, persistent, calls):
+            return None
+    return calls if len(calls) == token_count else None
+
+
+def _container_helper_calls(lines: list[str], site_idx: int) -> list[str] | None:
+    """Extract allow-listed helper calls in a container instruction whose token is on site_idx.
+
+    Canonical grammar for a container instruction holding ort_nuget_install.py:
+    - RUN <cmd> (no RUN flags, no exec form RUN [, no heredoc <<), joined across <= 256 lines
+    - <cmd> splits on && only (<= 256 simple commands); refuses ;, ||, |, &, (, ), `, $(,
+      { or } outside ${ORT_VERSION}, eval, sh -c, bash -c, env , and quotes outside
+      "${ORT_VERSION}" or "$ORT_VERSION"
+    - helper simple command matches fullmatch:
+      [ORT_VERSION=<literal>] python3 [/build/vmaf/]scripts/ci/ort_nuget_install.py <flags>
+      (/build/vmaf/ allowed for dev/Containerfile:745), with flags from ort_nuget_install.py
+      (--package, --version, --prefix, --pkgconfig-dir, --cache-dir, --print-pin), each at
+      most once, and --version in {<literal>, $ORT_VERSION, ${ORT_VERSION}, "${ORT_VERSION}",
+      "$ORT_VERSION"}
+    - non-helper simple command naming ORT_VERSION matches fullmatch:
+      [export ]ORT_VERSION=<literal>
+    - any non-canonical instruction is refused once with CONTAINER_SHAPE_FINDING
+    """
+    run_idx, _, command, fused = _container_instruction(lines, site_idx)
+    if command is None or fused is None:
+        return None
     prior = sum(
         lines[j].count("ort_nuget_install.py")
         for j in range(run_idx, min(site_idx, run_idx + MAX_COMMAND_LINES))
         if not lines[j].lstrip().startswith("#")
     )
+    calls = _parse_container_helper_instruction(command, fused)
+    if calls is None:
+        return None if prior == 0 else []
     count = lines[site_idx].count("ort_nuget_install.py")
-    return calls[prior : prior + count]
+    selected = calls[prior : prior + count]
+    return selected if len(selected) == count else None
 
 
 def _helper_command(
@@ -425,7 +516,10 @@ def _check_helper_step(
     calls = _helper_command(lines, site_idx, end_idx, is_workflow)
     line_no = site_idx + 1
     if calls is None:
-        return [f"{path}:{line_no}: helper command continuation exceeds limit"]
+        msg = (
+            "helper command continuation exceeds limit" if is_workflow else CONTAINER_SHAPE_FINDING
+        )
+        return [f"{path}:{line_no}: {msg}"]
     bound_end = site_idx if is_workflow else _container_instruction(lines, site_idx)[0] - 1
     findings: list[str] = []
     for call_text in calls:
@@ -493,11 +587,19 @@ def _scan_container_line(
     if not line.strip() or line.lstrip().startswith("#"):
         return []
     start_idx, _, command, fused = _container_instruction(lines, idx)
+    if command is None or fused is None:
+        if idx == start_idx:
+            return [f"{path}:{idx + 1}: container command continuation exceeds limit"]
+        return []
     findings: list[str] = []
     if idx == start_idx:
-        if command is None:
-            return [f"{path}:{idx + 1}: container command continuation exceeds limit"]
         findings = _scan_workflow_line(lines, idx, path, None, False, f"{command} {fused}")
+        if (
+            packages is not None
+            and "ort_nuget_install.py" in fused
+            and "ort_nuget_install.py" not in command
+        ):
+            findings.append(f"{path}:{idx + 1}: {CONTAINER_SHAPE_FINDING}")
     if "ort_nuget_install.py" in line and packages is not None:
         findings.extend(_check_helper_step(lines, idx, path, packages, False))
     return findings
