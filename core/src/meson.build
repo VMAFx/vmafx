@@ -253,14 +253,42 @@ if is_nvtx_enabled and host_machine.system() == 'windows'
     warning('NVTX is not supported on Windows, disabling.')
     is_nvtx_enabled = false
 endif
-# NVTX requires the CUDA toolkit headers even when enable_cuda=false because
-# nvToolsExt.h lives under /usr/local/cuda/include. Without this guard, meson
-# hard-errors on any host without a CUDA installation when enable_nvtx=true and
-# enable_cuda=false (the include_directories call at line ~484 fails with
-# "Include dir /usr/local/cuda/include does not exist").
-# Audit finding: build-matrix-symbols-audit-2026-05-16.md §1a.
+# NVTX needs nvToolsExt.h from the CUDA toolkit. The guard below turns
+# enable_nvtx=true + enable_cuda=false into a clear error instead of a missing
+# include directory at configure time.
 if is_nvtx_enabled and not is_cuda_enabled
     error('enable_nvtx=true requires enable_cuda=true (NVTX headers reside in the CUDA toolkit)')
+endif
+
+# Discover the CUDA toolkit include directory instead of assuming
+# /usr/local/cuda/include. nvcc's location identifies the toolkit root for the
+# common Linux layout; the conventional roots cover toolkit installs without
+# nvcc on PATH. The header probe also accepts a compiler default include path.
+nvtx_include_dir = ''
+if is_nvtx_enabled
+    nvtx_header_found = cc.has_header('nvtx3/nvToolsExt.h')
+    if not nvtx_header_found
+        nvcc_for_nvtx = find_program('nvcc', required : false)
+        if nvcc_for_nvtx.found()
+            candidate = nvcc_for_nvtx.full_path() / '..' / '..' / 'include'
+            if cc.has_header('nvtx3/nvToolsExt.h', args : '-I' + candidate)
+                nvtx_include_dir = candidate
+                nvtx_header_found = true
+            endif
+        endif
+    endif
+    if not nvtx_header_found
+        foreach candidate : ['/usr/local/cuda/include', '/opt/cuda/include']
+            if cc.has_header('nvtx3/nvToolsExt.h', args : '-I' + candidate)
+                nvtx_include_dir = candidate
+                nvtx_header_found = true
+                break
+            endif
+        endforeach
+    endif
+    if not nvtx_header_found
+        error('enable_nvtx=true but nvtx3/nvToolsExt.h was not found; install the CUDA toolkit or put nvcc on PATH')
+    endif
 endif
 
 # DNN runtime (ONNX Runtime) — defines dnn_sources / dnn_defines / dnn_deps.
@@ -1076,14 +1104,17 @@ if is_asm_enabled
     endif
 endif
 
-libvmaf_include = include_directories(
+libvmaf_include_dirs = [
     '.',
     '../include',
     src_dir,
     feature_src_dir,
     feature_src_dir + 'common',
-    is_nvtx_enabled ? '/usr/local/cuda/include' : '',
-)
+]
+if nvtx_include_dir != ''
+    libvmaf_include_dirs += [nvtx_include_dir]
+endif
+libvmaf_include = include_directories(libvmaf_include_dirs)
 
 # C++ standard: project-wide, not per target. core/meson.build injects the
 # newest working -std=c++2x flag (or /std:c++latest on MSVC) through
@@ -1466,11 +1497,14 @@ dl_dependency = dependency('dl', required : false)
 cuda_dependency = []
 common_cuda_objects = []
 cuda_inc = []
+if nvtx_include_dir != ''
+    cuda_inc = include_directories(nvtx_include_dir)
+endif
 
 if is_nvtx_enabled
     cuda_dependency += declare_dependency(
         dependencies: dl_dependency,
-        include_directories: include_directories('/usr/local/cuda/include'))
+        include_directories: cuda_inc)
 endif
 
 # ODR fix (follow-up to PR #840): propagate HAVE_CUDA / HAVE_NVTX / HAVE_SYCL
