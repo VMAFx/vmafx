@@ -1606,6 +1606,44 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         )
         self.assertEqual(len(checker.file_findings(source, REL_TEST_FILE)), 1)
 
+    def test_finally_sees_intermediate_body_binding(self) -> None:
+        self._check_handler_source(
+            "    try:\n        rc = run_checker()\n        might_raise()\n        rc = 3\n"
+            "    finally:\n        assert rc == 0\n",
+            1,
+        )
+
+    def test_finally_sees_intermediate_handler_binding(self) -> None:
+        self._check_handler_source(
+            "    try:\n        might_raise()\n    except ValueError:\n"
+            "        rc = run_checker()\n        boom()\n        rc = 3\n"
+            "    finally:\n        assert rc == 0\n",
+            1,
+        )
+
+    def test_finally_sees_intermediate_else_binding(self) -> None:
+        self._check_handler_source(
+            "    try:\n        pass\n    except ValueError:\n        pass\n"
+            "    else:\n        rc = run_checker()\n        boom()\n        rc = 3\n"
+            "    finally:\n        assert rc == 0\n",
+            1,
+        )
+
+    def test_finally_excludes_binding_replaced_before_try(self) -> None:
+        self._check_handler_source(
+            "    rc = run_checker()\n    rc = 3\n    try:\n        might_raise()\n"
+            "    finally:\n        assert rc == 0\n",
+            0,
+        )
+
+    def test_exception_group_finally_sees_nested_binding(self) -> None:
+        self._check_handler_source(
+            "    try:\n        pass\n    except* ValueError:\n        if flag:\n"
+            "            rc = run_checker()\n            boom()\n            rc = 3\n"
+            "    finally:\n        assert rc == 0\n",
+            1,
+        )
+
     def test_compound_paths_replace_bindings(self) -> None:
         cases = (
             "    try:\n        rc = 1\n    except ValueError:\n        rc = 2\n    assert rc == 0\n",

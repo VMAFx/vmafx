@@ -376,10 +376,13 @@ def _try_flow(node: ast.Try | ast.TryStar, bindings: set[str]) -> list[Traversal
     body: set[str] = set()
     otherwise: set[str] = set()
     snapshot: set[str] = set()
+    final_snapshot: set[str] = set()
     steps: list[TraversalStep] = [
         ([bindings], body),
-        (_SnapshotBoundary(snapshot, begin=True), body),
     ]
+    if node.finalbody:
+        steps.append((_SnapshotBoundary(final_snapshot, begin=True), body))
+    steps.append((_SnapshotBoundary(snapshot, begin=True), body))
     steps.extend((stmt, body) for stmt in node.body)
     steps.append((_SnapshotBoundary(snapshot, begin=False), body))
     steps.append(([body], otherwise))
@@ -394,6 +397,9 @@ def _try_flow(node: ast.Try | ast.TryStar, bindings: set[str]) -> list[Traversal
         if node.finalbody:
             states.append(entry)
         steps.extend((stmt, state) for stmt in handler.body)
+    if node.finalbody:
+        steps.append((_SnapshotBoundary(final_snapshot, begin=False), bindings))
+        states.append(final_snapshot)
     steps.append((states, bindings))
     steps.extend((stmt, bindings) for stmt in node.finalbody)
     return steps
