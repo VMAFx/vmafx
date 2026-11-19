@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess
+import subprocess  # argv-list calls only, no shell  # nosec B404
 from typing import Sequence
 
 TIMEOUT_SECONDS = 600
@@ -25,7 +25,7 @@ def run(args: argparse.Namespace, cmd: Sequence[str]) -> subprocess.CompletedPro
     if libdir:
         env["LD_LIBRARY_PATH"] = libdir + ":" + env.get("LD_LIBRARY_PATH", "")
     try:
-        return subprocess.run(  # noqa: S603 -- binary under test, argument list, no shell
+        return subprocess.run(  # noqa: S603 -- binary under test, argument list, no shell  # nosec B603
             list(cmd),
             env=env,
             capture_output=True,
