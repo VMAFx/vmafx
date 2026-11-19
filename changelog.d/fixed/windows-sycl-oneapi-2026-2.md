@@ -1,0 +1,1 @@
+- **CI:** Raise the Windows MSVC+SYCL oneAPI offline installer pin in `libvmaf-build-matrix.yml` to `2026.2.0.661` (`intel-oneapi-toolkit-2026.2.0.661_offline.exe`) so `icx-cl` satisfies MSVC 14.52's Clang 22+ STL check (`STL1000`) on `win25-vs2026` ([ADR-3567](docs/adr/3567-windows-sycl-oneapi-2026-2.md)).

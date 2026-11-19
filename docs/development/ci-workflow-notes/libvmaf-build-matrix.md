@@ -317,12 +317,14 @@ because v0.2.35 could exit before setup on current windows-2025
 images (ADR-0664), and the Linux legs left it behind because its
 own release table capped which CUDA versions could be pinned.
 oneAPI is installed via the official `oneapi-src/oneapi-ci`
-offline-installer pattern (`curl` the Base Toolkit installer +
-extract + run bootstrapper). We tried `rscohn2/setup-oneapi@v0`
-first (Linux-only — all install URLs `.sh`) and Chocolatey's
-`intel-oneapi-basekit` (not on the community feed); neither
-works on `windows-2025`. Pinned to oneAPI 2025.3.0.372 to
-lag the Linux SYCL leg, which now follows ONEAPI_APT_PACKAGE.
+offline-installer pattern (`curl` the oneAPI Toolkit installer +
+extract + run bootstrapper with `-p=NEED_VS20{17,19,22,26}_INTEGRATION=0`).
+We tried `rscohn2/setup-oneapi@v0` first (Linux-only — all install URLs
+`.sh`) and Chocolatey's `intel-oneapi-basekit` (not on the community
+feed); neither works on `windows-2025`. Pinned to oneAPI 2026.2.0.661
+(`intel-oneapi-toolkit-2026.2.0.661_offline.exe`, ADR-3567) so `icx-cl`
+reports a Clang 22+ front end (Clang 23) as required by MSVC 14.52's
+`yvals_core.h` `STL1000` check on `win25-vs2026`.
 The CUDA leg additionally injects `/experimental:c11atomics` into
 `CFLAGS` / `CXXFLAGS` because libvmaf uses C11 atomics that
 MSVC's `<stdatomic.h>` refuses without that flag; icx-cl (SYCL leg)
