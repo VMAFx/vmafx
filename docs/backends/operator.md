@@ -29,7 +29,7 @@ Verify the Sigstore signature:
 
 ```bash
 cosign verify \
-  --certificate-identity-regexp="^https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@" \
+  --certificate-identity-regexp='^https://github\.com/VMAFx/vmafx/\.github/workflows/docker-publish-operator-node\.yml@refs/(heads/master|tags/v[0-9][0-9A-Za-z.+-]*)$' \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
   ghcr.io/vmafx/vmafx-operator@sha256:<digest>
 ```

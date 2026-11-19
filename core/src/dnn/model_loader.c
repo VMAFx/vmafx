@@ -33,7 +33,9 @@
 #include "compat/crt_portable.h"
 #include "compat/path_utf8.h"
 #include "model_loader.h"
+#include "log.h"
 #include "onnx_scan.h"
+#include "signer_identity.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
@@ -1191,12 +1193,13 @@ static int find_bundle_for_onnx(const char *registry_doc, const char *onnx_basen
     return -ENOENT;
 }
 
-/* Slurp the registry JSON into a freshly-allocated NUL-terminated buffer.
- * Bounded to 1 MiB — the registry is < 8 KiB today; the cap is a defensive
- * sanity bound. Caller frees. */
-static int slurp_registry(const char *registry_path, char **out_buf)
+/* Slurp a registry or bundle JSON file into a freshly-allocated NUL-terminated
+ * buffer and write its length (without the NUL) to @p out_len. Bounded to
+ * 1 MiB: the registry is < 8 KiB and a bundle about 10 KiB today; the cap is a
+ * defensive sanity bound. Caller frees. */
+static int slurp_json_file(const char *path, char **out_buf, size_t *out_len)
 {
-    FILE *f = vmaf_fopen_utf8(registry_path, "rb");
+    FILE *f = vmaf_fopen_utf8(path, "rb");
     if (!f)
         return -errno;
     if (fseek(f, 0, SEEK_END) != 0) {
@@ -1225,6 +1228,7 @@ static int slurp_registry(const char *registry_path, char **out_buf)
         return -EIO;
     }
     *out_buf = buf;
+    *out_len = sz;
     return 0;
 }
 #endif /* !_WIN32 */
@@ -1342,7 +1346,8 @@ static int resolve_bundle_abs(const char *reg_path, const char *bundle_rel, char
  * it. Returns 0 only when cosign exits 0 (fail-closed).
  *
  * The certificate-identity-regexp + oidc-issuer mirror docs/ai/security.md;
- * they pin verification to VMAFx/vmafx's supply-chain workflow identity. */
+ * they pin verification to VMAFx/vmafx's supply-chain workflow identity, and
+ * the regexp is anchored at both ends (ADR-2985). */
 static int run_cosign_verify(const char *cosign_path, const char *bundle_abs, const char *onnx_path)
 {
     /* Build the --bundle=<path> argument. */
@@ -1357,9 +1362,9 @@ static int run_cosign_verify(const char *cosign_path, const char *bundle_abs, co
         (char *)"verify-blob",
         bundle_arg,
         (char *)"--certificate-identity-regexp",
-        (char *)"https://github.com/VMAFx/vmafx/.github/workflows/.+",
+        (char *)VMAF_DNN_SIGNER_IDENTITY_REGEXP,
         (char *)"--certificate-oidc-issuer",
-        (char *)"https://token.actions.githubusercontent.com",
+        (char *)VMAF_DNN_SIGNER_OIDC_ISSUER,
         (char *)onnx_path,
         NULL,
     };
@@ -1397,7 +1402,8 @@ static int lookup_bundle_abs(const char *onnx_path, const char *registry_path, c
     assert(reg_path != NULL);
 
     char *reg_buf = NULL;
-    int err = slurp_registry(reg_path, &reg_buf);
+    size_t reg_len = 0u;
+    int err = slurp_json_file(reg_path, &reg_buf, &reg_len);
     if (err != 0)
         return err;
     assert(reg_buf != NULL);
@@ -1412,6 +1418,165 @@ static int lookup_bundle_abs(const char *onnx_path, const char *registry_path, c
     assert(bundle_rel[0] != '\0');
 
     return resolve_bundle_abs(reg_path, bundle_rel, out, out_sz);
+}
+
+static int private_base_dir(const char *tmp_dir, const char **base)
+{
+    *base = (tmp_dir && tmp_dir[0] != '\0') ? tmp_dir : "/tmp";
+    struct stat st;
+    if ((*base)[0] != '/' || stat(*base, &st) != 0 || !S_ISDIR(st.st_mode))
+        return -EINVAL;
+    /* Base mode and sticky-bit checks are advisory; the private 0700 directory protects the copy. */
+    if ((st.st_mode & (S_IWGRP | S_IWOTH)) != 0 && (st.st_mode & S_ISVTX) == 0)
+        return -EACCES;
+    return 0;
+}
+
+static void private_dir_remove(const char *dir)
+{
+    if (rmdir(dir) != 0)
+        vmaf_log(VMAF_LOG_LEVEL_WARNING, "cannot remove temporary directory: %s\n", dir);
+}
+
+static int private_file_open(const char *dir, const char *out)
+{
+    int dirfd = openat(AT_FDCWD, dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (dirfd < 0) {
+        int err = -errno;
+        private_dir_remove(dir);
+        return err;
+    }
+    int fd = openat(dirfd, "bundle", O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+                    S_IRUSR | S_IWUSR);
+    int err = fd < 0 ? -errno : 0;
+    if (close(dirfd) != 0 && err == 0)
+        err = -errno;
+    if (err != 0) {
+        if (fd >= 0) {
+            if (close(fd) != 0 && err == 0)
+                err = -errno;
+            if (unlink(out) != 0)
+                vmaf_log(VMAF_LOG_LEVEL_WARNING, "cannot remove temporary bundle: %s\n", out);
+        }
+        private_dir_remove(dir);
+        return err;
+    }
+    return fd;
+}
+
+/* Create a directory inaccessible to other users and a file inside it. */
+static int private_copy_open(const char *tmp_dir, char *dir, size_t dir_sz, char *out,
+                             size_t out_sz)
+{
+    const char *base;
+    const int base_err = private_base_dir(tmp_dir, &base);
+    if (base_err != 0)
+        return base_err;
+    int n = snprintf(dir, dir_sz, "%s/vmafx-bundle-XXXXXX", base);
+    if (n < 0 || (size_t)n >= dir_sz)
+        return -ENAMETOOLONG;
+    if (mkdtemp(dir) == NULL)
+        return -errno;
+    n = snprintf(out, out_sz, "%s/bundle", dir);
+    if (n < 0 || (size_t)n >= out_sz) {
+        int err = -ENAMETOOLONG;
+        private_dir_remove(dir);
+        return err;
+    }
+    return private_file_open(dir, out);
+}
+
+static int write_all(int fd, const char *buf, size_t len)
+{
+    int err = 0;
+    size_t done = 0u;
+    /* Each pass writes bytes or ends; interrupted calls are bounded by len. */
+    for (size_t pass = 0u; done < len && pass <= len; pass++) {
+        /* SAFETY: done never exceeds len, and buf holds len bytes. */
+        const ssize_t w = write(fd, buf + done, len - done);
+        if (w < 0 && errno == EINTR)
+            continue;
+        if (w <= 0) {
+            err = (w < 0) ? -errno : -EIO;
+            break;
+        }
+        done += (size_t)w;
+    }
+    if (err == 0 && done != len)
+        err = -EIO;
+    return err;
+}
+
+static void private_copy_discard(const char *out, const char *dir)
+{
+    if (unlink(out) != 0)
+        vmaf_log(VMAF_LOG_LEVEL_WARNING, "cannot remove temporary bundle: %s\n", out);
+    if (rmdir(dir) != 0)
+        vmaf_log(VMAF_LOG_LEVEL_WARNING, "cannot remove temporary directory: %s\n", dir);
+}
+
+static int write_private_copy(const char *tmp_dir, const char *buf, size_t len, char *dir,
+                              size_t dir_sz, char *out, size_t out_sz)
+{
+    const int fd = private_copy_open(tmp_dir, dir, dir_sz, out, out_sz);
+    if (fd < 0)
+        return fd;
+    int err = write_all(fd, buf, len);
+    if (close(fd) != 0 && err == 0)
+        err = -errno;
+    if (err != 0)
+        private_copy_discard(out, dir);
+    return err;
+}
+
+static int verify_private_copy(const char *cosign_path, const char *copy_path, const char *copy_dir,
+                               const char *onnx_path)
+{
+    int err = run_cosign_verify(cosign_path, copy_path, onnx_path);
+    if (unlink(copy_path) != 0 && err == 0)
+        err = -errno;
+    if (rmdir(copy_dir) != 0 && err == 0)
+        err = -errno;
+    return err;
+}
+
+/* Read the bundle at @p bundle_abs once, check its signing certificate
+ * (signer_identity.h) and hand cosign a private copy of the bytes just
+ * checked, so cosign never verifies a bundle other than the one whose owner
+ * ID and identity were read (ADR-2985). A certificate that is not VMAFx's is
+ * -EPROTO, as a signature cosign rejects. */
+static int verify_bundle(const char *cosign_path, const char *tmp_dir, const char *bundle_abs,
+                         const char *onnx_path)
+{
+    char *bundle = NULL;
+    size_t bundle_len = 0u;
+    int err = slurp_json_file(bundle_abs, &bundle, &bundle_len);
+    if (err != 0)
+        return err;
+    assert(bundle != NULL);
+    err = vmaf_dnn_signer_check_bundle(bundle, bundle_len);
+    if (err != 0) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, err == -EPERM ? "tiny model: wrong signer\n" :
+                                                       "tiny model: malformed signer bundle\n");
+        free(bundle);
+        return -EPROTO;
+    }
+
+    char *copy_path = calloc(PATH_MAX, 1u);
+    char *copy_dir = calloc(PATH_MAX, 1u);
+    if (!copy_path || !copy_dir) {
+        free(copy_path);
+        free(copy_dir);
+        free(bundle);
+        return -ENOMEM;
+    }
+    err = write_private_copy(tmp_dir, bundle, bundle_len, copy_dir, PATH_MAX, copy_path, PATH_MAX);
+    free(bundle);
+    if (err == 0)
+        err = verify_private_copy(cosign_path, copy_path, copy_dir, onnx_path);
+    free(copy_path);
+    free(copy_dir);
+    return err;
 }
 
 int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path)
@@ -1442,6 +1607,8 @@ int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path)
      * concurrently with this read. */
     /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0488 caller-contract. */
     const char *path_env = getenv("PATH");
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — ADR-0488 caller-contract. */
+    const char *tmp_env = vmaf_getenv_portable("TMPDIR");
 
     char cosign_path[PATH_MAX];
     err = locate_cosign(path_env, cosign_path, sizeof(cosign_path));
@@ -1449,7 +1616,7 @@ int vmaf_dnn_verify_signature(const char *onnx_path, const char *registry_path)
         return err;
     assert(cosign_path[0] != '\0');
 
-    return run_cosign_verify(cosign_path, bundle_abs, onnx_path);
+    return verify_bundle(cosign_path, tmp_env, bundle_abs, onnx_path);
 }
 #endif /* !_WIN32 */
 

@@ -829,6 +829,24 @@ cosign verify ghcr.io/vmafx/vmafx-node@sha256:DIGEST \
 for every subject before the bundle can reach the release, so a release whose
 provenance does not verify is never published.
 
+#### Check the signer’s owner ID
+
+Certificate identity alone names the `VMAFx` login; it does not bind the
+numeric owner ID. For a GitHub build-provenance attestation, verify its signer
+and source ref as in the recipe above, and check the owner identifier too:
+
+```bash
+set -o pipefail
+gh attestation verify vmaf --repo VMAFx/vmafx \
+  --signer-workflow VMAFx/vmafx/.github/workflows/supply-chain.yml \
+  --source-ref "refs/tags/${tag}" --format json \
+  | jq -e 'length > 0 and all(.[]; .verificationResult.signature.certificate.sourceRepositoryOwnerIdentifier == "288567244")'
+```
+
+This checks the attestation certificate, not the separate cosign blob signature.
+For tiny-model bundles, libvmaf checks the cosign certificate itself before
+verification ([ADR-2985](../adr/2985-signer-owner-id-binding.md)).
+
 ### Build provenance on release assets
 
 Every workflow that creates a GitHub release or publishes release assets
