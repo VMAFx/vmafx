@@ -541,9 +541,15 @@ class DockerfileLabelTests(GateTestCase):
                 if "production-controller-image" in stage_records.values()
                 else self.LABEL
             )
-            text = f"FROM scratch AS {next(iter(stage_records))}\n"
-            if label is not None:
-                text += f'LABEL org.opencontainers.image.licenses="{label}"\n'
+            text = "".join(
+                f"FROM scratch AS {stage}\n"
+                + (
+                    f'LABEL org.opencontainers.image.licenses="{label}"\n'
+                    if label is not None
+                    else ""
+                )
+                for stage in stage_records
+            )
             files[relative] = text
         _write(self.root, files)
 
@@ -673,9 +679,46 @@ class DockerfileLabelTests(GateTestCase):
         problems = gate.dockerfile_licence_label_problems(self.root)
         self.assertEqual(len(problems), 1)
         self.assertIn(
-            "docker/Dockerfile.controller: listed in IMAGE_LICENCE_LABELS but missing",
+            "docker/Dockerfile.controller: listed in IMAGE_STAGE_RECORDS but missing",
             problems[0],
         )
+
+    def test_a_renamed_published_stage_is_refused(self) -> None:
+        self._tree()
+        (self.root / "docker/Dockerfile.controller").write_text(
+            "FROM scratch AS final-controller\n"
+            f'LABEL org.opencontainers.image.licenses="{self.LABEL}"\n',
+            encoding="utf-8",
+        )
+        problems = gate.dockerfile_licence_label_problems(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("listed stage controller is missing", problems[0])
+
+    def test_a_notice_only_component_is_named_and_not_in_the_label(self) -> None:
+        self._tree()
+        manifest = self.root / "tools/rc1-tester/image/licensing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["artifacts"]["production-controller-image"]["components"].append(
+            {
+                "id": "rocm-comgr",
+                "kind": "fixed",
+                "licence": "Apache-2.0 WITH LLVM-exception",
+            }
+        )
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
+    def test_an_unlisted_complex_licence_is_a_model_error(self) -> None:
+        self._tree()
+        manifest = self.root / "tools/rc1-tester/image/licensing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["artifacts"]["production-controller-image"]["components"].append(
+            {"id": "mystery", "kind": "fixed", "licence": "MIT (vendor note)"}
+        )
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        with self.assertRaises(gate.ModelError) as error:
+            gate.dockerfile_licence_label_problems(self.root)
+        self.assertIn("mystery", str(error.exception))
 
 
 if __name__ == "__main__":

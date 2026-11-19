@@ -677,11 +677,6 @@ def manifest_problems(root: Path, manifest: Path) -> list[str]:
     return checks[manifest.name](root, manifest)
 
 
-IMAGE_LICENCE_LABELS = {
-    "docker/Dockerfile.controller": "production-controller-image",
-    "docker/Dockerfile.production": "production-cli-image",
-    "docker/Dockerfile.production-gpu": "production-cuda-image",
-}
 IMAGE_STAGE_RECORDS = {
     "docker/Dockerfile.controller": {"controller": "production-controller-image"},
     "docker/Dockerfile.production": {
@@ -695,21 +690,32 @@ IMAGE_STAGE_RECORDS = {
         "final-oneapi2025": "production-oneapi-image",
     },
 }
-IMAGE_TARGET_STAGES = {
-    "docker/Dockerfile.controller": ("controller",),
-    "docker/Dockerfile.production": ("cli", "server"),
-    "docker/Dockerfile.production-gpu": (
-        "final-cuda13",
-        "final-rocm10",
-        "final-oneapi2026",
-        "final-oneapi2025",
-    ),
+# Components whose `licence` value is prose or a compound SPDX expression that
+# cannot be a single OCI label term. The value stays in the licensing notices;
+# naming the component here makes the omission visible in review.
+NOTICE_ONLY_COMPONENTS = {
+    "cpython": "prose in the PSF-2.0 sentence",
+    "debian-libgomp1": "toolchain runtime, GPL-3.0-or-later WITH GCC-exception-3.1",
+    "intel-gpu-stack": "compound MIT/LLVM sentence",
+    "intel-gpu-stack-apt": "compound per-package sentence",
+    "intel-oneapi-dpcpp-runtime": "Intel EULA reference with prose",
+    "intel-oneapi-runtime": "compound Intel EULA/ISSL/Apache-2.0 expression",
+    "intel-oneapi-tcm-hwloc": "BSD-3-Clause plus Intel Simplified Software License prose",
+    "intel-oneapi-umf": "Apache-2.0 WITH LLVM-exception, kept in notices",
+    "microsoft-linked-runtime": "Visual Studio runtime reference with prose",
+    "microsoft-static-runtime": "Visual Studio runtime reference with prose",
+    "microsoft-vc-runtime": "Visual C++ runtime reference with prose",
+    "microsoft-vc-runtime-programs": "Visual C++ runtime reference with prose",
+    "nvidia-cuda-device-code": "NVIDIA CUDA EULA with Attachment A prose",
+    "rocm-comgr": "Apache-2.0 WITH LLVM-exception, kept in notices",
+    "rocm-llvm": "Apache-2.0 WITH LLVM-exception, kept in notices",
+    "rocm-sysdeps": "compound LGPL/GPL/MIT/Zlib/BSD expression",
 }
 FROM_RE = re.compile(r"^FROM\s+(\S+)(?:\s+AS\s+(\S+))?", re.IGNORECASE)
 LABEL_RE = re.compile(
     r'^\s*LABEL\s+.*?org\.opencontainers\.image\.licenses="([^"]*)"', re.IGNORECASE
 )
-SPDX_TOKEN = re.compile(r"^[A-Za-z0-9.+-]+$")
+SPDX_TERM = re.compile(r"^[A-Za-z0-9.+-]+(?: WITH [A-Za-z0-9.+-]+)?$")
 LICENCES_KEY = "org.opencontainers.image.licenses"
 
 
@@ -733,19 +739,25 @@ def _record_component(records: dict, record_name: str, component_id: str) -> dic
 def _component_licences(component: dict) -> set[str]:
     """The label terms one resolved component carries.
 
-    ``licence`` may hold a full sentence rather than an SPDX term (the NVIDIA
-    EULA text). OCI's ``licenses`` value is an SPDX expression, so only
-    single-token terms belong there; the full text stays in the notices.
+    ``licence`` may hold prose or a compound expression that cannot be an OCI
+    label term (the NVIDIA EULA text, a per-package sentence). Those components
+    are named in ``NOTICE_ONLY_COMPONENTS`` and stay in the notices; an
+    unlisted value that is not a plain ``AND`` list is a model error.
     """
     found: set[str] = set()
     for value in component.get("licences", ()):
         found.add(str(value))
     licence = component.get("licence")
     if isinstance(licence, str):
-        for raw in licence.split(" AND "):
-            term = raw.strip()
-            if SPDX_TOKEN.fullmatch(term):
-                found.add(term)
+        if component.get("id") in NOTICE_ONLY_COMPONENTS:
+            return found
+        terms = [raw.strip() for raw in licence.split(" AND ")]
+        if terms and all(SPDX_TERM.fullmatch(term) for term in terms):
+            found.update(terms)
+        else:
+            raise ModelError(
+                f"{component.get('id')}: licence value is not a list of SPDX terms: " f"{licence!r}"
+            )
     return found
 
 
@@ -802,41 +814,39 @@ def _stage_index(stages: list[dict], reference: str) -> int | None:
     return None
 
 
-def _effective_labels(
-    stages: list[dict], index: int, seen: set[int] | None = None
-) -> dict[str, str]:
-    """The labels a stage inherits from its parent plus its own declarations."""
-    seen = set() if seen is None else seen
-    if index in seen:
-        raise ModelError("Dockerfile stage cycle")
-    seen.add(index)
-    parent = _stage_index(stages, stages[index]["base"])
-    inherited = _effective_labels(stages, parent, seen) if parent is not None else {}
-    return {**inherited, **stages[index]["labels"]}
+def _effective_labels(stages: list[dict], index: int) -> dict[str, str]:
+    """The labels a stage inherits from its parent chain plus its own declarations."""
+    chain: list[int] = []
+    current: int | None = index
+    for _ in range(len(stages) + 1):
+        if current is None:
+            break
+        if current in chain:
+            raise ModelError("Dockerfile stage cycle")
+        chain.append(current)
+        current = _stage_index(stages, stages[current]["base"])
+    labels: dict[str, str] = {}
+    for position in reversed(chain):
+        labels.update(stages[position]["labels"])
+    return labels
 
 
-def _image_stage_labels(path: Path, relative: str) -> list[tuple[str, str | None]]:
-    """The effective licence label of each published stage in one Dockerfile."""
+def _image_stage_labels(
+    path: Path, relative: str, stage_records: dict[str, str]
+) -> tuple[list[tuple[str, str | None]], list[str]]:
+    """The effective licence label of each published stage, and missing stages."""
     stages = _dockerfile_stages(path.read_text(encoding="utf-8"))
     if not stages:
-        return []
-    targets = IMAGE_TARGET_STAGES.get(relative)
-    if targets:
-        selected = [(name, _stage_index(stages, name)) for name in targets]
-        found = [(name, index) for name, index in selected if index is not None]
-        if found:
-            return [
-                (name, _effective_labels(stages, index).get(LICENCES_KEY))
-                for name, index in found
-                if index is not None
-            ]
-    last = len(stages) - 1
-    return [
-        (
-            stages[last].get("name") or f"stage {last + 1}",
-            _effective_labels(stages, last).get(LICENCES_KEY),
-        )
-    ]
+        return [], [f"{relative}: listed in IMAGE_STAGE_RECORDS but missing"]
+    found: list[tuple[str, str | None]] = []
+    problems: list[str] = []
+    for stage in stage_records:
+        index = _stage_index(stages, stage)
+        if index is None:
+            problems.append(f"{relative}: listed stage {stage} is missing")
+            continue
+        found.append((stage, _effective_labels(stages, index).get(LICENCES_KEY)))
+    return found, problems
 
 
 def _dockerfile_label_problems(
@@ -846,13 +856,12 @@ def _dockerfile_label_problems(
     path = root / relative
     if not path.is_file():
         if any(record_name in records for record_name in stage_records.values()):
-            return [f"{relative}: listed in IMAGE_LICENCE_LABELS but missing"]
+            return [f"{relative}: listed in IMAGE_STAGE_RECORDS but missing"]
         return []
-    default_record = next(iter(stage_records.values()))
+    labels, problems = _image_stage_labels(path, relative, stage_records)
     expected_by_record: dict[str, set[str]] = {}
-    problems: list[str] = []
-    for stage, label in _image_stage_labels(path, relative):
-        record_name = stage_records.get(stage, default_record)
+    for stage, label in labels:
+        record_name = stage_records[stage]
         if record_name not in expected_by_record:
             try:
                 expected_by_record[record_name] = _record_label_licences(records, record_name)
