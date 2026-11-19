@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.ci import check_exit_code_only_tests as checker  # noqa: E402
+from scripts.ci.tests.scanner_test_support import isolate_pre_commit_environment  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 GIT = shutil.which("git")
@@ -36,6 +37,7 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         if GIT is None:
             self.skipTest("git executable is required for throwaway repository fixtures")
         self.git_bin: str = GIT
+        isolate_pre_commit_environment(self)
         self._tmp = tempfile.TemporaryDirectory(prefix="exit-code-only-test-")
         self.addCleanup(self._tmp.cleanup)
         self.repo = Path(self._tmp.name)
@@ -1400,6 +1402,24 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         self.assertEqual(
             checker.file_findings(weak + "    assert out.stdout == 'ok'\n", REL_TEST_FILE), []
         )
+
+
+class ExitCodeOnlyHookEnvironmentTest(unittest.TestCase):
+    def test_fixture_ignores_outer_hook_refs(self) -> None:
+        """A changed-mode fixture test passes despite push refs absent from its repository."""
+        injected = {
+            "PRE_COMMIT_TO_REF": "f" * 40,
+            "PRE_COMMIT_FROM_REF": "e" * 40,
+        }
+        output = io.StringIO()
+        with mock.patch.dict(os.environ, injected):
+            case = ExitCodeOnlyTestsCheckTest(
+                "test_planted_new_weak_test_fails_with_file_line_and_function"
+            )
+            result = unittest.TextTestRunner(stream=output).run(unittest.TestSuite([case]))
+            self.assertEqual(result.testsRun, 1)
+            self.assertTrue(result.wasSuccessful(), output.getvalue())
+            self.assertEqual({key: os.environ[key] for key in injected}, injected)
 
 
 if __name__ == "__main__":
