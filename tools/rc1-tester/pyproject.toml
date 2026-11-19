@@ -40,15 +40,8 @@ addopts = "-q"
 filterwarnings = ["error"]
 
 [tool.ruff]
-extend = "../../pyproject.toml"
 line-length = 100
 target-version = "py310"
 
-[tool.ruff.lint]
-# Ruff's default selection; keep this subproject's existing rules while
-# inheriting only the shared settings above.
-select = ["E4", "E7", "E9", "F"]
-
 [tool.ruff.lint.per-file-ignores]
-# Tests prepend their src directory before importing the package.
-"tests/*.py" = ["PLR2004", "E402"]
+"tests/*.py" = ["PLR2004"]
