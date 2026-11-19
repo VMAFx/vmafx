@@ -228,6 +228,7 @@ def check_suite_registry_python(root: Path, py_want: str | None) -> list[str]:
     """
     if not py_want:
         return ["build-config.env defines no PYTHON_CI_VERSION (issue 3103)"]
+    series = ".".join(py_want.split(".")[:2])
     path = root / SUITE_MANIFEST
     if not path.is_file():
         return [f"{SUITE_MANIFEST} is missing; suite installs cannot inherit PYTHON_CI_VERSION"]
@@ -248,10 +249,11 @@ def check_suite_registry_python(root: Path, py_want: str | None) -> list[str]:
         if "python" not in install:
             inherits += 1
             continue
-        if install["python"] == py_want:
+        if install["python"] in (py_want, series):
             problems.append(
                 f"{SUITE_MANIFEST}: suite {name!r} repeats install.python "
-                f"'{py_want}'; omit it so PYTHON_CI_VERSION stays the only default"
+                f"{install['python']!r} ('{series}' or '{py_want}'); omit it so "
+                "PYTHON_CI_VERSION stays the only default"
             )
     if not inherits:
         problems.append(

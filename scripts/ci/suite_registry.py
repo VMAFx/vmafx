@@ -117,10 +117,10 @@ def _strings(value: Any, label: str) -> tuple[str, ...]:
     return tuple(value)
 
 
-def _install(value: Any, label: str, root: Path) -> Install:
+def _install(value: Any, label: str, default: str) -> Install:
     if not isinstance(value, dict):
         raise RegistryError(f"{label} must be an object")
-    python = value["python"] if "python" in value else default_python(root)
+    python = value.get("python", default)
     if not isinstance(python, str) or not python:
         raise RegistryError(f"{label}.python must be a non-empty string")
     venv_of = value.get("venv_of")
@@ -139,7 +139,12 @@ def _install(value: Any, label: str, root: Path) -> Install:
 
 
 def default_python(root: Path) -> str:
-    """The registry-wide Python version, from build-config.env's PYTHON_CI_VERSION."""
+    """The registry-wide Python series, from build-config.env's PYTHON_CI_VERSION.
+
+    The suites resolved to the inherited ``"3.14"`` series before this registry
+    carried the pin, so the default is the major.minor series, not the exact
+    patch release the workflow jobs use.
+    """
     try:
         text = (root / BUILD_CONFIG).read_text(encoding="utf-8")
     except OSError as exc:
@@ -147,7 +152,7 @@ def default_python(root: Path) -> str:
     match = re.search(r'(?m)^PYTHON_CI_VERSION="([^"]+)"\s*$', text)
     if match is None:
         raise RegistryError(f"{BUILD_CONFIG} defines no PYTHON_CI_VERSION")
-    return match.group(1)
+    return ".".join(match.group(1).split(".")[:2])
 
 
 PYTEST_REWRITE_PARTS = 2
@@ -173,14 +178,14 @@ def _pytest_fields(pytest_cfg: Any, label: str) -> dict[str, Any]:
     return fields
 
 
-def _suite_run_fields(entry: dict[str, Any], label: str, root: Path) -> dict[str, Any]:
+def _suite_run_fields(entry: dict[str, Any], label: str, default: str) -> dict[str, Any]:
     """The fields run_affected_suites.py reads: how a suite installs and runs locally."""
     has_install, has_reason = "install" in entry, "not_local" in entry
     if has_install == has_reason:
         raise RegistryError(f"{label}: give exactly one of install and not_local (a reason)")
     fields: dict[str, Any] = {}
     if has_install:
-        fields["install"] = _install(entry["install"], f"{label}.install", root)
+        fields["install"] = _install(entry["install"], f"{label}.install", default)
     elif not isinstance(entry["not_local"], str) or not entry["not_local"]:
         raise RegistryError(f"{label}.not_local must be a non-empty reason string")
     else:
@@ -197,7 +202,7 @@ def _suite_run_fields(entry: dict[str, Any], label: str, root: Path) -> dict[str
     return fields
 
 
-def _suite(entry: Any, index: int, root: Path) -> Suite:
+def _suite(entry: Any, index: int, default: str) -> Suite:
     if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
         raise RegistryError(f"suites[{index}] must be an object with a string name")
     label = f"suites[{index}] ({entry['name']})"
@@ -205,7 +210,7 @@ def _suite(entry: Any, index: int, root: Path) -> Suite:
         name=entry["name"],
         paths=_strings(entry.get("paths"), f"{label}.paths"),
         checks=_strings(entry.get("checks"), f"{label}.checks"),
-        **_suite_run_fields(entry, label, root),
+        **_suite_run_fields(entry, label, default),
     )
 
 
@@ -218,7 +223,18 @@ def load_registry(root: Path) -> Registry:
         raise RegistryError(f"cannot read {MANIFEST}: {exc}") from exc
     if data.get("schema_version") != 1:
         raise RegistryError(f"{MANIFEST}: schema_version must be 1")
-    suites = tuple(_suite(entry, i, root) for i, entry in enumerate(data.get("suites") or []))
+    entries = data.get("suites") or []
+    installs = [
+        entry.get("install")
+        for entry in entries
+        if isinstance(entry, dict) and isinstance(entry.get("install"), dict)
+    ]
+    # Read build-config.env once, and only when an install inherits from it:
+    # fixtures whose suites all pin an interpreter need no config file.
+    python_default = (
+        default_python(root) if any("python" not in install for install in installs) else ""
+    )
+    suites = tuple(_suite(entry, i, python_default) for i, entry in enumerate(entries))
     names = [suite.name for suite in suites]
     if not suites or len(set(names)) != len(names):
         raise RegistryError(f"{MANIFEST}: suites must be non-empty with unique names")

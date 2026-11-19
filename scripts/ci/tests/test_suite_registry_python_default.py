@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
@@ -30,7 +31,9 @@ class RegistryDefault(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
         (self.root / ".github").mkdir()
-        (self.root / "build-config.env").write_text('PYTHON_CI_VERSION="3.14"\n', encoding="utf-8")
+        (self.root / "build-config.env").write_text(
+            'PYTHON_CI_VERSION="3.14.10"\n', encoding="utf-8"
+        )
 
     def manifest(self, install: dict[str, object], name: str = "pkg") -> None:
         data = {
@@ -57,6 +60,14 @@ class RegistryDefault(unittest.TestCase):
         registry = suite_registry.load_registry(self.root)
         self.assertEqual(registry.suites[0].install.python, "3.13")  # type: ignore[union-attr]
 
+    def test_the_config_is_read_once_for_every_install(self) -> None:
+        self.manifest({"locks": ["lock.txt"]})
+        with mock.patch.object(
+            suite_registry, "default_python", wraps=suite_registry.default_python
+        ) as default:
+            suite_registry.load_registry(self.root)
+        self.assertEqual(default.call_count, 1)
+
 
 class CheckerDefault(unittest.TestCase):
     def setUp(self) -> None:
@@ -72,12 +83,14 @@ class CheckerDefault(unittest.TestCase):
 
     def test_inherited_default_is_clean(self) -> None:
         self.write([{"name": "pkg", "install": {"locks": ["lock.txt"]}}])
-        self.assertEqual(checker.check_suite_registry_python(self.root, "3.14"), [])
+        self.assertEqual(checker.check_suite_registry_python(self.root, "3.14.10"), [])
 
     def test_repeating_the_default_is_refused(self) -> None:
-        self.write([{"name": "pkg", "install": {"python": "3.14", "locks": ["x"]}}])
-        problems = checker.check_suite_registry_python(self.root, "3.14")
-        self.assertIn("repeats install.python", problems[0])
+        for repeated in ("3.14", "3.14.10"):
+            with self.subTest(repeated=repeated):
+                self.write([{"name": "pkg", "install": {"python": repeated, "locks": ["x"]}}])
+                problems = checker.check_suite_registry_python(self.root, "3.14.10")
+                self.assertIn("repeats install.python", problems[0])
 
     def test_an_explicit_override_is_allowed(self) -> None:
         self.write(
@@ -86,11 +99,11 @@ class CheckerDefault(unittest.TestCase):
                 {"name": "legacy", "install": {"python": "3.13", "locks": ["y"]}},
             ]
         )
-        self.assertEqual(checker.check_suite_registry_python(self.root, "3.14"), [])
+        self.assertEqual(checker.check_suite_registry_python(self.root, "3.14.10"), [])
 
     def test_no_inheriting_suite_is_refused(self) -> None:
         self.write([{"name": "pkg", "install": {"python": "3.13", "locks": ["x"]}}])
-        problems = checker.check_suite_registry_python(self.root, "3.14")
+        problems = checker.check_suite_registry_python(self.root, "3.14.10")
         self.assertIn("no suite install inherits", problems[0])
 
 
