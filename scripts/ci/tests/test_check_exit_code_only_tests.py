@@ -13,6 +13,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
@@ -23,6 +24,7 @@ if str(ROOT) not in sys.path:
 from scripts.ci import check_exit_code_only_tests as checker  # noqa: E402
 from scripts.ci.tests.scanner_test_support import isolate_pre_commit_environment  # noqa: E402
 from scripts.lib import new_scanner_findings  # noqa: E402
+from scripts.lib.safe_subprocess import CommandOutputLimitExceeded, CommandTimedOut  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 GIT = shutil.which("git")
@@ -88,8 +90,12 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         err = io.StringIO()
 
         # Git env builders strip GIT_*; inject isolation at the subprocess boundary.
-        def isolated_run(original, *args, **kwargs):
-            kwargs["env"].update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+        def isolated_run(
+            original: Callable[..., object], *args: object, **kwargs: object
+        ) -> object:
+            env = kwargs["env"]
+            assert isinstance(env, dict)
+            env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
             return original(*args, **kwargs)
 
         with contextlib.ExitStack() as stack:
@@ -1405,6 +1411,15 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         self.assertEqual(rc, 0, err)
         self.assertIn("0 exit-code-only test findings", out)
 
+    def test_deletion_after_nonadjacent_marker_does_not_select_weak_test(self) -> None:
+        weak = "def test_x():\n    rc = run_checker()\n    assert rc == 0\n"
+        prefix = "# exit-code-only: silent status probe\n# ordinary\n"
+        target = self._commit_file(REL_TEST_FILE, prefix + "# extra\n\n" + weak)
+        target.write_text(prefix + "\n" + weak, encoding="utf-8")
+        rc, out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 0, err)
+        self.assertIn("0 exit-code-only test findings", out)
+
     def test_changed_marker_deletion_and_short_addition(self) -> None:
         weak = "def test_x():\n    rc = run_checker()\n    assert rc == 0\n"
         marker = "# exit-code-only: silent status probe\n"
@@ -1576,8 +1591,8 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         self._commit_file(REL_TEST_FILE, "# base\n")
         for attr in ("revision_modes", "revision_bytes"):
             for exc in (
-                checker.CommandTimedOut(("git",), 1, None, None),
-                checker.CommandOutputLimitExceeded(("git",), 1, None, None),
+                CommandTimedOut(("git",), 1, None, None),
+                CommandOutputLimitExceeded(("git",), 1, None, None),
             ):
                 with (
                     self.subTest(boundary=attr, error=type(exc).__name__),
@@ -1594,10 +1609,11 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         (self.repo / REL_TEST_FILE).write_text(
             "def test_weak():\n    rc = run_checker()\n    assert rc == 0\n", encoding="utf-8"
         )
-        original = checker.run_command
+        original: Callable[..., object] = run_command
 
-        def ambient_order_file(*args, **kwargs):
+        def ambient_order_file(*args: object, **kwargs: object) -> object:
             env = kwargs["env"]
+            assert isinstance(env, dict)
             if env.get("GIT_CONFIG_GLOBAL") != os.devnull or env.get("GIT_CONFIG_NOSYSTEM") != "1":
                 raise OSError("global diff.orderFile missing in fixture")
             return original(*args, **kwargs)

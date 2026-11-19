@@ -87,6 +87,7 @@ HUNK_RE = re.compile(r"@@ -[0-9]+(?:,[0-9]+)? \+([0-9]+)(?:,([0-9]+))? @@(?: .*)
 
 FuncNode: TypeAlias = ast.FunctionDef | ast.AsyncFunctionDef
 DefNode: TypeAlias = ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+TraversalStep: TypeAlias = tuple[ast.AST | list[set[str]], set[str]]
 
 
 class ScanError(Exception):
@@ -336,12 +337,12 @@ def _escape_status(func: FuncNode, comments: dict[int, tuple[str, int, bool]]) -
     return "none"
 
 
-def _alternative_flow(branches, bindings):
+def _alternative_flow(branches: list[list[ast.stmt]], bindings: set[str]) -> list[TraversalStep]:
     """Schedule alternatives with snapshots taken after header evaluation."""
-    steps = []
-    states = []
+    steps: list[TraversalStep] = []
+    states: list[set[str]] = []
     for body in branches:
-        state = set()
+        state: set[str] = set()
         states.append(state)
         steps.append(([bindings], state))
         steps.extend((stmt, state) for stmt in body)
@@ -349,9 +350,10 @@ def _alternative_flow(branches, bindings):
     return steps
 
 
-def _loop_flow(node, bindings):
+def _loop_flow(node: ast.For | ast.AsyncFor | ast.While, bindings: set[str]) -> list[TraversalStep]:
     """Carry possible body bindings into else and preserve break paths."""
-    body, otherwise = set(), set()
+    body: set[str] = set()
+    otherwise: set[str] = set()
     return [
         ([bindings], body),
         *((stmt, body) for stmt in node.body),
@@ -361,16 +363,17 @@ def _loop_flow(node, bindings):
     ]
 
 
-def _try_flow(node, bindings):
+def _try_flow(node: ast.Try | ast.TryStar, bindings: set[str]) -> list[TraversalStep]:
     """Join normal and handler paths before executing finally."""
-    body, otherwise = set(), set()
-    steps = [([bindings], body)]
+    body: set[str] = set()
+    otherwise: set[str] = set()
+    steps: list[TraversalStep] = [([bindings], body)]
     steps.extend((stmt, body) for stmt in node.body)
     steps.append(([body], otherwise))
     steps.extend((stmt, otherwise) for stmt in node.orelse)
     states = [otherwise]
     for handler in node.handlers:
-        state = set()
+        state: set[str] = set()
         states.append(state)
         steps.append(([bindings, body], state))
         steps.extend((stmt, state) for stmt in handler.body)
@@ -379,7 +382,7 @@ def _try_flow(node, bindings):
     return steps
 
 
-def _push_children(node: ast.AST, bindings: set[str], stack: list[tuple[object, set[str]]]) -> None:
+def _push_children(node: ast.AST, bindings: set[str], stack: list[TraversalStep]) -> None:
     """Schedule header expressions and control-flow operations in execution order."""
     if isinstance(node, ast.If):
         bodies = [node.body, node.orelse]
@@ -412,7 +415,7 @@ def _push_children(node: ast.AST, bindings: set[str], stack: list[tuple[object, 
 def _assertion_kinds(func: FuncNode) -> list[str]:
     """Inspect assertions using independent branch bindings and conservative joins."""
     initial: set[str] = set()
-    stack: list[tuple[object, set[str]]] = [(node, initial) for node in reversed(func.body)]
+    stack: list[TraversalStep] = [(node, initial) for node in reversed(func.body)]
     kinds: list[str] = []
     for _ in range(MAX_BODY_NODES * 10):
         if not stack:
