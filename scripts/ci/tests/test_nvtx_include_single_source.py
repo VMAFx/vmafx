@@ -30,6 +30,10 @@ class NvtxIncludeSingleSource(unittest.TestCase):
         self.assertIn("cuda_dependency += [dl_dependency, nvtx_dependency]", text)
         self.assertNotIn("nvtx_include_dir", text)
 
+    def test_the_cpp23_pool_target_takes_the_dependency(self) -> None:
+        text = MESON.read_text(encoding="utf-8")
+        self.assertIn("dependencies : [pthread_dependency, nvtx_dependency]", text)
+
     def test_a_cuda_leg_configures_nvtx(self) -> None:
         text = MATRIX.read_text(encoding="utf-8")
         self.assertIn("-Denable_nvtx=true", text)

@@ -2964,6 +2964,8 @@ picture_pool_cpp23_lib = static_library(
 
 # ADR-0768: gpu_picture_pool.cpp compiled as an isolated C++23 static lib.
 # pthread_dependency: same win32 shim rationale as picture_pool_cpp23_lib above.
+# nvtx_dependency: the target builds with -DHAVE_NVTX through vmaf_cppflags_common
+# and includes nvtx3/nvToolsExt.h, so it needs the CUDA toolkit include.
 gpu_picture_pool_cpp23_lib = static_library(
     'gpu_picture_pool_cpp23',
     src_dir + 'gpu_picture_pool.cpp',
@@ -2972,7 +2974,7 @@ gpu_picture_pool_cpp23_lib = static_library(
     # whose VmafPicturePrivate changes size with HAVE_CUDA; the backend defines
     # come with vmaf_cppflags_common.
     cpp_args : vmaf_cppflags_common,
-    dependencies : [pthread_dependency],
+    dependencies : [pthread_dependency, nvtx_dependency],
     pic : true,
     install : false,
 )
