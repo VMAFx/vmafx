@@ -581,5 +581,27 @@ class DerivedFixtures(unittest.TestCase):
         self.assertLess(max(first[1::2]), 4)
 
 
+class SharedNetflixUrl(unittest.TestCase):
+    """The default lives in build-config.env; the environment can name a mirror."""
+
+    def test_the_default_is_the_provenance_url_from_config(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("NETFLIX_VMAF_URL", None)
+            with mock.patch.object(guard, "REPO", ROOT):
+                url = guard._netflix_upstream_url()
+        self.assertEqual(url, "https://github.com/Netflix/vmaf.git")
+
+    def test_an_environment_mirror_overrides_the_default(self) -> None:
+        mirror = "https://mirror.example.invalid/Netflix/vmaf.git"
+        with mock.patch.dict(os.environ, {"NETFLIX_VMAF_URL": mirror}, clear=False):
+            self.assertEqual(guard._netflix_upstream_url(), mirror)
+
+    def test_a_config_without_the_value_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            with mock.patch.object(guard, "REPO", Path(temporary)):
+                with self.assertRaisesRegex(RuntimeError, "NETFLIX_VMAF_URL"):
+                    guard._netflix_upstream_url()
+
+
 if __name__ == "__main__":
     unittest.main()

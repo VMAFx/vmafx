@@ -64,7 +64,23 @@ from scripts.dev import upstream_parity_matrix as matrix_data  # noqa: E402
 from scripts.lib.safe_subprocess import CommandTimedOut  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
-UPSTREAM_URL = "https://github.com/Netflix/vmaf.git"
+
+def _netflix_upstream_url() -> str:
+    """The shared Netflix URL, with ``NETFLIX_VMAF_URL`` as an explicit mirror override."""
+    override = os.environ.get("NETFLIX_VMAF_URL")
+    if override:
+        return override
+    config = REPO / "build-config.env"
+    if not config.is_file():
+        raise RuntimeError(f"{config} declares no NETFLIX_VMAF_URL")
+    prefix = 'NETFLIX_VMAF_URL="'
+    for line in config.read_text(encoding="utf-8").splitlines():
+        if line.startswith(prefix) and line.endswith('"'):
+            return line[len(prefix) : -1]
+    raise RuntimeError(f"{config} declares no NETFLIX_VMAF_URL")
+
+
+UPSTREAM_URL = _netflix_upstream_url()
 HARNESS_SOURCE = Path(__file__).with_name("upstream_parity_harness.c")
 CONSUMER_SOURCE = Path(__file__).with_name("compat_abi_consumer.c")
 PLANT_SOURCE = Path(__file__).with_name("compat_abi_plant.c")

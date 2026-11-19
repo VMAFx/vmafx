@@ -127,7 +127,12 @@ jobs:
 
       - name: Fetch upstream Netflix/vmaf
         run: |
-          git remote add --no-tags upstream https://github.com/Netflix/vmaf.git
+          if [ -z "${NETFLIX_VMAF_URL:-}" ]; then
+            set -a
+            . ./build-config.env
+            set +a
+          fi
+          git remote add --no-tags upstream "${NETFLIX_VMAF_URL}"
           git fetch --no-tags upstream master
 
       - name: Probe unported Netflix/vmaf commits

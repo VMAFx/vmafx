@@ -119,6 +119,26 @@ class CommandLine(unittest.TestCase):
         self.assertRegex(stdout.getvalue(), r"^[0-9a-f]{7,40}\n$")
 
 
+class SharedUpstreamUrl(unittest.TestCase):
+    """The default is declared once; workflows and the parity script consume it."""
+
+    def test_the_default_is_declared_in_build_config(self) -> None:
+        config = (ROOT / "build-config.env").read_text(encoding="utf-8")
+        self.assertIn('NETFLIX_VMAF_URL="https://github.com/Netflix/vmaf.git"', config)
+
+    def test_the_upstream_consumers_do_not_repeat_the_literal(self) -> None:
+        for rel in (
+            ".github/workflows/lint-and-format.yml",
+            ".github/workflows/upstream-watcher.yml",
+            ".github/workflows/ffmpeg-integration.yml",
+        ):
+            with self.subTest(workflow=rel):
+                text = (ROOT / rel).read_text(encoding="utf-8")
+                self.assertNotIn("https://github.com/Netflix/vmaf.git", text)
+                self.assertIn("${NETFLIX_VMAF_URL}", text)
+                self.assertIn('[ -z "${NETFLIX_VMAF_URL:-}" ]', text)
+
+
 class Workflow(unittest.TestCase):
     """The job is only a gate if it has history, the pin, and a required name."""
 
@@ -131,7 +151,8 @@ class Workflow(unittest.TestCase):
     def test_the_job_has_full_history_on_both_sides(self) -> None:
         job = self.job()
         self.assertIn("fetch-depth: 0", job)
-        self.assertIn("git fetch --no-tags --quiet https://github.com/Netflix/vmaf.git master", job)
+        self.assertIn(". ./build-config.env", job)
+        self.assertIn('git fetch --no-tags --quiet "${NETFLIX_VMAF_URL}" master', job)
         self.assertNotIn("--depth", job)
 
     def test_the_job_checks_against_the_recorded_head(self) -> None:
