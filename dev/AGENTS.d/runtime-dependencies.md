@@ -23,14 +23,20 @@ invariant: LD_LIBRARY_PATH includes tbb; NEO/ROCm pinned to kernel UAPI; ORT_VER
    line at container start when pin no longer matches host. Bump
    ARG, rebuild instead of working around it on host (CLAUDE.md §12
    r15 sub-rule 4).
-3. **`ORT_VERSION` must satisfy `ai/pyproject.toml` requirement
-   `onnxruntime>=1.20,<2.0`.** Current pin: `1.26.0` (bumped from
-   1.20.1 per ADR-0568 2026-05-18). Tarball naming pattern =
-   `onnxruntime-linux-x64-${ORT_VERSION}.tgz` from
-   microsoft/onnxruntime GitHub releases. C API stable across 1.x
-   line; however, ROCm EP and CUDA EP only available from ORT 1.26+
+3. **`ORT_VERSION` pinned on `1.x` (`<2.0`); `ai/pyproject.toml` Python
+   floor `onnxruntime>=1.31.1,<2.0` owned independently.** Current pin:
+   `1.30.0`. Source = `microsoft.ml.onnxruntime` NuGet package through
+   `scripts/ci/ort_nuget_install.py --package cpu` (ADR-3561). C API
+   stable across 1.x line; ROCm EP and CUDA EP available from ORT 1.26+
    (matching container's ROCm 10.1.0 + CUDA 13.x stack —
-   ADR-0541/ADR-0542, ROCm bumped by ADR-1225). Bumping ORT_VERSION
-   -> verify new version's tarball exists at GitHub releases URL
-   before updating ARG, update this note; ORT_SHA256 moves with ORT_VERSION
-   in locked pairs, verifying tarball before extraction (ADR-3334).
+   ADR-0541/ADR-0542, ROCm bumped by ADR-1225); provider-enabled
+   distributions need matching runtime dependencies (ADR-0113). Version
+   raise -> add pin to `scripts/ci/ort-nuget-pins.json` first
+   (`python3 scripts/ci/ort_nuget_install.py --print-pin <version>`
+   prints size + sha256 entry), then raise `ARG ORT_VERSION` and update
+   this note; guard `scripts/ci/check_ort_tarball_pins.py` refuses
+   `ORT_VERSION` without pin in `scripts/ci/ort-nuget-pins.json`, inline
+   `ORT_VERSION` overrides on helper call, and old release sources split
+   across `RUN` or `ADD` continuations with comments.
+   `ARG ORT_SHA256` not read by build; kept only for `renovate.json`
+   dependency-update rule until rule moves (ADR-3561 follow-up).
