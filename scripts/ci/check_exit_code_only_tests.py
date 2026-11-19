@@ -336,42 +336,76 @@ def _escape_status(func: FuncNode, comments: dict[int, tuple[str, int, bool]]) -
     return "none"
 
 
-def _branch_bodies(node: ast.AST) -> tuple[list[list[ast.stmt]], list[ast.stmt]]:
-    """Separate alternatives and final statements for compound control flow."""
-    if isinstance(node, (ast.If, ast.For, ast.AsyncFor, ast.While)):
-        return [node.body, node.orelse], []
-    if isinstance(node, (ast.With, ast.AsyncWith)):
-        return [node.body, []], []
-    if isinstance(node, (ast.Try, ast.TryStar)):
-        return [
-            node.body,
-            node.orelse,
-            *(handler.body for handler in node.handlers),
-            [],
-        ], node.finalbody
-    if isinstance(node, ast.Match):
-        return [*(case.body for case in node.cases), []], []
-    return [], []
+def _alternative_flow(branches, bindings):
+    """Schedule alternatives with snapshots taken after header evaluation."""
+    steps = []
+    states = []
+    for body in branches:
+        state = set()
+        states.append(state)
+        steps.append(([bindings], state))
+        steps.extend((stmt, state) for stmt in body)
+    steps.append((states, bindings))
+    return steps
+
+
+def _loop_flow(node, bindings):
+    """Carry possible body bindings into else and preserve break paths."""
+    body, otherwise = set(), set()
+    return [
+        ([bindings], body),
+        *((stmt, body) for stmt in node.body),
+        ([bindings, body], otherwise),
+        *((stmt, otherwise) for stmt in node.orelse),
+        ([otherwise, body], bindings),
+    ]
+
+
+def _try_flow(node, bindings):
+    """Join normal and handler paths before executing finally."""
+    body, otherwise = set(), set()
+    steps = [([bindings], body)]
+    steps.extend((stmt, body) for stmt in node.body)
+    steps.append(([body], otherwise))
+    steps.extend((stmt, otherwise) for stmt in node.orelse)
+    states = [otherwise]
+    for handler in node.handlers:
+        state = set()
+        states.append(state)
+        steps.append(([bindings, body], state))
+        steps.extend((stmt, state) for stmt in handler.body)
+    steps.append((states, bindings))
+    steps.extend((stmt, bindings) for stmt in node.finalbody)
+    return steps
 
 
 def _push_children(node: ast.AST, bindings: set[str], stack: list[tuple[object, set[str]]]) -> None:
-    """Schedule control-flow alternatives and their join without recursive calls."""
-    branches, final = _branch_bodies(node)
-    if not branches:
+    """Schedule header expressions and control-flow operations in execution order."""
+    if isinstance(node, ast.If):
+        bodies = [node.body, node.orelse]
+        steps = _alternative_flow(bodies, bindings)
+    elif isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
+        bodies = [node.body, node.orelse]
+        steps = _loop_flow(node, bindings)
+    elif isinstance(node, (ast.Try, ast.TryStar)):
+        bodies = [node.body, node.orelse, node.finalbody, *(h.body for h in node.handlers)]
+        steps = _try_flow(node, bindings)
+    elif isinstance(node, (ast.With, ast.AsyncWith)):
+        bodies = [node.body, []]
+        steps = _alternative_flow(bodies, bindings)
+    elif isinstance(node, ast.Match):
+        bodies = [*(case.body for case in node.cases), []]
+        steps = _alternative_flow(bodies, bindings)
+    else:
         stack.extend((child, bindings) for child in reversed(list(ast.iter_child_nodes(node))))
         return
-    branch_sets = [set(bindings) for _ in branches]
-    stack.extend((stmt, bindings) for stmt in reversed(final))
-    stack.append((branch_sets, bindings))
-    for body, branch_vars in reversed(list(zip(branches, branch_sets, strict=True))):
-        stack.extend((stmt, branch_vars) for stmt in reversed(body))
-    excluded = {id(stmt) for body in branches for stmt in body}
-    excluded.update(id(stmt) for stmt in final)
+    excluded = {id(stmt) for body in bodies for stmt in body}
     children = [
         child
         for child in ast.iter_child_nodes(node)
         if id(child) not in excluded and not isinstance(child, (ast.ExceptHandler, ast.match_case))
     ]
+    stack.extend(reversed(steps))
     stack.extend((child, bindings) for child in reversed(children))
 
 
@@ -380,7 +414,7 @@ def _assertion_kinds(func: FuncNode) -> list[str]:
     initial: set[str] = set()
     stack: list[tuple[object, set[str]]] = [(node, initial) for node in reversed(func.body)]
     kinds: list[str] = []
-    for _ in range(MAX_BODY_NODES * 3):
+    for _ in range(MAX_BODY_NODES * 10):
         if not stack:
             return kinds
         item, bindings = stack.pop()
@@ -509,6 +543,7 @@ def _marker_touched(
     comments: dict[int, tuple[str, int, bool]],
     hunks: list[tuple[int, int]],
     removed: dict[tuple[int, int], str],
+    added: set[tuple[int, int]],
 ) -> bool:
     """Select changed eligible standalone markers on either side of a diff."""
     for line, standalone, _ in _escape_candidates(func):
@@ -519,6 +554,10 @@ def _marker_touched(
                 continue
             if _escape_status(func, {line: comments[line]} if line in comments else {}) != "none":
                 return True
+            if (start, end) in added and start > 1:
+                previous = comments.get(start - 1)
+                if previous and _escape_status(func, {line: previous}) != "none":
+                    return True
             text = removed.get((start, end), "")
             if text.lstrip().startswith("#"):
                 column = len(text) - len(text.lstrip())
@@ -532,6 +571,7 @@ def file_findings(
     rel_path: str,
     hunks: list[tuple[int, int]] | None = None,
     removed: dict[tuple[int, int], str] | None = None,
+    added: set[tuple[int, int]] | None = None,
 ) -> list[Finding]:
     """Parse one Python test file and return exit-code-only findings in (changed) functions."""
     try:
@@ -554,7 +594,7 @@ def file_findings(
     for func, parents, end in funcs[:MAX_AST_NODES]:
         if hunks is not None and not (
             _function_touched(func, parents, end, hunks)
-            or _marker_touched(func, comments, hunks, removed or {})
+            or _marker_touched(func, comments, hunks, removed or {}, added or set())
         ):
             continue
         finding = _check_test_function(func, comments, rel_path)
@@ -728,7 +768,7 @@ def _changed_files_by_path(
 
 def _changed_hunks(
     root: Path, merge_base: str, old_path: str, new_path: str, outgoing: str = ""
-) -> tuple[list[tuple[int, int]], dict[tuple[int, int], str]]:
+) -> tuple[list[tuple[int, int]], dict[tuple[int, int], str], set[tuple[int, int]]]:
     """Read new-side zero-context hunk ranges for one changed or renamed file."""
     res = _run_git(
         root,
@@ -758,6 +798,7 @@ def _changed_hunks(
         raise ScanError(f"{new_path}: diff exceeds {MAX_AST_NODES} lines")
     hunks: list[tuple[int, int]] = []
     removed: dict[tuple[int, int], str] = {}
+    added: set[tuple[int, int]] = set()
     for line in lines[:MAX_AST_NODES]:
         if line.startswith("@@"):
             match = HUNK_RE.fullmatch(line)
@@ -766,9 +807,11 @@ def _changed_hunks(
             start = int(match.group(1))
             count = int(match.group(2)) if match.group(2) is not None else 1
             hunks.append((start, start + count - 1 if count else start + 1))
+            if count:
+                added.add(hunks[-1])
         elif hunks and line.startswith("-") and not line.startswith("---"):
             removed[hunks[-1]] = line[1:]
-    return hunks, removed
+    return hunks, removed, added
 
 
 def _normalise_explicit_path(root: Path, root_resolved: Path, raw: str) -> tuple[Path, str]:
@@ -895,12 +938,12 @@ def scan_repository(
             continue
         else:
             old_rel = changes[rel_path]
-            hunks, removed = (
+            hunks, removed, added = (
                 _changed_hunks(root, merge_base, old_rel, rel_path, outgoing)
                 if old_rel
-                else (None, {})
+                else (None, {}, set())
             )
-            current = file_findings(source, rel_path, hunks, removed)
+            current = file_findings(source, rel_path, hunks, removed, added)
         if len(findings) + len(current) > MAX_AST_NODES:
             raise ScanError(f"{root}: exceeds {MAX_AST_NODES} findings")
         findings.extend(current)

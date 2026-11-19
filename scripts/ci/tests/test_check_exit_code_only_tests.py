@@ -1492,6 +1492,66 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
                 findings = checker.file_findings(prefix + body, REL_TEST_FILE)
                 self.assertEqual(bool(findings), index != 0)
 
+    def test_compound_flow_carries_body_bindings(self) -> None:
+        cases = (
+            "    try:\n        rc = run_checker()\n    except ValueError:\n        pass\n    else:\n        assert rc == 0\n",
+            "    for x in [1]:\n        rc = run_checker()\n    else:\n        assert rc == 0\n",
+            "    async for x in items:\n        rc = run_checker()\n    else:\n        assert rc == 0\n",
+            "    while x:\n        rc = run_checker()\n    else:\n        assert rc == 0\n",
+            "    try:\n        rc = run_checker()\n    except ValueError:\n        pass\n    assert rc == 0\n",
+            "    try:\n        rc = run_checker()\n    except ValueError:\n        assert rc == 0\n",
+            "    for x in [1]:\n        rc = run_checker()\n        break\n    else:\n        rc = 5\n    assert rc == 0\n",
+            "    try:\n        rc = run_checker()\n    except ValueError:\n        pass\n    finally:\n        assert rc == 0\n",
+        )
+        for index, body in enumerate(cases):
+            with self.subTest(case=index):
+                source = "async def test_case(x):\n" + body
+                self.assertEqual(len(checker.file_findings(source, REL_TEST_FILE)), 1)
+
+    def test_compound_paths_replace_bindings(self) -> None:
+        cases = (
+            "    try:\n        rc = 1\n    except ValueError:\n        rc = 2\n    assert rc == 0\n",
+            "    if (rc := run_checker()):\n        pass\n    else:\n        assert rc == 0\n",
+            "    while (rc := run_checker()):\n        break\n    else:\n        assert rc == 0\n",
+        )
+        for index, body in enumerate(cases):
+            with self.subTest(case=index):
+                prefix = (
+                    "def test_case():\n    rc = run_checker()\n"
+                    if index == 0
+                    else "def test_case():\n"
+                )
+                self.assertEqual(
+                    bool(checker.file_findings(prefix + body, REL_TEST_FILE)), index != 0
+                )
+
+    def test_insertions_displace_escape_marker(self) -> None:
+        weak = "def test_old():\n    rc = run_checker()\n    assert rc == 0\n"
+        marker = "# exit-code-only: silent status probe\n"
+        target = self._commit_file(REL_TEST_FILE, marker + weak)
+        insertions = (
+            "\n",
+            "# ordinary\n\n",
+            "def test_new():\n    rc = run_checker()\n    assert rc == 0\n\n",
+        )
+        for insertion in insertions:
+            with self.subTest(insertion=insertion):
+                target.write_text(marker + insertion + weak, encoding="utf-8")
+                rc, _, err = self._run_checker("--changed-against", "HEAD")
+                self.assertEqual(rc, 1, err)
+                self.assertIn("test_old", err)
+                self.assertNotIn("test_new", err)
+
+    def test_changes_without_marker_do_not_select_unchanged_test(self) -> None:
+        weak = "def test_old():\n    rc = run_checker()\n    assert rc == 0\n"
+        target = self._commit_file(REL_TEST_FILE, "# first\n# second\n" + weak)
+        for content in ("# second\n" + weak, "# first\n# second\n\n" + weak):
+            with self.subTest(content=content):
+                target.write_text(content, encoding="utf-8")
+                rc, out, err = self._run_checker("--changed-against", "HEAD")
+                self.assertEqual(rc, 0, err)
+                self.assertIn("0 exit-code-only test findings", out)
+
     def test_changed_multiline_class_header_selects_method(self) -> None:
         source = "class TestX(\n    Base,\n):\n    def test_weak(self):\n        rc = run_checker()\n        assert rc == 0\n"
         target = self._commit_file(REL_TEST_FILE, source)
