@@ -84,7 +84,11 @@ Why each setting is there:
 The build needs `ocloc` for the default ahead-of-time targets
 ([AOT targets](overview.md#aot-targets-default-adr-0568)). On Windows it comes
 with oneAPI (`where ocloc`). An older `ocloc` may not know every default
-target; oneAPI 2025.1.1's rejects `bmg-g31` with `Unknown acronym`.
+target; oneAPI 2025.1.1's rejects `bmg-g31` with `Unknown acronym`. The Windows
+CI build with oneAPI 2026.2.0.661 rejected `tgllp` at AOT link. CI checks
+each default target with `ocloc ids`, reports the dropped targets, and passes
+the accepted list to Meson only if the refused set is exactly `tgllp`. The
+remaining targets and the `ocloc ids tgllp` result have not yet been measured.
 
 If `ocloc` rejects a target:
 

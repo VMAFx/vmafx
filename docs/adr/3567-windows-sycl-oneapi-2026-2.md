@@ -27,6 +27,12 @@ Intel's 2026 release notes identify Clang 22 as the C and C++ front end from
 compiler release 2026.0.0, providing the source for the Clang 22-or-later
 baseline; the installer resource path discussed below is a separate observation.
 
+Builds run `44475666625`, job `135395829372`, on head `e9133a6bea`
+installed oneAPI 2026.2.0.661 and configured successfully, then its AOT link
+rejected `tgllp`. The link stopped at the first rejected target; the full
+refused set and the result of `ocloc ids tgllp` remain unmeasured. Ubuntu SYCL
+passed with ocloc 26.35.39758.10 and the same default list.
+
 ## Decision
 
 1. **Raise `WINDOWS_BASEKIT_URL` in `libvmaf-build-matrix.yml` to oneAPI
@@ -52,9 +58,12 @@ baseline; the installer resource path discussed below is a separate observation.
    rejects `_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH`, and fails if the pin is
    moved to the CUDA leg only.
 
-The first `Windows MSVC+SYCL` run on the pull request head tests both the
-component ID and compiler front end: the install step fails for an unknown
-component, and the build fails with `STL1000` for a front end below Clang 22.
+4. **Probe the default AOT targets before Windows SYCL configuration.** The
+   CI leg checks each target with `ocloc ids`, expects only `tgllp` to be
+   refused, reports every dropped target, and passes the accepted list to
+   Meson. A different refused set, probe error, or empty accepted list fails
+   the leg. Affected Xe-LP devices obtain kernels from the `spir64` image at
+   run time. The revised Windows build and runtime behavior remain unmeasured.
 
 ## How the installer facts were read
 

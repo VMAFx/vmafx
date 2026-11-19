@@ -153,6 +153,23 @@ def validate_windows_sycl_toolset_contract(workflow_text: str) -> None:
     _validate_step_if_conditions(steps)
     _validate_msvc_step(steps)
     _validate_oneapi_step(steps)
+    _validate_aot_probe(steps)
+
+
+def _validate_aot_probe(steps: list[dict[str, Any]]) -> None:
+    probes = [(i, s) for i, s in enumerate(steps) if s.get("id") == "aot_targets"]
+    configs = [(i, s) for i, s in enumerate(steps) if s.get("name") == "Configure libvmaf (SYCL)"]
+    if len(probes) != 1 or len(configs) != 1 or probes[0][0] >= configs[0][0]:
+        raise AssertionError("AOT probe must precede SYCL configure")
+    probe, config = probes[0][1], configs[0][1]
+    if probe.get("if") != EXPECTED_SYCL_STEP_IF or config.get("if") != EXPECTED_SYCL_STEP_IF:
+        raise AssertionError("AOT probe and configure must run on the SYCL leg")
+    if "scripts\\ci\\ocloc_aot_targets.py" not in str(probe.get("run", "")):
+        raise AssertionError("AOT probe script missing")
+    if "-Dsycl_icpx_aot_targets=${{ steps.aot_targets.outputs.targets }}" not in str(
+        config.get("run", "")
+    ):
+        raise AssertionError("SYCL configure must use AOT probe output")
 
 
 class WindowsSyclToolsetContractTest(unittest.TestCase):
@@ -165,6 +182,24 @@ class WindowsSyclToolsetContractTest(unittest.TestCase):
     def assert_windows_pin_documentation(self, text: str) -> None:
         self.assertIn("lane pins its own release (2026.2.0.661, ADR-3567)", text)
         self.assertIn("tester zip keeps the build-config.env release (ADR-1566)", text)
+
+    def test_planted_probe_contract_failures(self) -> None:
+        job = _load_windows_gpu_job(WORKFLOW_PATH.read_text(encoding="utf-8"))
+        steps = job["steps"]
+        probe_index = next(i for i, step in enumerate(steps) if step.get("id") == "aot_targets")
+        config_index = next(
+            i for i, step in enumerate(steps) if step.get("name") == "Configure libvmaf (SYCL)"
+        )
+        missing = steps[:probe_index] + steps[probe_index + 1 :]
+        late = list(steps)
+        late[probe_index], late[config_index] = late[config_index], late[probe_index]
+        no_output = [dict(step) for step in steps]
+        no_output[config_index]["run"] = no_output[config_index]["run"].replace(
+            "-Dsycl_icpx_aot_targets=${{ steps.aot_targets.outputs.targets }}", ""
+        )
+        for planted in (missing, late, no_output):
+            with self.assertRaises(AssertionError):
+                _validate_aot_probe(planted)
 
     def test_windows_pin_documentation(self) -> None:
         for path in ("build-config.env", "docs/development/tester-image.md"):

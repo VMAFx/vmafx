@@ -374,6 +374,11 @@ meson's wrap decision). Rename the binary so meson can't
 find it.
 ADR-2170: the configure steps run under cmd, so the one helper that turns warnings
 into errors runs here and hands its arguments over. A row without `werror` gets none.
+---------- Probe Windows SYCL AOT targets ----------
+After oneAPI setup, the SYCL leg probes every default Meson AOT target with
+ocloc ids. It prints each result and fails if the refused set differs from
+the pin-associated expectation, tgllp, or if no targets are accepted.
+Configure receives the accepted list; dropped targets appear in a notice.
 ---------- Build ----------
 CFLAGS/CXXFLAGS carry `/experimental:c11atomics` — without
 that flag MSVC's `<stdatomic.h>` errors with "C atomic
