@@ -68,7 +68,8 @@ def probe(ocloc: str, target: str, timeout: float = TIMEOUT) -> tuple[bool, str,
 
 
 def select(ocloc: str, targets: list[str], expected: set[str], output: Path | None) -> int:
-    accepted, refused = [], []
+    accepted: list[str] = []
+    refused: list[str] = []
     failed = False
     for target in targets:
         ok, first, error = probe(ocloc, target)
