@@ -8,11 +8,14 @@ import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 CHECKER = ROOT / "scripts" / "ci" / "check-docs-fragment-imports.py"
 
 spec = importlib.util.spec_from_file_location("check_docs_fragment_imports", CHECKER)
+if spec is None or spec.loader is None:
+    raise ImportError(f"cannot load {CHECKER}")
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
@@ -64,7 +67,8 @@ class CheckDocsFragmentImportsTests(unittest.TestCase):
 
     def findings(self, files: dict[str, str]) -> list[str]:
         plant(self.root, files)
-        return module.findings(self.root)
+        found: list[str] = module.findings(self.root)
+        return found
 
     def test_the_real_repository_is_clean(self) -> None:
         """The gate is wired and the tree's docs-fragment imports are declared."""
@@ -251,9 +255,9 @@ class CheckDocsFragmentImportsTests(unittest.TestCase):
     def test_a_truncated_closure_walk_is_a_finding(self) -> None:
         """A closure cut short by the file bound must fail loudly, not pass
         a partial result as clean."""
-        old = module.MAX_FILES
-        module.MAX_FILES = 4
-        self.addCleanup(setattr, module, "MAX_FILES", old)
+        patcher = mock.patch.object(module, "MAX_FILES", 4)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         chain = {
             "Makefile": makefile(CHECKER_LINE + "\n\t@python3 scripts/docs/chain_5.py"),
             "scripts/ci/check-docs-fragment-imports.py": "# stub\n",
