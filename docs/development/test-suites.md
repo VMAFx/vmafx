@@ -337,6 +337,10 @@ python3 scripts/ci/check_exit_code_only_tests.py --changed-against origin/master
   such a command and has no assertion at all, or only `proc.check_returncode()`
   / `check=True` (`runs a command and asserts nothing`). A test that asserts a
   non-zero exit code checks a refusal path and is not flagged.
+- **Assertion scope**: the checker recognises assertion syntax in the test body
+  (`assert`, `self.assert*`, and `pytest.raises`); assertions inside helpers such
+  as `check_output(out)` are not visible. Add an inline output assertion, for
+  example `assert out.stdout == "expected"`.
 - **Escape comment**: place `# exit-code-only: <reason>` on the `def` line or
   the line immediately above it (or its first decorator), with `<reason>` at
   least 10 characters long. An empty or shorter reason is reported as a finding.
@@ -357,6 +361,8 @@ python3 scripts/ci/check_exit_code_only_tests.py --changed-against origin/master
   Added, type-changed, and
   untracked files, and files renamed from outside `<pathspec>`, are checked in
   full; a pure rename within the pathspec has no hunks and reports nothing.
+  When `PRE_COMMIT_TO_REF` is set, it compares the merge base with that
+  outgoing commit and reads its files, ignoring working-tree and untracked files.
   The check exits `1` on findings (`0` when clean). An
   unreadable file, a file above 1 MiB, an explicit path outside the repository
   root, a changed or untracked Python path inside `<pathspec>` that is not one

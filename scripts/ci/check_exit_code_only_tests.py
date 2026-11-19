@@ -25,6 +25,9 @@ paths outside the repository root, changed or untracked Python paths inside
 exceeded AST or file bounds, syntax errors, bad refs, and git errors exit 2
 with the cause on stderr.
 
+When `PRE_COMMIT_TO_REF` is set in changed mode, compare the merge base with
+the outgoing commit and read its blobs; ignore untracked and working-tree files.
+
 Justified cases carry `# exit-code-only: <reason>` (reason >= 10 characters)
 on the `def` line or the line immediately above it (or its first decorator); an
 empty or shorter reason is itself a finding.
@@ -34,11 +37,13 @@ from __future__ import annotations
 
 import argparse
 import ast
+import io
 import itertools
 import os
 import re
 import shutil
 import sys
+import tokenize
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -49,6 +54,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from scripts.lib.new_scanner_findings import (  # noqa: E402
+    ToolError,
+    revision_bytes,
+    revision_modes,
+)
 from scripts.lib.safe_subprocess import (  # noqa: E402
     CommandOutputLimitExceeded,
     CommandTimedOut,
@@ -163,13 +173,19 @@ def _is_zero_literal(node: ast.AST) -> bool:
 def _is_rc_expr(node: ast.AST, rc_vars: set[str]) -> bool:
     """True when an expression represents a process or checker return code."""
     expr = node.value if isinstance(node, ast.NamedExpr) else node
+    if isinstance(expr, ast.Await):
+        expr = expr.value
     if _is_runner_call(expr):
         return True
     if isinstance(expr, ast.Attribute) and expr.attr == "returncode":
         val = expr.value
+        if isinstance(val, ast.Await):
+            val = val.value
         return _is_runner_call(val) or (isinstance(val, ast.Name) and val.id in rc_vars)
     if isinstance(expr, ast.Subscript) and _is_zero_literal(expr.slice):
         val = expr.value
+        if isinstance(val, ast.Await):
+            val = val.value
         return _is_runner_call(val) or (isinstance(val, ast.Name) and val.id in rc_vars)
     return isinstance(expr, ast.Name) and expr.id in rc_vars
 
@@ -189,23 +205,30 @@ def _record_target_vars(target: ast.AST, rc_vars: set[str]) -> None:
             rc_vars.add(elts[0].id)
 
 
-def _collect_rc_vars(nodes: list[ast.AST]) -> set[str]:
-    """Return local variable names bound to a runner call result or return code."""
-    rc_vars: set[str] = set()
-    # len(nodes) <= MAX_BODY_NODES is enforced by _body_nodes at line 143.
-    for node in nodes[:MAX_BODY_NODES]:
-        if isinstance(node, ast.Assign) and _is_rc_expr(node.value, rc_vars):
-            if len(node.targets) > MAX_ASSIGN_TARGETS:
-                raise ScanError(f"assignment exceeds {MAX_ASSIGN_TARGETS} targets")
-            for target in node.targets[:MAX_ASSIGN_TARGETS]:
-                _record_target_vars(target, rc_vars)
-        elif (
-            isinstance(node, (ast.AnnAssign, ast.NamedExpr))
-            and node.value is not None
-            and _is_rc_expr(node.value, rc_vars)
-        ):
-            _record_target_vars(node.target, rc_vars)
-    return rc_vars
+def _update_rc_vars(node: ast.AST, rc_vars: set[str]) -> None:
+    """Update bindings in source order, invalidating overwritten names."""
+    if isinstance(node, ast.Assign):
+        targets = node.targets
+        value = node.value
+    elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)) and node.value is not None:
+        targets = [node.target]
+        value = node.value
+    else:
+        return
+    if len(targets) > MAX_ASSIGN_TARGETS:
+        raise ScanError(f"assignment exceeds {MAX_ASSIGN_TARGETS} targets")
+    is_rc = _is_rc_expr(value, rc_vars)
+    for target in targets[:MAX_ASSIGN_TARGETS]:
+        names = (
+            [target]
+            if isinstance(target, ast.Name)
+            else (target.elts if isinstance(target, (ast.Tuple, ast.List)) else [])
+        )
+        if len(names) > MAX_ASSIGN_TARGETS:
+            raise ScanError(f"assignment target unpack exceeds {MAX_ASSIGN_TARGETS} elements")
+        rc_vars.difference_update(name.id for name in names if isinstance(name, ast.Name))
+        if is_rc:
+            _record_target_vars(target, rc_vars)
 
 
 def _is_rc_zero_pair(left: ast.AST, right: ast.AST, rc_vars: set[str]) -> bool:
@@ -281,7 +304,7 @@ def _classify_assertion(node: ast.AST, rc_vars: set[str]) -> str | None:
     return "other" if name.startswith("assert") or _is_pytest_raises(func) else None
 
 
-def _escape_status(func: FuncNode, lines: list[str]) -> str:
+def _escape_status(func: FuncNode, comments: dict[int, str]) -> str:
     """Return 'valid', 'short', or 'none' for an `# exit-code-only:` comment."""
     if len(func.decorator_list) > MAX_DECORATORS:
         raise ScanError(f"{func.name}: function exceeds {MAX_DECORATORS} decorators")
@@ -291,17 +314,17 @@ def _escape_status(func: FuncNode, lines: list[str]) -> str:
         candidate_lines.extend([first_dec - 1, first_dec])
     # len(candidate_lines) <= 4 <= MAX_DECORATORS.
     for line_no in sorted(set(candidate_lines))[:MAX_DECORATORS]:
-        if 1 <= line_no <= len(lines):
-            match = ESCAPE_RE.search(lines[line_no - 1])
+        if line_no in comments:
+            match = ESCAPE_RE.search(comments[line_no])
             if match is not None:
                 reason = (match.group(1) or "").strip()
                 return "valid" if len(reason) >= MIN_REASON_LENGTH else "short"
     return "none"
 
 
-def _check_test_function(func: FuncNode, lines: list[str], rel_path: str) -> Finding | None:
+def _check_test_function(func: FuncNode, comments: dict[int, str], rel_path: str) -> Finding | None:
     """Inspect one `def test_*` node and return a Finding when weak or unescaped."""
-    escape = _escape_status(func, lines)
+    escape = _escape_status(func, comments)
     if escape == "short":
         return Finding(
             rel_path,
@@ -314,8 +337,13 @@ def _check_test_function(func: FuncNode, lines: list[str], rel_path: str) -> Fin
     nodes = _body_nodes(func)
     if not any(_is_runner_call(n) for n in nodes):
         return None
-    rc_vars = _collect_rc_vars(nodes)
-    kinds = [k for n in nodes if (k := _classify_assertion(n, rc_vars)) is not None]
+    rc_vars: set[str] = set()
+    kinds = []
+    for node in nodes[:MAX_BODY_NODES]:
+        _update_rc_vars(node, rc_vars)
+        kind = _classify_assertion(node, rc_vars)
+        if kind is not None:
+            kinds.append(kind)
     if not kinds:
         return Finding(
             rel_path,
@@ -410,14 +438,19 @@ def file_findings(
         tree = ast.parse(source, filename=rel_path)
     except SyntaxError as exc:
         raise ScanError(f"{rel_path}:{exc.lineno or 1}: syntax error: {exc.msg}") from exc
-    lines = source.splitlines()
+    lines = source.split("\n")
+    comments = {
+        token.start[0]: token.string
+        for token in tokenize.generate_tokens(io.StringIO(source).readline)
+        if token.type == tokenize.COMMENT
+    }
     funcs = _extract_test_functions(tree, rel_path, len(lines))
     findings: list[Finding] = []
     # len(funcs) <= MAX_AST_NODES is enforced by _extract_test_functions.
     for func, parents, end in funcs[:MAX_AST_NODES]:
         if hunks is not None and not _function_touched(func, parents, end, hunks):
             continue
-        finding = _check_test_function(func, lines, rel_path)
+        finding = _check_test_function(func, comments, rel_path)
         if finding is not None:
             findings.append(finding)
     return findings
@@ -451,11 +484,11 @@ def _run_git(root: Path, args: Sequence[str]) -> TextCommandResult:
         raise ScanError(f"{root}: git {' '.join(args[:2])} failed: {exc}") from exc
 
 
-def _resolve_merge_base(root: Path, ref: str) -> str:
+def _resolve_merge_base(root: Path, ref: str, outgoing: str = "") -> str:
     """Resolve `git merge-base <ref> HEAD` in `root`, raising ScanError on failure."""
     if not ref or ref.startswith("-"):
         raise ScanError(f"{root}: invalid git ref {ref!r}")
-    res = _run_git(root, ["merge-base", "--end-of-options", ref, "HEAD"])
+    res = _run_git(root, ["merge-base", "--end-of-options", ref, outgoing or "HEAD"])
     base = res.stdout.strip()
     if res.returncode != 0 or not base:
         detail = res.stderr.strip() or "no merge base found"
@@ -528,14 +561,16 @@ def _changed_files_by_path(
     ref: str,
     discovered_rels: frozenset[str],
     diff_pathspecs: Sequence[str],
+    outgoing: str = "",
 ) -> tuple[str, dict[str, str | None]]:
     """Return `(merge_base, {rel_path: old_rel_path | None})` for changed and untracked files."""
     if len(diff_pathspecs) > MAX_TEST_FILES:
         raise ScanError(f"{root}: exceeds {MAX_TEST_FILES} test files")
-    merge_base = _resolve_merge_base(root, ref)
+    merge_base = _resolve_merge_base(root, ref, outgoing)
     diff_res = _run_git(
         root,
         [
+            "--literal-pathspecs",
             "diff",
             "--name-status",
             "-z",
@@ -543,6 +578,7 @@ def _changed_files_by_path(
             "--no-color",
             "--no-ext-diff",
             merge_base,
+            *([outgoing] if outgoing else []),
             "--",
             *diff_pathspecs[:MAX_TEST_FILES],
         ],
@@ -550,20 +586,22 @@ def _changed_files_by_path(
     if diff_res.returncode != 0:
         raise ScanError(f"{root}: git diff against {ref} failed: {diff_res.stderr.strip()}")
     changes = _parse_name_status_z(diff_res.stdout)
-    others = _run_git(
-        root,
-        [
-            "ls-files",
-            "-z",
-            "--others",
-            "--exclude-standard",
-            "--",
-            *diff_pathspecs[:MAX_TEST_FILES],
-        ],
-    )
-    if others.returncode != 0:
-        raise ScanError(f"{root}: git ls-files failed: {others.stderr.strip()}")
-    _add_untracked_files(root, others.stdout, changes)
+    if not outgoing:
+        others = _run_git(
+            root,
+            [
+                "--literal-pathspecs",
+                "ls-files",
+                "-z",
+                "--others",
+                "--exclude-standard",
+                "--",
+                *diff_pathspecs[:MAX_TEST_FILES],
+            ],
+        )
+        if others.returncode != 0:
+            raise ScanError(f"{root}: git ls-files failed: {others.stderr.strip()}")
+        _add_untracked_files(root, others.stdout, changes)
     # len(changes) <= 2 * MAX_TEST_FILES is enforced by _parse_name_status_z and _add_untracked_files.
     for changed_path in list(changes)[: 2 * MAX_TEST_FILES]:
         if changed_path.endswith(".py") and changed_path not in discovered_rels:
@@ -574,20 +612,23 @@ def _changed_files_by_path(
 
 
 def _changed_hunks(
-    root: Path, merge_base: str, old_path: str, new_path: str
+    root: Path, merge_base: str, old_path: str, new_path: str, outgoing: str = ""
 ) -> list[tuple[int, int]]:
     """Read new-side zero-context hunk ranges for one changed or renamed file."""
     res = _run_git(
         root,
         [
+            "--literal-pathspecs",
             "diff",
             "--unified=0",
+            "--inter-hunk-context=0",
             "--no-color",
             "--no-ext-diff",
             "--no-textconv",
             "--text",
             "-M",
             merge_base,
+            *([outgoing] if outgoing else []),
             "--",
             old_path,
             new_path,
@@ -595,7 +636,9 @@ def _changed_hunks(
     )
     if res.returncode != 0:
         raise ScanError(f"{root}: git diff hunks for {new_path} failed: {res.stderr.strip()}")
-    lines = res.stdout.splitlines()
+    lines = res.stdout.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
     if len(lines) > MAX_AST_NODES:
         raise ScanError(f"{new_path}: diff exceeds {MAX_AST_NODES} lines")
     hunks: list[tuple[int, int]] = []
@@ -643,13 +686,70 @@ def discover_test_files(root: Path, explicit_paths: Sequence[str]) -> list[tuple
     return [(path, path.relative_to(root_resolved).as_posix()) for path in files[:MAX_TEST_FILES]]
 
 
+def _outgoing_files(
+    root: Path, outgoing: str, explicit_paths: Sequence[str]
+) -> tuple[list[tuple[Path, str]], dict[str, str]]:
+    """Discover regular test blobs from the outgoing tree, without reading the worktree."""
+    git = shutil.which("git")
+    if git is None:
+        raise ScanError("git executable not found on PATH")
+    try:
+        modes = revision_modes(git, root, outgoing)
+    except ToolError as exc:
+        raise ScanError(str(exc)) from exc
+    root_abs = Path(os.path.abspath(root))  # noqa: PTH100 -- lexical, no worktree reads
+    if explicit_paths:
+        files = []
+        for raw in explicit_paths[: MAX_TEST_FILES + 1]:
+            path = Path(
+                os.path.abspath(root_abs / raw)  # noqa: PTH100 -- do not follow worktree links
+            )
+            try:
+                rel = path.relative_to(root_abs).as_posix()
+            except ValueError as exc:
+                raise ScanError(f"{raw}: path is outside repository root {root}") from exc
+            files.append((path, rel))
+    else:
+        files = [
+            (root_abs / rel, rel)
+            for rel, mode in modes.items()
+            if Path(rel).parent == TESTS_REL_DIR
+            and Path(rel).match("test_*.py")
+            and mode in {"100644", "100755"}
+        ]
+    if len(files) > MAX_TEST_FILES:
+        raise ScanError(f"{root}: exceeds {MAX_TEST_FILES} test files")
+    return sorted(files), modes
+
+
+def _outgoing_source(root: Path, outgoing: str, rel: str, modes: dict[str, str]) -> str:
+    """Read a bounded regular file from the outgoing commit."""
+    git = shutil.which("git")
+    if git is None:
+        raise ScanError("git executable not found on PATH")
+    try:
+        raw = revision_bytes(git, root, outgoing, rel, modes=modes)
+        if raw is None:
+            raise ScanError(f"{rel}: not a regular file")
+        if len(raw) > MAX_FILE_BYTES:
+            raise ScanError(f"{rel}: exceeds {MAX_FILE_BYTES} byte read limit")
+        return raw.decode("utf-8")
+    except (ToolError, UnicodeDecodeError) as exc:
+        raise ScanError(f"{rel}: {exc}") from exc
+
+
 def scan_repository(
     root: Path,
     changed_against: str | None = None,
     explicit_paths: Sequence[str] = (),
 ) -> list[Finding]:
     """Scan test files under `root` and return all applicable findings."""
-    files = discover_test_files(root, explicit_paths)
+    outgoing = (os.environ.get("PRE_COMMIT_TO_REF") or "") if changed_against is not None else ""
+    modes: dict[str, str] = {}
+    if outgoing:
+        files, modes = _outgoing_files(root, outgoing, explicit_paths)
+    else:
+        files = discover_test_files(root, explicit_paths)
     rel_paths = [rel for _, rel in files]
     diff_pathspecs: Sequence[str] = rel_paths if explicit_paths else (TESTS_REL_DIR.as_posix(),)
     merge_base = ""
@@ -660,11 +760,16 @@ def scan_repository(
             changed_against,
             frozenset(rel_paths),
             diff_pathspecs,
+            outgoing,
         )
     findings: list[Finding] = []
     # len(files) <= MAX_TEST_FILES is enforced by discover_test_files.
     for full_path, rel_path in files[:MAX_TEST_FILES]:
-        source = read_bounded_source(full_path, rel_path)
+        source = (
+            _outgoing_source(root, outgoing, rel_path, modes)
+            if outgoing
+            else read_bounded_source(full_path, rel_path)
+        )
         if changes is None:
             current = file_findings(source, rel_path)
         elif rel_path not in changes:
@@ -672,7 +777,9 @@ def scan_repository(
             continue
         else:
             old_rel = changes[rel_path]
-            hunks = _changed_hunks(root, merge_base, old_rel, rel_path) if old_rel else None
+            hunks = (
+                _changed_hunks(root, merge_base, old_rel, rel_path, outgoing) if old_rel else None
+            )
             current = file_findings(source, rel_path, hunks)
         if len(findings) + len(current) > MAX_AST_NODES:
             raise ScanError(f"{root}: exceeds {MAX_AST_NODES} findings")
