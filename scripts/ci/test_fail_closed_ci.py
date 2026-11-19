@@ -2455,6 +2455,12 @@ class InstallStepContract(unittest.TestCase):
 
     def write_installer_stubs(self, stubs: Path, bash: str, checksum: str) -> Path:
         calls = stubs / "calls"
+        check_sources = (
+            'for file in "$APT_SOURCES_DIR"/*microsoft* "$APT_SOURCES_DIR"/*azure*; do\n'
+            '  if [[ -e $file ]]; then echo "refusing refresh: Microsoft/Azure sources remain" >&2; exit 91; fi\n'
+            "done\n"
+            "[[ -f $APT_SOURCES_DIR/oneAPI.list && -f $APT_SOURCES_DIR/ubuntu.sources ]] || exit 92\n"
+        )
         bodies = {
             "apt-get": 'verb=""\n'
             "skip_next=0\n"
@@ -2473,14 +2479,16 @@ class InstallStepContract(unittest.TestCase):
             "  verb=$arg\n"
             "  break\n"
             "done\n"
+            "if [[ $verb == update ]]; then\n" + check_sources + "fi\n"
             "if [[ $verb == install && ! -e $STUBS/archive-attempt ]]; then\n"
             '  : > "$STUBS/archive-attempt"\n  exit "$FAKE_ARCHIVE_INSTALL"\n'
             "fi\n",
             "apt-cache": '[[ $2 != "$FAKE_MISSING" ]] || exit 100\nexit "$FAKE_APT_CACHE"\n',
             "wget": '[[ -z $FAKE_SIGNAL ]] || kill -s "$FAKE_SIGNAL" "$PPID"\n'
             'printf "%s" "$FAKE_PAYLOAD" > "$2"\nexit "$FAKE_WGET"\n',
-            "bash": "exit 0\n",
-            "rm": "exit 0\n",
+            "bash": "apt-get --error-on=any -o Acquire::Retries=3 update -q\n",
+            "sudo": 'exec "$@"\n',
+            "rm": f'exec {shlex.quote(shutil.which("rm") or "/bin/rm")} "$@"\n',
             "sha256sum": f'exec {shlex.quote(checksum)} "$@"\n',
         }
         for tool, body in bodies.items():
@@ -2492,7 +2500,20 @@ class InstallStepContract(unittest.TestCase):
             stub.chmod(0o755)
         (stubs / "mktemp").write_text(f'#!{bash}\necho "$STUBS/installer"\n', encoding="utf-8")
         (stubs / "mktemp").chmod(0o755)
+        (stubs / "dirname").symlink_to(shutil.which("dirname") or "/usr/bin/dirname")
+        shutil.copy(ROOT / "scripts/ci/apt-install-cached.sh", stubs)
         return calls
+
+    def write_source_stubs(self, stubs: Path, source_files: bool) -> Path:
+        """Create the controlled APT source files."""
+        sources = stubs / "sources"
+        sources.mkdir()
+        for name in ("oneAPI.list", "ubuntu.sources"):
+            (sources / name).touch()
+        if source_files:
+            for name in ("microsoft-prod.list", "azure-cli.sources"):
+                (sources / name).touch()
+        return sources
 
     def run_installer(
         self,
@@ -2505,6 +2526,7 @@ class InstallStepContract(unittest.TestCase):
         source: str | None = None,
         corrupt: bool = False,
         signal: str = "",
+        source_files: bool = True,
     ) -> tuple[int, str, list[str]]:
         """Execute only controlled stub tools and the real checksum utility."""
         bash = shutil.which("bash")
@@ -2521,7 +2543,10 @@ class InstallStepContract(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             stubs = Path(directory)
             calls = self.write_installer_stubs(stubs, bash, checksum)
-            argv = [bash, "-c", script, "install-llvm.sh", major]
+            sources = self.write_source_stubs(stubs, source_files)
+            installer = stubs / "install-llvm.sh"
+            installer.write_text(script, encoding="utf-8", newline="\n")
+            argv = [bash, str(installer), major]
             if source is not None:
                 argv.append(source)
             # Tracked installer, isolated PATH, controlled stubs; no network or package changes.
@@ -2531,6 +2556,7 @@ class InstallStepContract(unittest.TestCase):
                     "PATH": directory,
                     "CALLS": str(calls),
                     "STUBS": directory,
+                    "APT_SOURCES_DIR": str(sources),
                     "FAKE_APT_CACHE": str(apt_cache),
                     "FAKE_WGET": str(wget),
                     "FAKE_MISSING": missing,
@@ -2549,6 +2575,17 @@ class InstallStepContract(unittest.TestCase):
 
     def installer(self) -> str:
         return (ROOT / "scripts/ci/install-llvm.sh").read_text(encoding="utf-8")
+
+    def test_runner_sources_removed_before_refresh_in_both_modes(self) -> None:
+        for source in ("--source=archive-first", "--source=apt.llvm.org"):
+            for source_files in (True, False):
+                with self.subTest(source=source, source_files=source_files):
+                    status, output, calls = self.run_installer(
+                        self.installer(), source=source, source_files=source_files
+                    )
+                    self.assertEqual(status, 0, output)
+                    self.assertTrue(any(call.startswith("rm -f ") for call in calls))
+                    self.assertIn("apt-get --error-on=any -o Acquire::Retries=3 update -q", calls)
 
     def test_distribution_archive_needs_no_llvm_org(self) -> None:
         status, stdout, calls = self.run_installer(self.installer())
