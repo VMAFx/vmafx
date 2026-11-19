@@ -682,6 +682,19 @@ IMAGE_LICENCE_LABELS = {
     "docker/Dockerfile.production": "production-cli-image",
     "docker/Dockerfile.production-gpu": "production-cuda-image",
 }
+IMAGE_STAGE_RECORDS = {
+    "docker/Dockerfile.controller": {"controller": "production-controller-image"},
+    "docker/Dockerfile.production": {
+        "cli": "production-cli-image",
+        "server": "production-server-image",
+    },
+    "docker/Dockerfile.production-gpu": {
+        "final-cuda13": "production-cuda-image",
+        "final-rocm10": "production-rocm-image",
+        "final-oneapi2026": "production-oneapi-image",
+        "final-oneapi2025": "production-oneapi-image",
+    },
+}
 IMAGE_TARGET_STAGES = {
     "docker/Dockerfile.controller": ("controller",),
     "docker/Dockerfile.production": ("cli", "server"),
@@ -693,7 +706,9 @@ IMAGE_TARGET_STAGES = {
     ),
 }
 FROM_RE = re.compile(r"^FROM\s+(\S+)(?:\s+AS\s+(\S+))?", re.IGNORECASE)
-LABEL_RE = re.compile(r'^\s*LABEL\s+org\.opencontainers\.image\.licenses="([^"]*)"', re.IGNORECASE)
+LABEL_RE = re.compile(
+    r'^\s*LABEL\s+.*?org\.opencontainers\.image\.licenses="([^"]*)"', re.IGNORECASE
+)
 SPDX_TOKEN = re.compile(r"^[A-Za-z0-9.+-]+$")
 LICENCES_KEY = "org.opencontainers.image.licenses"
 
@@ -743,10 +758,28 @@ def _record_label_licences(records: dict, record_name: str) -> set[str]:
     return found
 
 
+def _logical_lines(text: str) -> list[str]:
+    """Join Dockerfile lines that continue with a trailing backslash."""
+    logical: list[str] = []
+    pending = ""
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        if pending:
+            line = pending + " " + line.lstrip()
+        if line.endswith("\\"):
+            pending = line[:-1].rstrip()
+            continue
+        logical.append(line)
+        pending = ""
+    if pending:
+        logical.append(pending)
+    return logical
+
+
 def _dockerfile_stages(text: str) -> list[dict]:
     """Every build stage with the labels declared directly in it."""
     stages: list[dict] = []
-    for line in text.splitlines():
+    for line in _logical_lines(text):
         match = FROM_RE.match(line)
         if match:
             stages.append({"base": match.group(1), "name": match.group(2), "labels": {}})
@@ -807,20 +840,25 @@ def _image_stage_labels(path: Path, relative: str) -> list[tuple[str, str | None
 
 
 def _dockerfile_label_problems(
-    root: Path, records: dict, relative: str, record_name: str
+    root: Path, records: dict, relative: str, stage_records: dict[str, str]
 ) -> list[str]:
-    """The label problems of one Dockerfile and its manifest record."""
+    """The label problems of one Dockerfile and its per-stage manifest records."""
     path = root / relative
     if not path.is_file():
-        if record_name in records:
+        if any(record_name in records for record_name in stage_records.values()):
             return [f"{relative}: listed in IMAGE_LICENCE_LABELS but missing"]
         return []
-    try:
-        expected = _record_label_licences(records, record_name)
-    except (KeyError, StopIteration) as error:
-        raise ModelError(f"{record_name}: no licensing record") from error
+    default_record = next(iter(stage_records.values()))
+    expected_by_record: dict[str, set[str]] = {}
     problems: list[str] = []
     for stage, label in _image_stage_labels(path, relative):
+        record_name = stage_records.get(stage, default_record)
+        if record_name not in expected_by_record:
+            try:
+                expected_by_record[record_name] = _record_label_licences(records, record_name)
+            except (KeyError, StopIteration) as error:
+                raise ModelError(f"{record_name}: no licensing record") from error
+        expected = expected_by_record[record_name]
         if label is None:
             problems.append(f"{relative} stage {stage}: no org.opencontainers.image.licenses label")
             continue
@@ -851,8 +889,8 @@ def dockerfile_licence_label_problems(root: Path) -> list[str]:
             raise ModelError(f"{LICENSING_MANIFEST.as_posix()} has no artifacts record")
         return []
     problems: list[str] = []
-    for relative, record_name in IMAGE_LICENCE_LABELS.items():
-        problems += _dockerfile_label_problems(root, records, relative, record_name)
+    for relative, stage_records in IMAGE_STAGE_RECORDS.items():
+        problems += _dockerfile_label_problems(root, records, relative, stage_records)
     return problems
 
 

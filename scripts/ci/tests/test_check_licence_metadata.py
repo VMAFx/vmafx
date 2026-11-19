@@ -515,7 +515,11 @@ class DockerfileLabelTests(GateTestCase):
     ) -> None:
         records = {
             name: {"components": [{"id": "vmafx-binaries", "licences": list(self.LICENCES)}]}
-            for name in gate.IMAGE_LICENCE_LABELS.values()
+            for name in {
+                record
+                for stage_records in gate.IMAGE_STAGE_RECORDS.values()
+                for record in stage_records.values()
+            }
         }
         if cycle:
             records["production-controller-image"]["components"] = [
@@ -526,11 +530,18 @@ class DockerfileLabelTests(GateTestCase):
             ]
         files = _root_layout()
         files["tools/rc1-tester/image/licensing.json"] = json.dumps({"artifacts": records})
-        for relative, record_name in gate.IMAGE_LICENCE_LABELS.items():
-            if record_name == "production-controller-image" and not include_controller:
+        for relative, stage_records in gate.IMAGE_STAGE_RECORDS.items():
+            if (
+                next(iter(stage_records.values())) == "production-controller-image"
+                and not include_controller
+            ):
                 continue
-            label = controller_label if record_name == "production-controller-image" else self.LABEL
-            text = "FROM scratch\n"
+            label = (
+                controller_label
+                if "production-controller-image" in stage_records.values()
+                else self.LABEL
+            )
+            text = f"FROM scratch AS {next(iter(stage_records))}\n"
             if label is not None:
                 text += f'LABEL org.opencontainers.image.licenses="{label}"\n'
             files[relative] = text
@@ -609,6 +620,53 @@ class DockerfileLabelTests(GateTestCase):
         with self.assertRaises(gate.ModelError) as error:
             gate.dockerfile_licence_label_problems(self.root)
         self.assertIn("cyclic reference", str(error.exception))
+
+    def test_a_licences_key_on_a_continuation_line_is_read(self) -> None:
+        self._tree(controller_label=None)
+        (self.root / "docker/Dockerfile.controller").write_text(
+            "FROM scratch AS controller\n"
+            'LABEL org.opencontainers.image.title="VMAFx" \\\n'
+            f'  org.opencontainers.image.licenses="{self.LABEL}"\n',
+            encoding="utf-8",
+        )
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
+    def test_two_stages_of_one_dockerfile_use_their_own_records(self) -> None:
+        self._tree()
+        manifest = self.root / "tools/rc1-tester/image/licensing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["artifacts"]["production-server-image"]["components"].append(
+            {"id": "python", "kind": "fixed", "licence": "PSF-2.0"}
+        )
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        (self.root / "docker/Dockerfile.production").write_text(
+            "FROM scratch AS cli\n"
+            f'LABEL org.opencontainers.image.licenses="{self.LABEL}"\n'
+            "FROM scratch AS server\n"
+            f'LABEL org.opencontainers.image.licenses="{self.LABEL} AND PSF-2.0"\n',
+            encoding="utf-8",
+        )
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
+    def test_a_stage_with_the_other_record_s_licence_is_refused(self) -> None:
+        self._tree()
+        manifest = self.root / "tools/rc1-tester/image/licensing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["artifacts"]["production-server-image"]["components"].append(
+            {"id": "python", "kind": "fixed", "licence": "PSF-2.0"}
+        )
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        (self.root / "docker/Dockerfile.production").write_text(
+            "FROM scratch AS cli\n"
+            f'LABEL org.opencontainers.image.licenses="{self.LABEL}"\n'
+            "FROM scratch AS server\n"
+            f'LABEL org.opencontainers.image.licenses="{self.LABEL}"\n',
+            encoding="utf-8",
+        )
+        problems = gate.dockerfile_licence_label_problems(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("stage server", problems[0])
+        self.assertIn("missing ['PSF-2.0']", problems[0])
 
     def test_a_missing_dockerfile_with_a_manifest_record_is_refused(self) -> None:
         self._tree(include_controller=False)
