@@ -342,16 +342,22 @@ python3 scripts/ci/check_exit_code_only_tests.py --changed-against origin/master
   least 10 characters long. An empty or shorter reason is reported as a finding.
 - **Modes and exit codes**: default mode reports all existing findings with an
   informational count and the top 5 files, and exits `0`. `--changed-against
-  <ref>` resolves `git merge-base <ref> HEAD` and intersects each function's
-  line span (starting at the first decorator or excuse-comment line, whichever
-  is earlier) with the working-tree diff from
-  `git diff --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/ -M -U0 <merge-base> -- <pathspec>`
-  where `<pathspec>` is `scripts/ci/tests` in default discovery and the explicit
-  paths otherwise (with `-M` and a pathspec, a test file renamed from outside
-  `<pathspec>` shows as a new file with all functions selected, plus untracked
-  test files), exiting `1` on findings (`0` when clean). An unreadable file, a
-  file above 1 MiB, an exceeded file-block or hunk bound, a syntax error, a bad
-  ref, or a `git merge-base` / `git diff` failure exits `2` with the path or
-  bound on `stderr`, never `0`.
+  <ref>` resolves `git merge-base <ref> HEAD`, lists changed and untracked
+  files under `<pathspec>` (`scripts/ci/tests` in default discovery and the
+  normalised root-relative explicit paths otherwise) via
+  `git diff --name-status -z -M --no-color --no-ext-diff <merge-base> -- <pathspec>`
+  and `git ls-files -z --others --exclude-standard -- <pathspec>`, and checks
+  test functions that are new or whose AST (`ast.dump`, including decorators,
+  matched by class chain + function name against
+  `git show <merge-base>:<old-path>`) differs from the merge-base version (when
+  the old version has a syntax error, or for added, type-changed, or untracked
+  files, or a file renamed from outside `<pathspec>`, every function in the
+  file counts as changed), exiting `1` on findings (`0` when clean). An
+  unreadable file, a file above 1 MiB, an explicit path outside the repository
+  root, a changed or untracked Python path inside `<pathspec>` that is not one
+  of the discovered test files, an unsupported diff status letter, an exceeded
+  file or AST bound, a syntax error in a current test file, a bad ref, or a
+  `git merge-base` / `git diff` / `git ls-files` / `git show` failure exits `2`
+  with the cause on `stderr`, never `0`.
 - **Scope limit**: the check verifies that another assertion is present; it
   does not judge whether an output assertion is strong.

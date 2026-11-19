@@ -11,14 +11,20 @@ the checker silently drops its input.
 
 Default mode scans `scripts/ci/tests/test_*.py`, prints all findings with an
 informational count and top 5 files, and exits 0. `--changed-against <ref>`
-resolves `git merge-base <ref> HEAD` and checks only test functions whose line
-span (from the first decorator or excuse comment) intersects the working-tree
-diff from `git diff --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/ -M -U0 <merge-base> -- <pathspec>`
-(where `<pathspec>` is `scripts/ci/tests` in default discovery or the explicit
-paths; a test file renamed from outside `<pathspec>` shows as a new file with
-all functions selected, plus untracked test files), exiting 1 on findings.
-Unreadable files, files above 1 MiB, exceeded file-block or hunk bounds, syntax
-errors, bad refs, and git errors exit 2 with the path or bound on stderr.
+resolves `git merge-base <ref> HEAD`, lists changed and untracked files under
+`<pathspec>` (`scripts/ci/tests` in default discovery or the normalised
+root-relative explicit paths) with
+`git diff --name-status -z -M --no-color --no-ext-diff <merge-base> -- <pathspec>`
+and `git ls-files -z --others --exclude-standard -- <pathspec>`, and checks
+only test functions that are new or whose AST (`ast.dump`, including
+decorators, matched by class chain + function name against
+`git show <merge-base>:<old-path>`) changed, exiting 1 on findings. If the old
+file does not parse, or for added, type-changed, and untracked files, every
+function in the file counts as changed. Unreadable files, files above 1 MiB,
+paths outside the repository root, changed or untracked Python paths inside
+`<pathspec>` not in the discovered test files, unsupported diff status letters,
+exceeded AST or file bounds, syntax errors, bad refs, and git errors exit 2
+with the cause on stderr.
 
 Justified cases carry `# exit-code-only: <reason>` (reason >= 10 characters)
 on the `def` line or the line immediately above it (or its first decorator); an
@@ -59,17 +65,14 @@ MAX_BODY_NODES = 50_000
 MAX_CALL_ARGS = 64
 MAX_DECORATORS = 32
 MAX_ASSIGN_TARGETS = 32
-MAX_DIFF_HUNKS = 10_000
 MIN_REASON_LENGTH = 10
 TOP_FILES_LIMIT = 5
 EQUAL_OPERAND_COUNT = 2
 GIT_TIMEOUT_SECONDS = 30.0
 
 RC_NAMES = frozenset({"rc", "returncode", "return_code", "exit_code", "status", "code"})
+ALLOWED_SIMPLE_STATUSES = frozenset({"A", "M", "D", "T"})
 ESCAPE_RE = re.compile(r"#\s*exit-code-only(?:\s*:(.*)|$)")
-HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", re.MULTILINE)
-DEF_LINE_RE = re.compile(r"^\s*(?:async\s+)?def\b")
-META_LINE_RE = re.compile(r"^(?:\s*@|.*#\s*exit-code-only(?:\s*:|$))")
 
 FuncNode: TypeAlias = ast.FunctionDef | ast.AsyncFunctionDef
 
@@ -84,10 +87,8 @@ class Finding:
 
     path: str
     lineno: int
-    end_lineno: int
     func_name: str
     message: str
-    span_start: int | None = None
 
     def format(self) -> str:
         """Render the finding with file, line, function name, and reason."""
@@ -129,6 +130,8 @@ def _is_runner_call(node: ast.AST) -> bool:
 
 def _body_nodes(func: FuncNode) -> list[ast.AST]:
     """Walk a function body without recursion or descending into nested definitions."""
+    if len(func.body) > MAX_BODY_NODES:
+        raise ScanError(f"{func.name}: function body exceeds {MAX_BODY_NODES} AST nodes")
     stack: list[ast.AST] = list(reversed(func.body[:MAX_BODY_NODES]))
     nodes: list[ast.AST] = []
     for _ in range(MAX_BODY_NODES):
@@ -138,8 +141,10 @@ def _body_nodes(func: FuncNode) -> list[ast.AST]:
         nodes.append(curr)
         if isinstance(curr, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
-        children = list(itertools.islice(ast.iter_child_nodes(curr), MAX_BODY_NODES))
-        stack.extend(reversed(children))
+        children = list(itertools.islice(ast.iter_child_nodes(curr), MAX_BODY_NODES + 1))
+        if len(children) > MAX_BODY_NODES:
+            raise ScanError(f"{func.name}: function body exceeds {MAX_BODY_NODES} AST nodes")
+        stack.extend(reversed(children[:MAX_BODY_NODES]))
     raise ScanError(f"{func.name}: function body exceeds {MAX_BODY_NODES} AST nodes")
 
 
@@ -172,6 +177,8 @@ def _record_target_vars(target: ast.AST, rc_vars: set[str]) -> None:
     if isinstance(target, ast.Name):
         rc_vars.add(target.id)
     elif isinstance(target, (ast.Tuple, ast.List)) and target.elts:
+        if len(target.elts) > MAX_ASSIGN_TARGETS:
+            raise ScanError(f"assignment target unpack exceeds {MAX_ASSIGN_TARGETS} elements")
         elts = target.elts[:MAX_ASSIGN_TARGETS]
         named = [e.id for e in elts if isinstance(e, ast.Name) and e.id in RC_NAMES]
         if named:
@@ -183,8 +190,11 @@ def _record_target_vars(target: ast.AST, rc_vars: set[str]) -> None:
 def _collect_rc_vars(nodes: list[ast.AST]) -> set[str]:
     """Return local variable names bound to a runner call result or return code."""
     rc_vars: set[str] = set()
+    # len(nodes) <= MAX_BODY_NODES is enforced by _body_nodes at line 143.
     for node in nodes[:MAX_BODY_NODES]:
         if isinstance(node, ast.Assign) and _is_rc_expr(node.value, rc_vars):
+            if len(node.targets) > MAX_ASSIGN_TARGETS:
+                raise ScanError(f"assignment exceeds {MAX_ASSIGN_TARGETS} targets")
             for target in node.targets[:MAX_ASSIGN_TARGETS]:
                 _record_target_vars(target, rc_vars)
         elif (
@@ -227,6 +237,8 @@ def _equal_operands(call: ast.Call) -> tuple[ast.AST, ast.AST] | None:
     """Extract the two compared expressions of an assertEqual/assertEquals call."""
     if len(call.args) >= EQUAL_OPERAND_COUNT:
         return call.args[0], call.args[1]
+    if len(call.keywords) > MAX_CALL_ARGS:
+        raise ScanError(f"assertion call exceeds {MAX_CALL_ARGS} keyword arguments")
     kw = {k.arg: k.value for k in call.keywords[:MAX_CALL_ARGS] if k.arg in ("first", "second")}
     if len(call.args) == 1 and "second" in kw:
         return call.args[0], kw["second"]
@@ -267,23 +279,16 @@ def _classify_assertion(node: ast.AST, rc_vars: set[str]) -> str | None:
     return "other" if name.startswith("assert") or _is_pytest_raises(func) else None
 
 
-def _func_span_start(func: FuncNode, lines: list[str]) -> int:
-    """Return the earliest line of `func` including decorators and excuse comments."""
-    start = func.lineno
-    if func.decorator_list:
-        start = min(start, *(d.lineno for d in func.decorator_list[:MAX_DECORATORS]))
-    if 1 <= start - 1 <= len(lines) and ESCAPE_RE.search(lines[start - 2]) is not None:
-        return start - 1
-    return start
-
-
 def _escape_status(func: FuncNode, lines: list[str]) -> str:
     """Return 'valid', 'short', or 'none' for an `# exit-code-only:` comment."""
+    if len(func.decorator_list) > MAX_DECORATORS:
+        raise ScanError(f"{func.name}: function exceeds {MAX_DECORATORS} decorators")
     candidate_lines = [func.lineno - 1, func.lineno]
     if func.decorator_list:
         first_dec = min(d.lineno for d in func.decorator_list[:MAX_DECORATORS])
         candidate_lines.extend([first_dec - 1, first_dec])
-    for line_no in sorted(set(candidate_lines)):
+    # len(candidate_lines) <= 4 <= MAX_DECORATORS.
+    for line_no in sorted(set(candidate_lines))[:MAX_DECORATORS]:
         if 1 <= line_no <= len(lines):
             match = ESCAPE_RE.search(lines[line_no - 1])
             if match is not None:
@@ -294,17 +299,13 @@ def _escape_status(func: FuncNode, lines: list[str]) -> str:
 
 def _check_test_function(func: FuncNode, lines: list[str], rel_path: str) -> Finding | None:
     """Inspect one `def test_*` node and return a Finding when weak or unescaped."""
-    end_lineno = func.end_lineno or func.lineno
-    span_start = _func_span_start(func, lines)
     escape = _escape_status(func, lines)
     if escape == "short":
         return Finding(
             rel_path,
             func.lineno,
-            end_lineno,
             func.name,
             f"# exit-code-only: reason must be at least {MIN_REASON_LENGTH} characters",
-            span_start,
         )
     if escape == "valid":
         return None
@@ -317,45 +318,62 @@ def _check_test_function(func: FuncNode, lines: list[str], rel_path: str) -> Fin
         return Finding(
             rel_path,
             func.lineno,
-            end_lineno,
             func.name,
             "runs a command and asserts nothing",
-            span_start,
         )
     if all(k == "rc_zero" for k in kinds):
         return Finding(
             rel_path,
             func.lineno,
-            end_lineno,
             func.name,
             "asserts only exit code 0",
-            span_start,
         )
     return None
 
 
-def file_findings(source: str, rel_path: str) -> list[Finding]:
-    """Parse one Python test file and return all exit-code-only findings in it."""
+def _extract_test_functions(tree: ast.AST, rel_path: str) -> list[tuple[str, FuncNode]]:
+    """Return `(qualname, node)` in source order for all `def test_*` nodes in `tree`."""
+    stack: list[tuple[ast.AST, tuple[str, ...]]] = [(tree, ())]
+    funcs: list[tuple[str, FuncNode]] = []
+    for _ in range(MAX_AST_NODES + 1):
+        if not stack:
+            funcs.sort(key=lambda item: (item[1].lineno, item[1].col_offset))
+            return funcs
+        curr, class_chain = stack.pop()
+        if isinstance(curr, (ast.FunctionDef, ast.AsyncFunctionDef)) and curr.name.startswith(
+            "test_"
+        ):
+            funcs.append((".".join((*class_chain, curr.name)), curr))
+        next_chain = (*class_chain, curr.name) if isinstance(curr, ast.ClassDef) else class_chain
+        children = list(itertools.islice(ast.iter_child_nodes(curr), MAX_AST_NODES + 1))
+        if len(children) > MAX_AST_NODES:
+            raise ScanError(f"{rel_path}: exceeds {MAX_AST_NODES} AST nodes")
+        for child in reversed(children[:MAX_AST_NODES]):
+            stack.append((child, next_chain))
+    raise ScanError(f"{rel_path}: exceeds {MAX_AST_NODES} AST nodes")
+
+
+def file_findings(
+    source: str,
+    rel_path: str,
+    old_dumps: dict[str, str] | None = None,
+) -> list[Finding]:
+    """Parse one Python test file and return exit-code-only findings in (changed) functions."""
     try:
         tree = ast.parse(source, filename=rel_path)
     except SyntaxError as exc:
         raise ScanError(f"{rel_path}:{exc.lineno or 1}: syntax error: {exc.msg}") from exc
     lines = source.splitlines()
-    funcs: list[FuncNode] = []
-    walked = list(itertools.islice(ast.walk(tree), MAX_AST_NODES + 1))
-    if len(walked) > MAX_AST_NODES:
-        raise ScanError(f"{rel_path}: exceeds {MAX_AST_NODES} AST nodes")
-    for node in walked:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith(
-            "test_"
-        ):
-            funcs.append(node)
-    funcs.sort(key=lambda n: (n.lineno, n.col_offset))
-    return [
-        finding
-        for func in funcs[:MAX_AST_NODES]
-        if (finding := _check_test_function(func, lines, rel_path)) is not None
-    ]
+    funcs = _extract_test_functions(tree, rel_path)
+    findings: list[Finding] = []
+    # len(funcs) <= MAX_AST_NODES is enforced by _extract_test_functions.
+    for qualname, func in funcs[:MAX_AST_NODES]:
+        if old_dumps is not None and old_dumps.get(qualname) == ast.dump(func):
+            continue
+        finding = _check_test_function(func, lines, rel_path)
+        if finding is not None:
+            findings.append(finding)
+    return findings
 
 
 def _run_git(root: Path, args: Sequence[str]) -> TextCommandResult:
@@ -372,10 +390,11 @@ def _run_git(root: Path, args: Sequence[str]) -> TextCommandResult:
             env=env,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
             timeout_seconds=GIT_TIMEOUT_SECONDS,
         )
-    except (CommandTimedOut, CommandOutputLimitExceeded, OSError) as exc:
+    except (CommandTimedOut, CommandOutputLimitExceeded, OSError, UnicodeDecodeError) as exc:
         raise ScanError(f"{root}: git {' '.join(args[:2])} failed: {exc}") from exc
 
 
@@ -391,168 +410,165 @@ def _resolve_merge_base(root: Path, ref: str) -> str:
     return base
 
 
-def _classify_removed_lines(body: str) -> tuple[bool, bool]:
-    """Return `(has_leading_stmt, has_trailing_meta)` for `-` lines in a hunk body."""
-    lines = body.splitlines()
-    if len(lines) > MAX_BODY_NODES:
-        raise ScanError(f"git diff hunk exceeds {MAX_BODY_NODES} lines")
-    has_leading_stmt = False
-    has_trailing_meta = False
-    seen_def = False
-    for raw in lines[:MAX_BODY_NODES]:
-        if not raw.startswith("-"):
-            continue
-        line = raw[1:]
-        if DEF_LINE_RE.match(line):
-            seen_def = True
-            has_trailing_meta = False
-            continue
-        if META_LINE_RE.match(line):
-            has_trailing_meta = True
-            continue
-        stripped = line.strip()
-        if not seen_def and stripped and not stripped.startswith("#"):
-            has_leading_stmt = True
-    return has_leading_stmt, has_trailing_meta
+def _consume_status_record(
+    tokens: Sequence[str],
+    idx: int,
+    changes: dict[str, str | None],
+) -> int:
+    """Parse one NUL-separated `--name-status` record at `idx` and return the next index."""
+    status = tokens[idx]
+    if status in ALLOWED_SIMPLE_STATUSES:
+        if idx + 1 >= len(tokens) or not tokens[idx + 1]:
+            raise ScanError(f"malformed git diff record for status {status!r}")
+        path = tokens[idx + 1]
+        if status == "M":
+            changes[path] = path
+        elif status in ("A", "T"):
+            changes[path] = None
+        return idx + 2
+    if status.startswith("R") and status[1:].isdigit():
+        if idx + 2 >= len(tokens) or not tokens[idx + 1] or not tokens[idx + 2]:
+            raise ScanError(f"malformed git diff rename record for status {status!r}")
+        changes[tokens[idx + 2]] = tokens[idx + 1]
+        return idx + 3
+    raise ScanError(f"unsupported git diff status {status!r}")
 
 
-def _parse_diff_hunks(diff_text: str) -> list[tuple[int, int]]:
-    """Extract (new_start, new_count) line ranges from `git diff -U0` output."""
-    matches = list(itertools.islice(HUNK_RE.finditer(diff_text), MAX_DIFF_HUNKS + 1))
-    if len(matches) > MAX_DIFF_HUNKS:
-        raise ScanError(f"git diff exceeds {MAX_DIFF_HUNKS} hunks")
-    hunks: list[tuple[int, int]] = []
-    for idx, match in enumerate(matches[:MAX_DIFF_HUNKS]):
-        start = int(match.group(1))
-        count = int(match.group(2)) if match.group(2) is not None else 1
-        end_pos = matches[idx + 1].start() if idx + 1 < len(matches) else len(diff_text)
-        has_leading_stmt, has_trailing_meta = _classify_removed_lines(
-            diff_text[match.end() : end_pos]
-        )
-        if count > 0:
-            hunks.append((start, count + 1 if has_trailing_meta else count))
-            continue
-        if has_leading_stmt:
-            hunks.append((start, 0))
-        if has_trailing_meta:
-            hunks.append((start + 1, 1))
-    if len(hunks) > MAX_DIFF_HUNKS:
-        raise ScanError(f"git diff exceeds {MAX_DIFF_HUNKS} hunks")
-    return hunks
+def _parse_name_status_z(output: str) -> dict[str, str | None]:
+    """Parse `git diff --name-status -z -M` output into `new_path -> old_path | None`."""
+    if not output:
+        return {}
+    if not output.endswith("\0"):
+        raise ScanError("git diff --name-status output is not NUL-terminated")
+    tokens = output[:-1].split("\0", 3 * MAX_TEST_FILES + 1)
+    changes: dict[str, str | None] = {}
+    idx = 0
+    for record_count in range(MAX_TEST_FILES + 1):
+        if idx >= len(tokens):
+            return changes
+        if record_count >= MAX_TEST_FILES:
+            raise ScanError(f"git diff exceeds {MAX_TEST_FILES} file records")
+        idx = _consume_status_record(tokens, idx, changes)
+    raise ScanError(f"git diff exceeds {MAX_TEST_FILES} file records")
 
 
-def _block_dest_path(header: str) -> str | None:
-    """Return the destination repo-relative path from a `diff --git` block header."""
-    lines = header.splitlines()
-    if len(lines) > MAX_CALL_ARGS:
-        raise ScanError(f"git diff header exceeds {MAX_CALL_ARGS} lines")
-    for line in lines[:MAX_CALL_ARGS]:
-        if line.startswith("+++ b/"):
-            return line.removeprefix("+++ b/")
-        if line.startswith("rename to "):
-            return line.removeprefix("rename to ")
-    return None
+def _add_untracked_files(
+    root: Path,
+    output: str,
+    changes: dict[str, str | None],
+) -> None:
+    """Parse `git ls-files -z --others` output and record untracked paths in `changes`."""
+    if not output:
+        return
+    if not output.endswith("\0"):
+        raise ScanError(f"{root}: git ls-files output is not NUL-terminated")
+    untracked_paths = output[:-1].split("\0", MAX_TEST_FILES + 1)
+    if len(untracked_paths) > MAX_TEST_FILES:
+        raise ScanError(f"{root}: git ls-files exceeds {MAX_TEST_FILES} untracked files")
+    for untracked in untracked_paths[:MAX_TEST_FILES]:
+        if untracked:
+            changes.setdefault(untracked, None)
 
 
-def _parse_diff_by_path(diff_text: str) -> dict[str, list[tuple[int, int]]]:
-    """Parse a `git diff -U0` output once into a `rel_path -> hunks` mapping."""
-    by_path: dict[str, list[tuple[int, int]]] = {}
-    if "diff --git " not in diff_text:
-        return by_path
-    blocks = ("\n" + diff_text).split("\ndiff --git ", MAX_TEST_FILES + 2)[1:]
-    if len(blocks) > MAX_TEST_FILES:
-        raise ScanError(f"git diff exceeds {MAX_TEST_FILES} file blocks")
-    for block in blocks[:MAX_TEST_FILES]:
-        header = block.split("\n@@ ", 1)[0]
-        dest = _block_dest_path(header)
-        if dest is not None:
-            existing = by_path.setdefault(dest, [])
-            block_hunks = _parse_diff_hunks(block)
-            if len(existing) + len(block_hunks) > MAX_DIFF_HUNKS:
-                raise ScanError(f"{dest}: git diff exceeds {MAX_DIFF_HUNKS} hunks")
-            existing.extend(block_hunks[:MAX_DIFF_HUNKS])
-    return by_path
-
-
-def _changed_hunks_by_path(
+def _changed_files_by_path(
     root: Path,
     ref: str,
-    rel_paths: Sequence[str],
-    diff_pathspecs: Sequence[str] = (),
-) -> dict[str, list[tuple[int, int]]]:
-    """Return `rel_path -> hunks` from a single working-tree diff against merge-base."""
-    pathspecs = diff_pathspecs or (TESTS_REL_DIR.as_posix(),)
-    if len(pathspecs) > MAX_TEST_FILES:
+    discovered_rels: frozenset[str],
+    diff_pathspecs: Sequence[str],
+) -> tuple[str, dict[str, str | None]]:
+    """Return `(merge_base, {rel_path: old_rel_path | None})` for changed and untracked files."""
+    if len(diff_pathspecs) > MAX_TEST_FILES:
         raise ScanError(f"{root}: exceeds {MAX_TEST_FILES} test files")
     merge_base = _resolve_merge_base(root, ref)
     diff_res = _run_git(
         root,
         [
             "diff",
+            "--name-status",
+            "-z",
+            "-M",
             "--no-color",
             "--no-ext-diff",
-            "--src-prefix=a/",
-            "--dst-prefix=b/",
-            "-M",
-            "-U0",
             merge_base,
             "--",
-            *pathspecs[:MAX_TEST_FILES],
+            *diff_pathspecs[:MAX_TEST_FILES],
         ],
     )
     if diff_res.returncode != 0:
         raise ScanError(f"{root}: git diff against {ref} failed: {diff_res.stderr.strip()}")
-    by_path = _parse_diff_by_path(diff_res.stdout)
-    if rel_paths:
-        others = _run_git(root, ["ls-files", "--others", "--", *rel_paths[:MAX_TEST_FILES]])
-        if others.returncode != 0:
-            raise ScanError(f"{root}: git ls-files failed: {others.stderr.strip()}")
-        untracked_lines = others.stdout.splitlines()
-        if len(untracked_lines) > MAX_TEST_FILES:
-            raise ScanError(f"{root}: git ls-files exceeds {MAX_TEST_FILES} untracked files")
-        for untracked in untracked_lines[:MAX_TEST_FILES]:
-            if untracked:
-                by_path.setdefault(untracked, [(1, MAX_AST_NODES)])
-    return by_path
+    changes = _parse_name_status_z(diff_res.stdout)
+    others = _run_git(
+        root,
+        [
+            "ls-files",
+            "-z",
+            "--others",
+            "--exclude-standard",
+            "--",
+            *diff_pathspecs[:MAX_TEST_FILES],
+        ],
+    )
+    if others.returncode != 0:
+        raise ScanError(f"{root}: git ls-files failed: {others.stderr.strip()}")
+    _add_untracked_files(root, others.stdout, changes)
+    # len(changes) <= 2 * MAX_TEST_FILES is enforced by _parse_name_status_z and _add_untracked_files.
+    for changed_path in list(changes)[: 2 * MAX_TEST_FILES]:
+        if changed_path.endswith(".py") and changed_path not in discovered_rels:
+            raise ScanError(
+                f"{changed_path}: changed or untracked Python path is not in discovered test files"
+            )
+    return merge_base, changes
 
 
-def _spans_intersect(func_start: int, func_end: int, hunks: Sequence[tuple[int, int]]) -> bool:
-    """True when `[func_start, func_end]` intersects any diff hunk range.
+def _old_function_dumps(root: Path, merge_base: str, old_path: str) -> dict[str, str] | None:
+    """Return `qualname -> ast.dump(node)` from `<merge_base>:<old_path>`, or None on SyntaxError."""
+    spec = f"{merge_base}:{old_path}"
+    res = _run_git(root, ["show", spec])
+    if res.returncode != 0:
+        detail = res.stderr.strip() or "git show failed"
+        raise ScanError(f"{root}: git show {spec} failed: {detail}")
+    if len(res.stdout.encode("utf-8")) > MAX_FILE_BYTES:
+        raise ScanError(f"{old_path}: old version exceeds {MAX_FILE_BYTES} byte read limit")
+    try:
+        tree = ast.parse(res.stdout, filename=old_path)
+    except SyntaxError:
+        return None
+    funcs = _extract_test_functions(tree, old_path)
+    # len(funcs) <= MAX_AST_NODES is enforced by _extract_test_functions.
+    return {qualname: ast.dump(node) for qualname, node in funcs[:MAX_AST_NODES]}
 
-    In `git diff -U0`, a pure deletion hunk `+N,0` (`new_count == 0`) sits
-    immediately after new line `N`, so it matches `[func_start, func_end]` when
-    `func_start <= N <= func_end` (including deletion of the function's last
-    statement at `N == func_end`) without selecting a later function (`start > N`).
-    """
-    for new_start, new_count in hunks[:MAX_DIFF_HUNKS]:
-        if new_count > 0:
-            hunk_end = new_start + new_count - 1
-            if max(func_start, new_start) <= min(func_end, hunk_end):
-                return True
-        elif func_start <= new_start <= func_end:
-            return True
-    return False
+
+def _normalise_explicit_path(root: Path, root_resolved: Path, raw: str) -> tuple[Path, str]:
+    """Resolve one explicit path argument against `root` into `(abs_path, rel_posix)`."""
+    candidate = Path(raw)
+    resolved = (candidate if candidate.is_absolute() else (root_resolved / candidate)).resolve()
+    try:
+        rel_path = resolved.relative_to(root_resolved)
+    except ValueError as exc:
+        raise ScanError(f"{raw}: path is outside repository root {root}") from exc
+    rel_posix = rel_path.as_posix()
+    if rel_posix == ".":
+        raise ScanError(f"{raw}: not a regular file")
+    return resolved, rel_posix
 
 
 def discover_test_files(root: Path, explicit_paths: Sequence[str]) -> list[tuple[Path, str]]:
     """Return `(abs_path, rel_posix)` pairs for test files under `scripts/ci/tests/`."""
+    root_resolved = root.resolve()
     if explicit_paths:
         if len(explicit_paths) > MAX_TEST_FILES:
             raise ScanError(f"{root}: exceeds {MAX_TEST_FILES} test files")
-        pairs: list[tuple[Path, str]] = []
-        for raw in explicit_paths[:MAX_TEST_FILES]:
-            candidate = Path(raw)
-            full = candidate if candidate.is_absolute() else (root / candidate)
-            rel = candidate.as_posix() if not candidate.is_absolute() else full.as_posix()
-            pairs.append((full, rel))
-        return pairs
-    tests_dir = root / TESTS_REL_DIR
+        return [
+            _normalise_explicit_path(root, root_resolved, raw)
+            for raw in explicit_paths[:MAX_TEST_FILES]
+        ]
+    tests_dir = root_resolved / TESTS_REL_DIR
     if not tests_dir.is_dir():
-        raise ScanError(f"{tests_dir}: test directory not found")
+        raise ScanError(f"{root / TESTS_REL_DIR}: test directory not found")
     files = sorted(tests_dir.glob("test_*.py"))
     if len(files) > MAX_TEST_FILES:
-        raise ScanError(f"{tests_dir}: exceeds {MAX_TEST_FILES} test files")
-    return [(path, path.relative_to(root).as_posix()) for path in files[:MAX_TEST_FILES]]
+        raise ScanError(f"{root / TESTS_REL_DIR}: exceeds {MAX_TEST_FILES} test files")
+    return [(path, path.relative_to(root_resolved).as_posix()) for path in files[:MAX_TEST_FILES]]
 
 
 def scan_repository(
@@ -564,24 +580,32 @@ def scan_repository(
     files = discover_test_files(root, explicit_paths)
     rel_paths = [rel for _, rel in files]
     diff_pathspecs: Sequence[str] = rel_paths if explicit_paths else (TESTS_REL_DIR.as_posix(),)
-    hunks_by_path = (
-        _changed_hunks_by_path(root, changed_against, rel_paths, diff_pathspecs)
-        if changed_against is not None
-        else None
-    )
+    merge_base = ""
+    changes: dict[str, str | None] | None = None
+    if changed_against is not None:
+        merge_base, changes = _changed_files_by_path(
+            root,
+            changed_against,
+            frozenset(rel_paths),
+            diff_pathspecs,
+        )
     findings: list[Finding] = []
+    # len(files) <= MAX_TEST_FILES is enforced by discover_test_files.
     for full_path, rel_path in files[:MAX_TEST_FILES]:
         source = read_bounded_source(full_path, rel_path)
-        current = file_findings(source, rel_path)
-        if not current:
+        if changes is None:
+            current = file_findings(source, rel_path)
+        elif rel_path not in changes:
+            file_findings(source, rel_path)
             continue
-        if hunks_by_path is not None:
-            hunks = hunks_by_path.get(rel_path, ())
-            current = [
-                f
-                for f in current
-                if _spans_intersect(f.span_start or f.lineno, f.end_lineno, hunks)
-            ]
+        else:
+            old_rel = changes[rel_path]
+            old_dumps = (
+                _old_function_dumps(root, merge_base, old_rel) if old_rel is not None else None
+            )
+            current = file_findings(source, rel_path, old_dumps)
+        if len(findings) + len(current) > MAX_AST_NODES:
+            raise ScanError(f"{root}: exceeds {MAX_AST_NODES} findings")
         findings.extend(current)
     return findings
 
