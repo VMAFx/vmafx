@@ -15,7 +15,7 @@ available today, and the GPU backends that route ships.
 
 | Route | Command | Status | GPU backends |
 | --- | --- | --- | --- |
-| Container | `docker run --rm ghcr.io/vmafx/vmafx:<tag> --version` | available | CUDA, HIP, SYCL |
+| Container | `docker run --rm ghcr.io/vidiko/vmafx:<tag> --version` | available | CUDA, HIP, SYCL |
 | Release download | download `vmaf`, `libvmaf.so.3`, `libvmafx.so.1` (glibc 2.28 or later) | available | none |
 | Homebrew | `brew install Vidiko/tap/vmafx` | after the 0.1.0 tag, once the tap pull request merges | none |
 | conda-forge | `conda install -c conda-forge vmafx` | after 0.1.0, pending acceptance | none |
@@ -23,7 +23,7 @@ available today, and the GPU backends that route ships.
 | APT / RPM | `apt install vmafx` / `dnf install vmafx` | planned 0.2.0 ([#3115](https://github.com/vidiko/vmafx/issues/3115)) | see manifest |
 | Source build | `meson setup build core && ninja -C build` | available | CPU (CUDA, HIP, SYCL opt-in) |
 
-- **Container:** Available via multi-arch CPU and dedicated GPU container images (`ghcr.io/vmafx/vmafx:<tag>`, `<tag>-cuda13`, `<tag>-rocm10`, `<tag>-oneapi2026`) built by [`.github/workflows/docker-publish-production.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/docker-publish-production.yml).
+- **Container:** Available via multi-arch CPU and dedicated GPU container images (`ghcr.io/vidiko/vmafx:<tag>`, `<tag>-cuda13`, `<tag>-rocm10`, `<tag>-oneapi2026`) built by [`.github/workflows/docker-publish-production.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/docker-publish-production.yml).
 - **Release download:** Available via artifact `native-linux-x86_64` in [`packaging/manifest.toml`](https://github.com/vidiko/vmafx/blob/master/packaging/manifest.toml), built by [`.github/workflows/supply-chain.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/supply-chain.yml) (`Build Linux artifacts (x86_64)`). Backends: CPU only.
 - **Homebrew:** Formula in `Vidiko/homebrew-tap` published after the 0.1.0 tag and available once its pull request merges (channel `homebrew`, tracking [#2319](https://github.com/vidiko/vmafx/issues/2319), [ADR-3387](../adr/3387-homebrew-tap-publish.md)). Builds from source with CPU backend.
 - **conda-forge:** Recipe submitted after the 0.1.0 tag (channel `conda-forge`, tracking [#2319](https://github.com/vidiko/vmafx/issues/2319)). Builds from source with CPU backend.
@@ -35,7 +35,7 @@ available today, and the GPU backends that route ships.
 
 | Route | Command | Status | GPU backends |
 | --- | --- | --- | --- |
-| Container | `docker run --rm ghcr.io/vmafx/vmafx:<tag> --version` | available | none |
+| Container | `docker run --rm ghcr.io/vidiko/vmafx:<tag> --version` | available | none |
 | Release download | download `vmafx-linux-arm64.tar.gz` (glibc 2.28 or later) | from 0.1.0 | none |
 | Homebrew | `brew install Vidiko/tap/vmafx` | after the 0.1.0 tag, once the tap pull request merges | none |
 | conda-forge | `conda install -c conda-forge vmafx` | after 0.1.0, pending acceptance | none |
@@ -43,7 +43,7 @@ available today, and the GPU backends that route ships.
 | APT / RPM | `apt install vmafx` / `dnf install vmafx` | planned 0.2.0 ([#3115](https://github.com/vidiko/vmafx/issues/3115)) | see manifest |
 | Source build | `meson setup build core && ninja -C build` | available | none |
 
-- **Container:** Available via multi-arch CPU container image (`ghcr.io/vmafx/vmafx:<tag>`, platform `linux/arm64`) built by [`.github/workflows/docker-publish-production.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/docker-publish-production.yml). Backends: CPU only.
+- **Container:** Available via multi-arch CPU container image (`ghcr.io/vidiko/vmafx:<tag>`, platform `linux/arm64`) built by [`.github/workflows/docker-publish-production.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/docker-publish-production.yml). Backends: CPU only.
 - **Release download:** Available from 0.1.0 via artifact `native-linux-arm64` in [`packaging/manifest.toml`](https://github.com/vidiko/vmafx/blob/master/packaging/manifest.toml), one `vmafx-linux-arm64.tar.gz` bundle built by [`.github/workflows/supply-chain.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/supply-chain.yml) (`Build Linux artifacts (arm64)`); see [Release download](#release-download). Backends: CPU only.
 - **Homebrew:** Formula in `Vidiko/homebrew-tap` published after the 0.1.0 tag and available once its pull request merges (channel `homebrew`, tracking [#2319](https://github.com/vidiko/vmafx/issues/2319), [ADR-3387](../adr/3387-homebrew-tap-publish.md)). Builds from source with CPU backend.
 - **conda-forge:** Recipe submitted after the 0.1.0 tag (channel `conda-forge`, tracking [#2319](https://github.com/vidiko/vmafx/issues/2319)). Builds from source with CPU backend.
@@ -55,7 +55,7 @@ available today, and the GPU backends that route ships.
 
 | Route | Command | Status | GPU backends |
 | --- | --- | --- | --- |
-| Container | `docker run --rm ghcr.io/vmafx/vmafx:<tag> --version` | available (Docker Desktop) | none |
+| Container | `docker run --rm ghcr.io/vidiko/vmafx:<tag> --version` | available (Docker Desktop) | none |
 | Tester bundle | see [tester guide](../usage/tester-image.md#a-native-macos-bundle-apple-silicon) | tester prerelease (`tester-*`) | Metal |
 | Homebrew | `brew install Vidiko/tap/vmafx` | after the 0.1.0 tag, once the tap pull request merges | none |
 | conda-forge | `conda install -c conda-forge vmafx` | after 0.1.0, pending acceptance | none |
@@ -63,7 +63,7 @@ available today, and the GPU backends that route ships.
 | APT / RPM | — | not offered | — |
 | Source build | `meson setup build core && ninja -C build` | available | Metal |
 
-- **Container:** Available via Docker Desktop running the Linux multi-arch container image (`ghcr.io/vmafx/vmafx:<tag>`, platform `linux/arm64`). macOS does not support GPU passthrough to Linux containers; runs with CPU backend only.
+- **Container:** Available via Docker Desktop running the Linux multi-arch container image (`ghcr.io/vidiko/vmafx:<tag>`, platform `linux/arm64`). macOS does not support GPU passthrough to Linux containers; runs with CPU backend only.
 - **Tester bundle:** Available via tester bundle artifact `tester-macos-arm64` in [`packaging/manifest.toml`](https://github.com/vidiko/vmafx/blob/master/packaging/manifest.toml), built by [`.github/workflows/macos-tester-bundle.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/macos-tester-bundle.yml) (`Build and test the bundle (macOS arm64)`). These are separate tester prereleases (`tester-*` tags) created after manual dispatch with `publish: true`, not product releases. The bundle runs tests and produces a report rather than installing the CLI; a maintainer must provide `<TESTER-TAG>` and `<VERSION>` (see [tester guide](../usage/tester-image.md#a-native-macos-bundle-apple-silicon)). Includes Metal GPU backend.
 - **Homebrew:** Formula in `Vidiko/homebrew-tap` published after the 0.1.0 tag and available once its pull request merges (channel `homebrew`, tracking [#2319](https://github.com/vidiko/vmafx/issues/2319), [ADR-3387](../adr/3387-homebrew-tap-publish.md)). Builds from source with CPU backend.
 - **conda-forge:** Recipe submitted after the 0.1.0 tag (channel `conda-forge`, tracking [#2319](https://github.com/vidiko/vmafx/issues/2319)). Builds from source with CPU backend.
@@ -74,7 +74,7 @@ available today, and the GPU backends that route ships.
 
 | Route | Command | Status | GPU backends |
 | --- | --- | --- | --- |
-| Container | `docker run --rm ghcr.io/vmafx/vmafx:<tag> --version` | available (Docker Desktop) | none |
+| Container | `docker run --rm ghcr.io/vidiko/vmafx:<tag> --version` | available (Docker Desktop) | none |
 | Release download | — | not offered | — |
 | Homebrew | `brew install Vidiko/tap/vmafx` | after the 0.1.0 tag, once the tap pull request merges | none |
 | conda-forge | `conda install -c conda-forge vmafx` | after 0.1.0, pending acceptance | none |
@@ -82,7 +82,7 @@ available today, and the GPU backends that route ships.
 | APT / RPM | — | not offered | — |
 | Source build | `meson setup build core && ninja -C build` | available | none |
 
-- **Container:** Available via Docker Desktop running the Linux multi-arch container image (`ghcr.io/vmafx/vmafx:<tag>`, platform `linux/amd64`). macOS does not support GPU passthrough to Linux containers; runs with CPU backend only.
+- **Container:** Available via Docker Desktop running the Linux multi-arch container image (`ghcr.io/vidiko/vmafx:<tag>`, platform `linux/amd64`). macOS does not support GPU passthrough to Linux containers; runs with CPU backend only.
 - **Release download:** Not offered (no Intel macOS binary artifact in [`packaging/manifest.toml`](https://github.com/vidiko/vmafx/blob/master/packaging/manifest.toml)).
 - **Homebrew:** Formula in `Vidiko/homebrew-tap` published after the 0.1.0 tag and available once its pull request merges (channel `homebrew`, tracking [#2319](https://github.com/vidiko/vmafx/issues/2319), [ADR-3387](../adr/3387-homebrew-tap-publish.md)). Builds from source with CPU backend.
 - **conda-forge:** Recipe submitted after the 0.1.0 tag (channel `conda-forge`, tracking [#2319](https://github.com/vidiko/vmafx/issues/2319)). Builds from source with CPU backend.
@@ -93,7 +93,7 @@ available today, and the GPU backends that route ships.
 
 | Route | Command | Status | GPU backends |
 | --- | --- | --- | --- |
-| Container | `docker run --rm ghcr.io/vmafx/vmafx:<tag> --version` | available (Docker Desktop) | CPU (CUDA via WSL2) |
+| Container | `docker run --rm ghcr.io/vidiko/vmafx:<tag> --version` | available (Docker Desktop) | CPU (CUDA via WSL2) |
 | Tester bundle | see [tester guide](../usage/tester-image.md#f-native-windows-zip-x64-or-arm64) | tester prerelease (`tester-windows-*`) | CUDA, SYCL |
 | Homebrew | — | not offered | — |
 | conda-forge | — | not offered | — |
@@ -101,7 +101,7 @@ available today, and the GPU backends that route ships.
 | APT / RPM | — | not offered | — |
 | Source build | `set CFLAGS=/experimental:c11atomics && set CXXFLAGS=/experimental:c11atomics && meson setup build core && ninja -C build` | available | CPU (CUDA, SYCL opt-in) |
 
-- **Container:** Available via Docker Desktop running the Linux multi-arch container image (`ghcr.io/vmafx/vmafx:<tag>`, platform `linux/amd64`). Runs with CPU backend by default; GPU access on Windows is available only for NVIDIA GPUs via Docker Desktop's WSL2 backend with `--gpus all` (see [Docker](../usage/docker.md)).
+- **Container:** Available via Docker Desktop running the Linux multi-arch container image (`ghcr.io/vidiko/vmafx:<tag>`, platform `linux/amd64`). Runs with CPU backend by default; GPU access on Windows is available only for NVIDIA GPUs via Docker Desktop's WSL2 backend with `--gpus all` (see [Docker](../usage/docker.md)).
 - **Tester bundle:** Available via tester bundle artifacts `tester-windows-x64` (CPU), `tester-windows-x64-cuda` (CUDA), and `tester-windows-x64-sycl` (SYCL) in [`packaging/manifest.toml`](https://github.com/vidiko/vmafx/blob/master/packaging/manifest.toml), built by [`.github/workflows/windows-tester-bundle.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/windows-tester-bundle.yml). These are separate tester prereleases (`tester-windows-*` tags) created after manual dispatch with `publish: true`, not product releases. The bundles run tests and produce a report rather than installing the CLI; a maintainer must provide `<TESTER-TAG>` and `<VERSION>` (see [tester guide](../usage/tester-image.md#f-native-windows-zip-x64-or-arm64)). Includes CPU, CUDA, and SYCL variants.
 - **Homebrew / APT / RPM:** Not offered on Windows.
 - **conda-forge:** Not offered on Windows: the generated recipe ([`scripts/release/distribution.py`](https://github.com/vidiko/vmafx/blob/master/scripts/release/distribution.py)) builds with a POSIX shell script.
@@ -112,7 +112,7 @@ available today, and the GPU backends that route ships.
 
 | Route | Command | Status | GPU backends |
 | --- | --- | --- | --- |
-| Container | `docker run --rm ghcr.io/vmafx/vmafx:<tag> --version` | available (Docker Desktop) | none |
+| Container | `docker run --rm ghcr.io/vidiko/vmafx:<tag> --version` | available (Docker Desktop) | none |
 | Tester bundle | see [tester guide](../usage/tester-image.md#f-native-windows-zip-x64-or-arm64) | tester prerelease (`tester-windows-*`) | none |
 | Homebrew | — | not offered | — |
 | conda-forge | — | not offered | — |
@@ -120,7 +120,7 @@ available today, and the GPU backends that route ships.
 | APT / RPM | — | not offered | — |
 | Source build | `set CFLAGS=/experimental:c11atomics && set CXXFLAGS=/experimental:c11atomics && meson setup build core && ninja -C build` | available | none |
 
-- **Container:** Available via Docker Desktop running multi-arch Linux container image (`ghcr.io/vmafx/vmafx:<tag>`, platform `linux/arm64`). CPU only.
+- **Container:** Available via Docker Desktop running multi-arch Linux container image (`ghcr.io/vidiko/vmafx:<tag>`, platform `linux/arm64`). CPU only.
 - **Tester bundle:** Available via tester bundle artifact `tester-windows-arm64` in [`packaging/manifest.toml`](https://github.com/vidiko/vmafx/blob/master/packaging/manifest.toml), built by [`.github/workflows/windows-tester-bundle.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/windows-tester-bundle.yml) (`Build and test the zip (Windows arm64)`). These are separate tester prereleases (`tester-windows-*` tags) created after manual dispatch with `publish: true`, not product releases. The bundle runs tests and produces a report rather than installing the CLI; a maintainer must provide `<TESTER-TAG>` and `<VERSION>` (see [tester guide](../usage/tester-image.md#f-native-windows-zip-x64-or-arm64)). CPU backend only.
 - **Homebrew / conda-forge / winget / APT / RPM:** Not offered on Windows arm64.
 - **Source build:** Available via source archive (`artifacts.source`) or Git repository. MSVC requires `set CFLAGS=/experimental:c11atomics` and `set CXXFLAGS=/experimental:c11atomics` for C11 atomics (see [Native MSVC on Windows ARM64](building-on-windows.md#native-msvc-on-windows-arm64)). CPU backend only (NEON SIMD).
@@ -132,7 +132,7 @@ each candidate covers.
 
 ## Container image
 
-The images are published as `ghcr.io/vmafx/vmafx:<tag>`, where `<tag>` is a
+The images are published as `ghcr.io/vidiko/vmafx:<tag>`, where `<tag>` is a
 release tag such as `v1.0.0-rc.2`. The image's entry point is `vmaf`, so the
 arguments after the image name go straight to the CLI:
 

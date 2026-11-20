@@ -16,11 +16,11 @@
 #
 # Build:
 #   docker build -f docker/Dockerfile.controller --target controller \
-#     -t ghcr.io/vmafx/vmafx-controller:dev .
+#     -t ghcr.io/vidiko/vmafx-controller:dev .
 #
 # Run (auth disabled for a local try; production sets auth.* in the chart):
 #   docker run --rm -e VMAFX_AUTH_DISABLED=true -e VMAFX_SCORING_ROOTS=/media \
-#     -p 8080:8080 -p 9090:9090 ghcr.io/vmafx/vmafx-controller:dev
+#     -p 8080:8080 -p 9090:9090 ghcr.io/vidiko/vmafx-controller:dev
 #
 # The release workflow passes VMAFX_VERSION=vX.Y.Z; `--version` prints it
 # without starting fx or binding ports.

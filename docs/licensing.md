@@ -116,11 +116,11 @@ next to it ([ADR-1513](adr/1513-production-artifact-licensing.md),
 
 | Package | Notices and licence texts | Corresponding source |
 | --- | --- | --- |
-| `ghcr.io/vmafx/vmafx:<tag>` (CPU) | `/usr/local/share/vmafx/licenses/` in the image | `ghcr.io/vmafx/vmafx:<tag>-source` |
-| `ghcr.io/vmafx/vmafx:<tag>-server` | `/usr/local/share/vmafx/licenses/` | `ghcr.io/vmafx/vmafx:<tag>-server-source` |
-| `ghcr.io/vmafx/vmafx:<tag>-cuda13`, `-rocm10`, `-oneapi2026` (and `-oneapi2025`) | `/usr/local/share/vmafx/licenses/`; the GPU vendors' texts under `nvidia/`, `rocm/` and `intel/` | `ghcr.io/vmafx/vmafx:<tag>-cuda13-source`, `-rocm10-source`, `-oneapi2026-source` |
-| `ghcr.io/vmafx/vmafx-operator:<tag>`, `vmafx-server:<tag>` | `/usr/local/share/vmafx/licenses/` (Go modules under `go/`) | `<image>:<tag>-source` |
-| `ghcr.io/vmafx/vmafx-node:<tag>` | `/usr/local/share/vmafx/licenses/`; FFmpeg's and SVT-AV1's files under `/usr/local/share/vmafx/ffmpeg/` and `svt-av1/`; the copied libraries' copyright files under `copied-packages/`, the FUSE tools' under `fuse-tools/` | `ghcr.io/vmafx/vmafx-node:<tag>-source` (FFmpeg as built with its configure line, Debian sources, Go module zips) |
+| `ghcr.io/vidiko/vmafx:<tag>` (CPU) | `/usr/local/share/vmafx/licenses/` in the image | `ghcr.io/vidiko/vmafx:<tag>-source` |
+| `ghcr.io/vidiko/vmafx:<tag>-server` | `/usr/local/share/vmafx/licenses/` | `ghcr.io/vidiko/vmafx:<tag>-server-source` |
+| `ghcr.io/vidiko/vmafx:<tag>-cuda13`, `-rocm10`, `-oneapi2026` (and `-oneapi2025`) | `/usr/local/share/vmafx/licenses/`; the GPU vendors' texts under `nvidia/`, `rocm/` and `intel/` | `ghcr.io/vidiko/vmafx:<tag>-cuda13-source`, `-rocm10-source`, `-oneapi2026-source` |
+| `ghcr.io/vidiko/vmafx-operator:<tag>`, `vmafx-server:<tag>` | `/usr/local/share/vmafx/licenses/` (Go modules under `go/`) | `<image>:<tag>-source` |
+| `ghcr.io/vidiko/vmafx-node:<tag>` | `/usr/local/share/vmafx/licenses/`; FFmpeg's and SVT-AV1's files under `/usr/local/share/vmafx/ffmpeg/` and `svt-av1/`; the copied libraries' copyright files under `copied-packages/`, the FUSE tools' under `fuse-tools/` | `ghcr.io/vidiko/vmafx-node:<tag>-source` (FFmpeg as built with its configure line, Debian sources, Go module zips) |
 | Tester images and bundles | `/opt/vmafx/licenses/`, `licenses/` in a bundle | `<image>-source` |
 | `vmaf-mcp` on PyPI | the `licenses/` directory of the wheel's and the sdist's metadata (EUPL-1.2, BSD-2-Clause-Patent) | the sdist |
 | GitHub release files (`libvmaf.so*`, `libvmafx.so*`, `vmaf`) | `THIRD_PARTY_NOTICES.txt` and `licenses.tar.gz` next to them on the release | the release's source archives |
@@ -131,7 +131,7 @@ copyright lines and source; `texts/` holds the licence texts. The CPU image has
 no shell, so copy the directory out to read it:
 
 ```bash
-cid=$(docker create ghcr.io/vmafx/vmafx:<tag>)
+cid=$(docker create ghcr.io/vidiko/vmafx:<tag>)
 docker cp "$cid:/usr/local/share/vmafx/licenses" ./vmafx-licenses
 docker rm "$cid"
 less ./vmafx-licenses/THIRD_PARTY_NOTICES.txt

@@ -19,7 +19,7 @@
   [![Rust](https://raw.githubusercontent.com/vidiko/vmafx/badges/rust.svg)](https://github.com/vidiko/vmafx/actions/workflows/rust-ci.yml)
   <!-- 3 security/scorecard -->
   [![Security](https://raw.githubusercontent.com/vidiko/vmafx/badges/security.svg)](https://github.com/vidiko/vmafx/actions/workflows/security-scans.yml)
-  [![OpenSSF Scorecard](https://raw.githubusercontent.com/vidiko/vmafx/badges/scorecard.svg)](https://scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx)
+  [![OpenSSF Scorecard](https://raw.githubusercontent.com/vidiko/vmafx/badges/scorecard.svg)](https://scorecard.dev/viewer/?uri=github.com/vidiko/vmafx)
   [![OpenSSF Best Practices](https://raw.githubusercontent.com/vidiko/vmafx/badges/best-practices.svg)](https://www.bestpractices.dev/projects/14549)
   [![Codacy](https://raw.githubusercontent.com/vidiko/vmafx/badges/codacy.svg)](https://app.codacy.com/gh/vidiko/vmafx/dashboard)
   [![CodeRabbit](https://img.shields.io/badge/Reviews-CodeRabbit-8b5cf6?style=for-the-badge&logo=coderabbit&logoColor=white&labelColor=111a35)](https://coderabbit.ai)

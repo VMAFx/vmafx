@@ -18,7 +18,7 @@ The policy is recorded in
 A canonical artifact is any file that is:
 
 - Tagged in a GitHub release (`libvmaf.so`, Python wheels, CLI binaries).
-- Published to a container registry (`ghcr.io/vmafx/vmafx:*`).
+- Published to a container registry (`ghcr.io/vidiko/vmafx:*`).
 - Attached to a CI run as a downloadable artifact and used downstream
   (benchmark result JSON, snapshot score files).
 
@@ -114,7 +114,7 @@ is four workflows:
 | `.github/workflows/dev-container-publish.yml` | push to `master` (`dev/Containerfile`, `dev/scripts/**`) | `ghcr.io/vidiko/vmafx-dev-mcp:sha-<commit>`, `:master` | Yes — builds `libvmaf-build` stage into a private package; the job refuses to push unless GHCR reports the package private ([ADR-1564](../adr/1564-dev-image-private-guard.md)); releases do not pull it |
 | `.github/workflows/release-please.yml` | push to `master` | the release PR and, on merge, the tag + GitHub release | n/a — no build |
 | `.github/workflows/supply-chain.yml` | `release: published` | `libvmaf.so` chain, the `vmaf` CLI, `models.tar.gz`, `vmafx-linux-arm64.tar.gz`, SBOMs, cosign signatures, GitHub build-provenance attestations, the `vmaf-mcp` wheel | **Yes** — `build-artifacts` builds the manylinux `release-build` stage of the release tag's `dev/Containerfile` on a GitHub-hosted runner and compiles inside it ([ADR-1346](../adr/1346-hosted-slim-container-release-build.md), [ADR-1354](../adr/1354-native-bundle-release-track.md)) |
-| `.github/workflows/docker-publish-production.yml` | `release: published` | `ghcr.io/vmafx/vmafx:*` (cpu / cuda13 / rocm10 / oneapi2026, also tagged oneapi2025 / server) | Yes, inherently — `docker buildx` against `docker/Dockerfile.production*` |
+| `.github/workflows/docker-publish-production.yml` | `release: published` | `ghcr.io/vidiko/vmafx:*` (cpu / cuda13 / rocm10 / oneapi2026, also tagged oneapi2025 / server) | Yes, inherently — `docker buildx` against `docker/Dockerfile.production*` |
 
 Consequences:
 
@@ -367,7 +367,7 @@ bash scripts/ci/tests/test-check-container-build.sh
 
 ## Exceptions
 
-- **Tester image** (`ghcr.io/vmafx/vmafx:<tag>-tester`): built from its own Dockerfile
+- **Tester image** (`ghcr.io/vidiko/vmafx:<tag>-tester`): built from its own Dockerfile
   (`docker/Dockerfile.tester`), like the production images, by
   `docker-publish-tester.yml` ([ADR-1492](../adr/1492-tester-image-arm64-report.md)).
 - **macOS tester bundle**: macOS cannot be built in the Linux container, so the bundle is

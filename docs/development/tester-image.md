@@ -46,8 +46,8 @@ Nothing publishes on merge except build-and-test runs of the image and of the Wi
    environment (master only); `release-publish` is for product releases and is not used. The workflow builds both architectures on native runners, runs the
    documented `docker run` line on each, validates the report, pushes by digest, merges
    one index, signs it keyless and attests it, and publishes
-   `ghcr.io/vmafx/vmafx:<tag>-tester`. The package `ghcr.io/vmafx/vmafx` is already public,
-   so nothing needs a click; check once with a logged-out `docker pull`.
+   `ghcr.io/vidiko/vmafx:<tag>-tester`. Verify that the package is public
+   by pulling the published tag without signing in.
 2. **macOS bundle**: dispatch `Publish macOS Tester Bundle` on `master` with `ref` (or
    `tag`) and `publish: true`; the file is `vmafx-tester-macos-arm64-<git describe>.tar.xz`. `publish: false` builds, runs the bundle's own report on the hosted
    runner and uploads a 14-day workflow artifact only. With `publish: true` the
@@ -69,7 +69,7 @@ Nothing publishes on merge except build-and-test runs of the image and of the Wi
    `final-hip` (job `build-gpu`, one matrix leg per kit, linux/amd64 only) and runs the
    documented command without a GPU (the report must say `gpu.status` `no_device` with
    the missing option, `--device /dev/dri`, `--gpus all` or `--device /dev/kfd`, every
-   CPU check passing); the dispatch publishes `ghcr.io/vmafx/vmafx:<describe>-tester-sycl`,
+   CPU check passing); the dispatch publishes `ghcr.io/vidiko/vmafx:<describe>-tester-sycl`,
    `-tester-cuda` and `-tester-hip` in job `publish-gpu`: signed, with provenance and an attested SPDX SBOM (syft), each with its
    source image `<describe>-tester-<kit>-source` (target `<kit>-source-export`). Like the
    CPU image, each build cannot finish without its licence check (stage
@@ -139,7 +139,7 @@ the kits for other hardware follow the same rules. What the two packages do:
   stage, which the `final` stage depends on through its receipt
   (`/opt/vmafx/licence-check.json`); in the bundle it runs right before `pack`.
 - **Source.** The container's copyleft parts have their source in
-  `ghcr.io/vmafx/vmafx:<tag>-tester-source`, the Dockerfile's `source-export` target, built
+  `ghcr.io/vidiko/vmafx:<tag>-tester-source`, the Dockerfile's `source-export` target, built
   and pushed per architecture by the publishing run and merged into one signed index:
   `licensing.py sources` lists the Debian source packages of every installed package at its
   version (with `Built-Using` and `Static-Built-Using`) and the recorded source RPMs of the

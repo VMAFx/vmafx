@@ -29,11 +29,11 @@
 #     source is that commit with this ref's build recipe (ADR-1347)
 #
 # Produces (only on dispatch):
-#   ghcr.io/vmafx/vmafx:<git describe of the source commit>-tester
+#   ghcr.io/vidiko/vmafx:<git describe of the source commit>-tester
 #   (linux/amd64 + linux/arm64; `v1.0.0-rc.2-tester` for the tagged commit itself)
-#   ghcr.io/vmafx/vmafx:<...>-tester-source: the corresponding source of the
+#   ghcr.io/vidiko/vmafx:<...>-tester-source: the corresponding source of the
 #   image's copyleft parts (Dockerfile target source-export, ADR-1503)
-#   ghcr.io/vmafx/vmafx:<git describe of the source commit>-tester-sycl,
+#   ghcr.io/vidiko/vmafx:<git describe of the source commit>-tester-sycl,
 #   -tester-cuda and -tester-hip (linux/amd64: the Intel, NVIDIA and AMD GPU kits,
 #   targets final-sycl, final-cuda and final-hip of the same Dockerfile, jobs
 #   build-gpu and publish-gpu, each with its source image <...>-tester-<kit>-source)
@@ -90,7 +90,7 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: vmafx/vmafx
+  IMAGE_NAME: ${{ github.repository_owner }}/vmafx
   PUBLISH_TAG: ${{ github.event.inputs.tag }}
   SOURCE_REF: ${{ github.event.inputs.ref }}
   # Layer compression of every image this workflow pushes (ADR-1594): zstd at

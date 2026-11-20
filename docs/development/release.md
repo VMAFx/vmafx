@@ -752,17 +752,17 @@ repo or in CI secrets.
   and sdist, and PEP 740 attestations stored alongside the PyPI artefact
   (Trusted Publishing, no token). See
   [ADR-0166](../adr/0166-mcp-server-release-channel.md).
-- **Production container images** (`ghcr.io/vmafx/vmafx:<tag>` and the
+- **Production container images** (`ghcr.io/vidiko/vmafx:<tag>` and the
   `-cuda13` / `-rocm10` / `-oneapi2026` (also tagged `-oneapi2025`) / `-server`
   variants): cosign keyless signature plus a GitHub-native build-provenance
   attestation
   (`actions/attest-build-provenance`). See
   [ADR-0902](../adr/0902-signing-and-attestation-audit.md).
-- **Go service images** (`ghcr.io/vmafx/vmafx-server:<tag>`,
-  `ghcr.io/vmafx/vmafx-controller:<tag>` (since
+- **Go service images** (`ghcr.io/vidiko/vmafx-server:<tag>`,
+  `ghcr.io/vidiko/vmafx-controller:<tag>` (since
   [ADR-1589](../adr/1589-helm-controller-workload.md)),
-  `ghcr.io/vmafx/vmafx-operator:<tag>`, and
-  `ghcr.io/vmafx/vmafx-node:<tag>`): the same cosign signature, CycloneDX SBOM,
+  `ghcr.io/vidiko/vmafx-operator:<tag>`, and
+  `ghcr.io/vidiko/vmafx-node:<tag>`): the same cosign signature, CycloneDX SBOM,
   and GitHub-native build provenance, emitted by
   `docker-publish-operator-node.yml`. Each is built per architecture on a
   native runner and published as one multi-arch index, which carries the
@@ -810,16 +810,16 @@ pypi-attestations verify pypi \
   pypi:vmaf_mcp-0.1.0-py3-none-any.whl
 
 # Container image, cosign route. Replace DIGEST with the actual sha256 digest.
-cosign verify ghcr.io/vmafx/vmafx@sha256:DIGEST \
+cosign verify ghcr.io/vidiko/vmafx@sha256:DIGEST \
   --certificate-identity \
     "https://github.com/vidiko/vmafx/.github/workflows/docker-publish-production.yml@refs/tags/${tag}" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # Container image, GitHub-native attestation route (added by ADR-0902).
-gh attestation verify oci://ghcr.io/vmafx/vmafx@sha256:DIGEST --repo vidiko/vmafx
+gh attestation verify oci://ghcr.io/vidiko/vmafx@sha256:DIGEST --repo vidiko/vmafx
 
 # Go server/operator/node images use their own workflow identity.
-cosign verify ghcr.io/vmafx/vmafx-node@sha256:DIGEST \
+cosign verify ghcr.io/vidiko/vmafx-node@sha256:DIGEST \
   --certificate-identity \
     "https://github.com/vidiko/vmafx/.github/workflows/docker-publish-operator-node.yml@refs/tags/${tag}" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
@@ -902,13 +902,13 @@ docker buildx imagetools inspect ghcr.io/vmafx/vmafx:v1.0.0-rc.1 \
   --format '{{json .Image}}' | jq -r '.. | .Labels? // empty | ."io.vmafx.build-recipe"'
 cosign verify ghcr.io/vmafx/vmafx@sha256:DIGEST \
   --certificate-identity \
-    "https://github.com/vidiko/vmafx/.github/workflows/docker-publish-production.yml@refs/heads/master" \
+    "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/heads/master" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # vmafx-server, vmafx-operator and vmafx-node come from the other workflow.
 cosign verify ghcr.io/vmafx/vmafx-node@sha256:DIGEST \
   --certificate-identity \
-    "https://github.com/vidiko/vmafx/.github/workflows/docker-publish-operator-node.yml@refs/heads/master" \
+    "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@refs/heads/master" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
@@ -935,7 +935,7 @@ After that:
   `/healthz` plus `/readyz`;
 - it also checks the operator version and executes `vmaf --version` plus
   `ffmpeg -version` from the node image;
-- for `ghcr.io/vmafx/vmafx-node:<tag>-sycl`, `smoke-published-image.sh` with
+- for `ghcr.io/vidiko/vmafx-node:<tag>-sycl`, `smoke-published-image.sh` with
   kind `node-sycl` refuses an image whose `Config.Env` lacks the exact
   `VMAFX_BACKEND=sycl` entry (missing or another value), a wrong entrypoint, a
   mismatched `--version` or a broken FUSE mount, and prints the GPU skip reason
@@ -1220,9 +1220,9 @@ Later pushes keep the package's visibility.
 Check that an anonymous client can pull:
 
 ```bash
-token=$(curl -s "https://ghcr.io/token?scope=repository:vmafx/vmafx-node:pull" | jq -r .token)
+token=$(curl -s "https://ghcr.io/token?scope=repository:vidiko/vmafx-node:pull" | jq -r .token)
 curl -s -H "Authorization: Bearer $token" \
-  https://ghcr.io/v2/vmafx/vmafx-node/tags/list | jq '.tags'
+  https://ghcr.io/v2/vidiko/vmafx-node/tags/list | jq '.tags'
 ```
 
 #### Freezing the release PR while you cut it

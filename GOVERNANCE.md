@@ -200,7 +200,7 @@ holds any of the access.
   ([release-bot identity](docs/development/release.md#release-bot-identity)).
   The protected environments `release-publish` and `pypi-publish` gate
   publication.
-- **Container images** under `ghcr.io/vmafx/`, published by the release
+- **Container images** under `ghcr.io/vidiko/`, published by the release
   workflows.
 - **The documentation site**, published from the repository by GitHub Pages.
 - **The project mailbox** named in [`SECURITY.md`](SECURITY.md) and

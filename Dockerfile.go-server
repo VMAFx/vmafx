@@ -15,14 +15,14 @@
 #                 published as <tag>-source
 #
 # Build:
-#   docker build -f Dockerfile.go-server -t ghcr.io/vmafx/vmafx-server:dev .
+#   docker build -f Dockerfile.go-server -t ghcr.io/vidiko/vmafx-server:dev .
 #
 # Run:
 #   docker run --rm \
 #     -e VMAFX_VMAF_BINARY=/usr/local/bin/vmaf \
 #     -e VMAFX_MODEL_DIR=/usr/local/share/vmafx/model \
 #     -p 8080:8080 -p 9090:9090 \
-#     ghcr.io/vmafx/vmafx-server:dev
+#     ghcr.io/vidiko/vmafx-server:dev
 #
 # The release workflow passes VMAFX_VERSION=vX.Y.Z. The image's non-blocking
 # `--version` path prints that exact value without starting fx or binding ports.

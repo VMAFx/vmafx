@@ -17,12 +17,12 @@
       "bootstrap": {
         "version": 1,
         "state": "source-bundle",
-        "builderImage": "docker.io/library/golang@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414",
-        "baseImage": "ghcr.io/vmafx/vmafx-dev-mcp@sha256:3956ebc9342a75cc0120804cee37144fff402dc1bab83849c68bf73a2cd6c9cc",
-        "sourceSHA256": "sha256:938d9df5df2d6b7e950f125d691e6e5b03fdb38a7de12145ea8e7d2c938e141f",
-        "archiveSHA256": "sha256:4e15718a2f4225b23d4ff2feb0264279ce7a210898a5a30334c39f2c7384c86d",
-        "archiveParts": 6,
-        "dockerfileSHA256": "sha256:78241b34b2173193b84315cc7da10de1c0463d5a16cbe535fbe4394560e8a780"
+        "builderImage": "docker.io/library/golang@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d",
+        "baseImage": "ghcr.io/vidiko/vmafx-dev-mcp@sha256:29b13030cacce60cec4209f645c6772feda5b2d936fa511fc807eddccf12722c",
+        "sourceSHA256": "sha256:8aee6272dd3f89e5c082f4fef612ab330468bc41a9e707ad25931e4a038b908b",
+        "archiveSHA256": "sha256:3baf79294b0536e94aea820dbb81dcb70f4dc1e9070407f88353d84d81ad0cf2",
+        "archiveParts": 7,
+        "dockerfileSHA256": "sha256:01705d464869a4f22d27919da91c81f9535eea906a4c207308aab43218f65562"
       }
     },
     "vscode": {

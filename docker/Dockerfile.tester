@@ -190,7 +190,7 @@ COPY --from=refs-gen /opt/vmafx/reference/x86_64-scalar.json /
 FROM scratch AS xref
 
 # ===========================================================================
-# Intel GPU variant: ghcr.io/vmafx/vmafx:<describe>-tester-sycl (linux/amd64).
+# Intel GPU variant: ghcr.io/vidiko/vmafx:<describe>-tester-sycl (linux/amd64).
 #   docker build -f docker/Dockerfile.tester --target final-sycl .
 # The stages above are shared; `final` at the end stays the default target.
 # ===========================================================================
@@ -402,7 +402,7 @@ RUN --mount=type=bind,from=sycl-assembled,target=/rootfs \
 
 # ---------------------------------------------------------------------------
 # sycl-source-export: the corresponding source of the Intel GPU image's
-# copyleft parts, published as ghcr.io/vmafx/vmafx:<tag>-sycl-source
+# copyleft parts, published as ghcr.io/vidiko/vmafx:<tag>-sycl-source
 # (ADR-1503 rule 5)
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_PYTHON_BASE} AS sycl-source-fetch
@@ -435,7 +435,7 @@ USER 10001:10001
 ENTRYPOINT ["/usr/bin/python3", "/opt/vmafx/tester/vmaf-tester-report"]
 
 # ===========================================================================
-# NVIDIA GPU variant: ghcr.io/vmafx/vmafx:<describe>-tester-cuda (linux/amd64).
+# NVIDIA GPU variant: ghcr.io/vidiko/vmafx:<describe>-tester-cuda (linux/amd64).
 #   docker build -f docker/Dockerfile.tester --target final-cuda .
 # The image ships no NVIDIA file: libvmaf loads the host driver's libcuda.so.1
 # at run time (nv-codec-headers' loader), which the NVIDIA Container Toolkit
@@ -650,7 +650,7 @@ RUN --mount=type=bind,from=cuda-assembled,target=/rootfs \
 # ---------------------------------------------------------------------------
 # cuda-source-export: the corresponding source of the NVIDIA GPU image's
 # copyleft parts (its Debian packages), published as
-# ghcr.io/vmafx/vmafx:<tag>-cuda-source (ADR-1503 rule 5)
+# ghcr.io/vidiko/vmafx:<tag>-cuda-source (ADR-1503 rule 5)
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_PYTHON_BASE} AS cuda-source-fetch
 # Only /sources leaves this stage, so its package lists need no cleanup.
@@ -682,7 +682,7 @@ USER 10001:10001
 ENTRYPOINT ["/usr/bin/python3", "/opt/vmafx/tester/vmaf-tester-report"]
 
 # ===========================================================================
-# AMD GPU variant: ghcr.io/vmafx/vmafx:<describe>-tester-hip (linux/amd64).
+# AMD GPU variant: ghcr.io/vidiko/vmafx:<describe>-tester-hip (linux/amd64).
 #   docker build -f docker/Dockerfile.tester --target final-hip .
 # The HIP runtime comes from the pinned ROCm 10.1.0 image (ROCM_BUILDER of
 # build-config.env); the image ships only the files libvmaf loads, unmodified,
@@ -875,7 +875,7 @@ RUN --mount=type=bind,from=hip-assembled,target=/rootfs \
 # hip-source-export: the corresponding source of the AMD GPU image's copyleft
 # parts (its Debian packages, and the upstream archives and the TheRock tree of
 # the LGPL libraries the ROCm runtime bundles), published as
-# ghcr.io/vmafx/vmafx:<tag>-hip-source (ADR-1503 rule 5)
+# ghcr.io/vidiko/vmafx:<tag>-hip-source (ADR-1503 rule 5)
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_PYTHON_BASE} AS hip-source-fetch
 # Only /sources leaves this stage, so its package lists need no cleanup. git
@@ -936,7 +936,7 @@ RUN --mount=type=bind,from=assembled,target=/rootfs \
 
 # ---------------------------------------------------------------------------
 # source-export: the corresponding source of the image's copyleft parts,
-# published as ghcr.io/vmafx/vmafx:<tag>-source (ADR-1503 rule 5)
+# published as ghcr.io/vidiko/vmafx:<tag>-source (ADR-1503 rule 5)
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_PYTHON_BASE} AS source-fetch
 # Only /sources leaves this stage, so its package lists need no cleanup.

@@ -275,8 +275,8 @@ To search the text of records, use GitHub code search with a path filter:
 
 | Records | Query |
 | --- | --- |
-| ADRs | [`repo:vidiko/vmafx path:docs/adr/ <terms>`](https://github.com/search?q=repo%3AVMAFx%2Fvmafx+path%3Adocs%2Fadr%2F+precision&type=code) |
-| Research digests | [`repo:vidiko/vmafx path:docs/research/ <terms>`](https://github.com/search?q=repo%3AVMAFx%2Fvmafx+path%3Adocs%2Fresearch%2F+zensical&type=code) |
+| ADRs | [`repo:vidiko/vmafx path:docs/adr/ <terms>`](https://github.com/search?q=repo%3Avidiko%2Fvmafx+path%3Adocs%2Fadr%2F+precision&type=code) |
+| Research digests | [`repo:vidiko/vmafx path:docs/research/ <terms>`](https://github.com/search?q=repo%3Avidiko%2Fvmafx+path%3Adocs%2Fresearch%2F+zensical&type=code) |
 | Rebase notes, state | `repo:vidiko/vmafx path:docs/rebase-notes.md <terms>`, `path:docs/state.md` |
 
 Locally, `git grep -n '<terms>' -- docs/adr docs/research` does the same.

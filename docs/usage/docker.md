@@ -7,7 +7,7 @@ access for each variant.
 
 ## Published images
 
-Release images are published to `ghcr.io/vmafx/vmafx`. The entry point of every
+Release images are published to `ghcr.io/vidiko/vmafx`. The entry point of every
 variant below is the `vmaf` CLI, so arguments after the image name go straight
 to `vmaf` ([cli.md](cli.md)).
 
@@ -55,7 +55,7 @@ and pull with any Docker.
 Run a score on the CPU image:
 
 ```bash
-docker run --rm -v $(pwd):/files ghcr.io/vmafx/vmafx:<tag> \
+docker run --rm -v $(pwd):/files ghcr.io/vidiko/vmafx:<tag> \
     --reference /files/ref.y4m --distorted /files/dist.y4m \
     --json --output /files/scores.json
 ```
@@ -63,14 +63,14 @@ docker run --rm -v $(pwd):/files ghcr.io/vmafx/vmafx:<tag> \
 Run it on a GPU image, selecting the backend explicitly:
 
 ```bash
-docker run --rm --gpus all -v $(pwd):/files ghcr.io/vmafx/vmafx:<tag>-cuda13 \
+docker run --rm --gpus all -v $(pwd):/files ghcr.io/vidiko/vmafx:<tag>-cuda13 \
     --backend cuda --reference /files/ref.y4m --distorted /files/dist.y4m
 
 docker run --rm --device /dev/kfd --device /dev/dri -v $(pwd):/files \
-    ghcr.io/vmafx/vmafx:<tag>-rocm10 \
+    ghcr.io/vidiko/vmafx:<tag>-rocm10 \
     --backend hip --hip_device 0 --reference /files/ref.y4m --distorted /files/dist.y4m
 
-docker run --rm --device /dev/dri -v $(pwd):/files ghcr.io/vmafx/vmafx:<tag>-oneapi2026 \
+docker run --rm --device /dev/dri -v $(pwd):/files ghcr.io/vidiko/vmafx:<tag>-oneapi2026 \
     --backend sycl --reference /files/ref.y4m --distorted /files/dist.y4m
 ```
 

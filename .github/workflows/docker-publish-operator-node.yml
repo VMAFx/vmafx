@@ -22,10 +22,10 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  OPERATOR_IMAGE: vmafx/vmafx-operator
-  SERVER_IMAGE: vmafx/vmafx-server
-  CONTROLLER_IMAGE: vmafx/vmafx-controller
-  NODE_IMAGE: vmafx/vmafx-node
+  OPERATOR_IMAGE: ${{ github.repository_owner }}/vmafx-operator
+  SERVER_IMAGE: ${{ github.repository_owner }}/vmafx-server
+  CONTROLLER_IMAGE: ${{ github.repository_owner }}/vmafx-controller
+  NODE_IMAGE: ${{ github.repository_owner }}/vmafx-node
   PUBLISH_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
   # ADR-1594 (design notes)
   IMAGE_COMPRESSION: compression=zstd,compression-level=22,force-compression=true,oci-mediatypes=true
@@ -702,7 +702,7 @@ jobs:
   # -------------------------------------------------------------------------
   # Build + push vmafx-controller (amd64 + arm64; ADR-1589). A new GHCR
   # package starts private: the first publish creates
-  # ghcr.io/vmafx/vmafx-controller with private visibility until a maintainer
+  # ghcr.io/vidiko/vmafx-controller with private visibility until a maintainer
   # makes it public in the package settings.
   # -------------------------------------------------------------------------
   build-controller:

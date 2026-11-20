@@ -175,7 +175,7 @@ The project website is [VMAFx on GitHub Pages](https://vmafx.dev/).
 [BadgeApp API documentation](https://github.com/ossf/best-practices-badge/blob/33907f3e0f8748abbeb587af3a45ed9f24deb380/docs/api.md)
 uses `.json` URL suffixes, not the HTTP `Accept` header. Read-only queries
 include
-`/projects.json?url=https%3A%2F%2Fgithub.com%2FVMAFx%2Fvmafx`,
+`/projects.json?url=https%3A%2F%2Fgithub.com%2Fvidiko%2Fvmafx`,
 `/projects/ID.json` and `/projects/ID/badge.json`. The initial exact
 repository-URL query returned no match; the owner then
 registered project **14549**. Its public JSON readback identifies the correct

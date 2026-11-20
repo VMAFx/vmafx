@@ -1,5 +1,5 @@
-# Praetor bootstrap v1; selected source digest sha256:938d9df5df2d6b7e950f125d691e6e5b03fdb38a7de12145ea8e7d2c938e141f
-FROM docker.io/library/golang@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS praetor_build
+# Praetor bootstrap v1; selected source digest sha256:8aee6272dd3f89e5c082f4fef612ab330468bc41a9e707ad25931e4a038b908b
+FROM docker.io/library/golang@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS praetor_build
 WORKDIR /praetor-source
 COPY ["praetor-source.000.b64", "/tmp/praetor-source/000.b64"]
 COPY ["praetor-source.001.b64", "/tmp/praetor-source/001.b64"]
@@ -7,12 +7,13 @@ COPY ["praetor-source.002.b64", "/tmp/praetor-source/002.b64"]
 COPY ["praetor-source.003.b64", "/tmp/praetor-source/003.b64"]
 COPY ["praetor-source.004.b64", "/tmp/praetor-source/004.b64"]
 COPY ["praetor-source.005.b64", "/tmp/praetor-source/005.b64"]
+COPY ["praetor-source.006.b64", "/tmp/praetor-source/006.b64"]
 RUN cat /tmp/praetor-source/*.b64 > /tmp/praetor-source.b64 && base64 -d /tmp/praetor-source.b64 > /tmp/praetor-source.tar.gz
-RUN echo '4e15718a2f4225b23d4ff2feb0264279ce7a210898a5a30334c39f2c7384c86d  /tmp/praetor-source.tar.gz' > /tmp/praetor-source.sha256 && sha256sum -c /tmp/praetor-source.sha256 && tar -xzf /tmp/praetor-source.tar.gz -C /praetor-source
+RUN echo '3baf79294b0536e94aea820dbb81dcb70f4dc1e9070407f88353d84d81ad0cf2  /tmp/praetor-source.tar.gz' > /tmp/praetor-source.sha256 && sha256sum -c /tmp/praetor-source.sha256 && tar -xzf /tmp/praetor-source.tar.gz -C /praetor-source
 ENV GOTOOLCHAIN=local CGO_ENABLED=0 GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org
 RUN sha256sum go.mod go.sum > /tmp/praetor-modules.sha256 && /usr/local/go/bin/go mod download && /usr/local/go/bin/go mod verify && sha256sum -c /tmp/praetor-modules.sha256
 RUN /usr/local/go/bin/go build -mod=readonly -trimpath -buildvcs=false -o /out/praetorctl ./cmd/standardsctl
-FROM ghcr.io/vmafx/vmafx-dev-mcp@sha256:3956ebc9342a75cc0120804cee37144fff402dc1bab83849c68bf73a2cd6c9cc
+FROM ghcr.io/vidiko/vmafx-dev-mcp@sha256:29b13030cacce60cec4209f645c6772feda5b2d936fa511fc807eddccf12722c
 COPY --from=praetor_build --chmod=0444 /praetor-source/LICENSE /usr/local/share/praetor/LICENSE
 COPY --from=praetor_build --chmod=0555 /out/praetorctl /usr/local/bin/praetorctl
 COPY --from=praetor_build --chmod=0555 /out/praetorctl /usr/local/bin/standardsctl

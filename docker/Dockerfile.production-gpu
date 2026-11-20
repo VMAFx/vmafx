@@ -28,9 +28,9 @@
 # (production-cuda-image, production-rocm-image, production-oneapi-image).
 #
 # Tag matrix (built by CI):
-#   ghcr.io/vmafx/vmafx:<tag>-cuda13       (and <tag>-cuda13-source)
-#   ghcr.io/vmafx/vmafx:<tag>-rocm10       (and <tag>-rocm10-source)
-#   ghcr.io/vmafx/vmafx:<tag>-oneapi2026   (also tagged -oneapi2025, ADR-1368;
+#   ghcr.io/vidiko/vmafx:<tag>-cuda13       (and <tag>-cuda13-source)
+#   ghcr.io/vidiko/vmafx:<tag>-rocm10       (and <tag>-rocm10-source)
+#   ghcr.io/vidiko/vmafx:<tag>-oneapi2026   (also tagged -oneapi2025, ADR-1368;
 #                                           and <tag>-oneapi2026-source)
 #
 # Build args (all optional):
@@ -260,7 +260,7 @@ RUN bash scripts/ci/build-oneapi-libvmaf.sh
 # (ADR-0726: Vulkan backend removed; builder-vulkan stage deleted)
 
 # ===========================================================================
-# NVIDIA GPU image: ghcr.io/vmafx/vmafx:<tag>-cuda13
+# NVIDIA GPU image: ghcr.io/vidiko/vmafx:<tag>-cuda13
 # No NVIDIA library: libvmaf loads the host driver's libcuda.so.1 at run time,
 # which the NVIDIA Container Toolkit mounts with --gpus all (Docker Desktop:
 # /usr/lib/wsl/lib); the kernels are fatbins inside libvmaf.
@@ -343,7 +343,7 @@ RUN --mount=type=bind,from=cuda13-with-notices,target=/rootfs \
 
 # ---------------------------------------------------------------------------
 # cuda13-source-export: the corresponding source of the image's copyleft parts,
-# published as ghcr.io/vmafx/vmafx:<tag>-cuda13-source (ADR-1503 rule 5)
+# published as ghcr.io/vidiko/vmafx:<tag>-cuda13-source (ADR-1503 rule 5)
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_PYTHON_BASE} AS cuda13-source-fetch
 # Only /sources leaves this stage, so its package lists need no cleanup.
@@ -372,7 +372,7 @@ USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/vmaf"]
 
 # ===========================================================================
-# AMD GPU image: ghcr.io/vmafx/vmafx:<tag>-rocm10
+# AMD GPU image: ghcr.io/vidiko/vmafx:<tag>-rocm10
 # The ROCm runtime files of hip-runtime.json in /usr/local/lib/rocm; the GPU
 # kernel driver (amdgpu, /dev/kfd) is the host's.
 # ===========================================================================
@@ -451,7 +451,7 @@ RUN --mount=type=bind,from=rocm10-with-notices,target=/rootfs \
 
 # ---------------------------------------------------------------------------
 # rocm10-source-export: the corresponding source of the image's copyleft parts,
-# published as ghcr.io/vmafx/vmafx:<tag>-rocm10-source (ADR-1503 rule 5)
+# published as ghcr.io/vidiko/vmafx:<tag>-rocm10-source (ADR-1503 rule 5)
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_PYTHON_BASE} AS rocm10-source-fetch
 # Only /sources leaves this stage, so its package lists need no cleanup. git fetches the
@@ -481,7 +481,7 @@ USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/vmaf"]
 
 # ===========================================================================
-# Intel GPU image: ghcr.io/vmafx/vmafx:<tag>-oneapi2026 (ADR-1368, ADR-1517)
+# Intel GPU image: ghcr.io/vidiko/vmafx:<tag>-oneapi2026 (ADR-1368, ADR-1517)
 # Debian 13, the Intel SYCL runtime files of sycl-runtime.json in
 # /usr/local/lib/intel, and the Intel GPU user-mode stack of the pinned
 # compute-runtime release (scripts/ci/install-intel-ocloc.sh): the Level Zero
@@ -596,7 +596,7 @@ RUN --mount=type=bind,from=oneapi2026-with-notices,target=/rootfs \
 
 # ---------------------------------------------------------------------------
 # oneapi2026-source-export: the corresponding source of the image's copyleft parts,
-# published as ghcr.io/vmafx/vmafx:<tag>-oneapi2026-source (ADR-1503 rule 5)
+# published as ghcr.io/vidiko/vmafx:<tag>-oneapi2026-source (ADR-1503 rule 5)
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_PYTHON_BASE} AS oneapi2026-source-fetch
 # Only /sources leaves this stage, so its package lists need no cleanup.
