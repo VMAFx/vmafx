@@ -334,6 +334,27 @@ class FreezeTests(unittest.TestCase):
         self.base = self.git("rev-parse", "HEAD").strip()
         self.check_change(original.replace("Old context.", "Changed context."), 1)
 
+    def test_update_inside_context_fence(self) -> None:
+        original = BASE.replace("Old context.", "```text\nexample\n```\nOld context.")
+        self.write(ADR, original)
+        self.commit()
+        self.base = self.git("rev-parse", "HEAD").strip()
+        update = "## Status update 2026-11-20\nUpdate.\n"
+        self.check_change(
+            original.replace("example\n```", "example\n" + update + "```"), 1, "## Context"
+        )
+        self.check_change(original + "\n" + update, 0)
+
+    def test_references_replacement_fenced_heading(self) -> None:
+        self.check_change(
+            BASE.replace("[Source](old.md)", "New reference.\n\n```markdown\n## Example\n```"), 0
+        )
+
+    def test_nested_dated_update_keeps_level(self) -> None:
+        prefix = BASE + "\n## Status update 2026-11-20\n### Status update 2026-11-21\n"
+        self.check_change(prefix + "### Details\nDetails.\n", 0)
+        self.check_change(prefix + "x\n## Decision\nNew.\n", 1)
+
     def test_update_subheading_and_peer(self) -> None:
         self.check_change(BASE + "\n## Status update 2026-11-20\n### Details\nDetails.\n", 0)
         self.check_change(BASE + "\n## Status update 2026-11-20\nUpdate.\n## Decision\nNew.\n", 1)

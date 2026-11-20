@@ -79,20 +79,27 @@ def section(lines: list[str], index: int) -> str:
     )
 
 
-def in_references(lines: list[str], index: int) -> bool:
-    """Return whether a line belongs to a level-two References section."""
-    current = False
+def fenced_lines(lines: list[str]) -> list[bool]:
+    """Mark fence delimiters and lines inside fenced blocks."""
     fence = ""
-    for line in lines[: index + 1]:
+    fenced = []
+    for line in lines:
         marker = FENCE.match(line)
+        fenced.append(bool(fence) or marker is not None)
         if marker:
             token, tail = marker.groups()
             if not fence:
                 fence = token
             elif token[0] == fence[0] and len(token) >= len(fence) and not tail.strip():
                 fence = ""
-            continue
-        if not fence:
+    return fenced
+
+
+def in_references(lines: list[str], index: int) -> bool:
+    """Return whether a line belongs to a level-two References section."""
+    current = False
+    for line, fenced in zip(lines[: index + 1], fenced_lines(lines), strict=False):
+        if not fenced:
             match = HEADING.match(line)
             if match and len(match.group(1)) <= SECTION_LEVEL:
                 current = line.strip() == "## References"
@@ -102,10 +109,14 @@ def in_references(lines: list[str], index: int) -> bool:
 def allowed_update(lines: list[str], start: int, end: int) -> bool:
     """Accept inserted dated sections, including their subordinate content."""
     level = 0
-    for line in lines[start:end]:
-        match = HEADING.match(line)
+    fenced = fenced_lines(lines)
+    for index in range(start, end):
+        line = lines[index]
+        match = None if fenced[index] else HEADING.match(line)
         if match and UPDATE.match(line):
-            level = len(match.group(1))
+            heading_level = len(match.group(1))
+            if not level or heading_level <= level:
+                level = heading_level
         elif match and level and len(match.group(1)) <= level:
             level = 0
         if not level and line.strip():
@@ -157,11 +168,14 @@ def formatting_only(tag: str, before: list[str], after: list[str]) -> bool:
     )
 
 
-def has_section_heading(lines: list[str]) -> bool:
+def has_section_heading(lines: list[str], start: int, end: int) -> bool:
     """Detect headings that leave a References section."""
+    fenced = fenced_lines(lines)
     return any(
-        (match := HEADING.match(line)) is not None and len(match.group(1)) <= SECTION_LEVEL
-        for line in lines
+        not fenced[i]
+        and (match := HEADING.match(lines[i])) is not None
+        and len(match.group(1)) <= SECTION_LEVEL
+        for i in range(start, end)
     )
 
 
@@ -192,7 +206,7 @@ def refused(old: list[str], new: list[str], status: int) -> list[tuple[int, str]
         if formatting_only(tag, before, after):
             continue
         if tag == "insert" and (
-            (in_references(old, max(0, a - 1)) and not has_section_heading(new[c:d]))
+            (in_references(old, max(0, a - 1)) and not has_section_heading(new, c, d))
             or allowed_update(new, c, d)
             or allowed_note(old, a, new[c:d], status)
         ):
@@ -200,7 +214,7 @@ def refused(old: list[str], new: list[str], status: int) -> list[tuple[int, str]
         if (
             tag != "insert"
             and all(in_references(old, i) for i in range(a, b))
-            and not has_section_heading(new[c:d])
+            and not has_section_heading(new, c, d)
         ):
             continue
         if tag == "replace" and allowed_replace(before, after, old, status):
