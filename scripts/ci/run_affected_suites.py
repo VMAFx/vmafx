@@ -55,6 +55,7 @@ from scripts.lib.safe_subprocess import run as run_command
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CACHE = Path.home() / ".cache" / "vmafx-suite-venvs"
 DEFAULT_TIME_CAP_SECONDS = 900.0
+MAX_LOAD_FACTOR = 4.0
 DEFAULT_INSTALL_CAP_SECONDS = 1800.0
 GIT_TIMEOUT_SECONDS = 60.0
 HEAD_BLOB_HEADER_FIELDS = 3
@@ -468,16 +469,41 @@ def _rewritten(suite: registry_lib.Suite, path: str) -> str:
     return path
 
 
+def scaled_time_cap(base: float, load1: float, load5: float, cpus: int) -> float:
+    """Scale time for contention: a background load of one per CPU halves CPU share."""
+    return base * min(MAX_LOAD_FACTOR, 1 + max(load1, load5) / max(cpus, 1))
+
+
+def read_host_load() -> tuple[float, float, int] | None:
+    """Read host load and available CPUs, or report unavailable load."""
+    try:
+        load1, load5, _ = os.getloadavg()
+    except (AttributeError, OSError):
+        return None
+    process_count = getattr(os, "process_cpu_count", os.cpu_count)()
+    return load1, load5, process_count or os.cpu_count() or 1
+
+
 def _pytest_argv(
-    python: str, suite: registry_lib.Suite, junit: Path, files: Sequence[str]
+    python: str, suite: registry_lib.Suite, junit: Path, files: Sequence[str], timeout: float | None
 ) -> list[str]:
     argv = [python, "-m", "pytest", "-p", "no:cacheprovider", "-rs", "-q", f"--junitxml={junit}"]
-    if suite.pytest_timeout is not None:
-        argv += [
-            f"--timeout={suite.pytest_timeout}",
-            f"--timeout-method={suite.pytest_timeout_method}",
-        ]
+    if timeout is not None:
+        timeout = suite.pytest_timeout if suite.pytest_timeout is not None else timeout
+        argv += [f"--timeout={timeout:g}", f"--timeout-method={suite.pytest_timeout_method}"]
     return _via_env([*argv, *(_rewritten(suite, f) for f in files)])
+
+
+def _cap_description(suite: str, base: float) -> tuple[float, str]:
+    host = read_host_load()
+    if host is None:
+        return base, f"{suite}: time cap {base:g} s (base {base:g} s x 1; load unavailable)"
+    load1, load5, cpus = host
+    cap = scaled_time_cap(base, load1, load5, cpus)
+    return cap, (
+        f"{suite}: time cap {cap:.0f} s (base {base:g} s x {cap / base:.2f}; "
+        f"load {max(load1, load5):.1f} on {cpus} CPUs)"
+    )
 
 
 def run_pytest(
@@ -487,19 +513,34 @@ def run_pytest(
     files: Sequence[str],
     cap: float,
     env: dict[str, str],
+    per_test_timeout: float,
 ) -> tuple[SuiteResult, list[str]]:
-    """One pytest run over the suite's Python files, bounded by ``cap`` seconds."""
+    """Run pytest under a load-scaled wall cap and an available per-test timeout."""
     result = SuiteResult(name=suite.name, status="passed")
     if not files:
         return result, []
     junit = Path(tempfile.gettempdir()) / f"vmafx-affected-{suite.name}-{os.getpid()}.xml"
     junit.unlink(missing_ok=True)
     details: list[str] = []
+    timeout: float | None = (
+        suite.pytest_timeout if suite.pytest_timeout is not None else per_test_timeout
+    )
     try:
-        proc = _run(_pytest_argv(python, suite, junit, files), root, cap, env)
+        installed = _run(_via_env([python, "-c", "import pytest_timeout"]), root, 10, env)
+        if installed.returncode != 0:
+            timeout = None
+            print(
+                f"{suite.name}: runs without a per-test timeout because pytest-timeout is not installed there"
+            )
+    except CommandTimedOut:
+        raise RunnerError(f"{suite.name}: pytest-timeout import check timed out") from None
+    effective_cap, description = _cap_description(suite.name, cap)
+    print(description, flush=True)
+    try:
+        proc = _run(_pytest_argv(python, suite, junit, files, timeout), root, effective_cap, env)
     except CommandTimedOut:
         result.status = "failed"
-        return result, [f"pytest exceeded the {cap:g}s time cap"]
+        return result, [f"pytest exceeded {description}"]
     if not junit.exists():
         result.status = "failed"
         return result, [f"pytest wrote no results (exit {proc.returncode}):", proc.stdout[-3000:]]
@@ -511,6 +552,8 @@ def run_pytest(
         result.status = "failed"
         details += [f"FAILED {name}" for name in summary.failures[:LISTED_FAILURES]]
         details += violations[:LISTED_FAILURES]
+        if summary.failed and timeout is not None and "Timeout (>" in proc.stdout:
+            details.append(f"per-test timeout ({timeout:g} s) exceeded")
         if not (summary.failed or violations):
             details.append(f"pytest exit {proc.returncode}:\n{proc.stdout[-3000:]}")
     return result, details
@@ -714,7 +757,9 @@ def _run_in(
     """Run one suite's Python and shell test files in a resolved interpreter and merge results."""
     py_files = [f for f in files if f.endswith(".py")]
     sh_files = [f for f in files if f.endswith(".sh")]
-    result, details = run_pytest(root, suite, python, py_files, options.time_cap, env)
+    result, details = run_pytest(
+        root, suite, python, py_files, options.time_cap, env, options.per_test_timeout
+    )
     shell_passed, shell_failures = run_shell_files(root, sh_files)
     result.passed += shell_passed
     result.failed += len(shell_failures)
@@ -750,6 +795,9 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--list", action="store_true", help="print the affected suites only")
     parser.add_argument("--strict", action="store_true", help="a suite that cannot run fails")
     parser.add_argument("--time-cap", type=float, default=DEFAULT_TIME_CAP_SECONDS)
+    parser.add_argument(
+        "--per-test-timeout", type=float, default=registry_lib.PER_TEST_TIMEOUT_SECONDS
+    )
     parser.add_argument("--install-cap", type=float, default=DEFAULT_INSTALL_CAP_SECONDS)
     parser.add_argument(
         "--venv-root", default=os.environ.get("VMAFX_SUITE_VENVS", str(DEFAULT_CACHE))
@@ -764,6 +812,8 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     modes = sum(value is not None for value in (args.base, args.files, args.merge_base))
     if modes != 1 or (args.base is None) != (args.head is None):
         parser.error("give --base with --head, --files, or --merge-base (mutually exclusive)")
+    if args.time_cap <= 0 or args.per_test_timeout <= 0:
+        parser.error("time caps must be positive")
     return args
 
 

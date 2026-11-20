@@ -278,8 +278,12 @@ editable packages are re-pointed at the checkout on every run, so one cache
 serves every worktree, and a per-venv file lock serialises two runs that share
 it. A suite with `venv_of` runs in another suite's venv, as in CI (no suite uses it
 since the predictor trainer moved into `ai`, ADR-1886). The tests
-run with `pytest -p no:cacheprovider -rs` and the per-test timeout CI uses,
-under a 900 s cap per suite (`--time-cap`).
+run with `pytest -p no:cacheprovider -rs` and a 300 s per-test timeout
+(`--per-test-timeout`), unless the suite specifies its own. If its interpreter
+lacks pytest-timeout, the runner reports that tests run without this timeout.
+The 900 s base cap (`--time-cap`) is multiplied by
+`min(4, 1 + max(load1, load5) / CPUs)` immediately before each Python suite;
+if load is unavailable, the multiplier is 1.
 
 Measured on a loaded 32-core workstation with a warm `uv` wheel cache: a venv
 builds in 1 to 7 s (the first build with an empty wheel cache downloads the
