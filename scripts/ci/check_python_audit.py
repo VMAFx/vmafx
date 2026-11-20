@@ -16,12 +16,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from datetime import date
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+
 MANIFEST = REPO_ROOT / "requirements" / "locks" / "manifest.json"
 DEFAULT_IGNORE = REPO_ROOT / "scripts" / "ci" / "pip-audit-ignore.json"
 DEFAULT_FIXTURE = REPO_ROOT / "scripts" / "ci" / "fixtures" / "pip-audit-known-vuln.txt"
@@ -101,17 +105,18 @@ def run_audit(root: Path, requirement: Path) -> dict[str, object]:
         "off",
     ]
     try:
-        completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        completed = run_command(
             command,
+            allowed_executables=(sys.executable,),
             cwd=root,
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             check=False,
-            timeout=900,
+            timeout_seconds=900,
         )
-    except subprocess.TimeoutExpired as exc:
+    except TimeoutError as exc:
         raise AuditError(f"pip-audit timed out on {requirement}") from exc
     if completed.returncode not in (0, 1):
         detail = completed.stderr.strip() or completed.stdout.strip()

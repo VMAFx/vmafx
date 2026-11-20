@@ -120,7 +120,7 @@ class Exceptions(unittest.TestCase):
 class Runner(unittest.TestCase):
     def test_lock_audit_never_uses_pip_resolution(self) -> None:
         completed = mock.Mock(returncode=0, stdout='{"dependencies": []}', stderr="")
-        with mock.patch.object(check_python_audit.subprocess, "run", return_value=completed) as run:
+        with mock.patch.object(check_python_audit, "run_command", return_value=completed) as run:
             report = check_python_audit.run_audit(ROOT, ROOT / "python/requirements-lock.txt")
         self.assertEqual(report, {"dependencies": []})
         command = run.call_args.args[0]
