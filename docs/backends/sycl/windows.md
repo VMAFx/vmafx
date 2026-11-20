@@ -18,7 +18,7 @@ the container
 | Tool | Where it comes from | Why |
 | --- | --- | --- |
 | Visual Studio 2022 or 2026, "Desktop development with C++" workload | Visual Studio installer | MSVC linker, headers and libraries, Windows SDK |
-| Intel oneAPI Base Toolkit, DPC++/C++ compiler | Intel offline installer (CI pins 2025.3.0; 2025.1.1 also works) | `icx-cl`, `icpx`, the SYCL runtime and `ocloc`, which the Windows compiler ships |
+| Intel oneAPI Toolkit, DPC++/C++ compiler | Intel offline installer (CI pins 2026.2.0.661; 2025.3.0.372 was pinned while the runner image carried MSVC toolset 14.51) | `icx-cl`, `icpx`, the SYCL runtime and `ocloc`, which the Windows compiler ships |
 | Intel GPU driver | Intel Arc / Graphics driver | Level Zero runtime (`ze_loader.dll` in `System32`) |
 | Python 3.14, Meson and Ninja | `python -m pip install --require-hashes -r requirements/locks/build.txt` | build system |
 | CMake | `python -m pip install cmake` | builds the Level Zero loader below |
@@ -26,9 +26,14 @@ the container
 | `xxd` | Git for Windows (`C:\Program Files\Git\usr\bin`) | embeds the built-in models; without it `--model version=...` has nothing to load |
 
 !!! note
-    The Windows CI leg pins oneAPI 2025.3.0.372 (`ONEAPI_WINDOWS_VERSION` in
-    `build-config.env`) because the Windows installer lags. Linux builds and
-    images use oneAPI 2026.1 (`ONEAPI_VERSION`).
+    The `Windows MSVC+SYCL` CI leg in `libvmaf-build-matrix.yml` pins oneAPI
+    2026.2.0.661 (`intel-oneapi-toolkit-2026.2.0.661_offline.exe`,
+    [ADR-3567](../../adr/3567-windows-sycl-oneapi-2026-2.md)); the installer
+    lists Clang 23 resources (measured on 2026-11-19; see ADR-3567). Builds
+    run `44499808688` passed with no `STL1000` log lines. The Windows SYCL
+    tester zip still reads `ONEAPI_WINDOWS_VERSION` (`2025.3.0.372`) from
+    `build-config.env`. Linux builds and images use oneAPI 2026.1
+    (`ONEAPI_VERSION`).
 
 The oneAPI installer for Windows ships no Level Zero import library, so build
 the loader once, pinned to the version the CI leg uses. Use the Ninja
@@ -78,15 +83,26 @@ Why each setting is there:
 The build needs `ocloc` for the default ahead-of-time targets
 ([AOT targets](overview.md#aot-targets-default-adr-0568)). On Windows it comes
 with oneAPI (`where ocloc`). An older `ocloc` may not know every default
-target; oneAPI 2025.1.1's rejects `bmg-g31` with `Unknown acronym`.
+target; oneAPI 2025.1.1's rejects `bmg-g31` with `Unknown acronym`. The Windows
+CI build with oneAPI 2026.2.0.661 rejected `tgllp` at AOT link. Builds run
+`44487361326` measured six refusals with `ocloc ids`: `tgllp`, `adl-s`,
+`adl-p`, `adl-n`, `rpl-s` and `rpl-p`. It accepted 13: `dg2-g10`, `dg2-g11`,
+`acm-g10`, `acm-g11`, `acm-g12`, `mtl-h`, `mtl-u`, `arl-h`, `arl-s`,
+`arl-u`, `lnl-m`, `bmg-g21` and `bmg-g31`. CI reports the dropped targets
+and passes the accepted list to Meson only if the refused set matches those
+six. Xe-LP, Alder Lake and Raptor Lake integrated devices get no AOT image
+from the Windows CI build. By design, they fall back to the [`spir64` image
+compiled at run time](aot.md#default-target-list). Builds run `44499808688`
+passed with the 13 accepted targets; runtime fallback on the six refused
+families remains unmeasured.
 
 If `ocloc` rejects a target:
 
 1. Check each target with `ocloc ids <target>`.
-2. Drop the unknown ones from the list:
+2. Drop the unknown ones from the list. For the CI measurement above:
 
     ```bat
-    meson configure build -Dsycl_icpx_aot_targets=dg2-g10,dg2-g11,acm-g10,acm-g11,acm-g12,tgllp,adl-s,adl-p,adl-n,rpl-s,rpl-p,mtl-h,mtl-u,arl-h,arl-s,arl-u,lnl-m,bmg-g21
+    meson configure build -Dsycl_icpx_aot_targets=dg2-g10,dg2-g11,acm-g10,acm-g11,acm-g12,mtl-h,mtl-u,arl-h,arl-s,arl-u,lnl-m,bmg-g21,bmg-g31
     ```
 
 `-Dsycl_icpx_aot_targets=` (empty) builds SPIR-V only: every run then
