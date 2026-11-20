@@ -17,7 +17,7 @@ Three nets, because each one misses what another catches:
   test and for a script that is not a test, which the third net cannot run;
 * the sentinel run: every scratch-repository test script that runs on its
   own is executed the way a hook runs it, and must leave the hook's
-  repository byte-identical.
+  repository byte-identical and exit successfully.
 """
 
 from __future__ import annotations
@@ -36,6 +36,9 @@ from collections.abc import Callable
 from functools import partial
 from pathlib import Path
 from typing import Any, TypeGuard
+from unittest.mock import patch
+
+import yaml
 
 try:  # the hooks run this file with plain `python3`; only the tooling suite brings pytest
     import pytest
@@ -717,12 +720,12 @@ def unisolated_offenders(root: Path, names: list[str], today: str) -> list[str]:
     return offenders
 
 
-# The sentinel run is split into shards, one test method each: the tooling suite stops a
-# single test after 300 s (suite_registry.PER_TEST_TIMEOUT_SECONDS) and a hosted runner needed
-# more than that for all 63 scripts in one test. The scripts named here are the measured slow
-# ones (seconds: hosted runner standalone / this host under the sentinel); every other script
-# falls into one of REST_SHARDS shards by its position in the sorted list, so a new script is
-# always in a shard.
+# The sentinel run checks for changed files and nonzero exits. It is split into shards: the
+# tooling suite stops a single test after 300 s (suite_registry.PER_TEST_TIMEOUT_SECONDS), and
+# a hosted runner needed more than that for all 63 scripts in one test. The scripts named
+# here are the measured slow ones (seconds: hosted runner standalone / this host under the
+# sentinel); every other script falls into one of REST_SHARDS shards by its position in the
+# sorted list, so a new script is always in a shard.
 SLOW_SHARDS = {
     # 396 / 125 before its scratch tree was built once; 90 here after.
     "default_model": ("scripts/ci/tests/test-default-model-single-source.sh",),
@@ -730,6 +733,37 @@ SLOW_SHARDS = {
     "hooks": (
         "scripts/git-hooks/test-pre-push-pr-body-lint.py",
         "scripts/githooks/tests/test_install.py",
+    ),
+}
+CHECKOUT_READER_REASON = (
+    "reads this checkout's tracked files through the hook's GIT_DIR, which the sentinel replaces "
+    "with its one-file repository; a real hook names this checkout"
+)
+SENTINEL_EXPECTED_FAILURES: dict[str, tuple[str, frozenset[str]]] = {
+    "scripts/ci/tests/test_ci_impact.py": (
+        CHECKOUT_READER_REASON,
+        frozenset({"test_every_top_level_repo_entry_is_known"}),
+    ),
+    "scripts/ci/tests/test_cuda_pin_single_source.py": (
+        CHECKOUT_READER_REASON,
+        frozenset(
+            {
+                "test_every_matchstring_hits_a_real_line_in_the_tree",
+                "test_the_tree_has_sites_to_protect",
+            }
+        ),
+    ),
+    "scripts/ci/tests/test_check_licence_metadata.py": (
+        CHECKOUT_READER_REASON,
+        frozenset({"test_the_repository_passes"}),
+    ),
+    "scripts/ci/tests/test_check_tidy_coverage.py": (
+        CHECKOUT_READER_REASON,
+        frozenset({"test_the_repository_is_covered_today"}),
+    ),
+    "scripts/ci/tests/test_ci_tier.py": (
+        CHECKOUT_READER_REASON,
+        frozenset({"test_current_tree_passes_full_paths_drift_check"}),
     ),
 }
 REST_SHARDS = 2
@@ -852,13 +886,108 @@ def make_sentinel(root: Path) -> Path:
     return sentinel
 
 
+def declared_failure_report(stderr: str, returncode: int, declared: frozenset[str]) -> str:
+    """Validate the unittest report before accepting a declared failure."""
+    lines = stderr.splitlines()
+    ran = any(re.match(r"^Ran [1-9][0-9]* tests? in ", line) for line in lines)
+    if not ran:
+        last = next((line.strip() for line in reversed(lines) if line.strip()), "")
+        return f"exit {returncode} before unittest ran: {last[:200]}"
+    found = {
+        match.group(1)
+        for line in lines
+        if (match := re.match(r"^(?:FAIL|ERROR): (test\w*) \(", line))
+    }
+    if found != declared:
+        return f"declared failures {sorted(declared)}, got {sorted(found)}"
+    return ""
+
+
+# What the scratch scripts import when the sentinel runs them with the hook's
+# interpreter: flawfinder, identify and PyYAML directly; pre-commit for the hook
+# installer tests; pytest with its timeout plugin for the suite runners.
+SENTINEL_HOOK_ROOTS = frozenset(
+    {"flawfinder", "identify", "pyyaml", "pre-commit", "pytest-timeout"}
+)
+LOCK_PIN = re.compile(r"^([A-Za-z0-9_.-]+)==([^ \\;]+)")
+LOCK_VIA = re.compile(r"^\s+#\s+(?:via\s+)?([A-Za-z0-9_.-]+)\s*$")
+MAX_LOCK_LINES = 20000
+
+
+def package_key(name: str) -> str:
+    """Normalise a distribution name the way the lock and the hook spell it."""
+    return name.lower().replace("_", "-")
+
+
+def lock_graph(lock: str) -> tuple[dict[str, str], dict[str, set[str]]]:
+    """Read each pinned version and the packages its pip-compile "# via" lines name."""
+    pins: dict[str, str] = {}
+    parents: dict[str, set[str]] = {}
+    current = ""
+    for line in lock.splitlines()[:MAX_LOCK_LINES]:
+        if pin := LOCK_PIN.match(line):
+            current = package_key(pin.group(1))
+            pins[current] = pin.group(2)
+            parents[current] = set()
+        elif (via := LOCK_VIA.match(line)) and current and via.group(1) != "via":
+            parents[current].add(package_key(via.group(1)))
+    return pins, parents
+
+
+def sentinel_hook_requirements(lock: str) -> dict[str, str]:
+    """Pin every root and everything the lock installs for it, at the lock versions."""
+    pins, parents = lock_graph(lock)
+    needed = set(SENTINEL_HOOK_ROOTS)
+    for _ in range(len(pins) + 1):
+        grown = needed | {name for name, via in parents.items() if via & needed}
+        if grown == needed:
+            break
+        needed = grown
+    return {name: pins.get(name, "") for name in needed}
+
+
+def sentinel_hook_dependencies(config: str) -> list[object] | None:
+    """Return the sentinel hook's additional_dependencies when it is a python hook."""
+    data: object = yaml.safe_load(config)
+    if not isinstance(data, dict) or not isinstance(data.get("repos"), list):
+        return None
+    for repo in data["repos"]:
+        if not isinstance(repo, dict) or not isinstance(repo.get("hooks"), list):
+            continue
+        for hook in repo["hooks"]:
+            if not isinstance(hook, dict) or hook.get("id") != "test-git-fixture-isolation":
+                continue
+            deps = hook.get("additional_dependencies")
+            if hook.get("language") != "python" or not isinstance(deps, list):
+                return None
+            return deps
+    return None
+
+
+def sentinel_hook_matches_lock(config: str, lock: str) -> bool:
+    """The hook pins exactly the lock closure of its roots, at the lock versions."""
+    deps = sentinel_hook_dependencies(config)
+    if deps is None:
+        return False
+    parsed = [
+        re.fullmatch(r"([A-Za-z0-9_.-]+)==([^ \\]+)", dep) for dep in deps if isinstance(dep, str)
+    ]
+    if len(parsed) != len(deps) or any(match is None for match in parsed):
+        return False
+    versions = {
+        package_key(match.group(1)): match.group(2) for match in parsed if match is not None
+    }
+    wanted = sentinel_hook_requirements(lock)
+    return len(versions) == len(deps) and all(wanted.values()) and versions == wanted
+
+
 def sentinel_damage(script: str, directory: Path) -> list[str]:
-    """Run `script` from the checkout root under a sentinel GIT_DIR; list changed sentinel files."""
+    """List sentinel changes and unexpected exit statuses from a hook-run script."""
     sentinel = make_sentinel(directory)
     before = snapshot(sentinel)
     path = Path(script) if Path(script).is_absolute() else ROOT / script
     executable = sys.executable if path.suffix == ".py" else BASH
-    run_command(
+    result = run_command(
         [executable, str(path)],
         allowed_executables=(executable,),
         cwd=ROOT,
@@ -869,7 +998,22 @@ def sentinel_damage(script: str, directory: Path) -> list[str]:
         check=False,
     )
     after = snapshot(sentinel)
-    return sorted(key for key in before.keys() | after.keys() if before.get(key) != after.get(key))
+    damage = sorted(
+        key for key in before.keys() | after.keys() if before.get(key) != after.get(key)
+    )
+    if result.returncode != 0 and script in SENTINEL_EXPECTED_FAILURES:
+        issue = declared_failure_report(
+            str(result.stderr), result.returncode, SENTINEL_EXPECTED_FAILURES[script][1]
+        )
+        if issue:
+            damage.append(issue)
+    if result.returncode != 0 and script not in SENTINEL_EXPECTED_FAILURES:
+        lines = str(result.stderr).splitlines()
+        last = next((line.strip() for line in reversed(lines) if line.strip()), "")
+        damage.append(f"exit {result.returncode}: {last[:200]}")
+    if result.returncode == 0 and script in SENTINEL_EXPECTED_FAILURES:
+        damage.append("declared expected-fail, but exit 0")
+    return damage
 
 
 def snapshot(directory: Path) -> dict[str, bytes]:
@@ -1123,6 +1267,88 @@ class GitFixtureIsolation(unittest.TestCase):
                 self.assertNotEqual(changed, [], f"{label}: the sentinel saw nothing")
                 if expected:
                     self.assertIn(expected, changed)
+
+    def test_sentinel_reports_python_import_failure(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sentinel-python-failure-") as directory:
+            root = Path(directory)
+            script = root / "test-failure.py"
+            script.write_text("import vmafx_planted_missing_module\n")
+            self.assertEqual(
+                sentinel_damage(str(script), root),
+                ["exit 1: ModuleNotFoundError: No module named 'vmafx_planted_missing_module'"],
+            )
+
+    def test_sentinel_reports_bash_failure(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sentinel-bash-failure-") as directory:
+            root = Path(directory)
+            script = root / "test-failure.sh"
+            script.write_text("exit 1\n")
+            self.assertEqual(sentinel_damage(str(script), root), ["exit 1: "])
+
+    def test_sentinel_accepts_successful_python(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sentinel-python-success-") as directory:
+            root = Path(directory)
+            script = root / "test-success.py"
+            script.write_text("pass\n")
+            self.assertEqual(sentinel_damage(str(script), root), [])
+
+    def test_sentinel_declared_failure_matches(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sentinel-declared-") as directory:
+            root = Path(directory)
+            script = root / "test-expected.py"
+            script.write_text(
+                "import unittest\nclass Planted(unittest.TestCase):\n"
+                "    def test_planted(self): self.fail('planted')\n"
+                "unittest.main()\n"
+            )
+            with patch.dict(
+                SENTINEL_EXPECTED_FAILURES, {str(script): ("planted", frozenset({"test_planted"}))}
+            ):
+                self.assertEqual(sentinel_damage(str(script), root), [])
+
+    def test_sentinel_declared_crash_before_unittest(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sentinel-declared-crash-") as directory:
+            root = Path(directory)
+            script = root / "test-crash.py"
+            script.write_text("import vmafx_planted_missing_module\n")
+            with patch.dict(
+                SENTINEL_EXPECTED_FAILURES, {str(script): ("planted", frozenset({"test_planted"}))}
+            ):
+                self.assertEqual(
+                    sentinel_damage(str(script), root),
+                    [
+                        "exit 1 before unittest ran: ModuleNotFoundError: No module named 'vmafx_planted_missing_module'"
+                    ],
+                )
+
+    def test_sentinel_declared_failure_differs(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sentinel-declared-diff-") as directory:
+            root = Path(directory)
+            script = root / "test-diff.py"
+            script.write_text(
+                "import unittest\nclass Planted(unittest.TestCase):\n"
+                "    def test_other(self): self.fail('planted')\n"
+                "unittest.main()\n"
+            )
+            with patch.dict(
+                SENTINEL_EXPECTED_FAILURES, {str(script): ("planted", frozenset({"test_planted"}))}
+            ):
+                self.assertEqual(
+                    sentinel_damage(str(script), root),
+                    ["declared failures ['test_planted'], got ['test_other']"],
+                )
+
+    def test_sentinel_declared_failure_is_stale(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sentinel-declared-stale-") as directory:
+            root = Path(directory)
+            script = root / "test-success.py"
+            script.write_text("pass\n")
+            with patch.dict(
+                SENTINEL_EXPECTED_FAILURES, {str(script): ("planted", frozenset({"test_planted"}))}
+            ):
+                self.assertEqual(
+                    sentinel_damage(str(script), root), ["declared expected-fail, but exit 0"]
+                )
 
     def test_the_sentinel_starts_no_background_maintenance(self) -> None:
         with tempfile.TemporaryDirectory(prefix="git-identity-maintenance-") as directory:
@@ -1520,6 +1746,45 @@ class GitFixtureIsolation(unittest.TestCase):
                 self.assertTrue(reason)
                 text = (ROOT / name).read_text(encoding="utf-8", errors="replace")
                 self.assertTrue(unisolated_git(name, text), "no longer needed: remove it")
+
+    def test_sentinel_hook_dependencies_match_tooling_lock(self) -> None:
+        config = (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+        lock = (ROOT / "requirements/locks/tooling-tests.txt").read_text(encoding="utf-8")
+        # Positive: the real hook. Negative: a version off the lock, a dependency the
+        # lock installs for a root left out, an extra package, a system hook.
+        self.assertTrue(sentinel_hook_matches_lock(config, lock))
+        start = config.index("      - id: test-git-fixture-isolation\n")
+        head, hook = config[:start], config[start:]
+        planted = {
+            "version": hook.replace("- flawfinder==2.0.20", "- flawfinder==2.0.19", 1),
+            "missing": hook.replace("          - pluggy==1.7.0\n", "", 1),
+            "extra": hook.replace(
+                "          - pytest==9.2.0\n",
+                "          - pytest==9.2.0\n          - rich==1.0\n",
+                1,
+            ),
+            "system": hook.replace("        language: python\n", "        language: system\n", 1),
+        }
+        for name, text in planted.items():
+            with self.subTest(planted=name):
+                self.assertNotEqual(text, hook)
+                self.assertFalse(sentinel_hook_matches_lock(head + text, lock))
+        # Boundary: the closure follows "# via" lines, so a lock where pytest gains
+        # a dependency asks the hook for it too.
+        grown = lock + "newdep==1.0 \\\n    # via pytest\n"
+        self.assertEqual(sentinel_hook_requirements(grown).get("newdep"), "1.0")
+        self.assertFalse(sentinel_hook_matches_lock(config, grown))
+
+    def test_sentinel_expected_failures_are_live(self) -> None:
+        scripts = scratch_scripts()
+        for name, (reason, tests) in SENTINEL_EXPECTED_FAILURES.items():
+            with self.subTest(name=name):
+                self.assertIn(name, scripts)
+                self.assertTrue(reason)
+                self.assertTrue(tests)
+                text = (ROOT / name).read_text(encoding="utf-8")
+                for test in tests:
+                    self.assertIn(f"def {test}(", text)
 
     def test_isolation_rule_refuses_underscore_git_helpers(self) -> None:
         """Underscore-prefixed Git helpers must trigger the isolation check."""

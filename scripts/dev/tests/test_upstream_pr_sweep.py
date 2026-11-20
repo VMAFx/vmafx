@@ -7,21 +7,25 @@ from __future__ import annotations
 import io
 import os
 import shutil
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.dev import upstream_pr_sweep as sweep_mod
-from scripts.dev.tests.upstream_pr_sweep_fixture import (
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+
+from scripts.dev import upstream_pr_sweep as sweep_mod  # noqa: E402
+from scripts.dev.tests.upstream_pr_sweep_fixture import (  # noqa: E402
     SweepFixtureCase,
     fixture_environment,
     git_run,
     require_fixture_tools,
 )
-from scripts.lib.safe_subprocess import TextCommandResult
-from scripts.lib.safe_subprocess import run as run_command
+from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 
 def setUpModule() -> None:
