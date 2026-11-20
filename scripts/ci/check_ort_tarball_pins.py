@@ -333,7 +333,11 @@ def _check_tracked_versions(
     tracked = raw.get("tracked")
     if not isinstance(tracked, dict) or not tracked:
         return [f"{pin_file}: missing tracked table for Renovate"]
-    findings: list[str] = []
+    findings = [
+        f"{pin_file}: missing tracked version for package '{name}'"
+        for name in valid
+        if name not in tracked
+    ]
     for name, version in tracked.items():
         if name not in valid:
             findings.append(f"{pin_file}: tracked package '{name}' is not in packages")
