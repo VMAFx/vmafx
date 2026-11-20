@@ -804,6 +804,21 @@ def message_identity(kind: str) -> tuple[str, str]:
     return match.group(1), match.group(2)
 
 
+def report_message_failure(commit: Commit, reason: str) -> None:
+    """Print advice for a commit that Git has not created yet."""
+    signoff_failed = is_signoff_reason(reason)
+    title = "DCO sign-off" if signoff_failed else "DCO attribution"
+    print(f"::error title={title}::{commit.sha} {commit.subject}: {reason}")
+    print("dco: the commit being made is refused.")
+    if signoff_failed:
+        print("  New commit: git commit -s")
+        print("  Amend: git commit --amend -s --no-edit")
+    else:
+        print(
+            "  Remove model/tool attribution from the message or author identity and commit again."
+        )
+
+
 def check_message_file(path: str) -> int:
     """Check a pending commit message with Git's effective identities."""
     try:
@@ -831,9 +846,7 @@ def check_message_file(path: str) -> int:
     )
     reason = commit_attribution_reason(commit) or signoff_reason(commit)
     if reason:
-        report([(commit, reason)])
-        print("  New commit: git commit -s")
-        print("  Amend: git commit --amend -s --no-edit")
+        report_message_failure(commit, reason)
         return 1
     print("dco: PASS - commit message")
     return 0
