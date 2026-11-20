@@ -102,6 +102,40 @@ class _SnapshotBoundary(ast.AST):
         self.begin = begin
 
 
+class _Rebinding(ast.AST):
+    """Invalidate names bound by a target or pattern at its execution point."""
+
+    def __init__(self, targets: list[ast.AST], name: str | None = None) -> None:
+        self.targets = targets
+        self.name = name
+
+
+def _invalidate_rebindings(node: _Rebinding, bindings: set[str]) -> None:
+    """Walk binding targets and patterns without inspecting their expressions."""
+    if node.name is not None:
+        bindings.discard(node.name)
+    stack = list(node.targets)
+    for _ in range(MAX_BODY_NODES):
+        if not stack:
+            return
+        target = stack.pop()
+        if isinstance(target, ast.Name):
+            bindings.discard(target.id)
+        elif isinstance(target, ast.alias):
+            bindings.discard(target.asname or target.name.split(".")[0])
+        elif isinstance(target, (ast.MatchAs, ast.MatchStar)) and target.name:
+            bindings.discard(target.name)
+        elif isinstance(target, ast.MatchMapping) and target.rest:
+            bindings.discard(target.rest)
+        if isinstance(target, (ast.Tuple, ast.List, ast.Starred, ast.pattern)):
+            stack.extend(
+                child
+                for child in ast.iter_child_nodes(target)
+                if isinstance(child, (ast.Name, ast.Tuple, ast.List, ast.Starred, ast.pattern))
+            )
+    raise ScanError(f"binding target exceeds {MAX_BODY_NODES} AST nodes")
+
+
 @dataclass(frozen=True)
 class Finding:
     """One test function that asserts only exit code 0 or has an invalid escape."""
@@ -216,6 +250,13 @@ def _record_target_vars(target: ast.AST, rc_vars: set[str]) -> None:
 
 def _update_rc_vars(node: ast.AST, rc_vars: set[str]) -> None:
     """Update bindings in source order, invalidating overwritten names."""
+    if isinstance(node, _Rebinding):
+        _invalidate_rebindings(node, rc_vars)
+        return
+    if isinstance(node, (ast.Delete, ast.Import, ast.ImportFrom)):
+        rebound: list[ast.AST] = list(node.targets if isinstance(node, ast.Delete) else node.names)
+        _invalidate_rebindings(_Rebinding(rebound), rc_vars)
+        return
     if isinstance(node, ast.Assign):
         targets = node.targets
         value = node.value
@@ -345,7 +386,9 @@ def _escape_status(func: FuncNode, comments: dict[int, tuple[str, int, bool]]) -
     return "none"
 
 
-def _alternative_flow(branches: list[list[ast.stmt]], bindings: set[str]) -> list[TraversalStep]:
+def _alternative_flow(
+    branches: Sequence[Sequence[ast.AST]], bindings: set[str]
+) -> list[TraversalStep]:
     """Schedule alternatives with snapshots taken after header evaluation."""
     steps: list[TraversalStep] = []
     states: list[set[str]] = []
@@ -364,6 +407,11 @@ def _loop_flow(node: ast.For | ast.AsyncFor | ast.While, bindings: set[str]) -> 
     otherwise: set[str] = set()
     return [
         ([bindings], body),
+        *(
+            ((_Rebinding([node.target]), body),)
+            if isinstance(node, (ast.For, ast.AsyncFor))
+            else ()
+        ),
         *((stmt, body) for stmt in node.body),
         ([bindings, body], otherwise),
         *((stmt, otherwise) for stmt in node.orelse),
@@ -394,6 +442,7 @@ def _try_flow(node: ast.Try | ast.TryStar, bindings: set[str]) -> list[Traversal
         entry: set[str] = set()
         steps.append(([bindings, snapshot], entry))
         steps.append(([entry], state))
+        steps.append((_Rebinding([], handler.name), state))
         if node.finalbody:
             states.append(entry)
         steps.extend((stmt, state) for stmt in handler.body)
@@ -421,7 +470,17 @@ def _push_children(node: ast.AST, bindings: set[str], stack: list[TraversalStep]
         steps = _alternative_flow(bodies, bindings)
     elif isinstance(node, ast.Match):
         bodies = [*(case.body for case in node.cases), []]
-        steps = _alternative_flow(bodies, bindings)
+        branches: list[list[ast.AST]] = [
+            [_Rebinding([case.pattern]), *([case.guard] if case.guard else []), *case.body]
+            for case in node.cases
+        ]
+        steps = _alternative_flow([*branches, []], bindings)
+    elif isinstance(node, ast.withitem):
+        steps = [(node.context_expr, bindings)]
+        if node.optional_vars is not None:
+            steps.append((_Rebinding([node.optional_vars]), bindings))
+        stack.extend(reversed(steps))
+        return
     else:
         stack.extend((child, bindings) for child in reversed(list(ast.iter_child_nodes(node))))
         return

@@ -1344,6 +1344,60 @@ class ExitCodeOnlyTestsCheckTest(unittest.TestCase):
         )
         self.assertEqual(checker.file_findings(source, REL_TEST_FILE), [])
 
+    def test_nonassignment_rebindings_invalidate_returncode(self) -> None:
+        prefix = (
+            "async def test_case():\n    proc = run_checker()\n"
+            "    value = proc.returncode\n    assert value == 0\n"
+        )
+        cases = {
+            "for": "    for value in [len(proc.stdout)]:\n        assert value == 0\n",
+            "async_for": "    async for value in items:\n        assert value == 0\n",
+            "with": "    with context() as value:\n        assert value == 0\n",
+            "async_with": "    async with context() as value:\n        assert value == 0\n",
+            "except": "    try:\n        pass\n    except Exception as value:\n        assert value == 0\n",
+            "capture": "    match x:\n        case value:\n            assert value == 0\n",
+            "star": "    match x:\n        case [*value]:\n            assert value == 0\n",
+            "mapping": "    match x:\n        case {**value}:\n            assert value == 0\n",
+            "del": "    del value\n    assert value == 0\n",
+            "import": "    import example as value\n    assert value == 0\n",
+            "from_import": "    from example import value\n    assert value == 0\n",
+        }
+        for name, body in cases.items():
+            with self.subTest(form=name):
+                self.assertEqual(checker.file_findings(prefix + body, REL_TEST_FILE), [])
+
+    def test_loop_body_can_establish_returncode_after_rebinding(self) -> None:
+        source = (
+            "def test_case():\n    value = run_checker()\n"
+            "    for value in [1]:\n        rc = run_checker()\n        assert rc == 0\n"
+        )
+        self.assertEqual(len(checker.file_findings(source, REL_TEST_FILE)), 1)
+
+    def test_match_guard_binding_is_seen_in_case_body(self) -> None:
+        source = (
+            "def test_case():\n    match True:\n"
+            "        case _ if (rc := main([])) == 0:\n            assert rc == 0\n"
+        )
+        findings = checker.file_findings(source, REL_TEST_FILE)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].message, "asserts only exit code 0")
+
+    def test_match_guard_bindings_are_isolated_between_cases(self) -> None:
+        source = (
+            "def test_case():\n    proc = run_checker()\n"
+            "    match True:\n"
+            "        case False if (value := proc.returncode) == 0:\n            pass\n"
+            "        case _:\n            assert value == 0\n"
+        )
+        self.assertEqual(checker.file_findings(source, REL_TEST_FILE), [])
+
+    def test_loop_target_rebinds_after_iterable_is_evaluated(self) -> None:
+        source = (
+            "def test_case():\n    proc = run_checker()\n"
+            "    for value in [(value := proc.returncode)]:\n        assert value == 0\n"
+        )
+        self.assertEqual(checker.file_findings(source, REL_TEST_FILE), [])
+
     def test_escape_marker_requires_comment_token(self) -> None:
         source = (
             'def test_string(label="# exit-code-only: example marker"):\n'
