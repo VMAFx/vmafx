@@ -1,6 +1,6 @@
 # VMAFx hash lock; regenerate with: make python-locks-write
 # vmafx-uv-version: 0.13.6
-# vmafx-input-sha256: b3dab20ced57ec809973fc4a977e97306b07dfb2fc44f2e2b1f7c2b0366a7ab4
+# vmafx-input-sha256: 627576d7307dff6d0d694032bb506566dba959b961724ea5d31dfe9e81df488c
 # vmafx-inputs: requirements/locks/pre-commit.in
 attrs==26.1.0 \
     --hash=sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309 \
@@ -477,6 +477,10 @@ pyyaml==6.0.3 \
 reuse==6.2.0 \
     --hash=sha256:12b68549bb9d5f4957f06d726a83a9780628810008fb732bb0d0f21607f8c6d6 \
     --hash=sha256:4feae057a2334c9a513e6933cdb9be819d8b822f3b5b435a36138bd218897d23
+    # via -r requirements/locks/pre-commit.in
+ruamel-yaml==0.19.1 \
+    --hash=sha256:27592957fedf6e0b62f281e96effd28043345e0e66001f97683aa9a40c667c93 \
+    --hash=sha256:53eb66cd27849eff968ebf8f0bf61f46cdac2da1d1f3576dd4ccee9b25c31993
     # via -r requirements/locks/pre-commit.in
 tomlkit==0.15.2 \
     --hash=sha256:05562412163a3037b94497385fb7f9204c637bc605af7a48199e41cf2272f437 \

@@ -1662,6 +1662,15 @@ entries:
   - ai/pyproject.toml
   - dev-llm/pyproject.toml
   - tools/ensemble-training-kit/pyproject.toml
+- id: py-ruamel-yaml
+  name: ruamel.yaml (Python)
+  url: https://sourceforge.net/projects/ruamel-yaml/
+  kind: library
+  relation: integrated
+  license: MIT
+  paths:
+  - requirements/locks/pre-commit.in
+  - requirements/locks/tooling-tests.in
 - id: py-rich
   name: rich (Python)
   url: https://github.com/Textualize/rich

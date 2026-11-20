@@ -22,6 +22,14 @@ twin; the act runner Gitea ships sets ``GITEA_ACTIONS=true`` in the job environm
 A v3 pin anywhere else is refused, because github.com no longer serves v3.
 
 ``--write`` adds the guard and the twin to every v4+ step that has neither, in place.
+The writer uses ruamel.yaml's round-trip mode so comments, key order, folded blocks,
+quoting and anchors survive the edit; it sets ``width = 1000`` and
+``indent(mapping=2, sequence=4, offset=2)`` so a file that needs no twin is left
+byte-identical. A file whose unchanged round trip is not byte-identical (for example
+flow mappings with inner spaces) is refused rather than reformatted. ruamel.yaml follows
+YAML 1.2 for plain scalars: ``on``, ``yes`` and ``no`` are strings, not booleans, so a
+``with:`` value such as ``if-no-files-found: yes`` compares as the same string on the
+step and its twin.
 
 Exit 0 when every file passes, 1 on a finding.
 """
@@ -29,12 +37,19 @@ Exit 0 when every file passes, 1 on a finding.
 from __future__ import annotations
 
 import argparse
+import io
 import re
 import sys
+from collections.abc import Iterator, MutableMapping, MutableSequence
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-import yaml  # type: ignore[import-untyped]  # PyYAML ships no stubs in the hook env, as in scripts/ci/check_composite_actions.py
+from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.error import StringMark
+from ruamel.yaml.scalarstring import LiteralScalarString
+from ruamel.yaml.tokens import CommentToken
 
 ROOT = Path(__file__).resolve().parents[2]
 V3_PINS = {
@@ -49,9 +64,9 @@ SKIP_MARKER = "skipped on Gitea"
 OFF_GITEA = "env.GITEA_ACTIONS != 'true'"
 ON_GITEA = "env.GITEA_ACTIONS == 'true'"
 USES = re.compile(r"actions/(upload|download)-artifact@([0-9a-f]{40})")
-STEP_START = re.compile(r"^(\s*)- ")
 MAX_FILES = 512
 MAX_STEPS = 1024
+CA_POST_VALUE = 2
 
 
 def find_files(root: Path) -> list[Path]:
@@ -153,9 +168,25 @@ def check_steps(label: str, steps: list[Any]) -> list[str]:
     return findings
 
 
+def _yaml(round_trip: bool = False, explicit_start: bool = False) -> YAML:
+    """A YAML parser; ``round_trip`` keeps comments, order and quoting for writes."""
+    yaml = YAML(typ="rt" if round_trip else "safe")
+    if round_trip:
+        yaml.preserve_quotes = True
+        yaml.width = 1000
+        yaml.explicit_start = explicit_start
+        yaml.indent(mapping=2, sequence=4, offset=2)
+    return yaml
+
+
+def _load_yaml(text: str) -> Any:
+    """Parse one YAML document with ruamel.yaml's safe constructor."""
+    return _yaml().load(text)
+
+
 def check_file(path: Path) -> list[str]:
     """Findings for one workflow or composite action."""
-    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    doc = _load_yaml(path.read_text(encoding="utf-8"))
     if not isinstance(doc, dict):
         return []
     if isinstance(doc.get("runs"), dict):
@@ -167,120 +198,258 @@ def check_file(path: Path) -> list[str]:
     return findings
 
 
-def _step_end(lines: list[str], start: int, indent: int) -> int:
-    end = start + 1
-    while end < len(lines):
-        line = lines[end]
-        if line.strip() and len(line) - len(line.lstrip()) <= indent:
-            break
-        end += 1
-    while end > start + 1 and not lines[end - 1].strip():
-        end -= 1
-    return end
+def _is_mapping(value: object) -> bool:
+    return isinstance(value, MutableMapping)
 
 
-def _twin_lines(block: list[str], kind: str, inputs: set[str], cond: str | None) -> list[str]:
-    head = block[0]
-    indent = len(head) - len(head.lstrip())
-    pad = " " * (indent + 2)
-    step_keys = [ln for ln in block if len(ln) - len(ln.lstrip(" -")) == indent + 2]
-    name = next(
-        (
-            ln.split("name:", 1)[1].strip()
-            for ln in step_keys
-            if ln.lstrip(" -").startswith("name:")
-        ),
-        "",
-    )
-    name = (name.strip("'\"") or f"{kind.capitalize()} artifact") + " (Gitea)"
-    out = [
-        " " * indent
-        + "- name: "
-        + yaml.safe_dump(name, width=1000).strip().removesuffix("...").strip()
-    ]
-    out.append(pad + "if: " + guarded(cond, True))
-    if inputs <= V3_INPUTS[kind]:
-        out.append(pad + "uses: " + V3_PINS[kind])
-        keep = False
-        for line in block:
-            stripped = line.strip().lstrip("- ")
-            if stripped.startswith("with:"):
-                keep = True
-            elif keep and line.strip() and len(line) - len(line.lstrip()) <= indent + 2:
-                keep = False
-            if keep:
-                out.append(line)
-        return out
-    missing = ", ".join(sorted(inputs - V3_INPUTS[kind]))
-    reason = f"::warning::artifact {kind} {SKIP_MARKER}: v4+ is GitHub-only, v3 lacks {missing}"
-    out.append(pad + "shell: bash")
-    out.append(pad + "run: |")
-    out.append(pad + "  echo '" + reason + "'")
-    return out
+def _is_sequence(value: object) -> bool:
+    return isinstance(value, MutableSequence)
 
 
-def _guard_block(block: list[str], cond: str | None) -> list[str]:
-    head = block[0]
-    indent = len(head) - len(head.lstrip())
-    new_if = " " * (indent + 2) + "if: " + guarded(cond, False)
-    for i, line in enumerate(block):
-        if re.match(r"^\s*(- )?if:", line):
-            if line.lstrip().startswith("- "):
-                block[i] = " " * indent + "- if: " + guarded(cond, False)
-            else:
-                block[i] = new_if
-            return block
+def _step_lists(doc: Any) -> Iterator[Any]:
+    """Every ordered step list in a workflow or composite action."""
+    if not _is_mapping(doc):
+        return
+    runs = doc.get("runs")
+    if _is_mapping(runs) and _is_sequence(runs.get("steps")):
+        yield runs["steps"]
+    jobs = doc.get("jobs")
+    if not _is_mapping(jobs):
+        return
+    for job in jobs.values():
+        if _is_mapping(job) and _is_sequence(job.get("steps")):
+            yield job["steps"]
+
+
+def _set_if(step: Any, value: str) -> None:
+    """Set ``if:`` while keeping its original position in the step mapping."""
+    if "if" in step:
+        step["if"] = value
+        return
+    position = 1 if "name" in step else 0
+    insert = getattr(step, "insert", None)
+    if insert is None:
+        step["if"] = value
+    else:
+        insert(position, "if", value)
+
+
+def _last_mapping(step: Any) -> Any:
+    """The mapping whose last value carries the step's trailing blank line."""
+    with_map = step.get("with") if _is_mapping(step) else None
+    return with_map if _is_mapping(with_map) else step
+
+
+def _last_key(node: Any) -> Any:
+    """The last key of a mapping, whose post token carries trailing text."""
+    keys = list(node.keys()) if _is_mapping(node) else []
+    return keys[-1] if keys else None
+
+
+def _split_post_token(token: Any) -> tuple[Any, Any]:
+    """Split a post-value token at its first line break.
+
+    The part on the value's own line is an end-of-line comment and stays with
+    the source step. The remaining comment or blank block belongs after the
+    twin. A token with no second line stays with the source.
+    """
+    value = getattr(token, "value", None)
+    if not isinstance(value, str):
+        return token, None
+    head, sep, tail = value.partition("\n")
+    if not sep or not tail:
+        return token, None
+    column = getattr(token, "_column", 0)
+    start = getattr(token, "start_mark", None)
+    end = getattr(token, "end_mark", None)
     return (
-        [block[0], new_if, *block[1:]]
-        if not head.strip().startswith("- uses:")
-        else [
-            " " * indent + "- if: " + guarded(cond, False),
-            " " * (indent + 2) + head.strip()[2:],
-            *block[1:],
-        ]
+        CommentToken(head + sep, start_mark=start, end_mark=end, column=column) if head else None,
+        CommentToken(sep + tail, start_mark=start, end_mark=end, column=column),
     )
+
+
+def _take_trailing_post(step: Any) -> Any:
+    """Detach and return the source comment/blank token after a step."""
+    node = _last_mapping(step)
+    key = _last_key(node)
+    item = node.ca.items.get(key) if key is not None else None
+    if not item or len(item) <= CA_POST_VALUE:
+        return None
+    token = item[CA_POST_VALUE]
+    if token is None:
+        return None
+    head, tail = _split_post_token(token)
+    if tail is None:
+        return None
+    item[CA_POST_VALUE] = head
+    return tail
+
+
+def _attach_trailing_pre(step: Any, token: Any) -> None:
+    """Move a displaced source comment block before the step after the twin."""
+    if token is None:
+        return
+    value = getattr(token, "value", None)
+    if isinstance(value, str):
+        # The post token starts with the line break that ended the source step.
+        # Drop it, and the indentation the source line carried, so the pre
+        # comment is indented from its own start mark at the step's column.
+        if value.startswith("\n"):
+            value = value[1:]
+        if not value.startswith("\n"):
+            value = value.lstrip(" ")
+        token = CommentToken(
+            value,
+            start_mark=getattr(token, "start_mark", None),
+            end_mark=getattr(token, "end_mark", None),
+        )
+    comment = list(getattr(step.ca, "comment", None) or [None, None])
+    pre = list(comment[1] or [])
+    pre.append(token)
+    comment[1] = pre
+    step.ca.comment = comment
+
+
+def _comment_token(token: Any, value: str, column: int) -> CommentToken:
+    """A comment token whose start mark carries the column the emitter indents from."""
+    mark = getattr(token, "start_mark", None)
+    if mark is None:
+        mark = StringMark("<generated>", 0, 0, column, None, None)
+    else:
+        mark = StringMark(mark.name, mark.index, mark.line, column, mark.buffer, mark.pointer)
+    return CommentToken(value, start_mark=mark)
+
+
+def _attach_trailing_post(step: Any, token: Any, indent: int = 0) -> None:
+    """Attach a displaced source comment/blank block after the twin."""
+    if token is None:
+        return
+    node = _last_mapping(step)
+    key = _last_key(node)
+    if key is None:
+        return
+    value = getattr(token, "value", None)
+    if (
+        isinstance(value, str)
+        and value.startswith("\n")
+        and isinstance(node[key], LiteralScalarString)
+    ):
+        # A literal block already ends its line; its post token must not add
+        # a second line break before the first following comment or blank.
+        # Keep the source column when the comment is not deeper than the
+        # step-list indentation; deeper comments would enter the script text,
+        # so those are clamped to the step-list level.
+        source_column = getattr(getattr(token, "start_mark", None), "column", indent)
+        column = source_column if source_column <= indent else indent
+        trimmed = value[1:].lstrip(" ")
+        if not trimmed:
+            return
+        token = _comment_token(token, trimmed, column)
+    item = list(node.ca.items.get(key) or [None, None, None, None])
+    item[CA_POST_VALUE] = token
+    node.ca.items[key] = item
+
+
+def _twin_step(step: Any, kind: str, base: str) -> Any:
+    """Build the Gitea twin as a mapping, not as reconstructed text."""
+    name = step.get("name")
+    label = f"{name} (Gitea)" if name else f"{kind.capitalize()} artifact (Gitea)"
+    twin = CommentedMap()
+    twin["name"] = label
+    twin["if"] = guarded(base or None, True)
+    inputs = set((step.get("with") or {}).keys())
+    if inputs <= V3_INPUTS[kind]:
+        twin["uses"] = V3_PINS[kind].split("#", 1)[0].strip()
+        if "with" in step:
+            with_map = CommentedMap()
+            for key, value in step["with"].items():
+                with_map[key] = deepcopy(value)
+            twin["with"] = with_map
+        twin.yaml_add_eol_comment(V3_PINS[kind].split("#", 1)[1].strip(), key="uses")
+    else:
+        missing = ", ".join(sorted(inputs - V3_INPUTS[kind]))
+        twin["shell"] = "bash"
+        twin["run"] = LiteralScalarString(
+            f"echo '::warning::artifact {kind} {SKIP_MARKER}: "
+            f"v4+ is GitHub-only, v3 lacks {missing}'\n"
+        )
+    return twin
+
+
+def _ensure_guard_and_twin(steps: Any, idx: int, kind: str) -> tuple[bool, bool]:
+    """Guard a v4+ step and add its twin when it has neither. (changed, inserted)."""
+    step = steps[idx]
+    original = step.get("if")
+    base = _base_condition(original, on_gitea=False)
+    changed = False
+    if base is None:
+        base = str(original or "").strip()
+        _set_if(step, guarded(base or None, False))
+        changed = True
+    if idx + 1 < len(steps):
+        twin = steps[idx + 1]
+        if not _check_twin("", kind, step, twin, base):
+            return changed, False
+    steps.insert(idx + 1, _twin_step(step, kind, base))
+    return True, True
 
 
 def write_file(path: Path) -> bool:
     """Add the guard and the Gitea twin to every v4+ step in ``path`` that lacks them."""
     if not check_file(path):
         return False
-    lines = path.read_text(encoding="utf-8").split("\n")
-    out: list[str] = []
-    i = 0
-    changed = False
-    while i < len(lines):
-        start = STEP_START.match(lines[i])
-        if start is None:
-            out.append(lines[i])
-            i += 1
-            continue
-        end = _step_end(lines, i, len(start.group(1)))
-        block = lines[i:end]
-        parsed = yaml.safe_load("\n".join(ln[len(start.group(1)) :] for ln in block))
-        step = (
-            parsed[0] if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict) else {}
+    text = path.read_text(encoding="utf-8")
+    yaml = _yaml(round_trip=True, explicit_start=text.startswith("---"))
+    doc = yaml.load(text)
+    baseline = io.StringIO()
+    yaml.dump(doc, baseline)
+    if baseline.getvalue() != text:
+        print(
+            f"{path}: round-trip without edits is not byte-identical; refusing to rewrite",
+            file=sys.stderr,
         )
-        cls = _classify(step.get("uses"))
-        if cls is None or cls[1] or _base_condition(step.get("if"), on_gitea=False) is not None:
-            out.extend(block)
-            i = end
-            continue
-        cond = step.get("if")
-        cond_text = None if cond is None else str(cond)
-        inputs = set((step.get("with") or {}).keys())
-        out.extend(_guard_block(list(block), cond_text))
-        out.extend(_twin_lines(block, cls[0], inputs, cond_text))
-        changed = True
-        i = end
-    if changed:
-        path.write_text("\n".join(out), encoding="utf-8")
-    return changed
+        return False
+    changed = False
+    for steps in _step_lists(doc):
+        idx = 0
+        while idx < len(steps) and idx < MAX_STEPS:
+            step = steps[idx]
+            if not _is_mapping(step):
+                idx += 1
+                continue
+            cls = _classify(step.get("uses"))
+            if cls is None or cls[1]:
+                idx += 1
+                continue
+            did_change, inserted = _ensure_guard_and_twin(steps, idx, cls[0])
+            changed = changed or did_change
+            if inserted:
+                trailing = _take_trailing_post(step)
+                next_idx = idx + 2
+                if next_idx < len(steps):
+                    _attach_trailing_pre(steps[next_idx], trailing)
+                else:
+                    indent = getattr(getattr(step, "lc", None), "col", 8) - 2
+                    _attach_trailing_post(steps[idx + 1], trailing, max(indent, 0))
+            idx += 2 if inserted else 1
+    if not changed:
+        return False
+    stream = io.StringIO()
+    yaml.dump(doc, stream)
+    path.write_text(stream.getvalue(), encoding="utf-8")
+    return True
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Check that every artifact step has a Gitea path.")
-    parser.add_argument("--write", action="store_true", help="add missing guards and twins")
+    parser.add_argument(
+        "--write",
+        action="store_true",
+        help=(
+            "add missing guards and twins; refuses files that cannot round-trip "
+            "(for example supply-chain.yml), which need a manual edit"
+        ),
+    )
     parser.add_argument("paths", nargs="*", type=Path, help="files to check (default: all)")
     args = parser.parse_args(argv)
     paths = args.paths or find_files(ROOT)
