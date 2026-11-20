@@ -5,10 +5,13 @@
 
 from __future__ import annotations
 
+import ast
 import re
+import shlex
 import sys
 import unittest
 from copy import deepcopy
+from itertools import islice
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "libvmaf-build-matrix.yml"
 TESTER_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "windows-tester-bundle.yml"
 BUILD_CONFIG_PATH = REPO_ROOT / "build-config.env"
+AOT_PROBE_PATH = REPO_ROOT / "scripts" / "ci" / "ocloc_aot_targets.py"
 
 WINDOWS_GPU_JOB_ID = "windows-gpu-build"
 ONEAPI_STEP_NAME = "Install Intel oneAPI (windows)"
@@ -70,6 +74,7 @@ MIN_ONEAPI_MAJOR = 2026
 MAX_MATRIX_ROWS = 16
 MAX_JOB_STEPS = 64
 MAX_SCRIPT_LINES = 128
+MAX_PROBE_AST_NODES = 2048
 ONEAPI_URL_VERSION_RE = re.compile(
     r"intel-oneapi-(?:base-)?toolkit-(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)\.(?P<build>\d+)_offline\.exe$"
 )
@@ -143,14 +148,19 @@ def _validate_matrix_backends(job: dict[str, Any]) -> None:
             continue
         backend = str(row.get("backend", ""))
         backends.add(backend)
-        if backend == "cuda" and (
-            WINDOWS_INLINE_PIN_RE.search("\n".join(f"{key}:" for key in row))
-            or "oneapi" in str(row).lower()
-            or "toolset" in row
-        ):
-            raise AssertionError("CUDA matrix row must not carry the SYCL toolchain pin")
+        if backend == "cuda":
+            _validate_cuda_matrix_row(row)
     if backends != {"cuda", "sycl"}:
         raise AssertionError(f"expected matrix backends {{'cuda', 'sycl'}}, found {backends}")
+
+
+def _validate_cuda_matrix_row(row: dict[str, Any]) -> None:
+    if (
+        WINDOWS_INLINE_PIN_RE.search("\n".join(f"{key}:" for key in row))
+        or "oneapi" in str(row).lower()
+        or "toolset" in row
+    ):
+        raise AssertionError("CUDA matrix row must not carry the SYCL toolchain pin")
 
 
 def _validate_step_if_conditions(steps: list[dict[str, Any]]) -> None:
@@ -321,6 +331,109 @@ def _validate_tester_aot_probe(steps: list[dict[str, Any]], installer: int) -> N
         raise AssertionError("tester build must use AOT probe output")
 
 
+def _probe_path(expression: ast.expr) -> Path:
+    parts: list[str] = []
+    for _ in range(MAX_SCRIPT_LINES):
+        match expression:
+            case ast.Name(id="ROOT"):
+                path = REPO_ROOT.joinpath(*reversed(parts)).resolve()
+                if path.is_relative_to(REPO_ROOT):
+                    return path
+                break
+            case ast.BinOp(left=parent, op=ast.Div(), right=ast.Constant(value=str() as part)):
+                parts.append(part)
+                expression = parent
+            case _:
+                break
+    raise AssertionError("probe sys.path entry must be rooted at the repository")
+
+
+def _probe_import_bases(tree: ast.Module) -> list[Path]:
+    bases = [AOT_PROBE_PATH.parent]
+    for statement in tree.body:
+        match statement:
+            case ast.Expr(value=ast.Call(func=func) as call) if ast.unparse(func).startswith(
+                "sys.path."
+            ):
+                match call:
+                    case ast.Call(
+                        func=ast.Attribute(attr="insert"),
+                        args=[
+                            ast.Constant(value=0),
+                            ast.Call(func=ast.Name(id="str"), args=[path], keywords=[]),
+                        ],
+                        keywords=[],
+                    ):
+                        bases.insert(0, _probe_path(path))
+                    case _:
+                        raise AssertionError("unsupported probe sys.path change")
+    return bases
+
+
+def _probe_import_names(nodes: list[ast.AST]) -> set[str]:
+    modules: set[str] = set()
+    for node in nodes:
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            modules.add(node.module)
+            modules.update(f"{node.module}.{alias.name}" for alias in node.names)
+    return modules
+
+
+def _probe_import_path(module: str, bases: list[Path]) -> Path | None:
+    parts = module.split(".")
+    for base in bases:
+        stem = base.joinpath(*parts)
+        for path in (stem / "__init__.py", stem.with_suffix(".py")):
+            if path.is_file():
+                return path.relative_to(REPO_ROOT)
+    return None
+
+
+def _probe_local_imports() -> set[Path]:
+    tree = ast.parse(AOT_PROBE_PATH.read_text(encoding="utf-8"))
+    nodes = list(islice(ast.walk(tree), MAX_PROBE_AST_NODES + 1))
+    if len(nodes) > MAX_PROBE_AST_NODES:
+        raise AssertionError("probe exceeds AST node limit")
+    bases = _probe_import_bases(tree)
+    return {
+        path
+        for module in _probe_import_names(nodes)
+        if (path := _probe_import_path(module, bases)) is not None
+    }
+
+
+def _validate_tester_recipe_imports(workflow_text: str) -> None:
+    steps = _job_steps(_load_job(workflow_text, "build"))
+    run = str(steps[_step_index(steps, "Use this ref's build recipe")]["run"])
+    if len(run.splitlines()) > MAX_SCRIPT_LINES:
+        raise AssertionError("tester recipe overlay exceeds script line limit")
+    run = re.sub(r"\\\n[ \t]*", " ", run)
+    common, guard, remaining = run.partition("\nif [[ '${{ matrix.gpu }}' == sycl ]]; then\n")
+    sycl, end, _ = remaining.partition("\nfi\n")
+    if not guard or not end:
+        raise AssertionError("tester recipe overlay must have a SYCL branch")
+    checkout = r"git checkout FETCH_HEAD -- (.+)$"
+    commands = re.findall(rf"(?m)^{checkout}", common)
+    commands.extend(re.findall(rf"(?m)^  {checkout}", sycl))
+    overlay = {Path(word) for command in commands for word in shlex.split(command, comments=True)}
+    missing = sorted(
+        path for path in _probe_local_imports() if overlay.isdisjoint((path, *path.parents))
+    )
+    if missing:
+        raise AssertionError(
+            "tester recipe overlay lacks probe imports: " + ", ".join(p.as_posix() for p in missing)
+        )
+
+
+def _move_installer_check_last(run: str, marker: str) -> str:
+    lines = run.splitlines()[:MAX_SCRIPT_LINES]
+    line = next(line for line in lines if marker in line)
+    lines.remove(line)
+    return "\n".join([*lines, line])
+
+
 class WindowsSyclToolsetContractTest(unittest.TestCase):
     """Positive, negative, and boundary contract tests for Windows MSVC+SYCL toolchain pin."""
 
@@ -353,39 +466,22 @@ class WindowsSyclToolsetContractTest(unittest.TestCase):
 
     def test_planted_installer_integrity_failures(self) -> None:
         workflow = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
-        for kind in (
-            "size",
-            "sha256",
-            "late_size",
-            "late_sha256",
-            "curl",
-            "exit",
-            "length",
-            "refused",
-        ):
+        steps = _job_steps(workflow["jobs"][WINDOWS_GPU_JOB_ID])
+        installer = _step_index(steps, ONEAPI_STEP_NAME)
+        run = steps[installer]["run"]
+        mutations = {
+            "size": run.replace("INTEL_BASEKIT_WINDOWS_SIZE", ""),
+            "sha256": run.replace("INTEL_BASEKIT_WINDOWS_SHA256", ""),
+            "late_size": _move_installer_check_last(run, "INTEL_BASEKIT_WINDOWS_SIZE"),
+            "late_sha256": _move_installer_check_last(run, "Get-FileHash"),
+            "curl": run.replace("--fail", "", 1),
+            "exit": run.replace("if errorlevel 1 exit /b 1", "rem ignored", 1),
+            "length": run + "\nrem extra" * MAX_SCRIPT_LINES,
+            "refused": run.replace("%ONEAPI_WINDOWS_AOT_EXPECT_REFUSED%", ""),
+        }
+        for kind, replacement in mutations.items():
             planted = deepcopy(workflow)
-            target = next(
-                s
-                for s in planted["jobs"][WINDOWS_GPU_JOB_ID]["steps"]
-                if s.get("name") == ONEAPI_STEP_NAME
-            )
-            if kind in ("size", "sha256"):
-                target["run"] = target["run"].replace("INTEL_BASEKIT_WINDOWS_" + kind.upper(), "")
-            elif kind == "curl":
-                target["run"] = target["run"].replace("--fail", "", 1)
-            elif kind == "exit":
-                target["run"] = target["run"].replace("if errorlevel 1 exit /b 1", "rem ignored", 1)
-            elif kind == "length":
-                target["run"] += "\nrem extra" * MAX_SCRIPT_LINES
-            elif kind == "refused":
-                target["run"] = target["run"].replace("%ONEAPI_WINDOWS_AOT_EXPECT_REFUSED%", "")
-            else:
-                marker = "INTEL_BASEKIT_WINDOWS_SIZE" if kind == "late_size" else "Get-FileHash"
-                lines = target["run"].splitlines()
-                line = next(line for line in lines if marker in line)
-                lines.remove(line)
-                lines.append(line)
-                target["run"] = "\n".join(lines)
+            _job_steps(planted["jobs"][WINDOWS_GPU_JOB_ID])[installer]["run"] = replacement
             with self.subTest(kind=kind), self.assertRaises(AssertionError):
                 validate_windows_sycl_toolset_contract(yaml.safe_dump(planted))
 
@@ -439,6 +535,31 @@ class WindowsSyclToolsetContractTest(unittest.TestCase):
     def test_shared_windows_pin_values(self) -> None:
         _validate_build_config(BUILD_CONFIG_PATH.read_text(encoding="utf-8"))
 
+    def test_planted_missing_build_config_pins_rejected(self) -> None:
+        text = BUILD_CONFIG_PATH.read_text(encoding="utf-8")
+        for key in WINDOWS_PINS:
+            with self.subTest(key=key):
+                planted, count = re.subn(rf"(?m)^{key}=[^\n]*\n", "", text)
+                self.assertEqual(count, 1)
+                with self.assertRaisesRegex(AssertionError, f"missing {key} pin"):
+                    _validate_build_config(planted)
+
+    def test_planted_changed_build_config_pins_rejected(self) -> None:
+        text = BUILD_CONFIG_PATH.read_text(encoding="utf-8")
+        for key, changed in {
+            "INTEL_BASEKIT_WINDOWS_SIZE": "1" + EXPECTED_INSTALLER_SIZE[1:],
+            "INTEL_BASEKIT_WINDOWS_SHA256": "0" + EXPECTED_INSTALLER_SHA256[1:],
+            "INTEL_BASEKIT_WINDOWS_URL": EXPECTED_WINDOWS_BASEKIT_URL.replace("728c", "828c", 1),
+        }.items():
+            with self.subTest(key=key):
+                expected = WINDOWS_PINS[key]
+                self.assertEqual(len(expected), len(changed))
+                self.assertEqual(sum(a != b for a, b in zip(expected, changed, strict=True)), 1)
+                planted = text.replace(f'{key}="{expected}"', f'{key}="{changed}"', 1)
+                self.assertNotEqual(planted, text)
+                with self.assertRaisesRegex(AssertionError, f"{key} must be pinned once"):
+                    _validate_build_config(planted)
+
     def test_planted_second_build_config_pin_rejected(self) -> None:
         text = BUILD_CONFIG_PATH.read_text(encoding="utf-8")
         planted = f"{text}\nONEAPI_WINDOWS_VERSION=2025.3.0.372\n"
@@ -470,6 +591,19 @@ class WindowsSyclToolsetContractTest(unittest.TestCase):
 
     def test_tester_workflow_uses_the_shared_pin_and_aot_probe(self) -> None:
         _validate_tester_workflow(TESTER_WORKFLOW_PATH.read_text(encoding="utf-8"))
+
+    def test_tester_recipe_overlays_the_probe_imports(self) -> None:
+        _validate_tester_recipe_imports(TESTER_WORKFLOW_PATH.read_text(encoding="utf-8"))
+
+    def test_planted_missing_probe_parser_overlay_rejected(self) -> None:
+        text = TESTER_WORKFLOW_PATH.read_text(encoding="utf-8")
+        parser = "core/src/sycl/check_aot_image.py"
+        self.assertEqual(text.count(parser), 1)
+        planted = text.replace(parser, "", 1)
+        with self.assertRaisesRegex(
+            AssertionError, rf"overlay lacks probe imports: {re.escape(parser)}"
+        ):
+            _validate_tester_recipe_imports(planted)
 
     def test_planted_tester_switch_only_in_comment_rejected(self) -> None:
         text = TESTER_WORKFLOW_PATH.read_text(encoding="utf-8")

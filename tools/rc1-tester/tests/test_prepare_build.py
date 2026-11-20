@@ -313,7 +313,7 @@ def test_intel_runtime_reports_all_unmatched_patterns_and_sorted_dlls(tmp_path: 
     compiler.mkdir(parents=True)
     for name in ("sycl9.dll", "libfoo.DLL", "readme.txt"):
         (compiler / name).touch()
-    (compiler / "fake.dll").mkdir()
+    (compiler / "sycl8.dll").mkdir()
     umf = tmp_path / "umf/bin"
     umf.mkdir(parents=True)
     (umf / "allocator.dll").touch()
@@ -324,9 +324,22 @@ def test_intel_runtime_reports_all_unmatched_patterns_and_sorted_dlls(tmp_path: 
     message = str(caught.value)
     assert "compiler/bin/sycl8.dll" in message
     assert "compiler/bin/libmmd.dll" in message
-    assert "libfoo.DLL, sycl9.dll" in message
+    assert "DLLs present: libfoo.DLL, sycl9.dll)" in message
     assert "umf/bin/umf*.dll" in message and "allocator.dll" in message
-    assert "readme.txt" not in message and "fake.dll" not in message
+    assert "readme.txt" not in message
+
+
+def test_runtime_component_matches_only_the_file_with_a_shared_pattern(tmp_path: Path) -> None:
+    compiler = tmp_path / "compiler"
+    compiler.mkdir()
+    directory = compiler / "sycl8.dll"
+    directory.mkdir()
+    (compiler / "sycl10.dll").symlink_to(directory.name, target_is_directory=True)
+    dll = compiler / "sycl9.dll"
+    dll.touch()
+    component = {"id": "compiler", "dir": "compiler", "names": ["sycl*.dll"]}
+
+    assert pb.component_files(tmp_path, component) == ([dll], "")
 
 
 def test_intel_runtime_reports_a_missing_directory(tmp_path: Path) -> None:

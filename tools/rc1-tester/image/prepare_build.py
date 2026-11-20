@@ -49,6 +49,7 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterable
 from itertools import islice
 from pathlib import Path
 from typing import Any
@@ -350,9 +351,7 @@ def component_files(vendor_root: Path, component: dict) -> tuple[list[Path], str
     files: list[Path] = []
     unmatched: list[str] = []
     for pattern in patterns:
-        if Path(pattern).name != pattern or "**" in pattern:
-            raise BuildError(f"{component['id']}: expected a filename pattern, got {pattern!r}")
-        matches = [entry for entry in entries or () if entry.match(pattern)]
+        matches = runtime_pattern_files(entries or (), pattern, component["id"])
         if matches:
             files.extend(matches)
         else:
@@ -361,6 +360,12 @@ def component_files(vendor_root: Path, component: dict) -> tuple[list[Path], str
         detail = runtime_dll_listing(entries) if entries is not None else "directory missing"
         return files, f"{component['id']}: nothing matches {', '.join(unmatched)} ({detail})"
     return files, ""
+
+
+def runtime_pattern_files(entries: Iterable[Path], pattern: str, component_id: str) -> list[Path]:
+    if Path(pattern).name != pattern or "**" in pattern:
+        raise BuildError(f"{component_id}: expected a filename pattern, got {pattern!r}")
+    return [entry for entry in entries if entry.match(pattern) and entry.is_file()]
 
 
 def runtime_directory_entries(directory: Path) -> list[Path]:

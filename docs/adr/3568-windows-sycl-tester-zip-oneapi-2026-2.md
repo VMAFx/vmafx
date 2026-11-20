@@ -46,6 +46,8 @@ present in each affected directory in a single staging error.
 - **Positive**: One installer update applies to both jobs. The AOT check
   detects changes to the refused set before the build, and the runtime error
   reports all missing patterns in one run.
+  The SYCL zip recipe overlays the AOT probe's parser for older source refs, and
+  both Windows SYCL selectors follow changes to the shared pin and its loader.
 - **Negative**: A change to Intel's accepted targets stops both jobs until
   the expected set and the reason for the change are recorded.
 - **Neutral / follow-ups**: Re-measure the names used by

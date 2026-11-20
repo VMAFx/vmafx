@@ -461,6 +461,10 @@
         "tools/rc1-tester/image/sycl-rows.json",
         "tools/rc1-tester/image/prepare_build.py",
         "build-config.env",
+        "scripts/ci/load-build-config.sh",
+        "scripts/ci/ocloc_aot_targets.py",
+        "scripts/lib/safe_subprocess.py",
+        "core/src/sycl/check_aot_image.py",
         "core/src/sycl/scratch_ratchet.txt"
       ]
     },
@@ -474,7 +478,12 @@
         "core/*.h.in",
         "core/*meson.build",
         "core/meson_options.txt",
+        "core/src/sycl/check_aot_image.py",
         ".github/workflows/libvmaf-build-matrix.yml",
+        "build-config.env",
+        "scripts/ci/load-build-config.sh",
+        "scripts/ci/ocloc_aot_targets.py",
+        "scripts/lib/safe_subprocess.py",
         "scripts/ci/werror-args.sh",
         "scripts/ci/check_msvc_library_names.py",
         "scripts/ci/run_meson_test.py",

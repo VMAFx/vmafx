@@ -263,9 +263,11 @@ jobs:
           git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD -- tools/rc1-tester scripts/ci docs/hardware-reports \
             requirements/locks/windows-tester-zip.txt
-          # An older source ref may lack the recipe's AOT pin.
+          # Older source refs may lack the AOT pin and the modules the probe imports.
+          # The Windows build itself never runs the ELF checker that provides the parser.
           if [[ '${{ matrix.gpu }}' == sycl ]]; then
-            git checkout FETCH_HEAD -- build-config.env
+            git checkout FETCH_HEAD -- build-config.env scripts/lib/safe_subprocess.py \
+              core/src/sycl/check_aot_image.py
           fi
       - name: Setup python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
