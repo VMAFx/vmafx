@@ -39,6 +39,7 @@ Usage: check_aot_image.py --ocloc PATH --targets a,b,c [--partial TU=t1,t2]...
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import struct
 import subprocess
@@ -316,6 +317,14 @@ def section_images(section: bytes) -> list[Image]:
     return [image for payload in expand(section) for image in parse_images(payload)]
 
 
+def parse_ocloc_ip_version(output: str) -> str | None:
+    """Extract the GFX IP version from an ocloc ids response."""
+    words = output.split()
+    if "ids:" not in words or not words:
+        return None
+    return words[-1] if re.fullmatch(r"\d+\.\d+\.\d+", words[-1]) else None
+
+
 def ocloc_ip_version(ocloc: str, target: str) -> str:
     """Ask ocloc for a device acronym's GFX IP version, e.g. bmg-g21 -> 20.1.0."""
     result = subprocess.run(  # noqa: S603 -- Meson passes the resolved ocloc, no shell
@@ -325,10 +334,10 @@ def ocloc_ip_version(ocloc: str, target: str) -> str:
         check=False,
         timeout=OCLOC_TIMEOUT_SECONDS,
     )
-    lines = result.stdout.split()
-    if result.returncode != 0 or "ids:" not in lines or lines[-1] == "ids:":
+    version = parse_ocloc_ip_version(result.stdout)
+    if result.returncode != 0 or version is None:
         raise CheckError(f"`{ocloc} ids {target}` did not name an IP version: {result.stdout!r}")
-    return lines[-1]
+    return version
 
 
 def count_images(images: list[Image]) -> str:
