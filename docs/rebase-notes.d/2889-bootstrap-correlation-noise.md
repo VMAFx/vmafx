@@ -1,0 +1,3 @@
+## Bootstrap correlations collapse only float noise (2026-11-18)
+
+`test/issue-2889-bootstrap-golden`, [issue #2889](https://github.com/VMAFx/vmafx/issues/2889). `compat/python-vmaf/routine.py` normalizes prediction values at nine decimals before ranking them, so a 1.1e-12 difference between two flat assets is not a real rank difference while a difference at the six-decimal reporting grid remains distinct; a resampled prediction column with fewer than two distinct values returns `NaN`. Upstream's Python harness has neither rule, so a rebase must keep both branches and the coverage in `python/test/routine_test.py` (`test_correlation_stat_handles_constant_and_boundary_predictions` and `test_compare_two_quality_runners_on_dataset`).

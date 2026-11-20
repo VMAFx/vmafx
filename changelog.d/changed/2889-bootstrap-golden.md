@@ -1,0 +1,1 @@
+- Re-enable the `compare_two_quality_runners_on_dataset` bootstrap regression test; resampled correlations now return NaN when a prediction column is constant after collapsing 1e-12 float noise, and predictions are normalized at nine decimals so last-bit noise cannot create a spurious rank while six-decimal reporting differences stay distinct.

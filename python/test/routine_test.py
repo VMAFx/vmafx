@@ -5,6 +5,7 @@ import shutil
 import unittest
 
 import numpy as np
+import pandas as pd
 import pytest
 from sureal.subjective_model import MosModel, SubjectiveModel
 
@@ -20,6 +21,7 @@ from vmaf.core.quality_runner import (
 from vmaf.routine import (
     SubjectiveDatasetReader,
     SubjectiveDatasetTester,
+    _correlation_stat,
     compare_two_quality_runners_on_dataset,
     generate_dataset_from_raw,
     read_dataset,
@@ -601,13 +603,37 @@ class TestTrainOnDataset(unittest.TestCase):
         self.assertAlmostEqual(test_assets[2].groundtruth, 100, places=4)
         self.assertAlmostEqual(test_assets[3].groundtruth, 80, places=4)
 
-    @unittest.skip(
-        "Bootstrap resampling values drift with numpy RNG API changes across Python/numpy "
-        "versions (np.random.seed vs default_rng). The test's seed_resample=0 with "
-        "num_resample=10 produces different PLCC/SROCC on numpy >= 1.17 vs older releases. "
-        "Fix: switch to np.random.default_rng(seed_resample) in the resampler, then "
-        "regenerate the baseline values. (scaffold-audit ADR-0621 P3-3)"
-    )
+    def test_correlation_stat_handles_constant_and_boundary_predictions(self):
+        """A constant resample is undefined; real prediction differences remain distinct."""
+        constant = pd.DataFrame(
+            {
+                "groundtruth": [100.0, 80.0],
+                "first_prediction": [97.4280426426119, 97.4280426426108],
+            }
+        )
+        stats = _correlation_stat(constant, "groundtruth", "first_prediction")
+        self.assertTrue(np.isnan(stats["plcc"]))
+        self.assertTrue(np.isnan(stats["srocc"]))
+
+        distinct = pd.DataFrame(
+            {
+                "groundtruth": [100.0, 80.0],
+                "first_prediction": [1.0, 2.0],
+            }
+        )
+        stats = _correlation_stat(distinct, "groundtruth", "first_prediction")
+        self.assertAlmostEqual(stats["plcc"], -1.0, places=12)
+        self.assertAlmostEqual(stats["srocc"], -1.0, places=12)
+
+        boundary = pd.DataFrame(
+            {
+                "groundtruth": [100.0, 80.0],
+                "first_prediction": [97.4280426426119, 97.4280426436119],
+            }
+        )
+        stats = _correlation_stat(boundary, "groundtruth", "first_prediction")
+        self.assertFalse(np.isnan(stats["plcc"]))
+
     def test_compare_two_quality_runners_on_dataset(self):
         test_dataset = import_python_file(VmafConfig.test_resource_path("dataset_sample.py"))
         result = compare_two_quality_runners_on_dataset(
