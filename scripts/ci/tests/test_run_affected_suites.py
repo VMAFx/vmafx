@@ -22,7 +22,6 @@ import sys
 import tempfile
 import time
 import unittest
-from collections.abc import Sequence
 from pathlib import Path
 from unittest.mock import patch
 
@@ -59,6 +58,7 @@ def manifest() -> dict[str, object]:
                 "name": "pkg",
                 "paths": ["pkg/tests/"],
                 "checks": ["Pkg"],
+                "pytest": {"method": "thread" if os.name == "nt" else "signal"},
                 "install": {"python": "3.14", "locks": [LOCK]},
             },
             {
@@ -484,28 +484,94 @@ class LoadCapTests(unittest.TestCase):
         self.assertEqual(runner.scaled_time_cap(900, 1000, 0, 16), 3600)
 
     def test_unavailable_load_and_cpu_fallback(self) -> None:
-        with patch.object(os, "getloadavg", side_effect=OSError):
+        with patch.object(os, "getloadavg", side_effect=OSError, create=True):
             cap, description = runner._cap_description("pkg", 900)
         self.assertEqual(cap, 900)
         self.assertIn("load unavailable", description)
-        with patch.object(os, "getloadavg", return_value=(1.0, 2.0, 3.0)):
+        with patch.object(os, "getloadavg", return_value=(1.0, 2.0, 3.0), create=True):
             with patch.object(os, "process_cpu_count", return_value=None, create=True):
                 with patch.object(os, "cpu_count", return_value=8):
                     self.assertEqual(runner.read_host_load(), (1.0, 2.0, 8))
 
+    def test_missing_getloadavg_attribute_uses_the_base_cap(self) -> None:
+        with patch.dict(os.__dict__):
+            os.__dict__.pop("getloadavg", None)
+            self.assertIsNone(runner.read_host_load())
+            self.assertEqual(runner._cap_description("pkg", 900)[0], 900)
+
+    def test_cpu_count_fallback_is_at_least_one(self) -> None:
+        with patch.object(os, "getloadavg", return_value=(0.0, 2.0, 3.0), create=True):
+            with patch.object(os, "process_cpu_count", return_value=None, create=True):
+                with patch.object(os, "cpu_count", return_value=None):
+                    self.assertEqual(runner.read_host_load(), (0.0, 2.0, 1))
+        self.assertEqual(runner.scaled_time_cap(10, 0, 2, 0), 30)
+        self.assertEqual(runner.scaled_time_cap(10, 0, 3, 1), 40)
+
+
+class TimeoutPluginTests(unittest.TestCase):
     def test_suite_timeout_overrides_default(self) -> None:
         suite = registry_lib.Suite("s", ("t/",), ("c",), pytest_timeout=7)
-        with patch.object(runner, "_run", return_value=TextCommandResult((), 0, "", "")):
-            timeout = runner._suite_timeout(Path(), suite, "python", {}, 3)
-        argv = runner._pytest_argv(
-            "python",
-            suite,
-            Path("results.xml"),
-            ["t/test_x.py"],
-            timeout,
+        plugin_state = "VMAFX_PYTEST_TIMEOUT=1\r\n"
+        env = {"PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1", "PYTEST_ADDOPTS": "-p pytest_timeout"}
+        junit = Path("results.xml")
+        files = ["t/test_x.py"]
+        with patch.object(
+            runner, "_run", return_value=TextCommandResult((), 0, plugin_state, "")
+        ) as run:
+            timeout = runner._suite_timeout(Path(), suite, "python", env, 3, files, junit)
+        run.assert_called_once_with(
+            runner._pytest_argv("python", suite, junit, files, None, probe=True),
+            Path(),
+            60,
+            env,
         )
+        argv = runner._pytest_argv("python", suite, junit, files, timeout)
         self.assertIn("--timeout=7", argv)
         self.assertNotIn("--timeout=3", argv)
+
+    def test_missing_plugin_cannot_drop_an_explicit_suite_timeout(self) -> None:
+        suite = registry_lib.Suite("s", ("t/",), ("c",), pytest_timeout=7)
+        with patch.object(
+            runner, "_run", return_value=TextCommandResult((), 0, "VMAFX_PYTEST_TIMEOUT=0\n", "")
+        ):
+            with self.assertRaisesRegex(runner.RunnerError, "requires a per-test timeout"):
+                runner._suite_timeout(Path(), suite, "python", {}, 3, ["t/x.py"], Path("j.xml"))
+
+    def test_failed_plugin_probe_cannot_downgrade_an_optional_timeout(self) -> None:
+        suite = registry_lib.Suite("s", ("t/",), ("c",))
+        for status, output in (
+            (4, "invalid PYTEST_ADDOPTS"),
+            (1, "VMAFX_PYTEST_TIMEOUT=1\n"),
+            (0, ""),
+            (0, "VMAFX_PYTEST_TIMEOUT=0\nVMAFX_PYTEST_TIMEOUT=1\n"),
+        ):
+            with self.subTest(status=status, output=output):
+                with patch.object(
+                    runner, "_run", return_value=TextCommandResult((), status, output, "")
+                ):
+                    with self.assertRaisesRegex(runner.RunnerError, "pytest plugin check failed"):
+                        runner._suite_timeout(
+                            Path(), suite, "python", {}, 3, ["t/x.py"], Path("j.xml")
+                        )
+
+    def test_absent_plugin_keeps_only_the_optional_base_cap(self) -> None:
+        suite = registry_lib.Suite("s", ("t/",), ("c",))
+        probe = TextCommandResult((), 0, "VMAFX_PYTEST_TIMEOUT=0\n", "")
+        with (
+            patch.object(runner, "_run", return_value=probe) as run,
+            patch.object(runner, "_cap_description") as scaled,
+            patch.object(runner, "parse_junit", return_value=runner.JunitSummary(passed=1)),
+            patch.object(Path, "exists", return_value=True),
+            patch.object(Path, "unlink"),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            result, details = runner.run_pytest(Path(), suite, "python", ["t/x.py"], 9, {}, 3)
+        self.assertEqual(result.status, "passed", details)
+        self.assertIn("pytest-timeout is not loaded", output.getvalue())
+        self.assertIn("time cap 9 s (base, not load-scaled", output.getvalue())
+        self.assertEqual(run.call_args.args[2], 9)
+        self.assertFalse(any(arg.startswith("--timeout") for arg in run.call_args.args[0]))
+        scaled.assert_not_called()
 
 
 class SkipPolicyTests(unittest.TestCase):
@@ -534,7 +600,7 @@ class RunTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="affected-run-")
         self.addCleanup(self._tmp.cleanup)
         self.repo = Path(self._tmp.name)
-        self.env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        self.env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "PYTEST_"))}
         self.env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
         self.git("init", "-q")
         self.parent: str | None = None
@@ -652,20 +718,24 @@ class RunTests(unittest.TestCase):
     def test_load_scaled_slow_suite_passes(self) -> None:
         self.build({"pkg/tests/test_slow.py": "import time\ndef test_slow():\n    time.sleep(3)\n"})
         output = io.StringIO()
-        with patch.object(runner, "read_host_load", return_value=(32.0, 32.0, 16), create=True):
-            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
-                status = runner.main(
-                    [
-                        "--root",
-                        str(self.repo),
-                        "--python-exe",
-                        sys.executable,
-                        "--time-cap",
-                        "2",
-                        "--files",
-                        "pkg/tests/test_slow.py",
-                    ]
-                )
+        with (
+            patch.dict(os.environ, self.env, clear=True),
+            patch.object(runner, "read_host_load", return_value=(32.0, 32.0, 16)),
+            contextlib.redirect_stdout(output),
+            contextlib.redirect_stderr(output),
+        ):
+            status = runner.main(
+                [
+                    "--root",
+                    str(self.repo),
+                    "--python-exe",
+                    sys.executable,
+                    "--time-cap",
+                    "2",
+                    "--files",
+                    "pkg/tests/test_slow.py",
+                ]
+            )
         self.assertEqual(status, 0, output.getvalue())
         self.assertIn("time cap 6 s", output.getvalue())
 
@@ -683,43 +753,88 @@ class RunTests(unittest.TestCase):
         )
         self.assertLess(time.monotonic() - started, 60)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("per-test timeout (2 s)", result.stderr)
+        if os.name == "nt":
+            # pytest-timeout's thread method terminates before JUnit can be written.
+            self.assertIn("pytest wrote no results (exit 1)", result.stderr)
+            self.assertIn(" Timeout ", result.stderr)
+        else:
+            self.assertIn("per-test timeout (2 s)", result.stderr)
 
-    def test_missing_timeout_plugin_is_reported(self) -> None:
+    def test_disabled_timeout_plugin_is_reported_with_the_base_cap(self) -> None:
         self.build({"pkg/tests/test_ok.py": "def test_ok():\n    assert True\n"})
-        original = runner._run
-        with patch.object(runner, "_run", wraps=original) as run:
+        for settings in (
+            {"PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
+            {"PYTEST_DISABLE_PLUGIN_AUTOLOAD": "0"},
+            {"PYTEST_ADDOPTS": "-p no:timeout"},
+            {"PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1", "PYTEST_ADDOPTS": "-p no:pytest_timeout"},
+        ):
+            with self.subTest(settings=settings):
+                with patch.dict(self.env, settings):
+                    result = self.run_script("--files", "pkg/tests/test_ok.py")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("pytest-timeout is not loaded (missing or disabled)", result.stdout)
+                self.assertIn("time cap 900 s (base, not load-scaled", result.stdout)
+                self.assertIn("pkg: passed: 1 passed", result.stdout)
 
-            def no_plugin(
-                argv: Sequence[str], root: Path, timeout: float, env: dict[str, str] | None = None
-            ) -> TextCommandResult:
-                if "import pytest_timeout" in argv:
-                    return TextCommandResult(tuple(argv), 1, "", "")
-                return original(argv, root, timeout, env)
+    def test_explicit_plugin_load_with_autoload_disabled_keeps_the_timeout(self) -> None:
+        self.build({"pkg/tests/test_ok.py": "def test_ok():\n    assert True\n"})
+        for settings in (
+            {"PYTEST_ADDOPTS": "-p pytest_timeout"},
+            {"PYTEST_PLUGINS": "pytest_timeout"},
+        ):
+            with self.subTest(settings=settings):
+                with patch.dict(self.env, {"PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1", **settings}):
+                    result = self.run_script("--files", "pkg/tests/test_ok.py")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertNotIn("runs without", result.stdout)
+                self.assertNotIn("not load-scaled", result.stdout)
+                self.assertIn("pkg: passed: 1 passed", result.stdout)
 
-            run.side_effect = no_plugin
-            output = io.StringIO()
-            with patch.object(runner, "read_host_load", return_value=(32.0, 32.0, 16)):
-                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
-                    status = runner.main(
-                        [
-                            "--root",
-                            str(self.repo),
-                            "--python-exe",
-                            sys.executable,
-                            "--files",
-                            "pkg/tests/test_ok.py",
-                        ]
-                    )
-        self.assertEqual(status, 0, output.getvalue())
-        self.assertIn(
-            "pkg: runs without a per-test timeout because pytest-timeout is not installed there",
-            output.getvalue(),
+    def test_required_timeout_cannot_be_disabled(self) -> None:
+        data = manifest()
+        data["suites"][1]["pytest"]["timeout"] = 7
+        self.build(
+            {
+                ".github/test-suites.json": json.dumps(data),
+                "pkg/tests/test_ok.py": "def test_ok():\n    assert True\n",
+            }
         )
-        self.assertIn(
-            "pkg: time cap 900 s (base, not load-scaled: no per-test timeout)",
-            output.getvalue(),
+        for settings in (
+            {"PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
+            {"PYTEST_ADDOPTS": "-p no:timeout"},
+        ):
+            with self.subTest(settings=settings):
+                with patch.dict(self.env, settings):
+                    result = self.run_script("--files", "pkg/tests/test_ok.py")
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn("requires a per-test timeout", result.stderr)
+                self.assertNotIn("passed", result.stdout)
+                self.assertNotIn("runs without", result.stdout)
+
+    def test_config_addopts_disabling_timeout_is_respected(self) -> None:
+        self.build(
+            {
+                "pytest.ini": "[pytest]\naddopts = -p no:timeout\n",
+                "pkg/tests/test_ok.py": "def test_ok():\n    assert True\n",
+            }
         )
+        result = self.run_script("--files", "pkg/tests/test_ok.py")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("pytest-timeout is not loaded", result.stdout)
+        self.assertIn("not load-scaled", result.stdout)
+
+    def test_broken_conftest_is_a_probe_error_not_a_missing_plugin(self) -> None:
+        self.build(
+            {
+                "pkg/tests/conftest.py": "raise ImportError('planted conftest failure')\n",
+                "pkg/tests/test_ok.py": "def test_ok():\n    assert True\n",
+            }
+        )
+        result = self.run_script("--files", "pkg/tests/test_ok.py")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("pytest plugin check failed", result.stderr)
+        self.assertIn("planted conftest failure", result.stderr)
+        self.assertNotIn("runs without", result.stdout)
 
     def test_suite_that_cannot_run_locally_is_reported_not_passed(self) -> None:
         """Expose unavailable local coverage and enforce strict skip policy."""

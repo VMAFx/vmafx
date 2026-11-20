@@ -68,6 +68,21 @@ VENV_FORMAT = "2-compile-bytecode"
 # inputs CI provides (fail_on_skip in the registry).
 MISSING_DEPENDENCY_SKIP = r"could not import|No module named|[Nn]ot installed"
 LISTED_FAILURES = 10
+# A public pytest hook stops after normal argument/conftest loading, before any tests.
+# Unlike importing the module, this observes blocked and explicitly loaded plugins.
+TIMEOUT_PROBE = """import sys
+import pytest
+
+class Probe:
+    @pytest.hookimpl(tryfirst=True)
+    def pytest_cmdline_main(self, config):
+        loaded = any(getattr(plugin, '__name__', '') == 'pytest_timeout'
+                     for plugin in config.pluginmanager.get_plugins())
+        print('VMAFX_PYTEST_TIMEOUT=' + str(int(loaded)))
+        return 0
+
+raise SystemExit(pytest.main(sys.argv[1:], plugins=[Probe()]))
+"""
 
 
 class RunnerError(Exception):
@@ -485,9 +500,16 @@ def read_host_load() -> tuple[float, float, int] | None:
 
 
 def _pytest_argv(
-    python: str, suite: registry_lib.Suite, junit: Path, files: Sequence[str], timeout: float | None
+    python: str,
+    suite: registry_lib.Suite,
+    junit: Path,
+    files: Sequence[str],
+    timeout: float | None,
+    *,
+    probe: bool = False,
 ) -> list[str]:
-    argv = [python, "-m", "pytest", "-p", "no:cacheprovider", "-rs", "-q", f"--junitxml={junit}"]
+    entrypoint = ["-c", TIMEOUT_PROBE] if probe else ["-m", "pytest"]
+    argv = [python, *entrypoint, "-p", "no:cacheprovider", "-rs", "-q", f"--junitxml={junit}"]
     if timeout is not None:
         argv += [f"--timeout={timeout:g}", f"--timeout-method={suite.pytest_timeout_method}"]
     return _via_env([*argv, *(_rewritten(suite, f) for f in files)])
@@ -506,16 +528,31 @@ def _cap_description(suite: str, base: float) -> tuple[float, str]:
 
 
 def _suite_timeout(
-    root: Path, suite: registry_lib.Suite, python: str, env: dict[str, str], per_test_timeout: float
+    root: Path,
+    suite: registry_lib.Suite,
+    python: str,
+    env: dict[str, str],
+    per_test_timeout: float,
+    files: Sequence[str],
+    junit: Path,
 ) -> float | None:
+    """Probe pytest's loaded plugins in the suite's actual invocation context."""
+    argv = _pytest_argv(python, suite, junit, files, None, probe=True)
     try:
-        installed = _run(_via_env([python, "-c", "import pytest_timeout"]), root, 60, env)
+        probe = _run(argv, root, 60, env)
     except CommandTimedOut:
-        raise RunnerError(f"{suite.name}: pytest-timeout import check timed out") from None
-    if installed.returncode != 0:
-        print(
-            f"{suite.name}: runs without a per-test timeout because pytest-timeout is not installed there"
+        raise RunnerError(f"{suite.name}: pytest-timeout plugin check timed out") from None
+    states = re.findall(r"^VMAFX_PYTEST_TIMEOUT=([01])\r?$", probe.stdout, re.MULTILINE)
+    if probe.returncode != 0 or len(states) != 1:
+        raise RunnerError(f"{suite.name}: pytest plugin check failed:\n{probe.stdout[-3000:]}")
+    if states[0] == "0":
+        reason = (
+            "pytest-timeout is not loaded (missing or disabled); check its installation, "
+            "PYTEST_DISABLE_PLUGIN_AUTOLOAD and PYTEST_ADDOPTS"
         )
+        if suite.pytest_timeout is not None:
+            raise RunnerError(f"{suite.name}: requires a per-test timeout, but {reason}")
+        print(f"{suite.name}: runs without a per-test timeout because {reason}", flush=True)
         return None
     return suite.pytest_timeout if suite.pytest_timeout is not None else per_test_timeout
 
@@ -536,7 +573,7 @@ def run_pytest(
     junit = Path(tempfile.gettempdir()) / f"vmafx-affected-{suite.name}-{os.getpid()}.xml"
     junit.unlink(missing_ok=True)
     details: list[str] = []
-    timeout = _suite_timeout(root, suite, python, env, per_test_timeout)
+    timeout = _suite_timeout(root, suite, python, env, per_test_timeout, files, junit)
     if timeout is None:
         effective_cap = cap
         description = (

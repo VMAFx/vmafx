@@ -3,6 +3,8 @@
 - `scripts/ci/run_affected_suites.py`: default per-test timeout 300 s and wall
   cap multiplier `min(4, 1 + max(load1, load5) / CPUs)`; suite overrides win,
   and suites without a per-test timeout retain the unscaled base cap.
+  Detect actual plugin registration with the suite's pytest arguments and
+  environment; missing or disabled plugins cannot drop explicit registry timeouts.
 - `scripts/ci/tests/test_run_affected_suites.py`: timeout and load controls.
 - `docs/development/test-suites.md`: runner timeout behavior.
 - `changelog.d/fixed/affected-tests-load-scaled-cap.md`: release note.
