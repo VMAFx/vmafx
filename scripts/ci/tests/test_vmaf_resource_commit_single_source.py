@@ -36,6 +36,7 @@ class VmafResourceCommitSingleSource(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.repo = Path(temporary.name)
+        self.write("build-config.env", f'VMAF_RESOURCE_COMMIT="{WANT}"\n')
         self.write("docker/Dockerfile.tester", f"ARG VMAF_RESOURCE_COMMIT={WANT}\n")
         self.write_records([WANT] * MODULE.RESOURCE_RECORD_COUNT)
 
@@ -89,6 +90,16 @@ class VmafResourceCommitSingleSource(unittest.TestCase):
         problems = CHECK(self.repo, WANT)
         self.assertEqual(len(problems), 1)
         self.assertIn("exactly once", problems[0])
+
+    def test_duplicate_config_declaration_fails(self) -> None:
+        self.write(
+            "build-config.env",
+            f'VMAF_RESOURCE_COMMIT="{WANT}"\nVMAF_RESOURCE_COMMIT="{WANT}"\n',
+        )
+        self.assertEqual(
+            CHECK(self.repo, WANT),
+            ["build-config.env must declare VMAF_RESOURCE_COMMIT exactly once"],
+        )
 
     def test_drifted_record_fails(self) -> None:
         commits = [WANT] * MODULE.RESOURCE_RECORD_COUNT

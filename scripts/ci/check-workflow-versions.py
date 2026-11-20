@@ -101,6 +101,7 @@ LEVEL_ZERO_FETCHER_CALL_RE = re.compile(
 
 PYTHON_RE = re.compile(r'python-version:\s*[\'"]?([0-9]+\.[0-9]+\.[0-9]+)[\'"]?')
 RESOURCE_ARG_RE = re.compile(r"(?m)^ARG\s+VMAF_RESOURCE_COMMIT=([^\s#]+)")
+RESOURCE_CONFIG_RE = re.compile(r'(?m)^VMAF_RESOURCE_COMMIT="?([^"\s#]+)')
 RESOURCE_RECORD_RE = re.compile(
     r'"source":\s*"https://github\.com/Netflix/vmaf_resource/tree/([0-9a-f]{40})/'
 )
@@ -205,6 +206,10 @@ def check_vmaf_resource_commit(root: Path, want: str | None) -> list[str]:
     if not want:
         return ["build-config.env defines no VMAF_RESOURCE_COMMIT"]
     problems: list[str] = []
+    config = root / "build-config.env"
+    declarations = RESOURCE_CONFIG_RE.findall(config.read_text(encoding="utf-8"))
+    if len(declarations) != 1:
+        problems.append("build-config.env must declare VMAF_RESOURCE_COMMIT exactly once")
     for rel, pattern in RESOURCE_MIRRORS:
         path = root / rel
         if not path.is_file():
