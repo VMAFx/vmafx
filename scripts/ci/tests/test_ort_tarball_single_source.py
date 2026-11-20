@@ -157,6 +157,35 @@ class TestOrtGuard(unittest.TestCase):
                 else:
                     self.assertEqual(findings, [])
 
+    def test_docker_env_reads_every_assignment_and_continuation(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        call = (
+            "RUN python3 scripts/ci/ort_nuget_install.py --package cpu "
+            '--version "${ORT_VERSION}" --prefix /usr/local\n'
+        )
+        cases = (
+            "ARG ORT_VERSION=1.30.0\nENV OTHER=foo ORT_VERSION=1.99.0\n" + call,
+            "ARG ORT_VERSION=1.30.0\nENV A=1 \\\n    ORT_VERSION=1.99.0\n" + call,
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                container.write_text(text)
+                rc, findings = guard.check_tarball_pins(files=[container])
+                self.assertEqual(rc, 1, findings)
+                self.assertIn("ambiguous ORT_VERSION in build stage", "\n".join(findings))
+
+    def test_a_command_outside_the_allowlist_invalidates_a_helper_run(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        container.write_text(
+            "ARG ORT_VERSION=1.30.0\n"
+            "RUN echo ok && python3 scripts/ci/ort_nuget_install.py --package cpu "
+            '--version "${ORT_VERSION}" --prefix /usr/local\n'
+        )
+        self.assertEqual(
+            guard.check_tarball_pins(files=[container]),
+            (1, [f"{container}:2: {SHAPE_FINDING}"]),
+        )
+
     def test_container_sources_and_pins(self) -> None:
         container = Path(self.temp.name) / "Containerfile"
         for keyword in ("ARG", "ENV"):

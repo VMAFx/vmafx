@@ -186,19 +186,61 @@ def _find_docker_block(lines: list[str], site_idx: int) -> tuple[int, int]:
     return start_idx, max(site_idx, end_idx)
 
 
+def _joined_docker_instructions(lines: list[str]) -> list[str]:
+    """Join ARG/ENV continuations so multi-assignment instructions stay whole."""
+    joined: list[str] = []
+    pending = ""
+    for raw in lines:
+        stripped = raw.strip()
+        if pending:
+            stripped = f"{pending} {stripped}".strip()
+            if stripped.endswith("\\"):
+                pending = stripped[:-1].rstrip()
+                continue
+            pending = ""
+        elif stripped.endswith("\\") and re.match(r"^(?:ARG|ENV)\b", stripped, re.I):
+            pending = stripped[:-1].rstrip()
+            continue
+        joined.append(stripped)
+    if pending:
+        joined.append(pending)
+    return joined
+
+
+def _assignment_pairs(rest: str) -> list[tuple[str, str]]:
+    """Every `name=value` pair in an ARG/ENV instruction, or no pairs when malformed."""
+    try:
+        tokens = shlex.split(rest)
+    except ValueError:
+        return []
+    pairs: list[tuple[str, str]] = []
+    for token in tokens:
+        if "=" not in token:
+            return []
+        name, value = token.split("=", 1)
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None or not value:
+            return []
+        pairs.append((name, value))
+    return pairs
+
+
 def _docker_bindings(lines: list[str], start_idx: int, run_idx: int) -> dict[str, set[str]]:
     """ARG and ENV literal values in the build stage, up to the RUN."""
     bindings: dict[str, set[str]] = {}
     if run_idx - start_idx > MAX_STEP_LINES:
         return bindings
-    for line in lines[start_idx:run_idx]:
-        match = re.match(
-            r"^\s*(?:ARG|ENV)\s+([A-Za-z_][A-Za-z0-9_]*)" r"(?:\s*=\s*|\s+)[\"']?([^\"'\s#\\]+)",
-            line,
-            re.I,
-        )
-        if match:
-            bindings.setdefault(match.group(1), set()).add(match.group(2))
+    for line in _joined_docker_instructions(lines[start_idx:run_idx]):
+        match = re.match(r"^\s*(ARG|ENV)\s+(.+)$", line, re.I)
+        if not match:
+            continue
+        keyword, rest = match.group(1).upper(), match.group(2)
+        pairs = _assignment_pairs(rest)
+        if not pairs and keyword == "ENV" and "=" not in rest:
+            legacy = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)\s+([^\s#]+)", rest)
+            if legacy:
+                pairs = [(legacy.group(1), legacy.group(2).strip("\"'"))]
+        for name, value in pairs:
+            bindings.setdefault(name, set()).add(value)
     return bindings
 
 
@@ -670,18 +712,14 @@ def _check_helper_step(
     return findings
 
 
-def _check_nuget_download(  # noqa: PLR0911
-    lines: list[str], idx: int, path: Path, line: str, is_workflow: bool
+def _check_nuget_reference(
+    lines: list[str],
+    idx: int,
+    path: Path,
+    match: re.Match[str],
+    is_workflow: bool,
 ) -> list[str]:
-    """Reject direct runtime downloads and unresolved NuGet package variables."""
-    lower = line.lower()
-    if not any(marker in lower for marker in ("curl ", "wget ", "https://")):
-        return []
-    if ORT_PACKAGE_RE.search(line):
-        return [f"{path}:{idx + 1}: ONNX Runtime download must use helper"]
-    match = NUGET_ADDRESS_RE.search(line)
-    if not match or not match.group(1).startswith("$"):
-        return []
+    """Resolve a variable-backed NuGet reference to its pinned package family."""
     name = match.group(1)[1:].strip("{}")
     start_idx, end_idx = find_block_for_site(lines, idx, is_workflow)
     bindings = _step_bindings(lines[start_idx : end_idx + 1])
@@ -693,6 +731,21 @@ def _check_nuget_download(  # noqa: PLR0911
     if any(ORT_PACKAGE_RE.fullmatch(value) for value in values):
         return [f"{path}:{idx + 1}: ONNX Runtime download must use helper"]
     return []
+
+
+def _check_nuget_download(
+    lines: list[str], idx: int, path: Path, line: str, is_workflow: bool
+) -> list[str]:
+    """Reject direct runtime downloads and unresolved NuGet package variables."""
+    lower = line.lower()
+    if not any(marker in lower for marker in ("curl ", "wget ", "https://")):
+        return []
+    if ORT_PACKAGE_RE.search(line):
+        return [f"{path}:{idx + 1}: ONNX Runtime download must use helper"]
+    match = NUGET_ADDRESS_RE.search(line)
+    if not match or not match.group(1).startswith("$"):
+        return []
+    return _check_nuget_reference(lines, idx, path, match, is_workflow)
 
 
 def _scan_workflow_line(
