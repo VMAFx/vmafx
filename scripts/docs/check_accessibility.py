@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 import tempfile
 from datetime import date
@@ -23,6 +22,11 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+
 DEFAULT_SITE = REPO_ROOT / "build-docs" / "site"
 DEFAULT_FIXTURE = REPO_ROOT / "scripts" / "docs" / "accessibility-fixture.html"
 DEFAULT_ALLOWLIST = REPO_ROOT / "scripts" / "docs" / "accessibility-allowlist.json"
@@ -149,12 +153,14 @@ def run_pa11y(pa11y_ci: str, node: str | None, config: Path) -> dict[str, object
         command = [node, str(binary)]
     else:
         command = [pa11y_ci]
-    completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
+    completed = run_command(
         [*command, "--config", str(config), "--json", "--threshold", "999"],
+        allowed_executables=(command[0],),
         capture_output=True,
         text=True,
+        errors="replace",
         check=False,
-        timeout=TIMEOUT_SECONDS * 4,
+        timeout_seconds=TIMEOUT_SECONDS * 4,
     )
     if completed.returncode not in (0, 1, 2):
         raise AccessibilityError(
