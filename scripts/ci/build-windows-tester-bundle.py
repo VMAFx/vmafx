@@ -56,6 +56,7 @@ import io
 import json
 import os
 import platform
+import re
 import shutil
 import struct
 import subprocess
@@ -81,7 +82,13 @@ SYCL_RUNTIME = IMAGE_DIR / "sycl-runtime-windows.json"
 # searches a program's own directory before System32, ADR-1566).
 PROGRAM_DIRS = ("build/tools", "tests")
 # DLLs the SYCL runtime loads by name at run time, not through an import table.
-LOADED_AT_RUN_TIME = ("ur_loader.dll", "ur_adapter_level_zero.dll", "ur_adapter_level_zero_v2.dll")
+LOADED_AT_RUN_TIME = (
+    "ur_loader_shared.dll",
+    "ur_adapter_level_zero.dll",
+    "ur_adapter_level_zero_v2.dll",
+)
+UR_ASCII_DLL = re.compile(rb"ur_[a-z0-9_.-]+\.dll")
+UR_UTF16LE_DLL = re.compile(rb"u\x00r\x00_\x00(?:[a-z0-9_.-]\x00)+\.\x00d\x00l\x00l\x00")
 # The C and C++ runtime DLLs of the redistributable folder a /MD program imports.
 MD_RUNTIME_PREFIXES = ("vcruntime140", "msvcp140", "concrt140", "vccorlib140")
 SCRATCH_TEST = "test_sycl_kernel_scratch"
@@ -347,6 +354,42 @@ def vendor_dll_names() -> set[str]:
     return {name.lower() for component in spec["components"] for name in component["names"]}
 
 
+def check_runtime_dll_references(bundle: Path, names: set[str]) -> None:
+    """Verify dynamic-load names against the Intel DLLs staged with the CLI."""
+    directory = bundle / PROGRAM_DIRS[0]
+    references: dict[str, list[str]] = {name: [] for name in LOADED_AT_RUN_TIME}
+    encoded = {name: (name.encode("ascii"), name.encode("utf-16le")) for name in LOADED_AT_RUN_TIME}
+    missing = set(LOADED_AT_RUN_TIME)
+    found: set[str] = set()
+    # The staging manifest has already passed prepare_build's component and pattern bounds.
+    for filename in sorted(names):
+        path = directory / filename
+        if not path.is_file():
+            continue
+        missing.discard(filename)
+        data = path.read_bytes().lower()
+        found.update(name.decode("ascii") for name in UR_ASCII_DLL.findall(data))
+        found.update(name.decode("utf-16le") for name in UR_UTF16LE_DLL.findall(data))
+        for name, (ascii_name, wide_name) in encoded.items():
+            # A PE export directory can name its own DLL without loading it.
+            if filename != name and (ascii_name in data or wide_name in data):
+                references[name].append(filename)
+
+    failures = [f"{name} (not staged)" for name in sorted(missing)]
+    failures.extend(
+        f"{name} (no other staged Intel DLL references it)"
+        for name, sources in references.items()
+        if name not in missing and not sources
+    )
+    if failures:
+        listing = ", ".join(sorted(found)[:40]) or "(none)"
+        raise BuildError(
+            f"Intel run-time DLL check failed: {', '.join(failures)}. UR DLL names found: {listing}"
+        )
+    notice = ", ".join(f"{name} <- {' + '.join(sources)}" for name, sources in references.items())
+    print(f"::notice::Intel run-time DLL references: {notice}", flush=True)
+
+
 def drop_unimported_vendor_dlls(bundle: Path, names: set[str]) -> list[str]:
     """Remove the listed Intel DLLs that no file beside the programs imports and that
     the SYCL runtime does not load by name (ADR-1503 rule 1: ship only what runs). One
@@ -381,8 +424,10 @@ def stage_sycl(build: Path, bundle: Path) -> None:
     shutil.copy2(IMAGE_DIR / "sycl-rows.json", bundle / "image" / "sycl-rows.json")
     point_scratch_audit_at_bundle(bundle)
     prepare_build("intel-runtime", str(SYCL_RUNTIME), os.environ["ONEAPI_ROOT"], str(bundle))
+    names = vendor_dll_names()
+    check_runtime_dll_references(bundle, names)
     stage_level_zero_loader(bundle, Path(os.environ["VMAFX_LEVEL_ZERO_PREFIX"]))
-    dropped = drop_unimported_vendor_dlls(bundle, vendor_dll_names())
+    dropped = drop_unimported_vendor_dlls(bundle, names)
     versions = {"oneapi": os.environ["VMAFX_ONEAPI_VERSION"],
                 "level_zero_loader": os.environ["LEVEL_ZERO_VERSION"],
                 "intel_dlls_not_imported": ", ".join(dropped) or "none"}  # fmt: skip

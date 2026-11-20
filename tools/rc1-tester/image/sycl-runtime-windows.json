@@ -1,5 +1,5 @@
 {
- "comment": "The Intel SYCL runtime files the Windows SYCL tester zip ships (ADR-1566), copied unmodified from the oneAPI installation of its hosted build (prepare_build.py intel-runtime) beside every program (build/tools, tests: Windows searches a program's own directory before System32), and the licence texts that go with them. Compiler files must be listed in its credist.txt, whose Windows entries read <installdir>/bin/<name> (the Redistributables of the Intel End User License Agreement for Developer Tools); UMF and hwloc from TCM carry their own texts, as in sycl-runtime.json. The build drops every listed DLL that no file beside the programs imports and that the SYCL runtime does not load by name (scripts/ci/build-windows-tester-bundle.py LOADED_AT_RUN_TIME), so the list holds the candidates, not a promise. Paths are relative to ONEAPI_ROOT, whose */latest links the installer creates; read from the 2025.3.0.372 offline installer's packages on 2026-10-04.",
+ "comment": "The Intel SYCL runtime files the Windows SYCL tester zip ships (ADR-1566), copied unmodified from the oneAPI installation of its hosted build (prepare_build.py intel-runtime) beside every program (build/tools, tests: Windows searches a program's own directory before System32), and the licence texts that go with them. Compiler files must be listed in its credist.txt, whose Windows entries read <installdir>/bin/<name> (the Redistributables of the Intel End User License Agreement for Developer Tools); UMF and hwloc from TCM carry their own texts, as in sycl-runtime.json. The build drops every listed DLL that no file beside the programs imports and that the SYCL runtime does not load by name (scripts/ci/build-windows-tester-bundle.py LOADED_AT_RUN_TIME), so the list holds the candidates, not a promise. Paths are relative to ONEAPI_ROOT, whose */latest links the installer creates. The Windows Tester Zip run on 2026-11-20 listed these DLL names from the oneAPI 2026.2.0.661 offline installation.",
  "credist": "compiler/latest/share/doc/compiler/credist.txt",
  "credist_dir": "bin",
  "components": [
@@ -12,9 +12,9 @@
     "tests"
    ],
    "names": [
-    "sycl8.dll",
+    "sycl9.dll",
     "ur_win_proxy_loader.dll",
-    "ur_loader.dll",
+    "ur_loader_shared.dll",
     "ur_adapter_level_zero.dll",
     "ur_adapter_level_zero_v2.dll",
     "libmmd.dll",

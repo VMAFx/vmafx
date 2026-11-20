@@ -255,12 +255,12 @@ def sycl_bundle(root: Path) -> None:
     """A /MD bundle shaped like the SYCL zip: the runtime DLLs beside each program."""
     for directory, program in (("build/tools", "vmaf.exe"), ("tests", "test_sycl_psnr.exe")):
         write_pe(root, f"{directory}/{program}",
-                 make_pe(0x8664, ["sycl8.dll", "ze_loader.dll", "VCRUNTIME140.dll", "MSVCP140.dll",
+                 make_pe(0x8664, ["sycl9.dll", "ze_loader.dll", "VCRUNTIME140.dll", "MSVCP140.dll",
                                   "api-ms-win-crt-runtime-l1-1-0.dll", "KERNEL32.dll"]))  # fmt: skip
-        write_pe(root, f"{directory}/sycl8.dll",
+        write_pe(root, f"{directory}/sycl9.dll",
                  make_pe(0x8664, ["ur_win_proxy_loader.dll", "vcruntime140.dll"]))  # fmt: skip
         write_pe(root, f"{directory}/ur_win_proxy_loader.dll", make_pe(0x8664, ["ucrtbase.dll"]))
-        write_pe(root, f"{directory}/ur_loader.dll", make_pe(0x8664, ["msvcp140.dll"]))
+        write_pe(root, f"{directory}/ur_loader_shared.dll", make_pe(0x8664, ["msvcp140.dll"]))
         write_pe(root, f"{directory}/ze_loader.dll",
                  make_pe(0x8664, ["kernel32.dll", "cfgmgr32.dll"]))  # fmt: skip
         write_pe(root, f"{directory}/vcruntime140.dll", make_pe(0x8664, ["kernel32.dll"]))
@@ -269,9 +269,9 @@ def sycl_bundle(root: Path) -> None:
 
 def test_a_md_bundle_passes_with_its_runtime_beside_each_program(tmp_path: Path) -> None:
     sycl_bundle(tmp_path)
-    assert imports_check.check(tmp_path, "x64", "md", ("ur_loader.dll",)) == []
+    assert imports_check.check(tmp_path, "x64", "md", ("ur_loader_shared.dll",)) == []
     assert imports_check.main([str(tmp_path), "--machine", "x64", "--runtime", "md",
-                               "--loaded-at-run-time", "ur_loader.dll"]) == 0  # fmt: skip
+                               "--loaded-at-run-time", "ur_loader_shared.dll"]) == 0  # fmt: skip
     # The same tree is refused by the /MT check of the CPU and CUDA zips.
     assert any("imports the runtime DLL" in p for p in imports_check.check(tmp_path, "x64"))
 
@@ -279,11 +279,11 @@ def test_a_md_bundle_passes_with_its_runtime_beside_each_program(tmp_path: Path)
 def test_cfgmgr32_is_a_windows_dll_and_an_unknown_one_is_not(tmp_path: Path) -> None:
     """The Level Zero loader imports cfgmgr32.dll (System32); an unknown DLL still fails."""
     sycl_bundle(tmp_path)
-    assert imports_check.check(tmp_path, "x64", "md", ("ur_loader.dll",)) == []
+    assert imports_check.check(tmp_path, "x64", "md", ("ur_loader_shared.dll",)) == []
     write_pe(tmp_path, "tests/ze_loader.dll", make_pe(0x8664, ["kernel32.dll", "libvendor.dll"]))
     assert (
         "tests/ze_loader.dll: imports libvendor.dll, neither part of Windows nor in its directory"
-        in imports_check.check(tmp_path, "x64", "md", ("ur_loader.dll",))
+        in imports_check.check(tmp_path, "x64", "md", ("ur_loader_shared.dll",))
     )
 
 
@@ -291,7 +291,7 @@ def test_a_md_bundle_refuses_a_missing_or_unused_dll(tmp_path: Path) -> None:
     sycl_bundle(tmp_path)
     (tmp_path / "tests/msvcp140.dll").unlink()
     write_pe(tmp_path, "tests/opencl_adapter.dll", make_pe(0x8664, ["kernel32.dll"]))
-    problems = imports_check.check(tmp_path, "x64", "md", ("ur_loader.dll",))
+    problems = imports_check.check(tmp_path, "x64", "md", ("ur_loader_shared.dll",))
     assert (
         "tests/test_sycl_psnr.exe: imports msvcp140.dll, neither part of Windows nor in its directory"
         in problems
@@ -300,9 +300,9 @@ def test_a_md_bundle_refuses_a_missing_or_unused_dll(tmp_path: Path) -> None:
         p.startswith("tests/opencl_adapter.dll: no file in its directory imports it")
         for p in problems
     )
-    # ur_loader.dll is loaded by name at run time; without the allowance it is unused.
+    # The fixture models a dynamic load. The import check needs the run-time allowance.
     assert any(
-        p.startswith("build/tools/ur_loader.dll: no file")
+        p.startswith("build/tools/ur_loader_shared.dll: no file")
         for p in imports_check.check(tmp_path, "x64", "md")
     )
 
@@ -651,8 +651,8 @@ def test_the_programs_runtime_closure_comes_from_the_redistributable_folder(tmp_
     write_pe(crt, "msvcp140.dll", make_pe(0x8664, ["vcruntime140.dll", "vcruntime140_1.dll"]))
     write_pe(crt, "concrt140.dll", make_pe(0x8664, ["kernel32.dll"]))
     for directory in builder.PROGRAM_DIRS:
-        write_pe(bundle, f"{directory}/prog.exe", make_pe(0x8664, ["sycl8.dll", "kernel32.dll"]))
-        write_pe(bundle, f"{directory}/sycl8.dll", make_pe(0x8664, ["MSVCP140.dll"]))
+        write_pe(bundle, f"{directory}/prog.exe", make_pe(0x8664, ["sycl9.dll", "kernel32.dll"]))
+        write_pe(bundle, f"{directory}/sycl9.dll", make_pe(0x8664, ["MSVCP140.dll"]))
     copied = builder.copy_program_runtime(bundle, crt)
     names = sorted({entry["file"] for entry in copied})
     assert names == [f"{d}/{n}" for d in builder.PROGRAM_DIRS
@@ -663,26 +663,98 @@ def test_the_programs_runtime_closure_comes_from_the_redistributable_folder(tmp_
         builder.copy_program_runtime(bundle, crt)
 
 
+@pytest.fixture
+def staged_intel_proxy(tmp_path: Path) -> Path:
+    for name in builder.LOADED_AT_RUN_TIME:
+        write_pe(tmp_path, f"build/tools/{name}", name.encode("ascii") + b"\0")
+    return tmp_path / "build/tools/ur_win_proxy_loader.dll"
+
+
+@pytest.mark.parametrize("encoding", ["ascii", "utf-16le"])
+def test_staged_intel_dlls_reference_each_runtime_name(
+    tmp_path: Path, staged_intel_proxy: Path, capsys, encoding: str
+) -> None:
+    references = "\0".join(builder.LOADED_AT_RUN_TIME).upper().encode(encoding)
+    assert staged_intel_proxy.write_bytes(references) == len(references)
+    write_pe(tmp_path, "build/tools/sycl9.dll", references)
+
+    builder.check_runtime_dll_references(tmp_path, builder.vendor_dll_names())
+
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 1 and lines[0].startswith("::notice::")
+    for name in builder.LOADED_AT_RUN_TIME:
+        assert f"{name} <- sycl9.dll + {staged_intel_proxy.name}" in lines[0]
+
+
+def test_staged_intel_dlls_cannot_reference_themselves(
+    tmp_path: Path, staged_intel_proxy: Path
+) -> None:
+    payload = b"ur_z.dll\0ur_a.dll\0" + "UR_A.DLL".encode("utf-16le")
+    assert staged_intel_proxy.write_bytes(payload) == len(payload)
+    write_pe(
+        tmp_path,
+        "build/tools/unrelated.dll",
+        b"\0".join(name.encode("ascii") for name in builder.LOADED_AT_RUN_TIME),
+    )
+
+    with pytest.raises(builder.BuildError, match="no other staged Intel DLL") as caught:
+        builder.check_runtime_dll_references(tmp_path, builder.vendor_dll_names())
+
+    failures, listing = str(caught.value).split(". UR DLL names found: ")
+    for name in builder.LOADED_AT_RUN_TIME:
+        assert f"{name} (no other staged Intel DLL references it)" in failures
+    assert listing.split(", ") == sorted({*builder.LOADED_AT_RUN_TIME, "ur_a.dll", "ur_z.dll"})
+
+
+def test_runtime_dll_reference_requires_a_staged_target(
+    tmp_path: Path, staged_intel_proxy: Path
+) -> None:
+    name = "ur_loader_shared.dll"
+    (staged_intel_proxy.parent / name).unlink()
+    write_pe(tmp_path, f"tests/{name}", name.encode("ascii"))
+    references = "\0".join(builder.LOADED_AT_RUN_TIME).encode("ascii")
+    assert staged_intel_proxy.write_bytes(references) == len(references)
+
+    with pytest.raises(builder.BuildError, match=r"ur_loader_shared\.dll \(not staged\)"):
+        builder.check_runtime_dll_references(tmp_path, builder.vendor_dll_names())
+
+
+def test_similar_runtime_dll_names_do_not_count_as_references(
+    tmp_path: Path, staged_intel_proxy: Path
+) -> None:
+    payload = b"UR_LOADER.DLL\0ur_adapter_level_zero_v2.dll\0"
+    assert staged_intel_proxy.write_bytes(payload) == len(payload)
+
+    with pytest.raises(builder.BuildError, match="no other staged Intel DLL") as caught:
+        builder.check_runtime_dll_references(tmp_path, builder.vendor_dll_names())
+
+    failures, listing = str(caught.value).split(". UR DLL names found: ")
+    assert "ur_loader_shared.dll (no other staged Intel DLL references it)" in failures
+    assert "ur_adapter_level_zero.dll (no other staged Intel DLL references it)" in failures
+    assert "ur_adapter_level_zero_v2.dll" not in failures
+    assert "ur_loader.dll" in listing.split(", ")
+
+
 def test_unimported_intel_dlls_are_dropped_until_nothing_changes(tmp_path: Path) -> None:
     for directory in builder.PROGRAM_DIRS:
-        write_pe(tmp_path, f"{directory}/prog.exe", make_pe(0x8664, ["sycl8.dll", "libmmd.dll"]))
-        write_pe(tmp_path, f"{directory}/sycl8.dll", make_pe(0x8664, ["ur_win_proxy_loader.dll"]))
+        write_pe(tmp_path, f"{directory}/prog.exe", make_pe(0x8664, ["sycl9.dll", "libmmd.dll"]))
+        write_pe(tmp_path, f"{directory}/sycl9.dll", make_pe(0x8664, ["ur_win_proxy_loader.dll"]))
         write_pe(
             tmp_path, f"{directory}/ur_win_proxy_loader.dll", make_pe(0x8664, ["kernel32.dll"])
         )
         write_pe(tmp_path, f"{directory}/libmmd.dll", make_pe(0x8664, ["kernel32.dll"]))
-        write_pe(tmp_path, f"{directory}/ur_loader.dll", make_pe(0x8664, ["umf.dll"]))
+        write_pe(tmp_path, f"{directory}/ur_loader_shared.dll", make_pe(0x8664, ["umf.dll"]))
         write_pe(tmp_path, f"{directory}/umf.dll", make_pe(0x8664, ["libhwloc-15.dll"]))
         write_pe(tmp_path, f"{directory}/libhwloc-15.dll", make_pe(0x8664, ["kernel32.dll"]))
         # libirngmd imports libircmd: dropping the first orphans the second.
         write_pe(tmp_path, f"{directory}/libirngmd.dll", make_pe(0x8664, ["libircmd.dll"]))
         write_pe(tmp_path, f"{directory}/libircmd.dll", make_pe(0x8664, ["kernel32.dll"]))
-    names = {"sycl8.dll", "ur_win_proxy_loader.dll", "libmmd.dll", "ur_loader.dll", "umf.dll",
+    names = {"sycl9.dll", "ur_win_proxy_loader.dll", "libmmd.dll", "ur_loader_shared.dll", "umf.dll",
              "libhwloc-15.dll", "libirngmd.dll", "libircmd.dll"}  # fmt: skip
     assert builder.drop_unimported_vendor_dlls(tmp_path, names) == ["libirngmd.dll", "libircmd.dll"]
     left = sorted(p.name for p in (tmp_path / "tests").iterdir())
-    assert left == ["libhwloc-15.dll", "libmmd.dll", "prog.exe", "sycl8.dll", "umf.dll",
-                    "ur_loader.dll", "ur_win_proxy_loader.dll"]  # fmt: skip
+    assert left == ["libhwloc-15.dll", "libmmd.dll", "prog.exe", "sycl9.dll", "umf.dll",
+                    "ur_loader_shared.dll", "ur_win_proxy_loader.dll"]  # fmt: skip
     assert builder.drop_unimported_vendor_dlls(tmp_path, names) == []
 
 
@@ -691,8 +763,8 @@ def test_the_shipped_windows_sycl_runtime_list_names_redistributable_dlls() -> N
     assert spec["credist_dir"] == "bin"
     names = {n for c in spec["components"] for n in c["names"]}
     assert all(n.endswith(".dll") and "*" not in n for n in names)
-    assert {"sycl8.dll", "ur_loader.dll", "umf.dll", "libhwloc-15.dll"} <= names
+    assert {"sycl9.dll", "ur_loader_shared.dll", "umf.dll", "libhwloc-15.dll"} <= names
     # Debug builds, OpenCL and the JIT are not what the AOT programs load.
-    assert not {"sycl8d.dll", "ur_adapter_opencl.dll", "sycl-jit.dll", "OpenCL.dll"} & names
+    assert not {"sycl9d.dll", "ur_adapter_opencl.dll", "sycl-jit.dll", "OpenCL.dll"} & names
     assert set(builder.LOADED_AT_RUN_TIME) <= names
     assert all(c["dests"] == list(builder.PROGRAM_DIRS) for c in spec["components"])

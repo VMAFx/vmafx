@@ -366,6 +366,32 @@ def test_intel_runtime_passes_when_all_components_match(tmp_path: Path) -> None:
         assert (image / "lib/intel" / name).read_bytes() == b"MZ"
 
 
+def test_intel_runtime_prints_resolved_component_directories(tmp_path: Path, capsys) -> None:
+    spec = tmp_path / "runtime.json"
+    components = []
+    expected = []
+    for name, version, dll, component_id in (
+        ("umf", "1.1.0", "umf.dll", "intel-oneapi-umf"),
+        ("tcm", "1.5", "libhwloc-15.dll", "intel-oneapi-tcm-hwloc"),
+    ):
+        directory = tmp_path / name / version / "bin"
+        directory.mkdir(parents=True)
+        (directory / dll).touch()
+        try:
+            (tmp_path / name / "latest").symlink_to(version, target_is_directory=True)
+        except (NotImplementedError, OSError) as error:
+            pytest.skip(f"cannot create a directory symlink: {error}")
+        components.append({"id": component_id, "dir": f"{name}/latest/bin",
+                           "names": [dll], "credist": False, "licences": []})  # fmt: skip
+        expected.append(f"intel-runtime: {component_id}: {directory.resolve()}")
+    payload = json.dumps({"components": components})
+    assert spec.write_text(payload, encoding="utf-8") == len(payload)
+
+    assert pb.main(["prepare_build.py", "intel-runtime", str(spec), str(tmp_path),
+                    str(tmp_path / "img")]) == 0  # fmt: skip
+    assert capsys.readouterr().out.splitlines() == expected
+
+
 @pytest.mark.parametrize(
     ("key", "message"),
     [

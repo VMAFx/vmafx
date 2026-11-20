@@ -19,6 +19,7 @@ intel-runtime <runtime.json> <oneapi_root> <image_root>
                                       copy the listed Intel runtime files, unmodified,
                                       to <image_root>/lib/intel and their licence texts
                                       to <image_root>/licenses/intel (Intel GPU image)
+                                      and print each resolved component directory
 cuda-targets <build_dir> <image_root> write image/cuda-targets.json: the CUDA version
                                       and the cubin and PTX targets of the build's
                                       gencode list, from its Meson log (NVIDIA GPU image)
@@ -391,13 +392,16 @@ def check_redistributable(component: dict, files: list[Path], redistributable: s
 
 
 def resolve_runtime_components(
-    vendor_root: Path, components: list[dict]
+    vendor_root: Path, components: list[dict], *, report_directories: bool
 ) -> list[tuple[dict, list[Path]]]:
     if len(components) > MAX_RUNTIME_ITEMS:
         raise BuildError("too many runtime components")
     resolved: list[tuple[dict, list[Path]]] = []
     unmatched: list[str] = []
     for component in components:
+        if report_directories:
+            directory = (vendor_root / component["dir"]).resolve()
+            print(f"intel-runtime: {component['id']}: {directory}", flush=True)
         files, message = component_files(vendor_root, component)
         if message:
             unmatched.append(message)
@@ -407,7 +411,9 @@ def resolve_runtime_components(
     return resolved
 
 
-def stage_vendor_runtime(spec_path: Path, vendor_root: Path, image_root: Path) -> None:
+def stage_vendor_runtime(
+    spec_path: Path, vendor_root: Path, image_root: Path, *, report_directories: bool = False
+) -> None:
     """Copy the runtime files and licence texts a runtime spec names (sycl-runtime.json,
     sycl-runtime-windows.json, hip-runtime.json), byte for byte. A component's files go
     to its `dest` under the image root (default lib/intel), or to every directory of
@@ -415,7 +421,9 @@ def stage_vendor_runtime(spec_path: Path, vendor_root: Path, image_root: Path) -
     <licence_dir>/<id> (default licenses/intel). Compiler files must be in the spec's
     `credist` list when it has one, read under its `credist_dir` (default lib)."""
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
-    resolved = resolve_runtime_components(vendor_root, spec["components"])
+    resolved = resolve_runtime_components(
+        vendor_root, spec["components"], report_directories=report_directories
+    )
     redistributable = (
         credist_names(vendor_root / spec["credist"], spec.get("credist_dir", "lib"))
         if spec.get("credist")
@@ -528,7 +536,12 @@ def run(argv: list[str]) -> int:
     elif command == "twins" and len(argv) == 4:
         write_twins(Path(argv[2]), argv[3])
     elif command in ("intel-runtime", "rocm-runtime") and len(argv) == 5:
-        stage_vendor_runtime(Path(argv[2]), Path(argv[3]), Path(argv[4]))
+        stage_vendor_runtime(
+            Path(argv[2]),
+            Path(argv[3]),
+            Path(argv[4]),
+            report_directories=command == "intel-runtime",
+        )
     elif command == "cuda-targets" and len(argv) == 4:
         write_cuda_targets(Path(argv[2]), Path(argv[3]))
     elif command == "hip-targets" and len(argv) == 5:

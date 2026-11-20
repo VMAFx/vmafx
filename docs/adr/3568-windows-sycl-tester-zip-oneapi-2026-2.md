@@ -50,11 +50,14 @@ present in each affected directory in a single staging error.
   both Windows SYCL selectors follow changes to the shared pin and its loader.
 - **Negative**: A change to Intel's accepted targets stops both jobs until
   the expected set and the reason for the change are recorded.
-- **Neutral / follow-ups**: Re-measure the names used by
-  `sycl-runtime-windows.json` and `licensing.json` from this PR's Windows CI
-  run. Use those names and the new installer's `credist.txt` to update both
-  records together. This decision replaces the tester-pin consequence of
-  ADR-3567 and the tester pin of ADR-1566.
+- **Neutral / follow-ups**: Windows Tester Zip run 44821793070 on 2026-11-20
+  listed `sycl9.dll` in place of `sycl8.dll` and `ur_loader_shared.dll` in
+  place of `ur_loader.dll`. The runtime manifest and licence record use the
+  measured names. The build refuses a run-time DLL name that no other staged
+  Intel DLL references. Check the recorded UMF and TCM versions against the
+  resolved component directories printed by `prepare_build.py intel-runtime`.
+  This decision replaces the tester-pin consequence of ADR-3567 and the tester
+  pin of ADR-1566.
 
 ## References
 
