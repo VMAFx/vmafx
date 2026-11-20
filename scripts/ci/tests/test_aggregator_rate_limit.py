@@ -26,8 +26,8 @@ ENV = {
 }
 CHECK = "Pre-Commit"
 START = "2026-11-20T00:00:00Z"
-MIN_WAIT_MS = 1000
-MAX_WAIT_MS = 605000
+MIN_WAIT_MS = 60000
+MAX_WAIT_MS = 3605000
 EPOCH = int(datetime.fromisoformat(START.replace("Z", "+00:00")).timestamp())
 
 
@@ -60,14 +60,15 @@ class RateLimit(unittest.TestCase):
             env=ENV,
             run_created_at=START,
             api_errors={"listForRef": [403]},
-            api_error_detail=detail(600),
+            api_error_detail=detail(3600),
             sleeps=sleeps,
         )
 
     def test_primary_limit(self) -> None:
         sleeps: list[int] = []
         self.assertEqual(self.primary(sleeps), [])
-        self.assertTrue(any(MIN_WAIT_MS <= value <= MAX_WAIT_MS for value in sleeps))
+        self.assertEqual(len(sleeps), 1)
+        self.assertTrue(MIN_WAIT_MS < sleeps[0] <= MAX_WAIT_MS)
 
     def test_retry_after(self) -> None:
         sleeps: list[int] = []
@@ -130,7 +131,7 @@ class RateLimit(unittest.TestCase):
             env=ENV,
             run_created_at=START,
             api_errors={"listForRef": [403]},
-            api_error_detail=detail(600),
+            api_error_detail=detail(3600),
         )
         self.assertEqual(len(failures), 1)
         self.assertIn(CHECK, failures[0])

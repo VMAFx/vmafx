@@ -585,13 +585,16 @@ jobs:
             // fail by name, so the failure reads as a rerun and not as a code fault.
             const apiBackoffSeconds = [30, 60, 120, 240, 240, 210];
             let rateLimitWaitedSeconds = 0;
+            function isRateLimitAnswer(error, headers) {
+              return (error.status === 403 || error.status === 429) &&
+                (headers['retry-after'] !== undefined || headers['x-ratelimit-remaining'] === '0' ||
+                 /rate limit/i.test(error.message || ''));
+            }
             function rateLimitWaitSeconds(error, repeat) {
-              if (error.status !== 403 && error.status !== 429) return null;
               const headers = error.response?.headers || {};
+              if (!isRateLimitAnswer(error, headers)) return null;
               const retryAfter = headers['retry-after'];
               const remaining = headers['x-ratelimit-remaining'];
-              if (retryAfter === undefined && remaining !== '0' &&
-                  !/rate limit/i.test(error.message || '')) return null;
               const retrySeconds = Number(retryAfter);
               if (retryAfter !== undefined && Number.isFinite(retrySeconds) && retrySeconds >= 0) {
                 return retrySeconds;
