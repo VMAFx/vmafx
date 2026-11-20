@@ -45,7 +45,8 @@ headers and messages for errors. ``sleeps`` collects timeout arguments in millis
 ``controls`` takes a ``SimulationControls``: ``advance_sleep`` advances the clock on
 timeouts, ``clock_step_ms`` overrides each subsequent clock read and ``changing_check``
 adds an unrelated check that alternates status on each listing. ``later_checks_after_ms``
-switches to ``later_checks`` only after that elapsed time. The defaults keep the
+switches to ``later_checks`` only after that elapsed time. ``sleep_overrun_after_ms``
+adds two milliseconds to timeouts starting after that elapsed time. The defaults keep the
 original driver behavior.
 """
 
@@ -203,7 +204,15 @@ new AsyncFunction('github', 'context', 'core', 'process', 'Date', 'setTimeout', 
   core,
   {env: {GITHUB_RUN_ID: '1', ...(input.env || {})}},
   VirtualDate,
-  (callback, milliseconds) => { sleeps.push(milliseconds); if (input.advanceSleep) clock += milliseconds; callback(); },
+  (callback, milliseconds) => {
+    sleeps.push(milliseconds);
+    if (input.advanceSleep) {
+      const overrun = input.sleepOverrunAfterMs != null &&
+        clock - now >= input.sleepOverrunAfterMs ? 2 : 0;
+      clock += milliseconds + overrun;
+    }
+    callback();
+  },
 ).then(() => process.stdout.write(JSON.stringify({failures, infos, sleeps}))).catch(error => {
   console.error(error);
   process.exitCode = 1;
@@ -418,6 +427,7 @@ class SimulationControls:
     clock_step_ms: int | None = None
     changing_check: str | None = None
     later_checks_after_ms: int | None = None
+    sleep_overrun_after_ms: int | None = None
 
     def as_input(self) -> dict[str, object]:
         """Return the driver input keys for these controls."""
@@ -426,6 +436,7 @@ class SimulationControls:
             "clockStepMs": self.clock_step_ms,
             "changingCheck": self.changing_check,
             "laterChecksAfterMs": self.later_checks_after_ms,
+            "sleepOverrunAfterMs": self.sleep_overrun_after_ms,
         }
 
 

@@ -1002,14 +1002,14 @@ jobs:
             let editedListedAfterGrace = !isEditedPullRequest;
             let previousFingerprint = null;
             let pollIntervalSeconds = 30;
-            let finalSample = Date.now() >= deadline;
+            let finalSampleTaken = false;
             const fingerprintNames = new Set([
               ...required, ...Object.values(delayedStrictDependencies).flat(),
               ...Object.values(externalCheckUploadJobs).flat()
             ]);
-            while (Date.now() < deadline || finalSample) {
-              const isFinalSample = finalSample;
-              finalSample = false;
+            while (Date.now() < deadline || !finalSampleTaken) {
+              const isFinalSample = Date.now() >= deadline;
+              if (isFinalSample) finalSampleTaken = true;
               let check_runs = await withApiBackoff('listAllCheckRuns', () => listAllCheckRuns());
               if (!check_runs) return;
               const waitsBeforeLaterListings = rateLimitWaitCount;
@@ -1107,7 +1107,6 @@ jobs:
               // judging a pending result from the previous poll. Never sleep again.
               if (isFinalSample) break;
               const remainingPollMs = Math.max(0, deadline - Date.now());
-              finalSample = remainingPollMs <= pollIntervalSeconds * 1000;
               pollIntervalSeconds = Math.min(pollIntervalSeconds, remainingPollMs / 1000);
               if (pollIntervalSeconds > 0) {
                 await new Promise(r => setTimeout(r, pollIntervalSeconds * 1000));

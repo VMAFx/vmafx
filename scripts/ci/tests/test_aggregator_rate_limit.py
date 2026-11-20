@@ -334,7 +334,13 @@ class RateLimit(unittest.TestCase):
     def test_changed_poll_resets(self) -> None:
         self.assertEqual(self.poll_sleeps(True)[:3], [30000, 30000, 60000])
 
-    def final_sample(self, completed_after_s: int) -> tuple[list[str], list[int]]:
+    def final_sample(
+        self,
+        completed_after_s: int,
+        *,
+        retry_after: str = "90",
+        sleep_overrun_after_ms: int | None = None,
+    ) -> tuple[list[str], list[int]]:
         sleeps: list[int] = []
         failures = run_required_aggregator(
             CHECK,
@@ -348,9 +354,10 @@ class RateLimit(unittest.TestCase):
                 advance_sleep=True,
                 clock_step_ms=0,
                 later_checks_after_ms=completed_after_s * 1000,
+                sleep_overrun_after_ms=sleep_overrun_after_ms,
             ),
             api_errors={"listForRef": [429]},
-            api_error_detail={"listForRef": {"headers": {"retry-after": "90"}}},
+            api_error_detail={"listForRef": {"headers": {"retry-after": retry_after}}},
             sleeps=sleeps,
         )
         return failures, sleeps
@@ -367,6 +374,15 @@ class RateLimit(unittest.TestCase):
         failures, sleeps = self.final_sample(240 * 60 - 1)
         self.assertEqual(failures, [])
         self.assertEqual(sum(sleeps), 240 * 60 * 1000)
+
+    def test_final_sample_survives_timer_overrun(self) -> None:
+        failures, sleeps = self.final_sample(
+            240 * 60 - 1,
+            retry_after="29.999",
+            sleep_overrun_after_ms=235 * 60 * 1000,
+        )
+        self.assertEqual(failures, [])
+        self.assertEqual(sum(sleeps), 240 * 60 * 1000 - 1)
 
     def test_final_sample_does_not_wait_for_late_completion(self) -> None:
         failures, sleeps = self.final_sample(241 * 60)
@@ -395,7 +411,7 @@ class RateLimit(unittest.TestCase):
 
     def test_planted_no_final_sample(self) -> None:
         copy = self.mutate(
-            "while (Date.now() < deadline || finalSample)", "while (Date.now() < deadline)"
+            "while (Date.now() < deadline || !finalSampleTaken)", "while (Date.now() < deadline)"
         )
         with mock.patch.object(harness, "AGGREGATOR_PATH", copy):
             failures, _ = self.final_sample(238 * 60)
