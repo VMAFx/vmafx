@@ -32,7 +32,7 @@ invariant: LD_LIBRARY_PATH includes tbb; NEO/ROCm pinned to kernel UAPI; ORT_VER
    ADR-0541/ADR-0542, ROCm bumped by ADR-1225); provider-enabled
    distributions need matching runtime dependencies (ADR-0113). Version
    raise -> add pin to `scripts/ci/ort-nuget-pins.json` first
-   (`python3 scripts/ci/ort_nuget_install.py --print-pin <version>`
+   (`python3 scripts/ci/ort_nuget_install.py --package cpu --print-pin <version>`
    prints size + sha256 entry), then raise `ARG ORT_VERSION`, the matching
    `tracked.cpu` anchor, and this note; guard
    `scripts/ci/check_ort_tarball_pins.py` refuses `ORT_VERSION` without a

@@ -602,7 +602,7 @@
     },
     {
       "customType": "regex",
-      "description": "ONNX Runtime CPU NuGet package tracked through scripts/ci/ort-nuget-pins.json (ADR-3561). A bump lands on the `tracked.cpu` anchor; the guard refuses a version without a size/sha256 pin, so run `python3 scripts/ci/ort_nuget_install.py --print-pin <version>` and add the entry before merging.",
+      "description": "ONNX Runtime CPU NuGet package tracked through scripts/ci/ort-nuget-pins.json (ADR-3561). A bump lands on the `tracked.cpu` anchor; the guard refuses a version without a size/sha256 pin, so run `python3 scripts/ci/ort_nuget_install.py --package cpu --print-pin <version>` and add the entry before merging.",
       "managerFilePatterns": [
         "/^scripts/ci/ort-nuget-pins\\.json$/"
       ],
@@ -615,7 +615,7 @@
     },
     {
       "customType": "regex",
-      "description": "ONNX Runtime GPU NuGet package tracked through scripts/ci/ort-nuget-pins.json (ADR-3561). A bump lands on the `tracked.gpu` anchor; add the printed size/sha256 entry before merging.",
+      "description": "ONNX Runtime GPU NuGet package tracked through scripts/ci/ort-nuget-pins.json (ADR-3561). A bump lands on the `tracked.gpu` anchor; run `python3 scripts/ci/ort_nuget_install.py --package gpu --print-pin <version>` and add the printed size/sha256 entry before merging.",
       "managerFilePatterns": [
         "/^scripts/ci/ort-nuget-pins\\.json$/"
       ],

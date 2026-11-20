@@ -341,7 +341,7 @@ def _check_tracked_versions(
         if str(version) not in valid[name].get("versions", {}):
             findings.append(
                 f"{pin_file}: tracked {name} version '{version}' has no sha256/size pin; "
-                f"run scripts/ci/ort_nuget_install.py --print-pin {version}"
+                f"run scripts/ci/ort_nuget_install.py --package {name} --print-pin {version}"
             )
     return findings
 

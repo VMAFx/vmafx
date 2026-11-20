@@ -61,15 +61,13 @@ Replace `1.30.0` with the version to measure.
   `${ORT_VERSION}`, `eval`, `sh -c`, `bash -c`, `env`, and quotes enclosing
   the helper token; each helper command matching `[ORT_VERSION=<literal>]`
   followed by `python3 [/build/vmaf/]scripts/ci/ort_nuget_install.py <flags>`
-  with `/build/vmaf/` permitted for `dev/Containerfile:744`, unique helper
+  with `/build/vmaf/` permitted for `dev/Containerfile:745`, unique helper
   argument-parser flags, and `--version` in `<literal>`, `$ORT_VERSION`,
   `${ORT_VERSION}`, `"${ORT_VERSION}"`, or `"$ORT_VERSION"`; and any
   non-helper `ORT_VERSION` segment matching `[export ]ORT_VERSION=<literal>`).
-- Renovate tracks the `tracked.cpu` and `tracked.gpu` anchors in
-  `scripts/ci/ort-nuget-pins.json` with the `nuget` datasource. A bump
-  changes only the anchor; the guard refuses a tracked version without a
-  size/SHA-256 entry, so the update path is to run `--print-pin`, add the
-  entry, then raise the consumer `ORT_VERSION` sites.
+- Follow-up: the `renovate.json` custom manager (`renovate.json:603-617`,
+  `matchStrings` at `renovate.json:610-614` matching `ORT_SHA256`) still
+  references the old GitHub release tarball source.
 
 ## References
 
@@ -80,3 +78,15 @@ Replace `1.30.0` with the version to measure.
 - [Installer](../../scripts/ci/ort_nuget_install.py),
   [pins](../../scripts/ci/ort-nuget-pins.json), and
   [guard](../../scripts/ci/check_ort_tarball_pins.py).
+
+## Status update 2026-11-20: Renovate tracks the NuGet pins
+
+The follow-up above is resolved. `renovate.json` now tracks the
+`tracked.cpu` and `tracked.gpu` anchors in
+`scripts/ci/ort-nuget-pins.json` with the `nuget` datasource, so a bump
+changes only the anchor and never rewrites a tarball digest. The guard
+still refuses a tracked version without a size/SHA-256 pin; the update
+path is `python3 scripts/ci/ort_nuget_install.py --package cpu|gpu
+--print-pin <version>`, then add the entry and raise the consumer
+`ORT_VERSION` sites. The helper command moved to `dev/Containerfile:744`
+after the unused `ARG ORT_SHA256` was removed.

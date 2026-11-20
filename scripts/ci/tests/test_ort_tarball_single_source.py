@@ -720,7 +720,25 @@ class TestOrtGuard(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn(
             "tracked cpu version '1.99.0' has no sha256/size pin; "
-            "run scripts/ci/ort_nuget_install.py --print-pin 1.99.0",
+            "run scripts/ci/ort_nuget_install.py --package cpu --print-pin 1.99.0",
+            "\n".join(findings),
+        )
+
+    def test_tracked_gpu_version_without_pin_names_package(self) -> None:
+        root = Path(self.temp.name)
+        pins = root / "scripts/ci/ort-nuget-pins.json"
+        pins.parent.mkdir(parents=True)
+        pins.write_text(
+            (ROOT / "scripts/ci/ort-nuget-pins.json")
+            .read_text(encoding="utf-8")
+            .replace('"gpu": "1.22.0"', '"gpu": "1.99.0"'),
+            encoding="utf-8",
+        )
+        rc, findings = guard.check_tarball_pins(root=root)
+        self.assertEqual(rc, 1)
+        self.assertIn(
+            "tracked gpu version '1.99.0' has no sha256/size pin; "
+            "run scripts/ci/ort_nuget_install.py --package gpu --print-pin 1.99.0",
             "\n".join(findings),
         )
 
