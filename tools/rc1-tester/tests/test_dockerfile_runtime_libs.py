@@ -394,8 +394,11 @@ def _strip_trailing_comment(line: str) -> str:
             in_single = not in_single
         elif char == '"' and not in_single:
             in_double = not in_double
-        elif char == "#" and not in_single and not in_double and (
-            index == 0 or line[index - 1] in " \t"
+        elif (
+            char == "#"
+            and not in_single
+            and not in_double
+            and (index == 0 or line[index - 1] in " \t")
         ):
             return line[:index]
     return line
@@ -549,8 +552,7 @@ def test_the_oneapi_script_write_checks_run_over_the_script() -> None:
 
     commented = script.replace(
         'cp /usr/share/doc/libzimg2/copyright "${dist_dir}/doc/libzimg2/copyright"',
-        "true # cp /usr/share/doc/libzimg2/copyright "
-        '"${dist_dir}/doc/libzimg2/copyright"',
+        "true # cp /usr/share/doc/libzimg2/copyright " '"${dist_dir}/doc/libzimg2/copyright"',
     )
     assert _script_writes_record(_writable_body(commented), ONEAPI_DIST) is False
 

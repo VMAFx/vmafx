@@ -487,9 +487,7 @@ def test_a_measured_zimg_source_package_passes(tmp_path: Path) -> None:
             command, 0, stdout="zimg-3.0.6-1.el8.src.rpm\n", stderr=""
         )
 
-    assert (
-        zimg.check_source_package(library, record, runner=runner) == "zimg-3.0.6-1.el8.src.rpm"
-    )
+    assert zimg.check_source_package(library, record, runner=runner) == "zimg-3.0.6-1.el8.src.rpm"
 
 
 def test_the_build_stages_zimg_only_from_the_recorded_package() -> None:

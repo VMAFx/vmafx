@@ -56,9 +56,7 @@ def check_source_package(
     expected = recorded_source_rpm(record)
     actual = source_rpm_of(library, runner=runner)
     if actual != expected:
-        raise ValueError(
-            f"{library} comes from {actual}, but the licence record names {expected}"
-        )
+        raise ValueError(f"{library} comes from {actual}, but the licence record names {expected}")
     return actual
 
 
