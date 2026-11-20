@@ -475,10 +475,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # derived dynamically from the release pinned as INTEL_NEO_VERSION in
 # build-config.env (ADR-1145); CI build hosts install that release's ocloc
 # through scripts/ci/install-intel-ocloc.sh, so both compile with one IGC.
+# The Level Zero loader .debs (libze1, libze-dev) come from the same lock (ADR-3555).
 # The IGC debs install into /usr/local/lib without an ldconfig trigger, hence
 # the explicit ldconfig before anything loads them.
 COPY build-config.env /opt/vmafx/build-config.env
-COPY dev/scripts/fetch-intel-neo.py /tmp/fetch-intel-neo.py
+COPY dev/scripts/fetch-intel-neo.py dev/scripts/intel-neo-lock.json /tmp/
 # hadolint ignore=DL3003,DL3008,DL3009
 RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -488,30 +489,26 @@ RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
     && mkdir -p /tmp/neo && cd /tmp/neo \
     && token_args=() \
     && if [[ -n "${GITHUB_TOKEN:-}" ]]; then token_args=(--github-token "${GITHUB_TOKEN}"); fi \
-    && python3 /tmp/fetch-intel-neo.py --neo-ver "${INTEL_NEO_VERSION}" "${token_args[@]}" \
+    && python3 /tmp/fetch-intel-neo.py --neo-ver "${INTEL_NEO_VERSION}" --level-zero-ver "${LEVEL_ZERO_VERSION}" --level-zero-dev "${token_args[@]}" \
     && apt-get --error-on=any -o Acquire::Retries=3 update \
     && apt-get install -y --no-install-recommends ./*.deb \
     && ldconfig \
-    && cd / && rm -rf /tmp/neo /tmp/fetch-intel-neo.py
+    && cd / && rm -rf /tmp/neo /tmp/fetch-intel-neo.py /tmp/intel-neo-lock.json
 
-# Verify NEO compute-runtime packages were actually installed, and that ocloc
-# is the pinned release (icpx looks for exactly `ocloc` on PATH).
+# Verify NEO compute-runtime and Level Zero loader packages were actually
+# installed, and that ocloc and libze1/libze-dev match the pinned releases
+# (icpx looks for exactly `ocloc` on PATH).
 RUN . /opt/vmafx/build-config.env \
-    && for pkg in intel-opencl-icd libze-intel-gpu1 intel-ocloc; do \
+    && for pkg in intel-opencl-icd libze-intel-gpu1 intel-ocloc libze1 libze-dev; do \
         dpkg -l "${pkg}" 2>/dev/null | grep -q "^ii" \
-            || (echo "FATAL: ${pkg} was not installed" && exit 1); \
+            || { echo "FATAL: ${pkg} was not installed"; exit 1; }; \
+    done \
+    && for pkg in libze1 libze-dev; do \
+        ver="$(dpkg-query -W -f='${Version}' "${pkg}" 2>/dev/null)" \
+        && [[ -n "${LEVEL_ZERO_VERSION}" && "${ver}" == "${LEVEL_ZERO_VERSION}"* ]] \
+            || { echo "FATAL: ${pkg} version '${ver}' does not start with ${LEVEL_ZERO_VERSION}"; exit 1; }; \
     done \
     && test "$(ocloc query OCL_DRIVER_VERSION | tail -n 1)" = "${INTEL_NEO_VERSION}"
-
-# Level Zero loader (libze_loader) for SYCL
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    . /opt/vmafx/build-config.env \
-    && curl --retry 3 --retry-all-errors -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze1_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze1.deb \
-    && curl --retry 3 --retry-all-errors -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VERSION}/libze-dev_${LEVEL_ZERO_VERSION}%2Bu24.04_amd64.deb" -o /tmp/libze-dev.deb \
-    && apt-get --error-on=any -o Acquire::Retries=3 update \
-    && apt-get install -y --no-install-recommends /tmp/libze1.deb /tmp/libze-dev.deb \
-    && find /tmp -maxdepth 1 -name 'libze*.deb' -delete
 
 # ---------- Rust toolchain (ADR-3318) ---------------------------------------
 # The version is build-config.env's RUST_VERSION, the one rust-toolchain.toml,
@@ -739,26 +736,16 @@ COPY --chown=vmaf:vmaf dev/            /build/vmaf/dev/
 COPY --chown=vmaf:vmaf scripts/        /build/vmaf/scripts/
 RUN chown vmaf:vmaf /build /build/vmaf
 
-# Install ONNX Runtime C++ shared library (provides pkg-config .pc file so
-# meson can find it for -Denable_dnn=enabled). ONNX Runtime is not in Ubuntu
-# apt; we pull the official Linux x86_64 tarball from GitHub releases.
-# This CPU archive supplies the native C/C++ API, not CUDA or ROCm execution
-# providers. Provider-enabled ORT distributions need their matching runtime
-# dependencies (ADR-0113). The Python runtime floor is owned independently
-# by ai/pyproject.toml.
+# Install the pinned CPU ONNX Runtime C++ library and pkg-config metadata
+# using the shared NuGet installer (ADR-3561). Provider-enabled distributions
+# need matching runtime dependencies (ADR-0113). The Python runtime floor is
+# owned independently by ai/pyproject.toml.
 ARG ORT_VERSION=1.30.0
 ARG ORT_SHA256=a5ed5a3cac51fbb2e90da632ae43d19212faaa20e76484e62bcb7c23ddb3b3fd
-RUN curl --retry 3 --retry-all-errors -fsSL \
-        "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
-        -o /tmp/ort.tgz \
-    && echo "${ORT_SHA256}  /tmp/ort.tgz" | sha256sum --check --strict - \
-    && tar -xzf /tmp/ort.tgz -C /tmp \
-    && cp -r /tmp/onnxruntime-linux-x64-${ORT_VERSION}/include/* /usr/local/include/ \
-    && cp -r /tmp/onnxruntime-linux-x64-${ORT_VERSION}/lib/* /usr/local/lib/ \
-    && rm -rf /tmp/ort.tgz /tmp/onnxruntime-linux-x64-${ORT_VERSION} \
-    && ldconfig \
-    && printf "prefix=/usr/local\nexec_prefix=\${prefix}\nlibdir=\${exec_prefix}/lib\nincludedir=\${prefix}/include\n\nName: libonnxruntime\nDescription: ONNX Runtime C++ API\nVersion: %s\nLibs: -L\${libdir} -lonnxruntime\nCflags: -I\${includedir}\n" "${ORT_VERSION}" \
-        > /usr/local/lib/pkgconfig/libonnxruntime.pc
+RUN python3 /build/vmaf/scripts/ci/ort_nuget_install.py --package cpu \
+        --version "${ORT_VERSION}" --prefix /usr/local \
+        --pkgconfig-dir /usr/local/lib/pkgconfig \
+    && ldconfig
 
 USER vmaf
 

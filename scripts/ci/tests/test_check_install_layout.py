@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import check_install_layout as checker
 
+from scripts.ci.tests import symlink_test_support as links
 from scripts.lib.safe_subprocess import run as run_command
 
 CC_TIMEOUT_S = 60
@@ -342,6 +343,7 @@ def test_cmake_package_files_version_missing_fails(tmp_path: Path) -> None:
 
 
 def test_cmake_package_file_escapes_destdir_fails(tmp_path: Path) -> None:
+    links.skip_without_symlinks(tmp_path)
     stage = tmp_path / "stage"
     stage.mkdir()
     outside = tmp_path / "outside"

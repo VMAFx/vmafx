@@ -1,0 +1,12 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Declared exceptions to the bot-opener check of scripts/ci/check-dco.py.
+# Format and rules: scripts/ci/lint_exceptions.py.
+
+[[exception]]
+path = "dev/scripts/intel-neo-lock.json"
+category = "D"
+entered = 2026-11-16
+reason = "Category D, 120-day interval. Mend-hosted Renovate (opener renovate[bot]) blocks repository postUpgradeTasks, so .github/workflows/intel-neo-lock-refresh.yml commits refreshed asset lock metadata to renovate/** branches as vmafx-release-bot[bot] <340976456+vmafx-release-bot[bot]@users.noreply.github.com> (ADR-3555). Remove if Renovate gains a built-in lock refresh or self-hosted postUpgradeTasks; renew while Mend-hosted Renovate updates build-config.env."
+expires = 2027-03-16
