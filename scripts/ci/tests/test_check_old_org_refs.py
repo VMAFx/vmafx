@@ -34,6 +34,13 @@ spec.loader.exec_module(module)
 DAY = datetime.date(2026, 11, 30)
 
 
+def git_fixture_env() -> dict[str, str]:
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env["GIT_CONFIG_GLOBAL"] = os.devnull
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    return env
+
+
 def run_checker(cwd: str, env: dict[str, str], *extra: str) -> TextCommandResult:
     return run(
         [sys.executable, "-B", str(CHECKER), "--all", *extra],
@@ -127,18 +134,39 @@ class OldOrgTests(unittest.TestCase):
         self.assertTrue(self.hits("OTHER=VMAFx/x", "build-config.env"))
 
     def test_all_git_failure(self) -> None:
-        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-        env["GIT_CONFIG_GLOBAL"] = os.devnull
-        env["GIT_CONFIG_NOSYSTEM"] = "1"
+        env = git_fixture_env()
         with tempfile.TemporaryDirectory() as tmp:
+            env["GIT_CEILING_DIRECTORIES"] = str(Path(tmp).resolve().parent)
             result = run_checker(tmp, env)
             self.assertEqual(2, result.returncode)
             self.assertIn("check-old-org-refs:", result.stderr)
 
+    def test_all_git_ceiling_blocks_enclosing_repository(self) -> None:
+        env = git_fixture_env()
+        with tempfile.TemporaryDirectory() as tmp:
+            outer = Path(tmp).resolve()
+            run(
+                [GIT, "init", "-q", str(outer)],
+                allowed_executables=(GIT,),
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout_seconds=GIT_TIMEOUT_S,
+            )
+            inner = outer / "inner"
+            inner.mkdir()
+            result = run_checker(str(inner), env)
+            self.assertEqual(0, result.returncode)
+            self.assertEqual("", result.stdout)
+
+            env["GIT_CEILING_DIRECTORIES"] = str(outer)
+            result = run_checker(str(inner), env)
+            self.assertEqual(2, result.returncode)
+            self.assertIn("check-old-org-refs:", result.stderr)
+
     def test_planted_all_and_usage(self) -> None:
-        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-        env["GIT_CONFIG_GLOBAL"] = os.devnull
-        env["GIT_CONFIG_NOSYSTEM"] = "1"
+        env = git_fixture_env()
         env["OLD_ORG_REFS_TODAY"] = "2026-11-20"
         with tempfile.TemporaryDirectory() as tmp:
             run(
