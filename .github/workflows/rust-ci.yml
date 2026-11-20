@@ -144,14 +144,14 @@ jobs:
           sudo ldconfig
 
       - name: Set up the pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca  # stable
         with:
           # Pinned by commit SHA, so the action cannot infer the toolchain from
           # its git ref — `toolchain` must be given explicitly or setup fails
           # with "'toolchain' is a required input". The value is RUST_VERSION
           # of build-config.env (ADR-3318); check-workflow-versions.py refuses
           # another, and Renovate moves both in one pull request.
-          toolchain: 1.99.1
+          toolchain: 1.100.0
           components: rustfmt, clippy
 
       - name: Cache Rust artifacts
@@ -293,7 +293,7 @@ jobs:
           persist-credentials: false
 
       - name: Run cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        uses: EmbarkStudios/cargo-deny-action@70f81531115945ba6eb6b941ec9d39d063438eb9 # v2.1.2
         with:
           command: check
           # Match the project root's deny.toml location.
