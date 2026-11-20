@@ -6,9 +6,10 @@ backend you want covered, and return one report archive that lets a maintainer
 reproduce a failure. RC1 testing answers a narrow question: can another person
 do all of that from source?
 
-RC2 (`v1.0.0-rc.2`) is a stabilisation candidate that carries the dependency
-updates and fixes merged since RC1. It asks the same question, so RC2 testers
-follow this guide unchanged and use the RC2 tag wherever it says RC1.
+RC2 (`v1.0.0-rc.2`) is a stabilisation candidate that carried the dependency
+updates and fixes merged since RC1. Both `v1.0.0-rc.1` and `rc.2` were withdrawn
+and deleted after `v0.1.0` per [ADR-3398](../adr/3398-delete-withdrawn-rc-releases.md);
+this guide documents the tester verification procedure used during those candidate cycles.
 
 Performance benchmarking and tuning start in RC8, and real model training
 starts in RC9. RC3 to RC7 (twin exactness, the Rust metric, deduplication, the
@@ -35,7 +36,7 @@ training run.
 
 Download the source archive for the RC1 release from the
 [VMAFx releases page](https://github.com/VMAFx/vmafx/releases), or check out the
-exact RC1 tag in Git. Keep the source checkout: the current native release
+exact RC1 tag in Git (early candidates were deleted after 0.1.0 per [ADR-3398](../adr/3398-delete-withdrawn-rc-releases.md)). Keep the source checkout: the current native release
 payload contains `vmaf` and the library, while the report launcher and its small
 YUV fixtures live in the source tree.
 

@@ -17,9 +17,10 @@ development and CRD details are in [the operator guide](../development/operator.
 
 Pull by digest for production deployments:
 
-Images published after `v1.0.0-rc.2` have zstd layers and need Docker
-Engine 23.0 or later, Docker Desktop 4.19 or later, Podman or containerd 1.5
-or later ([what can pull them](../usage/docker.md#what-can-pull-the-images)).
+Images published after `v1.0.0-rc.2` (including `0.1.0` and later) have
+zstd layers and need Docker Engine 23.0 or later, Docker Desktop 4.19
+or later, Podman or containerd 1.5 or later
+([what can pull them](../usage/docker.md#what-can-pull-the-images)).
 
 ```bash
 docker pull ghcr.io/vmafx/vmafx-operator@sha256:<digest>

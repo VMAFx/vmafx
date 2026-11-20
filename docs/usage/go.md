@@ -44,10 +44,11 @@ retract (
 ```
 
 Candidates rc.1 and rc.2 carried stale licence metadata; rc.3 was withdrawn
-when the release stream restarted at `0.1.0`. Keep these retractions in
-later releases. They warn consumers about withdrawn versions; they do not
-delete cached versions or guarantee that a proxy selects a fork release.
-See the [Go retraction reference](https://go.dev/ref/mod#go-mod-file-retract).
+when the release stream restarted at `0.1.0` ([ADR-3292](../adr/3292-release-line-restart-0x.md));
+all three were deleted from the forge after `v0.1.0` ([ADR-3398](../adr/3398-delete-withdrawn-rc-releases.md)).
+Keep these retractions in later releases. They warn direct-mode consumers
+about withdrawn and deleted versions; the Go module proxy retains cached copies
+independently. See the [Go retraction reference](https://go.dev/ref/mod#go-mod-file-retract).
 
 ## Pin a commit
 

@@ -4,10 +4,11 @@
 
 VMAFx has no supported release line yet. The candidates `v1.0.0-rc.1`,
 `v1.0.0-rc.2` and `v1.0.0-rc.3` were published as pre-releases on 2026-09-27,
-2026-09-28 and 2026-10-07 and are withdrawn: the release line restarts at
-`v0.1.0`, the first VMAFx release
+2026-09-28 and 2026-10-07, withdrawn, and deleted after `v0.1.0`
 ([ADR-3292](docs/adr/3292-release-line-restart-0x.md),
-[release guide](docs/development/release.md)). Version strings inherited from
+[ADR-3398](docs/adr/3398-delete-withdrawn-rc-releases.md),
+[release guide](docs/development/release.md)). The release line restarts at
+`v0.1.0`, the first VMAFx release. Version strings inherited from
 libvmaf or Netflix tags do not identify a VMAFx support line either.
 
 Report problems against the current `master` commit and include its full SHA.
