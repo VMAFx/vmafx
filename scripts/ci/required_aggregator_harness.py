@@ -364,7 +364,9 @@ def _decode_driver_output(
         info_logs.extend(_string_list(payload.get("infos"), "info messages"))
     if sleeps is not None:
         values = payload.get("sleeps")
-        if not isinstance(values, list) or any(type(value) is not int for value in values):
+        if not isinstance(values, list) or any(
+            isinstance(value, bool) or not isinstance(value, int) for value in values
+        ):
             raise AssertionError("aggregator sleeps must be integers")
         sleeps.extend(values)
     return _string_list(payload.get("failures"), "failure messages")

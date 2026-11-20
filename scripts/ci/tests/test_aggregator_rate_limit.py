@@ -52,6 +52,39 @@ def pending(status: str) -> list[dict[str, object]]:
     ]
 
 
+class DriverOutput(unittest.TestCase):
+    def test_integer_sleeps_extend_list(self) -> None:
+        sleeps: list[int] = []
+        self.assertEqual(
+            harness._decode_driver_output('{"failures": [], "sleeps": [1, 2]}', None, sleeps), []
+        )
+        self.assertEqual(sleeps, [1, 2])
+
+    def test_boolean_sleep_rejected(self) -> None:
+        with self.assertRaisesRegex(AssertionError, "aggregator sleeps must be integers"):
+            harness._decode_driver_output('{"failures": [], "sleeps": [true]}', None, [])
+
+    def test_string_sleep_rejected(self) -> None:
+        with self.assertRaisesRegex(AssertionError, "aggregator sleeps must be integers"):
+            harness._decode_driver_output('{"failures": [], "sleeps": ["1"]}', None, [])
+
+    def test_float_sleep_rejected(self) -> None:
+        with self.assertRaisesRegex(AssertionError, "aggregator sleeps must be integers"):
+            harness._decode_driver_output('{"failures": [], "sleeps": [1.5]}', None, [])
+
+    def test_empty_sleeps_add_nothing(self) -> None:
+        sleeps = [3]
+        self.assertEqual(
+            harness._decode_driver_output('{"failures": [], "sleeps": []}', None, sleeps), []
+        )
+        self.assertEqual(sleeps, [3])
+
+    def test_none_sleeps_ignores_payload(self) -> None:
+        self.assertEqual(
+            harness._decode_driver_output('{"failures": [], "sleeps": [true]}', None, None), []
+        )
+
+
 class RateLimit(unittest.TestCase):
     def primary(self, sleeps: list[int]) -> list[str]:
         return run_required_aggregator(
