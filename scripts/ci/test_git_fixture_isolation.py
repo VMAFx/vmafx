@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Any, TypeGuard
 from unittest.mock import patch
 
-import yaml
+import yaml  # type: ignore[import-untyped]  # no PyYAML stubs in the hook environment, as in scripts/ci/check_fixture_bundle_jobs.py
 
 try:  # the hooks run this file with plain `python3`; only the tooling suite brings pytest
     import pytest
