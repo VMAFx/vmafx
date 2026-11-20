@@ -240,7 +240,10 @@ def _token_case(tmp_path: Path, digests: list[str]) -> tuple[Path, Path, dict[st
 
 
 def _blob_tokens(state_dir: Path) -> list[str]:
-    return json.loads((state_dir / "blob_tokens.json").read_text(encoding="utf-8"))
+    tokens = json.loads((state_dir / "blob_tokens.json").read_text(encoding="utf-8"))
+    if not isinstance(tokens, list) or not all(isinstance(t, str) for t in tokens):
+        raise AssertionError(f"blob_tokens.json is not a list of strings: {tokens!r}")
+    return tokens
 
 
 def _run_installer(
