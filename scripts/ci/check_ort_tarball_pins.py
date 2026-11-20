@@ -369,42 +369,59 @@ def _step_bindings(lines: list[str]) -> dict[str, set[str]] | None:
     return bindings
 
 
-def _parse_helper_flags(tokens: list[str]) -> tuple[str, str | None] | None:  # noqa: PLR0911, PLR0912  # fmt: skip
+def _helper_flag_pair(tokens: list[str], index: int) -> tuple[str, str, int] | None:
+    """Split one flag/value pair, returning the next index."""
+    argument = tokens[index]
+    if argument == "--print-pin" or argument.startswith("--print-pin="):
+        return None
+    if not argument.startswith("--"):
+        return None
+    if "=" in argument:
+        flag, value = argument.split("=", 1)
+        return flag, value, index + 1
+    if index + 1 >= len(tokens):
+        return None
+    return argument, tokens[index + 1], index + 2
+
+
+def _apply_helper_flag(
+    flag: str, value: str, package: str, version: str | None
+) -> tuple[str, str | None] | None:
+    """Validate one allowed helper flag and return the updated package/version."""
+    if flag == "--package":
+        if re.fullmatch(r"[A-Za-z0-9_-]+", value) is None:
+            return None
+        return value, version
+    if flag == "--version":
+        if (
+            CONTAINER_LITERAL_VERSION_RE.fullmatch(value) is None
+            and CONTAINER_VERSION_VAR_RE.fullmatch(value) is None
+        ):
+            return None
+        return package, value
+    if CONTAINER_FLAG_VALUE_RE.fullmatch(value) is None:
+        return None
+    return package, version
+
+
+def _parse_helper_flags(tokens: list[str]) -> tuple[str, str | None] | None:
     """Parse the flags of one helper call; None when any flag is outside the allow-list."""
     package = "cpu"
     version: str | None = None
     seen: set[str] = set()
     index = 0
     while index < len(tokens):
-        argument = tokens[index]
-        if argument == "--print-pin" or argument.startswith("--print-pin="):
+        parsed = _helper_flag_pair(tokens, index)
+        if parsed is None:
             return None
-        if not argument.startswith("--"):
-            return None
-        if "=" in argument:
-            flag, value = argument.split("=", 1)
-            index += 1
-        else:
-            if index + 1 >= len(tokens):
-                return None
-            flag, value = argument, tokens[index + 1]
-            index += 2
+        flag, value, index = parsed
         if flag not in HELPER_FLAGS or flag in seen:
             return None
         seen.add(flag)
-        if flag == "--package":
-            if re.fullmatch(r"[A-Za-z0-9_-]+", value) is None:
-                return None
-            package = value
-        elif flag == "--version":
-            if (
-                CONTAINER_LITERAL_VERSION_RE.fullmatch(value) is None
-                and CONTAINER_VERSION_VAR_RE.fullmatch(value) is None
-            ):
-                return None
-            version = value
-        elif CONTAINER_FLAG_VALUE_RE.fullmatch(value) is None:
+        applied = _apply_helper_flag(flag, value, package, version)
+        if applied is None:
             return None
+        package, version = applied
     if version is None or "--prefix" not in seen:
         return None
     return package, version
@@ -439,15 +456,64 @@ def _container_binding(
     return next(iter(values)), ""
 
 
-def _parse_container_helper_instruction(  # noqa: PLR0911, PLR0912
-    command: str, bindings: dict[str, set[str]]
-) -> list[tuple[str, str | None, str]] | None:
-    """Parse a canonical RUN instruction into helper calls and their resolved versions."""
+def _run_helper_body(command: str) -> str | None:
+    """Return a canonical RUN body, or None when the instruction is not eligible."""
     run_match = CONTAINER_RUN_RE.fullmatch(command.strip())
     if run_match is None:
         return None
     body = run_match.group(1).replace("${ORT_VERSION}", "$ORT_VERSION")
     if CONTAINER_FORBIDDEN_RE.search(body):
+        return None
+    return body
+
+
+def _parse_helper_segment(
+    tokens: list[str],
+    stripped: str,
+    exported: dict[str, str],
+    bindings: dict[str, set[str]],
+) -> tuple[str, str | None, str] | None:
+    """Parse a helper simple command inside a RUN instruction."""
+    helper_tokens = CONTAINER_HELPER_TOKEN_RE.findall(stripped)
+    if not helper_tokens or len(helper_tokens) != 1:
+        return None
+    parsed = _parse_helper_tokens(tokens)
+    if parsed is None:
+        return None
+    package, version = parsed
+    resolved, error = _container_binding(version, exported, bindings)
+    return package, resolved, error
+
+
+def _record_export(stripped: str, exported: dict[str, str]) -> bool:
+    """Record a canonical ORT_VERSION export; False means invalid or not an export."""
+    assignment = CONTAINER_EXPORT_RE.fullmatch(stripped)
+    if not assignment:
+        return False
+    value = assignment.group(1)
+    if "ORT_VERSION" in exported and exported["ORT_VERSION"] != value:
+        return False
+    exported["ORT_VERSION"] = value
+    return True
+
+
+def _split_segment(segment: str) -> list[str] | None:
+    """Strip and shell-split one RUN segment; None for blank or malformed input."""
+    stripped = segment.strip()
+    if not stripped:
+        return None
+    try:
+        return shlex.split(stripped)
+    except ValueError:
+        return None
+
+
+def _parse_container_helper_instruction(
+    command: str, bindings: dict[str, set[str]]
+) -> list[tuple[str, str | None, str]] | None:
+    """Parse a canonical RUN instruction into helper calls and their resolved versions."""
+    body = _run_helper_body(command)
+    if body is None:
         return None
     raw_segments = body.split("&&", MAX_COMMAND_LINES + 1)
     if len(raw_segments) > MAX_COMMAND_LINES:
@@ -456,31 +522,14 @@ def _parse_container_helper_instruction(  # noqa: PLR0911, PLR0912
     calls: list[tuple[str, str | None, str]] = []
     for segment in raw_segments:
         stripped = segment.strip()
-        if not stripped:
+        tokens = _split_segment(segment)
+        if tokens is None:
             return None
-        try:
-            tokens = shlex.split(stripped)
-        except ValueError:
-            return None
-        if not tokens:
-            return None
-        helper_tokens = CONTAINER_HELPER_TOKEN_RE.findall(stripped)
-        if helper_tokens:
-            if len(helper_tokens) != 1:
-                return None
-            parsed = _parse_helper_tokens(tokens)
-            if parsed is None:
-                return None
-            package, version = parsed
-            resolved, error = _container_binding(version, exported, bindings)
-            calls.append((package, resolved, error))
+        call = _parse_helper_segment(tokens, stripped, exported, bindings)
+        if call is not None:
+            calls.append(call)
             continue
-        assignment = CONTAINER_EXPORT_RE.fullmatch(stripped)
-        if assignment:
-            value = assignment.group(1)
-            if "ORT_VERSION" in exported and exported["ORT_VERSION"] != value:
-                return None
-            exported["ORT_VERSION"] = value
+        if _record_export(stripped, exported):
             continue
         if CONTAINER_SET_RE.fullmatch(stripped) or stripped == "ldconfig":
             continue
