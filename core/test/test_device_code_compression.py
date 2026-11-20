@@ -59,7 +59,11 @@ def elf_header(machine: int) -> bytes:
     return b"\x7fELF" + bytes([2, 1, 1]) + b"\0" * 9 + struct.pack("<HH", 2, machine)
 
 
-def fatbin(*entries: tuple[int, int, int, bytes]) -> bytes:
+def fatbin(
+    *entries: tuple[int, int, int, bytes],
+    compressed_size: int | None = None,
+    decompressed_size: int | None = None,
+) -> bytes:
     """Build a container with padded entry payloads."""
     body = bytearray()
     for kind, sm, flags, payload in entries:
@@ -68,10 +72,15 @@ def fatbin(*entries: tuple[int, int, int, bytes]) -> bytes:
         struct.pack_into("<H", header, 0, kind)
         struct.pack_into("<I", header, 4, len(header))
         struct.pack_into("<Q", header, 8, len(padded))
-        struct.pack_into("<I", header, 16, len(payload) if flags & 0x8000 else 0)
+        default_size = len(payload) if flags & 0x8000 else 0
+        struct.pack_into(
+            "<I", header, 16, default_size if compressed_size is None else compressed_size
+        )
         struct.pack_into("<I", header, 28, sm)
         struct.pack_into("<Q", header, 40, flags)
-        struct.pack_into("<Q", header, 56, len(payload) if flags & 0x8000 else 0)
+        struct.pack_into(
+            "<Q", header, 56, default_size if decompressed_size is None else decompressed_size
+        )
         body.extend(header + padded)
     return struct.pack("<IHHQ", 0xBA55ED50, 1, 16, len(body)) + body
 
@@ -101,6 +110,45 @@ class FatbinCheckTest(unittest.TestCase):
 
     def test_compressed_payload_with_cubin_header_passes(self) -> None:
         checker.check_fatbin("k.fatbin", fatbin((2, 90, 0x8011, elf_header(190))))
+
+    def test_flagged_zero_compressed_size_fails(self) -> None:
+        with self.assertRaisesRegex(
+            checker.CompressionError,
+            r"entry 0 cubin sm_90 flags 0x8011.*compressed size 0.*decompressed size 20",
+        ):
+            checker.check_fatbin(
+                "k.fatbin", fatbin((2, 90, 0x8011, elf_header(190)), compressed_size=0)
+            )
+
+    def test_flagged_oversized_compressed_size_fails(self) -> None:
+        with self.assertRaisesRegex(
+            checker.CompressionError,
+            r"entry 0 PTX sm_80 flags 0x8011.*compressed size 9.*decompressed size 8",
+        ):
+            checker.check_fatbin(
+                "k.fatbin", fatbin((1, 80, 0x8011, b"12345678"), compressed_size=9)
+            )
+
+    def test_flagged_zero_decompressed_size_fails(self) -> None:
+        with self.assertRaisesRegex(
+            checker.CompressionError,
+            r"entry 0 PTX sm_80 flags 0x8011.*compressed size 8.*decompressed size 0",
+        ):
+            checker.check_fatbin(
+                "k.fatbin", fatbin((1, 80, 0x8011, b"12345678"), decompressed_size=0)
+            )
+
+    def test_ptx_marker_in_compressed_padding_fails(self) -> None:
+        with self.assertRaisesRegex(checker.CompressionError, "0 cubin and 1 PTX"):
+            checker.check_fatbin(
+                "k.fatbin", fatbin((1, 80, 0x8011, b"12345678.target sm_"), compressed_size=8)
+            )
+
+    def test_compressed_size_equals_payload_size_passes(self) -> None:
+        checker.check_fatbin("k.fatbin", fatbin((1, 80, 0x8011, b"12345678")))
+
+    def test_compressed_size_one_below_payload_size_passes(self) -> None:
+        checker.check_fatbin("k.fatbin", fatbin((1, 80, 0x8011, b"1234567")))
 
     def test_raw_ptx_fails(self) -> None:
         with self.assertRaisesRegex(checker.CompressionError, "entry 0 PTX sm_80 flags 0x11"):

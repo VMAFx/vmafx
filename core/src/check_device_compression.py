@@ -26,6 +26,9 @@ at +8, compressed size u32 at +16, SM u32 at +28, flags u64 at +40 and
 decompressed size u64 at +56. Payload follows the entry header; compressed
 entries set flag 0x8000 (observed 0x8011 or 0x1008011); raw flags
 were 0x11 or 0x1000011, with zero compressed and decompressed sizes.
+Compressed sizes were positive and at most the padded payload size, with zero
+to seven padding bytes; decompressed sizes were positive and larger than the
+compressed sizes in all 24 compressed entries.
 Observed entry header sizes were 64, 88, 120, 168, 216 and 224 bytes; SM
 values were 80, 86, 89, 90, 100 and 120. Both zstd and lz4 use this flag.
 Measurements covered size compression, default lz4, no compression and
@@ -52,8 +55,10 @@ FATBIN_HEADER_SIZE_OFFSET = 6
 FATBIN_BODY_SIZE_OFFSET = 8
 FATBIN_ENTRY_SIZE_OFFSET = 4
 FATBIN_PAYLOAD_SIZE_OFFSET = 8
+FATBIN_COMPRESSED_SIZE_OFFSET = 16
 FATBIN_SM_OFFSET = 28
 FATBIN_FLAGS_OFFSET = 40
+FATBIN_DECOMPRESSED_SIZE_OFFSET = 56
 FATBIN_FLAG_COMPRESSED = 0x8000
 MAX_FATBIN_CONTAINERS = 4096
 MAX_FATBIN_ENTRIES = 4096
@@ -120,9 +125,9 @@ def fatbin_container_end(name: str, data: bytes, offset: int) -> tuple[int, int]
     return offset + header_size, end
 
 
-def fatbin_entries(name: str, data: bytes) -> list[tuple[int, int, int, int, int, int]]:
+def fatbin_entries(name: str, data: bytes) -> list[tuple[int, int, int, int, int, int, int, int]]:
     """Read entry metadata and payload ranges from concatenated containers."""
-    entries: list[tuple[int, int, int, int, int, int]] = []
+    entries: list[tuple[int, int, int, int, int, int, int, int]] = []
     offset = 0
     for _ in range(MAX_FATBIN_CONTAINERS):
         if offset == len(data):
@@ -136,13 +141,17 @@ def fatbin_entries(name: str, data: bytes) -> list[tuple[int, int, int, int, int
             kind = struct.unpack_from("<H", data, offset)[0]
             size = struct.unpack_from("<I", data, offset + FATBIN_ENTRY_SIZE_OFFSET)[0]
             payload_size = struct.unpack_from("<Q", data, offset + FATBIN_PAYLOAD_SIZE_OFFSET)[0]
+            compressed = struct.unpack_from("<I", data, offset + FATBIN_COMPRESSED_SIZE_OFFSET)[0]
+            decompressed = struct.unpack_from("<Q", data, offset + FATBIN_DECOMPRESSED_SIZE_OFFSET)[
+                0
+            ]
             sm = struct.unpack_from("<I", data, offset + FATBIN_SM_OFFSET)[0]
             flags = struct.unpack_from("<Q", data, offset + FATBIN_FLAGS_OFFSET)[0]
             start = offset + size
             finish = start + payload_size
             if size < FATBIN_ENTRY_HEADER_SIZE or finish > end:
                 raise CompressionError(f"{name}: malformed entry at offset {offset}")
-            entries.append((len(entries), kind, sm, flags, start, finish))
+            entries.append((len(entries), kind, sm, flags, start, finish, compressed, decompressed))
             offset = finish
         else:
             if offset != end:
@@ -159,15 +168,21 @@ def check_fatbin(name: str, data: bytes) -> None:
     entries = fatbin_entries(name, data)
     position = 0
     cubins = ptx = 0
-    for index, kind, sm, flags, start, end in entries:
+    for index, kind, sm, flags, start, end, compressed, decompressed in entries:
+        label = {1: "PTX", 2: "cubin"}.get(kind, f"kind {kind}")
         if not flags & FATBIN_FLAG_COMPRESSED:
-            label = {1: "PTX", 2: "cubin"}.get(kind, f"kind {kind}")
             raise CompressionError(
                 f"{name}: entry {index} {label} sm_{sm} flags 0x{flags:x} stored raw"
             )
+        if compressed == 0 or compressed > end - start or decompressed == 0:
+            raise CompressionError(
+                f"{name}: entry {index} {label} sm_{sm} flags 0x{flags:x} "
+                f"flagged compressed but invalid compressed data: compressed size {compressed}, "
+                f"decompressed size {decompressed}, payload size {end - start}"
+            )
         cubins += raw_elf_headers(data[position:start], EM_CUDA)
         ptx += data[position:start].count(PTX_TARGET)
-        position = end
+        position = start + compressed
     cubins += raw_elf_headers(data[position:], EM_CUDA)
     ptx += data[position:].count(PTX_TARGET)
     if cubins or ptx:
