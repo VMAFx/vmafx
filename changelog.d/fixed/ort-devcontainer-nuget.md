@@ -1,0 +1,1 @@
+- **Dev container:** Install ONNX Runtime from the pinned NuGet helper, avoiding unavailable release archives.
