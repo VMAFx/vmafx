@@ -61,7 +61,7 @@ concurrency:
 jobs:
   refresh-locks:
     name: Refresh Python dependency locks
-    if: github.repository == 'VMAFx/vmafx'
+    if: github.repository == 'vidiko/vmafx'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
