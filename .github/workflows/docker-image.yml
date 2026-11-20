@@ -101,12 +101,12 @@ jobs:
       - name: Prove trivy rejects the planted image
         run: |
           set +e
-          trivy image --exit-code 1 --ignorefile .trivyignore.yaml \
+          trivy image --exit-code 3 --ignorefile .trivyignore.yaml \
             --scanners vuln --severity HIGH,CRITICAL vmafx-trivy-negative
           rc=$?
           set -e
-          if [ "$rc" -ne 1 ]; then
-            echo "::error::trivy returned $rc for a known-vulnerable image; expected 1"
+          if [ "$rc" -ne 3 ]; then
+            echo "::error::trivy returned $rc for a known-vulnerable image; expected 3 (findings)"
             exit 1
           fi
       - name: Trivy image scan

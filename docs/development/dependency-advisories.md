@@ -42,9 +42,9 @@ starts to call an affected function.
 Python lock and container-image findings use a dated exception file when the
 fix is not available or the package is not reachable in a way the scanner can
 express. One entry names one lock file or image and one advisory, with a reason
-and an expiry; an unused or expired entry fails the gate. These entries are not
-OpenVEX statements: they suppress a scanner finding, they do not claim that the
-vulnerable code is unreachable.
+and an expiry. Python rejects unused or expired entries; Trivy stops applying
+expired entries but does not reject unused ones. These entries suppress scanner
+findings; they do not claim that vulnerable code is unreachable.
 
 ## Current statements
 
@@ -96,8 +96,8 @@ the golusoris root package again; take its sub-packages.
 ## The Python gate
 
 `scripts/ci/check_python_audit.py` reads the lock paths from
-`requirements/locks/manifest.json`, excludes the scanner's own
-`requirements/locks/security-audit.txt`, and runs
+`requirements/locks/manifest.json`, excludes only the scanner's own
+`requirements/locks/security-audit.txt` (CI and release tool locks are included), and runs
 `pip-audit --requirement <lock> --no-deps` for each project lock. The
 `--no-deps` mode is safe because every lock already contains the resolved
 transitive set; it stops pip-audit from re-resolving a different graph.
@@ -105,8 +105,15 @@ transitive set; it stops pip-audit from re-resolving a different graph.
 Before any lock is accepted, the gate audits
 `scripts/ci/fixtures/pip-audit-known-vuln.txt`
 (`requests==2.19.0`, CVE-2018-18074). A green run without that advisory is a
-gate error, not a pass. The gate also fails when pip-audit skips a dependency,
-returns no JSON, or exits with an error.
+gate error, not a pass. The expected package and version must report
+CVE-2018-18074 or its GHSA-x84v-xcm2-53pg identity; unrelated advisories do not
+satisfy the control. The gate also fails when pip-audit skips a dependency,
+returns no JSON or an empty dependency list, or exits with an error.
+
+On pull requests the planner selects the audit when a manifest input or output
+changes. The `python_audit` selector is checked against every manifest entry;
+checker, fixture and exception changes force full coverage. The required check
+still reports on an unaffected change, and the weekly schedule audits all locks.
 
 Retained findings go in `scripts/ci/pip-audit-ignore.json`; each entry names
 `file`, `package`, `id`, `reason` and `expires` (YYYY-MM-DD). The gate fails on
@@ -131,10 +138,11 @@ trivy image --exit-code 1 --ignorefile .trivyignore.yaml \
 ```
 
 The job first builds `scripts/ci/fixtures/trivy-negative.Dockerfile`
-(`ubuntu:18.04`, end-of-life) and requires Trivy to return exactly 1. A 0 means
-the gate missed known advisories; any other error is a scanner failure. Only
+(`ubuntu:18.04`, end-of-life) and requires Trivy to return exactly 3 (the explicit findings status). A 0 means
+the gate missed known advisories; any other status, including the scanner error status 1, is a scanner failure. Only
 then does it scan the real image. A retained image advisory is a dated entry in
-`.trivyignore.yaml`; the same expiry and unused-entry rules apply.
+`.trivyignore.yaml`; Trivy stops suppressing expired entries. Changes to this
+file select the image build and scan. Trivy does not reject unused entries.
 
 ## Checking a change locally
 

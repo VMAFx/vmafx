@@ -26,8 +26,20 @@ class LockSet(unittest.TestCase):
         self.assertGreaterEqual(len(locks), 5)
         self.assertIn("python/requirements-lock.txt", locks)
         self.assertIn("ai/requirements-runtime-lock.txt", locks)
+        self.assertIn("requirements/locks/twine.txt", locks)
+        self.assertIn("requirements/locks/package-build.txt", locks)
         self.assertNotIn("requirements/locks/security-audit.txt", locks)
         self.assertEqual(locks, sorted(locks))
+
+    def test_every_manifest_output_is_selected_regardless_of_filename(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "requirements/locks/manifest.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(
+                json.dumps({"locks": [{"output": "custom/dependencies.txt"}]}), encoding="utf-8"
+            )
+            self.assertEqual(check_python_audit.project_locks(root), ["custom/dependencies.txt"])
 
     def test_fixture_pins_an_advisory(self) -> None:
         text = (ROOT / "scripts/ci/fixtures/pip-audit-known-vuln.txt").read_text(encoding="utf-8")
@@ -119,10 +131,11 @@ class Exceptions(unittest.TestCase):
 
 class Runner(unittest.TestCase):
     def test_lock_audit_never_uses_pip_resolution(self) -> None:
-        completed = mock.Mock(returncode=0, stdout='{"dependencies": []}', stderr="")
+        report_json = '{"dependencies": [{"name": "requests", "version": "2.32.5", "vulns": []}]}'
+        completed = mock.Mock(returncode=0, stdout=report_json, stderr="")
         with mock.patch.object(check_python_audit, "run_command", return_value=completed) as run:
             report = check_python_audit.run_audit(ROOT, ROOT / "python/requirements-lock.txt")
-        self.assertEqual(report, {"dependencies": []})
+        self.assertEqual(report, json.loads(report_json))
         command = run.call_args.args[0]
         self.assertIn("--disable-pip", command)
         self.assertIn("--no-deps", command)
@@ -156,7 +169,52 @@ class SelfTest(unittest.TestCase):
                 check_python_audit.self_test(
                     ROOT, ROOT / "scripts/ci/fixtures/pip-audit-known-vuln.txt"
                 )
-        self.assertIn("no advisory", str(caught.exception))
+        self.assertIn("expected advisory", str(caught.exception))
+
+    def test_unrelated_advisory_does_not_satisfy_the_self_test(self) -> None:
+        report = {
+            "dependencies": [
+                {"name": "requests", "version": "2.19.0", "vulns": [{"id": "CVE-2099-0001"}]}
+            ]
+        }
+        with mock.patch.object(check_python_audit, "run_audit", return_value=report):
+            with self.assertRaises(check_python_audit.AuditError):
+                check_python_audit.self_test(
+                    ROOT, ROOT / "scripts/ci/fixtures/pip-audit-known-vuln.txt"
+                )
+
+    def test_wrong_package_does_not_satisfy_the_self_test(self) -> None:
+        report = {
+            "dependencies": [
+                {"name": "urllib3", "version": "2.0.0", "vulns": [{"id": "CVE-2018-18074"}]}
+            ]
+        }
+        with mock.patch.object(check_python_audit, "run_audit", return_value=report):
+            with self.assertRaises(check_python_audit.AuditError):
+                check_python_audit.self_test(
+                    ROOT, ROOT / "scripts/ci/fixtures/pip-audit-known-vuln.txt"
+                )
+
+    def test_ghsa_identity_is_accepted_for_the_planted_advisory(self) -> None:
+        report = {
+            "dependencies": [
+                {"name": "requests", "version": "2.19.0", "vulns": [{"id": "GHSA-x84v-xcm2-53pg"}]}
+            ]
+        }
+        with mock.patch.object(check_python_audit, "run_audit", return_value=report):
+            self.assertEqual(
+                check_python_audit.self_test(
+                    ROOT, ROOT / "scripts/ci/fixtures/pip-audit-known-vuln.txt"
+                ),
+                "GHSA-x84v-xcm2-53pg",
+            )
+
+    def test_empty_dependency_report_fails_closed(self) -> None:
+        completed = mock.Mock(returncode=0, stdout='{"dependencies": []}', stderr="")
+        with mock.patch.object(check_python_audit, "run_command", return_value=completed):
+            with self.assertRaises(check_python_audit.AuditError) as caught:
+                check_python_audit.run_audit(ROOT, ROOT / "python/requirements-lock.txt")
+        self.assertIn("no dependencies", str(caught.exception))
 
 
 if __name__ == "__main__":

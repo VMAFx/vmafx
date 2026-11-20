@@ -261,6 +261,24 @@ class ConfigContract(unittest.TestCase):
 
 
 class RoutingContract(unittest.TestCase):
+    def test_python_audit_selector_tracks_every_manifest_input_and_output(self) -> None:
+        manifest = json.loads(
+            (REPO_ROOT / "requirements/locks/manifest.json").read_text(encoding="utf-8")
+        )
+        expected = {"requirements/locks/manifest.json"}
+        for lock in manifest["locks"]:
+            expected.add(lock["output"])
+            expected.update(lock["inputs"])
+        config = planner.load_config(CONFIG)
+        self.assertEqual(set(config["selectors"]["python_audit"]["patterns"]), expected)
+        for path in sorted(expected):
+            with self.subTest(path=path):
+                self.assertTrue(_plan_for([path]).selectors["python_audit"])
+        self.assertFalse(_plan_for(["docs/development/ci.md"]).selectors["python_audit"])
+
+    def test_image_exception_change_runs_the_image_scan(self) -> None:
+        self.assertTrue(_plan_for([".trivyignore.yaml"]).selectors["docker_image"])
+
     def test_docs_only_change_is_impact_mode_with_no_c_lane(self) -> None:
         plan = _plan_for(["docs/usage/cli.md", "changelog.d/fixed/x.md"])
         self.assertEqual(plan.mode, "impact")

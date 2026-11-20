@@ -15,20 +15,23 @@ area: gates
 # Dependency audit and image scan
 
 Python: `check_python_audit.py` reads the lock list from
-`requirements/locks/manifest.json`, skips the scanner's own lock, runs
+`requirements/locks/manifest.json`, skips only the scanner's own lock (other tool locks included), runs
 `pip-audit --no-deps` per project lock, then applies
 `pip-audit-ignore.json`. One exception per lock and advisory, with expiry; an
-expired or unused entry fails. `--self-test` audits
+expired or unused entry fails. Every invocation first audits
 `fixtures/pip-audit-known-vuln.txt` (`requests==2.19.0`) and refuses a green run
-unless CVE-2018-18074 appears. New project lock -> manifest entry; no second
-list.
+unless the expected requests version reports CVE-2018-18074 or
+GHSA-x84v-xcm2-53pg. Empty reports fail. New lock -> manifest entry;
+`python_audit` impact patterns must cover its inputs and output (contract test).
+Pull requests route the audit; weekly schedules audit every lock.
 
 Image: `docker-image.yml` installs the `TRIVY_VERSION` / `TRIVY_SHA256` binary,
 builds `fixtures/trivy-negative.Dockerfile` (`ubuntu:18.04`) and requires
-`trivy image` to exit 1 before scanning the real `vmaf` image. `.trivyignore.yaml`
-supplies dated misconfiguration and image-vulnerability exceptions. A changed
+`trivy image --exit-code 3` to exit 3 before scanning the real `vmaf` image. `.trivyignore.yaml`
+supplies dated misconfiguration and image-vulnerability exceptions; image edits
+select the Docker gate. Trivy expires entries but does not reject unused ones. A changed
 severity threshold or scanner list must keep the negative control failing.
 
-Network: both gates need the advisory database. A scanner error exits 2; it is
-never a pass. Run the unit fixture with
+Network: both gates need the advisory database. A Python gate analysis error exits 2; a Trivy error returns 1,
+which the negative control refuses. Neither is a pass. Run the unit fixture with
 `python3 -m unittest scripts/ci/tests/test_python_audit.py`.

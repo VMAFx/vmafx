@@ -1,4 +1,4 @@
-# Planted defect for scripts/ci/check_python_audit.py --self-test.
-# requests 2.19.0 carries CVE-2018-18074 (GHSA-8c5j-9r9f-c6w8), so pip-audit
+# Planted defect for scripts/ci/check_python_audit.py.
+# requests 2.19.0 carries CVE-2018-18074 (GHSA-x84v-xcm2-53pg), so pip-audit
 # must report it before a green audit of the real locks is trusted.
 requests==2.19.0

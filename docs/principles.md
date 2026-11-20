@@ -280,8 +280,9 @@ Enforced scanners:
   the planted `requests==2.19.0` fixture to report CVE-2018-18074; retained
   findings are dated entries in
   [`scripts/ci/pip-audit-ignore.json`](https://github.com/VMAFx/vmafx/blob/master/scripts/ci/pip-audit-ignore.json).
-- Both run on pull requests and the weekly Security schedule, so an advisory
-  published after the lock or image landed still fails.
+- Pull requests run these scans when the image or Python lock inputs change;
+  each required check still reports when work is unaffected. Weekly schedules
+  audit all locks and the image, so newly published advisories are caught.
 
 
 ## 3. Quality gates (required for PR merge to master)

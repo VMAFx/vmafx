@@ -7,7 +7,7 @@ The lock set comes from ``requirements/locks/manifest.json``; the manifest is
 already the install authority, so a new lock is audited without a second list.
 Each finding is keyed by lock file, package and advisory. A retained finding
 needs one dated entry in ``scripts/ci/pip-audit-ignore.json``; an expired entry
-or an entry that matches nothing is a failure. ``--self-test`` first audits
+or an entry that matches nothing is a failure. Every invocation first audits
 ``scripts/ci/fixtures/pip-audit-known-vuln.txt`` and refuses to trust a green
 run unless pip-audit reports the planted advisory (issue 2749).
 """
@@ -29,7 +29,10 @@ from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 MANIFEST = REPO_ROOT / "requirements" / "locks" / "manifest.json"
 DEFAULT_IGNORE = REPO_ROOT / "scripts" / "ci" / "pip-audit-ignore.json"
 DEFAULT_FIXTURE = REPO_ROOT / "scripts" / "ci" / "fixtures" / "pip-audit-known-vuln.txt"
-LOCK_SUFFIXES = ("-lock.txt", "requirements-frozen.txt")
+AUDIT_TOOL_LOCK = "requirements/locks/security-audit.txt"
+PLANTED_PACKAGE = "requests"
+PLANTED_VERSION = "2.19.0"
+PLANTED_ADVISORY_IDS = frozenset({"CVE-2018-18074", "GHSA-x84v-xcm2-53pg"})
 FIELDS = ("file", "package", "id", "reason", "expires")
 
 
@@ -52,9 +55,9 @@ def project_locks(root: Path = REPO_ROOT) -> list[str]:
         output = entry.get("output") if isinstance(entry, dict) else None
         if not isinstance(output, str):
             raise AuditError(f"{manifest}: every lock needs a string output")
-        if output.startswith("requirements/locks/"):
+        if output == AUDIT_TOOL_LOCK:
             continue
-        if output.endswith(LOCK_SUFFIXES) and output not in locks:
+        if output not in locks:
             locks.append(output)
     if not locks:
         raise AuditError(f"{manifest}: no project locks found")
@@ -127,6 +130,8 @@ def run_audit(root: Path, requirement: Path) -> dict[str, object]:
         raise AuditError(f"pip-audit produced no JSON for {requirement}") from exc
     if not isinstance(report, dict) or not isinstance(report.get("dependencies"), list):
         raise AuditError(f"pip-audit JSON for {requirement} has no dependencies list")
+    if not report["dependencies"]:
+        raise AuditError(f"pip-audit JSON for {requirement} has no dependencies")
     return report
 
 
@@ -182,16 +187,21 @@ def self_test(root: Path, fixture: Path) -> str:
     if not fixture.is_file():
         raise AuditError(f"planted-defect fixture is missing: {fixture}")
     report = run_audit(root, fixture)
-    advisories = [
-        vuln.get("id")
+    advisories = {
+        str(vuln["id"])
         for dependency in report.get("dependencies", [])
         if isinstance(dependency, dict)
+        and dependency.get("name", "").lower() == PLANTED_PACKAGE
+        and dependency.get("version") == PLANTED_VERSION
         for vuln in dependency.get("vulns", [])
-        if isinstance(vuln, dict)
-    ]
+        if isinstance(vuln, dict) and vuln.get("id") in PLANTED_ADVISORY_IDS
+    }
     if not advisories:
-        raise AuditError("the planted-defect fixture produced no advisory")
-    return ", ".join(sorted(str(item) for item in advisories))
+        raise AuditError(
+            f"the planted-defect fixture did not report {PLANTED_PACKAGE}=={PLANTED_VERSION} "
+            "with its expected advisory"
+        )
+    return ", ".join(sorted(advisories))
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:

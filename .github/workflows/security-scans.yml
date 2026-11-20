@@ -366,22 +366,38 @@ jobs:
     # required-aggregator
     name: Python Dependency Audit
     runs-on: ubuntu-26.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Plan Python audit impact
+        id: impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/ci/plan-ci-impact.py --event "$EVENT_NAME" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --github-output "$GITHUB_OUTPUT"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        if: steps.impact.outputs.python_audit == 'true'
         with:
           python-version: "3.14.10"
       - name: Install pip-audit from its hash lock
+        if: steps.impact.outputs.python_audit == 'true'
         run: pip install --require-hashes -r requirements/locks/security-audit.txt
       - name: Audit the planted defect and every project lock
+        if: steps.impact.outputs.python_audit == 'true'
         # check_python_audit.py audits scripts/ci/fixtures/pip-audit-known-vuln.txt
         # first; a green result is not trusted unless that known advisory fires.
         run: python3 scripts/ci/check_python_audit.py
+      - name: Explain an unaffected audit
+        if: steps.impact.outputs.python_audit == 'false'
+        run: echo '::notice::Python lock inputs unchanged; the weekly audit still checks newly published advisories.'
 
   # ADR-1247: PR source checks cannot supply the full default-branch aggregate.
   # Folded in from scorecard-policy.yml: one workflow less creates one check
