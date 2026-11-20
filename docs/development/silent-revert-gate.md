@@ -80,9 +80,15 @@ non-merge branch commit, and those are new authorship, not recovered text.
 Two more filters keep the set arithmetic honest. Rendered files (`CHANGELOG.md`,
 `docs/adr/README.md`, `docs/adr/by-tag/`, `mkdocs.yml`, the tidy and standards
 baselines) are skipped: a rewind there is a regeneration artefact, and the
-generator's input is what matters. Conflict markers are never evidence —
-`0c494cca0` once left three in `core/src/feature/cuda/integer_vif_cuda.c`, and
-the PR that deleted them must not read as a revert.
+generator's input is what matters. A hand-written page can carry the same kind
+of generated island: lines strictly between `<!-- name:begin -->` or
+`<!-- name:table ... -->` and `<!-- name:end -->` (for example the credits
+summary and table blocks) are skipped, while the marker lines themselves and
+prose outside them stay checked. An unterminated or nested block is malformed
+input, so the gate fails closed instead of silently passing it. Conflict
+markers are never evidence — `0c494cca0` once left three in
+`core/src/feature/cuda/integer_vif_cuda.c`, and the PR that deleted them must
+not read as a revert.
 
 ## When the gate is right and the change is still correct
 
