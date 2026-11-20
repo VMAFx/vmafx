@@ -40,7 +40,8 @@ or ``created_at_offset_s``) that ``issues.listEventsForTimeline`` pages through.
 "listWorkflowRunsForRepo", "listEventsForTimeline") to sequences of HTTP status
 codes raised in order by successive calls to that stub. ``api_always`` maps stub
 names to an HTTP status code raised on every call to that stub. ``info_logs``,
-when given, collects every ``core.info`` message.
+when given, collects every ``core.info`` message. ``api_error_detail`` supplies per-stub
+headers and messages for errors. ``sleeps`` collects timeout arguments in milliseconds.
 """
 
 from __future__ import annotations
@@ -113,11 +114,15 @@ const failures = [];
 const infos = [];
 const apiErrors = input.apiErrors || {};
 const apiAlways = input.apiAlways || {};
+const apiErrorDetail = input.apiErrorDetail || {};
+const sleeps = [];
 function checkApiError(name) {
   const status = apiAlways[name] ?? (apiErrors[name] || []).shift();
   if (status === undefined) return;
-  const error = new Error(`HTTP ${status}`);
+  const detail = apiErrorDetail[name] || {};
+  const error = new Error(detail.message ?? `HTTP ${status}`);
   error.status = status;
+  error.response = {status, headers: detail.headers || {}};
   throw error;
 }
 const github = {rest: {
@@ -181,8 +186,8 @@ new AsyncFunction('github', 'context', 'core', 'process', 'Date', 'setTimeout', 
   core,
   {env: {GITHUB_RUN_ID: '1', ...(input.env || {})}},
   VirtualDate,
-  callback => callback(),
-).then(() => process.stdout.write(JSON.stringify({failures, infos}))).catch(error => {
+  (callback, milliseconds) => { sleeps.push(milliseconds); callback(); },
+).then(() => process.stdout.write(JSON.stringify({failures, infos, sleeps}))).catch(error => {
   console.error(error);
   process.exitCode = 1;
 });
@@ -349,17 +354,26 @@ def _string_list(values: object, label: str) -> list[str]:
     return items
 
 
-def _decode_driver_output(stdout: str, info_logs: list[str] | None) -> list[str]:
+def _decode_driver_output(
+    stdout: str, info_logs: list[str] | None, sleeps: list[int] | None
+) -> list[str]:
     payload: object = json.loads(stdout)
     if not isinstance(payload, dict):
         raise AssertionError("aggregator driver must return a JSON object")
     if info_logs is not None:
         info_logs.extend(_string_list(payload.get("infos"), "info messages"))
+    if sleeps is not None:
+        values = payload.get("sleeps")
+        if not isinstance(values, list) or any(type(value) is not int for value in values):
+            raise AssertionError("aggregator sleeps must be integers")
+        sleeps.extend(values)
     return _string_list(payload.get("failures"), "failure messages")
 
 
 def _run_driver(
-    driver_input: Mapping[str, object], info_logs: list[str] | None = None
+    driver_input: Mapping[str, object],
+    info_logs: list[str] | None = None,
+    sleeps: list[int] | None = None,
 ) -> list[str]:
     node = shutil.which("node")
     if node is None:
@@ -374,7 +388,7 @@ def _run_driver(
         check=True,
         timeout_seconds=SUBPROCESS_TIMEOUT_S,
     )
-    return _decode_driver_output(result.stdout, info_logs)
+    return _decode_driver_output(result.stdout, info_logs, sleeps)
 
 
 def run_required_aggregator(
@@ -404,6 +418,8 @@ def run_required_aggregator(
     api_errors: Mapping[str, Sequence[int]] | None = None,
     api_always: Mapping[str, int] | None = None,
     info_logs: list[str] | None = None,
+    api_error_detail: Mapping[str, Mapping[str, object]] | None = None,
+    sleeps: list[int] | None = None,
 ) -> list[str]:
     """Run the real Actions JavaScript; the module docstring lists the inputs."""
     script = _embedded_script(AGGREGATOR_PATH.read_text(encoding="utf-8"))
@@ -430,5 +446,6 @@ def run_required_aggregator(
         "laterChecks": [dict(check) for check in later_checks],
         "apiErrors": {name: list(codes) for name, codes in (api_errors or {}).items()},
         "apiAlways": dict(api_always or {}),
+        "apiErrorDetail": dict(api_error_detail or {}),
     }
-    return _run_driver(driver_input, info_logs)
+    return _run_driver(driver_input, info_logs, sleeps)

@@ -584,11 +584,47 @@ jobs:
             // HttpError" on 2026-10-30. Wait out an outage for 15 minutes, then
             // fail by name, so the failure reads as a rerun and not as a code fault.
             const apiBackoffSeconds = [30, 60, 120, 240, 240, 210];
+            let rateLimitWaitedSeconds = 0;
+            function rateLimitWaitSeconds(error, repeat) {
+              if (error.status !== 403 && error.status !== 429) return null;
+              const headers = error.response?.headers || {};
+              const retryAfter = headers['retry-after'];
+              const remaining = headers['x-ratelimit-remaining'];
+              if (retryAfter === undefined && remaining !== '0' &&
+                  !/rate limit/i.test(error.message || '')) return null;
+              const retrySeconds = Number(retryAfter);
+              if (retryAfter !== undefined && Number.isFinite(retrySeconds) && retrySeconds >= 0) {
+                return retrySeconds;
+              }
+              const reset = Number(headers['x-ratelimit-reset']);
+              if (remaining === '0' && headers['x-ratelimit-reset'] !== undefined &&
+                  Number.isFinite(reset)) {
+                return Math.max(0, reset - Math.floor(Date.now() / 1000)) + 5;
+              }
+              return Math.min(60 * 2 ** repeat, 960);
+            }
             async function withApiBackoff(label, call) {
-              for (let attempt = 0; attempt <= apiBackoffSeconds.length; attempt += 1) {
+              let attempt = 0;
+              let rateLimitWaits = 0;
+              for (let calls = 0; calls <= apiBackoffSeconds.length + 6; calls += 1) {
                 try {
                   return await call();
                 } catch (error) {
+                  const rateLimitSeconds = rateLimitWaitSeconds(error, rateLimitWaits);
+                  if (rateLimitSeconds !== null) {
+                    if (rateLimitWaits >= 6 || rateLimitWaitedSeconds + rateLimitSeconds > 5400) {
+                      core.setFailed(
+                        `GitHub API rate limit: ${label} still answers HTTP ${error.status}. ` +
+                        'No check result was judged; rerun this job. This is not a code failure.'
+                      );
+                      return null;
+                    }
+                    core.warning(`${label}: GitHub API HTTP ${error.status}, retrying in ${rateLimitSeconds} s`);
+                    rateLimitWaits += 1;
+                    rateLimitWaitedSeconds += rateLimitSeconds;
+                    await new Promise(r => setTimeout(r, rateLimitSeconds * 1000));
+                    continue;
+                  }
                   if (!(error.status >= 500)) throw error;
                   if (attempt === apiBackoffSeconds.length) {
                     core.setFailed(
@@ -599,6 +635,7 @@ jobs:
                     return null;
                   }
                   const seconds = apiBackoffSeconds[attempt];
+                  attempt += 1;
                   core.warning(`${label}: GitHub API HTTP ${error.status}, retrying in ${seconds} s`);
                   await new Promise(r => setTimeout(r, seconds * 1000));
                 }
@@ -948,6 +985,8 @@ jobs:
             let missingEditedWorkflows = [];
             let lastExcludedEditedSuites = 0;
             let editedListedAfterGrace = !isEditedPullRequest;
+            let previousFingerprint = null;
+            let pollIntervalSeconds = 30;
             while (Date.now() < deadline) {
               const check_runs = await withApiBackoff('listAllCheckRuns', () => listAllCheckRuns());
               if (!check_runs) return;
@@ -976,6 +1015,11 @@ jobs:
                 lastExcludedEditedSuites = editedState.staleSuites.size;
               }
               byName = newestByName(check_runs, suites);
+              const fingerprint = JSON.stringify(Object.values(byName)
+                .map(run => [run.name, run.status, run.conclusion]).sort());
+              pollIntervalSeconds = fingerprint === previousFingerprint
+                ? Math.min(pollIntervalSeconds * 2, 240) : 30;
+              previousFingerprint = fingerprint;
               const missing = required.filter(n => !byName[n] && !notOwed.has(n) && !eventExempt.has(n));
               const stillRunning = required.filter(n => {
                 const run = byName[n];
@@ -1030,7 +1074,7 @@ jobs:
                 core.info(`Waiting for check registration: ${missing.slice(0, 3).join(', ')}` +
                           (missing.length > 3 ? ` (+${missing.length - 3} more)` : ''));
               }
-              await new Promise(r => setTimeout(r, 30000));
+              await new Promise(r => setTimeout(r, pollIntervalSeconds * 1000));
             }
             if (isEditedPullRequest) {
               core.info(`Excluded ${lastExcludedEditedSuites} stale edited-rerun check suite(s)`);
