@@ -335,6 +335,105 @@ def test_the_release_files_carry_checked_notices() -> None:
     assert {"release-native", "release-models"} <= records.keys()
 
 
+# ------------------------------------------------- the Debian zimg record (issue #3242)
+
+
+def test_the_production_zimg_component_reads_the_debian_record() -> None:
+    """The production images copy libzimg2 out of Debian, so their zimg entry says so.
+
+    The tester entry already reads `usr/share/doc/libzimg2/SOURCE` and takes the
+    package's copyright file as its licence text; the production entry described
+    upstream zimg 3.0.6, which those images do not ship.
+    """
+    expanded = lic.load_manifest()["artifacts"]
+    tester = next(c for c in expanded["image"]["components"] if c["id"] == "zimg")
+    production = next(
+        c for c in expanded["production-cli-image"]["components"] if c["id"] == "zimg"
+    )
+    assert production["debian_source_file"] == tester["debian_source_file"]
+    assert production["texts"] == tester["texts"]
+    assert production["copyright"] == tester["copyright"]
+    assert production["licence"] == "WTFPL"
+    assert "usr/share/doc/libzimg2/**" in production["paths"]
+    assert production["source"] == tester["source"]
+
+
+def test_every_production_image_that_ships_zimg_reads_that_one_record() -> None:
+    """The eight production records inherit the component, so they agree with it."""
+    expanded = lic.load_manifest()["artifacts"]
+    cli = next(c for c in expanded["production-cli-image"]["components"] if c["id"] == "zimg")
+    for kind in (
+        "production-server-image",
+        "production-go-server-image",
+        "production-controller-image",
+        "production-node-image",
+        "production-node-sycl-image",
+        "production-cuda-image",
+        "production-rocm-image",
+        "production-oneapi-image",
+    ):
+        component = next(c for c in expanded[kind]["components"] if c["id"] == "zimg")
+        assert component == cli, kind
+
+
+def test_the_debian_record_is_the_text_the_gate_demands() -> None:
+    """The gate requires the copyright text by path, so the one in the record is it."""
+    record = lic.load_manifest()["artifacts"]["production-cli-image"]
+    scan = {"licences": [], "files": []}
+    needed = lic.needed_texts(record, scan, lic.load_manifest(), set())
+    assert "/usr/share/doc/libzimg2/copyright" in needed
+    assert needed["/usr/share/doc/libzimg2/copyright"]["artifact"] == (
+        "usr/share/doc/libzimg2/copyright"
+    )
+
+
+def test_the_images_that_link_zimg_from_source_keep_their_own_record() -> None:
+    """macOS and the Windows zips build zimg from source; release-native does not.
+
+    Issue #3242 left the three alone. The macOS bundle links Homebrew's
+    `libzimg.a` and the Windows zips vcpkg's, so each keeps its 3.0.6 archive
+    entry. `release-native` is different: `stage_zimg` copies the loader-resolved
+    `libzimg.so*` from the release container's unpinned `dnf` `zimg-devel`
+    (dev/Containerfile), so its entry names the wrong source — tracked in
+    #3396, not fixed here. None of them has a Debian SOURCE file to point at
+    and none may claim one.
+    """
+    expanded = lic.load_manifest()["artifacts"]
+    # The two families that really do build the 3.0.6 release say so in their own
+    # `source`, and carry the archive's WTFPL text by name — the tester-family
+    # entries fetch it, the repo-family entries copy the checked-in text.
+    expected = "https://github.com/sekrit-twc/zimg.git at commit f819b14e8f39d1282400b0d9543e8ef73c1b2bbd, tag release-3.0.6"
+    archive_texts = (
+        [
+            {
+                "name": "WTFPL.txt",
+                "fetched": "zimg-3.0.6-COPYING",
+                "label": "zimg 3.0.6 licence text (WTFPL v2)",
+            }
+        ],
+        [
+            {
+                "name": "WTFPL.txt",
+                "repo": "tools/rc1-tester/image/licenses/zimg-3.0.6-COPYING.txt",
+                "label": "zimg 3.0.6 licence text (WTFPL v2)",
+            }
+        ],
+    )
+    # release-native's entry names the 3.0.6 archive, but the bundle ships the
+    # distribution build (#3396): there the test pins only what the fix must not
+    # lose, no Debian record claimed, and leaves source and texts to #3396.
+    for kind in ("macos", "windows-zip", "windows-cuda-zip", "windows-sycl-zip", "release-native"):
+        component = next(c for c in expanded[kind]["components"] if c["id"] == "zimg")
+        assert "debian_source_file" not in component, kind
+        assert not any(
+            "usr/share/doc/libzimg2" in text for text in json.dumps(component["texts"]).split()
+        ), kind
+        if kind == "release-native":
+            continue
+        assert component["source"] == expected, kind
+        assert component["texts"] in archive_texts, kind
+
+
 def test_production_node_sycl_image_shares_runtime_and_node_components() -> None:
     """production-node-sycl-image shares the oneAPI SYCL runtime components and the
     Intel GPU user-mode stack from sycl-image and the worker node components from production-node-image (ADR-3371).
