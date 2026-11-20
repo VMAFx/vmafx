@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1566: A Windows SYCL tester zip built with /MD that carries its runtime beside every program and measures every SYCL twin on a tester's Intel GPU
 
-- **Status**: Accepted
+- **Status**: Accepted; superseded in part by [ADR-3567](3567-windows-sycl-oneapi-2026-2.md) on 2026-11-19: the CI lane pin changed; the tester zip pin stays.
 - **Date**: 2026-10-04
 - **Deciders**: maintainer, agent
 - **Tags**: ci, release, windows, sycl, testing, parity, license, fork-local
