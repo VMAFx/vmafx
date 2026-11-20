@@ -263,6 +263,10 @@ jobs:
           git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD -- tools/rc1-tester scripts/ci docs/hardware-reports \
             requirements/locks/windows-tester-zip.txt
+          # An older source ref may lack the recipe's AOT pin.
+          if [[ '${{ matrix.gpu }}' == sycl ]]; then
+            git checkout FETCH_HEAD -- build-config.env
+          fi
       - name: Setup python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
@@ -299,25 +303,24 @@ jobs:
           "INCLUDE=$dir\include;$env:INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "VMAFX_NV_CODEC_HEADERS=$dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "nv-codec-headers $commit"
-      # A ccache.exe on PATH makes meson wrap the compiler at configure time
-      # (the same step as the MSVC lanes of libvmaf-build-matrix.yml).
+      - name: Load build config
+        if: matrix.gpu == 'sycl'
+        shell: bash
+        run: scripts/ci/load-build-config.sh >> "$GITHUB_ENV"
       - name: Install Intel oneAPI (pinned offline installer)
         if: matrix.gpu == 'sycl'
         shell: pwsh
         run: |
-          $pins = @{}
-          foreach ($name in 'ONEAPI_WINDOWS_VERSION', 'INTEL_BASEKIT_WINDOWS_URL', 'INTEL_BASEKIT_WINDOWS_SIZE', 'INTEL_BASEKIT_WINDOWS_SHA256') {
-            $line = Select-String -Path build-config.env -Pattern "^$name=`"([^`"]+)`"$" | Select-Object -First 1
-            if (-not $line) { throw "no $name in build-config.env" }
-            $pins[$name] = $line.Matches[0].Groups[1].Value
+          foreach ($name in 'ONEAPI_WINDOWS_VERSION', 'INTEL_BASEKIT_WINDOWS_URL', 'INTEL_BASEKIT_WINDOWS_SIZE', 'INTEL_BASEKIT_WINDOWS_SHA256', 'ONEAPI_WINDOWS_AOT_EXPECT_REFUSED') {
+            if (-not (Test-Path "Env:$name")) { throw "no $name in build-config.env" }
           }
           $exe = Join-Path $env:RUNNER_TEMP 'oneapi-basekit.exe'
-          curl.exe --fail --location --retry 5 --retry-all-errors --retry-delay 5 --output $exe --url $pins['INTEL_BASEKIT_WINDOWS_URL']
+          curl.exe --fail --location --retry 5 --retry-all-errors --retry-delay 5 --output $exe --url $env:INTEL_BASEKIT_WINDOWS_URL
           if ($LASTEXITCODE -ne 0) { throw "download failed ($LASTEXITCODE)" }
           $size = (Get-Item $exe).Length
-          if ($size -ne [int64]$pins['INTEL_BASEKIT_WINDOWS_SIZE']) { throw "installer is $size bytes, not $($pins['INTEL_BASEKIT_WINDOWS_SIZE'])" }
+          if ($size -ne [int64]$env:INTEL_BASEKIT_WINDOWS_SIZE) { throw "installer is $size bytes, not $env:INTEL_BASEKIT_WINDOWS_SIZE" }
           $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
-          if ($hash -ne $pins['INTEL_BASEKIT_WINDOWS_SHA256']) { throw "installer SHA-256 $hash is not the pinned $($pins['INTEL_BASEKIT_WINDOWS_SHA256'])" }
+          if ($hash -ne $env:INTEL_BASEKIT_WINDOWS_SHA256) { throw "installer SHA-256 $hash is not the pinned $env:INTEL_BASEKIT_WINDOWS_SHA256" }
           $extracted = Join-Path $env:RUNNER_TEMP 'oneapi-extracted'
           $x = Start-Process -FilePath $exe -ArgumentList @('-s', '-x', '-f', $extracted) -Wait -PassThru -NoNewWindow
           if ($x.ExitCode -ne 0) { throw "extracting the oneAPI installer exited $($x.ExitCode)" }
@@ -336,13 +339,14 @@ jobs:
           $p = Start-Process -FilePath $boot -Wait -PassThru -NoNewWindow -ArgumentList @(
             '-s', '--action', 'install', "--components=$env:BASEKIT_WINDOWS_COMPONENTS", '--eula=accept',
             '-p=NEED_VS2017_INTEGRATION=0', '-p=NEED_VS2019_INTEGRATION=0', '-p=NEED_VS2022_INTEGRATION=0',
+            '-p=NEED_VS2026_INTEGRATION=0',
             "--log-dir=$env:RUNNER_TEMP")
           Remove-Item -Recurse -Force $extracted
           if ($p.ExitCode -ne 0) { throw "the oneAPI installer exited $($p.ExitCode)" }
           $setvars = 'C:\Program Files (x86)\Intel\oneAPI\setvars.bat'
           if (-not (Test-Path $setvars)) { throw "$setvars is missing after the install" }
-          "VMAFX_ONEAPI_VERSION=$($pins['ONEAPI_WINDOWS_VERSION'])" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "oneAPI $($pins['ONEAPI_WINDOWS_VERSION']) installed"
+          "VMAFX_ONEAPI_VERSION=$env:ONEAPI_WINDOWS_VERSION" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "oneAPI $env:ONEAPI_WINDOWS_VERSION installed"
       # The loader libvmaf links (find_library('ze_loader')) and the zip ships beside
       # every program, from LEVEL_ZERO_VERSION of build-config.env, MSVC's default
       # static runtime; the oneAPI installer carries no ze_loader.lib.
@@ -367,6 +371,8 @@ jobs:
           "VMAFX_LEVEL_ZERO_PREFIX=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "LEVEL_ZERO_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "Level Zero loader $version"
+      # A ccache.exe on PATH makes meson wrap the compiler at configure time
+      # (the same step as the MSVC lanes of libvmaf-build-matrix.yml).
       - name: Disable ccache wrap
         shell: pwsh
         run: |
@@ -417,12 +423,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       # The SYCL zip builds inside oneAPI's environment (icx-cl, ocloc for the AOT
       # targets, ONEAPI_ROOT), as the `Windows MSVC+SYCL` lane does.
+      - name: Probe Windows SYCL AOT targets
+        if: matrix.gpu == 'sycl'
+        shell: cmd
+        id: aot_targets
+        run: |
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat" || exit /b 1
+          python scripts\ci\ocloc_aot_targets.py ocloc --expect-refused "%ONEAPI_WINDOWS_AOT_EXPECT_REFUSED%" --github-output "%GITHUB_OUTPUT%" || exit /b 1
       - name: Build the SYCL zip
         if: matrix.gpu == 'sycl'
         shell: cmd
         env:
           VMAFX_ARCH: ${{ matrix.arch }}
           VMAFX_GPU: sycl
+          VMAFX_SYCL_AOT_TARGETS: ${{ steps.aot_targets.outputs.targets }}
           VMAFX_SOURCE_COMMIT: ${{ needs.validate.outputs.source-sha }}
           VMAFX_SOURCE_REF: ${{ needs.validate.outputs.describe }}
           VMAFX_RECIPE_COMMIT: ${{ github.sha }}

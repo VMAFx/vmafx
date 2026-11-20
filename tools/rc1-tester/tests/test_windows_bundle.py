@@ -579,7 +579,10 @@ def test_the_log_shows_the_output_of_a_failed_unit_test(tmp_path: Path, capsys) 
 
 
 def test_the_sycl_zip_builds_with_icx_cl_and_the_dynamic_runtime_on_x64_only(monkeypatch) -> None:
+    targets = "dg2,mtl-u"
+    monkeypatch.setenv("VMAFX_SYCL_AOT_TARGETS", targets)
     options = builder.meson_options("sycl")
+    assert f"-Dsycl_icpx_aot_targets={targets}" in options
     assert "-Denable_sycl=true" in options and "-Db_vscrt=md" in options
     assert "-Db_vscrt=mt" not in options and "-Denable_sycl=false" not in options
     assert builder.build_environment("sycl")["CC"] == "icx-cl"
@@ -593,6 +596,16 @@ def test_the_sycl_zip_builds_with_icx_cl_and_the_dynamic_runtime_on_x64_only(mon
         builder.gpu_kit({"VMAFX_ARCH": "arm64"})
     assert builder.import_check_arguments("windows-sycl-zip")[:2] == ["--runtime", "md"]
     assert builder.import_check_arguments("windows-cuda-zip") == ["--runtime", "mt"]
+
+
+@pytest.mark.parametrize("targets", [None, ""], ids=["missing", "empty"])
+def test_the_sycl_zip_requires_probed_aot_targets(monkeypatch, targets: str | None) -> None:
+    if targets is None:
+        monkeypatch.delenv("VMAFX_SYCL_AOT_TARGETS", raising=False)
+    else:
+        monkeypatch.setenv("VMAFX_SYCL_AOT_TARGETS", targets)
+    with pytest.raises(builder.BuildError, match="VMAFX_SYCL_AOT_TARGETS"):
+        builder.meson_options("sycl")
 
 
 def test_the_scratch_audit_reads_the_ratchet_list_the_zip_carries(

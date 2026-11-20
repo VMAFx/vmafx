@@ -31,6 +31,7 @@ Optional, for the SYCL zip (ADR-1566; x64 only; run inside oneAPI's setvars):
   ONEAPI_ROOT             the oneAPI installation (setvars sets it); the runtime files of
                           tools/rc1-tester/image/sycl-runtime-windows.json come from it
   VMAFX_ONEAPI_VERSION    the installed oneAPI release, recorded in image/gpu-runtime.json
+  VMAFX_SYCL_AOT_TARGETS  comma-separated targets accepted by the installed ocloc (ADR-3568)
   VMAFX_LEVEL_ZERO_PREFIX the install prefix of the Level Zero loader built from
                           LEVEL_ZERO_VERSION (bin/ze_loader.dll ships)
   LEVEL_ZERO_VERSION      that loader's release, recorded in image/gpu-runtime.json
@@ -222,8 +223,12 @@ def meson_options(gpu: str) -> list[str]:
     if gpu == "cuda":
         options = [o for o in options if o != "-Denable_cuda=false"] + list(CUDA_OPTIONS)
     if gpu == "sycl":
+        targets = os.environ.get("VMAFX_SYCL_AOT_TARGETS")
+        if not targets:
+            raise BuildError("VMAFX_SYCL_AOT_TARGETS must contain the targets accepted by ocloc")
         drop = ("-Denable_sycl=false", "-Db_vscrt=mt")
         options = [o for o in options if o not in drop] + list(SYCL_OPTIONS)
+        options.append(f"-Dsycl_icpx_aot_targets={targets}")
     return options
 
 

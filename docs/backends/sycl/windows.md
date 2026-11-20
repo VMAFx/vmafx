@@ -18,7 +18,7 @@ the container
 | Tool | Where it comes from | Why |
 | --- | --- | --- |
 | Visual Studio 2022 or 2026, "Desktop development with C++" workload | Visual Studio installer | MSVC linker, headers and libraries, Windows SDK |
-| Intel oneAPI Toolkit, DPC++/C++ compiler | Intel offline installer (CI pins 2026.2.0.661; 2025.3.0.372 was pinned while the runner image carried MSVC toolset 14.51) | `icx-cl`, `icpx`, the SYCL runtime and `ocloc`, which the Windows compiler ships |
+| Intel oneAPI Toolkit, DPC++/C++ compiler | Intel offline installer (both Windows SYCL jobs use 2026.2.0.661 from `build-config.env`) | `icx-cl`, `icpx`, the SYCL runtime and `ocloc`, which the Windows compiler ships |
 | Intel GPU driver | Intel Arc / Graphics driver | Level Zero runtime (`ze_loader.dll` in `System32`) |
 | Python 3.14, Meson and Ninja | `python -m pip install --require-hashes -r requirements/locks/build.txt` | build system |
 | CMake | `python -m pip install cmake` | builds the Level Zero loader below |
@@ -26,14 +26,11 @@ the container
 | `xxd` | Git for Windows (`C:\Program Files\Git\usr\bin`) | embeds the built-in models; without it `--model version=...` has nothing to load |
 
 !!! note
-    The `Windows MSVC+SYCL` CI leg in `libvmaf-build-matrix.yml` pins oneAPI
-    2026.2.0.661 (`intel-oneapi-toolkit-2026.2.0.661_offline.exe`,
-    [ADR-3567](../../adr/3567-windows-sycl-oneapi-2026-2.md)); the installer
-    lists Clang 23 resources (measured on 2026-11-19; see ADR-3567). Builds
-    run `44499808688` passed with no `STL1000` log lines. The Windows SYCL
-    tester zip still reads `ONEAPI_WINDOWS_VERSION` (`2025.3.0.372`) from
-    `build-config.env`. Linux builds and images use oneAPI 2026.1
-    (`ONEAPI_VERSION`).
+    The Windows MSVC+SYCL CI leg and the Windows SYCL tester zip share
+    `ONEAPI_WINDOWS_VERSION` (2026.2.0.661) and the installer pins in
+    `build-config.env`. Both use the installed `ocloc` to select AOT targets
+    before configuring Meson. Linux builds and images use oneAPI 2026.1
+    (`ONEAPI_VERSION`). [ADR-3568](../../adr/3568-windows-sycl-tester-zip-oneapi-2026-2.md)
 
 The oneAPI installer for Windows ships no Level Zero import library, so build
 the loader once, pinned to the version the CI leg uses. Use the Ninja
