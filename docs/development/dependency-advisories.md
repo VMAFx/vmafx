@@ -6,9 +6,11 @@ triaged. Vulnerabilities in VMAFx's own code are reported through
 
 ## Where advisories show up
 
-- **Python:** the dependency dashboard (issue #941, Renovate) lists OSV
-  advisories against a declared dependency. It lists one entry per package that
-  declares the dependency.
+- **Python:** pip-audit in `.github/workflows/security-scans.yml` audits every
+  project lock in `requirements/locks/manifest.json` (see the Python gate
+  below).
+- **Container images:** Trivy scans the image built from the root `Dockerfile`
+  in `.github/workflows/docker-image.yml` (see the image gate below).
 - **Go:** the Go vulnerability database, through the govulncheck gate below,
   in the `Go CI` workflow and `make govulncheck`.
 
@@ -36,6 +38,13 @@ triaged. Vulnerabilities in VMAFx's own code are reported through
 
 Re-read a statement when the dependency publishes a fix, or when our code
 starts to call an affected function.
+
+Python lock and container-image findings use a dated exception file when the
+fix is not available or the package is not reachable in a way the scanner can
+express. One entry names one lock file or image and one advisory, with a reason
+and an expiry; an unused or expired entry fails the gate. These entries are not
+OpenVEX statements: they suppress a scanner finding, they do not claim that the
+vulnerable code is unreachable.
 
 ## Current statements
 
@@ -83,6 +92,49 @@ vmafx uses as `bootstrap.Core` and `bootstrap.HTTP`; both packages and 59
 modules, the mail client and the helper among them, left the build
 ([ADR-1899](../adr/1899-govulncheck-symbol-gate-openvex.md)). Do not import
 the golusoris root package again; take its sub-packages.
+
+## The Python gate
+
+`scripts/ci/check_python_audit.py` reads the lock paths from
+`requirements/locks/manifest.json`, excludes the scanner's own
+`requirements/locks/security-audit.txt`, and runs
+`pip-audit --requirement <lock> --no-deps` for each project lock. The
+`--no-deps` mode is safe because every lock already contains the resolved
+transitive set; it stops pip-audit from re-resolving a different graph.
+
+Before any lock is accepted, the gate audits
+`scripts/ci/fixtures/pip-audit-known-vuln.txt`
+(`requests==2.19.0`, CVE-2018-18074). A green run without that advisory is a
+gate error, not a pass. The gate also fails when pip-audit skips a dependency,
+returns no JSON, or exits with an error.
+
+Retained findings go in `scripts/ci/pip-audit-ignore.json`; each entry names
+`file`, `package`, `id`, `reason` and `expires` (YYYY-MM-DD). The gate fails on
+an expired entry and on an entry that matches no finding.
+
+Run it locally after installing the scanner:
+
+```bash
+pip install --require-hashes -r requirements/locks/security-audit.txt
+python3 scripts/ci/check_python_audit.py
+python3 -m unittest scripts/ci/tests/test_python_audit.py
+```
+
+## The image gate
+
+`docker-image.yml` builds the image from the root `Dockerfile`, installs the
+pinned Trivy release and verifies `TRIVY_SHA256`, then runs:
+
+```bash
+trivy image --exit-code 1 --ignorefile .trivyignore.yaml \
+  --scanners vuln --severity HIGH,CRITICAL vmaf
+```
+
+The job first builds `scripts/ci/fixtures/trivy-negative.Dockerfile`
+(`ubuntu:18.04`, end-of-life) and requires Trivy to return exactly 1. A 0 means
+the gate missed known advisories; any other error is a scanner failure. Only
+then does it scan the real image. A retained image advisory is a dated entry in
+`.trivyignore.yaml`; the same expiry and unused-entry rules apply.
 
 ## Checking a change locally
 

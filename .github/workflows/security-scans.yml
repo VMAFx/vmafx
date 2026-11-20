@@ -360,6 +360,29 @@ jobs:
           # use exact package-wide PURLs, matching the text-unidecode precedent.
           allow-dependencies-licenses: pkg:pypi/text-unidecode, pkg:pypi/python-debian
 
+  python-audit:
+    needs: tier
+    if: needs.tier.outputs.light == 'true'
+    # required-aggregator
+    name: Python Dependency Audit
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.14.10"
+      - name: Install pip-audit from its hash lock
+        run: pip install --require-hashes -r requirements/locks/security-audit.txt
+      - name: Audit the planted defect and every project lock
+        # check_python_audit.py audits scripts/ci/fixtures/pip-audit-known-vuln.txt
+        # first; a green result is not trusted unless that known advisory fires.
+        run: python3 scripts/ci/check_python_audit.py
+
   # ADR-1247: PR source checks cannot supply the full default-branch aggregate.
   # Folded in from scorecard-policy.yml: one workflow less creates one check
   # suite less per pull-request commit, and Scorecard's SAST probe reads only

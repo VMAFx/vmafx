@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "comment": "One entry per lock file and advisory, with a reason and an expiry. An expired entry, an entry that matches nothing, and a finding without an entry all fail scripts/ci/check_python_audit.py.",
+  "exceptions": []
+}

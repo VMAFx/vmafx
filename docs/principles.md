@@ -267,10 +267,22 @@ Enforced today:
   Europe/Vienna and pins GitHub Actions to digests.
 - `osv-scanner.toml` configures the OSV scanner.
 
-Target scanners. These are named as goals; no workflow in the tree runs them as
-a PR
-gate yet: **trivy** (Dockerfile and filesystem CVEs) and **pip-audit** (Python
-dependencies).
+Enforced scanners:
+
+- **Trivy** runs `config` and `fs` in `lint-and-format.yml` and an image scan in
+  `docker-image.yml` for the image built from the root `Dockerfile`. The image
+  job first proves the gate rejects a planted end-of-life base. `TRIVY_VERSION`
+  and `TRIVY_SHA256` are single-sourced in `build-config.env`; retained
+  misconfigurations and image advisories are dated entries in
+  [`.trivyignore.yaml`](https://github.com/VMAFx/vmafx/blob/master/.trivyignore.yaml).
+- **pip-audit** audits every project lock listed by
+  `requirements/locks/manifest.json` in `security-scans.yml`. It first requires
+  the planted `requests==2.19.0` fixture to report CVE-2018-18074; retained
+  findings are dated entries in
+  [`scripts/ci/pip-audit-ignore.json`](https://github.com/VMAFx/vmafx/blob/master/scripts/ci/pip-audit-ignore.json).
+- Both run on pull requests and the weekly Security schedule, so an advisory
+  published after the lock or image landed still fails.
+
 
 ## 3. Quality gates (required for PR merge to master)
 

@@ -1,0 +1,1 @@
+- **Security gates:** CI now audits every project Python lock with `pip-audit` and scans the root `Dockerfile` image with Trivy; each gate first rejects a planted vulnerable fixture, and retained findings need a dated exception.
