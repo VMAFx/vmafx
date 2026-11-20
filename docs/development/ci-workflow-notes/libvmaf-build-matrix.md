@@ -317,12 +317,18 @@ because v0.2.35 could exit before setup on current windows-2025
 images (ADR-0664), and the Linux legs left it behind because its
 own release table capped which CUDA versions could be pinned.
 oneAPI is installed via the official `oneapi-src/oneapi-ci`
-offline-installer pattern (`curl` the Base Toolkit installer +
-extract + run bootstrapper). We tried `rscohn2/setup-oneapi@v0`
-first (Linux-only — all install URLs `.sh`) and Chocolatey's
-`intel-oneapi-basekit` (not on the community feed); neither
-works on `windows-2025`. Pinned to oneAPI 2025.3.0.372 to
-lag the Linux SYCL leg, which now follows ONEAPI_APT_PACKAGE.
+offline-installer pattern (`curl` the oneAPI Toolkit installer +
+extract + run bootstrapper with `-p=NEED_VS20{17,19,22,26}_INTEGRATION=0`).
+We tried `rscohn2/setup-oneapi@v0` first (Linux-only — all install URLs
+`.sh`) and Chocolatey's `intel-oneapi-basekit` (not on the community
+feed); neither works on `windows-2025`. The step pins oneAPI
+2026.2.0.661 (`intel-oneapi-toolkit-2026.2.0.661_offline.exe`, ADR-3567),
+whose package file list contains Clang 23 resources (measured from the
+installer on
+2026-11-19; see ADR-3567). Before extraction, the step checks the pinned
+2,402,678,488-byte size and SHA-256
+`e5774d5435835b66b16c4369a6c9704720fe2df9d67cdc48922c93782c152ee0`.
+Builds run `44499808688` passed with zero `STL1000` log lines.
 The CUDA leg additionally injects `/experimental:c11atomics` into
 `CFLAGS` / `CXXFLAGS` because libvmaf uses C11 atomics that
 MSVC's `<stdatomic.h>` refuses without that flag; icx-cl (SYCL leg)
@@ -370,6 +376,19 @@ meson's wrap decision). Rename the binary so meson can't
 find it.
 ADR-2170: the configure steps run under cmd, so the one helper that turns warnings
 into errors runs here and hands its arguments over. A row without `werror` gets none.
+---------- Probe Windows SYCL AOT targets ----------
+After oneAPI setup, the SYCL leg probes every default Meson AOT target with
+`ocloc ids`. Builds run `44487361326` refused six: `tgllp`, `adl-s`, `adl-p`,
+`adl-n`, `rpl-s` and `rpl-p`; it accepted 13: `dg2-g10`, `dg2-g11`,
+`acm-g10`, `acm-g11`, `acm-g12`, `mtl-h`, `mtl-u`, `arl-h`, `arl-s`,
+`arl-u`, `lnl-m`, `bmg-g21` and `bmg-g31`. The step fails if the refused
+set differs from those six or if no targets are accepted. Configure receives
+the accepted list; dropped targets appear in a notice. Xe-LP, Alder Lake and
+Raptor Lake integrated devices get no AOT image from the Windows CI build. By
+design, they fall back to the `spir64` image compiled at run time; see
+docs/backends/sycl/aot.md#default-target-list. Builds run `44499808688` passed
+with the 13 accepted targets; runtime fallback on the six refused families
+remains unmeasured.
 ---------- Build ----------
 CFLAGS/CXXFLAGS carry `/experimental:c11atomics` — without
 that flag MSVC's `<stdatomic.h>` errors with "C atomic
