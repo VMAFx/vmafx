@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # Research digest titles
 
-Every research digest, one heading each (819), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
+Every research digest, one heading each (820), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
 
 ## Research-0001: Cache shape for `bisect-model-quality` nightly
 
@@ -2767,6 +2767,10 @@ Every research digest, one heading each (819), so the site search finds a digest
 ## Research-3540: Human-vision mechanisms for extending VMAFx quality assessment
 
 [3540-hvs-biomimetic-survey](3540-hvs-biomimetic-survey.md)
+
+## Research-3567: Windows MSVC+SYCL leg on oneAPI 2026.2.0.661
+
+[3567-windows-sycl-oneapi-2026-2](3567-windows-sycl-oneapi-2026-2.md)
 
 ## ADR-0108 Six-Deliverables Compliance Audit — 2026-05-29
 
