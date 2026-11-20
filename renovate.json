@@ -324,7 +324,8 @@
       "matchPackageNames": [
         "intel/compute-runtime",
         "oneapi-src/level-zero",
-        "microsoft/onnxruntime",
+        "Microsoft.ML.OnnxRuntime",
+        "Microsoft.ML.OnnxRuntime.Gpu.Linux",
         "AOMediaCodec/SVT-AV1",
         "fraunhoferhhi/vvenc",
         "GPUOpen-LibrariesAndSDKs/AMF"
@@ -601,18 +602,28 @@
     },
     {
       "customType": "regex",
-      "description": "ONNX Runtime C++ library version in dev/Containerfile and the Go CI job (ADR-1134). Installed via tarball from GitHub releases (not apt). Tracks github.com/microsoft/onnxruntime releases. See ADR-0605.",
+      "description": "ONNX Runtime CPU NuGet package tracked through scripts/ci/ort-nuget-pins.json (ADR-3561). A bump lands on the `tracked.cpu` anchor; the guard refuses a version without a size/sha256 pin, so run `python3 scripts/ci/ort_nuget_install.py --print-pin <version>` and add the entry before merging.",
       "managerFilePatterns": [
-        "/^dev/Containerfile$/",
-        "/^\\.github/workflows/build\\.yml$/",
-        "/^\\.github/workflows/go-ci\\.yml$/"
+        "/^scripts/ci/ort-nuget-pins\\.json$/"
       ],
       "matchStrings": [
-        "ARG ORT_VERSION=(?<currentValue>[0-9.]+)\\nARG ORT_SHA256=(?<currentDigest>[a-f0-9]{64})",
-        "ORT_VERSION: \"(?<currentValue>[0-9.]+)\"\\n\\s*ORT_SHA256: \"(?<currentDigest>[a-f0-9]{64})\""
+        "\"tracked\":\\s*\\{[^}]*\"cpu\":\\s*\"(?<currentValue>[0-9.]+)\""
       ],
-      "datasourceTemplate": "github-release-attachments",
-      "depNameTemplate": "microsoft/onnxruntime",
+      "datasourceTemplate": "nuget",
+      "depNameTemplate": "Microsoft.ML.OnnxRuntime",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "ONNX Runtime GPU NuGet package tracked through scripts/ci/ort-nuget-pins.json (ADR-3561). A bump lands on the `tracked.gpu` anchor; add the printed size/sha256 entry before merging.",
+      "managerFilePatterns": [
+        "/^scripts/ci/ort-nuget-pins\\.json$/"
+      ],
+      "matchStrings": [
+        "\"tracked\":\\s*\\{[^}]*\"gpu\":\\s*\"(?<currentValue>[0-9.]+)\""
+      ],
+      "datasourceTemplate": "nuget",
+      "depNameTemplate": "Microsoft.ML.OnnxRuntime.Gpu.Linux",
       "versioningTemplate": "semver"
     },
     {

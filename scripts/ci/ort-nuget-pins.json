@@ -1,4 +1,8 @@
 {
+  "tracked": {
+    "cpu": "1.30.0",
+    "gpu": "1.22.0"
+  },
   "packages": {
     "cpu": {
       "source": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/{version}/microsoft.ml.onnxruntime.{version}.nupkg",

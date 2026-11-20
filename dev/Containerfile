@@ -741,7 +741,6 @@ RUN chown vmaf:vmaf /build /build/vmaf
 # need matching runtime dependencies (ADR-0113). The Python runtime floor is
 # owned independently by ai/pyproject.toml.
 ARG ORT_VERSION=1.30.0
-ARG ORT_SHA256=a5ed5a3cac51fbb2e90da632ae43d19212faaa20e76484e62bcb7c23ddb3b3fd
 RUN python3 /build/vmaf/scripts/ci/ort_nuget_install.py --package cpu \
         --version "${ORT_VERSION}" --prefix /usr/local \
         --pkgconfig-dir /usr/local/lib/pkgconfig \

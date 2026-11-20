@@ -95,13 +95,6 @@ class TrackedDownload:
 
 TRACKED_DOWNLOADS: tuple[TrackedDownload, ...] = (
     TrackedDownload(
-        name="ONNX Runtime",
-        marker="onnxruntime/releases/download",
-        sha_var="ORT_SHA256",
-        version_var="ORT_VERSION",
-        has_gpu_flavour=True,
-    ),
-    TrackedDownload(
         name="ClangBuildAnalyzer",
         marker="aras-p/ClangBuildAnalyzer/archive",
         sha_var="CLANGBUILDANALYZER_SHA256",
@@ -329,7 +322,28 @@ def _validate_pin_table(pin_file: Path) -> tuple[dict[str, dict[str, Any]], list
         valid[pkg_name] = pkg_data
         for version, pin in versions.items():
             findings.extend(_check_pin_entry(pin_file, pkg_name, str(version), pin))
+    findings.extend(_check_tracked_versions(pin_file, raw, valid))
     return valid, findings
+
+
+def _check_tracked_versions(
+    pin_file: Path, raw: dict[str, Any], valid: dict[str, dict[str, Any]]
+) -> list[str]:
+    """Every Renovate-tracked package version must already have a digest pin."""
+    tracked = raw.get("tracked")
+    if not isinstance(tracked, dict) or not tracked:
+        return [f"{pin_file}: missing tracked table for Renovate"]
+    findings: list[str] = []
+    for name, version in tracked.items():
+        if name not in valid:
+            findings.append(f"{pin_file}: tracked package '{name}' is not in packages")
+            continue
+        if str(version) not in valid[name].get("versions", {}):
+            findings.append(
+                f"{pin_file}: tracked {name} version '{version}' has no sha256/size pin; "
+                f"run scripts/ci/ort_nuget_install.py --print-pin {version}"
+            )
+    return findings
 
 
 def _step_bindings(lines: list[str]) -> dict[str, set[str]] | None:
@@ -626,7 +640,7 @@ def scan_file(
         else:
             findings.extend(_scan_container_line(lines, i, path, packages))
         entry = _match_tracked_entry(line)
-        if entry is None or entry.name == "ONNX Runtime":
+        if entry is None:
             continue
 
         site_line_num = i + 1

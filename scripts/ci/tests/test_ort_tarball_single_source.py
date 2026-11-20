@@ -706,6 +706,39 @@ class TestOrtGuard(unittest.TestCase):
             "invalid size", "\n".join(guard.check_tarball_pins(root=root, files=[workflow])[1])
         )
 
+    def test_tracked_version_without_pin_fails(self) -> None:
+        root = Path(self.temp.name)
+        pins = root / "scripts/ci/ort-nuget-pins.json"
+        pins.parent.mkdir(parents=True)
+        pins.write_text(
+            (ROOT / "scripts/ci/ort-nuget-pins.json")
+            .read_text(encoding="utf-8")
+            .replace('"cpu": "1.30.0"', '"cpu": "1.99.0"'),
+            encoding="utf-8",
+        )
+        rc, findings = guard.check_tarball_pins(root=root)
+        self.assertEqual(rc, 1)
+        self.assertIn(
+            "tracked cpu version '1.99.0' has no sha256/size pin; "
+            "run scripts/ci/ort_nuget_install.py --print-pin 1.99.0",
+            "\n".join(findings),
+        )
+
+    def test_renovate_tracks_each_ort_nuget_package(self) -> None:
+        data = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
+        managers = [
+            item
+            for item in data["customManagers"]
+            if "ort-nuget-pins" in json.dumps(item.get("managerFilePatterns", []))
+        ]
+        self.assertEqual(
+            {item["depNameTemplate"] for item in managers},
+            {"Microsoft.ML.OnnxRuntime", "Microsoft.ML.OnnxRuntime.Gpu.Linux"},
+        )
+        for item in managers:
+            self.assertEqual(item["datasourceTemplate"], "nuget")
+            self.assertIn("tracked", item["matchStrings"][0])
+
     def test_comments_and_unrelated_packages(self) -> None:
         workflow = Path(self.temp.name) / "test.yml"
         workflow.write_text(
