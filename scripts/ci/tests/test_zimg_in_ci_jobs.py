@@ -56,11 +56,21 @@ def jobs_without_zimg() -> list[tuple[str, str]]:
     return missing
 
 
+def apt_step_installs(step: dict[str, Any]) -> bool:
+    for line in str(step.get("run", "")).splitlines():
+        words = line.split()
+        if "apt-get" in words:
+            tail = words[words.index("apt-get") + 1 :]
+            if "install" in tail:
+                return True
+    return False
+
+
 def apt_steps_without_zimg(steps: list[dict[str, Any]]) -> list[str]:
     return [
         str(step.get("name"))
         for step in steps
-        if "apt-get -yq install" in str(step.get("run", ""))
+        if apt_step_installs(step)
         and "ninja-build" in str(step.get("run", ""))
         and "libzimg-dev" not in str(step.get("run", ""))
     ]
@@ -90,6 +100,14 @@ def test_every_matrix_install_step_carries_zimg() -> None:
 def test_a_matrix_install_step_without_zimg_is_found() -> None:
     step = {"name": "base", "run": "sudo -E apt-get -yq install ccache ninja-build nasm gcc g++"}
     assert apt_steps_without_zimg([step]) == ["base"]
+
+
+def test_a_retry_install_step_without_zimg_is_found() -> None:
+    step = {
+        "name": "retry",
+        "run": "sudo -E apt-get -yq -o Acquire::Retries=3 install ninja-build",
+    }
+    assert apt_steps_without_zimg([step]) == ["retry"]
 
 
 def stages(text: str) -> dict[str, str]:
