@@ -495,6 +495,7 @@ nav:
       - Release: development/release.md
       - Inherited Netflix tags: development/inherited-tags.md
       - Tester image (maintainers): development/tester-image.md
+      - CPU evidence from outside machines: development/cpu-evidence-offsite.md
       - CI: development/ci.md
       - Test suites: development/test-suites.md
       - Whole-tree lint ratchet: development/tidy-ratchet.md
