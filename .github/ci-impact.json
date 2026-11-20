@@ -420,6 +420,7 @@
         "scripts/ci/install-rocm-from-image.sh",
         "build-config.env",
         "dev/scripts/fetch-intel-neo.py",
+        "dev/scripts/intel-neo-lock.json",
         "python/requirements-test-lock.txt",
         "REUSE.toml",
         "NOTICE",
