@@ -8,11 +8,14 @@
 # average; we enforce "any non-trivial fork-added function has at least
 # one assert" in CI, and report the ≥2 average informationally.
 #
-# Scope: files whose copyright header contains a Lusoris copyright line
-# in either the legacy "Lusoris and Claude (Anthropic)" format or the
-# current "Copyright YYYY Lusoris" format (rebrand decided 2026-05-27;
-# memory: project_copyright_lusoris_only). Upstream Netflix files are
-# exempted (separate cleanup ticket).
+# Scope: every non-mirror C source the gate's pathspecs list (issue #3347).
+# Fork ownership is decided by the shared exact-path mirror filter, not by
+# the name in the copyright header: an outside contributor's file carries
+# their own copyright (ADR-3401) and is scanned like any other. Inherited
+# and third-party sources are exempted by exact path through
+# scripts/ci/assertion-density-exempt-paths.txt, loaded with the shared
+# load_manifest() loader; a listed path the listing no longer finds fails
+# the gate so the manifest cannot go stale.
 #
 # Exit 0 on pass, 1 on any fork-added function ≥MIN_LINES lines with zero asserts,
 # 2 when the source listing itself fails.
@@ -21,7 +24,7 @@ set -euo pipefail
 
 MIN_LINES="${MIN_LINES:-20}"
 
-# Collect fork-added files by header scan.
+# Collect fork-added files by exact-path scope, not by a header scan.
 #
 # Vendored verbatim mirrors are excluded: they carry a "Copyright 2026 Lusoris"
 # header (same license) but are byte-identical to their single source of truth
@@ -30,6 +33,13 @@ MIN_LINES="${MIN_LINES:-20}"
 # today; Pelorus uses explicit `return PEL_ERR_*` validation instead of
 # assert(). The shared exact-path filter keeps an unmanifested pelorus_*.cpp in
 # local lint scope. Fix mirror findings upstream in Pelorus and re-sync.
+#
+# Inherited and third-party sources (upstream Netflix, Xiph, Daala, IQA,
+# cJSON, libsvm, dav1d) are exempted by exact path through
+# scripts/ci/assertion-density-exempt-paths.txt: dropping the header grep
+# (issue #3347) would otherwise pull their 132 assert-less functions of
+# 20 lines or more (measured on master across the 82 files) into the
+# scan, and the gate would go red on code the fork does not own.
 #
 # The listing is taken in a command substitution, not inside the process
 # substitution below, so a failing `git ls-files` or mirror filter fails the
@@ -41,12 +51,36 @@ if ! CANDIDATES="$(git ls-files ':(glob)core/src/**/*.c' ':(glob)core/src/**/*.c
     "(git ls-files or scripts/ci/pelorus_mirror.py filter)" >&2
   exit 2
 fi
+
+EXEMPT_MANIFEST="scripts/ci/assertion-density-exempt-paths.txt"
+if ! EXEMPT="$(python3 scripts/ci/pelorus_mirror.py load-manifest "$EXEMPT_MANIFEST")"; then
+  echo "assertion-density: error: loading $EXEMPT_MANIFEST failed" \
+    "(scripts/ci/pelorus_mirror.py load-manifest)" >&2
+  exit 2
+fi
+
+# The manifest must never go stale: a listed path the source listing no longer
+# finds (file removed, renamed, or moved outside the gate's pathspecs) fails
+# the gate so the entry is pruned in the same change as its file.
+if [ -n "$EXEMPT" ]; then
+  STALE="$(LC_ALL=C comm -23 <(printf '%s\n' "$EXEMPT") <(printf '%s\n' "$CANDIDATES"))"
+  if [ -n "$STALE" ]; then
+    echo "assertion-density: error: $EXEMPT_MANIFEST lists paths the source" \
+      "listing no longer finds (removed, renamed, or outside the pathspecs):" >&2
+    printf '%s\n' "$STALE" >&2
+    exit 2
+  fi
+fi
+
+if [ -n "$EXEMPT" ]; then
+  SCANNABLE="$(LC_ALL=C comm -23 <(printf '%s\n' "$CANDIDATES") <(printf '%s\n' "$EXEMPT"))"
+else
+  SCANNABLE="$CANDIDATES"
+fi
 mapfile -t FILES < <(
-  printf '%s\n' "$CANDIDATES" | while read -r f; do
+  printf '%s\n' "$SCANNABLE" | while read -r f; do
     [ -f "$f" ] || continue
-    if head -n 20 "$f" 2>/dev/null | grep -qE "(Lusoris and Claude|Copyright [0-9]+ Lusoris)"; then
-      echo "$f"
-    fi
+    echo "$f"
   done
 )
 

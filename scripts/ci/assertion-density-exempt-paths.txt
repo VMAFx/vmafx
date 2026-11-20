@@ -1,0 +1,139 @@
+# Exact-path exemption list for scripts/ci/assertion-density.sh (issue #3347).
+#
+# The gate scans every non-mirror C source by default; the files below are the
+# code the fork inherited (upstream Netflix and its NVIDIA co-authored CUDA
+# files) and vendored third-party sources (Xiph, Daala, the IQA library, cJSON,
+# libsvm, dav1d). They are exempt because the fork does not own them and cannot
+# absorb fork-local asserts without breaking the sync with their source of
+# truth; new fork code carries an assert per non-trivial function instead.
+#
+# Keep sorted (load_manifest() in scripts/ci/pelorus_mirror.py refuses an
+# unsorted or duplicated list; entries are validated as exact repository
+# paths). The gate fails when a listed path no longer exists, so entries are
+# pruned in the same change that removes their file.
+
+# Netflix upstream (inherited)
+core/src/arm/cpu.c
+core/src/conversion_context.c
+core/src/conversion_policy.c
+core/src/cpu.cpp
+
+# Netflix upstream, NVIDIA co-authored CUDA (inherited)
+core/src/cuda/common.c
+core/src/cuda/picture_cuda.c
+
+# Netflix upstream (inherited)
+core/src/dict.cpp
+core/src/feature/adm.c
+core/src/feature/adm_tools.c
+core/src/feature/alias.c
+core/src/feature/cambi.c
+core/src/feature/ciede.c
+core/src/feature/common/alignment.c
+core/src/feature/common/blur_array.c
+core/src/feature/common/convolution.c
+core/src/feature/common/convolution_avx.c
+
+# Netflix upstream, NVIDIA co-authored CUDA (inherited)
+core/src/feature/cuda/integer_adm_cuda.c
+
+# Netflix upstream (inherited)
+core/src/feature/cuda/integer_motion_cuda.c
+
+# Netflix upstream, NVIDIA co-authored CUDA (inherited)
+core/src/feature/cuda/integer_vif_cuda.c
+
+# Netflix upstream (inherited)
+core/src/feature/feature_collector.cpp
+core/src/feature/feature_extractor.cpp
+core/src/feature/feature_name.cpp
+core/src/feature/float_adm.c
+core/src/feature/float_moment.c
+core/src/feature/float_motion.c
+core/src/feature/float_ms_ssim.c
+core/src/feature/float_psnr.c
+core/src/feature/float_ssim.c
+core/src/feature/float_vif.c
+core/src/feature/integer_adm.c
+core/src/feature/integer_motion.c
+core/src/feature/integer_motion_v2.c
+core/src/feature/integer_psnr.c
+
+# Xiph.Org (third-party)
+core/src/feature/integer_ssim.c
+
+# Netflix upstream (inherited)
+core/src/feature/integer_vif.c
+
+# IQA library, Tom Distler (third-party)
+core/src/feature/iqa/convolve.c
+core/src/feature/iqa/decimate.c
+core/src/feature/iqa/math_utils.c
+core/src/feature/iqa/ssim_tools.c
+
+# Netflix upstream (inherited)
+core/src/feature/luminance_tools.cpp
+core/src/feature/moment.c
+core/src/feature/motion.c
+core/src/feature/ms_ssim.c
+core/src/feature/null.c
+core/src/feature/offset.c
+core/src/feature/picture_copy.cpp
+core/src/feature/psnr.c
+core/src/feature/psnr_tools.cpp
+core/src/feature/speed.c
+core/src/feature/ssim.c
+core/src/feature/sycl/integer_vif_sycl.cpp
+
+# Xiph.Org (third-party)
+core/src/feature/third_party/xiph/psnr_hvs.c
+
+# Netflix upstream (inherited)
+core/src/feature/vif.c
+core/src/feature/vif_tools.c
+core/src/fex_ctx_vector.cpp
+core/src/framesync.c
+core/src/libvmaf.c
+core/src/log.c
+core/src/log.cpp
+
+# cJSON, Dave Gamble and cJSON contributors (third-party)
+core/src/mcp/3rdparty/cJSON/cJSON.c
+
+# Netflix upstream (inherited)
+core/src/mem.cpp
+core/src/metadata_handler.cpp
+core/src/model.c
+core/src/opt.cpp
+core/src/output.cpp
+core/src/picture.c
+core/src/picture_convert.c
+core/src/picture_pool.c
+core/src/picture_pool.cpp
+core/src/predict.c
+core/src/read_json_model.c
+core/src/read_json_model.cpp
+core/src/ref.cpp
+
+# LIBSVM, Chih-Chung Chang and Chih-Jen Lin (third-party)
+core/src/svm.cpp
+
+# Netflix upstream (inherited)
+core/src/thread_locale.cpp
+core/src/thread_pool.c
+
+# dav1d, VideoLAN and Two Orioles (third-party)
+core/src/x86/cpu.c
+
+# Daala project contributors (third-party)
+core/tools/vidinput.c
+
+# Netflix upstream (inherited)
+core/tools/vmaf_bench.c
+core/tools/vmaf_vpl.c
+
+# Daala project contributors (third-party)
+core/tools/y4m_input.c
+
+# Netflix upstream (inherited)
+core/tools/yuv_input.c
