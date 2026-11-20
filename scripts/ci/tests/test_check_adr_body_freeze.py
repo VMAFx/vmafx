@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 run = importlib.import_module("scripts.lib.safe_subprocess").run
+yaml = importlib.import_module("yaml")
 GIT = shutil.which("git") or "git"
 
 if TYPE_CHECKING:
@@ -314,6 +315,72 @@ class FreezeTests(unittest.TestCase):
         self.write("docs/adr/1234-renamed.md", BASE.replace("Old context.", "New context."))
         self.commit()
         self.assertEqual(self.run_check().returncode, 1)
+
+    def test_hook_always_runs(self) -> None:
+        config = yaml.safe_load((SCRIPT.parents[2] / ".pre-commit-config.yaml").read_text())
+        hook = next(
+            h
+            for repo in config["repos"]
+            for h in repo.get("hooks", [])
+            if h["id"] == "check-adr-body-freeze"
+        )
+        self.assertIs(hook.get("always_run"), True)
+        self.assertIs(hook.get("pass_filenames"), False)
+
+    def test_fenced_references_heading(self) -> None:
+        original = BASE.replace("Old context.", "```markdown\n## References\n```\nOld context.")
+        self.write(ADR, original)
+        self.commit()
+        self.base = self.git("rev-parse", "HEAD").strip()
+        self.check_change(original.replace("Old context.", "Changed context."), 1)
+
+    def test_update_subheading_and_peer(self) -> None:
+        self.check_change(BASE + "\n## Status update 2026-11-20\n### Details\nDetails.\n", 0)
+        self.check_change(BASE + "\n## Status update 2026-11-20\nUpdate.\n## Decision\nNew.\n", 1)
+
+    def test_reference_definition_destination(self) -> None:
+        original = BASE.replace("Old context.", '[s]: old.md "Title"')
+        self.write(ADR, original)
+        self.commit()
+        self.base = self.git("rev-parse", "HEAD").strip()
+        self.check_change(original.replace('old.md "Title"', 'new.md "Title"'), 0)
+        self.check_change(original.replace("[s]: old.md", "[t]: new.md"), 1)
+
+    def test_status_with_note_and_context_change(self) -> None:
+        changed = BASE.replace("Accepted\n", "Superseded\n> [!NOTE]\n> Superseded by ADR-9999\n")
+        self.check_change(changed, 0)
+        self.check_change(changed.replace("Old context.", "Changed context."), 1)
+
+    def test_references_replacement_cannot_add_section(self) -> None:
+        self.check_change(
+            BASE.replace("[Source](old.md)", "New reference.\n\n## Decision\nNew decision."), 1
+        )
+        self.check_change(BASE.replace("[Source](old.md)", "New reference."), 0)
+
+    def test_renamed_status_and_link_repairs(self) -> None:
+        target = "docs/adr/1234-renamed.md"
+        cases = (
+            (BASE.replace("Accepted", "Proposed"), "Old context.", "New context.", 0),
+            (BASE, "Old context.", "New context.", 1),
+            (
+                BASE.replace("Old context.", "See [source](old.md)."),
+                "source](old.md)",
+                "source](new.md)",
+                0,
+            ),
+        )
+        for original, before, after, expected in cases:
+            with self.subTest(expected=expected, before=before):
+                self.write(ADR, original)
+                self.commit()
+                self.base = self.git("rev-parse", "HEAD").strip()
+                self.git("mv", ADR, target)
+                self.write(target, original.replace(before, after))
+                self.commit()
+                result = self.run_check()
+                self.git("mv", target, ADR)
+                self.commit()
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
 
     def test_no_changes(self) -> None:
         self.assertEqual(self.run_check().returncode, 0)

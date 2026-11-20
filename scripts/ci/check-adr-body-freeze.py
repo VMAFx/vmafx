@@ -25,7 +25,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 run = importlib.import_module("scripts.lib.safe_subprocess").run
 GIT = shutil.which("git") or "git"
 SECTION_LEVEL = 2
-UPDATE_LEVEL = 3
 NOTE_MIN_LINES = 2
 REASON_MIN_LENGTH = 20
 
@@ -44,6 +43,8 @@ DIRECTIVE = re.compile(
     r"^<!--\s*markdownlint-(?:disable|enable|disable-line|disable-next-line|capture|restore)\b[^>]*-->\s*$"
 )
 LINK = re.compile(r"(\[[^\]\n]*\])\([^\n)]*\)")
+REFERENCE_LINK = re.compile(r"^( {0,3}\[[^\]\n]+\]:\s*)(?:<[^>\n]*>|\S+)(.*)$")
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 MESSAGE = (
     "body of an Accepted ADR is frozen (docs/adr/README.md); add a dated "
     '"### Status update YYYY-MM-DD" section or supersede it with a new ADR'
@@ -80,23 +81,36 @@ def section(lines: list[str], index: int) -> str:
 
 def in_references(lines: list[str], index: int) -> bool:
     """Return whether a line belongs to a level-two References section."""
-    for line in reversed(lines[: index + 1]):
-        match = HEADING.match(line)
-        if match and len(match.group(1)) <= SECTION_LEVEL:
-            return line.strip() == "## References"
-    return False
+    current = False
+    fence = ""
+    for line in lines[: index + 1]:
+        marker = FENCE.match(line)
+        if marker:
+            token, tail = marker.groups()
+            if not fence:
+                fence = token
+            elif token[0] == fence[0] and len(token) >= len(fence) and not tail.strip():
+                fence = ""
+            continue
+        if not fence:
+            match = HEADING.match(line)
+            if match and len(match.group(1)) <= SECTION_LEVEL:
+                current = line.strip() == "## References"
+    return current
 
 
 def allowed_update(lines: list[str], start: int, end: int) -> bool:
     """Accept inserted dated sections, including their subordinate content."""
-    active = False
+    level = 0
     for line in lines[start:end]:
         match = HEADING.match(line)
-        if match and len(match.group(1)) <= UPDATE_LEVEL:
-            active = bool(UPDATE.match(line))
-        if not active and line.strip():
+        if match and UPDATE.match(line):
+            level = len(match.group(1))
+        elif match and level and len(match.group(1)) <= level:
+            level = 0
+        if not level and line.strip():
             return False
-    return active
+    return bool(level)
 
 
 def allowed_note(old: list[str], pos: int, added: list[str], status: int) -> bool:
@@ -116,7 +130,11 @@ def allowed_note(old: list[str], pos: int, added: list[str], status: int) -> boo
 
 def link_repair(before: str, after: str) -> bool:
     """Permit only changes to Markdown link destinations."""
-    return before != after and LINK.sub(r"\1()", before) == LINK.sub(r"\1()", after)
+
+    def normalize(line: str) -> str:
+        return REFERENCE_LINK.sub(r"\1DEST\2", LINK.sub(r"\1()", line))
+
+    return before != after and normalize(before) == normalize(after)
 
 
 def normalized_words(lines: list[str]) -> list[str]:
@@ -139,6 +157,30 @@ def formatting_only(tag: str, before: list[str], after: list[str]) -> bool:
     )
 
 
+def has_section_heading(lines: list[str]) -> bool:
+    """Detect headings that leave a References section."""
+    return any(
+        (match := HEADING.match(line)) is not None and len(match.group(1)) <= SECTION_LEVEL
+        for line in lines
+    )
+
+
+def allowed_replace(before: list[str], after: list[str], old: list[str], status: int) -> bool:
+    """Allow status changes with a note, or linewise status and link repairs."""
+    if (
+        len(before) == 1
+        and len(after) > 1
+        and before[0] == old[status]
+        and STATUS_RE.match(after[0])
+        and allowed_note(old, status + 1, after[1:], status)
+    ):
+        return True
+    return len(before) == len(after) and all(
+        (old_line == old[status] and STATUS_RE.match(new_line)) or link_repair(old_line, new_line)
+        for old_line, new_line in zip(before, after, strict=True)
+    )
+
+
 def refused(old: list[str], new: list[str], status: int) -> list[tuple[int, str]]:
     """Return the location and section of each disallowed diff hunk."""
     failures: list[tuple[int, str]] = []
@@ -150,28 +192,18 @@ def refused(old: list[str], new: list[str], status: int) -> list[tuple[int, str]
         if formatting_only(tag, before, after):
             continue
         if tag == "insert" and (
-            (
-                in_references(old, max(0, a - 1))
-                and not any(
-                    (match := HEADING.match(line)) and len(match.group(1)) <= SECTION_LEVEL
-                    for line in new[c:d]
-                )
-            )
+            (in_references(old, max(0, a - 1)) and not has_section_heading(new[c:d]))
             or allowed_update(new, c, d)
             or allowed_note(old, a, new[c:d], status)
         ):
             continue
-        if tag != "insert" and all(in_references(old, i) for i in range(a, b)):
-            continue
         if (
-            tag == "replace"
-            and len(before) == len(after)
-            and all(
-                (old_line == old[status] and STATUS_RE.match(new_line))
-                or link_repair(old_line, new_line)
-                for old_line, new_line in zip(before, after, strict=True)
-            )
+            tag != "insert"
+            and all(in_references(old, i) for i in range(a, b))
+            and not has_section_heading(new[c:d])
         ):
+            continue
+        if tag == "replace" and allowed_replace(before, after, old, status):
             continue
         failures.append((max(1, c + 1), section(old, a)))
     return failures
@@ -181,8 +213,6 @@ def file_problems(base: str, head: str, kind: str, path: str, target: str) -> li
     """Compare one existing ADR with its destination."""
     old_text = git("show", f"{base}:{path}")
     new_text = "" if kind == "D" else git("show", f"{head}:{target}")
-    if kind.startswith("R"):
-        return [(1, "(rename)")] if old_text != new_text else []
     old = old_text.splitlines()
     status = status_index(old)
     if status is None or STATUS_RE.match(old[status]).group(1).lower() not in {
