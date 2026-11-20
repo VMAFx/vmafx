@@ -33,7 +33,7 @@ def cli_options(api: Api) -> list[Option]:
     return [o for _, o in all_options(api.option_groups) if o.cli is not None]
 
 
-def _takes_value(option: Option) -> bool:
+def takes_value(option: Option) -> bool:
     return option.type != "bool" and not (option.cli and option.cli.values)
 
 
@@ -43,7 +43,7 @@ def short_string(api: Api) -> str:
     for option in cli_options(api):
         assert option.cli is not None
         if option.cli.short:
-            out += option.cli.short + (":" if _takes_value(option) else "")
+            out += option.cli.short + (":" if takes_value(option) else "")
     return out
 
 
@@ -64,7 +64,7 @@ def long_entries(api: Api) -> list[tuple[str, int, str]]:
     out: list[tuple[str, int, str]] = []
     for option in cli_options(api):
         assert option.cli is not None
-        has_arg = 1 if _takes_value(option) else 0
+        has_arg = 1 if takes_value(option) else 0
         out += [(flag[2:], has_arg, option.cli.ident) for flag in option.cli.flags]
         out += [(flag[2:], 0, f"{option.cli.ident}_{v.upper()}") for v, flag in option.cli.values]
     return out
