@@ -168,6 +168,7 @@ extra_css:
 # chart (ADR-1508, scripts/docs/generate-charts.py).
 extra_javascript:
   - javascripts/charts.js
+  - javascripts/accessibility.js
   # Formulas (ADR-2705): the pinned KaTeX release in docs/javascripts/vendor/katex/,
   # served from the site, never from a CDN. katex.js runs after the two libraries.
   - javascripts/vendor/katex/katex.min.js
@@ -181,6 +182,7 @@ extra:
 
 nav:
   - Home: index.md
+  - Search: search.md
   - Get started:
       - getting-started/index.md
       - Score your first pair: getting-started/first-score.md
@@ -497,6 +499,7 @@ nav:
       - Tester image (maintainers): development/tester-image.md
       - CI: development/ci.md
       - Test suites: development/test-suites.md
+      - Accessibility check: development/accessibility.md
       - Whole-tree lint ratchet: development/tidy-ratchet.md
       - Local lint profile: development/local-lint.md
       - state.md gates: development/state-md-gates.md

@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "comment": "Each exception is a WCAG 2.2 AA deviation that is retained with a reason and an expiry. scripts/docs/check_accessibility.py rejects an entry that matches no issue or whose expiry has passed.",
+  "exceptions": []
+}

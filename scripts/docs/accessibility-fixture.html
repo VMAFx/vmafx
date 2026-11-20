@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- Copyright 2026 Lusoris; SPDX-License-Identifier: EUPL-1.2 -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Planted accessibility defect</title>
+    <style>
+      body { color: #777; background: #fff; }
+      .low { color: #595959; background: #fff; }
+      @media (prefers-color-scheme: dark) {
+        body { color: #eee; background: #111; }
+        .low { color: #333; background: #111; }
+      }
+    </style>
+  </head>
+  <body>
+    <h2>A page that skips its first heading level</h2>
+    <p><img src="missing.png" width="40" height="40"></p>
+    <p class="low">Low-contrast text pair</p>
+  </body>
+</html>
