@@ -350,6 +350,16 @@ class FreezeTests(unittest.TestCase):
             BASE.replace("[Source](old.md)", "New reference.\n\n```markdown\n## Example\n```"), 0
         )
 
+    def test_references_replacement_invalid_backtick_opener(self) -> None:
+        cases = (
+            ("invalid backtick", "New reference.\n```text`example\n## Decision\nNew decision.", 1),
+            ("tilde", "New reference.\n\n~~~text`example\n## Example\n~~~", 0),
+            ("backtick", "New reference.\n\n```text example\n## Example\n```", 0),
+        )
+        for name, replacement, expected in cases:
+            with self.subTest(name=name):
+                self.check_change(BASE.replace("[Source](old.md)", replacement), expected)
+
     def test_nested_dated_update_keeps_level(self) -> None:
         prefix = BASE + "\n## Status update 2026-11-20\n### Status update 2026-11-21\n"
         self.check_change(prefix + "### Details\nDetails.\n", 0)

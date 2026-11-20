@@ -85,6 +85,8 @@ def fenced_lines(lines: list[str]) -> list[bool]:
     fenced = []
     for line in lines:
         marker = FENCE.match(line)
+        if marker and not fence and marker.group(1)[0] == "`" and "`" in marker.group(2):
+            marker = None
         fenced.append(bool(fence) or marker is not None)
         if marker:
             token, tail = marker.groups()
