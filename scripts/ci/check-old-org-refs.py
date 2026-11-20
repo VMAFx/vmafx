@@ -47,6 +47,11 @@ PERMANENT = (
     "scripts/ci/research-digest-id-baseline.json",
     "docs/rebase-notes.d/**",
     "docs/rebase-notes.md",
+    # These four paths are rendered by make docs-render from permanent fragments (ADR-2197).
+    "docs/adr/README.md",
+    "docs/adr/titles.md",
+    "docs/adr/by-tag/**",
+    "docs/research/titles.md",
     "changelog.d/**",
     "CHANGELOG.md",
     "docs/changelog-archive/**",

@@ -90,6 +90,10 @@ class OldOrgTests(unittest.TestCase):
             "scripts/ci/research-digest-id-baseline.json",
             "docs/rebase-notes.d/x",
             "docs/rebase-notes.md",
+            "docs/adr/README.md",
+            "docs/adr/titles.md",
+            "docs/adr/by-tag/git.md",
+            "docs/research/titles.md",
             "changelog.d/x",
             "CHANGELOG.md",
             "docs/changelog-archive/x",
@@ -97,6 +101,10 @@ class OldOrgTests(unittest.TestCase):
         ):
             with self.subTest(path=path):
                 self.assertTrue(module.allowed(path))
+
+    def test_permanent_path_boundaries(self) -> None:
+        self.assertFalse(module.allowed("docs/adr/by-tag-notes.md"))
+        self.assertFalse(module.allowed("docs/adr/README-draft.md"))
 
     def test_dated_exceptions(self) -> None:
         entries = [

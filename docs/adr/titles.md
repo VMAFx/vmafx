@@ -5136,7 +5136,7 @@ Every ADR, one heading each (1460), so the site search finds an ADR by its title
 
 [1794-bilinear-column-tables-no-width-limit](1794-bilinear-column-tables-no-width-limit.md)
 
-## ADR-1805: Delete the Netflix release tags inherited by vidiko/vmafx
+## ADR-1805: Delete the Netflix release tags inherited by VMAFx/vmafx
 
 [1805-delete-inherited-netflix-tags](1805-delete-inherited-netflix-tags.md)
 

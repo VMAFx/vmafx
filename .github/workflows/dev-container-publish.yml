@@ -7,7 +7,7 @@
 # Motivation (ADR-1102, ADR-1178, ADR-1346):
 # All canonical build artifacts (release binaries, published images) must be
 # produced inside the canonical dev container rather than on the bare runner host.
-# This workflow publishes ghcr.io/vmafx/vmafx-dev-mcp on every change to
+# This workflow publishes ghcr.io/vidiko/vmafx-dev-mcp on every change to
 # dev/Containerfile or dev/scripts/** for the organisation's own use. The
 # package must stay private (ADR-1564): the stage holds toolkit files that may
 # not be redistributed, so the job refuses to push into a package that is not.
@@ -18,8 +18,8 @@
 # pushes to a registry; check-dev-container-build-secret.py checks its secret.
 #
 # Produces:
-#   ghcr.io/vmafx/vmafx-dev-mcp:sha-<commit>
-#   ghcr.io/vmafx/vmafx-dev-mcp:master
+#   ghcr.io/vidiko/vmafx-dev-mcp:sha-<commit>
+#   ghcr.io/vidiko/vmafx-dev-mcp:master
 #
 # Post-push: cosign keyless sign via Sigstore (OIDC).
 
@@ -73,7 +73,7 @@ jobs:
       - name: Refuse to push unless the package is private
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/ci/require-private-ghcr-package.sh VMAFx vmafx-dev-mcp
+        run: bash scripts/ci/require-private-ghcr-package.sh vidiko vmafx-dev-mcp
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
@@ -94,8 +94,8 @@ jobs:
           target: libvmaf-build
           outputs: type=image,push=true,${{ env.IMAGE_COMPRESSION }}
           tags: |
-            ghcr.io/vmafx/vmafx-dev-mcp:sha-${{ github.sha }}
-            ghcr.io/vmafx/vmafx-dev-mcp:master
+            ghcr.io/vidiko/vmafx-dev-mcp:sha-${{ github.sha }}
+            ghcr.io/vidiko/vmafx-dev-mcp:master
           # No GitHub Actions layer cache: exporting every layer of this
           # ~29.5 GB stage (mode=max) into a cache capped at 10 GB per
           # repository never finished, and six of ten master runs were
@@ -114,4 +114,4 @@ jobs:
       - name: Sign image (keyless OIDC via Sigstore)
         run: |
           cosign sign --yes \
-            "ghcr.io/vmafx/vmafx-dev-mcp@${{ steps.push.outputs.digest }}"
+            "ghcr.io/vidiko/vmafx-dev-mcp@${{ steps.push.outputs.digest }}"

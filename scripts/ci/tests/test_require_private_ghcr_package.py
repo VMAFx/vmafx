@@ -31,7 +31,7 @@ _BASH = shutil.which("bash")
 BASH = str(Path(_BASH).resolve(strict=True)) if _BASH is not None else "bash"
 WORKFLOW = ROOT / ".github/workflows/dev-container-publish.yml"
 GUARD_STEP = "Refuse to push unless the package is private"
-PACKAGE = "ghcr.io/vmafx/vmafx-dev-mcp"
+PACKAGE = "ghcr.io/vidiko/vmafx-dev-mcp"
 STUB_GH = """#!/usr/bin/env bash
 printf '%s\\n' "$*" > "$STUB_DIR/gh-args"
 if [[ -n ${STUB_ANSWER:-} ]]; then printf '%s' "$STUB_ANSWER"; fi
@@ -115,7 +115,7 @@ class PrivatePackageGuard(unittest.TestCase):
                 self.assertIn("carries no visibility", result.stderr)
 
     def test_wrong_usage_exits_2(self) -> None:
-        result = self.run_step("", command="bash scripts/ci/require-private-ghcr-package.sh VMAFx")
+        result = self.run_step("", command="bash scripts/ci/require-private-ghcr-package.sh vidiko")
         self.assertEqual(result.returncode, 2)
 
 
@@ -136,7 +136,7 @@ class WorkflowWiring(unittest.TestCase):
         self.assertNotIn("continue-on-error", step)
         self.assertEqual(step["env"]["GH_TOKEN"], "${{ github.token }}")
         self.assertEqual(
-            step["run"], "bash scripts/ci/require-private-ghcr-package.sh VMAFx vmafx-dev-mcp"
+            step["run"], "bash scripts/ci/require-private-ghcr-package.sh vidiko vmafx-dev-mcp"
         )
 
     def test_every_pushed_tag_is_in_the_guarded_package(self) -> None:
