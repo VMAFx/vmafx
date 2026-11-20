@@ -27,6 +27,18 @@ class ExitCodeOnlyHunksTest(ExitCodeOnlyFixture):
         if expected == 1:
             self.assertIn("test_a:", err)
 
+    def test_r11_f6_else_suite_boundary(self) -> None:
+        source = (
+            "if condition:\n    def test_a():\n        rc = run_checker()\n"
+            "        assert rc == 0\nelse:\n    setting = 1\n"
+        )
+        target = self._commit_file(REL_TEST_FILE, source)
+        target.write_text(source.replace("setting = 1", "setting = 2"), encoding="utf-8")
+        rc, out, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 0, err)
+        self.assertIn("0 exit-code-only test findings", out)
+        self.assertNotIn("test_a:", err)
+
     def test_deleted_final_assertion_after_comments_is_reported(self) -> None:
         cases = (
             ("", "", "\ndef test_next():\n    assert True\n"),

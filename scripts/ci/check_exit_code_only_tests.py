@@ -110,6 +110,14 @@ class _Rebinding(ast.AST):
         self.name = name
 
 
+class _LoopBinding(ast.AST):
+    """Bind a loop target from literal iterable values after header evaluation."""
+
+    def __init__(self, target: ast.AST, iterable: ast.AST) -> None:
+        self.target = target
+        self.iterable = iterable
+
+
 def _invalidate_rebindings(node: _Rebinding, bindings: set[str]) -> None:
     """Walk binding targets and patterns without inspecting their expressions."""
     if node.name is not None:
@@ -248,8 +256,30 @@ def _record_target_vars(target: ast.AST, rc_vars: set[str]) -> None:
             rc_vars.add(elts[0].id)
 
 
+def _apply_loop_binding(node: _LoopBinding, rc_vars: set[str]) -> None:
+    """Update a loop target after its iterable has been evaluated."""
+    is_rc = (
+        isinstance(node.target, ast.Name)
+        and isinstance(node.iterable, (ast.List, ast.Tuple, ast.Set))
+        and any(_is_rc_expr(item, rc_vars) for item in node.iterable.elts[:MAX_BODY_NODES])
+    )
+    _invalidate_rebindings(_Rebinding([node.target]), rc_vars)
+    if is_rc and isinstance(node.target, ast.Name):
+        rc_vars.add(node.target.id)
+
+
+def _check_assignment_targets(targets: Sequence[ast.AST]) -> None:
+    """Enforce the assignment unpacking bound before recording bindings."""
+    for target in targets[:MAX_ASSIGN_TARGETS]:
+        if isinstance(target, (ast.Tuple, ast.List)) and len(target.elts) > MAX_ASSIGN_TARGETS:
+            raise ScanError(f"assignment target unpack exceeds {MAX_ASSIGN_TARGETS} elements")
+
+
 def _update_rc_vars(node: ast.AST, rc_vars: set[str]) -> None:
     """Update bindings in source order, invalidating overwritten names."""
+    if isinstance(node, _LoopBinding):
+        _apply_loop_binding(node, rc_vars)
+        return
     if isinstance(node, _Rebinding):
         _invalidate_rebindings(node, rc_vars)
         return
@@ -268,16 +298,10 @@ def _update_rc_vars(node: ast.AST, rc_vars: set[str]) -> None:
     if len(targets) > MAX_ASSIGN_TARGETS:
         raise ScanError(f"assignment exceeds {MAX_ASSIGN_TARGETS} targets")
     is_rc = _is_rc_expr(value, rc_vars)
-    for target in targets[:MAX_ASSIGN_TARGETS]:
-        names = (
-            [target]
-            if isinstance(target, ast.Name)
-            else (target.elts if isinstance(target, (ast.Tuple, ast.List)) else [])
-        )
-        if len(names) > MAX_ASSIGN_TARGETS:
-            raise ScanError(f"assignment target unpack exceeds {MAX_ASSIGN_TARGETS} elements")
-        rc_vars.difference_update(name.id for name in names if isinstance(name, ast.Name))
-        if is_rc:
+    _check_assignment_targets(targets)
+    _invalidate_rebindings(_Rebinding(list(targets)), rc_vars)
+    if is_rc:
+        for target in targets[:MAX_ASSIGN_TARGETS]:
             _record_target_vars(target, rc_vars)
 
 
@@ -347,10 +371,16 @@ def _classify_assertion(node: ast.AST, rc_vars: set[str]) -> str | None:
     if name in ("assertEqual", "assertEquals"):
         pair = _equal_operands(node)
         return "rc_zero" if pair and _is_rc_zero_pair(pair[0], pair[1], rc_vars) else "other"
-    if name == "assertTrue" and node.args and _is_rc_zero_test(node.args[0], rc_vars):
-        return "rc_zero"
-    if name == "assertFalse" and node.args and _is_rc_expr(node.args[0], rc_vars):
-        return "rc_zero"
+    expr = (
+        node.args[0]
+        if node.args
+        else next((kw.value for kw in node.keywords[:MAX_CALL_ARGS] if kw.arg == "expr"), None)
+    )
+    if expr is not None:
+        if name == "assertTrue" and _is_rc_zero_test(expr, rc_vars):
+            return "rc_zero"
+        if name == "assertFalse" and _is_rc_expr(expr, rc_vars):
+            return "rc_zero"
     return "other" if name.startswith("assert") or _is_pytest_raises(func) else None
 
 
@@ -408,7 +438,7 @@ def _loop_flow(node: ast.For | ast.AsyncFor | ast.While, bindings: set[str]) -> 
     return [
         ([bindings], body),
         *(
-            ((_Rebinding([node.target]), body),)
+            ((_LoopBinding(node.target, node.iter), body),)
             if isinstance(node, (ast.For, ast.AsyncFor))
             else ()
         ),
@@ -436,16 +466,23 @@ def _try_flow(node: ast.Try | ast.TryStar, bindings: set[str]) -> list[Traversal
     steps.append(([body], otherwise))
     steps.extend((stmt, otherwise) for stmt in node.orelse)
     states = [otherwise]
+    handler_states: list[set[str]] = []
     for handler in node.handlers:
         state: set[str] = set()
         states.append(state)
         entry: set[str] = set()
-        steps.append(([bindings, snapshot], entry))
+        steps.append(
+            (
+                [bindings, snapshot, *(handler_states if isinstance(node, ast.TryStar) else [])],
+                entry,
+            )
+        )
         steps.append(([entry], state))
         steps.append((_Rebinding([], handler.name), state))
         if node.finalbody:
             states.append(entry)
         steps.extend((stmt, state) for stmt in handler.body)
+        handler_states.append(state)
     if node.finalbody:
         steps.append((_SnapshotBoundary(final_snapshot, begin=False), bindings))
         states.append(final_snapshot)
@@ -470,11 +507,21 @@ def _push_children(node: ast.AST, bindings: set[str], stack: list[TraversalStep]
         steps = _alternative_flow(bodies, bindings)
     elif isinstance(node, ast.Match):
         bodies = [*(case.body for case in node.cases), []]
-        branches: list[list[ast.AST]] = [
-            [_Rebinding([case.pattern]), *([case.guard] if case.guard else []), *case.body]
-            for case in node.cases
-        ]
-        steps = _alternative_flow([*branches, []], bindings)
+        steps = []
+        entries: list[set[str]] = [bindings]
+        outcomes: list[set[str]] = []
+        for case in node.cases:
+            entry: set[str] = set()
+            body: set[str] = set()
+            steps.append((list(entries), entry))
+            steps.append((_Rebinding([case.pattern]), entry))
+            if case.guard:
+                steps.append((case.guard, entry))
+            entries.append(entry)
+            steps.append(([entry], body))
+            steps.extend((stmt, body) for stmt in case.body)
+            outcomes.append(body)
+        steps.append(([*entries, *outcomes], bindings))
     elif isinstance(node, ast.withitem):
         steps = [(node.context_expr, bindings)]
         if node.optional_vars is not None:
@@ -592,11 +639,16 @@ def _bounded_children(node: ast.AST, end: int, rel_path: str) -> list[tuple[ast.
     if len(children) > MAX_AST_NODES:
         raise ScanError(f"{rel_path}: exceeds {MAX_AST_NODES} AST nodes")
     bounds = dict.fromkeys(children, end)
-    for _, value in ast.iter_fields(node):
-        if isinstance(value, list):
-            statements = [item for item in value if isinstance(item, ast.stmt)]
-            for current, following in itertools.pairwise(statements):
-                bounds[current] = _statement_start(following) - 1
+    fields = [
+        [item for item in value if isinstance(item, ast.stmt)]
+        for _, value in ast.iter_fields(node)
+        if isinstance(value, list) and any(isinstance(item, ast.stmt) for item in value)
+    ]
+    for index, statements in enumerate(fields):
+        for current, following in itertools.pairwise(statements):
+            bounds[current] = _statement_start(following) - 1
+        if index + 1 < len(fields):
+            bounds[statements[-1]] = _statement_start(fields[index + 1][0]) - 1
     return [(child, bounds[child]) for child in children]
 
 
@@ -833,6 +885,7 @@ def _changed_files_by_path(
         [
             "--literal-pathspecs",
             "diff",
+            "-O/dev/null",
             "--name-status",
             "-z",
             "-M",
@@ -883,6 +936,7 @@ def _changed_hunks(
         [
             "--literal-pathspecs",
             "diff",
+            "-O/dev/null",
             "--unified=0",
             "--inter-hunk-context=0",
             "--no-color",
@@ -952,7 +1006,12 @@ def discover_test_files(root: Path, explicit_paths: Sequence[str]) -> list[tuple
     files = sorted(tests_dir.glob("test_*.py"))
     if len(files) > MAX_TEST_FILES:
         raise ScanError(f"{root / TESTS_REL_DIR}: exceeds {MAX_TEST_FILES} test files")
-    return [(path, path.relative_to(root_resolved).as_posix()) for path in files[:MAX_TEST_FILES]]
+    result = []
+    for path in files[:MAX_TEST_FILES]:
+        rel = path.relative_to(root_resolved).as_posix()
+        _normalise_explicit_path(root, root_resolved, rel)
+        result.append((path, rel))
+    return result
 
 
 def _outgoing_files(
@@ -964,7 +1023,7 @@ def _outgoing_files(
         raise ScanError("git executable not found on PATH")
     try:
         modes = revision_modes(git, root, outgoing)
-    except (ToolError, CommandTimedOut, CommandOutputLimitExceeded) as exc:
+    except (ToolError, CommandTimedOut, CommandOutputLimitExceeded, OSError) as exc:
         raise ScanError(str(exc)) from exc
     root_abs = Path(os.path.abspath(root))  # noqa: PTH100 -- lexical, no worktree reads
     if explicit_paths:
@@ -1003,7 +1062,13 @@ def _outgoing_source(root: Path, outgoing: str, rel: str, modes: dict[str, str])
         if len(raw) > MAX_FILE_BYTES:
             raise ScanError(f"{rel}: exceeds {MAX_FILE_BYTES} byte read limit")
         return raw.decode("utf-8")
-    except (ToolError, CommandTimedOut, CommandOutputLimitExceeded, UnicodeDecodeError) as exc:
+    except (
+        ToolError,
+        CommandTimedOut,
+        CommandOutputLimitExceeded,
+        UnicodeDecodeError,
+        OSError,
+    ) as exc:
         raise ScanError(f"{rel}: {exc}") from exc
 
 
@@ -1048,7 +1113,7 @@ def scan_repository(
             old_rel = changes[rel_path]
             hunks, removed, added = (
                 _changed_hunks(root, merge_base, old_rel, rel_path, outgoing)
-                if old_rel
+                if old_rel and _is_test_candidate(old_rel)
                 else (None, {}, set())
             )
             current = file_findings(source, rel_path, hunks, removed, added)

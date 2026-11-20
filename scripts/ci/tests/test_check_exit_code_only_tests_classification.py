@@ -25,6 +25,44 @@ from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 
 class ExitCodeOnlyClassificationTest(ExitCodeOnlyFixture):
+    def test_r11_f1_nested_rebinding(self) -> None:
+        source = (
+            "def test_output():\n    proc = run_checker()\n    value = proc.returncode\n"
+            "    (value,), label = ((len(proc.stdout),), 'out')\n    assert value == 0\n"
+            "def test_rc():\n    rc, out = run_checker()\n    assert rc == 0\n"
+        )
+        self._commit_file(REL_TEST_FILE, source)
+        rc, out, err = self._run_checker()
+        self.assertEqual(rc, 0, err)
+        self.assertIn("test_rc: asserts only exit code 0", out)
+        self.assertNotIn("test_output:", out)
+
+    def test_r11_f2_keyword_boolean(self) -> None:
+        source = (
+            "def test_false(self):\n    proc = run_checker()\n    self.assertFalse(expr=proc.returncode)\n"
+            "def test_true(self):\n    proc = run_checker()\n    self.assertTrue(expr=proc.returncode == 0)\n"
+            "def test_output(self):\n    proc = run_checker()\n    self.assertTrue(expr=proc.stdout == '')\n"
+        )
+        self._commit_file(REL_TEST_FILE, source)
+        rc, out, err = self._run_checker()
+        self.assertEqual(rc, 0, err)
+        self.assertIn("test_false: asserts only exit code 0", out)
+        self.assertIn("test_true: asserts only exit code 0", out)
+        self.assertNotIn("test_output:", out)
+
+    def test_r11_f3_literal_loop_target(self) -> None:
+        source = (
+            "def test_weak():\n    proc = run_checker()\n"
+            "    for value in [(value := proc.returncode)]:\n        assert value == 0\n"
+            "def test_output():\n    proc = run_checker()\n"
+            "    for value in [len(proc.stdout)]:\n        assert value == 0\n"
+        )
+        self._commit_file(REL_TEST_FILE, source)
+        rc, out, err = self._run_checker()
+        self.assertEqual(rc, 0, err)
+        self.assertIn("test_weak: asserts only exit code 0", out)
+        self.assertNotIn("test_output:", out)
+
     def test_planted_helper_and_main_exit_code_only_forms_fail(self) -> None:
         self._commit_file(REL_TEST_FILE, "pass\n", "base")
         self._commit_file(

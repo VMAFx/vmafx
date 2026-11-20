@@ -21,6 +21,19 @@ from scripts.ci.tests.test_check_exit_code_only_tests import (  # noqa: E402
 
 
 class ExitCodeOnlyPathsTest(ExitCodeOnlyFixture):
+    def test_r11_f9_default_symlink_outside(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="outside-test-") as directory:
+            outside = Path(directory) / "outside.py"
+            outside.write_text("def test_x():\n    assert True\n", encoding="utf-8")
+            link = self.repo / "scripts/ci/tests/test_link.py"
+            try:
+                link.symlink_to(outside)
+            except OSError as exc:
+                self.skipTest(f"symlink unavailable: {exc}")
+            rc, _, err = self._run_checker()
+            self.assertEqual(rc, 2, err)
+            self.assertIn("path is outside repository root", err)
+
     def test_rename_from_outside_pathspec_into_tests_dir_checks_all_functions(self) -> None:
         outside_rel = "scripts/ci/legacy_moved_test.py"
         dest_rel = "scripts/ci/tests/test_moved_into_suite.py"

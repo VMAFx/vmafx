@@ -24,6 +24,28 @@ from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 
 class ExitCodeOnlyDiffSelectionTest(ExitCodeOnlyFixture):
+    def test_r11_f7_non_test_rename(self) -> None:
+        old = "scripts/ci/tests/helper.py"
+        new = "scripts/ci/tests/test_helper.py"
+        self._commit_file(old, "def test_weak():\n    rc = run_checker()\n    assert rc == 0\n")
+        self._git("mv", old, new)
+        self._git("commit", "-q", "-m", "rename")
+        rc, _, err = self._run_checker("--changed-against", "HEAD~1")
+        self.assertEqual(rc, 1, err)
+        self.assertIn("test_weak: asserts only exit code 0", err)
+
+    def test_r11_f10_outgoing_oserror(self) -> None:
+        self._commit_file(REL_TEST_FILE, "# base\n")
+        for attr in ("revision_modes", "revision_bytes"):
+            with (
+                self.subTest(boundary=attr),
+                mock.patch.dict("os.environ", {"PRE_COMMIT_TO_REF": "HEAD"}),
+                mock.patch.object(checker, attr, side_effect=OSError("launch failed")),
+            ):
+                rc, _, err = self._run_checker("--changed-against", "HEAD")
+                self.assertEqual(rc, 2, err)
+                self.assertIn("launch failed", err)
+
     def test_boundary_function_span_includes_trailing_comment(self) -> None:
         base_lines = (
             "import subprocess\n"

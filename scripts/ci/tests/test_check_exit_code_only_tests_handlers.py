@@ -20,6 +20,36 @@ from scripts.ci.tests.test_check_exit_code_only_tests import (  # noqa: E402
 
 
 class ExitCodeOnlyHandlersTest(ExitCodeOnlyFixture):
+    def test_r11_f4_except_star_chain(self) -> None:
+        source = (
+            "def test_star():\n    proc = run_checker()\n    try:\n        pass\n"
+            "    except* ValueError:\n        rc = proc.returncode\n"
+            "    except* TypeError:\n        assert rc == 0\n"
+            "def test_plain():\n    proc = run_checker()\n    try:\n        pass\n"
+            "    except ValueError:\n        rc = proc.returncode\n"
+            "    except TypeError:\n        assert rc == 0\n"
+        )
+        self._commit_file(REL_TEST_FILE, source)
+        rc, out, err = self._run_checker()
+        self.assertEqual(rc, 0, err)
+        self.assertIn("test_star: asserts only exit code 0", out)
+        self.assertNotIn("test_plain:", out)
+
+    def test_r11_f5_guard_fallthrough(self) -> None:
+        source = (
+            "def test_weak():\n    match True:\n"
+            "        case True if (rc := main([])) != 0:\n            pass\n"
+            "        case _:\n            assert rc == 0\n"
+            "def test_output():\n    proc = run_checker()\n    match True:\n"
+            "        case True if (value := len(proc.stdout)) != 0:\n            pass\n"
+            "        case _:\n            assert value == 0\n"
+        )
+        self._commit_file(REL_TEST_FILE, source)
+        rc, out, err = self._run_checker()
+        self.assertEqual(rc, 0, err)
+        self.assertIn("test_weak: asserts only exit code 0", out)
+        self.assertNotIn("test_output:", out)
+
     def test_branch_bindings_are_independent_and_merge(self) -> None:
         source = (
             "def test_branch(x):\n    proc = run_checker()\n    value = proc.returncode\n"

@@ -121,21 +121,21 @@ class ExitCodeOnlyFlowTest(ExitCodeOnlyFixture):
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].message, "asserts only exit code 0")
 
-    def test_match_guard_bindings_are_isolated_between_cases(self) -> None:
+    def test_match_guard_bindings_reach_later_cases(self) -> None:
         source = (
             "def test_case():\n    proc = run_checker()\n"
             "    match True:\n"
             "        case False if (value := proc.returncode) == 0:\n            pass\n"
             "        case _:\n            assert value == 0\n"
         )
-        self.assertEqual(checker.file_findings(source, REL_TEST_FILE), [])
+        self.assertEqual(len(checker.file_findings(source, REL_TEST_FILE)), 1)
 
-    def test_loop_target_rebinds_after_iterable_is_evaluated(self) -> None:
+    def test_literal_loop_target_retains_returncode(self) -> None:
         source = (
             "def test_case():\n    proc = run_checker()\n"
             "    for value in [(value := proc.returncode)]:\n        assert value == 0\n"
         )
-        self.assertEqual(checker.file_findings(source, REL_TEST_FILE), [])
+        self.assertEqual(len(checker.file_findings(source, REL_TEST_FILE)), 1)
 
 
 if __name__ == "__main__":

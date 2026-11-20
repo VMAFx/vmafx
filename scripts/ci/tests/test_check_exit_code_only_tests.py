@@ -114,6 +114,15 @@ class ExitCodeOnlyFixture(unittest.TestCase):
 class ExitCodeOnlyTestsCheckTest(ExitCodeOnlyFixture):
     """Git configuration and fixture environment tests."""
 
+    def test_r11_f8_missing_order_file(self) -> None:
+        source = "def test_weak():\n    rc = run_checker()\n    assert rc == 0\n"
+        target = self._commit_file(REL_TEST_FILE, source)
+        target.write_text(source.replace("run_checker()", "run_checker(1)"), encoding="utf-8")
+        self._git("config", "diff.orderFile", str(self.repo / "missing-order"))
+        rc, _, err = self._run_checker("--changed-against", "HEAD")
+        self.assertEqual(rc, 1, err)
+        self.assertIn("test_weak: asserts only exit code 0", err)
+
     def test_planted_new_weak_test_fails_with_file_line_and_function(self) -> None:
         self._commit_file(REL_TEST_FILE, "import subprocess\n", "base")
         self._commit_file(
