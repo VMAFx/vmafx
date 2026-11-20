@@ -1,0 +1,97 @@
+=== armA dev0 run01 start 2026-11-07T07:25:31Z
+0 MiB, 0 %
+=== armA dev0 run01 end   2026-11-07T07:25:41Z
+0 MiB, 0 %
+=== armA dev0 run02 start 2026-11-07T07:25:41Z
+0 MiB, 0 %
+=== armA dev0 run02 end   2026-11-07T07:25:48Z
+0 MiB, 0 %
+=== armA dev0 run03 start 2026-11-07T07:25:48Z
+0 MiB, 0 %
+=== armA dev0 run03 end   2026-11-07T07:25:52Z
+0 MiB, 0 %
+=== armA dev0 run04 start 2026-11-07T07:25:52Z
+0 MiB, 0 %
+=== armA dev0 run04 end   2026-11-07T07:25:57Z
+0 MiB, 0 %
+=== armA dev0 run05 start 2026-11-07T07:25:57Z
+0 MiB, 0 %
+=== armA dev0 run05 end   2026-11-07T07:26:02Z
+0 MiB, 0 %
+=== armA dev0 run06 start 2026-11-07T07:26:02Z
+0 MiB, 0 %
+=== armA dev0 run06 end   2026-11-07T07:26:07Z
+0 MiB, 0 %
+=== armA dev0 run07 start 2026-11-07T07:26:07Z
+0 MiB, 0 %
+=== armA dev0 run07 end   2026-11-07T07:26:13Z
+0 MiB, 0 %
+=== armA dev0 run08 start 2026-11-07T07:26:13Z
+0 MiB, 0 %
+=== armA dev0 run08 end   2026-11-07T07:26:18Z
+0 MiB, 0 %
+=== armA dev0 run09 start 2026-11-07T07:26:18Z
+0 MiB, 0 %
+=== armA dev0 run09 end   2026-11-07T07:26:23Z
+0 MiB, 0 %
+=== armA dev0 run10 start 2026-11-07T07:26:23Z
+0 MiB, 0 %
+=== armA dev0 run10 end   2026-11-07T07:26:27Z
+0 MiB, 0 %
+=== armA dev0 run11 start 2026-11-07T07:26:27Z
+0 MiB, 0 %
+=== armA dev0 run11 end   2026-11-07T07:26:32Z
+0 MiB, 0 %
+=== armA dev0 run12 start 2026-11-07T07:26:32Z
+0 MiB, 0 %
+=== armA dev0 run12 end   2026-11-07T07:26:37Z
+0 MiB, 0 %
+=== armA dev1 run01 start 2026-11-07T07:26:37Z
+567 MiB, 24 %
+=== armA dev1 run01 end   2026-11-07T07:26:41Z
+644 MiB, 90 %
+=== armA dev1 run02 start 2026-11-07T07:26:41Z
+644 MiB, 63 %
+=== armA dev1 run02 end   2026-11-07T07:26:44Z
+802 MiB, 35 %
+=== armA dev1 run03 start 2026-11-07T07:26:44Z
+802 MiB, 35 %
+=== armA dev1 run03 end   2026-11-07T07:26:48Z
+789 MiB, 98 %
+=== armA dev1 run04 start 2026-11-07T07:26:48Z
+789 MiB, 98 %
+=== armA dev1 run04 end   2026-11-07T07:26:51Z
+789 MiB, 20 %
+=== armA dev1 run05 start 2026-11-07T07:26:51Z
+789 MiB, 20 %
+=== armA dev1 run05 end   2026-11-07T07:26:55Z
+789 MiB, 21 %
+=== armA dev1 run06 start 2026-11-07T07:26:55Z
+789 MiB, 21 %
+=== armA dev1 run06 end   2026-11-07T07:26:58Z
+789 MiB, 67 %
+=== armA dev1 run07 start 2026-11-07T07:26:58Z
+789 MiB, 67 %
+=== armA dev1 run07 end   2026-11-07T07:27:01Z
+789 MiB, 19 %
+=== armA dev1 run08 start 2026-11-07T07:27:01Z
+789 MiB, 19 %
+=== armA dev1 run08 end   2026-11-07T07:27:04Z
+789 MiB, 20 %
+=== armA dev1 run09 start 2026-11-07T07:27:04Z
+789 MiB, 20 %
+=== armA dev1 run09 end   2026-11-07T07:27:07Z
+789 MiB, 20 %
+=== armA dev1 run10 start 2026-11-07T07:27:08Z
+789 MiB, 91 %
+=== armA dev1 run10 end   2026-11-07T07:27:11Z
+789 MiB, 20 %
+=== armA dev1 run11 start 2026-11-07T07:27:11Z
+789 MiB, 20 %
+=== armA dev1 run11 end   2026-11-07T07:27:14Z
+789 MiB, 21 %
+=== armA dev1 run12 start 2026-11-07T07:27:14Z
+789 MiB, 21 %
+=== armA dev1 run12 end   2026-11-07T07:27:17Z
+794 MiB, 21 %
+ARM-A-DONE 2026-11-07T07:27:17Z
