@@ -671,6 +671,136 @@ class AggregatorEditedWindowTests(unittest.TestCase):
                 self.assertEqual(len(failures), 1, failures)
                 self.assertIn("rule-enforcement.yml", failures[0])
 
+    def test_edited_unstamped_approval_gated_run_names_approval(self) -> None:
+        """Name a current-edit unstamped action_required/waiting Rules run instead of 'did not start'."""
+        for label, status, conclusion in (
+            ("action_required_conclusion", "completed", "action_required"),
+            ("action_required_status", "action_required", None),
+            ("waiting_status", "waiting", None),
+        ):
+            with self.subTest(case=label):
+                run = _rules_run(
+                    OLD_RULES_SUITE,
+                    AFTER_EDIT_S,
+                    display_title=PR_TITLE,
+                    status=status,
+                    conclusion=conclusion,
+                )
+                run["id"] = 43885542580
+                failures = self._run_edited_suites([run])
+                self.assertEqual(len(failures), 1, failures)
+                self.assertIn("awaits maintainer approval", failures[0])
+                self.assertIn("43885542580", failures[0])
+                self.assertIn("approve or re-run it, then re-run this check", failures[0])
+                self.assertNotIn("did not start", failures[0])
+
+    def test_edited_unstamped_approval_plain_title_and_wip_title(self) -> None:
+        """A real unapproved run has the PR title; a bracketed title is not a stamp."""
+        for display_title in (PR_TITLE, f"[WIP] {PR_TITLE}"):
+            with self.subTest(display_title=display_title):
+                run = _rules_run(
+                    OLD_RULES_SUITE,
+                    AFTER_EDIT_S,
+                    display_title=display_title,
+                    conclusion="action_required",
+                )
+                run["id"] = 43885542580
+                failures = self._run_edited_suites([run])
+                self.assertEqual(len(failures), 1, failures)
+                self.assertIn("awaits maintainer approval", failures[0])
+                self.assertIn("43885542580", failures[0])
+                self.assertNotIn("did not start", failures[0])
+
+    def test_edited_unstamped_success_after_edit_is_not_approval(self) -> None:
+        """Keep 'did not start' for an unstamped successful run from this edit."""
+        failures = self._run_edited_suites(
+            [_rules_run(OLD_RULES_SUITE, AFTER_EDIT_S, conclusion="success")]
+        )
+        self.assertEqual(len(failures), 1, failures)
+        self.assertIn("did not start", failures[0])
+        self.assertNotIn("awaits maintainer approval", failures[0])
+
+    def test_edited_unstamped_approval_before_edit_is_stale(self) -> None:
+        """Do not recommend approving an approval-gated run from an earlier edit."""
+        for label, status, conclusion in (
+            ("action_required_conclusion", "completed", "action_required"),
+            ("waiting_status", "waiting", None),
+        ):
+            with self.subTest(case=label):
+                run = _rules_run(
+                    OLD_RULES_SUITE,
+                    MIN_30_AGO,
+                    status=status,
+                    conclusion=conclusion,
+                )
+                failures = self._run_edited_suites([run])
+                self.assertEqual(len(failures), 1, failures)
+                self.assertIn("did not start", failures[0])
+                self.assertNotIn("awaits maintainer approval", failures[0])
+
+    def test_edited_older_stamped_approval_gated_run_is_not_named(self) -> None:
+        """Do not treat an older stamped run as the current edit's approval wait."""
+        failures = self._run_edited_suites(
+            [
+                _rules_run(
+                    OLD_RULES_SUITE,
+                    AFTER_EDIT_S,
+                    edit_stamp=STAMP_T1,
+                    conclusion="action_required",
+                )
+            ]
+        )
+        self.assertEqual(len(failures), 1, failures)
+        self.assertIn("did not start", failures[0])
+        self.assertNotIn("awaits maintainer approval", failures[0])
+
+    def test_edited_approval_gated_run_created_at_boundary(self) -> None:
+        """Name approval only when created_at is at or after the edit time."""
+        for label, offset, expect_approval in (
+            ("equal", 0, True),
+            ("one_second_before", -1, False),
+        ):
+            with self.subTest(case=label):
+                run = _rules_run(
+                    OLD_RULES_SUITE,
+                    offset,
+                    conclusion="action_required",
+                )
+                run["id"] = 43885542580
+                failures = self._run_edited_suites([run])
+                self.assertEqual(len(failures), 1, failures)
+                if expect_approval:
+                    self.assertIn("awaits maintainer approval", failures[0])
+                    self.assertNotIn("did not start", failures[0])
+                else:
+                    self.assertIn("did not start", failures[0])
+                    self.assertNotIn("awaits maintainer approval", failures[0])
+
+    def test_edited_unstamped_approval_invalid_created_at_is_stale(self) -> None:
+        """Treat an unparsable created_at as not belonging to the current edit."""
+        run = _rules_run(OLD_RULES_SUITE, AFTER_EDIT_S, conclusion="action_required")
+        run["created_at"] = "not-a-date"
+        run.pop("created_at_offset_s", None)
+        failures = self._run_edited_suites([run])
+        self.assertEqual(len(failures), 1, failures)
+        self.assertIn("did not start", failures[0])
+        self.assertNotIn("awaits maintainer approval", failures[0])
+
+    def test_edited_unstamped_approval_next_to_current_green_run(self) -> None:
+        """An approval-gated run cannot block a current stamped green Rules run."""
+        failures = self._run_edited_suites(
+            [
+                _rules_run(
+                    OLD_RULES_SUITE,
+                    AFTER_EDIT_S,
+                    conclusion="action_required",
+                ),
+                _rules_run(CURRENT_RULES_SUITE, 0, edit_stamp=STAMP_T2),
+            ],
+            extra_checks=_rules_suite_checks(CURRENT_RULES_SUITE),
+        )
+        self.assertEqual(failures, [])
+
     def test_edit_stamp_boundary_prefix_t1_with_t2_in_title_is_stale(self) -> None:
         """Treat `[T1] [T2] title` (author title starts with `[T2] `) as STALE on edit T2."""
         crafted = f"[{STAMP_T1}] [{STAMP_T2}] title"

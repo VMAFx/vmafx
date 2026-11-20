@@ -523,7 +523,11 @@ report from a current-edit run whose `display_title` starts with
 `"[<pull_request.updated_at>] "` (set via top-level `run-name:`): other `Rules`
 check suites on the same head SHA are excluded, and the aggregator fails closed
 when `pull_request.updated_at` is missing or when the `Rules` workflow does not
-start for the edit within the 2-minute registration grace. If two edits land in
+start for the edit within the 2-minute registration grace. When the edit's `Rules`
+run exists but waits on fork approval, the aggregator still fails closed and
+names that approval-gated run so a maintainer can approve or re-run it; only an
+unstamped run created at or after the edit time is treated as that current-edit
+run. If two edits land in
 the same second and produce multiple `Rules` runs sharing the edit-stamp prefix
 (in any status), the aggregator fails closed at once and asks for another
 pull-request edit or a commit push. To catch a second same-second `Rules` run
