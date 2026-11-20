@@ -457,6 +457,55 @@ class MypyScope(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("1 inherited", result.stdout)
 
+    def test_duplicate_of_inherited_finding_is_reported(self) -> None:
+        self.write("scripts/debt.py", 'unchanged: int = "debt"  # BAD\nother: int = 2  # BAD\n')
+        self.commit("duplicate inherited finding")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(
+            result.stderr,
+            "mypy: 1 finding(s) this branch introduces:\n"
+            "  scripts/debt.py: [assignment] planted finding\n"
+            "\nFindings already present at the merge base are not listed. Fixing them is\n"
+            "welcome, but this gate only asks that the branch add none.\n",
+        )
+
+    def test_duplicate_finding_moved_without_count_change_is_inherited(self) -> None:
+        self.write("scripts/debt.py", "first: int = 1  # BAD\nsecond: int = 2  # BAD\n")
+        self.commit("base with duplicate findings")
+        self.git("update-ref", "refs/remotes/origin/master", "HEAD")
+        self.write(
+            "scripts/debt.py", "first: int = 1  # BAD\nadded: int = 1\nsecond: int = 2  # BAD\n"
+        )
+        self.commit("move duplicate finding")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("2 inherited from the merge base, not reported", result.stdout)
+
+    def test_removing_inherited_duplicate_is_allowed(self) -> None:
+        self.write("scripts/debt.py", "first: int = 1  # BAD\nsecond: int = 2  # BAD\n")
+        self.commit("base with duplicate findings")
+        self.git("update-ref", "refs/remotes/origin/master", "HEAD")
+        self.write("scripts/debt.py", "first: int = 1  # BAD\n")
+        self.commit("remove duplicate finding")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("1 inherited from the merge base, not reported", result.stdout)
+
+    def test_multiple_introduced_duplicates_report_count(self) -> None:
+        self.write(
+            "scripts/debt.py",
+            'unchanged: int = "debt"  # BAD\nsecond: int = 2  # BAD\nthird: int = 3  # BAD\n',
+        )
+        self.commit("add two duplicate findings")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("2 finding(s) this branch introduces:", result.stderr)
+        self.assertIn(
+            "  scripts/debt.py: [assignment] planted finding (2 more than the merge base)\n",
+            result.stderr,
+        )
+
     def test_introduced_finding_fails_and_is_named(self) -> None:
         self.write("scripts/owned.py", "planted: int = 1  # BAD\n")
         self.commit("add a file with a finding")
