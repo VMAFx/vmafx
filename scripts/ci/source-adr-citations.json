@@ -22,6 +22,7 @@
     "9999": {
       "reason": "Synthetic impossible-number fixtures used by isolated CI checker tests.",
       "sites": {
+        "scripts/ci/tests/test_check_adr_body_freeze.py": 2,
         "scripts/ci/tests/test_check_silent_revert.py": 11,
         "scripts/ci/tests/test_check_source_adr_citations.py": 5,
         "scripts/ci/tests/test_tidy_ratchet.py": 1,

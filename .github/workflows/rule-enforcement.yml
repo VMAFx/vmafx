@@ -720,6 +720,14 @@ jobs:
 
           echo "ADR-collision-check phase 1: all ${#added_adrs[@]} ADR file(s) have unique prefix(es) on the PR base."
 
+      - name: Check frozen ADR bodies
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          python3 scripts/ci/check-adr-body-freeze.py
+          --base "${BASE_SHA}" --head "${HEAD_SHA}"
+
       - name: Check for ADR number collisions with open PRs (ADR-0628)
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
