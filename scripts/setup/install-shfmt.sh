@@ -79,7 +79,7 @@ fi
 
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
-curl --retry 3 --retry-all-errors -fsSL -o "$tmp" "$url"
+curl --retry 3 --retry-all-errors --max-time 30 -fsSL -o "$tmp" "$url"
 actual="$(sha256sum "$tmp" | awk '{print $1}')"
 if [[ "$actual" != "$digest" ]]; then
   echo "install-shfmt.sh: shfmt ${version} digest mismatch: got ${actual}, want ${digest}" >&2

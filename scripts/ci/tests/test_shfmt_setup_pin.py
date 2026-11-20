@@ -7,12 +7,17 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+
+from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+
 INSTALL = ROOT / "scripts/setup/install-shfmt.sh"
 UBUNTU = ROOT / "scripts/setup/ubuntu.sh"
 FEDORA = ROOT / "scripts/setup/fedora.sh"
@@ -46,13 +51,15 @@ def config_value(name: str) -> str:
     raise AssertionError(f"build-config.env declares no {name}")
 
 
-def resolve(machine: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 - fixed local bash and script paths
+def resolve(machine: str) -> TextCommandResult:
+    return run_command(
         [str(BASH), posix(INSTALL), "--resolve", machine],
+        allowed_executables=(str(BASH),),
         capture_output=True,
         text=True,
         errors="replace",
         check=False,
+        timeout_seconds=30,
     )
 
 
@@ -89,14 +96,16 @@ class ShfmtSetup(unittest.TestCase):
                 "HOME": os.environ.get("HOME", str(temporary)),
                 "VMAFX_REPO_ROOT": posix(ROOT),
             }
-            result = subprocess.run(  # noqa: S603 - fixed local bash and script paths
+            result = run_command(
                 [str(BASH), posix(INSTALL), "riscv64"],
+                allowed_executables=(str(BASH),),
                 capture_output=True,
                 text=True,
                 errors="replace",
                 check=False,
                 env=env,
                 cwd=temporary,
+                timeout_seconds=30,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse(marker.exists())
