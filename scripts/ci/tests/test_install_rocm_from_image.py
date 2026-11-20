@@ -70,7 +70,13 @@ if not url:
     sys.exit(1)
 
 if "token" in url or "auth" in url:
-    write_body(json.dumps({"token": "t"}).encode())
+    counter = state_dir / "token_count.txt"
+    count = int(counter.read_text()) + 1 if counter.exists() else 1
+    counter.write_text(str(count))
+    fail_after = state_dir / "token_fail_after.txt"
+    if fail_after.exists() and count > int(fail_after.read_text()):
+        sys.exit(22)
+    write_body(json.dumps({"token": f"t{count}"}).encode())
     sys.exit(0)
 
 if "/manifests/" in url:
@@ -79,6 +85,16 @@ if "/manifests/" in url:
     sys.exit(0)
 
 if "/blobs/" in url:
+    headers = [args[i + 1] for i, arg in enumerate(args[:-1]) if arg == "-H"]
+    token = next((h.removeprefix("Authorization: Bearer ") for h in headers
+                  if h.startswith("Authorization: Bearer ")), "")
+    log = state_dir / "blob_tokens.json"
+    tokens = json.loads(log.read_text()) if log.exists() else []
+    tokens.append(token)
+    log.write_text(json.dumps(tokens))
+    uses = state_dir / "token_uses.txt"
+    if uses.exists() and (not token or tokens.count(token) > int(uses.read_text())):
+        sys.exit(22)
     digest = url.split("/blobs/")[-1]
     safe_digest = digest.replace(":", "_")
     counter_file = state_dir / f"count_{safe_digest}.txt"
@@ -210,6 +226,23 @@ def _get_call_count(state_dir: Path, digest: str) -> int:
     return 0
 
 
+def _token_case(tmp_path: Path, digests: list[str]) -> tuple[Path, Path, dict[str, str]]:
+    _, state_dir, dest_dir, env = _setup_test_env(tmp_path)
+    _write_manifest(
+        state_dir,
+        [
+            {"mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip", "digest": digest}
+            for digest in digests
+        ],
+    )
+    (state_dir / "token_uses.txt").write_text("1", encoding="utf-8")
+    return state_dir, dest_dir, env
+
+
+def _blob_tokens(state_dir: Path) -> list[str]:
+    return json.loads((state_dir / "blob_tokens.json").read_text(encoding="utf-8"))
+
+
 def _run_installer(
     image: str,
     dest_dir: Path,
@@ -232,6 +265,40 @@ def _run_installer(
         check=False,
         timeout=SCRIPT_TIMEOUT_S,
     )
+
+
+def test_positive_fresh_token_for_each_layer(tmp_path: Path) -> None:
+    state_dir, dest_dir, env = _token_case(tmp_path, [ROCM_DIGEST, EMPTY_DIGEST])
+    proc = _run_installer(f"rocm/example@{ROCM_DIGEST}", dest_dir, env)
+    assert proc.returncode == 0, proc.stderr
+    assert _blob_tokens(state_dir) == ["t2", "t3"]
+
+
+def test_negative_layer_token_request_fails(tmp_path: Path) -> None:
+    state_dir, dest_dir, env = _token_case(tmp_path, [ROCM_DIGEST])
+    (state_dir / "token_fail_after.txt").write_text("1", encoding="utf-8")
+    proc = _run_installer(f"rocm/example@{ROCM_DIGEST}", dest_dir, env)
+    assert proc.returncode == 1
+    assert "failed to obtain a registry pull token" in proc.stderr
+    assert not dest_dir.exists()
+    assert (state_dir / "token_count.txt").read_text(encoding="utf-8") == "2"
+
+
+def test_boundary_single_attempt_fetches_two_tokens(tmp_path: Path) -> None:
+    state_dir, dest_dir, env = _token_case(tmp_path, [ROCM_DIGEST])
+    env["ROCM_LAYER_ATTEMPTS"] = "1"
+    proc = _run_installer(f"rocm/example@{ROCM_DIGEST}", dest_dir, env)
+    assert proc.returncode == 0, proc.stderr
+    assert (state_dir / "token_count.txt").read_text(encoding="utf-8") == "2"
+    assert _blob_tokens(state_dir) == ["t2"]
+
+
+def test_retry_fetches_fresh_token(tmp_path: Path) -> None:
+    state_dir, dest_dir, env = _token_case(tmp_path, [ROCM_DIGEST])
+    (state_dir / "mode.txt").write_text("fail_once", encoding="utf-8")
+    proc = _run_installer(f"rocm/example@{ROCM_DIGEST}", dest_dir, env)
+    assert proc.returncode == 0, proc.stderr
+    assert _blob_tokens(state_dir) == ["t2", "t3"]
 
 
 def test_curl_stub_output_modes(tmp_path: Path) -> None:

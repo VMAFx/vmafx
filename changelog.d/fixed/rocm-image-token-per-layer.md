@@ -1,0 +1,1 @@
+- CI: refresh the registry pull token before every ROCm image layer attempt so long installs and retries do not reuse an expired token.
