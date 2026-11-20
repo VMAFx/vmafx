@@ -17,8 +17,21 @@ The refresh workflow regenerates manifest outputs on dependency-update branches
 and publishes them in a signed-off release-bot commit. A shared publisher also
 serves the asset lock workflow. The DCO exception requires the exact refresh
 subject, release-bot identity, dependency-bot opener, and only paths with live
-entries in `.config/lint-exceptions.d/dco-python-lock-refresh.toml`. In landed
-mode every changed path must have a live entry for the co-author strip to apply.
+entries in `.config/lint-exceptions.d/dco-python-lock-refresh.toml`.
+
+In landed mode, a Renovate squash with one exact release-bot co-author line
+must change at least one live grant path. All other changed paths must be
+inputs in `requirements/locks/manifest.json`. The gate uses `GH_TOKEN` and
+`GITHUB_REPOSITORY` to read the associated pull request from the forge and
+verify that a single pull request merged as the squash SHA. It pages through
+the pull request commits and requires a release-bot commit. It reads the files
+for every commit whose Git author name and email match the release bot. Those
+files must all have live grants.
+Missing configuration, a missing or ambiguous association, a forge read error,
+or malformed or incomplete evidence keeps the co-author line and prints a
+`dco:` notice. A file list that reaches the requested page size is treated as
+potentially incomplete.
+
 The 2026-11-18 operator answer `vmafx-renovate-python-lock-refresh` grants the
 following 30 exact paths. A new lock output needs a new operator grant before an
 entry is added.

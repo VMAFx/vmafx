@@ -12,6 +12,10 @@ import sys
 import tempfile
 import tomllib
 import unittest
+from collections.abc import Callable
+from contextlib import redirect_stderr
+from functools import partial
+from io import StringIO
 from pathlib import Path
 from unittest import mock
 
@@ -362,12 +366,74 @@ class PythonLockLandedTest(unittest.TestCase):
             f"chore(deps): update python (#3501)\n\n{signoff}\n{self.mod.RELEASE_BOT_COAUTHOR}"
         )
 
+    def fake_fetch(self, squash: str, case: str) -> Callable[[str], object]:
+        """Provide the requested forge responses without any network access."""
+        if case in {"missing token", "missing repository"}:
+            env = {"GITHUB_REPOSITORY": "example/repo"} if case == "missing token" else {}
+            configured_fetch: Callable[[str], object] = self.mod.landed_forge_fetch(env)
+            return configured_fetch
+        if case == "unexpected request":
+            return mock.Mock(side_effect=AssertionError("unexpected forge request"))
+
+        bot_sha, opener_sha = "a" * 40, "b" * 40
+        pulls = f"/commits/{squash}/pulls?per_page=100&page=1"
+        commits = "/pulls/3501/commits?per_page=100&page=1"
+        files = f"/commits/{bot_sha}?per_page=100"
+        pr = {"number": 3501, "merge_commit_sha": squash, "merged_at": "2026-11-18T12:00:00Z"}
+        opener = {
+            "sha": opener_sha,
+            "commit": {"author": {"name": self.renovate[0], "email": self.renovate[1]}},
+        }
+        bot = {
+            "sha": bot_sha,
+            "commit": {"author": {"name": RELEASE_BOT[0], "email": RELEASE_BOT[1]}},
+        }
+        responses: dict[str, object] = {
+            pulls: [pr],
+            commits: [opener, bot],
+            files: {"files": [{"filename": OUT_IN_LOCKS}]},
+        }
+        overrides: dict[str, tuple[str, object]] = {
+            "forge error": (pulls, OSError("forge unavailable")),
+            "no PR": (pulls, []),
+            "multiple PRs": (pulls, [pr, dict(pr, number=3502)]),
+            "wrong merge SHA": (pulls, [dict(pr, merge_commit_sha=opener_sha)]),
+            "unmerged PR": (pulls, [dict(pr, merged_at=None)]),
+            "malformed author": (commits, [opener, bot, {"sha": "c" * 40, "commit": {}}]),
+            "no release-bot commit": (commits, [opener]),
+            "missing files": (files, {}),
+            "full file page": (files, {"files": [{"filename": OUT_IN_LOCKS}] * 100}),
+            "bot input": (files, {"files": [{"filename": OUT_IN_LOCKS}, {"filename": INPUT}]}),
+            "rename from input": (
+                files,
+                {"files": [{"filename": OUT_IN_LOCKS, "previous_filename": INPUT}]},
+            ),
+        }
+        if case == "later bot input":
+            later_sha = "d" * 40
+            responses[commits] = [dict(opener, sha=f"{i:040x}") for i in range(99)] + [bot]
+            responses["/pulls/3501/commits?per_page=100&page=2"] = [dict(bot, sha=later_sha)]
+            responses[f"/commits/{later_sha}?per_page=100"] = {"files": [{"filename": INPUT}]}
+        elif case != "valid":
+            path, response = overrides[case]
+            responses[path] = response
+
+        def fetch(path: str) -> object:
+            response = responses[path]
+            if isinstance(response, OSError):
+                raise response
+            return response
+
+        return fetch
+
     def judge(
         self,
         paths: tuple[str, ...],
         ident: tuple[str, str] | None = None,
         message: str | None = None,
         today: str = TODAY,
+        *,
+        forge_case: str = "valid",
     ) -> str | None:
         """Commit ``paths`` and judge the commit in landed mode."""
         with tempfile.TemporaryDirectory() as directory:
@@ -375,7 +441,9 @@ class PythonLockLandedTest(unittest.TestCase):
             sha = commit_paths(
                 repo, paths, ident or self.renovate, message=message or self.msg, signoff=False
             )
-            return judge_landed_in_repo(self.mod, repo, sha, self.exc_root, today=today)
+            judge = partial(self.mod.judge_landed, fetch=self.fake_fetch(sha, forge_case))
+            with mock.patch.object(self.mod, "judge_landed", judge):
+                return judge_landed_in_repo(self.mod, repo, sha, self.exc_root, today=today)
 
     def assert_refused(self, reason: str | None) -> None:
         """Assert the co-author trailer was not stripped."""
@@ -390,11 +458,14 @@ class PythonLockLandedTest(unittest.TestCase):
                 with self.subTest(paths=paths, today=day):
                     self.assertIsNone(self.judge(paths, today=day))
 
+    def test_positive_squash_with_input_and_output_passes(self) -> None:
+        """The forge attributes the output alone to the release bot."""
+        self.assertIsNone(self.judge((INPUT, OUT_IN_LOCKS)))
+
     def test_planted_refusals(self) -> None:
         """Input only, no path, a neighbour of an output, another author or another bot refuse."""
         for paths in (
             (INPUT,),
-            (INPUT, OUT_IN_LOCKS),
             (),
             (f"{OUT_IN_LOCKS}.bak",),
             ("other/requirements/locks/build.txt",),
@@ -410,9 +481,58 @@ class PythonLockLandedTest(unittest.TestCase):
         self.assert_refused(self.judge((OUT_IN_LOCKS,), message=two))
 
     def test_landed_unlisted_path_refuses_mixed_commit(self) -> None:
-        """The co-author strip requires every changed path to be listed."""
-        self.assert_refused(self.judge((OUT_IN_LOCKS, "other.txt")))
+        """Unlisted paths must be manifest inputs for the strip to apply."""
+        self.assert_refused(
+            self.judge((OUT_IN_LOCKS, "other.txt"), forge_case="unexpected request")
+        )
         self.assert_refused(self.judge(("other.txt",)))
+
+    def test_planted_release_bot_input_refused_in_both_modes(self) -> None:
+        """A manifest input remains outside the release bot's grant."""
+        sha = commit_paths(self.repo, (INPUT,), RELEASE_BOT, message=MESSAGE)
+        result = run_gate(
+            self.repo,
+            "--author",
+            fx.BOT_LOGIN,
+            "--author-type",
+            "Bot",
+            exc_root=self.exc_root,
+            today=TODAY,
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(sha[:10], result.stdout + result.stderr)
+        self.assertIn("is not the branch opener", result.stdout + result.stderr)
+        self.assert_refused(self.judge((INPUT, OUT_IN_LOCKS), forge_case="bot input"))
+
+    def test_planted_forge_failures_keep_trailer(self) -> None:
+        """A mixed squash needs a complete, unambiguous forge read."""
+        cases = (
+            "forge error",
+            "no PR",
+            "multiple PRs",
+            "wrong merge SHA",
+            "unmerged PR",
+            "malformed author",
+            "missing files",
+            "full file page",
+            "missing token",
+            "missing repository",
+            "rename from input",
+            "no release-bot commit",
+            "later bot input",
+        )
+        for case in cases:
+            with self.subTest(case=case):
+                self.assert_refused(self.judge((INPUT, OUT_IN_LOCKS), forge_case=case))
+
+    def test_forge_error_emits_one_notice(self) -> None:
+        """The refusal explains why the forge could not establish eligibility."""
+        output = StringIO()
+        with redirect_stderr(output):
+            self.assert_refused(self.judge((INPUT, OUT_IN_LOCKS), forge_case="forge error"))
+        (notice,) = output.getvalue().splitlines()
+        self.assertTrue(notice.startswith("dco: "))
+        self.assertIn("forge unavailable", notice)
 
     def test_boundary_expired_or_absent_class_refuses(self) -> None:
         """Past expiry or without the rule nothing is stripped."""
@@ -427,7 +547,9 @@ class PythonLockLandedTest(unittest.TestCase):
         write_exception_list(
             self.exc_root, paths=(LOCK_PATH,), expires=LANDED_EXPIRES, rule=LANDED_RULE
         )
-        self.assertIsNone(self.judge(("build-config.env", LOCK_PATH)))
+        self.assertIsNone(
+            self.judge(("build-config.env", LOCK_PATH), forge_case="unexpected request")
+        )
         self.assertIsNone(self.judge((OUT_IN_LOCKS,)))
 
     def test_boundary_commit_without_coauthor_line_still_passes(self) -> None:

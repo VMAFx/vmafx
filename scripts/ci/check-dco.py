@@ -13,15 +13,18 @@ In ``--landed`` mode, ADR-3555 also strips a single exact ``vmafx-release-bot[bo
 ``dco-landed-release-bot-coauthor`` exception path.
 ADR-3560 adds a second class for the signed Python lock refresh commit with the exact
 subject and author on a Renovate PR. Every changed path must have a live, path-exact
-``dco-python-lock-refresh`` exception. In ``--landed`` mode the same condition permits
-stripping the single co-author line.
+``dco-python-lock-refresh`` exception. In ``--landed`` mode the squash must change at
+least one live grant path, and all other paths must be manifest inputs. The forge
+must identify one merged PR for the squash and verify that it has release-bot
+commits and that all of them touched only live grant paths. Missing or invalid
+forge evidence keeps the trailer.
 
 Every non-merge commit in ``BASE..HEAD`` must end with a ``Signed-off-by: Name
 <email>`` trailer (what ``git commit -s`` writes), and the e-mail address of
 the trailer must be the commit's author or committer address.  A sign-off in
 the middle of the message, or one for somebody else, does not count.
 
-On master (``--landed``), all exemptions are disabled.  Every commit must have
+On master (``--landed``), every commit must have
 a sign-off matching the commit author or the designated landing identity
 (``--landing-identity``).  Committer address is not accepted because GitHub is
 committer on every squash. Commit author/committer identities must not name a
@@ -79,14 +82,14 @@ import re
 import shutil
 import sys
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts.ci import lint_exceptions
+from scripts.ci import check_python_dependency_locks, ci_tier, lint_exceptions
 from scripts.lib.safe_subprocess import (
     CommandOutputLimitExceeded,
     CommandTimedOut,
@@ -128,6 +131,8 @@ LANDED_COAUTHOR_EXCEPTION_RULE = "dco-landed-release-bot-coauthor"
 # ADR-3560: each Python lock output has its own path-exact exception.
 PYTHON_LOCK_EXCEPTION_RULE = "dco-python-lock-refresh"
 PYTHON_LOCK_SUBJECT = "chore(deps): refresh Python dependency locks"
+# GitHub caps the List commits on a pull request endpoint at 250 commits.
+PULL_COMMIT_LIMIT = 250
 
 # All 13 tokens equal praetor tools/planning/commit_msg_check.py BANNED_COAUTHORS;
 # both Python tuples use substring matching. Engine internal/forge/commit_message.go
@@ -540,7 +545,130 @@ def commit_attribution_reason(commit: Commit) -> str | None:
     return None
 
 
-def landed_exempt_message(commit: Commit, root: Path = DEFAULT_ROOT) -> str:
+def landed_forge_fetch(env: Mapping[str, str]) -> ci_tier.Fetcher:
+    """Build a repository-scoped getter whose configuration is checked on use."""
+
+    def fetch(path: str) -> object:
+        repo = env.get("GITHUB_REPOSITORY", "")
+        if not repo:
+            raise ci_tier.TierError("missing GITHUB_REPOSITORY")
+        token = env.get("GH_TOKEN", "")
+        if not token:
+            raise ci_tier.TierError("missing GH_TOKEN")
+        api_url = env.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+        return ci_tier.api_request("GET", f"{api_url}/repos/{repo}{path}", token)
+
+    return fetch
+
+
+def merged_pull_number(fetch: ci_tier.Fetcher, sha: str) -> int:
+    """Read the single associated PR and verify that it merged as this squash."""
+    pulls = ci_tier._paged(fetch, f"/commits/{sha}/pulls")
+    if len(pulls) != 1:
+        raise ci_tier.TierError(f"expected one associated pull request, found {len(pulls)}")
+    pull = pulls[0]
+    if not isinstance(pull, dict):
+        raise ci_tier.TierError("malformed associated pull request")
+    number = pull.get("number")
+    if type(number) is not int or number <= 0:
+        raise ci_tier.TierError("invalid associated pull request number")
+    merged_at = pull.get("merged_at")
+    if not isinstance(merged_at, str) or not merged_at or pull.get("merge_commit_sha") != sha:
+        raise ci_tier.TierError(f"pull request {number} did not merge as this squash")
+    return number
+
+
+def forge_commit_author(row: object) -> tuple[str, str, str]:
+    """Return a PR commit's SHA, Git author name and Git author email."""
+    if not isinstance(row, dict):
+        raise ci_tier.TierError("malformed pull request commit")
+    sha, commit = row.get("sha"), row.get("commit")
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise ci_tier.TierError("invalid pull request commit SHA")
+    author = commit.get("author") if isinstance(commit, dict) else None
+    if not isinstance(author, dict):
+        raise ci_tier.TierError(f"commit {sha[:10]} has no Git author")
+    name, email = author.get("name"), author.get("email")
+    if not isinstance(name, str) or not isinstance(email, str):
+        raise ci_tier.TierError(f"commit {sha[:10]} has an invalid Git author")
+    return sha, name, email
+
+
+def release_bot_commits(fetch: ci_tier.Fetcher, number: int) -> list[str]:
+    """Find release-bot commits in a complete PR commit list using Git author identities."""
+    rows = ci_tier._paged(fetch, f"/pulls/{number}/commits")
+    if not rows or len(rows) >= PULL_COMMIT_LIMIT:
+        raise ci_tier.TierError(f"pull request {number} has an empty or possibly truncated list")
+    shas = []
+    for row in rows:
+        sha, name, email = forge_commit_author(row)
+        if (name, email) == (RELEASE_BOT_NAME, RELEASE_BOT_EMAIL):
+            shas.append(sha)
+    if not shas:
+        raise ci_tier.TierError(f"pull request {number} has no release-bot commit")
+    return shas
+
+
+def forge_file_paths(file: object, sha: str) -> list[str]:
+    """Read a changed file, including the old path of a rename as PR mode does."""
+    if not isinstance(file, dict):
+        raise ci_tier.TierError(f"commit {sha[:10]} has a malformed file entry")
+    path = file.get("filename")
+    if not isinstance(path, str) or not path:
+        raise ci_tier.TierError(f"commit {sha[:10]} has an invalid filename")
+    if file.get("status") != "renamed" and "previous_filename" not in file:
+        return [path]
+    previous = file.get("previous_filename")
+    if not isinstance(previous, str) or not previous:
+        raise ci_tier.TierError(f"commit {sha[:10]} has an invalid previous filename")
+    return [path, previous]
+
+
+def forge_commit_paths(fetch: ci_tier.Fetcher, sha: str) -> list[str]:
+    """Read a release-bot commit's files, refusing a potentially truncated page."""
+    response = fetch(f"/commits/{sha}?per_page={ci_tier.PAGE_SIZE}")
+    files = response.get("files") if isinstance(response, dict) else None
+    if not isinstance(files, list) or len(files) >= ci_tier.PAGE_SIZE:
+        raise ci_tier.TierError(f"commit {sha[:10]} has a missing or possibly truncated file list")
+    return [path for file in files for path in forge_file_paths(file, sha)]
+
+
+def python_lock_landed_exemption(
+    sha: str, paths: list[str], root: Path, fetch: ci_tier.Fetcher | None
+) -> bool:
+    """Check the squash paths and prove the release bot stayed within its grant."""
+    ungranted = lint_exceptions.still_read(PYTHON_LOCK_EXCEPTION_RULE, paths, root)
+    if len(ungranted) == len(paths):
+        return False
+    try:
+        if ungranted and not set(ungranted).issubset(
+            check_python_dependency_locks.manifest_inputs(root)
+        ):
+            return False
+        if fetch is None:
+            fetch = landed_forge_fetch(os.environ)
+        number = merged_pull_number(fetch, sha)
+        for bot_sha in release_bot_commits(fetch, number):
+            bot_paths = forge_commit_paths(fetch, bot_sha)
+            if lint_exceptions.still_read(PYTHON_LOCK_EXCEPTION_RULE, bot_paths, root):
+                raise ci_tier.TierError(
+                    f"release-bot commit {bot_sha[:10]} touched an ungranted path"
+                )
+    except (
+        ci_tier.TierError,
+        check_python_dependency_locks.ContractError,
+        OSError,
+        ValueError,
+        RecursionError,
+    ) as error:
+        print(f"dco: {sha[:10]} Python lock refresh exemption refused: {error}", file=sys.stderr)
+        return False
+    return True
+
+
+def landed_exempt_message(
+    commit: Commit, root: Path = DEFAULT_ROOT, *, fetch: ci_tier.Fetcher | None = None
+) -> str:
     """Strip the single release-bot co-author line on a Renovate lock-refresh squash."""
     if input_bound_reason(
         commit.message, "COMMIT_MESSAGE", MAX_COMMIT_MESSAGE_BYTES, MAX_COMMIT_MESSAGE_LINES
@@ -557,17 +685,21 @@ def landed_exempt_message(commit: Commit, root: Path = DEFAULT_ROOT) -> str:
         return commit.message
     paths = commit_changed_paths(commit.sha)
     unexcepted = lint_exceptions.still_read(LANDED_COAUTHOR_EXCEPTION_RULE, paths, root)
-    excepted = len(unexcepted) < len(paths) or (
-        bool(paths) and not lint_exceptions.still_read(PYTHON_LOCK_EXCEPTION_RULE, paths, root)
-    )
-    if not paths or not excepted:
-        return commit.message
-    return "".join(kept)
+    if len(unexcepted) < len(paths) or python_lock_landed_exemption(commit.sha, paths, root, fetch):
+        return "".join(kept)
+    return commit.message
 
 
-def judge_landed(commit: Commit, landing_email: str, root: Path = DEFAULT_ROOT) -> str | None:
+def judge_landed(
+    commit: Commit,
+    landing_email: str,
+    root: Path = DEFAULT_ROOT,
+    *,
+    fetch: ci_tier.Fetcher | None = None,
+) -> str | None:
     """Judge a commit on master: refuse bot co-authors, generated trailers, and bad sign-offs."""
-    reason = commit_attribution_reason(replace(commit, message=landed_exempt_message(commit, root)))
+    message = landed_exempt_message(commit, root, fetch=fetch)
+    reason = commit_attribution_reason(replace(commit, message=message))
     if reason:
         return reason
     emails = signoff_emails(commit.message)
@@ -700,7 +832,7 @@ def pr_body_attribution(body: str) -> list[tuple[int, str]]:
     return findings
 
 
-def check_landed(args: argparse.Namespace) -> int:
+def check_landed(args: argparse.Namespace, fetch: ci_tier.Fetcher | None = None) -> int:
     head, base = args.head, args.base
     run_git(["rev-parse", "--verify", f"{head}^{{commit}}"])
     is_zero_base = bool(re.fullmatch(r"0{40}", base))
@@ -712,9 +844,11 @@ def check_landed(args: argparse.Namespace) -> int:
     else:
         commits = list_commits(base, head)
     landing_email = extract_email(args.landing_identity)
+    if fetch is None:
+        fetch = landed_forge_fetch(os.environ)
     failures = []
     for commit in commits:
-        reason = judge_landed(commit, landing_email)
+        reason = judge_landed(commit, landing_email, fetch=fetch)
         if reason is not None:
             failures.append((commit, reason))
     if failures:

@@ -237,8 +237,17 @@ D, entered 2026-11-18 and expires 2027-03-18. An absent or expired entry refuses
 the path. A new lock output needs a new operator grant before an entry is added.
 
 In landed mode, the same class strips the single release-bot co-author line only
-when every changed path has a live entry. The asset lock class retains its own
-rules.
+when the Renovate squash changes at least one live grant path and all other
+changed paths are inputs in `requirements/locks/manifest.json`. Using
+`GH_TOKEN` and `GITHUB_REPOSITORY`, the gate looks up the one associated pull
+request and verifies that it merged as this squash. It pages through the pull
+request's commits, requires a release-bot commit, and checks that every commit
+authored by the release-bot name and email touched only live grant paths. The
+manifest inputs are eligible only as squash paths. The 30-path grant also
+governs the bot's commits in landed mode. Missing configuration, an absent or
+ambiguous association, a forge read
+error, or malformed or incomplete evidence leaves the line for the attribution
+check to refuse. The gate prints a `dco:` notice when verification fails.
 
 Every other line of the message and the `Signed-off-by:` check in
 `judge_landed` still run unchanged; a second release-bot line or any other bot
@@ -292,8 +301,8 @@ Co-authored-by: vmafx-release-bot[bot] <340976456+vmafx-release-bot[bot]@users.n
 
 The Python lock refresh class ([ADR-3560](../adr/3560-python-lock-refresh.md))
 also strips that exact line under the same author and single-line conditions
-when the non-empty changed path list contains only live Python lock refresh
-exceptions.
+when the squash paths and merged pull request satisfy the Python lock refresh
+conditions above.
 
 The check examines non-merge commits in the range `BASE_SHA..HEAD_SHA`. If
 the base SHA is all zeros (initial push) or not an ancestor-reachable commit,
