@@ -44,7 +44,7 @@ import tarfile
 import tomllib
 import types
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -709,24 +709,30 @@ SPDX_TERM = re.compile(r"^[A-Za-z0-9.+-]+(?: WITH [A-Za-z0-9.+-]+)?$")
 LICENCES_KEY = "org.opencontainers.image.licenses"
 
 
-def _record_component(records: dict, record_name: str, component_id: str) -> dict:
+def _record_component(
+    records: dict[str, dict[str, Any]], record_name: str, component_id: str
+) -> dict[str, Any]:
     """Resolve a component through the manifest's `from` references."""
     seen: set[str] = set()
     current = record_name
     while current not in seen:
         seen.add(current)
-        component = next(
-            component
-            for component in records[current]["components"]
-            if component.get("id") == component_id
-        )
+        components = cast(list[dict[str, Any]], records[current].get("components", []))
+        try:
+            component = next(
+                component for component in components if component.get("id") == component_id
+            )
+        except StopIteration as error:
+            raise ModelError(
+                f"{record_name}: no component {component_id!r} in {current}"
+            ) from error
         if "from" not in component:
             return component
         current = component["from"]
     raise ModelError(f"{record_name}: cyclic reference while resolving {component_id}")
 
 
-def _component_licences(component: dict) -> set[str]:
+def _component_licences(component: dict[str, Any]) -> set[str]:
     """The label terms one resolved component carries.
 
     ``licence`` may hold prose or a compound expression that cannot be an OCI
@@ -751,16 +757,17 @@ def _component_licences(component: dict) -> set[str]:
     return found
 
 
-def _record_label_licences(records: dict, record_name: str) -> set[str]:
+def _record_label_licences(records: dict[str, dict[str, Any]], record_name: str) -> set[str]:
     """The licence labels of every component in a licensing record."""
     found: set[str] = set()
-    for component in records[record_name].get("components", []):
+    components = cast(list[dict[str, Any]], records[record_name].get("components", []))
+    for component in components:
         resolved = _record_component(records, record_name, component["id"])
         found |= _component_licences(resolved)
     return found
 
 
-def _checked_component_ids(records: dict) -> set[str]:
+def _checked_component_ids(records: dict[str, dict[str, Any]]) -> set[str]:
     """Every component id the published-image records resolve to."""
     found: set[str] = set()
     for record_name in {
@@ -770,13 +777,14 @@ def _checked_component_ids(records: dict) -> set[str]:
     }:
         if record_name not in records:
             continue
-        for component in records[record_name].get("components", []):
+        components = cast(list[dict[str, Any]], records[record_name].get("components", []))
+        for component in components:
             found.add(component["id"])
             found.add(_record_component(records, record_name, component["id"])["id"])
     return found
 
 
-def _unused_notice_only_problems(records: dict) -> list[str]:
+def _unused_notice_only_problems(records: dict[str, dict[str, Any]]) -> list[str]:
     """Entries in NOTICE_ONLY_COMPONENTS that no checked record resolves to."""
     used = _checked_component_ids(records)
     return [
@@ -803,9 +811,9 @@ def _logical_lines(text: str) -> list[str]:
     return logical
 
 
-def _dockerfile_stages(text: str) -> list[dict]:
+def _dockerfile_stages(text: str) -> list[dict[str, Any]]:
     """Every build stage with the labels declared directly in it."""
-    stages: list[dict] = []
+    stages: list[dict[str, Any]] = []
     for line in _logical_lines(text):
         match = FROM_RE.match(line)
         if match:
@@ -817,7 +825,7 @@ def _dockerfile_stages(text: str) -> list[dict]:
     return stages
 
 
-def _stage_index(stages: list[dict], reference: str) -> int | None:
+def _stage_index(stages: list[dict[str, Any]], reference: str) -> int | None:
     """The index of the stage a ``FROM`` reference names, or None for an external base."""
     wanted = reference.lower()
     for index, stage in enumerate(stages):
@@ -829,7 +837,7 @@ def _stage_index(stages: list[dict], reference: str) -> int | None:
     return None
 
 
-def _effective_labels(stages: list[dict], index: int) -> dict[str, str]:
+def _effective_labels(stages: list[dict[str, Any]], index: int) -> dict[str, str]:
     """The labels a stage inherits from its parent chain plus its own declarations."""
     chain: list[int] = []
     current: int | None = index
@@ -865,7 +873,10 @@ def _image_stage_labels(
 
 
 def _dockerfile_label_problems(
-    root: Path, records: dict, relative: str, stage_records: dict[str, str]
+    root: Path,
+    records: dict[str, dict[str, Any]],
+    relative: str,
+    stage_records: dict[str, str],
 ) -> list[str]:
     """The label problems of one Dockerfile and its per-stage manifest records."""
     path = root / relative
@@ -905,13 +916,14 @@ def dockerfile_licence_label_problems(root: Path) -> list[str]:
     # Read the raw records: `_record_component` follows `from` references and
     # reports a cycle, while `licensing.load_manifest` expands them away.
     payload = json.loads(manifest.read_text(encoding="utf-8"))
-    records = payload.get("artifacts")
-    if not isinstance(records, dict):
+    raw_records = payload.get("artifacts")
+    if not isinstance(raw_records, dict):
         # Shared fixture layouts only carry the root licence metadata; the real
         # tree's manifest must name the production artifacts.
         if root.resolve() == REPO_ROOT.resolve():
             raise ModelError(f"{LICENSING_MANIFEST.as_posix()} has no artifacts record")
         return []
+    records = cast(dict[str, dict[str, Any]], raw_records)
     problems: list[str] = []
     if root.resolve() == REPO_ROOT.resolve():
         problems += _unused_notice_only_problems(records)
