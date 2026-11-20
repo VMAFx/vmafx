@@ -59,6 +59,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -458,7 +459,7 @@ def _git_ls_files_env(resolved_root: Path) -> dict[str, str]:
     ``GIT_INDEX_FILE`` only for this checkout and stripping every ``GIT_*`` variable for
     any other root."""
     if resolved_root != REPO_ROOT.resolve():
-        return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        return git_env.drop()
     return {k: v for k, v in os.environ.items() if _keep_repo_git_var(k, v)}
 
 

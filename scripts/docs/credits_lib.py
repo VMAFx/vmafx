@@ -13,7 +13,6 @@ repository. Both call the functions here, so there is one implementation.
 from __future__ import annotations
 
 import datetime
-import os
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -22,6 +21,7 @@ from typing import Any
 
 import yaml  # type: ignore[import-untyped]  # PyYAML ships no stubs in the hook env, as in scripts/ci/check_composite_actions.py
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 KINDS = (
@@ -280,7 +280,7 @@ def apply_blocks(page: str, generated: dict[str, str]) -> str:
 
 def tracked_files(root: Path) -> list[str]:
     """Files Git lists for the checkout: tracked, and untracked but not ignored."""
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env = git_env.drop()
     result = run_command(
         ("git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard"),
         allowed_executables=("git",),

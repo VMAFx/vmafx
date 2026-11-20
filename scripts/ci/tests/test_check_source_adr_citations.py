@@ -18,6 +18,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -31,7 +32,7 @@ SCRIPT_TIMEOUT_S = 60
 
 def fixture_git_env() -> dict[str, str]:
     """Return a hermetic environment for disposable fixture repositories."""
-    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment = git_env.drop()
     environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
     return environment
 
@@ -262,9 +263,7 @@ class SourceAdrCitationTests(unittest.TestCase):
         self.registry()
         with tempfile.TemporaryDirectory() as caller_tmp:
             caller = Path(caller_tmp)
-            clean_env = {
-                key: value for key, value in os.environ.items() if not key.startswith("GIT_")
-            }
+            clean_env = git_env.drop()
             clean_env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
             subprocess.run(  # noqa: S603 -- fixed Git binary and disposable caller fixture
                 [GIT, "-c", "core.hooksPath=/dev/null", "init", "-q", str(caller)],

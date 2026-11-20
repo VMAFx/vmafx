@@ -31,7 +31,6 @@ headers (ADR-1454).
 from __future__ import annotations
 
 import argparse
-import os
 import posixpath
 import re
 import statistics
@@ -45,6 +44,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from scripts.docs import agents_index  # noqa: E402
+from scripts.lib import git_env  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 HEADING = "heading"
@@ -357,7 +357,7 @@ def read_old(ref: str | None, file: Path | None, directory: str, root: Path) -> 
 
     if file is not None:
         return file.read_text(encoding="utf-8")
-    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment = git_env.drop()
     result = run_command(
         ("git", "-C", str(root), "show", f"{ref}:{directory}/{agents_index.INDEX_NAME}"),
         allowed_executables=("git",),

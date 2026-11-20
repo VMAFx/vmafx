@@ -18,6 +18,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -116,11 +117,7 @@ class HookInstallTests(unittest.TestCase):
         self.bin.mkdir()
         self.log = self.base / "events.jsonl"
         # Isolate Git/pre-commit config and caches from the user's checkout.
-        self.env = {
-            key: value
-            for key, value in os.environ.items()
-            if not key.startswith(("GIT_", "PRE_COMMIT_"))
-        }
+        self.env = git_env.drop(prefixes=("GIT_", "PRE_COMMIT_"))
         self.env.update(
             GIT_CONFIG_NOSYSTEM="1",
             GIT_CONFIG_GLOBAL=os.devnull,
@@ -576,7 +573,7 @@ class LefthookBridgeTests(unittest.TestCase):
         self.log = self.repo / "bridge.log"
         self.bash = shutil.which("bash") or "/bin/bash"
         self.git = shutil.which("git") or "/usr/bin/git"
-        self.env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        self.env = git_env.drop()
         self.env["BRIDGE_LOG"] = str(self.log)
         run_command(
             (self.git, "init", "--quiet"),

@@ -29,7 +29,6 @@ Usage: check_render_on_master.py [--root DIR] [--bound-hours H] [--now EPOCH]
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import sys
 import tempfile
@@ -40,6 +39,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from scripts.lib import git_env  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 # The files `make docs-render` writes; deliverables-check.sh keeps the same list
@@ -69,7 +69,7 @@ class Verdict:
 def git_environment() -> dict[str, str]:
     """The caller's environment without GIT_* variables, which would point git
     at another repository (a hook's, a test's)."""
-    return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    return git_env.drop()
 
 
 def git(root: Path, *args: str) -> str:

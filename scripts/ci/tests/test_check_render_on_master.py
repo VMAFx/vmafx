@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Fixture coverage for the master-push render check (ADR-3295).
 
+
 Every case builds a disposable repository whose stub ``Makefile`` renders
 ``CHANGELOG.md`` from ``changelog.d/`` and checks it, commits with fixed
 committer times and runs ``scripts/ci/check_render_on_master.py`` with a fixed
@@ -13,7 +14,6 @@ fragments fails at any age.
 
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import subprocess
@@ -23,6 +23,8 @@ import unittest
 from pathlib import Path
 
 import yaml  # type: ignore[import-untyped]  # hook environments omit PyYAML stubs
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from scripts.lib import git_env
 
 ROOT = Path(__file__).resolve().parents[3]
 CHECK = ROOT / "scripts" / "ci" / "check_render_on_master.py"
@@ -67,7 +69,7 @@ class RenderOnMasterTest(unittest.TestCase):
 
         Constructs fixture commits with fixed commit timestamps.
         """
-        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env = git_env.drop()
         env.update(IDENT)
         if date is not None:
             env.update(GIT_AUTHOR_DATE=date, GIT_COMMITTER_DATE=date)
@@ -95,7 +97,7 @@ class RenderOnMasterTest(unittest.TestCase):
 
         ADR-3295: runs the master render check at a simulated wall-clock time.
         """
-        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env = git_env.drop()
         return subprocess.run(  # noqa: S603 -- fixed argv, no shell, check under test
             [sys.executable, str(CHECK), "--root", str(self.repo), "--now", str(NOW), *extra],
             env=env,

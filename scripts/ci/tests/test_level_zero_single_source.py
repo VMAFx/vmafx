@@ -20,6 +20,7 @@ from typing import Protocol, cast
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci.tests import symlink_test_support as links
+from scripts.lib import git_env
 from scripts.lib.renovate_regex import to_python
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -54,7 +55,7 @@ class LevelZeroSingleSource(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.repo = Path(self.temporary.name)
-        self.env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        self.env = git_env.drop()
         self.env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
         (self.repo / "dev").mkdir()
 

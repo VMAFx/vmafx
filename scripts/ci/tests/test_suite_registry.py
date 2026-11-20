@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Positive, negative and boundary controls for scripts/ci/suite_registry.py (ADR-1528).
 
+
 Each case builds a throwaway Git repository holding a manifest, an aggregator
 with a `required` list and a few test files, then runs the registry as a
 subprocess of this interpreter, as CI does.
@@ -11,13 +12,16 @@ subprocess of this interpreter, as CI does.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib import git_env
 
 ROOT = Path(__file__).resolve().parents[3]
 REGISTRY = ROOT / "scripts" / "ci" / "suite_registry.py"
@@ -71,8 +75,7 @@ class SuiteRegistryTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="suite-registry-")
         self.addCleanup(self._tmp.cleanup)
         self.repo = Path(self._tmp.name)
-        self.env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-        self.env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+        self.env = git_env.hermetic()
         self.git("init", "-q")
 
     def git(self, *args: str) -> None:

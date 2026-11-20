@@ -12,7 +12,6 @@ the local/CI guard. See docs/research/renovate-file-pattern-delimiters.md.
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import sys
@@ -23,6 +22,7 @@ from typing import Any, ClassVar
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.lib import git_env
 from scripts.lib.renovate_regex import to_python
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -75,9 +75,7 @@ class RenovateFilePatterns(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.config = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
-        environment = {
-            key: value for key, value in os.environ.items() if not key.startswith("GIT_")
-        }
+        environment = git_env.drop()
         result = run_command(
             [GIT, "-C", str(ROOT), "ls-files"],
             allowed_executables=(GIT,),

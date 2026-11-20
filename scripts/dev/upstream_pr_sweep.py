@@ -33,6 +33,7 @@ except ImportError:  # pragma: no cover - Windows fallback
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.ci.run_meson_test import sanitize_process_environment
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 MIN_PR_PARTS = 2
@@ -272,12 +273,19 @@ GIT_DROPPED_SETTINGS = frozenset({"GIT_CONFIG_PARAMETERS"})
 
 
 def git_environment() -> dict[str, str]:
-    """Return the process environment without any variable that locates a repository."""
+    """Return the process environment without any variable that locates a repository.
+
+    The whitelist (``GIT_SETTING_PREFIXES`` minus ``GIT_DROPPED_SETTINGS``)
+    must be evaluated against the CALLER's environment: the earlier
+    ``git_env.drop()`` sourcing dropped every ``GIT_*`` key before the
+    whitelist could re-admit the settings, which starved the fixture identity
+    and signing configuration out of every git subprocess (spotted in review
+    on PR #3339).
+    """
     return {
         key: value
-        for key, value in os.environ.items()
-        if not key.startswith("GIT_")
-        or (key.startswith(GIT_SETTING_PREFIXES) and key not in GIT_DROPPED_SETTINGS)
+        for key, value in git_env.drop_except(prefixes=("GIT_",), keep=GIT_SETTING_PREFIXES).items()
+        if key not in GIT_DROPPED_SETTINGS
     }
 
 

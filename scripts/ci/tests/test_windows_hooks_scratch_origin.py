@@ -15,9 +15,14 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib import git_env
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github" / "workflows" / "standards-gate.yml"
@@ -43,7 +48,7 @@ def scratch_git_lines(text: str) -> list[str]:
 def hook_free_environment() -> dict[str, str]:
     """The process environment without GIT_* (a hook's GIT_DIR / GIT_INDEX_FILE would point
     every git command, fixture setup and workflow step included, at the caller's repository)."""
-    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    return git_env.drop()
 
 
 def git(cwd: Path, *args: str) -> str:

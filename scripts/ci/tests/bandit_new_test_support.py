@@ -23,6 +23,7 @@ from scripts.ci.tests.scanner_test_support import (
     isolate_pre_commit_environment,
     run_push_entry,
 )
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 BASE = "from pathlib import Path\n\nexe = Path('tool')\n"
@@ -52,9 +53,7 @@ class BanditNewTestCase(unittest.TestCase):
         # Drop the caller's repository variables (a hook runs with GIT_DIR and
         # GIT_INDEX_FILE set) so the fixture never touches the caller's repository.
         env = {
-            **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
-            "GIT_CONFIG_GLOBAL": os.devnull,
-            "GIT_CONFIG_SYSTEM": os.devnull,
+            **git_env.hermetic(),
             "GIT_AUTHOR_NAME": "t",
             "GIT_AUTHOR_EMAIL": "t@example.invalid",
             "GIT_COMMITTER_NAME": "t",

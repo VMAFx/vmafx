@@ -15,12 +15,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
 
 SCRIPT = Path(__file__).with_name("pre-push-mypy.py").resolve()
 HELPER = SCRIPT.parents[1] / "lib/safe_subprocess.py"
 PUSH_HEAD = SCRIPT.parents[1] / "lib/push_head.py"
+GIT_ENV = SCRIPT.parents[1] / "lib/git_env.py"
 CONFIG = SCRIPT.parents[2] / ".pre-commit-config.yaml"
 ROOT = SCRIPT.parents[2]
 GIT = shutil.which("git") or "/usr/bin/git"
@@ -77,11 +79,7 @@ def fake_checker_source() -> str:
 
 
 def clean_fixture_environment(mypy: str) -> dict[str, str]:
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith(("GIT_", "PRE_COMMIT_"))
-    }
+    environment = git_env.drop(prefixes=("GIT_", "PRE_COMMIT_"))
     environment.update(
         GIT_CONFIG_NOSYSTEM="1",
         GIT_CONFIG_GLOBAL=os.devnull,
@@ -153,9 +151,7 @@ class MypyScope(unittest.TestCase):
         self.directory = Path(temporary.name)
         self.root = self.directory / "repo"
         self.root.mkdir()
-        self.environment = {
-            k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "PRE_COMMIT_"))
-        }
+        self.environment = git_env.drop(prefixes=("GIT_", "PRE_COMMIT_"))
         self.environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
         self.git("init", "-q", "--initial-branch=master")
         self.git("config", "user.name", "Fixture")
@@ -289,6 +285,7 @@ class MypyScope(unittest.TestCase):
         hook = hook_config("mypy-local")
         self.write("scripts/git-hooks/pre-push-mypy.py", SCRIPT.read_text())
         self.write("scripts/lib/safe_subprocess.py", HELPER.read_text())
+        self.write("scripts/lib/git_env.py", GIT_ENV.read_text())
         self.write("scripts/lib/push_head.py", PUSH_HEAD.read_text())
         self.write(
             ".pre-commit-config.yaml",
@@ -310,6 +307,7 @@ class MypyScope(unittest.TestCase):
             json.loads(self.receipt.read_text()),
             [
                 "scripts/git-hooks/pre-push-mypy.py",
+                "scripts/lib/git_env.py",
                 "scripts/lib/push_head.py",
                 "scripts/lib/safe_subprocess.py",
                 "scripts/owned.py",

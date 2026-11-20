@@ -21,6 +21,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import CommandFailed
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -41,7 +42,7 @@ def git(source: Path, *args: str) -> str:
     result = run_command(
         [executable, "-C", str(source), *args],
         allowed_executables=(executable,),
-        env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+        env=git_env.drop(),
         capture_output=True,
         text=True,
         check=True,

@@ -25,6 +25,7 @@ PUBLIC_MODEL = Path("scripts/ci/cppcheck-public-entrypoints.cfg")
 
 sys.path.insert(0, str(ROOT))
 
+from scripts.lib import git_env  # noqa: E402
 from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
@@ -183,7 +184,7 @@ class ConfiguredLintTests(unittest.TestCase):
         self.calls = self.root / "calls"
         self.calls.mkdir()
         self.env = dict(
-            {key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+            git_env.drop(),
             PATH=f"{self.bin}{os.pathsep}{os.environ['PATH']}",
             CALLS=str(self.calls),
             GIT_CONFIG_NOSYSTEM="1",
@@ -229,6 +230,8 @@ class ConfiguredLintTests(unittest.TestCase):
         helper = self.root / "scripts/lib/safe_subprocess.py"
         helper.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / "scripts/lib/safe_subprocess.py", helper)
+        git_helper = self.root / "scripts/lib/git_env.py"
+        shutil.copy2(ROOT / "scripts/lib/git_env.py", git_helper)
         self.cppcheck_filesdir = self.root / "cppcheck-data"
         posix_model = self.cppcheck_filesdir / "cfg/posix.cfg"
         posix_model.parent.mkdir(parents=True)
@@ -575,6 +578,8 @@ class ConfiguredLintTests(unittest.TestCase):
         helper = self.root / "scripts/lib/safe_subprocess.py"
         helper.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / "scripts/lib/safe_subprocess.py", helper)
+        git_helper = self.root / "scripts/lib/git_env.py"
+        shutil.copy2(ROOT / "scripts/lib/git_env.py", git_helper)
         original = self.database.read_bytes()
         (self.root / "native-database.json").write_bytes(original)
         if polluted:

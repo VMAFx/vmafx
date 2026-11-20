@@ -25,6 +25,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import ci_tier
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 CONFIG = ci_tier.load_config()
@@ -866,10 +867,7 @@ class FullPathsDrift(unittest.TestCase):
 
     @staticmethod
     def _git_env() -> dict[str, str]:
-        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-        env["GIT_CONFIG_GLOBAL"] = os.devnull
-        env["GIT_CONFIG_NOSYSTEM"] = "1"
-        return env
+        return git_env.hermetic()
 
     def _run_git(self, root: Path, *args: str, extra_env: dict[str, str] | None = None) -> None:
         git = ci_tier.GIT

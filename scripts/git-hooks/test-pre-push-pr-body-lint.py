@@ -18,10 +18,15 @@ import html
 import json
 import os
 import shutil
+import sys
 import tempfile
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib import git_env
 
 SCRIPT = Path(__file__).with_name("pre-push-pr-body-lint.sh").resolve()
 EXEMPTION = SCRIPT.parents[2] / "scripts/ci/release-pr-exempt.sh"
@@ -91,11 +96,7 @@ class HookFixture(unittest.TestCase):
         validator = self.root / "scripts/ci/validate-pr-body.sh"
         validator.write_text("#!/usr/bin/env bash\nexit 0\n")
         validator.chmod(0o700)
-        self.environment = {
-            key: value
-            for key, value in os.environ.items()
-            if not key.startswith(("GIT_", "GH_", "PRE_COMMIT_"))
-        }
+        self.environment = git_env.drop(prefixes=("GIT_", "GH_", "PRE_COMMIT_"))
         self.environment.update(
             GIT_CONFIG_NOSYSTEM="1",
             GIT_CONFIG_GLOBAL=os.devnull,

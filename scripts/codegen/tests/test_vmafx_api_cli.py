@@ -16,6 +16,7 @@ import copy
 import io
 import os
 import shutil
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -25,6 +26,10 @@ from unittest import mock
 from support import DEFINITION, bumped, document, entry, run, tool
 from vmafx_api import changelog, cli
 from vmafx_api.loader import parse
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib import git_env
 
 
 def main_output(argv: list[str]) -> tuple[int, str]:
@@ -62,7 +67,7 @@ class MergeBaseGateTest(unittest.TestCase):
         # A git hook exports GIT_DIR / GIT_INDEX_FILE; without this the fixture's
         # init and commits would act on the caller's repository. The identity
         # comes from the environment so nothing is written to a git config.
-        clean = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        clean = git_env.drop()
         clean.update(
             GIT_CONFIG_GLOBAL=os.devnull,
             GIT_CONFIG_NOSYSTEM="1",

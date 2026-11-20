@@ -135,6 +135,31 @@ FILTER_NODES = (*COMPREHENSION_NODES, ast.Call)
 BARRIER_NULL_KEYS = ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM")
 BARRIER_KEYS = (*BARRIER_NULL_KEYS, "GIT_CONFIG_NOSYSTEM")
 PAIR_LENGTH = 2
+# One implementation of the GIT_* scrub (issue #3324): scripts/lib/git_env.py. A tracked
+# Python file outside the allowlist may not spell the prefix filter inline: an inline copy
+# fixed in one file does not reach the others, and a drop-only fixture still reads the
+# user's global git configuration. git_env.py is the implementation; this checker plants
+# the literal forms as negative controls and cannot scan itself for them.
+INLINE_FILTER_ALLOWED = frozenset(
+    {
+        "scripts/lib/git_env.py",
+        "scripts/ci/test_git_fixture_isolation.py",
+        # GIT_CONFIG_KEY_N indexing of the caller's allowedSignersFile config, not
+        # a GIT_* scrub; the master checker recognizes the literal form (poison
+        # control) while this regex cannot tell it apart from a filter.
+        "scripts/dev/tests/test_upstream_pr_sweep.py",
+    }
+)
+# The literal spellings of the inline scrub the one-implementation rule refuses. The
+# checker cannot scan itself, so the negative controls live in its own tests.
+INLINE_GIT_FILTER = re.compile(r"""startswith\(\s*\(?\s*(?:["']\w+["']\s*,\s*)*["']GIT_""")
+INLINE_FILTER_EXCEPTION_EXPIRY = "2026-12-31"
+INLINE_FILTER_EXCEPTIONS = {
+    "tools/rc1-tester/image/licensing.py": (
+        "copied alone into the tester image as /tool/licensing.py; scripts.lib is not in "
+        "the container (published-rc-licence-companions.yml)"
+    ),
+}
 # One file, one reason, one expiry: a file whose git runs isolated in a way the marker cannot
 # see, with the place that does it. The sentinel run covers every test script among them.
 ISOLATION_EXCEPTION_EXPIRY = "2026-12-31"
@@ -452,6 +477,7 @@ def is_marker_prefix(arg: ast.expr) -> bool:
 
 def has_python_marker(tree: ast.AST) -> bool:
     """True when tree calls an environment helper or startswith('GIT_*')."""
+    aliases = git_env_alias_names(tree)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -459,10 +485,51 @@ def has_python_marker(tree: ast.AST) -> bool:
             return True
         if isinstance(node.func, ast.Attribute) and node.func.attr in PYTHON_HELPERS:
             return True
+        # The python twin (scripts/lib/git_env.py) is an isolation marker like its
+        # shell helpers: callers migrated for issue #3324 have no inline filter left.
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr in ("drop", "drop_except", "hermetic")
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id in aliases
+        ):
+            return True
         prefix = startswith_prefix_arg(node)
         if prefix is not None and is_marker_prefix(prefix):
             return True
     return False
+
+
+def git_env_alias_names(tree: ast.AST) -> set[str]:
+    """Local names bound to scripts.lib.git_env, including aliased imports."""
+    names = {"git_env"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(
+                alias.asname
+                for alias in node.names
+                if alias.name == "git_env" and alias.asname
+            )
+        elif isinstance(node, ast.ImportFrom) and node.module == "scripts.lib":
+            names.update(
+                alias.asname or alias.name
+                for alias in node.names
+                if alias.name == "git_env"
+            )
+    return names
+
+
+def has_hermetic_call(tree: ast.AST) -> bool:
+    """True when tree calls git_env.hermetic() — the whole barrier lives in the helper."""
+    aliases = git_env_alias_names(tree)
+    return any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "hermetic"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id in aliases
+        for node in ast.walk(tree)
+    )
 
 
 def is_barrier_value(key: str, value: ast.expr) -> bool:
@@ -660,6 +727,10 @@ def fixture_config_violation(name: str, tree: ast.AST) -> str:
         for key, value in node_barrier_pairs(node)
         if is_barrier_value(key, value)
     }
+    if not assigned and has_hermetic_call(tree):
+        # git_env.hermetic() performs the whole barrier inside the helper module
+        # (issue #3324 one-implementation gate), so no literal assignment is left.
+        return ""
     if "GIT_CONFIG_GLOBAL" not in assigned:
         return f"{name}: missing GIT_CONFIG_GLOBAL assignment to os.devnull"
     if not assigned.intersection(("GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM")):
@@ -1180,6 +1251,39 @@ class GitFixtureIsolation(unittest.TestCase):
             script.write_text(body)
             self.assertEqual(sentinel_damage(str(script), root), [])
 
+    def test_no_python_file_filters_the_git_prefix_inline(self) -> None:
+        # One implementation of the GIT_* scrub (issue #3324): scripts/lib/git_env.py.
+        # An inline copy fixed in one file does not reach the others, and a drop-only
+        # fixture still reads the user's global git configuration.
+        today = datetime.date.today().isoformat()
+        offenders = []
+        for name in tracked_files():
+            if not name.endswith(".py") or name in INLINE_FILTER_ALLOWED:
+                continue
+            path = ROOT / name
+            if not path.is_file():
+                continue
+            if INLINE_GIT_FILTER.search(path.read_text(encoding="utf-8", errors="replace")):
+                if name in INLINE_FILTER_EXCEPTIONS and today <= INLINE_FILTER_EXCEPTION_EXPIRY:
+                    continue
+                offenders.append(name)
+        self.assertEqual(
+            offenders,
+            [],
+            "inline GIT_* filter; build the environment with scripts/lib/git_env.py "
+            "(drop()/drop_except()/hermetic()):\n" + "\n".join(offenders),
+        )
+
+    def test_inline_filter_exceptions_are_live_and_needed(self) -> None:
+        self.assertGreaterEqual(
+            INLINE_FILTER_EXCEPTION_EXPIRY, datetime.date.today().isoformat(), "exceptions expired"
+        )
+        for name, reason in INLINE_FILTER_EXCEPTIONS.items():
+            with self.subTest(name=name):
+                self.assertTrue(reason)
+                text = (ROOT / name).read_text(encoding="utf-8", errors="replace")
+                self.assertTrue(INLINE_GIT_FILTER.search(text), "no longer needed: remove it")
+
     def test_no_script_creates_or_configures_a_repository_unisolated(self) -> None:
         self.check_python_isolation_controls()
         today = datetime.date.today().isoformat()
@@ -1442,8 +1546,14 @@ class GitFixtureIsolation(unittest.TestCase):
 
     def check_planted_python_isolation(self) -> None:
         """A temporary fixture copy fails the static check after re-admission; restore passes."""
-        name = "scripts/ci/tests/test_ci_impact.py"
-        original = (ROOT / name).read_text(encoding="utf-8")
+        name = "tests/test_fixture.py"
+        # Every real fixture file now calls git_env (issue #3324 one-implementation
+        # gate), so the planted copy is built from the canonical synthetic form the
+        # replay checks above use instead of reading a live tree file.
+        canonical = '{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}'
+        config = 'env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")\n'
+        create = 'git("init", "-q")\n'
+        original = "env = " + canonical + "\n" + config + create
         old = 'if not k.startswith("GIT_")'
         planted = original.replace(old, old + ' or k.startswith("GIT_CONFIG_")', 1)
         self.assertNotEqual(original, planted)

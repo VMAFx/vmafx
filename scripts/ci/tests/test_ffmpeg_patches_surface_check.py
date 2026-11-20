@@ -17,6 +17,7 @@ import yaml  # type: ignore[import-untyped]  # PyYAML ships no stubs in the hook
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
+from scripts.lib import git_env  # noqa: E402
 from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
@@ -29,7 +30,7 @@ SCRIPT_TIMEOUT_S = 300
 
 def _clean_env(**extra: str) -> dict[str, str]:
     """Return the caller environment without GIT_* and with a fixture-only identity."""
-    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env = git_env.drop()
     env.update(
         GIT_CONFIG_GLOBAL=os.devnull,
         GIT_CONFIG_SYSTEM=os.devnull,

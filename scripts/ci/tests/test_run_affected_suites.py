@@ -23,9 +23,9 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
-
 from scripts.ci import run_affected_suites as runner  # noqa: E402
 from scripts.ci import suite_registry as registry_lib  # noqa: E402
+from scripts.lib import git_env  # noqa: E402
 from scripts.lib import push_head  # noqa: E402
 from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
@@ -499,8 +499,7 @@ class RunTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="affected-run-")
         self.addCleanup(self._tmp.cleanup)
         self.repo = Path(self._tmp.name)
-        self.env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-        self.env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+        self.env = git_env.hermetic()
         self.git("init", "-q")
         self.parent: str | None = None
 

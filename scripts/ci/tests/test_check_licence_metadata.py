@@ -18,6 +18,7 @@ import io
 import json
 import os
 import shutil
+import sys
 import tarfile
 import tempfile
 import tomllib
@@ -25,6 +26,10 @@ import types
 import unittest
 from pathlib import Path
 from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.lib import git_env
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 GATE = REPO_ROOT / "scripts" / "ci" / "check_licence_metadata.py"
@@ -59,7 +64,7 @@ def _fixture_environment() -> dict[str, str]:
     """No caller Git state: a commit hook exports GIT_INDEX_FILE (and may export
     GIT_DIR), which would turn `git init` / `git add` in a fixture into writes to
     the caller's index and config."""
-    clean = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    clean = git_env.drop()
     clean.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
     return clean
 

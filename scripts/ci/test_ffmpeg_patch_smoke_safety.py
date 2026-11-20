@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.ci import ffmpeg_shared_series_fixture as shared_series
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -33,9 +34,7 @@ class SmokeSafety(unittest.TestCase):
     def git(self, path: Path, *args: str) -> str:
         # Isolate setup and assertions before injecting fake caller variables
         # into the smoke script itself. -C alone cannot select the fixture.
-        environment = {
-            key: value for key, value in os.environ.items() if not key.startswith("GIT_")
-        }
+        environment = git_env.drop()
         environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
         git = shutil.which("git")
         self.assertIsNotNone(git)
@@ -153,7 +152,7 @@ class SmokeSafety(unittest.TestCase):
         self.before_head = self.git(self.caller, "rev-parse", "HEAD")
         self.before_index = (self.caller / ".git/index").read_bytes()
         self.checkout = self.root / "ffmpeg-checkout"
-        self.env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        self.env = git_env.drop()
         self.env.update(
             {
                 "GIT_CONFIG_NOSYSTEM": "1",

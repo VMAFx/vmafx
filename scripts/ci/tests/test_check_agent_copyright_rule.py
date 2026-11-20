@@ -14,13 +14,15 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import check_agent_copyright_rule as rule
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from scripts.lib import git_env
 
 
 def fixture_git_env() -> dict[str, str]:
     """Return a hermetic environment for disposable fixture repositories."""
-    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment = git_env.drop()
     environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
     return environment
 

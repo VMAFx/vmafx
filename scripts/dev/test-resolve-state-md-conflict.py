@@ -29,6 +29,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.lib import git_env
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "dev" / "resolve-state-md-conflict.py"
 CHECKER = ROOT / "scripts" / "ci" / "check-state-md-rows.sh"
@@ -133,7 +137,7 @@ def relist(text: str, label: str, ids: list[str]) -> str:
 
 def clean_environment() -> dict[str, str]:
     """The caller's environment without any Git state, so no real repo is touched."""
-    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env = git_env.drop()
     env.update(
         GIT_CONFIG_NOSYSTEM="1",
         GIT_CONFIG_GLOBAL=os.devnull,

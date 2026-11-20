@@ -24,7 +24,6 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -38,6 +37,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from scripts.lib import git_env
 from scripts.lib.renovate_regex import to_python
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -390,8 +390,7 @@ class CudaPinGate(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.repo = Path(self.temporary.name)
-        self.env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-        self.env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+        self.env = git_env.hermetic()
         for name in (GATE, "build-config.env", "dev/Containerfile"):
             target = self.repo / name
             target.parent.mkdir(parents=True, exist_ok=True)

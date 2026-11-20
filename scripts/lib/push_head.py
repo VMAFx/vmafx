@@ -8,6 +8,7 @@ import os
 import shutil
 from pathlib import Path
 
+from scripts.lib import git_env
 from scripts.lib.safe_subprocess import run as run_command
 
 
@@ -30,7 +31,7 @@ def outgoing_head(head: str, root: Path) -> None:
             f"{outgoing}^{{commit}}",
         ],
         allowed_executables=(git,),
-        env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+        env=git_env.drop(),
         capture_output=True,
         text=True,
         check=False,
