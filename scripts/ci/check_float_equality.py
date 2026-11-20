@@ -41,6 +41,7 @@ DIAGNOSTIC = re.compile(
     r"^(?P<path>.+?):(?P<line>\d+):(?P<col>\d+): (?P<level>error|warning): "
     r"(?P<message>.*?)(?:" + "|".join(re.escape(tag) for tag in FLOAT_EQUAL_TAGS) + r")\s*$"
 )
+COMPILER_ERROR = re.compile(r"(?:^|:\s)(?:fatal )?error:")
 LITERAL = re.compile(r"(?:0[xX][0-9A-Fa-f]+|\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)[fFlL]?(?![\w.])")
 LITERAL_COMPARE = re.compile(
     rf"(?:{LITERAL.pattern})\s*(?:==|!=)|(?:==|!=)\s*(?:{LITERAL.pattern})"
@@ -114,18 +115,28 @@ def diagnostic_is_exempt(line: str) -> bool:
     return bool(LITERAL_COMPARE.search(without_comments))
 
 
-def findings(output: str, source: Path) -> list[str]:
-    """Keep only float-equal diagnostics the rule does not exempt."""
+def classify_diagnostics(output: str, source: Path) -> tuple[list[str], list[str], bool]:
+    """Return unexempt float findings, other errors and whether a float error occurred."""
     result: list[str] = []
+    other_errors: list[str] = []
+    float_error = False
     for diagnostic in output.splitlines():
         match = DIAGNOSTIC.match(diagnostic)
         if not match:
+            if COMPILER_ERROR.search(diagnostic):
+                other_errors.append(diagnostic)
             continue
+        float_error |= match.group("level") == "error"
         line = int(match.group("line"))
         if diagnostic_is_exempt(source_line(source, line)):
             continue
         result.append(f"{source}:{line}: {match.group('message').strip()}{FLOAT_EQUAL}")
-    return result
+    return result, other_errors, float_error
+
+
+def findings(output: str, source: Path) -> list[str]:
+    """Keep only float-equal diagnostics the rule does not exempt."""
+    return classify_diagnostics(output, source)[0]
 
 
 def check(
@@ -149,12 +160,14 @@ def check(
         if result.returncode == 0:
             continue
         output = result.stdout + result.stderr
-        diagnostic_findings = findings(output, source)
-        if diagnostic_findings:
-            problems.extend(diagnostic_findings)
-        else:
+        diagnostic_findings, other_errors, float_error = classify_diagnostics(output, source)
+        problems.extend(diagnostic_findings)
+        problems.extend(other_errors)
+        # Only an ordinary compilation failure explained by float errors can be
+        # excused. Warnings alone or a compiler crash must still fail closed.
+        if result.returncode != 1 or (not float_error and not other_errors):
             problems.append(
-                f"{source}: compiler exited {result.returncode} without a float-equal finding"
+                f"{source}: compiler exited {result.returncode} without an explaining float-equal error"
             )
     return problems
 

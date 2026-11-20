@@ -132,10 +132,97 @@ class FloatEqualityTests(unittest.TestCase):
             problems = MODULE.check(build, build, compiler=compiler, prefix="")
         self.assertTrue(any("comparison.c:3:" in problem for problem in problems), problems)
 
+    def check_output(self, output: str, line: str, returncode: int = 1) -> list[str]:
+        source = Path("comparison.c")
+        with (
+            mock.patch.object(MODULE, "load_units", return_value=[(source, ["gcc"], ROOT)]),
+            mock.patch.object(MODULE, "source_line", return_value=line),
+            mock.patch.object(
+                MODULE,
+                "run",
+                return_value=SimpleNamespace(returncode=returncode, stdout="", stderr=output),
+            ),
+        ):
+            return MODULE.check(ROOT, ROOT)
+
+    def test_check_accepts_only_exempt_float_errors(self) -> None:
+        for tag in MODULE.FLOAT_EQUAL_TAGS:
+            for line in ("return a == 1.25f;", "return a != a;"):
+                with self.subTest(tag=tag, line=line):
+                    output = f"comparison.c:1:12: error: unsafe comparison {tag}\n"
+                    self.assertEqual(self.check_output(output, line), [])
+
+    def test_check_keeps_non_float_errors_with_float_diagnostics(self) -> None:
+        float_error = "comparison.c:1:12: error: unsafe [-Werror=float-equal]\n"
+        other_errors = (
+            "comparison.c:2:3: error: unknown identifier 'missing'",
+            "comparison.c:2: fatal error: missing.h: No such file or directory",
+            "gcc: error: unrecognized command-line option '-invalid'",
+        )
+        for line in ("return a == 1.25f;", "return a == b;"):
+            for error in other_errors:
+                with self.subTest(line=line, error=error):
+                    problems = self.check_output(float_error + error, line)
+                    self.assertTrue(any(error in problem for problem in problems), problems)
+
+    def test_unexplained_failure_is_not_excused_by_a_float_warning(self) -> None:
+        output = "comparison.c:1:12: warning: unsafe [-Wfloat-equal]\n"
+        self.assertTrue(self.check_output(output, "return a == 1.25f;"))
+        self.assertTrue(self.check_output("", ""))
+
+    def test_abnormal_exit_is_not_excused_by_an_exempt_float_error(self) -> None:
+        output = "comparison.c:1:12: error: unsafe [-Werror=float-equal]\n"
+        for returncode in (2, -9):
+            with self.subTest(returncode=returncode):
+                self.assertTrue(self.check_output(output, "return a == 1.25f;", returncode))
+
+    def real_compiler_problems(self, body: str | None) -> list[str]:
+        compiler = shutil.which("gcc") or shutil.which("gcc-15") or shutil.which("clang")
+        if compiler is None:
+            self.skipTest("gcc/clang is not on PATH")
+        with tempfile.TemporaryDirectory() as temporary:
+            build = Path(temporary)
+            source = FIXTURES / "planted.c" if body is None else build / "comparison.c"
+            if body is not None:
+                source.write_text(body, encoding="utf-8")
+            (build / "compile_commands.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "directory": str(build),
+                            "file": str(source),
+                            "arguments": [compiler, "-c", str(source)],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            return MODULE.check(build, ROOT if body is None else build, prefix="")
+
+    def test_real_compiler_rejects_planted_header_declared_comparison(self) -> None:
+        problems = self.real_compiler_problems(None)
+        self.assertTrue(any("planted.c:7:" in problem for problem in problems), problems)
+
+    def test_real_compiler_accepts_exempt_literal_comparison(self) -> None:
+        self.assertEqual(
+            self.real_compiler_problems("int compare(float a) { return a == 1.25f; }\n"), []
+        )
+
+    def test_real_compiler_rejects_non_float_error(self) -> None:
+        problems = self.real_compiler_problems("int compare(void) { return missing; }\n")
+        self.assertTrue(any("missing" in problem for problem in problems), problems)
+
+    def test_real_compiler_rejects_non_float_error_alongside_exempt_comparison(self) -> None:
+        problems = self.real_compiler_problems(
+            "int compare(float a) { return a == 1.25f; }\n" "int broken(void) { return missing; }\n"
+        )
+        self.assertTrue(any("missing" in problem for problem in problems), problems)
+
     def test_check_is_wired_into_the_c_cpp_lint_job(self) -> None:
         workflow = (ROOT / ".github/workflows/lint-and-format.yml").read_text(encoding="utf-8")
         job = re.search(r"(?ms)^  clang-tidy:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n)", workflow)
-        self.assertIsNotNone(job)
+        if job is None:
+            self.fail("clang-tidy job is missing from lint-and-format.yml")
         body = job.group(1)
         compile_step = body.index("- name: Generate compile_commands.json")
         check_step = body.index("- name: Check float equality in core/test")
