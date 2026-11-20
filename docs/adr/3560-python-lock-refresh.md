@@ -69,6 +69,9 @@ renew it only while the limitation remains. A lease refuses publication if the
 branch changes or is deleted during refresh. The next input change runs the
 refresh again; otherwise rerun it against the current tip.
 
+- `check` and `write` reject input pins for `uv` that differ from `uv_version`,
+  so a Renovate PR that bumps an input pin fails until it also updates `uv_version`.
+
 ## References
 
 - [ADR-3555](3555-intel-neo-lock-file.md): asset lock refresh and author handling.

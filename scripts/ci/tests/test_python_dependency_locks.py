@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import io
 import json
 import re
 import stat
@@ -15,6 +16,7 @@ import sys
 import tempfile
 import unittest
 from collections.abc import Iterable
+from contextlib import redirect_stderr
 from pathlib import Path
 from typing import Any, cast
 from unittest import mock
@@ -40,6 +42,18 @@ def load_checker() -> Any:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def write_uv_pin_fixture(root: Path, inputs: dict[str, str], version: str) -> None:
+    """Write a minimal lock manifest and the named input files."""
+    manifest_path = root / "requirements/locks/manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    entry = {"output": "tooling-lock.txt", "inputs": list(inputs), "compile_args": list(inputs)}
+    manifest_path.write_text(
+        json.dumps({"uv_version": version, "locks": [entry]}), encoding="utf-8"
+    )
+    for relative, contents in inputs.items():
+        (root / relative).write_text(contents, encoding="utf-8")
 
 
 class InstallCommandTests(unittest.TestCase):
@@ -2213,6 +2227,66 @@ class FingerprintTests(unittest.TestCase):
                 self.assertNotEqual(before, self.checker.entry_digest(root, entry))
 
 
+class UvInputPinTests(unittest.TestCase):
+    """The checker and writer enforce the manifest version across lock inputs."""
+
+    def setUp(self) -> None:
+        self.checker = load_checker()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.version = "0.12.18"
+        self.tooling_input = self.root / "tooling.in"
+        self.other_input = self.root / "other.in"
+        write_uv_pin_fixture(
+            self.root, {"tooling.in": f"uv=={self.version}\n", "other.in": "pyyaml\n"}, self.version
+        )
+        self.manifest = self.checker.load_manifest(self.root)
+
+    def test_matching_pin_passes(self) -> None:
+        self.assertEqual(self.checker.check_uv_input_pins(self.root, self.manifest), [])
+
+    def test_reports_every_mismatched_pin_with_its_location(self) -> None:
+        self.tooling_input.write_text("pyyaml\nuv==0.0.1\n", encoding="utf-8")
+        self.other_input.write_text(f"uv=={self.version}\nuv==0.0.2 # comment\n", encoding="utf-8")
+        problems = self.checker.check_uv_input_pins(self.root, self.manifest)
+        self.assertEqual(len(problems), 2)
+        self.assertIn("tooling.in:2: uv==0.0.1", problems[0])
+        self.assertIn("other.in:2: uv==0.0.2", problems[1])
+        for problem in problems:
+            self.assertIn(f"uv_version {self.version}", problem)
+            self.assertIn("make python-locks-write", problem)
+
+    def test_check_rejects_mismatch_even_with_current_lock_fingerprint(self) -> None:
+        self.tooling_input.write_text("uv==0.0.1\n", encoding="utf-8")
+        generated = self.root / "generated.txt"
+        generated.write_text(f"uv==0.0.1 --hash=sha256:{'a' * 64}\n", encoding="utf-8")
+        self.checker.stamp_lock(self.root, self.manifest, self.manifest["locks"][0], generated)
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            self.assertEqual(self.checker.check(self.root), 1)
+        self.assertIn("ERROR: tooling.in:1: uv==0.0.1", stderr.getvalue())
+
+    def test_write_rejects_mismatch_before_running_uv(self) -> None:
+        self.tooling_input.write_text("uv==0.0.1\n", encoding="utf-8")
+        with mock.patch.object(self.checker, "_run_uv", side_effect=AssertionError("uv ran")):
+            with self.assertRaisesRegex(self.checker.ContractError, r"tooling\.in:1: uv==0\.0\.1"):
+                self.checker.write(self.root, sys.executable)
+
+    def test_missing_and_commented_out_pins_are_ignored(self) -> None:
+        self.tooling_input.write_text("  # uv==0.0.1\nuvicorn==1.0\n", encoding="utf-8")
+        self.assertEqual(self.checker.check_uv_input_pins(self.root, self.manifest), [])
+
+    def test_trailing_comment_is_ignored(self) -> None:
+        self.tooling_input.write_text(f"uv=={self.version} # comment\n", encoding="utf-8")
+        self.assertEqual(self.checker.check_uv_input_pins(self.root, self.manifest), [])
+
+    def test_unreadable_input_raises_contract_error(self) -> None:
+        self.other_input.unlink()
+        with self.assertRaisesRegex(self.checker.ContractError, r"^other\.in:"):
+            self.checker.check_uv_input_pins(self.root, self.manifest)
+
+
 class UvExecutionAndCompileArgsTests(unittest.TestCase):
     """Verify uv execution through safe_subprocess and compile_args validation."""
 
@@ -2253,6 +2327,9 @@ class UvExecutionAndCompileArgsTests(unittest.TestCase):
                     manifest_dir = root / "requirements" / "locks"
                     manifest_dir.mkdir(parents=True)
                     manifest_file = manifest_dir / "manifest.json"
+                    source = root / "pkg/requirements.in"
+                    source.parent.mkdir()
+                    source.write_text("pyyaml\n", encoding="utf-8")
                     entry = {
                         "output": "pkg/lock.txt",
                         "inputs": ["pkg/requirements.in"],

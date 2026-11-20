@@ -18,6 +18,9 @@ The central authority is `requirements/locks/manifest.json`, which pairs every
 lock file with its source files and compilation arguments using a reviewed,
 pinned
 version of `uv` (`uv_version` in `requirements/locks/manifest.json`).
+Both `check` and `write` reject a manifest input whose `uv` pin differs from
+`uv_version`, so a Renovate PR that bumps the pin must update `uv_version` in
+the same change to pass.
 
 Guides point at that field and never restate the number:
 `check_python_dependency_locks.py check` refuses any Markdown line that echoes

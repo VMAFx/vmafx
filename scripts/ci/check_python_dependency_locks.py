@@ -49,6 +49,7 @@ GIT_TIMEOUT_S = 60
 SUBPROCESS_TIMEOUT_S = 120
 HASH_RE = re.compile(r"--hash=sha256:[0-9a-f]{64}(?:\s|$)")
 EXACT_REQUIREMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+(?:\[[A-Za-z0-9_,.-]+\])?==[^;\s]+")
+UV_INPUT_PIN_RE = re.compile(r"uv\s*==\s*([^=;\s]+)(?:\s*;.*)?", re.IGNORECASE)
 PIP_NAME_RE = re.compile(
     r"(?:^|[/\\]|\$[\(\{][A-Za-z0-9_]*)pip(?:3|[0-9.]*)?(?:\.exe|[\)\}])?$",
     re.IGNORECASE,
@@ -453,6 +454,29 @@ def manifest_inputs(root: Path) -> list[str]:
         for path in entry["inputs"]:
             seen.setdefault(path, None)
     return list(seen)
+
+
+def check_uv_input_pins(root: Path, manifest: dict[str, Any]) -> list[str]:
+    """Report each exact uv input pin that differs from the manifest generator."""
+    expected = manifest["uv_version"]
+    problems: list[str] = []
+    for relative in manifest_inputs(root):
+        try:
+            lines = (root / relative).read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError) as error:
+            raise ContractError(f"{relative}: {error}") from error
+        for number, line in enumerate(lines, 1):
+            match = UV_INPUT_PIN_RE.fullmatch(line.partition("#")[0].strip())
+            if match is None:
+                continue
+            pinned = match.group(1)
+            if pinned != expected:
+                problems.append(
+                    f"{relative}:{number}: uv=={pinned} differs from uv_version {expected}. "
+                    "Set uv_version in the same change as the uv bump and regenerate the locks "
+                    "with that uv (make python-locks-write)."
+                )
+    return problems
 
 
 _TABLE_HEADER = re.compile(r"^\[\[?\s*([^\[\]]+?)\s*\]\]?\s*(?:#.*)?$")
@@ -1885,9 +1909,10 @@ def check(root: Path) -> int:
     try:
         manifest = load_manifest(root)
         entries = manifest["locks"]
-        problems = [
+        problems = check_uv_input_pins(root, manifest)
+        problems.extend(
             problem for entry in entries for problem in validate_lock(root, manifest, entry)
-        ]
+        )
         problems.extend(_check_alias_liveness(root, entries))
         outputs_paths = {str(Path(entry["output"])) for entry in entries}
 
@@ -1995,6 +2020,9 @@ def write(root: Path, uv_binary: str) -> int:
     except CommandValidationError as error:
         raise ContractError(f"cannot execute uv ({uv_binary}): {error}") from error
     manifest = load_manifest(root)
+    problems = check_uv_input_pins(root, manifest)
+    if problems:
+        raise ContractError("\n".join(problems))
     actual = uv_version(resolved_uv)
     if actual != manifest["uv_version"]:
         raise ContractError(
