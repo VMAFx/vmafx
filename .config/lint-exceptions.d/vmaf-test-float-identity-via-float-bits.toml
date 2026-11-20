@@ -8,9 +8,9 @@
 
 [[exception]]
 path = "core/test/test_pelorus_interop.c"
-reason = "Category A, interval to the stated expiry. Byte-identical mirror of the VMAFx/pelorus interop test (ADR-1113, scripts/ci/pelorus-mirror-paths.txt), vendored at tag v0.4.1 (33b4a625) and never edited here; line 1772 compares a returned variance with its input by value. Pelorus fixed the compare in its PR 350 (commit 796693b, 2026-10-17), but no Pelorus tag holds that commit yet, and the mirror only pins released commits. Renewed 2026-11-05 from category B (entered 2026-11-01). Ends when the first Pelorus tag holding 796693b is out: vmafx re-vendors with scripts/sync-pelorus-interop.sh and deletes this entry."
+reason = "Category A, interval to the stated expiry. Byte-identical mirror of the VMAFx/pelorus interop test (ADR-1113, scripts/ci/pelorus-mirror-paths.txt), vendored at tag v0.4.1 (33b4a625) and never edited here; line 1772 compares a returned variance with its input by value. Pelorus fixed the compare in its PR 350 (commit 796693b, 2026-10-17), but no Pelorus tag holds that commit yet, and the mirror only pins released commits. Renewed 2026-11-17 from category A (entered 2026-11-05, expiry was 2026-11-19); renewed 2026-11-05 from category B (entered 2026-11-01). Ends when the first Pelorus tag holding 796693b is out: vmafx re-vendors with scripts/sync-pelorus-interop.sh and deletes this entry."
 owner = "pelorus"
 trigger = "first pelorus tag holding 796693b"
 category = "A"
-entered = 2026-11-05
-expires = 2026-11-19
+entered = 2026-11-17
+expires = 2027-02-14
