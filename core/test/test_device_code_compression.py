@@ -7,9 +7,11 @@ Two halves, both device-free:
 
 * core/src/check_device_compression.py fails the build when a CUDA fatbin, a
   HIP code object bundle or a SYCL device image section is stored raw. The
-  fixtures are synthetic: a fatbin with a cubin ELF header or PTX text in the
-  clear, a plain offload bundle, ELF files whose SYCL sections hold SPIR-V or
-  zstd frames (hand-built raw-block frames, so no zstd library is needed).
+  fixtures are synthetic: fatbins with raw entries or valid zstd streams
+  containing cubin ELF headers or PTX markers, a plain offload bundle, and ELF
+  files whose SYCL sections hold SPIR-V or zstd frames. Hand-built raw-block
+  frames need no extra library; Python 3.14's standard decoder verifies the
+  CUDA fixtures independently of the build check's flag/size contract.
 * core/src/meson.build gives every device compile its backend's compression
   list, defined once between BEGIN/END markers, at the strongest setting; the
   option that turns it off defaults to on.
@@ -92,6 +94,59 @@ def zstd_frame(payload: bytes) -> bytes:
     return b"\x28\xb5\x2f\xfd" + bytes([0x20, len(payload)]) + block + payload
 
 
+def compressed_fatbin(payload: bytes, *, kind: int = 2, sm: int = 90) -> bytes:
+    """A size-mode CUDA entry with a valid zstd stream and exact decoded size.
+
+    A raw block deliberately retains markers inside the stream. nvcc's size
+    mode uses zstd with flag 0x8000; the checker does not decode the stream.
+    """
+    return fatbin((kind, sm, 0x8011, zstd_frame(payload)), decompressed_size=len(payload))
+
+
+class FatbinFixtureTest(unittest.TestCase):
+    def setUp(self) -> None:
+        try:
+            from compression import zstd  # noqa: PLC0415 - Python >= 3.14 only
+        except ImportError:
+            self.skipTest("fixture decoding needs Python >= 3.14's compression.zstd")
+        self.zstd = zstd
+
+    def test_marker_streams_decode_to_original(self) -> None:
+        for kind, sm, payload in ((1, 80, b".target sm_80"), (2, 90, elf_header(190))):
+            with self.subTest(kind=kind):
+                data = compressed_fatbin(payload, kind=kind, sm=sm)
+                [entry] = checker.fatbin_entries("fixture.fatbin", data)
+                _index, _kind, _sm, _flags, start, end, compressed, decompressed = entry
+                stream = data[start : start + compressed]
+                self.assertEqual(compressed, len(zstd_frame(payload)))
+                self.assertEqual(decompressed, len(payload))
+                self.assertEqual(data[start + compressed : end], b"\0" * (-compressed % 8))
+                self.assertIn(payload, stream)
+                self.assertEqual(self.zstd.decompress(stream), payload)
+
+    def test_plaintext_with_consistent_metadata_is_not_a_valid_fixture(self) -> None:
+        for kind, sm, payload in ((1, 80, b".target sm_80"), (2, 90, elf_header(190))):
+            with self.subTest(kind=kind):
+                data = fatbin((kind, sm, 0x8011, payload))
+                [entry] = checker.fatbin_entries("fixture.fatbin", data)
+                self.assertEqual(entry[-2:], (len(payload), len(payload)))
+                # Fixture trust check only: the production checker does not decode.
+                with self.assertRaises(self.zstd.ZstdError):
+                    self.zstd.decompress(data[entry[4] : entry[4] + entry[-2]])
+
+    def test_invalid_stream_with_consistent_metadata_is_not_a_valid_fixture(self) -> None:
+        payload = b".target sm_80"
+        frame = zstd_frame(payload)
+        reserved_block = frame[:6] + bytes([frame[6] | 6]) + frame[7:]
+        for stream in (frame[:-1], reserved_block):
+            with self.subTest(stream=stream):
+                data = fatbin((1, 80, 0x8011, stream), decompressed_size=len(payload))
+                [entry] = checker.fatbin_entries("fixture.fatbin", data)
+                self.assertEqual(entry[-2:], (len(stream), len(payload)))
+                with self.assertRaises(self.zstd.ZstdError):
+                    self.zstd.decompress(data[entry[4] : entry[4] + entry[-2]])
+
+
 def sycl_elf(**sections: bytes) -> bytes:
     """An ELF64 file whose sections are named __CLANG_OFFLOAD_BUNDLE__sycl-<key>."""
     named = {
@@ -103,13 +158,13 @@ def sycl_elf(**sections: bytes) -> bytes:
 
 class FatbinCheckTest(unittest.TestCase):
     def test_compressed_fatbin_passes(self) -> None:
-        checker.check_fatbin("k.fatbin", fatbin((2, 90, 0x8011, OPAQUE)))
+        checker.check_fatbin("k.fatbin", compressed_fatbin(b"compressed cubin"))
 
     def test_compressed_payload_with_ptx_marker_passes(self) -> None:
-        checker.check_fatbin("k.fatbin", fatbin((1, 80, 0x8011, b".target sm_80")))
+        checker.check_fatbin("k.fatbin", compressed_fatbin(b".target sm_80", kind=1, sm=80))
 
     def test_compressed_payload_with_cubin_header_passes(self) -> None:
-        checker.check_fatbin("k.fatbin", fatbin((2, 90, 0x8011, elf_header(190))))
+        checker.check_fatbin("k.fatbin", compressed_fatbin(elf_header(190)))
 
     def test_flagged_zero_compressed_size_fails(self) -> None:
         with self.assertRaisesRegex(
@@ -139,16 +194,29 @@ class FatbinCheckTest(unittest.TestCase):
             )
 
     def test_ptx_marker_in_compressed_padding_fails(self) -> None:
+        payload = b"ptx"
+        stream = zstd_frame(payload)
         with self.assertRaisesRegex(checker.CompressionError, "0 cubin and 1 PTX"):
             checker.check_fatbin(
-                "k.fatbin", fatbin((1, 80, 0x8011, b"12345678.target sm_"), compressed_size=8)
+                "k.fatbin",
+                fatbin(
+                    (1, 80, 0x8011, stream + b".target sm_"),
+                    compressed_size=len(stream),
+                    decompressed_size=len(payload),
+                ),
             )
 
     def test_compressed_size_equals_payload_size_passes(self) -> None:
-        checker.check_fatbin("k.fatbin", fatbin((1, 80, 0x8011, b"12345678")))
+        data = compressed_fatbin(b"1234567", kind=1, sm=80)
+        [entry] = checker.fatbin_entries("k.fatbin", data)
+        self.assertEqual(entry[-2], entry[5] - entry[4])
+        checker.check_fatbin("k.fatbin", data)
 
     def test_compressed_size_one_below_payload_size_passes(self) -> None:
-        checker.check_fatbin("k.fatbin", fatbin((1, 80, 0x8011, b"1234567")))
+        data = compressed_fatbin(b"123456", kind=1, sm=80)
+        [entry] = checker.fatbin_entries("k.fatbin", data)
+        self.assertEqual(entry[-2] + 1, entry[5] - entry[4])
+        checker.check_fatbin("k.fatbin", data)
 
     def test_raw_ptx_fails(self) -> None:
         with self.assertRaisesRegex(checker.CompressionError, "entry 0 PTX sm_80 flags 0x11"):
@@ -169,7 +237,7 @@ class FatbinCheckTest(unittest.TestCase):
             checker.check_fatbin("k.fatbin", fatbin() + b".target sm_80")
 
     def test_cubin_in_entry_header_fails(self) -> None:
-        data = bytearray(fatbin((2, 90, 0x8011, b"payload")))
+        data = bytearray(compressed_fatbin(b"payload"))
         data[16 + 64 : 16 + 64] = elf_header(190) + b"\0" * 4
         struct.pack_into("<I", data, 16 + 4, 88)
         struct.pack_into("<Q", data, 8, len(data) - 16)
@@ -192,8 +260,8 @@ class FatbinCheckTest(unittest.TestCase):
             checker.check_fatbin("k.fatbin", bytes(data))
 
     def test_two_containers_pass(self) -> None:
-        entry = (2, 90, 0x8011, b"payload")
-        checker.check_fatbin("k.fatbin", fatbin(entry) + fatbin(entry))
+        container = compressed_fatbin(b"payload")
+        checker.check_fatbin("k.fatbin", container + container)
 
     def test_entry_limit_fails(self) -> None:
         entry = (2, 90, 0x8011, b"")
@@ -206,7 +274,7 @@ class FatbinCheckTest(unittest.TestCase):
             checker.check_fatbin("k.fatbin", OPAQUE)
 
     def test_boundaries(self) -> None:
-        data = bytearray(fatbin((2, 90, 0x8011, b"payload")))
+        data = bytearray(compressed_fatbin(b"payload"))
         data[80:80] = elf_header(62) + b"\x7fELF\x02\x01" + b"\0" * 6
         struct.pack_into("<I", data, 20, 96)
         struct.pack_into("<Q", data, 8, len(data) - 16)
@@ -267,7 +335,7 @@ class MainTest(unittest.TestCase):
 
     def test_every_file_compressed_writes_the_stamp(self) -> None:
         files = {
-            "a.fatbin": fatbin((2, 90, 0x8011, OPAQUE)),
+            "a.fatbin": compressed_fatbin(b"compressed cubin"),
             "b.fatbin": fatbin(),
             "c.hsaco": b"CCOB",
         }
