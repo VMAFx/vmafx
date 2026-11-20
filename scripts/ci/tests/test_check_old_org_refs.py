@@ -20,10 +20,15 @@ from scripts.lib.safe_subprocess import TextCommandResult, run  # noqa: E402
 CHECKER = Path(
     os.environ.get("OLD_ORG_CHECKER_TEST_PATH", ROOT / "scripts/ci/check-old-org-refs.py")
 ).resolve()
-GIT = str(Path(shutil.which("git")).resolve())
+git_path = shutil.which("git")
+if git_path is None:
+    raise RuntimeError("git not found on PATH")
+GIT = str(Path(git_path).resolve())
 GIT_TIMEOUT_S = 60
 SCRIPT_TIMEOUT_S = 60
 spec = importlib.util.spec_from_file_location("old_org_guard", CHECKER)
+if spec is None or spec.loader is None:
+    raise RuntimeError(f"cannot load checker: {CHECKER}")
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 DAY = datetime.date(2026, 11, 30)
@@ -43,10 +48,11 @@ def run_checker(cwd: str, env: dict[str, str], *extra: str) -> TextCommandResult
 
 
 class OldOrgTests(unittest.TestCase):
-    def hits(self, line, path="example.txt", day=DAY):
-        return module.line_findings(path, 1, line, day)
+    def hits(self, line: str, path: str = "example.txt", day: datetime.date = DAY) -> list[str]:
+        findings: list[str] = module.line_findings(path, 1, line, day)
+        return findings
 
-    def test_forms(self):
+    def test_forms(self) -> None:
         forms = {
             "a": "VMAFx/repo",
             "b": "cordanaLLM/repo",
@@ -60,7 +66,7 @@ class OldOrgTests(unittest.TestCase):
             with self.subTest(letter=letter):
                 self.assertIn(f"({letter})", self.hits(text)[0])
 
-    def test_exempt_forms(self):
+    def test_exempt_forms(self) -> None:
         for value in (
             "github.com/VMAFx/vmafx",
             "pkg:golang/github.com/VMAFx/vmafx",
@@ -76,7 +82,7 @@ class OldOrgTests(unittest.TestCase):
         self.assertTrue(self.hits("http://github.com/VMAFx/x"))
         self.assertTrue(self.hits("https://github.com/VMAFx/x"))
 
-    def test_permanent_paths(self):
+    def test_permanent_paths(self) -> None:
         for path in (
             "docs/adr/1234-title.md",
             "docs/adr/_index_fragments/a.md",
@@ -92,7 +98,7 @@ class OldOrgTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue(module.allowed(path))
 
-    def test_dated_exceptions(self):
+    def test_dated_exceptions(self) -> None:
         entries = [
             ("core/include/libvmaf/pelorus/x.h", "VMAFx/x"),
             ("core/src/interop/pelorus_x.c", "VMAFx/x"),
@@ -112,7 +118,7 @@ class OldOrgTests(unittest.TestCase):
                 )
         self.assertTrue(self.hits("OTHER=VMAFx/x", "build-config.env"))
 
-    def test_all_git_failure(self):
+    def test_all_git_failure(self) -> None:
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         env["GIT_CONFIG_GLOBAL"] = os.devnull
         env["GIT_CONFIG_NOSYSTEM"] = "1"
@@ -121,7 +127,7 @@ class OldOrgTests(unittest.TestCase):
             self.assertEqual(2, result.returncode)
             self.assertIn("check-old-org-refs:", result.stderr)
 
-    def test_planted_all_and_usage(self):
+    def test_planted_all_and_usage(self) -> None:
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         env["GIT_CONFIG_GLOBAL"] = os.devnull
         env["GIT_CONFIG_NOSYSTEM"] = "1"
