@@ -7,14 +7,17 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
 from scripts.ci import required_aggregator_harness as harness
-from scripts.ci.required_aggregator_harness import run_required_aggregator
+from scripts.ci.required_aggregator_harness import SimulationControls, run_required_aggregator
 from scripts.lib.safe_subprocess import CommandFailed
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -34,7 +37,10 @@ EPOCH = int(datetime.fromisoformat(START.replace("Z", "+00:00")).timestamp())
 def detail(seconds: int) -> dict[str, dict[str, object]]:
     return {
         "listForRef": {
-            "headers": {"x-ratelimit-remaining": "0", "x-ratelimit-reset": str(EPOCH + seconds)}
+            "headers": {
+                "x-ratelimit-remaining": "0",
+                "x-ratelimit-reset": str(EPOCH + seconds),
+            }
         }
     }
 
@@ -56,7 +62,8 @@ class DriverOutput(unittest.TestCase):
     def test_integer_sleeps_extend_list(self) -> None:
         sleeps: list[int] = []
         self.assertEqual(
-            harness._decode_driver_output('{"failures": [], "sleeps": [1, 2]}', None, sleeps), []
+            harness._decode_driver_output('{"failures": [], "sleeps": [1, 2]}', None, sleeps),
+            [],
         )
         self.assertEqual(sleeps, [1, 2])
 
@@ -75,13 +82,15 @@ class DriverOutput(unittest.TestCase):
     def test_empty_sleeps_add_nothing(self) -> None:
         sleeps = [3]
         self.assertEqual(
-            harness._decode_driver_output('{"failures": [], "sleeps": []}', None, sleeps), []
+            harness._decode_driver_output('{"failures": [], "sleeps": []}', None, sleeps),
+            [],
         )
         self.assertEqual(sleeps, [3])
 
     def test_none_sleeps_ignores_payload(self) -> None:
         self.assertEqual(
-            harness._decode_driver_output('{"failures": [], "sleeps": [true]}', None, None), []
+            harness._decode_driver_output('{"failures": [], "sleeps": [true]}', None, None),
+            [],
         )
 
 
@@ -96,6 +105,74 @@ class RateLimit(unittest.TestCase):
             api_error_detail=detail(3600),
             sleeps=sleeps,
         )
+
+    def test_budget_negative(self) -> None:
+        sleeps: list[int] = []
+        failures = run_required_aggregator(
+            CHECK,
+            "success",
+            env=ENV,
+            controls=SimulationControls(clock_step_ms=14400000),
+            api_errors={"getWorkflowRun": [429]},
+            api_error_detail={"getWorkflowRun": {"headers": {"retry-after": "301"}}},
+            sleeps=sleeps,
+        )
+        self.assertTrue(any(f.startswith("GitHub API rate limit:") for f in failures))
+        self.assertNotIn(301000, sleeps)
+
+    def test_budget_boundary(self) -> None:
+        sleeps: list[int] = []
+        run_required_aggregator(
+            CHECK,
+            "success",
+            env=ENV,
+            controls=SimulationControls(clock_step_ms=14400000),
+            api_errors={"getWorkflowRun": [429]},
+            api_error_detail={"getWorkflowRun": {"headers": {"retry-after": "300"}}},
+            sleeps=sleeps,
+        )
+        self.assertIn(300000, sleeps)
+
+    def test_startup_budget(self) -> None:
+        sleeps: list[int] = []
+        run_required_aggregator(
+            CHECK,
+            None,
+            env=ENV,
+            extra_checks=pending("queued"),
+            controls=SimulationControls(advance_sleep=True),
+            api_errors={"getWorkflowRun": [429]},
+            api_error_detail={"getWorkflowRun": {"headers": {"retry-after": "5400"}}},
+            sleeps=sleeps,
+        )
+        self.assertIn(5400000, sleeps)
+        self.assertLess(len(sleeps), 20)
+        self.assertLessEqual(sum(sleeps), 245 * 60 * 1000)
+
+    def test_reread_after_later_wait(self) -> None:
+        failures = run_required_aggregator(
+            CHECK,
+            None,
+            env=ENV,
+            event="push",
+            later_checks=pending("completed"),
+            api_errors={"listWorkflowRunsForRepo": [429]},
+            api_error_detail={"listWorkflowRunsForRepo": {"headers": {"retry-after": "7"}}},
+        )
+        self.assertFalse(any(CHECK in f and "never" in f for f in failures))
+        self.assertTrue(any(CHECK in f for f in failures))
+
+    def test_fingerprint_ignores_unjudged_changes(self) -> None:
+        sleeps: list[int] = []
+        run_required_aggregator(
+            CHECK,
+            None,
+            env=ENV,
+            extra_checks=pending("queued"),
+            controls=SimulationControls(changing_check="Unrelated job"),
+            sleeps=sleeps,
+        )
+        self.assertEqual(sleeps[:3], [30000, 60000, 120000])
 
     def test_primary_limit(self) -> None:
         sleeps: list[int] = []

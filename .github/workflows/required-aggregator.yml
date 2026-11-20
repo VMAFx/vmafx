@@ -94,6 +94,7 @@ jobs:
         with:
           retries: 3
           script: |
+            const scriptStartMs = Date.now();
             // Ordered by historical reliability. ADR-1297 added the Build
             // matrix entries, along with every other check that was reporting
             // on the pull request and blocking nothing. Every name below must
@@ -584,7 +585,10 @@ jobs:
             // HttpError" on 2026-10-30. Wait out an outage for 15 minutes, then
             // fail by name, so the failure reads as a rerun and not as a code fault.
             const apiBackoffSeconds = [30, 60, 120, 240, 240, 210];
+            // 245 minutes leaves five minutes within the 250-minute job timeout.
+            const budgetEndMs = scriptStartMs + 245 * 60 * 1000;
             let rateLimitWaitedSeconds = 0;
+            let rateLimitWaitCount = 0;
             function isRateLimitAnswer(error, headers) {
               return (error.status === 403 || error.status === 429) &&
                 (headers['retry-after'] !== undefined || headers['x-ratelimit-remaining'] === '0' ||
@@ -615,7 +619,9 @@ jobs:
                 } catch (error) {
                   const rateLimitSeconds = rateLimitWaitSeconds(error, rateLimitWaits);
                   if (rateLimitSeconds !== null) {
-                    if (rateLimitWaits >= 6 || rateLimitWaitedSeconds + rateLimitSeconds > 5400) {
+                    // A wait ending exactly at the budget is allowed.
+                    if (rateLimitWaits >= 6 || rateLimitWaitedSeconds + rateLimitSeconds > 5400 ||
+                        Date.now() + rateLimitSeconds * 1000 > budgetEndMs) {
                       core.setFailed(
                         `GitHub API rate limit: ${label} still answers HTTP ${error.status}. ` +
                         'No check result was judged; rerun this job. This is not a code failure.'
@@ -624,6 +630,7 @@ jobs:
                     }
                     core.warning(`${label}: GitHub API HTTP ${error.status}, retrying in ${rateLimitSeconds} s`);
                     rateLimitWaits += 1;
+                    rateLimitWaitCount += 1;
                     rateLimitWaitedSeconds += rateLimitSeconds;
                     await new Promise(r => setTimeout(r, rateLimitSeconds * 1000));
                     continue;
@@ -958,41 +965,29 @@ jobs:
             // path-filter-not-applicable (acceptable). Older draft-era
             // check_runs on the same SHA are ignored so a ready PR cannot
             // merge on skipped draft gates. A run still IN_PROGRESS at
-            // deadline is treated as failure — extend `deadline` if your
-            // matrix is slower. The Ubuntu gcc/clang DNN + Windows MSVC
-            // builds can take 12+ minutes each; the deadline must also
-            // account for GitHub Actions runner queue depth on free-tier
-            // projects, where a job can wait 30+ minutes before starting on
-            // a heavy queue (observed 2026-05-09 when ~80 CI jobs were
-            // queued across the ~40 in-flight PRs and the previous
-            // 30-minute deadline failed every PR with `queued` for two hours
-            // straight). Bumped to 90 minutes; corresponding
-            // `timeout-minutes` lifted to 100 to allow the polling job itself
-            // to finish.
-            //
-            // 2026-08-30: the same starvation recurred at 90 minutes. A
-            // two-month Renovate backlog opened ~44 concurrent dependency
-            // PRs; every aggregator on that wave died on the deadline with
-            // siblings still `queued`/`in_progress` and NO real check failure
-            // (verified on #1083/#1087/#1089: e.g. job 89636653774 ran
-            // 03:24:39 -> 04:54:53Z = 90m14s and expired on
-            // `Build - Ubuntu gcc (CPU) + DNN: in_progress; CodeQL: queued;
-            // ShellCheck + shfmt: queued`). Because the aggregator is a
-            // required check, a timeout blocks the merge, which keeps the
-            // queue deep, which causes the next timeout. Raised to 240
-            // minutes with `timeout-minutes` at 250. This job only polls the
-            // checks API, so a longer ceiling costs a runner slot rather
-            // than compute; the hosted-runner hard cap is 360 minutes.
-            const deadline = Date.now() + 240 * 60 * 1000;
+            // deadline is treated as failure. Runner queue depth sets the
+            // deadline: 30 minutes failed every PR on 2026-05-09 (~80 queued
+            // jobs), 90 minutes failed the 2026-08-30 Renovate wave with no
+            // real check failure (#1083/#1087/#1089, job 89636653774 expired
+            // after 90m14s on queued siblings). A timeout blocks the merge,
+            // which keeps the queue deep, so 240 minutes with
+            // `timeout-minutes` at 250; polling costs a runner slot, not
+            // compute, and the hosted-runner cap is 360 minutes.
+            const deadline = Math.min(Date.now() + 240 * 60 * 1000, budgetEndMs);
             let byName = {};
             let missingEditedWorkflows = [];
             let lastExcludedEditedSuites = 0;
             let editedListedAfterGrace = !isEditedPullRequest;
             let previousFingerprint = null;
             let pollIntervalSeconds = 30;
+            const fingerprintNames = new Set([
+              ...required, ...Object.values(delayedStrictDependencies).flat(),
+              ...Object.values(externalCheckUploadJobs).flat()
+            ]);
             while (Date.now() < deadline) {
-              const check_runs = await withApiBackoff('listAllCheckRuns', () => listAllCheckRuns());
+              let check_runs = await withApiBackoff('listAllCheckRuns', () => listAllCheckRuns());
               if (!check_runs) return;
+              const waitsBeforeLaterListings = rateLimitWaitCount;
               const suites = await withApiBackoff('pullRequestSuites', () => pullRequestSuites());
               if (!suites) return;
               if (isEditedPullRequest) {
@@ -1017,8 +1012,14 @@ jobs:
                 missingEditedWorkflows = editedState.missingWorkflows;
                 lastExcludedEditedSuites = editedState.staleSuites.size;
               }
+              // One re-list after a later wait; API wait caps and the budget bound it.
+              if (rateLimitWaitCount !== waitsBeforeLaterListings) {
+                check_runs = await withApiBackoff('listAllCheckRuns', () => listAllCheckRuns());
+                if (!check_runs) return;
+              }
               byName = newestByName(check_runs, suites);
               const fingerprint = JSON.stringify(Object.values(byName)
+                .filter(run => fingerprintNames.has(run.name) || run.name.includes('Decide the CI tier'))
                 .map(run => [run.name, run.status, run.conclusion]).sort());
               pollIntervalSeconds = fingerprint === previousFingerprint
                 ? Math.min(pollIntervalSeconds * 2, 240) : 30;
@@ -1077,6 +1078,8 @@ jobs:
                 core.info(`Waiting for check registration: ${missing.slice(0, 3).join(', ')}` +
                           (missing.length > 3 ? ` (+${missing.length - 3} more)` : ''));
               }
+              pollIntervalSeconds = Math.min(pollIntervalSeconds, Math.max(0, deadline - nowMs) / 1000);
+              if (pollIntervalSeconds === 0) break;
               await new Promise(r => setTimeout(r, pollIntervalSeconds * 1000));
             }
             if (isEditedPullRequest) {

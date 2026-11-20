@@ -42,6 +42,10 @@ codes raised in order by successive calls to that stub. ``api_always`` maps stub
 names to an HTTP status code raised on every call to that stub. ``info_logs``,
 when given, collects every ``core.info`` message. ``api_error_detail`` supplies per-stub
 headers and messages for errors. ``sleeps`` collects timeout arguments in milliseconds.
+``controls`` takes a ``SimulationControls``: ``advance_sleep`` advances the clock on
+timeouts, ``clock_step_ms`` overrides each subsequent clock read and ``changing_check``
+adds an unrelated check that alternates status on each listing. The defaults keep the
+original driver behavior.
 """
 
 from __future__ import annotations
@@ -51,6 +55,7 @@ import re
 import shutil
 import textwrap
 from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.lib.safe_subprocess import run as run_command
@@ -68,10 +73,15 @@ const parsedRunCreated =
   typeof input.runCreatedAt === 'string' ? Date.parse(input.runCreatedAt) : Number.NaN;
 const now = Number.isFinite(parsedRunCreated) ? parsedRunCreated : defaultNow;
 let clock = now;
+let firstClockRead = true;
 let runListings = 0;
 const hasLaterRuns = Array.isArray(input.laterWorkflowRuns) && input.laterWorkflowRuns.length > 0;
 class VirtualDate extends Date {
-  static now() { clock += hasLaterRuns && runListings < 2 ? 15000 : 180000; return clock; }
+  static now() {
+    if (firstClockRead) { firstClockRead = false; return clock; }
+    clock += input.clockStepMs ?? (hasLaterRuns && runListings < 2 ? 15000 : 180000);
+    return clock;
+  }
 }
 const runCreatedAt =
   input.runCreatedAt != null ? input.runCreatedAt : new Date(now).toISOString();
@@ -142,7 +152,11 @@ const github = {rest: {
   checks: {listForRef: async ({page = 1, per_page: perPage = 30} = {}) => {
     checkApiError('listForRef');
     if (page === 1) listings += 1;
-    const all = listings > 1 && laterChecks.length ? laterChecks : checks;
+    const all = [...(listings > 1 && laterChecks.length ? laterChecks : checks)];
+    if (input.changingCheck) {
+      all.push(withDefaults({name: input.changingCheck, status: listings % 2 ? 'queued' : 'in_progress',
+        check_suite: {id: 1}}));
+    }
     return {data: {check_runs: paginate(all, page, perPage)}};
   }},
   issues: {listEventsForTimeline: async ({page = 1, per_page: perPage = 30} = {}) => {
@@ -186,7 +200,7 @@ new AsyncFunction('github', 'context', 'core', 'process', 'Date', 'setTimeout', 
   core,
   {env: {GITHUB_RUN_ID: '1', ...(input.env || {})}},
   VirtualDate,
-  (callback, milliseconds) => { sleeps.push(milliseconds); callback(); },
+  (callback, milliseconds) => { sleeps.push(milliseconds); if (input.advanceSleep) clock += milliseconds; callback(); },
 ).then(() => process.stdout.write(JSON.stringify({failures, infos, sleeps}))).catch(error => {
   console.error(error);
   process.exitCode = 1;
@@ -393,6 +407,23 @@ def _run_driver(
     return _decode_driver_output(result.stdout, info_logs, sleeps)
 
 
+@dataclass(frozen=True)
+class SimulationControls:
+    """Clock and listing controls for the driver; the defaults change nothing."""
+
+    advance_sleep: bool = False
+    clock_step_ms: int | None = None
+    changing_check: str | None = None
+
+    def as_input(self) -> dict[str, object]:
+        """Return the driver input keys for these controls."""
+        return {
+            "advanceSleep": self.advance_sleep,
+            "clockStepMs": self.clock_step_ms,
+            "changingCheck": self.changing_check,
+        }
+
+
 def run_required_aggregator(
     check_name: str,
     conclusion: str | None,
@@ -422,6 +453,7 @@ def run_required_aggregator(
     info_logs: list[str] | None = None,
     api_error_detail: Mapping[str, Mapping[str, object]] | None = None,
     sleeps: list[int] | None = None,
+    controls: SimulationControls | None = None,
 ) -> list[str]:
     """Run the real Actions JavaScript; the module docstring lists the inputs."""
     script = _embedded_script(AGGREGATOR_PATH.read_text(encoding="utf-8"))
@@ -431,6 +463,7 @@ def run_required_aggregator(
     runs = _resolve_workflow_runs(script, event, action, pr_updated_at, workflow_runs)
     driver_input: dict[str, object] = {
         "script": script,
+        **(controls or SimulationControls()).as_input(),
         "checks": checks,
         "expectedApps": _expected_apps(script),
         "env": dict(env or {}),
