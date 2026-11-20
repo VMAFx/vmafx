@@ -1035,7 +1035,10 @@ jobs:
           fi
           exit "${status}"
       - name: Fetch Netflix/vmaf with its full history
-        run: git fetch --no-tags --quiet https://github.com/Netflix/vmaf.git master
+        shell: bash
+        run: |
+          url="$(python3 scripts/ci/upstream_parity_pin.py --url)"
+          git fetch --no-tags --quiet "${url}" master
       - name: Resolve the recorded upstream head
         id: upstream
         shell: bash

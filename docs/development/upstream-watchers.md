@@ -46,7 +46,8 @@ naming the repository prevents tracking issues from targeting upstream.
   in [`known-upstream-bugs.md`](known-upstream-bugs.md), parsed by
   `scripts/ci/upstream_parity_pin.py`.
 - **Upstream commit history**: `git rev-list --no-merges <pin>..<ref>`
-  over `master` of `https://github.com/Netflix/vmaf.git`.
+  over `master` of `NETFLIX_VMAF_URL` (default
+  `https://github.com/Netflix/vmaf.git` in `build-config.env`).
 - **Dispositions ledger**: the tracked TSV file
   `scripts/upstream-watcher/netflix-dispositions.tsv`.
 

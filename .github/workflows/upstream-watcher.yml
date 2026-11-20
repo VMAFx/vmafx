@@ -127,7 +127,8 @@ jobs:
 
       - name: Fetch upstream Netflix/vmaf
         run: |
-          git remote add --no-tags upstream https://github.com/Netflix/vmaf.git
+          url="$(python3 scripts/ci/upstream_parity_pin.py --url)"
+          git remote add --no-tags upstream "${url}"
           git fetch --no-tags upstream master
 
       - name: Probe unported Netflix/vmaf commits

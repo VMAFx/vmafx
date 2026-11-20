@@ -624,8 +624,9 @@ jobs:
         run: |
           set -euo pipefail
           pin="$(python3 scripts/ci/upstream_parity_pin.py)"
+          url="$(python3 scripts/ci/upstream_parity_pin.py --url)"
           git clone --filter=blob:none --no-checkout --quiet \
-            https://github.com/Netflix/vmaf.git "$RUNNER_TEMP/netflix-src"
+            "${url}" "$RUNNER_TEMP/netflix-src"
           git -C "$RUNNER_TEMP/netflix-src" checkout --quiet --detach "$pin"
           meson setup "$RUNNER_TEMP/netflix-build" "$RUNNER_TEMP/netflix-src/libvmaf" \
             --buildtype release --prefix "$RUNNER_TEMP/prefix-netflix" -Denable_float=true

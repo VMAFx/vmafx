@@ -7,11 +7,14 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import re
 import sys
+import tempfile
 import unittest
 from collections.abc import Sequence
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
@@ -21,6 +24,8 @@ from scripts.ci import upstream_parity_pin as pin  # noqa: E402
 HEADING = "## Upstream head the fork is at parity with"
 FULL = "cea2b4d832a105116a3f16f56d6f5d953421952c"
 JOB_NAME = "Licence Provenance"
+URL = "https://github.com/Netflix/vmaf.git"
+URL_LITERAL = re.compile(r"https://github\.com/Netflix/vmaf(\.git)?(?=[\"'\s]|$)")
 
 
 def document(*headings: str) -> str:
@@ -119,6 +124,74 @@ class CommandLine(unittest.TestCase):
         self.assertRegex(stdout.getvalue(), r"^[0-9a-f]{7,40}\n$")
 
 
+class SharedUpstreamUrl(unittest.TestCase):
+    """The default is declared once; workflows and the parity script consume it."""
+
+    def test_the_default_is_declared_in_build_config(self) -> None:
+        config = (ROOT / "build-config.env").read_text(encoding="utf-8")
+        self.assertIn('NETFLIX_VMAF_URL="https://github.com/Netflix/vmaf.git"', config)
+
+    def test_the_default_is_the_provenance_url(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(pin.upstream_url(ROOT), URL)
+
+    def test_an_environment_mirror_overrides_the_default(self) -> None:
+        mirror = "https://mirror.example.invalid/Netflix/vmaf.git"
+        with mock.patch.dict(os.environ, {"NETFLIX_VMAF_URL": mirror}, clear=False):
+            self.assertEqual(pin.upstream_url(), mirror)
+
+    def test_a_config_that_lacks_the_value_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            (Path(temporary) / "build-config.env").write_text(
+                'SOME_OTHER_KEY="value"\n', encoding="utf-8"
+            )
+            with mock.patch.dict(os.environ, {}, clear=True):
+                with self.assertRaisesRegex(pin.PinError, "declares no NETFLIX_VMAF_URL"):
+                    pin.upstream_url(Path(temporary))
+
+    def test_a_missing_config_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            with mock.patch.dict(os.environ, {}, clear=True):
+                with self.assertRaisesRegex(pin.PinError, "not found"):
+                    pin.upstream_url(Path(temporary))
+
+    def test_url_and_within_are_mutually_exclusive(self) -> None:
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as raised:
+                pin.main(["--url", "--within", "FETCH_HEAD"])
+        self.assertEqual(raised.exception.code, 2)
+
+    def test_url_option_prints_the_url(self) -> None:
+        stdout = io.StringIO()
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with contextlib.redirect_stdout(stdout):
+                status = pin.main(["--url"])
+        self.assertEqual(status, 0)
+        self.assertEqual(stdout.getvalue(), f"{URL}\n")
+
+
+class NoLiteralCopies(unittest.TestCase):
+    """The clone URL has one declaration; every consumer asks the pin reader."""
+
+    def test_workflows_do_not_repeat_the_literal(self) -> None:
+        for path in (ROOT / ".github/workflows").glob("*.yml"):
+            with self.subTest(workflow=path.name):
+                self.assertIsNone(
+                    URL_LITERAL.search(path.read_text(encoding="utf-8")),
+                    f"{path.name} repeats the Netflix URL",
+                )
+
+    def test_scripts_outside_tests_do_not_repeat_the_literal(self) -> None:
+        for path in (ROOT / "scripts").rglob("*.py"):
+            if "tests" in path.parts or path.name.startswith("test_"):
+                continue
+            with self.subTest(script=str(path.relative_to(ROOT))):
+                self.assertIsNone(
+                    URL_LITERAL.search(path.read_text(encoding="utf-8")),
+                    f"{path.relative_to(ROOT)} repeats the Netflix URL",
+                )
+
+
 class Workflow(unittest.TestCase):
     """The job is only a gate if it has history, the pin, and a required name."""
 
@@ -131,7 +204,8 @@ class Workflow(unittest.TestCase):
     def test_the_job_has_full_history_on_both_sides(self) -> None:
         job = self.job()
         self.assertIn("fetch-depth: 0", job)
-        self.assertIn("git fetch --no-tags --quiet https://github.com/Netflix/vmaf.git master", job)
+        self.assertIn("scripts/ci/upstream_parity_pin.py --url", job)
+        self.assertNotIn('git fetch --no-tags --quiet "${NETFLIX_VMAF_URL}" master', job)
         self.assertNotIn("--depth", job)
 
     def test_the_job_checks_against_the_recorded_head(self) -> None:

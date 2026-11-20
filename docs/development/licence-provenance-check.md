@@ -56,7 +56,9 @@ notice and the SPDX licence identifier intact.
 ## Running it locally
 
 ```bash
-git remote add --no-tags upstream https://github.com/Netflix/vmaf.git   # once
+# An already exported NETFLIX_VMAF_URL overrides the shared default.
+url="$(python3 scripts/ci/upstream_parity_pin.py --url)"
+git remote add --no-tags upstream "${url}"   # once
 git fetch upstream
 pin="$(python3 scripts/ci/upstream_parity_pin.py --within upstream/master)"
 python3 scripts/dev/relicense_fork_files.py --check --upstream-ref "$pin"
@@ -107,7 +109,7 @@ The reader fails, and the job with it, when:
 1. Checks out the pull request with full history (`fetch-depth: 0`).
 2. Runs `scripts/dev/tests/test_relicense_fork_files.py` and
    `scripts/ci/tests/test_upstream_parity_pin.py`.
-3. Fetches `master` of `https://github.com/Netflix/vmaf.git`.
+3. Fetches `master` from the shared `NETFLIX_VMAF_URL` in `build-config.env`.
 4. Resolves the recorded head with `upstream_parity_pin.py --within FETCH_HEAD`.
 5. Runs `relicense_fork_files.py --check --upstream-ref <that commit>`.
 

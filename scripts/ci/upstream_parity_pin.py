@@ -13,7 +13,9 @@ request, never because Netflix pushed a commit.
 
 Without options the recorded id is printed as written. With ``--within REF``
 the id is also resolved in the checkout: it must name exactly one commit, and
-REF (the fetched upstream branch) must contain it. The full id is printed.
+REF (the fetched upstream branch) must contain it. ``--url`` prints the shared
+Netflix URL instead, taking ``NETFLIX_VMAF_URL`` from the environment when set
+and from ``build-config.env`` otherwise. The full id is printed.
 
 Exit status: 0 on success, 2 when the record is missing, ambiguous, malformed,
 or does not name a commit of the upstream branch.
@@ -22,6 +24,7 @@ or does not name a commit of the upstream branch.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import sys
@@ -34,6 +37,8 @@ sys.path.insert(0, str(REPO))
 from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 
 RECORD = Path("docs/development/known-upstream-bugs.md")
+CONFIG = Path("build-config.env")
+NETFLIX_URL_KEY = "NETFLIX_VMAF_URL"
 HEADING = "## Upstream head the fork is at parity with"
 PIN_LINE = re.compile(
     r"^## Upstream head the fork is at parity with: `([0-9a-f]{7,40})`"
@@ -102,14 +107,36 @@ def resolve(pin: str, within: str, call: GitRunner) -> str:
     return full
 
 
+def upstream_url(repo: Path = REPO) -> str:
+    """The shared Netflix URL, with ``NETFLIX_VMAF_URL`` as an explicit mirror override."""
+    override = os.environ.get(NETFLIX_URL_KEY)
+    if override:
+        return override
+    config = repo / CONFIG
+    if not config.is_file():
+        raise PinError(f"{config} not found")
+    prefix = f'{NETFLIX_URL_KEY}="'
+    for line in config.read_text(encoding="utf-8").splitlines():
+        if line.startswith(prefix) and line.endswith('"'):
+            return line[len(prefix) : -1]
+    raise PinError(f"{config} declares no {NETFLIX_URL_KEY}")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n", 1)[0])
     parser.add_argument("--repo", type=Path, default=REPO, help="checkout (default: this one)")
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--within", metavar="REF", help="resolve the id and require REF to contain the commit"
+    )
+    mode.add_argument(
+        "--url", action="store_true", help="print the shared Netflix URL instead of the pin"
     )
     args = parser.parse_args(argv)
     try:
+        if args.url:
+            print(upstream_url(args.repo))
+            return 0
         pin = recorded_pin((args.repo / RECORD).read_text(encoding="utf-8"))
         if args.within:
             pin = resolve(pin, args.within, git_runner(args.repo))
