@@ -504,9 +504,13 @@ def check_rust_pins(root: Path, rust_want: str | None) -> list[str]:
 
 
 NODE_VERSION_RE = re.compile(r"node-version:[ \t]*['\"]?([0-9][0-9.]*)['\"]?")
-COSIGN_ENV_RE = re.compile(r'(?m)^\s*COSIGN_VERSION:\s*"?([0-9.]+)"?')
-COSIGN_INPUT_RE = re.compile(r'cosign-release:\s*"?v\$\{\{\s*env\.COSIGN_VERSION\s*\}\}"?')
+COSIGN_ENV_RE = re.compile(r'(?m)^  COSIGN_VERSION:\s*"?([0-9.]+)"?\s*(?:#.*)?$')
+COSIGN_INPUT_RE = re.compile(
+    r'cosign-release:\s*"?v\$\{\{\s*env\.COSIGN_VERSION\s*\}\}"?' r"(?=\s*(?:[,}#]|$))",
+    re.MULTILINE,
+)
 COSIGN_ANY_RE = re.compile(r"cosign-release:")
+COSIGN_INSTALLER_RE = re.compile(r"(?m)^\s*(?:-\s*)?uses:\s*sigstore/cosign-installer(?:@\S*)?")
 NODE_PRECOMMIT_RE = re.compile(
     r"^default_language_version:[ \t]*\n(?:[ \t]+.*\n)*?[ \t]+node:[ \t]*['\"]?([^'\"\s]+)['\"]?",
     re.MULTILINE,
@@ -591,7 +595,7 @@ def check_cosign_pins(root: Path, cosign_want: str | None) -> list[str]:
     problems: list[str] = []
     for path in sorted(workflows.glob("*.yml")):
         text = path.read_text(encoding="utf-8")
-        calls = COSIGN_ANY_RE.findall(text)
+        calls = COSIGN_INSTALLER_RE.findall(text)
         if not calls:
             continue
         rel = path.relative_to(root)
@@ -606,8 +610,8 @@ def check_cosign_pins(root: Path, cosign_want: str | None) -> list[str]:
         derived = len(COSIGN_INPUT_RE.findall(text))
         if derived != len(calls):
             problems.append(
-                f"{rel}: {len(calls) - derived} cosign-release input(s) do not use "
-                "env.COSIGN_VERSION"
+                f"{rel}: {len(calls) - derived} cosign-installer step(s) do not set "
+                "cosign-release from env.COSIGN_VERSION"
             )
     return problems
 

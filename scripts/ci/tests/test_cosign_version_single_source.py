@@ -56,12 +56,12 @@ class CosignVersionSingleSource(unittest.TestCase):
             len(MODULE.COSIGN_ANY_RE.findall(path.read_text(encoding="utf-8")))
             for path in sorted((ROOT / ".github/workflows").glob("*.yml"))
         )
-        self.assertEqual(count, 22)
+        self.assertEqual(count, 25)
 
     def test_literal_input_fails(self) -> None:
         self.write(self.fixture(release='"v3.1.4"'))
         self.assertIn(
-            "1 cosign-release input(s) do not use env.COSIGN_VERSION",
+            "1 cosign-installer step(s) do not set cosign-release from env.COSIGN_VERSION",
             "\n".join(CHECK(self.root, WANT)),
         )
 
@@ -81,6 +81,46 @@ class CosignVersionSingleSource(unittest.TestCase):
 
     def test_drifted_env_fails(self) -> None:
         self.write(self.fixture(env='  COSIGN_VERSION: "3.0.0"\n'))
+        self.assertIn("pins COSIGN_VERSION '3.0.0'", "\n".join(CHECK(self.root, WANT)))
+
+    def test_job_env_does_not_satisfy_the_mirror(self) -> None:
+        self.write(
+            "name: sign\n"
+            "jobs:\n"
+            "  sign:\n"
+            "    env:\n"
+            '      COSIGN_VERSION: "3.1.4"\n'
+            "    steps:\n"
+            "      - uses: sigstore/cosign-installer\n"
+            "        with:\n"
+            "          cosign-release: v${{ env.COSIGN_VERSION }}\n"
+        )
+        self.assertIn(
+            "sign.yml must declare COSIGN_VERSION exactly once",
+            "\n".join(CHECK(self.root, WANT)),
+        )
+
+    def test_suffix_after_the_expression_fails(self) -> None:
+        self.write(self.fixture(release="v${{ env.COSIGN_VERSION }}-rc1"))
+        self.assertIn(
+            "1 cosign-installer step(s) do not set cosign-release from env.COSIGN_VERSION",
+            "\n".join(CHECK(self.root, WANT)),
+        )
+
+    def test_installer_step_without_the_input_fails(self) -> None:
+        self.write(
+            "name: sign\n"
+            "env:\n"
+            '  COSIGN_VERSION: "3.1.4"\n'
+            "jobs:\n"
+            "  sign:\n"
+            "    steps:\n"
+            "      - uses: sigstore/cosign-installer\n"
+        )
+        self.assertIn(
+            "1 cosign-installer step(s) do not set cosign-release from env.COSIGN_VERSION",
+            "\n".join(CHECK(self.root, WANT)),
+        )
 
     def test_renovate_manager_owns_config_and_workflows(self) -> None:
         data = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
