@@ -151,8 +151,8 @@ tag's name, so the hook at every commit and push reads the commit from disk.
 - **Which path ran:** the command output and `receipt.json` (`source`,
   `target_source`, `cache`) say `cache hit`, `fetched into cache` or, for a
   newer release found by `--latest`, `fetched (unpinned)`. A newer release has
-  no pin yet: it is always fetched, and `--refresh --latest` writes its commit
-  to `FFMPEG_COMMIT` together with the tag.
+  no pin yet: it is fetched for replay; only an explicit `--refresh --latest`
+  writes its commit to `FFMPEG_COMMIT` together with the tag.
 - **Concurrency:** writers hold a lock file next to the repository (waiting at
   most ten minutes), and a ref moves only after its commit was fetched and
   verified, so parallel hooks share one entry.
@@ -186,7 +186,7 @@ The **FFmpeg Patch Stack** check registers on every ready pull request to
 | Trigger | What runs | Which release |
 | --- | --- | --- |
 | Pull request, push to `master`, manual dispatch | Contract tests on every event; fetch and replay of the complete series when the ADR-1140 impact planner selects it | The configured release (`FFMPEG_TAG`); never discovers a newer one |
-| Schedule, 05:43 UTC daily (**FFmpeg Release Refresh** job) | `--refresh --latest`, see below | The newest stable upstream release |
+| Schedule, 05:43 UTC daily (**FFmpeg Release Refresh** job) | `--scan-latest --latest`, see below | The newest stable upstream release |
 
 The impact planner selects the expensive fetch and replay for core, patch,
 workflow or CI-authority changes. Unknown inputs take the full validation
@@ -199,26 +199,28 @@ Local pre-commit and pre-push runs keep it enabled.
 
 ### Scheduled release discovery
 
-The scheduled updater owns upstream discovery. Renovate no longer opens
-separate FFmpeg pin-only updates that omit the series rebase. The job runs:
+The scheduled job scans upstream without creating a PR or modifying pins. It
+requires `FFMPEG_FIX_SERIES_VERIFY=cosign` and runs:
 
 ```bash
-python3 scripts/ci/ffmpeg_patch_stack.py --refresh --latest \
+python3 scripts/ci/ffmpeg_patch_stack.py --scan-latest --latest \
   --output-dir "$RUNNER_TEMP/ffmpeg-patch-refresh"
 ```
 
-`--latest` is accepted only with `--refresh`. It discovers the highest stable
-`nX.Y` or `nX.Y.Z` upstream release tag and replays the complete series onto
-it. Development, RC and snapshot refs are excluded.
+`--scan-latest` discovers the highest stable `nX.Y` or `nX.Y.Z` upstream
+release; development, RC and snapshot refs are excluded. The current shared
+series tarball is checked against its pinned SHA256, its release `SHA256SUMS`
+and cosign signature, and its `base.env` must match the current
+`FFMPEG_TAG`/`FFMPEG_COMMIT`. The complete patch stack is then replayed against
+the candidate. A compatible candidate produces a unified patch of only the
+`ffmpeg-patches/` changes plus a receipt; `build-config.env` and Docker pins are
+never part of that proposal. No newer stable release, or no compatible shared
+series release, yields an explicit `no-op` receipt and an empty proposal.
 
-The pinned shared fix series targets one FFmpeg release. When a newer release
-exists, the refresh therefore stops with `FFmpeg n9.1 is released, but the
-pinned shared fix series v0.5.0 targets n9.0.2` (with the tags of the day),
-writes nothing to the tree, and
-keeps the rebased candidate patches under `<output-dir>/patches`. Move
-`FFMPEG_FIX_SERIES_TAG` and `FFMPEG_FIX_SERIES_SHA256` to a series release for
-the new FFmpeg together with `FFMPEG_TAG` and `FFMPEG_COMMIT`, then run
-`--refresh`.
+A scan conflict or any verification error fails and retains diagnostics. The
+artifact is evidence for maintainer review, not an automatic Renovate update or
+pull request. Updating shared-series and FFmpeg pins remains a separate reviewed
+change.
 
 The job uploads a `ffmpeg-patch-refresh-<run-id>-<attempt>` artifact, retained
 for 14 days, containing:
@@ -227,11 +229,12 @@ for 14 days, containing:
 - the command log;
 - `source-revision.txt`;
 - `worktree-status.txt`;
-- `proposed-refresh.patch`.
+- `proposed-refresh.patch` (empty for an explicit no-op).
 
-The diff includes tracked generated configuration mirrors as well as the patch
-series. Review it against the recorded source revision before applying it to
-an isolated branch and running the configured-release check.
+The proposal is restricted to `ffmpeg-patches/`; it does not change tracked
+FFmpeg pins or generated Docker mirrors. Review it against the recorded source
+revision before applying it to an isolated branch and running the configured-
+release check.
 
 A replay conflict leaves the scheduled job failed and retains its diagnostics.
 The workflow has read-only repository permissions and creates no pull request,

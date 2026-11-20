@@ -241,7 +241,7 @@ jobs:
           set -euo pipefail
           output_dir="$RUNNER_TEMP/ffmpeg-patch-refresh"
           mkdir -p "$output_dir"
-          python3 scripts/ci/ffmpeg_patch_stack.py --refresh --latest --output-dir "$output_dir" \
+          python3 scripts/ci/ffmpeg_patch_stack.py --scan-latest --latest --output-dir "$output_dir" \
             2>&1 | tee "$output_dir/workflow-command.log"
 
       - name: Record proposed refresh
@@ -251,7 +251,7 @@ jobs:
           set -euo pipefail
           output_dir="$RUNNER_TEMP/ffmpeg-patch-refresh"
           mkdir -p "$output_dir"
-          git diff --binary > "$output_dir/proposed-refresh.patch"
+          test -f "$output_dir/proposed-refresh.patch"
           git status --short > "$output_dir/worktree-status.txt"
           git rev-parse HEAD > "$output_dir/source-revision.txt"
 
