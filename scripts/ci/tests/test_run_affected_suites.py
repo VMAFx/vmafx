@@ -495,12 +495,14 @@ class LoadCapTests(unittest.TestCase):
 
     def test_suite_timeout_overrides_default(self) -> None:
         suite = registry_lib.Suite("s", ("t/",), ("c",), pytest_timeout=7)
+        with patch.object(runner, "_run", return_value=TextCommandResult((), 0, "", "")):
+            timeout = runner._suite_timeout(Path(), suite, "python", {}, 3)
         argv = runner._pytest_argv(
             "python",
             suite,
             Path("results.xml"),
             ["t/test_x.py"],
-            3,
+            timeout,
         )
         self.assertIn("--timeout=7", argv)
         self.assertNotIn("--timeout=3", argv)
@@ -670,12 +672,8 @@ class RunTests(unittest.TestCase):
     def test_per_test_timeout_stops_hang(self) -> None:
         spec = importlib.util.find_spec("pytest_timeout")
         self.assertIsNotNone(spec, "pytest-timeout is required for this test")
-        assert spec is not None and spec.origin is not None
-        plugin = Path(spec.origin).read_text(encoding="utf-8")
         self.build(
             {
-                "pytest_timeout.py": plugin,
-                "conftest.py": 'pytest_plugins = ["pytest_timeout"]\n',
                 "pkg/tests/test_hang.py": "import time\ndef test_hang():\n    time.sleep(600)\n",
             }
         )
@@ -701,20 +699,25 @@ class RunTests(unittest.TestCase):
 
             run.side_effect = no_plugin
             output = io.StringIO()
-            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
-                status = runner.main(
-                    [
-                        "--root",
-                        str(self.repo),
-                        "--python-exe",
-                        sys.executable,
-                        "--files",
-                        "pkg/tests/test_ok.py",
-                    ]
-                )
+            with patch.object(runner, "read_host_load", return_value=(32.0, 32.0, 16)):
+                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                    status = runner.main(
+                        [
+                            "--root",
+                            str(self.repo),
+                            "--python-exe",
+                            sys.executable,
+                            "--files",
+                            "pkg/tests/test_ok.py",
+                        ]
+                    )
         self.assertEqual(status, 0, output.getvalue())
         self.assertIn(
             "pkg: runs without a per-test timeout because pytest-timeout is not installed there",
+            output.getvalue(),
+        )
+        self.assertIn(
+            "pkg: time cap 900 s (base, not load-scaled: no per-test timeout)",
             output.getvalue(),
         )
 

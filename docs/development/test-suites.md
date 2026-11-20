@@ -281,9 +281,9 @@ since the predictor trainer moved into `ai`, ADR-1886). The tests
 run with `pytest -p no:cacheprovider -rs` and a 300 s per-test timeout
 (`--per-test-timeout`), unless the suite specifies its own. If its interpreter
 lacks pytest-timeout, the runner reports that tests run without this timeout.
-The 900 s base cap (`--time-cap`) is multiplied by
-`min(4, 1 + max(load1, load5) / CPUs)` immediately before each Python suite;
-if load is unavailable, the multiplier is 1.
+For suites with a per-test timeout, the 900 s base cap (`--time-cap`) is multiplied by
+`min(4, 1 + max(load1, load5) / CPUs)`; if load is unavailable, the multiplier is 1.
+Suites without a per-test timeout retain the unscaled base cap.
 
 Measured on a loaded 32-core workstation with a warm `uv` wheel cache: a venv
 builds in 1 to 7 s (the first build with an empty wheel cache downloads the

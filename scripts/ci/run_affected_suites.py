@@ -489,7 +489,6 @@ def _pytest_argv(
 ) -> list[str]:
     argv = [python, "-m", "pytest", "-p", "no:cacheprovider", "-rs", "-q", f"--junitxml={junit}"]
     if timeout is not None:
-        timeout = suite.pytest_timeout if suite.pytest_timeout is not None else timeout
         argv += [f"--timeout={timeout:g}", f"--timeout-method={suite.pytest_timeout_method}"]
     return _via_env([*argv, *(_rewritten(suite, f) for f in files)])
 
@@ -504,6 +503,21 @@ def _cap_description(suite: str, base: float) -> tuple[float, str]:
         f"{suite}: time cap {cap:.0f} s (base {base:g} s x {cap / base:.2f}; "
         f"load {max(load1, load5):.1f} on {cpus} CPUs)"
     )
+
+
+def _suite_timeout(
+    root: Path, suite: registry_lib.Suite, python: str, env: dict[str, str], per_test_timeout: float
+) -> float | None:
+    try:
+        installed = _run(_via_env([python, "-c", "import pytest_timeout"]), root, 60, env)
+    except CommandTimedOut:
+        raise RunnerError(f"{suite.name}: pytest-timeout import check timed out") from None
+    if installed.returncode != 0:
+        print(
+            f"{suite.name}: runs without a per-test timeout because pytest-timeout is not installed there"
+        )
+        return None
+    return suite.pytest_timeout if suite.pytest_timeout is not None else per_test_timeout
 
 
 def run_pytest(
@@ -522,19 +536,14 @@ def run_pytest(
     junit = Path(tempfile.gettempdir()) / f"vmafx-affected-{suite.name}-{os.getpid()}.xml"
     junit.unlink(missing_ok=True)
     details: list[str] = []
-    timeout: float | None = (
-        suite.pytest_timeout if suite.pytest_timeout is not None else per_test_timeout
-    )
-    try:
-        installed = _run(_via_env([python, "-c", "import pytest_timeout"]), root, 10, env)
-        if installed.returncode != 0:
-            timeout = None
-            print(
-                f"{suite.name}: runs without a per-test timeout because pytest-timeout is not installed there"
-            )
-    except CommandTimedOut:
-        raise RunnerError(f"{suite.name}: pytest-timeout import check timed out") from None
-    effective_cap, description = _cap_description(suite.name, cap)
+    timeout = _suite_timeout(root, suite, python, env, per_test_timeout)
+    if timeout is None:
+        effective_cap = cap
+        description = (
+            f"{suite.name}: time cap {cap:g} s (base, not load-scaled: no per-test timeout)"
+        )
+    else:
+        effective_cap, description = _cap_description(suite.name, cap)
     print(description, flush=True)
     try:
         proc = _run(_pytest_argv(python, suite, junit, files, timeout), root, effective_cap, env)
