@@ -224,11 +224,13 @@ def load_registry(root: Path) -> Registry:
     if data.get("schema_version") != 1:
         raise RegistryError(f"{MANIFEST}: schema_version must be 1")
     entries = data.get("suites") or []
-    installs = [
-        entry.get("install")
-        for entry in entries
-        if isinstance(entry, dict) and isinstance(entry.get("install"), dict)
-    ]
+    installs: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        install = entry.get("install")
+        if isinstance(install, dict):
+            installs.append(install)
     # Read build-config.env once, and only when an install inherits from it:
     # fixtures whose suites all pin an interpreter need no config file.
     python_default = (
