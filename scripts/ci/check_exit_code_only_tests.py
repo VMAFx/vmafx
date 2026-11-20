@@ -633,22 +633,36 @@ def _statement_start(node: ast.stmt) -> int:
     return node.lineno
 
 
+def _clause_start(node: ast.stmt | ast.ExceptHandler | ast.match_case) -> int:
+    """Return the first line of a statement or clause."""
+    if isinstance(node, ast.stmt):
+        return _statement_start(node)
+    if isinstance(node, ast.ExceptHandler):
+        return node.lineno
+    return node.pattern.lineno
+
+
 def _bounded_children(node: ast.AST, end: int, rel_path: str) -> list[tuple[ast.AST, int]]:
-    """Assign each statement its next sibling's start or its parent's end."""
+    """Assign each clause its next sibling's start or its parent's end."""
     children = list(itertools.islice(ast.iter_child_nodes(node), MAX_AST_NODES + 1))
     if len(children) > MAX_AST_NODES:
         raise ScanError(f"{rel_path}: exceeds {MAX_AST_NODES} AST nodes")
     bounds = dict.fromkeys(children, end)
     fields = [
-        [item for item in value if isinstance(item, ast.stmt)]
-        for _, value in ast.iter_fields(node)
-        if isinstance(value, list) and any(isinstance(item, ast.stmt) for item in value)
+        [
+            item
+            for item in value[:MAX_AST_NODES]
+            if isinstance(item, (ast.stmt, ast.ExceptHandler, ast.match_case))
+        ]
+        for _, value in itertools.islice(ast.iter_fields(node), MAX_AST_NODES)
+        if isinstance(value, list)
     ]
-    for index, statements in enumerate(fields):
-        for current, following in itertools.pairwise(statements):
-            bounds[current] = _statement_start(following) - 1
+    fields = [field for field in fields[:MAX_AST_NODES] if field]
+    for index, clauses in enumerate(fields[:MAX_AST_NODES]):
+        for current, following in itertools.islice(itertools.pairwise(clauses), MAX_AST_NODES):
+            bounds[current] = _clause_start(following) - 1
         if index + 1 < len(fields):
-            bounds[statements[-1]] = _statement_start(fields[index + 1][0]) - 1
+            bounds[clauses[-1]] = _clause_start(fields[index + 1][0]) - 1
     return [(child, bounds[child]) for child in children]
 
 

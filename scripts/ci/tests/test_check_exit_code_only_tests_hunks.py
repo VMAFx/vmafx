@@ -39,6 +39,42 @@ class ExitCodeOnlyHunksTest(ExitCodeOnlyFixture):
         self.assertIn("0 exit-code-only test findings", out)
         self.assertNotIn("test_a:", err)
 
+    def _check_clause_boundary(self, source: str) -> None:
+        target = self._commit_file(REL_TEST_FILE, source)
+        with self.subTest(edit="assertion control"):
+            target.write_text(
+                source.replace("assert rc == 0", "assert rc == 0  # changed"), encoding="utf-8"
+            )
+            rc, _out, err = self._run_checker("--changed-against", "HEAD")
+            self.assertEqual(rc, 1, err)
+            self.assertIn("test_a: asserts only exit code 0", err)
+        with self.subTest(edit="next clause"):
+            target.write_text(source.replace("setting = 1", "setting = 2"), encoding="utf-8")
+            rc, out, err = self._run_checker("--changed-against", "HEAD")
+            self.assertEqual(rc, 0, err)
+            self.assertIn("0 exit-code-only test findings", out)
+            self.assertNotIn("test_a:", err)
+
+    def test_r11_f6_handler_clause_boundary(self) -> None:
+        weak = "    def test_a():\n        rc = run_checker()\n        assert rc == 0\n"
+        cases = (
+            "try:\n" + weak + "except ImportError:\n    setting = 1\n",
+            "try:\n    pass\nexcept ImportError:\n"
+            + weak
+            + "except ValueError:\n    setting = 1\n",
+        )
+        for source in cases[:2]:
+            with self.subTest(source=source):
+                self._check_clause_boundary(source)
+
+    def test_r11_f6_match_case_boundary(self) -> None:
+        source = (
+            "match value:\n    case 1:\n        def test_a():\n"
+            "            rc = run_checker()\n            assert rc == 0\n"
+            "    case 2:\n        setting = 1\n"
+        )
+        self._check_clause_boundary(source)
+
     def test_deleted_final_assertion_after_comments_is_reported(self) -> None:
         cases = (
             ("", "", "\ndef test_next():\n    assert True\n"),
