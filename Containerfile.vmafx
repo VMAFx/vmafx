@@ -95,7 +95,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         libdav1d7 libzimg2
 COPY build-config.env /tmp/vmafx/build-config.env
 COPY scripts/ci/install-intel-ocloc.sh /tmp/vmafx/scripts/ci/install-intel-ocloc.sh
-COPY dev/scripts/fetch-intel-neo.py /tmp/vmafx/dev/scripts/fetch-intel-neo.py
+COPY dev/scripts/fetch-intel-neo.py dev/scripts/intel-neo-lock.json /tmp/vmafx/dev/scripts/
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     bash /tmp/vmafx/scripts/ci/install-intel-ocloc.sh --components runtime /tmp/vmafx

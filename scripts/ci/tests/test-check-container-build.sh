@@ -31,6 +31,8 @@
 
 set -euo pipefail
 
+# shellcheck source=/dev/null
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../../lib/symlink-probe.sh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GATE="${SCRIPT_DIR}/../check-container-build.sh"
 
@@ -463,21 +465,29 @@ run_case "verify a stamp with an empty image_title" 1 "$HOST_MARKER" --verify "$
 # release verifier rejects one too, and the two gates must agree.
 SYMLINK_DIR="${WORKDIR}/symlinked-stamp"
 mkdir -p "$SYMLINK_DIR"
-ln -s "${CONTAINER_ARTIFACTS}/container-build-provenance.txt" \
-  "${SYMLINK_DIR}/container-build-provenance.txt"
-run_case "verify a symlinked stamp (target is valid)" 1 "$HOST_MARKER" --verify "$SYMLINK_DIR"
-if grep -q 'is a symlink, not a staged stamp' "${WORKDIR}/out.log"; then
-  PASS=$((PASS + 1))
-  echo "ok   symlinked stamp is named as a symlink"
+if reason=$(symlink_probe "$SYMLINK_DIR"); then
+  ln -s "${CONTAINER_ARTIFACTS}/container-build-provenance.txt" \
+    "${SYMLINK_DIR}/container-build-provenance.txt"
+  run_case "verify a symlinked stamp (target is valid)" 1 "$HOST_MARKER" --verify "$SYMLINK_DIR"
+  if grep -q 'is a symlink, not a staged stamp' "${WORKDIR}/out.log"; then
+    PASS=$((PASS + 1))
+    echo "ok   symlinked stamp is named as a symlink"
+  else
+    FAIL=$((FAIL + 1))
+    echo "FAIL symlinked stamp rejection does not name the symlink:"
+    sed 's/^/       | /' "${WORKDIR}/out.log"
+  fi
 else
-  FAIL=$((FAIL + 1))
-  echo "FAIL symlinked stamp rejection does not name the symlink:"
-  sed 's/^/       | /' "${WORKDIR}/out.log"
+  echo "SKIP: verify a symlinked stamp (target is valid): cannot create a symbolic link in $SYMLINK_DIR: $reason"
 fi
 DANGLING_DIR="${WORKDIR}/dangling-stamp"
 mkdir -p "$DANGLING_DIR"
-ln -s "${WORKDIR}/no-such-stamp" "${DANGLING_DIR}/container-build-provenance.txt"
-run_case "verify a dangling symlinked stamp" 1 "$HOST_MARKER" --verify "$DANGLING_DIR"
+if reason=$(symlink_probe "$DANGLING_DIR"); then
+  ln -s "${WORKDIR}/no-such-stamp" "${DANGLING_DIR}/container-build-provenance.txt"
+  run_case "verify a dangling symlinked stamp" 1 "$HOST_MARKER" --verify "$DANGLING_DIR"
+else
+  echo "SKIP: verify a dangling symlinked stamp: cannot create a symbolic link in $DANGLING_DIR: $reason"
+fi
 
 echo
 echo "=== consumer verifier: verify-native-release-artifacts.sh fails closed ==="
@@ -513,9 +523,13 @@ if [ -f "$VERIFY_NATIVE" ]; then
   NATIVE_LINKED_DIR="${WORKDIR}/native-symlinked-stamp"
   mkdir -p "$NATIVE_LINKED_DIR"
   cp -p "${NATIVE_DIR}/vmaf" "${NATIVE_DIR}/libvmaf.so" "$NATIVE_LINKED_DIR/"
-  ln -s "${CONTAINER_ARTIFACTS}/container-build-provenance.txt" \
-    "${NATIVE_LINKED_DIR}/container-build-provenance.txt"
-  expect_native_provenance_failure "a symlinked stamp" "$NATIVE_LINKED_DIR"
+  if reason=$(symlink_probe "$NATIVE_LINKED_DIR"); then
+    ln -s "${CONTAINER_ARTIFACTS}/container-build-provenance.txt" \
+      "${NATIVE_LINKED_DIR}/container-build-provenance.txt"
+    expect_native_provenance_failure "a symlinked stamp" "$NATIVE_LINKED_DIR"
+  else
+    echo "SKIP: verify-native-release-artifacts.sh rejects a symlinked stamp: cannot create a symbolic link in $NATIVE_LINKED_DIR: $reason"
+  fi
 fi
 
 echo

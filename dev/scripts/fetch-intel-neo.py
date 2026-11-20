@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: EUPL-1.2
 # Copyright 2026 Lusoris
-"""Resolve, download, and verify Intel NEO compute stack packages.
+"""Download and verify Intel NEO and Level Zero packages from a pinned lock file.
 
-Derives the matched set of intel-opencl-icd, libze-intel-gpu1, libigdgmm12,
-intel-igc-core-2, intel-igc-opencl-2, and intel-ocloc deb packages from a
-pinned intel/compute-runtime release tag. See ADR-1145.
+Default mode reads ``dev/scripts/intel-neo-lock.json`` (or ``--lock PATH``) and
+downloads each selected ``.deb`` directly from ``https://github.com/...`` with
+zero ``api.github.com`` requests, verifying every download against the locked
+SHA-256 digest and writing ``SHA256SUMS`` to ``--output-dir`` (ADR-3555).
 
-``--components runtime`` (the default) fetches the whole set: the GPU runtime a
-host needs to run SYCL kernels plus the ocloc offline compiler. ``--components
-ocloc`` fetches only ocloc and the IGC libraries it loads, which is what a build
-host needs for icpx SYCL ahead-of-time compilation (ADR-1360).
+``--write-lock PATH`` resolves the matched Intel NEO compute stack (ADR-1145)
+and Level Zero loader packages (ADR-1368) via the GitHub Releases API, records
+upstream SHA-256 digests without downloading ``.deb`` archives, and writes the
+sorted lock file. The payload is validated before the lock is replaced.
 
-``--level-zero-ver`` also fetches the Level Zero loader (``libze1``, plus
-``libze-dev`` with ``--level-zero-dev``) from that oneapi-src/level-zero
-release. The loader is not part of compute-runtime, and that release publishes
-no checksum file, so each deb is checked against the SHA-256 digest GitHub
-records for the release asset (ADR-1368).
+Lock file schema (``dev/scripts/intel-neo-lock.json``):
+  - ``neo_version`` (str): pinned ``intel/compute-runtime`` release tag.
+  - ``level_zero_version`` (str): pinned ``oneapi-src/level-zero`` version.
+  - ``level_zero_distro`` (str): Ubuntu build suffix (``"u24.04"``).
+  - ``neo`` (object): exact keys ``gmm``, ``icd``, ``level_zero``, ``igc_core``,
+    ``igc_opencl``, ``ocloc`` mapped to asset records (matching ``StackAssets``).
+  - ``level_zero`` (object): exact keys ``libze1``, ``libze-dev`` mapped to
+    asset records (matching ``level_zero_packages``).
+  - Each asset record is ``{"name": str, "sha256": str, "url": str}``, where
+    ``url`` is ``https://github.com/<owner>/<repo>/releases/download/<tag>/<name>``
+    and ``sha256`` is 64 lowercase hexadecimal characters.
 """
 
 from __future__ import annotations
@@ -36,30 +43,56 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, NoReturn
-from urllib.parse import unquote, urlsplit
+from urllib.parse import SplitResult, unquote, urlsplit
 
 HTTP_NOT_FOUND = 404
 ASCII_CONTROL_LIMIT = 32
 ASCII_DELETE = 127
 MAX_METADATA_BYTES = 8 * 1024 * 1024
+MAX_LOCK_BYTES = 1024 * 1024
 HTTP_TIMEOUT_SECONDS = 60
+RELEASE_DOWNLOAD_PATH_SEGMENTS = 7
 ALLOWED_DOWNLOAD_HOSTS = {"api.github.com", "github.com"}
+DEFAULT_LOCK_PATH = Path(__file__).with_name("intel-neo-lock.json")
+REFRESH_LOCK_HINT = (
+    "Refresh with: bash -c '. ./build-config.env && python3 dev/scripts/fetch-intel-neo.py "
+    '--neo-ver "$INTEL_NEO_VERSION" --level-zero-ver "$LEVEL_ZERO_VERSION" '
+    "--write-lock dev/scripts/intel-neo-lock.json'"
+)
 
 
-def _validate_https_url(url: str) -> None:
-    """Reject credentials, fragments, non-HTTPS schemes, and non-GitHub hosts."""
-    parsed = urlsplit(url)
-    hostname = parsed.hostname or ""
-    github_content = hostname.endswith(".githubusercontent.com")
-    if (
+def _is_release_download_path(path: str) -> bool:
+    parts = path.split("/")
+    return (
+        len(parts) == RELEASE_DOWNLOAD_PATH_SEGMENTS
+        and parts[0] == ""
+        and parts[3:5] == ["releases", "download"]
+        and all(part and part not in {".", ".."} for part in parts[1:])
+    )
+
+
+def _has_unsafe_url_parts(parsed: SplitResult) -> bool:
+    return (
         parsed.scheme != "https"
-        or (hostname not in ALLOWED_DOWNLOAD_HOSTS and not github_content)
         or parsed.username is not None
         or parsed.password is not None
         or parsed.port not in {None, 443}
-        or not parsed.path.startswith("/")
-        or parsed.fragment
-    ):
+        or bool(parsed.fragment)
+    )
+
+
+def _validate_https_url(url: str, *, release_asset_only: bool = False) -> None:
+    """Reject credentials, fragments, non-HTTPS schemes, and non-GitHub hosts."""
+    parsed = urlsplit(url)
+    hostname = parsed.hostname if parsed.hostname is not None else ""
+    if _has_unsafe_url_parts(parsed):
+        raise ValueError(f"refusing non-GitHub HTTPS URL: {url}")
+    if release_asset_only:
+        if hostname != "github.com" or parsed.query or not _is_release_download_path(parsed.path):
+            raise ValueError(f"refusing non-GitHub release asset URL: {url}")
+        return
+    github_host = hostname in ALLOWED_DOWNLOAD_HOSTS or hostname.endswith(".githubusercontent.com")
+    if not github_host or not parsed.path.startswith("/"):
         raise ValueError(f"refusing non-GitHub HTTPS URL: {url}")
 
 
@@ -187,6 +220,11 @@ def _fatal(message: str, *, leading_newline: bool = False) -> NoReturn:
     raise SystemExit(1)
 
 
+def _lock_fatal(lock_path: Path, message: str) -> NoReturn:
+    """Report an invalid or stale lock file naming both the path and refresh command."""
+    _fatal(f"lock file {lock_path}: {message}\n{REFRESH_LOCK_HINT}")
+
+
 def _decode_json(raw: bytes, source: str) -> dict[str, Any]:
     try:
         document = json.loads(raw.decode("utf-8"))
@@ -274,6 +312,13 @@ COMPONENTS = ("runtime", "ocloc")
 # 26.04, the two bases that install it; dev/Containerfile uses the same build.
 LEVEL_ZERO_DISTRO = "u24.04"
 SHA256_DIGEST = re.compile(r"sha256:([0-9a-f]{64})")
+LOCK_SHA256 = re.compile(r"[0-9a-f]{64}")
+LOCK_NEO_ROLES = ("gmm", "icd", "level_zero", "igc_core", "igc_opencl", "ocloc")
+LOCK_LEVEL_ZERO_PACKAGES = ("libze1", "libze-dev")
+LOCK_TOP_KEYS = frozenset(
+    {"neo_version", "level_zero_version", "level_zero_distro", "neo", "level_zero"}
+)
+LOCK_ASSET_KEYS = frozenset({"name", "url", "sha256"})
 
 
 @dataclass(frozen=True)
@@ -483,57 +528,246 @@ def _resolve_level_zero(
     return targets, checksums
 
 
-def _fetch_level_zero(
-    version: str, output_dir: Path, token: str | None, dev: bool
-) -> tuple[list[tuple[str, str]], dict[str, str]]:
-    source = f"https://api.github.com/repos/oneapi-src/level-zero/releases/tags/v{version}"
-    print(f"Querying Level Zero loader release metadata for v{version}...")
-    document = _decode_json(make_request(source, token=token), source)
-    targets, checksums = _resolve_level_zero(document, version, level_zero_packages(dev), source)
-    _download_and_verify(output_dir, targets, checksums, token)
-    return targets, checksums
+@dataclass(frozen=True)
+class LockedStack:
+    neo_version: str
+    level_zero_version: str
+    level_zero_distro: str
+    stack: StackAssets
+    level_zero_assets: dict[str, tuple[str, str]]
+    checksums: dict[str, str]
 
 
-def resolve_and_fetch(
+def _no_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key {key!r}")
+        result[key] = value
+    return result
+
+
+def _read_lock_json(lock_path: Path) -> dict[str, Any]:
+    try:
+        with lock_path.open("rb") as stream:
+            raw = stream.read(MAX_LOCK_BYTES + 1)
+    except OSError as error:
+        _lock_fatal(lock_path, f"cannot read lock file ({error})")
+    if len(raw) > MAX_LOCK_BYTES:
+        _lock_fatal(lock_path, "lock file exceeds size limit")
+    try:
+        document = json.loads(raw.decode("utf-8"), object_pairs_hook=_no_duplicate_keys)
+    except (UnicodeError, json.JSONDecodeError, ValueError) as error:
+        _lock_fatal(lock_path, f"invalid JSON ({error})")
+    if not isinstance(document, dict):
+        _lock_fatal(lock_path, "top-level JSON value must be an object")
+    return document
+
+
+def _check_exact_keys(
+    mapping: dict[str, Any], expected: frozenset[str], context: str, lock_path: Path
+) -> None:
+    unknown = sorted(set(mapping) - expected)
+    if unknown:
+        _lock_fatal(lock_path, f"unknown key(s) in {context}: {', '.join(unknown)}")
+    missing = sorted(expected - set(mapping))
+    if missing:
+        _lock_fatal(lock_path, f"missing key(s) in {context}: {', '.join(missing)}")
+
+
+def _parse_lock_asset(raw: Any, context: str, lock_path: Path) -> tuple[tuple[str, str], str]:
+    if not isinstance(raw, dict):
+        _lock_fatal(lock_path, f"{context} must be an object")
+    _check_exact_keys(raw, LOCK_ASSET_KEYS, context, lock_path)
+    name, url, sha256 = raw["name"], raw["url"], raw["sha256"]
+    if not isinstance(name, str) or not isinstance(url, str) or not isinstance(sha256, str):
+        _lock_fatal(lock_path, f"{context} fields must be strings")
+    if LOCK_SHA256.fullmatch(sha256) is None:
+        _lock_fatal(lock_path, f"{context} has invalid sha256 digest {sha256!r}")
+    try:
+        _validate_https_url(url, release_asset_only=True)
+        safe_name = _validate_asset_filename(name)
+        url_name = _asset_filename(url)
+    except ValueError as error:
+        _lock_fatal(lock_path, f"{context} has invalid URL or filename ({error})")
+    if safe_name != url_name:
+        _lock_fatal(lock_path, f"{context} name {safe_name!r} does not match URL {url_name!r}")
+    return (safe_name, url), sha256
+
+
+def _parse_lock_group(
+    raw_group: Any,
+    expected_keys: tuple[str, ...],
+    group_name: str,
+    lock_path: Path,
+    checksums: dict[str, str],
+) -> dict[str, tuple[str, str]]:
+    if not isinstance(raw_group, dict):
+        _lock_fatal(lock_path, f"{group_name} must be an object")
+    _check_exact_keys(raw_group, frozenset(expected_keys), group_name, lock_path)
+    parsed: dict[str, tuple[str, str]] = {}
+    for key in expected_keys:
+        asset, digest = _parse_lock_asset(raw_group[key], f"{group_name}.{key}", lock_path)
+        _record_checksum(checksums, asset[0], digest, str(lock_path))
+        parsed[key] = asset
+    return parsed
+
+
+def _parse_lock_document(document: dict[str, Any], lock_path: Path) -> LockedStack:
+    _check_exact_keys(document, LOCK_TOP_KEYS, "top-level object", lock_path)
+    neo_ver = document["neo_version"]
+    lz_ver = document["level_zero_version"]
+    lz_distro = document["level_zero_distro"]
+    if not all(isinstance(v, str) and v for v in (neo_ver, lz_ver, lz_distro)):
+        _lock_fatal(lock_path, "version and distro fields must be non-empty strings")
+    if lz_distro != LEVEL_ZERO_DISTRO:
+        _lock_fatal(
+            lock_path,
+            f"level_zero_distro {lz_distro!r} does not match expected {LEVEL_ZERO_DISTRO!r}",
+        )
+    checksums: dict[str, str] = {}
+    neo_map = _parse_lock_group(document["neo"], LOCK_NEO_ROLES, "neo", lock_path, checksums)
+    lz_map = _parse_lock_group(
+        document["level_zero"], LOCK_LEVEL_ZERO_PACKAGES, "level_zero", lock_path, checksums
+    )
+    for package, (asset_name, _url) in lz_map.items():
+        expected_name = f"{package}_{lz_ver}+{lz_distro}_amd64.deb"
+        if asset_name != expected_name:
+            _lock_fatal(
+                lock_path, f"level_zero.{package} names {asset_name!r}, expected {expected_name!r}"
+            )
+    stack = StackAssets(
+        gmm=neo_map["gmm"],
+        icd=neo_map["icd"],
+        level_zero=neo_map["level_zero"],
+        igc_core=neo_map["igc_core"],
+        igc_opencl=neo_map["igc_opencl"],
+        ocloc=neo_map["ocloc"],
+        checksum=(lock_path.name, ""),
+    )
+    return LockedStack(neo_ver, lz_ver, lz_distro, stack, lz_map, checksums)
+
+
+def load_lock(lock_path: Path) -> LockedStack:
+    """Read and validate ``lock_path`` without performing any network request."""
+    return _parse_lock_document(_read_lock_json(lock_path), lock_path)
+
+
+def fetch_from_lock(
+    lock_path: Path,
     neo_ver: str,
     output_dir: Path,
-    token: str | None = None,
     components: str = "runtime",
     level_zero_ver: str | None = None,
     level_zero_dev: bool = False,
 ) -> None:
-    """Resolve deb URLs, download, and verify against published checksums."""
+    """Download and verify selected packages from ``lock_path`` without API calls."""
+    locked = load_lock(lock_path)
+    if locked.neo_version != neo_ver:
+        _lock_fatal(
+            lock_path, f"neo_version {locked.neo_version!r} does not match --neo-ver {neo_ver!r}"
+        )
+    if level_zero_ver is not None and locked.level_zero_version != level_zero_ver:
+        _lock_fatal(
+            lock_path,
+            f"level_zero_version {locked.level_zero_version!r} does not match "
+            f"--level-zero-ver {level_zero_ver!r}",
+        )
     output_dir.mkdir(parents=True, exist_ok=True)
-    source = f"https://api.github.com/repos/intel/compute-runtime/releases/tags/{neo_ver}"
+    _print_resolution(neo_ver, locked.stack)
+    targets = list(locked.stack.select(components))
+    if level_zero_ver is not None:
+        targets.extend(locked.level_zero_assets[pkg] for pkg in level_zero_packages(level_zero_dev))
+    _download_and_verify(output_dir, targets, locked.checksums, token=None)
+    _write_checksum_audit(output_dir, targets, locked.checksums)
+    print(f"\nIntel NEO '{components}' deb packages downloaded and verified from {lock_path}.")
+
+
+def _lock_entry(asset: tuple[str, str], checksums: dict[str, str]) -> dict[str, str]:
+    name, url = asset
+    digest = checksums.get(name)
+    if digest is None:
+        _fatal(f"checksum for {name} not found in published release hashes")
+    return {"name": name, "sha256": digest, "url": url}
+
+
+def _atomic_write_json(path: Path, serialized: str) -> None:
+    temporary_path: Path | None = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            temporary.write(serialized)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        temporary_path.replace(path)
+    except OSError as error:
+        if temporary_path is not None:
+            with contextlib.suppress(FileNotFoundError):
+                temporary_path.unlink()
+        _fatal(f"failed to write lock file {path}: {error}")
+
+
+def write_lock(
+    lock_path: Path, neo_ver: str, level_zero_ver: str, token: str | None = None
+) -> None:
+    """Resolve NEO and Level Zero releases via GitHub API and write ``lock_path``."""
+    neo_source = f"https://api.github.com/repos/intel/compute-runtime/releases/tags/{neo_ver}"
     print(f"Querying Intel compute-runtime release metadata for {neo_ver}...")
-    stack = _resolve_stack(_decode_json(make_request(source, token=token), source), neo_ver, source)
+    stack = _resolve_stack(
+        _decode_json(make_request(neo_source, token=token), neo_source), neo_ver, neo_source
+    )
     _print_resolution(neo_ver, stack)
-    targets = stack.select(components)
     print(f"Downloading checksum file: {stack.checksum[1]}...")
     checksums = _parse_checksums(make_request(stack.checksum[1], token=token), stack.checksum[1])
     _add_igc_checksums(checksums, stack, token)
-    _download_and_verify(output_dir, targets, checksums, token)
-    if level_zero_ver:
-        loader_targets, loader_checksums = _fetch_level_zero(
-            level_zero_ver, output_dir, token, level_zero_dev
-        )
-        targets = [*targets, *loader_targets]
-        checksums = {**checksums, **loader_checksums}
-    _write_checksum_audit(output_dir, targets, checksums)
-    print(f"\nIntel NEO '{components}' deb packages downloaded and verified successfully.")
+    lz_source = (
+        f"https://api.github.com/repos/oneapi-src/level-zero/releases/tags/v{level_zero_ver}"
+    )
+    print(f"Querying Level Zero loader release metadata for v{level_zero_ver}...")
+    lz_targets, lz_checksums = _resolve_level_zero(
+        _decode_json(make_request(lz_source, token=token), lz_source),
+        level_zero_ver,
+        level_zero_packages(dev=True),
+        lz_source,
+    )
+    for name, digest in lz_checksums.items():
+        _record_checksum(checksums, name, digest, lz_source)
+    neo_entries = {role: _lock_entry(getattr(stack, role), checksums) for role in LOCK_NEO_ROLES}
+    lz_entries = {
+        pkg: _lock_entry(asset, checksums)
+        for pkg, asset in zip(LOCK_LEVEL_ZERO_PACKAGES, lz_targets, strict=True)
+    }
+    payload: dict[str, Any] = {
+        "level_zero": lz_entries,
+        "level_zero_distro": LEVEL_ZERO_DISTRO,
+        "level_zero_version": level_zero_ver,
+        "neo": neo_entries,
+        "neo_version": neo_ver,
+    }
+    serialized = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    if len(serialized.encode("utf-8")) > MAX_LOCK_BYTES:
+        _lock_fatal(lock_path, "lock file exceeds size limit")
+    parsed = json.loads(serialized, object_pairs_hook=_no_duplicate_keys)
+    _parse_lock_document(parsed, lock_path)
+    _atomic_write_json(lock_path, serialized)
+    load_lock(lock_path)
+    print(f"\nWrote verified Intel NEO and Level Zero lock file to {lock_path}.")
 
 
-def main() -> None:
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(line_buffering=True)
-    if hasattr(sys.stderr, "reconfigure"):
-        sys.stderr.reconfigure(line_buffering=True)
-
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Fetch and verify Intel NEO deb packages.")
     parser.add_argument(
         "--neo-ver",
         required=True,
-        help="Pinned intel/compute-runtime release tag (e.g. 26.31.39395.13)",
+        help="Pinned intel/compute-runtime release tag (e.g. 26.35.39758.10)",
     )
     parser.add_argument(
         "--output-dir", type=Path, default=Path(), help="Directory to save downloaded debs"
@@ -541,7 +775,7 @@ def main() -> None:
     parser.add_argument(
         "--github-token",
         default=os.getenv("GITHUB_TOKEN", ""),
-        help="Optional GitHub token for rate limiting",
+        help="Optional GitHub token for --write-lock API lookups (ignored in lock mode)",
     )
     parser.add_argument(
         "--components",
@@ -552,7 +786,6 @@ def main() -> None:
             "ocloc: the offline compiler and its IGC libraries only (an AOT build host)"
         ),
     )
-
     parser.add_argument(
         "--level-zero-ver",
         default="",
@@ -563,17 +796,47 @@ def main() -> None:
         action="store_true",
         help="With --level-zero-ver, also fetch the loader's headers and link library (libze-dev)",
     )
+    lock_group = parser.add_mutually_exclusive_group()
+    lock_group.add_argument(
+        "--lock",
+        type=Path,
+        default=None,
+        help=f"Read pinned asset URLs and SHA-256 sums from PATH (default: {DEFAULT_LOCK_PATH})",
+    )
+    lock_group.add_argument(
+        "--write-lock",
+        type=Path,
+        default=None,
+        help="Resolve release metadata via GitHub API and write the sorted lock JSON to PATH",
+    )
+    return parser
 
+
+def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True)
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(line_buffering=True)
+
+    parser = _build_parser()
     args = parser.parse_args()
-    if args.level_zero_dev and not args.level_zero_ver:
+    level_zero_ver = args.level_zero_ver.strip() or None
+    if args.level_zero_dev and not level_zero_ver:
         parser.error("--level-zero-dev needs --level-zero-ver")
-    token = args.github_token.strip() or None
-    resolve_and_fetch(
+    if args.write_lock is not None:
+        if level_zero_ver is None:
+            parser.error("--write-lock needs --level-zero-ver")
+        token = args.github_token.strip() or None
+        write_lock(args.write_lock, args.neo_ver, level_zero_ver, token=token)
+        return
+
+    lock_path = args.lock if args.lock is not None else DEFAULT_LOCK_PATH
+    fetch_from_lock(
+        lock_path,
         args.neo_ver,
         args.output_dir,
-        token=token,
         components=args.components,
-        level_zero_ver=args.level_zero_ver.strip() or None,
+        level_zero_ver=level_zero_ver,
         level_zero_dev=args.level_zero_dev,
     )
 
