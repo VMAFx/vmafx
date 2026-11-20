@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+name: Guard against superseded pull request edits
+description: Fail a Rules job when a later edit changed the pull request text.
+runs:
+  using: composite
+  steps:
+    - name: Check the current pull request text
+      if: github.event_name == 'pull_request' && github.event.action == 'edited'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+      run: python3 scripts/ci/edit_supersede_guard.py

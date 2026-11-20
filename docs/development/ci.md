@@ -451,12 +451,32 @@ does not start rebase waves outside its schedule
 
 - Every workflow with a `pull_request`, `pull_request_target` or `merge_group`
   trigger carries a workflow-level `concurrency` block whose group is the same
-  for every push of one pull request and whose `cancel-in-progress` is true off
-  master (the block under "Master push runs" below). A workflow that cannot
+  for every push of one pull request and whose `cancel-in-progress` is true on
+  a new push (for `required-aggregator.yml` and `rule-enforcement.yml`, only a
+  `synchronize` event cancels; other workflows keep `cancel-in-progress` true
+  off master, as shown under "Master push runs" below). A workflow that cannot
   carry one is listed in `UNSUPERSEDED` of
   `scripts/ci/tests/test_master_concurrency_contract.py` with its reason; today
   `docs.yml` (per-job groups, the Pages deploy is never cancelled) and
   `pr-label-lanes.yml` (its called workflows keep their own groups).
+- In `required-aggregator.yml` and `rule-enforcement.yml`, same-head
+  `pull_request` events (`edited`, `reopened`, `ready_for_review`) keep
+  `cancel-in-progress` false
+  ([ADR-3557](../adr/3557-aggregator-same-head-queue.md)): a review bot edits
+  the pull-request body seconds after each push, GitHub counts a cancelled
+  check run in an earlier check suite on the head commit as blocking the merge
+  even when a newer suite succeeds, and a pending same-head twin waits behind
+  the running run (further pending aggregator edits collapse to the newest
+  without creating check runs). `rule-enforcement.yml` gives each `edited` run
+  its own group keyed on `github.run_id`, so no later edit (same second or not)
+  replaces or cancels it; `run-name` keeps the `pull_request.updated_at` stamp
+  for aggregator correlation, and same-second edits sharing that stamp fail
+  closed when an aggregator run lists both `Rules` runs
+  ([ADR-3551](../adr/3551-aggregator-edited-window.md)); the
+  [required-checks aggregator section](#required-checks-aggregator) details the
+  residual bounds. Enforced by
+  `same_head_findings`, `pending_replacement_findings` and `skip_findings` in
+  `scripts/ci/tests/test_master_concurrency_contract.py`.
 - `renovate.json` sets `updateNotScheduled: false`: Renovate opens and rebases
   its branches only in its Monday schedule, at most two pull requests and three
   branches at once. Ticking a pull request's rebase box on the dependency
@@ -486,10 +506,14 @@ commit ever gets a complete verdict ([ADR-1673](../adr/1673-master-runs-not-canc
 - The merge train keeps one sentinel master commit's runs alive and cancels the
   other superseded master runs itself through the API. GitHub's per-ref
   cancellation is not involved on master.
-- The Required Checks Aggregator follows the same rule. Re-running the
-  aggregator of an old master head no longer cancels the newest one. On a PR ref
-  the old warning stands: re-running an older head's aggregator cancels the
-  current head's.
+- The Required Checks Aggregator follows the same SHA group rule on master, and
+  on a PR ref cancels only on `synchronize`
+  ([ADR-3557](../adr/3557-aggregator-same-head-queue.md)). Re-running the
+  aggregator of an old master head no longer cancels the newest one. On a PR
+  ref, re-running an older head's `synchronize` run still cancels the current
+  head's run, while re-running an `edited` twin waits as pending; re-run a
+  cancelled aggregator only when no aggregator run of the same head is in
+  progress.
 - Blocks that must serialise keep their group and are listed with a reason in
   `scripts/ci/tests/test_master_concurrency_contract.py`: `dev-container-publish.yml`
   (registry publish), `release-please.yml` (one release PR per push),
@@ -524,13 +548,33 @@ report from a current-edit run whose `display_title` starts with
 check suites on the same head SHA are excluded, and the aggregator fails closed
 when `pull_request.updated_at` is missing or when the `Rules` workflow does not
 start for the edit within the 2-minute registration grace. If two edits land in
-the same second and produce multiple `Rules` runs sharing the edit-stamp prefix
-(in any status), the aggregator fails closed at once and asks for another
+the same second and an aggregator run lists multiple `Rules` runs sharing the
+edit-stamp prefix (in any status), it fails closed at once and asks for another
 pull-request edit or a commit push. To catch a second same-second `Rules` run
 before passing on an earlier green one, an `edited` aggregator run keeps
 polling until a workflow-runs listing started after the 2-minute registration
 grace, though a duplicate registering after the grace is not seen by that
 aggregator run (its own `Rules` checks still report on the head commit).
+The later edit's aggregator run shares the aggregator concurrency group. If its
+pending run survives, it starts its own 2-minute grace after the earlier run
+leaves the group and fails closed when it lists both `Rules` runs. If the later
+run registers after that grace, or a third edit replaces the pending second
+look, the content guard in `.github/actions/edit-supersede-guard/action.yml` and
+`scripts/ci/edit_supersede_guard.py` fails an earlier `Rules` job when its event
+title, body or base differs from the live pull request. The earlier failed job
+then fails the aggregator instead of allowing a stale pass. The guard waits
+until five seconds after the event stamp, capped at 30 seconds; a pull-request
+read that lags the edit by more than the five-second settle can still return
+stale text. `test_late_registering_same_second_edit_fails_on_superseded_rules_run`
+in `scripts/ci/tests/test_aggregator_edited_window.py` covers delayed
+registration, and `test_superseded_fails` in
+`scripts/ci/tests/test_edit_supersede_guard.py` covers the guard decision.
+`test_known_gap_third_edit_replaces_pending_second_look` in
+`scripts/ci/tests/test_master_concurrency_contract.py` still pins the
+three-event concurrency path: a third edit can replace the pending second look.
+`serial_second_look_findings` in
+`scripts/ci/tests/test_master_concurrency_contract.py` pins the shared group and
+non-cancelling `edited` policy that allow a surviving pending second look.
 Because `actions/runner` converts any YAML
 string containing `${{` into one expression capped at 21,000 UTF-16 code units
 after `.NET` `Char.IsWhiteSpace` expression trimming,
