@@ -272,7 +272,8 @@ images.
 The build checks its own output: `core/src/check_device_compression.py` fails
 it when a fatbin holds a raw cubin or PTX entry, a HIP bundle is not a
 compressed (`CCOB`) bundle, or a SYCL image section of `libvmaf.so` (Linux
-shared builds) is not zstd-compressed.
+shared builds) is not zstd-compressed. The fatbin check reads each entry's
+compressed flag and scans only bytes outside compressed payloads for raw code.
 
 ### `enable_hip` and `enable_hipcc`
 
