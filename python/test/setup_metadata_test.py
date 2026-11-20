@@ -218,10 +218,10 @@ def test_build_backend_floor_covers_the_license_metadata_form():
 # a URL that is not https fails the check, and so does the upstream one.
 
 HARNESS_URLS = {
-    "Homepage": "https://github.com/VMAFx/vmafx",
-    "Repository": "https://github.com/VMAFx/vmafx",
+    "Homepage": "https://github.com/vidiko/vmafx",
+    "Repository": "https://github.com/vidiko/vmafx",
     "Documentation": "https://vmafx.dev/",
-    "Issues": "https://github.com/VMAFx/vmafx/issues",
+    "Issues": "https://github.com/vidiko/vmafx/issues",
 }
 
 
@@ -254,7 +254,7 @@ def test_harness_package_urls_point_at_the_fork() -> None:
 def test_the_url_check_refuses_a_url_that_is_not_https() -> None:
     """Negative from the issue: a URL that is not https fails the check."""
     urls = dict(HARNESS_URLS)
-    urls["Homepage"] = "http://github.com/VMAFx/vmafx"
+    urls["Homepage"] = "http://github.com/vidiko/vmafx"
     problems = _url_problems(urls)
     assert any("not https" in problem for problem in problems), problems
 
@@ -265,7 +265,7 @@ def test_the_url_check_refuses_the_upstream_repository() -> None:
     urls["Homepage"] = "https://github.com/Netflix/vmaf"
     problems = _url_problems(urls)
     assert any(
-        "expected https://github.com/VMAFx/vmafx" in problem for problem in problems
+        "expected https://github.com/vidiko/vmafx" in problem for problem in problems
     ), problems
 
 

@@ -751,3 +751,26 @@ other than the caller's (a scratch repository, a clone into a temporary director
 
 Only temporary caller paths are injected. The local pre-commit/pre-push hook
 runs when its inputs change. Required `Pre-Commit` CI also runs the regression.
+
+## Old organisation references
+
+`check-old-org-refs` rejects obsolete GitHub organisation slugs, URLs, Pages
+hosts and owner settings after the moves to vidiko, plurano and tekmora. Go
+module and import paths remain valid. Run the full tracked-file check with
+`python3 -B scripts/ci/check-old-org-refs.py --all`.
+
+The permanent path allow-list preserves committed historical records: numbered
+ADRs and index fragments, research and its digest baseline, rebase notes,
+changelog fragments, the changelog and its archives. The checker's test file
+is also allowed so it can contain examples. For a specific intentional historical
+reference elsewhere, append `old-org-ok` on the same line.
+
+Four MEL category C exceptions were entered on 2026-11-20 and expire on
+2026-11-30. After expiry their references are reported with the reason:
+
+- Vendored Pelorus files and its interoperability guide: update banners when Pelorus is re-vendored from vidiko/pelorus.
+- `FFMPEG_FIX_SERIES_REPO` in `build-config.env`: the signed ffmpeg-patches v0.7.0 workflow identity changes with the next series release.
+- `lua/standards.lua` and the two `tools/markdownlint` package files: Praetor renders them and must rename them.
+- `ghcr.io/` image references: switch in the follow-up PR when vidiko image tags exist.
+
+Set `OLD_ORG_REFS_TODAY` to an ISO date to inspect expiry behavior.
