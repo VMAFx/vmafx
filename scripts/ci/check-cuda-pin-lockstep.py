@@ -89,6 +89,9 @@ APT_NVCC_VERSION_RE = re.compile(
 APT_CUDART_VERSION_RE = re.compile(
     r'(?m)^CUDA_APT_CUDART_VERSION="(?P<value>[0-9]+\.[0-9]+\.[0-9]+-[0-9]+)"'
 )
+APT_NVTX_VERSION_RE = re.compile(
+    r'(?m)^CUDA_APT_NVTX_VERSION="(?P<value>[0-9]+\.[0-9]+\.[0-9]+-[0-9]+)"'
+)
 LABEL_RE = re.compile(r"(?m)^\s*LABEL\s+[^\n]*\bCUDA (?P<value>[0-9]+\.[0-9]+\.[0-9]+)\b")
 
 # Five spellings used to live here and no longer have a single site in the
@@ -118,6 +121,7 @@ SITE_SHAPES = (
     ("apt-toolkit-version", APT_TOOLKIT_VERSION_RE),
     ("apt-nvcc-version", APT_NVCC_VERSION_RE),
     ("apt-cudart-version", APT_CUDART_VERSION_RE),
+    ("apt-nvtx-version", APT_NVTX_VERSION_RE),
     ("label", LABEL_RE),
 )
 
@@ -136,6 +140,7 @@ EXACT_METADATA_KINDS = frozenset(
         "apt-toolkit-version",
         "apt-nvcc-version",
         "apt-cudart-version",
+        "apt-nvtx-version",
     }
 )
 
@@ -275,7 +280,7 @@ def expected_value(kind: str, version: str) -> str | None:
         return series.replace(".", "-")
     if kind == "apt-toolkit-version":
         return f"{version}-1"
-    if kind in {"apt-nvcc-version", "apt-cudart-version"}:
+    if kind in {"apt-nvcc-version", "apt-cudart-version", "apt-nvtx-version"}:
         return None
     return version
 
@@ -371,7 +376,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
             "\nCUDA is a coordinated pin: every site moves in one commit.\n"
             "  Derived spellings:  scripts/ci/check-cuda-pin-lockstep.py --write\n"
             "  Exact apt metadata: verify the NVIDIA redist manifest and Packages index,\n"
-            "                      then update CUDA_APT_LOCK_RELEASE and all three versions\n"
+            "                      then update CUDA_APT_LOCK_RELEASE and all four versions\n"
             "  A new spelling must be taught to this gate and to renovate.json's\n"
             "  CUDA manager in the same change (ADR-1285).",
             file=sys.stderr,

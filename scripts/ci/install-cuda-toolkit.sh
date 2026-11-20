@@ -101,7 +101,8 @@ for required_name in \
   CUDA_APT_PACKAGE \
   CUDA_APT_TOOLKIT_VERSION \
   CUDA_APT_NVCC_VERSION \
-  CUDA_APT_CUDART_VERSION; do
+  CUDA_APT_CUDART_VERSION \
+  CUDA_APT_NVTX_VERSION; do
   if [ -z "${!required_name:-}" ]; then
     echo "::error::install-cuda-toolkit: ${required_name} is unset in build-config.env" >&2
     exit 2
@@ -129,7 +130,7 @@ fi
 dotted="${series//-/.}"
 major="${series%%-*}"
 
-for component_name in CUDA_APT_NVCC_VERSION CUDA_APT_CUDART_VERSION; do
+for component_name in CUDA_APT_NVCC_VERSION CUDA_APT_CUDART_VERSION CUDA_APT_NVTX_VERSION; do
   component_version="${!component_name}"
   case "$component_version" in
     "${dotted}."*-*) ;;
@@ -219,6 +220,15 @@ verify_builder_layout() {
   "${cuda_home}/bin/nvcc" --version
 }
 
+verify_nvtx_layout() {
+  if [ ! -f "${cuda_home}/targets/x86_64-linux/include/nvtx3/nvToolsExt.h" ]; then
+    echo "::error::install-cuda-toolkit: expected nvtx3/nvToolsExt.h under" \
+      "${cuda_home}/targets/x86_64-linux/include after installing cuda-nvtx-${series};" \
+      "the package layout changed" >&2
+    exit 1
+  fi
+}
+
 verify_runtime_layout() {
   if [ ! -e "${cuda_home}/lib64/libcudart.so.${major}" ]; then
     echo "::error::install-cuda-toolkit: expected libcudart under ${cuda_home}/lib64 after installing" \
@@ -247,12 +257,15 @@ case "$mode" in
     $SUDO apt-get install -y -qq --no-install-recommends \
       "cuda-nvcc-${series}=${CUDA_APT_NVCC_VERSION}" \
       "cuda-cudart-dev-${series}=${CUDA_APT_CUDART_VERSION}" \
-      "cuda-cudart-${series}=${CUDA_APT_CUDART_VERSION}"
+      "cuda-cudart-${series}=${CUDA_APT_CUDART_VERSION}" \
+      "cuda-nvtx-${series}=${CUDA_APT_NVTX_VERSION}"
     require_installed_version "cuda-nvcc-${series}" "$CUDA_APT_NVCC_VERSION"
     require_installed_version "cuda-cudart-dev-${series}" "$CUDA_APT_CUDART_VERSION"
     require_installed_version "cuda-cudart-${series}" "$CUDA_APT_CUDART_VERSION"
+    require_installed_version "cuda-nvtx-${series}" "$CUDA_APT_NVTX_VERSION"
     verify_builder_layout
     verify_runtime_layout
+    verify_nvtx_layout
 
     if [ -n "${GITHUB_PATH:-}" ]; then
       echo "${cuda_home}/bin" >>"$GITHUB_PATH"
@@ -265,7 +278,8 @@ case "$mode" in
     fi
 
     echo "install-cuda-toolkit: CUDA ${CUDA_VERSION} builder" \
-      "(nvcc ${CUDA_APT_NVCC_VERSION}, cudart ${CUDA_APT_CUDART_VERSION}) from ${distro}"
+      "(nvcc ${CUDA_APT_NVCC_VERSION}, cudart ${CUDA_APT_CUDART_VERSION}," \
+      "nvtx ${CUDA_APT_NVTX_VERSION}) from ${distro}"
     ;;
 
   runtime)
@@ -289,15 +303,18 @@ case "$mode" in
       "${CUDA_APT_PACKAGE}=${CUDA_APT_TOOLKIT_VERSION}" \
       "cuda-nvcc-${series}=${CUDA_APT_NVCC_VERSION}" \
       "cuda-cudart-dev-${series}=${CUDA_APT_CUDART_VERSION}" \
-      "cuda-cudart-${series}=${CUDA_APT_CUDART_VERSION}"
+      "cuda-cudart-${series}=${CUDA_APT_CUDART_VERSION}" \
+      "cuda-nvtx-${series}=${CUDA_APT_NVTX_VERSION}"
     require_installed_version "$CUDA_APT_PACKAGE" "$CUDA_APT_TOOLKIT_VERSION"
     require_installed_version "cuda-nvcc-${series}" "$CUDA_APT_NVCC_VERSION"
     require_installed_version "cuda-cudart-dev-${series}" "$CUDA_APT_CUDART_VERSION"
     require_installed_version "cuda-cudart-${series}" "$CUDA_APT_CUDART_VERSION"
+    require_installed_version "cuda-nvtx-${series}" "$CUDA_APT_NVTX_VERSION"
     verify_builder_layout
     verify_runtime_layout
+    verify_nvtx_layout
     echo "install-cuda-toolkit: CUDA ${CUDA_VERSION} full development toolkit" \
       "(toolkit ${CUDA_APT_TOOLKIT_VERSION}, nvcc ${CUDA_APT_NVCC_VERSION}," \
-      "cudart ${CUDA_APT_CUDART_VERSION}) from ${distro}"
+      "cudart ${CUDA_APT_CUDART_VERSION}, nvtx ${CUDA_APT_NVTX_VERSION}) from ${distro}"
     ;;
 esac

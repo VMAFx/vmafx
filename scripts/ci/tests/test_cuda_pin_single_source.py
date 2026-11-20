@@ -64,6 +64,7 @@ MANUAL_METADATA_KINDS = {
     "apt-toolkit-version": "exact NVIDIA toolkit Debian package version",
     "apt-nvcc-version": "exact NVIDIA nvcc component Debian package version",
     "apt-cudart-version": "exact NVIDIA cudart component Debian package version",
+    "apt-nvtx-version": "exact NVIDIA NVTX component Debian package version",
 }
 # Spellings a Renovate custom manager rewrites in place.
 #
@@ -143,7 +144,7 @@ class CudaPinCoverage(unittest.TestCase):
         cls.sites = MODULE.find_sites(ROOT)
 
     def test_the_tree_has_sites_to_protect(self) -> None:
-        self.assertEqual(len(self.sites), 7, "expected exactly 7 CUDA pin sites")
+        self.assertEqual(len(self.sites), 8, "expected exactly 8 CUDA pin sites")
         kinds = {site.kind for site in self.sites}
         self.assertEqual(
             kinds,
@@ -342,6 +343,7 @@ class CudaPinCoverage(unittest.TestCase):
             "CUDA_APT_TOOLKIT_VERSION",
             "CUDA_APT_NVCC_VERSION",
             "CUDA_APT_CUDART_VERSION",
+            "CUDA_APT_NVTX_VERSION",
         ):
             line = next(line for line in config_lines if line.startswith(f"{name}="))
             with self.subTest(name=name):
@@ -455,7 +457,7 @@ class CudaPinGate(unittest.TestCase):
     def test_the_fixture_starts_in_lockstep(self) -> None:
         result = self.gate()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("7 sites", result.stdout)
+        self.assertIn("8 sites", result.stdout)
 
     def test_each_spelling_is_caught_when_it_drifts(self) -> None:
         cases = (
@@ -482,6 +484,12 @@ class CudaPinGate(unittest.TestCase):
                 f'CUDA_APT_CUDART_VERSION="{self.pin("CUDA_APT_CUDART_VERSION")}"',
                 'CUDA_APT_CUDART_VERSION="12.9.1-1"',
                 "apt-cudart-version",
+            ),
+            (
+                "build-config.env",
+                f'CUDA_APT_NVTX_VERSION="{self.pin("CUDA_APT_NVTX_VERSION")}"',
+                'CUDA_APT_NVTX_VERSION="12.9.1-1"',
+                "apt-nvtx-version",
             ),
             (
                 "build-config.env",
@@ -536,7 +544,7 @@ class CudaPinGate(unittest.TestCase):
         self.assertIn("docker/Dockerfile.node", result.stderr)
 
     def test_a_site_in_an_unknown_spelling_fails(self) -> None:
-        """An eighth copy in a shape nobody taught the gate is still drift."""
+        """A ninth copy in a shape nobody taught the gate is still drift."""
         workflow = self.repo / ".github/workflows/newlane.yml"
         workflow.write_text(
             "name: New lane\njobs:\n  build:\n    env:\n"
@@ -567,6 +575,7 @@ class CudaPinGate(unittest.TestCase):
         self.assertIn('CUDA_APT_PACKAGE="cuda-toolkit-13-4"', config)
         self.assertIn('CUDA_APT_NVCC_VERSION="13.4.92-1"', config)
         self.assertIn('CUDA_APT_CUDART_VERSION="13.4.92-1"', config)
+        self.assertIn('CUDA_APT_NVTX_VERSION="13.4.92-1"', config)
         self.assertIn(
             f"CUDA {self.pin('CUDA_VERSION')} runtime",
             (self.repo / "docker/Dockerfile.production-gpu").read_text(),

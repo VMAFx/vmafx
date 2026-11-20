@@ -260,18 +260,32 @@ if is_nvtx_enabled and not is_cuda_enabled
     error('enable_nvtx=true requires enable_cuda=true (NVTX headers reside in the CUDA toolkit)')
 endif
 
-# Discover the CUDA toolkit through Meson's own dependency: it reads
-# CUDA_PATH / CUDA_HOME / CUDA_ROOT and the conventional /usr/local/cuda*
-# roots, and takes the include directory from the toolkit's target tree.
-# The partial dependency keeps the include and compile arguments without
-# linking the CUDA runtime, which the driver-loading backend does not want.
+# Discover the CUDA toolkit through Meson's own dependency, then resolve the
+# NVTX include from the nvcc that is actually on PATH. CudaDependency derives
+# link arguments from requested_modules (cudart_static by default), and
+# partial_dependency() does not clear that list. The driver-loading backend
+# must not link the CUDA runtime, so nvtx_dependency carries the include
+# directory and nothing else.
 nvtx_dependency = []
 if is_nvtx_enabled
     cuda_dep = dependency('cuda', required : false)
     if not cuda_dep.found()
         error('enable_nvtx=true but the CUDA toolkit was not found; set CUDA_PATH or install the toolkit')
     endif
-    nvtx_dependency = cuda_dep.partial_dependency(compile_args : true, includes : true)
+    nvcc = find_program('nvcc', required : false)
+    if not nvcc.found()
+        error('enable_nvtx=true but nvcc was not found; set CUDA_PATH or install the toolkit')
+    endif
+    fs = import('fs')
+    cuda_root = fs.parent(fs.parent(nvcc.full_path()))
+    nvtx_include_dir = cuda_root / 'targets' / 'x86_64-linux' / 'include'
+    if not fs.is_dir(nvtx_include_dir)
+        nvtx_include_dir = cuda_root / 'include'
+    endif
+    if not fs.is_dir(nvtx_include_dir)
+        error('enable_nvtx=true but the CUDA toolkit include directory was not found under ' + cuda_root)
+    endif
+    nvtx_dependency = declare_dependency(include_directories : include_directories(nvtx_include_dir))
     if not cc.has_header('nvtx3/nvToolsExt.h', dependencies : nvtx_dependency)
         error('enable_nvtx=true but nvtx3/nvToolsExt.h was not found in the CUDA toolkit')
     endif
