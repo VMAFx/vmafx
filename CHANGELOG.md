@@ -702,6 +702,17 @@ Contributed by luoye-cpu.
 - **The scoring node takes container inputs and a time window**: `.mkv`, `.mp4` and other inputs ffmpeg reads are decoded by the node's ffmpeg into a Y4M pipe and scored, with no temp file; the new job fields `window_start` and `window_duration` score a sample without decoding the whole clip ([ADR-3370](docs/adr/3370-node-container-decode.md)).
 
 
+- **Smoke-test `vmafx-node:<tag>-sycl` for `VMAFX_BACKEND=sycl` on publish.**
+  `docker-publish-operator-node.yml` now runs
+  `scripts/release/smoke-published-image.sh` with kind `node-sycl` on the
+  published `-sycl` digest after signature verification. It inspects
+  `Config.Env` of the pulled image and refuses a tag lacking the exact
+  `VMAFX_BACKEND=sycl` entry (missing or set to another value), checks the
+  `/usr/local/bin/vmafx-node` entrypoint, `--version` and the FUSE mount, and
+  prints the GPU skip reason instead of passing SYCL scoring silently
+  (`scripts/release/tests/test-smoke-published-image.sh`).
+
+
 - **`ghcr.io/vmafx/vmafx-node:<tag>-sycl` scores on Intel GPUs (ADR-3371).**
   The `node-sycl` image now carries a oneAPI build of `libvmaf` from the shared
   `scripts/ci/build-oneapi-libvmaf.sh` (the script the production oneAPI image
@@ -2797,6 +2808,9 @@ Contributed by luoye-cpu.
   every non-cancelled run.
 
 
+- **CI:** Install Linux CPU and GPU ONNX Runtime from pinned NuGet packages.
+
+
 - **ADR allocator scans open pull request heads to avoid fork PR collisions.**
   In claim mode, `scripts/adr/next-free.sh` queries `gh` for open pull request
   head commit SHAs and scans their `docs/adr` trees alongside origin branches.
@@ -2949,6 +2963,9 @@ Contributed by luoye-cpu.
 
 
 - **Changes to shared `scripts/lib` helpers and `scripts/__init__.py` now run the Build workflow's Python test legs.** A test fails when a helper imported by the Python tests is missing from the selector.
+
+
+- **CI:** symbolic-link test fixtures under `scripts/ci/tests` probe the target directory via `symlink_test_support.py` and `scripts/lib/symlink-probe.sh` before creating links and skip with the probe's error on Windows volumes or hosts that reject symbolic links, enforced by `scripts/ci/tests/test_symlink_test_support.py`.
 
 
 - Windows UCRT64 CI: the MSYS2 leg installs `python-setuptools`, which the codegen suite (`test_vmafx_api_generator`) imports, instead of failing on a missing module.
@@ -3345,6 +3362,9 @@ Contributed by luoye-cpu.
   no score changes.
 
 
+- **Intel NEO and Level Zero container and CI fetches read a committed asset lock instead of querying `api.github.com` at build time.** `dev/scripts/fetch-intel-neo.py` now reads `.deb` URLs and SHA-256 digests from `dev/scripts/intel-neo-lock.json` by default (`--write-lock` refreshes it, `.github/workflows/intel-neo-lock-refresh.yml` commits updates on Renovate branches as `vmafx-release-bot[bot]`, `renovate.json` ignores that author email during branch checks, and `scripts/ci/check-dco.py` accepts that signed single-file refresh commit via `dco-bot-opener`), eliminating anonymous GitHub API rate-limit failures in the credential-free `Release Dry Run` GPU image builds ([ADR-3555](docs/adr/3555-intel-neo-lock-file.md)). `dev/Containerfile` now fetches the Level Zero loader `.deb` packages (`libze1`, `libze-dev`) through the same lock instead of unchecked `curl` downloads. `--write-lock` validates the new lock before it replaces the old one. `scripts/ci/check-dco.py --landed` also accepts the single `vmafx-release-bot[bot]` `Co-authored-by:` trailer added when GitHub squashes a `renovate[bot]` pull request that updates `dev/scripts/intel-neo-lock.json` (`dco-landed-release-bot-coauthor`).
+
+
 - Python harness: the per-content fit lines of the subjective-dataset scatter plots
   (`RegressorMixin._least_squares_line()`) no longer raise
   `ValueError: not enough values to unpack` when a group's least-squares line has a
@@ -3366,6 +3386,9 @@ Contributed by luoye-cpu.
   (`vmafx_build_info.h`, `vmafx_build_commit.h`) had no entry in the licence
   manifest. Both are listed now, and a test fails when a new generated header
   lacks one.
+
+
+- LLVM installation removes the hosted runner's Microsoft and Azure apt sources before refreshing package lists, avoiding failures when those unrelated repositories rate-limit requests. Both distribution archive and apt.llvm.org installs use the same cleanup as cached apt installs.
 
 
 - CI: the Python lock checker no longer refuses a step before `actions/checkout` that runs
@@ -3476,6 +3499,24 @@ Contributed by luoye-cpu.
 - CI: Renovate's CI Node.js pull request can pass the dependency-only deliverables exemption and move Node to a new major while the engine-locked documentation workflow keeps its own major until the next engine pin move.
 
 
+- **`vmafx-node` no longer dials an undeployed online-training sidecar, gates
+  `/readyz` on the sidecar when enabled, and supports node-scoped pod affinity
+  in the Helm chart
+  ([ADR-3558](docs/adr/3558-node-sidecar-readiness-gpu-affinity.md)).** The
+  sidecar feedback drainer is now opt-in via `VMAFX_SIDECAR_ENABLED`
+  (`sidecar.enabled`, chart `node.sidecar.enabled`, default `false`), stopping
+  recurring `WARN sidecar not reachable` logs on standard deployments while
+  rejecting invalid boolean values at startup. When enabled, `/readyz` reports
+  `503` unless the drainer holds a live Unix socket connection (with reconnect
+  backoff capped at 15 s so readiness recovers within 30 s). The Helm chart's
+  node `readinessProbe` now queries HTTP `/readyz` on `metrics` (backed by
+  `scorer`, loopback `grpc`, and conditional `sidecar` checks, amending
+  ADR-1094), and `node.affinity` overrides global `affinity` so heterogeneous
+  GPU pools can configure soft scheduling preferences without a hard pin. For
+  Intel Arc pools, use `gpu.intel.com/product` with `Arc_Pro_B60` preferred
+  (weight 100) and `Arc_B580` as fallback (weight 50).
+
+
 - Go tests: the `cmd/vmafx-node` tests that dial the node's listeners start the graph through `startAppWithRetry`, which picks fresh loopback ports and retries up to five times when a reserved port was taken before the graph bound it (`bind: address already in use`); other start errors fail at once.
 
 
@@ -3496,6 +3537,9 @@ Contributed by luoye-cpu.
   `float_psnr` and `ciede` twins up to 15 bits, the `psnr_hvs` twins up to 11
   bits. Before, twins outside the five `picture_copy()` families were accepted
   unmeasured, and the `float_moment` twins returned unscaled moments there.
+
+
+- **Dev container:** Install ONNX Runtime from the pinned NuGet helper, avoiding unavailable release archives.
 
 
 - **Traces, metrics and logs leave the services when an OTLP endpoint is
@@ -3787,6 +3831,13 @@ Contributed by luoye-cpu.
   random on ext4. It now keeps a second link to the stale socket, so the file
   system cannot give its inode number to the server's new socket
   (`ai/sidecar/tests/test_socket_permissions.py`).
+
+
+- **Make published node image smoke-test frames readable.** The FUSE frames
+  folder was created by `mktemp -d` with mode 0700, preventing the nonroot mount
+  container from reading it and causing every `vmafx-node` and
+  `vmafx-node-...-sycl` publish smoke step to fail. The folder is now 0755, and
+  the test stub refuses unreadable folders.
 
 
 - **A stale private-state lock no longer stops every commit hook.** `scripts/githooks/state-sync.sh`
@@ -4091,6 +4142,16 @@ Contributed by luoye-cpu.
   ([FFmpeg patch automation](docs/development/ffmpeg-patch-automation.md)).
   `scripts/ci/test_ffmpeg_patch_stack.py` refuses a header the series adds with
   any other guard.
+
+
+- **CI:** Move the Windows MSVC+SYCL oneAPI offline installer pin in `libvmaf-build-matrix.yml` to `2026.2.0.661` (`intel-oneapi-toolkit-2026.2.0.661_offline.exe`): MSVC 14.52 refuses Clang front ends older than 22 (`STL1000`), and Intel's release notes describe a Clang 22 front end from compiler release 2026.0.0 ([ADR-3567](docs/adr/3567-windows-sycl-oneapi-2026-2.md)).
+  The installer size and SHA-256 are checked before extraction.
+  Builds run `44487361326` measured six refused AOT targets (`tgllp`, `adl-s`,
+  `adl-p`, `adl-n`, `rpl-s`, `rpl-p`). Xe-LP, Alder Lake and Raptor Lake
+  integrated devices get no AOT image from the Windows CI build and, by design,
+  fall back to the [`spir64` image compiled at run time](docs/backends/sycl/aot.md#default-target-list).
+  Builds run `44499808688` built the leg with the 13 accepted targets; the
+  run-time fallback on the six refused families remains unmeasured.
 
 
 - **The Windows SYCL tester zip passes its import check.** `cfgmgr32.dll`, which the Level Zero loader imports, is a System32 DLL and is now accepted by `scripts/ci/check-windows-bundle-imports.py`; an unknown DLL is still refused. The x64-sycl leg failed on it, so no rc.3 Windows zip was published.

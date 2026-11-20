@@ -1,0 +1,1 @@
+- **CI:** Install Linux CPU and GPU ONNX Runtime from pinned NuGet packages.
