@@ -577,3 +577,10 @@ python3 scripts/ci/rust_twin_diff.py --vmaf build-rs/tools/vmaf \
 - [Features](features.md): full feature extractor reference table
 - [ADR-0196](../adr/0196-float-motion-gpu.md): `float_motion` GPU kernels
 - [ADR-0219](../adr/0219-motion3-gpu-coverage.md): `motion3` GPU coverage
+
+See the [glossary](../reference/glossary.md) for the terms used across the
+metric pages.
+
+Glossary terms: [Feature extractor](../reference/glossary.md#feature-extractor),
+[Motion](../reference/glossary.md#motion),
+[Range](../reference/glossary.md#range).

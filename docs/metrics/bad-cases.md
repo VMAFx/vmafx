@@ -45,3 +45,6 @@ File the report through the
 "bug report" for a wrong score, "performance regression" for a slowdown and
 "hardware report" for a result from a device the project does not test. Open
 and confirmed bugs are tracked in [the state ledger](../state.md).
+
+See the [glossary](../reference/glossary.md) for the terms used across the
+metric pages.

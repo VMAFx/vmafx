@@ -599,6 +599,9 @@ nav:
       - By tag: adr/by-tag/index.md
   - Reference:
       - FAQ: reference/faq.md
+      - What a VMAF number means: reference/concepts.md
+      - Metric and model chooser: reference/chooser.md
+      - Glossary: reference/glossary.md
       - References: reference/references.md
       - Benchmarks: benchmarks.md
   - Records:

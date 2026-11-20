@@ -157,3 +157,12 @@ python3 scripts/ci/run_meson_test.py -- -C core/build-cpu test_niqe
   extractor](../adr/1112-niqe-nr-metric.md)
 - [CAMBI](cambi.md) — the other fork no-reference metric
 - [Features overview](features.md)
+
+See the [glossary](../reference/glossary.md) — terms used here:
+[HDR](../reference/glossary.md#hdr),
+[pooling](../reference/glossary.md#pooling).
+
+Glossary terms: [Feature extractor](../reference/glossary.md#feature-extractor),
+[PQ](../reference/glossary.md#pq-hlg), [HLG](../reference/glossary.md#pq-hlg),
+[Range](../reference/glossary.md#range),
+[Scaling](../reference/glossary.md#scaling).

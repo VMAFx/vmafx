@@ -45,3 +45,5 @@ metrics, pooled metrics and aggregate metrics.
 - v1.0: `--nflx_ctc v1.0`
   - 2023-01-01
   - Initial CTC release
+
+See the [glossary](../../reference/glossary.md) — terms used here: [NEG](../../reference/glossary.md#neg), [CTC](../../reference/glossary.md#ctc).

@@ -140,3 +140,10 @@ python3 scripts/ci/run_meson_test.py -- \
   digest](../research/0108-y-funque-plus-atoms.md)
 - [SSIMULACRA 2](ssimulacra2.md) — the other fork wavelet/perceptual metric
 - [Features overview](features.md)
+
+See the [glossary](../reference/glossary.md) — terms used here:
+[HDR](../reference/glossary.md#hdr), [SDR](../reference/glossary.md#sdr),
+[pooling](../reference/glossary.md#pooling).
+
+Glossary terms: [PQ](../reference/glossary.md#pq-hlg),
+[HLG](../reference/glossary.md#pq-hlg).
