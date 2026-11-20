@@ -8,6 +8,27 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## Windows SYCL pin (2026-11-19)
+
+Keep the Windows SYCL oneAPI 2026.2.0.661 installer pin and the AOT probe
+before configuration, including the declared refused set. Verify the installer
+size and SHA-256 before extraction; preserve the workflow contract test in
+`scripts/ci/test_windows_sycl_toolset_contract.py`.
+
+## Tester Image as an own-input lane and CPython 3.14.10 licence record (2026-11-16)
+
+- `.github/workflows/docker-publish-tester.yml`: `impact` and the `Tester Image`
+  gate run on `needs.tier.outputs.light == 'true'`, routed by selector
+  `tester_image` on both tiers (ADR-3554). Fork-only workflow, no upstream
+  counterpart. **On sync**: keep both `outputs.light` conditions, which
+  `scripts/ci/tests/test_ci_routing_contract.py` and
+  `scripts/ci/tests/test_required_release_legs.py` guard.
+- `.github/ci-tier.json` (`own_input_lanes`),
+  `.github/workflows/required-aggregator.yml` (`delayedMissing` waiting on
+  active `delayedStrictDependencies` for `notOwed` own-input lanes) and
+  `tools/rc1-tester/image/licensing.json` (`cpython_license_rst["3.14.10"]`)
+  are fork-only files.
+
 ## SYCL graph registration has one entry point (2026-11-14)
 
 `fix/issue-3365-sycl-register`. `vmaf_sycl_graph_register_flags()` is the
@@ -1579,6 +1600,10 @@ rebase or sync keeps `PRAETOR_REF` at `9bf502ec6ce5...` in `.github/workflows/st
 and keeps the seven governance jobs of `lefthook.yml`, `scripts/git-hooks/hiss-audit.sh` and
 `scripts/githooks/state-sync.sh` on `sh .config/lefthook/engine.sh <arguments>`: a side of a
 conflict that calls `praetorctl` or `standardsctl` directly brings back the engine from `PATH`.
+The `Makefile` governance targets (`verify-all`, `compile-context`, `audit`, `hiss-coverage`,
+`dedupe-check`) likewise keep `-include .config/praetor/engine.mk` and `$(PRAETORCTL)`: a side of a
+conflict that calls `standardsctl` there brings back the `PATH` engine, and
+`scripts/ci/tests/test_make_governance_engine_pin.py` fails on it (issue 3468).
 `.config/lefthook/engine.sh` and `.config/praetor/engine.mk` are praetor's text. `praetorctl adopt`
 refreshes each only while it is unedited, so never edit or format them: take them from one side of a
 conflict, or regenerate them with `adopt --lock-source-root=<praetor clone at the pin>` in a

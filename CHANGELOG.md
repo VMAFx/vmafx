@@ -64,6 +64,16 @@
   names the CI check next to the hook.
 
 
+- **The toolchain probe now pairs the MinGW cross runtime with the compiler's thread model, not only its
+  presence (#3307).** The new `x86_64-w64-mingw32-gcc` entry prints the driver's `Thread model:` line, resolves
+  `libstdc++-6.dll` / `libgcc_s_seh-1.dll` with `gcc -print-file-name` (never a path rebuilt from `-dumpversion`,
+  which Debian's flavoured drivers report as `13-win32`), exits non-zero when a resolution fails, and
+  `objdump -p`-asserts the runtime's import table against the detected model — a win32-model driver next to a
+  `libwinpthread`-importing runtime refuses instead of pasting green evidence. The probe reports tool absence as
+  exit 0; only a found driver whose runtime cannot be resolved or whose flavour contradicts the model fails.
+Contributed by luoye-cpu.
+
+
 - **`adm_cuda` evaluates two viewing distances in one instance (ADR-2795).**
   With `adm_norm_view_dist_extra`, or when two models such as
   `vmaf_v1.0.16_3d0h` and `_5d0h` run on `--backend cuda`, the CUDA twin runs
@@ -657,6 +667,12 @@
 - **Per-platform install tables.** Document installation routes, commands, status, and GPU backend support per platform in Getting Started ([#2319](https://github.com/VMAFx/vmafx/issues/2319)).
 
 
+- Agents: `.config/lane-brief.yaml` makes the lane launcher refuse a vmafx review
+  brief that lacks `Write nothing in the worktree` or `return: final message only`,
+  so a review job can no longer spend its run and then end in the rc 79 worktree
+  guard (ADR-3553).
+
+
 - **Mini retrain and a resumable stage runner for the retrain tooling** (ADR-1898, issue #1246).
   `make mini-retrain` runs extraction, feature checks, combination, training and export of
   `vmaf_tiny_v2` to `v4` and `fr_regressor_v1`, validation, registry validation and a PLCC / SROCC / RMSE
@@ -684,6 +700,17 @@
 
 
 - **The scoring node takes container inputs and a time window**: `.mkv`, `.mp4` and other inputs ffmpeg reads are decoded by the node's ffmpeg into a Y4M pipe and scored, with no temp file; the new job fields `window_start` and `window_duration` score a sample without decoding the whole clip ([ADR-3370](docs/adr/3370-node-container-decode.md)).
+
+
+- **Smoke-test `vmafx-node:<tag>-sycl` for `VMAFX_BACKEND=sycl` on publish.**
+  `docker-publish-operator-node.yml` now runs
+  `scripts/release/smoke-published-image.sh` with kind `node-sycl` on the
+  published `-sycl` digest after signature verification. It inspects
+  `Config.Env` of the pulled image and refuses a tag lacking the exact
+  `VMAFX_BACKEND=sycl` entry (missing or set to another value), checks the
+  `/usr/local/bin/vmafx-node` entrypoint, `--version` and the FUSE mount, and
+  prints the GPU skip reason instead of passing SYCL scoring silently
+  (`scripts/release/tests/test-smoke-published-image.sh`).
 
 
 - **`ghcr.io/vmafx/vmafx-node:<tag>-sycl` scores on Intel GPUs (ADR-3371).**
@@ -2468,6 +2495,9 @@
   +4.2 ms is `T-SYCL-SPEED-COV-EXACT-SEQUENTIAL-COST-2026-10-06` (RC8).
 
 
+- `Tester Image` runs on light-tier pull requests that change the tester image's own inputs (`docker/Dockerfile.tester`, `tools/rc1-tester/**`, `build-config.env`, the toolkit install scripts, the licence inputs and the workflow), the Required Checks Aggregator waits while a selected own-input lane's build jobs run on the light tier, and `tools/rc1-tester/image/licensing.json` records CPython 3.14.10 for the tester and production MCP server images ([ADR-3554](docs/adr/3554-tester-image-own-input-lane.md)).
+
+
 - **The changed-files clang-tidy jobs defer to the lane that measures a file instead of failing
   on it (Q-341, Q-342).** In `Tidy Changed`, a changed file without a command in the CPU build is
   skipped only when a lane's `measured_sources` lists it, or when a live `clang-tidy-coverage`
@@ -2641,6 +2671,14 @@
 
 ### Fixed
 
+- **Docs:** the Python library page no longer walks readers through the
+  three distribution package-manager blocks (including the `yum` route for
+  old CentOS and RHEL, which the supported install table does not cover);
+  it now points Linux readers at the per-distribution getting-started
+  install guides and keeps the Python-version requirement, the `nasm`
+  2.13.02 floor and the Python headers note (issue 2339).
+
+
 - **CI:** the `FFmpeg vmafx Filter` job fails on any compiler warning and on a build log its warning scan cannot read, so the series' own C code meets the warning gate the other FFmpeg builds already enforce (issue 2477).
 
 
@@ -2710,6 +2748,26 @@
 - **Tag raw HDR inputs with colour transfer and primaries:** copy `-color_primaries`, `-color_trc`, `-colorspace`, and `-color_range` from encode options to input options for raw sources so FFmpeg passes colour properties to the encoder (issue 3345). User `--extra-ffmpeg-arg` colour options stay output-only.
 
 
+- **Move the `.cursor/rules/vmafx-workspace.mdc` instructions into the canonical agent documents, so `praetorctl compile-context --verify` no longer refuses an instruction file outside `AGENTS.md`.**
+  Workspace defaults (`.vscode/` tasks, clangd as the only C/C++ language server, `meson setup <build-dir> core`)
+  merge into `docs/development/ide-setup.md`, where the setup steps already live. The agent-integration and
+  hand-off rules move to a new "Agent integration contract" section of `docs/development/agent-reference.md`,
+  which section 9 of `AGENTS.md` already links. `AGENTS.md` gains one pointer line and the hand-written
+  `.mdc` is deleted, so Cursor reads the generated projection instead.
+  `scripts/ci/tests/test_cursor_rules_migration.py` checks the deletion, the canonical sentences,
+  the `AGENTS.md` pointer and the generated projection line without needing `praetorctl`.
+
+
+- **`libaom-av1` `ultrafast` maps to `-cpu-used 8`, the highest value FFmpeg accepts.**
+  The adapter mapped `ultrafast` to 9, which FFmpeg's `libaom-av1` wrapper refuses
+  (`Value 9.000000 for parameter 'cpu-used' out of range [0 - 8]`), so every
+  `ultrafast` encode and the predictor probe that uses it failed at option
+  parsing. The Python adapter, the Go twins (`pkg/encoder` and
+  `pkg/codecadapter`) and the docs now agree on 0..8, a unit test pins every
+  accepted preset inside that range, and the libaom adapter cache version moves
+  to `2` so cached argv from the old mapping is not reused.
+
+
 - **Run active SYCL combined-graph extractors on subsampled frames (#3356).**
   `vmaf_sycl_graph_submit()` now counts and enqueues only the registered graph extractors that run
   on the current frame under `--subsample N` (`N > 1`), using direct per-extractor submission on
@@ -2720,6 +2778,37 @@
 
 
 - **Credits page:** the credits check no longer lets the Netflix VMAF entry's `core/` directory cover every third-party file below it, and under `closest` REUSE precedence it reads a file's own licence header, so the two SSIMULACRA 2 headers are now credited to libjxl and the inherited speed-filter test and four inherited Python `third_party/` files to Netflix VMAF (issue 3370).
+
+
+- **The assertion-density gate now scans C and C++ files that sit directly under `core/src/`, and the `core/tools` subdirectories.**
+  The `git ls-files` pathspecs lacked `:(glob)`, so `core/src/**/*.c` skipped all 31 files directly under `core/src/` (and
+  `core/tools/*.c` pulled in subdirectories by accident). The nine functions over 20 lines in four of the skipped files
+  that had no `assert()` carry one now, and the harness plants an assert-less function directly under `core/src/`, which
+  fails on the old pathspec and is reported on the new one.
+
+
+- **Run the pinned Praetor engine in Makefile governance targets (#3468).** `verify-all`, `compile-context`, `audit`, `hiss-coverage` and `dedupe-check` called `standardsctl` from `PATH` instead of the repository pin; the `Makefile` now includes `.config/praetor/engine.mk` and invokes `$(PRAETORCTL)`, and `scripts/ci/tests/test_make_governance_engine_pin.py` rejects missing or misplaced includes and literal `standardsctl` or `praetorctl` calls.
+
+
+- **Forward `main()` argv and pin timeouts in `test_vmafx_rgb_math_contract`.**
+  `main(argv)` called `unittest.main()` without `argv`, parsing `sys.argv`
+  instead of its own argument list; it now passes `argv=[sys.argv[0], *args]`,
+  and the warm-up test pins `timeout=TIMEOUT` on every compiler call.
+
+
+- **Cache compiler probes, log phases and warm up compilers for
+  `test_vmafx_rgb_math_contract`.**
+  `compile_frame_import` re-ran `is_gnu_gcc` and `probe_c_std` on every call,
+  and a timed-out run reported neither which compiler step stalled nor the
+  Meson test log on the Windows ARM64 MSVC job. `is_gnu_gcc` and `probe_c_std`
+  now cache per resolved compiler executable, and every compiler subprocess
+  logs `start` and `done` phase lines to `stderr` with flushing. The
+  `windows-arm64` job warms the GNU compilers the test resolves (`--warm-up`)
+  before the fast suite and uploads `core\build\meson-logs\testlog.txt` on
+  every non-cancelled run.
+
+
+- **CI:** Install Linux CPU and GPU ONNX Runtime from pinned NuGet packages.
 
 
 - **ADR allocator scans open pull request heads to avoid fork PR collisions.**
@@ -2764,6 +2853,9 @@
 
 
 - **CI:** `Required Checks Aggregator` pins check-run producers (`github-advanced-security` for `CodeQL`, `Semgrep OSS` and `gitleaks`; `github-actions` otherwise), scopes the `minCreatedMs` age window to `github-actions` (and missing slugs on `github-actions` names), and waits through the propagation window after SARIF upload jobs so per-SHA code-scanning checks stay visible after draft transitions without masking new failures (pull request 3047, ADR-3539).
+
+
+- **Required Checks Aggregator re-runs on pull-request title and body edits without dropping earlier ready-head build results.** `.github/workflows/required-aggregator.yml` now triggers on `edited` pull-request events, anchors its 2-minute GitHub Actions check-run freshness window at the latest `ready_for_review` timeline event (or `pull_request.created_at` when never a draft), and excludes `rule-enforcement.yml` check suites whose `display_title` does not start with the `"[<pull_request.updated_at>] "` edit-stamp prefix set by `run-name:` while failing closed if `pull_request.updated_at` is missing or no current `Rules` run starts, so gates re-triggered by `rule-enforcement.yml` (`Deliverables Checklist`, `docs/state.md Gate`, `DCO Sign-off`) block merges when an edit turns them red while draft-era runs before ready-for-review remain excluded (ADR-3551). When multiple `Rules` runs share the same one-second edit stamp (in any status), the aggregator also fails closed immediately and asks for another pull-request edit or a commit push. The embedded aggregator script avoids `${{` syntax in comments so `actions/runner` does not convert the 43 KB script into an oversize expression, and `scripts/ci/check-workflow-size.py` now enforces GitHub's 21,000-character expression limit across all workflow files.
 
 
 - CI: the required-checks aggregator of a master push no longer reads the check runs of a scheduled
@@ -2873,6 +2965,9 @@
 - **Changes to shared `scripts/lib` helpers and `scripts/__init__.py` now run the Build workflow's Python test legs.** A test fails when a helper imported by the Python tests is missing from the selector.
 
 
+- **CI:** symbolic-link test fixtures under `scripts/ci/tests` probe the target directory via `symlink_test_support.py` and `scripts/lib/symlink-probe.sh` before creating links and skip with the probe's error on Windows volumes or hosts that reject symbolic links, enforced by `scripts/ci/tests/test_symlink_test_support.py`.
+
+
 - Windows UCRT64 CI: the MSYS2 leg installs `python-setuptools`, which the codegen suite (`test_vmafx_api_generator`) imports, instead of failing on a missing module.
 
 
@@ -2904,6 +2999,9 @@
 
 
 - **Keep Codacy off the compiled agent-context files.** `CLAUDE.md`, `.windsurfrules`, `.cursor/rules/*.mdc`, `.github/copilot-instructions.md`, `.codex/rules.md` and `.gemini/GEMINI.md` are rendered from `AGENTS.md` by `praetorctl compile-context`, so a Codacy finding on them cannot be fixed in place. They are now top-level `exclude_paths` in `.codacy.yml`, and `scripts/ci/tests/test_codacy_config.py` fails when any tracked file carrying the compile marker is not excluded. Codacy's Agentlinter still reads them, because its wrapper scans the whole checkout and only filters results by file.
+
+
+- **CI:** exclude `docs/hardware-reports/index.md` by exact path from Codacy's `markdownlint` engine in `.codacy.yml` alongside `docs/hardware-reports/.markdownlint-cli2.yaml` (Codacy reads only the root `.markdownlint.json`), and fail `scripts/ci/tests/test_codacy_config.py` when nested `markdownlint-cli2` configurations and exact-path Codacy exclusions drift apart.
 
 
 - **Keep Codacy's Ruff off the trees with their own Ruff configuration.** Codacy's Ruff reads only the root `pyproject.toml`, so it reported findings in `ai/`, `dev-llm/`, `mcp-server/vmaf-mcp/`, `tools/rc1-tester/`, `tools/vmaf-roi-score/` and `tools/vmaf-tune/` that their own configurations rule out, such as `PLR2004` in tests. The `ruff-check` hook still lints those trees with their nested configurations. `.codacy.yml` now excludes them from Codacy's Ruff, and `scripts/ci/tests/test_codacy_config.py` fails when that list and the directories holding a nested Ruff configuration drift apart.
@@ -2991,6 +3089,9 @@
 
 
 - **The dev container builds again: ClangBuildAnalyzer is configured with the Ninja generator.** The `build-deps` stage of `dev/Containerfile` installs `ninja-build` but no make program, so CMake's default "Unix Makefiles" generator stopped the ClangBuildAnalyzer build of ADR-3336 and every dev image build failed. The configure now passes `-G Ninja`, and `scripts/ci/tests/test_dev_image_build_stages.py` refuses a CMake configure without a generator in that stage.
+
+
+- **Ubuntu dev images and `scripts/setup/ubuntu.sh`:** install hash-pinned Python build and lint tools into a dedicated virtual environment (`VMAFX_TOOLS_VENV`, `/opt/vmafx-tools` in `docker/dev/ubuntu-26.04*.Dockerfile`), stage `requirements/locks/build.txt` and `dev-linters.txt` via `ARG VMAFX_REPO_ROOT`, validate boolean flags strictly against `true|false`, and build and smoke-test all three Ubuntu dev images in CI when their inputs change (issue 3455, [ADR-3545](docs/adr/3545-dev-image-tools-venv-ci.md)).
 
 
 - **The dev container runs the command it is given and exits.** `dev/scripts/dev-mcp-entrypoint.sh`
@@ -3261,6 +3362,9 @@
   no score changes.
 
 
+- **Intel NEO and Level Zero container and CI fetches read a committed asset lock instead of querying `api.github.com` at build time.** `dev/scripts/fetch-intel-neo.py` now reads `.deb` URLs and SHA-256 digests from `dev/scripts/intel-neo-lock.json` by default (`--write-lock` refreshes it, `.github/workflows/intel-neo-lock-refresh.yml` commits updates on Renovate branches as `vmafx-release-bot[bot]`, `renovate.json` ignores that author email during branch checks, and `scripts/ci/check-dco.py` accepts that signed single-file refresh commit via `dco-bot-opener`), eliminating anonymous GitHub API rate-limit failures in the credential-free `Release Dry Run` GPU image builds ([ADR-3555](docs/adr/3555-intel-neo-lock-file.md)). `dev/Containerfile` now fetches the Level Zero loader `.deb` packages (`libze1`, `libze-dev`) through the same lock instead of unchecked `curl` downloads. `--write-lock` validates the new lock before it replaces the old one. `scripts/ci/check-dco.py --landed` also accepts the single `vmafx-release-bot[bot]` `Co-authored-by:` trailer added when GitHub squashes a `renovate[bot]` pull request that updates `dev/scripts/intel-neo-lock.json` (`dco-landed-release-bot-coauthor`).
+
+
 - Python harness: the per-content fit lines of the subjective-dataset scatter plots
   (`RegressorMixin._least_squares_line()`) no longer raise
   `ValueError: not enough values to unpack` when a group's least-squares line has a
@@ -3282,6 +3386,9 @@
   (`vmafx_build_info.h`, `vmafx_build_commit.h`) had no entry in the licence
   manifest. Both are listed now, and a test fails when a new generated header
   lacks one.
+
+
+- LLVM installation removes the hosted runner's Microsoft and Azure apt sources before refreshing package lists, avoiding failures when those unrelated repositories rate-limit requests. Both distribution archive and apt.llvm.org installs use the same cleanup as cached apt installs.
 
 
 - CI: the Python lock checker no longer refuses a step before `actions/checkout` that runs
@@ -3392,6 +3499,24 @@
 - CI: Renovate's CI Node.js pull request can pass the dependency-only deliverables exemption and move Node to a new major while the engine-locked documentation workflow keeps its own major until the next engine pin move.
 
 
+- **`vmafx-node` no longer dials an undeployed online-training sidecar, gates
+  `/readyz` on the sidecar when enabled, and supports node-scoped pod affinity
+  in the Helm chart
+  ([ADR-3558](docs/adr/3558-node-sidecar-readiness-gpu-affinity.md)).** The
+  sidecar feedback drainer is now opt-in via `VMAFX_SIDECAR_ENABLED`
+  (`sidecar.enabled`, chart `node.sidecar.enabled`, default `false`), stopping
+  recurring `WARN sidecar not reachable` logs on standard deployments while
+  rejecting invalid boolean values at startup. When enabled, `/readyz` reports
+  `503` unless the drainer holds a live Unix socket connection (with reconnect
+  backoff capped at 15 s so readiness recovers within 30 s). The Helm chart's
+  node `readinessProbe` now queries HTTP `/readyz` on `metrics` (backed by
+  `scorer`, loopback `grpc`, and conditional `sidecar` checks, amending
+  ADR-1094), and `node.affinity` overrides global `affinity` so heterogeneous
+  GPU pools can configure soft scheduling preferences without a hard pin. For
+  Intel Arc pools, use `gpu.intel.com/product` with `Arc_Pro_B60` preferred
+  (weight 100) and `Arc_B580` as fallback (weight 50).
+
+
 - Go tests: the `cmd/vmafx-node` tests that dial the node's listeners start the graph through `startAppWithRetry`, which picks fresh loopback ports and retries up to five times when a reserved port was taken before the graph bound it (`bind: address already in use`); other start errors fail at once.
 
 
@@ -3412,6 +3537,9 @@
   `float_psnr` and `ciede` twins up to 15 bits, the `psnr_hvs` twins up to 11
   bits. Before, twins outside the five `picture_copy()` families were accepted
   unmeasured, and the `float_moment` twins returned unscaled moments there.
+
+
+- **Dev container:** Install ONNX Runtime from the pinned NuGet helper, avoiding unavailable release archives.
 
 
 - **Traces, metrics and logs leave the services when an OTLP endpoint is
@@ -3703,6 +3831,13 @@
   random on ext4. It now keeps a second link to the stale socket, so the file
   system cannot give its inode number to the server's new socket
   (`ai/sidecar/tests/test_socket_permissions.py`).
+
+
+- **Make published node image smoke-test frames readable.** The FUSE frames
+  folder was created by `mktemp -d` with mode 0700, preventing the nonroot mount
+  container from reading it and causing every `vmafx-node` and
+  `vmafx-node-...-sycl` publish smoke step to fail. The folder is now 0755, and
+  the test stub refuses unreadable folders.
 
 
 - **A stale private-state lock no longer stops every commit hook.** `scripts/githooks/state-sync.sh`
@@ -4007,6 +4142,16 @@
   ([FFmpeg patch automation](docs/development/ffmpeg-patch-automation.md)).
   `scripts/ci/test_ffmpeg_patch_stack.py` refuses a header the series adds with
   any other guard.
+
+
+- **CI:** Move the Windows MSVC+SYCL oneAPI offline installer pin in `libvmaf-build-matrix.yml` to `2026.2.0.661` (`intel-oneapi-toolkit-2026.2.0.661_offline.exe`): MSVC 14.52 refuses Clang front ends older than 22 (`STL1000`), and Intel's release notes describe a Clang 22 front end from compiler release 2026.0.0 ([ADR-3567](docs/adr/3567-windows-sycl-oneapi-2026-2.md)).
+  The installer size and SHA-256 are checked before extraction.
+  Builds run `44487361326` measured six refused AOT targets (`tgllp`, `adl-s`,
+  `adl-p`, `adl-n`, `rpl-s`, `rpl-p`). Xe-LP, Alder Lake and Raptor Lake
+  integrated devices get no AOT image from the Windows CI build and, by design,
+  fall back to the [`spir64` image compiled at run time](docs/backends/sycl/aot.md#default-target-list).
+  Builds run `44499808688` built the leg with the 13 accepted targets; the
+  run-time fallback on the six refused families remains unmeasured.
 
 
 - **The Windows SYCL tester zip passes its import check.** `cfgmgr32.dll`, which the Level Zero loader imports, is a System32 DLL and is now accepted by `scripts/ci/check-windows-bundle-imports.py`; an unknown DLL is still refused. The x64-sycl leg failed on it, so no rc.3 Windows zip was published.

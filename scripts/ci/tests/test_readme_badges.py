@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import ci_tier
 from scripts.ci import readme_badges as rb
+from scripts.ci.tests import symlink_test_support as links
 from scripts.lib.safe_subprocess import CommandValidationError
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -564,6 +565,7 @@ class Collect(unittest.TestCase):
 
         def relink() -> None:
             """Replace go.svg with a link to lint.svg."""
+            links.skip_without_symlinks(self.dir)
             target.unlink()
             target.symlink_to(self.dir / "lint.svg")
 
@@ -986,6 +988,7 @@ class ImageFault(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root, outside = Path(tmp) / "repo", Path(tmp) / "outside.svg"
             root.mkdir()
+            links.skip_without_symlinks(root)
             outside.write_text("<svg/>", encoding="utf-8")
             (root / "inside.svg").write_text("<svg/>", encoding="utf-8")
             (root / "link.svg").symlink_to(outside)
