@@ -25,6 +25,7 @@ REPO = Path(__file__).resolve().parents[3]
 _CHECKER_SPEC = importlib.util.spec_from_file_location(
     "check_licence_metadata", REPO / "scripts/ci/check_licence_metadata.py"
 )
+assert _CHECKER_SPEC is not None and _CHECKER_SPEC.loader is not None
 checker = importlib.util.module_from_spec(_CHECKER_SPEC)
 _CHECKER_SPEC.loader.exec_module(checker)
 
