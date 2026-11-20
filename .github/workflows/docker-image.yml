@@ -5,6 +5,8 @@ on:
   pull_request:
     branches: [master]
     types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    - cron: "0 5 * * 1"   # weekly, before the security scan
   workflow_dispatch:
 
 permissions:
