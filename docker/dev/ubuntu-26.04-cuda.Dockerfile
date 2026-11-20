@@ -2,7 +2,7 @@
 # Base: digest-pinned Ubuntu 26.04. CUDA compiler + runtime headers are installed
 # explicitly via scripts/ci/install-cuda-toolkit.sh from NVIDIA's apt repository (ADR-1306),
 # avoiding the OCI image publication lag that blocked bumping CUDA releases.
-ARG CUDA_BUILDER="ubuntu:26.04@sha256:065aa8626841f16057b78b027b464cd59c4fac36c204c72dcbf48d66f5fa8a96"
+ARG CUDA_BUILDER="ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db"
 FROM ${CUDA_BUILDER}
 ARG VMAFX_REPO_ROOT=/tmp
 
