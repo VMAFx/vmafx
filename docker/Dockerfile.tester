@@ -427,7 +427,7 @@ FROM sycl-assembled AS final-sycl
 ARG VMAFX_SOURCE_COMMIT=unknown
 LABEL org.opencontainers.image.title="vmafx-tester-sycl" \
       org.opencontainers.image.description="VMAFx Intel GPU tester image: SYCL build, SYCL device tests, parity gate, one JSON report. Licences: /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt" \
-      org.opencontainers.image.source="https://github.com/VMAFx/vmafx" \
+      org.opencontainers.image.source="https://github.com/vidiko/vmafx" \
       org.opencontainers.image.vendor="Lusoris" \
       org.opencontainers.image.revision="${VMAFX_SOURCE_COMMIT}"
 COPY --from=sycl-licence-check /out/licence-check.json /opt/vmafx/licence-check.json
@@ -674,7 +674,7 @@ FROM cuda-assembled AS final-cuda
 ARG VMAFX_SOURCE_COMMIT=unknown
 LABEL org.opencontainers.image.title="vmafx-tester-cuda" \
       org.opencontainers.image.description="VMAFx NVIDIA GPU tester image: CUDA build, CUDA device tests, parity gate, one JSON report. Licences: /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt" \
-      org.opencontainers.image.source="https://github.com/VMAFx/vmafx" \
+      org.opencontainers.image.source="https://github.com/vidiko/vmafx" \
       org.opencontainers.image.vendor="Lusoris" \
       org.opencontainers.image.revision="${VMAFX_SOURCE_COMMIT}"
 COPY --from=cuda-licence-check /out/licence-check.json /opt/vmafx/licence-check.json
@@ -901,7 +901,7 @@ FROM hip-assembled AS final-hip
 ARG VMAFX_SOURCE_COMMIT=unknown
 LABEL org.opencontainers.image.title="vmafx-tester-hip" \
       org.opencontainers.image.description="VMAFx AMD GPU tester image: HIP build, HIP device tests, parity gate, one JSON report. Licences: /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt" \
-      org.opencontainers.image.source="https://github.com/VMAFx/vmafx" \
+      org.opencontainers.image.source="https://github.com/vidiko/vmafx" \
       org.opencontainers.image.vendor="Lusoris" \
       org.opencontainers.image.revision="${VMAFX_SOURCE_COMMIT}"
 COPY --from=hip-licence-check /out/licence-check.json /opt/vmafx/licence-check.json
@@ -960,7 +960,7 @@ FROM assembled AS final
 ARG VMAFX_SOURCE_COMMIT=unknown
 LABEL org.opencontainers.image.title="vmafx-tester" \
       org.opencontainers.image.description="VMAFx tester image: CPU build, SIMD unit tests, Netflix golden gate, one JSON report. Licences: /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt" \
-      org.opencontainers.image.source="https://github.com/VMAFx/vmafx" \
+      org.opencontainers.image.source="https://github.com/vidiko/vmafx" \
       org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-3-Clause-Clear AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE AND WTFPL" \
       org.opencontainers.image.vendor="Lusoris" \
       org.opencontainers.image.revision="${VMAFX_SOURCE_COMMIT}"

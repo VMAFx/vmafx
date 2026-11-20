@@ -37,7 +37,7 @@ schema_version = 1
 name = "vmafx"
 summary = "Perceptual video quality assessment (VMAF) with GPU backends"
 homepage = "https://vmafx.dev/"
-repository = "https://github.com/VMAFx/vmafx"
+repository = "https://github.com/vidiko/vmafx"
 publisher = "VMAFx"
 command = "vmaf"
 

@@ -62,7 +62,7 @@ runs the PR-body deliverables gate and other pre-push hooks.
 !!! warning
     Bypassing is for the maintainer only. Agents never bypass hooks
     (operational rule 6 of the
-    [agent harness](https://github.com/VMAFx/vmafx/blob/master/AGENTS.md)
+    [agent harness](https://github.com/vidiko/vmafx/blob/master/AGENTS.md)
     forbids the skip-hooks push flag and `LEFTHOOK=0`).
 
 ## Troubleshooting

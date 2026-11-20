@@ -6,7 +6,7 @@ Best Practices level and the Codacy grade. They are SVG files on the `badges`
 branch, drawn in the same `for-the-badge` style as every other badge on the
 page ([README standard](../README-STANDARD.md#badge-block)). The README links
 each one with
-`https://raw.githubusercontent.com/VMAFx/vmafx/badges/<slug>.svg`.
+`https://raw.githubusercontent.com/vidiko/vmafx/badges/<slug>.svg`.
 
 ## Where a badge value comes from
 
@@ -16,7 +16,7 @@ GitHub can start a scheduled run late, or drop it, when Actions is under load,
 so 15 minutes is the intended step, not a promise:
 
 ```bash
-gh workflow run readme-badges.yml -R VMAFx/vmafx
+gh workflow run readme-badges.yml -R vidiko/vmafx
 ```
 
 Its first job runs `scripts/ci/readme_badges.py spec`, which asks each source
@@ -26,8 +26,8 @@ for the current value:
 | --- | --- | --- |
 | Tests, Builds, Lint, FFmpeg, Go, Rust, Security | GitHub API: the newest push run of the workflow on the default branch, among the last 30, that has a conclusion and was not cancelled or skipped. Runs in progress, cancelled and skipped are passed over, so a run in progress never hides a red one. | `passing` green for `success`; `failing` red for `failure`, `timed_out` or `startup_failure`; `unknown` grey for any other conclusion (`action_required`, `neutral`, `stale`) and when no run qualifies. An older run's value never stands in. |
 | OpenSSF Scorecard | `https://api.scorecard.dev/projects/github.com/VMAFx/vmafx` | the score with one decimal, `8.5 / 10`; green from an unrounded 8.5, the master requirement in [the principles](../principles.md) ([ADR-1247](../adr/1247-scorecard-exact-head-gates.md)), amber from 4.0, red below. The colour follows the unrounded score, so 8.46 reads `8.5 / 10` in amber. |
-| OpenSSF Best Practices | `https://www.bestpractices.dev/projects.json?url=https://github.com/VMAFx/vmafx` | `in progress` amber, `passing`, `silver` or `gold` green. |
-| Codacy | `https://app.codacy.com/api/v3/analysis/organizations/gh/VMAFx/repositories/vmafx` | the grade letter; A and B green, C amber, D to F red. |
+| OpenSSF Best Practices | `https://www.bestpractices.dev/projects.json?url=https://github.com/vidiko/vmafx` | `in progress` amber, `passing`, `silver` or `gold` green. |
+| Codacy | `https://app.codacy.com/api/v3/analysis/organizations/gh/vidiko/repositories/vmafx` | the grade letter; A and B green, C amber, D to F red. |
 
 Only the GitHub API call carries the workflow token. The three public
 sources get a plain request with no token. Every request goes over https
@@ -118,8 +118,8 @@ to 15 minutes of lag, more when GitHub delays a run, and has neither problem.
   dropped). Check it, then re-enable the workflow:
 
   ```bash
-  gh run list -R VMAFx/vmafx --workflow readme-badges.yml --limit 1 --json createdAt,conclusion
-  gh workflow enable readme-badges.yml -R VMAFx/vmafx
+  gh run list -R vidiko/vmafx --workflow readme-badges.yml --limit 1 --json createdAt,conclusion
+  gh workflow enable readme-badges.yml -R vidiko/vmafx
   ```
 
 - The Praetor governance badge in the `praetor:readme-governance` block is

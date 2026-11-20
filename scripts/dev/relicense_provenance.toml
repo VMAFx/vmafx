@@ -469,7 +469,7 @@ from = ["netflix-speed"]  # transcribes update_entropy() and get_speed_score() o
 # ---------------------------------------------------------------------------
 
 [mirrors.pelorus]
-# ADR-1113: the Pelorus interop ABI is single-sourced in VMAFx/pelorus
+# ADR-1113: the Pelorus interop ABI is single-sourced in vidiko/pelorus
 # (libpelorus/). scripts/sync-pelorus-interop.sh fails on any difference from
 # the pinned commit except its banner and include rewrites; the conformance
 # fixture is compared from its first include on.

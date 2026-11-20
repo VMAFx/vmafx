@@ -41,7 +41,7 @@ WINDOWS_CHECKOUT = ("-c", "core.autocrlf=false", "-c", "core.eol=crlf")
 MODEL_DIR = "model/"
 
 # What the pinned engine reads as raw bytes, by its source
-# (cordanaLLM/praetor at the standards-gate.yml PRAETOR_REF):
+# (tekmora/praetor at the standards-gate.yml PRAETOR_REF):
 # internal/config/lockdigest.go hashes .config/archetypes; the effective policy
 # digest reads .standards.yaml and .standards.lock; internal/agentcontext/render.go
 # lists the compiled targets and their persona directories,

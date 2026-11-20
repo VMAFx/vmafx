@@ -7,7 +7,7 @@ MSYS2, see [Building on Windows](../building-on-windows.md).
 
 Run the setup script from the repository root in PowerShell 7 as an
 administrator
-([`scripts/setup/windows.ps1`](https://github.com/VMAFx/vmafx/blob/master/scripts/setup/windows.ps1)):
+([`scripts/setup/windows.ps1`](https://github.com/vidiko/vmafx/blob/master/scripts/setup/windows.ps1)):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\setup\windows.ps1                 # toolchain and linters

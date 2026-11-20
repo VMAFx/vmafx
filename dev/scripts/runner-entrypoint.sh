@@ -14,12 +14,12 @@ fi
 
 if [ -z "${RUNNER_TOKEN:-}" ]; then
   echo "ERROR: RUNNER_TOKEN environment variable is not set." >&2
-  echo "Generate a registration token via: gh api -X POST repos/VMAFx/vmafx/actions/runners/registration-token --jq .token" >&2
+  echo "Generate a registration token via: gh api -X POST repos/vidiko/vmafx/actions/runners/registration-token --jq .token" >&2
   echo "Or run arbitrary commands, e.g.: docker run --rm <image> ./run.sh --help" >&2
   exit 1
 fi
 
-REPO_URL="https://github.com/${GITHUB_REPOSITORY:-VMAFx/vmafx}"
+REPO_URL="https://github.com/${GITHUB_REPOSITORY:-vidiko/vmafx}"
 RUNNER_NAME="${RUNNER_NAME:-$(hostname)-sycl-arc}"
 RUNNER_LABELS="${RUNNER_LABELS:-self-hosted,linux,x64,sycl-arc}"
 RUNNER_WORKDIR="${RUNNER_WORKDIR:-/actions-runner/_work}"

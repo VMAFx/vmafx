@@ -337,7 +337,7 @@ is not skipped by path: it is named in the **declared exception list**,
 ```toml
 [[exception]]
 path = "core/src/interop/pelorus_version.c"   # one tracked file, never a pattern
-reason = "Read-only mirror of VMAFx/pelorus (ADR-1113); ..."
+reason = "Read-only mirror of vidiko/pelorus (ADR-1113); ..."
 expires = 2026-12-31
 ```
 
@@ -603,7 +603,7 @@ one tracked file per entry with a reason and an expiry. Today that is one
 file, praetor's Python launcher `.config/lefthook/python.sh`. `praetorctl adopt`
 refreshes it at a pin move only while it is praetor's own text, so a
 formatter must not rewrite it
-([cordanaLLM/praetor#1441](https://github.com/cordanaLLM/praetor/issues/1441)).
+([tekmora/praetor#1441](https://github.com/tekmora/praetor/issues/1441)).
 The hook launcher `.config/lefthook/engine.sh` is shfmt-clean since engine
 train `32a35c8fb947` and is formatted like every other file.
 

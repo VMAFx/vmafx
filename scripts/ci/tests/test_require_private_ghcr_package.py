@@ -88,7 +88,7 @@ class PrivatePackageGuard(unittest.TestCase):
         self.assertIn(f"{PACKAGE} is private", result.stdout)
         args = (self.stub_dir / "gh-args").read_text(encoding="utf-8")
         self.assertIn("api", args.split())
-        self.assertIn("/orgs/VMAFx/packages/container/vmafx-dev-mcp", args)
+        self.assertIn("/orgs/vidiko/packages/container/vmafx-dev-mcp", args)
 
     def test_a_planted_public_answer_fails_the_step(self) -> None:
         result = self.run_step(json.dumps({"name": "vmafx-dev-mcp", "visibility": "public"}))

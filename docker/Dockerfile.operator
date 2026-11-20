@@ -107,7 +107,7 @@ FROM ${RELEASE_RUNTIME_STATIC} AS operator-assembled
 
 LABEL org.opencontainers.image.title="vmafx-operator"
 LABEL org.opencontainers.image.description="VMAFX Kubernetes operator — CRD reconciliation for VmafxJob / VmafxNode / VmafxModelTraining. Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
-LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.source="https://github.com/vidiko/vmafx"
 LABEL org.opencontainers.image.licenses="EUPL-1.2"
 LABEL org.opencontainers.image.vendor="Lusoris"
 

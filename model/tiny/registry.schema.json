@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/VMAFx/vmafx/model/tiny/registry.schema.json",
+  "$id": "https://github.com/vidiko/vmafx/model/tiny/registry.schema.json",
   "title": "VMAF tiny-model registry v1",
   "description": "Index of the ONNX tiny-models shipped under model/tiny/. Every ONNX file referenced here must live under model/tiny/ and match the sha256 recorded below; every non-smoke entry also carries a sidecar JSON with the same basename. ai/scripts/validate_model_registry.py and core/test/dnn/test_registry.sh check the digests, and the validator holds the registry opset and the sidecars (opset, tensor names, feature and codec-block widths) to the graphs. The runtime does not compare digests: `vmaf --tiny-model` takes a file path and loads any model the op allowlist admits; `--tiny-model-verify` looks the file's Sigstore bundle up here and runs cosign on it. Per-model inference metadata (input/output tensor names, normalisation, opset) lives in the sidecar next to each ONNX file, so the registry stays small and easy to audit. T6-9 (ADR-0211) added license metadata + Sigstore bundle paths.",
   "type": "object",

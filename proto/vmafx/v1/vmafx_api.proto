@@ -255,7 +255,7 @@ message Provenance {
   uint32 n_annotations = 29;
 
   // Digest of the encode record of the distorted input (`sha256:` and 64 hex digits,
-  // VMAFx/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI
+  // vidiko/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI
   // 0.1.5.
   string encode_record = 30;
 

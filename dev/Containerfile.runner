@@ -15,7 +15,7 @@ FROM ${BASE_IMAGE}
 
 LABEL org.opencontainers.image.title="vmaf-sycl-arc-runner"
 LABEL org.opencontainers.image.description="Containerised GitHub Actions runner for Intel Arc A380 SYCL CI"
-LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.source="https://github.com/vidiko/vmafx"
 LABEL org.opencontainers.image.licenses="BSD-2-Clause-Patent"
 
 ARG RUNNER_VERSION=2.337.0

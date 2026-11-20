@@ -21,15 +21,15 @@ The licence texts are in the repository
 
 | File | What it holds |
 | --- | --- |
-| [`LICENSE`](https://github.com/VMAFx/vmafx/blob/master/LICENSE) | the EUPL-1.2, the licence of the files the fork wrote (the same bytes as `LICENSES/EUPL-1.2.txt`) |
-| [`NOTICE`](https://github.com/VMAFx/vmafx/blob/master/NOTICE) | Netflix's BSD-2-Clause-Patent text with its copyright notice, for the files inherited from Netflix |
-| [`LICENSES/`](https://github.com/VMAFx/vmafx/tree/master/LICENSES) | every licence a file names |
+| [`LICENSE`](https://github.com/vidiko/vmafx/blob/master/LICENSE) | the EUPL-1.2, the licence of the files the fork wrote (the same bytes as `LICENSES/EUPL-1.2.txt`) |
+| [`NOTICE`](https://github.com/vidiko/vmafx/blob/master/NOTICE) | Netflix's BSD-2-Clause-Patent text with its copyright notice, for the files inherited from Netflix |
+| [`LICENSES/`](https://github.com/vidiko/vmafx/tree/master/LICENSES) | every licence a file names |
 
 No other file at the root is a licence file. `NOTICE` carries Netflix's text
 under a name licence detectors do not read as a licence file, so `LICENSE` is
 the only root licence file they find; each file's own header still decides.
 Files without a header of their own, such as model data, are covered by
-[`REUSE.toml`](https://github.com/VMAFx/vmafx/blob/master/REUSE.toml).
+[`REUSE.toml`](https://github.com/vidiko/vmafx/blob/master/REUSE.toml).
 
 ## Embedding VMAFx in another product
 
@@ -49,7 +49,7 @@ both, so an embedder meets both licences:
 
 | What you do | Netflix files (BSD-2-Clause-Patent) | Fork files (EUPL-1.2) |
 | --- | --- | --- |
-| Distribute `libvmaf` or the `vmaf` binary, modified or not, inside your product | Reproduce the copyright notice, the conditions and the disclaimer in the documentation or other materials you ship ([`NOTICE`](https://github.com/VMAFx/vmafx/blob/master/NOTICE), condition 2) | Keep every notice and include a copy of the licence (Article 5, "Attribution right"). Provide the source, or name a repository where it is "easily and freely available", for as long as you distribute (Article 5, "Provision of Source Code") |
+| Distribute `libvmaf` or the `vmaf` binary, modified or not, inside your product | Reproduce the copyright notice, the conditions and the disclaimer in the documentation or other materials you ship ([`NOTICE`](https://github.com/vidiko/vmafx/blob/master/NOTICE), condition 2) | Keep every notice and include a copy of the licence (Article 5, "Attribution right"). Provide the source, or name a repository where it is "easily and freely available", for as long as you distribute (Article 5, "Provision of Source Code") |
 | Link your program against `libvmaf`, statically or dynamically | No condition on your program | The licence leaves what counts as a derivative work to the copyright law of the country in Article 15 (Article 1, "Derivative Works"). The Commission's reading: static and dynamic linking create no condition on the other program. There is no case law on it |
 | Change `libvmaf` and distribute the result | As above | Distribute the changed library under the EUPL-1.2. If you combine it with a work under a licence in the EUPL's appendix (GPL, LGPL, MPL and others), you may use that licence instead. Mark the changed work as modified, with the date, and provide its source (Article 5) |
 | Run it on a server and let others use it over a network | No condition | "Distribution or Communication" includes "providing access to its essential functionalities" (Article 1), so the source obligation applies to that service too |
@@ -70,7 +70,7 @@ Sources (fetched 2026-10-05):
 
 - EUPL-1.2, official English text:
   [interoperable-europe.ec.europa.eu, `EUPL-1.2 EN.txt`](https://interoperable-europe.ec.europa.eu/sites/default/files/custom-page/attachment/2020-03/EUPL-1.2%20EN.txt).
-  The repository copy, [`LICENSES/EUPL-1.2.txt`](https://github.com/VMAFx/vmafx/blob/master/LICENSES/EUPL-1.2.txt),
+  The repository copy, [`LICENSES/EUPL-1.2.txt`](https://github.com/vidiko/vmafx/blob/master/LICENSES/EUPL-1.2.txt),
   has the same words and differs only in dashes and spacing. Article 5,
   "Provision of Source Code": "When distributing or communicating copies of
   the Work, the Licensee will provide a machine-readable copy of the Source
@@ -90,7 +90,7 @@ Sources (fetched 2026-10-05):
 - BSD-2-Clause-Patent, SPDX text:
   [github.com/spdx/license-list-data](https://github.com/spdx/license-list-data/blob/main/text/BSD-2-Clause-Patent.txt),
   the same conditions and patent grant as the repository's
-  [`NOTICE`](https://github.com/VMAFx/vmafx/blob/master/NOTICE).
+  [`NOTICE`](https://github.com/vidiko/vmafx/blob/master/NOTICE).
 
 ## Models
 
@@ -99,7 +99,7 @@ The BRISQUE model is the LIVE laboratory's release, used under its notice as
 written ([ADR-1507](adr/1507-brisque-live-notice-terms.md)): a publication that
 reports research using it acknowledges LIVE and CPS at UT Austin and cites the
 two works the notice names. The tiny-AI models list their licence and upstream
-in [`model/tiny/registry.json`](https://github.com/VMAFx/vmafx/blob/master/model/tiny/registry.json)
+in [`model/tiny/registry.json`](https://github.com/vidiko/vmafx/blob/master/model/tiny/registry.json)
 and in their model cards ([model registry](ai/model-registry.md)). Three of them
 carry upstream weights and keep their authors' terms: FastDVDnet (MIT, Matias
 Tassano), TransNet V2 (MIT, Tomáš Souček) and LPIPS-SqueezeNet (BSD-2-Clause,
@@ -289,7 +289,7 @@ project withdrew two kinds of image and completed the rest
 
   ```bash
   docker pull ghcr.io/vmafx/vmafx:v1.0.0-rc.2-source
-  gh release download v1.0.0-rc.2 --repo VMAFx/vmafx -p 'THIRD_PARTY_NOTICES-*'
+  gh release download v1.0.0-rc.2 --repo vidiko/vmafx -p 'THIRD_PARTY_NOTICES-*'
   ```
 
 The licence section of each release page lists the withdrawn images, the

@@ -50,7 +50,7 @@ SCHEMA = 1
 KINDS = ("github_owner", "github_repo", "arxiv_query", "openalex_query", "manual")
 AUTOMATED = ("github_owner", "github_repo", "arxiv_query", "openalex_query")
 SECTIONS = ("New repositories", "Releases", "Pushes", "New papers")
-USER_AGENT = "vmafx-research-radar (+https://github.com/VMAFx/vmafx)"
+USER_AGENT = "vmafx-research-radar (+https://github.com/vidiko/vmafx)"
 HTTP_TIMEOUT_S = 20.0
 HTTP_ATTEMPTS = 3
 HTTP_BACKOFF_S = (1.0, 4.0)
@@ -502,7 +502,7 @@ def render_digest(result: Collected, win: Window) -> str:
         f"Sources read: {result.sources_read}. Items: {len(result.items)}.",
         "",
         "Triage this digest with the "
-        "[triage procedure](https://github.com/VMAFx/vmafx/blob/master/docs/research/radar/triage.md).",
+        "[triage procedure](https://github.com/vidiko/vmafx/blob/master/docs/research/radar/triage.md).",
         "",
     ]
     for name in SECTIONS:

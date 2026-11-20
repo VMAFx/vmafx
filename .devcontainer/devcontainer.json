@@ -1,5 +1,5 @@
 {
-  "name": "vmafx/vmafx",
+  "name": "vidiko/vmafx",
   "build": {
     "dockerfile": "Dockerfile.praetor",
     "context": "."

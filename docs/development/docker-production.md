@@ -332,7 +332,7 @@ tag=vX.Y.Z
 # The signing identity is the workflow at the ref it ran on: refs/tags/$tag for
 # a normal publish, refs/heads/master for a recovered image (every
 # v1.0.0-rc.1 image; see release.md). Pin the one that applies.
-identity="https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/heads/master"
+identity="https://github.com/vidiko/vmafx/.github/workflows/docker-publish-production.yml@refs/heads/master"
 
 # Verify the cosign signature
 cosign verify \
@@ -354,7 +354,7 @@ attested with GitHub's attestation store
 ([ADR-1513](../adr/1513-production-artifact-licensing.md)):
 
 ```bash
-gh attestation verify oci://ghcr.io/vmafx/vmafx:$tag --repo VMAFx/vmafx \
+gh attestation verify oci://ghcr.io/vmafx/vmafx:$tag --repo vidiko/vmafx \
   --predicate-type https://spdx.dev/Document/v2.3
 ```
 

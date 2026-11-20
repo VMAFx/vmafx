@@ -7,7 +7,7 @@ tiny MLP that maps libvmaf's classical 6-feature vector
 neural-network sibling of the production `vmaf_v0.6.1` SVR — same input,
 same target — packaged as an ONNX that uses only operators on libvmaf's op
 allowlist
-([`core/src/dnn/op_allowlist.c`](https://github.com/VMAFx/vmafx/blob/master/core/src/dnn/op_allowlist.c)),
+([`core/src/dnn/op_allowlist.c`](https://github.com/vidiko/vmafx/blob/master/core/src/dnn/op_allowlist.c)),
 so it can run inside
 `libvmaf`'s tiny-AI inference path on every supported execution provider
 (CPU / CUDA / OpenVINO / ROCm).

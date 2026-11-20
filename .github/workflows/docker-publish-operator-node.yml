@@ -1474,27 +1474,27 @@ jobs:
         run: |
           cosign verify \
             --certificate-identity \
-              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
+              "https://github.com/vidiko/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.OPERATOR_IMAGE }}@${{ needs.publish-operator.outputs.digest }}"
           cosign verify \
             --certificate-identity \
-              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
+              "https://github.com/vidiko/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}@${{ needs.publish-server.outputs.digest }}"
           cosign verify \
             --certificate-identity \
-              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
+              "https://github.com/vidiko/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE }}@${{ needs.publish-controller.outputs.digest }}"
           cosign verify \
             --certificate-identity \
-              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
+              "https://github.com/vidiko/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ needs.publish-node.outputs.digest }}"
           cosign verify \
             --certificate-identity \
-              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
+              "https://github.com/vidiko/vmafx/.github/workflows/docker-publish-operator-node.yml@${GITHUB_REF}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.NODE_IMAGE }}@${{ needs.publish-node-sycl.outputs.digest }}"
 

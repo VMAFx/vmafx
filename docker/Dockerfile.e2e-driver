@@ -39,7 +39,7 @@ FROM ${RELEASE_RUNTIME_STATIC} AS driver
 
 LABEL org.opencontainers.image.title="vmafx-e2e-driver"
 LABEL org.opencontainers.image.description="VMAFx E2E test driver: controller failover scenario on kind. Test image, not published."
-LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.source="https://github.com/vidiko/vmafx"
 LABEL org.opencontainers.image.licenses="EUPL-1.2"
 LABEL org.opencontainers.image.vendor="Lusoris"
 

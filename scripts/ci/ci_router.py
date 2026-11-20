@@ -56,7 +56,7 @@ class SyntheticEvent:
     base_ref: str = "master"
     head_ref: str = ""
     head_repo: str = ""
-    repository: str = "VMAFx/vmafx"
+    repository: str = "vidiko/vmafx"
     draft: bool = False
     author: str = "someone"
     author_type: str = "User"

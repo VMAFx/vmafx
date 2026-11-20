@@ -614,7 +614,7 @@ jobs:
       - name: Verify what was just signed
         run: |
           cosign verify \
-            --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/docker-publish-tester\.yml@refs/(heads/master|tags/v.*)$' \
+            --certificate-identity-regexp '^https://github.com/vidiko/vmafx/\.github/workflows/docker-publish-tester\.yml@refs/(heads/master|tags/v.*)$' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.index.outputs.digest }}"
           {
@@ -686,7 +686,7 @@ jobs:
         run: |
           verify() {  # subject, predicate type; the attestation index can lag a few seconds
             for _ in 1 2 3 4 5 6; do
-              gh attestation verify "oci://${IMAGE}@$1" -R VMAFx/vmafx \
+              gh attestation verify "oci://${IMAGE}@$1" -R vidiko/vmafx \
                 --predicate-type "$2" && return 0
               sleep 10
             done
@@ -1053,7 +1053,7 @@ jobs:
           VENDOR: ${{ matrix.vendor }}
         run: |
           cosign verify \
-            --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/docker-publish-tester\.yml@refs/(heads/master|tags/v.*)$' \
+            --certificate-identity-regexp '^https://github.com/vidiko/vmafx/\.github/workflows/docker-publish-tester\.yml@refs/(heads/master|tags/v.*)$' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${IMAGE}@${DIGEST}"
           {

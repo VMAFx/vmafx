@@ -13,7 +13,7 @@ Intel oneAPI Base Kit, ROCm payload. Licences allow internal use, not
 redistribution. `dev-container-publish.yml` step "Refuse to push unless
 package is private" runs `require-private-ghcr-package.sh VMAFx vmafx-dev-mcp`
 right after checkout, before Buildx, login and build-push. Script reads
-`GET /orgs/VMAFx/packages/container/vmafx-dev-mcp` via `gh api` with job
+`GET /orgs/vidiko/packages/container/vmafx-dev-mcp` via `gh api` with job
 token; exit 0 only on `visibility == "private"` exactly. API error, 401/403/404,
 missing or non-string `visibility`, `public`, `internal` -> exit 1. Never give
 step `if:` or `continue-on-error`, never move it after push, never

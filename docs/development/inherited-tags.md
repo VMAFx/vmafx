@@ -1,12 +1,12 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Inherited Netflix tags (removed 2026-10-05)
 
-VMAFx/vmafx was created from a copy of Netflix/vmaf and carried 26 of its
+vidiko/vmafx was created from a copy of Netflix/vmaf and carried 26 of its
 release tags. [ADR-1805](../adr/1805-delete-inherited-netflix-tags.md) deleted
-them from `VMAFx/vmafx` on 2026-10-05, after the maintainer decided so. The
+them from `vidiko/vmafx` on 2026-10-05, after the maintainer decided so. The
 commits stay in history and `Netflix/vmaf` keeps its own tags. This page
 records what was removed and how to recreate a tag. The machine-readable copy
-is [`scripts/release/inherited-upstream-tags.json`](https://github.com/VMAFx/vmafx/blob/master/scripts/release/inherited-upstream-tags.json);
+is [`scripts/release/inherited-upstream-tags.json`](https://github.com/vidiko/vmafx/blob/master/scripts/release/inherited-upstream-tags.json);
 the push guard and the tests read it.
 
 ## Why

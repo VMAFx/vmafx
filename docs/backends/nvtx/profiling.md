@@ -28,8 +28,8 @@ default NVTX row of the trace.
 
 | File | Range name | What it spans |
 |------|------------|---------------|
-| [core/src/feature/feature_extractor.cpp](https://github.com/VMAFx/vmafx/blob/master/core/src/feature/feature_extractor.cpp) | the extractor name (for example `float_vif_cuda`) | one whole extract call of one feature extractor on one frame |
-| [core/src/gpu_picture_pool.cpp](https://github.com/VMAFx/vmafx/blob/master/core/src/gpu_picture_pool.cpp) | `fetch idx <pic_idx> <counter>` | taking a picture from the GPU picture pool and its synchronisation callback |
+| [core/src/feature/feature_extractor.cpp](https://github.com/vidiko/vmafx/blob/master/core/src/feature/feature_extractor.cpp) | the extractor name (for example `float_vif_cuda`) | one whole extract call of one feature extractor on one frame |
+| [core/src/gpu_picture_pool.cpp](https://github.com/vidiko/vmafx/blob/master/core/src/gpu_picture_pool.cpp) | `fetch idx <pic_idx> <counter>` | taking a picture from the GPU picture pool and its synchronisation callback |
 
 There is one range per extractor, not one per scale. The dispatcher and
 drain files under `core/src/cuda/` carry no NVTX calls.

@@ -27,7 +27,7 @@ broader Phase 4b context.
 
 ```bash
 # Clone the repository.
-git clone https://github.com/VMAFx/vmafx.git && cd vmafx
+git clone https://github.com/vidiko/vmafx.git && cd vmafx
 
 # Install CRDs + operator. The image tag defaults to v<Chart.AppVersion>;
 # pass --set operator.image.tag=<release tag> to pin another release.

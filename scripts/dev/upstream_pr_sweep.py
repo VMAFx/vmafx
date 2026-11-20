@@ -7,9 +7,9 @@ Inspect, validate, rebase, build, test, and push open PR branches from our
 fork against upstream/master.
 
 Usage:
-    scripts/dev/upstream_pr_sweep.py --fork VMAFx/vmafx --prs prs.txt
-    scripts/dev/upstream_pr_sweep.py --fork VMAFx/vmafx --discover --apply
-    scripts/dev/upstream_pr_sweep.py --fork VMAFx/vmafx --discover --apply --push
+    scripts/dev/upstream_pr_sweep.py --fork vidiko/vmafx --prs prs.txt
+    scripts/dev/upstream_pr_sweep.py --fork vidiko/vmafx --discover --apply
+    scripts/dev/upstream_pr_sweep.py --fork vidiko/vmafx --discover --apply --push
 """
 
 from __future__ import annotations
@@ -1069,7 +1069,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="root directory for PR worktrees",
     )
     parser.add_argument(
-        "--fork", required=True, help="fork repository owner/name (e.g. VMAFx/vmafx)"
+        "--fork", required=True, help="fork repository owner/name (e.g. vidiko/vmafx)"
     )
     parser.add_argument(
         "--upstream-repo",

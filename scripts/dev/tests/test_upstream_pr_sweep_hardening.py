@@ -580,7 +580,7 @@ class UpstreamPrSweepHardeningTest(SweepFixtureCase):
         doc_text = doc_path.read_text(encoding="utf-8")
         self.assertNotIn("../../scripts/dev/tests/test_upstream_pr_sweep.py", doc_text)
         self.assertIn(
-            "https://github.com/VMAFx/vmafx/blob/master/scripts/dev/tests/test_upstream_pr_sweep.py",
+            "https://github.com/vidiko/vmafx/blob/master/scripts/dev/tests/test_upstream_pr_sweep.py",
             doc_text,
         )
 

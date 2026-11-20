@@ -332,7 +332,7 @@ model reader helpers) are UTF-8 strings on every platform.
 
 The vendored Pelorus entry point `pel_x265_csv_parse()` is a temporary
 exception: its pinned upstream source still uses the Windows narrow CRT. It
-is tracked in `docs/state.md` and must be fixed in `VMAFx/pelorus` before
+is tracked in `docs/state.md` and must be fixed in `vidiko/pelorus` before
 re-vendoring under the ADR-1113 mirror invariant. Background:
 [ADR-1182](../adr/1182-windows-utf8-path-contract.md).
 

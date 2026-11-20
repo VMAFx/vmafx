@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Require every tester leg to be green on the exact head of a release candidate (ADR-2198).
 
-    GH_TOKEN=$(gh auth token) check-candidate-legs.py --sha <40 hex> [--repo VMAFx/vmafx]
+    GH_TOKEN=$(gh auth token) check-candidate-legs.py --sha <40 hex> [--repo vidiko/vmafx]
 
 A pull request builds only the legs whose inputs it changed and a master push skips them
 all when nothing they read changed, so a leg can be red for days without any required
@@ -139,7 +139,7 @@ def check(fetch: Fetcher, repo: str, legs: Sequence[Mapping[str, Any]], sha: str
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--sha", required=True, help="the candidate's full commit id")
-    parser.add_argument("--repo", default="VMAFx/vmafx")
+    parser.add_argument("--repo", default="vidiko/vmafx")
     parser.add_argument("--legs", type=Path, default=DEFAULT_LEGS)
     args = parser.parse_args(argv)
     token = os.environ.get("GH_TOKEN", "")

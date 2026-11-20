@@ -1,6 +1,6 @@
 """Build a stand-in shared FFmpeg fix series for the tests (ADR-3143).
 
-The real series is a release tarball of VMAFx/ffmpeg-patches that
+The real series is a release tarball of vidiko/ffmpeg-patches that
 ``scripts/ci/ffmpeg-shared-series.sh`` downloads and verifies. A test gives the
 script a tarball of the same layout through a ``file://`` URL and pins its
 sha256 in the fixture's ``build-config.env``, so the script's own checks run.

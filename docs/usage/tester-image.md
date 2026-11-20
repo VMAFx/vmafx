@@ -43,8 +43,8 @@ file name, the `git describe` of the tested commit (for example
 
 ```sh
 # 1. Download the archive and its checksum (curl sets no quarantine flag on the files).
-curl -LO https://github.com/VMAFx/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-macos-arm64-<VERSION>.tar.xz
-curl -LO https://github.com/VMAFx/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-macos-arm64-<VERSION>.tar.xz.sha256
+curl -LO https://github.com/vidiko/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-macos-arm64-<VERSION>.tar.xz
+curl -LO https://github.com/vidiko/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-macos-arm64-<VERSION>.tar.xz.sha256
 
 # 2. Check the download against the checksum; it prints "OK" and nothing else.
 shasum -a 256 -c vmafx-tester-macos-arm64-<VERSION>.tar.xz.sha256
@@ -106,28 +106,28 @@ hosted build. Either needs a tool you may not have; neither is needed to run the
 
 ```sh
 # GitHub build provenance (needs the GitHub CLI, `gh`):
-gh attestation verify vmafx-tester-macos-arm64-<VERSION>.tar.xz -R VMAFx/vmafx
+gh attestation verify vmafx-tester-macos-arm64-<VERSION>.tar.xz -R vidiko/vmafx
 
 # Or verify against the attached in-toto provenance bundle (.intoto.jsonl):
 gh attestation verify vmafx-tester-macos-arm64-<VERSION>.tar.xz \
-  --bundle vmafx-tester-macos-provenance.intoto.jsonl --repo VMAFx/vmafx
+  --bundle vmafx-tester-macos-provenance.intoto.jsonl --repo vidiko/vmafx
 
 # Sigstore keyless signature (needs `cosign`; the .sigstore.json file is next to the archive):
 cosign verify-blob --bundle vmafx-tester-macos-arm64-<VERSION>.tar.xz.sigstore.json \
-  --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/macos-tester-bundle\.yml@refs/heads/master$' \
+  --certificate-identity-regexp '^https://github.com/vidiko/vmafx/\.github/workflows/macos-tester-bundle\.yml@refs/heads/master$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   vmafx-tester-macos-arm64-<VERSION>.tar.xz
 
 # The SPDX software bill of materials (the .spdx.json asset) is attested on the archive:
-gh attestation verify vmafx-tester-macos-arm64-<VERSION>.tar.xz -R VMAFx/vmafx \
+gh attestation verify vmafx-tester-macos-arm64-<VERSION>.tar.xz -R vidiko/vmafx \
   --predicate-type https://spdx.dev/Document/v2.3
 ```
 
 To read what you are about to run: `run.sh` is in the bundle,
-the report program is [`tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py`](https://github.com/VMAFx/vmafx/blob/master/tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py)
+the report program is [`tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py`](https://github.com/vidiko/vmafx/blob/master/tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py)
 and its neighbours `hw_*.py`, and the build is
-[`scripts/ci/build-macos-tester-bundle.sh`](https://github.com/VMAFx/vmafx/blob/master/scripts/ci/build-macos-tester-bundle.sh)
-run by [`macos-tester-bundle.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/macos-tester-bundle.yml).
+[`scripts/ci/build-macos-tester-bundle.sh`](https://github.com/vidiko/vmafx/blob/master/scripts/ci/build-macos-tester-bundle.sh)
+run by [`macos-tester-bundle.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/macos-tester-bundle.yml).
 
 ### Gatekeeper
 
@@ -152,7 +152,7 @@ It cannot reach Metal and SVE2 is not exposed by Apple cores; the report says so
 ```sh
 # 1. Check the signature of the image (needs `cosign`; skip if you do not have it).
 cosign verify \
-  --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/docker-publish-tester\.yml@refs/(heads/master|tags/v.*)$' \
+  --certificate-identity-regexp '^https://github.com/vidiko/vmafx/\.github/workflows/docker-publish-tester\.yml@refs/(heads/master|tags/v.*)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   ghcr.io/vmafx/vmafx:<VERSION>-tester
 
@@ -174,13 +174,13 @@ To record the image digest in the report add `--image-digest sha256:...` after t
 name.
 
 To read what runs: the Containerfile is
-[`docker/Dockerfile.tester`](https://github.com/VMAFx/vmafx/blob/master/docker/Dockerfile.tester)
+[`docker/Dockerfile.tester`](https://github.com/vidiko/vmafx/blob/master/docker/Dockerfile.tester)
 and the report program is `tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py` and its
 `hw_*.py` neighbours. The licences of everything in the image are in
 `/opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt` inside it (`docker run --rm --entrypoint cat
 ghcr.io/vmafx/vmafx:<VERSION>-tester /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`); see
 [Licences of what you download](#licences-of-what-you-download). The image is built only by
-[`docker-publish-tester.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/docker-publish-tester.yml)
+[`docker-publish-tester.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/docker-publish-tester.yml)
 from a tagged commit, signed keyless with cosign and attested like the other VMAFx
 images. It is about 1.05 GB on disk and about 270 MB to download; it holds a CPU-only build,
 no compiler, and runs as a numeric non-root user. Its layers are zstd-compressed, so an
@@ -550,8 +550,8 @@ maintainer gives you (the tag looks like `tester-windows-20261004-1a2b3c4d`), an
 ```powershell
 # 1. Download the zip and its checksum. curl.exe comes with Windows 10 and 11, and
 #    a file it downloads carries no "downloaded from the internet" mark.
-curl.exe -LO https://github.com/VMAFx/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-windows-<ARCH>-<VERSION>.zip
-curl.exe -LO https://github.com/VMAFx/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-windows-<ARCH>-<VERSION>.zip.sha256
+curl.exe -LO https://github.com/vidiko/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-windows-<ARCH>-<VERSION>.zip
+curl.exe -LO https://github.com/vidiko/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-windows-<ARCH>-<VERSION>.zip.sha256
 
 # 2. Check the download against the checksum; it prints True and nothing else.
 (Get-FileHash vmafx-tester-windows-<ARCH>-<VERSION>.zip).Hash -eq (Get-Content vmafx-tester-windows-<ARCH>-<VERSION>.zip.sha256).Split(' ')[0]
@@ -704,28 +704,28 @@ hosted build. Either needs a tool you may not have; neither is needed to run the
 
 ```powershell
 # GitHub build provenance (needs the GitHub CLI, gh):
-gh attestation verify vmafx-tester-windows-<ARCH>-<VERSION>.zip -R VMAFx/vmafx
+gh attestation verify vmafx-tester-windows-<ARCH>-<VERSION>.zip -R vidiko/vmafx
 
 # Or verify against the attached in-toto provenance bundle (.intoto.jsonl):
 gh attestation verify vmafx-tester-windows-<ARCH>-<VERSION>.zip `
-  --bundle vmafx-tester-windows-provenance.intoto.jsonl --repo VMAFx/vmafx
+  --bundle vmafx-tester-windows-provenance.intoto.jsonl --repo vidiko/vmafx
 
 # Sigstore keyless signature (needs cosign; the .sigstore.json file is next to the zip):
 cosign verify-blob --bundle vmafx-tester-windows-<ARCH>-<VERSION>.zip.sigstore.json `
-  --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/windows-tester-bundle\.yml@refs/heads/master$' `
+  --certificate-identity-regexp '^https://github.com/vidiko/vmafx/\.github/workflows/windows-tester-bundle\.yml@refs/heads/master$' `
   --certificate-oidc-issuer https://token.actions.githubusercontent.com `
   vmafx-tester-windows-<ARCH>-<VERSION>.zip
 
 # The SPDX software bill of materials (the .spdx.json asset) is attested on the zip:
-gh attestation verify vmafx-tester-windows-<ARCH>-<VERSION>.zip -R VMAFx/vmafx `
+gh attestation verify vmafx-tester-windows-<ARCH>-<VERSION>.zip -R vidiko/vmafx `
   --predicate-type https://spdx.dev/Document/v2.3
 ```
 
 To read what you are about to run: `run.cmd` is in the zip, the report program is
-[`tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py`](https://github.com/VMAFx/vmafx/blob/master/tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py)
+[`tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py`](https://github.com/vidiko/vmafx/blob/master/tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py)
 with its neighbours `hw_*.py` (the Windows host facts are `hw_winfacts.py`), and the
-build is [`scripts/ci/build-windows-tester-bundle.py`](https://github.com/VMAFx/vmafx/blob/master/scripts/ci/build-windows-tester-bundle.py)
-run by [`windows-tester-bundle.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/windows-tester-bundle.yml).
+build is [`scripts/ci/build-windows-tester-bundle.py`](https://github.com/vidiko/vmafx/blob/master/scripts/ci/build-windows-tester-bundle.py)
+run by [`windows-tester-bundle.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/windows-tester-bundle.yml).
 
 ### Remove it afterwards
 
@@ -837,7 +837,7 @@ workflow refuses to build a package with a file whose licence is not recorded
   ```sh
   docker buildx imagetools inspect --raw ghcr.io/vmafx/vmafx:<VERSION>-tester \
     | jq -r '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest'
-  gh attestation verify oci://ghcr.io/vmafx/vmafx@<that digest> -R VMAFx/vmafx \
+  gh attestation verify oci://ghcr.io/vmafx/vmafx@<that digest> -R vidiko/vmafx \
     --predicate-type https://spdx.dev/Document/v2.3
   ```
 
@@ -846,7 +846,7 @@ workflow refuses to build a package with a file whose licence is not recorded
   --format '{{json .Manifest}}' | jq -r .digest`):
 
   ```sh
-  gh attestation verify oci://ghcr.io/vmafx/vmafx@<index digest> -R VMAFx/vmafx
+  gh attestation verify oci://ghcr.io/vmafx/vmafx@<index digest> -R vidiko/vmafx
   ```
 
 ## What the report contains
@@ -950,10 +950,10 @@ run prints the file name to use (`file name for a pull request: ...`). With the 
 CLI (`gh`) and `git` set up with your name and e-mail address:
 
 ```sh
-gh repo fork VMAFx/vmafx --clone && cd vmafx
+gh repo fork vidiko/vmafx --clone && cd vmafx
 git switch -c hardware-report && cp ../report.json <file name printed by the run>
 git add docs/hardware-reports && git commit -m "docs(hardware-reports): add a report from <your CPU>"
-git push -u origin hardware-report && gh pr create --repo VMAFx/vmafx --fill
+git push -u origin hardware-report && gh pr create --repo vidiko/vmafx --fill
 ```
 
 Edit the `"note"` field of the JSON first if you want to add a line (for example the Mac
@@ -964,7 +964,7 @@ the index page when the pull request is merged.
 ### Without opening a pull request
 
 Open an issue with the
-[hardware report form](https://github.com/VMAFx/vmafx/issues/new?template=hardware_report.yml)
+[hardware report form](https://github.com/vidiko/vmafx/issues/new?template=hardware_report.yml)
 and attach `report.json`. A maintainer commits it for you; give a name and an e-mail
 address in the form if you want a `Co-authored-by:` line with your credit.
 

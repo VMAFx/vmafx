@@ -1777,7 +1777,7 @@ func (c *Context) Annotation(index uint32) (Annotation, error) {
 	return annotationFromC(out), nil
 }
 
-// SetEncodeRecord: Record the digest of the encode record of the distorted input (VMAFx/pelorus#81): `sha256:` and 64 lower-case hex digits, copied; NULL or empty clears it. VMAFX_E_INVALID names any other form. Added in ABI 0.1.5.
+// SetEncodeRecord: Record the digest of the encode record of the distorted input (vidiko/pelorus#81): `sha256:` and 64 lower-case hex digits, copied; NULL or empty clears it. VMAFX_E_INVALID names any other form. Added in ABI 0.1.5.
 func (c *Context) SetEncodeRecord(record string) error {
 	cRecord := C.CString(record)
 	defer freeCString(cRecord)

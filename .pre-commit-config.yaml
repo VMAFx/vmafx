@@ -194,7 +194,7 @@ repos:
         #   to changed files.
         #
         #   tools/figures/ is praetor's figure engine, locked byte for byte by
-        #   `standardsctl audit` (ADR-1351, cordanaLLM/praetor#578); praetor's
+        #   `standardsctl audit` (ADR-1351, tekmora/praetor#578); praetor's
         #   own `make docs-lint` styles its README under praetor's rules.
         #
         #   The register skills (social-text, caveman, adhd-format) under

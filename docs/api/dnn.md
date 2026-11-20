@@ -495,7 +495,7 @@ The function:
 1. Reads the registry and finds the entry for the model's basename.
 2. Reads that entry's `sigstore_bundle` field and resolves the bundle path.
 3. Runs `cosign verify-blob` through `posix_spawnp`, pinned to the identity
-   regexp `https://github.com/VMAFx/vmafx/.github/workflows/.+` and the
+   regexp `https://github.com/vidiko/vmafx/.github/workflows/.+` and the
    issuer `https://token.actions.githubusercontent.com`.
 4. Returns `0` only when cosign exits `0`. It fails closed: any error
    stops model load.

@@ -188,7 +188,7 @@ holds any of the access.
 
 ### 8.2 What access exists
 
-- **The GitHub organization and repository** (`VMAFx/vmafx`), including branch
+- **The GitHub organization and repository** (`vidiko/vmafx`), including branch
   protection, the required checks, secrets and environments.
 - **Release identities.** Release artifacts are signed keyless with Sigstore
   and GitHub OIDC; no long-lived signing key exists, and the signing identity

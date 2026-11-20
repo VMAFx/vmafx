@@ -141,7 +141,7 @@ update_output="$(
 if [[ "${update_rc}" -ne 0 ]]; then
   printf 'FAIL: synthetic re-pin update failed\n%s\n' "${update_output}" >&2
   fail=$((fail + 1))
-elif ! grep -Fq "VMAFx/pelorus@${fixture_pin}" \
+elif ! grep -Fq "vidiko/pelorus@${fixture_pin}" \
   "${mirror}/core/test/test_pelorus_interop.c"; then
   printf 'FAIL: synthetic re-pin left the fixture source banner stale\n%s\n' \
     "${update_output}" >&2
@@ -324,7 +324,7 @@ expect_clean "licence cases restored"
 workflow="${repo_root}/.github/workflows/lint-and-format.yml"
 for required in \
   'name: Resolve exact Pelorus vendor pin' \
-  'repository: VMAFx/pelorus' \
+  'repository: vidiko/pelorus' \
   "ref: \${{ steps.pelorus-vendor.outputs.sha }}" \
   "run: scripts/sync-pelorus-interop.sh \"\${GITHUB_WORKSPACE}/.ci/pelorus\"" \
   'python3 scripts/ci/pelorus_mirror.py filter'; do

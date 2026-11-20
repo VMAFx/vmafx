@@ -1,6 +1,6 @@
 {
   "@context": "https://openvex.dev/ns/v0.2.0",
-  "@id": "https://github.com/VMAFx/vmafx/blob/master/security/vex/torch.openvex.json",
+  "@id": "https://github.com/vidiko/vmafx/blob/master/security/vex/torch.openvex.json",
   "author": "VMAFx maintainers",
   "role": "Project maintainer",
   "timestamp": "2026-10-05T21:00:00Z",

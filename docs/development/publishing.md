@@ -196,7 +196,7 @@ gate's single source of truth:
 vmafx_dev_container=1
 image_title=vmaf-dev-mcp
 containerfile=dev/Containerfile
-source=https://github.com/VMAFx/vmafx
+source=https://github.com/vidiko/vmafx
 ```
 
 The gate has three modes, and fails closed in all three — a missing marker, a
@@ -223,7 +223,7 @@ schema=vmafx-container-build-provenance/1
 vmafx_dev_container=1
 image_title=vmaf-dev-mcp
 containerfile=dev/Containerfile
-source=https://github.com/VMAFx/vmafx
+source=https://github.com/vidiko/vmafx
 git_commit=<GITHUB_SHA or git rev-parse HEAD>
 stamped_at=<SOURCE_DATE_EPOCH or now, UTC>
 ```
