@@ -568,16 +568,22 @@ absent or skipped, never failed: the names the run's CI tier does not owe, the
 operator switch is off. `scripts/ci/tests/test_aggregator_absent_fails.py`
 runs the embedded script against both rules.
 
-The aggregator's GitHub API calls retry HTTP 5xx answers for 15 minutes; an
-exhausted retry fails as `Transient GitHub API failure:` and judges no check.
-Rate-limit responses wait for `retry-after`, the reset time, or exponential
-backoff, with at most six waits per call and 90 minutes across the script. An
-exhausted limit fails as `GitHub API rate limit:` and asks for a rerun without
-judging checks. Other API errors end the job immediately. Polling starts at 30
-seconds, doubles when the judged checks are unchanged up to 240 seconds, and
-resets to 30 seconds on change. `scripts/ci/tests/test_ci_aggregator_tier.py`
-exercises 5xx handling; `scripts/ci/tests/test_aggregator_rate_limit.py` covers
-rate limits and polling.
+The aggregator's GitHub API calls retry HTTP 5xx answers for up to 15 minutes;
+an exhausted retry or time budget fails as `Transient GitHub API failure:` and
+judges no check. Rate-limit responses wait for `retry-after`, the reset time, or
+exponential backoff, with at most six waits per call and 90 minutes across the
+script. An exhausted limit fails as `GitHub API rate limit:` and asks for a rerun
+without judging checks. All API waits share a 245-minute script budget. Each
+request has an abort signal limited to 30 seconds or the remaining budget,
+whichever is shorter; the script owns retries. Other API errors end the job
+immediately. Polling starts at 30 seconds, doubles when the judged checks are
+unchanged up to 240 seconds, and resets to 30 seconds on change. After the last
+sleep reaches the 240-minute polling deadline, it takes one final bounded sample
+and never sleeps again. If startup leaves less time, polling stops 30 seconds
+before the script budget ends so that final query still has request time.
+`scripts/ci/tests/test_ci_aggregator_tier.py` exercises 5xx handling;
+`scripts/ci/tests/test_aggregator_rate_limit.py` covers rate limits, mixed retries,
+and completion between the last regular poll and the final sample.
 
 ### Release legs
 

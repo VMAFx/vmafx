@@ -38,13 +38,14 @@ or ``created_at_offset_s``) that ``issues.listEventsForTimeline`` pages through.
 
 ``api_errors`` maps API stub names ("getWorkflowRun", "listForRef",
 "listWorkflowRunsForRepo", "listEventsForTimeline") to sequences of HTTP status
-codes raised in order by successive calls to that stub. ``api_always`` maps stub
+codes raised in order by successive calls to that stub (``None`` permits one call). ``api_always`` maps stub
 names to an HTTP status code raised on every call to that stub. ``info_logs``,
 when given, collects every ``core.info`` message. ``api_error_detail`` supplies per-stub
 headers and messages for errors. ``sleeps`` collects timeout arguments in milliseconds.
 ``controls`` takes a ``SimulationControls``: ``advance_sleep`` advances the clock on
 timeouts, ``clock_step_ms`` overrides each subsequent clock read and ``changing_check``
-adds an unrelated check that alternates status on each listing. The defaults keep the
+adds an unrelated check that alternates status on each listing. ``later_checks_after_ms``
+switches to ``later_checks`` only after that elapsed time. The defaults keep the
 original driver behavior.
 """
 
@@ -128,7 +129,7 @@ const apiErrorDetail = input.apiErrorDetail || {};
 const sleeps = [];
 function checkApiError(name) {
   const status = apiAlways[name] ?? (apiErrors[name] || []).shift();
-  if (status === undefined) return;
+  if (status == null) return;
   const detail = apiErrorDetail[name] || {};
   const error = new Error(detail.message ?? `HTTP ${status}`);
   error.status = status;
@@ -152,7 +153,9 @@ const github = {rest: {
   checks: {listForRef: async ({page = 1, per_page: perPage = 30} = {}) => {
     checkApiError('listForRef');
     if (page === 1) listings += 1;
-    const all = [...(listings > 1 && laterChecks.length ? laterChecks : checks)];
+    const useLaterChecks = input.laterChecksAfterMs != null
+      ? clock - now >= input.laterChecksAfterMs : listings > 1;
+    const all = [...(useLaterChecks && laterChecks.length ? laterChecks : checks)];
     if (input.changingCheck) {
       all.push(withDefaults({name: input.changingCheck, status: listings % 2 ? 'queued' : 'in_progress',
         check_suite: {id: 1}}));
@@ -414,6 +417,7 @@ class SimulationControls:
     advance_sleep: bool = False
     clock_step_ms: int | None = None
     changing_check: str | None = None
+    later_checks_after_ms: int | None = None
 
     def as_input(self) -> dict[str, object]:
         """Return the driver input keys for these controls."""
@@ -421,6 +425,7 @@ class SimulationControls:
             "advanceSleep": self.advance_sleep,
             "clockStepMs": self.clock_step_ms,
             "changingCheck": self.changing_check,
+            "laterChecksAfterMs": self.later_checks_after_ms,
         }
 
 
@@ -448,7 +453,7 @@ def run_required_aggregator(
     absent_checks: Collection[str] = (),
     extra_checks: Sequence[Mapping[str, object]] = (),
     later_checks: Sequence[Mapping[str, object]] = (),
-    api_errors: Mapping[str, Sequence[int]] | None = None,
+    api_errors: Mapping[str, Sequence[int | None]] | None = None,
     api_always: Mapping[str, int] | None = None,
     info_logs: list[str] | None = None,
     api_error_detail: Mapping[str, Mapping[str, object]] | None = None,

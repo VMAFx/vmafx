@@ -92,7 +92,8 @@ jobs:
           # ADR-1319 — distinct switch for the unprovisioned multi-vendor lane.
           GPU_COVERAGE_ENABLED: ${{ vars.GPU_COVERAGE_ENABLED }}
         with:
-          retries: 3
+          # The script owns retries so all waits share its wall-clock budget.
+          retries: 0
           script: |
             const scriptStartMs = Date.now();
             // Ordered by historical reliability. ADR-1297 added the Build
@@ -589,6 +590,15 @@ jobs:
             const budgetEndMs = scriptStartMs + 245 * 60 * 1000;
             let rateLimitWaitedSeconds = 0;
             let rateLimitWaitCount = 0;
+            function apiRequestOptions() {
+              const remainingMs = budgetEndMs - Date.now();
+              if (remainingMs <= 0) {
+                const error = new Error('GitHub API time budget exhausted');
+                error.name = 'AggregatorBudgetExceeded';
+                throw error;
+              }
+              return {signal: AbortSignal.timeout(Math.min(30000, remainingMs))};
+            }
             function isRateLimitAnswer(error, headers) {
               return (error.status === 403 || error.status === 429) &&
                 (headers['retry-after'] !== undefined || headers['x-ratelimit-remaining'] === '0' ||
@@ -617,6 +627,10 @@ jobs:
                 try {
                   return await call();
                 } catch (error) {
+                  if (error.name === 'AggregatorBudgetExceeded') {
+                    core.setFailed(`${error.message}: ${label}. No check result was judged; rerun this job.`);
+                    return null;
+                  }
                   const rateLimitSeconds = rateLimitWaitSeconds(error, rateLimitWaits);
                   if (rateLimitSeconds !== null) {
                     // A wait ending exactly at the budget is allowed.
@@ -636,10 +650,11 @@ jobs:
                     continue;
                   }
                   if (!(error.status >= 500)) throw error;
-                  if (attempt === apiBackoffSeconds.length) {
+                  if (attempt === apiBackoffSeconds.length ||
+                      Date.now() + apiBackoffSeconds[attempt] * 1000 > budgetEndMs) {
                     core.setFailed(
                       `Transient GitHub API failure: ${label} still answers HTTP ${error.status} ` +
-                      'after 15 minutes. No check result was judged; rerun this job. ' +
+                      'after exhausting its retry or time budget. No check result was judged; rerun this job. ' +
                       'This is not a code failure.'
                     );
                     return null;
@@ -654,6 +669,7 @@ jobs:
             }
             const currentRun = await withApiBackoff('getWorkflowRun', () =>
               github.rest.actions.getWorkflowRun({
+                request: apiRequestOptions(),
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 run_id: Number(process.env.GITHUB_RUN_ID || context.runId),
@@ -703,6 +719,7 @@ jobs:
               for (let page = 1; page <= 10; page += 1) {
                 const response = await withApiBackoff('listEventsForTimeline', () =>
                   github.rest.issues.listEventsForTimeline({
+                    request: apiRequestOptions(),
                     owner: context.repo.owner,
                     repo: context.repo.repo,
                     issue_number: pr.number,
@@ -796,6 +813,7 @@ jobs:
               const runs = [];
               for (let page = 1; page <= 10; page += 1) {
                 const { data } = await github.rest.actions.listWorkflowRunsForRepo({
+                  request: apiRequestOptions(),
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   head_sha: sha,
@@ -920,6 +938,7 @@ jobs:
               const checkRuns = [];
               for (let page = 1; page <= 20; page += 1) {
                 const { data } = await github.rest.checks.listForRef({
+                  request: apiRequestOptions(),
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   ref: sha,
@@ -973,18 +992,24 @@ jobs:
             // which keeps the queue deep, so 240 minutes with
             // `timeout-minutes` at 250; polling costs a runner slot, not
             // compute, and the hosted-runner cap is 360 minutes.
-            const deadline = Math.min(Date.now() + 240 * 60 * 1000, budgetEndMs);
+            // Leave request time for the final sample if startup consumed the budget.
+            const finalSampleReserveMs = 30000;
+            const deadline = Math.min(Date.now() + 240 * 60 * 1000,
+              budgetEndMs - finalSampleReserveMs);
             let byName = {};
             let missingEditedWorkflows = [];
             let lastExcludedEditedSuites = 0;
             let editedListedAfterGrace = !isEditedPullRequest;
             let previousFingerprint = null;
             let pollIntervalSeconds = 30;
+            let finalSample = Date.now() >= deadline;
             const fingerprintNames = new Set([
               ...required, ...Object.values(delayedStrictDependencies).flat(),
               ...Object.values(externalCheckUploadJobs).flat()
             ]);
-            while (Date.now() < deadline) {
+            while (Date.now() < deadline || finalSample) {
+              const isFinalSample = finalSample;
+              finalSample = false;
               let check_runs = await withApiBackoff('listAllCheckRuns', () => listAllCheckRuns());
               if (!check_runs) return;
               const waitsBeforeLaterListings = rateLimitWaitCount;
@@ -1078,9 +1103,15 @@ jobs:
                 core.info(`Waiting for check registration: ${missing.slice(0, 3).join(', ')}` +
                           (missing.length > 3 ? ` (+${missing.length - 3} more)` : ''));
               }
-              pollIntervalSeconds = Math.min(pollIntervalSeconds, Math.max(0, deadline - nowMs) / 1000);
-              if (pollIntervalSeconds === 0) break;
-              await new Promise(r => setTimeout(r, pollIntervalSeconds * 1000));
+              // Take one last bounded sample after the final sleep instead of
+              // judging a pending result from the previous poll. Never sleep again.
+              if (isFinalSample) break;
+              const remainingPollMs = Math.max(0, deadline - Date.now());
+              finalSample = remainingPollMs <= pollIntervalSeconds * 1000;
+              pollIntervalSeconds = Math.min(pollIntervalSeconds, remainingPollMs / 1000);
+              if (pollIntervalSeconds > 0) {
+                await new Promise(r => setTimeout(r, pollIntervalSeconds * 1000));
+              }
             }
             if (isEditedPullRequest) {
               core.info(`Excluded ${lastExcludedEditedSuites} stale edited-rerun check suite(s)`);

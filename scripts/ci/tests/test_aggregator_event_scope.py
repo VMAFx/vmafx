@@ -26,7 +26,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import required_aggregator_harness as harness
-from scripts.ci.required_aggregator_harness import run_required_aggregator
+from scripts.ci.required_aggregator_harness import SimulationControls, run_required_aggregator
 
 PR_ONLY_GATE = "Deliverables Checklist"
 PUSH_SUITE = 1
@@ -76,11 +76,10 @@ UPLOAD_JOB_PAIRS = (
     ("gitleaks", "Gitleaks"),
 )
 ACTIONS_CHECK = "Pre-Commit"
-# VirtualDate in required_aggregator_harness._NODE_DRIVER advances by 3 minutes per Date.now()
-# call and reaches +12 minutes on the first poll's nowMs: +11m sits 1m inside the 2m propagation
-# window, while +8m sits 4m behind nowMs (outside the 2m window).
-WITHIN_FIRST_POLL_PROPAGATION_MIN = 11
-PAST_FIRST_POLL_PROPAGATION_MIN = 8
+# The propagation fixtures use a clock advanced only by sleeps, so additional
+# deadline checks cannot age an upload out before the first sample.
+WITHIN_FIRST_POLL_PROPAGATION_MIN = -1
+PAST_FIRST_POLL_PROPAGATION_MIN = -4
 _OVERRIDE = contextlib.ExitStack()
 
 
@@ -157,6 +156,7 @@ def _run_pr_checks(
         absent_checks=absent_checks,
         extra_checks=extra_checks,
         later_checks=later_checks,
+        controls=SimulationControls(advance_sleep=True, clock_step_ms=0),
     )
 
 

@@ -112,7 +112,7 @@ class RateLimit(unittest.TestCase):
             CHECK,
             "success",
             env=ENV,
-            controls=SimulationControls(clock_step_ms=14400000),
+            controls=SimulationControls(clock_step_ms=7200000),
             api_errors={"getWorkflowRun": [429]},
             api_error_detail={"getWorkflowRun": {"headers": {"retry-after": "301"}}},
             sleeps=sleeps,
@@ -126,12 +126,81 @@ class RateLimit(unittest.TestCase):
             CHECK,
             "success",
             env=ENV,
-            controls=SimulationControls(clock_step_ms=14400000),
+            controls=SimulationControls(clock_step_ms=7200000),
             api_errors={"getWorkflowRun": [429]},
             api_error_detail={"getWorkflowRun": {"headers": {"retry-after": "300"}}},
             sleeps=sleeps,
         )
         self.assertIn(300000, sleeps)
+
+    def test_mixed_retries_stop_at_wall_clock_budget(self) -> None:
+        # The 62 successful samples through minute 237 include every API page.
+        successful_pages = 62 * ((len(pending("in_progress")) + 99) // 100)
+        for last_status, prefix in (
+            (429, "GitHub API rate limit:"),
+            (503, "Transient GitHub API failure:"),
+        ):
+            with self.subTest(last_status=last_status):
+                sleeps: list[int] = []
+                failures = run_required_aggregator(
+                    CHECK,
+                    None,
+                    env=ENV,
+                    run_created_at=START,
+                    extra_checks=[
+                        check for check in pending("in_progress") if check["name"] == CHECK
+                    ],
+                    controls=SimulationControls(advance_sleep=True, clock_step_ms=0),
+                    api_errors={
+                        "listForRef": [429]
+                        + [None] * successful_pages
+                        + [429, 503, 429, 502, last_status]
+                    },
+                    api_error_detail={"listForRef": {"headers": {"retry-after": "90"}}},
+                    sleeps=sleeps,
+                )
+                self.assertEqual(len(failures), 1)
+                self.assertTrue(failures[0].startswith(prefix), failures)
+                self.assertEqual(sleeps[-4:], [90000, 30000, 90000, 60000])
+                self.assertEqual(sum(sleeps), (244 * 60 + 30) * 1000)
+
+    def test_mixed_retry_counts_are_bounded(self) -> None:
+        for statuses, prefix in (
+            ([429, 503] * 6 + [429], "GitHub API rate limit:"),
+            ([503, 429] * 6 + [503], "Transient GitHub API failure:"),
+        ):
+            with self.subTest(statuses=statuses):
+                sleeps: list[int] = []
+                failures = run_required_aggregator(
+                    CHECK,
+                    "success",
+                    env=ENV,
+                    controls=SimulationControls(advance_sleep=True, clock_step_ms=0),
+                    api_errors={"listForRef": statuses},
+                    api_error_detail={"listForRef": {"headers": {"retry-after": "0"}}},
+                    sleeps=sleeps,
+                )
+                self.assertEqual(len(failures), 1)
+                self.assertTrue(failures[0].startswith(prefix), failures)
+                self.assertEqual(len(sleeps), 12)
+                self.assertEqual(sum(sleeps), 15 * 60 * 1000)
+
+    def test_rate_limit_wait_budget_is_shared(self) -> None:
+        sleeps: list[int] = []
+        failures = run_required_aggregator(
+            CHECK,
+            "success",
+            env=ENV,
+            controls=SimulationControls(advance_sleep=True, clock_step_ms=0),
+            api_errors={"getWorkflowRun": [429], "listForRef": [429]},
+            api_error_detail={
+                "getWorkflowRun": {"headers": {"retry-after": "5399"}},
+                "listForRef": {"headers": {"retry-after": "2"}},
+            },
+            sleeps=sleeps,
+        )
+        self.assertTrue(failures[0].startswith("GitHub API rate limit:"))
+        self.assertEqual(sleeps, [5399000])
 
     def test_startup_budget(self) -> None:
         sleeps: list[int] = []
@@ -265,6 +334,46 @@ class RateLimit(unittest.TestCase):
     def test_changed_poll_resets(self) -> None:
         self.assertEqual(self.poll_sleeps(True)[:3], [30000, 30000, 60000])
 
+    def final_sample(self, completed_after_s: int) -> tuple[list[str], list[int]]:
+        sleeps: list[int] = []
+        failures = run_required_aggregator(
+            CHECK,
+            None,
+            env=ENV,
+            run_created_at=START,
+            extra_checks=[check for check in pending("in_progress") if check["name"] == CHECK],
+            later_checks=[{"name": CHECK, "conclusion": "success", "check_suite": {"id": 1}}]
+            + [check for check in pending("completed") if check["name"] != CHECK],
+            controls=SimulationControls(
+                advance_sleep=True,
+                clock_step_ms=0,
+                later_checks_after_ms=completed_after_s * 1000,
+            ),
+            api_errors={"listForRef": [429]},
+            api_error_detail={"listForRef": {"headers": {"retry-after": "90"}}},
+            sleeps=sleeps,
+        )
+        return failures, sleeps
+
+    def test_final_sample_observes_completion_inside_deadline(self) -> None:
+        failures, sleeps = self.final_sample(238 * 60)
+        self.assertEqual(failures, [])
+        self.assertEqual(sleeps[4:8], [240000] * 4)
+        self.assertEqual(sum(sleeps[:-1]), 237 * 60 * 1000)
+        self.assertEqual(sum(sleeps), 240 * 60 * 1000)
+        self.assertGreaterEqual(sum(sleeps), 238 * 60 * 1000)
+
+    def test_final_sample_observes_completion_in_last_second(self) -> None:
+        failures, sleeps = self.final_sample(240 * 60 - 1)
+        self.assertEqual(failures, [])
+        self.assertEqual(sum(sleeps), 240 * 60 * 1000)
+
+    def test_final_sample_does_not_wait_for_late_completion(self) -> None:
+        failures, sleeps = self.final_sample(241 * 60)
+        self.assertTrue(any(CHECK in failure and "in_progress" in failure for failure in failures))
+        self.assertEqual(sum(sleeps), 240 * 60 * 1000)
+        self.assertLess(len(sleeps), 70)
+
     def mutate(self, before: str, after: str) -> Path:
         text = harness.AGGREGATOR_PATH.read_text(encoding="utf-8")
         mutated = text.replace(before, after)
@@ -283,6 +392,14 @@ class RateLimit(unittest.TestCase):
         with mock.patch.object(harness, "AGGREGATOR_PATH", copy):
             with self.assertRaises(CommandFailed):
                 self.primary([])
+
+    def test_planted_no_final_sample(self) -> None:
+        copy = self.mutate(
+            "while (Date.now() < deadline || finalSample)", "while (Date.now() < deadline)"
+        )
+        with mock.patch.object(harness, "AGGREGATOR_PATH", copy):
+            failures, _ = self.final_sample(238 * 60)
+        self.assertTrue(any(CHECK in failure and "in_progress" in failure for failure in failures))
 
     def test_planted_fixed_poll(self) -> None:
         copy = self.mutate("setTimeout(r, pollIntervalSeconds * 1000)", "setTimeout(r, 30000)")
