@@ -87,8 +87,11 @@ LOADED_AT_RUN_TIME = (
     "ur_adapter_level_zero.dll",
     "ur_adapter_level_zero_v2.dll",
 )
-UR_ASCII_DLL = re.compile(rb"ur_[a-z0-9_.-]+\.dll")
-UR_UTF16LE_DLL = re.compile(rb"u\x00r\x00_\x00(?:[a-z0-9_.-]\x00)+\.\x00d\x00l\x00l\x00")
+UR_ASCII_DLL = re.compile(rb"(?<![a-z0-9_.-])ur_[a-z0-9_.-]+\.dll(?![a-z0-9_.-])")
+UR_UTF16LE_DLL = re.compile(
+    rb"(?<![a-z0-9_.-]\x00)u\x00r\x00_\x00(?:[a-z0-9_.-]\x00)+\.\x00d\x00l\x00l\x00"
+    rb"(?![a-z0-9_.-]\x00)"
+)
 # The C and C++ runtime DLLs of the redistributable folder a /MD program imports.
 MD_RUNTIME_PREFIXES = ("vcruntime140", "msvcp140", "concrt140", "vccorlib140")
 SCRATCH_TEST = "test_sycl_kernel_scratch"
@@ -355,10 +358,12 @@ def vendor_dll_names() -> set[str]:
 
 
 def check_runtime_dll_references(bundle: Path, names: set[str]) -> None:
-    """Verify dynamic-load names against the Intel DLLs staged with the CLI."""
+    """Verify whole dynamic-load names against the Intel DLLs shipped with the CLI."""
+    for name in LOADED_AT_RUN_TIME:
+        if UR_ASCII_DLL.fullmatch(name.encode("utf-8")) is None:
+            raise BuildError(f"invalid configured Intel run-time DLL name: {name!r}")
     directory = bundle / PROGRAM_DIRS[0]
     references: dict[str, list[str]] = {name: [] for name in LOADED_AT_RUN_TIME}
-    encoded = {name: (name.encode("ascii"), name.encode("utf-16le")) for name in LOADED_AT_RUN_TIME}
     missing = set(LOADED_AT_RUN_TIME)
     found: set[str] = set()
     # The staging manifest has already passed prepare_build's component and pattern bounds.
@@ -368,11 +373,12 @@ def check_runtime_dll_references(bundle: Path, names: set[str]) -> None:
             continue
         missing.discard(filename)
         data = path.read_bytes().lower()
-        found.update(name.decode("ascii") for name in UR_ASCII_DLL.findall(data))
-        found.update(name.decode("utf-16le") for name in UR_UTF16LE_DLL.findall(data))
-        for name, (ascii_name, wide_name) in encoded.items():
+        tokens = {token.decode("ascii") for token in UR_ASCII_DLL.findall(data)}
+        tokens.update(token.decode("utf-16le") for token in UR_UTF16LE_DLL.findall(data))
+        found.update(tokens)
+        for name in LOADED_AT_RUN_TIME:
             # A PE export directory can name its own DLL without loading it.
-            if filename != name and (ascii_name in data or wide_name in data):
+            if filename != name and name in tokens:
                 references[name].append(filename)
 
     failures = [f"{name} (not staged)" for name in sorted(missing)]
@@ -425,9 +431,9 @@ def stage_sycl(build: Path, bundle: Path) -> None:
     point_scratch_audit_at_bundle(bundle)
     prepare_build("intel-runtime", str(SYCL_RUNTIME), os.environ["ONEAPI_ROOT"], str(bundle))
     names = vendor_dll_names()
-    check_runtime_dll_references(bundle, names)
     stage_level_zero_loader(bundle, Path(os.environ["VMAFX_LEVEL_ZERO_PREFIX"]))
     dropped = drop_unimported_vendor_dlls(bundle, names)
+    check_runtime_dll_references(bundle, names.difference(dropped))
     versions = {"oneapi": os.environ["VMAFX_ONEAPI_VERSION"],
                 "level_zero_loader": os.environ["LEVEL_ZERO_VERSION"],
                 "intel_dlls_not_imported": ", ".join(dropped) or "none"}  # fmt: skip

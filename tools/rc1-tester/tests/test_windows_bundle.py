@@ -735,6 +735,81 @@ def test_similar_runtime_dll_names_do_not_count_as_references(
     assert "ur_loader.dll" in listing.split(", ")
 
 
+@pytest.mark.parametrize("encoding", ["ascii", "utf-16le"])
+@pytest.mark.parametrize("token", ["xur_loader_shared.dll", "ur_loader_shared.dll.mui"])
+def test_runtime_dll_reference_rejects_partial_tokens(
+    tmp_path: Path, staged_intel_proxy: Path, encoding: str, token: str
+) -> None:
+    name = "ur_loader_shared.dll"
+    assert (staged_intel_proxy.parent / name).write_bytes(b"\0") == 1
+    payload = token.encode(encoding)
+    assert staged_intel_proxy.write_bytes(payload) == len(payload)
+
+    with pytest.raises(builder.BuildError, match="no other staged Intel DLL") as caught:
+        builder.check_runtime_dll_references(tmp_path, builder.vendor_dll_names())
+
+    failures, listing = str(caught.value).split(". UR DLL names found: ")
+    assert f"{name} (no other staged Intel DLL references it)" in failures
+    assert name not in listing.split(", ")
+
+
+@pytest.mark.parametrize("encoding", ["ascii", "utf-16le"])
+@pytest.mark.parametrize("prefix,suffix", [("C:\\x\\", "\0"), ("", "\0"), ("\0", "")])
+def test_runtime_dll_reference_accepts_whole_tokens(
+    tmp_path: Path, staged_intel_proxy: Path, encoding: str, prefix: str, suffix: str
+) -> None:
+    name = "ur_loader_shared.dll"
+    payload = f"{prefix}{name}{suffix}".encode(encoding)
+    assert staged_intel_proxy.write_bytes(payload) == len(payload)
+    other_names = [other for other in builder.LOADED_AT_RUN_TIME if other != name]
+    write_pe(tmp_path, "build/tools/sycl9.dll", "\0".join(other_names).encode(encoding))
+
+    builder.check_runtime_dll_references(tmp_path, builder.vendor_dll_names())
+
+
+def test_runtime_dll_reference_rejects_an_invalid_configured_name(
+    tmp_path: Path, monkeypatch
+) -> None:
+    name = "loader.dll"
+    monkeypatch.setattr(builder, "LOADED_AT_RUN_TIME", (name,))
+    write_pe(tmp_path, f"build/tools/{name}", b"\0")
+    write_pe(tmp_path, "build/tools/sycl9.dll", name.encode("ascii"))
+
+    with pytest.raises(builder.BuildError, match=r"invalid configured Intel run-time DLL name"):
+        builder.check_runtime_dll_references(tmp_path, {name, "sycl9.dll"})
+
+
+def test_stage_sycl_rejects_a_runtime_reference_only_in_a_pruned_dll(
+    tmp_path: Path, monkeypatch
+) -> None:
+    bundle, prefix = tmp_path / "bundle", tmp_path / "level-zero"
+    (bundle / "image").mkdir(parents=True)
+    (bundle / "tests").mkdir()
+    monkeypatch.chdir(_REPO)
+    monkeypatch.setattr(builder, "prepare_build", lambda *_args: "")
+    monkeypatch.setattr(builder, "point_scratch_audit_at_bundle", lambda _bundle: None)
+    monkeypatch.setenv("ONEAPI_ROOT", str(tmp_path))
+    monkeypatch.setenv("VMAFX_LEVEL_ZERO_PREFIX", str(prefix))
+    monkeypatch.setenv("VMAFX_ONEAPI_VERSION", "fixture")
+    monkeypatch.setenv("LEVEL_ZERO_VERSION", "fixture")
+    pe = make_pe(0x8664, ["kernel32.dll"])
+    write_pe(prefix, "bin/ze_loader.dll", pe)
+    for name in builder.LOADED_AT_RUN_TIME:
+        write_pe(bundle, f"build/tools/{name}", pe)
+    target = "ur_loader_shared.dll"
+    other_names = [name for name in builder.LOADED_AT_RUN_TIME if name != target]
+    write_pe(bundle, "build/tools/vmaf.exe", make_pe(0x8664, ["sycl9.dll"]))
+    write_pe(bundle, "build/tools/sycl9.dll", pe + "\0".join(other_names).encode("ascii"))
+    pruned = "build/tools/libirngmd.dll"
+    write_pe(bundle, pruned, pe + target.encode("ascii"))
+
+    with pytest.raises(builder.BuildError, match=rf"{target} \(no other staged Intel DLL"):
+        builder.stage_sycl(tmp_path / "build", bundle)
+
+    assert not (bundle / pruned).exists()
+    assert (bundle / f"build/tools/{target}").is_file()
+
+
 def test_unimported_intel_dlls_are_dropped_until_nothing_changes(tmp_path: Path) -> None:
     for directory in builder.PROGRAM_DIRS:
         write_pe(tmp_path, f"{directory}/prog.exe", make_pe(0x8664, ["sycl9.dll", "libmmd.dll"]))
@@ -767,4 +842,7 @@ def test_the_shipped_windows_sycl_runtime_list_names_redistributable_dlls() -> N
     # Debug builds, OpenCL and the JIT are not what the AOT programs load.
     assert not {"sycl9d.dll", "ur_adapter_opencl.dll", "sycl-jit.dll", "OpenCL.dll"} & names
     assert set(builder.LOADED_AT_RUN_TIME) <= names
+    for name in builder.LOADED_AT_RUN_TIME:
+        assert builder.UR_ASCII_DLL.fullmatch(name.encode("ascii"))
+        assert builder.UR_UTF16LE_DLL.fullmatch(name.encode("utf-16le"))
     assert all(c["dests"] == list(builder.PROGRAM_DIRS) for c in spec["components"])

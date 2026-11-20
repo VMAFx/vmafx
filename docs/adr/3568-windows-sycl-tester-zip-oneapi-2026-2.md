@@ -53,11 +53,11 @@ present in each affected directory in a single staging error.
 - **Neutral / follow-ups**: Windows Tester Zip run 44821793070 on 2026-11-20
   listed `sycl9.dll` in place of `sycl8.dll` and `ur_loader_shared.dll` in
   place of `ur_loader.dll`. The runtime manifest and licence record use the
-  measured names. The build refuses a run-time DLL name that no other staged
-  Intel DLL references. Check the recorded UMF and TCM versions against the
-  resolved component directories printed by `prepare_build.py intel-runtime`.
-  This decision replaces the tester-pin consequence of ADR-3567 and the tester
-  pin of ADR-1566.
+  measured names. After pruning, the build requires each run-time DLL name to
+  occur as a whole name in another Intel DLL that the bundle ships. Check the
+  recorded UMF and TCM versions against the resolved component directories
+  printed by `prepare_build.py intel-runtime`. This decision replaces the tester-pin
+  consequence of ADR-3567 and the tester pin of ADR-1566.
 
 ## References
 
