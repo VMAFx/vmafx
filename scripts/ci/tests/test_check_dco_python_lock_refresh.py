@@ -384,47 +384,70 @@ class PythonLockLandedTest(unittest.TestCase):
             "sha": opener_sha,
             "commit": {"author": {"name": self.renovate[0], "email": self.renovate[1]}},
         }
-        bot = {
-            "sha": bot_sha,
-            "commit": {"author": {"name": RELEASE_BOT[0], "email": RELEASE_BOT[1]}},
+        identities = {
+            "uppercase bot": (RELEASE_BOT[0].upper(), RELEASE_BOT[1].upper()),
+            "padded bot": (f" {RELEASE_BOT[0]} ", f" {RELEASE_BOT[1]} "),
         }
+        bot = self.release_bot_row(bot_sha, *identities.get(case, RELEASE_BOT))
         responses: dict[str, object] = {
             pulls: [pr],
             commits: [opener, bot],
-            files: {"files": [{"filename": OUT_IN_LOCKS}]},
+            files: self.release_bot_file_response(case),
         }
         overrides: dict[str, tuple[str, object]] = {
             "forge error": (pulls, OSError("forge unavailable")),
+            "forge type error": (pulls, TypeError("invalid forge request")),
+            "forge overflow": (pulls, OverflowError("invalid forge API port")),
             "no PR": (pulls, []),
             "multiple PRs": (pulls, [pr, dict(pr, number=3502)]),
             "wrong merge SHA": (pulls, [dict(pr, merge_commit_sha=opener_sha)]),
             "unmerged PR": (pulls, [dict(pr, merged_at=None)]),
+            "malformed merged_at": (pulls, [dict(pr, merged_at="yesterday")]),
             "malformed author": (commits, [opener, bot, {"sha": "c" * 40, "commit": {}}]),
             "no release-bot commit": (commits, [opener]),
-            "missing files": (files, {}),
-            "full file page": (files, {"files": [{"filename": OUT_IN_LOCKS}] * 100}),
-            "bot input": (files, {"files": [{"filename": OUT_IN_LOCKS}, {"filename": INPUT}]}),
-            "rename from input": (
-                files,
-                {"files": [{"filename": OUT_IN_LOCKS, "previous_filename": INPUT}]},
-            ),
         }
         if case == "later bot input":
             later_sha = "d" * 40
             responses[commits] = [dict(opener, sha=f"{i:040x}") for i in range(99)] + [bot]
             responses["/pulls/3501/commits?per_page=100&page=2"] = [dict(bot, sha=later_sha)]
-            responses[f"/commits/{later_sha}?per_page=100"] = {"files": [{"filename": INPUT}]}
-        elif case != "valid":
+            responses[f"/commits/{later_sha}?per_page=100"] = {
+                "files": [{"filename": INPUT, "status": "modified"}]
+            }
+        elif case == "forge key error":
+            del responses[files]
+        elif case in overrides:
             path, response = overrides[case]
             responses[path] = response
 
         def fetch(path: str) -> object:
             response = responses[path]
-            if isinstance(response, OSError):
+            if isinstance(response, Exception):
                 raise response
             return response
 
         return fetch
+
+    @staticmethod
+    def release_bot_row(sha: str, name: str, email: str) -> dict[str, object]:
+        return {"sha": sha, "commit": {"author": {"name": name, "email": email}}}
+
+    @staticmethod
+    def release_bot_file_response(case: str) -> dict[str, object]:
+        output = {"filename": OUT_IN_LOCKS, "status": "modified"}
+        overrides: dict[str, dict[str, object]] = {
+            "missing files": {},
+            "empty files": {"files": []},
+            "full file page": {"files": [output] * 100},
+            "missing status": {"files": [{"filename": OUT_IN_LOCKS}]},
+            "unknown status": {"files": [dict(output, status="unknown")]},
+            "bot input": {"files": [output, dict(output, filename=INPUT)]},
+            "rename from input": {
+                "files": [dict(output, status="renamed", previous_filename=INPUT)]
+            },
+            "rename missing previous": {"files": [dict(output, status="renamed")]},
+            "bot manifest": {"files": [output, dict(output, filename=MANIFEST)]},
+        }
+        return overrides.get(case, {"files": [output]})
 
     def judge(
         self,
@@ -441,9 +464,38 @@ class PythonLockLandedTest(unittest.TestCase):
             sha = commit_paths(
                 repo, paths, ident or self.renovate, message=message or self.msg, signoff=False
             )
-            judge = partial(self.mod.judge_landed, fetch=self.fake_fetch(sha, forge_case))
-            with mock.patch.object(self.mod, "judge_landed", judge):
-                return judge_landed_in_repo(self.mod, repo, sha, self.exc_root, today=today)
+            return self.judge_squash(repo, sha, forge_case, today)
+
+    def judge_squash(self, repo: fx.Repo, sha: str, forge_case: str, today: str) -> str | None:
+        judge = partial(self.mod.judge_landed, fetch=self.fake_fetch(sha, forge_case))
+        with mock.patch.object(self.mod, "judge_landed", judge):
+            return judge_landed_in_repo(self.mod, repo, sha, self.exc_root, today=today)
+
+    def judge_manifest_squash(
+        self,
+        before: str | None,
+        after: str,
+        *,
+        root_commit: bool = False,
+        forge_case: str = "valid",
+    ) -> str | None:
+        """Commit the manifest contents and check the landed decision using Git objects."""
+        with tempfile.TemporaryDirectory() as directory:
+            repo = fx.Repo(Path(directory))
+            manifest = repo.path / MANIFEST
+            manifest.parent.mkdir(parents=True)
+            if root_commit:
+                repo.git(["switch", "--orphan", "root-squash"])
+            if before is not None:
+                manifest.write_text(before, encoding="utf-8")
+                repo.git(["add", "--", MANIFEST])
+                repo.git(["commit", "-qm", "Parent manifest"])
+            manifest.write_text(after, encoding="utf-8")
+            (repo.path / OUT_IN_LOCKS).write_text("refreshed\n", encoding="utf-8")
+            repo.git(["add", "--", MANIFEST, OUT_IN_LOCKS])
+            repo.git(["commit", "-q", "-F", "-"], self.renovate, stdin=self.msg)
+            sha = repo.git(["rev-parse", "HEAD"]).strip()
+            return self.judge_squash(repo, sha, forge_case, TODAY)
 
     def assert_refused(self, reason: str | None) -> None:
         """Assert the co-author trailer was not stripped."""
@@ -461,6 +513,69 @@ class PythonLockLandedTest(unittest.TestCase):
     def test_positive_squash_with_input_and_output_passes(self) -> None:
         """The forge attributes the output alone to the release bot."""
         self.assertIsNone(self.judge((INPUT, OUT_IN_LOCKS)))
+
+    def test_positive_squash_with_only_uv_version_changed_in_manifest_passes(self) -> None:
+        before = lock_checker.load_manifest(self.exc_root)
+        after = dict(before, uv_version="99.0.0")
+        self.assertIsNone(self.judge_manifest_squash(json.dumps(before), json.dumps(after)))
+        self.assert_refused(
+            self.judge_manifest_squash(
+                json.dumps(before), json.dumps(after), forge_case="bot manifest"
+            )
+        )
+
+    def test_manifest_changes_beyond_uv_version_refused(self) -> None:
+        before = dict(lock_checker.load_manifest(self.exc_root), policy={"enabled": True})
+        bump = dict(before, uv_version="99.0.0")
+        changes = (
+            dict(bump, new_key="extra"),
+            dict(bump, policy={"enabled": False}),
+            dict(bump, policy={"enabled": 1}),
+            {key: value for key, value in bump.items() if key != "policy"},
+            dict(bump, uv_version="99.0.0rc1"),
+        )
+        for index, after in enumerate(changes):
+            with self.subTest(case=index):
+                self.assert_refused(
+                    self.judge_manifest_squash(json.dumps(before), json.dumps(after))
+                )
+        self.assert_refused(
+            self.judge_manifest_squash(json.dumps(before), json.dumps(before, indent=2))
+        )
+
+    def test_invalid_manifest_git_objects_refused(self) -> None:
+        before = lock_checker.load_manifest(self.exc_root)
+        after = json.dumps(dict(before, uv_version="99.0.0"))
+        invalid = (
+            "{",
+            "[]",
+            f'{after[:-1]}, "uv_version": "99.0.0"}}',
+            f'{after[:-1]}, "weight": NaN}}',
+        )
+        for text in invalid:
+            with self.subTest(text=text[:40]):
+                self.assert_refused(self.judge_manifest_squash(json.dumps(before), text))
+                self.assert_refused(self.judge_manifest_squash(text, after))
+
+    def test_high_precision_manifest_value_change_refused(self) -> None:
+        before = lock_checker.load_manifest(self.exc_root)
+        after = dict(before, uv_version="99.0.0")
+        self.assert_refused(
+            self.judge_manifest_squash(
+                f'{json.dumps(before)[:-1]}, "weight": 0.10000000000000000001}}',
+                f'{json.dumps(after)[:-1]}, "weight": 0.10000000000000000002}}',
+            )
+        )
+
+    def test_manifest_diff_without_parent_manifest_refused(self) -> None:
+        after = (self.exc_root / MANIFEST).read_text(encoding="utf-8")
+        self.assert_refused(self.judge_manifest_squash(None, after))
+        self.assert_refused(self.judge_manifest_squash(None, after, root_commit=True))
+
+    def test_forge_normalizes_release_bot_name_and_email(self) -> None:
+        for case in ("uppercase bot", "padded bot"):
+            with self.subTest(case=case):
+                self.assertIsNone(self.judge((INPUT, OUT_IN_LOCKS), forge_case=case))
 
     def test_planted_refusals(self) -> None:
         """Input only, no path, a neighbour of an output, another author or another bot refuse."""
@@ -508,16 +623,24 @@ class PythonLockLandedTest(unittest.TestCase):
         """A mixed squash needs a complete, unambiguous forge read."""
         cases = (
             "forge error",
+            "forge key error",
+            "forge type error",
+            "forge overflow",
             "no PR",
             "multiple PRs",
             "wrong merge SHA",
             "unmerged PR",
+            "malformed merged_at",
             "malformed author",
             "missing files",
+            "empty files",
             "full file page",
+            "missing status",
+            "unknown status",
             "missing token",
             "missing repository",
             "rename from input",
+            "rename missing previous",
             "no release-bot commit",
             "later bot input",
         )

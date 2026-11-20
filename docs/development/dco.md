@@ -237,17 +237,28 @@ D, entered 2026-11-18 and expires 2027-03-18. An absent or expired entry refuses
 the path. A new lock output needs a new operator grant before an entry is added.
 
 In landed mode, the same class strips the single release-bot co-author line only
-when the Renovate squash changes at least one live grant path and all other
-changed paths are inputs in `requirements/locks/manifest.json`. Using
-`GH_TOKEN` and `GITHUB_REPOSITORY`, the gate looks up the one associated pull
-request and verifies that it merged as this squash. It pages through the pull
-request's commits, requires a release-bot commit, and checks that every commit
-authored by the release-bot name and email touched only live grant paths. The
-manifest inputs are eligible only as squash paths. The 30-path grant also
-governs the bot's commits in landed mode. Missing configuration, an absent or
-ambiguous association, a forge read
-error, or malformed or incomplete evidence leaves the line for the attribution
-check to refuse. The gate prints a `dco:` notice when verification fails.
+when the Renovate squash changes at least one live grant path. The remaining
+paths must be manifest inputs or `requirements/locks/manifest.json` itself. For
+the manifest path, the gate reads the parent and squash copies from local Git
+objects. Both must be valid manifests with unique JSON keys, and the only
+changed value must be the top-level `uv_version`, set to an exact release.
+Missing or unreadable Git objects, malformed manifests, and any other manifest
+change keep the co-author line.
+
+Using `GH_TOKEN` and `GITHUB_REPOSITORY`, the gate requires a single associated
+pull request whose merge SHA matches the squash and whose `merged_at` parses as
+an ISO 8601 timestamp. The complete commit list must have fewer than 250 entries
+and include a release-bot commit, identified by normalized Git author name and
+email. Each release-bot commit must have a nonempty file list shorter than one
+API page (100 entries), with valid filenames and statuses `added`, `removed`,
+`modified`, `renamed`, `copied`,
+`changed`, or `unchanged`. Renames require a previous filename, and the gate
+checks any supplied previous filename. Every reported path must have a live grant
+among the 30 paths. Missing configuration, missing, ambiguous, malformed or
+incomplete forge evidence, and `TierError`, `OSError`, `ValueError`,
+`RecursionError`, `KeyError`, `TypeError`, or `OverflowError` from the forge read
+keep the line for the attribution check to refuse. The gate prints a `dco:`
+notice for verification errors.
 
 Every other line of the message and the `Signed-off-by:` check in
 `judge_landed` still run unchanged; a second release-bot line or any other bot

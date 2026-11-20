@@ -177,6 +177,19 @@ dependencies = ["numpy>=2.5.3"]
         lookup.assert_called_once_with(self.tmp_path.resolve())
         self.assertEqual(code, 0)
 
+    def test_fallback_discovers_pyproject_below_hidden_parent_of_root(self) -> None:
+        root = self.tmp_path / ".cache" / "worktree"
+        pyproject = root / "pkg" / "pyproject.toml"
+        pyproject.parent.mkdir(parents=True)
+        pyproject.write_text('[project]\nname = "visible-pkg"\n', encoding="utf-8")
+        self.assertEqual(check_python_floors.discover_pyprojects(root), [pyproject])
+
+    def test_fallback_excludes_hidden_directories_inside_root(self) -> None:
+        pyproject = self.tmp_path / "pkg" / ".cache" / "pyproject.toml"
+        pyproject.parent.mkdir(parents=True)
+        pyproject.write_text('[project]\nname = "hidden-pkg"\n', encoding="utf-8")
+        self.assertEqual(check_python_floors.discover_pyprojects(self.tmp_path), [])
+
     def test_the_tree_passes(self) -> None:
         """The actual repository packages pass floor check."""
         code = check_python_floors.main(["--root", str(ROOT)])
@@ -195,6 +208,11 @@ class TestToolingUvPin(unittest.TestCase):
 
     def test_pin_equals_manifest(self) -> None:
         manifest = check_python_dependency_locks.load_manifest(ROOT)
+        pins = check_python_dependency_locks.find_uv_input_pins(
+            ROOT, ("requirements/locks/tooling-tests.in",)
+        )
+        self.assertTrue(pins, "tooling-tests.in must contain an exact uv pin")
+        self.assertEqual({version for _, _, version in pins}, {manifest["uv_version"]})
         self.assertEqual(check_python_dependency_locks.check_uv_input_pins(ROOT, manifest), [])
 
     def test_planted_other_version_is_refused(self) -> None:

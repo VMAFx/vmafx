@@ -14,10 +14,23 @@ In ``--landed`` mode, ADR-3555 also strips a single exact ``vmafx-release-bot[bo
 ADR-3560 adds a second class for the signed Python lock refresh commit with the exact
 subject and author on a Renovate PR. Every changed path must have a live, path-exact
 ``dco-python-lock-refresh`` exception. In ``--landed`` mode the squash must change at
-least one live grant path, and all other paths must be manifest inputs. The forge
-must identify one merged PR for the squash and verify that it has release-bot
-commits and that all of them touched only live grant paths. Missing or invalid
-forge evidence keeps the trailer.
+least one of the 30 live grant paths. Other paths must be manifest inputs, or the
+manifest itself if valid parent and squash copies read from local Git objects
+differ only in the top-level ``uv_version`` value. The new value must be an exact
+release. Missing or invalid objects, malformed or duplicate-key JSON, and any
+other manifest change keep the trailer.
+
+The forge must identify one PR with the squash SHA and a parseable ``merged_at``
+timestamp. Its complete commit list must have fewer than 250 entries and include
+a release-bot commit identified by normalized Git author name and email. Each
+release-bot commit needs a nonempty file list shorter than one page (100 entries),
+with valid filenames and only ``added``, ``removed``, ``modified``, ``renamed``,
+``copied``, ``changed``, or ``unchanged`` statuses. A rename requires the previous
+filename, and any supplied previous
+filename is also checked. Every reported path needs a live grant. Missing forge
+configuration, missing, ambiguous, malformed or incomplete forge evidence, and
+``TierError``, ``OSError``, ``ValueError``, ``RecursionError``, ``KeyError``,
+``TypeError``, or ``OverflowError`` from the forge read keep the trailer.
 
 Every non-merge commit in ``BASE..HEAD`` must end with a ``Signed-off-by: Name
 <email>`` trailer (what ``git commit -s`` writes), and the e-mail address of
@@ -85,6 +98,7 @@ import unicodedata
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -133,6 +147,9 @@ PYTHON_LOCK_EXCEPTION_RULE = "dco-python-lock-refresh"
 PYTHON_LOCK_SUBJECT = "chore(deps): refresh Python dependency locks"
 # GitHub caps the List commits on a pull request endpoint at 250 commits.
 PULL_COMMIT_LIMIT = 250
+FORGE_FILE_STATUSES = frozenset(
+    {"added", "removed", "modified", "renamed", "copied", "changed", "unchanged"}
+)
 
 # All 13 tokens equal praetor tools/planning/commit_msg_check.py BANNED_COAUTHORS;
 # both Python tuples use substring matching. Engine internal/forge/commit_message.go
@@ -352,7 +369,7 @@ def is_exempt_opener_commit(
     """
     if pre_push or author != RENOVATE_BOT_LOGIN or author_type != "Bot":
         return False
-    if (name, email) != (RELEASE_BOT_NAME, RELEASE_BOT_EMAIL):
+    if (name, email) != NORMALIZED_RELEASE_BOT:
         return False
     paths = commit_changed_paths(sha)
     if not paths:
@@ -493,8 +510,14 @@ def drop_format_characters(text: str) -> str:
 
 
 def normalized_identity(text: str) -> str:
-    """Share NFKC, format removal, and case normalization across identity checks."""
-    return drop_format_characters(normalize_attribution_text(text)).lower()
+    """Share NFKC, format removal, whitespace and case normalization across identities."""
+    return drop_format_characters(normalize_attribution_text(text)).strip().lower()
+
+
+NORMALIZED_RELEASE_BOT = (
+    normalized_identity(RELEASE_BOT_NAME),
+    normalized_identity(RELEASE_BOT_EMAIL),
+)
 
 
 def is_bot_identity(name: str, email: str) -> bool:
@@ -575,6 +598,7 @@ def merged_pull_number(fetch: ci_tier.Fetcher, sha: str) -> int:
     merged_at = pull.get("merged_at")
     if not isinstance(merged_at, str) or not merged_at or pull.get("merge_commit_sha") != sha:
         raise ci_tier.TierError(f"pull request {number} did not merge as this squash")
+    parse_time(merged_at, f"pull request {number} merged_at")
     return number
 
 
@@ -602,7 +626,7 @@ def release_bot_commits(fetch: ci_tier.Fetcher, number: int) -> list[str]:
     shas = []
     for row in rows:
         sha, name, email = forge_commit_author(row)
-        if (name, email) == (RELEASE_BOT_NAME, RELEASE_BOT_EMAIL):
+        if (normalized_identity(name), normalized_identity(email)) == NORMALIZED_RELEASE_BOT:
             shas.append(sha)
     if not shas:
         raise ci_tier.TierError(f"pull request {number} has no release-bot commit")
@@ -616,7 +640,10 @@ def forge_file_paths(file: object, sha: str) -> list[str]:
     path = file.get("filename")
     if not isinstance(path, str) or not path:
         raise ci_tier.TierError(f"commit {sha[:10]} has an invalid filename")
-    if file.get("status") != "renamed" and "previous_filename" not in file:
+    status = file.get("status")
+    if not isinstance(status, str) or status not in FORGE_FILE_STATUSES:
+        raise ci_tier.TierError(f"commit {sha[:10]} has an invalid file status")
+    if status != "renamed" and "previous_filename" not in file:
         return [path]
     previous = file.get("previous_filename")
     if not isinstance(previous, str) or not previous:
@@ -628,20 +655,46 @@ def forge_commit_paths(fetch: ci_tier.Fetcher, sha: str) -> list[str]:
     """Read a release-bot commit's files, refusing a potentially truncated page."""
     response = fetch(f"/commits/{sha}?per_page={ci_tier.PAGE_SIZE}")
     files = response.get("files") if isinstance(response, dict) else None
-    if not isinstance(files, list) or len(files) >= ci_tier.PAGE_SIZE:
-        raise ci_tier.TierError(f"commit {sha[:10]} has a missing or possibly truncated file list")
+    if not isinstance(files, list) or not 0 < len(files) < ci_tier.PAGE_SIZE:
+        raise ci_tier.TierError(
+            f"commit {sha[:10]} has a missing, empty or possibly truncated file list"
+        )
     return [path for file in files for path in forge_file_paths(file, sha)]
+
+
+def manifest_uv_version_only(sha: str) -> bool:
+    """Prove the parent-to-squash manifest diff changes only the exact uv release."""
+    manifest = check_python_dependency_locks.MANIFEST_PATH.as_posix()
+    before, after = (
+        check_python_dependency_locks.parse_manifest(
+            run_git(["--no-lazy-fetch", "cat-file", "--", "blob", f"{rev}:{manifest}"]),
+            parse_float=Decimal,
+        )
+        for rev in (f"{sha}^", sha)
+    )
+    old_version, new_version = before.pop("uv_version"), after.pop("uv_version")
+    if old_version == new_version or before != after:
+        return False
+    # Equality checks Decimal values exactly. Serialization also distinguishes true from 1.
+    return json.dumps(before, sort_keys=True, default=str) == json.dumps(
+        after, sort_keys=True, default=str
+    )
 
 
 def python_lock_landed_exemption(
     sha: str, paths: list[str], root: Path, fetch: ci_tier.Fetcher | None
 ) -> bool:
     """Check the squash paths and prove the release bot stayed within its grant."""
-    ungranted = lint_exceptions.still_read(PYTHON_LOCK_EXCEPTION_RULE, paths, root)
-    if len(ungranted) == len(paths):
-        return False
     try:
-        if ungranted and not set(ungranted).issubset(
+        ungranted = set(lint_exceptions.still_read(PYTHON_LOCK_EXCEPTION_RULE, paths, root))
+        if ungranted == set(paths):
+            return False
+        manifest = check_python_dependency_locks.MANIFEST_PATH.as_posix()
+        if manifest in ungranted:
+            if not manifest_uv_version_only(sha):
+                return False
+            ungranted.remove(manifest)
+        if ungranted and not ungranted.issubset(
             check_python_dependency_locks.manifest_inputs(root)
         ):
             return False
@@ -657,9 +710,14 @@ def python_lock_landed_exemption(
     except (
         ci_tier.TierError,
         check_python_dependency_locks.ContractError,
+        InputBoundError,
+        UsageError,
         OSError,
         ValueError,
         RecursionError,
+        KeyError,
+        TypeError,
+        OverflowError,
     ) as error:
         print(f"dco: {sha[:10]} Python lock refresh exemption refused: {error}", file=sys.stderr)
         return False

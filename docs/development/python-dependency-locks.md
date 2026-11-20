@@ -22,6 +22,14 @@ Both `check` and `write` reject a manifest input whose `uv` pin differs from
 `uv_version`, so a Renovate PR that bumps the pin must update `uv_version` in
 the same change to pass.
 
+The checker recognizes `uv` by its case-insensitive, PEP 503-normalized package
+name. It checks `==` and `===` pins with optional extras, whitespace, and
+environment markers. In `.in` and `.txt` files it joins backslash-continued
+lines and reports the first physical line. In TOML files it checks strings in
+`project.dependencies`, `project.optional-dependencies` groups,
+`dependency-groups` arrays, and `build-system.requires`. It reports the dotted
+TOML key and skips dependency group include tables. Malformed TOML fails the check.
+
 Guides point at that field and never restate the number:
 `check_python_dependency_locks.py check` refuses any Markdown line that echoes
 a uv version (with optional leading `v`, e.g. `vX.Y.Z` or `X.Y.Z`) within 40 characters

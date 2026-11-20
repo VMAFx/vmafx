@@ -20,17 +20,26 @@ subject, release-bot identity, dependency-bot opener, and only paths with live
 entries in `.config/lint-exceptions.d/dco-python-lock-refresh.toml`.
 
 In landed mode, a Renovate squash with one exact release-bot co-author line
-must change at least one live grant path. All other changed paths must be
-inputs in `requirements/locks/manifest.json`. The gate uses `GH_TOKEN` and
-`GITHUB_REPOSITORY` to read the associated pull request from the forge and
-verify that a single pull request merged as the squash SHA. It pages through
-the pull request commits and requires a release-bot commit. It reads the files
-for every commit whose Git author name and email match the release bot. Those
-files must all have live grants.
-Missing configuration, a missing or ambiguous association, a forge read error,
-or malformed or incomplete evidence keeps the co-author line and prints a
-`dco:` notice. A file list that reaches the requested page size is treated as
-potentially incomplete.
+must change at least one live grant path. The remaining paths must be manifest
+inputs or `requirements/locks/manifest.json` itself. The manifest can accompany
+a uv bump if the parent and squash copies are valid manifests read from local
+Git objects and the only changed value is top-level `uv_version`, set to an
+exact release. Missing or unreadable Git objects, malformed manifests,
+duplicate JSON keys, and other manifest changes keep the co-author line.
+
+The gate uses `GH_TOKEN` and `GITHUB_REPOSITORY` to require one associated pull
+request with the squash SHA and an ISO 8601 `merged_at` timestamp. The complete
+commit list must have fewer than 250 entries and include a release-bot commit
+identified by normalized Git author name and email. Each such commit must have
+a nonempty file list shorter than one API page (100 entries), with valid
+filenames and statuses `added`, `removed`, `modified`, `renamed`, `copied`,
+`changed`, or `unchanged`. Renames require a
+previous filename, and the gate checks any supplied previous filename. Every
+reported path must have a live grant among the 30 paths. Missing configuration,
+missing, ambiguous, malformed or incomplete forge evidence, and `TierError`,
+`OSError`, `ValueError`, `RecursionError`, `KeyError`, `TypeError`, or
+`OverflowError` from the forge read keep the co-author line and print a `dco:`
+notice.
 
 The 2026-11-18 operator answer `vmafx-renovate-python-lock-refresh` grants the
 following 30 exact paths. A new lock output needs a new operator grant before an

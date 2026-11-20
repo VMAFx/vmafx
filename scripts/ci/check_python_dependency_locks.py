@@ -23,7 +23,8 @@ import stat
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterable, Sequence
+import tomllib
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, cast
 
@@ -49,7 +50,11 @@ GIT_TIMEOUT_S = 60
 SUBPROCESS_TIMEOUT_S = 120
 HASH_RE = re.compile(r"--hash=sha256:[0-9a-f]{64}(?:\s|$)")
 EXACT_REQUIREMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+(?:\[[A-Za-z0-9_,.-]+\])?==[^;\s]+")
-UV_INPUT_PIN_RE = re.compile(r"uv\s*==\s*([^=;\s]+)(?:\s*;.*)?", re.IGNORECASE)
+EXACT_INPUT_PIN_RE = re.compile(
+    r"([A-Za-z0-9_.-]+)\s*(?:\[\s*(?:[A-Za-z0-9_.-]+(?:\s*,\s*[A-Za-z0-9_.-]+)*\s*)?\])?"
+    r"\s*===?\s*([^=;\s]+)(?:\s*;.*)?",
+    re.DOTALL,
+)
 PIP_NAME_RE = re.compile(
     r"(?:^|[/\\]|\$[\(\{][A-Za-z0-9_]*)pip(?:3|[0-9.]*)?(?:\.exe|[\)\}])?$",
     re.IGNORECASE,
@@ -136,6 +141,10 @@ def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
             raise ContractError(f"{MANIFEST_PATH}: duplicate JSON key {key!r}")
         result[key] = value
     return result
+
+
+def _reject_json_constant(value: str) -> None:
+    raise ContractError(f"{MANIFEST_PATH}: invalid JSON constant {value}")
 
 
 INSECURE_COMPILE_FLAGS = {
@@ -405,14 +414,16 @@ def validate_manifest_entry(entry: dict[str, Any]) -> list[str]:
     ]
 
 
-def load_manifest(root: Path) -> dict[str, Any]:
-    path = root / MANIFEST_PATH
+def parse_manifest(text: str, *, parse_float: Callable[[str], object] = float) -> dict[str, Any]:
+    """Parse and validate a lock manifest from the worktree or a Git object."""
     try:
         data = json.loads(
-            path.read_text(encoding="utf-8"),
+            text,
             object_pairs_hook=_reject_duplicate_json_keys,
+            parse_constant=_reject_json_constant,
+            parse_float=parse_float,
         )
-    except (OSError, json.JSONDecodeError) as error:
+    except (ValueError, RecursionError, ArithmeticError) as error:
         raise ContractError(f"{MANIFEST_PATH}: {error}") from error
     if not isinstance(data, dict) or not isinstance(data.get("locks"), list):
         raise ContractError(f"{MANIFEST_PATH}: expected an object with a locks array")
@@ -426,20 +437,21 @@ def load_manifest(root: Path) -> dict[str, Any]:
         entry_problems = validate_manifest_entry(raw_entry)
         if entry_problems:
             raise ContractError(f"{MANIFEST_PATH}: {'; '.join(entry_problems)}")
-        aliases: list[str] = []
-        for alias_item in raw_entry.get("install_aliases", []):
-            if isinstance(alias_item, dict):
-                a_str = alias_item.get("alias")
-                if isinstance(a_str, str):
-                    aliases.append(a_str)
-            elif isinstance(alias_item, str):
-                aliases.append(alias_item)
+        aliases = [item["alias"] for item in (raw_entry.get("install_aliases") or [])]
         for target in [raw_entry["output"], *aliases]:
             normalized = _normalize_install_target(target)
             if normalized in install_targets:
                 raise ContractError(f"{MANIFEST_PATH}: install target {target!r} is repeated")
             install_targets.add(normalized)
     return data
+
+
+def load_manifest(root: Path) -> dict[str, Any]:
+    try:
+        text = (root / MANIFEST_PATH).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise ContractError(f"{MANIFEST_PATH}: {error}") from error
+    return parse_manifest(text)
 
 
 def manifest_outputs(root: Path) -> list[str]:
@@ -449,34 +461,91 @@ def manifest_outputs(root: Path) -> list[str]:
 
 def manifest_inputs(root: Path) -> list[str]:
     """Return every input path the manifest names, once each, in first-seen order."""
+    return _manifest_input_paths(load_manifest(root))
+
+
+def _manifest_input_paths(manifest: dict[str, Any]) -> list[str]:
     seen: dict[str, None] = {}
-    for entry in load_manifest(root)["locks"]:
+    for entry in manifest["locks"]:
         for path in entry["inputs"]:
             seen.setdefault(path, None)
     return list(seen)
 
 
+def _requirements_file_lines(text: str) -> Iterator[tuple[int, str]]:
+    """Join requirement continuations in one pass over the physical lines."""
+    pending: list[str] = []
+    start = 0
+    for number, line in enumerate(text.splitlines(), 1):
+        if not pending:
+            start = number
+        if line.endswith("\\") and not line.lstrip().startswith("#"):
+            pending.append(line.removesuffix("\\"))
+            continue
+        pending.append(line)
+        yield start, "".join(pending).partition("#")[0]
+        pending.clear()
+    if pending:
+        yield start, "".join(pending).partition("#")[0]
+
+
+def _toml_requirement_arrays(data: dict[str, Any]) -> Iterator[tuple[str, object]]:
+    project = data.get("project")
+    if isinstance(project, dict):
+        yield "project.dependencies", project.get("dependencies")
+        optional = project.get("optional-dependencies")
+        if isinstance(optional, dict):
+            for key, entries in optional.items():
+                yield f"project.optional-dependencies.{key}", entries
+    groups = data.get("dependency-groups")
+    if isinstance(groups, dict):
+        for key, entries in groups.items():
+            yield f"dependency-groups.{key}", entries
+    build = data.get("build-system")
+    if isinstance(build, dict):
+        yield "build-system.requires", build.get("requires")
+
+
+def _input_requirements(relative: str, text: str) -> Iterator[tuple[int | str, str]]:
+    if Path(relative).suffix.lower() != ".toml":
+        yield from _requirements_file_lines(text)
+        return
+    try:
+        data = tomllib.loads(text)
+    except (tomllib.TOMLDecodeError, RecursionError) as error:
+        raise ContractError(f"{relative}: invalid TOML: {error}") from error
+    for key, entries in _toml_requirement_arrays(data):
+        if isinstance(entries, list):
+            for requirement in entries:
+                if isinstance(requirement, str):
+                    yield key, requirement
+
+
+def find_uv_input_pins(root: Path, inputs: Iterable[str]) -> list[tuple[str, int | str, str]]:
+    """Return each exact uv pin with its relative path and line number or TOML key."""
+    pins: list[tuple[str, int | str, str]] = []
+    for relative in inputs:
+        try:
+            text = (root / relative).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as error:
+            raise ContractError(f"{relative}: {error}") from error
+        for location, requirement in _input_requirements(relative, text):
+            match = EXACT_INPUT_PIN_RE.fullmatch(requirement.strip())
+            if match and re.sub(r"[-_.]+", "-", match[1]).lower() == "uv":
+                pins.append((relative, location, match[2]))
+    return pins
+
+
 def check_uv_input_pins(root: Path, manifest: dict[str, Any]) -> list[str]:
     """Report each exact uv input pin that differs from the manifest generator."""
     expected = manifest["uv_version"]
-    problems: list[str] = []
-    for relative in manifest_inputs(root):
-        try:
-            lines = (root / relative).read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError) as error:
-            raise ContractError(f"{relative}: {error}") from error
-        for number, line in enumerate(lines, 1):
-            match = UV_INPUT_PIN_RE.fullmatch(line.partition("#")[0].strip())
-            if match is None:
-                continue
-            pinned = match.group(1)
-            if pinned != expected:
-                problems.append(
-                    f"{relative}:{number}: uv=={pinned} differs from uv_version {expected}. "
-                    "Set uv_version in the same change as the uv bump and regenerate the locks "
-                    "with that uv (make python-locks-write)."
-                )
-    return problems
+    return [
+        f"{relative}:{location}: uv=={pinned} differs from uv_version {expected}. "
+        "Set uv_version in the same change as the uv bump and regenerate the locks "
+        "with that uv (make python-locks-write)."
+        for relative, location, pinned in find_uv_input_pins(root, _manifest_input_paths(manifest))
+        if pinned != expected
+    ]
 
 
 _TABLE_HEADER = re.compile(r"^\[\[?\s*([^\[\]]+?)\s*\]\]?\s*(?:#.*)?$")
@@ -581,43 +650,45 @@ def _normalize_pip_tokens(tokens: list[str]) -> list[str]:
     return normalized
 
 
+def _pip_options_start(tokens: list[str], index: int) -> int | None:
+    """Find the start of pip options for a direct or ``python -m`` invocation."""
+    token = tokens[index]
+    if PIP_NAME_RE.search(token):
+        if (
+            index > 1
+            and tokens[index - 1].lower() == "-m"
+            and PYTHON_NAME_RE.search(tokens[index - 2])
+        ):
+            return None  # The Python executable already represents this invocation.
+        return index + 1
+    if (
+        PYTHON_NAME_RE.search(token)
+        and index + 2 < len(tokens)
+        and tokens[index + 1].lower() == "-m"
+        and PIP_NAME_RE.search(tokens[index + 2])
+    ):
+        return index + 3
+    return None
+
+
 def _pip_install_tokens(command: str) -> Iterable[list[str]]:
     """Yield normalized ``pip install`` token slices from executable shell text."""
-
     tokens = _shell_tokens(command)
-    for index, token in enumerate(tokens):
-        arguments_at: int | None = None
-        invoked_by_python = (
-            index >= 2  # noqa: PLR2004
-            and tokens[index - 1].lower() == "-m"
-            and PYTHON_NAME_RE.search(tokens[index - 2]) is not None
-        )
-        pre_flags: list[str] = []
-        if PIP_NAME_RE.search(token) and not invoked_by_python:
-            j = index + 1
-            while j < len(tokens) and tokens[j] not in SHELL_CONTROL_OPERATORS:
-                if tokens[j].lower() == "install":
-                    pre_flags = tokens[index + 1 : j]
-                    arguments_at = j + 1
-                    break
-                j += 1
-        elif PYTHON_NAME_RE.search(token) and index + 2 < len(tokens):
-            if tokens[index + 1].lower() == "-m" and PIP_NAME_RE.search(tokens[index + 2]):
-                j = index + 3
-                while j < len(tokens) and tokens[j] not in SHELL_CONTROL_OPERATORS:
-                    if tokens[j].lower() == "install":
-                        pre_flags = tokens[index + 3 : j]
-                        arguments_at = j + 1
-                        break
-                    j += 1
-        if arguments_at is None:
+    for index in range(len(tokens)):
+        start = _pip_options_start(tokens, index)
+        if start is None:
             continue
-        end = arguments_at
-        while end < len(tokens) and tokens[end] not in SHELL_CONTROL_OPERATORS:
-            end += 1
-        raw_tail = [*pre_flags, *tokens[arguments_at:end]]
-        normalized_tail = _normalize_pip_tokens(raw_tail)
-        yield ["pip", "install", *normalized_tail]
+        for subcommand in range(start, len(tokens)):
+            if tokens[subcommand] in SHELL_CONTROL_OPERATORS:
+                break
+            if tokens[subcommand].lower() != "install":
+                continue
+            end = subcommand + 1
+            while end < len(tokens) and tokens[end] not in SHELL_CONTROL_OPERATORS:
+                end += 1
+            raw_tail = [*tokens[start:subcommand], *tokens[subcommand + 1 : end]]
+            yield ["pip", "install", *_normalize_pip_tokens(raw_tail)]
+            break
 
 
 def _is_container_recipe(relative: Path | str) -> bool:
@@ -832,18 +903,9 @@ def get_manifest_lock_targets_for_consumer(
     root: Path | None = None,
 ) -> set[str]:
     """Return all valid lock file targets (outputs and bound aliases) for a consumer."""
-    search_root = root
     if manifest is None:
-        if search_root is None:
-            default_root = Path(__file__).resolve().parents[2]
-            if (default_root / MANIFEST_PATH).exists():
-                search_root = default_root
-            elif (Path.cwd() / MANIFEST_PATH).exists():
-                search_root = Path.cwd()
-            else:
-                search_root = default_root
         try:
-            manifest = load_manifest(search_root)
+            manifest = load_manifest(_resolve_search_root(root))
         except ContractError:
             return set()
     targets: set[str] = set()
@@ -1203,15 +1265,7 @@ def scan_install_commands(
     root: Path | None = None,
 ) -> list[str]:
     """Return unsafe executable pip-install commands in one supported surface."""
-    search_root = root
-    if search_root is None:
-        default_root = Path(__file__).resolve().parents[2]
-        if (default_root / MANIFEST_PATH).exists():
-            search_root = default_root
-        elif (Path.cwd() / MANIFEST_PATH).exists():
-            search_root = Path.cwd()
-        else:
-            search_root = default_root
+    search_root = _resolve_search_root(root)
 
     if valid_lock_outputs is None:
         valid_lock_outputs = get_manifest_lock_targets_for_consumer(path, root=search_root)
@@ -1553,13 +1607,9 @@ def _simple_yaml_mapping_entry(line: str) -> tuple[str, str] | None:
     return key, match.group(4)
 
 
-def _parse_workflow_jobs_fallback(text: str) -> dict[str, list[dict[str, Any]]]:
-    jobs: dict[str, list[dict[str, Any]]] = {}
-    cur_job: str | None = None
+def _fallback_jobs_lines(text: str) -> Iterator[tuple[str, int, tuple[str, str] | None]]:
+    """Yield the lines inside the fallback parser's top-level jobs mapping."""
     in_jobs = False
-    in_steps = False
-    cur_step: dict[str, Any] | None = None
-    mode, indent = "", 0
     for line in text.splitlines():
         spaces = len(line) - len(line.lstrip(" "))
         mapping = _simple_yaml_mapping_entry(line)
@@ -1571,8 +1621,17 @@ def _parse_workflow_jobs_fallback(text: str) -> dict[str, list[dict[str, Any]]]:
             continue
         if in_jobs and line and not line.startswith((" ", "#")):
             in_jobs = False
-        if not in_jobs:
-            continue
+        if in_jobs:
+            yield line, spaces, mapping
+
+
+def _parse_workflow_jobs_fallback(text: str) -> dict[str, list[dict[str, Any]]]:
+    jobs: dict[str, list[dict[str, Any]]] = {}
+    cur_job: str | None = None
+    in_steps = False
+    cur_step: dict[str, Any] | None = None
+    mode, indent = "", 0
+    for line, spaces, mapping in _fallback_jobs_lines(text):
         job_mapping = mapping if spaces == WORKFLOW_JOB_INDENT else None
         if job_mapping and not job_mapping[1].split("#", 1)[0].strip():
             cur_job = job_mapping[0]
@@ -1807,7 +1866,12 @@ def validate_lock(root: Path, manifest: dict[str, Any], entry: dict[str, Any]) -
         problems.append(f"{output}: source fingerprint is stale; run make python-locks-write")
     if metadata.get("uv-version") != manifest.get("uv_version"):
         problems.append(f"{output}: generator version does not match manifest")
+    problems.extend(_validate_lock_requirements(text, output))
+    return problems
 
+
+def _validate_lock_requirements(text: str, output: str) -> list[str]:
+    problems: list[str] = []
     requirements = 0
     for line, logical in logical_lines(text):
         stripped = logical.strip()

@@ -2257,6 +2257,57 @@ class UvInputPinTests(unittest.TestCase):
             self.assertIn(f"uv_version {self.version}", problem)
             self.assertIn("make python-locks-write", problem)
 
+    def test_requirement_file_pin_forms(self) -> None:
+        forms = (
+            "uv[pypy]==0.0.1",
+            'UV == 0.0.1 ; python_version >= "3.11"',
+            "uv == \\\n    0.0.1",
+            "u\\\nv === 0.0.1",
+            "uv [ pypy, test-tools ] === 0.0.1",
+        )
+        for form in forms:
+            with self.subTest(form=form):
+                self.tooling_input.write_text(f"# comment \\\n{form}\n", encoding="utf-8")
+                problems = self.checker.check_uv_input_pins(self.root, self.manifest)
+                self.assertEqual(len(problems), 1)
+                self.assertIn("tooling.in:2: uv==0.0.1", problems[0])
+
+    def test_pyproject_pin_forms(self) -> None:
+        declarations = {
+            "project.dependencies": '[project]\ndependencies = ["uv==0.0.1"]',
+            "project.optional-dependencies.dev": (
+                '[project.optional-dependencies]\ndev = ["uv[pypy] == 0.0.1"]'
+            ),
+            "dependency-groups.lint": (
+                '[dependency-groups]\nlint = [{include-group = "uv==0.0.2"}, "uv===0.0.1"]'
+            ),
+            "build-system.requires": '[build-system]\nrequires = ["uv==0.0.1"]',
+        }
+        for key, declaration in declarations.items():
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                write_uv_pin_fixture(root, {"pyproject.toml": declaration}, self.version)
+                manifest = self.checker.load_manifest(root)
+                problems = self.checker.check_uv_input_pins(root, manifest)
+                self.assertEqual(len(problems), 1)
+                self.assertIn(f"pyproject.toml:{key}: uv==0.0.1", problems[0])
+
+    def test_invalid_toml_input_raises_contract_error(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_uv_pin_fixture(
+                root, {"pyproject.toml": "[project\ndependencies = ["}, self.version
+            )
+            manifest = self.checker.load_manifest(root)
+            with self.assertRaisesRegex(
+                self.checker.ContractError, r"^pyproject\.toml: invalid TOML"
+            ):
+                self.checker.check_uv_input_pins(root, manifest)
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                self.assertEqual(self.checker.check(root), 1)
+            self.assertIn("ERROR: pyproject.toml: invalid TOML", stderr.getvalue())
+
     def test_check_rejects_mismatch_even_with_current_lock_fingerprint(self) -> None:
         self.tooling_input.write_text("uv==0.0.1\n", encoding="utf-8")
         generated = self.root / "generated.txt"
@@ -2274,7 +2325,7 @@ class UvInputPinTests(unittest.TestCase):
                 self.checker.write(self.root, sys.executable)
 
     def test_missing_and_commented_out_pins_are_ignored(self) -> None:
-        self.tooling_input.write_text("  # uv==0.0.1\nuvicorn==1.0\n", encoding="utf-8")
+        self.tooling_input.write_text("  # uv==0.0.1\nuvicorn==1.0\nuv>=0.1\n", encoding="utf-8")
         self.assertEqual(self.checker.check_uv_input_pins(self.root, self.manifest), [])
 
     def test_trailing_comment_is_ignored(self) -> None:
