@@ -1092,6 +1092,13 @@ repos:
         # pyproject.toml — same posture as CI's lint-and-format job).
         stages: [pre-push]
 
+      - id: dco-sign-off-commit-msg
+        name: DCO sign-off on the commit being made (ADR-2462)
+        entry: python3 scripts/ci/check-dco.py --message-file
+        language: system
+        always_run: true
+        stages: [commit-msg]
+
       # Defence: the commit-msg hook only sees commits made here. A review
       # bot's commit pulled from the pull request branch reached CI without a
       # sign-off on #3426; check every outgoing commit as the DCO job does.
