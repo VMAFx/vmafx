@@ -2808,6 +2808,9 @@ Contributed by luoye-cpu.
   every non-cancelled run.
 
 
+- **CI:** Install Linux CPU and GPU ONNX Runtime from pinned NuGet packages.
+
+
 - **ADR allocator scans open pull request heads to avoid fork PR collisions.**
   In claim mode, `scripts/adr/next-free.sh` queries `gh` for open pull request
   head commit SHAs and scans their `docs/adr` trees alongside origin branches.
@@ -3385,6 +3388,9 @@ Contributed by luoye-cpu.
   lacks one.
 
 
+- LLVM installation removes the hosted runner's Microsoft and Azure apt sources before refreshing package lists, avoiding failures when those unrelated repositories rate-limit requests. Both distribution archive and apt.llvm.org installs use the same cleanup as cached apt installs.
+
+
 - CI: the Python lock checker no longer refuses a step before `actions/checkout` that runs
   `jq -c`, `bash -c` or another tool's own `-c` / `-r` / `-e` flag; it reads those flags as a
   requirements file or an editable target only in a pip-like command
@@ -3531,6 +3537,9 @@ Contributed by luoye-cpu.
   `float_psnr` and `ciede` twins up to 15 bits, the `psnr_hvs` twins up to 11
   bits. Before, twins outside the five `picture_copy()` families were accepted
   unmeasured, and the `float_moment` twins returned unscaled moments there.
+
+
+- **Dev container:** Install ONNX Runtime from the pinned NuGet helper, avoiding unavailable release archives.
 
 
 - **Traces, metrics and logs leave the services when an OTLP endpoint is
@@ -4133,6 +4142,16 @@ Contributed by luoye-cpu.
   ([FFmpeg patch automation](docs/development/ffmpeg-patch-automation.md)).
   `scripts/ci/test_ffmpeg_patch_stack.py` refuses a header the series adds with
   any other guard.
+
+
+- **CI:** Move the Windows MSVC+SYCL oneAPI offline installer pin in `libvmaf-build-matrix.yml` to `2026.2.0.661` (`intel-oneapi-toolkit-2026.2.0.661_offline.exe`): MSVC 14.52 refuses Clang front ends older than 22 (`STL1000`), and Intel's release notes describe a Clang 22 front end from compiler release 2026.0.0 ([ADR-3567](docs/adr/3567-windows-sycl-oneapi-2026-2.md)).
+  The installer size and SHA-256 are checked before extraction.
+  Builds run `44487361326` measured six refused AOT targets (`tgllp`, `adl-s`,
+  `adl-p`, `adl-n`, `rpl-s`, `rpl-p`). Xe-LP, Alder Lake and Raptor Lake
+  integrated devices get no AOT image from the Windows CI build and, by design,
+  fall back to the [`spir64` image compiled at run time](docs/backends/sycl/aot.md#default-target-list).
+  Builds run `44499808688` built the leg with the 13 accepted targets; the
+  run-time fallback on the six refused families remains unmeasured.
 
 
 - **The Windows SYCL tester zip passes its import check.** `cfgmgr32.dll`, which the Level Zero loader imports, is a System32 DLL and is now accepted by `scripts/ci/check-windows-bundle-imports.py`; an unknown DLL is still refused. The x64-sycl leg failed on it, so no rc.3 Windows zip was published.
