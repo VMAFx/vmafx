@@ -1,0 +1,1 @@
+- Every cosign-installer input now derives from `COSIGN_VERSION` in `build-config.env`; the version gate rejects literal inputs and workflow mirrors that drift from the owner file.

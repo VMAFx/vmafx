@@ -504,6 +504,9 @@ def check_rust_pins(root: Path, rust_want: str | None) -> list[str]:
 
 
 NODE_VERSION_RE = re.compile(r"node-version:[ \t]*['\"]?([0-9][0-9.]*)['\"]?")
+COSIGN_ENV_RE = re.compile(r'(?m)^\s*COSIGN_VERSION:\s*"?([0-9.]+)"?')
+COSIGN_INPUT_RE = re.compile(r'cosign-release:\s*"?v\$\{\{\s*env\.COSIGN_VERSION\s*\}\}"?')
+COSIGN_ANY_RE = re.compile(r"cosign-release:")
 NODE_PRECOMMIT_RE = re.compile(
     r"^default_language_version:[ \t]*\n(?:[ \t]+.*\n)*?[ \t]+node:[ \t]*['\"]?([^'\"\s]+)['\"]?",
     re.MULTILINE,
@@ -573,6 +576,42 @@ def check_node_pins(root: Path, node_want: str | None) -> list[str]:
     return problems
 
 
+def check_cosign_pins(root: Path, cosign_want: str | None) -> list[str]:
+    """Every cosign-installer input is derived from COSIGN_VERSION.
+
+    `with:` inputs cannot source build-config.env at parse time, so each
+    workflow carries one top-level `COSIGN_VERSION` mirror and every
+    `cosign-release:` input must be `v${{ env.COSIGN_VERSION }}`.
+    """
+    if not cosign_want:
+        return ["build-config.env defines no COSIGN_VERSION"]
+    workflows = root / ".github" / "workflows"
+    if not workflows.is_dir():
+        return []
+    problems: list[str] = []
+    for path in sorted(workflows.glob("*.yml")):
+        text = path.read_text(encoding="utf-8")
+        calls = COSIGN_ANY_RE.findall(text)
+        if not calls:
+            continue
+        rel = path.relative_to(root)
+        values = COSIGN_ENV_RE.findall(text)
+        if len(values) != 1:
+            problems.append(f"{rel} must declare COSIGN_VERSION exactly once")
+        elif values[0] != cosign_want:
+            problems.append(
+                f"{rel} pins COSIGN_VERSION '{values[0]}'; "
+                f"build-config.env says '{cosign_want}'"
+            )
+        derived = len(COSIGN_INPUT_RE.findall(text))
+        if derived != len(calls):
+            problems.append(
+                f"{rel}: {len(calls) - derived} cosign-release input(s) do not use "
+                "env.COSIGN_VERSION"
+            )
+    return problems
+
+
 def _read_intel_neo_lock(lock_path: Path) -> tuple[dict[str, object] | None, str | None]:
     try:
         document = json.loads(lock_path.read_text(encoding="utf-8"))
@@ -632,6 +671,7 @@ def main() -> int:
     ver_want = cfg.get("VMAFX_VERSION")
     rust_want = cfg.get("RUST_VERSION")
     node_want = cfg.get("NODE_VERSION")
+    cosign_want = cfg.get("COSIGN_VERSION")
 
     problems: list[str] = []
     problems.extend(check_level_zero_container(root))
@@ -642,6 +682,7 @@ def main() -> int:
     problems.extend(check_mypy_python_version(root, py_want))
     problems.extend(check_rust_pins(root, rust_want))
     problems.extend(check_node_pins(root, node_want))
+    problems.extend(check_cosign_pins(root, cosign_want))
     problems.extend(check_intel_neo_lock(root, neo_want, lz_want))
 
     for problem in problems:
@@ -654,7 +695,7 @@ def main() -> int:
         return 1
     print(
         f"check-workflow-versions: OK (Level Zero {lz_want}, Python CI {py_want}, "
-        f"Rust {rust_want}, Node {node_want}, VMAFx {ver_want})"
+        f"Rust {rust_want}, Node {node_want}, cosign {cosign_want}, VMAFx {ver_want})"
     )
     return 0
 

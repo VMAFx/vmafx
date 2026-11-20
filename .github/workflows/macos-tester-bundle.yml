@@ -50,6 +50,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  COSIGN_VERSION: "3.1.4"
   # python-build-standalone 20261001, CPython 3.13.16, stripped install_only archive;
   # the SHA-256 is the one in that release's SHA256SUMS.
   PBS_URL: https://github.com/astral-sh/python-build-standalone/releases/download/20261001/cpython-3.13.16%2B20261001-aarch64-apple-darwin-install_only_stripped.tar.gz
@@ -297,7 +298,7 @@ jobs:
           sbom-path: ${{ steps.sbom.outputs.path }}
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
         with:
-          cosign-release: "v3.1.4"
+          cosign-release: "v${{ env.COSIGN_VERSION }}"
       - name: Sign the bundle (keyless OIDC via Sigstore)
         run: |
           for f in bundle/*.tar.xz; do

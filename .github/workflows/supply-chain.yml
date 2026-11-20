@@ -30,6 +30,9 @@ concurrency:
   group: supply-chain-${{ github.event.release.tag_name || github.event.inputs.tag || github.ref }}
   cancel-in-progress: false
 
+env:
+  COSIGN_VERSION: "3.1.4"
+
 jobs:
   validate-release:
     name: Validate release versions
@@ -585,7 +588,7 @@ jobs:
       # + Rekor entry) instead of the legacy split .sig/.pem pair.
       # Verify later with: cosign verify-blob --bundle <f>.bundle <f>
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
-        with: { cosign-release: "v3.1.4" }
+        with: { cosign-release: "v${{ env.COSIGN_VERSION }}" }
       - name: Sign every artifact (keyless OIDC)
         run: |
           cd artifacts
@@ -796,7 +799,7 @@ jobs:
         uses: actions/download-artifact@a9bc5e6ef2cb54c177f32aa5726adaa15e7e2d59  # v3.1.0
         with: { name: mcp-dist, path: mcp-dist/ }
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
-        with: { cosign-release: "v3.1.4" }
+        with: { cosign-release: "v${{ env.COSIGN_VERSION }}" }
       - name: Sign every artifact (keyless OIDC)
         run: |
           cd mcp-dist
