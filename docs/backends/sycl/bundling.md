@@ -115,7 +115,7 @@ trusting a copy in prose:
 | Component | Pin in `build-config.env` | Current value |
 |-----------|---------------------------|---------------|
 | Intel oneAPI DPC++ (Linux) | `ONEAPI_VERSION`, package `intel-oneapi-compiler-dpcpp-cpp-<version>` | 2026.1 (apt build 2026.1.1-325) |
-| Intel oneAPI (Windows CI) | `ONEAPI_WINDOWS_VERSION` | 2025.3.0.372 |
+| Intel oneAPI (Windows CI) | `WINDOWS_BASEKIT_URL` in `libvmaf-build-matrix.yml` (`ONEAPI_WINDOWS_VERSION` in `build-config.env` for the tester zip) | 2026.2.0.661 (tester zip: 2025.3.0.372) |
 | Level Zero loader | `LEVEL_ZERO_VERSION` | 1.34.0 |
 | Intel Compute Runtime (NEO) | `INTEL_NEO_VERSION` | 26.35.39758.10 |
 
