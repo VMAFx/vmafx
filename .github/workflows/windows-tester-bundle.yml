@@ -89,8 +89,6 @@ env:
   PBS_X64_FULL_SHA256: fbccab8d1487f327874956eb2d0e979612c133f3619b6e86e4ec250cb0191b55
   PBS_ARM64_FULL_URL: https://github.com/astral-sh/python-build-standalone/releases/download/20261001/cpython-3.13.16%2B20261001-aarch64-pc-windows-msvc-pgo-full.tar.zst
   PBS_ARM64_FULL_SHA256: d88129f3600d12887a9fee50847d71eac7127b9be20785fa759e4459b9c1bee8
-  # Netflix/vmaf_resource commit the fixtures are fetched from.
-  VMAF_RESOURCE_COMMIT: c0ab6adbd7e41bb354f14686ed08500530622bc3
   # The SYCL zip's compiler (ADR-1566): only the DPC++/C++ component of the oneAPI
   # installer build-config.env pins (ONEAPI_WINDOWS_VERSION, INTEL_BASEKIT_WINDOWS_*);
   # its required packages bring the runtime, UMF 1.0.2 and TCM 1.4.1.
@@ -263,6 +261,13 @@ jobs:
           git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
           git checkout FETCH_HEAD -- tools/rc1-tester scripts/ci docs/hardware-reports \
             requirements/locks/windows-tester-zip.txt
+          commit=$(git show FETCH_HEAD:build-config.env \
+            | sed -n 's/^VMAF_RESOURCE_COMMIT="\([0-9a-f]\{40\}\)"$/\1/p')
+          if [[ -z $commit ]]; then
+            echo "::error::no VMAF_RESOURCE_COMMIT in the recipe's build-config.env" >&2
+            exit 1
+          fi
+          echo "VMAF_RESOURCE_COMMIT=$commit" >> "$GITHUB_ENV"
       - name: Setup python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:

@@ -1,0 +1,1 @@
+- **CI:** Define the tester fixture commit once as `VMAF_RESOURCE_COMMIT` in `build-config.env` and fail `check-workflow-versions.py` when the tester image or either tester-bundle workflow mirror drifts.

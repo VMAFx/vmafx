@@ -36,6 +36,7 @@ ARG ROCM_BUILDER="rocm/dev-ubuntu-26.04:10.1.0-full@sha256:4f5ed1bf6532a4b992040
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_BUILDER_BASE} AS fixtures
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# Mirrors build-config.env's VMAF_RESOURCE_COMMIT; check-workflow-versions.py enforces it.
 ARG VMAF_RESOURCE_COMMIT=c0ab6adbd7e41bb354f14686ed08500530622bc3
 # hadolint ignore=DL3008
 RUN apt-get --error-on=any -o Acquire::Retries=3 update \
