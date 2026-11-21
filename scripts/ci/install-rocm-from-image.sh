@@ -136,13 +136,16 @@ STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
 echo "==> Authenticating to $REGISTRY for $REPO"
-curl -fsSL --max-time "$API_MAX_TIME" --retry 5 --retry-delay 10 --retry-all-errors \
-  -o "$STAGE/.token.json" "${AUTH}?service=${AUTH_SERVICE}&scope=repository:${REPO}:pull"
-TOKEN="$(jq -r .token "$STAGE/.token.json")"
-if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-  echo "install-rocm-from-image.sh: failed to obtain a registry pull token" >&2
-  exit 1
-fi
+fetch_token() {
+  if ! curl -fsSL --max-time "$API_MAX_TIME" --retry 5 --retry-delay 10 --retry-all-errors \
+    -o "$STAGE/.token.json" "${AUTH}?service=${AUTH_SERVICE}&scope=repository:${REPO}:pull" ||
+    ! TOKEN="$(jq -r .token "$STAGE/.token.json")" ||
+    [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+    echo "install-rocm-from-image.sh: failed to obtain a registry pull token" >&2
+    exit 1
+  fi
+}
+fetch_token
 
 ACCEPT='application/vnd.docker.distribution.manifest.v2+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.manifest.v1+json,application/vnd.oci.image.index.v1+json'
 
@@ -190,6 +193,7 @@ TAR_ERRORS="$STAGE/.tar-errors"
 extract_layer() {
   local digest="$1" attempt=1 statuses
   while [ "$attempt" -le "$LAYER_ATTEMPTS" ]; do
+    fetch_token
     set +e
     curl -fsSL --max-time "$LAYER_MAX_TIME" \
       -H "Authorization: Bearer ${TOKEN}" \
