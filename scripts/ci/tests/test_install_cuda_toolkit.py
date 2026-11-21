@@ -43,6 +43,7 @@ LOCK_RELEASE = _config_value("CUDA_APT_LOCK_RELEASE")
 TOOLKIT_VERSION = _config_value("CUDA_APT_TOOLKIT_VERSION")
 NVCC_VERSION = _config_value("CUDA_APT_NVCC_VERSION")
 CUDART_VERSION = _config_value("CUDA_APT_CUDART_VERSION")
+NVTX_VERSION = _config_value("CUDA_APT_NVTX_VERSION")
 SERIES = APT_PACKAGE.removeprefix("cuda-toolkit-")
 DOTTED = SERIES.replace("-", ".")
 MAJOR = SERIES.split("-", maxsplit=1)[0]
@@ -75,6 +76,7 @@ class FakeHost:
             f"cuda-nvcc-{SERIES}": NVCC_VERSION,
             f"cuda-cudart-dev-{SERIES}": CUDART_VERSION,
             f"cuda-cudart-{SERIES}": CUDART_VERSION,
+            f"cuda-nvtx-{SERIES}": NVTX_VERSION,
         }
         versions.update(installed_versions or {})
         self._stub_commands(uid=uid, has_sudo=has_sudo, curl_exit=curl_exit, versions=versions)
@@ -121,6 +123,9 @@ class FakeHost:
         )
         (cuda_home / "lib64" / f"libcudart.so.{MAJOR}").write_text("", encoding="utf-8")
         (targets_lib / f"libcudart.so.{MAJOR}").write_text("", encoding="utf-8")
+        include_dir = cuda_home / "targets" / "x86_64-linux" / "include" / "nvtx3"
+        include_dir.mkdir(parents=True)
+        (include_dir / "nvToolsExt.h").write_text("", encoding="utf-8")
 
     @staticmethod
     def _write_executable(path: Path, content: str) -> None:
@@ -208,6 +213,7 @@ class InstallCudaToolkitTest(unittest.TestCase):
         self.assertIn(f"cuda-nvcc-{SERIES}={NVCC_VERSION}", install)
         self.assertIn(f"cuda-cudart-dev-{SERIES}={CUDART_VERSION}", install)
         self.assertIn(f"cuda-cudart-{SERIES}={CUDART_VERSION}", install)
+        self.assertIn(f"cuda-nvtx-{SERIES}={NVTX_VERSION}", install)
         self.assertNotIn(APT_PACKAGE, install)
         self.assertIn(
             f"ln -sfn {host.prefix}/cuda-{DOTTED} {host.prefix}/cuda",
@@ -221,6 +227,7 @@ class InstallCudaToolkitTest(unittest.TestCase):
         install = host.apt_install_calls()
         self.assertIn(f"cuda-cudart-{SERIES}={CUDART_VERSION}", install)
         self.assertNotIn("cuda-nvcc", install)
+        self.assertNotIn("cuda-nvtx", install)
         ln_calls = [call for call in host.calls() if call.startswith("ln ")]
         self.assertIn(
             "ln -sf "
@@ -261,7 +268,17 @@ class InstallCudaToolkitTest(unittest.TestCase):
         self.assertIn(f"cuda-nvcc-{SERIES}={NVCC_VERSION}", install)
         self.assertIn(f"cuda-cudart-dev-{SERIES}={CUDART_VERSION}", install)
         self.assertIn(f"cuda-cudart-{SERIES}={CUDART_VERSION}", install)
+        self.assertIn(f"cuda-nvtx-{SERIES}={NVTX_VERSION}", install)
         self.assertNotIn("libcuda1", install)
+
+    def test_missing_nvtx_header_fails_closed(self) -> None:
+        host = FakeHost(self.tempdir)
+        (
+            host.prefix / f"cuda-{DOTTED}" / "targets/x86_64-linux/include/nvtx3/nvToolsExt.h"
+        ).unlink()
+        result = host.run("--builder")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("nvtx3/nvToolsExt.h", result.stderr)
 
     def test_installed_version_mismatch_fails_closed(self) -> None:
         package = f"cuda-nvcc-{SERIES}"
@@ -304,7 +321,8 @@ class InstallCudaToolkitTest(unittest.TestCase):
             f'CUDA_APT_LOCK_RELEASE="{LOCK_RELEASE}"\n'
             f'CUDA_APT_TOOLKIT_VERSION="{TOOLKIT_VERSION}"\n'
             f'CUDA_APT_NVCC_VERSION="{NVCC_VERSION}"\n'
-            f'CUDA_APT_CUDART_VERSION="{CUDART_VERSION}"\n',
+            f'CUDA_APT_CUDART_VERSION="{CUDART_VERSION}"\n'
+            f'CUDA_APT_NVTX_VERSION="{NVTX_VERSION}"\n',
             encoding="utf-8",
         )
         host = FakeHost(self.tempdir / "host")
@@ -320,7 +338,8 @@ class InstallCudaToolkitTest(unittest.TestCase):
             'CUDA_APT_PACKAGE="cuda-compiler-13-4"\n'
             f'CUDA_APT_TOOLKIT_VERSION="{TOOLKIT_VERSION}"\n'
             f'CUDA_APT_NVCC_VERSION="{NVCC_VERSION}"\n'
-            f'CUDA_APT_CUDART_VERSION="{CUDART_VERSION}"\n',
+            f'CUDA_APT_CUDART_VERSION="{CUDART_VERSION}"\n'
+            f'CUDA_APT_NVTX_VERSION="{NVTX_VERSION}"\n',
             encoding="utf-8",
         )
         host = FakeHost(self.tempdir / "host")
@@ -336,7 +355,8 @@ class InstallCudaToolkitTest(unittest.TestCase):
             f'CUDA_APT_PACKAGE="{APT_PACKAGE}"\n'
             f'CUDA_APT_TOOLKIT_VERSION="{TOOLKIT_VERSION}"\n'
             f'CUDA_APT_NVCC_VERSION="{NVCC_VERSION}"\n'
-            f'CUDA_APT_CUDART_VERSION="{CUDART_VERSION}"\n',
+            f'CUDA_APT_CUDART_VERSION="{CUDART_VERSION}"\n'
+            f'CUDA_APT_NVTX_VERSION="{NVTX_VERSION}"\n',
             encoding="utf-8",
         )
         host = FakeHost(self.tempdir / "host")

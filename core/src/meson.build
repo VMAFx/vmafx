@@ -253,14 +253,42 @@ if is_nvtx_enabled and host_machine.system() == 'windows'
     warning('NVTX is not supported on Windows, disabling.')
     is_nvtx_enabled = false
 endif
-# NVTX requires the CUDA toolkit headers even when enable_cuda=false because
-# nvToolsExt.h lives under /usr/local/cuda/include. Without this guard, meson
-# hard-errors on any host without a CUDA installation when enable_nvtx=true and
-# enable_cuda=false (the include_directories call at line ~484 fails with
-# "Include dir /usr/local/cuda/include does not exist").
-# Audit finding: build-matrix-symbols-audit-2026-05-16.md §1a.
+# NVTX needs nvToolsExt.h from the CUDA toolkit. The guard below turns
+# enable_nvtx=true + enable_cuda=false into a clear error instead of a missing
+# include directory at configure time.
 if is_nvtx_enabled and not is_cuda_enabled
     error('enable_nvtx=true requires enable_cuda=true (NVTX headers reside in the CUDA toolkit)')
+endif
+
+# Discover the CUDA toolkit through Meson's own dependency, then resolve the
+# NVTX include from the nvcc that is actually on PATH. CudaDependency derives
+# link arguments from requested_modules (cudart_static by default), and
+# partial_dependency() does not clear that list. The driver-loading backend
+# must not link the CUDA runtime, so nvtx_dependency carries the include
+# directory and nothing else.
+nvtx_dependency = []
+if is_nvtx_enabled
+    cuda_dep = dependency('cuda', required : false)
+    if not cuda_dep.found()
+        error('enable_nvtx=true but the CUDA toolkit was not found; set CUDA_PATH or install the toolkit')
+    endif
+    nvcc = find_program('nvcc', required : false)
+    if not nvcc.found()
+        error('enable_nvtx=true but nvcc was not found; set CUDA_PATH or install the toolkit')
+    endif
+    fs = import('fs')
+    cuda_root = fs.parent(fs.parent(nvcc.full_path()))
+    nvtx_include_dir = cuda_root / 'targets' / 'x86_64-linux' / 'include'
+    if not fs.is_dir(nvtx_include_dir)
+        nvtx_include_dir = cuda_root / 'include'
+    endif
+    if not fs.is_dir(nvtx_include_dir)
+        error('enable_nvtx=true but the CUDA toolkit include directory was not found under ' + cuda_root)
+    endif
+    nvtx_dependency = declare_dependency(include_directories : include_directories(nvtx_include_dir))
+    if not cc.has_header('nvtx3/nvToolsExt.h', dependencies : nvtx_dependency)
+        error('enable_nvtx=true but nvtx3/nvToolsExt.h was not found in the CUDA toolkit')
+    endif
 endif
 
 # DNN runtime (ONNX Runtime) — defines dnn_sources / dnn_defines / dnn_deps.
@@ -1082,7 +1110,6 @@ libvmaf_include = include_directories(
     src_dir,
     feature_src_dir,
     feature_src_dir + 'common',
-    is_nvtx_enabled ? '/usr/local/cuda/include' : '',
 )
 
 # C++ standard: project-wide, not per target. core/meson.build injects the
@@ -1465,12 +1492,9 @@ dl_dependency = dependency('dl', required : false)
 
 cuda_dependency = []
 common_cuda_objects = []
-cuda_inc = []
 
 if is_nvtx_enabled
-    cuda_dependency += declare_dependency(
-        dependencies: dl_dependency,
-        include_directories: include_directories('/usr/local/cuda/include'))
+    cuda_dependency += [dl_dependency, nvtx_dependency]
 endif
 
 # ODR fix (follow-up to PR #840): propagate HAVE_CUDA / HAVE_NVTX / HAVE_SYCL
@@ -2040,7 +2064,6 @@ if is_cuda_enabled
             cuda_dir,
             feature_src_dir,
             include_directories('../src/cuda/'),
-            cuda_inc,
         ],
         c_args : vmaf_cflags_common,
         # pthread_dependency is a no-op on POSIX (empty list) and on Windows
@@ -2955,6 +2978,8 @@ picture_pool_cpp23_lib = static_library(
 
 # ADR-0768: gpu_picture_pool.cpp compiled as an isolated C++23 static lib.
 # pthread_dependency: same win32 shim rationale as picture_pool_cpp23_lib above.
+# nvtx_dependency: the target builds with -DHAVE_NVTX through vmaf_cppflags_common
+# and includes nvtx3/nvToolsExt.h, so it needs the CUDA toolkit include.
 gpu_picture_pool_cpp23_lib = static_library(
     'gpu_picture_pool_cpp23',
     src_dir + 'gpu_picture_pool.cpp',
@@ -2963,7 +2988,7 @@ gpu_picture_pool_cpp23_lib = static_library(
     # whose VmafPicturePrivate changes size with HAVE_CUDA; the backend defines
     # come with vmaf_cppflags_common.
     cpp_args : vmaf_cppflags_common,
-    dependencies : [pthread_dependency],
+    dependencies : [pthread_dependency, nvtx_dependency],
     pic : true,
     install : false,
 )

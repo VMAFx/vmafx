@@ -239,7 +239,7 @@ jobs:
             CC: ccache gcc-14
             CXX: ccache g++-14
             cuda: true
-            meson_extra: -Denable_cuda=true -Denable_nvcc=true
+            meson_extra: -Denable_cuda=true -Denable_nvcc=true -Denable_nvtx=true
             werror: true
             name: Ubuntu CUDA
             tier: full
