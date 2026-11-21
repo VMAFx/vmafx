@@ -33,7 +33,7 @@ jobs:
     # .github/repository-security-policy.json holds both names; a test keeps
     # these in step with it.
     if: >-
-      github.repository == 'VMAFx/vmafx'
+      github.repository == 'vidiko/vmafx'
       && github.server_url == 'https://github.com'
       && github.ref == 'refs/heads/master'
     runs-on: ubuntu-26.04

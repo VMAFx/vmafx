@@ -2,7 +2,7 @@
 # Perceptual spatial-pooling weighting — `libvmaf/perceptual_weight.h`
 
 This C API lets libvmaf consume the per-frame side-data that the
-[Pelorus](https://github.com/VMAFx/pelorus) GPU pre-encode pipeline attaches to
+[Pelorus](https://github.com/vidiko/pelorus) GPU pre-encode pipeline attaches to
 each distorted frame, and use it to **perceptually re-weight VMAF's spatial
 pooling**: frames whose spatial regions carry high banding risk count for more
 in a pooled score. It builds on the vendored

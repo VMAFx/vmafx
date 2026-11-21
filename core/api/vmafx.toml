@@ -643,7 +643,7 @@ fields = [
   { name = "n_models", type = "u32", doc = "Mounted models; see vmafx_context_model_provenance(). Added in ABI 0.1.5." },
   { name = "n_features", type = "u32", doc = "Features with scores; see vmafx_context_feature_provenance(). Added in ABI 0.1.5." },
   { name = "n_annotations", type = "u32", doc = "Caller annotations; see vmafx_context_annotation(). Added in ABI 0.1.5." },
-  { name = "encode_record", type = "cstr", doc = "Digest of the encode record of the distorted input (`sha256:` and 64 hex digits, VMAFx/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI 0.1.5." },
+  { name = "encode_record", type = "cstr", doc = "Digest of the encode record of the distorted input (`sha256:` and 64 hex digits, vidiko/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI 0.1.5." },
   { name = "scores_digest", type = "cstr", doc = "`sha256:` and the SHA-256 of every per-frame score written so far: one line `<feature> <index> <16 hex digits of the IEEE-754 bits>` per score, features in byte order, frames in index order. Added in ABI 0.1.5." },
   { name = "elapsed_ns", type = "u64", doc = "Nanoseconds from the first submitted frame to the flush (to now before it); timing, not covered by `digest`. Added in ABI 0.1.5." },
   { name = "digest", type = "cstr", doc = "`sha256:` and the SHA-256 of the record's canonical JSON (RFC 8785) without `digest` and `elapsed_ns`: models, features and annotations included (vmafx_context_provenance_json() with VMAFX_PROVENANCE_JSON_CANONICAL). Added in ABI 0.1.5." },
@@ -1925,7 +1925,7 @@ name = "vmafx_context_set_encode_record"
 header = "vmafx/provenance.h"
 since = "0.1"
 returns = "status"
-doc = "Record the digest of the encode record of the distorted input (VMAFx/pelorus#81): `sha256:` and 64 lower-case hex digits, copied; NULL or empty clears it. VMAFX_E_INVALID names any other form. Added in ABI 0.1.5."
+doc = "Record the digest of the encode record of the distorted input (vidiko/pelorus#81): `sha256:` and 64 lower-case hex digits, copied; NULL or empty clears it. VMAFX_E_INVALID names any other form. Added in ABI 0.1.5."
 params = [
   { name = "context", type = "VmafxContext", pass = "in" },
   { name = "record", type = "cstr", pass = "in", nullable = true },

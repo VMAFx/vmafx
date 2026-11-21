@@ -13,7 +13,7 @@ Netflix fixtures) and, at the end, what the last re-run measured.
 !!! warning "This is not the Netflix golden-data gate"
     The golden gate is the Python `assertAlmostEqual` suite invoked by
     `make test-netflix-golden` ([AGENTS.md section
-    8](https://github.com/VMAFx/vmafx/blob/master/AGENTS.md));
+    8](https://github.com/vidiko/vmafx/blob/master/AGENTS.md));
     its assertions are never edited. `testdata/netflix_benchmark_results.json`
     is fork-added data governed by the `/regen-snapshots` rule and by
     [ADR-1192](../adr/1192-netflix-bench-snapshot-drift-not-regenerated.md).

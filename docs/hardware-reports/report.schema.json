@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/VMAFx/vmafx/docs/hardware-reports/report.schema.json",
+  "$id": "https://github.com/vidiko/vmafx/docs/hardware-reports/report.schema.json",
   "title": "VMAFx tester report, schema versions 1 to 4",
   "description": "Written by vmaf-tester-report (tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py). Checked by scripts/ci/check-hardware-reports.py.",
   "type": "object",

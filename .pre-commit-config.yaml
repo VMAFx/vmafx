@@ -194,7 +194,7 @@ repos:
         #   to changed files.
         #
         #   tools/figures/ is praetor's figure engine, locked byte for byte by
-        #   `standardsctl audit` (ADR-1351, cordanaLLM/praetor#578); praetor's
+        #   `standardsctl audit` (ADR-1351, tekmora/praetor#578); praetor's
         #   own `make docs-lint` styles its README under praetor's rules.
         #
         #   The register skills (social-text, caveman, adhd-format) under
@@ -674,7 +674,28 @@ repos:
       - id: test-git-fixture-isolation
         name: Git fixtures preserve caller repositories
         entry: python3 scripts/ci/test_git_fixture_isolation.py
-        language: system
+        language: python
+        # The lock closure of what the sentinel's scripts import; a test in the
+        # script keeps it equal to requirements/locks/tooling-tests.txt.
+        additional_dependencies:
+          - cfgv==3.5.0
+          - colorama==0.4.6
+          - distlib==0.4.4
+          - filelock==4.2.7
+          - flawfinder==2.0.20
+          - identify==2.6.20
+          - iniconfig==2.3.1
+          - nodeenv==1.12.0
+          - packaging==26.3
+          - platformdirs==4.14.3
+          - pluggy==1.7.0
+          - pre-commit==4.7.0
+          - pygments==2.21.0
+          - pytest==9.2.0
+          - pytest-timeout==2.4.0
+          - python-discovery==1.9.2
+          - pyyaml==6.0.3
+          - virtualenv==21.15.2
         files: '^(scripts/ci/test_(git_fixture_isolation|ffmpeg_patch_stack|ffmpeg_patch_smoke_safety)\.py|scripts/ci/test-classify-dependency-pr\.sh|scripts/ci/tests/(test_level_zero_single_source\.py|test-sync-pelorus-interop\.sh)|scripts/dev/(test-cleanup-agent-state\.sh|(test-)?resolve-state-md-conflict\.py)|scripts/lib/(clean|drop)-git-env\.sh|(.*/)?test[-_][^/]*\.(sh|py)|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
@@ -725,6 +746,12 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+
+      - id: check-old-org-refs
+        name: Reject obsolete GitHub organisation references
+        entry: python3 -B scripts/ci/check-old-org-refs.py
+        language: system
+        types: [text]
 
       - id: check-aggregator-names
         name: Check required CI checks aggregator list matches workflows

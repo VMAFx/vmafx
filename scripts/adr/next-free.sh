@@ -48,7 +48,7 @@
 #   In claim mode, open pull request heads on the target repository are also
 #   scanned via gh pr list. By default the target repository is determined from
 #   the origin remote URL; contributors with a personal fork as origin can set
-#   VMAF_ADR_PR_REPO (e.g. VMAF_ADR_PR_REPO=VMAFx/vmafx) to query the upstream
+#   VMAF_ADR_PR_REPO (e.g. VMAF_ADR_PR_REPO=vidiko/vmafx) to query the upstream
 #   project instead of their personal fork.
 #
 # Offline / network-fail mode:

@@ -63,7 +63,7 @@ How the scores of a context are made (#2142). Strings live as long as the contex
 | `n_models` | `uint32_t n_models` | 168 | 0.1 | Mounted models; see vmafx_context_model_provenance(). Added in ABI 0.1.5. |
 | `n_features` | `uint32_t n_features` | 172 | 0.1 | Features with scores; see vmafx_context_feature_provenance(). Added in ABI 0.1.5. |
 | `n_annotations` | `uint32_t n_annotations` | 176 | 0.1 | Caller annotations; see vmafx_context_annotation(). Added in ABI 0.1.5. |
-| `encode_record` | `const char *encode_record` | 184 | 0.1 | Digest of the encode record of the distorted input (`sha256:` and 64 hex digits, VMAFx/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI 0.1.5. |
+| `encode_record` | `const char *encode_record` | 184 | 0.1 | Digest of the encode record of the distorted input (`sha256:` and 64 hex digits, vidiko/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI 0.1.5. |
 | `scores_digest` | `const char *scores_digest` | 192 | 0.1 | `sha256:` and the SHA-256 of every per-frame score written so far: one line `<feature> <index> <16 hex digits of the IEEE-754 bits>` per score, features in byte order, frames in index order. Added in ABI 0.1.5. |
 | `elapsed_ns` | `uint64_t elapsed_ns` | 200 | 0.1 | Nanoseconds from the first submitted frame to the flush (to now before it); timing, not covered by `digest`. Added in ABI 0.1.5. |
 | `digest` | `const char *digest` | 208 | 0.1 | `sha256:` and the SHA-256 of the record's canonical JSON (RFC 8785) without `digest` and `elapsed_ns`: models, features and annotations included (vmafx_context_provenance_json() with VMAFX_PROVENANCE_JSON_CANONICAL). Added in ABI 0.1.5. |
@@ -126,7 +126,7 @@ Initialise with `VMAFX_ANNOTATION_INIT`.
 | `vmafx_feature_provenance` | 0.1 | Describe the feature named `feature` (as the scores carry it, option-decorated names included); VMAFX_E_NOTFOUND when the context has no score of it. Added in ABI 0.1.5. |
 | `vmafx_context_annotate` | 0.1 | Add `key` = `value` (both copied) to the context's provenance record, for what only the caller knows: the inputs, the command line. A key may repeat; annotations keep their order. VMAFX_E_INVALID names a key outside 1 to 64 characters of `a-z`, `0-9` and `_`, VMAFX_E_RANGE a value over 4096 bytes or the 257th annotation. Added in ABI 0.1.5. |
 | `vmafx_context_annotation` | 0.1 | Annotation `index` of the context, in the order added; VMAFX_E_NOTFOUND past the last one. Added in ABI 0.1.5. |
-| `vmafx_context_set_encode_record` | 0.1 | Record the digest of the encode record of the distorted input (VMAFx/pelorus#81): `sha256:` and 64 lower-case hex digits, copied; NULL or empty clears it. VMAFX_E_INVALID names any other form. Added in ABI 0.1.5. |
+| `vmafx_context_set_encode_record` | 0.1 | Record the digest of the encode record of the distorted input (vidiko/pelorus#81): `sha256:` and 64 lower-case hex digits, copied; NULL or empty clears it. VMAFX_E_INVALID names any other form. Added in ABI 0.1.5. |
 | `vmafx_context_provenance_json` | 0.1 | The provenance record as JSON in RFC 8785 form (keys in byte order, no whitespace; integers as numbers, 64-bit integers as strings, enums by their lower-case value names, as the proto Provenance message maps to JSON), with models, features and annotations. `*json` lives until the next call of this function on the context or its destruction. Added in ABI 0.1.5. |
 
 ```c

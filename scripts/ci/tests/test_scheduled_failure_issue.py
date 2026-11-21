@@ -57,7 +57,7 @@ class ScheduledFailureIssueTest(unittest.TestCase):
         if env_override:
             env.update(env_override)
         default_args = (
-            "VMAFx/vmafx",
+            "vidiko/vmafx",
             "12345",
             "Upstream watcher failed on schedule",
             "See docs/development/upstream-watchers.md.",
@@ -115,7 +115,7 @@ class ScheduledFailureIssueTest(unittest.TestCase):
         result = self.run_script(
             "job-a",
             "",
-            "VMAFx/vmafx",
+            "vidiko/vmafx",
             "999",
             custom_title,
             "Remediation hint",
@@ -129,11 +129,11 @@ class ScheduledFailureIssueTest(unittest.TestCase):
         """Malformed positional arguments to the script cause it to exit with code 2."""
         test_cases = (
             ("VMAFx", "123", "Title", "Hint"),
-            ("VMAFx/vmafx", "12x", "Title", "Hint"),
-            ("VMAFx/vmafx", "123", "", "Hint"),
-            ("VMAFx/vmafx", "123", "Title", ""),
-            ("VMAFx/vmafx", "123"),
-            ("VMAFx/vmafx",),
+            ("vidiko/vmafx", "12x", "Title", "Hint"),
+            ("vidiko/vmafx", "123", "", "Hint"),
+            ("vidiko/vmafx", "123", "Title", ""),
+            ("vidiko/vmafx", "123"),
+            ("vidiko/vmafx",),
             (),
         )
         for args in test_cases:
@@ -163,7 +163,7 @@ class ScheduledFailureIssueTest(unittest.TestCase):
             [  # noqa: S607
                 "bash",
                 str(SCRIPT),
-                "VMAFx/vmafx",
+                "vidiko/vmafx",
                 "123",
                 "Title",
                 "Hint",
@@ -186,7 +186,7 @@ class ScheduledFailureIssueTest(unittest.TestCase):
             [  # noqa: S607
                 "bash",
                 str(SCRIPT),
-                "VMAFx/vmafx",
+                "vidiko/vmafx",
                 "1",
                 "Title",
                 "Hint",

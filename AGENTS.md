@@ -100,8 +100,9 @@ make verify-all
 <!-- markdownlint-disable MD013 -->
 # AGENTS.md — VMAFx
 
-> **CORRECT REPO: `VMAFx/vmafx` (active) — NOT `lusoris/vmaf` (archived)**
-> Fork renamed + transferred. All work, PRs, gh commands -> `VMAFx/vmafx`. Session start: `gh repo set-default VMAFx/vmafx`.
+> **CORRECT REPO: `vidiko/vmafx` (active) — NOT `lusoris/vmaf` (archived)**
+> Moved from `VMAFx/vmafx` on 2026-11-20; the old organisation keeps a rename notice. <!-- old-org-ok -->
+> Fork renamed + transferred. All work, PRs, gh commands -> `vidiko/vmafx`. Session start: `gh repo set-default vidiko/vmafx`.
 
 ## GLOBAL PROJECT RULES (TOP PRIORITY)
 

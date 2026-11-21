@@ -643,10 +643,10 @@ def pyproject_text(api: Api) -> str:
         'authors = [{ name = "Lusoris", email = "lusoris@pm.me" }]\n'
         "dependencies = []\n\n"
         "[project.urls]\n"
-        'Homepage = "https://github.com/VMAFx/vmafx"\n'
-        'Repository = "https://github.com/VMAFx/vmafx"\n'
+        'Homepage = "https://github.com/vidiko/vmafx"\n'
+        'Repository = "https://github.com/vidiko/vmafx"\n'
         'Documentation = "https://vmafx.dev/api/vmafx/bindings/"\n'
-        'Issues = "https://github.com/VMAFx/vmafx/issues"\n\n'
+        'Issues = "https://github.com/vidiko/vmafx/issues"\n\n'
         "[tool.hatch.version]\n"
         'path = "vmafx/_api.py"\n\n'
         "[tool.hatch.build.targets.wheel]\n"

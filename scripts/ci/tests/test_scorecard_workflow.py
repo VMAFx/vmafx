@@ -313,7 +313,7 @@ class SupersededMasterRunTests(unittest.TestCase):
                 "github.com",
                 "--method",
                 "POST",
-                f"repos/VMAFx/vmafx/actions/runs/{RUN_ID}/cancel",
+                f"repos/vidiko/vmafx/actions/runs/{RUN_ID}/cancel",
             ],
         )
         # The wait is bounded; a run the cancel never reached is red, never green.
@@ -339,7 +339,7 @@ class SupersededMasterRunTests(unittest.TestCase):
                 "RUNNER_TEMP": str(root / "runner"),
                 "GITHUB_STEP_SUMMARY": str(root / "summary.md"),
                 "EXPECTED_SHA": "b" * 40,
-                "EXPECTED_REPOSITORY": "VMAFx/vmafx",
+                "EXPECTED_REPOSITORY": "vidiko/vmafx",
                 "GH_TOKEN": "stub-token",
                 "RUN_ID": RUN_ID,
             }

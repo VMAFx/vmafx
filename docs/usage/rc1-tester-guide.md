@@ -34,13 +34,13 @@ training run.
 ## 1. Obtain the RC1 source
 
 Download the source archive for the RC1 release from the
-[VMAFx releases page](https://github.com/VMAFx/vmafx/releases), or check out the
+[VMAFx releases page](https://github.com/vidiko/vmafx/releases), or check out the
 exact RC1 tag in Git. Keep the source checkout: the current native release
 payload contains `vmaf` and the library, while the report launcher and its small
 YUV fixtures live in the source tree.
 
 ```bash
-git clone https://github.com/VMAFx/vmafx.git
+git clone https://github.com/vidiko/vmafx.git
 cd vmafx
 git switch --detach <RC1-TAG>
 ```
@@ -292,5 +292,5 @@ Home and repository path prefixes are redacted, and the probes do not request
 device serial numbers or GPU UUIDs. Archive user/group, permission, and
 timestamp metadata are normalized. Still inspect `report.md` and
 `diagnostics.json` before sharing. Then attach the archive to a
-[VMAFx issue](https://github.com/VMAFx/vmafx/issues) with a short description of
+[VMAFx issue](https://github.com/vidiko/vmafx/issues) with a short description of
 the expected and observed behavior.

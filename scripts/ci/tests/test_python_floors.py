@@ -6,9 +6,7 @@
 from __future__ import annotations
 
 import io
-import json
 import os
-import re
 import stat
 import sys
 import tempfile
@@ -20,7 +18,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from scripts.ci import check_python_floors  # noqa: E402
+from scripts.ci import check_python_dependency_locks, check_python_floors  # noqa: E402
+from scripts.ci.tests.test_python_dependency_locks import write_uv_pin_fixture  # noqa: E402
 
 
 class TestParseFloor(unittest.TestCase):
@@ -178,35 +177,51 @@ dependencies = ["numpy>=2.5.3"]
         lookup.assert_called_once_with(self.tmp_path.resolve())
         self.assertEqual(code, 0)
 
+    def test_fallback_discovers_pyproject_below_hidden_parent_of_root(self) -> None:
+        root = self.tmp_path / ".cache" / "worktree"
+        pyproject = root / "pkg" / "pyproject.toml"
+        pyproject.parent.mkdir(parents=True)
+        pyproject.write_text('[project]\nname = "visible-pkg"\n', encoding="utf-8")
+        self.assertEqual(check_python_floors.discover_pyprojects(root), [pyproject])
+
+    def test_fallback_excludes_hidden_directories_inside_root(self) -> None:
+        pyproject = self.tmp_path / "pkg" / ".cache" / "pyproject.toml"
+        pyproject.parent.mkdir(parents=True)
+        pyproject.write_text('[project]\nname = "hidden-pkg"\n', encoding="utf-8")
+        self.assertEqual(check_python_floors.discover_pyprojects(self.tmp_path), [])
+
     def test_the_tree_passes(self) -> None:
         """The actual repository packages pass floor check."""
         code = check_python_floors.main(["--root", str(ROOT)])
         self.assertEqual(code, 0)
 
 
-def tooling_uv_pin(text: str) -> str | None:
-    """Return the uv version pinned in a tooling-tests lock input."""
-    match = re.search(r"^uv==(\S+)$", text, re.MULTILINE)
-    return match.group(1) if match else None
-
-
 class TestToolingUvPin(unittest.TestCase):
     """The tooling suite installs the uv the lock manifest names."""
 
-    def manifest_uv(self) -> str:
-        manifest = ROOT / "requirements/locks/manifest.json"
-        return str(json.loads(manifest.read_text(encoding="utf-8"))["uv_version"])
+    def problems_for(self, text: str) -> list[str]:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_uv_pin_fixture(root, {"tooling-tests.in": text}, "0.12.18")
+            manifest = check_python_dependency_locks.load_manifest(root)
+            return check_python_dependency_locks.check_uv_input_pins(root, manifest)
 
     def test_pin_equals_manifest(self) -> None:
-        text = (ROOT / "requirements/locks/tooling-tests.in").read_text(encoding="utf-8")
-        self.assertEqual(tooling_uv_pin(text), self.manifest_uv())
+        manifest = check_python_dependency_locks.load_manifest(ROOT)
+        pins = check_python_dependency_locks.find_uv_input_pins(
+            ROOT, ("requirements/locks/tooling-tests.in",)
+        )
+        self.assertTrue(pins, "tooling-tests.in must contain an exact uv pin")
+        self.assertEqual({version for _, _, version in pins}, {manifest["uv_version"]})
+        self.assertEqual(check_python_dependency_locks.check_uv_input_pins(ROOT, manifest), [])
 
     def test_planted_other_version_is_refused(self) -> None:
-        planted = "pyyaml==6.0.3\nuv==0.0.1\n"
-        self.assertNotEqual(tooling_uv_pin(planted), self.manifest_uv())
+        problems = self.problems_for("pyyaml==6.0.3\nuv==0.0.1\n")
+        self.assertEqual(len(problems), 1)
+        self.assertIn("tooling-tests.in:2: uv==0.0.1", problems[0])
 
-    def test_missing_pin_is_refused(self) -> None:
-        self.assertIsNone(tooling_uv_pin("pyyaml==6.0.3\nuvicorn==1.0\n"))
+    def test_missing_pin_is_ignored(self) -> None:
+        self.assertEqual(self.problems_for("pyyaml==6.0.3\nuvicorn==1.0\n"), [])
 
 
 if __name__ == "__main__":

@@ -23,7 +23,7 @@ ACTION = ROOT / ".github/actions/tidy-lane/action.yml"
 IMPACT = ROOT / ".github/ci-impact.json"
 LANES = ("cuda", "hip", "sycl", "arm64", "clang", "integrations", "rust")
 LISTS = 2  # `required` and `strictMustReport`
-DIGEST = re.compile(r"^ghcr\.io/vmafx/vmafx-dev-mcp@sha256:[0-9a-f]{64}$")
+DIGEST = re.compile(r"^ghcr\.io/vidiko/vmafx-dev-mcp@sha256:[0-9a-f]{64}$")
 
 
 def load(path: Path) -> dict[str, object]:

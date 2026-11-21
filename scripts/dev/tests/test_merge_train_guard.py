@@ -46,7 +46,7 @@ class FixtureTrain(guard.Train):
 
     def git(self, *args: str, cwd: Path | None = None) -> str:
         if args[:2] == ("remote", "get-url"):
-            return "https://github.com/VMAFx/vmafx.git"
+            return "https://github.com/vidiko/vmafx.git"
         if args[0] == "push" and self.fail_push:
             raise guard.Refused("fixture push rejected")
         result: str = super().git(*args, cwd=cwd)
@@ -470,7 +470,7 @@ class TrainContract(unittest.TestCase):
         original = self.train.git
         for urls in (
             "https://example.invalid/fork.git",
-            "https://github.com/VMAFx/vmafx.git\nhttps://example.invalid/fork.git",
+            "https://github.com/vidiko/vmafx.git\nhttps://example.invalid/fork.git",
         ):
 
             def git(*args: str, cwd: Path | None = None, urls: str = urls) -> str:

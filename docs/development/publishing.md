@@ -18,7 +18,7 @@ The policy is recorded in
 A canonical artifact is any file that is:
 
 - Tagged in a GitHub release (`libvmaf.so`, Python wheels, CLI binaries).
-- Published to a container registry (`ghcr.io/vmafx/vmafx:*`).
+- Published to a container registry (`ghcr.io/vidiko/vmafx:*`).
 - Attached to a CI run as a downloadable artifact and used downstream
   (benchmark result JSON, snapshot score files).
 
@@ -111,10 +111,10 @@ is four workflows:
 
 | Workflow / job | Trigger | Produces | Builds in a container? |
 |---|---|---|---|
-| `.github/workflows/dev-container-publish.yml` | push to `master` (`dev/Containerfile`, `dev/scripts/**`) | `ghcr.io/vmafx/vmafx-dev-mcp:sha-<commit>`, `:master` | Yes — builds `libvmaf-build` stage into a private package; the job refuses to push unless GHCR reports the package private ([ADR-1564](../adr/1564-dev-image-private-guard.md)); releases do not pull it |
+| `.github/workflows/dev-container-publish.yml` | push to `master` (`dev/Containerfile`, `dev/scripts/**`) | `ghcr.io/vidiko/vmafx-dev-mcp:sha-<commit>`, `:master` | Yes — builds `libvmaf-build` stage into a private package; the job refuses to push unless GHCR reports the package private ([ADR-1564](../adr/1564-dev-image-private-guard.md)); releases do not pull it |
 | `.github/workflows/release-please.yml` | push to `master` | the release PR and, on merge, the tag + GitHub release | n/a — no build |
 | `.github/workflows/supply-chain.yml` | `release: published` | `libvmaf.so` chain, the `vmaf` CLI, `models.tar.gz`, `vmafx-linux-arm64.tar.gz`, SBOMs, cosign signatures, GitHub build-provenance attestations, the `vmaf-mcp` wheel | **Yes** — `build-artifacts` builds the manylinux `release-build` stage of the release tag's `dev/Containerfile` on a GitHub-hosted runner and compiles inside it ([ADR-1346](../adr/1346-hosted-slim-container-release-build.md), [ADR-1354](../adr/1354-native-bundle-release-track.md)) |
-| `.github/workflows/docker-publish-production.yml` | `release: published` | `ghcr.io/vmafx/vmafx:*` (cpu / cuda13 / rocm10 / oneapi2026, also tagged oneapi2025 / server) | Yes, inherently — `docker buildx` against `docker/Dockerfile.production*` |
+| `.github/workflows/docker-publish-production.yml` | `release: published` | `ghcr.io/vidiko/vmafx:*` (cpu / cuda13 / rocm10 / oneapi2026, also tagged oneapi2025 / server) | Yes, inherently — `docker buildx` against `docker/Dockerfile.production*` |
 
 Consequences:
 
@@ -160,7 +160,7 @@ changes: the same files, the same licence check and SBOM, other bytes on the wir
 | `models.tar.gz`, `licenses.tar.gz` (release) | `scripts/release/build-native-release-artifacts.sh` | `gzip -9n` | 42.20 MB (gzip 6: 42.25 MB) | xz-utils and zstd are not Essential on Debian; xz would save another 2 % |
 | git-archive source tarballs (`licensing.py fetch-sources`, the FFmpeg source in `docker/Dockerfile.node`) | as named | `git archive --format=tar.gz -9` | 1.5 % smaller than level 6 on this repository's `core/` and `scripts/` | name and format kept for the source indexes |
 | Container images and their `-source` images (tester, production, operator, server, node, the rc licence companions) | `docker-publish-tester.yml`, `docker-publish-production.yml`, `docker-publish-operator-node.yml`, `published-rc-licence-companions.yml`, `.github/actions/image-licence-artifacts` | zstd, BuildKit's best level (22), `force-compression`, OCI media types, on every layer (`IMAGE_COMPRESSION`) | tester 267.8 to 200.1 MB, oneAPI 1,424 to 1,073 MB, ROCm 10 8,310 to 7,065 MB, CPU CLI 55.7 to 51.5 MB (amd64) | pulling needs Docker Engine 23.0, Docker Desktop 4.19, containerd 1.5 or Podman ([requirements](../usage/docker.md#what-can-pull-the-images)) |
-| `ghcr.io/vmafx/vmafx-dev-mcp` | `dev-container-publish.yml` | the same `IMAGE_COMPRESSION` | 17.0 to 14.0 GB | encoding adds an estimated 2 to 4 minutes to a job that used 57 of its 90 |
+| `ghcr.io/vidiko/vmafx-dev-mcp` | `dev-container-publish.yml` | the same `IMAGE_COMPRESSION` | 17.0 to 14.0 GB | encoding adds an estimated 2 to 4 minutes to a job that used 57 of its 90 |
 
 Three mechanics keep the table true:
 
@@ -196,7 +196,7 @@ gate's single source of truth:
 vmafx_dev_container=1
 image_title=vmaf-dev-mcp
 containerfile=dev/Containerfile
-source=https://github.com/VMAFx/vmafx
+source=https://github.com/vidiko/vmafx
 ```
 
 The gate has three modes, and fails closed in all three — a missing marker, a
@@ -223,7 +223,7 @@ schema=vmafx-container-build-provenance/1
 vmafx_dev_container=1
 image_title=vmaf-dev-mcp
 containerfile=dev/Containerfile
-source=https://github.com/VMAFx/vmafx
+source=https://github.com/vidiko/vmafx
 git_commit=<GITHUB_SHA or git rev-parse HEAD>
 stamped_at=<SOURCE_DATE_EPOCH or now, UTC>
 ```
@@ -341,12 +341,12 @@ bash scripts/ci/check-container-build.sh --verify artifacts
 ```
 
 `.github/workflows/dev-container-publish.yml` still pushes
-`ghcr.io/vmafx/vmafx-dev-mcp` (the `libvmaf-build` stage) for the
+`ghcr.io/vidiko/vmafx-dev-mcp` (the `libvmaf-build` stage) for the
 organisation's own use. No release job pulls it. The package must stay
 private: the stage holds the full CUDA toolkit, Intel's oneAPI Base Kit and
 the ROCm payload, which their licences allow to be used internally but not
 redistributed. Before it builds, the job runs
-`scripts/ci/require-private-ghcr-package.sh VMAFx vmafx-dev-mcp`, which reads
+`scripts/ci/require-private-ghcr-package.sh vidiko vmafx-dev-mcp`, which reads
 the package's visibility from the GitHub API and fails the job unless it is
 `private`, including when the visibility cannot be read
 ([ADR-1564](../adr/1564-dev-image-private-guard.md)). Do not make the package
@@ -354,7 +354,7 @@ public or give anyone outside the organisation access to it. To check it
 yourself:
 
 ```bash
-GH_TOKEN=$(gh auth token) bash scripts/ci/require-private-ghcr-package.sh VMAFx vmafx-dev-mcp
+GH_TOKEN=$(gh auth token) bash scripts/ci/require-private-ghcr-package.sh vidiko vmafx-dev-mcp
 ```
 
 Run the unit suite locally with:
@@ -367,7 +367,7 @@ bash scripts/ci/tests/test-check-container-build.sh
 
 ## Exceptions
 
-- **Tester image** (`ghcr.io/vmafx/vmafx:<tag>-tester`): built from its own Dockerfile
+- **Tester image** (`ghcr.io/vidiko/vmafx:<tag>-tester`): built from its own Dockerfile
   (`docker/Dockerfile.tester`), like the production images, by
   `docker-publish-tester.yml` ([ADR-1492](../adr/1492-tester-image-arm64-report.md)).
 - **macOS tester bundle**: macOS cannot be built in the Linux container, so the bundle is

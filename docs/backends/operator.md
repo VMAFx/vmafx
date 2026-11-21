@@ -22,16 +22,16 @@ Engine 23.0 or later, Docker Desktop 4.19 or later, Podman or containerd 1.5
 or later ([what can pull them](../usage/docker.md#what-can-pull-the-images)).
 
 ```bash
-docker pull ghcr.io/vmafx/vmafx-operator@sha256:<digest>
+docker pull ghcr.io/vidiko/vmafx-operator@sha256:<digest>
 ```
 
 Verify the Sigstore signature:
 
 ```bash
 cosign verify \
-  --certificate-identity-regexp="^https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@" \
+  --certificate-identity-regexp="^https://github.com/vidiko/vmafx/.github/workflows/docker-publish-operator-node.yml@" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-  ghcr.io/vmafx/vmafx-operator@sha256:<digest>
+  ghcr.io/vidiko/vmafx-operator@sha256:<digest>
 ```
 
 ## Build the image locally
@@ -41,7 +41,7 @@ docker build \
   -f docker/Dockerfile.operator \
   --target operator \
   --build-arg VMAFX_VERSION=dev \
-  -t ghcr.io/vmafx/vmafx-operator:dev \
+  -t ghcr.io/vidiko/vmafx-operator:dev \
   .
 ```
 
@@ -53,7 +53,7 @@ docker buildx build \
   --target operator \
   --platform linux/amd64,linux/arm64 \
   --build-arg VMAFX_VERSION=dev \
-  -t ghcr.io/vmafx/vmafx-operator:dev \
+  -t ghcr.io/vidiko/vmafx-operator:dev \
   --push \
   .
 ```
@@ -61,7 +61,7 @@ docker buildx build \
 Confirm the injected build version without Kubernetes credentials:
 
 ```bash
-docker run --rm ghcr.io/vmafx/vmafx-operator:dev --version
+docker run --rm ghcr.io/vidiko/vmafx-operator:dev --version
 ```
 
 ## Run
@@ -72,7 +72,7 @@ docker run --rm \
   -e VMAFX_OPERATOR_HEALTH_PROBE_ADDR=:8081 \
   -e VMAFX_OPERATOR_LEADER_ELECTION=false \
   -e VMAFX_LOG_LEVEL=info \
-  ghcr.io/vmafx/vmafx-operator:<tag>
+  ghcr.io/vidiko/vmafx-operator:<tag>
 ```
 
 In-cluster the operator reads kubeconfig from the service-account token
@@ -99,7 +99,7 @@ switch; runtime configuration is supplied through the environment.
 The workflow `.github/workflows/docker-publish-operator-node.yml` fires when a
 GitHub release is published and on `workflow_dispatch`. It:
 
-1. Builds `ghcr.io/vmafx/vmafx-operator` for `linux/amd64` and `linux/arm64`
+1. Builds `ghcr.io/vidiko/vmafx-operator` for `linux/amd64` and `linux/arm64`
    in one job per architecture (`CGO_ENABLED=0` pure-Go binary), then merges
    the platform images into one multi-arch index.
 2. Signs the pushed digest via `cosign sign --yes` (Sigstore keyless OIDC).
@@ -130,7 +130,7 @@ defaults to `v<Chart.AppVersion>` (`deploy/helm/vmafx/values.yaml`):
 operator:
   enabled: true
   image:
-    repository: ghcr.io/vmafx/vmafx-operator
+    repository: ghcr.io/vidiko/vmafx-operator
     tag: "vX.Y.Z"
 ```
 

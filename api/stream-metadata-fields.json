@@ -1,7 +1,7 @@
 {
   "schema": "vmafx/stream-metadata-fields/1",
-  "description": "Field names, JSON types and units of the per-frame stream metadata of VMAFx (VMAFx/vmafx#2271), the decode-side bitstream facts reported next to a score. Seeded from the Pelorus telemetry field registry; a field marked pelorus 'shared' is spelled, typed and measured exactly as the registry row of the same key. not_carried lists the registry's shared keys VMAFx does not report. Append-only: a key is never renamed, retyped or reused (docs/api/stream-metadata-fields.md).",
-  "seeded_from": "VMAFx/pelorus@ec45e24d7342df908a2545e3a1d6dc7516d27475:libpelorus/schema/telemetry-fields.json",
+  "description": "Field names, JSON types and units of the per-frame stream metadata of VMAFx (vidiko/vmafx#2271), the decode-side bitstream facts reported next to a score. Seeded from the Pelorus telemetry field registry; a field marked pelorus 'shared' is spelled, typed and measured exactly as the registry row of the same key. not_carried lists the registry's shared keys VMAFx does not report. Append-only: a key is never renamed, retyped or reused (docs/api/stream-metadata-fields.md).",
+  "seeded_from": "vidiko/pelorus@ec45e24d7342df908a2545e3a1d6dc7516d27475:libpelorus/schema/telemetry-fields.json",
   "fields": [
     {
       "key": "display_index",

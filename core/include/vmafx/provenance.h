@@ -153,7 +153,7 @@ struct VmafxProvenance {
     uint32_t n_annotations;
     /**
      * Digest of the encode record of the distorted input (`sha256:` and 64 hex digits,
-     * VMAFx/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI
+     * vidiko/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI
      * 0.1.5.
      */
     const char *encode_record;
@@ -323,7 +323,7 @@ VMAFX_EXPORT VmafxStatus vmafx_context_annotation(const VmafxContext *context, u
                                                   VmafxAnnotation *out, VmafxError **error);
 
 /**
- * Record the digest of the encode record of the distorted input (VMAFx/pelorus#81): `sha256:` and
+ * Record the digest of the encode record of the distorted input (vidiko/pelorus#81): `sha256:` and
  * 64 lower-case hex digits, copied; NULL or empty clears it. VMAFX_E_INVALID names any other form.
  * Added in ABI 0.1.5.
  * @since 0.1

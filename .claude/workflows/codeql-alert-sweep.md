@@ -61,7 +61,7 @@ For each alert:
    arithmetic). Compare `objdump -d` of the object before and after: it
    must be identical. For any other false positive, dismiss the alert
    through the API (`gh api -X PATCH
-   repos/VMAFx/vmafx/code-scanning/alerts/<n> -f state=dismissed -f
+   repos/vidiko/vmafx/code-scanning/alerts/<n> -f state=dismissed -f
    dismissed_reason="false positive" -f dismissed_comment="<ADR / digest
    cite>"`), with the citing ADR or research digest in the comment.
 3. Run `make lint` after every batch of 3-5 fixes; bisect locally

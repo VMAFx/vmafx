@@ -61,14 +61,14 @@ merge() {
   mkdir -p "$scratch/digests"
   for ((n = 0; n < count; n++)); do : >"$scratch/digests/d$n"; done
   (cd "$scratch/digests" && env PATH="$scratch/bin:$PATH" SHIM_LOG="$scratch/log" \
-    GITHUB_OUTPUT="$scratch/output" IMAGE=ghcr.io/vmafx/vmafx-node TAG=v0.1.0 PLATFORMS=2 \
-    META_JSON='{"tags":["ghcr.io/vmafx/vmafx-node:v0.1.0","ghcr.io/vmafx/vmafx-node:latest"]}' \
+    GITHUB_OUTPUT="$scratch/output" IMAGE=ghcr.io/vidiko/vmafx-node TAG=v0.1.0 PLATFORMS=2 \
+    META_JSON='{"tags":["ghcr.io/vidiko/vmafx-node:v0.1.0","ghcr.io/vidiko/vmafx-node:latest"]}' \
     "$@" bash -euo pipefail "$scratch/run.sh") >/dev/null 2>"$scratch/err" || rc=$?
   if [[ "$rc" -eq "$want" ]]; then ok "$description"; else bad "$description (exit $rc, wanted $want: $(cat "$scratch/err"))"; fi
 }
 
 merge 0 "merges two platform digests" 2
-if grep -qx 'buildx imagetools create --tag ghcr.io/vmafx/vmafx-node:v0.1.0 --tag ghcr.io/vmafx/vmafx-node:latest ghcr.io/vmafx/vmafx-node@sha256:d0 ghcr.io/vmafx/vmafx-node@sha256:d1' "$scratch/log"; then
+if grep -qx 'buildx imagetools create --tag ghcr.io/vidiko/vmafx-node:v0.1.0 --tag ghcr.io/vidiko/vmafx-node:latest ghcr.io/vidiko/vmafx-node@sha256:d0 ghcr.io/vidiko/vmafx-node@sha256:d1' "$scratch/log"; then
   ok "applies every metadata tag to both platform images"
 else
   bad "unexpected imagetools create call: $(head -1 "$scratch/log")"

@@ -567,7 +567,7 @@ class BuildSecretContract(unittest.TestCase):
         # docker run's own image line.
         line = '            "vmafx-release-build:${GITHUB_SHA}" \\\n'
         self.assertEqual(self.release.count(line), 1)
-        text = self.release.replace(line, "            ghcr.io/vmafx/vmafx-dev-mcp:master \\\n")
+        text = self.release.replace(line, "            ghcr.io/vidiko/vmafx-dev-mcp:master \\\n")
         self.assertNotEqual(text, self.release)
         errors = MODULE.validate_release_rehearsal(text, self.workflow)
         self.assertTrue(any("built in the same job" in e for e in errors), errors)

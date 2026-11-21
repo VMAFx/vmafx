@@ -2,7 +2,7 @@
 # `vmaf-tune prefilter` — Pelorus deband and CRF joint autotune
 
 `vmaf-tune prefilter` runs a VMAF-in-the-loop search that tunes the strengths
-of the [Pelorus](https://github.com/VMAFx/pelorus) deband pre-filter and the
+of the [Pelorus](https://github.com/vidiko/pelorus) deband pre-filter and the
 encoder CRF together. It returns the lowest-bitrate combination that reaches a
 target VMAF, plus a ready-to-use ffmpeg `-vf` fragment. It is the control-plane
 seam between vmafx and Pelorus

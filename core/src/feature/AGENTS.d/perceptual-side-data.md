@@ -55,7 +55,7 @@ invariant: Perceptual side-data weighting golden-isolation invariant and normali
   Pelorus mirror (`pel_blob_unwrap()`, `libvmaf/pelorus/*.h`) stays
   byte-identical to the pin (ADR-1113).
 - **Vectors = Pelorus' file.** `testdata/pelorus/udu-wrap-vectors.txt` copied
-  from VMAFx/pelorus `ffmpeg-patches/test/fixtures/udu-wrap-vectors.txt`
+  from vidiko/pelorus `ffmpeg-patches/test/fixtures/udu-wrap-vectors.txt`
   (blob `3a115ee3` at `7f6bd706`). Pelorus adds vectors: copy file, raise
   `VEC_MIN_COUNT` in `core/test/test_pelorus_udu_wrap.c`. Never edit a vector
   here.

@@ -19,7 +19,7 @@
 #   `gh auth login`).
 #   For a headless or unattended host where `gh` interactive login is not
 #   available, provide a fine-grained personal access token (PAT) with
-#   Administration: read-write permissions scoped to VMAFx/vmafx:
+#   Administration: read-write permissions scoped to vidiko/vmafx:
 #     mkdir -p ~/.config/vmafx-runner
 #     echo "GH_TOKEN=github_pat_..." > ~/.config/vmafx-runner/env
 #     chmod 0600 ~/.config/vmafx-runner/env
@@ -27,7 +27,7 @@
 
 [Unit]
 Description=VMAFx Intel Arc A380 SYCL self-hosted runner supervisor
-Documentation=https://github.com/VMAFx/vmafx/blob/master/docs/development/ci-self-hosted-sycl.md
+Documentation=https://github.com/vidiko/vmafx/blob/master/docs/development/ci-self-hosted-sycl.md
 After=network-online.target docker.service
 Wants=network-online.target
 

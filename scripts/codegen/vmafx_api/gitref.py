@@ -12,6 +12,7 @@ extracts a directory as committed (the chart a migration test renders).
 from __future__ import annotations
 
 import io
+import os
 import shutil
 import subprocess
 import tarfile
@@ -21,6 +22,16 @@ from pathlib import Path
 from .loader import parse
 from .model import Api
 
+GIT_REPOSITORY_VARIABLES = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+    "GIT_PREFIX",
+)
 GIT_TIMEOUT = 60  # seconds; HISS-02 bounds every external call
 
 
@@ -38,6 +49,7 @@ def _git_bytes(root: Path, *args: str) -> bytes:
             check=False,
             capture_output=True,
             timeout=GIT_TIMEOUT,
+            env={k: v for k, v in os.environ.items() if k not in GIT_REPOSITORY_VARIABLES},
         )
     except subprocess.TimeoutExpired as err:
         raise Unavailable(f"git {args[0]} timed out after {GIT_TIMEOUT} s") from err

@@ -148,7 +148,7 @@ jobs:
     name: Build Linux artifacts (${{ matrix.arch }})
     needs: validate-release
     # Fork-PR guard: tag releases on the canonical repository only
-    if: github.repository == 'VMAFx/vmafx' && startsWith(github.ref, 'refs/tags/v')
+    if: github.repository == 'vidiko/vmafx' && startsWith(github.ref, 'refs/tags/v')
     # Both native architectures use the pinned manylinux / glibc 2.28 stage.
     # ARM runs natively; no cross compiler or emulation enters the release.
     strategy:
@@ -916,7 +916,7 @@ jobs:
     name: Verify Rust crates
     needs: [validate-release]
     # Final releases only: match the crates-publish guard.
-    if: ${{ github.repository == 'VMAFx/vmafx' && github.server_url == 'https://github.com' && !contains(needs.validate-release.outputs.version, '-') }}
+    if: ${{ github.repository == 'vidiko/vmafx' && github.server_url == 'https://github.com' && !contains(needs.validate-release.outputs.version, '-') }}
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
@@ -948,7 +948,7 @@ jobs:
     needs: [validate-release, verify-native-artifacts, sign, provenance, crates-verify]
     # Final releases only (the PyPI rule): an rc tag must not publish the 0.1.0 crates early.
     # The tag comes from validate-release, so the workflow_dispatch recovery path works too.
-    if: ${{ github.repository == 'VMAFx/vmafx' && github.server_url == 'https://github.com' && !contains(needs.validate-release.outputs.version, '-') }}
+    if: ${{ github.repository == 'vidiko/vmafx' && github.server_url == 'https://github.com' && !contains(needs.validate-release.outputs.version, '-') }}
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     environment: release-publish
@@ -977,7 +977,7 @@ jobs:
             version="$(python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["package"]["version"])' \
               "bindings/rust/$crate/Cargo.toml")"
             http_code="$(curl --retry 3 --retry-all-errors --silent --show-error --max-time 60 \
-              --user-agent 'VMAFx/vmafx release publisher (https://github.com/VMAFx/vmafx)' \
+              --user-agent 'vidiko/vmafx release publisher (https://github.com/vidiko/vmafx)' \
               --output "$RUNNER_TEMP/$crate-version.json" --write-out '%{http_code}' \
               "https://crates.io/api/v1/crates/$crate/$version")"
             case "$http_code" in
@@ -1207,7 +1207,7 @@ jobs:
     name: Build vmafx wheels
     needs: validate-release
     # Fork-PR guard: tag releases on the canonical repository only
-    if: github.repository == 'VMAFx/vmafx' && startsWith(github.ref, 'refs/tags/v')
+    if: github.repository == 'vidiko/vmafx' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: read
     uses: ./.github/workflows/vmafx-wheels.yml

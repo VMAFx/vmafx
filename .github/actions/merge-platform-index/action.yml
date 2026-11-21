@@ -11,7 +11,7 @@ name: Merge platform index
 description: Merge per-platform image digests into one tagged multi-architecture index
 inputs:
   image:
-    description: Image repository, e.g. ghcr.io/vmafx/vmafx-server
+    description: Image repository, e.g. ghcr.io/vidiko/vmafx-server
     required: true
   meta-json:
     description: The `json` output of docker/metadata-action (its tags are applied)

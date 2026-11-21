@@ -184,7 +184,7 @@ model card repeats the quote next to the fork's reading of it
 ([ADR-1570](../adr/1570-tiny-model-dataset-terms-retrain-rc9.md)).
 
 The fork keeps these models under the licences recorded in
-[`model/tiny/registry.json`](https://github.com/VMAFx/vmafx/blob/master/model/tiny/registry.json).
+[`model/tiny/registry.json`](https://github.com/vidiko/vmafx/blob/master/model/tiny/registry.json).
 Its reading is the same for every dataset: the weights are fitted
 parameters, they cannot reproduce a clip, an image or a label, and no dataset
 file is redistributed. That reading is the fork's; it is not a

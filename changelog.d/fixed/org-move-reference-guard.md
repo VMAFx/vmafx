@@ -1,0 +1,1 @@
+- Correct fork links after the organisation moves and reject obsolete GitHub organisation references with a documented pre-commit check.

@@ -241,7 +241,7 @@ files alongside the existing `libvmaf.h` compatibility surface:
 The legacy `libvmaf.h` bindgen surface in `vmafx-sys` and the phase-1 `libvmaf`
 wrappers at the crate root of `vmafx`
 ([ADR-0929](../../adr/0929-rust-safe-binding-scaffold.md),
-[README](https://github.com/VMAFx/vmafx/blob/master/bindings/rust/vmafx/README.md))
+[README](https://github.com/vidiko/vmafx/blob/master/bindings/rust/vmafx/README.md))
 remain available while callers migrate (see the [migration table](compat.md)).
 
 ### Linking the library
@@ -463,7 +463,7 @@ mean, err := ctx.ScorePooled(model, vmafx.PoolMean, 0, frames-1)
 
 The in-process paths of `pkg/libvmaf` (`ScoreDirect`, used by `vmafx-mcp` with
 `VMAFX_MCP_DIRECT=1`, and `StreamScorer`, used by the `vmafx-server` gRPC
-`ScoreStream`) hold no cgo of their own since [#2434](https://github.com/VMAFx/vmafx/issues/2434):
+`ScoreStream`) hold no cgo of their own since [#2434](https://github.com/vidiko/vmafx/issues/2434):
 they call `LoadModelFile`, `UseModel`, `NewHostFrame`, `Submit`, `Flush` and
 `ScorePooled` of this package. The pooled mean of `vmaf_v1.0.16_3d0h` through
 `ScoreDirect`, through `pkg/vmafx` and through the libvmaf C API is bit-for-bit

@@ -224,7 +224,7 @@ def test_a_recorded_tree_passes_and_carries_its_texts(tmp_path: Path) -> None:
     assert notices_then_check(args) == []
     licences = Path(args.root) / "licenses"
     text = (licences / lic.NOTICES_NAME).read_text()
-    assert "https://github.com/VMAFx/vmafx/tree/c0ffee" in text and "the image t1-source" in text
+    assert "https://github.com/vidiko/vmafx/tree/c0ffee" in text and "the image t1-source" in text
     assert "  tar 1.35-1  source tar=1.35+dfsg-1 glibc=2.41-1" in text
     assert "libquadmath-1234.so.0: LGPL-2.1-or-later; source gcc.src.rpm" in text
     assert (licences / "texts/EUPL-1.2.txt").read_text() == "EUPL text\n"

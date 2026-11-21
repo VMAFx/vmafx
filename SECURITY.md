@@ -22,7 +22,7 @@ we coordinate when a problem also affects this fork.
 **Please do not open a public issue for security problems.**
 
 Use GitHub's private vulnerability-reporting flow:
-`https://github.com/VMAFx/vmafx/security/advisories/new`
+`https://github.com/vidiko/vmafx/security/advisories/new`
 
 If the issue is in code inherited from upstream, we will coordinate
 disclosure with Netflix/vmaf maintainers.

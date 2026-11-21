@@ -3090,7 +3090,7 @@ libvmafx_sources = [
     # ADR-1113: vendored Pelorus <-> vmafx interop ABI (pack/parse, deband +
     # denoise param contracts, x265 CSV QP-report reader, version/result-string
     # accessors). CPU-only, dependency-free, NO Vulkan. Verbatim mirror of
-    # VMAFx/pelorus@e2e4040311a443210927549c3a336f909c6473f3 (v0.3.0, ABI 1.3).
+    # vidiko/pelorus@e2e4040311a443210927549c3a336f909c6473f3 (v0.3.0, ABI 1.3).
     # DO NOT EDIT; re-sync via
     # scripts/sync-pelorus-interop.sh. See docs/api/pelorus-interop.md.
     src_dir + 'interop/pelorus_interop.c',
