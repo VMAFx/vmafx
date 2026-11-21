@@ -174,9 +174,12 @@ origin='$ORIGIN'
 # new_repo <dir> — a committed tree holding only what the build script reads.
 new_repo() {
   local dir="$1"
-  mkdir -p "$dir/scripts/ci" "$dir/scripts/release" "$dir/model" "$dir/LICENSES" "$dir/core" \
-    "$dir/tools/rc1-tester/image"
+  mkdir -p "$dir/scripts/ci" "$dir/scripts/lib" "$dir/scripts/release" "$dir/model" \
+    "$dir/LICENSES" "$dir/core" "$dir/tools/rc1-tester/image"
   cp -- "$REPO_ROOT/scripts/ci/check-container-build.sh" "$dir/scripts/ci/"
+  cp -- "$REPO_ROOT/scripts/__init__.py" "$dir/scripts/"
+  cp -- "$REPO_ROOT/scripts/lib/__init__.py" \
+    "$REPO_ROOT/scripts/lib/safe_subprocess.py" "$dir/scripts/lib/"
   cp -- "$licensing_stub" "$dir/tools/rc1-tester/image/licensing.py"
   cp -- "$REPO_ROOT/scripts/release/build-native-release-artifacts.sh" \
     "$REPO_ROOT/scripts/release/verify-native-release-artifacts.sh" \

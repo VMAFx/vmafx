@@ -1,5 +1,5 @@
 - **The production images credit the libzimg they ship.** The `vmaf` command now links zimg by
-  default ([ADR-3396](../docs/adr/3396-zimg-on-by-default.md)), so every production image copies
+  default ([ADR-3396](docs/adr/3396-zimg-on-by-default.md)), so every production image copies
   `libzimg.so*` out of Debian's `libzimg2` package — but the `zimg` entry of
   `tools/rc1-tester/image/licensing.json` still described upstream zimg 3.0.6 and claimed no file in
   the image, so the six builders that copy that library had no Debian record for it (issue #3242).

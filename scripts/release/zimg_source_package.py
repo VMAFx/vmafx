@@ -15,13 +15,21 @@ reads the same `zimg-source-rpm.txt`, so the expected value has one home.
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
 
+REPO = Path(__file__).resolve().parents[2]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+
+from scripts.lib.safe_subprocess import CommandOutputLimitExceeded, TextCommandResult  # noqa: E402
+from scripts.lib.safe_subprocess import run as safe_run  # noqa: E402
+
 RECORD = Path("tools/rc1-tester/image/zimg-source-rpm.txt")
-Runner = Callable[..., "subprocess.CompletedProcess[str]"]
+RPM_TIMEOUT_SECONDS = 10.0
+RPM_MAX_OUTPUT_BYTES = 65_536
+Runner = Callable[..., TextCommandResult]
 
 
 def recorded_source_rpm(record: Path = RECORD) -> str:
@@ -32,14 +40,20 @@ def recorded_source_rpm(record: Path = RECORD) -> str:
     return value
 
 
-def source_rpm_of(library: Path, *, runner: Runner = subprocess.run) -> str:
-    """The ``SOURCERPM`` of the installed package that owns ``library``."""
-    result = runner(
-        ["rpm", "-qf", "--qf", "%{SOURCERPM}", str(library)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+def source_rpm_of(library: Path, *, runner: Runner = safe_run) -> str:
+    """Read ``SOURCERPM`` within a fixed deadline and combined output ceiling."""
+    try:
+        result = runner(
+            ["rpm", "-qf", "--qf", "%{SOURCERPM}", str(library)],
+            allowed_executables=("rpm",),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout_seconds=RPM_TIMEOUT_SECONDS,
+            max_output_bytes=RPM_MAX_OUTPUT_BYTES,
+        )
+    except (OSError, CommandOutputLimitExceeded) as error:
+        raise ValueError(f"cannot read the source package of {library}: {error}") from error
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
         raise ValueError(f"cannot read the source package of {library}: {detail}")
@@ -49,9 +63,7 @@ def source_rpm_of(library: Path, *, runner: Runner = subprocess.run) -> str:
     return value
 
 
-def check_source_package(
-    library: Path, record: Path = RECORD, *, runner: Runner = subprocess.run
-) -> str:
+def check_source_package(library: Path, record: Path = RECORD, *, runner: Runner = safe_run) -> str:
     """Return the measured source package, or raise when it is not the recorded one."""
     expected = recorded_source_rpm(record)
     actual = source_rpm_of(library, runner=runner)

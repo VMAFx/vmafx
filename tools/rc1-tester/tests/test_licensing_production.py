@@ -11,7 +11,7 @@ import importlib.util
 import json
 import os
 import re
-import subprocess  # nosec B404 -- CompletedProcess fixtures only; no command runs
+import sys
 from pathlib import Path
 
 import pytest
@@ -22,12 +22,15 @@ lic = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(lic)
 
 REPO = Path(__file__).resolve().parents[3]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
 
-_spec_zimg = importlib.util.spec_from_file_location(
-    "zimg_source_package", REPO / "scripts" / "release" / "zimg_source_package.py"
+from scripts.lib.safe_subprocess import (
+    CommandOutputLimitExceeded,
+    CommandTimedOut,
+    TextCommandResult,
 )
-zimg = importlib.util.module_from_spec(_spec_zimg)
-_spec_zimg.loader.exec_module(zimg)
+from scripts.release import zimg_source_package as zimg
 
 
 def write(path: Path, text: str) -> Path:
@@ -459,35 +462,87 @@ def test_the_recorded_zimg_source_package_is_the_one_the_record_names() -> None:
     assert "zimg 3.0.6-1.el8" in component["source"]
 
 
+def rpm_runner(returncode: int, stdout: str, stderr: str = "") -> zimg.Runner:
+    """Return a fake query that checks the command and its execution bounds."""
+
+    def runner(command: list[str], **kwargs: object) -> TextCommandResult:
+        assert command[:4] == ["rpm", "-qf", "--qf", "%{SOURCERPM}"]
+        assert Path(command[4]).name == "libzimg.so.2"
+        assert kwargs == {
+            "allowed_executables": ("rpm",),
+            "capture_output": True,
+            "text": True,
+            "check": False,
+            "timeout_seconds": 10.0,
+            "max_output_bytes": 65_536,
+        }
+        return TextCommandResult(tuple(command), returncode, stdout, stderr)
+
+    return runner
+
+
 def test_a_mismatched_zimg_source_package_is_refused(tmp_path: Path) -> None:
     """An EPEL rebuild must fail the release, not silently keep the old notice."""
-    record = tmp_path / "zimg-source-rpm.txt"
-    record.write_text("zimg-3.0.6-1.el8.src.rpm\n")
+    record = write(tmp_path / "zimg-source-rpm.txt", "zimg-3.0.6-1.el8.src.rpm\n")
     library = tmp_path / "libzimg.so.2"
-    library.write_text("elf")
-
-    def runner(command, **kwargs):
-        return subprocess.CompletedProcess(
-            command, 0, stdout="zimg-3.0.6-2.el8.src.rpm\n", stderr=""
+    with pytest.raises(ValueError, match=r"comes from zimg-3\.0\.6-2\.el8\.src\.rpm"):
+        zimg.check_source_package(
+            library, record, runner=rpm_runner(0, "zimg-3.0.6-2.el8.src.rpm\n")
         )
-
-    with pytest.raises(ValueError, match="zimg-3.0.6-2.el8.src.rpm"):
-        zimg.check_source_package(library, record, runner=runner)
 
 
 def test_a_measured_zimg_source_package_passes(tmp_path: Path) -> None:
-    """The measured package the record names is staged unchanged."""
-    record = tmp_path / "zimg-source-rpm.txt"
-    record.write_text("zimg-3.0.6-1.el8.src.rpm\n")
+    record = write(tmp_path / "zimg-source-rpm.txt", "zimg-3.0.6-1.el8.src.rpm\n")
     library = tmp_path / "libzimg.so.2"
-    library.write_text("elf")
-
-    def runner(command, **kwargs):
-        return subprocess.CompletedProcess(
-            command, 0, stdout="zimg-3.0.6-1.el8.src.rpm\n", stderr=""
-        )
-
+    runner = rpm_runner(0, "zimg-3.0.6-1.el8.src.rpm\n")
     assert zimg.check_source_package(library, record, runner=runner) == "zimg-3.0.6-1.el8.src.rpm"
+
+
+def test_a_blank_zimg_source_record_is_refused(tmp_path: Path) -> None:
+    record = write(tmp_path / "zimg-source-rpm.txt", " \n\t")
+
+    def unexpected_query(command: list[str], **kwargs: object) -> TextCommandResult:
+        pytest.fail("a blank record must be refused before querying rpm")
+
+    with pytest.raises(ValueError, match=r"zimg-source-rpm\.txt records no source package"):
+        zimg.check_source_package(tmp_path / "libzimg.so.2", record, runner=unexpected_query)
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stdout", "stderr", "message"),
+    [
+        (1, "secondary output", "not owned", "cannot read the source package of .*: not owned"),
+        (1, "no owner found", "", "cannot read the source package of .*: no owner found"),
+        (0, " \n\t", "", "the package that owns .* records no source package"),
+    ],
+    ids=("stderr", "stdout-fallback", "blank-output"),
+)
+def test_an_unusable_zimg_query_is_refused(
+    tmp_path: Path, returncode: int, stdout: str, stderr: str, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        zimg.source_rpm_of(tmp_path / "libzimg.so.2", runner=rpm_runner(returncode, stdout, stderr))
+
+
+@pytest.mark.parametrize(
+    ("error", "message"),
+    [
+        (CommandTimedOut(("rpm",), 10.0, "", ""), "command timed out after 10s: rpm"),
+        (
+            CommandOutputLimitExceeded(("rpm",), 65_536, "", ""),
+            "command exceeded 65536 captured bytes: rpm",
+        ),
+    ],
+    ids=("timeout", "output-limit"),
+)
+def test_an_rpm_query_exceeding_its_bounds_is_refused(
+    tmp_path: Path, error: Exception, message: str
+) -> None:
+    def runner(command: list[str], **kwargs: object) -> TextCommandResult:
+        raise error
+
+    with pytest.raises(ValueError, match=message):
+        zimg.source_rpm_of(tmp_path / "libzimg.so.2", runner=runner)
 
 
 def test_the_build_stages_zimg_only_from_the_recorded_package() -> None:

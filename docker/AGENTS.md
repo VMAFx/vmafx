@@ -168,9 +168,11 @@ file as licence text, same as tester entry.
   `runtime` overwrites `/opt/vmafx/lib` from `python-venv` (carries record) before
   install; test proves order.
 - macOS bundle, Windows zips build zimg from source; keep 3.0.6 archive entry.
-- `release-native` not from source: `stage_zimg` copies loader-resolved
-  `libzimg.so*` from `release-build` (unpinned `dnf` `zimg-devel`); 3.0.6
-  entry names wrong source, tracked in #3396.
+- `release-native` ships the loader-resolved `libzimg.so*` from `release-build`
+  (unpinned `dnf` `zimg-devel`). `stage_zimg` refuses a library whose `SOURCERPM`
+  differs from `tools/rc1-tester/image/zimg-source-rpm.txt` (#3396). For a new
+  EPEL build, update that file and the `release-native` zimg entry in
+  `tools/rc1-tester/image/licensing.json` together.
 
 ## Fedora optional SYCL repository
 
