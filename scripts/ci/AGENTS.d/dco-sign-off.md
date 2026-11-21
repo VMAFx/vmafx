@@ -3,6 +3,7 @@ paths:
   - scripts/ci/check-dco.py
   - scripts/ci/dco-cutoff.txt
   - scripts/ci/tests/check_dco_fixture.py
+  - scripts/ci/tests/test_check_dco_commit_msg.py
   - scripts/ci/tests/test_check_dco.py
   - scripts/ci/tests/test_check_dco_attribution.py
   - scripts/ci/tests/test_check_dco_landed.py
@@ -45,6 +46,8 @@ Gate: `Signed-off-by:` trailer on each non-merge PR commit; model/tool attributi
    E-mail + `[bot]` entries: Python-only. Token change -> update praetor tuple + local tuple;
    word-token change -> update engine regex word list together.
 
+10. **Message-file mode.** Merge commits exempt; shared sign-off helper; Git failures exit 2.
+
 Required context `DCO Sign-off` = job `dco-sign-off` in `rule-enforcement.yml`; one entry in
 `required-aggregator.yml` list (`check-aggregator-names.sh`).
-Regression: `python3 -B -m pytest -q -p no:cacheprovider -rs scripts/ci/tests/test_check_dco.py scripts/ci/tests/test_check_dco_attribution.py scripts/ci/tests/test_check_dco_landed.py`.
+Regression: `python3 -B -m pytest -q -p no:cacheprovider -rs scripts/ci/tests/test_check_dco_commit_msg.py scripts/ci/tests/test_check_dco.py scripts/ci/tests/test_check_dco_attribution.py scripts/ci/tests/test_check_dco_landed.py`.

@@ -28,6 +28,13 @@ git push --force-with-lease
 field; a sign-off for somebody else does not count. The line must sit in the
 last block of the message, as git writes it.
 
+## Check when committing
+
+The `dco-sign-off-commit-msg` hook checks each message when a commit is made.
+It requires a sign-off matching the author or committer and refuses model or
+coding tool attribution. Merge commits are exempt. For a new commit use
+`git commit -s`; to repair the last commit use `git commit --amend -s --no-edit`.
+
 ## Check before you push
 
 The `dco-sign-off` pre-push hook in `.pre-commit-config.yaml` runs the check on

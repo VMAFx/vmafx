@@ -438,6 +438,11 @@ def judge(
         return reason
     if is_exempt_bot_commit(commit, author, author_type):
         return None
+    return signoff_reason(commit)
+
+
+def signoff_reason(commit: Commit) -> str | None:
+    """Require a trailer matching the author or committer."""
     emails = signoff_emails(commit.message)
     if not emails:
         return "no 'Signed-off-by: Name <email>' trailer"
@@ -1010,6 +1015,63 @@ def check(args: argparse.Namespace) -> int:
     return check_pr(args)
 
 
+def message_identity(kind: str) -> tuple[str, str]:
+    """Read the identity Git will use for this commit."""
+    identity = run_git(["var", f"GIT_{kind}_IDENT"]).strip()
+    match = re.match(r"^(.*?)\s+<([^<>\s]+@[^<>\s]+)>\s+\d+\s+[+-]\d{4}$", identity)
+    if not match:
+        raise UsageError(f"git var GIT_{kind}_IDENT: unparseable identity")
+    return match.group(1), match.group(2)
+
+
+def report_message_failure(commit: Commit, reason: str) -> None:
+    """Print advice for a commit that Git has not created yet."""
+    signoff_failed = is_signoff_reason(reason)
+    title = "DCO sign-off" if signoff_failed else "DCO attribution"
+    print(f"::error title={title}::{commit.sha} {commit.subject}: {reason}")
+    print("dco: the commit being made is refused.")
+    if signoff_failed:
+        print("  New commit: git commit -s")
+        print("  Amend: git commit --amend -s --no-edit")
+    else:
+        print(
+            "  Remove model/tool attribution from the message or author identity and commit again."
+        )
+
+
+def check_message_file(path: str) -> int:
+    """Check a pending commit message with Git's effective identities."""
+    try:
+        message = read_bounded_file(
+            Path(path), MAX_COMMIT_MESSAGE_BYTES, "MAX_COMMIT_MESSAGE_BYTES"
+        )
+    except UsageError as exc:
+        raise UsageError(f"commit message file {path}: {exc}") from exc
+    message = run_git(["stripspace", "--strip-comments"], stdin=message)
+    merge_path = Path(run_git(["rev-parse", "--git-path", "MERGE_HEAD"]).strip())
+    if merge_path.is_file():
+        print("dco: merge commit is exempt.")
+        return 0
+    author_name, author_email = message_identity("AUTHOR")
+    committer_name, committer_email = message_identity("COMMITTER")
+    subject = message.splitlines()[0] if message.splitlines() else ""
+    commit = Commit(
+        "(commit being made)",
+        author_name,
+        author_email,
+        committer_name,
+        committer_email,
+        subject,
+        message,
+    )
+    reason = commit_attribution_reason(commit) or signoff_reason(commit)
+    if reason:
+        report_message_failure(commit, reason)
+        return 1
+    print("dco: PASS - commit message")
+    return 0
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     """Parse revision, identity, body-source, and enforcement options with environment defaults."""
     env = os.environ.get
@@ -1030,6 +1092,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--landed", action="store_true")
     parser.add_argument("--merge-base", default="", metavar="REF")
+    parser.add_argument("--message-file", default="", metavar="PATH")
     parser.add_argument("--landing-identity", default=env("LANDING_IDENTITY", ""))
     args = parser.parse_args(argv)
     if args.head is None:
@@ -1041,7 +1104,25 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     """Validate required inputs and return distinct statuses for policy and usage failures."""
     args = parse_args(argv)
-    if not args.merge_base and (not args.base or not args.head):
+    if args.message_file and any(
+        arg == option or arg.startswith(option + "=")
+        for arg in argv
+        for option in (
+            "--base",
+            "--head",
+            "--merge-base",
+            "--landed",
+            "--pr-body-file",
+            "--pr-body",
+            "--pr-body-from-event",
+        )
+    ):
+        print(
+            "check-dco: --message-file cannot be combined with range, landed or PR body options",
+            file=sys.stderr,
+        )
+        return 2
+    if not args.message_file and not args.merge_base and (not args.base or not args.head):
         print(
             "check-dco: --base and --head (or BASE_SHA and HEAD_SHA), or --merge-base,"
             " are required",
@@ -1055,7 +1136,7 @@ def main(argv: list[str]) -> int:
         )
         return 2
     try:
-        return check(args)
+        return check_message_file(args.message_file) if args.message_file else check(args)
     except InputBoundError as exc:
         print(f"check-dco: {exc}", file=sys.stderr)
         return 1
