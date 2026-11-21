@@ -9,7 +9,7 @@
 
   <!-- README-STANDARD badge block: one group, fixed order (docs/README-STANDARD.md) -->
   <!-- 1 release/version -->
-  [![Release](https://img.shields.io/static/v1?label=release&message=v1.0.0-rc.3&style=for-the-badge&color=3b82f6&labelColor=111a35)](https://github.com/vidiko/vmafx/releases) <!-- x-release-please-version -->
+  [![Release](https://img.shields.io/static/v1?label=release&message=v0.1.0&style=for-the-badge&color=3b82f6&labelColor=111a35)](https://github.com/vidiko/vmafx/releases) <!-- x-release-please-version -->
   <!-- 2 CI/build -->
   [![Tests](https://raw.githubusercontent.com/vidiko/vmafx/badges/tests.svg)](https://github.com/vidiko/vmafx/actions/workflows/tests-and-quality-gates.yml)
   [![Builds](https://raw.githubusercontent.com/vidiko/vmafx/badges/builds.svg)](https://github.com/vidiko/vmafx/actions/workflows/libvmaf-build-matrix.yml)
