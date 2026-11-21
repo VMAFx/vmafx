@@ -21,7 +21,7 @@
 #   RUNNER_DISPLAY_NAME human-readable job name (default: SYCL Parity (Arc A380))
 #   RUNNER_SWITCH_NAME repository-variable name used in diagnostics
 #   RUNNER_RUNBOOK     operator documentation path used in diagnostics
-#   GITHUB_REPOSITORY  owner/repo (default: VMAFx/vmafx)
+#   GITHUB_REPOSITORY  owner/repo (default: vidiko/vmafx)
 #   RUNNERS_JSON       test hook: use this JSON instead of calling the API
 #   RUNNERS_FILE       test hook: read the JSON from this file instead
 #   GH_TOKEN           token for `gh api` (needs Administration: read)
@@ -49,7 +49,7 @@ LABELS_DISPLAY="$(
   IFS=,
   echo "${REQUIRED_LABELS[*]}"
 )"
-REPO="${GITHUB_REPOSITORY:-VMAFx/vmafx}"
+REPO="${GITHUB_REPOSITORY:-vidiko/vmafx}"
 ENABLED="${RUNNER_ENABLED:-false}"
 DISPLAY_NAME="${RUNNER_DISPLAY_NAME:-SYCL Parity (Arc A380)}"
 SWITCH_NAME="${RUNNER_SWITCH_NAME:-SYCL_ARC_RUNNER_ENABLED}"

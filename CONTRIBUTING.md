@@ -26,9 +26,9 @@ extractors, quality runners, models).
 New here? You do not need to understand the whole tree.
 
 1. Pick an issue labelled
-   [`good first issue`](https://github.com/VMAFx/vmafx/labels/good%20first%20issue)
+   [`good first issue`](https://github.com/vidiko/vmafx/labels/good%20first%20issue)
    (small, self-contained, with the files named) or
-   [`help wanted`](https://github.com/VMAFx/vmafx/labels/help%20wanted)
+   [`help wanted`](https://github.com/vidiko/vmafx/labels/help%20wanted)
    (larger, but wanted). Comment on the issue that you are taking it, so two
    people do not do the same work.
 2. Follow the [Quickstart](#quickstart) to build and run the tests.
@@ -38,7 +38,7 @@ New here? You do not need to understand the whole tree.
    below applies.
 5. Ask in the issue or the pull request if you are stuck; questions are
    welcome there. Open-ended questions go to
-   [Discussions](https://github.com/VMAFx/vmafx/discussions).
+   [Discussions](https://github.com/vidiko/vmafx/discussions).
 
 Contributions that are not code count too: documentation fixes, bug
 reproductions, [hardware reports](.github/ISSUE_TEMPLATE/hardware_report.yml)

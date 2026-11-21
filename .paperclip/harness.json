@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "platform": "vmafx/vmafx",
+  "platform": "vidiko/vmafx",
   "operating_contract": [
     "Branch push != shipping. Open PR required. Work ships after merge.",
     "Rebase onto main immediately: run git fetch origin \u0026\u0026 git rebase origin/main before proposing.",

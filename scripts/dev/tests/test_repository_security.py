@@ -27,16 +27,16 @@ class RepositorySecurityTests(unittest.TestCase):
     def setUp(self) -> None:
         self.policy = json.loads((ROOT / ".github/repository-security-policy.json").read_text())
         self.rule = copy.deepcopy(self.policy["ruleset"])
-        self.rule.update(id=8123, source_type="Repository", source="VMAFx/vmafx")
+        self.rule.update(id=8123, source_type="Repository", source="vidiko/vmafx")
         self.responses = {
-            "/repos/VMAFx/vmafx": {"full_name": "VMAFx/vmafx", "default_branch": "master"},
-            "/repos/VMAFx/vmafx/rulesets?includes_parents=false&per_page=100": [
+            "/repos/vidiko/vmafx": {"full_name": "vidiko/vmafx", "default_branch": "master"},
+            "/repos/vidiko/vmafx/rulesets?includes_parents=false&per_page=100": [
                 {"id": 8123, "name": self.rule["name"]},
                 {"id": 8199, "name": "unrelated release policy"},
             ],
-            "/repos/VMAFx/vmafx/private-vulnerability-reporting": {"enabled": True},
-            "/repos/VMAFx/vmafx/rulesets/8123": self.rule,
-            "/repos/VMAFx/vmafx/rules/branches/master?per_page=100": [
+            "/repos/vidiko/vmafx/private-vulnerability-reporting": {"enabled": True},
+            "/repos/vidiko/vmafx/rulesets/8123": self.rule,
+            "/repos/vidiko/vmafx/rules/branches/master?per_page=100": [
                 {**copy.deepcopy(rule), "ruleset_id": 8123} for rule in self.rule["rules"]
             ],
         }
@@ -76,11 +76,11 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertEqual(self.inspect(), [])
 
     def test_no_managed_ruleset_fails(self) -> None:
-        self.responses["/repos/VMAFx/vmafx/rulesets?includes_parents=false&per_page=100"] = []
+        self.responses["/repos/vidiko/vmafx/rulesets?includes_parents=false&per_page=100"] = []
         self.assertIn("exactly one", " ".join(self.inspect()))
 
     def test_duplicate_managed_rule_fails(self) -> None:
-        key = "/repos/VMAFx/vmafx/rulesets?includes_parents=false&per_page=100"
+        key = "/repos/vidiko/vmafx/rulesets?includes_parents=false&per_page=100"
         self.responses[key].append({"id": 8999, "name": self.rule["name"]})
         self.assertIn("exactly one", " ".join(self.inspect()))
 
@@ -139,11 +139,11 @@ class RepositorySecurityTests(unittest.TestCase):
                 CHECK.bypass_count(8123)
 
     def test_disabled_reporting_is_detected(self) -> None:
-        self.responses["/repos/VMAFx/vmafx/private-vulnerability-reporting"] = {"enabled": False}
+        self.responses["/repos/vidiko/vmafx/private-vulnerability-reporting"] = {"enabled": False}
         self.assertIn("private_vulnerability_reporting", " ".join(self.inspect()))
 
     def test_boolean_as_integer_is_not_accepted(self) -> None:
-        self.responses["/repos/VMAFx/vmafx/private-vulnerability-reporting"] = {"enabled": 1}
+        self.responses["/repos/vidiko/vmafx/private-vulnerability-reporting"] = {"enabled": 1}
         self.assertIn("private_vulnerability_reporting", " ".join(self.inspect()))
 
     def test_review_freshness_or_check_origin_changes_are_detected(self) -> None:
@@ -172,11 +172,11 @@ class RepositorySecurityTests(unittest.TestCase):
         self.assertIn("conditions", errors)
 
     def test_missing_effective_rule_is_detected(self) -> None:
-        self.responses["/repos/VMAFx/vmafx/rules/branches/master?per_page=100"].pop()
+        self.responses["/repos/vidiko/vmafx/rules/branches/master?per_page=100"].pop()
         self.assertIn("effective_rules", " ".join(self.inspect()))
 
     def test_truncation_and_malformed_ids_fail_closed(self) -> None:
-        key = "/repos/VMAFx/vmafx/rulesets?includes_parents=false&per_page=100"
+        key = "/repos/vidiko/vmafx/rulesets?includes_parents=false&per_page=100"
         self.responses[key] *= 50
         with self.assertRaisesRegex(ValueError, "truncated"):
             self.inspect()
@@ -188,7 +188,7 @@ class RepositorySecurityTests(unittest.TestCase):
     def test_wrong_target_is_rejected_before_network_access(self) -> None:
         self.policy["repository"] = "Netflix/vmaf"
         with patch.object(CHECK, "get_json") as fetch:
-            with self.assertRaisesRegex(ValueError, "VMAFx/vmafx master"):
+            with self.assertRaisesRegex(ValueError, "vidiko/vmafx master"):
                 CHECK.inspect(self.policy)
             fetch.assert_not_called()
 

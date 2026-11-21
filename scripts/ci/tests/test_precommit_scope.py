@@ -38,7 +38,7 @@ OWN_PR = wr.SyntheticEvent(
     "synchronize",
     ref="refs/pull/1/merge",
     head_ref="docs/example",
-    head_repo="VMAFx/vmafx",
+    head_repo="vidiko/vmafx",
 )
 MASTER_PUSH = wr.SyntheticEvent("push", ref="refs/heads/master")
 FULL_ONLY_LEG = "Ubuntu gcc"

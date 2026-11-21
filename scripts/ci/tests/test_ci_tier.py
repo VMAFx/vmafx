@@ -28,7 +28,7 @@ from scripts.ci import ci_tier
 from scripts.lib.safe_subprocess import run as run_command
 
 CONFIG = ci_tier.load_config()
-REPO = "VMAFx/vmafx"
+REPO = "vidiko/vmafx"
 RELEASE_REF = "release-please--branches--master--components--vmafx"
 PR_3401_PATHS = (
     ".github/workflows/libvmaf-build-matrix.yml",

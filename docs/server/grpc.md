@@ -150,7 +150,7 @@ table, the `pkg/score` client wrapper, and a worked client loop.
 
 ## Configuration
 
-The server runs on the [golusoris](https://github.com/golusoris/golusoris) fx
+The server runs on the [golusoris](https://github.com/plurano/golusoris) fx
 framework (ADR-1119). Runtime configuration is environment-only: golusoris'
 koanf layer reads 12-factor variables under the `VMAFX_` prefix, and `_` in the
 env name maps to the `.` config-key separator (so `VMAFX_HTTP_ADDR` sets

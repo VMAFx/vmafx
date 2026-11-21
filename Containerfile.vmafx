@@ -64,7 +64,7 @@ FROM ubuntu:26.04@sha256:065aa8626841f16057b78b027b464cd59c4fac36c204c72dcbf48d6
 
 LABEL org.opencontainers.image.title="vmafx"
 LABEL org.opencontainers.image.description="VMAFx fork: libvmaf (SYCL) + ffmpeg with the fork patches, Intel Arc/Xe"
-LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.source="https://github.com/vidiko/vmafx"
 # FFmpeg is configured --enable-gpl --enable-version3, so the image as a
 # whole is GPL-3.0-or-later; the fork code is EUPL-1.2, Netflix code
 # BSD-2-Clause-Patent.

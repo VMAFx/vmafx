@@ -37,7 +37,7 @@ assert spec and spec.loader
 gate = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = gate
 spec.loader.exec_module(gate)
-REPO = "VMAFx/vmafx"
+REPO = "vidiko/vmafx"
 SHA = "a" * 40
 
 
@@ -410,7 +410,7 @@ class ComparisonReadTests(GhStubCase):
 
     def test_refuses_bad_input_before_any_request(self) -> None:
         with self.patched():
-            for repository, newer in [("VMAFx/vmafx/x", NEWER), ("VMAFx", NEWER), (REPO, "HEAD")]:
+            for repository, newer in [("vidiko/vmafx/x", NEWER), ("VMAFx", NEWER), (REPO, "HEAD")]:
                 with self.subTest(repository=repository, newer=newer):
                     with self.assertRaises(gate.InvalidReport):
                         gate.fetch_comparison(repository, BASE, newer, None)

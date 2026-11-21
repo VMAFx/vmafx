@@ -182,7 +182,7 @@ still runs as UID 65532 with no effective capability:
 docker run --device /dev/fuse \
   --cap-drop ALL --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH \
   -e VMAFX_STORAGE_MODE=mount \
-  ghcr.io/vmafx/vmafx-node:<tag>
+  ghcr.io/vidiko/vmafx-node:<tag>
 ```
 
 - `--security-opt no-new-privileges` (Kubernetes
@@ -489,7 +489,7 @@ To check the image on a host with an Intel GPU, list the SYCL devices it sees:
 docker run --rm --device /dev/dri \
   --group-add "$(stat -c %g /dev/dri/renderD128)" \
   --entrypoint /usr/local/bin/vmaf \
-  ghcr.io/vmafx/vmafx-node:vX.Y.Z-sycl --backend sycl --list-backends
+  ghcr.io/vidiko/vmafx-node:vX.Y.Z-sycl --backend sycl --list-backends
 ```
 
 The process runs as the distroless `nonroot` user, so it needs the group that
@@ -501,7 +501,7 @@ docker run --rm \
   --device /dev/dri \
   --group-add "$(stat -c %g /dev/dri/renderD128)" \
   -p 50052:50052 \
-  ghcr.io/vmafx/vmafx-node:vX.Y.Z-sycl
+  ghcr.io/vidiko/vmafx-node:vX.Y.Z-sycl
 ```
 
 In Kubernetes, request the GPU from the Intel device plugin and add the render
@@ -514,7 +514,7 @@ spec:
     supplementalGroups: [992]          # the GID of /dev/dri/renderD* on the node
   containers:
     - name: vmafx-node
-      image: ghcr.io/vmafx/vmafx-node:vX.Y.Z-sycl
+      image: ghcr.io/vidiko/vmafx-node:vX.Y.Z-sycl
       resources:
         limits:
           gpu.intel.com/i915: "1"      # or gpu.intel.com/xe

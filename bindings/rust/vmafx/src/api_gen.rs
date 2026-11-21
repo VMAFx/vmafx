@@ -1382,7 +1382,7 @@ pub struct Provenance {
     /// Caller annotations; see `vmafx_context_annotation()`. Added in ABI 0.1.5.
     pub n_annotations: u32,
     /// Digest of the encode record of the distorted input (`sha256:` and 64 hex digits,
-    /// VMAFx/pelorus#81), set with `vmafx_context_set_encode_record()`; empty when none. Added in
+    /// vidiko/pelorus#81), set with `vmafx_context_set_encode_record()`; empty when none. Added in
     /// ABI 0.1.5.
     pub encode_record: String,
     /// `sha256:` and the SHA-256 of every per-frame score written so far: one line `<feature>
@@ -2853,7 +2853,7 @@ impl Context {
         Ok(Annotation::from_c(out))
     }
 
-    /// Record the digest of the encode record of the distorted input (VMAFx/pelorus#81): `sha256:`
+    /// Record the digest of the encode record of the distorted input (vidiko/pelorus#81): `sha256:`
     /// and 64 lower-case hex digits, copied; NULL or empty clears it. `VMAFX_E_INVALID` names any
     /// other form. Added in ABI 0.1.5.
     ///

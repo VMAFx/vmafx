@@ -27,7 +27,7 @@ description: Dry-run `release-please` locally, preview CHANGELOG diff, verify si
    Repo fetches Netflix upstream tags into shared local tag namespace.
    Risk: dry-run against ordinary dev checkout can mistake upstream-only
    `vX.Y.Z` tag for VMAFx release -> bypasses configured bootstrap SHA.
-   Simulation clone: only tags advertised by `VMAFx/vmafx`, plus candidate
+   Simulation clone: only tags advertised by `vidiko/vmafx`, plus candidate
    master tree. GitHub token: protected file descriptor or file path only,
    never literal command-line value.
 3. Parse proposed release: version bump, CHANGELOG delta, affected packages.

@@ -6,7 +6,7 @@ Local patch series against FFmpeg **n9.0.2** integrating VMAFx through
 
 Every build applies the **shared FFmpeg fix series** first: fixes to FFmpeg
 itself, maintained for all consumers in
-[VMAFx/ffmpeg-patches](https://github.com/VMAFx/ffmpeg-patches) and pinned in
+[vidiko/ffmpeg-patches](https://github.com/vidiko/ffmpeg-patches) and pinned in
 `build-config.env` (`FFMPEG_FIX_SERIES_*`). `scripts/ci/ffmpeg-shared-series.sh`
 downloads the pinned release, verifies it, and applies it; the patches in this
 directory add VMAFx integration on top. See

@@ -9,5 +9,5 @@
 
 [[exception]]
 path = ".config/lefthook/python.sh"
-reason = "Praetor's Python launcher, written by `praetorctl adopt` at engine train 32a35c8fb947. Adoption refreshes it only while it is one of praetor's own texts; a formatted copy is kept as the repository's file and stops following the engine pin (ADR-3272). The launcher is not shfmt-clean (trailing comment alignment; cordanaLLM/praetor issue 1441, open); remove the entry with the engine pin that carries the fix. Category D (120 days)."
+reason = "Praetor's Python launcher, written by `praetorctl adopt` at engine train 32a35c8fb947. Adoption refreshes it only while it is one of praetor's own texts; a formatted copy is kept as the repository's file and stops following the engine pin (ADR-3272). The launcher is not shfmt-clean (trailing comment alignment; tekmora/praetor issue 1441, open); remove the entry with the engine pin that carries the fix. Category D (120 days)."
 expires = 2027-02-15

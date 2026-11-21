@@ -7,7 +7,7 @@
 
 [[exception]]
 path = "core/include/libvmaf/pelorus/deband.h"
-reason = "Byte-identical ABI mirror of VMAFx/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
+reason = "Byte-identical ABI mirror of vidiko/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
 owner = "pelorus"
 trigger = "pelorus 0.13.0 releases the interop surface as a Rust crate"
 category = "A"
@@ -15,7 +15,7 @@ expires = 2027-11-20
 
 [[exception]]
 path = "core/include/libvmaf/pelorus/denoise.h"
-reason = "Byte-identical ABI mirror of VMAFx/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
+reason = "Byte-identical ABI mirror of vidiko/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
 owner = "pelorus"
 trigger = "pelorus 0.13.0 releases the interop surface as a Rust crate"
 category = "A"
@@ -23,7 +23,7 @@ expires = 2027-11-20
 
 [[exception]]
 path = "core/include/libvmaf/pelorus/interop.h"
-reason = "Byte-identical ABI mirror of VMAFx/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
+reason = "Byte-identical ABI mirror of vidiko/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
 owner = "pelorus"
 trigger = "pelorus 0.13.0 releases the interop surface as a Rust crate"
 category = "A"
@@ -31,7 +31,7 @@ expires = 2027-11-20
 
 [[exception]]
 path = "core/include/libvmaf/pelorus/pelorus.h"
-reason = "Byte-identical ABI mirror of VMAFx/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
+reason = "Byte-identical ABI mirror of vidiko/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
 owner = "pelorus"
 trigger = "pelorus 0.13.0 releases the interop surface as a Rust crate"
 category = "A"
@@ -39,7 +39,7 @@ expires = 2027-11-20
 
 [[exception]]
 path = "core/src/interop/pelorus_deband_params.c"
-reason = "Byte-identical ABI mirror of VMAFx/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
+reason = "Byte-identical ABI mirror of vidiko/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
 owner = "pelorus"
 trigger = "pelorus 0.13.0 releases the interop surface as a Rust crate"
 category = "A"
@@ -47,7 +47,7 @@ expires = 2027-11-20
 
 [[exception]]
 path = "core/src/interop/pelorus_denoise_params.c"
-reason = "Byte-identical ABI mirror of VMAFx/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
+reason = "Byte-identical ABI mirror of vidiko/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
 owner = "pelorus"
 trigger = "pelorus 0.13.0 releases the interop surface as a Rust crate"
 category = "A"
@@ -55,7 +55,7 @@ expires = 2027-11-20
 
 [[exception]]
 path = "core/src/interop/pelorus_interop.c"
-reason = "Byte-identical ABI mirror of VMAFx/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
+reason = "Byte-identical ABI mirror of vidiko/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
 owner = "pelorus"
 trigger = "pelorus 0.13.0 releases the interop surface as a Rust crate"
 category = "A"
@@ -63,7 +63,7 @@ expires = 2027-11-20
 
 [[exception]]
 path = "core/src/interop/pelorus_qp_report_csv.c"
-reason = "Byte-identical ABI mirror of VMAFx/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
+reason = "Byte-identical ABI mirror of vidiko/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
 owner = "pelorus"
 trigger = "pelorus 0.13.0 releases the interop surface as a Rust crate"
 category = "A"
@@ -71,7 +71,7 @@ expires = 2027-11-20
 
 [[exception]]
 path = "core/src/interop/pelorus_version.c"
-reason = "Byte-identical ABI mirror of VMAFx/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
+reason = "Byte-identical ABI mirror of vidiko/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
 owner = "pelorus"
 trigger = "pelorus 0.13.0 releases the interop surface as a Rust crate"
 category = "A"
@@ -79,7 +79,7 @@ expires = 2027-11-20
 
 [[exception]]
 path = "core/test/test_pelorus_interop.c"
-reason = "Byte-identical ABI mirror of VMAFx/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
+reason = "Byte-identical ABI mirror of vidiko/pelorus (ADR-1113), listed in scripts/ci/pelorus-mirror-paths.txt and kept identical by scripts/sync-pelorus-interop.sh; it stays host C until pelorus ships the interop surface as a Rust crate. Owner: pelorus. Category A: the interval is this entry's own, the vmafx 1.2.0 release (Host C/C++ removed); the date below is the list's 400-day cap and is renewed by re-review until 1.2.0."
 owner = "pelorus"
 trigger = "pelorus 0.13.0 releases the interop surface as a Rust crate"
 category = "A"

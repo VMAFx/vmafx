@@ -2,7 +2,7 @@
 # VMAFX Production Docker Images
 
 This page covers pulling, running, and building the VMAFX production container
-images hosted at `ghcr.io/vmafx/vmafx`.
+images hosted at `ghcr.io/vidiko/vmafx`.
 
 !!! note
     For the **development MCP container** (full GPU toolchain, oneAPI, CUDA,
@@ -27,13 +27,13 @@ them](../usage/docker.md#what-can-pull-the-images)).
 tag=v1.0.0-rc.2
 
 # Pull and run the vmaf CLI (CPU, smallest image)
-docker pull ghcr.io/vmafx/vmafx:$tag
-docker run --rm ghcr.io/vmafx/vmafx:$tag --version
+docker pull ghcr.io/vidiko/vmafx:$tag
+docker run --rm ghcr.io/vidiko/vmafx:$tag --version
 
 # Score a video pair (mount a local directory)
 docker run --rm \
   -v /path/to/videos:/data:ro \
-  ghcr.io/vmafx/vmafx:$tag \
+  ghcr.io/vidiko/vmafx:$tag \
   --reference /data/ref.yuv \
   --distorted /data/dis.yuv \
   --width 576 --height 324 \
@@ -120,7 +120,7 @@ every image.
 ```bash
 docker run --rm --gpus all \
   -v /path/to/videos:/data:ro \
-  ghcr.io/vmafx/vmafx:$tag-cuda13 \
+  ghcr.io/vidiko/vmafx:$tag-cuda13 \
   --backend cuda \
   --reference /data/ref.yuv --distorted /data/dis.yuv \
   --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
@@ -156,7 +156,7 @@ docker run --rm \
   --group-add "$(getent group render | cut -d: -f3)" \
   --group-add "$(getent group video | cut -d: -f3)" \
   -v /path/to/videos:/data:ro \
-  ghcr.io/vmafx/vmafx:$tag-rocm10 \
+  ghcr.io/vidiko/vmafx:$tag-rocm10 \
   --backend hip \
   --reference /data/ref.yuv --distorted /data/dis.yuv \
   --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
@@ -201,7 +201,7 @@ docker run --rm \
   --device "$render" \
   --group-add "$(getent group render | cut -d: -f3)" \
   -v /path/to/videos:/data:ro \
-  ghcr.io/vmafx/vmafx:$tag-oneapi2026 \
+  ghcr.io/vidiko/vmafx:$tag-oneapi2026 \
   --backend sycl \
   --reference /data/ref.yuv --distorted /data/dis.yuv \
   --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
@@ -226,7 +226,7 @@ docker run --rm \
   -v /usr/lib/wsl:/usr/lib/wsl:ro \
   -e ONEAPI_DEVICE_SELECTOR=level_zero:0 \
   -v /path/to/videos:/data:ro \
-  ghcr.io/vmafx/vmafx:$tag-oneapi2026 \
+  ghcr.io/vidiko/vmafx:$tag-oneapi2026 \
   --backend sycl \
   --reference /data/ref.yuv --distorted /data/dis.yuv \
   --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
@@ -287,7 +287,7 @@ server in the dev container, is not in this image.
 ```bash
 docker run --rm -p 8080:8080 \
   -e VMAFX_MCP_HTTP_TOKEN='replace-with-a-secret' \
-  ghcr.io/vmafx/vmafx:vX.Y.Z-server
+  ghcr.io/vidiko/vmafx:vX.Y.Z-server
 ```
 
 The image explicitly binds `0.0.0.0` so its published port is reachable; the
@@ -301,12 +301,12 @@ To override the port or run the stdio transport:
 ```bash
 docker run --rm -p 8080:8080 \
   -e VMAFX_MCP_HTTP_TOKEN='replace-with-a-secret' \
-  ghcr.io/vmafx/vmafx:vX.Y.Z-server \
+  ghcr.io/vidiko/vmafx:vX.Y.Z-server \
   --transport http --port 8080
 
 docker run --rm -i \
   --entrypoint /venv/bin/vmaf-mcp \
-  ghcr.io/vmafx/vmafx:vX.Y.Z-server \
+  ghcr.io/vidiko/vmafx:vX.Y.Z-server \
   --transport stdio
 ```
 
@@ -332,20 +332,20 @@ tag=vX.Y.Z
 # The signing identity is the workflow at the ref it ran on: refs/tags/$tag for
 # a normal publish, refs/heads/master for a recovered image (every
 # v1.0.0-rc.1 image; see release.md). Pin the one that applies.
-identity="https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/heads/master"
+identity="https://github.com/vidiko/vmafx/.github/workflows/docker-publish-production.yml@refs/heads/master"
 
 # Verify the cosign signature
 cosign verify \
   --certificate-identity "$identity" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/vmafx/vmafx:$tag
+  ghcr.io/vidiko/vmafx:$tag
 
 # Verify and print the SBOM attestation
 cosign verify-attestation \
   --certificate-identity "$identity" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --type cyclonedx \
-  ghcr.io/vmafx/vmafx:$tag \
+  ghcr.io/vidiko/vmafx:$tag \
   | jq '.payload | @base64d | fromjson'
 ```
 
@@ -354,7 +354,7 @@ attested with GitHub's attestation store
 ([ADR-1513](../adr/1513-production-artifact-licensing.md)):
 
 ```bash
-gh attestation verify oci://ghcr.io/vmafx/vmafx:$tag --repo VMAFx/vmafx \
+gh attestation verify oci://ghcr.io/vidiko/vmafx:$tag --repo vidiko/vmafx \
   --predicate-type https://spdx.dev/Document/v2.3
 ```
 
@@ -372,7 +372,7 @@ without passing the licence check
 | `/usr/local/share/vmafx/licenses/texts/` | the licence texts the notices name |
 | `/usr/local/share/vmafx/licenses/vmafx-compiled-sources.json` | the licence of every repository file the build compiled |
 | `/usr/local/share/vmafx/licence-check.json` | the receipt of the licence check |
-| `ghcr.io/vmafx/vmafx:<tag>-source`, `<tag>-server-source`, `<tag>-cuda13-source`, `<tag>-rocm10-source`, `<tag>-oneapi2026-source` | the corresponding source of the copyleft parts: Debian source packages of every installed package at the installed version, (server) the GCC source RPMs of the runtimes grafted into the numpy and scipy wheels, and (ROCm) the elfutils and numactl archives and the TheRock tree that built the LGPL libraries of the ROCm runtime; `SOURCES.txt` is the index |
+| `ghcr.io/vidiko/vmafx:<tag>-source`, `<tag>-server-source`, `<tag>-cuda13-source`, `<tag>-rocm10-source`, `<tag>-oneapi2026-source` | the corresponding source of the copyleft parts: Debian source packages of every installed package at the installed version, (server) the GCC source RPMs of the runtimes grafted into the numpy and scipy wheels, and (ROCm) the elfutils and numactl archives and the TheRock tree that built the LGPL libraries of the ROCm runtime; `SOURCES.txt` is the index |
 
 How the gate works, per stage of `docker/Dockerfile.production`:
 

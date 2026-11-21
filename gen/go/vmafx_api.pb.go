@@ -488,7 +488,7 @@ type Provenance struct {
 	// Caller annotations; see vmafx_context_annotation(). Added in ABI 0.1.5.
 	NAnnotations uint32 `protobuf:"varint,29,opt,name=n_annotations,json=nAnnotations,proto3" json:"n_annotations,omitempty"`
 	// Digest of the encode record of the distorted input (`sha256:` and 64 hex digits,
-	// VMAFx/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI
+	// vidiko/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI
 	// 0.1.5.
 	EncodeRecord string `protobuf:"bytes,30,opt,name=encode_record,json=encodeRecord,proto3" json:"encode_record,omitempty"`
 	// `sha256:` and the SHA-256 of every per-frame score written so far: one line `<feature> <index>

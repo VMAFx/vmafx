@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 -->
 # Pelorus interop ABI (vendored) — `libvmaf/pelorus/`
 
-The [Pelorus](https://github.com/VMAFx/pelorus) GPU pre-encode pipeline and
+The [Pelorus](https://github.com/vidiko/pelorus) GPU pre-encode pipeline and
 vmafx share a small, versioned **data-plane interop ABI**: a self-describing
 per-frame metadata blob that Pelorus filters (`vf_pelorus_*`) write and vmafx
 reads for perceptually-weighted scoring. The blob rides each `AVFrame` as an
@@ -21,7 +21,7 @@ the current pin, Pelorus v0.4.1 (interop ABI 1.5), in
 
 !!! warning "The mirror is read-only"
     Do not edit the vendored files. They are byte-identical to their Pelorus
-    origin (pinned at `VMAFx/pelorus@33b4a625cad64a7e9ca14f6db06eb91ba8f56663`,
+    origin (pinned at `VMAFx/pelorus@33b4a625cad64a7e9ca14f6db06eb91ba8f56663`, <!-- old-org-ok -->
     the `v0.4.1` tag)
     except for a `VENDORED FROM ... DO NOT EDIT` banner and the include-path
     rewrite described below. Fix any defect upstream in Pelorus, then
@@ -54,7 +54,7 @@ Pelorus's. (`qp_report_csv.c` is required to link: the conformance fixture exerc
 ### The only local edits
 
 1. A `VENDORED FROM
-   VMAFx/pelorus@33b4a625cad64a7e9ca14f6db06eb91ba8f56663 — DO NOT EDIT`
+   VMAFx/pelorus@33b4a625cad64a7e9ca14f6db06eb91ba8f56663 — DO NOT EDIT` <!-- old-org-ok -->
    banner inserted after the (unchanged) Pelorus license header.
 2. Intra-Pelorus `#include "pelorus/<x>.h"` rewritten to
    `#include "libvmaf/pelorus/<x>.h"` so the headers resolve under

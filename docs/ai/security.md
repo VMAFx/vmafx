@@ -146,7 +146,7 @@ To verify a model by hand before loading it:
 
 ```bash
 cosign verify-blob \
-    --certificate-identity-regexp "https://github.com/VMAFx/vmafx/.github/workflows/supply-chain.yml@.*" \
+    --certificate-identity-regexp "https://github.com/vidiko/vmafx/.github/workflows/supply-chain.yml@.*" \
     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
     --bundle model/tiny/vmaf_tiny_v2.onnx.sigstore.json \
     model/tiny/vmaf_tiny_v2.onnx

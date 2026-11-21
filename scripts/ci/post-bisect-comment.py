@@ -226,8 +226,8 @@ def main() -> int:
     )
     p.add_argument(
         "--repo",
-        default=os.environ.get("GITHUB_REPOSITORY", "VMAFx/vmafx"),
-        help="owner/name (defaults to $GITHUB_REPOSITORY or VMAFx/vmafx)",
+        default=os.environ.get("GITHUB_REPOSITORY", "vidiko/vmafx"),
+        help="owner/name (defaults to $GITHUB_REPOSITORY or vidiko/vmafx)",
     )
     args = p.parse_args()
 

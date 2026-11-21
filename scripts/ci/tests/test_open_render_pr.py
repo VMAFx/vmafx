@@ -169,7 +169,7 @@ class OpenRenderPrTest(unittest.TestCase):
         self.runner_temp.mkdir()
         self.app_slug = "vmafx-release-bot"
         self.token = TEST_TOKEN
-        self.github_repository = "VMAFx/vmafx"
+        self.github_repository = "vidiko/vmafx"
         self.render_branch = "render-docs"
         self.push_url = (
             f"https://x-access-token:{self.token}@github.com/{self.github_repository}.git"

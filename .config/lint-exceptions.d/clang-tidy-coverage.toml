@@ -197,42 +197,42 @@ expires = 2027-03-31
 path = "core/src/interop/pelorus_deband_params.c"
 category = "A"
 entered = 2026-11-02
-reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of vidiko/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
 expires = 2027-03-31
 
 [[exception]]
 path = "core/src/interop/pelorus_denoise_params.c"
 category = "A"
 entered = 2026-11-02
-reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of vidiko/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
 expires = 2027-03-31
 
 [[exception]]
 path = "core/src/interop/pelorus_interop.c"
 category = "A"
 entered = 2026-11-02
-reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of vidiko/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
 expires = 2027-03-31
 
 [[exception]]
 path = "core/src/interop/pelorus_qp_report_csv.c"
 category = "A"
 entered = 2026-11-02
-reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of vidiko/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
 expires = 2027-03-31
 
 [[exception]]
 path = "core/src/interop/pelorus_version.c"
 category = "A"
 entered = 2026-11-02
-reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of vidiko/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
 expires = 2027-03-31
 
 [[exception]]
 path = "core/test/test_pelorus_interop.c"
 category = "A"
 entered = 2026-11-02
-reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of VMAFx/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
+reason = "Category A, interval to the stated expiry. Pelorus interop mirror (pelorus-164-interop-mirror). Byte-identical mirror of vidiko/pelorus (ADR-1113; listed in scripts/ci/pelorus-mirror-paths.txt, which tidy-ratchet.py refuses as a translation unit): tidied in pelorus CI (libpelorus build, test, format, tidy) at the pinned SHA; a fix lands upstream and is re-vendored by scripts/sync-pelorus-interop.sh."
 expires = 2027-03-31
 
 [[exception]]

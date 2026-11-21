@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # vmafx-sys
 
-Raw FFI bindings to **libvmaf** (the [VMAFX](https://github.com/VMAFx/vmafx) fork of
+Raw FFI bindings to **libvmaf** (the [VMAFX](https://github.com/vidiko/vmafx) fork of
 [Netflix/vmaf](https://github.com/Netflix/vmaf)).
 
 The crate exposes two layers:

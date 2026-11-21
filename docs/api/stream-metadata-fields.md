@@ -4,13 +4,13 @@
 VMAFx plans to report per-frame stream metadata next to each score: the
 decode-side facts of the distorted bitstream, such as the frame's coded size,
 its average quantiser and its picture type
-([VMAFx/vmafx#2271](https://github.com/VMAFx/vmafx/issues/2271)). The
-[Pelorus](https://github.com/VMAFx/pelorus) telemetry field registry already
+([vidiko/vmafx#2271](https://github.com/vidiko/vmafx/issues/2271)). The
+[Pelorus](https://github.com/vidiko/pelorus) telemetry field registry already
 names the same facts for its own pipeline. So that a consumer can join the two
 streams without a mapping table, every field the two projects share is
 spelled, typed and measured the same way in both.
 
-[`api/stream-metadata-fields.json`](https://github.com/VMAFx/vmafx/blob/master/api/stream-metadata-fields.json)
+[`api/stream-metadata-fields.json`](https://github.com/vidiko/vmafx/blob/master/api/stream-metadata-fields.json)
 is the VMAFx side of that agreement. It is the list of field names, not the
 reporting code: no CLI flag or library call emits these fields yet. The
 reporting lands with #2271 and uses these names.
@@ -20,7 +20,7 @@ reporting lands with #2271 and uses these names.
 | Key | Meaning |
 | --- | --- |
 | `schema` | `vmafx/stream-metadata-fields/1`. A reader that does not know the version refuses the file. |
-| `seeded_from` | The Pelorus registry the list was seeded from, pinned to a commit: `VMAFx/pelorus@<40-hex commit>:libpelorus/schema/telemetry-fields.json`. |
+| `seeded_from` | The Pelorus registry the list was seeded from, pinned to a commit: `vidiko/pelorus@<40-hex commit>:libpelorus/schema/telemetry-fields.json`. |
 | `fields` | One row per field VMAFx reports: `key`, `json` (JSON type), `unit`, `range` and `pelorus`. |
 | `not_carried` | The keys of the Pelorus registry's shared rows that VMAFx does not report. |
 

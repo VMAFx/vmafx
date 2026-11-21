@@ -15,7 +15,7 @@ check and refresh it.
 ## Shared FFmpeg fix series
 
 Fixes to FFmpeg itself are not kept in `ffmpeg-patches/`. They live in
-[VMAFx/ffmpeg-patches](https://github.com/VMAFx/ffmpeg-patches), which
+[vidiko/ffmpeg-patches](https://github.com/vidiko/ffmpeg-patches), which
 publishes a signed release tarball per FFmpeg base, and every VMAFx FFmpeg
 build applies that series first and `ffmpeg-patches/series.txt` second
 ([ADR-3143](../adr/3143-ffmpeg-shared-fix-series.md)). `build-config.env`

@@ -3,7 +3,7 @@
 Alpine builds a CPU-only VMAFx: Alpine uses musl libc, which the CUDA and Intel
 oneAPI toolchains do not support. Run the setup script from the repository
 root, then build
-([`scripts/setup/alpine.sh`](https://github.com/VMAFx/vmafx/blob/master/scripts/setup/alpine.sh)).
+([`scripts/setup/alpine.sh`](https://github.com/vidiko/vmafx/blob/master/scripts/setup/alpine.sh)).
 
 ## Setup script
 

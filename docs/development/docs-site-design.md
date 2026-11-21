@@ -160,7 +160,7 @@ evidence (`AGENTS.md` §11).
 ## Diagrams
 
 Architecture, pipeline and flow diagrams are figure specs drawn with the figure
-engine in `tools/figures/` ([README](https://github.com/VMAFx/vmafx/blob/master/tools/figures/README.md),
+engine in `tools/figures/` ([README](https://github.com/vidiko/vmafx/blob/master/tools/figures/README.md),
 [ADR-1508](../adr/1508-docs-site-toolchain-and-charts.md)). A page names a
 figure with a fence that holds only its slug:
 
@@ -275,9 +275,9 @@ To search the text of records, use GitHub code search with a path filter:
 
 | Records | Query |
 | --- | --- |
-| ADRs | [`repo:VMAFx/vmafx path:docs/adr/ <terms>`](https://github.com/search?q=repo%3AVMAFx%2Fvmafx+path%3Adocs%2Fadr%2F+precision&type=code) |
-| Research digests | [`repo:VMAFx/vmafx path:docs/research/ <terms>`](https://github.com/search?q=repo%3AVMAFx%2Fvmafx+path%3Adocs%2Fresearch%2F+zensical&type=code) |
-| Rebase notes, state | `repo:VMAFx/vmafx path:docs/rebase-notes.md <terms>`, `path:docs/state.md` |
+| ADRs | [`repo:vidiko/vmafx path:docs/adr/ <terms>`](https://github.com/search?q=repo%3Avidiko%2Fvmafx+path%3Adocs%2Fadr%2F+precision&type=code) |
+| Research digests | [`repo:vidiko/vmafx path:docs/research/ <terms>`](https://github.com/search?q=repo%3Avidiko%2Fvmafx+path%3Adocs%2Fresearch%2F+zensical&type=code) |
+| Rebase notes, state | `repo:vidiko/vmafx path:docs/rebase-notes.md <terms>`, `path:docs/state.md` |
 
 Locally, `git grep -n '<terms>' -- docs/adr docs/research` does the same.
 

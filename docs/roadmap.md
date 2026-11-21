@@ -3,10 +3,10 @@
 VMAFx tracks its plan in GitHub, not in a document that drifts. This page is a
 map of where that plan lives and how the releases are sequenced.
 
-- **Board** — [VMAFx Roadmap](https://github.com/orgs/VMAFx/projects/1) (public)
-- **Milestones** — [all milestones](https://github.com/VMAFx/vmafx/milestones)
+- **Board** — [VMAFx Roadmap](https://github.com/orgs/vidiko/projects/1) (public)
+- **Milestones** — [all milestones](https://github.com/vidiko/vmafx/milestones)
 - **Epics** — issues labelled
-  [`epic`](https://github.com/VMAFx/vmafx/issues?q=is%3Aissue+is%3Aopen+label%3Aepic),
+  [`epic`](https://github.com/vidiko/vmafx/issues?q=is%3Aissue+is%3Aopen+label%3Aepic),
   each with a child task list
 
 ## Releases
@@ -19,21 +19,21 @@ and its tracking issue, and moves into the release that now ships it.
 
 | Version | Milestone | Theme |
 | --- | --- | --- |
-| 0.1.0 | [0.1.0](https://github.com/VMAFx/vmafx/milestone/1) | First release: the RC4 package (first full Rust metric, zero-copy device-frame import, the VMAFx API and its bindings, the FFmpeg and GStreamer integrations, provenance, input formats, the scoring API contract) and packaging |
-| 0.2.0 | [0.2.0](https://github.com/VMAFx/vmafx/milestone/17) | Foundations, capability tables and benchmarks: the RC5 deduplication and tool consolidation, the RC6 GPU and RC7 CPU capability tables, RC8 benchmarking, tuning and training readiness, observability, the RC3 carry-over |
-| 0.3.0 | [0.3.0](https://github.com/VMAFx/vmafx/milestone/10) | Rust P1a: the default-model extractors Rust-default with SIMD ([#2573](https://github.com/VMAFx/vmafx/issues/2573)), with P0b to P0e |
-| 0.4.0 | [0.4.0](https://github.com/VMAFx/vmafx/milestone/3) | Encoder feedback, embedding and platforms: the rest of the embedding epic ([#2067](https://github.com/VMAFx/vmafx/issues/2067)), [#2164](https://github.com/VMAFx/vmafx/issues/2164), [#2156](https://github.com/VMAFx/vmafx/issues/2156); encoder-side predictors ([#2416](https://github.com/VMAFx/vmafx/issues/2416)), the VLC plugin ([#2358](https://github.com/VMAFx/vmafx/issues/2358)), the mobile and WebAssembly targets |
-| 0.5.0 | [0.5.0](https://github.com/VMAFx/vmafx/milestone/11) | Rust P1b: the remaining CPU extractors and SIMD ([#2574](https://github.com/VMAFx/vmafx/issues/2574)) |
-| 0.6.0 | [0.6.0](https://github.com/VMAFx/vmafx/milestone/12) | Rust P2: engine, model loading, predict and pooling, generated ABI shells ([#2575](https://github.com/VMAFx/vmafx/issues/2575)) |
-| 0.7.0 | [0.7.0](https://github.com/VMAFx/vmafx/milestone/4) | New metrics with exact twins: the RC5 metric package ([#2496](https://github.com/VMAFx/vmafx/issues/2496)), [#2165](https://github.com/VMAFx/vmafx/issues/2165), [#2167](https://github.com/VMAFx/vmafx/issues/2167), the artefact detectors ([#2272](https://github.com/VMAFx/vmafx/issues/2272)), ST-GREED ([#2394](https://github.com/VMAFx/vmafx/issues/2394)), picks from [#2168](https://github.com/VMAFx/vmafx/issues/2168); our own no-reference models ([#2415](https://github.com/VMAFx/vmafx/issues/2415)) and foveated scoring ([#2419](https://github.com/VMAFx/vmafx/issues/2419)) |
-| 0.8.0 | [0.8.0](https://github.com/VMAFx/vmafx/milestone/8) | Metric A/B comparison, the best current mix and more training data: [#2240](https://github.com/VMAFx/vmafx/issues/2240), [#2241](https://github.com/VMAFx/vmafx/issues/2241) |
-| 0.9.0 | [0.9.0](https://github.com/VMAFx/vmafx/milestone/9) | The next model generation: the RC9 retraining ([#1246](https://github.com/VMAFx/vmafx/issues/1246)) and [#2242](https://github.com/VMAFx/vmafx/issues/2242) |
-| 0.10.0 | [0.10.0](https://github.com/VMAFx/vmafx/milestone/2) | Integrations, live quality and cloud-native: the OBS Studio plugin ([#2239](https://github.com/VMAFx/vmafx/issues/2239)), no-reference mode in the plugins ([#2413](https://github.com/VMAFx/vmafx/issues/2413)), the live P.1204 monitor ([#2417](https://github.com/VMAFx/vmafx/issues/2417)), AI-generated video scoring ([#2418](https://github.com/VMAFx/vmafx/issues/2418)), the cloud-native platform ([#2431](https://github.com/VMAFx/vmafx/issues/2431)) with containers, Helm and operator ([#2497](https://github.com/VMAFx/vmafx/issues/2497)), and the rest of the milestone. The encode job moved to its own repository, [vidiko/torcul](https://github.com/vidiko/torcul) ([ADR-3382](adr/3382-encode-service-leaves-vmafx.md)) |
-| 0.11.0 | [0.11.0](https://github.com/VMAFx/vmafx/milestone/5) | Breaking changes only: the `libvmaf.h` compatibility library removed ([ADR-1852](adr/1852-vmafx-api-redesign.md)), the rest of [#1254](https://github.com/VMAFx/vmafx/issues/1254) |
-| 1.0.0 | [1.0.0](https://github.com/VMAFx/vmafx/milestone/13) | First stable: Rust P3, CLI, tools, MCP server, ONNX Runtime host and host glue ([#2576](https://github.com/VMAFx/vmafx/issues/2576), [#2581](https://github.com/VMAFx/vmafx/issues/2581)), and a frozen interface; candidates from `v1.0.0-rc.4` |
-| 1.1.0 | [1.1.0](https://github.com/VMAFx/vmafx/milestone/14) | Rust P4 and P5: GPU host runtimes and the kernel verdict per backend ([#2577](https://github.com/VMAFx/vmafx/issues/2577), [#2578](https://github.com/VMAFx/vmafx/issues/2578)) |
-| 1.2.0 | [1.2.0](https://github.com/VMAFx/vmafx/milestone/15) | Host C and C++ removed outside the exception list ([#2579](https://github.com/VMAFx/vmafx/issues/2579)) |
-| 1.3.0 | [1.3.0](https://github.com/VMAFx/vmafx/milestone/16) | Open subjective studies |
+| 0.1.0 | [0.1.0](https://github.com/vidiko/vmafx/milestone/1) | First release: the RC4 package (first full Rust metric, zero-copy device-frame import, the VMAFx API and its bindings, the FFmpeg and GStreamer integrations, provenance, input formats, the scoring API contract) and packaging |
+| 0.2.0 | [0.2.0](https://github.com/vidiko/vmafx/milestone/17) | Foundations, capability tables and benchmarks: the RC5 deduplication and tool consolidation, the RC6 GPU and RC7 CPU capability tables, RC8 benchmarking, tuning and training readiness, observability, the RC3 carry-over |
+| 0.3.0 | [0.3.0](https://github.com/vidiko/vmafx/milestone/10) | Rust P1a: the default-model extractors Rust-default with SIMD ([#2573](https://github.com/vidiko/vmafx/issues/2573)), with P0b to P0e |
+| 0.4.0 | [0.4.0](https://github.com/vidiko/vmafx/milestone/3) | Encoder feedback, embedding and platforms: the rest of the embedding epic ([#2067](https://github.com/vidiko/vmafx/issues/2067)), [#2164](https://github.com/vidiko/vmafx/issues/2164), [#2156](https://github.com/vidiko/vmafx/issues/2156); encoder-side predictors ([#2416](https://github.com/vidiko/vmafx/issues/2416)), the VLC plugin ([#2358](https://github.com/vidiko/vmafx/issues/2358)), the mobile and WebAssembly targets |
+| 0.5.0 | [0.5.0](https://github.com/vidiko/vmafx/milestone/11) | Rust P1b: the remaining CPU extractors and SIMD ([#2574](https://github.com/vidiko/vmafx/issues/2574)) |
+| 0.6.0 | [0.6.0](https://github.com/vidiko/vmafx/milestone/12) | Rust P2: engine, model loading, predict and pooling, generated ABI shells ([#2575](https://github.com/vidiko/vmafx/issues/2575)) |
+| 0.7.0 | [0.7.0](https://github.com/vidiko/vmafx/milestone/4) | New metrics with exact twins: the RC5 metric package ([#2496](https://github.com/vidiko/vmafx/issues/2496)), [#2165](https://github.com/vidiko/vmafx/issues/2165), [#2167](https://github.com/vidiko/vmafx/issues/2167), the artefact detectors ([#2272](https://github.com/vidiko/vmafx/issues/2272)), ST-GREED ([#2394](https://github.com/vidiko/vmafx/issues/2394)), picks from [#2168](https://github.com/vidiko/vmafx/issues/2168); our own no-reference models ([#2415](https://github.com/vidiko/vmafx/issues/2415)) and foveated scoring ([#2419](https://github.com/vidiko/vmafx/issues/2419)) |
+| 0.8.0 | [0.8.0](https://github.com/vidiko/vmafx/milestone/8) | Metric A/B comparison, the best current mix and more training data: [#2240](https://github.com/vidiko/vmafx/issues/2240), [#2241](https://github.com/vidiko/vmafx/issues/2241) |
+| 0.9.0 | [0.9.0](https://github.com/vidiko/vmafx/milestone/9) | The next model generation: the RC9 retraining ([#1246](https://github.com/vidiko/vmafx/issues/1246)) and [#2242](https://github.com/vidiko/vmafx/issues/2242) |
+| 0.10.0 | [0.10.0](https://github.com/vidiko/vmafx/milestone/2) | Integrations, live quality and cloud-native: the OBS Studio plugin ([#2239](https://github.com/vidiko/vmafx/issues/2239)), no-reference mode in the plugins ([#2413](https://github.com/vidiko/vmafx/issues/2413)), the live P.1204 monitor ([#2417](https://github.com/vidiko/vmafx/issues/2417)), AI-generated video scoring ([#2418](https://github.com/vidiko/vmafx/issues/2418)), the cloud-native platform ([#2431](https://github.com/vidiko/vmafx/issues/2431)) with containers, Helm and operator ([#2497](https://github.com/vidiko/vmafx/issues/2497)), and the rest of the milestone. The encode job moved to its own repository, [vidiko/torcul](https://github.com/vidiko/torcul) ([ADR-3382](adr/3382-encode-service-leaves-vmafx.md)) |
+| 0.11.0 | [0.11.0](https://github.com/vidiko/vmafx/milestone/5) | Breaking changes only: the `libvmaf.h` compatibility library removed ([ADR-1852](adr/1852-vmafx-api-redesign.md)), the rest of [#1254](https://github.com/vidiko/vmafx/issues/1254) |
+| 1.0.0 | [1.0.0](https://github.com/vidiko/vmafx/milestone/13) | First stable: Rust P3, CLI, tools, MCP server, ONNX Runtime host and host glue ([#2576](https://github.com/vidiko/vmafx/issues/2576), [#2581](https://github.com/vidiko/vmafx/issues/2581)), and a frozen interface; candidates from `v1.0.0-rc.4` |
+| 1.1.0 | [1.1.0](https://github.com/vidiko/vmafx/milestone/14) | Rust P4 and P5: GPU host runtimes and the kernel verdict per backend ([#2577](https://github.com/vidiko/vmafx/issues/2577), [#2578](https://github.com/vidiko/vmafx/issues/2578)) |
+| 1.2.0 | [1.2.0](https://github.com/vidiko/vmafx/milestone/15) | Host C and C++ removed outside the exception list ([#2579](https://github.com/vidiko/vmafx/issues/2579)) |
+| 1.3.0 | [1.3.0](https://github.com/vidiko/vmafx/milestone/16) | Open subjective studies |
 
 After `0.1.0` every `0.x` release is a plain minor release; only `1.0.0` runs
 release candidates, starting at `v1.0.0-rc.4` so that no published tag is
@@ -44,12 +44,12 @@ and ADR-2342; the stage content and the ordering rules below are theirs.
 
 Three milestones are deliberately **rolling** rather than tied to a release:
 
-- [Models & benchmarks](https://github.com/VMAFx/vmafx/milestone/6) — retraining
+- [Models & benchmarks](https://github.com/vidiko/vmafx/milestone/6) — retraining
   cadence, benchmark baselines, corpus work.
-- [Code health & deduplication](https://github.com/VMAFx/vmafx/milestone/7) —
+- [Code health & deduplication](https://github.com/vidiko/vmafx/milestone/7) —
   the
   fork adds and changes a lot, so slimming it is recurring work, not a one-off.
-- [Research and upstream watch](https://github.com/VMAFx/vmafx/milestone/19) —
+- [Research and upstream watch](https://github.com/vidiko/vmafx/milestone/19) —
   research digests and watching Netflix/vmaf, FFmpeg and comparable tools.
 
 ## How the stages are ordered
@@ -82,14 +82,14 @@ changed is which release ships each stage.
 | --- | --- | --- | --- |
 | **RC1** | withdrawn `v1.0.0-rc.1` | correctness and tester readiness | — |
 | **RC2** | withdrawn `v1.0.0-rc.2` | stabilisation and repair | — |
-| **RC3** | withdrawn `v1.0.0-rc.3`; carry-over in 0.2.0 | twin exactness, overflow audit at 8K and 16K | [#1721](https://github.com/VMAFx/vmafx/issues/1721) |
-| **RC4** | 0.1.0 | first full Rust metric, zero-copy device-frame import, new VMAFx API and its bindings, FFmpeg filters and series redesign, GStreamer element, provenance, input formats, scoring API contract, engineering principles, OBS-ready API | [#1723](https://github.com/VMAFx/vmafx/issues/1723) |
-| **RC5** | 0.2.0 (metrics: 0.7.0; deployment: 0.10.0) | deduplication, tool consolidation, device-targeted scoring; the new metrics and the cloud-native deployment moved out | [#1724](https://github.com/VMAFx/vmafx/issues/1724) |
-| **RC6** | 0.2.0 | GPU capability source of truth, GPU format envelope, legacy GPU build variants | [#1725](https://github.com/VMAFx/vmafx/issues/1725) |
-| **RC7** | 0.2.0 | CPU capability source of truth, CPU format envelope | [#1885](https://github.com/VMAFx/vmafx/issues/1885) |
-| **RC8** | 0.2.0 | benchmark and tune, throughput per resolution, training readiness | [#1245](https://github.com/VMAFx/vmafx/issues/1245) |
-| **RC9** | 0.9.0 | real retraining | [#1246](https://github.com/VMAFx/vmafx/issues/1246) |
-| **First stable `v1.0.0`** | 1.0.0 | Rust P3 and a frozen interface | [#2576](https://github.com/VMAFx/vmafx/issues/2576), [#2581](https://github.com/VMAFx/vmafx/issues/2581) |
+| **RC3** | withdrawn `v1.0.0-rc.3`; carry-over in 0.2.0 | twin exactness, overflow audit at 8K and 16K | [#1721](https://github.com/vidiko/vmafx/issues/1721) |
+| **RC4** | 0.1.0 | first full Rust metric, zero-copy device-frame import, new VMAFx API and its bindings, FFmpeg filters and series redesign, GStreamer element, provenance, input formats, scoring API contract, engineering principles, OBS-ready API | [#1723](https://github.com/vidiko/vmafx/issues/1723) |
+| **RC5** | 0.2.0 (metrics: 0.7.0; deployment: 0.10.0) | deduplication, tool consolidation, device-targeted scoring; the new metrics and the cloud-native deployment moved out | [#1724](https://github.com/vidiko/vmafx/issues/1724) |
+| **RC6** | 0.2.0 | GPU capability source of truth, GPU format envelope, legacy GPU build variants | [#1725](https://github.com/vidiko/vmafx/issues/1725) |
+| **RC7** | 0.2.0 | CPU capability source of truth, CPU format envelope | [#1885](https://github.com/vidiko/vmafx/issues/1885) |
+| **RC8** | 0.2.0 | benchmark and tune, throughput per resolution, training readiness | [#1245](https://github.com/vidiko/vmafx/issues/1245) |
+| **RC9** | 0.9.0 | real retraining | [#1246](https://github.com/vidiko/vmafx/issues/1246) |
+| **First stable `v1.0.0`** | 1.0.0 | Rust P3 and a frozen interface | [#2576](https://github.com/vidiko/vmafx/issues/2576), [#2581](https://github.com/vidiko/vmafx/issues/2581) |
 
 The sections below keep each stage's scope as its ADRs set it; where the
 milestone moves above put part of a stage in another release, the table wins.
@@ -126,7 +126,7 @@ milestone moves above put part of a stage in another release, the table wins.
 #### RC4 — first full Rust metric, zero-copy import and the VMAFx API
 
 Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
-([#2142](https://github.com/VMAFx/vmafx/issues/2142)) through the new API.
+([#2142](https://github.com/vidiko/vmafx/issues/2142)) through the new API.
 
 - **In scope:** The whole `vmaf_v1.0.16_3d0h` path (cambi, speed_chroma, integer
   adm3, integer motion3, model prediction) in Rust; the C ABI is unchanged and
@@ -141,17 +141,17 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
   the FFmpeg filters under VMAFx names (`vmafx`, `vmafx_tune`, `vmafx_pre`)
   ([ADR-1852](adr/1852-vmafx-api-redesign.md)). Since 2026-10-06
   ([ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)): the versioned
-  scoring API contract ([#2155](https://github.com/VMAFx/vmafx/issues/2155)) and
+  scoring API contract ([#2155](https://github.com/vidiko/vmafx/issues/2155)) and
   server mode with observability
-  ([#1251](https://github.com/VMAFx/vmafx/issues/1251)), generated from the same
+  ([#1251](https://github.com/vidiko/vmafx/issues/1251)), generated from the same
   definition; a native `vmafx` GStreamer element
-  ([#2236](https://github.com/VMAFx/vmafx/issues/2236)) and CI conformance of
+  ([#2236](https://github.com/vidiko/vmafx/issues/2236)) and CI conformance of
   the `vmaf` element of upstream's gst-plugins-bad on the compatibility
-  `libvmaf.so.3` ([#2237](https://github.com/VMAFx/vmafx/issues/2237)); an API
-  ready for OBS Studio ([#2238](https://github.com/VMAFx/vmafx/issues/2238):
+  `libvmaf.so.3` ([#2237](https://github.com/vidiko/vmafx/issues/2237)); an API
+  ready for OBS Studio ([#2238](https://github.com/vidiko/vmafx/issues/2238):
   texture import including OpenGL interop, asynchronous window scores, bounded
   queues); real-time FFmpeg GPU scoring with `n_stats`
-  ([#2138](https://github.com/VMAFx/vmafx/issues/2138)). Since 2026-10-07
+  ([#2138](https://github.com/vidiko/vmafx/issues/2138)). Since 2026-10-07
   ([ADR-2342](adr/2342-rc-map-amendment-2026-10.md)): language bindings
   generated from the definition (Rust, Go, Python); the FFmpeg patch series
   redesigned in one change from `0001`, grouped by purpose, after an audit of
@@ -160,15 +160,15 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
   incremental `motion2` / `motion3` for live windows; Vulkan frame import;
   engineering principles per language with warnings as errors in every one;
   the observability package
-  ([#2430](https://github.com/VMAFx/vmafx/issues/2430)); Linux arm64 and
+  ([#2430](https://github.com/vidiko/vmafx/issues/2430)); Linux arm64 and
   older-glibc binaries and the package-manager channels
-  ([#2437](https://github.com/VMAFx/vmafx/issues/2437)); the cloud-native
-  platform ([#2431](https://github.com/VMAFx/vmafx/issues/2431), now in
+  ([#2437](https://github.com/vidiko/vmafx/issues/2437)); the cloud-native
+  platform ([#2431](https://github.com/vidiko/vmafx/issues/2431), now in
   0.10.0): state out of
   the processes (PostgreSQL, a job queue, a two-tier cache, object storage, OCI
   artifacts), scaling on queue depth, and CRDs, proto, OpenAPI and the Helm
   schema generated from the definition; conformance of SVT Encore's VMAF
-  options on the compatibility library ([#2364](https://github.com/VMAFx/vmafx/issues/2364))
+  options on the compatibility library ([#2364](https://github.com/vidiko/vmafx/issues/2364))
 - **Exit boundary:** The Rust path is bit-identical to the C path on the parity
   fixtures; an imported device frame scores bit-identically to the same frame
   uploaded from the host, with no host copy of pixel data and fence-ordering
@@ -180,20 +180,20 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
 
 - **In scope:** One implementation per behaviour across GPU twins and host code,
   the Rust code included; `libgpudispatch` extracted, folding in the per-backend
-  import code RC4 wrote ([#1455](https://github.com/VMAFx/vmafx/issues/1455)).
+  import code RC4 wrote ([#1455](https://github.com/vidiko/vmafx/issues/1455)).
   One implementation per tool
-  ([#1249](https://github.com/VMAFx/vmafx/issues/1249)), the `tools/` surface
+  ([#1249](https://github.com/vidiko/vmafx/issues/1249)), the `tools/` surface
   finished and the known unfinished surfaces closed
-  ([#1250](https://github.com/VMAFx/vmafx/issues/1250),
-  [#1270](https://github.com/VMAFx/vmafx/issues/1270),
-  [#1272](https://github.com/VMAFx/vmafx/issues/1272)). The new metrics with
+  ([#1250](https://github.com/vidiko/vmafx/issues/1250),
+  [#1270](https://github.com/vidiko/vmafx/issues/1270),
+  [#1272](https://github.com/vidiko/vmafx/issues/1272)). The new metrics with
   their twins written once on `libgpudispatch`: ΔE-ITP, PU21, NIQE, BRISQUE,
-  Y-FUNQUE+ ([#1247](https://github.com/VMAFx/vmafx/issues/1247),
-  [#1248](https://github.com/VMAFx/vmafx/issues/1248)), HDR-SSIM and HDR-MS-SSIM
-  ([#2161](https://github.com/VMAFx/vmafx/issues/2161)), XPSNR
-  ([#2158](https://github.com/VMAFx/vmafx/issues/2158)); Metal twins of
+  Y-FUNQUE+ ([#1247](https://github.com/vidiko/vmafx/issues/1247),
+  [#1248](https://github.com/vidiko/vmafx/issues/1248)), HDR-SSIM and HDR-MS-SSIM
+  ([#2161](https://github.com/vidiko/vmafx/issues/2161)), XPSNR
+  ([#2158](https://github.com/vidiko/vmafx/issues/2158)); Metal twins of
   `speed_chroma` and `speed_temporal`
-  ([#2160](https://github.com/VMAFx/vmafx/issues/2160)). Device-targeted scoring
+  ([#2160](https://github.com/vidiko/vmafx/issues/2160)). Device-targeted scoring
   ([ADR-1880](adr/1880-format-envelope-device-targets.md)): device profiles
   (phone, tablet, laptop, TV, VR per eye, portrait included), each a target
   resolution, a scaling and a viewing distance per display height mapped onto
@@ -202,18 +202,18 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
   machinery. Cloud-native deployment
   ([ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)): containers,
   Helm chart and a kind plus kuttl test setup
-  ([#1252](https://github.com/VMAFx/vmafx/issues/1252)); the operator, the
+  ([#1252](https://github.com/vidiko/vmafx/issues/1252)); the operator, the
   controller / node split and the GPU pool arbiter in `libgpudispatch`
-  ([#1253](https://github.com/VMAFx/vmafx/issues/1253)); both now in 0.10.0.
+  ([#1253](https://github.com/vidiko/vmafx/issues/1253)); both now in 0.10.0.
   Since 2026-10-07
   ([ADR-2342](adr/2342-rc-map-amendment-2026-10.md)) the tool consolidation
   also carries live alignment of two feeds with timecode
-  ([#2354](https://github.com/VMAFx/vmafx/issues/2354)), interlaced video
-  ([#2361](https://github.com/VMAFx/vmafx/issues/2361)), region masks
-  ([#2362](https://github.com/VMAFx/vmafx/issues/2362)), container input
-  ([#2363](https://github.com/VMAFx/vmafx/issues/2363)), bits per pixel and
-  BD-rate ([#2284](https://github.com/VMAFx/vmafx/issues/2284)), HandBrake
-  support ([#2407](https://github.com/VMAFx/vmafx/issues/2407)) and the minimal
+  ([#2354](https://github.com/vidiko/vmafx/issues/2354)), interlaced video
+  ([#2361](https://github.com/vidiko/vmafx/issues/2361)), region masks
+  ([#2362](https://github.com/vidiko/vmafx/issues/2362)), container input
+  ([#2363](https://github.com/vidiko/vmafx/issues/2363)), bits per pixel and
+  BD-rate ([#2284](https://github.com/vidiko/vmafx/issues/2284)), HandBrake
+  support ([#2407](https://github.com/vidiko/vmafx/issues/2407)) and the minimal
   run-result timeline they report on; one reusable build-and-provenance
   workflow for every image; and a small Vulkan compute experiment with a
   written verdict. The Go tools replace the Python MCP server and `vmaf-tune`
@@ -263,7 +263,7 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
   proven against it, the default becomes reference-exact and Netflix's
   behaviour a named compatibility mode that the golden gate runs in
   ([ADR-2343](adr/2343-reference-exact-default-compat-mode.md),
-  [#2286](https://github.com/VMAFx/vmafx/issues/2286))
+  [#2286](https://github.com/vidiko/vmafx/issues/2286))
 - **Exit boundary:** Drift check green; audit finds no instruction outside the
   feature set a gate guarantees; parity green under Intel SDE (AVX2-only model,
   Skylake-X, Ice Lake, Sapphire Rapids, the AMD AVX-512 set) and qemu (aarch64
@@ -278,14 +278,14 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
   / RC7 evidence), and distributed throughput across nodes
   ([ADR-2001](adr/2001-release-scope-1-0-and-roadmap-to-2-0.md)). Training
   readiness: automatic temporal alignment and the HDR-input guard for SDR models
-  ([#2163](https://github.com/VMAFx/vmafx/issues/2163),
-  [#2157](https://github.com/VMAFx/vmafx/issues/2157)), the external-metric
+  ([#2163](https://github.com/vidiko/vmafx/issues/2163),
+  [#2157](https://github.com/vidiko/vmafx/issues/2157)), the external-metric
   runner and estimator calibration
-  ([#2162](https://github.com/VMAFx/vmafx/issues/2162),
-  [#2143](https://github.com/VMAFx/vmafx/issues/2143)), the HDR conversion-check
-  workflow ([#2145](https://github.com/VMAFx/vmafx/issues/2145)), the mini
+  ([#2162](https://github.com/vidiko/vmafx/issues/2162),
+  [#2143](https://github.com/vidiko/vmafx/issues/2143)), the HDR conversion-check
+  workflow ([#2145](https://github.com/vidiko/vmafx/issues/2145)), the mini
   retrain in CI and the measured resource plan of
-  [#1246](https://github.com/VMAFx/vmafx/issues/1246)
+  [#1246](https://github.com/vidiko/vmafx/issues/1246)
 - **Exit boundary:** Results identify the exact artifact, fixtures, host,
   drivers and runtimes; accepted wins are re-measured and preserve
   correctness/parity; the mini retrain passes every stage
@@ -294,7 +294,7 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
 
 - **In scope:** The locked one-shot model retraining programme on the clean,
   tuned tree, started only when every precondition of
-  [#1246](https://github.com/VMAFx/vmafx/issues/1246) holds (the RC4 to RC8
+  [#1246](https://github.com/vidiko/vmafx/issues/1246) holds (the RC4 to RC8
   items above included). The shipped v1 models read compatibility-mode
   features until this run; the retrain trains on reference-exact features
   ([ADR-2343](adr/2343-reference-exact-default-compat-mode.md))
@@ -303,8 +303,8 @@ Also in RC4 since 2026-10-05 (ADR-1868): provenance on every score
 
 #### First stable `v1.0.0`
 
-- **In scope:** Rust P3 ([#2576](https://github.com/VMAFx/vmafx/issues/2576),
-  [#2581](https://github.com/VMAFx/vmafx/issues/2581)) and a review that freezes
+- **In scope:** Rust P3 ([#2576](https://github.com/vidiko/vmafx/issues/2576),
+  [#2581](https://github.com/vidiko/vmafx/issues/2581)) and a review that freezes
   the public interface; release candidates from `v1.0.0-rc.4`
 - **Exit boundary:** The freeze review is accepted, and publication preflight
   passes on the immutable final tag
@@ -332,7 +332,7 @@ affected checks or measurements to be rerun.
 [ADR-2478](adr/2478-rust-core-migration.md) decides that Rust replaces all
 host-side C and C++ by 1.2.0 behind the unchanged C ABI, exported from Rust and
 generated from the API definition. The epic is
-[#2567](https://github.com/VMAFx/vmafx/issues/2567); the phases and their
+[#2567](https://github.com/vidiko/vmafx/issues/2567); the phases and their
 releases are in the table above
 ([ADR-3292](adr/3292-release-line-restart-0x.md) moved them from the ADR's
 phase table) and the research digest is

@@ -41,7 +41,7 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
 # The marker dev/Containerfile bakes into every stage, release-build included.
 marker="$scratch/etc-vmafx-dev-container"
 printf '%s\n' 'vmafx_dev_container=1' 'image_title=vmaf-dev-mcp' \
-  'containerfile=dev/Containerfile' 'source=https://github.com/VMAFx/vmafx' >"$marker"
+  'containerfile=dev/Containerfile' 'source=https://github.com/vidiko/vmafx' >"$marker"
 
 # Stub meson. `setup` only records its arguments and environment; `compile`
 # links a real SONAME chain unless STUB_MESON_MODE asks for a failure.
