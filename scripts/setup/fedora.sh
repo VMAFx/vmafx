@@ -35,14 +35,9 @@ $SUDO dnf install -y \
   shellcheck
 
 if [[ "$INSTALL_LINTERS" == "true" ]]; then
-  if ! command -v shfmt >/dev/null; then
-    # Pin the explicit version URL — /releases/latest/download/ 404s once
-    # upstream tags a newer version since the filename embeds the version.
-    SHFMT_VERSION="v3.13.1"
-    $SUDO curl --retry 3 --retry-all-errors -fsSL -o /usr/local/bin/shfmt \
-      "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64"
-    $SUDO chmod +x /usr/local/bin/shfmt
-  fi
+  # shfmt comes from the shared pinned installer (build-config.env owns the
+  # version and per-architecture digests; issue 3101).
+  bash "$SCRIPT_DIR/install-shfmt.sh"
   python3 -m pip install --user --require-hashes \
     -r "$REPO_ROOT/requirements/locks/dev-linters.txt"
 fi

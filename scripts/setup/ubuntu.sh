@@ -84,16 +84,9 @@ prepare_tools_venv "$VMAFX_TOOLS_VENV"
 
 if [[ "$INSTALL_LINTERS" == "true" ]]; then
   $SUDO apt-get install -y --no-install-recommends shellcheck
-  # shfmt from release (not in apt for older Ubuntu).
-  # Pin to an explicit version URL — the /releases/latest/download/ route
-  # 404s as soon as upstream tags a newer version because the filename
-  # contains the version string.
-  if ! command -v shfmt >/dev/null; then
-    SHFMT_VERSION="v3.13.1"
-    $SUDO curl --retry 3 --retry-all-errors -fsSL -o /usr/local/bin/shfmt \
-      "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64"
-    $SUDO chmod +x /usr/local/bin/shfmt
-  fi
+  # shfmt comes from the shared pinned installer (build-config.env owns the
+  # version and per-architecture digests; issue 3101).
+  bash "$SCRIPT_DIR/install-shfmt.sh"
   # Python linters in the tools venv (no sudo pip). isort was retired in
   # ADR-1126; ruff's `I` ruleset is the only import sorter now.
   "$VMAFX_TOOLS_VENV/bin/python" -m pip install --require-hashes \
