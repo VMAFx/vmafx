@@ -659,9 +659,9 @@ repos:
 
       - id: test-renovate-file-patterns
         name: Renovate custom managers select real inputs
-        entry: python3 -m unittest discover -s scripts/ci/tests -p test_renovate_file_patterns.py
+        entry: python3 -m unittest discover -s scripts/ci/tests -p 'test_renovate_*.py'
         language: system
-        files: '^(renovate\.json|scripts/ci/tests/test_renovate_file_patterns\.py)$'
+        files: '^(renovate\.json|scripts/ci/tests/test_renovate_(file_patterns|review_hold)\.py)$'
         pass_filenames: false
 
       - id: check-python-requirements-single-source
