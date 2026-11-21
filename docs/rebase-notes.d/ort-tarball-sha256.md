@@ -9,6 +9,9 @@
   run, removing the cache entry and failing immediately on mismatch.
 - `scripts/ci/check_ort_tarball_pins.py` statically enforces presence of
   `ORT_SHA256`, verification ordering before `tar -x`, and cross-site digest
-  consistency. `renovate.json` updates version and digest in locked pairs via
-  `github-release-attachments`. **On sync**: new ORT tarball download sites must
-  declare `ORT_SHA256` and verify with `sha256sum --check --strict`.
+  consistency. `renovate.json` tracks the NuGet pins through the `tracked.cpu`
+  and `tracked.gpu` anchors (`nuget` datasource); a bump changes only the
+  anchor, and the guard refuses a missing package anchor or a tracked version
+  without a size/SHA-256 entry. **On sync**: new ORT NuGet download sites must use
+  `scripts/ci/ort_nuget_install.py --package cpu|gpu` and declare a pinned
+  `ORT_VERSION`.

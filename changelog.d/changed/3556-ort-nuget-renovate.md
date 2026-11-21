@@ -1,0 +1,1 @@
+- ONNX Runtime NuGet updates are now tracked by Renovate from `scripts/ci/ort-nuget-pins.json`; the development container no longer carries an unused `ORT_SHA256`, and the guard refuses a tracked version that has no size/SHA-256 pin.

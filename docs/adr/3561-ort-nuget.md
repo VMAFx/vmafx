@@ -78,3 +78,15 @@ Replace `1.30.0` with the version to measure.
 - [Installer](../../scripts/ci/ort_nuget_install.py),
   [pins](../../scripts/ci/ort-nuget-pins.json), and
   [guard](../../scripts/ci/check_ort_tarball_pins.py).
+
+## Status update 2026-11-20: Renovate tracks the NuGet pins
+
+The follow-up above is resolved. `renovate.json` now tracks the
+`tracked.cpu` and `tracked.gpu` anchors in
+`scripts/ci/ort-nuget-pins.json` with the `nuget` datasource, so a bump
+changes only the anchor and never rewrites a tarball digest. The guard
+still refuses a tracked version without a size/SHA-256 pin; the update
+path is `python3 scripts/ci/ort_nuget_install.py --package cpu|gpu
+--print-pin <version>`, then add the entry and raise the consumer
+`ORT_VERSION` sites. The helper command moved to `dev/Containerfile:744`
+after the unused `ARG ORT_SHA256` was removed.

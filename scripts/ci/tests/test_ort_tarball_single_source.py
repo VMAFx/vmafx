@@ -706,6 +706,94 @@ class TestOrtGuard(unittest.TestCase):
             "invalid size", "\n".join(guard.check_tarball_pins(root=root, files=[workflow])[1])
         )
 
+    def test_tracked_version_without_pin_fails(self) -> None:
+        root = Path(self.temp.name)
+        pins = root / "scripts/ci/ort-nuget-pins.json"
+        pins.parent.mkdir(parents=True)
+        pins.write_text(
+            (ROOT / "scripts/ci/ort-nuget-pins.json")
+            .read_text(encoding="utf-8")
+            .replace('"cpu": "1.30.0"', '"cpu": "1.99.0"'),
+            encoding="utf-8",
+        )
+        rc, findings = guard.check_tarball_pins(root=root)
+        self.assertEqual(rc, 1)
+        self.assertIn(
+            "tracked cpu version '1.99.0' has no sha256/size pin; "
+            "run scripts/ci/ort_nuget_install.py --package cpu --print-pin 1.99.0",
+            "\n".join(findings),
+        )
+
+    def test_tracked_gpu_version_without_pin_names_package(self) -> None:
+        root = Path(self.temp.name)
+        pins = root / "scripts/ci/ort-nuget-pins.json"
+        pins.parent.mkdir(parents=True)
+        pins.write_text(
+            (ROOT / "scripts/ci/ort-nuget-pins.json")
+            .read_text(encoding="utf-8")
+            .replace('"gpu": "1.22.0"', '"gpu": "1.99.0"'),
+            encoding="utf-8",
+        )
+        rc, findings = guard.check_tarball_pins(root=root)
+        self.assertEqual(rc, 1)
+        self.assertIn(
+            "tracked gpu version '1.99.0' has no sha256/size pin; "
+            "run scripts/ci/ort_nuget_install.py --package gpu --print-pin 1.99.0",
+            "\n".join(findings),
+        )
+
+    def test_each_package_requires_tracked_anchor(self) -> None:
+        root = Path(self.temp.name)
+        pins = root / "scripts/ci/ort-nuget-pins.json"
+        pins.parent.mkdir(parents=True)
+        source = (ROOT / "scripts/ci/ort-nuget-pins.json").read_text(encoding="utf-8")
+        for name in ("cpu", "gpu"):
+            with self.subTest(package=name):
+                data = json.loads(source)
+                del data["tracked"][name]
+                pins.write_text(json.dumps(data), encoding="utf-8")
+                self.assertEqual(
+                    guard.check_tarball_pins(root=root),
+                    (1, [f"{pins}: missing tracked version for package '{name}'"]),
+                )
+        pins.write_text(source, encoding="utf-8")
+        self.assertEqual(guard.check_tarball_pins(root=root), (0, []))
+
+    def test_missing_or_malformed_tracked_table_fails(self) -> None:
+        root = Path(self.temp.name)
+        pins = root / "scripts/ci/ort-nuget-pins.json"
+        pins.parent.mkdir(parents=True)
+        data = json.loads((ROOT / "scripts/ci/ort-nuget-pins.json").read_text(encoding="utf-8"))
+        for value in (None, {}, [], "1.30.0"):
+            with self.subTest(tracked=value):
+                data["tracked"] = value
+                pins.write_text(json.dumps(data), encoding="utf-8")
+                self.assertEqual(
+                    guard.check_tarball_pins(root=root),
+                    (1, [f"{pins}: missing tracked table for Renovate"]),
+                )
+        del data["tracked"]
+        pins.write_text(json.dumps(data), encoding="utf-8")
+        self.assertEqual(
+            guard.check_tarball_pins(root=root),
+            (1, [f"{pins}: missing tracked table for Renovate"]),
+        )
+
+    def test_renovate_tracks_each_ort_nuget_package(self) -> None:
+        data = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
+        managers = [
+            item
+            for item in data["customManagers"]
+            if "ort-nuget-pins" in json.dumps(item.get("managerFilePatterns", []))
+        ]
+        self.assertEqual(
+            {item["depNameTemplate"] for item in managers},
+            {"Microsoft.ML.OnnxRuntime", "Microsoft.ML.OnnxRuntime.Gpu.Linux"},
+        )
+        for item in managers:
+            self.assertEqual(item["datasourceTemplate"], "nuget")
+            self.assertIn("tracked", item["matchStrings"][0])
+
     def test_comments_and_unrelated_packages(self) -> None:
         workflow = Path(self.temp.name) / "test.yml"
         workflow.write_text(
