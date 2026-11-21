@@ -11,6 +11,7 @@ the local/CI guard. See docs/research/renovate-file-pattern-delimiters.md.
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
 import re
@@ -257,6 +258,97 @@ class RenovateFilePatterns(unittest.TestCase):
         self.assertTrue(any("missing from postUpdateOptions" in e for e in errors))
 
 
+def matching_group_rules(config: dict[str, Any], dependency: dict[str, str]) -> list[int]:
+    """Find group rules for these concrete fixtures in their configured order."""
+    result = []
+    for index, rule in enumerate(config["packageRules"]):
+        if "groupName" not in rule:
+            continue
+        matches = True
+        for key, patterns in rule.items():
+            if not key.startswith("match"):
+                continue
+            value = dependency.get(key, "")
+            choices = patterns if isinstance(patterns, list) else [patterns]
+            if not any(
+                (
+                    re.search(p[1:-1], value)
+                    if p.startswith("/") and p.endswith("/")
+                    else fnmatch.fnmatchcase(value, p)
+                )
+                for p in choices
+            ):
+                matches = False
+                break
+        if matches:
+            result.append(index)
+    return result
+
+
+class CoupledPinGroups(unittest.TestCase):
+    config: ClassVar[dict[str, Any]]
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.config = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
+
+    def group(self, dep: dict[str, str]) -> str:
+        indices = matching_group_rules(self.config, dep)
+        return str(self.config["packageRules"][indices[-1]]["groupName"]) if indices else ""
+
+    def test_clang_group_and_order(self) -> None:
+        for manager, package in (
+            ("pre-commit", "pre-commit/mirrors-clang-format"),
+            ("pip_requirements", "clang-format"),
+        ):
+            with self.subTest(manager=manager):
+                dep = {
+                    "matchManagers": manager,
+                    "matchPackageNames": package,
+                    "matchUpdateTypes": "patch",
+                }
+                indices = matching_group_rules(self.config, dep)
+                self.assertGreaterEqual(len(indices), 2)
+                self.assertEqual(self.group(dep), "clang-format (all managers)")
+                self.assertGreater(indices[-1], max(indices[:-1]))
+
+    def test_other_dependencies_keep_their_groups(self) -> None:
+        for manager, package, group in (
+            ("pip_requirements", "requests", "Python (patch)"),
+            ("pre-commit", "pre-commit/pre-commit-hooks", "pre-commit hooks"),
+        ):
+            with self.subTest(manager=manager):
+                self.assertEqual(
+                    self.group(
+                        {
+                            "matchManagers": manager,
+                            "matchPackageNames": package,
+                            "matchUpdateTypes": "patch",
+                        }
+                    ),
+                    group,
+                )
+
+    def test_rust_custom_group_and_actions_exclusion(self) -> None:
+        dep = {
+            "matchManagers": "custom.regex",
+            "matchDepNames": "rust",
+            "matchPackageNames": "rust",
+            "matchUpdateTypes": "minor",
+        }
+        self.assertEqual(self.group(dep), "Rust toolchain")
+        rules = self.config["packageRules"]
+        self.assertTrue(
+            any(
+                r.get("matchManagers") == ["github-actions"]
+                and r.get("matchDepNames") == ["rust"]
+                and r.get("matchDepTypes") == ["uses-with"]
+                and r.get("enabled") is False
+                for r in rules
+            )
+        )
+
+
 def helm_subchart_findings(config: dict[str, Any], files: list[str]) -> list[str]:
     """Require postUpdateOptions: ['helmUpdateSubChartArchives'] in renovate.json
     when packaged Helm subchart archives (*.tgz under charts/) are git-tracked.
@@ -466,6 +558,14 @@ def rust_findings(config: dict[str, Any], read: Callable[[str], str]) -> list[st
     ):
         errors.append("the rust-toolchain manager still updates rust-toolchain.toml")
     if not any(
+        r.get("matchManagers") == ["github-actions"]
+        and r.get("matchDepNames") == ["rust"]
+        and r.get("matchDepTypes") == ["uses-with"]
+        and r.get("enabled") is False
+        for r in rules
+    ):
+        errors.append("the github-actions manager still updates the Rust toolchain input")
+    if not any(
         r.get("matchManagers") == ["custom.regex"]
         and r.get("matchDepNames") == ["rust"]
         and r.get("groupName") == "Rust toolchain"
@@ -539,6 +639,19 @@ class RustToolchainGroup(unittest.TestCase):
 
         self.assertIn(
             "the rust-toolchain manager still updates rust-toolchain.toml", self.findings(enable)
+        )
+
+    def test_actions_manager_left_enabled_fails(self) -> None:
+        def enable(config: dict[str, Any]) -> None:
+            for rule in config["packageRules"]:
+                if rule.get("matchManagers") == ["github-actions"] and rule.get(
+                    "matchDepNames"
+                ) == ["rust"]:
+                    rule["enabled"] = True
+
+        self.assertIn(
+            "the github-actions manager still updates the Rust toolchain input",
+            self.findings(enable),
         )
 
     def test_missing_group_fails(self) -> None:
