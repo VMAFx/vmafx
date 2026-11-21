@@ -463,6 +463,7 @@
         "build-config.env",
         "scripts/ci/load-build-config.sh",
         "scripts/ci/ocloc_aot_targets.py",
+        "core/meson_options.txt",
         "scripts/lib/safe_subprocess.py",
         "core/src/sycl/check_aot_image.py",
         "core/src/sycl/scratch_ratchet.txt"

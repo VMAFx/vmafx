@@ -349,6 +349,7 @@ SYCL_ONLY_INPUTS = {
     "scripts/ci/ocloc_aot_targets.py",
     "scripts/lib/safe_subprocess.py",
     "core/src/sycl/check_aot_image.py",
+    "core/meson_options.txt",
     "core/src/sycl/scratch_ratchet.txt",
 }
 ADDED_TRIGGER_PATHS = {
