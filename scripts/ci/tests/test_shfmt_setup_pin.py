@@ -63,7 +63,51 @@ def resolve(machine: str) -> TextCommandResult:
     )
 
 
+def ubuntu_copies_missing_shfmt(text: str) -> list[str]:
+    """Find COPY instructions that stage ubuntu.sh without its sibling installer."""
+    ubuntu = UBUNTU.relative_to(ROOT).as_posix()
+    helper = INSTALL.relative_to(ROOT).as_posix()
+    missing = []
+    for line in text.replace("\\\n", " ").splitlines():
+        words = line.split()
+        if not words or words[0].upper() != "COPY":
+            continue
+        sources = words[1:-1]
+        if ubuntu in sources and helper not in sources:
+            missing.append(line.strip())
+    return missing
+
+
 class ShfmtSetup(unittest.TestCase):
+    def test_dockerfiles_copy_the_shared_installer_with_ubuntu_setup(self) -> None:
+        git = shutil.which("git") or "git"
+        result = run_command(
+            [git, "ls-files", "-z", "--", ":(glob)**/Dockerfile*", ":(glob)**/*.Dockerfile"],
+            allowed_executables=(git,),
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout_seconds=30,
+        )
+        dockerfiles = result.stdout.rstrip("\0").split("\0")
+        self.assertTrue(result.stdout)
+        for name in dockerfiles:
+            with self.subTest(dockerfile=name):
+                text = (ROOT / name).read_text(encoding="utf-8")
+                self.assertEqual(ubuntu_copies_missing_shfmt(text), [])
+
+    def test_dockerfile_missing_the_shared_installer_is_detected(self) -> None:
+        path = ROOT / "docker/dev/ubuntu-26.04.Dockerfile"
+        text = path.read_text(encoding="utf-8")
+        helper = INSTALL.relative_to(ROOT).as_posix()
+        self.assertEqual(ubuntu_copies_missing_shfmt(text), [])
+        planted = text.replace(f"{helper} ", "", 1)
+        self.assertEqual(
+            ubuntu_copies_missing_shfmt(planted),
+            ["COPY build-config.env scripts/setup/ubuntu.sh /tmp/"],
+        )
+
     def test_the_pin_is_in_build_config(self) -> None:
         self.assertEqual(config_value("SHFMT_VERSION"), "v3.13.1")
 
