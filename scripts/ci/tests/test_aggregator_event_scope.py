@@ -29,11 +29,22 @@ from scripts.ci import required_aggregator_harness as harness
 from scripts.ci.required_aggregator_harness import run_required_aggregator
 
 PR_ONLY_GATE = "Deliverables Checklist"
+FULL_TIER_OWED_GATE = "Windows ARM64 MSVC"
 PUSH_SUITE = 1
+MERGE_GROUP_SUITE = 1
 PR_SUITE = 7
 OTHER_BRANCH_SUITE = 8
 SCHEDULE_SUITE = 9
 CODE_SCANNING_SUITE = 99
+MERGE_GROUP_HEAD_BRANCH = f"gh-readonly-queue/master/pr-1-{'a' * 40}"
+MERGE_GROUP_REF = f"refs/heads/{MERGE_GROUP_HEAD_BRANCH}"
+MERGE_GROUP_RUNS = (
+    {
+        "event": "merge_group",
+        "head_branch": MERGE_GROUP_HEAD_BRANCH,
+        "check_suite_id": MERGE_GROUP_SUITE,
+    },
+)
 RUNS_ON_LANDED_COMMIT = (
     {"event": "push", "head_branch": "master", "check_suite_id": PUSH_SUITE},
     {"event": "pull_request", "head_branch": "fix/example", "check_suite_id": PR_SUITE},
@@ -462,6 +473,108 @@ class AggregatorAppCheckWindow(_AggregatorCase):
             later_checks=unreached_later,
         )
         self.assertEqual(failures, [])
+
+
+def _pull_request_only_names() -> list[str]:
+    """Return the pullRequestOnly names declared in the aggregator script."""
+    script = harness._embedded_script(harness.AGGREGATOR_PATH.read_text(encoding="utf-8"))
+    return harness._javascript_string_list(script, "pullRequestOnly", "pullRequestOnly")
+
+
+class AggregatorMergeGroupScope(_AggregatorCase):
+    """Merge-queue merge_group verdict, exemptions and foreign-suite exclusion (ADR-3556)."""
+
+    def test_merge_group_passes_when_every_owed_context_succeeds(self) -> None:
+        """Pass on merge_group when every owed context succeeds on the queue head branch."""
+        absent = ("Scorecard Master Gate", "Scorecard PR Gate", *_pull_request_only_names())
+        failures = run_required_aggregator(
+            FULL_TIER_OWED_GATE,
+            "success",
+            event="merge_group",
+            ref=MERGE_GROUP_REF,
+            workflow_runs=MERGE_GROUP_RUNS,
+            absent_checks=absent,
+        )
+        self.assertEqual(failures, [])
+
+    def test_merge_group_fails_when_owed_full_tier_context_is_absent(self) -> None:
+        """Fail on merge_group when an owed full-tier context such as Windows ARM64 MSVC is absent."""
+        failures = run_required_aggregator(
+            FULL_TIER_OWED_GATE,
+            None,
+            event="merge_group",
+            ref=MERGE_GROUP_REF,
+            workflow_runs=MERGE_GROUP_RUNS,
+            absent_checks=("Scorecard Master Gate", "Scorecard PR Gate"),
+        )
+        self.assert_single_failure(failures, FULL_TIER_OWED_GATE)
+
+    def test_merge_group_fails_when_owed_context_reports_failure(self) -> None:
+        """Fail on merge_group when an owed context reports conclusion failure."""
+        failures = run_required_aggregator(
+            FULL_TIER_OWED_GATE,
+            "failure",
+            event="merge_group",
+            ref=MERGE_GROUP_REF,
+            workflow_runs=MERGE_GROUP_RUNS,
+            absent_checks=("Scorecard Master Gate", "Scorecard PR Gate"),
+        )
+        self.assert_single_failure(failures, f"{FULL_TIER_OWED_GATE}: failure")
+
+    def test_merge_group_exempts_scorecard_gates_while_push_still_fails(self) -> None:
+        """Exempt both Scorecard gates and log the exempt gate on merge_group while push still fails."""
+        info_logs: list[str] = []
+        mg_failures = run_required_aggregator(
+            "Scorecard Master Gate",
+            None,
+            event="merge_group",
+            ref=MERGE_GROUP_REF,
+            workflow_runs=MERGE_GROUP_RUNS,
+            absent_checks=("Scorecard PR Gate",),
+            info_logs=info_logs,
+        )
+        self.assertEqual(mg_failures, [])
+        self.assertIn(
+            "OK (merge-group-exempt context, merge_group event): Scorecard Master Gate",
+            info_logs,
+        )
+        push_failures = run_required_aggregator(
+            "Scorecard Master Gate",
+            None,
+            event="push",
+            workflow_runs=RUNS_ON_LANDED_COMMIT,
+            absent_checks=("Scorecard PR Gate",),
+        )
+        self.assert_single_failure(push_failures, "Scorecard Master Gate: never reported")
+
+    def test_merge_group_exempts_pull_request_only_context(self) -> None:
+        """Exempt pull-request-only contexts such as Deliverables Checklist when absent on merge_group."""
+        failures = run_required_aggregator(
+            PR_ONLY_GATE,
+            None,
+            event="merge_group",
+            ref=MERGE_GROUP_REF,
+            workflow_runs=MERGE_GROUP_RUNS,
+            absent_checks=("Scorecard Master Gate", "Scorecard PR Gate"),
+        )
+        self.assertEqual(failures, [])
+
+    def test_merge_group_ignores_foreign_pull_request_run_on_same_sha(self) -> None:
+        """Exclude pull_request check suites on the same SHA from satisfying owed merge_group contexts."""
+        runs = (
+            *MERGE_GROUP_RUNS,
+            {"event": "pull_request", "head_branch": "fix/example", "check_suite_id": PR_SUITE},
+        )
+        failures = run_required_aggregator(
+            FULL_TIER_OWED_GATE,
+            "success",
+            event="merge_group",
+            ref=MERGE_GROUP_REF,
+            selected_suite=PR_SUITE,
+            workflow_runs=runs,
+            absent_checks=("Scorecard Master Gate", "Scorecard PR Gate"),
+        )
+        self.assert_single_failure(failures, FULL_TIER_OWED_GATE)
 
 
 if __name__ == "__main__":

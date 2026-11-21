@@ -3,7 +3,7 @@ paths:
   - .github/workflows/tests-and-quality-gates.yml
   - .github/workflows/lint-and-format.yml
   - scripts/ci/test_self_hosted_runner_workflow_contract.py
-invariant: Every runs-on naming arc-runners carries the head-repo guard before the label; fork PRs stay hosted.
+invariant: Every runs-on naming arc-runners carries the head-repo guard before the label; fork PRs and merge groups stay hosted.
 ---
 # ARC pool fork guard
 
@@ -16,14 +16,15 @@ invariant: Every runs-on naming arc-runners carries the head-repo guard before t
 
   ```text
   ${{ vars.ARC_RUNNERS_ENABLED == 'true'
-      && (github.event_name != 'pull_request'
+      && (github.event_name == 'push'
+          || github.event_name == 'workflow_dispatch'
           || github.event.pull_request.head.repo.full_name == github.repository)
       && 'arc-runners' || 'ubuntu-26.04' }}
   ```
 
 - Jobs today: Sanitizers, `Cppcheck (Whole Project)`. New pool job copies
   expression, adds row to `ARC_JOBS`.
-- No job-level `if:` skip instead: both jobs required; fork PR needs them.
+- No job-level `if:` skip instead: both jobs required; fork PR needs both jobs.
 
 ## Check
 

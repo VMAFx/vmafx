@@ -139,6 +139,19 @@ class TrainContract(unittest.TestCase):
         self.train.git("worktree", "add", "--detach", str(checkout), self.head)
         return checkout
 
+    def test_guard_refuses_cross_repository_prs(self) -> None:
+        field = "isCrossRepository"
+        del self.train.metadata[field]
+        for fields in ({field: True}, {}, {field: None}, {field: "false"}):
+            with (
+                self.subTest(fields=fields),
+                patch.dict(self.train.metadata, fields),
+                self.assertRaisesRegex(
+                    guard.Refused, "cross-repository PRs require an explicit owner"
+                ),
+            ):
+                self.train.guard(1421)
+
     def test_holds_and_nonmaster_apply_to_every_action(self) -> None:
         for condition in ("held", "stacked", "release", "paused", "protected"):
             for action in ("promote", "rebase", "arm", "merge"):

@@ -8,6 +8,9 @@ on:
     branches: [master]
     # ADR-0331 (design notes)
     types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
+    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -68,11 +71,11 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           PR_BASE: ${{ github.base_ref }}
-          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_BEFORE: ${{ github.event.before || github.event.merge_group.base_sha }}
         run: |
           case "${EVENT}" in
             pull_request) base="origin/${PR_BASE}" ;;
-            push) base="${PUSH_BEFORE}" ;;
+            push|merge_group) base="${PUSH_BEFORE}" ;;
             *) base="HEAD~1" ;;
           esac
           if ! git rev-parse --verify --quiet "${base}^{commit}" >/dev/null; then
@@ -125,12 +128,12 @@ jobs:
         env:
           PR_BASE_REF: ${{ github.base_ref }}
           GH_EVENT_NAME: ${{ github.event_name }}
-          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_BEFORE_SHA: ${{ github.event.before || github.event.merge_group.base_sha }}
         run: |
           if [ "$GH_EVENT_NAME" = "pull_request" ]; then
             files=$(git diff --name-only --diff-filter=d \
               "origin/${PR_BASE_REF}...HEAD" -- '*.c' '*.h' '*.cpp' '*.hpp')
-          elif [ "$GH_EVENT_NAME" = "push" ]; then
+          elif [ "$GH_EVENT_NAME" = "push" ] || [ "$GH_EVENT_NAME" = "merge_group" ]; then
             before="$PUSH_BEFORE_SHA"
             zero="0000000000000000000000000000000000000000"
             if [ -z "$before" ] || [ "$before" = "$zero" ]; then
@@ -215,7 +218,7 @@ jobs:
         env:
           PR_BASE_REF: ${{ github.base_ref }}
           GH_EVENT_NAME: ${{ github.event_name }}
-          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_BEFORE_SHA: ${{ github.event.before || github.event.merge_group.base_sha }}
         run: |
           # ADR-0209, ADR-0239, ADR-1113, ADR-1283 (design notes)
           exclude_untidyable() {
@@ -255,7 +258,7 @@ jobs:
               -- '*.c' '*.h' '*.cpp' '*.hpp' \
               | exclude_untidyable \
               | tr '\n' ' ')
-          elif [ "$GH_EVENT_NAME" = "push" ]; then
+          elif [ "$GH_EVENT_NAME" = "push" ] || [ "$GH_EVENT_NAME" = "merge_group" ]; then
             before="$PUSH_BEFORE_SHA"
             zero="0000000000000000000000000000000000000000"
             if [ -z "$before" ] || [ "$before" = "$zero" ]; then
@@ -586,7 +589,7 @@ jobs:
         env:
           GH_EVENT_NAME: ${{ github.event_name }}
           GH_BASE_REF: ${{ github.base_ref }}
-          GH_EVENT_BEFORE: ${{ github.event.before }}
+          GH_EVENT_BEFORE: ${{ github.event.before || github.event.merge_group.base_sha }}
         run: |
           if [ "$GH_EVENT_NAME" = "pull_request" ]; then
             files=$(git diff --name-only --diff-filter=d \
@@ -598,7 +601,7 @@ jobs:
                  'core/test/test_integer_cambi_sycl.c' \
                  'core/src/sycl/*.c' 'core/test/test_vmafx_import_sycl*.c' \
               | tr '\n' ' ')
-          elif [ "$GH_EVENT_NAME" = "push" ]; then
+          elif [ "$GH_EVENT_NAME" = "push" ] || [ "$GH_EVENT_NAME" = "merge_group" ]; then
             before="$GH_EVENT_BEFORE"
             zero="0000000000000000000000000000000000000000"
             if [ -z "$before" ] || [ "$before" = "$zero" ]; then
@@ -734,7 +737,7 @@ jobs:
     # required-aggregator
     name: Cppcheck
     # ADR-0359, ADR-3286 (design notes)
-    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'arc-runners' || 'ubuntu-26.04' }}
+    runs-on: ${{ vars.ARC_RUNNERS_ENABLED == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) && 'arc-runners' || 'ubuntu-26.04' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -855,7 +858,7 @@ jobs:
         run: pip install --require-hashes -r requirements/locks/mypy.txt
       - name: Run merge-base mypy gate
         env:
-          VMAFX_MYPY_BASE_REF: ${{ github.event_name == 'push' && github.event.before || 'origin/master' }}
+          VMAFX_MYPY_BASE_REF: ${{ github.event_name == 'push' && github.event.before || github.event.merge_group.base_sha || 'origin/master' }}
         run: python3 scripts/git-hooks/pre-push-mypy.py
 
   registry-validate:
@@ -1090,7 +1093,7 @@ jobs:
         if: ${{ !cancelled() }}
         shell: bash
         env:
-          BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before || github.event.merge_group.base_sha }}
         run: |
           if [[ -z "${BASE_REF}" || "${BASE_REF}" =~ ^0+$ ]]; then
             BASE_REF="refs/remotes/origin/master"
@@ -1177,7 +1180,7 @@ jobs:
         env:
           PR_BASE_REF: ${{ github.base_ref }}
           GH_EVENT_NAME: ${{ github.event_name }}
-          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_BEFORE_SHA: ${{ github.event.before || github.event.merge_group.base_sha }}
         run: |
           set -o pipefail
           keep() { grep "$@" || { rc=$?; [ "$rc" -eq 1 ] || return "$rc"; }; }
@@ -1187,7 +1190,7 @@ jobs:
               | keep -E '^(docs/|changelog\.d/|README\.md|CLAUDE\.md|AGENTS\.md)' \
               | keep -vE '^(subprojects/|core/test/data/|python/test/resource/|compat/python-vmaf/resource/|compat/python-vmaf/matlab/|model/|testdata/)' \
               | keep -vE '^(docs/adr/README\.md|CHANGELOG\.md|docs/adr/_index_fragments/|changelog\.d/|docs/rebase-notes\.d/)')
-          elif [ "$GH_EVENT_NAME" = "push" ]; then
+          elif [ "$GH_EVENT_NAME" = "push" ] || [ "$GH_EVENT_NAME" = "merge_group" ]; then
             before="$PUSH_BEFORE_SHA"
             zero="0000000000000000000000000000000000000000"
             if [ -z "$before" ] || [ "$before" = "$zero" ]; then

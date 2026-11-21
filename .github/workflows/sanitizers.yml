@@ -24,6 +24,9 @@ on:
   pull_request:
     branches: [master]
     types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
+    branches: [master]
   schedule:
     # Fuzz nightly at 04:30 UTC. TSan fires on push to master (above).
     - cron: "30 4 * * *"
@@ -61,7 +64,7 @@ jobs:
   # trip it unconditionally (rewrite tracked separately).
   asan-ubsan:
     needs: tier
-    if: needs.tier.outputs.full == 'true' && (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: needs.tier.outputs.full == 'true' && (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     # ADR-1297 — required. `-fsanitize=address,undefined` in one build is a
     # distinct configuration from the separate `Sanitizers (address)` and
     # `Sanitizers (undefined)` rows that were already required: interaction

@@ -12,6 +12,9 @@ on:
     # ADR-0331 — `ready_for_review` lets the per-job draft gate fire
     # CI when a draft PR is promoted to ready-for-review.
     types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
+    branches: [master]
   schedule:
     - cron: "0 6 * * 1"   # weekly Mon 06:00 UTC
   workflow_dispatch:

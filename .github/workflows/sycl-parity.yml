@@ -17,14 +17,17 @@ name: SYCL Parity
 # The probe needs the SYCL_RUNNER_PROBE_TOKEN secret (fine-grained PAT,
 # Administration: read) because GITHUB_TOKEN cannot list self-hosted runners.
 #
-# Fork PRs never reach this workflow's jobs: the `if:` below requires the PR
-# head to live in this repository. There is no pull_request_target here and
-# must never be one.
+# Fork PRs cannot reach the probe or self-hosted job. Merge groups require
+# a same-repository queue prefix before the probe runs. Queue admission is the
+# primary barrier; there is no pull_request_target here and must never be one.
 
 on:
   pull_request:
     branches: [master]
     types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
+    branches: [master]
   push:
     branches: [master]
   workflow_dispatch:
@@ -47,9 +50,12 @@ jobs:
 
   runner-available:
     needs: tier
-    if: needs.tier.outputs.full == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+    if: needs.tier.outputs.full == 'true' && (github.event_name == 'push' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
     name: "Probe SYCL Runner"
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      pull-requests: read
     # Security: never schedule anything from a fork PR onto self-hosted
     # infrastructure; drafts do not contend for the scarce runner (ADR-0331).
     timeout-minutes: 5
@@ -61,12 +67,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check runner availability
         id: probe
-        env:
-          GH_TOKEN: ${{ secrets.SYCL_RUNNER_PROBE_TOKEN || github.token }}
-          RUNNER_ENABLED: ${{ vars.SYCL_ARC_RUNNER_ENABLED }}
-          RUNNER_LABELS: "self-hosted linux x64 sycl-arc"
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: bash scripts/ci/check-runner-available.sh
+        uses: ./.github/actions/runner-probe
+        with:
+          token: ${{ secrets.SYCL_RUNNER_PROBE_TOKEN || github.token }}
+          enabled: ${{ vars.SYCL_ARC_RUNNER_ENABLED }}
+          labels: "self-hosted linux x64 sycl-arc"
 
   sycl-parity:
     # required-aggregator: SYCL Parity (Arc A380)

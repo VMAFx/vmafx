@@ -17,6 +17,9 @@ on:
   pull_request:
     branches: [master]
     types: [opened, edited, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
+    branches: [master]
   push:
     branches: [master]
   workflow_dispatch:
@@ -554,9 +557,21 @@ jobs:
               'Semgrep OSS',
               'gitleaks',
             ];
+            // ADR-3556: GitHub merge queue (merge_group) event-scoped exemption.
+            const mergeGroupExempt = [
+              // It runs on the master push after the merge, and the PR gate ran on the pull request.
+              'Scorecard Master Gate',
+            ];
             const eventExempt = new Set();
+            const mergeGroupExemptSet = new Set();
             if (context.eventName !== 'pull_request') {
               for (const name of pullRequestOnly) eventExempt.add(name);
+            }
+            if (context.eventName === 'merge_group') {
+              for (const name of mergeGroupExempt) {
+                eventExempt.add(name);
+                mergeGroupExemptSet.add(name);
+              }
             }
             // ADR-2169 — contexts the tier of this event does not owe. A tier
             // that is not named (a push, a fork pull request, a labelled own
@@ -1087,7 +1102,10 @@ jobs:
                 continue;
               }
               if (eventExempt.has(name) && (!run || run.conclusion === 'skipped')) {
-                core.info(`OK (pull-request-only context, ${context.eventName} event): ${name}`);
+                const exemptLabel = mergeGroupExemptSet.has(name)
+                  ? 'merge-group-exempt'
+                  : 'pull-request-only';
+                core.info(`OK (${exemptLabel} context, ${context.eventName} event): ${name}`);
                 continue;
               }
               if (strictMustReport.includes(name)) {
