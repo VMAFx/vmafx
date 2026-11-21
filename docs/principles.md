@@ -284,7 +284,6 @@ Enforced scanners:
   each required check still reports when work is unaffected. Weekly schedules
   audit all locks and the image, so newly published advisories are caught.
 
-
 ## 3. Quality gates (required for PR merge to master)
 
 - ✅ `make lint` — zero clang-tidy / cppcheck / ruff / black findings

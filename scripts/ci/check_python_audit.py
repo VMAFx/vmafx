@@ -187,15 +187,26 @@ def self_test(root: Path, fixture: Path) -> str:
     if not fixture.is_file():
         raise AuditError(f"planted-defect fixture is missing: {fixture}")
     report = run_audit(root, fixture)
-    advisories = {
-        str(vuln["id"])
-        for dependency in report.get("dependencies", [])
-        if isinstance(dependency, dict)
-        and dependency.get("name", "").lower() == PLANTED_PACKAGE
-        and dependency.get("version") == PLANTED_VERSION
-        for vuln in dependency.get("vulns", [])
-        if isinstance(vuln, dict) and vuln.get("id") in PLANTED_ADVISORY_IDS
-    }
+    dependencies = report.get("dependencies")
+    if not isinstance(dependencies, list):
+        raise AuditError("planted-defect report has no dependencies list")
+    advisories: set[str] = set()
+    for dependency in dependencies:
+        if not isinstance(dependency, dict):
+            continue
+        name = dependency.get("name")
+        version = dependency.get("version")
+        vulns = dependency.get("vulns")
+        if (
+            not isinstance(name, str)
+            or name.lower() != PLANTED_PACKAGE
+            or version != PLANTED_VERSION
+            or not isinstance(vulns, list)
+        ):
+            continue
+        for vuln in vulns:
+            if isinstance(vuln, dict) and vuln.get("id") in PLANTED_ADVISORY_IDS:
+                advisories.add(str(vuln["id"]))
     if not advisories:
         raise AuditError(
             f"the planted-defect fixture did not report {PLANTED_PACKAGE}=={PLANTED_VERSION} "

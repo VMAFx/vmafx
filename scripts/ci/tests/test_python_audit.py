@@ -216,6 +216,43 @@ class SelfTest(unittest.TestCase):
                 check_python_audit.run_audit(ROOT, ROOT / "python/requirements-lock.txt")
         self.assertIn("no dependencies", str(caught.exception))
 
+    def test_planted_audit_runs_before_real_lock_audits(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture = root / "planted.txt"
+            fixture.write_text("requests==2.19.0\n", encoding="utf-8")
+            lock = root / "project.lock"
+            lock.write_text("example==1.0\n", encoding="utf-8")
+            manifest = root / "requirements/locks/manifest.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(
+                json.dumps({"locks": [{"output": "project.lock"}]}), encoding="utf-8"
+            )
+            ignore = root / "ignore.json"
+            ignore.write_text(json.dumps({"schema_version": 1, "exceptions": []}), encoding="utf-8")
+            calls: list[Path] = []
+
+            def report(_root: Path, requirement: Path) -> dict[str, object]:
+                calls.append(requirement)
+                if requirement == fixture:
+                    return {
+                        "dependencies": [
+                            {
+                                "name": "requests",
+                                "version": "2.19.0",
+                                "vulns": [{"id": "CVE-2018-18074"}],
+                            }
+                        ]
+                    }
+                return {"dependencies": [{"name": "example", "version": "1.0", "vulns": []}]}
+
+            with mock.patch.object(check_python_audit, "run_audit", side_effect=report):
+                result = check_python_audit.main(
+                    ["--root", str(root), "--ignore", str(ignore), "--fixture", str(fixture)]
+                )
+            self.assertEqual(result, 0)
+            self.assertEqual(calls, [fixture, lock])
+
 
 if __name__ == "__main__":
     unittest.main()
