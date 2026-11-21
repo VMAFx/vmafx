@@ -12,20 +12,33 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import shlex
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 EXIT_SUCCESS = 0
 EXIT_FINDINGS = 1
 EXIT_ERROR = 2
 
-DEFAULT_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_ROOT = REPO_ROOT
+sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    CommandOutputLimitExceeded,
+    CommandValidationError,
+)
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    run as run_command,
+)
+
 HEX_RE = re.compile(r"^[a-f0-9]{64}$")
 STEP_START_RE = re.compile(r"^(\s*)-\s+(?:name|uses|run):")
 GENERIC_STEP_RE = re.compile(r"^(\s*)-\s+")
-TAR_EXTRACT_RE = re.compile(r"\btar\b.*?(?:-[a-zA-Z0-9]*x|--extract)")
+TAR_EXTRACT_RE = re.compile(r"\btar(?=\s).*?(?:-[a-zA-Z0-9]*x|--extract)")
 SHA_CHECK_RE = re.compile(r"\bsha256sum\b.*?(?:--check|-c\b)")
 GPU_MARKER_RE = re.compile(r"onnxruntime-[^\s\"'/]*-gpu")
 PACKAGE_FLAG_RE = re.compile(r"--package(?:=|\s+)[\"']?([A-Za-z0-9_-]+)")
@@ -46,23 +59,28 @@ HELPER_FLAGS: frozenset[str] = frozenset(
         "--print-pin",
     }
 )
-MAX_HELPER_FLAGS = len(HELPER_FLAGS)
 CONTAINER_SHAPE_FINDING = "container ort_nuget_install.py instruction violates canonical RUN shape"
 CONTAINER_RUN_RE = re.compile(r"^RUN\s+(?!-|\s*\[)(.+)$", re.I)
 CONTAINER_FORBIDDEN_RE = re.compile(
-    r"[\"'`;|(){}]|<<|\$\(|(?<!&)&(?!&)|\beval\b|\b(?:sh|bash)\s+-[A-Za-z]*c\b|\benv\s"
+    r"[`;|(){}]|<<|\$\(|(?<!&)&(?!&)|\beval\b|\b(?:sh|bash)\s+-[A-Za-z]*c\b|\benv\s"
 )
-CONTAINER_ORT_ASSIGN_RE = re.compile(r"^(?:export\s+)?ORT_VERSION=([0-9]+(?:\.[0-9]+)+)$")
-CONTAINER_HELPER_CMD_RE = re.compile(
-    r"^(?:ORT_VERSION=([0-9]+(?:\.[0-9]+)+)\s+)?"
-    r"python3\s+(?:/build/vmaf/)?scripts/ci/ort_nuget_install\.py"
-    r"((?:\s+--[a-z-]+(?:=|\s+)(?!-)\S+)+)$"
+CONTAINER_HELPER_TOKEN_RE = re.compile(
+    r"(?:[^\s\"']*/)?ort_nuget_install\.py|scripts\.ci\.ort_nuget_install"
 )
-CONTAINER_FLAG_PAIR_RE = re.compile(r"(--[a-z-]+)(?:=|\s+)((?!-)\S+)")
-CONTAINER_VERSION_ARG_RE = re.compile(
-    r'^(?:[0-9]+(?:\.[0-9]+)+|\$ORT_VERSION|\$\{ORT_VERSION\}|"\$ORT_VERSION"|"\$\{ORT_VERSION\}")$'
+CONTAINER_HELPER_PATHS = frozenset(
+    {
+        "scripts/ci/ort_nuget_install.py",
+        "/build/vmaf/scripts/ci/ort_nuget_install.py",
+    }
 )
-CONTAINER_FLAG_VALUE_RE = re.compile(r"^[A-Za-z0-9_./][A-Za-z0-9_./-]*$")
+CONTAINER_MODULE = "scripts.ci.ort_nuget_install"
+MODULE_PREFIX_LEN = 2
+FILE_PREFIX_LEN = 1
+CONTAINER_EXPORT_RE = re.compile(r"^export\s+ORT_VERSION=([0-9]+(?:\.[0-9]+)+)$")
+CONTAINER_SET_RE = re.compile(r"^set(?:\s+-[eux]+|\s+-o\s+pipefail)?$")
+CONTAINER_FLAG_VALUE_RE = re.compile(r"^[A-Za-z0-9_./-]+$")
+CONTAINER_LITERAL_VERSION_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)+$")
+CONTAINER_VERSION_VAR_RE = re.compile(r"^\$(?:ORT_VERSION|\{ORT_VERSION\})$")
 NUGET_ADDRESS_RE = re.compile(
     r"(?:api\.nuget\.org/v3-flatcontainer/|nuget\.org/api/v2/package/)"
     r"(\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Za-z_][A-Za-z0-9_]*|[^/\s\"']+)",
@@ -137,44 +155,148 @@ def _find_workflow_block(lines: list[str], site_idx: int) -> tuple[int, int]:
     return start_idx, end_idx
 
 
-def _container_instruction(
-    lines: list[str], site_idx: int
-) -> tuple[int, int, str | None, str | None]:
-    """Return start index, end index, spaced text and fused text for an instruction."""
-    start_idx = site_idx
-    for j in range(site_idx - 1, max(-1, site_idx - 2 - MAX_COMMAND_LINES), -1):
-        stripped = lines[j].strip()
-        if not stripped or stripped.startswith("#"):
+def _docker_heredocs(header: str) -> list[tuple[bool, str]]:
+    """Recognize unquoted heredoc operators without treating quoted text as syntax."""
+    header = re.sub(
+        r"\\(.)", lambda match: "\x01" if match.group(1) == "<" else match.group(0), header
+    )
+    lexer = shlex.shlex(header, posix=False, punctuation_chars="<")
+    lexer.whitespace_split = True
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        return []
+    delimiters: list[tuple[bool, str]] = []
+    for index in range(len(tokens) - 1):
+        if tokens[index] != "<<":
+            continue
+        value = tokens[index + 1]
+        tabs = value.startswith("-")
+        delimiter = value.removeprefix("-").strip("\"'")
+        if re.fullmatch(r"[A-Za-z0-9_.-]+", delimiter):
+            delimiters.append((tabs, delimiter))
+    return delimiters
+
+
+def _docker_continuation_end(lines: list[str], start: int) -> int:
+    """Find the instruction header end before consuming any heredoc body."""
+    end = start
+    for idx in range(start, len(lines)):
+        end = idx
+        stripped = lines[idx].strip()
+        if idx > start and (not stripped or stripped.startswith("#")):
             continue
         if not stripped.endswith("\\"):
             break
-        start_idx = j
+    return end
 
-    parts: list[str] = []
-    end_idx = start_idx
-    for idx in range(start_idx, min(len(lines), start_idx + MAX_COMMAND_LINES)):
-        end_idx = idx
-        stripped = lines[idx].strip()
-        if idx > start_idx and (not stripped or stripped.startswith("#")):
+
+def _docker_instruction_end(lines: list[str], start: int) -> int:
+    """Find a whole logical instruction, including comments and heredoc bodies."""
+    end = _docker_continuation_end(lines, start)
+    header = " ".join(
+        line.strip().removesuffix("\\")
+        for line in lines[start : end + 1]
+        if not line.lstrip().startswith("#")
+    )
+    for tabs, delimiter in _docker_heredocs(header):
+        for idx in range(end + 1, len(lines)):
+            end = idx
+            candidate = lines[idx].lstrip("\t") if tabs else lines[idx]
+            if candidate == delimiter:
+                break
+    return end
+
+
+def _docker_instructions(lines: list[str]) -> list[tuple[int, int, str | None, str]]:
+    """Read each logical instruction once; retain detection text beyond the parse cap."""
+    instructions: list[tuple[int, int, str | None, str]] = []
+    next_idx = 0
+    for idx in range(len(lines)):
+        if idx < next_idx or not lines[idx].strip() or lines[idx].lstrip().startswith("#"):
             continue
-        parts.append(stripped.rstrip("\\"))
-        if not stripped.endswith("\\"):
-            return start_idx, end_idx, " ".join(parts), "".join(parts)
-    return start_idx, end_idx, None, None
+        end = _docker_instruction_end(lines, idx)
+        header_end = _docker_continuation_end(lines, idx)
+        parts = [
+            raw.strip().removesuffix("\\")
+            for raw in lines[idx : header_end + 1]
+            if raw.strip() and not raw.lstrip().startswith("#")
+        ]
+        payload = "\n" + "\n".join(lines[header_end + 1 : end + 1]) if end > header_end else ""
+        command = " ".join(parts) + payload if end - idx < MAX_COMMAND_LINES else None
+        instructions.append((idx, end, command, "".join(parts) + payload))
+        next_idx = end + 1
+    return instructions
+
+
+def _container_instruction(
+    lines: list[str], site_idx: int
+) -> tuple[int, int, str | None, str | None]:
+    """Return containing logical instruction, preserving full detection text."""
+    for instruction in _docker_instructions(lines):
+        if instruction[0] <= site_idx <= instruction[1]:
+            return instruction
+    return site_idx, site_idx, lines[site_idx], lines[site_idx]
 
 
 def _find_docker_block(lines: list[str], site_idx: int) -> tuple[int, int]:
-    """Find start and end line indices of container instruction and preceding ARGs/ENVs."""
-    run_idx, end_idx, _, _ = _container_instruction(lines, site_idx)
-    start_idx = run_idx
-    for j in range(run_idx - 1, max(-1, run_idx - 1 - MAX_STEP_LINES), -1):
-        line = lines[j]
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or re.match(r"^\s*(?:ARG|ENV)\b", line):
-            start_idx = j
+    """Find the actual build stage, ignoring FROM inside continuations and heredocs."""
+    start_idx = 0
+    for start, end, command, fused in _docker_instructions(lines):
+        if not re.match(r"^FROM\b", command or fused, re.I):
             continue
-        break
-    return start_idx, max(site_idx, end_idx)
+        if start > site_idx:
+            return start_idx, start - 1
+        start_idx = end + 1
+    return start_idx, len(lines) - 1
+
+
+def _assignment_pairs(rest: str) -> list[tuple[str, str]]:
+    """Every name=value pair, including empty values; malformed input returns no pairs."""
+    try:
+        tokens = shlex.split(rest)
+    except ValueError:
+        return []
+    pairs: list[tuple[str, str]] = []
+    for token in tokens:
+        if "=" not in token:
+            return []
+        name, value = token.split("=", 1)
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None:
+            return []
+        pairs.append((name, value))
+    return pairs
+
+
+def _docker_assignment_values(keyword: str, rest: str) -> list[tuple[str, str]]:
+    """Parse assignments; retain unknown values for affected names on unsupported syntax."""
+    pairs = _assignment_pairs(rest)
+    if not pairs and keyword == "ENV" and "=" not in rest:
+        legacy = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)\s+([^\s#]+)", rest)
+        if legacy:
+            pairs = [(legacy.group(1), legacy.group(2).strip("\"'"))]
+    if not pairs:
+        names = re.findall(r"(?:^|\s)([A-Za-z_][A-Za-z0-9_]*)(?==|\s|$)", rest)
+        return [(name, "<unresolved>") for name in names]
+    return [
+        (name, "<unresolved>" if re.search(r"[$`\\]", value) else value) for name, value in pairs
+    ]
+
+
+def _docker_bindings(lines: list[str], start_idx: int, run_idx: int) -> dict[str, set[str]]:
+    """Last assignment wins within ARG/ENV; ENV takes precedence over same-stage ARG."""
+    arguments: dict[str, str] = {}
+    environment: dict[str, str] = {}
+    if run_idx - start_idx > MAX_STEP_LINES:
+        return {}
+    for _, _, command, fused in _docker_instructions(lines[start_idx:run_idx]):
+        match = re.match(r"^(ARG|ENV)\s+(.+)$", command or fused, re.I)
+        if not match:
+            continue
+        keyword, rest = match.group(1).upper(), match.group(2)
+        target = environment if keyword == "ENV" else arguments
+        target.update(_docker_assignment_values(keyword, rest))
+    return {name: {value} for name, value in (arguments | environment).items()}
 
 
 def find_block_for_site(lines: list[str], site_idx: int, is_workflow: bool) -> tuple[int, int]:
@@ -215,37 +337,84 @@ def _check_sha_pin(
     return sha_val, sha_line_num, findings
 
 
+def _shell_without_comment(line: str) -> str:
+    """Remove shell comments without truncating quoted or embedded hash characters."""
+    result: list[str] = []
+    quote: str | None = None
+    escaped = False
+    word_boundary = True
+    for char in line:
+        if escaped:
+            result.append(char)
+            escaped = False
+            word_boundary = False
+            continue
+        if quote == "'":
+            result.append(char)
+            if char == "'":
+                quote = None
+            continue
+        if char == "\\" and quote != "'":
+            result.append(char)
+            escaped = True
+            word_boundary = False
+            continue
+        if quote is not None:
+            result.append(char)
+            if char == quote:
+                quote = None
+            continue
+        if char in "'\"":
+            result.append(char)
+            quote = char
+            word_boundary = False
+            continue
+        if char == "#" and word_boundary:
+            break
+        result.append(char)
+        word_boundary = char.isspace()
+    return "".join(result)
+
+
+def _docker_verification_lines(lines: list[str]) -> list[str]:
+    """Keep executable RUN text in stage order, excluding comments and heredoc payloads."""
+    executable = [""] * len(lines)
+    for start, _, command, fused in _docker_instructions(lines):
+        if not re.match(r"^RUN\b", command or fused, re.I):
+            continue
+        header_end = _docker_continuation_end(lines, start)
+        for idx in range(start, header_end + 1):
+            executable[idx] = _shell_without_comment(lines[idx])
+    return executable
+
+
 def _check_verification_order(
     entry: TrackedDownload,
     block_lines: list[str],
     start_idx: int,
     site_line_num: int,
     path: Path,
+    is_workflow: bool = True,
 ) -> list[str]:
-    """Verify sha256sum --check occurs after download and before tar -x."""
+    """Verify same-stage sha256sum --check follows download and precedes tar -x."""
     findings: list[str] = []
-    check_line_num: int | None = None
-    tar_line_num: int | None = None
-
-    for offset, b_line in enumerate(block_lines):
-        line_no = start_idx + offset + 1
-        if check_line_num is None and SHA_CHECK_RE.search(b_line):
-            check_line_num = line_no
-        if tar_line_num is None and TAR_EXTRACT_RE.search(b_line):
-            tar_line_num = line_no
-
-    if check_line_num is None:
+    if not is_workflow:
+        block_lines = _docker_verification_lines(block_lines)
+    relative_site = site_line_num - start_idx - 1
+    tail_lines = block_lines[relative_site:]
+    # Ignore all earlier commands, including those on the download's physical line.
+    tail_lines = [tail_lines[0].partition(entry.marker)[2], *tail_lines[1:]]
+    tail = "\n".join(tail_lines)
+    check = SHA_CHECK_RE.search(tail)
+    extract = TAR_EXTRACT_RE.search(tail)
+    if check is None:
         findings.append(f"{path}:{site_line_num}: {entry.name}: missing sha256sum --check in block")
-    elif check_line_num <= site_line_num:
-        findings.append(
-            f"{path}:{check_line_num}: {entry.name}: sha256sum --check occurs before or at download line {site_line_num}"
-        )
-
-    if tar_line_num is not None and check_line_num is not None and tar_line_num <= check_line_num:
+    elif extract is not None and extract.start() < check.start():
+        tar_line_num = site_line_num + tail.count("\n", 0, extract.start())
+        check_line_num = site_line_num + tail.count("\n", 0, check.start())
         findings.append(
             f"{path}:{tar_line_num}: {entry.name}: tar extraction occurs before sha256sum --check on line {check_line_num}"
         )
-
     return findings
 
 
@@ -344,101 +513,217 @@ def _step_bindings(lines: list[str]) -> dict[str, set[str]] | None:
     return bindings
 
 
-def _valid_container_helper_flags(flags_tail: str) -> bool:
-    """Return True when every helper flag is known, unique, and has an allowed value."""
-    pairs = CONTAINER_FLAG_PAIR_RE.findall(flags_tail)
-    if not pairs or len(pairs) > MAX_HELPER_FLAGS:
-        return False
-    seen: set[str] = set()
-    for flag, value in pairs[:MAX_HELPER_FLAGS]:
-        if flag not in HELPER_FLAGS or flag in seen:
-            return False
-        seen.add(flag)
-        if flag == "--version":
-            if CONTAINER_VERSION_ARG_RE.fullmatch(value) is None:
-                return False
-        elif CONTAINER_FLAG_VALUE_RE.fullmatch(value) is None or "ORT_VERSION" in value:
-            return False
-    return True
-
-
-def _parse_container_segment(raw_seg: str, persistent: list[str], calls: list[str]) -> bool:
-    """Validate one &&-separated simple command in a container helper instruction."""
-    seg = raw_seg.strip()
-    if not seg or "&" in seg:
-        return False
-    if "ort_nuget_install.py" in seg:
-        cmd_match = CONTAINER_HELPER_CMD_RE.fullmatch(seg)
-        if cmd_match is None or not _valid_container_helper_flags(cmd_match.group(2)):
-            return False
-        calls.append(" ".join([*persistent, seg]))
-        return True
-    if "ORT_VERSION" in seg:
-        if CONTAINER_ORT_ASSIGN_RE.fullmatch(seg) is None:
-            return False
-        persistent.append(seg)
-    return True
-
-
-def _parse_container_helper_instruction(command: str, fused: str) -> list[str] | None:
-    """Validate canonical container RUN shape and return helper calls with active bindings."""
-    token_count = command.count("ort_nuget_install.py")
-    if token_count == 0 or fused.count("ort_nuget_install.py") != token_count:
+def _helper_flag_pair(tokens: list[str], index: int) -> tuple[str, str, int] | None:
+    """Split one flag/value pair, returning the next index."""
+    argument = tokens[index]
+    if argument == "--print-pin" or argument.startswith("--print-pin="):
         return None
+    if not argument.startswith("--"):
+        return None
+    if "=" in argument:
+        flag, value = argument.split("=", 1)
+        return flag, value, index + 1
+    if index + 1 >= len(tokens):
+        return None
+    return argument, tokens[index + 1], index + 2
+
+
+def _apply_helper_flag(
+    flag: str, value: str, package: str, version: str | None
+) -> tuple[str, str | None] | None:
+    """Validate one allowed helper flag and return the updated package/version."""
+    if flag == "--package":
+        if re.fullmatch(r"[A-Za-z0-9_-]+", value) is None:
+            return None
+        return value, version
+    if flag == "--version":
+        if (
+            CONTAINER_LITERAL_VERSION_RE.fullmatch(value) is None
+            and CONTAINER_VERSION_VAR_RE.fullmatch(value) is None
+        ):
+            return None
+        return package, value
+    if CONTAINER_FLAG_VALUE_RE.fullmatch(value) is None:
+        return None
+    return package, version
+
+
+def _parse_helper_flags(tokens: list[str]) -> tuple[str, str | None] | None:
+    """Parse the flags of one helper call; None when any flag is outside the allow-list."""
+    package = "cpu"
+    version: str | None = None
+    seen: set[str] = set()
+    index = 0
+    while index < len(tokens):
+        parsed = _helper_flag_pair(tokens, index)
+        if parsed is None:
+            return None
+        flag, value, index = parsed
+        if flag not in HELPER_FLAGS or flag in seen:
+            return None
+        seen.add(flag)
+        applied = _apply_helper_flag(flag, value, package, version)
+        if applied is None:
+            return None
+        package, version = applied
+    if version is None or "--prefix" not in seen:
+        return None
+    return package, version
+
+
+def _parse_helper_tokens(tokens: list[str]) -> tuple[str, str | None] | None:
+    """Parse one helper simple command with either the file or module spelling."""
+    if not tokens or tokens[0] != "python3":
+        return None
+    if len(tokens) > MODULE_PREFIX_LEN and tokens[1] == "-m":
+        if tokens[2] != CONTAINER_MODULE:
+            return None
+        return _parse_helper_flags(tokens[3:])
+    if len(tokens) > FILE_PREFIX_LEN and tokens[1] in CONTAINER_HELPER_PATHS:
+        return _parse_helper_flags(tokens[2:])
+    return None
+
+
+def _container_binding(
+    version: str | None, exported: dict[str, str], bindings: dict[str, set[str]]
+) -> tuple[str | None, str]:
+    """Resolve a helper's $ORT_VERSION from the RUN export or the build stage."""
+    if version is not None and CONTAINER_LITERAL_VERSION_RE.fullmatch(version):
+        return version, ""
+    if "ORT_VERSION" in exported:
+        return exported["ORT_VERSION"], ""
+    values = bindings.get("ORT_VERSION", set())
+    if len(values) > 1:
+        return None, "ambiguous ORT_VERSION in build stage"
+    if not values:
+        return None, "missing ORT_VERSION in build stage"
+    return next(iter(values)), ""
+
+
+def _run_helper_body(command: str) -> str | None:
+    """Return a canonical RUN body, or None when the instruction is not eligible."""
     run_match = CONTAINER_RUN_RE.fullmatch(command.strip())
     if run_match is None:
         return None
-    body = run_match.group(1)
-    normalized = (
-        body.replace('"${ORT_VERSION}"', "$ORT_VERSION")
-        .replace('"$ORT_VERSION"', "$ORT_VERSION")
-        .replace("${ORT_VERSION}", "$ORT_VERSION")
-    )
-    if CONTAINER_FORBIDDEN_RE.search(normalized):
+    body = run_match.group(1).replace("${ORT_VERSION}", "$ORT_VERSION")
+    if CONTAINER_FORBIDDEN_RE.search(body):
         return None
-    raw_segments = body.split("&&", MAX_COMMAND_LINES + 1)
+    return body
+
+
+def _parse_helper_segment(
+    tokens: list[str],
+    stripped: str,
+    exported: dict[str, str],
+    bindings: dict[str, set[str]],
+) -> tuple[str, str | None, str] | None:
+    """Parse a helper simple command inside a RUN instruction."""
+    helper_tokens = CONTAINER_HELPER_TOKEN_RE.findall(stripped)
+    if not helper_tokens or len(helper_tokens) != 1:
+        return None
+    parsed = _parse_helper_tokens(tokens)
+    if parsed is None:
+        return None
+    package, version = parsed
+    resolved, error = _container_binding(version, exported, bindings)
+    return package, resolved, error
+
+
+def _record_export(stripped: str, exported: dict[str, str]) -> bool:
+    """Record a canonical ORT_VERSION export; False means invalid or not an export."""
+    assignment = CONTAINER_EXPORT_RE.fullmatch(stripped)
+    if not assignment:
+        return False
+    value = assignment.group(1)
+    if "ORT_VERSION" in exported and exported["ORT_VERSION"] != value:
+        return False
+    exported["ORT_VERSION"] = value
+    return True
+
+
+def _split_segment(segment: str) -> list[str] | None:
+    """Strip and shell-split one RUN segment; None for blank or malformed input."""
+    stripped = segment.strip()
+    if not stripped:
+        return None
+    try:
+        return shlex.split(stripped)
+    except ValueError:
+        return None
+
+
+def _shell_segments(body: str) -> list[str]:
+    """Split only unquoted &&; preserve single-quoted dollars as literal flag input."""
+    segments: list[str] = []
+    characters: list[str] = []
+    quote = ""
+    escaped = False
+    skip = False
+    for idx, character in enumerate(body):
+        if skip:
+            skip = False
+            continue
+        if escaped:
+            characters.append("\x01" if character == "$" else character)
+            escaped = False
+        elif character == "\\" and quote != "'":
+            characters.append(character)
+            escaped = True
+        elif character == quote:
+            quote = ""
+            characters.append(character)
+        elif character in "\"'" and not quote:
+            quote = character
+            characters.append(character)
+        elif not quote and body[idx : idx + 2] == "&&":
+            segments.append("".join(characters))
+            characters = []
+            skip = True
+        else:
+            characters.append("\x01" if character == "$" and quote == "'" else character)
+    segments.append("".join(characters))
+    return segments
+
+
+def _parse_container_helper_instruction(
+    command: str, bindings: dict[str, set[str]]
+) -> list[tuple[str, str | None, str]] | None:
+    """Parse a canonical RUN instruction into helper calls and their resolved versions."""
+    body = _run_helper_body(command)
+    if body is None:
+        return None
+    raw_segments = _shell_segments(body)
     if len(raw_segments) > MAX_COMMAND_LINES:
         return None
-    persistent: list[str] = []
-    calls: list[str] = []
-    for raw_seg in raw_segments[:MAX_COMMAND_LINES]:
-        if not _parse_container_segment(raw_seg, persistent, calls):
+    exported: dict[str, str] = {}
+    calls: list[tuple[str, str | None, str]] = []
+    for segment in raw_segments:
+        stripped = segment.strip()
+        tokens = _split_segment(segment)
+        if tokens is None:
             return None
-    return calls if len(calls) == token_count else None
-
-
-def _container_helper_calls(lines: list[str], site_idx: int) -> list[str] | None:
-    """Extract allow-listed helper calls in a container instruction whose token is on site_idx.
-
-    Canonical grammar for a container instruction holding ort_nuget_install.py:
-    - RUN <cmd> (no RUN flags, no exec form RUN [, no heredoc <<), joined across <= 256 lines
-    - <cmd> splits on && only (<= 256 simple commands); refuses ;, ||, |, &, (, ), `, $(,
-      { or } outside ${ORT_VERSION}, eval, sh -c, bash -c, env , and quotes outside
-      "${ORT_VERSION}" or "$ORT_VERSION"
-    - helper simple command matches fullmatch:
-      [ORT_VERSION=<literal>] python3 [/build/vmaf/]scripts/ci/ort_nuget_install.py <flags>
-      (/build/vmaf/ allowed for dev/Containerfile:745), with flags from ort_nuget_install.py
-      (--package, --version, --prefix, --pkgconfig-dir, --cache-dir, --print-pin), each at
-      most once, and --version in {<literal>, $ORT_VERSION, ${ORT_VERSION}, "${ORT_VERSION}",
-      "$ORT_VERSION"}
-    - non-helper simple command naming ORT_VERSION matches fullmatch:
-      [export ]ORT_VERSION=<literal>
-    - any non-canonical instruction is refused once with CONTAINER_SHAPE_FINDING
-    """
-    run_idx, _, command, fused = _container_instruction(lines, site_idx)
-    if command is None or fused is None:
+        call = _parse_helper_segment(tokens, stripped, exported, bindings)
+        if call is not None:
+            calls.append(call)
+            continue
+        if _record_export(stripped, exported):
+            continue
+        if CONTAINER_SET_RE.fullmatch(stripped) or stripped == "ldconfig":
+            continue
         return None
-    prior = sum(
-        lines[j].count("ort_nuget_install.py")
-        for j in range(run_idx, min(site_idx, run_idx + MAX_COMMAND_LINES))
-        if not lines[j].lstrip().startswith("#")
-    )
-    calls = _parse_container_helper_instruction(command, fused)
-    if calls is None:
-        return None if prior == 0 else []
-    count = lines[site_idx].count("ort_nuget_install.py")
-    selected = calls[prior : prior + count]
-    return selected if len(selected) == count else None
+    if not calls:
+        return None
+    return calls
+
+
+def _container_helper_token_lines(lines: list[str], start_idx: int, end_idx: int) -> list[int]:
+    """Line numbers of helper tokens in an instruction, in call order."""
+    found: list[int] = []
+    for idx in range(start_idx, end_idx + 1):
+        if lines[idx].lstrip().startswith("#"):
+            continue
+        found.extend([idx + 1] * len(CONTAINER_HELPER_TOKEN_RE.findall(lines[idx])))
+    return found
 
 
 def _helper_command(
@@ -446,7 +731,7 @@ def _helper_command(
 ) -> list[str] | None:
     """Collect shell helper call(s) at site_idx, rejecting excessively long continuations."""
     if not is_workflow:
-        return _container_helper_calls(lines, site_idx)
+        return None
     parts: list[str] = []
     for idx in range(site_idx, min(end_idx + 1, site_idx + MAX_COMMAND_LINES)):
         line = lines[idx].strip()
@@ -504,6 +789,40 @@ def _check_helper_call(
     return ""
 
 
+def _check_container_helper_step(
+    lines: list[str],
+    site_idx: int,
+    path: Path,
+    packages: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Validate every helper call and every other simple command in one container RUN."""
+    run_idx, end_idx, command, fused = _container_instruction(lines, site_idx)
+    line_no = run_idx + 1
+    if command is None or fused is None:
+        return [f"{path}:{line_no}: container command continuation exceeds limit"]
+    start_idx, _ = _find_docker_block(lines, run_idx)
+    bindings = _docker_bindings(lines, start_idx, run_idx)
+    calls = _parse_container_helper_instruction(command, bindings)
+    if calls is None:
+        return [f"{path}:{line_no}: {CONTAINER_SHAPE_FINDING}"]
+    token_lines = _container_helper_token_lines(lines, run_idx, end_idx)
+    if len(token_lines) != len(calls):
+        return [f"{path}:{line_no}: {CONTAINER_SHAPE_FINDING}"]
+    findings: list[str] = []
+    for (package, version, error), call_line in zip(calls, token_lines, strict=True):
+        if error:
+            findings.append(f"{path}:{call_line}: {error}")
+        elif package not in packages:
+            findings.append(f"{path}:{call_line}: unknown ONNX Runtime package '{package}' in step")
+        elif version is None:
+            findings.append(f"{path}:{call_line}: missing ORT_VERSION in build stage")
+        elif version not in packages[package].get("versions", {}):
+            findings.append(
+                f"{path}:{call_line}: unpinned ORT_VERSION '{version}' for package '{package}'"
+            )
+    return findings
+
+
 def _check_helper_step(
     lines: list[str],
     site_idx: int,
@@ -512,21 +831,45 @@ def _check_helper_step(
     is_workflow: bool,
 ) -> list[str]:
     """Verify helper invocation(s) whose token is on site_idx."""
+    if not is_workflow:
+        return _check_container_helper_step(lines, site_idx, path, packages)
     start_idx, end_idx = find_block_for_site(lines, site_idx, is_workflow)
     calls = _helper_command(lines, site_idx, end_idx, is_workflow)
     line_no = site_idx + 1
     if calls is None:
-        msg = (
-            "helper command continuation exceeds limit" if is_workflow else CONTAINER_SHAPE_FINDING
-        )
-        return [f"{path}:{line_no}: {msg}"]
-    bound_end = site_idx if is_workflow else _container_instruction(lines, site_idx)[0] - 1
+        return [f"{path}:{line_no}: helper command continuation exceeds limit"]
+    bound_end = site_idx
     findings: list[str] = []
     for call_text in calls:
         message = _check_helper_call(lines, start_idx, bound_end, call_text, packages)
         if message:
             findings.append(f"{path}:{line_no}: {message}")
     return findings
+
+
+def _check_nuget_reference(
+    lines: list[str],
+    idx: int,
+    path: Path,
+    match: re.Match[str],
+    is_workflow: bool,
+) -> list[str]:
+    """Resolve a variable-backed NuGet reference to its pinned package family."""
+    name = match.group(1)[1:].strip("{}")
+    start_idx, end_idx = find_block_for_site(lines, idx, is_workflow)
+    bindings = (
+        _step_bindings(lines[start_idx : end_idx + 1])
+        if is_workflow
+        else _docker_bindings(lines, start_idx, idx)
+    )
+    if bindings is None:
+        return [f"{path}:{idx + 1}: step binding limit exceeded"]
+    values = bindings.get(name, set())
+    if not values or "<unresolved>" in values or "" in values:
+        return [f"{path}:{idx + 1}: NuGet download with unresolved package"]
+    if any(ORT_PACKAGE_RE.fullmatch(value) for value in values):
+        return [f"{path}:{idx + 1}: ONNX Runtime download must use helper"]
+    return []
 
 
 def _check_nuget_download(
@@ -536,23 +879,14 @@ def _check_nuget_download(
     lower = line.lower()
     if not any(marker in lower for marker in ("curl ", "wget ", "https://")):
         return []
-    if ORT_PACKAGE_RE.search(line):
-        return [f"{path}:{idx + 1}: ONNX Runtime download must use helper"]
-    match = NUGET_ADDRESS_RE.search(line)
-    if not match or not match.group(1).startswith("$"):
-        return []
-    name = match.group(1)[1:].strip("{}")
-    start_idx, end_idx = find_block_for_site(lines, idx, is_workflow)
-    bindings = _step_bindings(lines[start_idx : end_idx + 1])
-    if bindings is None:
-        return [f"{path}:{idx + 1}: step binding limit exceeded"]
-    if any(ORT_PACKAGE_RE.fullmatch(value) for values in bindings.values() for value in values):
-        return [f"{path}:{idx + 1}: ONNX Runtime download must use helper"]
-    return (
-        [f"{path}:{idx + 1}: NuGet download with unresolved package"]
-        if name not in bindings
-        else []
-    )
+    findings: list[str] = []
+    for match in NUGET_ADDRESS_RE.finditer(line):
+        package = match.group(1)
+        if package.startswith("$"):
+            findings.extend(_check_nuget_reference(lines, idx, path, match, is_workflow))
+        elif ORT_PACKAGE_RE.fullmatch(package):
+            findings.append(f"{path}:{idx + 1}: ONNX Runtime download must use helper")
+    return list(dict.fromkeys(findings))
 
 
 def _scan_workflow_line(
@@ -580,28 +914,34 @@ def _scan_workflow_line(
 
 
 def _scan_container_line(
-    lines: list[str], idx: int, path: Path, packages: dict[str, dict[str, Any]] | None
+    lines: list[str],
+    idx: int,
+    path: Path,
+    packages: dict[str, dict[str, Any]] | None,
+    instruction: tuple[int, int, str | None, str] | None = None,
 ) -> list[str]:
-    """Check container instructions, including continued RUN and ADD commands."""
+    """Check a container instruction once, including continued RUN and ADD commands."""
     line = lines[idx]
     if not line.strip() or line.lstrip().startswith("#"):
         return []
-    start_idx, _, command, fused = _container_instruction(lines, idx)
-    if command is None or fused is None:
-        if idx == start_idx:
+    start_idx, _, command, fused = instruction or _container_instruction(lines, idx)
+    if command is None:
+        if idx != start_idx:
+            return []
+        if CONTAINER_HELPER_TOKEN_RE.search(fused or ""):
             return [f"{path}:{idx + 1}: container command continuation exceeds limit"]
+        return _scan_workflow_line(lines, idx, path, None, False, fused or "")
+    if idx != start_idx:
         return []
-    findings: list[str] = []
-    if idx == start_idx:
-        findings = _scan_workflow_line(lines, idx, path, None, False, f"{command} {fused}")
-        if (
-            packages is not None
-            and "ort_nuget_install.py" in fused
-            and "ort_nuget_install.py" not in command
-        ):
+    fused = fused or ""
+    findings = _scan_workflow_line(lines, idx, path, None, False, command)
+    findings.extend(_scan_workflow_line(lines, idx, path, None, False, fused))
+    findings = list(dict.fromkeys(findings))
+    if packages is not None and CONTAINER_HELPER_TOKEN_RE.search(fused):
+        if not CONTAINER_HELPER_TOKEN_RE.search(command):
             findings.append(f"{path}:{idx + 1}: {CONTAINER_SHAPE_FINDING}")
-    if "ort_nuget_install.py" in line and packages is not None:
-        findings.extend(_check_helper_step(lines, idx, path, packages, False))
+        else:
+            findings.extend(_check_helper_step(lines, idx, path, packages, False))
     return findings
 
 
@@ -616,15 +956,18 @@ def scan_file(
         raise OSError(f"Cannot read {path}: {err}") from err
 
     lines = content.splitlines()
-    is_workflow = path.suffix in (".yml", ".yaml")
+    is_workflow = path.suffix in (".yml", ".yaml") and not path.name.lower().startswith(
+        ("dockerfile", "containerfile")
+    )
     findings: list[str] = []
     site_records: list[tuple[str, str, str, str, Path, int]] = []
 
+    instructions = {} if is_workflow else {item[0]: item for item in _docker_instructions(lines)}
     for i, line in enumerate(lines):
         if is_workflow:
             findings.extend(_scan_workflow_line(lines, i, path, packages, True))
-        else:
-            findings.extend(_scan_container_line(lines, i, path, packages))
+        elif i in instructions:
+            findings.extend(_scan_container_line(lines, i, path, packages, instructions[i]))
         entry = _match_tracked_entry(line)
         if entry is None or entry.name == "ONNX Runtime":
             continue
@@ -639,7 +982,9 @@ def scan_file(
         )
         findings.extend(sha_findings)
         findings.extend(
-            _check_verification_order(entry, block_lines, start_idx, site_line_num, path)
+            _check_verification_order(
+                entry, block_lines, start_idx, site_line_num, path, is_workflow
+            )
         )
 
         flavour, version = _extract_site_metadata(entry, block_text)
@@ -649,8 +994,50 @@ def scan_file(
     return findings, site_records
 
 
+def _is_target_path(relative: str) -> bool:
+    """Whether a repository-relative path is a workflow or container file."""
+    path = PurePosixPath(relative)
+    if path.parts[:2] == (".github", "workflows") and path.suffix in (".yml", ".yaml"):
+        return True
+    name = path.name
+    return (
+        name in {"Dockerfile", "Containerfile"}
+        or name.startswith(("Dockerfile.", "Containerfile."))
+        or name.endswith((".Dockerfile", ".Containerfile"))
+    )
+
+
+def _tracked_files(root: Path) -> list[Path] | None:
+    """Tracked files, or None only for a fixture outside any Git worktree."""
+    if not any((parent / ".git").exists() for parent in (root, *root.parents)):
+        return None
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
+    environment.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    result = run_command(
+        ("git", "-C", str(root), "ls-files", "-z"),
+        allowed_executables=("git",),
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        max_output_bytes=64 * 1_048_576,
+    )
+    if result.returncode != 0:
+        raise OSError(f"git ls-files failed for {root}: {result.stderr.strip()}")
+    return [root / name for name in result.stdout.split("\0") if name]
+
+
 def _find_target_files(repo_root: Path) -> list[Path]:
-    """Find all candidate files under repo_root."""
+    """Find tracked workflow and container files under repo_root."""
+    tracked = _tracked_files(repo_root)
+    if tracked is not None:
+        return sorted(
+            path
+            for path in tracked
+            if path.is_file() and _is_target_path(path.relative_to(repo_root).as_posix())
+        )
     patterns = [
         ".github/workflows/*.yml",
         ".github/workflows/*.yaml",
@@ -658,11 +1045,13 @@ def _find_target_files(repo_root: Path) -> list[Path]:
         "Containerfile*",
         "**/Dockerfile*",
         "**/Containerfile*",
+        "**/*.Dockerfile",
+        "**/*.Containerfile",
     ]
     target_files: list[Path] = []
     for pat in patterns:
         for path in sorted(repo_root.glob(pat)):
-            if path.is_file():
+            if path.is_file() and _is_target_path(path.relative_to(repo_root).as_posix()):
                 target_files.append(path)
     return sorted(set(target_files))
 
@@ -684,7 +1073,10 @@ def check_tarball_pins(
     files: list[Path] | None = None,
 ) -> tuple[int, list[str]]:
     """Scan candidate files for tracked download verification."""
-    target_files = files if files else _find_target_files(root if root else DEFAULT_ROOT)
+    try:
+        target_files = files if files else _find_target_files(root if root else DEFAULT_ROOT)
+    except (OSError, CommandValidationError, CommandOutputLimitExceeded) as err:
+        return EXIT_ERROR, [f"check_ort_tarball_pins: error: {err}"]
     all_findings: list[str] = []
     all_sites: list[tuple[str, str, str, str, Path, int]] = []
 
