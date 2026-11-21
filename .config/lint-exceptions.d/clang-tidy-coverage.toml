@@ -274,5 +274,5 @@ expires = 2027-02-27
 path = "scripts/ci/tests/fixtures/float_equality/planted.c"
 category = "D"
 entered = 2026-11-20
-reason = "Float-equality checker planted defect: the unsafe comparison proves that an unexempt diagnostic fails. The test_check_float_equality real-compiler regression compiles it; no clang-tidy lane consumes this fixture."
-expires = 2027-06-30
+reason = "Category D, 120-day interval. Float-equality checker planted defect: the unsafe comparison proves that an unexempt diagnostic fails. The test_check_float_equality real-compiler regression compiles it; no clang-tidy lane consumes this fixture."
+expires = 2027-03-20

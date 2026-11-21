@@ -42,12 +42,21 @@ DIAGNOSTIC = re.compile(
     r"(?P<message>.*?)(?:" + "|".join(re.escape(tag) for tag in FLOAT_EQUAL_TAGS) + r")\s*$"
 )
 COMPILER_ERROR = re.compile(r"(?:^|:\s)(?:fatal )?error:")
-LITERAL = re.compile(r"(?:0[xX][0-9A-Fa-f]+|\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)[fFlL]?(?![\w.])")
-LITERAL_COMPARE = re.compile(
-    rf"(?:{LITERAL.pattern})\s*(?:==|!=)|(?:==|!=)\s*(?:{LITERAL.pattern})"
+LITERAL = (
+    r"(?:[+-] *)?(?:"
+    r"0[xX](?:[0-9a-fA-F]+\.?[0-9a-fA-F]*|\.[0-9a-fA-F]+)[pP][+-]?[0-9]+[fFlL]?"
+    r"|(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?[fFlL]?"
+    r"|(?:0[xX][0-9a-fA-F]+|0[bB][01]+|[0-9]+)[uUlL]*)"
 )
-NAN_IDIOM = re.compile(r"\b(?P<name>[A-Za-z_]\w*)\s*!=\s*(?P=name)\b")
-COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.DOTALL)
+NAME = r"[A-Za-z_][A-Za-z_0-9]*"
+# Only boundaries that cannot join the simple token to a higher-precedence
+# expression. Line ends alone cannot prove a boundary in multi-line C code.
+LEFT_BOUNDARY = r"(?:\breturn\b|[([{;,?:]|&&|\|\||(?<![<>=!])=)"
+RIGHT_BOUNDARY = r"(?:[)\]};,?:]|&&|\|\|)"
+LEFT_OPERAND = re.compile(rf"{LEFT_BOUNDARY}\s*(?P<operand>{LITERAL}|{NAME})\s*\Z")
+RIGHT_OPERAND = re.compile(rf"\s*(?P<operand>{LITERAL}|{NAME})\s*{RIGHT_BOUNDARY}")
+NUMERIC_LITERAL = re.compile(LITERAL)
+AMBIGUOUS_SOURCE = re.compile(r"""["'\\#]|/\*|\*/""")
 
 
 def load_units(
@@ -101,21 +110,35 @@ def syntax_only(argv: list[str]) -> list[str]:
 
 
 def source_line(path: Path, number: int) -> str:
+    if number < 1:
+        return ""
     try:
-        return path.read_text(encoding="utf-8", errors="replace").splitlines()[number - 1]
-    except (OSError, IndexError):
+        return path.read_text(encoding="utf-8").splitlines()[number - 1]
+    except (OSError, IndexError, UnicodeError):
         return ""
 
 
-def diagnostic_is_exempt(line: str) -> bool:
-    """Exempt a literal operand and the ``x != x`` NaN idiom."""
-    without_comments = COMMENT.sub("", line)
-    if NAN_IDIOM.search(without_comments):
+def diagnostic_is_exempt(line: str, column: int) -> bool:
+    """Exempt a proven literal operand or same-name NaN test at this column."""
+    # Keep the compiler's offsets. Reject ambiguous lexical context and
+    # prefixes where byte offsets and display columns can differ.
+    code = line.partition("//")[0]
+    index = column - 1
+    if index < 0 or not code[:index].isascii() or "\t" in code[:index]:
+        return False
+    operator = code[index : index + 2]
+    if operator not in ("==", "!=") or AMBIGUOUS_SOURCE.search(code):
+        return False
+    left = LEFT_OPERAND.search(code[:index])
+    right = RIGHT_OPERAND.match(code[index + 2 :])
+    if left is not None and NUMERIC_LITERAL.fullmatch(left["operand"]):
         return True
-    return bool(LITERAL_COMPARE.search(without_comments))
+    if right is not None and NUMERIC_LITERAL.fullmatch(right["operand"]):
+        return True
+    return bool(operator == "!=" and left and right and left["operand"] == right["operand"])
 
 
-def classify_diagnostics(output: str, source: Path) -> tuple[list[str], list[str], bool]:
+def classify_diagnostics(output: str, directory: Path) -> tuple[list[str], list[str], bool]:
     """Return unexempt float findings, other errors and whether a float error occurred."""
     result: list[str] = []
     other_errors: list[str] = []
@@ -127,16 +150,18 @@ def classify_diagnostics(output: str, source: Path) -> tuple[list[str], list[str
                 other_errors.append(diagnostic)
             continue
         float_error |= match.group("level") == "error"
+        path = Path(match.group("path"))
         line = int(match.group("line"))
-        if diagnostic_is_exempt(source_line(source, line)):
+        column = int(match.group("col"))
+        if diagnostic_is_exempt(source_line(directory / path, line), column):
             continue
-        result.append(f"{source}:{line}: {match.group('message').strip()}{FLOAT_EQUAL}")
+        result.append(f"{path}:{line}:{column}: {match.group('message').strip()}{FLOAT_EQUAL}")
     return result, other_errors, float_error
 
 
-def findings(output: str, source: Path) -> list[str]:
+def findings(output: str, directory: Path) -> list[str]:
     """Keep only float-equal diagnostics the rule does not exempt."""
-    return classify_diagnostics(output, source)[0]
+    return classify_diagnostics(output, directory)[0]
 
 
 def check(
@@ -160,7 +185,7 @@ def check(
         if result.returncode == 0:
             continue
         output = result.stdout + result.stderr
-        diagnostic_findings, other_errors, float_error = classify_diagnostics(output, source)
+        diagnostic_findings, other_errors, float_error = classify_diagnostics(output, directory)
         problems.extend(diagnostic_findings)
         problems.extend(other_errors)
         # Only an ordinary compilation failure explained by float errors can be

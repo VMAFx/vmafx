@@ -5,10 +5,10 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import re
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,25 +17,45 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = Path(__file__).with_name("fixtures") / "float_equality"
-SPEC = importlib.util.spec_from_file_location(
-    "check_float_equality", ROOT / "scripts/ci/check_float_equality.py"
-)
-assert SPEC is not None and SPEC.loader is not None
-MODULE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(MODULE)
+sys.path.insert(0, str(ROOT))
+
+from scripts.ci import check_float_equality as MODULE  # noqa: E402
 
 
 class FloatEqualityTests(unittest.TestCase):
     def test_planted_header_declared_shape_is_not_exempt(self) -> None:
         line = (FIXTURES / "planted.c").read_text(encoding="utf-8").splitlines()[6]
-        self.assertFalse(MODULE.diagnostic_is_exempt(line))
+        self.assertFalse(MODULE.diagnostic_is_exempt(line, line.index("==") + 1))
 
     def test_literal_operand_is_exempt(self) -> None:
-        self.assertTrue(MODULE.diagnostic_is_exempt("if (score == 0.0f) return 1;"))
-        self.assertTrue(MODULE.diagnostic_is_exempt("if (0.0f == score) return 1;"))
+        for line in (
+            "if (score == 0.0f) return 1;",
+            "if (0.0f == score) return 1;",
+            "return score == -.5f;",
+            "return +0x1.8p-2L == score;",
+            "return score == 12ULL;",
+        ):
+            with self.subTest(line=line):
+                self.assertTrue(MODULE.diagnostic_is_exempt(line, line.index("==") + 1))
 
     def test_nan_idiom_is_exempt(self) -> None:
-        self.assertTrue(MODULE.diagnostic_is_exempt("if (value != value) return 1;"))
+        line = "if (value1 != value1) return 1;"
+        self.assertTrue(MODULE.diagnostic_is_exempt(line, line.index("!=") + 1))
+
+    def test_ambiguous_source_does_not_waive_a_diagnostic(self) -> None:
+        cases = (
+            ("return a == 1.25f;", 1),
+            ("return a == 1.25f;", 0),
+            ("return a == 1.25f;", 99),
+            ("    2.0f == b;", 10),  # The previous line may end with '*'.
+            ("return a == 2.0f", 10),  # The next line may start with '*'.
+            ("return a <= 2 == b;", 15),
+            ("return a != b.a;", 10),
+            ('return a == b && consume("1.25f == c");', 10),
+        )
+        for line, column in cases:
+            with self.subTest(line=line, column=column):
+                self.assertFalse(MODULE.diagnostic_is_exempt(line, column))
 
     def test_planted_diagnostic_is_reported(self) -> None:
         output = (
@@ -43,9 +63,9 @@ class FloatEqualityTests(unittest.TestCase):
             "is unsafe [-Wfloat-equal]\n"
         )
         self.assertEqual(
-            MODULE.findings(output, FIXTURES / "planted.c"),
+            MODULE.findings(output, ROOT),
             [
-                f"{FIXTURES / 'planted.c'}:6: comparing floating point with == or != is unsafe"
+                f"{FIXTURES / 'planted.c'}:6:12: comparing floating point with == or != is unsafe"
                 "[-Wfloat-equal]"
             ],
         )
@@ -86,9 +106,9 @@ class FloatEqualityTests(unittest.TestCase):
             "is unsafe [-Werror=float-equal]\n"
         )
         self.assertEqual(
-            MODULE.findings(output, FIXTURES / "planted.c"),
+            MODULE.findings(output, ROOT),
             [
-                f"{FIXTURES / 'planted.c'}:7: comparing floating point with == or != is unsafe"
+                f"{FIXTURES / 'planted.c'}:7:12: comparing floating point with == or != is unsafe"
                 "[-Wfloat-equal]"
             ],
         )
@@ -99,9 +119,9 @@ class FloatEqualityTests(unittest.TestCase):
             "is unsafe [-Werror,-Wfloat-equal]\n"
         )
         self.assertEqual(
-            MODULE.findings(output, FIXTURES / "planted.c"),
+            MODULE.findings(output, ROOT),
             [
-                f"{FIXTURES / 'planted.c'}:7: comparing floating point with == or != is unsafe"
+                f"{FIXTURES / 'planted.c'}:7:12: comparing floating point with == or != is unsafe"
                 "[-Wfloat-equal]"
             ],
         )
@@ -149,11 +169,11 @@ class FloatEqualityTests(unittest.TestCase):
         for tag in MODULE.FLOAT_EQUAL_TAGS:
             for line in ("return a == 1.25f;", "return a != a;"):
                 with self.subTest(tag=tag, line=line):
-                    output = f"comparison.c:1:12: error: unsafe comparison {tag}\n"
+                    output = f"comparison.c:1:10: error: unsafe comparison {tag}\n"
                     self.assertEqual(self.check_output(output, line), [])
 
     def test_check_keeps_non_float_errors_with_float_diagnostics(self) -> None:
-        float_error = "comparison.c:1:12: error: unsafe [-Werror=float-equal]\n"
+        float_error = "comparison.c:1:10: error: unsafe [-Werror=float-equal]\n"
         other_errors = (
             "comparison.c:2:3: error: unknown identifier 'missing'",
             "comparison.c:2: fatal error: missing.h: No such file or directory",
@@ -166,18 +186,20 @@ class FloatEqualityTests(unittest.TestCase):
                     self.assertTrue(any(error in problem for problem in problems), problems)
 
     def test_unexplained_failure_is_not_excused_by_a_float_warning(self) -> None:
-        output = "comparison.c:1:12: warning: unsafe [-Wfloat-equal]\n"
+        output = "comparison.c:1:10: warning: unsafe [-Wfloat-equal]\n"
         self.assertTrue(self.check_output(output, "return a == 1.25f;"))
         self.assertTrue(self.check_output("", ""))
 
     def test_abnormal_exit_is_not_excused_by_an_exempt_float_error(self) -> None:
-        output = "comparison.c:1:12: error: unsafe [-Werror=float-equal]\n"
+        output = "comparison.c:1:10: error: unsafe [-Werror=float-equal]\n"
         for returncode in (2, -9):
             with self.subTest(returncode=returncode):
                 self.assertTrue(self.check_output(output, "return a == 1.25f;", returncode))
 
-    def real_compiler_problems(self, body: str | None) -> list[str]:
-        compiler = shutil.which("gcc") or shutil.which("gcc-15") or shutil.which("clang")
+    def real_compiler_problems(self, body: str | None, compiler: str | None = None) -> list[str]:
+        compiler = (
+            compiler or shutil.which("gcc") or shutil.which("gcc-15") or shutil.which("clang")
+        )
         if compiler is None:
             self.skipTest("gcc/clang is not on PATH")
         with tempfile.TemporaryDirectory() as temporary:
@@ -203,10 +225,47 @@ class FloatEqualityTests(unittest.TestCase):
         problems = self.real_compiler_problems(None)
         self.assertTrue(any("planted.c:7:" in problem for problem in problems), problems)
 
-    def test_real_compiler_accepts_exempt_literal_comparison(self) -> None:
-        self.assertEqual(
-            self.real_compiler_problems("int compare(float a) { return a == 1.25f; }\n"), []
+    def real_compilers(self) -> list[str]:
+        compilers = [shutil.which("gcc") or shutil.which("gcc-15"), shutil.which("clang")]
+        available = [compiler for compiler in compilers if compiler is not None]
+        if not available:
+            self.skipTest("gcc/clang is not on PATH")
+        return available
+
+    def test_real_compilers_reject_each_unsafe_comparison(self) -> None:
+        cases = (
+            ("a == 1.25f || b == c", "b == c"),
+            ("a != a || b == c", "b == c"),
+            ("a * 2.0f == b", "2.0f == b"),
+            ("a == 2 * b", "a == 2"),
+            ("v1 == v2", "v1 == v2"),
         )
+        functions = [
+            f"int compare_{i}(float a, float b, float c, float v1, float v2) {{ return {expr}; }}"
+            for i, (expr, _) in enumerate(cases)
+        ]
+        expected = [
+            f"comparison.c:{i}:{line.index('==', line.index(unsafe)) + 1}:"
+            for i, (line, (_, unsafe)) in enumerate(zip(functions, cases, strict=True), start=1)
+        ]
+        for compiler in self.real_compilers():
+            with self.subTest(compiler=compiler):
+                problems = self.real_compiler_problems("\n".join(functions) + "\n", compiler)
+                self.assertEqual(len(problems), len(expected), problems)
+                for location in expected:
+                    self.assertTrue(any(location in problem for problem in problems), problems)
+                self.assertTrue(
+                    all(MODULE.FLOAT_EQUAL in problem for problem in problems), problems
+                )
+
+    def test_real_compilers_accept_only_exempt_comparisons(self) -> None:
+        source = (
+            "int literal(float a) { return a == 1.25f || 1.25f == a; }\n"
+            "int nan_test(float a) { return a != a; }\n"
+        )
+        for compiler in self.real_compilers():
+            with self.subTest(compiler=compiler):
+                self.assertEqual(self.real_compiler_problems(source, compiler), [])
 
     def test_real_compiler_rejects_non_float_error(self) -> None:
         problems = self.real_compiler_problems("int compare(void) { return missing; }\n")
