@@ -13,13 +13,17 @@
 # scripts/ci/check-default-model-single-source.sh applies to the default model:
 # one authoritative value, mirrors permitted, drift fatal.
 #
-# Three rules:
+# Five rules:
 #   1. No Dockerfile in scope may FROM a literal registry reference. It must
 #      FROM ${SOME_ARG} or from an earlier stage in the same file.
 #   2. Any `ARG NAME=...` whose NAME is a key in build-config.env must carry
 #      exactly the config's value.
 #   3. Every pinned image tag must actually carry the version its knob claims,
 #      so RELEASE_DEBIAN=13 cannot sit above a debian:12 pin.
+#   4. Workflows must not hardcode versions that build-config.env owns.
+#   5. Dev Container features resolve through devcontainer-lock.json: every
+#      generated feature reference needs an exact version and @sha256 digest,
+#      never a mutable major tag.
 #
 # Rule 3 is what would have caught the drift that prompted this file:
 # Dockerfile.controller and Dockerfile.operator were still on Debian 12 and
@@ -27,7 +31,7 @@
 #
 # Usage: check-base-image-single-source.sh [--write]
 #   --write   rewrite Dockerfile ARG defaults from build-config.env instead of
-#             failing on drift (rule 2 only; rules 1 and 3 still report)
+#             failing on drift (rule 2 only; rules 1, 3, 4 and 5 still report)
 # Exit: 0 clean; 1 a violation; 2 the config is missing or malformed.
 set -euo pipefail
 export LC_ALL=C
@@ -205,6 +209,14 @@ done
 # the version and the repository URL on different lines, which a line-oriented
 # grep cannot see.
 if ! python3 scripts/ci/check-workflow-versions.py; then
+  fail=1
+fi
+
+# ------------------------- rule 5: devcontainer features resolve the lock --
+# `.devcontainer/devcontainer.json` is generated and keeps its major tags; exact
+# releases and digests live in `devcontainer-lock.json`, which the Dev Containers
+# CLI writes and this gate requires for every generated feature.
+if ! python3 scripts/ci/check_devcontainer_feature_pins.py; then
   fail=1
 fi
 
