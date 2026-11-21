@@ -13,6 +13,7 @@ config: rust-toolchain.toml, both workspaces' `rust-version`, the workflow's
 from __future__ import annotations
 
 import importlib.util
+import os
 import tempfile
 import textwrap
 import unittest
@@ -36,6 +37,16 @@ class RustPinGate(Protocol):
 
 GATE = cast(RustPinGate, MODULE)
 WANT = "1.99.0"
+MANIFEST = """\
+[workspace.package]
+rust-version = "{version}"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+"""
 WORKFLOW = """\
     jobs:
       rust:
@@ -58,7 +69,7 @@ class RustToolchainSingleSource(unittest.TestCase):
         self.repo = Path(temporary.name)
         self.write("rust-toolchain.toml", f'[toolchain]\nchannel = "{WANT}"\n')
         for rel in ("Cargo.toml", "core/src/rust/Cargo.toml"):
-            self.write(rel, f'[workspace.package]\nrust-version = "{WANT}"\n')
+            self.write(rel, MANIFEST.format(version=WANT))
         self.write(".github/workflows/rust-ci.yml", textwrap.dedent(WORKFLOW).format(version=WANT))
         self.write("dev/Containerfile", textwrap.dedent(CONTAINER).format(extra=""))
 
@@ -94,15 +105,33 @@ class RustToolchainSingleSource(unittest.TestCase):
         self.assertIn("rust-toolchain.toml: no [toolchain] channel", self.check()[0])
 
     def test_manifest_drift_fails(self) -> None:
-        self.write("core/src/rust/Cargo.toml", '[workspace.package]\nrust-version = "1.85"\n')
+        self.write("core/src/rust/Cargo.toml", MANIFEST.format(version="1.85"))
         problems = self.check()
         self.assertEqual(len(problems), 1)
         self.assertIn("core/src/rust/Cargo.toml", problems[0])
         self.assertIn("'1.85'", problems[0])
 
     def test_manifest_without_rust_version_fails(self) -> None:
-        self.write("Cargo.toml", "[workspace]\nmembers = []\n")
-        self.assertIn("rust-version is 'None'", self.check()[0])
+        manifest = MANIFEST.format(version=WANT).replace(f'rust-version = "{WANT}"\n', "")
+        self.write("Cargo.toml", manifest)
+        self.assertIn("rust-version is 'None'", "\n".join(self.check()))
+
+    def test_release_profile_drift_fails(self) -> None:
+        manifest = MANIFEST.format(version=WANT).replace("opt-level = 3", "opt-level = 2")
+        self.write("core/src/rust/Cargo.toml", manifest)
+        problems = self.check()
+        self.assertEqual(len(problems), 1)
+        self.assertIn("core/src/rust/Cargo.toml: [profile.release] opt-level is 2", problems[0])
+
+    def test_missing_release_profile_fails(self) -> None:
+        self.write("core/src/rust/Cargo.toml", f'[workspace.package]\nrust-version = "{WANT}"\n')
+        problems = self.check()
+        self.assertIn("core/src/rust/Cargo.toml: no [profile.release] table", problems)
+
+    def test_missing_release_profile_key_fails(self) -> None:
+        manifest = MANIFEST.format(version=WANT).replace('panic = "abort"\n', "")
+        self.write("Cargo.toml", manifest)
+        self.assertIn("Cargo.toml: [profile.release] has no panic", self.check())
 
     def test_workflow_stable_fails(self) -> None:
         """The unpinned "stable" input this gate replaced."""
@@ -148,6 +177,10 @@ STATICLIB = importlib.util.module_from_spec(STATICLIB_SPEC)
 STATICLIB_SPEC.loader.exec_module(STATICLIB)
 
 
+@unittest.skipUnless(
+    os.name == "posix",
+    "the cargo stub is a POSIX shell script; Windows cannot execute it",
+)
 class CargoRunsWhereTheToolchainFileIs(unittest.TestCase):
     """rustup reads rust-toolchain.toml from the working directory upwards.
 

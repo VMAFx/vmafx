@@ -251,7 +251,8 @@ FORMATTER_PINS = {
 def precommit_rev(text: str, repo: str) -> str | None:
     """Return the `rev:` of one pre-commit repository, without a leading v."""
     match = re.search(
-        rf"(?m)^\s*-\s*repo:\s*{re.escape(repo)}\s*\n\s*rev:\s*['\"]?v?([0-9][^'\"\s]*)", text
+        rf"(?m)^\s*-\s*repo:\s*{re.escape(repo)}\s*\n\s*rev:\s*['\"]?v?([0-9][^'\"\s]*)",
+        text,
     )
     return match.group(1) if match else None
 
@@ -415,6 +416,7 @@ def check_mypy_python_version(root: Path, py_ci: str | None = None) -> list[str]
 RUST_TOOLCHAIN_RE = re.compile(r"(?m)^\s*toolchain:\s*['\"]?([^'\"\s#]+)")
 RUST_LITERAL_RE = re.compile(r"(?:--default-toolchain|\+)\s*([0-9]+\.[0-9]+\.[0-9]+)\b")
 RUST_MANIFESTS = ("Cargo.toml", "core/src/rust/Cargo.toml")
+RELEASE_PROFILE_KEYS = ("opt-level", "lto", "codegen-units", "panic")
 
 
 def _rust_toolchain_file_problems(root: Path, rust_want: str) -> list[str]:
@@ -433,6 +435,7 @@ def _rust_toolchain_file_problems(root: Path, rust_want: str) -> list[str]:
 
 def _rust_manifest_problems(root: Path, rust_want: str) -> list[str]:
     problems: list[str] = []
+    release_profiles: dict[str, dict] = {}
     for rel in RUST_MANIFESTS:
         try:
             data = tomllib.loads((root / rel).read_text(encoding="utf-8"))
@@ -445,6 +448,37 @@ def _rust_manifest_problems(root: Path, rust_want: str) -> list[str]:
                 f"{rel}: [workspace.package] rust-version is '{found}'; "
                 f"build-config.env says RUST_VERSION '{rust_want}'"
             )
+        release = data.get("profile", {}).get("release")
+        if not isinstance(release, dict):
+            problems.append(f"{rel}: no [profile.release] table")
+            continue
+        release_profiles[rel] = release
+
+    baseline_rel = RUST_MANIFESTS[0]
+    problems.extend(_release_profile_problems(release_profiles, baseline_rel))
+    return problems
+
+
+def _release_profile_problems(release_profiles: dict[str, dict], baseline_rel: str) -> list[str]:
+    """Compare every [profile.release] with the baseline manifest."""
+    baseline = release_profiles.get(baseline_rel)
+    if baseline is None:
+        return []
+    problems: list[str] = []
+    for key in RELEASE_PROFILE_KEYS:
+        expected = baseline.get(key)
+        if expected is None:
+            problems.append(f"{baseline_rel}: [profile.release] has no {key}")
+            continue
+        for rel, release in release_profiles.items():
+            if rel == baseline_rel:
+                continue
+            found = release.get(key)
+            if found != expected:
+                problems.append(
+                    f"{rel}: [profile.release] {key} is {found!r}; "
+                    f"{baseline_rel} sets {expected!r}"
+                )
     return problems
 
 
@@ -573,7 +607,9 @@ def check_node_pins(root: Path, node_want: str | None) -> list[str]:
     return problems
 
 
-def _read_intel_neo_lock(lock_path: Path) -> tuple[dict[str, object] | None, str | None]:
+def _read_intel_neo_lock(
+    lock_path: Path,
+) -> tuple[dict[str, object] | None, str | None]:
     try:
         document = json.loads(lock_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
