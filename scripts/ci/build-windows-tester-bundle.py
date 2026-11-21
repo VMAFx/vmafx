@@ -82,8 +82,9 @@ SYCL_RUNTIME = IMAGE_DIR / "sycl-runtime-windows.json"
 # searches a program's own directory before System32, ADR-1566).
 PROGRAM_DIRS = ("build/tools", "tests")
 # DLLs loaded at run time: only the two Level Zero adapters, because the
-# 2026.2 UR loader is static inside sycl9.dll (UR_STATIC_LOADER=ON in
-# sycl/cmake/modules/BuildUnifiedRuntime.cmake:97) so it loads them directly.
+# 2026.2 UR loader is static inside sycl9.dll (intel/llvm v7.2.0,
+# unified-runtime/CMakeLists.txt:56 UR_STATIC_LOADER default ON;
+# sycl/cmake/modules/BuildUnifiedRuntime.cmake:98) so it loads them directly.
 LOADED_AT_RUN_TIME = (
     "ur_adapter_level_zero.dll",
     "ur_adapter_level_zero_v2.dll",

@@ -271,7 +271,10 @@ the C and C++ runtime, and everything they load lies in their own directory
   spec sets `credist_dir`). The spec lists candidates: the build drops every listed DLL
   nothing imports and the SYCL runtime does not load by name (`LOADED_AT_RUN_TIME`: the
   two Level Zero adapters the Unified Runtime loader inside `sycl9.dll` loads by name;
-  on 2026.2 that loader is linked statically), and records the dropped names in
+  on 2026.2 that loader is linked statically (intel/llvm v7.2.0:
+  `unified-runtime/CMakeLists.txt:56`, `UR_STATIC_LOADER` default ON;
+  `sycl/cmake/modules/BuildUnifiedRuntime.cmake:98` on Windows)), and records
+  the dropped names in
   `image/gpu-runtime.json`. After pruning, the build requires each run-time
   DLL name to occur as a whole name in another Intel DLL that the bundle ships;
 - `ze_loader.dll`, built by the workflow from `LEVEL_ZERO_VERSION` (component

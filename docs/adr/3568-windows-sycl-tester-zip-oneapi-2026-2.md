@@ -54,8 +54,10 @@ present in each affected directory in a single staging error.
   listed `sycl9.dll` in place of `sycl8.dll` and `ur_loader_shared.dll` in
   place of `ur_loader.dll`. The runtime manifest and licence record use the
   measured names. On oneAPI 2026.2 the UR loader is linked statically into
-  `sycl9.dll` (`sycl/cmake/modules/BuildUnifiedRuntime.cmake:97`,
-  `UR_STATIC_LOADER` default ON), so `LOADED_AT_RUN_TIME` keeps only the two
+  `sycl9.dll` (intel/llvm v7.2.0: `unified-runtime/CMakeLists.txt:56`,
+  `UR_STATIC_LOADER` default ON;
+  `sycl/cmake/modules/BuildUnifiedRuntime.cmake:98` on Windows), so
+  `LOADED_AT_RUN_TIME` keeps only the two
   Level Zero adapters the static loader opens by name and drops
   `ur_loader_shared.dll` unless a staged file imports it. After pruning, the
   build requires each run-time DLL name to occur as a whole name in another
