@@ -167,7 +167,11 @@ class FakeHost:
         return self.log.read_text(encoding="utf-8").splitlines()
 
     def apt_install_calls(self) -> str:
-        return " ".join(line for line in self.calls() if line.startswith("apt-get install "))
+        return " ".join(
+            line
+            for line in self.calls()
+            if line.split()[:1] == ["apt-get"] and "install" in line.split()[1:]
+        )
 
 
 class InstallCudaToolkitTest(unittest.TestCase):

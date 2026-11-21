@@ -123,7 +123,7 @@ fi
 if ! command -v curl >/dev/null 2>&1 || ! command -v gpg >/dev/null 2>&1 ||
   ! dpkg -s ca-certificates >/dev/null 2>&1; then
   $SUDO apt-get --error-on=any -o Acquire::Retries=3 update -qq
-  $SUDO apt-get install -y -qq --no-install-recommends ca-certificates curl gpg
+  $SUDO apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends ca-certificates curl gpg
 fi
 
 tmp="$(mktemp -d)"
@@ -177,7 +177,7 @@ case "$mode" in
     done
     ;;
 esac
-$SUDO apt-get install -y -qq --no-install-recommends "${operands[@]}"
+$SUDO apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends "${operands[@]}"
 
 # --- verify ---------------------------------------------------------------
 for operand in "${operands[@]}"; do

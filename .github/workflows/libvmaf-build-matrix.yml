@@ -326,19 +326,20 @@ jobs:
 
       - name: Install dependencies (ubuntu)
         if: ${{ (startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) && steps.impact.outputs.c_core == 'true' }}
+        timeout-minutes: 15
         run: |
           bash scripts/ci/apt-install-cached.sh refresh
-          sudo -E apt-get -yq install ccache ninja-build nasm libomp-dev pkg-config
+          sudo -E apt-get -yq -o Acquire::Retries=3 install ccache ninja-build nasm libomp-dev pkg-config
           # ADR-0692 (design notes)
           case "$CC" in
-          *gcc-14)   sudo -E apt-get -yq install gcc-14 g++-14 ;;
+          *gcc-14)   sudo -E apt-get -yq -o Acquire::Retries=3 install gcc-14 g++-14 ;;
           *clang-22) sudo bash scripts/ci/install-llvm.sh 22
-                     sudo -E apt-get -yq install libclang-rt-22-dev libomp-22-dev ;;
-          *gcc)      sudo -E apt-get -yq install gcc g++ ;;
-          *clang)    sudo -E apt-get -yq install clang ;;
+                     sudo -E apt-get -yq -o Acquire::Retries=3 install libclang-rt-22-dev libomp-22-dev ;;
+          *gcc)      sudo -E apt-get -yq -o Acquire::Retries=3 install gcc g++ ;;
+          *clang)    sudo -E apt-get -yq -o Acquire::Retries=3 install clang ;;
           esac
           if [ "${{ matrix.zimg }}" != "false" ]; then
-            sudo -E apt-get -yq install libzimg-dev
+            sudo -E apt-get -yq -o Acquire::Retries=3 install libzimg-dev
           fi
 
       - name: Install dependencies (mac)
@@ -391,9 +392,10 @@ jobs:
           CC: gcc
           CXX: g++
           GITHUB_TOKEN: ${{ github.token }}
+        timeout-minutes: 15
         run: |
           bash scripts/ci/apt-install-cached.sh refresh
-          sudo -E apt-get -yq install ccache ninja-build nasm gcc g++ gpg-agent pkg-config libzimg-dev
+          sudo -E apt-get -yq -o Acquire::Retries=3 install ccache ninja-build nasm gcc g++ gpg-agent pkg-config libzimg-dev
           # ADR-1360 (design notes)
           bash scripts/ci/install-intel-ocloc.sh
           wget --tries=3 --retry-connrefused --retry-on-host-error -qO "$RUNNER_TEMP/oneapi-key.asc" \
@@ -404,7 +406,7 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/oneAPI.list
           bash scripts/ci/apt-install-cached.sh refresh
           set -a; . ./build-config.env; set +a
-          sudo -E apt-get -yq install "${ONEAPI_APT_PACKAGE}" cmake
+          sudo -E apt-get -yq -o Acquire::Retries=3 install "${ONEAPI_APT_PACKAGE}" cmake
           # ADR-1231 (design notes)
           set -a; . ./build-config.env; set +a
           git clone --depth=1 --branch "v${LEVEL_ZERO_VERSION}" \
@@ -431,16 +433,18 @@ jobs:
 
       - name: Install base deps for CUDA-only builds
         if: ${{ (matrix.cuda && !matrix.sycl) && steps.impact.outputs.c_core == 'true' }}
+        timeout-minutes: 15
         run: |
           bash scripts/ci/apt-install-cached.sh refresh
-          sudo -E apt-get -yq install ccache ninja-build nasm gcc g++ pkg-config libzimg-dev
+          sudo -E apt-get -yq -o Acquire::Retries=3 install ccache ninja-build nasm gcc g++ pkg-config libzimg-dev
 
       # ADR-1225 (design notes)
       - name: Install ROCm / HIP toolchain
         if: ${{ (matrix.hip) && steps.impact.outputs.c_core == 'true' }}
+        timeout-minutes: 15
         run: |
           bash scripts/ci/apt-install-cached.sh refresh
-          sudo -E apt-get -yq install --no-install-recommends \
+          sudo -E apt-get -yq -o Acquire::Retries=3 install --no-install-recommends \
             ccache ninja-build nasm libomp-dev pkg-config gcc g++ jq libzimg-dev
           # ADR-1231 (design notes)
           set -a; . ./build-config.env; set +a

@@ -165,7 +165,7 @@ ARG RR_APT_VERSION=5.9.0-5
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
     # Toolchains
     ccache \
     gcc-13 \
@@ -433,7 +433,7 @@ RUN key="$(mktemp)" \
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
     intel-basekit
 
 # ---------- Intel GPU compute-runtime (Arc / Xe dispatch via Level Zero) ----
@@ -485,13 +485,13 @@ RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     . /opt/vmafx/build-config.env \
-    && apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends clinfo \
+    && apt-get --error-on=any -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends clinfo \
     && mkdir -p /tmp/neo && cd /tmp/neo \
     && token_args=() \
     && if [[ -n "${GITHUB_TOKEN:-}" ]]; then token_args=(--github-token "${GITHUB_TOKEN}"); fi \
     && python3 /tmp/fetch-intel-neo.py --neo-ver "${INTEL_NEO_VERSION}" --level-zero-ver "${LEVEL_ZERO_VERSION}" --level-zero-dev "${token_args[@]}" \
     && apt-get --error-on=any -o Acquire::Retries=3 update \
-    && apt-get install -y --no-install-recommends ./*.deb \
+    && apt-get -o Acquire::Retries=3 install -y --no-install-recommends ./*.deb \
     && ldconfig \
     && cd / && rm -rf /tmp/neo /tmp/fetch-intel-neo.py /tmp/intel-neo-lock.json
 
@@ -630,7 +630,7 @@ COPY --from=rocm-src /opt/rocm /opt/rocm
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
     libxml2-16 \
     && ln -sf /usr/lib/x86_64-linux-gnu/libxml2.so.16.1.2 \
               /usr/lib/x86_64-linux-gnu/libxml2.so.2
@@ -974,7 +974,7 @@ USER root
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
+    apt-get --error-on=any -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
     libx264-dev libx265-dev libvpx-dev libdav1d-dev \
     libfdk-aac-dev libmp3lame-dev libopus-dev libvorbis-dev \
     libass-dev libfreetype-dev libfontconfig-dev libfribidi-dev \

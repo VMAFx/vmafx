@@ -853,7 +853,15 @@ APT_SNAPSHOT_WRITE = [
 APT_SNAPSHOT_CHECK = ["grep", "-Eqx", 'APT::Snapshot "[0-9]{8}T[0-9]{6}Z";', APT_SNAPSHOT_FILE]
 APT_CERTIFICATE_BOOTSTRAP = [
     ["apt-get", "--error-on=any", "-o", "Acquire::Retries=3", "update"],
-    ["apt-get", "install", "-y", "--no-install-recommends", "ca-certificates"],
+    [
+        "apt-get",
+        "-o",
+        "Acquire::Retries=3",
+        "install",
+        "-y",
+        "--no-install-recommends",
+        "ca-certificates",
+    ],
 ]
 
 
@@ -2267,7 +2275,8 @@ class FailClosedCIContract(unittest.TestCase):
         self.assertIn("sudo bash scripts/ci/install-llvm.sh 22", tidy_job)
         # The packages come from the job's apt list (apt archive cache).
         self.assertIn(
-            "grep -v '^#' .github/apt/clang-tidy-full.txt | xargs sudo apt-get install -y",
+            "grep -v '^#' .github/apt/clang-tidy-full.txt | xargs sudo apt-get "
+            "-o Acquire::Retries=3 install -y",
             tidy_job,
         )
         apt_list = (ROOT / ".github/apt/clang-tidy-full.txt").read_text(encoding="utf-8")
@@ -2453,11 +2462,27 @@ class InstallStepContract(unittest.TestCase):
             "[[ -f $APT_SOURCES_DIR/oneAPI.list && -f $APT_SOURCES_DIR/ubuntu.sources ]] || exit 92\n"
         )
         bodies = {
-            "apt-get": 'if [[ " $* " == *" update "* ]]; then\n'
-            + check_sources
-            + "fi\n"
-            + "if [[ $1 == install && ! -e $STUBS/archive-attempt ]]; then\n"
-            '  : > "$STUBS/archive-attempt"\n  exit "$FAKE_ARCHIVE_INSTALL"\nfi\n',
+            "apt-get": 'verb=""\n'
+            "skip_next=0\n"
+            'for arg in "$@"; do\n'
+            "  if [[ $skip_next -eq 1 ]]; then\n"
+            "    skip_next=0\n"
+            "    continue\n"
+            "  fi\n"
+            "  if [[ $arg == -o ]]; then\n"
+            "    skip_next=1\n"
+            "    continue\n"
+            "  fi\n"
+            "  if [[ $arg == -* ]]; then\n"
+            "    continue\n"
+            "  fi\n"
+            "  verb=$arg\n"
+            "  break\n"
+            "done\n"
+            "if [[ $verb == update ]]; then\n" + check_sources + "fi\n"
+            "if [[ $verb == install && ! -e $STUBS/archive-attempt ]]; then\n"
+            '  : > "$STUBS/archive-attempt"\n  exit "$FAKE_ARCHIVE_INSTALL"\n'
+            "fi\n",
             "apt-cache": '[[ $2 != "$FAKE_MISSING" ]] || exit 100\nexit "$FAKE_APT_CACHE"\n',
             "wget": '[[ -z $FAKE_SIGNAL ]] || kill -s "$FAKE_SIGNAL" "$PPID"\n'
             'printf "%s" "$FAKE_PAYLOAD" > "$2"\nexit "$FAKE_WGET"\n',
@@ -2567,7 +2592,9 @@ class InstallStepContract(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertIn("LLVM 22 from the distribution archive", stdout)
         self.assertIn(
-            "apt-get install -y -q clang-22 lldb-22 lld-22 clangd-22 clang-tidy-22", calls
+            "apt-get -o Acquire::Retries=3 install -y -q clang-22 lldb-22 lld-22 clangd-22 "
+            "clang-tidy-22",
+            calls,
         )
         self.assertFalse([call for call in calls if call.startswith("wget")])
 
