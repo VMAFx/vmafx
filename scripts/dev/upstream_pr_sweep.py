@@ -527,6 +527,15 @@ def operator_emails(repo: Path) -> set[str]:
     return emails
 
 
+def _first_foreign_email(lines: Sequence[str], allowed: set[str]) -> str | None:
+    for line in lines[:MAX_PR_COMMITS]:
+        for email in line.split("\x00")[:2]:
+            normalized = email.strip().lower()
+            if normalized and normalized not in allowed:
+                return email.strip()
+    return None
+
+
 def check_commit_authors(
     repo: Path, base_sha: str, old_sha: str, *, allow_foreign_authors: bool = False
 ) -> tuple[bool, str]:
@@ -541,11 +550,9 @@ def check_commit_authors(
         return False, f"range has more than {MAX_PR_COMMITS} commits; refusing"
     if allow_foreign_authors:
         return True, ""
-    for line in lines[:MAX_PR_COMMITS]:
-        for email in line.split("\x00")[:2]:
-            normalized = email.strip().lower()
-            if normalized and normalized not in allowed:
-                return False, f"foreign commit identity '{email.strip()}' not in operator emails"
+    foreign = _first_foreign_email(lines, allowed)
+    if foreign is not None:
+        return False, f"foreign commit identity '{foreign}' not in operator emails"
     return True, ""
 
 
@@ -610,8 +617,8 @@ def run_rebase(wt: Path, base_sha: str) -> tuple[str | None, str]:
     return "REBASE-FAIL", first_line or f"git rebase exited {rc}"
 
 
-def count_unsigned(wt: Path, base_sha: str) -> tuple[int, str]:
-    rc, out, err = git_cmd(wt, ["log", "--format=%G?", f"{base_sha}..HEAD"])
+def count_unsigned(wt: Path, base_sha: str, head: str = "HEAD") -> tuple[int, str]:
+    rc, out, err = git_cmd(wt, ["log", "--format=%G?", f"{base_sha}..{head}"])
     if rc != 0:
         detail = (
             f"git log signature verification failed: {err.strip()}"
@@ -735,7 +742,14 @@ def _is_object_id(value: str) -> bool:
 
 
 def push_branch(
-    wt: Path, branch: str, old_sha: str, new_sha: str, fork: str = ""
+    wt: Path,
+    branch: str,
+    old_sha: str,
+    new_sha: str,
+    fork: str = "",
+    *,
+    base_sha: str = "upstream/master",
+    self_review: Path | None = None,
 ) -> tuple[bool, str]:
     """Push the verified ``new_sha``, never the symbolic HEAD, under a lease on ``old_sha``."""
     if fork:
@@ -744,6 +758,29 @@ def push_branch(
             return False, f"push refused: {url_detail}"
     if not _is_object_id(new_sha):
         return False, "push refused: no verified commit SHA"
+    # Import lazily: the gate shares this module's bounded Git and signature helpers.
+    from scripts.dev.upstream_push_gate import (  # noqa: PLC0415 - gate imports sweep helpers
+        MAX_CLASSES,
+        UsageError,
+        run_gate,
+    )
+
+    mechanical_only = "rebase-only push" if self_review is None else None
+    try:
+        results = run_gate(
+            wt,
+            base=base_sha,
+            head=new_sha,
+            self_review=self_review,
+            mechanical_only=mechanical_only,
+        )
+    except (OSError, ValueError, RuntimeError, UsageError) as exc:
+        return False, f"push refused: upstream gate could not run ({type(exc).__name__})"
+    for result in results[:MAX_CLASSES]:
+        print(result.line(), file=sys.stderr)
+    for result in results[:MAX_CLASSES]:
+        if result.verdict.status == "FAIL":
+            return False, result.line()
     refspec = f"{new_sha}:refs/heads/{branch}"
     lease = f"--force-with-lease=refs/heads/{branch}:{old_sha}"
     rc, out, err = git_cmd(wt, ["push", lease, "origin", refspec], timeout=60.0)
@@ -893,18 +930,28 @@ def _execute_build_and_push(
     old_sha: str,
     new_sha: str,
     *,
+    base_sha: str,
     fork: str = "",
     build: bool,
     push: bool,
     cuda_prefix: str,
     jobs: int,
+    self_review: Path | None = None,
 ) -> SweepRow:
     if build:
         status, detail = build_and_test(wt, target.number, target.branch, cuda_prefix, jobs)
         if status != "OK":
             return SweepRow(target.number, target.branch, status, old_sha, new_sha, 0, detail)
     if push:
-        push_ok, push_detail = push_branch(wt, target.branch, old_sha, new_sha, fork=fork)
+        push_ok, push_detail = push_branch(
+            wt,
+            target.branch,
+            old_sha,
+            new_sha,
+            fork=fork,
+            base_sha=base_sha,
+            self_review=self_review,
+        )
         if not push_ok:
             return SweepRow(
                 target.number, target.branch, "REFUSED", old_sha, new_sha, 0, push_detail
@@ -927,6 +974,7 @@ def _apply_pr_changes(
     cuda_prefix: str,
     jobs: int,
     allow_foreign_authors: bool,
+    self_review: Path | None = None,
 ) -> SweepRow:
     rebase_failure, new_sha = _execute_rebase(
         repo,
@@ -953,11 +1001,13 @@ def _apply_pr_changes(
         target,
         old_sha,
         new_sha,
+        base_sha=base_sha,
         fork=fork,
         build=build,
         push=push,
         cuda_prefix=cuda_prefix,
         jobs=jobs,
+        self_review=self_review,
     )
 
 
@@ -974,6 +1024,7 @@ def process_pr(
     cuda_prefix: str,
     jobs: int,
     allow_foreign_authors: bool = False,
+    self_review: Path | None = None,
 ) -> SweepRow:
     candidate_wt = pr_worktree_path(worktree_root, target.number)
     with worktree_lock(candidate_wt) as (locked, lock_detail):
@@ -1010,10 +1061,19 @@ def process_pr(
             cuda_prefix=cuda_prefix,
             jobs=jobs,
             allow_foreign_authors=allow_foreign_authors,
+            self_review=self_review,
         )
 
 
 def sweep(args: argparse.Namespace) -> list[SweepRow]:
+    self_review = getattr(args, "self_review", None)
+    if self_review is not None:
+        from scripts.dev.upstream_push_gate import read_text  # noqa: PLC0415
+
+        try:
+            read_text(self_review)
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"cannot read self-review {self_review}: {exc}") from exc
     repo = Path(args.repo).resolve()
     worktree_root = Path(args.worktree_root).resolve()
     fork_owner = args.fork.split("/", maxsplit=1)[0]
@@ -1044,6 +1104,7 @@ def sweep(args: argparse.Namespace) -> list[SweepRow]:
                 cuda_prefix=args.cuda_prefix,
                 jobs=args.jobs,
                 allow_foreign_authors=allow_foreign,
+                self_review=self_review,
             )
         except Exception as exc:
             row = SweepRow(
@@ -1087,6 +1148,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--apply", action="store_true", help="apply rebases, builds, or pushes")
     parser.add_argument("--push", action="store_true", help="push rebased branches with lease")
+    parser.add_argument("--self-review", type=Path, help="file with Cxx: answer lines")
     parser.add_argument(
         "--allow-foreign-authors",
         action="store_true",

@@ -32,6 +32,13 @@ def setUpModule() -> None:
 
 
 class UpstreamPrSweepHardeningTest(SweepFixtureCase):
+    def setUp(self) -> None:
+        super().setUp()
+        # Keep the independent gate contract in test_upstream_push_gate.py.
+        gate = patch("scripts.dev.upstream_push_gate.run_gate", return_value=[])
+        gate.start()
+        self.addCleanup(gate.stop)
+
     def test_T00_missing_new_sha_returns_structured_failure(self) -> None:
         target = sweep_mod.PRTarget(number=1, branch="fix/pr-1", head_owner="testfork")
         for missing_val in (None, ""):

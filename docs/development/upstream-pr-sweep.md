@@ -162,3 +162,75 @@ and support fixtures in
 [`scripts/dev/tests/upstream_pr_sweep_fixture.py`](https://github.com/vidiko/vmafx/blob/master/scripts/dev/tests/upstream_pr_sweep_fixture.py),
 using isolated bare upstream and fork repositories with local SSH-based Git commit
 signing.
+
+## Pre-push gate for upstream branches
+
+Run `scripts/dev/upstream_push_gate.py` before publishing a branch from a contribution worktree. The gate is offline: it reads the supplied local upstream ref and exact proposed head, and never fetches or contacts a remote service. Refresh the local upstream ref through your usual workflow before relying on the merge result.
+
+Invoke the script from this checkout and point `--repo` at the contribution worktree:
+
+```bash
+python3 /path/to/fork/scripts/dev/upstream_push_gate.py \
+  --repo /path/to/contribution-worktree \
+  --base upstream/master --head HEAD \
+  --draft /path/to/pr-draft.md --self-review /path/to/self-review.txt
+```
+
+Repeat `--draft FILE` for additional drafts. Both refs resolve to immutable commit IDs before checking. The output has one `PASS`, `FAIL`, or `SKIP` line per class, with its class ID, name, and reason. Exit 0 means no check failed; exit 1 reports check failures; exit 2 reports invalid arguments, unavailable inputs, or setup errors. A skip is never evidence that its class passed.
+
+The canonical class list, hit counts, and full review questions live in `scripts/dev/upstream_review_classes.json`. The gate refuses an implemented class missing from that file or a listed mechanical/self-review class without an implementation.
+
+| Class ID | Check | Mode |
+| --- | --- | --- |
+| C01 | Require green fork CI on the exact proposed head before publishing or updating the upstream pull request. | online |
+| C02 | Catalogue reviewer requests only: outside authors cannot request reviewers and the base has no CODEOWNERS. | non-actionable |
+| C03 | Require upstream subsystem subjects, a non-empty body, and 72-column message wrapping. | mechanical |
+| C04 | Require a test change for source changes or an explicit C04 self-review reason. | mechanical |
+| C05 | Reject model or tool attribution and fork artifacts in commit messages, drafts, and added diff lines. | mechanical |
+| C06 | Require the pushed head to merge cleanly onto the supplied local upstream ref. | mechanical |
+| C07 | Require one contribution commit unless C07 explains the reviewable split. | mechanical |
+| C08 | Require recorded performance measurements of candidate forms under two compilers. | self-review |
+| C09 | Require every resolvable commit ID in drafts to be reachable from the pushed head or upstream ref. | mechanical |
+| C10 | Check for open upstream pull requests touching the same functions before publishing. | online |
+| C11 | Require a release-build reproducer demonstrating an output, exit-code, or memory effect. | self-review |
+| C12 | Require checks of fallible calls and resource release on failure in touched functions. | self-review |
+| C13 | Require a search of sibling backends and call sites, with fixes or an explicit scope reason. | self-review |
+| C14 | Require signature status G for every contribution commit in the exact pushed range. | mechanical |
+| C15 | Require prior upstream issue agreement for score, public API, or exit-behaviour changes. | self-review |
+| C16 | Require sanitizer evidence for extremal inputs at 8, 10, 12, and 16 bits. | self-review |
+| C17 | Reject fork-only paths and contribution ranges exceeding three commits. | mechanical |
+
+C01 and C10 are deferred to a later round; this command does not establish exact-head CI status or detect overlapping open pull requests. C02 is catalogued only because outside authors cannot request reviewers and the upstream base has no CODEOWNERS. These classes print SKIP with their reason.
+
+### Self-review evidence
+
+Supply a UTF-8 file with one `Cxx: <answer>` line per self-review class. Answer yes/no and include the command, result, input, or review evidence; each answer must contain at least 12 characters. `n/a: <reason>` is accepted when a class does not apply. Example:
+
+```text
+C08: yes: two compiler commands and timings are in perf-results.txt
+C11: yes: release-case.yuv changes peak memory; before/after in results.txt
+C12: yes: checked allocation and cleanup paths in the touched function
+C13: yes: searched sibling backends and callers; paths in parity-results.txt
+C15: n/a: no score, public API, or exit-code behaviour changes
+C16: yes: sanitizer commands and 8/10/12/16-bit extrema in results.txt
+```
+
+C08 and C16 cannot start with `n/a` when the diff touches the x86, arm64, or CUDA kernel directories, or filenames containing `avx` or `neon`. The gate checks evidence presence and applicability; a reviewer must assess its substance.
+
+A source change under `libvmaf/src/`, `libvmaf/tools/`, or `python/vmaf/` without a test change requires an additional `C04: <reason>` line. Multiple contribution commits require `C07: <reason>` explaining the split, and more than three commits always fails C17. These optional reasons also need at least 12 characters.
+
+### Sweep integration and limits
+
+`push_branch` calls the same gate directly on the resolved `base_sha..new_sha` immediately before pushing. A FAIL produces a REFUSED row whose detail is the first FAIL line, and no push runs. The gate verifies the proposed head even if a build moved symbolic HEAD. An empty `base..head` range or a range containing a merge commit is refused as an error before checks run.
+
+When `--self-review` is omitted, the sweep supplies `--mechanical-only "rebase-only push"`, which skips the six self-review classes and prints that reason. A person can use this mode for a pure rebase after reviewing the existing patch. It does not waive C04, C07, signatures, message shape, or any other mechanical check.
+
+When `--self-review /path/to/self-review.txt` is passed to the sweep,
+`--mechanical-only` is omitted so all six self-review classes run alongside the
+mechanical checks. Use the same UTF-8 `Cxx: <answer>` lines described above,
+including the C04 or C07 reason as applicable. The file must be readable before
+the sweep starts.
+
+Commit subjects use `<subsystem>: <summary>` and at most 72 characters; conventional-commit prefixes are refused. A blank second line and a non-empty body are required. Body lines wrap at 72 columns, except bare URLs, four-space/tab-indented lines, and trailers in the final paragraph. Attribution checks share the DCO checker's attribution functions without requiring DCO sign-off. Leak diagnostics name a commit or file and line number without echoing the offending line.
+
+Inputs have byte, line, draft, token, and commit-count bounds; Git calls use the sweep's allow-listed executable and timeout. The gate needs an installed Git supporting `merge-tree --write-tree --no-messages --name-only` and signature verification configured for the contribution commits. Regression fixtures cover planted failures in disposable signed repositories.

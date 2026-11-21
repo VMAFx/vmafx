@@ -32,6 +32,130 @@ def setUpModule() -> None:
     require_fixture_tools()
 
 
+class SelfReviewSweepTest(SweepFixtureCase):
+    def _multicommit_head(self) -> str:
+        tree = git_run(self.repo, "rev-parse", f"{self.upstream_master_sha}^{{tree}}")
+        first = git_run(
+            self.repo,
+            "commit-tree",
+            "-S",
+            tree,
+            "-p",
+            self.upstream_master_sha,
+            "-m",
+            "libvmaf: first change",
+            "-m",
+            "First reviewed change.",
+        )
+        return git_run(
+            self.repo,
+            "commit-tree",
+            "-S",
+            tree,
+            "-p",
+            first,
+            "-m",
+            "libvmaf: second change",
+            "-m",
+            "Second reviewed change.",
+        )
+
+    def test_multicommit_review_reaches_push(self) -> None:
+        head = self._multicommit_head()
+        review = self.root / "review.txt"
+        review.write_text(
+            "".join(
+                f"{cid}: yes: reviewed evidence recorded for sweep push\n"
+                for cid in ("C07", "C08", "C11", "C12", "C13", "C15", "C16")
+            ),
+            encoding="utf-8",
+        )
+        parser = sweep_mod.build_parser()
+        common = [
+            "--repo",
+            str(self.repo),
+            "--worktree-root",
+            str(self.worktree_root),
+            "--fork",
+            "testfork/vmaf",
+            "--prs",
+            str(self.prs_file),
+            "--apply",
+            "--push",
+        ]
+        git_cmd = sweep_mod.git_cmd
+
+        def fake_git(cwd: Path, args: list[str], *, timeout: float = 120.0) -> tuple[int, str, str]:
+            if args[0] == "push":
+                return 0, "", ""
+            return git_cmd(cwd, args, timeout=timeout)
+
+        with (
+            patch.object(
+                sweep_mod,
+                "_validate_pr_preconditions",
+                return_value=(None, self.repo, self.pr_old_sha),
+            ),
+            patch.object(sweep_mod, "_execute_rebase", return_value=(None, head)),
+            patch.object(sweep_mod, "resolve_base_sha", return_value=self.upstream_master_sha),
+            patch.object(sweep_mod, "check_origin_url", return_value=(True, "")),
+            patch.object(sweep_mod, "git_cmd", side_effect=fake_git) as git_mock,
+        ):
+            refused = sweep_mod.sweep(parser.parse_args(common))[0]
+            self.assertEqual(refused.status, "REFUSED")
+            self.assertIn("C07", refused.detail)
+            self.assertFalse(any(call.args[1][0] == "push" for call in git_mock.call_args_list))
+            accepted = sweep_mod.sweep(parser.parse_args([*common, "--self-review", str(review)]))[
+                0
+            ]
+            self.assertEqual(accepted.status, "OK")
+            self.assertTrue(any(call.args[1][0] == "push" for call in git_mock.call_args_list))
+
+    def test_self_review_file_runs_self_review_classes_on_push(self) -> None:
+        head = self._multicommit_head()
+        incomplete = self.root / "incomplete-review.txt"
+        incomplete.write_text(
+            "C07: yes: split keeps changes independently reviewable\n", encoding="utf-8"
+        )
+        ok, detail = sweep_mod.push_branch(
+            self.repo,
+            "fix/pr-1",
+            self.pr_old_sha,
+            head,
+            base_sha=self.upstream_master_sha,
+            self_review=incomplete,
+        )
+        self.assertFalse(ok)
+        self.assertIn("FAIL C08 ", detail)
+
+    def test_missing_review_fails_before_pr_work(self) -> None:
+        missing = self.root / "missing-review.txt"
+        output = io.StringIO()
+        row = sweep_mod.SweepRow(1, "fix/pr-1", "OK", "-", "-", 0, "stub")
+        target = sweep_mod.PRTarget(1, "fix/pr-1", "testfork")
+        with (
+            patch.object(sweep_mod, "process_pr", return_value=row) as process,
+            patch.object(sweep_mod, "parse_pr_file", return_value=[target]),
+            patch.object(sweep_mod, "resolve_base_sha", return_value=self.upstream_master_sha),
+            redirect_stderr(output),
+        ):
+            rc = sweep_mod.main(
+                [
+                    "--fork",
+                    "testfork/vmaf",
+                    "--prs",
+                    str(self.prs_file),
+                    "--self-review",
+                    str(missing),
+                    "--apply",
+                    "--push",
+                ]
+            )
+        self.assertNotEqual(rc, 0)
+        self.assertIn(str(missing), output.getvalue())
+        process.assert_not_called()
+
+
 class HookEnvironmentIsolationTest(unittest.TestCase):
     """A hook exports GIT_DIR; neither the fixture nor the tool may act on that repository."""
 
@@ -110,6 +234,13 @@ class HookEnvironmentIsolationTest(unittest.TestCase):
 
 
 class UpstreamPrSweepTest(SweepFixtureCase):
+    def setUp(self) -> None:
+        super().setUp()
+        # These legacy fixtures test sweep mechanics; the gate has signed integration tests.
+        gate = patch("scripts.dev.upstream_push_gate.run_gate", return_value=[])
+        gate.start()
+        self.addCleanup(gate.stop)
+
     def test_positive_dry_run_then_apply_and_push(self) -> None:
         parser = sweep_mod.build_parser()
         args_dry = parser.parse_args(

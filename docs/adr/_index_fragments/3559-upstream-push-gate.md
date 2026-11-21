@@ -1,0 +1,1 @@
+| [ADR-3559](3559-upstream-push-gate.md) | Require offline upstream pre-push checks and recorded self-review, sharing the sweep Git runner and attribution policy | Accepted | upstream, process, tooling, testing |
