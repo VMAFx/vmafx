@@ -171,6 +171,26 @@ EXCEPTIONS = (
         expiry=None,
     ),
 )
+MARKER_RULE = ExceptionRule(
+    (
+        ".codex/rules.md",
+        ".cursor/rules/hiss-invariants.mdc",
+        ".gemini/GEMINI.md",
+        ".github/copilot-instructions.md",
+        ".windsurfrules",
+        "AGENTS.md",
+        "AGENTS.readonly.md",
+        "CLAUDE.md",
+        "docs/api/pelorus-interop.md",
+        "docs/state.md",
+        "scripts/ci/check-issue-reference-provenance.py",
+        "scripts/ci/tests/test_issue_reference_provenance.py",
+    ),
+    INLINE_MARKER,
+    expiry=EXPIRY,
+    entry=ENTRY,
+    mel="C",
+)
 ORG = r"(?:vmafx|cordanallm|golusoris)(?![A-Za-z0-9_-])"
 ORG_START = r"(?<![A-Za-z0-9_/-])"
 WORKFLOW_PATH = re.compile(r"\.github/workflows/[^/]+\.ya?ml")
@@ -285,12 +305,21 @@ def expired(reason: str, mel: str, entry: dt.date, expiry: dt.date) -> str:
     return f" [expired exception: {reason}; MEL {mel}, {entry} to {expiry}]"
 
 
+def marker_scope(path: str) -> bool:
+    return any(fnmatch.fnmatchcase(path, pattern) for pattern in MARKER_RULE.paths)
+
+
+def marker_findings(location: str, today: dt.date) -> list[str]:
+    rule = MARKER_RULE
+    if rule.expiry is None or today <= rule.expiry:
+        return []
+    return [f"{location}:{expired(rule.reason, rule.mel, rule.entry, rule.expiry)}"]
+
+
 def line_findings(path: str, number: int, line: str, today: dt.date) -> list[str]:
     location = f"{path}:{number}"
-    if INLINE_MARKER in line:
-        return (
-            [] if today <= EXPIRY else [f"{location}:{expired(INLINE_MARKER, 'C', ENTRY, EXPIRY)}"]
-        )
+    if INLINE_MARKER in line and marker_scope(path):
+        return marker_findings(location, today)
     line = URL_ESCAPE.sub(lambda match: URL_DELIMITERS[match.group().lower()], line)
     return reference_findings(path, location, line, today)
 

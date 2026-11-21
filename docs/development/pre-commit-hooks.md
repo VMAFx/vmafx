@@ -767,8 +767,9 @@ rebase notes, release candidate records, changelog fragments, the changelog and
 its archives. Permanent line exceptions keep the release candidate examples,
 signing provenance, licence records, source offers and dated state ledger rows
 that name pre-move images. Inline exceptions use the marker defined as
-`INLINE_MARKER` in `scripts/ci/check-old-org-refs.py` and are valid through
-2026-11-30.
+`INLINE_MARKER` in `scripts/ci/check-old-org-refs.py`. The scanner honours
+that marker only in the paths listed by `MARKER_RULE` in the same module,
+still through 2026-11-30, and refuses it anywhere else.
 
 Four MEL category C exceptions were entered on 2026-11-20 and expire on
 2026-11-30. After expiry their references are reported with the reason:

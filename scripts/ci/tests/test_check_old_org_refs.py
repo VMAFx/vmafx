@@ -81,6 +81,7 @@ class OldOrgTests(unittest.TestCase):
             "e": f"{OLD_ORG}.github.io",
             "f": f"{OLD_HOST}/orgs/{OLD_DEPS_ORG}/people",
             "g": f'owner: "{OLD_ORG}"',
+            "j": f"repo:{OLD_ORG.lower()}/vmafx",
         }
         for letter, text in forms.items():
             with self.subTest(letter=letter):
@@ -94,7 +95,6 @@ class OldOrgTests(unittest.TestCase):
             "vmafx/types.h",
             f"../{OLD_DEPS_ORG}/",
             f"{OLD_DEPS_ORG}/fx",
-            f"{OLD_ORG}/repo # {INLINE_MARKER}",
             "vidiko/vmafx/x",
             f"{OLD_ORG}-next/x",
             f"owner: {OLD_ORG}-next",
@@ -103,6 +103,7 @@ class OldOrgTests(unittest.TestCase):
         ):
             with self.subTest(value=value):
                 self.assertEqual([], self.hits(value))
+        self.assertEqual([], self.hits(f"{OLD_ORG}/repo # {INLINE_MARKER}", "AGENTS.md"))
         self.assertEqual([], self.hits(f"module {OLD_MODULE}", "go.mod"))
         self.assertEqual([], self.hits(f'\t"{OLD_MODULE}/pkg/score"', "score.go"))
         self.assertTrue(self.hits(f"http://{OLD_HOST}/{OLD_ORG}/x"))
@@ -148,12 +149,15 @@ class OldOrgTests(unittest.TestCase):
             ("tools/markdownlint/package.json", f"{OLD_ORG}/x"),
             ("tools/markdownlint/package-lock.json", f"{OLD_ORG}/x"),
             (K8S_VALUES, f"{LEGACY_IMAGE}-operator"),
-            ("inline.txt", f"{OLD_ORG}/x # {INLINE_MARKER}"),
+            ("AGENTS.md", f"{OLD_ORG}/x # {INLINE_MARKER}"),
         ]
         for path, line in entries:
             with self.subTest(path=path):
                 self.assertEqual([], self.hits(line, path))
                 self.assertIn("expired exception", self.hits(line, path, NEXT_DAY)[0])
+        with self.subTest(path="example.txt"):
+            line = f"{OLD_ORG}/x # {INLINE_MARKER}"
+            self.assertIn("(a)", self.hits(line, "example.txt")[0])
         self.assertTrue(self.hits(f"OTHER={OLD_ORG}/x", "build-config.env"))
 
     def test_pre_move_tester_identity_expires(self) -> None:
