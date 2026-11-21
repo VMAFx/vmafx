@@ -30,7 +30,6 @@
     "340976456+vmafx-release-bot[bot]@users.noreply.github.com"
   ],
   "osvVulnerabilityAlerts": true,
-  "dependencyDashboardOSVVulnerabilitySummary": "all",
   "prCreation": "immediate",
   "ignorePaths": [
     "python/requirements.txt",
@@ -820,7 +819,10 @@
   },
   "draftPR": true,
   "branchConcurrentLimit": 3,
-  "dependencyDashboard": true,
+  "dependencyDashboard": {
+    "enabled": true,
+    "osvVulnerabilitySummary": "all"
+  },
   "customDatasources": {
     "nvidia-cuda-redist": {
       "defaultRegistryUrlTemplate": "https://developer.download.nvidia.com/compute/cuda/redist/",
