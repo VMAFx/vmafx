@@ -1,6 +1,6 @@
 # Build backends and frontend tools
 build==1.6.1
-hatchling==1.32.4
+hatchling==1.33.0
 editables==0.6
 # setuptools 84.1.0 or later: GHSA-xmj3-9gf7-h52w.
 setuptools==84.2.1
