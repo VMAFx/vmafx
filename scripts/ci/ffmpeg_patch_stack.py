@@ -31,7 +31,13 @@ PATCH_NAME = re.compile(r"\d{4}-[A-Za-z0-9_.-]+\.patch\Z")
 COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 CACHE_LOCK_SECONDS = 600
 CACHE_FETCH_SECONDS = 180
-MIRRORS = ("Dockerfile", "Dockerfile.ffmpeg", "dev/Containerfile", "docker/Dockerfile.node")
+MIRRORS = (
+    "Containerfile.vmafx",
+    "Dockerfile",
+    "Dockerfile.ffmpeg",
+    "dev/Containerfile",
+    "docker/Dockerfile.node",
+)
 # The shared FFmpeg fix series every build applies before ffmpeg-patches/
 # (ADR-3143): three pins in build-config.env, one script that fetches,
 # verifies and applies it.

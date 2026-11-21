@@ -133,6 +133,11 @@ class BaseImageGate(unittest.TestCase):
         self.assertEqual(result.returncode, expected, output)
         return output
 
+    def test_root_containerfile_is_in_scope(self) -> None:
+        output = self.check("FROM alpine:latest\n", 1, "Containerfile.vmafx")
+        self.assertIn("Containerfile.vmafx", output)
+        self.assertIn("hardcodes a base image", output)
+
     def test_external_from_is_rejected_with_or_without_digest(self) -> None:
         for ref in ("alpine", "alpine:latest", "registry.example/base:1", self.pin):
             with self.subTest(ref=ref):
@@ -206,6 +211,14 @@ class BaseImageGate(unittest.TestCase):
                 self.check(text, 1)
                 self.check(text, 0, write=True)
                 self.assertIn(self.pin, (self.repo / "Dockerfile").read_text())
+
+    def test_write_leaves_no_temporary_containerfile(self) -> None:
+        text = BASE.format(pin="debian:wrong")
+        self.check(text, 0, write=True)
+        leftovers = [
+            path.name for path in self.repo.iterdir() if path.name.startswith("Dockerfile.")
+        ]
+        self.assertEqual(leftovers, [])
 
     def test_write_cannot_legitimize_a_hardcoded_external_image(self) -> None:
         self.check("FROM alpine:latest\n", 1, write=True)

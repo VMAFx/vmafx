@@ -1,0 +1,3 @@
+- Drop the committed workstation path from the MCP parity test's Python candidates (#3094).
+- Refresh `Containerfile.vmafx` from the shared FFmpeg tag and remote pins, and include root `Containerfile.*` in the base-image guard (#3095, #3097).
+- Replace each rewritten Containerfile atomically, so an interrupted or overlapping pin sync cannot leave a truncated file.
