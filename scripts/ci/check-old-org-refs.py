@@ -259,7 +259,7 @@ def exception(path: str, line: str, reference: str) -> ExceptionRule | None:
 
 
 def pattern_hits(path: str, line: str) -> list[tuple[str, re.Match[str]]]:
-    hits = []
+    hits: list[tuple[str, re.Match[str]]] = []
     if WORKFLOW_PATH.fullmatch(path) and not line.lstrip().startswith("#"):
         hits.extend(("i", match) for match in WORKFLOW_IMAGE.finditer(line))
     for letter, pattern in PATTERNS:
