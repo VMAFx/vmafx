@@ -42,7 +42,10 @@ ROCM_SCRIPT = "scripts/ci/" + "install-rocm-" + "from-image.sh"
 ROCM_NAME = Path(ROCM_SCRIPT).name
 
 
-def manifest() -> dict[str, object]:
+def manifest(*, pkg_timeout: int | None = None) -> dict[str, object]:
+    pytest_cfg: dict[str, object] = {"method": "thread" if os.name == "nt" else "signal"}
+    if pkg_timeout is not None:
+        pytest_cfg["timeout"] = pkg_timeout
     return {
         "schema_version": 1,
         "name_patterns": ["test_*.py"],
@@ -58,7 +61,7 @@ def manifest() -> dict[str, object]:
                 "name": "pkg",
                 "paths": ["pkg/tests/"],
                 "checks": ["Pkg"],
-                "pytest": {"method": "thread" if os.name == "nt" else "signal"},
+                "pytest": pytest_cfg,
                 "install": {"python": "3.14", "locks": [LOCK]},
             },
             {
@@ -469,6 +472,17 @@ class VenvLockTests(unittest.TestCase):
                 with self.assertRaises(runner.RunnerError), runner.VenvLock(path, 0.5):
                     self.fail("the second taker must not get the lock")
 
+    def test_lock_io_failure_is_not_retried_as_contention(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="affected-lock-") as tmp:
+            path = Path(tmp) / "ai.lock"
+            with patch.object(
+                runner, "lock_file", side_effect=OSError("planted I/O error")
+            ) as lock:
+                with self.assertRaisesRegex(OSError, "planted I/O error"), runner.VenvLock(path, 5):
+                    self.fail("a lock I/O failure must propagate")
+            lock.assert_called_once()
+            self.assertTrue(lock.call_args.args[0].closed)
+
     def test_a_released_lock_can_be_taken_again(self) -> None:
         with tempfile.TemporaryDirectory(prefix="affected-lock-") as tmp:
             path = Path(tmp) / "ai.lock"
@@ -791,11 +805,9 @@ class RunTests(unittest.TestCase):
                 self.assertIn("pkg: passed: 1 passed", result.stdout)
 
     def test_required_timeout_cannot_be_disabled(self) -> None:
-        data = manifest()
-        data["suites"][1]["pytest"]["timeout"] = 7
         self.build(
             {
-                ".github/test-suites.json": json.dumps(data),
+                ".github/test-suites.json": json.dumps(manifest(pkg_timeout=7)),
                 "pkg/tests/test_ok.py": "def test_ok():\n    assert True\n",
             }
         )
@@ -835,6 +847,46 @@ class RunTests(unittest.TestCase):
         self.assertIn("pytest plugin check failed", result.stderr)
         self.assertIn("planted conftest failure", result.stderr)
         self.assertNotIn("runs without", result.stdout)
+
+    def test_startup_duplicate_probe_marker_fails_closed(self) -> None:
+        self.build(
+            {
+                "pkg/tests/conftest.py": "print('VMAFX_PYTEST_TIMEOUT=0')\n",
+                "pkg/tests/test_ok.py": "def test_ok():\n    assert True\n",
+            }
+        )
+        with patch.dict(self.env, {"PYTEST_ADDOPTS": "-s"}):
+            result = self.run_script("--files", "pkg/tests/test_ok.py")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("pytest plugin check failed", result.stderr)
+        self.assertIn("VMAFX_PYTEST_TIMEOUT=0", result.stderr)
+        self.assertIn("VMAFX_PYTEST_TIMEOUT=1", result.stderr)
+        self.assertNotIn("passed", result.stdout)
+
+    def test_probe_junit_file_is_not_treated_as_real_results(self) -> None:
+        conftest = (
+            "import sys\nfrom pathlib import Path\nimport pytest\n"
+            "if sys.argv[0] == '-c':\n"
+            "    for arg in sys.argv[1:]:\n"
+            "        if arg.startswith('--junitxml='):\n"
+            "            Path(arg.split('=', 1)[1]).write_text(\n"
+            "                '<testsuite><testcase name=\"planted\"/></testsuite>',\n"
+            "                encoding='utf-8')\n"
+            "            Path('probe-junit-written').touch()\n"
+            "def pytest_configure(config):\n"
+            "    pytest.exit('fixture exits without results', returncode=0)\n"
+        )
+        self.build(
+            {
+                "pkg/tests/conftest.py": conftest,
+                "pkg/tests/test_ok.py": "def test_ok():\n    assert True\n",
+            }
+        )
+        result = self.run_script("--files", "pkg/tests/test_ok.py")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertTrue((self.repo / "probe-junit-written").is_file())
+        self.assertIn("pytest wrote no results (exit 0)", result.stderr)
+        self.assertNotIn("pkg: passed", result.stdout)
 
     def test_suite_that_cannot_run_locally_is_reported_not_passed(self) -> None:
         """Expose unavailable local coverage and enforce strict skip policy."""
@@ -1014,9 +1066,10 @@ class RunTests(unittest.TestCase):
         second = "pkg/tests/test_second.py"
         absent = "pkg/tests/test_absent.py"
         body = "# snowman: \u2603\r\n# embedded: \0\n"
-        self.build({first: body, second: "# initial\n"})
+        self.build({first: "# initial\n", second: "# initial\n"})
+        (self.repo / first).write_bytes(body.encode("utf-8"))
         (self.repo / second).write_bytes(b"# invalid: \xff\n")
-        self.git("add", second)
+        self.git("add", first, second)
         self.commit()
         with patch.object(runner, "_git", wraps=runner._git) as command:
             texts = runner._head_test_texts(self.repo, [first, absent, second])

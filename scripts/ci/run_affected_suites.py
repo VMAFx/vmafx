@@ -48,6 +48,7 @@ from typing import IO, overload
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.ci import suite_registry as registry_lib
+from scripts.lib.file_lock import lock_file
 from scripts.lib.push_head import outgoing_head
 from scripts.lib.safe_subprocess import CommandTimedOut, TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
@@ -304,28 +305,37 @@ class VenvLock:
 
     def __init__(self, path: Path, wait_seconds: float) -> None:
         self.path, self.wait_seconds = path, wait_seconds
-        self._handle: IO[str] | None = None
+        self._handle: IO[bytes] | None = None
 
     def __enter__(self) -> VenvLock:
-        try:
-            import fcntl  # noqa: PLC0415 - POSIX only; Windows runs without the lock
-        except ImportError:
-            return self
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._handle = self.path.open("a")
+        handle = self.path.open("a+b")
+        try:
+            self._acquire(handle)
+        except BaseException:
+            handle.close()
+            raise
+        self._handle = handle
+        return self
+
+    def _acquire(self, handle: IO[bytes]) -> None:
         deadline = time.monotonic() + self.wait_seconds
         while time.monotonic() <= deadline:
             try:
-                fcntl.flock(self._handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                return self
+                lock_file(handle, acquire=True)
+                return
             except BlockingIOError:
-                time.sleep(LOCK_POLL_SECONDS)
-        self._handle.close()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                time.sleep(min(LOCK_POLL_SECONDS, remaining))
         raise RunnerError(f"timed out waiting for {self.path}")
 
     def __exit__(self, *_exc: object) -> None:
         if self._handle is not None:
-            self._handle.close()
+            with self._handle as handle:
+                lock_file(handle, acquire=False)
+            self._handle = None
 
 
 def _run(
@@ -491,9 +501,12 @@ def scaled_time_cap(base: float, load1: float, load5: float, cpus: int) -> float
 
 def read_host_load() -> tuple[float, float, int] | None:
     """Read host load and available CPUs, or report unavailable load."""
+    getloadavg = getattr(os, "getloadavg", None)
+    if getloadavg is None:
+        return None
     try:
-        load1, load5, _ = os.getloadavg()
-    except (AttributeError, OSError):
+        load1, load5, _ = getloadavg()
+    except OSError:
         return None
     process_count = getattr(os, "process_cpu_count", os.cpu_count)()
     return load1, load5, process_count or os.cpu_count() or 1
@@ -536,7 +549,7 @@ def _suite_timeout(
     files: Sequence[str],
     junit: Path,
 ) -> float | None:
-    """Probe pytest's loaded plugins in the suite's actual invocation context."""
+    """Check stock pytest-timeout registration before pytest configures the suite."""
     argv = _pytest_argv(python, suite, junit, files, None, probe=True)
     try:
         probe = _run(argv, root, 60, env)
@@ -582,6 +595,8 @@ def run_pytest(
     else:
         effective_cap, description = _cap_description(suite.name, cap)
     print(description, flush=True)
+    # A startup hook may have written the probe's --junitxml path.
+    junit.unlink(missing_ok=True)
     try:
         proc = _run(_pytest_argv(python, suite, junit, files, timeout), root, effective_cap, env)
     except CommandTimedOut:
