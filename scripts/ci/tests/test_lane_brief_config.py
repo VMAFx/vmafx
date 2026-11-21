@@ -35,12 +35,18 @@ from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 CONFIG = REPO / ".config" / "lane-brief.yaml"
 ALLOWED_KEYS = frozenset({"required", "required_by_stage", "credential_stub_tests"})
 STAGES = frozenset({"impl", "fix", "review", "audit", "research"})
-REVIEW_CLAUSES = ("Write nothing in the worktree", "return: final message only")
+FIX_CLAUSES = ("mypy --no-site-packages --disable-error-code=import-not-found",)
+REVIEW_CLAUSES = (
+    "Write nothing in the worktree",
+    "return: final message only",
+    "grep the test tree for each changed literal",
+    "build-option change: meson setup",
+)
 MAX_STAGES = 8
 MAX_ENTRIES = 32
 MAX_ENTRY_CHARS = 200
 READER_TIMEOUT_SECONDS = 60
-ROUTER_STUB = "tiers:\n  test:\n    target_tasks: [review, feature_implementation]\n"
+ROUTER_STUB = "tiers:\n  test:\n    target_tasks: [review, fix, feature_implementation]\n"
 SKIP_REASON = (
     "brief_stage.py is absent: set LANE_BRIEF_STAGE_PY or LANE_TOOLS_DIR to the praetor "
     "tools/lanes reader (CI has no praetor clone); alternate coverage: the shape tests in "
@@ -62,7 +68,10 @@ SAFE_REVIEW_BRIEF = (
     "\n"
     "- Read only. Write nothing in the worktree: no tracked edit, no untracked file.\n"
     "return: final message only. Put the report in the final message.\n"
+    "grep the test tree for each changed literal\n"
+    "build-option change: meson setup\n"
 )
+FIX_BRIEF = "task: fix\n\nFix the issue.\n"
 IMPL_BRIEF = (
     "task: feature_implementation\n"
     "order: planted-impl\n"
@@ -141,10 +150,21 @@ class LaneBriefConfigShapeTest(unittest.TestCase):
     def test_repo_config_fits_reader_contract(self) -> None:
         self.assertEqual(shape_errors(load_config()), [])
 
-    def test_review_stage_holds_both_clauses(self) -> None:
+    def test_fix_stage_holds_mypy_clause(self) -> None:
+        fix = load_config()["required_by_stage"]["fix"]
+        for clause in FIX_CLAUSES:
+            self.assertIn(clause, fix)
+            self.assertTrue(1 <= len(clause) <= MAX_ENTRY_CHARS)
+
+    def test_review_stage_holds_all_clauses(self) -> None:
         review = load_config()["required_by_stage"]["review"]
         for clause in REVIEW_CLAUSES:
             self.assertIn(clause, review)
+            self.assertTrue(1 <= len(clause) <= MAX_ENTRY_CHARS)
+
+    def test_review_stage_holds_build_option_clause(self) -> None:
+        review = load_config()["required_by_stage"]["review"]
+        self.assertIn(REVIEW_CLAUSES[3], review)
 
     def test_config_change_runs_this_file(self) -> None:
         # A change to the config alone must select the suite that holds this file.
@@ -284,7 +304,16 @@ class LaneBriefReplayTest(unittest.TestCase):
         result = self.required(SAFE_REVIEW_BRIEF, self.repo_worktree())
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_impl_brief_needs_no_review_clause(self) -> None:
+    def test_fix_brief_without_mypy_is_refused(self) -> None:
+        result = self.required(FIX_BRIEF, self.repo_worktree())
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.strip(), FIX_CLAUSES[0])
+
+    def test_fix_brief_with_mypy_passes(self) -> None:
+        result = self.required(FIX_BRIEF + FIX_CLAUSES[0] + "\n", self.repo_worktree())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_impl_brief_needs_no_stage_clauses(self) -> None:
         result = self.required(IMPL_BRIEF, self.repo_worktree())
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -294,10 +323,22 @@ class LaneBriefReplayTest(unittest.TestCase):
         self.assertIn("cannot resolve brief stage", result.stdout)
 
     def test_brief_with_one_clause_names_only_the_other(self) -> None:
-        brief = "task: review\n\nWrite nothing in the worktree.\n"
+        brief = SAFE_REVIEW_BRIEF.replace(REVIEW_CLAUSES[1], "")
         result = self.required(brief, self.repo_worktree())
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(result.stdout.strip(), "return: final message only")
+
+    def test_review_missing_literal_search_names_only_it(self) -> None:
+        brief = SAFE_REVIEW_BRIEF.replace(REVIEW_CLAUSES[2], "")
+        result = self.required(brief, self.repo_worktree())
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.strip(), REVIEW_CLAUSES[2])
+
+    def test_review_missing_build_option_names_only_it(self) -> None:
+        brief = SAFE_REVIEW_BRIEF.replace(REVIEW_CLAUSES[3], "")
+        result = self.required(brief, self.repo_worktree())
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.strip(), REVIEW_CLAUSES[3])
 
     def test_task_line_counts_on_line_20_only(self) -> None:
         on_20 = self.required(FILLER + UNSAFE_REVIEW_BRIEF, self.repo_worktree())

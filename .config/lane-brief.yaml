@@ -16,9 +16,16 @@
 # planted briefs against the reader.
 ---
 required_by_stage:
+  # A fix without a mypy command reached the pre-push gate with type errors.
+  fix:
+    - "mypy --no-site-packages --disable-error-code=import-not-found"
   # A review job that leaves any path in the worktree ends with rc 79 (lane
   # guard in agy-job.sh), so a review brief must forbid worktree output and
   # ask for the report in the final message.
   review:
     - "Write nothing in the worktree"
     - "return: final message only"
+    # A review missed tests still matching a changed command literal.
+    - "grep the test tree for each changed literal"
+    # A review missed a build option's missing header package and unwanted link.
+    - "build-option change: meson setup"
