@@ -64,11 +64,12 @@ Verified by reading the sources, not by testing with assistive technology:
 
 ## Known limitations
 
-- No accessibility audit, keyboard pass or screen-reader pass has been done on
-  any surface.
-- The contrast ratios of the custom documentation palette have not been
-  measured.
-- There is no automated accessibility check in continuous integration.
+- No manual keyboard pass or screen-reader pass has been done on any surface.
+- The contrast ratios of the custom documentation palette are checked by an
+  automated scan of a fixed page set, not exhaustively on every page.
+- Continuous integration runs `pa11y-ci` over five fixed pages and the search
+  page, in the light and dark palettes. It is an automated WCAG 2.2 A/AA scan,
+  not a conformance claim and not a substitute for a manual pass.
 - The command-line tools do not read `NO_COLOR` and have no `--no-color`
   option.
 - Whether the generated Grafana dashboards ever convey state by colour alone
