@@ -18,6 +18,17 @@ The central authority is `requirements/locks/manifest.json`, which pairs every
 lock file with its source files and compilation arguments using a reviewed,
 pinned
 version of `uv` (`uv_version` in `requirements/locks/manifest.json`).
+Both `check` and `write` reject a manifest input whose `uv` pin differs from
+`uv_version`, so a Renovate PR that bumps the pin must update `uv_version` in
+the same change to pass.
+
+The checker recognizes `uv` by its case-insensitive, PEP 503-normalized package
+name. It checks `==` and `===` pins with optional extras, whitespace, and
+environment markers. In `.in` and `.txt` files it joins backslash-continued
+lines and reports the first physical line. In TOML files it checks strings in
+`project.dependencies`, `project.optional-dependencies` groups,
+`dependency-groups` arrays, and `build-system.requires`. It reports the dotted
+TOML key and skips dependency group include tables. Malformed TOML fails the check.
 
 Guides point at that field and never restate the number:
 `check_python_dependency_locks.py check` refuses any Markdown line that echoes
@@ -73,6 +84,17 @@ CI Workflows & Dockerfiles                Local Workstation (make lint-tools, cy
 | `make lint-tools` | Installs project linting tools (`ruff`, `black`, `mypy`) into `.venv` from `requirements/locks/dev-linters.txt` using `--require-hashes`. |
 | `make cythonize-deps` | Installs C-extension build dependencies (`Cython`, `numpy`, `setuptools`, `packaging`) from `requirements/locks/cythonize.txt` using `--require-hashes`. |
 | `python3 -m pip install --require-hashes -r requirements/locks/nox.txt` | Installs the reviewed Nox release and its transitive dependencies before running local package sessions. |
+
+## Automatic lock refresh
+
+[ADR-3560](../adr/3560-python-lock-refresh.md) records automatic refresh when a
+dependency-update branch changes a manifest input. The workflow publishes
+manifest outputs as a signed-off release-bot commit. The DCO exemption covers
+only live entries among the 30 exact paths in
+`.config/lint-exceptions.d/dco-python-lock-refresh.toml`; a new output needs a
+new operator grant. If the branch moves or is deleted, publication fails without
+overwriting it. The next input change runs refresh again; otherwise rerun it
+against the current tip.
 
 ## How to add or update a dependency
 

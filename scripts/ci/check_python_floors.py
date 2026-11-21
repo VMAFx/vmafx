@@ -86,10 +86,9 @@ def discover_pyprojects(root: Path) -> list[Path]:
             tracked = []
 
     if not tracked:
+        relative_paths = (p.relative_to(root) for p in root.rglob("pyproject.toml"))
         tracked = [
-            str(p.relative_to(root))
-            for p in root.rglob("pyproject.toml")
-            if not any(part.startswith(".") for part in p.parts)
+            str(p) for p in relative_paths if not any(part.startswith(".") for part in p.parts)
         ]
 
     candidates: list[Path] = []

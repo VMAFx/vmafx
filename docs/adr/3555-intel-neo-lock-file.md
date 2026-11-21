@@ -70,3 +70,11 @@ Both upstream release tags are already pinned in `build-config.env` (`INTEL_NEO_
 - Order `vmafx-neo-lock-refresh-commit` (2026-11-16, refresh-commit DCO and Renovate handling, paraphrased): scope the PR-mode `check-dco.py` bot-opener exemption to `renovate[bot]` PRs, `vmafx-release-bot[bot]` commits, and live `dco-bot-opener` paths (`dev/scripts/intel-neo-lock.json`, Category D, 120 days), and add the release-bot noreply email to `renovate.json` `gitIgnoredAuthors`.
 - [ADR-1145](1145-neo-stack-derived-from-release.md), [ADR-1151](1151-vmafx-first-release-1-0-0.md), [ADR-1271](1271-neo-buildkit-github-token-secret.md), [ADR-1360](1360-sycl-aot-compile-time-device-codegen.md), [ADR-1368](1368-oneapi-release-image-debian13.md), [ADR-1595](1595-pr-time-verify-push-only-workflows.md), [ADR-3544](3544-dco-refuse-bot-authored-commits.md).
 - [`docs/development/dco.md`](../development/dco.md) and [`docs/development/dependency-bot.md`](../development/dependency-bot.md) (DCO exemptions and Mend-hosted Renovate GitHub App configuration).
+
+## Update (2026-11-18) — Python lock refresh
+
+[ADR-3560](3560-python-lock-refresh.md) extends this pattern to the Python lock
+files. The DCO exemption grows from one path to the 30 path-exact lock outputs
+listed in `.config/lint-exceptions.d/dco-python-lock-refresh.toml`. No glob or
+other path is granted. A new lock output needs a new operator grant. The decision
+is ledger answer `vmafx-renovate-python-lock-refresh` dated 2026-11-18.
