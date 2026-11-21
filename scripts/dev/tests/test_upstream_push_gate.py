@@ -577,7 +577,9 @@ class PushGateTest(SweepFixtureCase):
         self.assertEqual(over, [])
 
     def test_catalog_object_key_count_is_bounded(self) -> None:
-        at_limit = [(f"k{index}", index) for index in range(gate.MAX_LINES)]
+        at_limit: list[tuple[str, object]] = [
+            (f"k{index}", index) for index in range(gate.MAX_LINES)
+        ]
         self.assertEqual(len(gate._unique_json_object(at_limit)), gate.MAX_LINES)
         over_limit = [*at_limit, ("extra", 0)]
         with self.assertRaisesRegex(ValueError, "more than"):
@@ -591,7 +593,7 @@ class PushGateTest(SweepFixtureCase):
 
     def test_usage_error_from_parse_commits_is_caught_in_gate_and_sweep(self) -> None:
         head = git_run(self.repo, "rev-parse", "HEAD")
-        real_git = gate.git_cmd
+        real_git = sweep.git_cmd
 
         def corrupt_log(
             cwd: Path, args: list[str], *, timeout: float = 120.0
