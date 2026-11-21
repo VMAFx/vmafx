@@ -1,0 +1,84 @@
+# Arm D of the #3320 CUDA OOM retry study (PR #3336): variant of
+# check_oom_and_memory_return() in the CUDA OOM test, kept as a patch so the
+# variant is reproducible after a clean build (the campaign ran it reverted).
+#
+# Apply from the repository root of the build worktree (as-landed source at
+# master b38635f63), rebuild and run testdata/cuda-oom-retry-study/run_armD.sh:
+#   git apply testdata/cuda-oom-retry-study/armD_edit.patch
+#   ninja -C build
+#   bash testdata/cuda-oom-retry-study/run_armD.sh <build-worktree> <results-root>
+# Revert the source afterwards: git checkout -- core/test/test_cuda_oom_pictures_released.c
+diff --git a/core/test/test_cuda_oom_pictures_released.c b/core/test/test_cuda_oom_pictures_released.c
+index c9f8031..03b941b 100644
+--- a/core/test/test_cuda_oom_pictures_released.c
++++ b/core/test/test_cuda_oom_pictures_released.c
+@@ -28,11 +28,18 @@
+ #include <errno.h>
+ #include <stdio.h>
+ #include <stdlib.h>
++#include <time.h>
+ 
+ #ifndef _WIN32
+ #include <unistd.h>
+ #endif
+ 
++#ifdef _WIN32
++#define WIN32_LEAN_AND_MEAN
++#define NOMINMAX
++#include <windows.h>
++#endif
++
+ #include "mu_table.h"
+ #include "test.h"
+ 
+@@ -61,6 +68,16 @@ typedef struct {
+     size_t bytes;
+ } Hog;
+ 
++static void sleep_ms(unsigned ms)
++{
++#ifdef _WIN32
++    Sleep(ms);
++#else
++    const struct timespec ts = {.tv_sec = ms / 1000u, .tv_nsec = (long)(ms % 1000u) * 1000000L};
++    (void)nanosleep(&ts, NULL);
++#endif
++}
++
+ static int probe_alloc(const VmafCudaState *state, size_t bytes)
+ {
+     if (state->f->cuCtxPushCurrent(state->ctx) != CUDA_SUCCESS) {
+@@ -155,16 +172,27 @@ static char *check_oom_and_memory_return(VmafCudaState *state, Hog *hog, int oom
+                                          int probe_hogged)
+ {
+     hog_release(state, hog);
+-    const int probe_back = probe_alloc(state, PROBE_BYTES);
++    /* #3277 probe-perturbation A/B, arm D: single probes after a silent ladder
++     * of 1/5/15/45/105 s (local experiment, not for commit). The checkpoint
++     * probes are logged; probe_back stays -1 unless a checkpoint saw the
++     * memory back, so a slow-window run falls through to the retry. */
++    static const unsigned LADDER_S[] = {1u, 5u, 15u, 45u, 105u};
++    int probe_back = -1;
++    unsigned silent_s = 0;
++    for (size_t i = 0; i < sizeof(LADDER_S) / sizeof(LADDER_S[0]); i++) {
++        sleep_ms((LADDER_S[i] - silent_s) * 1000u);
++        silent_s = LADDER_S[i];
++        const int probe = probe_alloc(state, PROBE_BYTES);
++        (void)fprintf(stderr, "[silent-wait total %u s -> probe %d] ", silent_s, probe);
++        if (probe == 1) {
++            probe_back = probe;
++            break;
++        }
++    }
+     (void)fprintf(stderr, "[hog %zu MiB, luma probe under hog %d, first rc %d, memory back %d] ",
+                   hog->bytes >> 20, probe_hogged, oom_err, probe_back);
+     mu_assert("a frame was scored with the device's memory taken", oom_err != 0);
+     (void)fprintf(stderr, "[first frame with no memory left: %d] ", oom_err);
+-
+-    /* The pair of the failed call is back in the pool, and the ring that could
+-     * not be built is built now. */
+-    mu_assert("allocation probe failed", probe_back >= 0);
+-    mu_assert("device memory not yet returned after the hog was freed", probe_back == 1);
+     return NULL;
+ }
+ 
