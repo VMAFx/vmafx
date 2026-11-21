@@ -161,6 +161,50 @@ class CpuRowVerdictTests(unittest.TestCase):
         self.assertEqual(GEN._status(row("Apple M-series, native"), [passing]),
                          "1 reported, worst pass")  # fmt: skip
 
+    def test_executed_dispatch_mismatch_fails_the_cpu_row(self) -> None:
+        # Schema 4: the level the library reports it executed is part of the dispatch
+        # check (hw_report.EXECUTED_CHECK) and the report writer counts it, so a
+        # mismatch must fail the CPU row instead of reading pass against the report's
+        # own fail verdict (review of PR #3443).
+        report = checked_report([], **self.avx2_host())
+        report["executed_dispatch"] = {"status": "mismatch"}
+        report["verdict"], report["failed_checks"] = "fail", ["executed_dispatch"]
+        self.assertEqual(GEN._status(row("x86 with AVX2"), [report]), "1 reported, worst fail")
+
+    def test_executed_dispatch_absent_or_matching_keeps_the_verdict(self) -> None:
+        # A schema-3 report has no executed_dispatch section (the in-tree reports
+        # carry schema 3), so it is not counted; a matching schema-4 section keeps
+        # the pass.
+        report = checked_report([], **self.avx2_host())
+        self.assertNotIn("executed_dispatch", report)
+        self.assertEqual(GEN._status(row("x86 with AVX2"), [report]), "1 reported, worst pass")
+        report["executed_dispatch"] = {"status": "match"}
+        self.assertEqual(GEN._status(row("x86 with AVX2"), [report]), "1 reported, worst pass")
+
+
+class DriverCellTests(unittest.TestCase):
+    """The Driver column is the driver: the compile target (`code_path`, the
+    cubin/sm level) is a build fact and not part of it (review of PR #3443)."""
+
+    def test_gpu_driver_is_the_driver_version_only(self) -> None:
+        report = {"host": {"kernel_release": "6.6.0"}}
+        facts = {"driver_version": "576.52", "code_path": "cubin sm_120"}
+        self.assertEqual(GEN._driver(report, "cuda", facts), "576.52")
+        self.assertNotIn("cubin", GEN._driver(report, "cuda", facts))
+
+    def test_gpu_driver_without_a_driver_version_is_not_reported(self) -> None:
+        # The shape of the shipped 5080/4060 reports: device facts carry a
+        # code_path and no driver_version, so the column is "not reported" —
+        # not the compile target wearing a driver label.
+        facts = {"code_path": "cubin sm_89"}
+        self.assertEqual(GEN._driver({"host": {}}, "cuda", facts), "not reported")
+
+    def test_cpu_and_metal_keep_their_shapes(self) -> None:
+        self.assertEqual(
+            GEN._driver({"host": {"kernel_release": "10.0.26300"}}, "cpu", {}), "10.0.26300"
+        )
+        self.assertEqual(GEN._driver({"host": {}}, "metal", {}), "not reported")
+
 
 class RefusalTests(unittest.TestCase):
     def needs(self) -> dict[str, Any]:

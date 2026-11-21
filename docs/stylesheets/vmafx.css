@@ -1040,6 +1040,59 @@ body {
   font-family: var(--md-text-font-family);
 }
 
+/* --------------------------------------------------- hardware report filter */
+
+.vx-hardware-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+  margin: 1rem 0 1.2rem;
+  padding: 0.8rem 1rem;
+  background: var(--vx-surface);
+  border: 0.05rem solid var(--vx-line);
+  border-radius: var(--vx-radius-m);
+}
+
+.vx-hardware-filter label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--vx-fg-2);
+  font-size: var(--vx-text-small);
+}
+
+.vx-hardware-filter input,
+.vx-hardware-filter select {
+  min-width: 7rem;
+  padding: 0.25rem 0.4rem;
+  color: var(--vx-fg);
+  background: var(--vx-bg);
+  border: 0.05rem solid var(--vx-border);
+  border-radius: var(--vx-radius-s);
+  font: inherit;
+}
+
+.vx-hardware-filter input[type="search"] {
+  min-width: 14rem;
+}
+
+.vx-hardware-filter [data-hardware-count] {
+  margin-left: auto;
+  color: var(--vx-fg-3);
+  font-size: var(--vx-text-small);
+}
+
+.vx-hardware-older {
+  color: var(--vx-fg-3);
+  font-size: var(--vx-text-small);
+  white-space: nowrap;
+}
+
+.vx-hardware-empty {
+  color: var(--vx-fg-2);
+}
+
 /* -------------------------------------------------------- accessibility */
 
 :focus-visible {
