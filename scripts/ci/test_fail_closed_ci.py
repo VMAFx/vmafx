@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from collections.abc import Callable
 from functools import partial
@@ -2124,6 +2125,52 @@ class AptUpdateFailClosedContract(DisposableRepoTestCase):
         )
 
 
+PYTEST_WARNING_EXEMPT = {
+    "bindings/python/pyproject.toml": "the bindings run no pytest suite of their own",
+    "python/pyproject.toml": "pytest is configured in python/tox.ini, which sets filterwarnings",
+    "tools/ensemble-training-kit/pyproject.toml": "the kit has no pytest suite",
+}
+
+
+def _tracked_pyprojects(root: Path) -> list[Path]:
+    """List tracked pyproject files; fixtures without git fall back to rglob."""
+    if not (root / ".git").exists():
+        return sorted(root.rglob("pyproject.toml"))
+    result = run_command(
+        ["git", "-C", str(root), "ls-files", "-z"],
+        allowed_executables=("git",),
+        env=listing_git_environment(root),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout_seconds=SCRIPT_TIMEOUT_S,
+    )
+    return sorted(
+        root / name
+        for name in result.stdout.split("\0")
+        if name and Path(name).name == "pyproject.toml"
+    )
+
+
+def pytest_filterwarnings_problems(root: Path) -> list[str]:
+    """Every tracked pyproject pytest section must turn warnings into errors (issue 3081)."""
+    problems: list[str] = []
+    for path in _tracked_pyprojects(root):
+        relative = path.relative_to(root).as_posix()
+        if relative in PYTEST_WARNING_EXEMPT:
+            continue
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        ini_options = data.get("tool", {}).get("pytest", {}).get("ini_options")
+        if not isinstance(ini_options, dict):
+            problems.append(f"{relative}: missing [tool.pytest.ini_options]")
+            continue
+        if ini_options.get("filterwarnings") != ["error"]:
+            problems.append(
+                f"{relative}: [tool.pytest.ini_options] filterwarnings " 'must be ["error"]'
+            )
+    return problems
+
+
 class FailClosedCIContract(unittest.TestCase):
     def test_contract_is_wired_into_required_ci_and_local_hooks(self) -> None:
         """Keep the CI contract in Tooling Tests and local hooks for every tracked installation source."""
@@ -2158,6 +2205,8 @@ class FailClosedCIContract(unittest.TestCase):
             "docker/dev/x.Containerfile",
             "scripts/ci/test_fail_closed_ci.py",
             "python/tox.ini",
+            "pyproject.toml",
+            "ai/pyproject.toml",
             ".pre-commit-config.yaml",
         ):
             with self.subTest(path=path):
@@ -2176,6 +2225,43 @@ class FailClosedCIContract(unittest.TestCase):
         ]
         self.assertIn("depends = py314", coverage)
         self.assertNotRegex(coverage, r"(?m)^\s*coverage (?:report|xml|html) .*\s-i(?:\s|$)")
+        self.assertEqual(pytest_filterwarnings_problems(ROOT), [])
+
+    def test_pytest_filterwarnings_audit_rejects_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "pyproject.toml").write_text(
+                '[tool.pytest.ini_options]\nfilterwarnings = ["default"]\n',
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                pytest_filterwarnings_problems(root),
+                ["pyproject.toml: [tool.pytest.ini_options] filterwarnings " 'must be ["error"]'],
+            )
+            (root / "pyproject.toml").write_text(
+                '[tool.pytest.ini_options]\nfilterwarnings = ["error"]\n',
+                encoding="utf-8",
+            )
+            self.assertEqual(pytest_filterwarnings_problems(root), [])
+
+    def test_pytest_filterwarnings_audit_reports_missing_table(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "pyproject.toml").write_text(
+                '[project]\nname = "missing-pytest-table"\n', encoding="utf-8"
+            )
+            self.assertEqual(
+                pytest_filterwarnings_problems(root),
+                ["pyproject.toml: missing [tool.pytest.ini_options]"],
+            )
+            (root / "bindings/python").mkdir(parents=True)
+            (root / "bindings/python/pyproject.toml").write_text(
+                '[project]\nname = "declared-exception"\n', encoding="utf-8"
+            )
+            self.assertEqual(
+                pytest_filterwarnings_problems(root),
+                ["pyproject.toml: missing [tool.pytest.ini_options]"],
+            )
 
     def test_cpu_coverage_records_and_reasserts_pytest_failure(self) -> None:
         workflow = (WORKFLOWS / "tests-and-quality-gates.yml").read_text(encoding="utf-8")
