@@ -1,0 +1,215 @@
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: EUPL-1.2
+
+# Path-exact exceptions for the Python lock refresh (ADR-3560).
+# Each entry expires independently. Format: scripts/ci/lint_exceptions.py.
+
+[[exception]]
+path = "requirements/locks/build.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "requirements/locks/tox.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "requirements/locks/nox.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "requirements/locks/pre-commit.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "requirements/locks/dev-linters.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "requirements/locks/cythonize.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "requirements/locks/mypy.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "requirements/locks/jsonschema.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "requirements/locks/docs-check.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "requirements/locks/windows-tester-zip.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "requirements/locks/package-build.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "requirements/locks/gcovr.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "requirements/locks/pytest-timeout.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "requirements/locks/tooling-tests.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "docs/requirements-lock.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "python/requirements-lock.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "python/requirements-test-lock.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "python/requirements-coverage-lock.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "ai/requirements-runtime-lock.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "ai/requirements-dev-lock.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "mcp-server/vmaf-mcp/requirements-runtime-lock.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "mcp-server/vmaf-mcp/requirements-production-lock.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "mcp-server/vmaf-mcp/requirements-dev-lock.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "dev/requirements-python-env-lock.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "tools/vmaf-tune/requirements-dev-lock.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "tools/rc1-tester/requirements-dev-lock.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "dev-llm/requirements-dev-lock.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "tools/vmaf-roi-score/requirements-dev-lock.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "tools/ensemble-training-kit/requirements-dev-lock.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
+
+[[exception]]
+path = "requirements/locks/twine.txt"
+category = "D"
+entered = 2026-11-18
+reason = "Category D, 120-day interval. Grant vmafx-renovate-python-lock-refresh; ADR-3560. Remove when the hosted refresh limitation no longer applies."
+expires = 2027-03-18
