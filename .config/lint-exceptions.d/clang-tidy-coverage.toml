@@ -269,3 +269,10 @@ category = "A"
 entered = 2026-11-02
 reason = "Category A, interval to the stated expiry. Reference harness the Go tests of pkg/libvmaf compile with cc against the Meson-built library, so it is in no Meson compile database and no lane reads it. Clean under the repository .clang-tidy when run by hand. Rectify by building it from a compile database a lane reads."
 expires = 2027-02-27
+
+[[exception]]
+path = "scripts/ci/tests/fixtures/float_equality/planted.c"
+category = "D"
+entered = 2026-11-20
+reason = "Category D, 120-day interval. Float-equality checker planted defect: the unsafe comparison proves that an unexempt diagnostic fails. The test_check_float_equality real-compiler regression compiles it; no clang-tidy lane consumes this fixture."
+expires = 2027-03-20

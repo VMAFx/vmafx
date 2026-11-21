@@ -36,6 +36,7 @@
 
 #include "metal_twin.h"
 
+#include "float_bits.h"
 #include "libvmaf/picture.h"
 #include "metal/iosurface_layout.h"
 
@@ -368,7 +369,8 @@ static int fixture_pairs(VmafPicture ref[2], VmafPicture dist[2], unsigned bpc)
 
 static int scores_equal(const PsnrScores *a, const PsnrScores *b)
 {
-    return a->y == b->y && a->cb == b->cb && a->cr == b->cr;
+    return vmaf_test_identical_f64(a->y, b->y) && vmaf_test_identical_f64(a->cb, b->cb) &&
+           vmaf_test_identical_f64(a->cr, b->cr);
 }
 
 /* Import the NV12 / P010 frame pair and compare its psnr with the CPU's on
