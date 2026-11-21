@@ -81,7 +81,9 @@ SYCL_RUNTIME = IMAGE_DIR / "sycl-runtime-windows.json"
 # The SYCL zip's programs and the DLLs they load lie in these directories (Windows
 # searches a program's own directory before System32, ADR-1566).
 PROGRAM_DIRS = ("build/tools", "tests")
-# DLLs the SYCL runtime loads by name at run time, not through an import table.
+# DLLs loaded at run time: only the two Level Zero adapters, because the
+# 2026.2 UR loader is static inside sycl9.dll (UR_STATIC_LOADER=ON in
+# sycl/cmake/modules/BuildUnifiedRuntime.cmake:97) so it loads them directly.
 LOADED_AT_RUN_TIME = (
     "ur_loader_shared.dll",
     "ur_adapter_level_zero.dll",
