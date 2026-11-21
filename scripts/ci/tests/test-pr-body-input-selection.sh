@@ -5,20 +5,21 @@
 # scripts/ci/tests/test-pr-body-input-selection.sh — the ADR-0108 PR-body
 # gates must decide what fd 0 is before reading it.
 #
-# Four gates read a PR body, and every one of them once chose its input with
+# Five gates read a PR body, and every one of them once chose its input with
 # `[ ! -t 0 ]`, which answers "is fd 0 something other than a terminal" — not
 # "did anybody pipe me a PR body". Three shapes fall in the gap, and this file
-# pins all three for all four:
+# pins all three for all five:
 #
 #   scripts/ci/deliverables-check.sh          ADR-0108 six-deliverable gate
 #   scripts/ci/validate-pr-body.sh            its local mirror
 #   scripts/ci/ffmpeg-patches-surface-check.sh  ADR-0409 surface gate
 #   scripts/ci/state-md-touch-check.sh        ADR-0165 state.md gate
+#   scripts/ci/check-toolchain-claims.sh      ADR-0108 toolchain claims gate
 #
-# The last two were fixed a commit later than the first two, which is the
-# reason this file covers all four rather than the pair that happened to be
+# The last three were fixed after the first two, which is the
+# reason this file covers all five rather than the pair that happened to be
 # noticed first: the defect was in a copied idiom, so a test naming only the
-# scripts already fixed would have gone on passing while two gates still hung.
+# scripts already fixed would have gone on passing while gates still hung.
 #
 # The two pairs answer an absent body differently, and the expectations below
 # encode that on purpose. deliverables-check.sh and validate-pr-body.sh exist
@@ -56,10 +57,11 @@ deliverables="${repo_root}/scripts/ci/deliverables-check.sh"
 validator="${repo_root}/scripts/ci/validate-pr-body.sh"
 ffmpeg_surface="${repo_root}/scripts/ci/ffmpeg-patches-surface-check.sh"
 state_touch="${repo_root}/scripts/ci/state-md-touch-check.sh"
+toolchain_claims="${repo_root}/scripts/ci/check-toolchain-claims.sh"
 helper="${repo_root}/scripts/ci/pr-body-input.sh"
 
 for script in "${deliverables}" "${validator}" "${ffmpeg_surface}" \
-  "${state_touch}" "${helper}"; do
+  "${state_touch}" "${toolchain_claims}" "${helper}"; do
   if [ ! -r "${script}" ]; then
     echo "test-pr-body-input-selection: missing ${script}" >&2
     exit 1
@@ -295,6 +297,31 @@ run_case 0 "state-md: a real pipe still reaches the opt-out parser" \
   "printf 'no state delta: regression test\n' | ${state_env} bash '${state_touch}'"
 expect_output "state-md: the piped opt-out was honoured" \
   'PASS — opt-out'
+
+echo "--- scripts/ci/check-toolchain-claims.sh ---"
+
+run_case 2 "toolchain-claims: closed fd 0 is a usage error, not a hang" \
+  "bash '${toolchain_claims}' 0<&-"
+expect_output "toolchain-claims: the closed-fd message names fd 0" \
+  'stdin .fd 0. is closed'
+
+run_case 2 "toolchain-claims: </dev/null is a usage error" \
+  "bash '${toolchain_claims}' </dev/null"
+expect_output "toolchain-claims: the /dev/null message names the descriptor" \
+  'not a readable stream'
+
+if python3 -c 'import pty' >/dev/null 2>&1; then
+  run_case 2 "toolchain-claims: tty stdin is a usage error" \
+    "python3 -c 'import pty, subprocess, sys; m, s = pty.openpty(); sys.exit(subprocess.run([\"bash\", \"${toolchain_claims}\"], stdin=s).returncode)'"
+  expect_output "toolchain-claims: the tty message names the terminal" \
+    'stdin is a terminal'
+fi
+
+run_case 0 "toolchain-claims: a real pipe still reaches the parser" \
+  "cat '${work}/body.md' | bash '${toolchain_claims}'"
+
+run_case 0 "toolchain-claims: \$PR_BODY still reaches the parser with fd 0 on /dev/null" \
+  "PR_BODY=\"\$(cat '${work}/body.md')\" bash '${toolchain_claims}' </dev/null"
 
 echo "--- scripts/ci/pr-body-input.sh (descriptor hygiene) ---"
 

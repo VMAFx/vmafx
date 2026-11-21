@@ -96,6 +96,23 @@ if [ -z "$(printf '%s' "${PR_BODY}" | tr -d '[:space:]')" ]; then
   exit 1
 fi
 
+# ---------- 0. Toolchain claims (before every early exit) ----------
+#
+# A claim that this host lacks a toolchain, or that code was not compiled
+# here, must carry scripts/dev/toolchain-probe.sh output. It runs before the
+# deliverables sections because those exit early (render-only track, missing
+# deliverables), and a claim check that only runs on a clean checklist is no
+# check.
+toolchain_check_script="${_deliverables_dir}/check-toolchain-claims.sh"
+if [ ! -f "${toolchain_check_script}" ]; then
+  echo "::error title=Toolchain claims check missing::${toolchain_check_script} not found" >&2
+  exit 1
+fi
+if ! PR_BODY="${PR_BODY}" bash "${toolchain_check_script}"; then
+  echo "deliverables-check: toolchain claims check failed; see scripts/dev/toolchain-probe.sh." >&2
+  exit 1
+fi
+
 # Strip markdown emphasis/code characters (backticks, asterisks,
 # underscores, backslashes) before grepping: the PR template wraps
 # labels like `AGENTS.md` in backticks, which would otherwise insert

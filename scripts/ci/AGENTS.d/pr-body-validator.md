@@ -3,6 +3,9 @@ paths:
   - scripts/ci/validate-pr-body.sh
   - scripts/ci/deliverables-check.sh
   - scripts/ci/test-validate-pr-body.sh
+  - scripts/ci/check-toolchain-claims.sh
+  - scripts/ci/test-check-toolchain-claims.sh
+  - scripts/dev/toolchain-probe.sh
   - scripts/git-hooks/pre-push
   - scripts/git-hooks/pre-push-pr-body-lint.sh
   - scripts/git-hooks/test-pre-push-pr-body-lint.py
