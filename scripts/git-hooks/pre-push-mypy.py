@@ -44,6 +44,7 @@ import shutil
 import sys
 import tempfile
 import tomllib
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -81,18 +82,18 @@ def git(*args: str) -> str:
     return result.stdout
 
 
-def fingerprints(output: str) -> set[str]:
-    """Findings without line numbers, so an edit above one does not rename it."""
-    found = set()
+def fingerprints(output: str) -> Counter[str]:
+    """Count findings without line numbers, so moving one does not rename it."""
+    found: Counter[str] = Counter()
     for line in output.splitlines():
         match = FINDING_RE.match(line.strip())
         if match:
             code = match.group("code") or "no-code"
-            found.add(f"{match.group('path')}: [{code}] {match.group('message')}")
+            found[f"{match.group('path')}: [{code}] {match.group('message')}"] += 1
     return found
 
 
-def checked_fingerprints(status: int, output: str, phase: str) -> set[str]:
+def checked_fingerprints(status: int, output: str, phase: str) -> Counter[str]:
     """Accept only mypy's success and ordinary-finding exit statuses."""
     found = fingerprints(output)
     if status not in (0, 1):
@@ -133,7 +134,7 @@ def run_mypy(executable: str, paths: list[str], cwd: Path) -> tuple[int, str]:
     return status, output
 
 
-def baseline_fingerprints(executable: str, paths: list[str], root: Path, base: str) -> set[str]:
+def baseline_fingerprints(executable: str, paths: list[str], root: Path, base: str) -> Counter[str]:
     """The same files as they are at the merge base, checked out on the side."""
     cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
     cache.mkdir(parents=True, exist_ok=True)
@@ -162,7 +163,7 @@ def baseline_fingerprints(executable: str, paths: list[str], root: Path, base: s
                 target.unlink()
         present = [path for path in paths if (worktree / path).is_file()]
         if not present:
-            return set()
+            return Counter()
         status, output = run_mypy(executable, present, worktree)
         return checked_fingerprints(status, output, "baseline")
     finally:
@@ -286,13 +287,15 @@ def verify_paths(selected: list[str], root: Path) -> None:
             raise RuntimeError(f"selected Python path is not a regular file: {filename}")
 
 
-def report(introduced: set[str], inherited: int) -> int:
+def report(introduced: Counter[str], inherited: int) -> int:
     if not introduced:
         print(f"mypy: no new findings ({inherited} inherited from the merge base, not reported)")
         return 0
-    print(f"mypy: {len(introduced)} finding(s) this branch introduces:", file=sys.stderr)
+    print(f"mypy: {sum(introduced.values())} finding(s) this branch introduces:", file=sys.stderr)
     for finding in sorted(introduced):
-        print(f"  {finding}", file=sys.stderr)
+        count = introduced[finding]
+        suffix = f" ({count} more than the merge base)" if count > 1 else ""
+        print(f"  {finding}{suffix}", file=sys.stderr)
     print(
         "\nFindings already present at the merge base are not listed. Fixing them is\n"
         "welcome, but this gate only asks that the branch add none.",
@@ -330,7 +333,7 @@ def main() -> int:
         if not current:
             return 0
         inherited = baseline_fingerprints(executable, selected, root, base)
-        return report(current - inherited, len(current & inherited))
+        return report(current - inherited, sum((current & inherited).values()))
     except (OSError, ValueError, RuntimeError, CommandFailed) as exc:
         print(f"mypy scope check failed: {exc}", file=sys.stderr)
         return 2
