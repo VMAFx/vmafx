@@ -783,6 +783,21 @@
     },
     {
       "customType": "regex",
+      "description": "cosign-installer release used by every signing job. build-config.env owns COSIGN_VERSION; each workflow repeats it in top-level env because `with:` inputs cannot source the file, and scripts/ci/check-workflow-versions.py requires every cosign-release input to derive from that env value.",
+      "managerFilePatterns": [
+        "/^build-config\\.env$/",
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)COSIGN_VERSION=\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"",
+        "(?:^|\\n)[ \\t]+COSIGN_VERSION:[ \\t]*\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "sigstore/cosign",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
       "description": "Ubuntu dev-image archive date (ADR-3541): one shared timestamp, read by all three Dockerfiles.",
       "managerFilePatterns": [
         "/^build-config\\.env$/"

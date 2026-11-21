@@ -5,8 +5,9 @@ paths:
   - scripts/ci/tests/test_formatter_pins_single_source.py
   - scripts/ci/tests/test_mypy_python_version_single_source.py
   - scripts/ci/tests/test_rust_toolchain_single_source.py
+  - scripts/ci/tests/test_cosign_version_single_source.py
   - rust-toolchain.toml
-invariant: Level Zero, ruff / black, mypy `python_version`, Rust toolchain: one owner each plus checked mirrors.
+invariant: Level Zero, ruff / black, mypy `python_version`, Rust toolchain, cosign: one owner each plus checked mirrors.
 area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
@@ -65,3 +66,14 @@ compares all; fixture `tests/test_rust_toolchain_single_source.py` (also holds
 file from cwd). Renovate: one `custom.regex` manager, group "Rust toolchain",
 no automerge, built-in `rust-toolchain` manager disabled; `RustToolchainGroup`
 in `tests/test_renovate_file_patterns.py`. New pin site -> both, same commit.
+
+cosign-installer (audit C2-07): `COSIGN_VERSION` in `build-config.env` owns
+the release. `with:` inputs cannot source the file, so every signing workflow
+carries one top-level `COSIGN_VERSION` mirror and each `cosign-release` input
+is `v${{ env.COSIGN_VERSION }}`; `check_cosign_pins()` anchors the mirror to
+the two-space top-level `env:` block, counts every `cosign-installer` step
+(including flow-style `with:` maps), and requires each step's input to end at
+the expression. The repository has 25 steps across nine workflows. Fixture:
+`tests/test_cosign_version_single_source.py`. Renovate: one `custom.regex`
+manager reads `build-config.env` plus every workflow mirror, so one bump moves
+both. New workflow or input -> widen both, same commit.
