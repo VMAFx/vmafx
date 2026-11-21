@@ -568,13 +568,16 @@ absent or skipped, never failed: the names the run's CI tier does not owe, the
 operator switch is off. `scripts/ci/tests/test_aggregator_absent_fails.py`
 runs the embedded script against both rules.
 
-The aggregator's GitHub API calls (`getWorkflowRun`, `listEventsForTimeline`,
-`listAllCheckRuns`, `pullRequestSuites`) retry HTTP 5xx answers for 15 minutes.
-If the API still answers 5xx, the job fails with `Transient GitHub API failure:`,
-the call and the status, and judges no check: rerun the job, because the code
-did not fail.
-Any other API error ends the job at once.
-`scripts/ci/tests/test_ci_aggregator_tier.py` runs both paths against a stub.
+The aggregator's GitHub API calls retry HTTP 5xx answers for 15 minutes; an
+exhausted retry fails as `Transient GitHub API failure:` and judges no check.
+Rate-limit responses wait for `retry-after`, the reset time, or exponential
+backoff, with at most six waits per call and 90 minutes across the script. An
+exhausted limit fails as `GitHub API rate limit:` and asks for a rerun without
+judging checks. Other API errors end the job immediately. Polling starts at 30
+seconds, doubles when the judged checks are unchanged up to 240 seconds, and
+resets to 30 seconds on change. `scripts/ci/tests/test_ci_aggregator_tier.py`
+exercises 5xx handling; `scripts/ci/tests/test_aggregator_rate_limit.py` covers
+rate limits and polling.
 
 ### Release legs
 
