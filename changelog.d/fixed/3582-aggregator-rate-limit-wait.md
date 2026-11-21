@@ -1,0 +1,1 @@
+- **CI:** wait on API rate limits and poll less often (issue 3582).

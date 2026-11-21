@@ -733,7 +733,14 @@ other than the caller's (a scratch repository, a clone into a temporary director
   - **Sentinel run.** Every scratch-repository test script that runs on its own is
     executed under a sentinel `GIT_DIR` and fails when the sentinel's config, index,
     refs or objects change. Planted scripts that write an identity, `core.bare` or
-    `uploadpack.*`, or that clone, prove the sentinel sees each of them.
+    `uploadpack.*`, or that clone, prove the sentinel sees each of them. A nonzero
+    exit also fails unless `SENTINEL_EXPECTED_FAILURES` declares the script with a
+    reason and its exact failing tests. A declared script that exits zero, crashes
+    before unittest runs, or fails different tests is reported. The commit hook runs
+    in a pre-commit Python environment pinned to the tooling-tests lock versions of
+    flawfinder, identify, PyYAML, pre-commit and pytest-timeout, plus every package
+    the lock installs for them, so the scripts it runs find their imports; a test
+    derives that set from the lock's `# via` lines and keeps the pins in step.
 
   The whole gate takes about four minutes. The hook `git-fixture-isolation-static`
   runs the identity and isolation checks alone on every changed script. The

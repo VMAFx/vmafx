@@ -3539,6 +3539,9 @@ Contributed by luoye-cpu.
   unmeasured, and the `float_moment` twins returned unscaled moments there.
 
 
+- Correct fork links after the organisation moves and reject obsolete GitHub organisation references with a documented pre-commit check.
+
+
 - **Dev container:** Install ONNX Runtime from the pinned NuGet helper, avoiding unavailable release archives.
 
 
@@ -3760,6 +3763,9 @@ Contributed by luoye-cpu.
   The no-reference model (#2166) is a 1.1 item because the live no-reference mode
   (#2413) needs it; the 1.3 row now names the artefact detectors (#2272), ST-GREED
   (#2394) and the decision issue (#2167) instead.
+
+
+- CI: refresh the registry pull token before every ROCm image layer attempt so long installs and retries do not reuse an expired token.
 
 
 - **ROCm container layer downloads retry the entire pipeline.** Mid-stream network
