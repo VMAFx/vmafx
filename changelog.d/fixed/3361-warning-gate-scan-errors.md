@@ -1,0 +1,1 @@
+- **CI:** every FFmpeg build warning gate (the two `FFmpeg Integration` jobs, `Dockerfile.ffmpeg`, and the patched-file gates of `Dockerfile`, `dev/Containerfile` and `docker/Dockerfile.node`) now fails when its scan cannot read the build log, cannot write its warnings file or cannot run the patched-file filter, instead of passing as if no warning appeared (issue 3361).
