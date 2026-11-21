@@ -590,6 +590,14 @@ jobs:
             const budgetEndMs = scriptStartMs + 245 * 60 * 1000;
             let rateLimitWaitedSeconds = 0;
             let rateLimitWaitCount = 0;
+            function apiShapeError(label) {
+              const error = new Error(`Invalid GitHub API response shape: ${label}`);
+              error.status = 500;
+              throw error;
+            }
+            function requireApiShape(condition, label) {
+              if (!condition) apiShapeError(label);
+            }
             function apiRequestOptions() {
               const remainingMs = budgetEndMs - Date.now();
               if (remainingMs <= 0) {
@@ -653,8 +661,9 @@ jobs:
                   if (attempt === apiBackoffSeconds.length ||
                       Date.now() + apiBackoffSeconds[attempt] * 1000 > budgetEndMs) {
                     core.setFailed(
-                      `Transient GitHub API failure: ${label} still answers HTTP ${error.status} ` +
-                      'after exhausting its retry or time budget. No check result was judged; rerun this job. ' +
+                      `Transient GitHub API failure: ${label} returned HTTP ${error.status}: ` +
+                      `${error.message || 'request failed'} after exhausting its retry or time budget. ` +
+                      'No check result was judged; rerun this job. ' +
                       'This is not a code failure.'
                     );
                     return null;
@@ -667,16 +676,21 @@ jobs:
               }
               return null;
             }
-            const currentRun = await withApiBackoff('getWorkflowRun', () =>
-              github.rest.actions.getWorkflowRun({
+            const currentRun = await withApiBackoff('getWorkflowRun', async () => {
+              const response = await github.rest.actions.getWorkflowRun({
                 request: apiRequestOptions(),
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 run_id: Number(process.env.GITHUB_RUN_ID || context.runId),
-              })
-            );
+              });
+              requireApiShape(
+                response.data && typeof response.data.created_at === 'string',
+                'getWorkflowRun data.created_at'
+              );
+              return response;
+            });
             if (!currentRun) return;
-            const ownCreatedAt = currentRun.data && currentRun.data.created_at;
+            const ownCreatedAt = currentRun.data.created_at;
             const ownCreatedMs = Date.parse(ownCreatedAt || '');
             if (!Number.isFinite(ownCreatedMs)) {
               core.setFailed('Cannot derive window anchor: workflow run created_at is invalid.');
@@ -717,16 +731,18 @@ jobs:
               let latestReadyAt = null;
               let latestReadyMs = Number.NaN;
               for (let page = 1; page <= 10; page += 1) {
-                const response = await withApiBackoff('listEventsForTimeline', () =>
-                  github.rest.issues.listEventsForTimeline({
+                const response = await withApiBackoff('listEventsForTimeline', async () => {
+                  const result = await github.rest.issues.listEventsForTimeline({
                     request: apiRequestOptions(),
                     owner: context.repo.owner,
                     repo: context.repo.repo,
                     issue_number: pr.number,
                     per_page: 100,
                     page,
-                  })
-                );
+                  });
+                  requireApiShape(Array.isArray(result.data), 'listEventsForTimeline data');
+                  return result;
+                });
                 if (!response) return null;
                 for (const item of response.data) {
                   if (!item || item.event !== 'ready_for_review') continue;
@@ -812,14 +828,23 @@ jobs:
             async function listWorkflowRunsForSha() {
               const runs = [];
               for (let page = 1; page <= 10; page += 1) {
-                const { data } = await github.rest.actions.listWorkflowRunsForRepo({
-                  request: apiRequestOptions(),
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  head_sha: sha,
-                  per_page: 100,
-                  page,
+                const response = await withApiBackoff('listWorkflowRunsForRepo', async () => {
+                  const result = await github.rest.actions.listWorkflowRunsForRepo({
+                    request: apiRequestOptions(),
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    head_sha: sha,
+                    per_page: 100,
+                    page,
+                  });
+                  requireApiShape(
+                    result.data && Array.isArray(result.data.workflow_runs),
+                    'listWorkflowRunsForRepo data.workflow_runs'
+                  );
+                  return result;
                 });
+                if (!response) return null;
+                const { data } = response;
                 runs.push(...data.workflow_runs);
                 if (data.workflow_runs.length < 100) return runs;
               }
@@ -830,6 +855,7 @@ jobs:
               const suites = new Set();
               if (pullRequestEvents.has(context.eventName)) return suites;
               const runs = await listWorkflowRunsForSha();
+              if (!runs) return null;
               for (const run of runs) {
                 if (foreignRun(run)) suites.add(run.check_suite_id);
               }
@@ -937,14 +963,23 @@ jobs:
             async function listAllCheckRuns() {
               const checkRuns = [];
               for (let page = 1; page <= 20; page += 1) {
-                const { data } = await github.rest.checks.listForRef({
-                  request: apiRequestOptions(),
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  ref: sha,
-                  per_page: 100,
-                  page,
+                const response = await withApiBackoff('listAllCheckRuns', async () => {
+                  const result = await github.rest.checks.listForRef({
+                    request: apiRequestOptions(),
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    ref: sha,
+                    per_page: 100,
+                    page,
+                  });
+                  requireApiShape(
+                    result.data && Array.isArray(result.data.check_runs),
+                    'listForRef data.check_runs'
+                  );
+                  return result;
                 });
+                if (!response) return null;
+                const { data } = response;
                 checkRuns.push(...data.check_runs);
                 if (data.check_runs.length < 100) return checkRuns;
               }

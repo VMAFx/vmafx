@@ -46,7 +46,9 @@ headers and messages for errors. ``sleeps`` collects timeout arguments in millis
 timeouts, ``clock_step_ms`` overrides each subsequent clock read and ``changing_check``
 adds an unrelated check that alternates status on each listing. ``later_checks_after_ms``
 switches to ``later_checks`` only after that elapsed time. ``sleep_overrun_after_ms``
-adds two milliseconds to timeouts starting after that elapsed time. The defaults keep the
+adds two milliseconds to timeouts starting after that elapsed time. ``api_latency_after_ms``
+and ``api_latency_ms`` advance time when API responses return after the threshold.
+``api_response_overrides`` replaces successive stub responses by API name. The defaults keep the
 original driver behavior.
 """
 
@@ -127,7 +129,16 @@ const infos = [];
 const apiErrors = input.apiErrors || {};
 const apiAlways = input.apiAlways || {};
 const apiErrorDetail = input.apiErrorDetail || {};
+const apiResponseOverrides = input.apiResponseOverrides || {};
 const sleeps = [];
+function apiResponse(name, response) {
+  const overrides = apiResponseOverrides[name] || [];
+  const configured = overrides.length ? overrides.shift() : response;
+  if (input.apiLatencyAfterMs != null && clock - now >= input.apiLatencyAfterMs) {
+    clock += input.apiLatencyMs || 0;
+  }
+  return configured;
+}
 function checkApiError(name) {
   const status = apiAlways[name] ?? (apiErrors[name] || []).shift();
   if (status == null) return;
@@ -141,14 +152,16 @@ const github = {rest: {
   actions: {
     getWorkflowRun: async () => {
       checkApiError('getWorkflowRun');
-      return {data: {created_at: runCreatedAt}};
+      return apiResponse('getWorkflowRun', {data: {created_at: runCreatedAt}});
     },
     listWorkflowRunsForRepo: async ({page = 1, per_page: perPage = 30} = {}) => {
       checkApiError('listWorkflowRunsForRepo');
       if (page === 1) runListings += 1;
       const allRuns =
         runListings > 1 && laterWorkflowRuns.length ? laterWorkflowRuns : workflowRuns;
-      return {data: {workflow_runs: paginate(allRuns, page, perPage)}};
+      return apiResponse('listWorkflowRunsForRepo', {
+        data: {workflow_runs: paginate(allRuns, page, perPage)}
+      });
     },
   },
   checks: {listForRef: async ({page = 1, per_page: perPage = 30} = {}) => {
@@ -161,11 +174,11 @@ const github = {rest: {
       all.push(withDefaults({name: input.changingCheck, status: listings % 2 ? 'queued' : 'in_progress',
         check_suite: {id: 1}}));
     }
-    return {data: {check_runs: paginate(all, page, perPage)}};
+    return apiResponse('listForRef', {data: {check_runs: paginate(all, page, perPage)}});
   }},
   issues: {listEventsForTimeline: async ({page = 1, per_page: perPage = 30} = {}) => {
     checkApiError('listEventsForTimeline');
-    return {data: paginate(timelineEvents, page, perPage)};
+    return apiResponse('listEventsForTimeline', {data: paginate(timelineEvents, page, perPage)});
   }},
 }};
 const eventName = input.event || 'pull_request';
@@ -428,6 +441,8 @@ class SimulationControls:
     changing_check: str | None = None
     later_checks_after_ms: int | None = None
     sleep_overrun_after_ms: int | None = None
+    api_latency_after_ms: int | None = None
+    api_latency_ms: int = 0
 
     def as_input(self) -> dict[str, object]:
         """Return the driver input keys for these controls."""
@@ -437,6 +452,8 @@ class SimulationControls:
             "changingCheck": self.changing_check,
             "laterChecksAfterMs": self.later_checks_after_ms,
             "sleepOverrunAfterMs": self.sleep_overrun_after_ms,
+            "apiLatencyAfterMs": self.api_latency_after_ms,
+            "apiLatencyMs": self.api_latency_ms,
         }
 
 
@@ -466,6 +483,7 @@ def run_required_aggregator(
     later_checks: Sequence[Mapping[str, object]] = (),
     api_errors: Mapping[str, Sequence[int | None]] | None = None,
     api_always: Mapping[str, int] | None = None,
+    api_response_overrides: Mapping[str, Sequence[Mapping[str, object]]] | None = None,
     info_logs: list[str] | None = None,
     api_error_detail: Mapping[str, Mapping[str, object]] | None = None,
     sleeps: list[int] | None = None,
@@ -497,6 +515,10 @@ def run_required_aggregator(
         "laterChecks": [dict(check) for check in later_checks],
         "apiErrors": {name: list(codes) for name, codes in (api_errors or {}).items()},
         "apiAlways": dict(api_always or {}),
+        "apiResponseOverrides": {
+            name: [dict(response) for response in responses]
+            for name, responses in (api_response_overrides or {}).items()
+        },
         "apiErrorDetail": dict(api_error_detail or {}),
     }
     return _run_driver(driver_input, info_logs, sleeps)

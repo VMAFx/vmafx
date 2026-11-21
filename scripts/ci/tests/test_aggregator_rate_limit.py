@@ -117,12 +117,14 @@ class RateLimit(unittest.TestCase):
             api_error_detail={"getWorkflowRun": {"headers": {"retry-after": "301"}}},
             sleeps=sleeps,
         )
-        self.assertTrue(any(f.startswith("GitHub API rate limit:") for f in failures))
+        self.assertEqual(len(failures), 1)
+        self.assertTrue(failures[0].startswith("GitHub API rate limit:"))
+        self.assertIn("No check result was judged", failures[0])
         self.assertNotIn(301000, sleeps)
 
     def test_budget_boundary(self) -> None:
         sleeps: list[int] = []
-        run_required_aggregator(
+        failures = run_required_aggregator(
             CHECK,
             "success",
             env=ENV,
@@ -132,6 +134,67 @@ class RateLimit(unittest.TestCase):
             sleeps=sleeps,
         )
         self.assertIn(300000, sleeps)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("GitHub API time budget exhausted", failures[0])
+        self.assertIn("No check result was judged", failures[0])
+
+    def test_timeout_500_response_retries(self) -> None:
+        sleeps: list[int] = []
+        failures = run_required_aggregator(
+            CHECK,
+            "success",
+            env=ENV,
+            api_errors={"getWorkflowRun": [500]},
+            api_error_detail={"getWorkflowRun": {"message": "TimeoutError: request timed out"}},
+            sleeps=sleeps,
+        )
+        self.assertEqual(failures, [])
+        self.assertEqual(sleeps, [30000])
+
+    def test_truncated_api_bodies_retry_inside_each_api_closure(self) -> None:
+        cases = (
+            ("getWorkflowRun", "pull_request", None),
+            ("listForRef", "pull_request", None),
+            ("listWorkflowRunsForRepo", "push", None),
+            ("listEventsForTimeline", "pull_request", "edited"),
+        )
+        for api_name, event, action in cases:
+            with self.subTest(api=api_name):
+                sleeps: list[int] = []
+                failures = run_required_aggregator(
+                    CHECK,
+                    "success",
+                    env=ENV,
+                    event=event,
+                    action=action,
+                    pr_created_at=START if action == "edited" else None,
+                    api_response_overrides={api_name: [{"data": ""}]},
+                    sleeps=sleeps,
+                )
+                self.assertEqual(failures, [])
+                self.assertIn(30000, sleeps)
+
+    def test_final_sample_budget_failure_between_pages_is_not_judged(self) -> None:
+        sleeps: list[int] = []
+        failures = run_required_aggregator(
+            CHECK,
+            None,
+            env=ENV,
+            run_created_at=START,
+            extra_checks=[check for check in pending("in_progress") if check["name"] == CHECK],
+            controls=SimulationControls(
+                advance_sleep=True,
+                clock_step_ms=0,
+                api_latency_after_ms=240 * 60 * 1000,
+                api_latency_ms=5 * 60 * 1000,
+            ),
+            sleeps=sleeps,
+        )
+        self.assertEqual(len(failures), 1)
+        self.assertIn("GitHub API time budget exhausted", failures[0])
+        self.assertIn("No check result was judged", failures[0])
+        self.assertNotIn(CHECK, failures[0])
+        self.assertEqual(sum(sleeps), 240 * 60 * 1000)
 
     def test_mixed_retries_stop_at_wall_clock_budget(self) -> None:
         # The 62 successful samples through minute 237 include every API page.

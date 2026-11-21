@@ -568,22 +568,24 @@ absent or skipped, never failed: the names the run's CI tier does not owe, the
 operator switch is off. `scripts/ci/tests/test_aggregator_absent_fails.py`
 runs the embedded script against both rules.
 
-The aggregator's GitHub API calls retry HTTP 5xx answers for up to 15 minutes;
-an exhausted retry or time budget fails as `Transient GitHub API failure:` and
-judges no check. Rate-limit responses wait for `retry-after`, the reset time, or
-exponential backoff, with at most six waits per call and 90 minutes across the
-script. An exhausted limit fails as `GitHub API rate limit:` and asks for a rerun
-without judging checks. All API waits share a 245-minute script budget. Each
-request has an abort signal limited to 30 seconds or the remaining budget,
-whichever is shorter; the script owns retries. Other API errors end the job
-immediately. Polling starts at 30 seconds, doubles when the judged checks are
-unchanged up to 240 seconds, and resets to 30 seconds on change. After the last
-sleep reaches the 240-minute polling deadline, it takes one final bounded sample
-and never sleeps again. If startup leaves less time, polling stops 30 seconds
-before the script budget ends so that final query still has request time.
+The aggregator job has a 250-minute timeout and the embedded script enforces a
+245-minute API and retry budget. Every request is limited to 30 seconds or the
+remaining budget, whichever is shorter. A request timeout and malformed response
+body (including an empty body) are retried as HTTP 500; exhausted retries or
+budget fail with `Transient GitHub API failure:` or
+`GitHub API time budget exhausted:` and explicitly judge no check. Rate-limit
+responses wait for `retry-after`, the reset time, or exponential backoff, with at
+most six waits per call and 90 minutes across the script. An exhausted limit fails
+as `GitHub API rate limit:` without judging checks. Retries are owned by the
+script; other API errors end the job immediately. Polling starts at 30 seconds,
+doubles when the judged checks are unchanged up to 240 seconds, and resets to 30
+seconds on change. At the polling deadline, the script makes one final sample and
+does not poll again; API retries for that sample remain inside the script budget.
+If startup leaves less time, polling stops 30 seconds before the script budget
+ends so that the final request still has time to run.
 `scripts/ci/tests/test_ci_aggregator_tier.py` exercises 5xx handling;
-`scripts/ci/tests/test_aggregator_rate_limit.py` covers rate limits, mixed retries,
-and completion between the last regular poll and the final sample.
+`scripts/ci/tests/test_aggregator_rate_limit.py` covers rate limits, malformed
+responses, mixed retries and completion between the last regular poll and final sample.
 
 ### Release legs
 
