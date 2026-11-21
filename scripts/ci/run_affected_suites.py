@@ -35,6 +35,7 @@ import hashlib
 import os
 import re
 import shutil
+import signal
 import sys
 import tempfile
 import time
@@ -484,12 +485,39 @@ def read_host_load() -> tuple[float, float, int] | None:
     return load1, load5, process_count or os.cpu_count() or 1
 
 
+def _has_sigalrm() -> bool:
+    return hasattr(signal, "SIGALRM")
+
+
+def _timeout_args(
+    suite: registry_lib.Suite, timeout: float | None, env: dict[str, str]
+) -> list[str]:
+    if timeout is None:
+        return []
+    args: list[str] = []
+    if env.get("PYTEST_DISABLE_PLUGIN_AUTOLOAD"):
+        args += ["-p", "pytest_timeout"]
+    method = suite.pytest_timeout_method
+    if method == "signal" and not _has_sigalrm():
+        print(
+            f"{suite.name}: per-test timeout method thread (signal.SIGALRM unavailable)",
+            flush=True,
+        )
+        method = "thread"
+    args += [f"--timeout={timeout:g}", f"--timeout-method={method}"]
+    return args
+
+
 def _pytest_argv(
-    python: str, suite: registry_lib.Suite, junit: Path, files: Sequence[str], timeout: float | None
+    python: str,
+    suite: registry_lib.Suite,
+    junit: Path,
+    files: Sequence[str],
+    timeout: float | None,
+    env: dict[str, str],
 ) -> list[str]:
     argv = [python, "-m", "pytest", "-p", "no:cacheprovider", "-rs", "-q", f"--junitxml={junit}"]
-    if timeout is not None:
-        argv += [f"--timeout={timeout:g}", f"--timeout-method={suite.pytest_timeout_method}"]
+    argv += _timeout_args(suite, timeout, env)
     return _via_env([*argv, *(_rewritten(suite, f) for f in files)])
 
 
@@ -508,6 +536,13 @@ def _cap_description(suite: str, base: float) -> tuple[float, str]:
 def _suite_timeout(
     root: Path, suite: registry_lib.Suite, python: str, env: dict[str, str], per_test_timeout: float
 ) -> float | None:
+    """Return the per-test timeout seconds, or None when pytest-timeout is missing.
+
+    The import probe matches the gate for emitting timeout CLI options: options are
+    built only after a successful import, and with plugin autoload disabled a
+    non-empty ``PYTEST_DISABLE_PLUGIN_AUTOLOAD`` forces ``-p pytest_timeout`` ahead of
+    ``--timeout``.
+    """
     try:
         installed = _run(_via_env([python, "-c", "import pytest_timeout"]), root, 60, env)
     except CommandTimedOut:
@@ -546,7 +581,9 @@ def run_pytest(
         effective_cap, description = _cap_description(suite.name, cap)
     print(description, flush=True)
     try:
-        proc = _run(_pytest_argv(python, suite, junit, files, timeout), root, effective_cap, env)
+        proc = _run(
+            _pytest_argv(python, suite, junit, files, timeout, env), root, effective_cap, env
+        )
     except CommandTimedOut:
         result.status = "failed"
         return result, [f"pytest exceeded {description}"]

@@ -503,9 +503,45 @@ class LoadCapTests(unittest.TestCase):
             Path("results.xml"),
             ["t/test_x.py"],
             timeout,
+            {},
         )
         self.assertIn("--timeout=7", argv)
         self.assertNotIn("--timeout=3", argv)
+
+
+class TimeoutArgvTests(unittest.TestCase):
+    def suite(self, method: str = "signal") -> registry_lib.Suite:
+        return registry_lib.Suite("pkg", ("t/",), ("c",), pytest_timeout_method=method)
+
+    def test_disabled_autoload_registers_timeout_plugin(self) -> None:
+        args = runner._timeout_args(self.suite(), 2.0, {"PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"})
+        idx_p = args.index("-p")
+        self.assertEqual(args[idx_p + 1], "pytest_timeout")
+        self.assertLess(idx_p, args.index("--timeout=2"))
+
+    def test_enabled_autoload_adds_no_plugin_flag(self) -> None:
+        for env in ({}, {"PYTEST_DISABLE_PLUGIN_AUTOLOAD": ""}):
+            args = runner._timeout_args(self.suite(), 2.0, env)
+            self.assertNotIn("-p", args)
+            self.assertNotIn("pytest_timeout", args)
+
+    def test_no_timeout_gives_no_timeout_args(self) -> None:
+        args = runner._timeout_args(self.suite(), None, {"PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"})
+        self.assertEqual(args, [])
+
+    def test_signal_method_falls_back_to_thread_without_sigalrm(self) -> None:
+        with patch.object(runner, "_has_sigalrm", return_value=False):
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                args = runner._timeout_args(self.suite("signal"), 2.0, {})
+        self.assertIn("--timeout-method=thread", args)
+        self.assertIn("per-test timeout method thread (signal.SIGALRM unavailable)", out.getvalue())
+        with patch.object(runner, "_has_sigalrm", return_value=True):
+            args = runner._timeout_args(self.suite("signal"), 2.0, {})
+        self.assertIn("--timeout-method=signal", args)
+        for has_sigalrm in (True, False):
+            with patch.object(runner, "_has_sigalrm", return_value=has_sigalrm):
+                args = runner._timeout_args(self.suite("thread"), 2.0, {})
+            self.assertIn("--timeout-method=thread", args)
 
 
 class SkipPolicyTests(unittest.TestCase):
@@ -681,6 +717,26 @@ class RunTests(unittest.TestCase):
         result = self.run_script(
             "--per-test-timeout", "2", "--time-cap", "120", "--files", "pkg/tests/test_hang.py"
         )
+        self.assertLess(time.monotonic() - started, 60)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("per-test timeout (2 s)", result.stderr)
+
+    def test_per_test_timeout_stops_hang_with_autoload_disabled(self) -> None:
+        spec = importlib.util.find_spec("pytest_timeout")
+        self.assertIsNotNone(spec, "pytest-timeout is required for this test")
+        self.build(
+            {
+                "pkg/tests/test_hang.py": "import time\ndef test_hang():\n    time.sleep(600)\n",
+            }
+        )
+        self.env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+        try:
+            started = time.monotonic()
+            result = self.run_script(
+                "--per-test-timeout", "2", "--time-cap", "120", "--files", "pkg/tests/test_hang.py"
+            )
+        finally:
+            self.env.pop("PYTEST_DISABLE_PLUGIN_AUTOLOAD", None)
         self.assertLess(time.monotonic() - started, 60)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("per-test timeout (2 s)", result.stderr)
