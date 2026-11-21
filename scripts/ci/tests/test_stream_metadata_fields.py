@@ -31,7 +31,7 @@ PELORUS_CLASSES = frozenset({"shared", "vmafx_only"})
 JSON_TYPES = frozenset({"integer", "number", "string", "boolean", "array"})
 COLUMNS = ("key", "json", "unit", "range", "pelorus")
 KEY_RE = re.compile(r"^[a-z][a-z0-9_]*$")
-SEED_RE = re.compile(r"^VMAFx/pelorus@[0-9a-f]{40}:libpelorus/schema/telemetry-fields\.json$")
+SEED_RE = re.compile(r"^vidiko/pelorus@[0-9a-f]{40}:libpelorus/schema/telemetry-fields\.json$")
 
 
 def check_field(index: int, field: Any) -> list[str]:
@@ -148,7 +148,7 @@ class FieldListTest(unittest.TestCase):
         self.assert_finding(lambda d: d.update(schema="vmafx/stream-metadata-fields/2"), "schema")
 
     def test_unpinned_seed_fails(self) -> None:
-        bad = "VMAFx/pelorus@master:libpelorus/schema/telemetry-fields.json"
+        bad = "vidiko/pelorus@master:libpelorus/schema/telemetry-fields.json"
         self.assert_finding(lambda d: d.update(seeded_from=bad), "seeded_from")
 
     def test_empty_fields_fails(self) -> None:

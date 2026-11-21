@@ -43,8 +43,8 @@ file name, the `git describe` of the tested commit (for example
 
 ```sh
 # 1. Download the archive and its checksum (curl sets no quarantine flag on the files).
-curl -LO https://github.com/VMAFx/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-macos-arm64-<VERSION>.tar.xz
-curl -LO https://github.com/VMAFx/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-macos-arm64-<VERSION>.tar.xz.sha256
+curl -LO https://github.com/vidiko/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-macos-arm64-<VERSION>.tar.xz
+curl -LO https://github.com/vidiko/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-macos-arm64-<VERSION>.tar.xz.sha256
 
 # 2. Check the download against the checksum; it prints "OK" and nothing else.
 shasum -a 256 -c vmafx-tester-macos-arm64-<VERSION>.tar.xz.sha256
@@ -106,28 +106,28 @@ hosted build. Either needs a tool you may not have; neither is needed to run the
 
 ```sh
 # GitHub build provenance (needs the GitHub CLI, `gh`):
-gh attestation verify vmafx-tester-macos-arm64-<VERSION>.tar.xz -R VMAFx/vmafx
+gh attestation verify vmafx-tester-macos-arm64-<VERSION>.tar.xz -R vidiko/vmafx
 
 # Or verify against the attached in-toto provenance bundle (.intoto.jsonl):
 gh attestation verify vmafx-tester-macos-arm64-<VERSION>.tar.xz \
-  --bundle vmafx-tester-macos-provenance.intoto.jsonl --repo VMAFx/vmafx
+  --bundle vmafx-tester-macos-provenance.intoto.jsonl --repo vidiko/vmafx
 
 # Sigstore keyless signature (needs `cosign`; the .sigstore.json file is next to the archive):
 cosign verify-blob --bundle vmafx-tester-macos-arm64-<VERSION>.tar.xz.sigstore.json \
-  --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/macos-tester-bundle\.yml@refs/heads/master$' \
+  --certificate-identity-regexp '^https://github.com/vidiko/vmafx/\.github/workflows/macos-tester-bundle\.yml@refs/heads/master$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   vmafx-tester-macos-arm64-<VERSION>.tar.xz
 
 # The SPDX software bill of materials (the .spdx.json asset) is attested on the archive:
-gh attestation verify vmafx-tester-macos-arm64-<VERSION>.tar.xz -R VMAFx/vmafx \
+gh attestation verify vmafx-tester-macos-arm64-<VERSION>.tar.xz -R vidiko/vmafx \
   --predicate-type https://spdx.dev/Document/v2.3
 ```
 
 To read what you are about to run: `run.sh` is in the bundle,
-the report program is [`tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py`](https://github.com/VMAFx/vmafx/blob/master/tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py)
+the report program is [`tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py`](https://github.com/vidiko/vmafx/blob/master/tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py)
 and its neighbours `hw_*.py`, and the build is
-[`scripts/ci/build-macos-tester-bundle.sh`](https://github.com/VMAFx/vmafx/blob/master/scripts/ci/build-macos-tester-bundle.sh)
-run by [`macos-tester-bundle.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/macos-tester-bundle.yml).
+[`scripts/ci/build-macos-tester-bundle.sh`](https://github.com/vidiko/vmafx/blob/master/scripts/ci/build-macos-tester-bundle.sh)
+run by [`macos-tester-bundle.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/macos-tester-bundle.yml).
 
 ### Gatekeeper
 
@@ -149,22 +149,25 @@ works too. `<VERSION>` is the same string as above. On an Apple silicon Mac Dock
 arm64 virtual machine, so the container tests the fork's aarch64 code on your real CPU.
 It cannot reach Metal and SVE2 is not exposed by Apple cores; the report says so.
 
+Images published after the move use the `vidiko` workflow identity in the command below.
+An image published before the move (`ghcr.io/vmafx/vmafx:<VERSION>-tester`) verifies with `VMAFx` as the organisation in the workflow identity.
+
 ```sh
 # 1. Check the signature of the image (needs `cosign`; skip if you do not have it).
 cosign verify \
-  --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/docker-publish-tester\.yml@refs/(heads/master|tags/v.*)$' \
+  --certificate-identity-regexp '^https://github.com/vidiko/vmafx/\.github/workflows/docker-publish-tester\.yml@refs/(heads/master|tags/v.*)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/vmafx/vmafx:<VERSION>-tester
+  ghcr.io/vidiko/vmafx:<VERSION>-tester
 
 # 2. Pull it and note its digest.
-docker pull ghcr.io/vmafx/vmafx:<VERSION>-tester
-docker image inspect --format '{{index .RepoDigests 0}}' ghcr.io/vmafx/vmafx:<VERSION>-tester
+docker pull ghcr.io/vidiko/vmafx:<VERSION>-tester
+docker image inspect --format '{{index .RepoDigests 0}}' ghcr.io/vidiko/vmafx:<VERSION>-tester
 
 # 3. Run it. This exact line makes the container unable to reach the network, write
 #    its own filesystem, gain privileges or keep any Linux capability.
 docker run --rm --network none --read-only --cap-drop ALL \
   --security-opt no-new-privileges --tmpfs /tmp \
-  ghcr.io/vmafx/vmafx:<VERSION>-tester > report.json
+  ghcr.io/vidiko/vmafx:<VERSION>-tester > report.json
 ```
 
 No volume mount is needed; the report goes to your standard output (`report.json`) and a
@@ -174,13 +177,13 @@ To record the image digest in the report add `--image-digest sha256:...` after t
 name.
 
 To read what runs: the Containerfile is
-[`docker/Dockerfile.tester`](https://github.com/VMAFx/vmafx/blob/master/docker/Dockerfile.tester)
+[`docker/Dockerfile.tester`](https://github.com/vidiko/vmafx/blob/master/docker/Dockerfile.tester)
 and the report program is `tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py` and its
 `hw_*.py` neighbours. The licences of everything in the image are in
 `/opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt` inside it (`docker run --rm --entrypoint cat
-ghcr.io/vmafx/vmafx:<VERSION>-tester /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`); see
+ghcr.io/vidiko/vmafx:<VERSION>-tester /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`); see
 [Licences of what you download](#licences-of-what-you-download). The image is built only by
-[`docker-publish-tester.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/docker-publish-tester.yml)
+[`docker-publish-tester.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/docker-publish-tester.yml)
 from a tagged commit, signed keyless with cosign and attested like the other VMAFx
 images. It is about 1.05 GB on disk and about 270 MB to download; it holds a CPU-only build,
 no compiler, and runs as a numeric non-root user. Its layers are zstd-compressed, so an
@@ -215,17 +218,17 @@ On a desktop with one GPU it takes a few minutes (90 seconds with an Arc A380).
 
 `<VERSION>` is the version the maintainers give you, as for the other packages. The
 signature check (`cosign verify ...`) of [B](#b-container-image) works the same way for
-`ghcr.io/vmafx/vmafx:<VERSION>-tester-sycl`.
+`ghcr.io/vidiko/vmafx:<VERSION>-tester-sycl`.
 
 ### On Linux
 
 ```sh
-docker pull ghcr.io/vmafx/vmafx:<VERSION>-tester-sycl
+docker pull ghcr.io/vidiko/vmafx:<VERSION>-tester-sycl
 
 docker run --rm --network none --read-only --cap-drop ALL \
   --security-opt no-new-privileges --tmpfs /tmp \
   --device /dev/dri $(stat -c '--group-add %g' /dev/dri/renderD* | sort -u) \
-  ghcr.io/vmafx/vmafx:<VERSION>-tester-sycl > report.json
+  ghcr.io/vidiko/vmafx:<VERSION>-tester-sycl > report.json
 ```
 
 `--device /dev/dri` gives the container the GPU's device nodes. The container runs as
@@ -253,12 +256,12 @@ Run this in the WSL Linux shell (for example Ubuntu), not in PowerShell:
 ```sh
 ls -l /dev/dxg /usr/lib/wsl/lib/libdxcore.so    # both must exist
 
-docker pull ghcr.io/vmafx/vmafx:<VERSION>-tester-sycl
+docker pull ghcr.io/vidiko/vmafx:<VERSION>-tester-sycl
 
 docker run --rm --network none --read-only --cap-drop ALL \
   --security-opt no-new-privileges --tmpfs /tmp \
   --device /dev/dxg -v /usr/lib/wsl:/usr/lib/wsl:ro \
-  ghcr.io/vmafx/vmafx:<VERSION>-tester-sycl > report.json
+  ghcr.io/vidiko/vmafx:<VERSION>-tester-sycl > report.json
 ```
 
 Under WSL2 the GPU is `/dev/dxg`, and the user-mode half of your Windows driver is in
@@ -300,7 +303,7 @@ Xe-LPG GPU.
 About 0.85 GB to download and 1.35 GB on disk. The GPU code in the library and the test programs is stored compressed and decompressed when it loads ([ADR-1590](../adr/1590-device-code-compression.md)). Its notices are
 `/opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`, with the licence texts next to it; read
 them with
-`docker run --rm --entrypoint cat ghcr.io/vmafx/vmafx:<VERSION>-tester-sycl /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`
+`docker run --rm --entrypoint cat ghcr.io/vidiko/vmafx:<VERSION>-tester-sycl /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`
 and see [Licences of what you download](#licences-of-what-you-download).
 
 | Path | What | Licence |
@@ -357,16 +360,16 @@ desktop with one GPU it takes about two and a half minutes.
 
 `<VERSION>` is the version the maintainers give you, as for the other packages. The
 signature check (`cosign verify ...`) of [B](#b-container-image) works the same way for
-`ghcr.io/vmafx/vmafx:<VERSION>-tester-cuda`.
+`ghcr.io/vidiko/vmafx:<VERSION>-tester-cuda`.
 
 ### On Linux
 
 ```sh
-docker pull ghcr.io/vmafx/vmafx:<VERSION>-tester-cuda
+docker pull ghcr.io/vidiko/vmafx:<VERSION>-tester-cuda
 
 docker run --rm --network none --read-only --cap-drop ALL \
   --security-opt no-new-privileges --tmpfs /tmp --gpus all \
-  ghcr.io/vmafx/vmafx:<VERSION>-tester-cuda > report.json
+  ghcr.io/vidiko/vmafx:<VERSION>-tester-cuda > report.json
 ```
 
 `--gpus all` asks the NVIDIA Container Toolkit for every GPU and for your driver's
@@ -386,7 +389,7 @@ NVIDIA's [CUDA on WSL guide](https://docs.nvidia.com/cuda/wsl-user-guide/index.h
 describe. Then run, in PowerShell or in the WSL Linux shell:
 
 ```sh
-docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp --gpus all ghcr.io/vmafx/vmafx:<VERSION>-tester-cuda > report.json
+docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp --gpus all ghcr.io/vidiko/vmafx:<VERSION>-tester-cuda > report.json
 ```
 
 Docker Desktop passes the GPU as `/dev/dxg` and lends the user-mode half of your
@@ -421,7 +424,7 @@ another family.
 ### What is in the NVIDIA GPU image
 
 About 0.45 GB to download and 0.75 GB on disk. The GPU code in the library and the test programs is stored compressed and decompressed when it loads ([ADR-1590](../adr/1590-device-code-compression.md)). Read its notices with
-`docker run --rm --entrypoint cat ghcr.io/vmafx/vmafx:<VERSION>-tester-cuda /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`
+`docker run --rm --entrypoint cat ghcr.io/vidiko/vmafx:<VERSION>-tester-cuda /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`
 and see [Licences of what you download](#licences-of-what-you-download).
 
 | Path | What | Licence |
@@ -470,18 +473,18 @@ On a desktop with one GPU it takes about two minutes.
 
 `<VERSION>` is the version the maintainers give you, as for the other packages. The
 signature check (`cosign verify ...`) of [B](#b-container-image) works the same way for
-`ghcr.io/vmafx/vmafx:<VERSION>-tester-hip`.
+`ghcr.io/vidiko/vmafx:<VERSION>-tester-hip`.
 
 ### On Linux
 
 ```sh
-docker pull ghcr.io/vmafx/vmafx:<VERSION>-tester-hip
+docker pull ghcr.io/vidiko/vmafx:<VERSION>-tester-hip
 
 docker run --rm --network none --read-only --cap-drop ALL \
   --security-opt no-new-privileges --tmpfs /tmp \
   --device /dev/kfd --device /dev/dri \
   $(stat -c '--group-add %g' /dev/kfd /dev/dri/renderD* | sort -u) \
-  ghcr.io/vmafx/vmafx:<VERSION>-tester-hip > report.json
+  ghcr.io/vidiko/vmafx:<VERSION>-tester-hip > report.json
 ```
 
 `/dev/kfd` is ROCm's compute device and `/dev/dri` holds the GPU's render nodes. The
@@ -517,7 +520,7 @@ family.
 ### What is in the AMD GPU image
 
 About 0.35 GB to download and 0.7 GB on disk. The GPU code in the library and the test programs is stored compressed and decompressed when it loads ([ADR-1590](../adr/1590-device-code-compression.md)). Read its notices with
-`docker run --rm --entrypoint cat ghcr.io/vmafx/vmafx:<VERSION>-tester-hip /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`
+`docker run --rm --entrypoint cat ghcr.io/vidiko/vmafx:<VERSION>-tester-hip /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`
 and see [Licences of what you download](#licences-of-what-you-download).
 
 | Path | What | Licence |
@@ -550,8 +553,8 @@ maintainer gives you (the tag looks like `tester-windows-20261004-1a2b3c4d`), an
 ```powershell
 # 1. Download the zip and its checksum. curl.exe comes with Windows 10 and 11, and
 #    a file it downloads carries no "downloaded from the internet" mark.
-curl.exe -LO https://github.com/VMAFx/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-windows-<ARCH>-<VERSION>.zip
-curl.exe -LO https://github.com/VMAFx/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-windows-<ARCH>-<VERSION>.zip.sha256
+curl.exe -LO https://github.com/vidiko/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-windows-<ARCH>-<VERSION>.zip
+curl.exe -LO https://github.com/vidiko/vmafx/releases/download/<TESTER-TAG>/vmafx-tester-windows-<ARCH>-<VERSION>.zip.sha256
 
 # 2. Check the download against the checksum; it prints True and nothing else.
 (Get-FileHash vmafx-tester-windows-<ARCH>-<VERSION>.zip).Hash -eq (Get-Content vmafx-tester-windows-<ARCH>-<VERSION>.zip.sha256).Split(' ')[0]
@@ -704,28 +707,28 @@ hosted build. Either needs a tool you may not have; neither is needed to run the
 
 ```powershell
 # GitHub build provenance (needs the GitHub CLI, gh):
-gh attestation verify vmafx-tester-windows-<ARCH>-<VERSION>.zip -R VMAFx/vmafx
+gh attestation verify vmafx-tester-windows-<ARCH>-<VERSION>.zip -R vidiko/vmafx
 
 # Or verify against the attached in-toto provenance bundle (.intoto.jsonl):
 gh attestation verify vmafx-tester-windows-<ARCH>-<VERSION>.zip `
-  --bundle vmafx-tester-windows-provenance.intoto.jsonl --repo VMAFx/vmafx
+  --bundle vmafx-tester-windows-provenance.intoto.jsonl --repo vidiko/vmafx
 
 # Sigstore keyless signature (needs cosign; the .sigstore.json file is next to the zip):
 cosign verify-blob --bundle vmafx-tester-windows-<ARCH>-<VERSION>.zip.sigstore.json `
-  --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/windows-tester-bundle\.yml@refs/heads/master$' `
+  --certificate-identity-regexp '^https://github.com/vidiko/vmafx/\.github/workflows/windows-tester-bundle\.yml@refs/heads/master$' `
   --certificate-oidc-issuer https://token.actions.githubusercontent.com `
   vmafx-tester-windows-<ARCH>-<VERSION>.zip
 
 # The SPDX software bill of materials (the .spdx.json asset) is attested on the zip:
-gh attestation verify vmafx-tester-windows-<ARCH>-<VERSION>.zip -R VMAFx/vmafx `
+gh attestation verify vmafx-tester-windows-<ARCH>-<VERSION>.zip -R vidiko/vmafx `
   --predicate-type https://spdx.dev/Document/v2.3
 ```
 
 To read what you are about to run: `run.cmd` is in the zip, the report program is
-[`tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py`](https://github.com/VMAFx/vmafx/blob/master/tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py)
+[`tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py`](https://github.com/vidiko/vmafx/blob/master/tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py)
 with its neighbours `hw_*.py` (the Windows host facts are `hw_winfacts.py`), and the
-build is [`scripts/ci/build-windows-tester-bundle.py`](https://github.com/VMAFx/vmafx/blob/master/scripts/ci/build-windows-tester-bundle.py)
-run by [`windows-tester-bundle.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/windows-tester-bundle.yml).
+build is [`scripts/ci/build-windows-tester-bundle.py`](https://github.com/vidiko/vmafx/blob/master/scripts/ci/build-windows-tester-bundle.py)
+run by [`windows-tester-bundle.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/windows-tester-bundle.yml).
 
 ### Remove it afterwards
 
@@ -763,10 +766,10 @@ workflow refuses to build a package with a file whose licence is not recorded
 - **Container only**: the Debian base system includes GPL and LGPL programs and
   libraries, and the numpy and scipy wheels include LGPL `libquadmath`. Their
   corresponding source is published next to the image as
-  `ghcr.io/vmafx/vmafx:<VERSION>-tester-source`: Debian source packages at the
+  `ghcr.io/vidiko/vmafx:<VERSION>-tester-source`: Debian source packages at the
   installed versions and the source RPMs of the wheels' GCC runtime libraries,
   indexed by `/sources/SOURCES.txt`. To get it:
-  `docker create --name vmafx-src ghcr.io/vmafx/vmafx:<VERSION>-tester-source true`,
+  `docker create --name vmafx-src ghcr.io/vidiko/vmafx:<VERSION>-tester-source true`,
   `docker cp vmafx-src:/sources ./vmafx-tester-sources`, `docker rm vmafx-src`.
 - **Intel GPU image only**: Intel's SYCL runtime files are Redistributables of the
   Intel End User License Agreement for Developer Tools; its text, the compiler's
@@ -778,7 +781,7 @@ workflow refuses to build a package with a file whose licence is not recorded
   Apache-2.0 WITH LLVM-exception); the notices name its release and source. The
   image's interpreter is Debian's Python 3.13, under the PSF licence in its package's
   copyright file. The source of its Debian packages is
-  `ghcr.io/vmafx/vmafx:<VERSION>-tester-sycl-source`, fetched the same way.
+  `ghcr.io/vidiko/vmafx:<VERSION>-tester-sycl-source`, fetched the same way.
 - **NVIDIA GPU image only**: the image holds no NVIDIA file. The driver library the
   run uses (`libcuda.so.1`) comes from your own NVIDIA driver, which the NVIDIA
   Container Toolkit (or WSL2) lends to the container, under the driver's licence.
@@ -792,7 +795,7 @@ workflow refuses to build a package with a file whose licence is not recorded
   EUPL-1.2 covers only the VMAFx files, never NVIDIA's. The CUDA driver loader that
   `libvmaf` compiles in comes from FFmpeg's `nv-codec-headers` (MIT), whose notices are
   in `/opt/vmafx/licenses/nv-codec-headers/`. The source of the image's Debian
-  packages is `ghcr.io/vmafx/vmafx:<VERSION>-tester-cuda-source`.
+  packages is `ghcr.io/vidiko/vmafx:<VERSION>-tester-cuda-source`.
 - **AMD GPU image only**: the ROCm 10.1.0 runtime files in `/opt/vmafx/lib/rocm` are
   open source and ship unmodified: the HIP runtime, `rocprofiler-register` and `kpack`
   under MIT, the ROCm runtime under NCSA, the code object manager and the LLVM and Clang
@@ -801,7 +804,7 @@ workflow refuses to build a package with a file whose licence is not recorded
   bzip2). Their texts are in `/opt/vmafx/licenses/rocm/` and `/opt/vmafx/licenses/texts/`.
   Two of the bundled libraries are LGPL (elfutils' `libelf`, numactl's `libnuma`): you
   may replace them, and their corresponding source (the upstream archives and the
-  TheRock tree that built them) is in `ghcr.io/vmafx/vmafx:<VERSION>-tester-hip-source`
+  TheRock tree that built them) is in `ghcr.io/vidiko/vmafx:<VERSION>-tester-hip-source`
   with the source of the image's Debian packages.
 - **Windows zip only**: the C and C++ runtime is Microsoft's, linked into `vmaf.exe`
   and the test programs when they were built (`/MT`), so no runtime DLL is installed or
@@ -835,18 +838,18 @@ workflow refuses to build a package with a file whose licence is not recorded
   platform manifest the tag's index lists, so look that digest up first:
 
   ```sh
-  docker buildx imagetools inspect --raw ghcr.io/vmafx/vmafx:<VERSION>-tester \
+  docker buildx imagetools inspect --raw ghcr.io/vidiko/vmafx:<VERSION>-tester \
     | jq -r '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest'
-  gh attestation verify oci://ghcr.io/vmafx/vmafx@<that digest> -R VMAFx/vmafx \
+  gh attestation verify oci://ghcr.io/vidiko/vmafx@<that digest> -R vidiko/vmafx \
     --predicate-type https://spdx.dev/Document/v2.3
   ```
 
   Use `arm64` for the arm64 manifest. The build provenance is attested on the index the
-  tag points at (`docker buildx imagetools inspect ghcr.io/vmafx/vmafx:<VERSION>-tester
+  tag points at (`docker buildx imagetools inspect ghcr.io/vidiko/vmafx:<VERSION>-tester
   --format '{{json .Manifest}}' | jq -r .digest`):
 
   ```sh
-  gh attestation verify oci://ghcr.io/vmafx/vmafx@<index digest> -R VMAFx/vmafx
+  gh attestation verify oci://ghcr.io/vidiko/vmafx@<index digest> -R vidiko/vmafx
   ```
 
 ## What the report contains
@@ -950,10 +953,10 @@ run prints the file name to use (`file name for a pull request: ...`). With the 
 CLI (`gh`) and `git` set up with your name and e-mail address:
 
 ```sh
-gh repo fork VMAFx/vmafx --clone && cd vmafx
+gh repo fork vidiko/vmafx --clone && cd vmafx
 git switch -c hardware-report && cp ../report.json <file name printed by the run>
 git add docs/hardware-reports && git commit -m "docs(hardware-reports): add a report from <your CPU>"
-git push -u origin hardware-report && gh pr create --repo VMAFx/vmafx --fill
+git push -u origin hardware-report && gh pr create --repo vidiko/vmafx --fill
 ```
 
 Edit the `"note"` field of the JSON first if you want to add a line (for example the Mac
@@ -964,7 +967,7 @@ the index page when the pull request is merged.
 ### Without opening a pull request
 
 Open an issue with the
-[hardware report form](https://github.com/VMAFx/vmafx/issues/new?template=hardware_report.yml)
+[hardware report form](https://github.com/vidiko/vmafx/issues/new?template=hardware_report.yml)
 and attach `report.json`. A maintainer commits it for you; give a name and an e-mail
 address in the form if you want a `Co-authored-by:` line with your credit.
 

@@ -35,7 +35,7 @@ _spec.loader.exec_module(legs_check)
 
 SHA = "a" * 40
 OTHER = "b" * 40
-REPO = "VMAFx/vmafx"
+REPO = "vidiko/vmafx"
 LEGS = json.loads((ROOT / "scripts/release/candidate-legs.json").read_text("utf-8"))["workflows"]
 WINDOWS = next(entry for entry in LEGS if entry["file"] == "windows-tester-bundle.yml")
 

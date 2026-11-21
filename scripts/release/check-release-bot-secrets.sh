@@ -15,7 +15,7 @@
 # Exit: 0 both present; 1 one or both missing; 2 gh unavailable / not authorised.
 set -euo pipefail
 
-repo="${1:-VMAFx/vmafx}"
+repo="${1:-vidiko/vmafx}"
 required=(RELEASE_BOT_APP_ID RELEASE_BOT_PRIVATE_KEY)
 
 if ! command -v gh >/dev/null 2>&1; then

@@ -101,7 +101,7 @@ displayed upstream aggregate. How individual results are counted:
 | `CII-Best-Practices` | Passing badge, earned 2026-09-26 ([record](best-practices-assessment.md)) | Scores 5 out of 10; silver scores 7 and gold 10. |
 
 The public [Scorecard
-dashboard](https://scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx)
+dashboard](https://scorecard.dev/viewer/?uri=github.com/vidiko/vmafx)
 and badge show the latest published result, which may describe an older commit.
 They are useful navigation and historical evidence, never the gate's source of
 truth. Code-scanning SARIF is available in GitHub's Security tab. An earned Best

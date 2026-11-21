@@ -3,9 +3,9 @@
 A window score is a pooled score over a range of frames that you ask for
 before the frames are final and read when they are: the per-window
 statistics of a live encode (`n_stats`,
-[#2138](https://github.com/VMAFx/vmafx/issues/2138)), or a rolling score a
+[#2138](https://github.com/vidiko/vmafx/issues/2138)), or a rolling score a
 live-production plugin shows without blocking its render thread
-([#2238](https://github.com/VMAFx/vmafx/issues/2238)). The calls are part of
+([#2238](https://github.com/vidiko/vmafx/issues/2238)). The calls are part of
 the [VMAFx API preview](index.md) and are declared in `vmafx/score.h`; the
 [reference page](score.md) lists every field. The design is recorded in
 [ADR-2074](../../adr/2074-vmafx-window-scores.md).

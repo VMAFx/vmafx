@@ -50,11 +50,11 @@ build/tools/vmaf \
 3. [Choose a backend](backends/index.md) for your hardware.
 4. Use it through the [CLI](usage/cli.md), the [C API](api/index.md) or the
    [FFmpeg filter](usage/ffmpeg.md).
-5. Look things up in the reference below, or [contribute](https://github.com/VMAFx/vmafx/blob/master/CONTRIBUTING.md).
+5. Look things up in the reference below, or [contribute](https://github.com/vidiko/vmafx/blob/master/CONTRIBUTING.md).
 
 </div>
 
-Found a problem? [Open an issue](https://github.com/VMAFx/vmafx/issues).
+Found a problem? [Open an issue](https://github.com/vidiko/vmafx/issues).
 Have hardware the project does not own? Run the
 [tester image](usage/tester-image.md) and send the report.
 
@@ -165,7 +165,7 @@ Have hardware the project does not own? Run the
 | C API | [API overview](api/index.md): contexts, pictures, models, features; [GPU](api/gpu.md), [DNN sessions](api/dnn.md), [embedded MCP](api/mcp.md) |
 | MCP servers | [Overview](mcp/index.md), [tool reference](mcp/tools.md), [embedded server](mcp/embedded.md), [release channel](mcp/release-channel.md) |
 | Tiny AI | [Tiny-AI docs](ai/index.md), [training](ai/training.md), [training data](ai/training-data.md), [MOS corpora](ai/mos-corpora.md), [inference](ai/inference.md), [LOSO evaluation](ai/loso-eval.md), [predictor](ai/predictor.md), [conformal VQA](ai/conformal-vqa.md), [ensemble training kit](ai/ensemble-training-kit.md), [ensemble v2 runbook](ai/ensemble-v2-real-corpus-retrain-runbook.md), [quantization](ai/quantization.md), [quant epsilon](ai/quant-eps.md), [model registry](ai/model-registry.md), [roadmap](ai/roadmap.md) |
-| Other | [FAQ](reference/faq.md), [references](reference/references.md), [papers](https://github.com/VMAFx/vmafx/tree/master/docs/reference/papers), [presentations](https://github.com/VMAFx/vmafx/tree/master/docs/reference/presentations), [benchmarks](benchmarks.md) |
+| Other | [FAQ](reference/faq.md), [references](reference/references.md), [papers](https://github.com/vidiko/vmafx/tree/master/docs/reference/papers), [presentations](https://github.com/vidiko/vmafx/tree/master/docs/reference/presentations), [benchmarks](benchmarks.md) |
 
 ## Project
 

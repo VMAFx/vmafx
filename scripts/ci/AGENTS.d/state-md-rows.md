@@ -34,7 +34,7 @@ reported dirty file as clean. Do not narrow any of them.
    every later URL candidate. One row with lldb's frame name in single
    backticks took lint of this file from 4 s to 140-250 s, past gate's
    fixed 120 s budget (`T-STATE-MD-UNPAIRED-CODE-SPAN-LINT-TIMEOUT-2026-10-06`,
-   cordanaLLM/praetor#784). backtick that belongs to text goes inside
+   tekmora/praetor#784). backtick that belongs to text goes inside
    longer run (``` `` mod`close `` ```); `[` with no `]` goes into code span
    or is escaped (`\[`). Do not exclude `docs/state.md` from style lint
    instead.

@@ -3,7 +3,7 @@
 Run the setup script from the repository root, then build. The script supports
 Fedora 40 and later, RHEL 9, Rocky Linux 9 and AlmaLinux 9; on the RHEL family
 it enables EPEL first
-([`scripts/setup/fedora.sh`](https://github.com/VMAFx/vmafx/blob/master/scripts/setup/fedora.sh)).
+([`scripts/setup/fedora.sh`](https://github.com/vidiko/vmafx/blob/master/scripts/setup/fedora.sh)).
 
 ## Setup script
 
@@ -38,7 +38,7 @@ python3 -m pip install --user --require-hashes -r requirements/locks/build.txt
 ### CUDA (optional)
 
 The project builds and tests with CUDA 13.4 (`CUDA_VERSION` in
-[`build-config.env`](https://github.com/VMAFx/vmafx/blob/master/build-config.env)).
+[`build-config.env`](https://github.com/vidiko/vmafx/blob/master/build-config.env)).
 Use NVIDIA's repository for your Fedora release (`fedora40`, `fedora41`, ...):
 
 ```bash

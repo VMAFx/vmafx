@@ -315,7 +315,7 @@ bundle_url_for() {
   elif [ -n "${BUNDLE_BASE_URL:-}" ]; then
     echo "${BUNDLE_BASE_URL}/${bundle_name}.tar.zst"
   else
-    echo "https://github.com/VMAFx/vmafx/releases/download/fixtures-${bundle_name}/${bundle_name}.tar.zst"
+    echo "https://github.com/vidiko/vmafx/releases/download/fixtures-${bundle_name}/${bundle_name}.tar.zst"
   fi
 }
 

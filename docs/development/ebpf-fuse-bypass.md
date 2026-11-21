@@ -116,7 +116,7 @@ The same settings outside Kubernetes, which load and attach the program on a
 docker run --user 0 --cap-drop ALL --cap-add BPF --cap-add PERFMON --cap-add SYS_ADMIN \
   --device /dev/fuse -v /sys/kernel/tracing:/sys/kernel/tracing:ro \
   -e VMAFX_STORAGE_MODE=mount -e VMAFX_STORAGE_MOUNT_ROOT=/rclone-mount \
-  -e VMAFX_EBPF_BYPASS=1 --tmpfs /rclone-mount ghcr.io/vmafx/vmafx-node:<tag>
+  -e VMAFX_EBPF_BYPASS=1 --tmpfs /rclone-mount ghcr.io/vidiko/vmafx-node:<tag>
 ```
 
 Without the tracefs mount the node stops with `syscall tracepoints not

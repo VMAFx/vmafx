@@ -43,11 +43,11 @@ formatted or given a licence header here:
 
 - shfmt skips the launcher through a dated exception in
   `.config/lint-exceptions.d/shfmt.toml`
-  ([cordanaLLM/praetor#1282](https://github.com/cordanaLLM/praetor/issues/1282));
+  ([tekmora/praetor#1282](https://github.com/tekmora/praetor/issues/1282));
 - the launcher and `block_evasion.py` have dated exceptions in
   `.config/lint-exceptions.d/spdx.toml`, and the default annotation of
   `REUSE.toml` labels them
-  ([cordanaLLM/praetor#1281](https://github.com/cordanaLLM/praetor/issues/1281)).
+  ([tekmora/praetor#1281](https://github.com/tekmora/praetor/issues/1281)).
 
 Consequences worth knowing:
 
@@ -58,7 +58,7 @@ Consequences worth knowing:
   `.gitignore` carries no re-include for it.
 - The repository's own black, ruff and markdownlint pre-commit hooks skip
   `tools/figures/`, since a rewrite there fails the audit
-  ([cordanaLLM/praetor#578](https://github.com/cordanaLLM/praetor/issues/578)).
+  ([tekmora/praetor#578](https://github.com/tekmora/praetor/issues/578)).
 - Praetor requires Git to ignore the retired numbered workspace root, so the
   [ADR-1277](../adr/1277-workingdir-contract-cleanup.md) contract check accepts
   praetor's managed rule for it and nothing else
@@ -245,7 +245,7 @@ here:
   They land in a change of their own after this one.
 - **Not wired.** The root `Makefile` does not include `engine.mk`, and its
   governance targets call `standardsctl` from `PATH`
-  ([cordanaLLM/praetor#1231](https://github.com/cordanaLLM/praetor/issues/1231)).
+  ([tekmora/praetor#1231](https://github.com/tekmora/praetor/issues/1231)).
 
 Audit's warnings are the same 143 with both engines.
 
@@ -280,7 +280,7 @@ here:
 Audit's warnings were the same 143 with both engines. The hooks still ran the
 engine on `PATH` at that pin: praetor's launcher was not yet written for a
 repository that keeps its own `lefthook.yml`
-([cordanaLLM/praetor#1172](https://github.com/cordanaLLM/praetor/issues/1172)).
+([tekmora/praetor#1172](https://github.com/tekmora/praetor/issues/1172)).
 
 The pin before that was `d141862c430b`
 ([ADR-3061](../adr/3061-praetor-pin-d141862c.md)). Against `3a766f2d56ad` it
@@ -291,9 +291,9 @@ exactly, and builds the checker there. Go 1.27.2 writes export data version 5.
 The x/tools v0.49.0 that go-apidiff requires reads up to version 4, so the
 checker read every package as empty, and the gate's canary failed the
 `Go API Compatibility` check on every pull request once setup-go's `stable`
-resolved to 1.27.2 ([cordanaLLM/praetor#1051](https://github.com/cordanaLLM/praetor/pull/1051)).
+resolved to 1.27.2 ([tekmora/praetor#1051](https://github.com/tekmora/praetor/pull/1051)).
 `praetor-api.yml` still installs Go as `stable`, which is praetor's template
-text ([cordanaLLM/praetor#1037](https://github.com/cordanaLLM/praetor/issues/1037)).
+text ([tekmora/praetor#1037](https://github.com/tekmora/praetor/issues/1037)).
 The engine's audit added one advisory warning, about the missing cache-band
 markers in `AGENTS.md`.
 
@@ -311,7 +311,7 @@ changed four things here:
   `reuse-lint` hook, and the commit hook and `make lint` keep it locally.
   `reuse.yml` is not byte-locked: praetor keeps an edited copy, so its two
   actions are pinned to commits here where praetor writes tags
-  ([cordanaLLM/praetor#899](https://github.com/cordanaLLM/praetor/issues/899)).
+  ([tekmora/praetor#899](https://github.com/tekmora/praetor/issues/899)).
   A planted file naming a licence without a text in `LICENSES/` fails it; a
   file without any SPDX line is covered by the `REUSE.toml` default and fails
   `scripts/ci/check-copyright.sh` instead.
@@ -328,14 +328,14 @@ changed four things here:
   `scripts/ci/praetor_tidy_coverage.py` copies into `.standards.yaml`
   ([tidy lanes](tidy-lanes.md#praetors-copy-of-the-same-facts)). Praetor is
   asked to read a declared wrapper script
-  ([cordanaLLM/praetor#924](https://github.com/cordanaLLM/praetor/issues/924)).
+  ([tekmora/praetor#924](https://github.com/tekmora/praetor/issues/924)).
 - **Workflow trigger report (HISS-18).** Audit warns, without failing, about
   136 jobs in 28 workflows that skip a draft at job level or wait on a job
   that does. It recommends a failing first step instead, while this
   repository's tier design skips drafts at job level and lets the aggregator
   fail them ([ADR-2169](../adr/2169-ci-fewer-runs.md)). Three warnings name
   jobs that never run on a pull request
-  ([cordanaLLM/praetor#922](https://github.com/cordanaLLM/praetor/issues/922)).
+  ([tekmora/praetor#922](https://github.com/tekmora/praetor/issues/922)).
 - **Engine-written files.** The managed workflows name `shell: bash` on their
   draft step; the API gate program is gofumpt-formatted and gains
   `tools/apicompat/gate/placeholder.go`; the figure-engine hook and notes are

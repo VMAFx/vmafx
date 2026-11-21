@@ -31,8 +31,8 @@ This is the
     runner APIs both returned zero runners, `GPU_COVERAGE_ENABLED` was absent,
     and the documented local runner service, environment and state paths were
     absent. Re-check with
-    `gh api /repos/VMAFx/vmafx/actions/runners --jq '.total_count'` and
-    `gh variable list -R VMAFx/vmafx`.
+    `gh api /repos/vidiko/vmafx/actions/runners --jq '.total_count'` and
+    `gh variable list -R vidiko/vmafx`.
 
 Historical backlog reference: T7-3. The local `.workingdir/BACKLOG.md`
 notebook is not part of the published documentation; the linked workflow is
@@ -97,13 +97,13 @@ adapted for this fork's labels.
 The token is short-lived (1 hour) and single-use. Generate one in
 the GitHub UI:
 
-`https://github.com/VMAFx/vmafx/settings/actions/runners/new`
+`https://github.com/vidiko/vmafx/settings/actions/runners/new`
 
 Or via `gh`:
 
 ```bash
 gh api -X POST \
-  /repos/VMAFx/vmafx/actions/runners/registration-token \
+  /repos/vidiko/vmafx/actions/runners/registration-token \
   --jq .token
 ```
 
@@ -127,7 +127,7 @@ tar xzf "actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
 
 ```bash
 ./config.sh \
-  --url https://github.com/VMAFx/vmafx \
+  --url https://github.com/vidiko/vmafx \
   --token "<token from step 1>" \
   --labels self-hosted,linux,gpu-full,gpu-cuda,gpu-intel,avx512 \
   --name "$(hostname)-gpu-full" \
@@ -153,7 +153,7 @@ The service auto-starts on boot and respawns on crash. Logs land in
 ### 5. Verify it's online
 
 ```bash
-gh api /repos/VMAFx/vmafx/actions/runners --jq '.runners[] | {name, status, labels: [.labels[].name]}'
+gh api /repos/vidiko/vmafx/actions/runners --jq '.runners[] | {name, status, labels: [.labels[].name]}'
 ```
 
 The runner should appear with `"status": "online"` and the full label
@@ -161,7 +161,7 @@ set. Trigger the `coverage-gpu` job once with `gh workflow run` to
 confirm end-to-end:
 
 ```bash
-gh variable set GPU_COVERAGE_ENABLED -b true -R VMAFx/vmafx
+gh variable set GPU_COVERAGE_ENABLED -b true -R vidiko/vmafx
 gh workflow run tests-and-quality-gates.yml
 ```
 
@@ -214,11 +214,11 @@ python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
 
 ```bash
 # Disable admission before taking the runner offline.
-gh variable set GPU_COVERAGE_ENABLED -b false -R VMAFx/vmafx
+gh variable set GPU_COVERAGE_ENABLED -b false -R vidiko/vmafx
 cd ~/actions-runner
 sudo ./svc.sh stop && sudo ./svc.sh uninstall
 ./config.sh remove --token "$(gh api -X POST \
-  /repos/VMAFx/vmafx/actions/runners/remove-token --jq .token)"
+  /repos/vidiko/vmafx/actions/runners/remove-token --jq .token)"
 rm -rf ~/actions-runner
 ```
 

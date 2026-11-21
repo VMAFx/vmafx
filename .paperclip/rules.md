@@ -1,4 +1,4 @@
-# Paperclip Operating Rules (vmafx/vmafx)
+# Paperclip Operating Rules (vidiko/vmafx)
 
 ## Operating Contract
 

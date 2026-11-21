@@ -3,10 +3,11 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Keep migrated issue references bound to the repository that owned them.
 
-The active ``VMAFx/vmafx`` repository started a new issue/PR number space after
+The active ``vidiko/vmafx`` repository started a new issue/PR number space after
 the project moved away from ``lusoris/vmaf``.  A bare ``#NNN`` therefore points
 at the active repository even when the surrounding historical record describes
-an issue or pull request from the archived repository.
+an issue or pull request from the archived repository. The former ``VMAFx/vmafx``  # old-org-ok
+URLs redirect to ``vidiko/vmafx`` and share its issue/PR number space.
 
 This checker is deliberately context-scoped.  It protects only references whose
 origin is established by repository history, and it does not reject bare issue
@@ -139,7 +140,7 @@ CONTRACTS = (
     ),
     ProvenanceContract(
         "changelog.d/changed/state-md-github-issues-crossref.md",
-        "Cross-reference `docs/state.md` against `VMAFx/vmafx`",
+        "Cross-reference `docs/state.md` against `VMAFx/vmafx`",  # old-org-ok
         (
             "lusoris/vmaf#239",
             "lusoris/vmaf#241",
@@ -254,7 +255,7 @@ CONTRACTS = (
     ),
     ProvenanceContract(
         "CHANGELOG.md",
-        "Cross-reference `docs/state.md` against `VMAFx/vmafx`",
+        "Cross-reference `docs/state.md` against `VMAFx/vmafx`",  # old-org-ok
         (
             "lusoris/vmaf#239",
             "lusoris/vmaf#241",
@@ -328,11 +329,12 @@ def check_contract(text: str, contract: ProvenanceContract) -> list[str]:
         findings.append(f"unqualified archived reference #{match}")
 
     wrong_active = re.compile(
-        rf"(?:VMAFx/vmafx#|github\.com/VMAFx/vmafx/(?:issues|pull)/)" rf"({'|'.join(numbers)})\b",
+        rf"(?:(?:VMAFx|vidiko)/vmafx#|github\.com/(?:VMAFx|vidiko)/vmafx/(?:issues|pull)/)"
+        rf"({'|'.join(numbers)})\b",
         re.IGNORECASE,
     )
     for match in sorted(set(wrong_active.findall(block))):
-        findings.append(f"wrong repository VMAFx/vmafx for archived reference #{match}")
+        findings.append(f"wrong repository vidiko/vmafx for archived reference #{match}")
     return findings
 
 

@@ -27,7 +27,7 @@ concurrency:
 jobs:
   refresh-lock:
     name: Refresh Intel NEO lock file
-    if: github.repository == 'VMAFx/vmafx'
+    if: github.repository == 'vidiko/vmafx'
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:

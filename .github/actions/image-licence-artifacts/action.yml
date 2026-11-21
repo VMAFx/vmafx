@@ -14,7 +14,7 @@ name: Image licence artifacts
 description: Attest an SPDX SBOM per platform and publish the corresponding-source image
 inputs:
   image:
-    description: Image repository, e.g. ghcr.io/vmafx/vmafx
+    description: Image repository, e.g. ghcr.io/vidiko/vmafx
     required: true
   digest:
     description: Digest of the pushed image (an index or a single manifest)

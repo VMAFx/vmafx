@@ -22,7 +22,7 @@ from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
 REPO_ROOT = IMPORT_ROOT
 MAKEFILE = REPO_ROOT / "Makefile"
 INCLUDE_LINE = "-include .config/praetor/engine.mk"
-SECTION_HEADER = "# cordanaLLM/praetor Governance Targets"
+SECTION_HEADER = "# tekmora/praetor Governance Targets"
 GOVERNANCE_TARGETS: tuple[str, ...] = (
     "verify-all",
     "compile-context",

@@ -336,7 +336,7 @@ def validate_docker_identities(relative_path: str, text: str) -> None:
     # the default branch for an ADR-1347 recovery dispatch. validate-release
     # admits no other ref, so the identity stays exact without a regexp.
     expected_identity = (
-        "https://github.com/VMAFx/vmafx/.github/workflows/"
+        "https://github.com/vidiko/vmafx/.github/workflows/"
         f"{Path(relative_path).name}@${{GITHUB_REF}}"
     )
     lines = text.splitlines()
@@ -554,7 +554,7 @@ expect_rejected("Rust crate verifier with id-token permission", verify_with_cred
 production_path = workflow_paths[1]
 bad_identity = deepcopy(texts)
 expected_identity = (
-    "https://github.com/VMAFx/vmafx/.github/workflows/"
+    "https://github.com/vidiko/vmafx/.github/workflows/"
     "docker-publish-production.yml@${GITHUB_REF}"
 )
 bad_identity[production_path] = bad_identity[production_path].replace(

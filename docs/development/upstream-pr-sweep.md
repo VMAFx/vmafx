@@ -37,10 +37,10 @@ worktree, or file:
 # Using an explicit PRs list file ("<number> <branch> <head_owner>";
 # e.g. "1707 fix/cambi-heatmaps VMAFx", or "<number> <branch>" where
 # head_owner defaults to the owner in --fork)
-python3 scripts/dev/upstream_pr_sweep.py --fork VMAFx/vmafx --prs prs.txt
+python3 scripts/dev/upstream_pr_sweep.py --fork vidiko/vmafx --prs prs.txt
 
 # Or discover open PRs automatically via the GitHub CLI
-python3 scripts/dev/upstream_pr_sweep.py --fork VMAFx/vmafx --discover
+python3 scripts/dev/upstream_pr_sweep.py --fork vidiko/vmafx --discover
 ```
 
 ### 2. Apply rebase and verify signatures
@@ -49,13 +49,13 @@ Fetch the current `upstream/master` and `origin/<branch>` tips, execute the
 rebase onto `upstream/master`, and verify commit signatures:
 
 ```bash
-python3 scripts/dev/upstream_pr_sweep.py --fork VMAFx/vmafx --prs prs.txt --apply
+python3 scripts/dev/upstream_pr_sweep.py --fork vidiko/vmafx --prs prs.txt --apply
 ```
 
 To also execute the Meson setup, Ninja build, and test suite in `libvmaf`:
 
 ```bash
-python3 scripts/dev/upstream_pr_sweep.py --fork VMAFx/vmafx --prs prs.txt --apply --build --jobs 4
+python3 scripts/dev/upstream_pr_sweep.py --fork vidiko/vmafx --prs prs.txt --apply --build --jobs 4
 ```
 
 Meson setup, Ninja compilation, and the test suite run with `build_environment()`,
@@ -71,7 +71,7 @@ CUDA options (`-Denable_cuda=true -Denable_nvcc=true`).
 Once validated, push the rebased branch to `origin` with `--force-with-lease`:
 
 ```bash
-python3 scripts/dev/upstream_pr_sweep.py --fork VMAFx/vmafx --prs prs.txt --apply --push
+python3 scripts/dev/upstream_pr_sweep.py --fork vidiko/vmafx --prs prs.txt --apply --push
 ```
 
 Note: `--push` strictly requires `--apply`.
@@ -156,9 +156,9 @@ The tool emits one TSV (tab-separated) row per PR to standard output (with
 ## Regressions and testing
 
 All sweep operations are covered by unit tests in
-[`scripts/dev/tests/test_upstream_pr_sweep.py`](https://github.com/VMAFx/vmafx/blob/master/scripts/dev/tests/test_upstream_pr_sweep.py),
-[`scripts/dev/tests/test_upstream_pr_sweep_hardening.py`](https://github.com/VMAFx/vmafx/blob/master/scripts/dev/tests/test_upstream_pr_sweep_hardening.py),
+[`scripts/dev/tests/test_upstream_pr_sweep.py`](https://github.com/vidiko/vmafx/blob/master/scripts/dev/tests/test_upstream_pr_sweep.py),
+[`scripts/dev/tests/test_upstream_pr_sweep_hardening.py`](https://github.com/vidiko/vmafx/blob/master/scripts/dev/tests/test_upstream_pr_sweep_hardening.py),
 and support fixtures in
-[`scripts/dev/tests/upstream_pr_sweep_fixture.py`](https://github.com/VMAFx/vmafx/blob/master/scripts/dev/tests/upstream_pr_sweep_fixture.py),
+[`scripts/dev/tests/upstream_pr_sweep_fixture.py`](https://github.com/vidiko/vmafx/blob/master/scripts/dev/tests/upstream_pr_sweep_fixture.py),
 using isolated bare upstream and fork repositories with local SSH-based Git commit
 signing.

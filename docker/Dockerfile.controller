@@ -16,11 +16,11 @@
 #
 # Build:
 #   docker build -f docker/Dockerfile.controller --target controller \
-#     -t ghcr.io/vmafx/vmafx-controller:dev .
+#     -t ghcr.io/vidiko/vmafx-controller:dev .
 #
 # Run (auth disabled for a local try; production sets auth.* in the chart):
 #   docker run --rm -e VMAFX_AUTH_DISABLED=true -e VMAFX_SCORING_ROOTS=/media \
-#     -p 8080:8080 -p 9090:9090 ghcr.io/vmafx/vmafx-controller:dev
+#     -p 8080:8080 -p 9090:9090 ghcr.io/vidiko/vmafx-controller:dev
 #
 # The release workflow passes VMAFX_VERSION=vX.Y.Z; `--version` prints it
 # without starting fx or binding ports.
@@ -174,7 +174,7 @@ FROM ${RELEASE_RUNTIME_CC} AS controller-assembled
 
 LABEL org.opencontainers.image.title="vmafx-controller"
 LABEL org.opencontainers.image.description="VMAFX controller — job queue, node API and auth gateway, gRPC + HTTP, backed by libvmaf. Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
-LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.source="https://github.com/vidiko/vmafx"
 LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE AND WTFPL"
 LABEL org.opencontainers.image.vendor="Lusoris"
 

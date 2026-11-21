@@ -32,7 +32,7 @@ With the container image, mount the clips and let the CLI write the JSON to
 standard output:
 
 ```bash
-docker run --rm -v "$PWD/testdata:/data:ro" ghcr.io/vmafx/vmafx:v1.0.0-rc.2 \
+docker run --rm -v "$PWD/testdata:/data:ro" ghcr.io/vidiko/vmafx:v1.0.0-rc.2 \
   --reference /data/ref_576x324_48f.yuv \
   --distorted /data/dis_576x324_48f.yuv \
   --width 576 --height 324 --pixel_format 420 --bitdepth 8 \

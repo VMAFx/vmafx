@@ -39,7 +39,7 @@ Sponsors also accepts custom amounts.
 - Names, links and logos appear only for sponsors, and only at the placement
   the tier states. Say so if you would rather stay anonymous.
 - Logos are placed by the maintainer after you send them. The full rules are
-  in [`SPONSORS.md`](https://github.com/VMAFx/vmafx/blob/master/SPONSORS.md).
+  in [`SPONSORS.md`](https://github.com/vidiko/vmafx/blob/master/SPONSORS.md).
 - Sponsoring gives no influence over the roadmap, no early access and no
   support. Questions and bugs go through the normal issue tracker for everyone.
 - The decision and the alternatives are recorded in

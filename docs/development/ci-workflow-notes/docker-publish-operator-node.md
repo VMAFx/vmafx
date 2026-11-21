@@ -16,14 +16,14 @@ Triggers:
   - workflow_dispatch at an existing published tag for recovery
 
 Produces:
-  ghcr.io/vmafx/vmafx-operator:<tag>   (amd64 + arm64)
-  ghcr.io/vmafx/vmafx-operator:latest  (same)
-  ghcr.io/vmafx/vmafx-server:<tag>     (amd64 + arm64, Go HTTP/gRPC server)
-  ghcr.io/vmafx/vmafx-server:latest    (same)
-  ghcr.io/vmafx/vmafx-controller:<tag> (amd64 + arm64, job queue + auth gateway, ADR-1589)
-  ghcr.io/vmafx/vmafx-controller:latest (same)
-  ghcr.io/vmafx/vmafx-node:<tag>       (amd64 + arm64, CPU variant)
-  ghcr.io/vmafx/vmafx-node:latest      (same)
+  ghcr.io/vidiko/vmafx-operator:<tag>   (amd64 + arm64)
+  ghcr.io/vidiko/vmafx-operator:latest  (same)
+  ghcr.io/vidiko/vmafx-server:<tag>     (amd64 + arm64, Go HTTP/gRPC server)
+  ghcr.io/vidiko/vmafx-server:latest    (same)
+  ghcr.io/vidiko/vmafx-controller:<tag> (amd64 + arm64, job queue + auth gateway, ADR-1589)
+  ghcr.io/vidiko/vmafx-controller:latest (same)
+  ghcr.io/vidiko/vmafx-node:<tag>       (amd64 + arm64, CPU variant)
+  ghcr.io/vidiko/vmafx-node:latest      (same)
 
 Post-push steps: cosign keyless sign + syft SBOM (CycloneDX JSON) via cosign attest.
 Each image also carries its licence texts and passes a licence check in its

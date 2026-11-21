@@ -138,7 +138,7 @@ rules:
     # checks that. The NaN idiom covers call-free operands only. Semgrep looks
     # through casts, so any operand cast to an integer type, such as
     # `(uint64_t)expected`, makes an integer comparison and is exempt. Narrowings
-    # ported from VMAFx/pelorus commit e5e7c2e.
+    # ported from vidiko/pelorus commit e5e7c2e.
     # scripts/ci/tests/test_semgrep_float_identity.py plants each case.
     patterns:
       - pattern-either:

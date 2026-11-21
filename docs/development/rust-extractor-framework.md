@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Rust extractor framework
 
-RC4 ([epic #1723](https://github.com/VMAFx/vmafx/issues/1723)) moves the
+RC4 ([epic #1723](https://github.com/vidiko/vmafx/issues/1723)) moves the
 features of the default model `vmaf_v1.0.16_3d0h` to Rust. Each Rust
 extractor is a **twin** of a C extractor: it returns the C extractor's scores
 bit for bit, it is registered next to it, and the C extractor stays the

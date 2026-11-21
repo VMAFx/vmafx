@@ -33,7 +33,7 @@ env:
 jobs:
   render:
     name: Open the render pull request
-    if: github.repository == 'VMAFx/vmafx'
+    if: github.repository == 'vidiko/vmafx'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:

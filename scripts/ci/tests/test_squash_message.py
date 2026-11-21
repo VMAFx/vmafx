@@ -740,7 +740,7 @@ class TestRealEngine(unittest.TestCase):
                 self.assertNotEqual(
                     res.returncode,
                     0,
-                    f"engine now accepts '{t}': drop the substitution (cordanaLLM/praetor 1861)",
+                    f"engine now accepts '{t}': drop the substitution (tekmora/praetor 1861)",
                 )
             finally:
                 tmp_path.unlink(missing_ok=True)

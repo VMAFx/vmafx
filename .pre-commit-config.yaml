@@ -194,7 +194,7 @@ repos:
         #   to changed files.
         #
         #   tools/figures/ is praetor's figure engine, locked byte for byte by
-        #   `standardsctl audit` (ADR-1351, cordanaLLM/praetor#578); praetor's
+        #   `standardsctl audit` (ADR-1351, tekmora/praetor#578); praetor's
         #   own `make docs-lint` styles its README under praetor's rules.
         #
         #   The register skills (social-text, caveman, adhd-format) under
@@ -725,6 +725,12 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+
+      - id: check-old-org-refs
+        name: Reject obsolete GitHub organisation references
+        entry: python3 -B scripts/ci/check-old-org-refs.py
+        language: system
+        types: [text]
 
       - id: check-aggregator-names
         name: Check required CI checks aggregator list matches workflows

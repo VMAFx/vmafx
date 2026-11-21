@@ -13,7 +13,7 @@ We track upstream but don't duplicate its discussion threads.
 ## Is it about this fork specifically?
 
 - **GPU backends (CUDA / SYCL / HIP / Metal)** —
-  [open a bug report](https://github.com/VMAFx/vmafx/issues/new/choose)
+  [open a bug report](https://github.com/vidiko/vmafx/issues/new/choose)
 - **SIMD paths (AVX2 / AVX-512 / NEON)** — same
 - **`--precision` flag / IEEE-754 output** — same
 - **Tiny-AI surface / ONNX Runtime integration** — same
@@ -43,8 +43,8 @@ after you ask, see [What to expect](CONTRIBUTING.md#what-to-expect).
 ## Chat / real-time
 
 None currently. Open-ended questions and ideas go to
-[GitHub Discussions](https://github.com/VMAFx/vmafx/discussions); watch
-[the repo](https://github.com/VMAFx/vmafx) for announcements.
+[GitHub Discussions](https://github.com/vidiko/vmafx/discussions); watch
+[the repo](https://github.com/vidiko/vmafx) for announcements.
 
 ## Sponsoring
 

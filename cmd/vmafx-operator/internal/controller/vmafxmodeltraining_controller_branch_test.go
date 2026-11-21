@@ -52,7 +52,7 @@ var _ = Describe("VmafxModelTraining controller — branch coverage", func() {
 			Spec: vmafxv1.VmafxModelTrainingSpec{
 				BaseModel:      "vmaf_v0.6.1",
 				Algorithm:      "online-sgd-ema",
-				OutputRegistry: "ghcr.io/vmafx/models",
+				OutputRegistry: "ghcr.io/vidiko/models",
 				DataSource:     vmafxv1.VmafxModelTrainingDataSource{},
 			},
 		}

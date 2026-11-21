@@ -20,4 +20,4 @@ invariant: Windows internal paths enforce UTF-8 normalization and runtime shims.
   (no `VMAF_EXPORT`, preserving ADR-0379 ABI stability).
   `core/src/interop/pelorus_qp_report_csv.c` must remain untouched to respect
   ADR-1113 Pelorus verbatim mirror invariant; its narrow path remains open
-  until changed in `VMAFx/pelorus` and re-vendored.
+  until changed in `vidiko/pelorus` and re-vendored.

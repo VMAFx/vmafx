@@ -195,7 +195,7 @@ pytest tools/vmaf-tune/tests/test_saliency.py \
 ## History
 
 - ADR-0293 wired the model into `vmaf-tune` as bucket #2 of the
-  [PR #354](https://github.com/VMAFx/vmafx/pull/354) audit, with `libx264`
+  [PR #354](https://github.com/vidiko/vmafx/pull/354) audit, with `libx264`
   as the baseline encoder. ADR-0414 added x265, SVT-AV1 and VVenC, and
   ADR-0396 added the temporal aggregators.
 

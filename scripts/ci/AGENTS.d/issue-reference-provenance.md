@@ -10,7 +10,7 @@ area: gates
 
 `check-issue-reference-provenance.py` protects small set of historical
 issue and pull-request contexts proven to belong to retired
-`lusoris/vmaf` tracker. active `VMAFx/vmafx` repository reused those
+`lusoris/vmaf` tracker. active `vidiko/vmafx` repository reused those
 numbers for unrelated pull requests, so restoring bare issue number inside
 one of protected contexts silently changes cited object. Keep
 checker, its unit suite, always-run pre-commit hook, and Rule

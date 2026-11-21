@@ -1,4 +1,4 @@
-# Pre-Migration Epic: VMAFx/vmafx
+# Pre-Migration Epic: vidiko/vmafx
 
 - **Target Framework**: `github.com/golusoris/golusoris v0.8.0`
 - **Current Readiness Score**: `43.4%`
@@ -9,20 +9,20 @@
 Each task is a tracked issue; the issue state is authoritative
 ([ADR-1249](docs/adr/1249-praetor-governance-adoption.md)).
 
-- [x] **Task 1**: [TASK 1/5] Invariant & Complexity Hygiene: VMAFx/vmafx#1444
+- [x] **Task 1**: [TASK 1/5] Invariant & Complexity Hygiene: vidiko/vmafx#1444
   (closed 2026-10-07)
-- [x] **Task 2**: [TASK 2/5] Decoupling & Config Externalization: VMAFx/vmafx#1445
+- [x] **Task 2**: [TASK 2/5] Decoupling & Config Externalization: vidiko/vmafx#1445
   (closed 2026-10-07)
-  - *Prerequisites*: Depends-On: VMAFx/vmafx#1444
-- [ ] **Task 3**: [TASK 3/5] Framework Dependency Substitution: VMAFx/vmafx#1446
+  - *Prerequisites*: Depends-On: vidiko/vmafx#1444
+- [ ] **Task 3**: [TASK 3/5] Framework Dependency Substitution: vidiko/vmafx#1446
   (open)
-  - *Prerequisites*: Depends-On: VMAFx/vmafx#1445
-- [x] **Task 4**: [TASK 4/5] Gated Verification & Ed25519 Receipt: VMAFx/vmafx#1447
+  - *Prerequisites*: Depends-On: vidiko/vmafx#1445
+- [x] **Task 4**: [TASK 4/5] Gated Verification & Ed25519 Receipt: vidiko/vmafx#1447
   (closed 2026-10-07)
-  - *Prerequisites*: Depends-On: VMAFx/vmafx#1446
+  - *Prerequisites*: Depends-On: vidiko/vmafx#1446
 - [x] **Task 5**: [TASK 5/5] Full Praetor Activation & Governance Lockdown:
-  VMAFx/vmafx#1448 (closed 2026-10-07)
-  - *Prerequisites*: Depends-On: VMAFx/vmafx#1447
+  vidiko/vmafx#1448 (closed 2026-10-07)
+  - *Prerequisites*: Depends-On: vidiko/vmafx#1447
 
 ## Execution Directives
 
@@ -34,7 +34,7 @@ Each task is a tracked issue; the issue state is authoritative
 
 ## Decomposed Sub-Issue Definitions
 
-### Issue 1: [TASK 1/5] Invariant & Complexity Hygiene: VMAFx/vmafx
+### Issue 1: [TASK 1/5] Invariant & Complexity Hygiene: vidiko/vmafx
 
 **Labels**: `task, hiss, hygiene`
 
@@ -44,10 +44,10 @@ Each task is a tracked issue; the issue state is authoritative
 - Eliminate unhandled panics, unwrap(), and raw fatal exits.
 - Add 3D unit tests (positive, negative, boundary) with race detector.
 
-### Issue 2: [TASK 2/5] Decoupling & Config Externalization: VMAFx/vmafx
+### Issue 2: [TASK 2/5] Decoupling & Config Externalization: vidiko/vmafx
 
 **Labels**: `task, architecture, decoupling`
-**Depends-On**: `VMAFx/vmafx#1444`
+**Depends-On**: `vidiko/vmafx#1444`
 
 #### Scope (task 2)
 
@@ -55,10 +55,10 @@ Each task is a tracked issue; the issue state is authoritative
 - Externalize secrets and tokens behind environment variables / HashiCorp Vault.
 - Decouple monorepo circular import dependencies.
 
-### Issue 3: [TASK 3/5] Framework Dependency Substitution: VMAFx/vmafx
+### Issue 3: [TASK 3/5] Framework Dependency Substitution: vidiko/vmafx
 
 **Labels**: `task, dependencies, migration`
-**Depends-On**: `VMAFx/vmafx#1445`
+**Depends-On**: `vidiko/vmafx#1445`
 
 #### Scope (task 3)
 
@@ -67,10 +67,10 @@ Each task is a tracked issue; the issue state is authoritative
 - Apply verified import substitutions.
 - Reconcile .needs.yaml capability declarations.
 
-### Issue 4: [TASK 4/5] Gated Verification & Ed25519 Receipt: VMAFx/vmafx
+### Issue 4: [TASK 4/5] Gated Verification & Ed25519 Receipt: vidiko/vmafx
 
 **Labels**: `task, verification, gating`
-**Depends-On**: `VMAFx/vmafx#1446`
+**Depends-On**: `vidiko/vmafx#1446`
 
 #### Scope (task 4)
 
@@ -78,10 +78,10 @@ Each task is a tracked issue; the issue state is authoritative
 - Verify all 5 gates (prefetch, SCA, HISS-16, tests, receipts).
 - Sign Ed25519 Exit-0 receipt and submit fast-forward PR.
 
-### Issue 5: [TASK 5/5] Full Praetor Activation & Governance Lockdown: VMAFx/vmafx
+### Issue 5: [TASK 5/5] Full Praetor Activation & Governance Lockdown: vidiko/vmafx
 
 **Labels**: `task, activation, governance`
-**Depends-On**: `VMAFx/vmafx#1447`
+**Depends-On**: `vidiko/vmafx#1447`
 
 #### Scope (task 5)
 
