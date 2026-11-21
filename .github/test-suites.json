@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "comment": "source_paths, install, pytest and fail_on_skip tell scripts/ci/run_affected_suites.py how to run a suite locally; not_local says why it cannot. Every tracked test file belongs to exactly one suite, and every suite names the required checks that run it (ADR-1528). scripts/ci/suite_registry.py check enforces both; scripts/ci/suite_registry.py run tooling runs the tooling suite. docs/development/test-suites.md describes each suite.",
+  "comment": "source_paths, install, pytest and fail_on_skip tell scripts/ci/run_affected_suites.py how to run a suite locally; install.python is optional and defaults to PYTHON_CI_VERSION from build-config.env, while an explicit value is a per-suite override. not_local says why it cannot run locally. Every tracked test file belongs to exactly one suite, and every suite names the required checks that run it (ADR-1528). scripts/ci/suite_registry.py check enforces both; scripts/ci/suite_registry.py run tooling runs the tooling suite. docs/development/test-suites.md describes each suite.",
   "name_patterns": [
     "test_*.py",
     "test-*.py",
@@ -37,7 +37,7 @@
       "paths": ["compat/python-vmaf/tests/"],
       "checks": ["Python Package Tests (compat)"],
       "source_paths": ["compat/python-vmaf/", "python/vmaf/"],
-      "install": {"python": "3.14", "locks": ["requirements/locks/package-build.txt", "python/requirements-test-lock.txt"]},
+      "install": {"locks": ["requirements/locks/package-build.txt", "python/requirements-test-lock.txt"]},
       "pytest": {"rewrite": ["compat/python-vmaf/", "compat/vmaf/"]},
       "runs": "pytest compat/vmaf/tests with python/requirements-test-lock.txt"
     },
@@ -46,7 +46,7 @@
       "paths": ["ai/tests/", "ai/sidecar/tests/"],
       "checks": ["Tiny AI"],
       "source_paths": ["ai/", "model/", "tools/vmaf-tune/src/vmaftune/predictor.py"],
-      "install": {"python": "3.14", "locks": ["requirements/locks/package-build.txt", "ai/requirements-dev-lock.txt"], "editable": ["ai"]},
+      "install": {"locks": ["requirements/locks/package-build.txt", "ai/requirements-dev-lock.txt"], "editable": ["ai"]},
       "pytest": {"timeout": 60, "method": "signal"},
       "fail_on_skip": "vmaf binary|vmaf CLI|golden YUV|Netflix .*(YUV|fixtures)|checkerboard YUVs",
       "runs": "pytest ai/tests/ ai/sidecar/tests/ with ai/requirements-dev-lock.txt"
@@ -56,7 +56,7 @@
       "paths": ["ai/e2e/"],
       "checks": ["Tiny AI"],
       "source_paths": ["ai/", "model/tiny/registry.schema.json", "testdata/ref_576x324_48f.yuv", "testdata/dis_576x324_48f.yuv"],
-      "install": {"python": "3.14", "locks": ["requirements/locks/package-build.txt", "ai/requirements-dev-lock.txt"], "editable": ["ai"]},
+      "install": {"locks": ["requirements/locks/package-build.txt", "ai/requirements-dev-lock.txt"], "editable": ["ai"]},
       "pytest": {"timeout": 900, "method": "signal"},
       "fail_on_skip": ".*",
       "runs": "pytest ai/e2e/ (the mini retrain end to end) in the Tiny AI job (which builds the vmaf CLI the test runs) and nightly in mini-retrain.yml (ADR-1898)"
@@ -66,7 +66,7 @@
       "paths": ["mcp-server/vmaf-mcp/tests/"],
       "checks": ["MCP Smoke"],
       "source_paths": ["mcp-server/vmaf-mcp/"],
-      "install": {"python": "3.14", "locks": ["requirements/locks/package-build.txt", "mcp-server/vmaf-mcp/requirements-dev-lock.txt"], "editable": ["mcp-server/vmaf-mcp"]},
+      "install": {"locks": ["requirements/locks/package-build.txt", "mcp-server/vmaf-mcp/requirements-dev-lock.txt"], "editable": ["mcp-server/vmaf-mcp"]},
       "pytest": {"timeout": 60, "method": "signal"},
       "fail_on_skip": "vmaf binary|vmaf CLI|golden YUV|Netflix .*(YUV|fixtures)|checkerboard YUVs",
       "runs": "pytest mcp-server/vmaf-mcp/tests/ with mcp-server/vmaf-mcp/requirements-dev-lock.txt"
@@ -76,7 +76,7 @@
       "paths": ["tools/rc1-tester/tests/"],
       "checks": ["RC1 Tester Report"],
       "source_paths": ["tools/rc1-tester/"],
-      "install": {"python": "3.14", "locks": ["requirements/locks/package-build.txt", "tools/rc1-tester/requirements-dev-lock.txt"], "editable": ["tools/rc1-tester"]},
+      "install": {"locks": ["requirements/locks/package-build.txt", "tools/rc1-tester/requirements-dev-lock.txt"], "editable": ["tools/rc1-tester"]},
       "runs": "pytest tools/rc1-tester/tests/ with tools/rc1-tester/requirements-dev-lock.txt"
     },
     {
@@ -84,7 +84,7 @@
       "paths": ["tools/vmaf-tune/tests/"],
       "checks": ["Python Package Tests (vmaf-tune)"],
       "source_paths": ["tools/vmaf-tune/", "model/"],
-      "install": {"python": "3.14", "locks": ["requirements/locks/package-build.txt", "tools/vmaf-tune/requirements-dev-lock.txt"], "editable": ["tools/vmaf-tune"]},
+      "install": {"locks": ["requirements/locks/package-build.txt", "tools/vmaf-tune/requirements-dev-lock.txt"], "editable": ["tools/vmaf-tune"]},
       "fail_on_skip": "vmaf binary|vmaf CLI|golden YUV|Netflix .*(YUV|fixtures)|checkerboard YUVs",
       "runs": "pytest over this suite's files (suite_registry.py list vmaf-tune) with tools/vmaf-tune/requirements-dev-lock.txt"
     },
@@ -93,7 +93,7 @@
       "paths": ["dev-llm/tests/"],
       "checks": ["Python Package Tests (dev-llm)"],
       "source_paths": ["dev-llm/"],
-      "install": {"python": "3.14", "locks": ["requirements/locks/package-build.txt", "dev-llm/requirements-dev-lock.txt"], "editable": ["dev-llm"]},
+      "install": {"locks": ["requirements/locks/package-build.txt", "dev-llm/requirements-dev-lock.txt"], "editable": ["dev-llm"]},
       "runs": "pytest dev-llm/tests with dev-llm/requirements-dev-lock.txt"
     },
     {
@@ -101,7 +101,7 @@
       "paths": ["tools/vmaf-roi-score/tests/"],
       "checks": ["Python Package Tests (vmaf-roi-score)"],
       "source_paths": ["tools/vmaf-roi-score/"],
-      "install": {"python": "3.14", "locks": ["requirements/locks/package-build.txt", "tools/vmaf-roi-score/requirements-dev-lock.txt"], "editable": ["tools/vmaf-roi-score"]},
+      "install": {"locks": ["requirements/locks/package-build.txt", "tools/vmaf-roi-score/requirements-dev-lock.txt"], "editable": ["tools/vmaf-roi-score"]},
       "runs": "pytest tools/vmaf-roi-score/tests with tools/vmaf-roi-score/requirements-dev-lock.txt on Python 3.12"
     },
     {
@@ -164,7 +164,7 @@
       ],
       "checks": ["Tooling Tests"],
       "source_paths": [".config/lane-brief.yaml", "requirements/locks/", "packaging/", ".github/test-suites.json", "LICENSE", "NOTICE", "LICENSES/", "REUSE.toml"],
-      "install": {"python": "3.14", "locks": ["requirements/locks/package-build.txt", "requirements/locks/tooling-tests.txt"]},
+      "install": {"locks": ["requirements/locks/package-build.txt", "requirements/locks/tooling-tests.txt"]},
       "pytest": {"timeout": 300, "method": "signal"},
       "runs": "scripts/ci/suite_registry.py run tooling: one pytest run over every Python test file, then every shell test file with bash; scripts/ci/tests/test_check_install_layout.py belongs here via scripts/: parser fixtures always run, real installed-SDK smoke requires VMAF_BUILD_DIR"
     }

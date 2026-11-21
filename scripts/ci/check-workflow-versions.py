@@ -100,6 +100,7 @@ LEVEL_ZERO_FETCHER_CALL_RE = re.compile(
 
 
 PYTHON_RE = re.compile(r'python-version:\s*[\'"]?([0-9]+\.[0-9]+\.[0-9]+)[\'"]?')
+SUITE_MANIFEST = Path(".github/test-suites.json")
 
 
 def load_config(root: Path) -> dict[str, str]:
@@ -214,6 +215,51 @@ def check_workflows(root: Path, lz_want: str | None, py_want: str | None) -> lis
                         f"{rel}:{line_no} pins python-version '{ver}'; "
                         f"build-config.env says '{py_want}'"
                     )
+    return problems
+
+
+def check_suite_registry_python(root: Path, py_want: str | None) -> list[str]:
+    """Suite installs inherit PYTHON_CI_VERSION instead of repeating it (issue 3103).
+
+    An explicit ``install.python`` remains a per-suite override for a suite that
+    genuinely needs another interpreter. What this rejects is the old copy of
+    the default in every install: changing ``build-config.env`` then left the
+    registry installing the previous Python.
+    """
+    if not py_want:
+        return ["build-config.env defines no PYTHON_CI_VERSION (issue 3103)"]
+    series = ".".join(py_want.split(".")[:2])
+    path = root / SUITE_MANIFEST
+    if not path.is_file():
+        return [f"{SUITE_MANIFEST} is missing; suite installs cannot inherit PYTHON_CI_VERSION"]
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return [f"{SUITE_MANIFEST} cannot be read as JSON ({exc})"]
+    suites = data.get("suites") if isinstance(data, dict) else None
+    if not isinstance(suites, list):
+        return [f"{SUITE_MANIFEST} has no suites list"]
+    problems: list[str] = []
+    inherits = 0
+    for index, suite in enumerate(suites):
+        install = suite.get("install") if isinstance(suite, dict) else None
+        if not isinstance(install, dict):
+            continue
+        name = suite.get("name", f"suites[{index}]")
+        if "python" not in install:
+            inherits += 1
+            continue
+        if install["python"] in (py_want, series):
+            problems.append(
+                f"{SUITE_MANIFEST}: suite {name!r} repeats install.python "
+                f"{install['python']!r} ('{series}' or '{py_want}'); omit it so "
+                "PYTHON_CI_VERSION stays the only default"
+            )
+    if not inherits:
+        problems.append(
+            f"{SUITE_MANIFEST}: no suite install inherits PYTHON_CI_VERSION; "
+            "remove at least one install.python default"
+        )
     return problems
 
 
@@ -636,6 +682,7 @@ def main() -> int:
     problems: list[str] = []
     problems.extend(check_level_zero_container(root))
     problems.extend(check_workflows(root, lz_want, py_want))
+    problems.extend(check_suite_registry_python(root, py_want))
     problems.extend(check_vmafx_version(root, ver_want))
     problems.extend(check_formatter_pins(root))
     problems.extend(check_makefile_venv_paths(root))

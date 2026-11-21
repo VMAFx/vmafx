@@ -179,6 +179,14 @@ class SuiteRegistryTests(unittest.TestCase):
         (self.repo / "orphan" / "test_local.py").write_text("x = 1\n", encoding="utf-8")
         self.assertEqual(self.registry("check").returncode, 0)
 
+    def test_non_object_suite_is_a_usage_error(self) -> None:
+        data = manifest()
+        data["suites"] = [None]
+        self.build(PASSING_FILES, data)
+        result = self.registry("check")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("suites[0] must be an object", result.stderr)
+
     def test_duplicate_manifest_key_is_a_usage_error(self) -> None:
         self.build(PASSING_FILES)
         path = self.repo / ".github" / "test-suites.json"
