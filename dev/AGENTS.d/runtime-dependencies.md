@@ -34,14 +34,45 @@ invariant: LD_LIBRARY_PATH includes tbb; NEO/ROCm pinned to kernel UAPI; ORT_VER
    raise -> add pin to `scripts/ci/ort-nuget-pins.json` first
    (`python3 scripts/ci/ort_nuget_install.py --print-pin <version>`
    prints size + sha256 entry), then raise `ARG ORT_VERSION` and update
-   this note; guard `scripts/ci/check_ort_tarball_pins.py` refuses
-   `ORT_VERSION` without pin in `scripts/ci/ort-nuget-pins.json`, inline
-   `ORT_VERSION` overrides on helper call, `.`/`source` prologues,
-   `--print-pin` inside a container `RUN`, and old release sources split
-   across `RUN` or `ADD` continuations with comments. It accepts a container
-   helper `RUN` only when every `&&`-separated simple command is the helper,
-   `export ORT_VERSION=<literal>`, `set -e`/`set -eux`/`set -o pipefail`, or
-   `ldconfig`; `ARG`/`ENV` bindings are read across the build stage. Limit:
-   a script copied and run as `RUN sh /install.sh` is not read.
-   `ARG ORT_SHA256` not read by build; kept only for `renovate.json`
+   this note.
+
+   Guard `scripts/ci/check_ort_tarball_pins.py` performs bounded static checks;
+   it is not a general shell or Docker parser. It checks the entire logical
+   `RUN` instruction for helper tokens, including a bare token and module
+   spelling. A helper token after the command-parser cap still yields a
+   continuation-limit finding. Continuation joining treats blank and
+   full-line comment lines consistently.
+
+   A container helper `RUN` is accepted only when every simple command
+   separated by unquoted shell `&&` is the helper, `export
+   ORT_VERSION=<literal>`, `set -e`/`set -eux`/`set -o pipefail`, or
+   `ldconfig`. Quoted `&&` is not a separator. Bare `ORT_VERSION=<literal>`,
+   inline overrides, `.`/`source`, `--print-pin`, flags, exec form, heredoc,
+   and other commands are rejected. Single-quoted `$ORT_VERSION` text does
+   not expand. Helper version may be a literal or `$ORT_VERSION`/`${ORT_VERSION}`
+   in an accepted form.
+
+   Effective `ORT_VERSION` comes from the preceding export in that `RUN`, or
+   from same-stage `ARG`/`ENV` bindings. Last assignment wins; `ENV` takes
+   precedence over `ARG`. Only real `FROM` instructions start a new stage;
+   `FROM` text in continuations or heredoc content does not. Unsupported
+   dynamic values affecting version resolution fail closed. Each recognized
+   NuGet URL resolves its referenced variable using the value effective at
+   that stage and instruction. Unrelated variables carrying an ORT package
+   name do not cause a finding.
+
+   CBA checks associate validation with each target download: checksum must
+   follow download, and tar extraction must follow checksum. Discovery uses
+   Git-tracked workflow and container files named exactly `Dockerfile` or
+   `Containerfile`, prefixed by `Dockerfile.` or `Containerfile.`, or suffixed
+   by `.Dockerfile` or `.Containerfile`, including `docker/dev/*.Dockerfile`;
+   `Containerfile.yaml` uses container parsing. Recognized Git discovery
+   failures exit 2; glob fallback applies only to non-Git fixture directories.
+   Untracked backups stay outside discovery.
+
+   Limit: `COPY install.sh /install.sh` plus `RUN sh /install.sh` is not read;
+   cross-file shell scripts remain outside guard scope. The installer still
+   enforces package size and SHA-256 pins when such a script invokes it.
+
+   `ARG ORT_SHA256` is not read by build; kept only for `renovate.json`
    dependency-update rule until rule moves (ADR-3561 follow-up).

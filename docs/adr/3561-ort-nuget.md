@@ -51,26 +51,72 @@ Replace `1.30.0` with the version to measure.
 - The installer includes both upstream licence notices under its prefix.
 - `scripts/ci/check_ort_tarball_pins.py` verifies that every workflow step
   calling the helper names a pinned `ORT_VERSION` for its package.
-- The development container uses the same installer; the guard checks tracked
-  container files for old sources, direct NuGet downloads, and helper version
-  pins. A container instruction that names the helper is accepted only as a
-  plain `RUN` (no flags, exec form, or heredoc) whose continuation-joined body
-  splits on `&&` into allow-listed simple commands: a helper call, an
-  `export ORT_VERSION=<literal>` assignment, `set -e`/`set -eux`/`set -o
-  pipefail`, or `ldconfig`. Every other command, including bare
-  `ORT_VERSION=<literal>`, `.`/`source`, `--print-pin`, and inline overrides,
-  is a shape finding at the instruction start.
-- Helper calls may use `python3 <path>/scripts/ci/ort_nuget_install.py` or
-  `python3 -m scripts.ci.ort_nuget_install`. Each helper flag may appear once;
-  `--package` accepts `[A-Za-z0-9_-]+`, `--prefix` is required, and
-  `--version` is a literal or `$ORT_VERSION`/`${ORT_VERSION}`. An
-  `ORT_VERSION` exported in the same `RUN` wins; otherwise the guard reads
-  `ARG`/`ENV` literals across the whole build stage up to the previous `FROM`,
-  so a `WORKDIR` between the binding and the call no longer hides it.
-- The guard reads tracked files only, so an untracked `Containerfile.bak` is
-  outside the check. It does not follow a script that the image copies and
-  runs (`COPY install.sh /install.sh`, `RUN sh /install.sh`); the installer
-  still enforces its own pin and digest checks in that path.
+- The development container uses the same installer. The guard checks old
+  ONNX Runtime release sources, direct NuGet downloads, and helper version
+  pins within the static scope below.
+
+### Guard scope and limits
+
+[`check_ort_tarball_pins.py`](../../scripts/ci/check_ort_tarball_pins.py)
+implements bounded static checks for the repository's supported workflow and
+container instruction forms. It is not a general shell or Dockerfile parser.
+[`test_ort_tarball_single_source.py`](../../scripts/ci/tests/test_ort_tarball_single_source.py)
+contains the guard's positive, negative, and boundary fixtures.
+
+- Helper detection covers the entire logical container instruction, including
+  a bare `ort_nuget_install.py` token and the module spelling
+  `scripts.ci.ort_nuget_install`. A helper token in a later segment cannot
+  hide an earlier unsupported command. Detection continues beyond the command
+  parser's cap; a helper in that tail produces a limit finding at the
+  instruction start rather than a successful scan.
+- An instruction naming the helper is accepted only as a plain `RUN` (no
+  flags, exec form, or heredoc). Only unquoted shell `&&` separates its simple
+  commands; quoted `&&` remains part of an argument. Every segment must be an
+  allowed helper call, `export ORT_VERSION=<literal>`,
+  `set -e`/`set -eux`/`set -o pipefail`, or `ldconfig`. Other commands,
+  including bare `ORT_VERSION=<literal>`, `.`/`source`, `--print-pin`, and
+  inline overrides, produce a shape finding at the instruction start.
+- Calls may use `python3 scripts/ci/ort_nuget_install.py`,
+  `python3 /build/vmaf/scripts/ci/ort_nuget_install.py`, or
+  `python3 -m scripts.ci.ort_nuget_install`. Each allowed helper flag may occur
+  once; `--package` accepts `[A-Za-z0-9_-]+`, `--prefix` is required, and
+  `--version` is a literal or an unquoted or double-quoted
+  `$ORT_VERSION`/`${ORT_VERSION}`. Single-quoted variable text does not expand
+  and is rejected.
+- Each call uses its preceding supported `RUN` export, if present; otherwise
+  it uses the effective `ORT_VERSION` before that instruction in the same
+  build stage. The last assignment within `ARG` or `ENV` wins, and `ENV`
+  takes precedence over `ARG`. Intervening instructions such as `WORKDIR`
+  do not hide bindings. Only real `FROM` instructions establish stage
+  boundaries: `FROM` text in a continuation or heredoc body does not.
+  Unsupported dynamic values that affect version resolution fail closed.
+- Continuation joining ignores blank and full-line comment lines consistently
+  for helper detection, source checks, and stage bindings. Old release
+  addresses split across `RUN` or `ADD` continuations remain forbidden.
+  For every recognized NuGet URL, the guard checks the package segment. In
+  container files, a referenced variable resolves to the stage value effective
+  at that instruction; workflow references resolve against their owning step's
+  bindings. A direct ONNX Runtime package URL or unresolved package variable
+  is a finding; an unrelated variable containing an ONNX Runtime package name
+  does not make a different package's URL a finding.
+- ClangBuildAnalyzer retains its digest check. Checksum and extraction order
+  is checked after the target download; unrelated earlier checksum or `tar`
+  commands do not satisfy or invalidate that download's order check.
+- Repository discovery uses Git-tracked workflow files and container files
+  named exactly `Dockerfile` or `Containerfile`, prefixed by `Dockerfile.` or
+  `Containerfile.`, or suffixed by `.Dockerfile` or `.Containerfile` (including
+  `docker/dev/*.Dockerfile`). Container names take precedence over `.yml`/
+  `.yaml`: `Containerfile.yaml` uses the container checks. Untracked
+  backups are outside repository discovery. Recognized Git discovery
+  failures return exit 2; glob discovery is reserved for non-Git fixture
+  directories. Explicit file arguments select the supplied files.
+- The guard does not read scripts copied into an image and invoked with
+  `RUN sh /install.sh`, or follow other cross-file shell calls. For example,
+  `COPY install.sh /install.sh` followed by `RUN sh /install.sh` does not
+  expose that script's contents to these checks. If that script calls the
+  shared installer, the installer still enforces its own size and digest
+  pins at execution time.
+
 - Follow-up: the `renovate.json` custom manager (`renovate.json:603-617`,
   `matchStrings` at `renovate.json:610-614` matching `ORT_SHA256`) still
   references the old GitHub release tarball source.

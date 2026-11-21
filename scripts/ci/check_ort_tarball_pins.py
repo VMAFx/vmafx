@@ -27,12 +27,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ROOT = REPO_ROOT
 sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    CommandOutputLimitExceeded,
+    CommandValidationError,
+)
+from scripts.lib.safe_subprocess import (  # noqa: E402
+    run as run_command,
+)
 
 HEX_RE = re.compile(r"^[a-f0-9]{64}$")
 STEP_START_RE = re.compile(r"^(\s*)-\s+(?:name|uses|run):")
 GENERIC_STEP_RE = re.compile(r"^(\s*)-\s+")
-TAR_EXTRACT_RE = re.compile(r"\btar\b.*?(?:-[a-zA-Z0-9]*x|--extract)")
+TAR_EXTRACT_RE = re.compile(r"\btar(?=\s).*?(?:-[a-zA-Z0-9]*x|--extract)")
 SHA_CHECK_RE = re.compile(r"\bsha256sum\b.*?(?:--check|-c\b)")
 GPU_MARKER_RE = re.compile(r"onnxruntime-[^\s\"'/]*-gpu")
 PACKAGE_FLAG_RE = re.compile(r"--package(?:=|\s+)[\"']?([A-Za-z0-9_-]+)")
@@ -59,7 +65,7 @@ CONTAINER_FORBIDDEN_RE = re.compile(
     r"[`;|(){}]|<<|\$\(|(?<!&)&(?!&)|\beval\b|\b(?:sh|bash)\s+-[A-Za-z]*c\b|\benv\s"
 )
 CONTAINER_HELPER_TOKEN_RE = re.compile(
-    r"(?:/build/vmaf/)?scripts/ci/ort_nuget_install\.py|scripts\.ci\.ort_nuget_install"
+    r"(?:[^\s\"']*/)?ort_nuget_install\.py|scripts\.ci\.ort_nuget_install"
 )
 CONTAINER_HELPER_PATHS = frozenset(
     {
@@ -149,66 +155,102 @@ def _find_workflow_block(lines: list[str], site_idx: int) -> tuple[int, int]:
     return start_idx, end_idx
 
 
+def _docker_heredocs(header: str) -> list[tuple[bool, str]]:
+    """Recognize unquoted heredoc operators without treating quoted text as syntax."""
+    header = re.sub(
+        r"\\(.)", lambda match: "\x01" if match.group(1) == "<" else match.group(0), header
+    )
+    lexer = shlex.shlex(header, posix=False, punctuation_chars="<")
+    lexer.whitespace_split = True
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        return []
+    delimiters: list[tuple[bool, str]] = []
+    for index in range(len(tokens) - 1):
+        if tokens[index] != "<<":
+            continue
+        value = tokens[index + 1]
+        tabs = value.startswith("-")
+        delimiter = value.removeprefix("-").strip("\"'")
+        if re.fullmatch(r"[A-Za-z0-9_.-]+", delimiter):
+            delimiters.append((tabs, delimiter))
+    return delimiters
+
+
+def _docker_continuation_end(lines: list[str], start: int) -> int:
+    """Find the instruction header end before consuming any heredoc body."""
+    end = start
+    for idx in range(start, len(lines)):
+        end = idx
+        stripped = lines[idx].strip()
+        if idx > start and (not stripped or stripped.startswith("#")):
+            continue
+        if not stripped.endswith("\\"):
+            break
+    return end
+
+
+def _docker_instruction_end(lines: list[str], start: int) -> int:
+    """Find a whole logical instruction, including comments and heredoc bodies."""
+    end = _docker_continuation_end(lines, start)
+    header = " ".join(
+        line.strip().removesuffix("\\")
+        for line in lines[start : end + 1]
+        if not line.lstrip().startswith("#")
+    )
+    for tabs, delimiter in _docker_heredocs(header):
+        for idx in range(end + 1, len(lines)):
+            end = idx
+            candidate = lines[idx].lstrip("\t") if tabs else lines[idx]
+            if candidate == delimiter:
+                break
+    return end
+
+
+def _docker_instructions(lines: list[str]) -> list[tuple[int, int, str | None, str]]:
+    """Read each logical instruction once; retain detection text beyond the parse cap."""
+    instructions: list[tuple[int, int, str | None, str]] = []
+    next_idx = 0
+    for idx in range(len(lines)):
+        if idx < next_idx or not lines[idx].strip() or lines[idx].lstrip().startswith("#"):
+            continue
+        end = _docker_instruction_end(lines, idx)
+        parts = [
+            raw.strip().removesuffix("\\")
+            for raw in lines[idx : end + 1]
+            if raw.strip() and not raw.lstrip().startswith("#")
+        ]
+        command = " ".join(parts) if end - idx < MAX_COMMAND_LINES else None
+        instructions.append((idx, end, command, "".join(parts)))
+        next_idx = end + 1
+    return instructions
+
+
 def _container_instruction(
     lines: list[str], site_idx: int
 ) -> tuple[int, int, str | None, str | None]:
-    """Return start index, end index, spaced text and fused text for an instruction."""
-    start_idx = site_idx
-    for j in range(site_idx - 1, max(-1, site_idx - 2 - MAX_COMMAND_LINES), -1):
-        stripped = lines[j].strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if not stripped.endswith("\\"):
-            break
-        start_idx = j
-
-    parts: list[str] = []
-    end_idx = start_idx
-    for idx in range(start_idx, min(len(lines), start_idx + MAX_COMMAND_LINES)):
-        end_idx = idx
-        stripped = lines[idx].strip()
-        if idx > start_idx and (not stripped or stripped.startswith("#")):
-            continue
-        parts.append(stripped.rstrip("\\"))
-        if not stripped.endswith("\\"):
-            return start_idx, end_idx, " ".join(parts), "".join(parts)
-    return start_idx, end_idx, None, None
+    """Return containing logical instruction, preserving full detection text."""
+    for instruction in _docker_instructions(lines):
+        if instruction[0] <= site_idx <= instruction[1]:
+            return instruction
+    return site_idx, site_idx, lines[site_idx], lines[site_idx]
 
 
 def _find_docker_block(lines: list[str], site_idx: int) -> tuple[int, int]:
-    """Find the build stage containing the instruction that starts at site_idx."""
-    run_idx, end_idx, _, _ = _container_instruction(lines, site_idx)
+    """Find the actual build stage, ignoring FROM inside continuations and heredocs."""
     start_idx = 0
-    for j in range(run_idx - 1, max(-1, run_idx - 1 - MAX_STEP_LINES), -1):
-        if re.match(r"^\s*FROM\b", lines[j], re.I):
-            start_idx = j + 1
-            break
-    return start_idx, max(site_idx, end_idx)
-
-
-def _joined_docker_instructions(lines: list[str]) -> list[str]:
-    """Join ARG/ENV continuations so multi-assignment instructions stay whole."""
-    joined: list[str] = []
-    pending = ""
-    for raw in lines:
-        stripped = raw.strip()
-        if pending:
-            stripped = f"{pending} {stripped}".strip()
-            if stripped.endswith("\\"):
-                pending = stripped[:-1].rstrip()
-                continue
-            pending = ""
-        elif stripped.endswith("\\") and re.match(r"^(?:ARG|ENV)\b", stripped, re.I):
-            pending = stripped[:-1].rstrip()
+    for start, end, command, fused in _docker_instructions(lines):
+        if not re.match(r"^FROM\b", command or fused, re.I):
             continue
-        joined.append(stripped)
-    if pending:
-        joined.append(pending)
-    return joined
+        if start > site_idx:
+            return start_idx, start - 1
+        start_idx = end + 1
+    return start_idx, len(lines) - 1
 
 
 def _assignment_pairs(rest: str) -> list[tuple[str, str]]:
-    """Every `name=value` pair in an ARG/ENV instruction, or no pairs when malformed."""
+    """Every name=value pair, including empty values; malformed input returns no pairs."""
     try:
         tokens = shlex.split(rest)
     except ValueError:
@@ -218,30 +260,41 @@ def _assignment_pairs(rest: str) -> list[tuple[str, str]]:
         if "=" not in token:
             return []
         name, value = token.split("=", 1)
-        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None or not value:
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None:
             return []
         pairs.append((name, value))
     return pairs
 
 
+def _docker_assignment_values(keyword: str, rest: str) -> list[tuple[str, str]]:
+    """Parse assignments; retain unknown values for affected names on unsupported syntax."""
+    pairs = _assignment_pairs(rest)
+    if not pairs and keyword == "ENV" and "=" not in rest:
+        legacy = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)\s+([^\s#]+)", rest)
+        if legacy:
+            pairs = [(legacy.group(1), legacy.group(2).strip("\"'"))]
+    if not pairs:
+        names = re.findall(r"(?:^|\s)([A-Za-z_][A-Za-z0-9_]*)(?==|\s|$)", rest)
+        return [(name, "<unresolved>") for name in names]
+    return [
+        (name, "<unresolved>" if re.search(r"[$`\\]", value) else value) for name, value in pairs
+    ]
+
+
 def _docker_bindings(lines: list[str], start_idx: int, run_idx: int) -> dict[str, set[str]]:
-    """ARG and ENV literal values in the build stage, up to the RUN."""
-    bindings: dict[str, set[str]] = {}
+    """Last assignment wins within ARG/ENV; ENV takes precedence over same-stage ARG."""
+    arguments: dict[str, str] = {}
+    environment: dict[str, str] = {}
     if run_idx - start_idx > MAX_STEP_LINES:
-        return bindings
-    for line in _joined_docker_instructions(lines[start_idx:run_idx]):
-        match = re.match(r"^\s*(ARG|ENV)\s+(.+)$", line, re.I)
+        return {}
+    for _, _, command, fused in _docker_instructions(lines[start_idx:run_idx]):
+        match = re.match(r"^(ARG|ENV)\s+(.+)$", command or fused, re.I)
         if not match:
             continue
         keyword, rest = match.group(1).upper(), match.group(2)
-        pairs = _assignment_pairs(rest)
-        if not pairs and keyword == "ENV" and "=" not in rest:
-            legacy = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)\s+([^\s#]+)", rest)
-            if legacy:
-                pairs = [(legacy.group(1), legacy.group(2).strip("\"'"))]
-        for name, value in pairs:
-            bindings.setdefault(name, set()).add(value)
-    return bindings
+        target = environment if keyword == "ENV" else arguments
+        target.update(_docker_assignment_values(keyword, rest))
+    return {name: {value} for name, value in (arguments | environment).items()}
 
 
 def find_block_for_site(lines: list[str], site_idx: int, is_workflow: bool) -> tuple[int, int]:
@@ -282,6 +335,20 @@ def _check_sha_pin(
     return sha_val, sha_line_num, findings
 
 
+def _docker_verification_lines(lines: list[str]) -> list[str]:
+    """Keep executable RUN text in stage order, excluding comments and heredoc payloads."""
+    executable = [""] * len(lines)
+    for start, end, command, fused in _docker_instructions(lines):
+        if not re.match(r"^RUN\b", command or fused, re.I):
+            continue
+        if _docker_heredocs(lines[start]):
+            continue
+        for idx in range(start, end + 1):
+            if not lines[idx].lstrip().startswith("#"):
+                executable[idx] = lines[idx]
+    return executable
+
+
 def _check_verification_order(
     entry: TrackedDownload,
     block_lines: list[str],
@@ -291,28 +358,21 @@ def _check_verification_order(
 ) -> list[str]:
     """Verify sha256sum --check occurs after download and before tar -x."""
     findings: list[str] = []
-    check_line_num: int | None = None
-    tar_line_num: int | None = None
-
-    for offset, b_line in enumerate(block_lines):
-        line_no = start_idx + offset + 1
-        if check_line_num is None and SHA_CHECK_RE.search(b_line):
-            check_line_num = line_no
-        if tar_line_num is None and TAR_EXTRACT_RE.search(b_line):
-            tar_line_num = line_no
-
-    if check_line_num is None:
+    relative_site = site_line_num - start_idx - 1
+    tail_lines = block_lines[relative_site:]
+    # Ignore all earlier commands, including those on the download's physical line.
+    tail_lines = [tail_lines[0].partition(entry.marker)[2], *tail_lines[1:]]
+    tail = "\n".join(tail_lines)
+    check = SHA_CHECK_RE.search(tail)
+    extract = TAR_EXTRACT_RE.search(tail)
+    if check is None:
         findings.append(f"{path}:{site_line_num}: {entry.name}: missing sha256sum --check in block")
-    elif check_line_num <= site_line_num:
-        findings.append(
-            f"{path}:{check_line_num}: {entry.name}: sha256sum --check occurs before or at download line {site_line_num}"
-        )
-
-    if tar_line_num is not None and check_line_num is not None and tar_line_num <= check_line_num:
+    elif extract is not None and extract.start() < check.start():
+        tar_line_num = site_line_num + tail.count("\n", 0, extract.start())
+        check_line_num = site_line_num + tail.count("\n", 0, check.start())
         findings.append(
             f"{path}:{tar_line_num}: {entry.name}: tar extraction occurs before sha256sum --check on line {check_line_num}"
         )
-
     return findings
 
 
@@ -550,6 +610,39 @@ def _split_segment(segment: str) -> list[str] | None:
         return None
 
 
+def _shell_segments(body: str) -> list[str]:
+    """Split only unquoted &&; preserve single-quoted dollars as literal flag input."""
+    segments: list[str] = []
+    characters: list[str] = []
+    quote = ""
+    escaped = False
+    skip = False
+    for idx, character in enumerate(body):
+        if skip:
+            skip = False
+            continue
+        if escaped:
+            characters.append("\x01" if character == "$" else character)
+            escaped = False
+        elif character == "\\" and quote != "'":
+            characters.append(character)
+            escaped = True
+        elif character == quote:
+            quote = ""
+            characters.append(character)
+        elif character in "\"'" and not quote:
+            quote = character
+            characters.append(character)
+        elif not quote and body[idx : idx + 2] == "&&":
+            segments.append("".join(characters))
+            characters = []
+            skip = True
+        else:
+            characters.append("\x01" if character == "$" and quote == "'" else character)
+    segments.append("".join(characters))
+    return segments
+
+
 def _parse_container_helper_instruction(
     command: str, bindings: dict[str, set[str]]
 ) -> list[tuple[str, str | None, str]] | None:
@@ -557,7 +650,7 @@ def _parse_container_helper_instruction(
     body = _run_helper_body(command)
     if body is None:
         return None
-    raw_segments = body.split("&&", MAX_COMMAND_LINES + 1)
+    raw_segments = _shell_segments(body)
     if len(raw_segments) > MAX_COMMAND_LINES:
         return None
     exported: dict[str, str] = {}
@@ -722,11 +815,15 @@ def _check_nuget_reference(
     """Resolve a variable-backed NuGet reference to its pinned package family."""
     name = match.group(1)[1:].strip("{}")
     start_idx, end_idx = find_block_for_site(lines, idx, is_workflow)
-    bindings = _step_bindings(lines[start_idx : end_idx + 1])
+    bindings = (
+        _step_bindings(lines[start_idx : end_idx + 1])
+        if is_workflow
+        else _docker_bindings(lines, start_idx, idx)
+    )
     if bindings is None:
         return [f"{path}:{idx + 1}: step binding limit exceeded"]
     values = bindings.get(name, set())
-    if not values:
+    if not values or "<unresolved>" in values or "" in values:
         return [f"{path}:{idx + 1}: NuGet download with unresolved package"]
     if any(ORT_PACKAGE_RE.fullmatch(value) for value in values):
         return [f"{path}:{idx + 1}: ONNX Runtime download must use helper"]
@@ -740,12 +837,14 @@ def _check_nuget_download(
     lower = line.lower()
     if not any(marker in lower for marker in ("curl ", "wget ", "https://")):
         return []
-    if ORT_PACKAGE_RE.search(line):
-        return [f"{path}:{idx + 1}: ONNX Runtime download must use helper"]
-    match = NUGET_ADDRESS_RE.search(line)
-    if not match or not match.group(1).startswith("$"):
-        return []
-    return _check_nuget_reference(lines, idx, path, match, is_workflow)
+    findings: list[str] = []
+    for match in NUGET_ADDRESS_RE.finditer(line):
+        package = match.group(1)
+        if package.startswith("$"):
+            findings.extend(_check_nuget_reference(lines, idx, path, match, is_workflow))
+        elif ORT_PACKAGE_RE.fullmatch(package):
+            findings.append(f"{path}:{idx + 1}: ONNX Runtime download must use helper")
+    return list(dict.fromkeys(findings))
 
 
 def _scan_workflow_line(
@@ -773,26 +872,29 @@ def _scan_workflow_line(
 
 
 def _scan_container_line(
-    lines: list[str], idx: int, path: Path, packages: dict[str, dict[str, Any]] | None
+    lines: list[str],
+    idx: int,
+    path: Path,
+    packages: dict[str, dict[str, Any]] | None,
+    instruction: tuple[int, int, str | None, str] | None = None,
 ) -> list[str]:
     """Check a container instruction once, including continued RUN and ADD commands."""
     line = lines[idx]
     if not line.strip() or line.lstrip().startswith("#"):
         return []
-    start_idx, _, command, fused = _container_instruction(lines, idx)
-    if command is None or fused is None:
+    start_idx, _, command, fused = instruction or _container_instruction(lines, idx)
+    if command is None:
         if idx != start_idx:
             return []
-        window = " ".join(
-            line.strip().rstrip("\\")
-            for line in lines[start_idx : start_idx + MAX_COMMAND_LINES + 1]
-        )
-        if not CONTAINER_HELPER_TOKEN_RE.search(window):
-            return _scan_workflow_line(lines, idx, path, None, False, window)
-        return [f"{path}:{idx + 1}: container command continuation exceeds limit"]
+        if CONTAINER_HELPER_TOKEN_RE.search(fused or ""):
+            return [f"{path}:{idx + 1}: container command continuation exceeds limit"]
+        return _scan_workflow_line(lines, idx, path, None, False, fused or "")
     if idx != start_idx:
         return []
-    findings = _scan_workflow_line(lines, idx, path, None, False, f"{command} {fused}")
+    fused = fused or ""
+    findings = _scan_workflow_line(lines, idx, path, None, False, command)
+    findings.extend(_scan_workflow_line(lines, idx, path, None, False, fused))
+    findings = list(dict.fromkeys(findings))
     if packages is not None and CONTAINER_HELPER_TOKEN_RE.search(fused):
         if not CONTAINER_HELPER_TOKEN_RE.search(command):
             findings.append(f"{path}:{idx + 1}: {CONTAINER_SHAPE_FINDING}")
@@ -818,11 +920,12 @@ def scan_file(
     findings: list[str] = []
     site_records: list[tuple[str, str, str, str, Path, int]] = []
 
+    instructions = {} if is_workflow else {item[0]: item for item in _docker_instructions(lines)}
     for i, line in enumerate(lines):
         if is_workflow:
             findings.extend(_scan_workflow_line(lines, i, path, packages, True))
-        else:
-            findings.extend(_scan_container_line(lines, i, path, packages))
+        elif i in instructions:
+            findings.extend(_scan_container_line(lines, i, path, packages, instructions[i]))
         entry = _match_tracked_entry(line)
         if entry is None or entry.name == "ONNX Runtime":
             continue
@@ -853,28 +956,32 @@ def _is_target_path(relative: str) -> bool:
     if path.parts[:2] == (".github", "workflows") and path.suffix in (".yml", ".yaml"):
         return True
     name = path.name
-    return name in {"Dockerfile", "Containerfile"} or name.startswith(
-        ("Dockerfile.", "Containerfile.")
+    return (
+        name in {"Dockerfile", "Containerfile"}
+        or name.startswith(("Dockerfile.", "Containerfile."))
+        or name.endswith((".Dockerfile", ".Containerfile"))
     )
 
 
 def _tracked_files(root: Path) -> list[Path] | None:
-    """Tracked files under root, or None when root is not a readable git worktree."""
-    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-    try:
-        result = run_command(
-            ("git", "-C", str(root), "ls-files", "-z"),
-            allowed_executables=("git",),
-            env=environment,
-            capture_output=True,
-            text=True,
-            check=False,
-            max_output_bytes=64 * 1_048_576,
-        )
-    except OSError:
+    """Tracked files, or None only for a fixture outside any Git worktree."""
+    if not any((parent / ".git").exists() for parent in (root, *root.parents)):
         return None
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
+    environment.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    result = run_command(
+        ("git", "-C", str(root), "ls-files", "-z"),
+        allowed_executables=("git",),
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        max_output_bytes=64 * 1_048_576,
+    )
     if result.returncode != 0:
-        return None
+        raise OSError(f"git ls-files failed for {root}: {result.stderr.strip()}")
     return [root / name for name in result.stdout.split("\0") if name]
 
 
@@ -894,6 +1001,8 @@ def _find_target_files(repo_root: Path) -> list[Path]:
         "Containerfile*",
         "**/Dockerfile*",
         "**/Containerfile*",
+        "**/*.Dockerfile",
+        "**/*.Containerfile",
     ]
     target_files: list[Path] = []
     for pat in patterns:
@@ -920,7 +1029,10 @@ def check_tarball_pins(
     files: list[Path] | None = None,
 ) -> tuple[int, list[str]]:
     """Scan candidate files for tracked download verification."""
-    target_files = files if files else _find_target_files(root if root else DEFAULT_ROOT)
+    try:
+        target_files = files if files else _find_target_files(root if root else DEFAULT_ROOT)
+    except (OSError, CommandValidationError, CommandOutputLimitExceeded) as err:
+        return EXIT_ERROR, [f"check_ort_tarball_pins: error: {err}"]
     all_findings: list[str] = []
     all_sites: list[tuple[str, str, str, str, Path, int]] = []
 
