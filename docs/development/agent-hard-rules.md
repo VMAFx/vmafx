@@ -122,7 +122,7 @@ line budget. Changing a rule here changes it for every agent.
     these apply the shared FFmpeg fix series pinned in `build-config.env`
     (`FFMPEG_FIX_SERIES_*`, [ADR-3143](../adr/3143-ffmpeg-shared-fix-series.md))
     and then replay every entry in `ffmpeg-patches/series.txt` cumulatively in
-    disposable storage. A fix to FFmpeg itself goes to VMAFx/ffmpeg-patches,
+    disposable storage. A fix to FFmpeg itself goes to vidiko/ffmpeg-patches,
     not into `ffmpeg-patches/`. Per-patch `git apply --check` is not a series gate.
     Local hooks refresh the configured release; daily CI discovers the latest
     stable released tag, excluding development and prerelease refs. See
@@ -163,7 +163,7 @@ line budget. Changing a rule here changes it for every agent.
       `core/build-all`) but are no longer the default mental model.
     - **The container is canonical for published artifacts
       ([ADR-1102](../adr/1102-phase4b9-container-only-publishing.md)).**
-      Release binaries, published container images (`ghcr.io/vmafx/vmafx:*`)
+      Release binaries, published container images (`ghcr.io/vidiko/vmafx:*`)
       and CI benchmark or snapshot artifacts used downstream must be produced
       inside the container. Host-side builds are diagnostic-only (IDE/clangd,
       debugger, sanitizer sweeps); never publish a host-built binary as a

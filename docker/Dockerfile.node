@@ -140,7 +140,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 LABEL org.opencontainers.image.title="vmafx-node-vmaf-builder"
 LABEL org.opencontainers.image.description="Build stage: libvmaf + vmaf CLI (release/stripped)"
-LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.source="https://github.com/vidiko/vmafx"
 
 # hadolint ignore=DL3008
 RUN apt-get --error-on=any -o Acquire::Retries=3 update \
@@ -462,7 +462,7 @@ FROM ${RELEASE_RUNTIME_CC} AS runtime-base
 
 LABEL org.opencontainers.image.title="vmafx-node"
 LABEL org.opencontainers.image.description="VMAFX worker node — FFmpeg + libvmaf + vmafx-node gRPC service. Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
-LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.source="https://github.com/vidiko/vmafx"
 LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE AND GPL-3.0-or-later AND GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.1-or-later AND WTFPL"
 LABEL org.opencontainers.image.vendor="Lusoris"
 

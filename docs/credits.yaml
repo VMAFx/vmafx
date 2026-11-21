@@ -99,7 +99,7 @@ entries:
   note: Streaming JSON parser for model files.
 - id: contribution-dmitry-popovich
   name: Dmitry Popovich's SYCL build and container work
-  url: https://github.com/VMAFx/vmafx/pull/2216
+  url: https://github.com/vidiko/vmafx/pull/2216
   kind: code
   relation: adapted
   license: EUPL-1.2
@@ -113,7 +113,7 @@ entries:
   note: Dmitry Popovich (@Tualua) designed the hybrid GCC and icpx build and the SYCL plus FFmpeg image in PR 2216; the project reworked them into PR 2883 and PR 2891.
 - id: contribution-luoye-cpu-mingw-thread-model-probe
   name: luoye-cpu's MinGW thread-model probe test
-  url: https://github.com/VMAFx/vmafx/pull/3317
+  url: https://github.com/vidiko/vmafx/pull/3317
   kind: code
   relation: used-by-CI
   license: EUPL-1.2
@@ -124,7 +124,7 @@ entries:
   note: luoye-cpu wrote the planted-stub test for the toolchain probe's MinGW thread-model and runtime-DLL entry, in PR 3317.
 - id: contribution-luoye-cpu-near-dup-spot-window
   name: luoye-cpu's near-duplicate spot-check tests
-  url: https://github.com/VMAFx/vmafx/pull/3444
+  url: https://github.com/vidiko/vmafx/pull/3444
   kind: code
   relation: used-by-CI
   license: EUPL-1.2
@@ -414,7 +414,7 @@ entries:
   evidence:
   - REUSE.toml
   - docs/licensing.md
-  note: The patch series adds libvmaf filters. The shared fix series applied before it (VMAFx/ffmpeg-patches,
+  note: The patch series adds libvmaf filters. The shared fix series applied before it (vidiko/ffmpeg-patches,
     fetched at build time) also touches GPL units. Upstream states most files LGPL v2.1 or later and some GPL.
 - id: lime-local-explainer
   name: LIME local explainer
@@ -1201,7 +1201,7 @@ entries:
   note: Informative subset only.
 - id: praetor
   name: praetor
-  url: https://github.com/cordanaLLM/praetor
+  url: https://github.com/tekmora/praetor
   kind: tool
   relation: used-by-CI
   license: EUPL-1.2
@@ -1211,7 +1211,7 @@ entries:
   note: Standards engine, hooks and skills; installed by praetorctl adopt.
 - id: golusoris
   name: golusoris
-  url: https://github.com/golusoris/golusoris
+  url: https://github.com/plurano/golusoris
   kind: library
   relation: shipped
   license: EUPL-1.2
@@ -1220,7 +1220,7 @@ entries:
   note: Go framework of the services.
 - id: pelorus
   name: pelorus
-  url: https://github.com/VMAFx/pelorus
+  url: https://github.com/vidiko/pelorus
   kind: code
   relation: vendored
   license: EUPL-1.2
@@ -1231,7 +1231,7 @@ entries:
   evidence:
   - scripts/ci/pelorus-mirror-paths.txt
   - scripts/sync-pelorus-interop.sh
-  note: Interop ABI headers, parser and conformance fixture vendored from the VMAFx/pelorus repository.
+  note: Interop ABI headers, parser and conformance fixture vendored from the vidiko/pelorus repository.
 - id: go-goptuna
   name: goptuna (Go)
   url: https://github.com/c-bata/goptuna

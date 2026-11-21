@@ -190,7 +190,7 @@ COPY --from=refs-gen /opt/vmafx/reference/x86_64-scalar.json /
 FROM scratch AS xref
 
 # ===========================================================================
-# Intel GPU variant: ghcr.io/vmafx/vmafx:<describe>-tester-sycl (linux/amd64).
+# Intel GPU variant: ghcr.io/vidiko/vmafx:<describe>-tester-sycl (linux/amd64).
 #   docker build -f docker/Dockerfile.tester --target final-sycl .
 # The stages above are shared; `final` at the end stays the default target.
 # ===========================================================================
@@ -402,7 +402,7 @@ RUN --mount=type=bind,from=sycl-assembled,target=/rootfs \
 
 # ---------------------------------------------------------------------------
 # sycl-source-export: the corresponding source of the Intel GPU image's
-# copyleft parts, published as ghcr.io/vmafx/vmafx:<tag>-sycl-source
+# copyleft parts, published as ghcr.io/vidiko/vmafx:<tag>-sycl-source
 # (ADR-1503 rule 5)
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_PYTHON_BASE} AS sycl-source-fetch
@@ -427,7 +427,7 @@ FROM sycl-assembled AS final-sycl
 ARG VMAFX_SOURCE_COMMIT=unknown
 LABEL org.opencontainers.image.title="vmafx-tester-sycl" \
       org.opencontainers.image.description="VMAFx Intel GPU tester image: SYCL build, SYCL device tests, parity gate, one JSON report. Licences: /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt" \
-      org.opencontainers.image.source="https://github.com/VMAFx/vmafx" \
+      org.opencontainers.image.source="https://github.com/vidiko/vmafx" \
       org.opencontainers.image.vendor="Lusoris" \
       org.opencontainers.image.revision="${VMAFX_SOURCE_COMMIT}"
 COPY --from=sycl-licence-check /out/licence-check.json /opt/vmafx/licence-check.json
@@ -435,7 +435,7 @@ USER 10001:10001
 ENTRYPOINT ["/usr/bin/python3", "/opt/vmafx/tester/vmaf-tester-report"]
 
 # ===========================================================================
-# NVIDIA GPU variant: ghcr.io/vmafx/vmafx:<describe>-tester-cuda (linux/amd64).
+# NVIDIA GPU variant: ghcr.io/vidiko/vmafx:<describe>-tester-cuda (linux/amd64).
 #   docker build -f docker/Dockerfile.tester --target final-cuda .
 # The image ships no NVIDIA file: libvmaf loads the host driver's libcuda.so.1
 # at run time (nv-codec-headers' loader), which the NVIDIA Container Toolkit
@@ -650,7 +650,7 @@ RUN --mount=type=bind,from=cuda-assembled,target=/rootfs \
 # ---------------------------------------------------------------------------
 # cuda-source-export: the corresponding source of the NVIDIA GPU image's
 # copyleft parts (its Debian packages), published as
-# ghcr.io/vmafx/vmafx:<tag>-cuda-source (ADR-1503 rule 5)
+# ghcr.io/vidiko/vmafx:<tag>-cuda-source (ADR-1503 rule 5)
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_PYTHON_BASE} AS cuda-source-fetch
 # Only /sources leaves this stage, so its package lists need no cleanup.
@@ -674,7 +674,7 @@ FROM cuda-assembled AS final-cuda
 ARG VMAFX_SOURCE_COMMIT=unknown
 LABEL org.opencontainers.image.title="vmafx-tester-cuda" \
       org.opencontainers.image.description="VMAFx NVIDIA GPU tester image: CUDA build, CUDA device tests, parity gate, one JSON report. Licences: /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt" \
-      org.opencontainers.image.source="https://github.com/VMAFx/vmafx" \
+      org.opencontainers.image.source="https://github.com/vidiko/vmafx" \
       org.opencontainers.image.vendor="Lusoris" \
       org.opencontainers.image.revision="${VMAFX_SOURCE_COMMIT}"
 COPY --from=cuda-licence-check /out/licence-check.json /opt/vmafx/licence-check.json
@@ -682,7 +682,7 @@ USER 10001:10001
 ENTRYPOINT ["/usr/bin/python3", "/opt/vmafx/tester/vmaf-tester-report"]
 
 # ===========================================================================
-# AMD GPU variant: ghcr.io/vmafx/vmafx:<describe>-tester-hip (linux/amd64).
+# AMD GPU variant: ghcr.io/vidiko/vmafx:<describe>-tester-hip (linux/amd64).
 #   docker build -f docker/Dockerfile.tester --target final-hip .
 # The HIP runtime comes from the pinned ROCm 10.1.0 image (ROCM_BUILDER of
 # build-config.env); the image ships only the files libvmaf loads, unmodified,
@@ -875,7 +875,7 @@ RUN --mount=type=bind,from=hip-assembled,target=/rootfs \
 # hip-source-export: the corresponding source of the AMD GPU image's copyleft
 # parts (its Debian packages, and the upstream archives and the TheRock tree of
 # the LGPL libraries the ROCm runtime bundles), published as
-# ghcr.io/vmafx/vmafx:<tag>-hip-source (ADR-1503 rule 5)
+# ghcr.io/vidiko/vmafx:<tag>-hip-source (ADR-1503 rule 5)
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_PYTHON_BASE} AS hip-source-fetch
 # Only /sources leaves this stage, so its package lists need no cleanup. git
@@ -901,7 +901,7 @@ FROM hip-assembled AS final-hip
 ARG VMAFX_SOURCE_COMMIT=unknown
 LABEL org.opencontainers.image.title="vmafx-tester-hip" \
       org.opencontainers.image.description="VMAFx AMD GPU tester image: HIP build, HIP device tests, parity gate, one JSON report. Licences: /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt" \
-      org.opencontainers.image.source="https://github.com/VMAFx/vmafx" \
+      org.opencontainers.image.source="https://github.com/vidiko/vmafx" \
       org.opencontainers.image.vendor="Lusoris" \
       org.opencontainers.image.revision="${VMAFX_SOURCE_COMMIT}"
 COPY --from=hip-licence-check /out/licence-check.json /opt/vmafx/licence-check.json
@@ -936,7 +936,7 @@ RUN --mount=type=bind,from=assembled,target=/rootfs \
 
 # ---------------------------------------------------------------------------
 # source-export: the corresponding source of the image's copyleft parts,
-# published as ghcr.io/vmafx/vmafx:<tag>-source (ADR-1503 rule 5)
+# published as ghcr.io/vidiko/vmafx:<tag>-source (ADR-1503 rule 5)
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_PYTHON_BASE} AS source-fetch
 # Only /sources leaves this stage, so its package lists need no cleanup.
@@ -960,7 +960,7 @@ FROM assembled AS final
 ARG VMAFX_SOURCE_COMMIT=unknown
 LABEL org.opencontainers.image.title="vmafx-tester" \
       org.opencontainers.image.description="VMAFx tester image: CPU build, SIMD unit tests, Netflix golden gate, one JSON report. Licences: /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt" \
-      org.opencontainers.image.source="https://github.com/VMAFx/vmafx" \
+      org.opencontainers.image.source="https://github.com/vidiko/vmafx" \
       org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-3-Clause-Clear AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE AND WTFPL" \
       org.opencontainers.image.vendor="Lusoris" \
       org.opencontainers.image.revision="${VMAFX_SOURCE_COMMIT}"

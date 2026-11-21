@@ -4,7 +4,7 @@ Windows has three build routes. This page covers the first and the details of
 the other two; the [Windows MSVC install page](install/windows.md) has the
 setup script for MSVC.
 
-| Route | Compiler | GPU backends | CI job ([`libvmaf-build-matrix.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/libvmaf-build-matrix.yml)) |
+| Route | Compiler | GPU backends | CI job ([`libvmaf-build-matrix.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/libvmaf-build-matrix.yml)) |
 | --- | --- | --- | --- |
 | [MSYS2 / MinGW-w64](#msys2-and-mingw-w64) | GCC (UCRT64) | none | `Windows UCRT64`: builds and runs the tests |
 | [Native MSVC, x64](#native-msvc-and-cuda) | `cl.exe` | CUDA; SYCL with `icx-cl` | `Windows MSVC+CUDA`, `Windows MSVC+SYCL`: build and install, no GPU tests |
@@ -60,7 +60,7 @@ build provenance, and print a configure warning: under LTO, binutils `ld
 with `__imp_<fn>` pointers and missing `T <fn>` function thunks, so executables
 auto-import calls as data and abort before `main` with a 32-bit
 pseudo-relocation out-of-range error under 64-bit ASLR
-([VMAFx/vmafx#3257](https://github.com/VMAFx/vmafx/issues/3257),
+([vidiko/vmafx#3257](https://github.com/vidiko/vmafx/issues/3257),
 [ADR-3397](../adr/3397-mingw-gcc-dll-lto-off.md)). Static builds
 (`--default-library=static`, as above) keep LTO enabled;
 `scripts/ci/check_mingw_import_thunks.py` verifies that every DLL function
@@ -202,7 +202,7 @@ FFmpeg builds with `cl.exe` through its own configure script
 (`--toolchain=msvc`), run from an MSYS2 shell that has the MSVC environment.
 The patch series in `ffmpeg-patches/` applies and links on this route; the
 `FFmpeg Windows MSVC` check
-([`ffmpeg-integration.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/ffmpeg-integration.yml))
+([`ffmpeg-integration.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/ffmpeg-integration.yml))
 builds it whenever a change reaches the C library or the patches
 ([ADR-2783](../adr/2783-ffmpeg-msvc-consumer-leg.md)).
 
@@ -214,7 +214,7 @@ builds it whenever a change reaches the C library or the patches
    and point `PKG_CONFIG` at that `pkgconf.exe` and `PKG_CONFIG_PATH` at the
    triplet's `lib\pkgconfig`. Remove `-lstdc++` from the installed
    `zimg.pc`, or the static link stops at `LNK1181` on `stdc++.lib`.
-   [`scripts/ci/setup-zimg-windows.ps1`](https://github.com/VMAFx/vmafx/blob/master/scripts/ci/setup-zimg-windows.ps1)
+   [`scripts/ci/setup-zimg-windows.ps1`](https://github.com/vidiko/vmafx/blob/master/scripts/ci/setup-zimg-windows.ps1)
    performs exactly these steps for CI. `-Denable_zimg=false` builds
    without zimg, and PQ inputs then fail to score.
 
@@ -270,4 +270,4 @@ links its host tools; the series does not write those lines, so they are
 printed but do not fail the run. With the host's compiler
 every warning fails it. The script's other settings (`FFMPEG_JOBS`,
 `SMOKE_FATE`, `KEEP_BUILD`) are listed at the top of
-[`ffmpeg-patches/test/build-and-run.sh`](https://github.com/VMAFx/vmafx/blob/master/ffmpeg-patches/test/build-and-run.sh).
+[`ffmpeg-patches/test/build-and-run.sh`](https://github.com/vidiko/vmafx/blob/master/ffmpeg-patches/test/build-and-run.sh).

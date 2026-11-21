@@ -79,7 +79,7 @@ class EnsureLabelTest(unittest.TestCase):
 
     def test_creates_label_with_force_and_exits_zero(self) -> None:
         result = self.run_script(
-            "VMAFx/vmafx",
+            "vidiko/vmafx",
             "upstream-blocked",
             "e99695",
             "Waiting on an upstream change",
@@ -89,14 +89,14 @@ class EnsureLabelTest(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertIn("label list", calls[1])
         self.assertIn("label create upstream-blocked", calls[0])
-        self.assertIn("--repo VMAFx/vmafx", calls[0])
+        self.assertIn("--repo vidiko/vmafx", calls[0])
         self.assertIn("--color e99695", calls[0])
         self.assertIn("--description Waiting on an upstream change", calls[0])
         self.assertIn("--force", calls[0])
 
     def test_fails_closed_when_gh_label_create_fails(self) -> None:
         result = self.run_script(
-            "VMAFx/vmafx",
+            "vidiko/vmafx",
             "upstream-blocked",
             "e99695",
             "Waiting on an upstream change",
@@ -108,7 +108,7 @@ class EnsureLabelTest(unittest.TestCase):
 
     def test_waits_until_a_new_label_is_listed(self) -> None:
         result = self.run_script(
-            "VMAFx/vmafx",
+            "vidiko/vmafx",
             "upstream-blocked",
             "e99695",
             "Waiting on an upstream change",
@@ -119,7 +119,7 @@ class EnsureLabelTest(unittest.TestCase):
 
     def test_fails_naming_a_label_that_is_never_listed(self) -> None:
         result = self.run_script(
-            "VMAFx/vmafx",
+            "vidiko/vmafx",
             "upstream-blocked",
             "e99695",
             "Waiting on an upstream change",
@@ -133,9 +133,9 @@ class EnsureLabelTest(unittest.TestCase):
     def test_rejects_missing_or_malformed_arguments(self) -> None:
         test_cases = (
             (),
-            ("VMAFx/vmafx",),
-            ("VMAFx/vmafx", "upstream-blocked"),
-            ("VMAFx/vmafx", "upstream-blocked", "e99695"),
+            ("vidiko/vmafx",),
+            ("vidiko/vmafx", "upstream-blocked"),
+            ("vidiko/vmafx", "upstream-blocked", "e99695"),
             ("invalid-repo", "upstream-blocked", "e99695", "desc"),
             ("", "upstream-blocked", "e99695", "desc"),
         )

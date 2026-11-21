@@ -13,7 +13,7 @@ Scratch tree used by the **Python training / evaluation harness** (i.e.
 | This fork (Lusoris)      | `compat/python-vmaf/workspace/` (next to its user)  |
 
 The move is motivated by the repository-layout rule in
-[AGENTS.md §5](https://github.com/VMAFx/vmafx/blob/master/AGENTS.md): the repo
+[AGENTS.md §5](https://github.com/vidiko/vmafx/blob/master/AGENTS.md): the repo
 root is reserved for surfaces a consumer actually builds against (`core/`,
 `ai/`, `cmd/`, `mcp-server/`, `tools/`, `docs/`, `model/`, `testdata/`).
 Everything else is pushed down into the subtree that owns it.

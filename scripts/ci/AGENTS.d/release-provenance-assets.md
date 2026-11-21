@@ -23,4 +23,4 @@ attestation bundle and uploads it:
 asserts `.intoto.jsonl` write in `run:` step (`jq --compact-output . > ...intoto.jsonl`) and presence
 in uploaded asset set (glob match or `files:` list). Exempt list allows non-binary
 companion workflows (`published-rc-licence-companions.yml`); stale exemptions fail gate.
-Verification: `gh attestation verify <asset> --bundle <bundle>.intoto.jsonl --repo VMAFx/vmafx`.
+Verification: `gh attestation verify <asset> --bundle <bundle>.intoto.jsonl --repo vidiko/vmafx`.

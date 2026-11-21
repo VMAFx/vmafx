@@ -83,7 +83,7 @@ by group:
 | Input | `frame_width`, `frame_height`, `pix_fmt`, `bpc`, `n_frames`; the CLI's command line as `cli_argv` annotations |
 | Models | `models[]`: `name`, `version` (built-in version or file path), `sha256` of the model bytes as loaded, `flags`, `overrides` (feature options applied after loading) |
 | Features | `features[]`: `feature` (the name the report uses), `extractor`, `implementation` (`c` or `rust`), `backend`, `device`, `runtime`, `options`, `exactness`, `source` (`extractor`, `model`, `imported`) |
-| Encode | `encode_record`: the digest of the encode record of the distorted input ([VMAFx/pelorus#81](https://github.com/VMAFx/pelorus/issues/81)), empty until a producer sets it |
+| Encode | `encode_record`: the digest of the encode record of the distorted input ([vidiko/pelorus#81](https://github.com/vidiko/pelorus/issues/81)), empty until a producer sets it |
 | Digests | `scores_digest`, `digest`; `elapsed_ns` is timing and not digested |
 
 `device_runtime` (and the `runtime` field of feature extractors on the device)

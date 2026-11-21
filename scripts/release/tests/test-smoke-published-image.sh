@@ -121,7 +121,7 @@ smoke() {
   rm -f "$scratch/state/frames"
   mkdir -p "$scratch/state"
   env PATH="$scratch/bin:$PATH" SHIM_KIND="$kind" SHIM_STATE="$scratch/state" \
-    SMOKE_READY_TRIES=2 "$@" "$SMOKE" ghcr.io/vmafx/image@sha256:0 "$kind" 0.1.0 \
+    SMOKE_READY_TRIES=2 "$@" "$SMOKE" ghcr.io/vidiko/image@sha256:0 "$kind" 0.1.0 \
     >"$scratch/out" 2>"$scratch/err" || rc=$?
   if [[ "$rc" -eq "$want" ]]; then ok "$description"; else bad "$description (exit $rc, wanted $want: $(tail -3 "$scratch/err"))"; fi
 }
@@ -193,10 +193,10 @@ smoke 0 "starts the controller for the HTTP check" controller SHIM_RUN_ENV_LOG="
 if grep -q 'VMAFX_AUTH_DISABLED=true' "$log"; then ok "the controller starts with auth disabled"; else bad "the controller starts without VMAFX_AUTH_DISABLED=true"; fi
 
 rc=0
-"$SMOKE" ghcr.io/vmafx/image@sha256:0 bogus 1 >/dev/null 2>&1 || rc=$?
+"$SMOKE" ghcr.io/vidiko/image@sha256:0 bogus 1 >/dev/null 2>&1 || rc=$?
 if [[ "$rc" -eq 64 ]]; then ok "exits 64 on an unknown kind"; else bad "unknown kind exited $rc"; fi
 rc=0
-"$SMOKE" ghcr.io/vmafx/image@sha256:0 >/dev/null 2>&1 || rc=$?
+"$SMOKE" ghcr.io/vidiko/image@sha256:0 >/dev/null 2>&1 || rc=$?
 if [[ "$rc" -eq 64 ]]; then ok "exits 64 on a wrong argument count"; else bad "wrong argument count exited $rc"; fi
 
 printf '%d passed, %d failed\n' "$pass" "$fail"

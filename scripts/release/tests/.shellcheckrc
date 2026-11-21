@@ -1,0 +1,7 @@
+# ShellCheck configuration for scripts/release/tests/: the same setting as
+# scripts/ci/.shellcheckrc and scripts/lib/.shellcheckrc. The pre-commit hook
+# checks staged files one at a time, so a test that sources lib.sh gets
+# SC1091 "not specified as input" and SC2154 for the counters lib.sh sets,
+# unless ShellCheck follows the `# shellcheck source=` directive the test
+# already carries. This analyses the sibling; it suppresses nothing.
+external-sources=true

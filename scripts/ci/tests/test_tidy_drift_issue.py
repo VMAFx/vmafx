@@ -50,7 +50,7 @@ class TidyDriftIssue(unittest.TestCase):
             "SCHEDULED_FAILURE_WAIT": "0",
         }
         return subprocess.run(  # noqa: S603 - fixed argv: bash, the script under test, test args
-            ["bash", str(SCRIPT), *(args or ("VMAFx/vmafx", "12345"))],  # noqa: S607
+            ["bash", str(SCRIPT), *(args or ("vidiko/vmafx", "12345"))],  # noqa: S607
             env=env,
             text=True,
             capture_output=True,
@@ -85,7 +85,7 @@ class TidyDriftIssue(unittest.TestCase):
 
     def test_rejects_malformed_arguments(self) -> None:
         """Malformed positional arguments to the script cause it to exit with code 2."""
-        for args in (("VMAFx",), ("VMAFx/vmafx", "12x"), ("VMAFx/vmafx",), ()):
+        for args in (("VMAFx",), ("vidiko/vmafx", "12x"), ("vidiko/vmafx",), ()):
             with self.subTest(args=args):
                 result = subprocess.run(  # noqa: S603 - fixed argv: bash, the script under test
                     ["bash", str(SCRIPT), *args],  # noqa: S607
@@ -103,7 +103,7 @@ class TidyDriftIssue(unittest.TestCase):
         failing.write_text("#!/usr/bin/env bash\nexit 4\n", encoding="utf-8")
         failing.chmod(failing.stat().st_mode | stat.S_IXUSR)
         result = subprocess.run(  # noqa: S603 - fixed argv: bash, the script under test
-            ["bash", str(SCRIPT), "VMAFx/vmafx", "1"],  # noqa: S607
+            ["bash", str(SCRIPT), "vidiko/vmafx", "1"],  # noqa: S607
             env={**os.environ, "TIDY_DRIFT_GH": str(failing)},
             text=True,
             capture_output=True,

@@ -8,6 +8,14 @@ search:
 # Rebase notes
 
 <!-- rebase-notes:fragments:begin (rendered from docs/rebase-notes.d/; do not edit) -->
+## ROCm image layer pull tokens (2026-11-20)
+
+`scripts/ci/install-rocm-from-image.sh` fetches a registry pull token before
+the manifest and again before each layer attempt. On sync, retain the token
+refresh inside the retry loop and its shared `fetch_token` implementation.
+`scripts/ci/tests/test_install_rocm_from_image.py` checks token exhaustion,
+token endpoint failure and retries with a fresh token.
+
 ## Windows SYCL pin (2026-11-19)
 
 Keep the Windows SYCL oneAPI 2026.2.0.661 installer pin and the AOT probe

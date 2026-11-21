@@ -64,7 +64,7 @@ to `vmaf` (pooled and per frame).
    `bootstrap.ci.p95.hi` from the returned `VmafModelCollectionScore`.
 
 The types are declared in
-[`core/include/libvmaf/model.h`](https://github.com/VMAFx/vmafx/blob/master/core/include/libvmaf/model.h).
+[`core/include/libvmaf/model.h`](https://github.com/vidiko/vmafx/blob/master/core/include/libvmaf/model.h).
 
 ### The Python harness
 
@@ -154,7 +154,7 @@ To train a bootstrap model, one can use
 parameter file, the `model_type` must be `BOOTSTRAP_LIBSVMNUSVR`. In
 `model_param_dict`, one can optionally specify the number of models to be used
 via `num_models`. See
-[`vmaf_v6_bootstrap.py`](https://github.com/VMAFx/vmafx/blob/master/compat/python-vmaf/resource/param/vmaf_v6_bootstrap.py)
+[`vmaf_v6_bootstrap.py`](https://github.com/vidiko/vmafx/blob/master/compat/python-vmaf/resource/param/vmaf_v6_bootstrap.py)
 for an example parameter file.
 
 Running the command line below will generate a bootstrap model

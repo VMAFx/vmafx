@@ -13,7 +13,7 @@ full-gate toolchain. The installed gateway runs under the `python3` its launcher
 finds, which needs PyYAML for the squash composer; check with
 `python3 -c "import yaml"`. The installed GitHub CLI must support `pr merge
 --match-head-commit` and `pr checks --required --json`. GitHub requests name
-`github.com/VMAFx/vmafx` explicitly. Both origin fetch and push URLs must identify
+`github.com/vidiko/vmafx` explicitly. Both origin fetch and push URLs must identify
 only the canonical repository; multiple push destinations are refused.
 
 Keep mutable operator state outside tracked source, normally in

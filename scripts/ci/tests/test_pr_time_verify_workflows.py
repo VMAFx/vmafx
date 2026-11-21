@@ -113,7 +113,7 @@ def run_validate(
             "GITHUB_SHA": sha,
             "GITHUB_OUTPUT": str(out),
             "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
-            "GITHUB_REPOSITORY": "VMAFx/vmafx",
+            "GITHUB_REPOSITORY": "vidiko/vmafx",
             "RUNNER_TEMP": str(tmp_path),
             "DEFAULT_BRANCH": "master",
             "GH_TOKEN": "unused",

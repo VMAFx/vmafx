@@ -1258,6 +1258,7 @@ need to fail fast. The ROCm layer download in
 `scripts/ci/install-rocm-from-image.sh` retries the whole curl, decompressor and
 tar pipeline up to `LAYER_ATTEMPTS` times; inner curl retries would append to the
 pipe, so this streaming fetch is exempt from both inner retries and file output.
+Each layer attempt obtains a fresh registry pull token before downloading.
 
 Older curl stages use a bounded shell loop around the fetch plus an exact
 `ALLOWLIST` exemption instead of `--retry-all-errors`. In `dev/Containerfile`,

@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   landed:
@@ -23,6 +24,7 @@ jobs:
 
       - name: Verify landed commit messages
         env:
+          GH_TOKEN: ${{ github.token }}
           BASE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
           LANDING_IDENTITY: "Lusoris <lusoris@proton.me>"

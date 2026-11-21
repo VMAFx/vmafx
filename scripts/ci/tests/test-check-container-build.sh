@@ -53,7 +53,7 @@ cat >"$CONTAINER_MARKER" <<'EOF'
 vmafx_dev_container=1
 image_title=vmaf-dev-mcp
 containerfile=dev/Containerfile
-source=https://github.com/VMAFx/vmafx
+source=https://github.com/vidiko/vmafx
 EOF
 
 # The fixture above is only meaningful if it matches what dev/Containerfile
@@ -261,14 +261,14 @@ cat >"$RUNNER_MARKER" <<'EOF'
 vmafx_dev_container=1
 image_title=vmaf-sycl-arc-runner
 containerfile=dev/Containerfile.runner
-source=https://github.com/VMAFx/vmafx
+source=https://github.com/vidiko/vmafx
 EOF
 
 # write_marker_with_title <path> <title>
 # A well-formed marker whose image_title is the given (possibly near-miss)
 # value; used for the identity boundary cases below.
 write_marker_with_title() {
-  printf 'vmafx_dev_container=1\nimage_title=%s\ncontainerfile=dev/Containerfile\nsource=https://github.com/VMAFx/vmafx\n' \
+  printf 'vmafx_dev_container=1\nimage_title=%s\ncontainerfile=dev/Containerfile\nsource=https://github.com/vidiko/vmafx\n' \
     "$2" >"$1"
 }
 
@@ -278,7 +278,7 @@ cat >"$UNAUTHORIZED_TITLE_MARKER" <<'EOF'
 vmafx_dev_container=1
 image_title=unauthorized-runner
 containerfile=dev/Containerfile
-source=https://github.com/VMAFx/vmafx
+source=https://github.com/vidiko/vmafx
 EOF
 
 # Our key set, but the marker is truncated (no image_title).

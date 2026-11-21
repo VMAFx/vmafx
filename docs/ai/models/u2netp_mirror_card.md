@@ -154,7 +154,7 @@ The operator-facing fetch and verification recipe lives at
 2. Or download the signed release assets instead of exporting:
 
    ```bash
-   gh release download <tag> --repo VMAFx/vmafx \
+   gh release download <tag> --repo vidiko/vmafx \
      --pattern 'u2netp_mirror_v*.onnx' \
      --pattern 'u2netp_mirror_v*.onnx.bundle' \
      --pattern 'Apache-2.0-u2netp.txt'
@@ -165,7 +165,7 @@ The operator-facing fetch and verification recipe lives at
    ```bash
    cosign verify-blob \
      --bundle u2netp_mirror_v1.onnx.bundle \
-     --certificate-identity-regexp '^https://github\.com/VMAFx/vmafx' \
+     --certificate-identity-regexp '^https://github\.com/vidiko/vmafx' \
      --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
      u2netp_mirror_v1.onnx
    ```

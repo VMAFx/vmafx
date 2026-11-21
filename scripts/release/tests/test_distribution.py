@@ -220,7 +220,7 @@ class TapFormulaTests(unittest.TestCase):
             rc = distribution.main(["--root", str(ROOT), "source-url", "--version", "1.2.3"])
         self.assertEqual(rc, 0)
         self.assertEqual(out.getvalue().strip(),
-                         "https://github.com/VMAFx/vmafx/archive/refs/tags/v1.2.3.tar.gz")  # fmt: skip
+                         "https://github.com/vidiko/vmafx/archive/refs/tags/v1.2.3.tar.gz")  # fmt: skip
 
     def test_main_source_url_prerelease_boundary(self) -> None:
         out = io.StringIO()

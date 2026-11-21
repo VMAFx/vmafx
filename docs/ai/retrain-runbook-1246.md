@@ -3,7 +3,7 @@
 
 This runbook defines the end-to-end operational procedure for the one-shot
 retraining pass of the fork's tiny-AI models against the canonical
-`vmaf_v1.0.16_3d0h` teacher model (Epic [#1246](https://github.com/VMAFx/vmafx/issues/1246)).
+`vmaf_v1.0.16_3d0h` teacher model (Epic [#1246](https://github.com/vidiko/vmafx/issues/1246)).
 
 The retrain executes **once** as RC9 (`v1.0.0-rc.9`), after RC8 evidence is
 accepted and the remaining preconditions are satisfied. Under
@@ -54,7 +54,7 @@ and architectural records:
   thresholds (Research-2029).
 - **Maintainer decision, 2026-09-04 (D6 — Hardware Backends)**: Feature extraction is
   restricted to CPU and CUDA. The SYCL lane remains disabled (`--no_sycl`) until
-  the SYCL v1-model fix (PR [#1307](https://github.com/VMAFx/vmafx/pull/1307)) and
+  the SYCL v1-model fix (PR [#1307](https://github.com/vidiko/vmafx/pull/1307)) and
   open motion2/cambi drift rows are merged and verified.
 - **Ensemble Policy (ADR-1105)**: The five `fr_regressor_v2_ensemble_v1_seed{0..4}`
   rows remain parked at `smoke: true` until this run executes
@@ -65,7 +65,7 @@ and architectural records:
   `vmaf_v1.0.16*` models read compatibility-mode features, their training
   inputs, until this run; the retrain extracts and trains on reference-exact
   features. The RC7 conformance results
-  ([#2286](https://github.com/VMAFx/vmafx/issues/2286)) are accepted before
+  ([#2286](https://github.com/vidiko/vmafx/issues/2286)) are accepted before
   this run starts.
 - **Golden Data Invariant (ADR-0024)**: Netflix golden-data assertions in `python/test/`
   (`assertAlmostEqual` values) are never modified.
@@ -81,8 +81,8 @@ the verification command for each gate and confirm a passing result.
 |---|---|---|---|
 | **G1** | Every other 1.0.0 epic closed | `gh issue list --milestone "1.0.0 — First release" --state open` | **FAIL** — 11 open besides this one: #1235, #1236, #1237, #1238, #1240, #1241, #1242, #1243, #1245, #1270, #1272. #1244 (container-only publishing) was closed 2026-09-06 after verifying all three of its tasks on `master` plus the enforcement gate #1269 added. Note the epic bodies are snapshots and several items in them have already shipped, so the count overstates the remaining work; each needs auditing against the code before it is treated as outstanding. |
 | **G2** | `master` fully green across CI matrix | `gh run list --branch master --limit 20 --json conclusion,name --jq '[.[]\|select(.conclusion=="failure")]'` | **PASS** as of 2026-09-06 — zero failing runs on `master` HEAD. The release-please failure this row was written for is gone: it was the missing release-bot App credential, warned-not-errored on push by ADR-1171, and the workflow now reports success. |
-| **G3** | Container rebuilt with GPU default-model fixes | See §3 for container rebuild & CUDA verification command | **PASS** as of 2026-09-06 — #1307, #1312 and #1324 are all on `master`, the container was rebuilt from `cd52f2670` and the default model was verified on **all four** backends, not just CUDA: CPU 82.816062, CUDA 82.814062, SYCL 82.814061, HIP 82.816061, every one exiting 0. Evidence and container digest in [issue #1246 comment](https://github.com/VMAFx/vmafx/issues/1246#issuecomment-5555646084). |
-| **G4** | K150K re-smoke verified with zero disk leak | See §4 for 5-clip smoke & manifest validation command | **PASS** as of 2026-09-06 — [#1302](https://github.com/VMAFx/vmafx/pull/1302) merged at 13:03Z, so the three assertions it supplied now hold. Re-ran §4.1 end to end against `master` `e91ab8284`: `ok=5 fail=0`, 10.6 s, 0.47 clip/s, 5 parquet rows x 60 columns. All seven §4.2 assertions pass — `schema` = `k150k-feature-extraction-manifest-v1`, `status` = `complete`, manifest `teacher_model` = `vmaf_v1.0.16_3d0h`, `stats.ok` = 5, the `teacher_model` parquet column present with the single value `vmaf_v1.0.16_3d0h`, and `adm3_mean` present. Zero disk leak confirmed: `/tmp/k150k_smoke_scratch` was empty after the run (no per-clip temp survivors) and only the two intended outputs remained, both removed by §4.3. |
+| **G3** | Container rebuilt with GPU default-model fixes | See §3 for container rebuild & CUDA verification command | **PASS** as of 2026-09-06 — #1307, #1312 and #1324 are all on `master`, the container was rebuilt from `cd52f2670` and the default model was verified on **all four** backends, not just CUDA: CPU 82.816062, CUDA 82.814062, SYCL 82.814061, HIP 82.816061, every one exiting 0. Evidence and container digest in [issue #1246 comment](https://github.com/vidiko/vmafx/issues/1246#issuecomment-5555646084). |
+| **G4** | K150K re-smoke verified with zero disk leak | See §4 for 5-clip smoke & manifest validation command | **PASS** as of 2026-09-06 — [#1302](https://github.com/vidiko/vmafx/pull/1302) merged at 13:03Z, so the three assertions it supplied now hold. Re-ran §4.1 end to end against `master` `e91ab8284`: `ok=5 fail=0`, 10.6 s, 0.47 clip/s, 5 parquet rows x 60 columns. All seven §4.2 assertions pass — `schema` = `k150k-feature-extraction-manifest-v1`, `status` = `complete`, manifest `teacher_model` = `vmaf_v1.0.16_3d0h`, `stats.ok` = 5, the `teacher_model` parquet column present with the single value `vmaf_v1.0.16_3d0h`, and `adm3_mean` present. Zero disk leak confirmed: `/tmp/k150k_smoke_scratch` was empty after the run (no per-clip temp survivors) and only the two intended outputs remained, both removed by §4.3. |
 | **G5** | Explicit maintainer authorization | `gh issue view 1246 --comments` | **FAIL** (Awaiting maintainer sign-off) |
 
 > **Gate status is a measurement, not a plan.** Every cell above says how it was
@@ -143,7 +143,7 @@ docker exec vmaf-dev-mcp rm -f /tmp/smoke_cuda_v1.json
 Verify `extract_k150k_features.py` under the rebuilt binary and confirm row-level
 teacher stamping and manifest generation before launching the multi-day run.
 
-*(`--vmaf-model` and row-level teacher stamping came from PR [#1302](https://github.com/VMAFx/vmafx/pull/1302), merged 2026-09-06 — they are on `master`.)*
+*(`--vmaf-model` and row-level teacher stamping came from PR [#1302](https://github.com/vidiko/vmafx/pull/1302), merged 2026-09-06 — they are on `master`.)*
 
 ### 4.1 Execute Smoke Command
 
@@ -196,7 +196,7 @@ docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract
 >   /workspace/.corpus/konvid-150k/k150ka_extracted/orig_10000251326_540_5s.mp4
 > ```
 >
-> **What still needs [#1302](https://github.com/VMAFx/vmafx/pull/1302).** Of §4.2's
+> **What still needs [#1302](https://github.com/vidiko/vmafx/pull/1302).** Of §4.2's
 > assertions, `schema`, `status` and `stats.ok` already pass on `master`. Three do
 > not, and all three are supplied by #1302: `teacher_model` in the manifest,
 > the `teacher_model` parquet column, and `adm3_mean` (`grep -c adm3` on master's
@@ -261,7 +261,7 @@ mkdir -p runs/logs runs/shards
 - **Wall-clock Estimate**: ~105–110 h.
   - *Basis*: Measured throughput of 0.36–0.40 clip/s with 8 outer workers on RTX 4090.
     $152{,}265 \text{ clips} \div 0.38 \text{ clip/s} \approx 400{,}700 \text{ s} \approx 111.3 \text{ h}$.
-- **Prerequisite**: Requires PR [#1302](https://github.com/VMAFx/vmafx/pull/1302) (`--vmaf-model` flag).
+- **Prerequisite**: Requires PR [#1302](https://github.com/vidiko/vmafx/pull/1302) (`--vmaf-model` flag).
 - **Identity pairs (maintainer decision Q-013)**: K150K rows whose reference
   equals the distorted clip (VMAF about 99) are excluded from the
   full-reference teacher fit; K150K MOS labels feed the NR/MOS head only.
@@ -288,7 +288,7 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/e
 - **Backend**: CPU (`core/build-cpu/tools/vmaf` or `/usr/local/bin/vmaf --no_cuda --no_sycl`).
 - **Wall-clock Estimate**: ~1.5–2 h.
   - *Basis*: 79 pairs × 48–100 frames at ~24 s/pair on Zen 5 CPU, plus residual speed feature extraction passes.
-- **Prerequisite**: Requires PR [#1302](https://github.com/VMAFx/vmafx/pull/1302) (`--vmaf-model` flag).
+- **Prerequisite**: Requires PR [#1302](https://github.com/vidiko/vmafx/pull/1302) (`--vmaf-model` flag).
 
 ```bash
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract_full_features.py \
@@ -308,7 +308,7 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/e
 - **Backend**: CPU (`--no_sycl`).
 - **Wall-clock Estimate**: ~8–12 h.
   - *Basis*: 10-bit YCbCr 4:2:0 decode and scoring: Tier D (~1 h), C (~2 h), B (~3 h), A (~4 h) (Research-0082).
-- **Prerequisite**: Requires PR [#1302](https://github.com/VMAFx/vmafx/pull/1302) (teacher model resolution).
+- **Prerequisite**: Requires PR [#1302](https://github.com/vidiko/vmafx/pull/1302) (teacher model resolution).
 
 ```bash
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/bvi_dvc_to_full_features.py \
@@ -331,7 +331,7 @@ nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/b
 - **Backend**: CPU (`--threads 8`).
 - **Wall-clock Estimate**: ~8–10 h.
   - *Basis*: ~1,500 clips at ~20 s/clip decode and multi-threaded CPU extraction across 8 threads (`docs/ai/youtube-ugc-ingestion.md`).
-- **Prerequisite**: Requires PR [#1302](https://github.com/VMAFx/vmafx/pull/1302).
+- **Prerequisite**: Requires PR [#1302](https://github.com/vidiko/vmafx/pull/1302).
 
 ```bash
 nohup docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/extract_ugc_features.py \
@@ -401,7 +401,7 @@ for p in shards:
 
 ### 6.2 Combine Shards
 
-*(Note: Requires PR [#1302](https://github.com/VMAFx/vmafx/pull/1302) for combiner teacher validation).*
+*(Note: Requires PR [#1302](https://github.com/vidiko/vmafx/pull/1302) for combiner teacher validation).*
 
 ```bash
 docker exec vmaf-dev-mcp /opt/vmaf-venv/bin/python /workspace/ai/scripts/combine_full_feature_parquets.py \
@@ -752,12 +752,12 @@ verified against current live `master` state and are flagged:
 
 1. **SYCL Feature Extraction Lane (UNVERIFIED)**:
    The SYCL backend is excluded from this runbook per maintainer decision D6.
-   PR [#1307](https://github.com/VMAFx/vmafx/pull/1307) addresses v1 model crashes
+   PR [#1307](https://github.com/vidiko/vmafx/pull/1307) addresses v1 model crashes
    on Arc A380, but open drift rows (`T-SYCL-CAMBI-PARITY-DRIFT-2026-09-05` and
    `T-SYCL-MOTION2-CHECKERBOARD-DRIFT-2026-09-05`) prevent using SYCL for training data.
 2. **`--vmaf-model` CLI Plumbing in `extract_k150k_features.py` (UNVERIFIED on master)**:
    The `--vmaf-model` argument and row-level provenance logic exist on branch
-   `feat/ai-teacher-single-source` (PR [#1302](https://github.com/VMAFx/vmafx/pull/1302)),
+   `feat/ai-teacher-single-source` (PR [#1302](https://github.com/vidiko/vmafx/pull/1302)),
    which is not yet merged to `master`. Verified on branch PR #1302.
 3. **C Loader `.int8.onnx` Redirect (`vmaf --tiny-model`) (UNVERIFIED on master)**:
    As documented in Research-2029, `vmaf_use_tiny_model()` currently lacks the

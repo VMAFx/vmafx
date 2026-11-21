@@ -21,10 +21,10 @@ authors = [{ name = "Lusoris", email = "lusoris@pm.me" }]
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/VMAFx/vmafx"
-Repository = "https://github.com/VMAFx/vmafx"
+Homepage = "https://github.com/vidiko/vmafx"
+Repository = "https://github.com/vidiko/vmafx"
 Documentation = "https://vmafx.dev/api/vmafx/bindings/"
-Issues = "https://github.com/VMAFx/vmafx/issues"
+Issues = "https://github.com/vidiko/vmafx/issues"
 
 [tool.hatch.version]
 path = "vmafx/_api.py"

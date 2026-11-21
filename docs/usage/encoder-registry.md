@@ -4,7 +4,7 @@
 # Encoder registry
 
 VMAFx keeps one list of every video encoder it knows about in
-[`api/vmafx-encoders.toml`](https://github.com/VMAFx/vmafx/blob/master/api/vmafx-encoders.toml)
+[`api/vmafx-encoders.toml`](https://github.com/vidiko/vmafx/blob/master/api/vmafx-encoders.toml)
 ([ADR-3388](../adr/3388-central-encoder-registry.md)). The Go `vmafx-tune`
 (`pkg/encoder`) and the Python `vmaf-tune` read their quality knobs, quality
 windows and presets from it, so the two tools cannot disagree about a codec.

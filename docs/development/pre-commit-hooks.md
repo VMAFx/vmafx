@@ -337,7 +337,7 @@ is not skipped by path: it is named in the **declared exception list**,
 ```toml
 [[exception]]
 path = "core/src/interop/pelorus_version.c"   # one tracked file, never a pattern
-reason = "Read-only mirror of VMAFx/pelorus (ADR-1113); ..."
+reason = "Read-only mirror of vidiko/pelorus (ADR-1113); ..."
 expires = 2026-12-31
 ```
 
@@ -603,7 +603,7 @@ one tracked file per entry with a reason and an expiry. Today that is one
 file, praetor's Python launcher `.config/lefthook/python.sh`. `praetorctl adopt`
 refreshes it at a pin move only while it is praetor's own text, so a
 formatter must not rewrite it
-([cordanaLLM/praetor#1441](https://github.com/cordanaLLM/praetor/issues/1441)).
+([tekmora/praetor#1441](https://github.com/tekmora/praetor/issues/1441)).
 The hook launcher `.config/lefthook/engine.sh` is shfmt-clean since engine
 train `32a35c8fb947` and is formatted like every other file.
 
@@ -733,7 +733,14 @@ other than the caller's (a scratch repository, a clone into a temporary director
   - **Sentinel run.** Every scratch-repository test script that runs on its own is
     executed under a sentinel `GIT_DIR` and fails when the sentinel's config, index,
     refs or objects change. Planted scripts that write an identity, `core.bare` or
-    `uploadpack.*`, or that clone, prove the sentinel sees each of them.
+    `uploadpack.*`, or that clone, prove the sentinel sees each of them. A nonzero
+    exit also fails unless `SENTINEL_EXPECTED_FAILURES` declares the script with a
+    reason and its exact failing tests. A declared script that exits zero, crashes
+    before unittest runs, or fails different tests is reported. The commit hook runs
+    in a pre-commit Python environment pinned to the tooling-tests lock versions of
+    flawfinder, identify, PyYAML, pre-commit and pytest-timeout, plus every package
+    the lock installs for them, so the scripts it runs find their imports; a test
+    derives that set from the lock's `# via` lines and keeps the pins in step.
 
   The whole gate takes about four minutes. The hook `git-fixture-isolation-static`
   runs the identity and isolation checks alone on every changed script. The
@@ -751,3 +758,37 @@ other than the caller's (a scratch repository, a clone into a temporary director
 
 Only temporary caller paths are injected. The local pre-commit/pre-push hook
 runs when its inputs change. Required `Pre-Commit` CI also runs the regression.
+
+## Old organisation references
+
+`check-old-org-refs` rejects obsolete GitHub and GHCR organisation references
+after the moves to vidiko, plurano and tekmora. It checks scheme-less and
+URL-encoded links, owner settings, and image names in workflow YAML. Published
+Go module and import paths remain valid. Run the full tracked-file check with
+`python3 -B scripts/ci/check-old-org-refs.py`. The scanner reports tracked text
+above its 8 MiB read limit.
+
+The permanent path allow-list preserves committed historical records: numbered
+ADRs and their numbered index fragments, research and its digest baseline,
+rebase notes, release candidate records, changelog fragments, the changelog and
+its archives. Permanent line exceptions keep the release candidate examples,
+signing provenance, licence records, source offers and dated state ledger rows
+that name pre-move images. Inline exceptions use the marker defined as
+`INLINE_MARKER` in `scripts/ci/check-old-org-refs.py`. The scanner honours
+that marker only in the paths listed by `MARKER_RULE` in the same module,
+still through 2026-11-30, and refuses it anywhere else.
+
+Four MEL category C exceptions were entered on 2026-11-20 and expire on
+2026-11-30. After expiry their references are reported with the reason:
+
+- Vendored Pelorus files and its interoperability guide: update banners when Pelorus is re-vendored from vidiko/pelorus.
+- `FFMPEG_FIX_SERIES_REPO` in `build-config.env`: the signed ffmpeg-patches v0.7.0 workflow identity changes with the next series release.
+- `lua/standards.lua` and the two `tools/markdownlint` package files: Praetor renders them and must rename them.
+- `ghcr.io/` image references in Kubernetes manifests, chart configuration and
+  the workflows, docs and tests that use them: switch in the follow-up PR when
+  vidiko image tags exist.
+
+The tester guide's pre-move signing identity uses a MEL category D exception
+from 2026-11-20 through 2027-03-20.
+
+Set `OLD_ORG_REFS_TODAY` to an ISO date to inspect expiry behavior.

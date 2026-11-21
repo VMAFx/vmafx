@@ -8,7 +8,7 @@ the headline table.
 
 !!! note "Scope"
     Netflix's upstream correctness numbers are the Netflix golden CPU pools;
-    see [AGENTS.md §8](https://github.com/VMAFx/vmafx/blob/master/AGENTS.md).
+    see [AGENTS.md §8](https://github.com/vidiko/vmafx/blob/master/AGENTS.md).
 
 ## Current headline numbers
 
@@ -417,7 +417,7 @@ baselines above come from `testdata/bench_backends.py` (see
 For the SIMD breakdown and `--precision` overhead numbers, see the harness
 scripts under `testdata/` (or the inlined `repeat_bench.py` / `simd_bench.py`
 / `precision_bench.py` from the
-[T7-37 PR description](https://github.com/VMAFx/vmafx/pulls?q=T7-37)).
+[T7-37 PR description](https://github.com/vidiko/vmafx/pulls?q=T7-37)).
 
 ### Quick CLI smoke benchmark
 

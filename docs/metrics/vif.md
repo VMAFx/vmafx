@@ -219,7 +219,7 @@ python3 scripts/dev/speed_gpu_parity.py --backend cuda \
 The kernels hardcoded the two defaults (`vif_sigma_nsq = 2.0`,
 `vif_enhn_gain_limit = 100.0`) as local constants: a non-default value was
 accepted, range-checked, folded into the derived feature name, and then ignored.
-[`model/vmaf_float_v0.6.1neg.json`](https://github.com/VMAFx/vmafx/blob/master/model/vmaf_float_v0.6.1neg.json)
+[`model/vmaf_float_v0.6.1neg.json`](https://github.com/vidiko/vmafx/blob/master/model/vmaf_float_v0.6.1neg.json)
 sets `vif_enhn_gain_limit = 1.0` on all four VIF scales (that setting *is* what
 makes it the NEG model), so running it on a GPU backend produced non-NEG scores
 published under the NEG feature keys. If you scored with the NEG model on CUDA,

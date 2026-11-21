@@ -2,7 +2,7 @@
 
 Run the setup script from the repository root, then build. The script also
 covers Manjaro, CachyOS and EndeavourOS
-([`scripts/setup/arch.sh`](https://github.com/VMAFx/vmafx/blob/master/scripts/setup/arch.sh)).
+([`scripts/setup/arch.sh`](https://github.com/vidiko/vmafx/blob/master/scripts/setup/arch.sh)).
 
 ## Setup script
 

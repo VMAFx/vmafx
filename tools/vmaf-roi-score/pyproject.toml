@@ -24,11 +24,11 @@ runtime = ["onnxruntime>=1.31.1", "numpy>=2.5.3"]
 vmaf-roi-score = "vmafroiscore.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/VMAFx/vmafx"
-Repository = "https://github.com/VMAFx/vmafx"
+Homepage = "https://github.com/vidiko/vmafx"
+Repository = "https://github.com/vidiko/vmafx"
 Documentation = "https://vmafx.dev/"
-Issues = "https://github.com/VMAFx/vmafx/issues"
-Changelog = "https://github.com/VMAFx/vmafx/blob/master/CHANGELOG.md"
+Issues = "https://github.com/vidiko/vmafx/issues"
+Changelog = "https://github.com/vidiko/vmafx/blob/master/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]

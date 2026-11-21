@@ -354,15 +354,22 @@ class DcoLockRefreshExemptionTest(unittest.TestCase):
         workflow = (fx.ROOT / ".github/workflows/intel-neo-lock-refresh.yml").read_text(
             encoding="utf-8"
         )
+        publisher = (fx.ROOT / "scripts/ci/lock_refresh_publish.py").read_text(encoding="utf-8")
         for snippet in (
             "permissions:\n  contents: read",
-            f'bot="{RELEASE_BOT[0]}"',
-            f'email="{RELEASE_BOT[1]}"',
-            "Signed-off-by: %s <%s>",
-            'git add -- "$lock"',
-            '--author="$bot <$email>" -F "$msg" -- "$lock"',
+            "lock_refresh_publish.py refuse-non-renovate",
+            "lock_refresh_publish.py publish",
+            '--subject "chore(deps): refresh Intel NEO and Level Zero asset lock"',
+            '-- "$lock"',
         ):
             self.assertIn(snippet, workflow)
+        for snippet in (
+            f'BOT_NAME = "{RELEASE_BOT[0]}"',
+            f'BOT_EMAIL = "{RELEASE_BOT[1]}"',
+            'f"Signed-off-by: {BOT_NAME} <{BOT_EMAIL}>"',
+            '"-F", str(message), "--", *pathspec',
+        ):
+            self.assertIn(snippet, publisher)
 
 
 def judge_landed_in_repo(

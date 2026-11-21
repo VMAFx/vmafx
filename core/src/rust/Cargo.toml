@@ -34,8 +34,8 @@ edition = "2024"
 # build-config.env RUST_VERSION (ADR-3318); check-workflow-versions.py holds it there.
 rust-version = "1.99.1"
 license = "EUPL-1.2 AND BSD-2-Clause-Patent"
-repository = "https://github.com/VMAFx/vmafx"
-homepage = "https://github.com/VMAFx/vmafx"
+repository = "https://github.com/vidiko/vmafx"
+homepage = "https://github.com/vidiko/vmafx"
 documentation = "https://vmafx.dev/"
 readme = "../../../README.md"
 

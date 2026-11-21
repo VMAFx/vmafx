@@ -33,7 +33,7 @@ RELEASE_REF = "release-please--branches--master--components--vmafx"
 # body limit (#1213). It carries none of the ADR-0108 deliverables.
 RELEASE_BODY = (
     "This release is too large to preview in the pull request body. View the "
-    "full release notes here: https://github.com/VMAFx/vmafx/blob/"
+    "full release notes here: https://github.com/vidiko/vmafx/blob/"
     f"{RELEASE_REF}--release-notes/release-notes.md"
 )
 # `gh pr view --json author` marshals every non-User actor as
@@ -105,7 +105,7 @@ class HookFixture(unittest.TestCase):
         self.git("init", "-q", "--initial-branch=master")
         self.git("config", "user.name", "Fixture")
         self.git("config", "user.email", "fixture@example.invalid")
-        self.git("remote", "add", "origin", "git@github.com:VMAFx/vmafx.git")
+        self.git("remote", "add", "origin", "git@github.com:vidiko/vmafx.git")
         self.git("commit", "--allow-empty", "-qm", "base")
         self.git("update-ref", "refs/remotes/origin/master", "HEAD")
         self.git("switch", "-qc", "fix/pr-lookup")
@@ -137,7 +137,7 @@ class HookFixture(unittest.TestCase):
         self.write_tool(
             "curl",
             'case "${*: -1}" in\n'
-            "  */pulls) printf '%s\\n' '<a href=\"/VMAFx/vmafx/pull/1514\">PR</a>' ;;\n"
+            "  */pulls) printf '%s\\n' '<a href=\"/vidiko/vmafx/pull/1514\">PR</a>' ;;\n"
             "  */pull/1514) cat <<'EOF'\n"
             '<div class="js-pull-header-details" data-pull-is-open="true"></div>\n'
             f"{status}"

@@ -534,7 +534,7 @@ def _setup_cosign_test_fixture(p: Path, record: Path) -> dict[str, str]:
         'FFMPEG_REMOTE="https://github.com/FFmpeg/FFmpeg.git"\n'
         'FFMPEG_TAG="n9.0.2"\n'
         'FFMPEG_COMMIT="946fcce07b6dcd0331c8cc609192aeff5e1924f8"\n'
-        'FFMPEG_FIX_SERIES_REPO="https://github.com/VMAFx/ffmpeg-patches"\n'
+        'FFMPEG_FIX_SERIES_REPO="https://github.com/vidiko/ffmpeg-patches"\n'
         f'FFMPEG_FIX_SERIES_TAG="v0.0.0-fixture"\nFFMPEG_FIX_SERIES_SHA256="{sha}"\n'
     )
     env = {

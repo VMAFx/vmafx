@@ -7,20 +7,24 @@ from __future__ import annotations
 import io
 import os
 import shutil
+import sys
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.ci.run_meson_test import CREDENTIAL_ENV_VARS
-from scripts.dev import upstream_pr_sweep as sweep_mod
-from scripts.dev.tests.upstream_pr_sweep_fixture import (
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+
+from scripts.ci.run_meson_test import CREDENTIAL_ENV_VARS  # noqa: E402
+from scripts.dev import upstream_pr_sweep as sweep_mod  # noqa: E402
+from scripts.dev.tests.upstream_pr_sweep_fixture import (  # noqa: E402
     REPO_ROOT,
     SweepFixtureCase,
     git_run,
     require_fixture_tools,
 )
-from scripts.lib.safe_subprocess import TextCommandResult
+from scripts.lib.safe_subprocess import TextCommandResult  # noqa: E402
 
 
 def setUpModule() -> None:
@@ -580,7 +584,7 @@ class UpstreamPrSweepHardeningTest(SweepFixtureCase):
         doc_text = doc_path.read_text(encoding="utf-8")
         self.assertNotIn("../../scripts/dev/tests/test_upstream_pr_sweep.py", doc_text)
         self.assertIn(
-            "https://github.com/VMAFx/vmafx/blob/master/scripts/dev/tests/test_upstream_pr_sweep.py",
+            "https://github.com/vidiko/vmafx/blob/master/scripts/dev/tests/test_upstream_pr_sweep.py",
             doc_text,
         )
 

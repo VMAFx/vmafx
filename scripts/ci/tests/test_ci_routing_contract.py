@@ -42,7 +42,7 @@ from scripts.ci.required_aggregator_harness import (
 ROOT = Path(__file__).resolve().parents[3]
 CONFIG = ROOT / ".github" / "ci-tier.json"
 WORKFLOWS = Path(os.environ.get("CI_ROUTING_WORKFLOWS_DIR", ROOT / ".github" / "workflows"))
-REPOSITORY = "VMAFx/vmafx"
+REPOSITORY = "vidiko/vmafx"
 RELEASE_REF = "release-please--branches--master--components--vmafx"
 # The self-hosted lanes report only when an operator provisioned a runner (ADR-1177,
 # ADR-1319); the simulation reads their probe as an unprovisioned host.

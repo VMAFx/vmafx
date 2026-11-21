@@ -70,7 +70,7 @@ stay inline in git, because per-file fetch overhead dominates below that size.
 
     ```bash
     gh release upload tiny-blobs-v1 model/tiny/<name>.onnx \
-      --repo VMAFx/vmafx
+      --repo vidiko/vmafx
     ```
 
 4. Add `release_url` to the registry entry, pointing at the upload (see

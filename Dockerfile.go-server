@@ -15,14 +15,14 @@
 #                 published as <tag>-source
 #
 # Build:
-#   docker build -f Dockerfile.go-server -t ghcr.io/vmafx/vmafx-server:dev .
+#   docker build -f Dockerfile.go-server -t ghcr.io/vidiko/vmafx-server:dev .
 #
 # Run:
 #   docker run --rm \
 #     -e VMAFX_VMAF_BINARY=/usr/local/bin/vmaf \
 #     -e VMAFX_MODEL_DIR=/usr/local/share/vmafx/model \
 #     -p 8080:8080 -p 9090:9090 \
-#     ghcr.io/vmafx/vmafx-server:dev
+#     ghcr.io/vidiko/vmafx-server:dev
 #
 # The release workflow passes VMAFX_VERSION=vX.Y.Z. The image's non-blocking
 # `--version` path prints that exact value without starting fx or binding ports.
@@ -177,7 +177,7 @@ FROM ${RELEASE_RUNTIME_CC} AS go-server-assembled
 
 LABEL org.opencontainers.image.title="vmafx-server"
 LABEL org.opencontainers.image.description="VMAFX scoring server — Go gRPC + HTTP, backed by libvmaf. Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
-LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.source="https://github.com/vidiko/vmafx"
 LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE AND WTFPL"
 LABEL org.opencontainers.image.vendor="Lusoris"
 

@@ -32,9 +32,9 @@ from scripts.lib.safe_subprocess import CommandValidationError
 
 ROOT = Path(__file__).resolve().parents[3]
 NOW = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
-REPO = "VMAFx/vmafx"
+REPO = "vidiko/vmafx"
 RAW = re.compile(
-    r"\[!\[(?P<alt>[^\]]+)\]\(https://raw\.githubusercontent\.com/VMAFx/vmafx/badges/"
+    r"\[!\[(?P<alt>[^\]]+)\]\(https://raw\.githubusercontent\.com/vidiko/vmafx/badges/"
     r"(?P<slug>[a-z0-9-]+)\.svg\)\]"
 )
 
@@ -173,7 +173,7 @@ class ScorecardValue(unittest.TestCase):
 class BestPracticesValue(unittest.TestCase):
     """The Best Practices badge shows the level of the one listed project."""
 
-    URL = "https://github.com/VMAFx/vmafx"
+    URL = "https://github.com/vidiko/vmafx"
 
     def rows(self, *levels: str) -> list[dict[str, str]]:
         """One Best Practices row for this repository per level."""
@@ -259,11 +259,11 @@ class ReadValue(unittest.TestCase):
     def test_public_sources_get_their_own_urls_and_no_github_call(self) -> None:
         """Scorecard, Best Practices and Codacy are read from their own URLs only."""
         answers = {
-            "https://api.scorecard.dev/projects/github.com/VMAFx/vmafx": {"score": 8.9},
-            "https://www.bestpractices.dev/projects.json?url=https%3A%2F%2Fgithub.com%2FVMAFx%2Fvmafx": [
-                {"repo_url": "https://github.com/VMAFx/vmafx", "badge_level": "passing"}
+            "https://api.scorecard.dev/projects/github.com/vidiko/vmafx": {"score": 8.9},
+            "https://www.bestpractices.dev/projects.json?url=https%3A%2F%2Fgithub.com%2Fvidiko%2Fvmafx": [
+                {"repo_url": "https://github.com/vidiko/vmafx", "badge_level": "passing"}
             ],
-            "https://app.codacy.com/api/v3/analysis/organizations/gh/VMAFx/repositories/vmafx": {
+            "https://app.codacy.com/api/v3/analysis/organizations/gh/vidiko/repositories/vmafx": {
                 "data": {"gradeLetter": "A"}
             },
         }
@@ -921,13 +921,13 @@ class Main(unittest.TestCase):
 
 
 SHIELDS = "https://img.shields.io/badge/C-23-3b82f6?style=for-the-badge&labelColor=111a35"
-GOVERNANCE = "https://github.com/vmafx/vmafx/actions/workflows/praetor-docs.yml/badge.svg"
+GOVERNANCE = "https://github.com/vidiko/vmafx/actions/workflows/praetor-docs.yml/badge.svg"
 BLOCK = (
     "<!-- praetor:readme-governance:start -->\n"
     "[![Documentation Governance][docs-badge]][docs-runs]\n"
     "\n"
     f"[docs-badge]: {GOVERNANCE}\n"
-    "[docs-runs]: https://github.com/vmafx/vmafx/actions/workflows/praetor-docs.yml\n"
+    "[docs-runs]: https://github.com/vidiko/vmafx/actions/workflows/praetor-docs.yml\n"
     "<!-- praetor:readme-governance:end -->\n"
 )
 
@@ -950,7 +950,7 @@ class ImageFault(unittest.TestCase):
             "https://img.shields.io/static/v1?label=release&message=v1&style=for-the-badge&color=3b82f6&labelColor=111a35",
             "docs/assets/vmafx-readme-banner.svg",
         ]
-        allowed.append("https://raw.githubusercontent.com/vmafx/VMAFX/badges/tests.svg")
+        allowed.append("https://raw.githubusercontent.com/vidiko/VMAFX/badges/tests.svg")
         for url in allowed:
             with self.subTest(url=url):
                 self.assertIsNone(rb.image_fault(url, ROOT))
@@ -968,8 +968,8 @@ class ImageFault(unittest.TestCase):
             f"https://raw.githubusercontent.com/{REPO}/master/tests.svg": "not a rendered",
             # Planted cases from the pull request 3393 review: other repositories.
             "https://raw.githubusercontent.com/someone/vmafx/badges/tests.svg": "not a rendered",
-            "https://raw.githubusercontent.com/VMAFx/vmafx-fork/badges/tests.svg": "not a rendered",
-            "https://raw.githubusercontent.com/VMAFx/vmafx/badges/x/tests.svg": "not a rendered",
+            "https://raw.githubusercontent.com/vidiko/vmafx-fork/badges/tests.svg": "not a rendered",
+            "https://raw.githubusercontent.com/vidiko/vmafx/badges/x/tests.svg": "not a rendered",
             # Planted cases from the pull request 3393 review: missing files.
             "docs/assets/no-such-banner.svg": "no such file next to the README",
             "docs/assets": "no such file next to the README",
@@ -1026,7 +1026,7 @@ class HomeRepository(unittest.TestCase):
             cached.cache_clear()
 
     def test_the_policy_names_this_repository(self) -> None:
-        """The checked-in policy names VMAFx/vmafx."""
+        """The checked-in policy names vidiko/vmafx."""
         self.assertEqual(rb.home_repository(), REPO)
 
     def test_a_missing_or_malformed_policy_is_a_badge_error(self) -> None:
@@ -1102,7 +1102,7 @@ class DesignFaults(unittest.TestCase):
 
     def test_another_repository_governance_badge_is_a_fault(self) -> None:
         """A governance badge of another repository is a fault."""
-        other = GOVERNANCE.replace("vmafx/vmafx", "someone/vmafx")
+        other = GOVERNANCE.replace(REPO, "someone/vmafx")
         self.assertEqual(len(rb.design_faults(BLOCK.replace(GOVERNANCE, other), ROOT)), 1)
 
     def test_the_governance_badge_outside_the_block_is_a_fault(self) -> None:

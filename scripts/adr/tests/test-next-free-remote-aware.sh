@@ -712,7 +712,7 @@ git -C "${FAKE_REPO}" checkout --quiet master
 git -C "${FAKE_REPO}" branch -D temp-override-pr >/dev/null
 git -C "${FAKE_REPO}" update-ref "refs/pull/13/head" "${SHA_OVERRIDE}"
 
-CUSTOM_REPO="VMAFx/vmafx"
+CUSTOM_REPO="vidiko/vmafx"
 
 # 13a: Positive case: VMAF_ADR_PR_REPO set to CUSTOM_REPO
 cat >"${STUB_BIN}/gh" <<GHEOF

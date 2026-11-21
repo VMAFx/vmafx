@@ -57,7 +57,7 @@ MISSED_SCOPE_CONTRACTS = (
     ),
     CHECKER.ProvenanceContract(
         "changelog.d/changed/state-md-github-issues-crossref.md",
-        "Cross-reference `docs/state.md` against `VMAFx/vmafx`",
+        "Cross-reference `docs/state.md` against `VMAFx/vmafx`",  # old-org-ok
         (
             "lusoris/vmaf#239",
             "lusoris/vmaf#241",
@@ -172,7 +172,7 @@ MISSED_SCOPE_CONTRACTS = (
     ),
     CHECKER.ProvenanceContract(
         "CHANGELOG.md",
-        "Cross-reference `docs/state.md` against `VMAFx/vmafx`",
+        "Cross-reference `docs/state.md` against `VMAFx/vmafx`",  # old-org-ok
         (
             "lusoris/vmaf#239",
             "lusoris/vmaf#241",
@@ -226,16 +226,19 @@ class IssueReferenceProvenanceTests(unittest.TestCase):
 
     def test_wrong_active_repository_forms_fail_red(self) -> None:
         wrong_forms = (
-            "VMAFx/vmafx#857",
-            "https://github.com/VMAFx/vmafx/issues/857",
-            "https://github.com/VMAFx/vmafx/pull/857",
+            "VMAFx/vmafx#857",  # old-org-ok
+            "vidiko/vmafx#857",
+            "https://github.com/vidiko/vmafx/issues/857",
+            "https://github.com/vidiko/vmafx/pull/857",
+            "https://github.com/VMAFx/vmafx/issues/857",  # old-org-ok
+            "https://github.com/VMAFx/vmafx/pull/857",  # old-org-ok
         )
         for wrong_form in wrong_forms:
             with self.subTest(wrong_form=wrong_form):
                 text = f"| historical CAMBI row | {wrong_form} |\n"
                 findings = CHECKER.check_contract(text, self.contract("lusoris/vmaf#857"))
                 self.assertIn(
-                    "wrong repository VMAFx/vmafx for archived reference #857",
+                    "wrong repository vidiko/vmafx for archived reference #857",
                     findings,
                 )
 

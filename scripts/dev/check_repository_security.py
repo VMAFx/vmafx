@@ -35,7 +35,7 @@ PAGE_SIZE = 100
 # Upper bound on the comparison steps of one policy document.
 DIFFERENCES_NODE_LIMIT = 1_000_000
 BYPASS_QUERY = """query {
-  repository(owner: "VMAFx", name: "vmafx") {
+  repository(owner: "vidiko", name: "vmafx") {
     rulesets(first: 100) {
       pageInfo { hasNextPage }
       nodes { databaseId bypassActors(first: 1) { totalCount } }
@@ -181,8 +181,8 @@ def bypass_count(rule_id: int) -> int:
 def inspect(policy: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
     """Check the one managed ruleset, effective master rules, and reporting flag."""
     repository = policy["repository"]
-    if repository != "VMAFx/vmafx" or policy["default_branch"] != "master":
-        raise ValueError("policy must target VMAFx/vmafx master")
+    if repository != "vidiko/vmafx" or policy["default_branch"] != "master":
+        raise ValueError("policy must target vidiko/vmafx master")
     prefix = f"/repos/{repository}"
     data: dict[str, Any] = {
         "repository": get_json(prefix),

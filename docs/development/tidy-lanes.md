@@ -267,7 +267,7 @@ The release workflows pass that audit without an exception since
 | C, C++ and the device kernels | `cpu`, `clang`, `cuda`, `hip`, `sycl`, `arm64` (the six container lanes) | |
 | Metal host code (`core/src/metal/*.mm`, `core/src/feature/metal/*_metal.mm`) and the Metal-only C tests | `metal` (macOS, below) | |
 | Metal kernels (`core/src/feature/metal/*.metal`) | nothing | Upstream clang-tidy has no Metal language mode (`clang -x metal` answers "language not recognized"). |
-| Pelorus mirror (`core/src/interop/pelorus_*.c`, `core/test/test_pelorus_interop.c`) | nothing here | Byte-identical mirror of VMAFx/pelorus (ADR-1113); `scripts/ci/pelorus-mirror-paths.txt` keeps it out of every lane. It is tidied in the pelorus repository's own CI at the pinned SHA, fixed there and re-vendored. One entry per file; the check fails on a mirror file without one. |
+| Pelorus mirror (`core/src/interop/pelorus_*.c`, `core/test/test_pelorus_interop.c`) | nothing here | Byte-identical mirror of vidiko/pelorus (ADR-1113); `scripts/ci/pelorus-mirror-paths.txt` keeps it out of every lane. It is tidied in the pelorus repository's own CI at the pinned SHA, fixed there and re-vendored. One entry per file; the check fails on a mirror file without one. |
 | `.config/hiss/testdata/` | nothing | The planted defect is the fixture. |
 | `cmd/vmafx-node/bpf/` | nothing | Includes `vmlinux.h`, generated from a running kernel's BTF. |
 | `core/tools/compat/win32/getopt.c`, `core/tools/test/test_vmaf_windows_utf8_argv.cpp` | nothing | Built on Windows only. |
@@ -282,7 +282,7 @@ kernels include; the check does not count it as a unit.
 
 The Objective-C++ sources of the Metal backend need Apple's SDK, which no
 container has. The `Tidy Metal` workflow
-([`tidy-metal.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/tidy-metal.yml))
+([`tidy-metal.yml`](https://github.com/vidiko/vmafx/blob/master/.github/workflows/tidy-metal.yml))
 runs on `macos-latest` weekly, on a pull request that touches the Metal host
 sources, and on dispatch (a macOS runner bills ten times a Linux one, so it is
 not a per-pull-request gate, as for the tester bundle): Homebrew's `llvm@22` clang-tidy (the Linux lanes'

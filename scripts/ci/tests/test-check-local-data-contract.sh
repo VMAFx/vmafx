@@ -126,7 +126,7 @@ new_case
 track scripts/config.txt '.corpus/OPEN.md'
 expect 'state placed below corpus root fails' 1
 
-# ADR-1351 / cordanaLLM/praetor#641: praetor's audit-verified tail block in
+# ADR-1351 / tekmora/praetor#641: praetor's audit-verified tail block in
 # .gitignore ignores the retired root and its locked docs gate names it.
 praetor_block() {
   printf '%s\n' \

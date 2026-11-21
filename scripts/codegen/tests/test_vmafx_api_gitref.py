@@ -18,6 +18,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from support import ROOT  # noqa: F401 -- puts scripts/codegen on sys.path
 from vmafx_api import gitref
@@ -72,6 +73,22 @@ class TreeAtTest(unittest.TestCase):
     def test_text_reads_use_universal_newlines(self) -> None:
         files = gitref.files_at(self.repo, "HEAD", "chart", ".yaml")
         self.assertEqual(files, {"chart/Chart.yaml": "name: demo\nversion: 1\n"})
+
+    def test_reads_given_repository_despite_inherited_git_location(self) -> None:
+        other = Path(self.tmp.name) / "other"
+        (other / "chart").mkdir(parents=True)
+        (other / "chart" / "Other.yaml").write_text("name: other\n")
+        git(other, "init", "-q")
+        git(other, "add", ".")
+        git(other, "commit", "-q", "-m", "other")
+        with mock.patch.dict(
+            os.environ,
+            {"GIT_DIR": str(other / ".git"), "GIT_INDEX_FILE": str(other / ".git" / "index")},
+        ):
+            self.assertEqual(
+                gitref.files_at(self.repo, "HEAD", "chart", ".yaml"),
+                {"chart/Chart.yaml": "name: demo\nversion: 1\n"},
+            )
 
     def test_unknown_revision_is_unavailable(self) -> None:
         with self.assertRaisesRegex(gitref.Unavailable, "git archive"):
