@@ -189,6 +189,13 @@ list. On the host, the verified recipe is:
 python3 -m venv .venv
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install "meson==1.12.1" ninja pre-commit pytest nox
+# The third-party imports of `make docs-fragments-check` (issue 3244):
+# jsonschema validates docs/hardware-reports (scripts/ci/check-hardware-reports.py),
+# PyYAML reads docs/credits.yaml (scripts/docs/credits_lib.py). The Makefile
+# puts this .venv first on PATH, so without these the pre-commit hook's
+# `error: python package jsonschema is required` is a missing declaration,
+# not a broken checkout.
+.venv/bin/pip install --require-hashes -r requirements/locks/docs-check.txt
 .venv/bin/pip install -r python/requirements.txt
 .venv/bin/pip install -e python
 .venv/bin/pip install -e mcp-server/vmaf-mcp
@@ -196,6 +203,13 @@ python3 -m venv .venv
 .venv/bin/pip install -e dev-llm
 # optional, heavy (PyTorch): .venv/bin/pip install -e "ai[dev]"
 ```
+
+`make lint-tools` installs the same docs-check lock (together with the pinned
+linters), so either route leaves the virtual environment with every import the
+docs-fragments hook needs. `scripts/ci/check-docs-fragment-imports.py`, the
+first step of `make docs-fragments-check`, fails while a third-party import of
+the scripts that target runs is missing from
+`requirements/locks/docs-check.in`.
 
 Pin Meson to the version in `requirements/locks/build.in` (currently
 `meson==1.12.1`). Meson build directories record the absolute path of the

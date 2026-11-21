@@ -147,9 +147,15 @@ RUFF_VERSION  := 0.17.3
 BLACK_VERSION := 26.10.1
 
 .PHONY: mini-retrain mini-retrain-test
+# The second lock (issue 3244) declares the third-party imports of
+# `make docs-fragments-check` — jsonschema (scripts/ci/check-hardware-reports.py)
+# and PyYAML (scripts/docs/credits_lib.py) — the same hash-locked docs-check
+# lock the CI Docs job installs, so a recipe-built .venv no longer passes the
+# check only because jsonschema was once installed by hand.
 .PHONY: lint-tools
 lint-tools: $(VENV_PIP)
 	$(VENV_PIP) install --quiet --require-hashes -r requirements/locks/dev-linters.txt
+	$(VENV_PIP) install --quiet --require-hashes -r requirements/locks/docs-check.txt
 	@echo "lint tools installed into $(VENV_PIP:%/pip=%)"
 	@command -v shfmt >/dev/null || { \
 	   echo "note: shfmt is not a Python package and was not installed."; \
@@ -313,7 +319,17 @@ docs-render-check:
 # documentation charts match their specs, data and renders, and every vendored
 # docs asset matches the hashes in its vendor.json (ADR-1508), and every link and
 # heading anchor under docs/api/ resolves (scripts/docs/check_doc_links.py).
+#
+# The first step (issue 3244) is the declared-imports gate: every third-party
+# module the scripts of this target import — directly, or through repository
+# modules their imports reach — must be declared in
+# requirements/locks/docs-check.in, the lock the CI Docs job installs and
+# `make lint-tools` / the setup recipe install locally. The gate is
+# stdlib-only on purpose: it runs on the bare `python3` this target resolves
+# before any of the scripts it guards, however incomplete the environment is.
 docs-fragments-check:
+	@echo "--- third-party imports of the scripts this target runs (issue 3244) ---"
+	@python3 scripts/ci/check-docs-fragment-imports.py
 	@echo "--- changelog.d/ fragments ---"
 	@bash scripts/release/concat-changelog-fragments.sh --lint
 	@echo "--- docs/adr/_index_fragments/ rows ---"
@@ -1079,7 +1095,7 @@ help:
 	@echo "  make coverage-html    — render HTML coverage report"
 	@echo "  make coverage-check   — enforce the local floors (37% overall / 85% critical)"
 	@echo "  make assertion-density — Power-of-10 rule 5 density check"
-	@echo "  make lint-tools       — install ruff/black/mypy into .venv at the pinned versions"
+	@echo "  make lint-tools       — install ruff/black/mypy plus the docs-fragments-check imports (issue 3244) into .venv at the pinned versions"
 	@echo "  make install-hooks    — wire up pre-commit + pre-push git hooks"
 	@echo "  make hiss-coverage    — replay declared HISS evidence fixtures"
 	@echo "  make dedupe-check     — reject duplicate implementation families"
