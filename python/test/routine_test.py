@@ -606,7 +606,8 @@ class TestTrainOnDataset(unittest.TestCase):
         "versions (np.random.seed vs default_rng). The test's seed_resample=0 with "
         "num_resample=10 produces different PLCC/SROCC on numpy >= 1.17 vs older releases. "
         "Fix: switch to np.random.default_rng(seed_resample) in the resampler, then "
-        "regenerate the baseline values. (scaffold-audit ADR-0621 P3-3)"
+        "regenerate the baseline values. (scaffold-audit ADR-0621 P3-3) This needs a built "
+        "scorer; the follow-up PR will attach its run output."
     )
     def test_compare_two_quality_runners_on_dataset(self):
         test_dataset = import_python_file(VmafConfig.test_resource_path("dataset_sample.py"))
