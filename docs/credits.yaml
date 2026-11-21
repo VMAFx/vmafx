@@ -133,6 +133,18 @@ entries:
   evidence:
   - tools/vmaf-tune/tests/test_near_dup_verify.py
   note: luoye-cpu wrote the unit tests for the two-leg near-duplicate spot check and its fail-closed cases, in PR 3444.
+- id: contribution-luoye-cpu-t0-idle-window
+  name: luoye-cpu's idle-window T0 calibration reports
+  url: https://github.com/VMAFx/vmafx/pull/3335
+  kind: dataset
+  relation: used-by-CI
+  license: EUPL-1.2
+  paths:
+  - testdata/perf/t0-idle-window/
+  evidence:
+  - testdata/perf/t0-idle-window/README.md
+  - testdata/perf/t0-idle-window/REPORT.md
+  note: luoye-cpu measured and wrote the 32 per-run wall-clock reports, their summary and the generator behind the T0 benchmark calibration, in PR 3335.
 - id: libsvm
   name: libsvm
   url: https://github.com/cjlin1/libsvm
