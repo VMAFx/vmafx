@@ -685,6 +685,25 @@ class MsvcLegRouting(unittest.TestCase):
     """ADR-3279: `windows_msvc_sycl` follows what the MSVC+SYCL leg compiles."""
 
     SELECTOR = "windows_msvc_sycl"
+    SYCL_ZIP_SELECTOR = "windows_tester_zip_sycl"
+
+    def test_shared_sycl_toolset_inputs_select_both_legs(self) -> None:
+        for path in (
+            "build-config.env",
+            "scripts/ci/load-build-config.sh",
+            "scripts/ci/ocloc_aot_targets.py",
+            "scripts/lib/safe_subprocess.py",
+            "core/src/sycl/check_aot_image.py",
+        ):
+            with self.subTest(path=path):
+                plan = _plan_for([path])
+                self.assertTrue(plan.selectors[self.SELECTOR])
+                self.assertTrue(plan.selectors[self.SYCL_ZIP_SELECTOR])
+
+    def test_docs_only_change_leaves_both_sycl_legs_off(self) -> None:
+        plan = _plan_for(["docs/index.md"])
+        self.assertFalse(plan.selectors[self.SELECTOR])
+        self.assertFalse(plan.selectors[self.SYCL_ZIP_SELECTOR])
 
     def test_core_c_cpp_header_and_meson_files_select_the_leg(self) -> None:
         for path in (

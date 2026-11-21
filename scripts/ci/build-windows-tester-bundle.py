@@ -31,6 +31,7 @@ Optional, for the SYCL zip (ADR-1566; x64 only; run inside oneAPI's setvars):
   ONEAPI_ROOT             the oneAPI installation (setvars sets it); the runtime files of
                           tools/rc1-tester/image/sycl-runtime-windows.json come from it
   VMAFX_ONEAPI_VERSION    the installed oneAPI release, recorded in image/gpu-runtime.json
+  VMAFX_SYCL_AOT_TARGETS  comma-separated targets accepted by the installed ocloc (ADR-3568)
   VMAFX_LEVEL_ZERO_PREFIX the install prefix of the Level Zero loader built from
                           LEVEL_ZERO_VERSION (bin/ze_loader.dll ships)
   LEVEL_ZERO_VERSION      that loader's release, recorded in image/gpu-runtime.json
@@ -55,6 +56,7 @@ import io
 import json
 import os
 import platform
+import re
 import shutil
 import struct
 import subprocess
@@ -79,8 +81,19 @@ SYCL_RUNTIME = IMAGE_DIR / "sycl-runtime-windows.json"
 # The SYCL zip's programs and the DLLs they load lie in these directories (Windows
 # searches a program's own directory before System32, ADR-1566).
 PROGRAM_DIRS = ("build/tools", "tests")
-# DLLs the SYCL runtime loads by name at run time, not through an import table.
-LOADED_AT_RUN_TIME = ("ur_loader.dll", "ur_adapter_level_zero.dll", "ur_adapter_level_zero_v2.dll")
+# DLLs loaded at run time: only the two Level Zero adapters, because the
+# 2026.2 UR loader is static inside sycl9.dll (intel/llvm v7.2.0,
+# unified-runtime/CMakeLists.txt:56 UR_STATIC_LOADER default ON;
+# sycl/cmake/modules/BuildUnifiedRuntime.cmake:98) so it loads them directly.
+LOADED_AT_RUN_TIME = (
+    "ur_adapter_level_zero.dll",
+    "ur_adapter_level_zero_v2.dll",
+)
+UR_ASCII_DLL = re.compile(rb"(?<![a-z0-9_.-])ur_[a-z0-9_.-]+\.dll(?![a-z0-9_.-])")
+UR_UTF16LE_DLL = re.compile(
+    rb"(?<![a-z0-9_.-]\x00)u\x00r\x00_\x00(?:[a-z0-9_.-]\x00)+\.\x00d\x00l\x00l\x00"
+    rb"(?![a-z0-9_.-]\x00)"
+)
 # The C and C++ runtime DLLs of the redistributable folder a /MD program imports.
 MD_RUNTIME_PREFIXES = ("vcruntime140", "msvcp140", "concrt140", "vccorlib140")
 SCRATCH_TEST = "test_sycl_kernel_scratch"
@@ -222,8 +235,12 @@ def meson_options(gpu: str) -> list[str]:
     if gpu == "cuda":
         options = [o for o in options if o != "-Denable_cuda=false"] + list(CUDA_OPTIONS)
     if gpu == "sycl":
+        targets = os.environ.get("VMAFX_SYCL_AOT_TARGETS")
+        if not targets:
+            raise BuildError("VMAFX_SYCL_AOT_TARGETS must contain the targets accepted by ocloc")
         drop = ("-Denable_sycl=false", "-Db_vscrt=mt")
         options = [o for o in options if o not in drop] + list(SYCL_OPTIONS)
+        options.append(f"-Dsycl_icpx_aot_targets={targets}")
     return options
 
 
@@ -342,6 +359,45 @@ def vendor_dll_names() -> set[str]:
     return {name.lower() for component in spec["components"] for name in component["names"]}
 
 
+def check_runtime_dll_references(bundle: Path, names: set[str]) -> None:
+    """Verify whole dynamic-load names against the Intel DLLs shipped with the CLI."""
+    for name in LOADED_AT_RUN_TIME:
+        if UR_ASCII_DLL.fullmatch(name.encode("utf-8")) is None:
+            raise BuildError(f"invalid configured Intel run-time DLL name: {name!r}")
+    directory = bundle / PROGRAM_DIRS[0]
+    references: dict[str, list[str]] = {name: [] for name in LOADED_AT_RUN_TIME}
+    missing = set(LOADED_AT_RUN_TIME)
+    found: set[str] = set()
+    # The staging manifest has already passed prepare_build's component and pattern bounds.
+    for filename in sorted(names):
+        path = directory / filename
+        if not path.is_file():
+            continue
+        missing.discard(filename)
+        data = path.read_bytes().lower()
+        tokens = {token.decode("ascii") for token in UR_ASCII_DLL.findall(data)}
+        tokens.update(token.decode("utf-16le") for token in UR_UTF16LE_DLL.findall(data))
+        found.update(tokens)
+        for name in LOADED_AT_RUN_TIME:
+            # A PE export directory can name its own DLL without loading it.
+            if filename != name and name in tokens:
+                references[name].append(filename)
+
+    failures = [f"{name} (not staged)" for name in sorted(missing)]
+    failures.extend(
+        f"{name} (no other staged Intel DLL references it)"
+        for name, sources in references.items()
+        if name not in missing and not sources
+    )
+    if failures:
+        listing = ", ".join(sorted(found)[:40]) or "(none)"
+        raise BuildError(
+            f"Intel run-time DLL check failed: {', '.join(failures)}. UR DLL names found: {listing}"
+        )
+    notice = ", ".join(f"{name} <- {' + '.join(sources)}" for name, sources in references.items())
+    print(f"::notice::Intel run-time DLL references: {notice}", flush=True)
+
+
 def drop_unimported_vendor_dlls(bundle: Path, names: set[str]) -> list[str]:
     """Remove the listed Intel DLLs that no file beside the programs imports and that
     the SYCL runtime does not load by name (ADR-1503 rule 1: ship only what runs). One
@@ -376,8 +432,10 @@ def stage_sycl(build: Path, bundle: Path) -> None:
     shutil.copy2(IMAGE_DIR / "sycl-rows.json", bundle / "image" / "sycl-rows.json")
     point_scratch_audit_at_bundle(bundle)
     prepare_build("intel-runtime", str(SYCL_RUNTIME), os.environ["ONEAPI_ROOT"], str(bundle))
+    names = vendor_dll_names()
     stage_level_zero_loader(bundle, Path(os.environ["VMAFX_LEVEL_ZERO_PREFIX"]))
-    dropped = drop_unimported_vendor_dlls(bundle, vendor_dll_names())
+    dropped = drop_unimported_vendor_dlls(bundle, names)
+    check_runtime_dll_references(bundle, names.difference(dropped))
     versions = {"oneapi": os.environ["VMAFX_ONEAPI_VERSION"],
                 "level_zero_loader": os.environ["LEVEL_ZERO_VERSION"],
                 "intel_dlls_not_imported": ", ".join(dropped) or "none"}  # fmt: skip

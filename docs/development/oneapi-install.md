@@ -46,7 +46,7 @@ except where a command needs one.
 | Component | Pin | Notes |
 | --- | --- | --- |
 | Intel oneAPI compiler (Linux) | `ONEAPI_VERSION` (2026.1), exact apt build `ONEAPI_APT_VERSION` | `icpx` ships with the compiler package; CI and the release image install it from Intel's apt repository. |
-| Intel oneAPI (Windows) | `WINDOWS_BASEKIT_URL` in `libvmaf-build-matrix.yml` (2026.2.0.661, [ADR-3567](../adr/3567-windows-sycl-oneapi-2026-2.md)); `ONEAPI_WINDOWS_VERSION` (2025.3.0.372) and `INTEL_BASEKIT_WINDOWS_URL`, `_SIZE`, `_SHA256` in `build-config.env` (the installer the Windows SYCL tester zip checks and installs) | The offline installer URL carries a per-build GUID; `libvmaf-build-matrix.yml` pins 2026.2.0.661 (Clang 23 resource files measured in the installer on 2026-11-19; see ADR-3567) to test MSVC 14.52 `STL1000` compatibility. |
+| Intel oneAPI (Windows) | `ONEAPI_WINDOWS_VERSION` (2026.2.0.661), `INTEL_BASEKIT_WINDOWS_URL`, `_SIZE`, `_SHA256` and `ONEAPI_WINDOWS_AOT_EXPECT_REFUSED` in `build-config.env` | The Windows MSVC+SYCL CI leg and tester zip share the offline installer for MSVC 14.52 compatibility. Both check its size and digest before extraction and verify the refused AOT targets before configuring Meson. [ADR-3568](../adr/3568-windows-sycl-tester-zip-oneapi-2026-2.md) |
 | Compute runtime (`level-zero-loader`) | distro package | Arch / CachyOS: `pacman -S level-zero-loader`. |
 | `ocloc` (GPU offline compiler) | `INTEL_NEO_VERSION` | Needed for the default ahead-of-time build. |
 | Level Zero loader (container) | `LEVEL_ZERO_VERSION` | Installed by `install-intel-ocloc.sh --components build`. |

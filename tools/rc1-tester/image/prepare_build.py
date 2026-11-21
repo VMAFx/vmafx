@@ -19,6 +19,7 @@ intel-runtime <runtime.json> <oneapi_root> <image_root>
                                       copy the listed Intel runtime files, unmodified,
                                       to <image_root>/lib/intel and their licence texts
                                       to <image_root>/licenses/intel (Intel GPU image)
+                                      and print each resolved component directory
 cuda-targets <build_dir> <image_root> write image/cuda-targets.json: the CUDA version
                                       and the cubin and PTX targets of the build's
                                       gencode list, from its Meson log (NVIDIA GPU image)
@@ -49,6 +50,8 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterable
+from itertools import islice
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +59,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from vmaf_rc1_tester.hw_facts import machine_name, vmaf_binary
 
 MIN_TESTS = 10
+MAX_RUNTIME_ITEMS = 64
+MAX_RUNTIME_DIRECTORY_ENTRIES = 4096
 # The parity gate and what it imports or reads (ADR-1496): it runs under the
 # bundle's standard-library interpreter, so nothing outside these files.
 GATE_FILES = (
@@ -337,22 +342,78 @@ def copy_unmodified(source: Path, target: Path) -> None:
         shutil.copy2(source, target)
 
 
-def component_files(oneapi: Path, component: dict, redistributable: set[str]) -> list[Path]:
-    """The files of one component; refuses a compiler file credist.txt does not list."""
+def component_files(vendor_root: Path, component: dict) -> tuple[list[Path], str]:
+    """Resolve the files of one component and report its unmatched patterns."""
+    directory = vendor_root / component["dir"]
+    patterns = component["names"]
+    if len(patterns) > MAX_RUNTIME_ITEMS:
+        raise BuildError(f"{component['id']}: too many runtime patterns")
+    entries = runtime_directory_entries(directory) if directory.is_dir() else None
     files: list[Path] = []
-    for pattern in component["names"]:
-        matches = sorted((oneapi / component["dir"]).glob(pattern))
-        if not matches:
-            raise BuildError(f"{component['id']}: nothing matches {component['dir']}/{pattern}")
-        files += matches
+    unmatched: list[str] = []
+    for pattern in patterns:
+        matches = runtime_pattern_files(entries or (), pattern, component["id"])
+        if matches:
+            files.extend(matches)
+        else:
+            unmatched.append(f"{component['dir']}/{pattern}")
+    if unmatched:
+        detail = runtime_dll_listing(entries) if entries is not None else "directory missing"
+        return files, f"{component['id']}: nothing matches {', '.join(unmatched)} ({detail})"
+    return files, ""
+
+
+def runtime_pattern_files(entries: Iterable[Path], pattern: str, component_id: str) -> list[Path]:
+    if Path(pattern).name != pattern or "**" in pattern:
+        raise BuildError(f"{component_id}: expected a filename pattern, got {pattern!r}")
+    return [entry for entry in entries if entry.match(pattern) and entry.is_file()]
+
+
+def runtime_directory_entries(directory: Path) -> list[Path]:
+    with os.scandir(directory) as entries:
+        paths = [Path(entry.path) for entry in islice(entries, MAX_RUNTIME_DIRECTORY_ENTRIES + 1)]
+    if len(paths) > MAX_RUNTIME_DIRECTORY_ENTRIES:
+        raise BuildError(f"{directory}: too many runtime directory entries")
+    return sorted(paths)
+
+
+def runtime_dll_listing(entries: list[Path]) -> str:
+    names = sorted(
+        path.name for path in entries if path.suffix.lower() == ".dll" and path.is_file()
+    )
+    return f"DLLs present: {', '.join(names) or '(none)'}"
+
+
+def check_redistributable(component: dict, files: list[Path], redistributable: set[str]) -> None:
     if component["credist"]:
         unlisted = [path.name for path in files if path.name not in redistributable]
         if unlisted:
             raise BuildError(f"{component['id']}: not in credist.txt: {unlisted}")
-    return files
 
 
-def stage_vendor_runtime(spec_path: Path, vendor_root: Path, image_root: Path) -> None:
+def resolve_runtime_components(
+    vendor_root: Path, components: list[dict], *, report_directories: bool
+) -> list[tuple[dict, list[Path]]]:
+    if len(components) > MAX_RUNTIME_ITEMS:
+        raise BuildError("too many runtime components")
+    resolved: list[tuple[dict, list[Path]]] = []
+    unmatched: list[str] = []
+    for component in components:
+        if report_directories:
+            directory = (vendor_root / component["dir"]).resolve()
+            print(f"intel-runtime: {component['id']}: {directory}", flush=True)
+        files, message = component_files(vendor_root, component)
+        if message:
+            unmatched.append(message)
+        resolved.append((component, files))
+    if unmatched:
+        raise BuildError("\n".join(unmatched))
+    return resolved
+
+
+def stage_vendor_runtime(
+    spec_path: Path, vendor_root: Path, image_root: Path, *, report_directories: bool = False
+) -> None:
     """Copy the runtime files and licence texts a runtime spec names (sycl-runtime.json,
     sycl-runtime-windows.json, hip-runtime.json), byte for byte. A component's files go
     to its `dest` under the image root (default lib/intel), or to every directory of
@@ -360,14 +421,20 @@ def stage_vendor_runtime(spec_path: Path, vendor_root: Path, image_root: Path) -
     <licence_dir>/<id> (default licenses/intel). Compiler files must be in the spec's
     `credist` list when it has one, read under its `credist_dir` (default lib)."""
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    resolved = resolve_runtime_components(
+        vendor_root, spec["components"], report_directories=report_directories
+    )
     redistributable = (
         credist_names(vendor_root / spec["credist"], spec.get("credist_dir", "lib"))
         if spec.get("credist")
         else set()
     )
-    for component in spec["components"]:
+    for component, files in resolved:
+        check_redistributable(component, files, redistributable)
         dests = component.get("dests") or [component.get("dest", "lib/intel")]
-        for path in component_files(vendor_root, component, redistributable):
+        if len(dests) > MAX_RUNTIME_ITEMS or len(component["licences"]) > MAX_RUNTIME_ITEMS:
+            raise BuildError(f"{component['id']}: too many runtime destinations or licence texts")
+        for path in files:
             for dest in dests:
                 copy_unmodified(path, image_root / dest / path.name)
         texts = image_root / spec.get("licence_dir", "licenses/intel") / component["id"]
@@ -469,7 +536,12 @@ def run(argv: list[str]) -> int:
     elif command == "twins" and len(argv) == 4:
         write_twins(Path(argv[2]), argv[3])
     elif command in ("intel-runtime", "rocm-runtime") and len(argv) == 5:
-        stage_vendor_runtime(Path(argv[2]), Path(argv[3]), Path(argv[4]))
+        stage_vendor_runtime(
+            Path(argv[2]),
+            Path(argv[3]),
+            Path(argv[4]),
+            report_directories=command == "intel-runtime",
+        )
     elif command == "cuda-targets" and len(argv) == 4:
         write_cuda_targets(Path(argv[2]), Path(argv[3]))
     elif command == "hip-targets" and len(argv) == 5:

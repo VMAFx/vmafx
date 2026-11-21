@@ -339,12 +339,17 @@ def _dry_run_groups(paths: list[str]) -> dict[str, str]:
 # BSD-2-Clause-Patent text the image's licence stages bind-mount (ADR-1699).
 # What the x64 SYCL zip reads and the x64 zip does not (ADR-2198), derived from the leg:
 # sycl-rows.json (`stage_sycl`), prepare_build.py (`stage`, `twins`, `intel-runtime`),
-# build-config.env (the oneAPI and Level Zero pins of the install steps) and the scratch
+# the shared pins and their loader, the AOT probe and its imports, and the scratch
 # ratchet list the scratch audit reads.
 SYCL_ONLY_INPUTS = {
     "tools/rc1-tester/image/sycl-rows.json",
     "tools/rc1-tester/image/prepare_build.py",
     "build-config.env",
+    "scripts/ci/load-build-config.sh",
+    "scripts/ci/ocloc_aot_targets.py",
+    "scripts/lib/safe_subprocess.py",
+    "core/src/sycl/check_aot_image.py",
+    "core/meson_options.txt",
     "core/src/sycl/scratch_ratchet.txt",
 }
 ADDED_TRIGGER_PATHS = {

@@ -1319,20 +1319,20 @@
     {
      "id": "intel-oneapi-dpcpp-runtime",
      "kind": "fixed",
-     "name": "Intel oneAPI DPC++/C++ Compiler 2025.3 runtime for Windows: sycl8, the Unified Runtime loader, its Windows proxy loader and its Level Zero adapters, and the compiler's math and support libraries the programs import",
+     "name": "Intel oneAPI DPC++/C++ Compiler 2026.2 runtime for Windows: sycl9, the Unified Runtime loader, its Windows proxy loader and its Level Zero adapters, and the compiler's math and support libraries the programs import",
      "paths": [
-      "build/tools/sycl8.dll",
+      "build/tools/sycl9.dll",
       "build/tools/ur_win_proxy_loader.dll",
-      "build/tools/ur_loader.dll",
+      "build/tools/ur_loader_shared.dll",
       "build/tools/ur_adapter_level_zero.dll",
       "build/tools/ur_adapter_level_zero_v2.dll",
       "build/tools/libmmd.dll",
       "build/tools/svml_dispmd.dll",
       "build/tools/libircmd.dll",
       "build/tools/libirngmd.dll",
-      "tests/sycl8.dll",
+      "tests/sycl9.dll",
       "tests/ur_win_proxy_loader.dll",
-      "tests/ur_loader.dll",
+      "tests/ur_loader_shared.dll",
       "tests/ur_adapter_level_zero.dll",
       "tests/ur_adapter_level_zero_v2.dll",
       "tests/libmmd.dll",
@@ -1344,7 +1344,7 @@
      "copyright": [
       "Copyright (C) Intel Corporation"
      ],
-     "source": "binary only; copied unmodified from the oneAPI Base Toolkit 2025.3.0.372 for Windows installed on the hosted runner, every file listed in its credist.txt (tools/rc1-tester/image/sycl-runtime-windows.json); a listed DLL nothing imports is left out (image/gpu-runtime.json)",
+     "source": "binary only; copied unmodified from the oneAPI Base Toolkit 2026.2.0.661 for Windows installed on the hosted runner, every file listed in its credist.txt (tools/rc1-tester/image/sycl-runtime-windows.json); a listed DLL nothing imports is left out (image/gpu-runtime.json)",
      "texts": [
       {
        "artifact": "licenses/intel/intel-oneapi-dpcpp-runtime/LICENSE.rtf",
@@ -1369,7 +1369,7 @@
     {
      "id": "intel-oneapi-umf",
      "kind": "fixed",
-     "name": "Intel oneAPI Unified Memory Framework 1.0.2 for Windows (umf.dll)",
+     "name": "Intel oneAPI Unified Memory Framework 1.1.0 for Windows (umf.dll)",
      "paths": [
       "build/tools/umf.dll",
       "tests/umf.dll"
@@ -1378,7 +1378,7 @@
      "copyright": [
       "Copyright (C) Intel Corporation"
      ],
-     "source": "https://github.com/oneapi-src/unified-memory-framework (release 1.0.2); binary copied unmodified from the oneAPI Base Toolkit 2025.3.0.372 for Windows",
+     "source": "https://github.com/oneapi-src/unified-memory-framework (release 1.1.0); binary copied unmodified from the oneAPI Base Toolkit 2026.2.0.661 for Windows",
      "texts": [
       {
        "artifact": "licenses/intel/intel-oneapi-umf/LICENSE.TXT",
@@ -1393,7 +1393,7 @@
     {
      "id": "intel-oneapi-tcm-hwloc",
      "kind": "fixed",
-     "name": "Portable Hardware Locality (libhwloc-15.dll) as built by Intel in oneAPI Thread Composability Manager 1.4.1 for Windows",
+     "name": "Portable Hardware Locality (libhwloc-15.dll) as built by Intel in oneAPI Thread Composability Manager 1.5 for Windows",
      "paths": [
       "build/tools/libhwloc-15.dll",
       "tests/libhwloc-15.dll"
@@ -1404,7 +1404,7 @@
       "Copyright (c) 2009-2016 Inria",
       "Copyright (C) Intel Corporation"
      ],
-     "source": "https://github.com/open-mpi/hwloc (2.x); binary copied unmodified from the oneAPI Base Toolkit 2025.3.0.372 for Windows",
+     "source": "https://github.com/open-mpi/hwloc (2.x); binary copied unmodified from the oneAPI Base Toolkit 2026.2.0.661 for Windows",
      "texts": [
       {
        "artifact": "licenses/intel/intel-oneapi-tcm-hwloc/license.txt",

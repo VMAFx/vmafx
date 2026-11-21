@@ -1007,7 +1007,7 @@ def windows_sycl_tree(tmp: Path) -> argparse.Namespace:
     args.artifact = "windows-sycl-zip"
     root = Path(args.root)
     for directory in ("build/tools", "tests"):
-        for name in ("sycl8.dll", "ur_loader.dll", "ur_adapter_level_zero.dll", "libmmd.dll",
+        for name in ("sycl9.dll", "ur_loader_shared.dll", "ur_adapter_level_zero.dll", "libmmd.dll",
                      "umf.dll", "libhwloc-15.dll", "ze_loader.dll", "vcruntime140.dll",
                      "msvcp140.dll"):  # fmt: skip
             write(root / directory / name, "MZ")
@@ -1035,6 +1035,15 @@ def windows_sycl_tree(tmp: Path) -> argparse.Namespace:
 def test_the_windows_sycl_zip_record_passes_and_refuses_planted_defects(tmp_path: Path) -> None:
     args = windows_sycl_tree(tmp_path)
     data = lic.load_manifest()
+    spec_path = REPO / "tools/rc1-tester/image/sycl-runtime-windows.json"
+    runtime = json.loads(spec_path.read_text(encoding="utf-8"))
+    record = lic.artifact_record(data, args.artifact)
+    recorded_paths = {
+        component["id"]: component.get("paths", []) for component in record["components"]
+    }
+    for component in runtime["components"]:
+        paths = [f"{dest}/{name}" for dest in component["dests"] for name in component["names"]]
+        assert sorted(recorded_paths[component["id"]]) == sorted(paths)
     assert notices_then_check(args, data) == []
     root = Path(args.root)
     notices = (root / "licenses/THIRD_PARTY_NOTICES.txt").read_text()

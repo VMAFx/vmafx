@@ -293,6 +293,164 @@ def test_credist_reads_windows_entries_under_bin_with_either_separator(tmp_path:
     assert pb.credist_names(credist) == {"libsycl.so.9"}
 
 
+def windows_runtime_spec(root: Path) -> Path:
+    spec = {
+        "components": [
+            {"id": "compiler", "dir": "compiler/bin", "names": ["sycl8.dll", "libmmd.dll"]},
+            {"id": "umf", "dir": "umf/bin", "names": ["umf*.dll"]},
+        ]
+    }
+    for component in spec["components"]:
+        component.update(credist=False, licences=[])
+    path = root / "runtime.json"
+    path.write_text(json.dumps(spec), encoding="utf-8")
+    return path
+
+
+def test_intel_runtime_reports_all_unmatched_patterns_and_sorted_dlls(tmp_path: Path) -> None:
+    spec = windows_runtime_spec(tmp_path)
+    compiler = tmp_path / "compiler/bin"
+    compiler.mkdir(parents=True)
+    for name in ("sycl9.dll", "libfoo.DLL", "readme.txt"):
+        (compiler / name).touch()
+    (compiler / "sycl8.dll").mkdir()
+    umf = tmp_path / "umf/bin"
+    umf.mkdir(parents=True)
+    (umf / "allocator.dll").touch()
+
+    with pytest.raises(pb.BuildError, match="nothing matches") as caught:
+        pb.stage_vendor_runtime(spec, tmp_path, tmp_path / "img")
+
+    message = str(caught.value)
+    assert "compiler/bin/sycl8.dll" in message
+    assert "compiler/bin/libmmd.dll" in message
+    assert "DLLs present: libfoo.DLL, sycl9.dll)" in message
+    assert "umf/bin/umf*.dll" in message and "allocator.dll" in message
+    assert "readme.txt" not in message
+
+
+def test_runtime_component_matches_only_the_file_with_a_shared_pattern(tmp_path: Path) -> None:
+    compiler = tmp_path / "compiler"
+    compiler.mkdir()
+    directory = compiler / "sycl8.dll"
+    directory.mkdir()
+    (compiler / "sycl10.dll").symlink_to(directory.name, target_is_directory=True)
+    dll = compiler / "sycl9.dll"
+    dll.touch()
+    component = {"id": "compiler", "dir": "compiler", "names": ["sycl*.dll"]}
+
+    assert pb.component_files(tmp_path, component) == ([dll], "")
+
+
+def test_intel_runtime_reports_a_missing_directory(tmp_path: Path) -> None:
+    spec = windows_runtime_spec(tmp_path)
+    compiler = tmp_path / "compiler/bin"
+    compiler.mkdir(parents=True)
+    (compiler / "sycl8.dll").touch()
+    (compiler / "libmmd.dll").touch()
+    image = tmp_path / "img"
+    with pytest.raises(pb.BuildError, match=r"umf/bin/umf\*\.dll.*directory missing"):
+        pb.stage_vendor_runtime(spec, tmp_path, image)
+    assert not image.exists()
+
+
+def test_intel_runtime_passes_when_all_components_match(tmp_path: Path) -> None:
+    spec = windows_runtime_spec(tmp_path)
+    for relative in ("compiler/bin/sycl8.dll", "compiler/bin/libmmd.dll", "umf/bin/umf.dll"):
+        dll = tmp_path / relative
+        dll.parent.mkdir(parents=True, exist_ok=True)
+        dll.write_bytes(b"MZ")
+    image = tmp_path / "img"
+    pb.stage_vendor_runtime(spec, tmp_path, image)
+    for name in ("sycl8.dll", "libmmd.dll", "umf.dll"):
+        assert (image / "lib/intel" / name).read_bytes() == b"MZ"
+
+
+def test_intel_runtime_prints_resolved_component_directories(tmp_path: Path, capsys) -> None:
+    spec = tmp_path / "runtime.json"
+    components = []
+    expected = []
+    for name, version, dll, component_id in (
+        ("umf", "1.1.0", "umf.dll", "intel-oneapi-umf"),
+        ("tcm", "1.5", "libhwloc-15.dll", "intel-oneapi-tcm-hwloc"),
+    ):
+        directory = tmp_path / name / version / "bin"
+        directory.mkdir(parents=True)
+        (directory / dll).touch()
+        try:
+            (tmp_path / name / "latest").symlink_to(version, target_is_directory=True)
+        except (NotImplementedError, OSError) as error:
+            pytest.skip(f"cannot create a directory symlink: {error}")
+        components.append({"id": component_id, "dir": f"{name}/latest/bin",
+                           "names": [dll], "credist": False, "licences": []})  # fmt: skip
+        expected.append(f"intel-runtime: {component_id}: {directory.resolve()}")
+    payload = json.dumps({"components": components})
+    assert spec.write_text(payload, encoding="utf-8") == len(payload)
+
+    assert pb.main(["prepare_build.py", "intel-runtime", str(spec), str(tmp_path),
+                    str(tmp_path / "img")]) == 0  # fmt: skip
+    assert capsys.readouterr().out.splitlines() == expected
+
+
+@pytest.mark.parametrize(
+    ("key", "message"),
+    [
+        ("components", "too many runtime components"),
+        ("names", "too many runtime patterns"),
+        ("dests", "too many runtime destinations or licence texts"),
+        ("licences", "too many runtime destinations or licence texts"),
+    ],
+)
+def test_runtime_manifest_lists_are_bounded(tmp_path: Path, monkeypatch, key, message) -> None:
+    monkeypatch.setattr(pb, "MAX_RUNTIME_ITEMS", 1, raising=False)
+    (tmp_path / "sycl8.dll").touch()
+    component = {
+        "id": "compiler",
+        "dir": ".",
+        "credist": False,
+        "names": ["sycl8.dll"],
+        "dests": ["bin"],
+        "licences": ["sycl8.dll"],
+    }
+    spec = {"components": [component]}
+    if key == "components":
+        spec[key] *= 2
+    else:
+        component[key] *= 2
+    path = tmp_path / "runtime.json"
+    path.write_text(json.dumps(spec), encoding="utf-8")
+    with pytest.raises(pb.BuildError, match=message):
+        pb.stage_vendor_runtime(path, tmp_path, tmp_path / "img")
+
+
+@pytest.mark.parametrize(
+    ("pattern", "limit", "message"),
+    [
+        ("sycl8.dll", 1, "too many runtime directory entries"),
+        ("**/sycl8.dll", 4, "expected a filename pattern"),
+    ],
+)
+def test_runtime_directory_scan_is_bounded(
+    tmp_path: Path, monkeypatch, pattern: str, limit: int, message: str
+) -> None:
+    monkeypatch.setattr(pb, "MAX_RUNTIME_DIRECTORY_ENTRIES", limit, raising=False)
+    directory = tmp_path / "bin"
+    directory.mkdir()
+    (directory / "sycl8.dll").touch()
+    (directory / "libmmd.dll").touch()
+    component = {
+        "id": "compiler",
+        "dir": "bin",
+        "names": [pattern],
+        "credist": False,
+        "licences": [],
+    }
+    path = tmp_path / "runtime.json"
+    path.write_text(json.dumps({"components": [component]}), encoding="utf-8")
+    with pytest.raises(pb.BuildError, match=message):
+        pb.stage_vendor_runtime(path, tmp_path, tmp_path / "img")
+
+
 def test_a_component_with_dests_lands_beside_every_program(tmp_path: Path) -> None:
     oneapi = tmp_path / "oneapi"
     bin_dir = oneapi / "compiler" / "latest" / "bin"
