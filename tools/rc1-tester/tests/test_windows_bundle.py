@@ -709,30 +709,53 @@ def test_staged_intel_dlls_cannot_reference_themselves(
 def test_runtime_dll_reference_requires_a_staged_target(
     tmp_path: Path, staged_intel_proxy: Path
 ) -> None:
-    name = "ur_loader_shared.dll"
+    name = "ur_adapter_level_zero.dll"
     (staged_intel_proxy.parent / name).unlink()
     write_pe(tmp_path, f"tests/{name}", name.encode("ascii"))
     references = "\0".join(builder.LOADED_AT_RUN_TIME).encode("ascii")
     assert staged_intel_proxy.write_bytes(references) == len(references)
 
-    with pytest.raises(builder.BuildError, match=r"ur_loader_shared\.dll \(not staged\)"):
+    with pytest.raises(builder.BuildError, match=r"ur_adapter_level_zero\.dll \(not staged\)"):
         builder.check_runtime_dll_references(tmp_path, builder.vendor_dll_names())
 
 
-def test_similar_runtime_dll_names_do_not_count_as_references(
-    tmp_path: Path, staged_intel_proxy: Path
+def test_static_loader_layout_passes_the_reference_check(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    payload = b"UR_LOADER.DLL\0ur_adapter_level_zero_v2.dll\0"
-    assert staged_intel_proxy.write_bytes(payload) == len(payload)
+    table = b"ur_adapter_level_zero.dll\0ur_adapter_level_zero_v2.dll\0ur_adapter_opencl.dll\0"
+    write_pe(tmp_path, "build/tools/sycl9.dll", table)
+    write_pe(tmp_path, "build/tools/ur_win_proxy_loader.dll", b"ur_loader.dll\0")
+    write_pe(tmp_path, "build/tools/ur_loader_shared.dll", b"ur_loader_shared.dll\0")
+    for name in builder.LOADED_AT_RUN_TIME:
+        write_pe(tmp_path, f"build/tools/{name}", name.encode("ascii") + b"\0")
+
+    builder.check_runtime_dll_references(tmp_path, builder.vendor_dll_names())
+
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 1 and lines[0].startswith("::notice::")
+    for name in builder.LOADED_AT_RUN_TIME:
+        assert f"{name} <- sycl9.dll" in lines[0]
+
+
+def test_missing_adapter_reference_is_refused(tmp_path: Path) -> None:
+    table = b"ur_adapter_level_zero.dll\0ur_adapter_opencl.dll\0"
+    write_pe(tmp_path, "build/tools/sycl9.dll", table)
+    write_pe(tmp_path, "build/tools/ur_win_proxy_loader.dll", b"ur_loader.dll\0")
+    write_pe(tmp_path, "build/tools/ur_loader_shared.dll", b"ur_loader_shared.dll\0")
+    for name in builder.LOADED_AT_RUN_TIME:
+        write_pe(tmp_path, f"build/tools/{name}", name.encode("ascii") + b"\0")
 
     with pytest.raises(builder.BuildError, match="no other staged Intel DLL") as caught:
         builder.check_runtime_dll_references(tmp_path, builder.vendor_dll_names())
 
-    failures, listing = str(caught.value).split(". UR DLL names found: ")
-    assert "ur_loader_shared.dll (no other staged Intel DLL references it)" in failures
-    assert "ur_adapter_level_zero.dll (no other staged Intel DLL references it)" in failures
-    assert "ur_adapter_level_zero_v2.dll" not in failures
-    assert "ur_loader.dll" in listing.split(", ")
+    assert "ur_adapter_level_zero_v2.dll (no other staged Intel DLL references it)" in str(
+        caught.value
+    )
+
+
+def test_shared_ur_loader_is_not_loaded_by_name() -> None:
+    assert "ur_loader_shared.dll" not in builder.LOADED_AT_RUN_TIME
+    assert "ur_loader_shared.dll" in builder.vendor_dll_names()
 
 
 @pytest.mark.parametrize("encoding", ["ascii", "utf-16le"])
@@ -740,7 +763,7 @@ def test_similar_runtime_dll_names_do_not_count_as_references(
 def test_runtime_dll_reference_rejects_partial_tokens(
     tmp_path: Path, staged_intel_proxy: Path, encoding: str, token: str
 ) -> None:
-    name = "ur_loader_shared.dll"
+    name = "ur_adapter_level_zero.dll"
     assert (staged_intel_proxy.parent / name).write_bytes(b"\0") == 1
     payload = token.encode(encoding)
     assert staged_intel_proxy.write_bytes(payload) == len(payload)
@@ -758,7 +781,7 @@ def test_runtime_dll_reference_rejects_partial_tokens(
 def test_runtime_dll_reference_accepts_whole_tokens(
     tmp_path: Path, staged_intel_proxy: Path, encoding: str, prefix: str, suffix: str
 ) -> None:
-    name = "ur_loader_shared.dll"
+    name = "ur_adapter_level_zero.dll"
     payload = f"{prefix}{name}{suffix}".encode(encoding)
     assert staged_intel_proxy.write_bytes(payload) == len(payload)
     other_names = [other for other in builder.LOADED_AT_RUN_TIME if other != name]
@@ -796,7 +819,7 @@ def test_stage_sycl_rejects_a_runtime_reference_only_in_a_pruned_dll(
     write_pe(prefix, "bin/ze_loader.dll", pe)
     for name in builder.LOADED_AT_RUN_TIME:
         write_pe(bundle, f"build/tools/{name}", pe)
-    target = "ur_loader_shared.dll"
+    target = "ur_adapter_level_zero.dll"
     other_names = [name for name in builder.LOADED_AT_RUN_TIME if name != target]
     write_pe(bundle, "build/tools/vmaf.exe", make_pe(0x8664, ["sycl9.dll"]))
     write_pe(bundle, "build/tools/sycl9.dll", pe + "\0".join(other_names).encode("ascii"))
@@ -826,10 +849,15 @@ def test_unimported_intel_dlls_are_dropped_until_nothing_changes(tmp_path: Path)
         write_pe(tmp_path, f"{directory}/libircmd.dll", make_pe(0x8664, ["kernel32.dll"]))
     names = {"sycl9.dll", "ur_win_proxy_loader.dll", "libmmd.dll", "ur_loader_shared.dll", "umf.dll",
              "libhwloc-15.dll", "libirngmd.dll", "libircmd.dll"}  # fmt: skip
-    assert builder.drop_unimported_vendor_dlls(tmp_path, names) == ["libirngmd.dll", "libircmd.dll"]
+    assert builder.drop_unimported_vendor_dlls(tmp_path, names) == [
+        "libirngmd.dll",
+        "ur_loader_shared.dll",
+        "libircmd.dll",
+        "umf.dll",
+        "libhwloc-15.dll",
+    ]
     left = sorted(p.name for p in (tmp_path / "tests").iterdir())
-    assert left == ["libhwloc-15.dll", "libmmd.dll", "prog.exe", "sycl9.dll", "umf.dll",
-                    "ur_loader_shared.dll", "ur_win_proxy_loader.dll"]  # fmt: skip
+    assert left == ["libmmd.dll", "prog.exe", "sycl9.dll", "ur_win_proxy_loader.dll"]  # fmt: skip
     assert builder.drop_unimported_vendor_dlls(tmp_path, names) == []
 
 

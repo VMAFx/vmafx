@@ -269,9 +269,10 @@ the C and C++ runtime, and everything they load lies in their own directory
   (`prepare_build.py intel-runtime` with `dests`; its compiler files must be in the
   installed `credist.txt`, whose Windows entries read `<installdir>/bin/<name>`, so the
   spec sets `credist_dir`). The spec lists candidates: the build drops every listed DLL
-  nothing imports and the SYCL runtime does not load by name (`LOADED_AT_RUN_TIME`:
-  the Unified Runtime loader and its Level Zero adapters), and records the dropped
-  names in `image/gpu-runtime.json`. After pruning, the build requires each run-time
+  nothing imports and the SYCL runtime does not load by name (`LOADED_AT_RUN_TIME`: the
+  two Level Zero adapters the Unified Runtime loader inside `sycl9.dll` loads by name;
+  on 2026.2 that loader is linked statically), and records the dropped names in
+  `image/gpu-runtime.json`. After pruning, the build requires each run-time
   DLL name to occur as a whole name in another Intel DLL that the bundle ships;
 - `ze_loader.dll`, built by the workflow from `LEVEL_ZERO_VERSION` (component
   `level-zero-loader`, MIT): libvmaf imports it, so without it no program starts, and

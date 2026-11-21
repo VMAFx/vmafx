@@ -53,8 +53,13 @@ present in each affected directory in a single staging error.
 - **Neutral / follow-ups**: Windows Tester Zip run 44821793070 on 2026-11-20
   listed `sycl9.dll` in place of `sycl8.dll` and `ur_loader_shared.dll` in
   place of `ur_loader.dll`. The runtime manifest and licence record use the
-  measured names. After pruning, the build requires each run-time DLL name to
-  occur as a whole name in another Intel DLL that the bundle ships. Check the
+  measured names. On oneAPI 2026.2 the UR loader is linked statically into
+  `sycl9.dll` (`sycl/cmake/modules/BuildUnifiedRuntime.cmake:97`,
+  `UR_STATIC_LOADER` default ON), so `LOADED_AT_RUN_TIME` keeps only the two
+  Level Zero adapters the static loader opens by name and drops
+  `ur_loader_shared.dll` unless a staged file imports it. After pruning, the
+  build requires each run-time DLL name to occur as a whole name in another
+  Intel DLL that the bundle ships. Check the
   recorded UMF and TCM versions against the resolved component directories
   printed by `prepare_build.py intel-runtime`. This decision replaces the tester-pin
   consequence of ADR-3567 and the tester pin of ADR-1566.

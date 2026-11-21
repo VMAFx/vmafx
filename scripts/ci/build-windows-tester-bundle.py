@@ -85,7 +85,6 @@ PROGRAM_DIRS = ("build/tools", "tests")
 # 2026.2 UR loader is static inside sycl9.dll (UR_STATIC_LOADER=ON in
 # sycl/cmake/modules/BuildUnifiedRuntime.cmake:97) so it loads them directly.
 LOADED_AT_RUN_TIME = (
-    "ur_loader_shared.dll",
     "ur_adapter_level_zero.dll",
     "ur_adapter_level_zero_v2.dll",
 )
