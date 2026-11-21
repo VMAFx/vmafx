@@ -754,16 +754,21 @@ runs when its inputs change. Required `Pre-Commit` CI also runs the regression.
 
 ## Old organisation references
 
-`check-old-org-refs` rejects obsolete GitHub organisation slugs, URLs, Pages
-hosts and owner settings after the moves to vidiko, plurano and tekmora. Go
-module and import paths remain valid. Run the full tracked-file check with
-`python3 -B scripts/ci/check-old-org-refs.py --all`.
+`check-old-org-refs` rejects obsolete GitHub and GHCR organisation references
+after the moves to vidiko, plurano and tekmora. It checks scheme-less and
+URL-encoded links, owner settings, and image names in workflow YAML. Published
+Go module and import paths remain valid. Run the full tracked-file check with
+`python3 -B scripts/ci/check-old-org-refs.py`. The scanner reports tracked text
+above its 8 MiB read limit.
 
 The permanent path allow-list preserves committed historical records: numbered
-ADRs and index fragments, research and its digest baseline, rebase notes,
-changelog fragments, the changelog and its archives. The checker's test file
-is also allowed so it can contain examples. For a specific intentional historical
-reference elsewhere, append `old-org-ok` on the same line.
+ADRs and their numbered index fragments, research and its digest baseline,
+rebase notes, release candidate records, changelog fragments, the changelog and
+its archives. Permanent line exceptions keep the release candidate examples,
+signing provenance, licence records, source offers and dated state ledger rows
+that name pre-move images. Inline exceptions use the marker defined as
+`INLINE_MARKER` in `scripts/ci/check-old-org-refs.py` and are valid through
+2026-11-30.
 
 Four MEL category C exceptions were entered on 2026-11-20 and expire on
 2026-11-30. After expiry their references are reported with the reason:
@@ -771,6 +776,11 @@ Four MEL category C exceptions were entered on 2026-11-20 and expire on
 - Vendored Pelorus files and its interoperability guide: update banners when Pelorus is re-vendored from vidiko/pelorus.
 - `FFMPEG_FIX_SERIES_REPO` in `build-config.env`: the signed ffmpeg-patches v0.7.0 workflow identity changes with the next series release.
 - `lua/standards.lua` and the two `tools/markdownlint` package files: Praetor renders them and must rename them.
-- `ghcr.io/` image references: switch in the follow-up PR when vidiko image tags exist.
+- `ghcr.io/` image references in Kubernetes manifests, chart configuration and
+  the workflows, docs and tests that use them: switch in the follow-up PR when
+  vidiko image tags exist.
+
+The tester guide's pre-move signing identity uses a MEL category D exception
+from 2026-11-20 through 2027-03-20.
 
 Set `OLD_ORG_REFS_TODAY` to an ISO date to inspect expiry behavior.
