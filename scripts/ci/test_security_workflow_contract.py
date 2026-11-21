@@ -5,11 +5,19 @@
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.lib.safe_subprocess import run as run_command  # noqa: E402
+
 SECURITY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "security-scans.yml"
 EXPECTED_GROUP = (
     "group: security-${{ github.workflow }}-${{ github.event_name }}-"
@@ -83,6 +91,59 @@ class SecurityWorkflowContractTest(unittest.TestCase):
                 end = index
                 break
         return "\n".join(lines[start:end])
+
+    def test_python_audit_keeps_a_required_context_when_its_inputs_are_unchanged(self) -> None:
+        workflow = SECURITY_WORKFLOW.read_text(encoding="utf-8")
+        job = self._job_block(workflow, "python-audit")
+        self.assertIn("fetch-depth: 0", job)
+        self.assertIn("id: impact", job)
+        self.assertIn("scripts/ci/plan-ci-impact.py", job)
+        self.assertEqual(job.count("if: steps.impact.outputs.python_audit == 'true'"), 3)
+        self.assertIn("if: steps.impact.outputs.python_audit == 'false'", job)
+        self.assertIn("name: Python Dependency Audit", job)
+        aggregate = (REPO_ROOT / ".github/workflows/required-aggregator.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("'Python Dependency Audit'", aggregate)
+
+    def test_trivy_control_distinguishes_scanner_errors_from_findings(self) -> None:
+        workflow = (REPO_ROOT / ".github/workflows/docker-image.yml").read_text(encoding="utf-8")
+        control = workflow.split("- name: Prove trivy rejects the planted image", 1)[1].split(
+            "- name: Trivy image scan", 1
+        )[0]
+        self.assertIn("trivy image --exit-code 3", control)
+        self.assertIn('if [ "$rc" -ne 3 ]', control)
+        fixture = (REPO_ROOT / "scripts/ci/fixtures/trivy-negative.Dockerfile").read_text(
+            encoding="utf-8"
+        )
+        self.assertRegex(fixture, r"FROM ubuntu:18\.04@sha256:[0-9a-f]{64}")
+        self.assertIn("USER 65534:65534", fixture)
+        tier = json.loads((REPO_ROOT / ".github/ci-tier.json").read_text(encoding="utf-8"))
+        self.assertIn(".trivyignore.yaml", tier["full_paths"])
+
+    def test_trivy_control_executes_the_findings_and_error_statuses(self) -> None:
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("bash unavailable; Linux CI executes the workflow control")
+        workflow = (REPO_ROOT / ".github/workflows/docker-image.yml").read_text(encoding="utf-8")
+        step = workflow.split("- name: Prove trivy rejects the planted image", 1)[1].split(
+            "- name: Trivy image scan", 1
+        )[0]
+        body = "\n".join(line[10:] for line in step.split("run: |\n", 1)[1].splitlines())
+        findings_status = 3
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "control.sh"
+            for status in (0, 1, findings_status):
+                with self.subTest(scanner_status=status):
+                    script.write_text(f"trivy() {{ return {status}; }}\n{body}\n", encoding="utf-8")
+                    result = run_command(
+                        [bash, str(script)],
+                        allowed_executables=(bash,),
+                        capture_output=True,
+                        text=True,
+                        timeout_seconds=10,
+                    )
+                    self.assertEqual(result.returncode == 0, status == findings_status)
 
     def test_concurrency_is_scoped_by_event_and_ref(self) -> None:
         workflow = SECURITY_WORKFLOW.read_text(encoding="utf-8")

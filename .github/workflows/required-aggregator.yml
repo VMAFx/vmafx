@@ -118,6 +118,7 @@ jobs:
               'Scorecard PR Gate',
               'Scorecard Master Gate',
               'Python Lint',
+              'Python Dependency Audit',
               // ADR-1238: scanner failures must not hide the Go test suite.
               'go vet + go test',
               'Semgrep',
