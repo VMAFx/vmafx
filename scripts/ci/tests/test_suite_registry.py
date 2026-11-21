@@ -181,7 +181,7 @@ class SuiteRegistryTests(unittest.TestCase):
 
     def test_non_object_suite_is_a_usage_error(self) -> None:
         data = manifest()
-        data["suites"] = [None]  # type: ignore[assignment]
+        data["suites"] = [None]
         self.build(PASSING_FILES, data)
         result = self.registry("check")
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
