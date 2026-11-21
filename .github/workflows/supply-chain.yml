@@ -584,7 +584,7 @@ jobs:
       # bundle (single .bundle file containing signature + certificate
       # + Rekor entry) instead of the legacy split .sig/.pem pair.
       # Verify later with: cosign verify-blob --bundle <f>.bundle <f>
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532  # v4.1.3
         with: { cosign-release: "v3.1.4" }
       - name: Sign every artifact (keyless OIDC)
         run: |
@@ -795,7 +795,7 @@ jobs:
         if: ${{ env.GITEA_ACTIONS == 'true' }}
         uses: actions/download-artifact@a9bc5e6ef2cb54c177f32aa5726adaa15e7e2d59  # v3.1.0
         with: { name: mcp-dist, path: mcp-dist/ }
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532  # v4.1.3
         with: { cosign-release: "v3.1.4" }
       - name: Sign every artifact (keyless OIDC)
         run: |
@@ -930,9 +930,9 @@ jobs:
           ref: ${{ needs.validate-release.outputs.tag }}
           persist-credentials: false
       - name: Set up the pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca  # stable
         with:
-          toolchain: 1.99.1
+          toolchain: 1.100.0
       - name: Install libclang for packaged-header verification
         timeout-minutes: 5
         run: |
@@ -964,9 +964,9 @@ jobs:
           ref: ${{ needs.validate-release.outputs.tag }}
           persist-credentials: false
       - name: Set up the pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca  # stable
         with:
-          toolchain: 1.99.1
+          toolchain: 1.100.0
       - name: Check immutable crate versions
         id: crates-state
         timeout-minutes: 3
@@ -1329,7 +1329,7 @@ jobs:
               exit 1
             }
           done
-      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
+      - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3.0.4
         with:
           tag_name: ${{ needs.validate-release.outputs.tag }}
           overwrite_files: true
