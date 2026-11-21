@@ -355,7 +355,7 @@ jobs:
           $version = $line.Matches[0].Groups[1].Value
           $src = Join-Path $env:RUNNER_TEMP 'level-zero-src'
           $prefix = Join-Path $env:RUNNER_TEMP 'level-zero-prefix'
-          git clone -q --depth=1 --branch "v$version" https://github.com/oneapi-src/level-zero $src
+          python scripts/ci/git_clone_retry.py -q --depth=1 --branch "v$version" https://github.com/oneapi-src/level-zero $src
           if ($LASTEXITCODE -ne 0) { throw "cannot fetch level-zero v$version" }
           cmake -S $src -B "$src\build" "-DCMAKE_INSTALL_PREFIX=$prefix" -DCMAKE_BUILD_TYPE=Release -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
           if ($LASTEXITCODE -ne 0) { throw 'cmake configure failed' }

@@ -407,7 +407,7 @@ jobs:
           sudo -E apt-get -yq install "${ONEAPI_APT_PACKAGE}" cmake
           # ADR-1231 (design notes)
           set -a; . ./build-config.env; set +a
-          git clone --depth=1 --branch "v${LEVEL_ZERO_VERSION}" \
+          python3 scripts/ci/git_clone_retry.py --depth=1 --branch "v${LEVEL_ZERO_VERSION}" \
             https://github.com/oneapi-src/level-zero.git /tmp/level-zero
           cmake -S /tmp/level-zero -B /tmp/level-zero/build -DCMAKE_INSTALL_PREFIX=/usr \
             -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
@@ -1005,7 +1005,8 @@ jobs:
           REM build-config.env, so LEVEL_ZERO_VERSION is mirrored here by hand
           REM and checked against the config by
           REM scripts/ci/check-base-image-single-source.sh (ADR-1231).
-          git clone --depth=1 --branch v1.34.0 https://github.com/oneapi-src/level-zero level-zero-src
+          python scripts/ci/git_clone_retry.py --depth=1 --branch v1.34.0 https://github.com/oneapi-src/level-zero level-zero-src
+          if errorlevel 1 exit /b 1
           cmake -S level-zero-src -B level-zero-src\build -DCMAKE_INSTALL_PREFIX=%CD%\level-zero-prefix -DCMAKE_BUILD_TYPE=Release -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
           cmake --build level-zero-src\build --config Release --target install
           echo INCLUDE=%CD%\level-zero-prefix\include;%INCLUDE%>>%GITHUB_ENV%

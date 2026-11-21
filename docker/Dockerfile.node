@@ -213,6 +213,7 @@ FROM ${RELEASE_BUILDER_BASE} AS ffmpeg-deps-base
 ARG DEBIAN_FRONTEND=noninteractive
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY --chmod=0755 scripts/ci/git_clone_retry.py /usr/local/bin/git_clone_retry.py
 
 # hadolint ignore=DL3008
 RUN apt-get --error-on=any -o Acquire::Retries=3 update \
@@ -258,7 +259,7 @@ RUN ldconfig
 # Ubuntu's libsvtav1-dev omits SvtAv1Enc.pc. Build from source so
 # FFmpeg's --enable-libsvtav1 configure probe resolves correctly.
 ARG SVTAV1_VERSION=4.2.0
-RUN git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
+RUN python3 /usr/local/bin/git_clone_retry.py --depth=1 --branch "v${SVTAV1_VERSION}" \
         https://gitlab.com/AOMediaCodec/SVT-AV1.git /tmp/SVT-AV1 \
     && cmake -S /tmp/SVT-AV1 -B /tmp/SVT-AV1/build \
         -DCMAKE_BUILD_TYPE=Release \
