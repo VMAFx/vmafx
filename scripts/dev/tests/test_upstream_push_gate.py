@@ -4,11 +4,14 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
 import io
 import json
 import os
 import shutil
 import sys
+from collections.abc import Callable
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
@@ -31,6 +34,7 @@ SELF_IDS = ("C08", "C11", "C12", "C13", "C15", "C16")
 SUBJECT = "libvmaf/adm: fix lowres buffer size"
 BODY = "Exercise the low resolution buffer with a release build input."
 RANGE_LIMIT = 3
+MAX_COLUMNS = 100
 MIN_HITS = 2
 
 
@@ -484,3 +488,162 @@ class PushGateTest(SweepFixtureCase):
         pushes = [call.args[1] for call in commands.call_args_list if call.args[1][0] == "push"]
         self.assertEqual(len(pushes), 1)
         self.assertEqual(pushes[0][-1], f"{head}:refs/heads/topic")
+
+    def test_empty_commit_range_fails_closed(self) -> None:
+        with self.assertRaisesRegex(ValueError, "empty"):
+            gate.read_commits(self.repo, self.base, self.base, gate.load_attribution())
+        rc, output = self.run_gate("--base", "HEAD", "--head", "HEAD")
+        self.assertEqual(rc, 2, output)
+        self.assertIn("empty", output)
+
+    def test_merge_commit_in_range_is_refused(self) -> None:
+        head = git_run(self.repo, "rev-parse", "HEAD")
+        tree = git_run(self.repo, "rev-parse", "HEAD^{tree}")
+        side = git_run(
+            self.repo,
+            "commit-tree",
+            "-S",
+            tree,
+            "-p",
+            self.base,
+            "-m",
+            "libvmaf: side commit",
+            "-m",
+            BODY,
+        )
+        merge = git_run(
+            self.repo,
+            "commit-tree",
+            "-S",
+            tree,
+            "-p",
+            head,
+            "-p",
+            side,
+            "-m",
+            SUBJECT,
+            "-m",
+            BODY,
+        )
+        rc, output = self.run_gate("--head", merge)
+        self.assertEqual(rc, 2, output)
+        self.assertIn(merge, output)
+
+    def test_catalog_rejects_duplicate_and_unknown_keys_and_bad_questions(self) -> None:
+        raw = gate.CLASS_FILE.read_text(encoding="utf-8")
+        base_data = json.loads(raw)
+        catalog = self.root / "classes.json"
+        duplicate_raw = raw.replace('"schema": 1,', '"schema": 1,\n  "schema": 1,', 1)
+        catalog.write_text(duplicate_raw, encoding="utf-8")
+        with (
+            patch.object(gate, "CLASS_FILE", catalog),
+            self.assertRaisesRegex(ValueError, "duplicate JSON key"),
+        ):
+            gate.load_classes()
+
+        bad_cases: list[dict[str, object]] = [
+            {**base_data, "extra": True},
+            {
+                **base_data,
+                "classes": [
+                    {**row, "extra": "x"} if i == 0 else row
+                    for i, row in enumerate(base_data["classes"])
+                ],
+            },
+            {
+                **base_data,
+                "classes": [
+                    {**row, "question": "Why?"} if row["id"] == "C03" else row
+                    for row in base_data["classes"]
+                ],
+            },
+            {
+                **base_data,
+                "classes": [
+                    {k: v for k, v in row.items() if k != "question"} if row["id"] == "C08" else row
+                    for row in base_data["classes"]
+                ],
+            },
+        ]
+        for case in bad_cases:
+            catalog.write_text(json.dumps(case), encoding="utf-8")
+            with patch.object(gate, "CLASS_FILE", catalog), self.assertRaises(ValueError):
+                gate.load_classes()
+        self.assertLessEqual(_mccabe_complexity(gate.load_classes), 10)
+
+    def test_gate_source_lines_within_column_limit(self) -> None:
+        lines = Path(gate.__file__).read_text(encoding="utf-8").splitlines()
+        over = [lineno for lineno, line in enumerate(lines, 1) if len(line) > MAX_COLUMNS]
+        self.assertEqual(over, [])
+
+    def test_catalog_object_key_count_is_bounded(self) -> None:
+        at_limit = [(f"k{index}", index) for index in range(gate.MAX_LINES)]
+        self.assertEqual(len(gate._unique_json_object(at_limit)), gate.MAX_LINES)
+        over_limit = [*at_limit, ("extra", 0)]
+        with self.assertRaisesRegex(ValueError, "more than"):
+            gate._unique_json_object(over_limit)
+
+    def test_c05_added_plus_plus_line_is_not_treated_as_header(self) -> None:
+        self.write("libvmaf/test/test_x.c", "++ benign line\n++ See VMAFx/vmafx\n")
+        self.amend()
+        output = self.assert_failure("C05")
+        self.assertIn("libvmaf/test/test_x.c:2", output)
+
+    def test_usage_error_from_parse_commits_is_caught_in_gate_and_sweep(self) -> None:
+        head = git_run(self.repo, "rev-parse", "HEAD")
+        real_git = gate.git_cmd
+
+        def corrupt_log(
+            cwd: Path, args: list[str], *, timeout: float = 120.0
+        ) -> tuple[int, str, str]:
+            if args[:2] == ["log", "-z"]:
+                return 0, "unterminated-log-record", ""
+            return real_git(cwd, args, timeout=timeout)
+
+        with patch.object(gate, "git_cmd", side_effect=corrupt_log):
+            rc, output = self.run_gate()
+            self.assertEqual(rc, 2, output)
+            self.assertIn("unparseable NUL-terminated git log record", output)
+            ok, detail = sweep.push_branch(self.repo, "topic", self.base, head, base_sha=self.base)
+            self.assertFalse(ok)
+            self.assertEqual(detail, "push refused: upstream gate could not run (UsageError)")
+
+        usage_err = gate.load_attribution().UsageError
+
+        def fail_with_usage(_ctx: gate.Context) -> gate.Verdict:
+            raise usage_err("simulated usage failure")
+
+        with patch.dict(gate.CHECKS, {"C03": ("mechanical", fail_with_usage)}):
+            rc, output = self.run_gate()
+        self.assertEqual(rc, 1, output)
+        self.assertIn(
+            "FAIL C03 patch_split_or_shape: check could not complete (UsageError)", output
+        )
+
+    def test_check_commit_authors_complexity_and_behavior(self) -> None:
+        self.assertLessEqual(_mccabe_complexity(sweep.check_commit_authors), 10)
+        head = git_run(self.repo, "rev-parse", "HEAD")
+        ok, detail = sweep.check_commit_authors(self.repo, self.base, head)
+        self.assertTrue(ok, detail)
+        with patch.object(sweep, "operator_emails", return_value={"other@example.org"}):
+            ok, detail = sweep.check_commit_authors(self.repo, self.base, head)
+            self.assertFalse(ok)
+            self.assertIn("foreign commit identity", detail)
+            ok, detail = sweep.check_commit_authors(
+                self.repo, self.base, head, allow_foreign_authors=True
+            )
+            self.assertTrue(ok, detail)
+
+
+def _mccabe_complexity(func: Callable[..., object]) -> int:
+    tree = ast.parse(inspect.getsource(func))
+    score = 1
+    for node in ast.walk(tree):
+        if isinstance(
+            node,
+            (ast.If, ast.For, ast.AsyncFor, ast.While, ast.IfExp, ast.ExceptHandler),
+        ):
+            score += 1
+        elif isinstance(node, ast.BoolOp):
+            score += len(node.values) - 1
+    return score

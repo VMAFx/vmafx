@@ -60,7 +60,11 @@ class SelfReviewSweepTest(SweepFixtureCase):
         head = self._multicommit_head()
         review = self.root / "review.txt"
         review.write_text(
-            "C07: yes: split keeps changes independently reviewable\n", encoding="utf-8"
+            "".join(
+                f"{cid}: yes: reviewed evidence recorded for sweep push\n"
+                for cid in ("C07", "C08", "C11", "C12", "C13", "C15", "C16")
+            ),
+            encoding="utf-8",
         )
         parser = sweep_mod.build_parser()
         common = [
@@ -102,6 +106,23 @@ class SelfReviewSweepTest(SweepFixtureCase):
             ]
             self.assertEqual(accepted.status, "OK")
             self.assertTrue(any(call.args[1][0] == "push" for call in git_mock.call_args_list))
+
+    def test_self_review_file_runs_self_review_classes_on_push(self) -> None:
+        head = self._multicommit_head()
+        incomplete = self.root / "incomplete-review.txt"
+        incomplete.write_text(
+            "C07: yes: split keeps changes independently reviewable\n", encoding="utf-8"
+        )
+        ok, detail = sweep_mod.push_branch(
+            self.repo,
+            "fix/pr-1",
+            self.pr_old_sha,
+            head,
+            base_sha=self.upstream_master_sha,
+            self_review=incomplete,
+        )
+        self.assertFalse(ok)
+        self.assertIn("FAIL C08 ", detail)
 
     def test_missing_review_fails_before_pr_work(self) -> None:
         missing = self.root / "missing-review.txt"

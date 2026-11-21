@@ -72,6 +72,7 @@ class CommitInfo(Protocol):
 
 class Attribution(Protocol):
     LOG_FORMAT: str
+    UsageError: type[Exception]
 
     def parse_commits(self, out: str) -> list[CommitInfo]: ...
     def commit_attribution_reason(self, commit: CommitInfo) -> str | None: ...
@@ -135,8 +136,17 @@ def read_text(path: Path) -> str:
     return text
 
 
+ROOT_KEYS = frozenset({"schema", "upstream", "classes"})
+CLASS_TEXT_KEYS = ("id", "slug", "mode", "check")
+CLASS_ALLOWED_KEYS = frozenset({*CLASS_TEXT_KEYS, "hits", "question"})
+CLASS_MODES = frozenset({"mechanical", "self-review", "online", "non-actionable"})
+
+
 def load_attribution() -> Attribution:
     name = "_upstream_gate_attribution"
+    existing = sys.modules.get(name)
+    if existing is not None:
+        return cast(Attribution, existing)
     path = Path(__file__).resolve().parents[1] / "ci" / "check-dco.py"
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
@@ -147,41 +157,69 @@ def load_attribution() -> Attribution:
     return cast(Attribution, module)
 
 
+UsageError = load_attribution().UsageError
+
+
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    if len(pairs) > MAX_LINES:
+        raise ValueError(f"JSON object has more than {MAX_LINES} keys")
+    obj: dict[str, object] = {}
+    for key, value in pairs[:MAX_LINES]:
+        if key in obj:
+            raise ValueError(f"duplicate JSON key: {key}")
+        obj[key] = value
+    return obj
+
+
+def _has_required_strings(row: dict[str, object]) -> bool:
+    return all(isinstance(row.get(key), str) and str(row[key]).strip() for key in CLASS_TEXT_KEYS)
+
+
+def _validate_class_mode(cid: str, mode: str, row: dict[str, object]) -> None:
+    if mode not in CLASS_MODES:
+        raise ValueError(f"{cid}: invalid mode")
+    if mode == "self-review":
+        question = row.get("question")
+        if not isinstance(question, str) or not question.strip():
+            raise ValueError(f"{cid}: missing self-review question")
+    elif "question" in row:
+        raise ValueError(f"{cid}: question not allowed for {mode} class")
+    if cid in CHECKS:
+        if CHECKS[cid][0] != mode:
+            raise ValueError(f"{cid}: implementation mode mismatch")
+    elif mode in {"mechanical", "self-review"}:
+        raise ValueError(f"{cid}: no implementation")
+
+
+def _parse_class_row(row: object, seen: set[str]) -> ReviewClass:
+    if not isinstance(row, dict) or not set(row).issubset(CLASS_ALLOWED_KEYS):
+        raise ValueError("invalid class entry")
+    if not _has_required_strings(row):
+        raise ValueError("invalid class entry")
+    cid, mode = str(row["id"]), str(row["mode"])
+    if cid in seen or not re.fullmatch(r"C[0-9]{2}", cid):
+        raise ValueError(f"duplicate or invalid class id: {cid}")
+    seen.add(cid)
+    hits = row.get("hits")
+    if isinstance(hits, bool) or not isinstance(hits, int) or hits < 0:
+        raise ValueError(f"{cid}: invalid hit count")
+    _validate_class_mode(cid, mode, row)
+    return ReviewClass(cid, str(row["slug"]), mode)
+
+
 def load_classes() -> list[ReviewClass]:
-    data = json.loads(read_text(CLASS_FILE))
+    data = json.loads(read_text(CLASS_FILE), object_pairs_hook=_unique_json_object)
     if (
         not isinstance(data, dict)
-        or data.get("schema") != 1
-        or data.get("upstream") != "Netflix/vmaf"
+        or set(data) != ROOT_KEYS
+        or (data.get("schema"), data.get("upstream")) != (1, "Netflix/vmaf")
     ):
         raise ValueError("invalid upstream review class schema")
     rows = data.get("classes")
     if not isinstance(rows, list) or len(rows) > MAX_CLASSES:
         raise ValueError("invalid or oversized class list")
-    classes: list[ReviewClass] = []
     seen: set[str] = set()
-    for row in rows[:MAX_CLASSES]:
-        if not isinstance(row, dict) or not all(
-            isinstance(row.get(key), str) and row[key].strip()
-            for key in ("id", "slug", "mode", "check")
-        ):
-            raise ValueError("invalid class entry")
-        cid, mode = row["id"], row["mode"]
-        if cid in seen or not re.fullmatch(r"C[0-9]{2}", cid):
-            raise ValueError(f"duplicate or invalid class id: {cid}")
-        seen.add(cid)
-        hits = row.get("hits")
-        if isinstance(hits, bool) or not isinstance(hits, int) or hits < 0:
-            raise ValueError(f"{cid}: invalid hit count")
-        if mode not in {"mechanical", "self-review", "online", "non-actionable"}:
-            raise ValueError(f"{cid}: invalid mode")
-        if mode == "self-review" and not isinstance(row.get("question"), str):
-            raise ValueError(f"{cid}: missing self-review question")
-        if mode in {"mechanical", "self-review"} and cid not in CHECKS:
-            raise ValueError(f"{cid}: no implementation")
-        if cid in CHECKS and mode != CHECKS[cid][0]:
-            raise ValueError(f"{cid}: implementation mode mismatch")
-        classes.append(ReviewClass(cid, row["slug"], mode))
+    classes = [_parse_class_row(row, seen) for row in rows[:MAX_CLASSES]]
     missing = CHECKS.keys() - seen
     if missing:
         raise ValueError(f"implemented classes missing: {', '.join(sorted(missing))}")
@@ -213,13 +251,18 @@ def read_answers(path: Path | None) -> dict[str, str]:
 
 def read_commits(repo: Path, base: str, head: str, attribution: Attribution) -> list[CommitInfo]:
     rc, out, _err = git_cmd(
-        repo, ["rev-list", f"--max-count={MAX_PR_COMMITS + 1}", f"{base}..{head}"]
+        repo, ["rev-list", "--parents", f"--max-count={MAX_PR_COMMITS + 1}", f"{base}..{head}"]
     )
-    shas = bounded_lines(out, "commit list")
-    if rc != 0 or len(shas) > MAX_PR_COMMITS:
+    rows = [row for row in bounded_lines(out, "commit list") if row.strip()]
+    if rc != 0 or len(rows) > MAX_PR_COMMITS:
         raise ValueError(f"cannot read range within {MAX_PR_COMMITS} commits")
+    if not rows:
+        raise ValueError(f"empty commit range: {base}..{head}")
     commits: list[CommitInfo] = []
-    for sha in shas[:MAX_PR_COMMITS]:
+    for row in rows[:MAX_PR_COMMITS]:
+        sha, *parents = row.split()
+        if len(parents) > 1:
+            raise ValueError(f"merge commit in range: {sha}")
         rc, out, _err = git_cmd(
             repo, ["log", "-z", "-1", f"--format={attribution.LOG_FORMAT}", sha]
         )
@@ -359,16 +402,27 @@ def line_leak(ctx: Context, lines: list[str], source: str, *, attribution: bool)
     return None
 
 
+def _hunk_start_line(header: str) -> int:
+    match = re.search(r"\+(\d+)", header)
+    return int(match[1]) if match else 0
+
+
+def _added_line_leaks(ctx: Context, text: str, path: str) -> bool:
+    return fork_reference(text) or bool(ctx.attribution.line_attribution_reason(text, path))
+
+
 def diff_leak(ctx: Context) -> Verdict | None:
-    path, lineno = "diff", 0
+    path, lineno, in_header = "diff", 0, False
     for line in ctx.diff[:MAX_LINES]:
-        if line.startswith("+++ "):
-            path = line[4:].removeprefix("b/")
+        if line.startswith("diff --git "):
+            in_header = True
         elif line.startswith("@@ "):
-            match = re.search(r"\+(\d+)", line)
-            lineno = int(match[1]) if match else 0
+            in_header, lineno = False, _hunk_start_line(line)
+        elif in_header:
+            if line.startswith("+++ "):
+                path = line[4:].removeprefix("b/")
         elif line.startswith("+"):
-            if fork_reference(line[1:]) or ctx.attribution.line_attribution_reason(line[1:], path):
+            if _added_line_leaks(ctx, line[1:], path):
                 return Verdict("FAIL", f"{path}:{lineno}: forbidden attribution or fork reference")
             lineno += 1
         elif line.startswith(" "):
@@ -478,7 +532,8 @@ def check_review(ctx: Context, cid: str) -> Verdict:
     if len(answer) < MIN_ANSWER_LENGTH:
         return Verdict(
             "FAIL",
-            f"self-review {cid} requires at least {MIN_ANSWER_LENGTH} characters of answer and evidence",
+            f"self-review {cid} requires at least {MIN_ANSWER_LENGTH} "
+            "characters of answer and evidence",
         )
     kernel = any(
         path.startswith(KERNEL_PATHS)
@@ -536,7 +591,7 @@ def run_gate(
         if entry.id in CHECKS:
             try:
                 verdict = CHECKS[entry.id][1](ctx)
-            except (OSError, ValueError, RuntimeError) as exc:
+            except (OSError, ValueError, RuntimeError, UsageError) as exc:
                 verdict = Verdict("FAIL", f"check could not complete ({type(exc).__name__})")
         else:
             reason = (
@@ -571,7 +626,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             self_review=args.self_review,
             mechanical_only=args.mechanical_only,
         )
-    except (OSError, ValueError, RuntimeError, CommandOutputLimitExceeded) as exc:
+    except (OSError, ValueError, RuntimeError, CommandOutputLimitExceeded, UsageError) as exc:
         print(f"upstream-push-gate: error: {exc}", file=sys.stderr)
         return 2
     for result in results[:MAX_CLASSES]:

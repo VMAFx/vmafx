@@ -527,6 +527,15 @@ def operator_emails(repo: Path) -> set[str]:
     return emails
 
 
+def _first_foreign_email(lines: Sequence[str], allowed: set[str]) -> str | None:
+    for line in lines[:MAX_PR_COMMITS]:
+        for email in line.split("\x00")[:2]:
+            normalized = email.strip().lower()
+            if normalized and normalized not in allowed:
+                return email.strip()
+    return None
+
+
 def check_commit_authors(
     repo: Path, base_sha: str, old_sha: str, *, allow_foreign_authors: bool = False
 ) -> tuple[bool, str]:
@@ -541,11 +550,9 @@ def check_commit_authors(
         return False, f"range has more than {MAX_PR_COMMITS} commits; refusing"
     if allow_foreign_authors:
         return True, ""
-    for line in lines[:MAX_PR_COMMITS]:
-        for email in line.split("\x00")[:2]:
-            normalized = email.strip().lower()
-            if normalized and normalized not in allowed:
-                return False, f"foreign commit identity '{email.strip()}' not in operator emails"
+    foreign = _first_foreign_email(lines, allowed)
+    if foreign is not None:
+        return False, f"foreign commit identity '{foreign}' not in operator emails"
     return True, ""
 
 
@@ -754,18 +761,20 @@ def push_branch(
     # Import lazily: the gate shares this module's bounded Git and signature helpers.
     from scripts.dev.upstream_push_gate import (  # noqa: PLC0415 - gate imports sweep helpers
         MAX_CLASSES,
+        UsageError,
         run_gate,
     )
 
+    mechanical_only = "rebase-only push" if self_review is None else None
     try:
         results = run_gate(
             wt,
             base=base_sha,
             head=new_sha,
             self_review=self_review,
-            mechanical_only="rebase-only push",
+            mechanical_only=mechanical_only,
         )
-    except (OSError, ValueError, RuntimeError) as exc:
+    except (OSError, ValueError, RuntimeError, UsageError) as exc:
         return False, f"push refused: upstream gate could not run ({type(exc).__name__})"
     for result in results[:MAX_CLASSES]:
         print(result.line(), file=sys.stderr)

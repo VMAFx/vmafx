@@ -221,13 +221,15 @@ A source change under `libvmaf/src/`, `libvmaf/tools/`, or `python/vmaf/` withou
 
 ### Sweep integration and limits
 
-`push_branch` calls the same gate directly on the resolved `base_sha..new_sha` immediately before pushing. A FAIL produces a REFUSED row whose detail is the first FAIL line, and no push runs. The gate verifies the proposed head even if a build moved symbolic HEAD.
+`push_branch` calls the same gate directly on the resolved `base_sha..new_sha` immediately before pushing. A FAIL produces a REFUSED row whose detail is the first FAIL line, and no push runs. The gate verifies the proposed head even if a build moved symbolic HEAD. An empty `base..head` range or a range containing a merge commit is refused as an error before checks run.
 
-The sweep supplies `--mechanical-only "rebase-only push"`, which skips the six self-review classes and prints that reason. A person can use this mode for a pure rebase after reviewing the existing patch. It does not waive C04, C07, signatures, message shape, or any other mechanical check.
+When `--self-review` is omitted, the sweep supplies `--mechanical-only "rebase-only push"`, which skips the six self-review classes and prints that reason. A person can use this mode for a pure rebase after reviewing the existing patch. It does not waive C04, C07, signatures, message shape, or any other mechanical check.
 
-For those cases, pass `--self-review /path/to/self-review.txt` to the sweep.
-Use the same UTF-8 `Cxx: <answer>` lines described above, including the C04
-or C07 reason as applicable. The file must be readable before the sweep starts.
+When `--self-review /path/to/self-review.txt` is passed to the sweep,
+`--mechanical-only` is omitted so all six self-review classes run alongside the
+mechanical checks. Use the same UTF-8 `Cxx: <answer>` lines described above,
+including the C04 or C07 reason as applicable. The file must be readable before
+the sweep starts.
 
 Commit subjects use `<subsystem>: <summary>` and at most 72 characters; conventional-commit prefixes are refused. A blank second line and a non-empty body are required. Body lines wrap at 72 columns, except bare URLs, four-space/tab-indented lines, and trailers in the final paragraph. Attribution checks share the DCO checker's attribution functions without requiring DCO sign-off. Leak diagnostics name a commit or file and line number without echoing the offending line.
 

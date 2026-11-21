@@ -19,10 +19,11 @@ The first round checks local refs only. C01 (exact-head CI) and C10 (overlapping
 
 Reuse the sweep's allow-listed, timed Git runner and signature counter. Extend the counter with an optional head argument so verification covers the immutable commit being pushed even when symbolic HEAD changes during a build. Reuse only the attribution functions from `scripts/ci/check-dco.py`, loaded with `importlib.util.spec_from_file_location`; do not invoke its sign-off policy.
 
-The sweep calls the gate directly before pushing `base_sha..new_sha`, with `--mechanical-only "rebase-only push"`. Any FAIL refuses the push and supplies its first failing result as the row detail. A person publishing a substantive change supplies the full self-review file. Rebase mode still enforces C04 and C07; a test omission or multi-commit branch therefore needs manual review before publication.
+The sweep calls the gate directly before pushing `base_sha..new_sha`, passing `--mechanical-only "rebase-only push"` only when `--self-review` is omitted. Any FAIL refuses the push and supplies its first failing result as the row detail. A person publishing a substantive change supplies the full self-review file. Rebase mode still enforces C04 and C07; a test omission or multi-commit branch therefore needs manual review before publication.
 
-Pass `--self-review <file>` to the sweep to supply that review. The UTF-8 file
-uses `Cxx: <answer>` lines, including a C04 or C07 reason where applicable.
+Pass `--self-review <file>` to the sweep to run the self-review classes as well
+as the mechanical checks. The UTF-8 file uses `Cxx: <answer>` lines, including
+a C04 or C07 reason where applicable.
 
 ## Alternatives considered
 
@@ -38,7 +39,7 @@ uses `Cxx: <answer>` lines, including a C04 or C07 reason where applicable.
 - Upstream-shaped signed patches with tests and review evidence can be checked before publication using the same implementation as the sweep.
 - Local upstream refs must be current: a clean local merge does not demonstrate fresh remote CI or absence of overlapping contributions.
 - Self-review validates evidence presence and applicability, rather than proving the measurements or review conclusions.
-- Missing inputs, failed Git operations, and oversized inputs refuse verification. Explicit skips always state their reason.
+- Empty `base..head` ranges, merge commits in the range, missing inputs, failed Git operations, and oversized inputs refuse verification. Explicit skips always state their reason.
 - The pre-commit contract and affected-suite discovery select the new regressions; fixtures use disposable signed repositories and no remote service.
 
 ## References
