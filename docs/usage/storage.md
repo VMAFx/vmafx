@@ -169,7 +169,7 @@ later, Docker Desktop 4.19 or later, Podman or containerd 1.5 or later ([what ca
 them](docker.md#what-can-pull-the-images)).
 
 ```bash
-docker run --rm --entrypoint /usr/local/bin/rclone ghcr.io/vmafx/vmafx-node:<tag> version
+docker run --rm --entrypoint /usr/local/bin/rclone ghcr.io/vidiko/vmafx-node:<tag> version
 ```
 
 ### Authentication errors

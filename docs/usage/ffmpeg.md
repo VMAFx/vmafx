@@ -531,7 +531,7 @@ it.
 
 The loopback decoder of FFmpeg 7.0 and later (`-dec`) feeds an encoder's output
 back into a filter graph, so one command can encode, decode and score
-([#2138](https://github.com/VMAFx/vmafx/issues/2138)). With NVIDIA hardware:
+([#2138](https://github.com/vidiko/vmafx/issues/2138)). With NVIDIA hardware:
 
 ```bash
 ffmpeg -init_hw_device cuda=cu:0 -filter_hw_device cu \
@@ -925,7 +925,7 @@ All fork-added options and standalone backend filters have been retired in issue
     replacement: [Migrating from the libvmaf filters](#migrating-from-the-libvmaf-filters))
     copies only the first plane of each CUDA frame into libvmaf (features that read
     U and V see no chroma) and refuses 10-bit, 12-bit and 4:2:2 CUDA frames
-    ([issue 3274](https://github.com/VMAFx/vmafx/issues/3274)). The defect is in
+    ([issue 3274](https://github.com/vidiko/vmafx/issues/3274)). The defect is in
     FFmpeg `libavfilter/vf_libvmaf.c`, not in libvmaf.
 
     The VMAFx patch series carries the fix since

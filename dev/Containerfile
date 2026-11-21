@@ -132,7 +132,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 LABEL org.opencontainers.image.title="vmaf-dev-mcp-build-deps"
 LABEL org.opencontainers.image.description="Base build tools for VMAF fork dev-MCP container"
-LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.source="https://github.com/vidiko/vmafx"
 # No org.opencontainers.image.licenses here: this stage holds distribution
 # packages and SDK tools only, no VMAFx file. libvmaf-build, the published
 # target, states the licences of the VMAFx files it copies (ADR-1699).
@@ -150,7 +150,7 @@ RUN printf '%s\n' \
     'vmafx_dev_container=1' \
     'image_title=vmaf-dev-mcp' \
     'containerfile=dev/Containerfile' \
-    'source=https://github.com/VMAFx/vmafx' \
+    'source=https://github.com/vidiko/vmafx' \
     > /etc/vmafx-dev-container \
     && chmod 0644 /etc/vmafx-dev-container
 
@@ -313,7 +313,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 LABEL org.opencontainers.image.title="vmafx-release-build"
 LABEL org.opencontainers.image.description="manylinux glibc 2.28 compiler for the VMAFx native Linux bundles"
-LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.source="https://github.com/vidiko/vmafx"
 # No org.opencontainers.image.licenses: this stage holds build tools
 # packages only; the source it compiles is mounted at run time (ADR-1699).
 
@@ -324,7 +324,7 @@ RUN printf '%s\n' \
     'vmafx_dev_container=1' \
     'image_title=vmaf-dev-mcp' \
     'containerfile=dev/Containerfile' \
-    'source=https://github.com/VMAFx/vmafx' \
+    'source=https://github.com/vidiko/vmafx' \
     > /etc/vmafx-dev-container \
     && chmod 0644 /etc/vmafx-dev-container
 
@@ -1424,7 +1424,7 @@ ARG VMAFX_SOURCE_REF=unknown
 RUN printf '%s\n' \
     "source_rev=${VMAFX_SOURCE_REV}" \
     "source_ref=${VMAFX_SOURCE_REF}" \
-    'source_repo=https://github.com/VMAFx/vmafx' \
+    'source_repo=https://github.com/vidiko/vmafx' \
     > /etc/vmafx-dev-source \
     && chmod 0644 /etc/vmafx-dev-source
 # The Python harness must be importable, and the Netflix golden suite must

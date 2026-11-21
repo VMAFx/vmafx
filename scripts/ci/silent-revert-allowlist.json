@@ -340,7 +340,7 @@
       "adr": "ADR-3379",
       "kind": "reverse-hunk",
       "undoes": "bfa15add7e6490dcfab6c3e5613239949b8539c5",
-      "evidence": "^\\s*(?:\\[\\[exception\\]\\]|- rule: clang-tidy-coverage|path\\s*[=:]\\s*\"(?:gstreamer|ffmpeg-patches)/src/[A-Za-z0-9_.]+\\.c\"|expires\\s*[=:]\\s*\"?2026-11-01\"?|reason\\s*[=:]\\s*\"Category A \\(stated interval 14 days, from 2026-10-18;.*the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry\\.\")\\s*$",
+      "evidence": "^\\s*(?:\\[\\[exception\\]\\]|- rule: clang-tidy-coverage|path\\s*[=:]\\s*\"(?:gstreamer|ffmpeg-patches)/src/[A-Za-z0-9_.]+\\.c\"|expires\\s*[=:]\\s*\"?2026-11-01\"?|reason\\s*[=:]\\s*\"Category A \\(stated interval 14 days, from 2026-10-18;.*the gstreamer and ffmpeg-patches/src lane is vidiko/vmafx#2860, which removes this entry\\.\")\\s*$",
       "reason": "ADR-3379 (#2860) adds the `integrations` clang-tidy lane, which builds and measures the GStreamer plugin and the ffmpeg-patches/src sources; the Category A clang-tidy-coverage exceptions that bfa15add7 added for those files said in their own reason that #2860 removes them, and test_check_tidy_coverage.py now refuses an exception for a measured file.",
       "paths": [
         ".config/lint-exceptions.d/clang-tidy-coverage.toml",
@@ -351,7 +351,7 @@
       "adr": "ADR-3379",
       "kind": "reverse-hunk",
       "undoes": "37d9fec93058038101e43e334584659e427898f5",
-      "evidence": "^\\s*(?:\\[\\[exception\\]\\]|- rule: clang-tidy-coverage|path\\s*[=:]\\s*\"(?:gstreamer|ffmpeg-patches)/src/[A-Za-z0-9_.]+\\.c\"|expires\\s*[=:]\\s*\"?2026-11-01\"?|reason\\s*[=:]\\s*\"Category A \\(stated interval 14 days, from 2026-10-18;.*the gstreamer and ffmpeg-patches/src lane is VMAFx/vmafx#2860, which removes this entry\\.\")\\s*$",
+      "evidence": "^\\s*(?:\\[\\[exception\\]\\]|- rule: clang-tidy-coverage|path\\s*[=:]\\s*\"(?:gstreamer|ffmpeg-patches)/src/[A-Za-z0-9_.]+\\.c\"|expires\\s*[=:]\\s*\"?2026-11-01\"?|reason\\s*[=:]\\s*\"Category A \\(stated interval 14 days, from 2026-10-18;.*the gstreamer and ffmpeg-patches/src lane is vidiko/vmafx#2860, which removes this entry\\.\")\\s*$",
       "reason": "ADR-3379 (#2860) adds the `integrations` clang-tidy lane, which builds and measures the GStreamer plugin and the ffmpeg-patches/src sources; the Category A clang-tidy-coverage exceptions that 37d9fec93 added for those files said in their own reason that #2860 removes them, and test_check_tidy_coverage.py now refuses an exception for a measured file.",
       "paths": [
         ".config/lint-exceptions.d/clang-tidy-coverage.toml",

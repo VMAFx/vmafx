@@ -109,7 +109,7 @@ ADR-1539), fail closed.
    raw `grpc.listen` to `:50052`; operator explicitly selecting `:9090` via
    file or env remains intact.
 
-10. **go.mod golusoris pin** (`go.mod`, ADR-1119): `golusoris/golusoris` pinned
+10. **go.mod golusoris pin** (`go.mod`, ADR-1119): `plurano/golusoris` pinned
     at `v0.7.0` (module-wide). Do not change pin or edit
     `internal/app/bootstrap` from this package (both shared across all
     binaries).

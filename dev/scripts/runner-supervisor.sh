@@ -35,7 +35,7 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 COMPOSE_FILE="${REPO_ROOT}/dev/docker-compose.runner.yml"
 ARC_NODE_SCRIPT="${REPO_ROOT}/dev/scripts/arc-render-node.sh"
 
-REPO="${GITHUB_REPOSITORY:-VMAFx/vmafx}"
+REPO="${GITHUB_REPOSITORY:-vidiko/vmafx}"
 CONTAINER_NAME="${RUNNER_CONTAINER_NAME:-vmaf-sycl-arc-runner}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vmafx-runner"
 LOG_FILE="${RUNNER_SUPERVISOR_LOG:-${STATE_DIR}/supervisor.log}"

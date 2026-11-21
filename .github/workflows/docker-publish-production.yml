@@ -5,11 +5,11 @@
 #   - workflow_dispatch at an existing published tag for recovery
 #
 # Produces:
-#   ghcr.io/vmafx/vmafx:<tag>           (cpu, amd64+arm64)
-#   ghcr.io/vmafx/vmafx:latest          (same)
-#   ghcr.io/vmafx/vmafx:<tag>-cuda13    (amd64 only — CUDA not portable to arm64)
-#   ghcr.io/vmafx/vmafx:<tag>-rocm10     (amd64 only)
-#   ghcr.io/vmafx/vmafx:<tag>-oneapi2026 (amd64 only; also tagged <tag>-oneapi2025,
+#   ghcr.io/vidiko/vmafx:<tag>           (cpu, amd64+arm64)
+#   ghcr.io/vidiko/vmafx:latest          (same)
+#   ghcr.io/vidiko/vmafx:<tag>-cuda13    (amd64 only — CUDA not portable to arm64)
+#   ghcr.io/vidiko/vmafx:<tag>-rocm10     (amd64 only)
+#   ghcr.io/vidiko/vmafx:<tag>-oneapi2026 (amd64 only; also tagged <tag>-oneapi2025,
 #                                         the pre-2026 name kept by ADR-1368)
 #
 
@@ -46,7 +46,7 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: vmafx/vmafx
+  IMAGE_NAME: ${{ github.repository_owner }}/vmafx
   # Validation below proves this tag, GITHUB_REF, GITHUB_SHA, and the published
   # GitHub release all identify the same immutable source commit.
   PUBLISH_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
@@ -347,7 +347,7 @@ jobs:
         run: |
           cosign verify \
             --certificate-identity \
-              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@${GITHUB_REF}" \
+              "https://github.com/vidiko/vmafx/.github/workflows/docker-publish-production.yml@${GITHUB_REF}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-cpu.outputs.digest }}"
 
@@ -876,7 +876,7 @@ jobs:
             "${{ needs.build-oneapi2026.outputs.digest }}"; do
             cosign verify \
               --certificate-identity \
-                "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@${GITHUB_REF}" \
+                "https://github.com/vidiko/vmafx/.github/workflows/docker-publish-production.yml@${GITHUB_REF}" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
               "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${digest}"
           done
@@ -1093,7 +1093,7 @@ jobs:
         run: |
           cosign verify \
             --certificate-identity \
-              "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@${GITHUB_REF}" \
+              "https://github.com/vidiko/vmafx/.github/workflows/docker-publish-production.yml@${GITHUB_REF}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-server.outputs.digest }}"
 

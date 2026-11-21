@@ -43,8 +43,8 @@ Body ticking deliverable via `- [x]` must satisfy diff coverage:
 ## How to invoke
 
 ```bash
-gh pr view <num> --repo VMAFx/vmafx --json body -q .body \
-  | PR_BODY="$(gh pr view <num> --repo VMAFx/vmafx --json body -q .body)" \
+gh pr view <num> --repo vidiko/vmafx --json body -q .body \
+  | PR_BODY="$(gh pr view <num> --repo vidiko/vmafx --json body -q .body)" \
     bash scripts/ci/validate-pr-body.sh
 ```
 

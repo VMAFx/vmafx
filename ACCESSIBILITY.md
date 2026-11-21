@@ -35,7 +35,7 @@ This statement covers:
 - the tester kits (`tools/rc1-tester`), which write plain files.
 
 The project does not serve a web application. A planned report viewer
-([#2316](https://github.com/VMAFx/vmafx/issues/2316)) will need its own
+([#2316](https://github.com/vidiko/vmafx/issues/2316)) will need its own
 accessibility criteria before it ships. GitHub's own interface (issues,
 pull requests, Discussions) is not part of this project; report barriers in
 it to GitHub.
@@ -80,12 +80,12 @@ Verified by reading the sources, not by testing with assistive technology:
 
 Work on colour control in the command line, an automated check of the
 documentation site, and the dashboards is tracked in issues labelled
-[`accessibility`](https://github.com/VMAFx/vmafx/labels/accessibility).
+[`accessibility`](https://github.com/vidiko/vmafx/labels/accessibility).
 
 ## Report a barrier
 
 Open an
-[accessibility issue](https://github.com/VMAFx/vmafx/issues/new?template=accessibility.yml).
+[accessibility issue](https://github.com/vidiko/vmafx/issues/new?template=accessibility.yml).
 Please include:
 
 - the page, command or dashboard, and the project version;
@@ -94,7 +94,7 @@ Please include:
 - what you expected, what happened, and how much it blocks you.
 
 If you cannot use the form, ask in
-[Discussions](https://github.com/VMAFx/vmafx/discussions) and say that it is
+[Discussions](https://github.com/vidiko/vmafx/discussions) and say that it is
 an accessibility matter. Responses are best effort and carry no guaranteed
 time; see [What to expect](CONTRIBUTING.md#what-to-expect).
 

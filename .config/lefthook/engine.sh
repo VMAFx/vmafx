@@ -8,8 +8,8 @@
 # value of PRAETOR_REF declared in a workflow under .github/workflows ("PRAETOR_REF: <ref>" or
 # "PRAETOR_REF=<ref>"), a PRAETOR_COMMIT declaration holding exactly 40 lowercase hexadecimal
 # characters, or the uses ref of praetor-adopt / reusable workflows
-# ("uses: cordanaLLM/praetor/.github/actions/praetor-adopt@<ref>" or
-# "uses: cordanaLLM/praetor/.github/workflows/<workflow>@<ref>"), the same declaration a hosted
+# ("uses: tekmora/praetor/.github/actions/praetor-adopt@<ref>" or
+# "uses: tekmora/praetor/.github/workflows/<workflow>@<ref>"), the same declaration a hosted
 # Standards job installs the engine from with "go install <module>/cmd/standardsctl@${PRAETOR_REF}".
 # A PRAETOR_REF pin is a commit id of 7 to 40 hexadecimal digits or a release tag such as v1.2.3;
 # a branch name moves, so it is no pin. A non-pin uses ref such as @main is treated as unpinned

@@ -976,7 +976,7 @@ def notice_header(record: dict, args: argparse.Namespace) -> list[str]:
         f"Licences and notices of {record['title']} {args.tag}",
         "=" * 72,
         "",
-        f"VMAFx source of this artifact: https://github.com/VMAFx/vmafx/tree/{args.source_commit}",
+        f"VMAFx source of this artifact: https://github.com/vidiko/vmafx/tree/{args.source_commit}",
         "(EUPL-1.2 Article 5; the licence texts named below are in texts/ next to this file).",
         f"Corresponding source of the copyleft parts: {offer}",
         "Recorded by tools/rc1-tester/image/licensing.json (ADR-1503).",

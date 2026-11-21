@@ -14,7 +14,7 @@ evidence. ADR-1177 gave Arc parity a dedicated capability. ADR-1319 removes
 the obsolete duplicate, making this workflow the sole hardware
 `float_ssim`-parity owner.
 
-**State of the lane:** it is off until the repository variable `SYCL_ARC_RUNNER_ENABLED` is `true` (section 2). With the variable unset the check skips and no hardware evidence is produced; check `gh api repos/VMAFx/vmafx/actions/runners` before citing a master run as hardware parity evidence.
+**State of the lane:** it is off until the repository variable `SYCL_ARC_RUNNER_ENABLED` is `true` (section 2). With the variable unset the check skips and no hardware evidence is produced; check `gh api repos/vidiko/vmafx/actions/runners` before citing a master run as hardware parity evidence.
 
 ---
 
@@ -37,12 +37,12 @@ the container sees one.
 | Limits | 8 CPUs, 16 GB RAM | compose `deploy.resources.limits` |
 | Lifecycle | `--ephemeral`: register, wait, run exactly one job, unregister, exit | [`dev/scripts/runner-entrypoint.sh`](../../dev/scripts/runner-entrypoint.sh) |
 | seccomp | `seccomp=unconfined`, required by the Level-Zero NEO runtime on Linux ≥ 7.0 ([ADR-0541](../adr/0541-dev-container-sycl-hip-runtime-fix.md)) | compose `security_opt:` |
-| Scope | repository-level runner on `VMAFx/vmafx` (not an org runner group) | registration token endpoint |
+| Scope | repository-level runner on `vidiko/vmafx` (not an org runner group) | registration token endpoint |
 
 What runs on it: the `sycl-parity` job of
 [`.github/workflows/sycl-parity.yml`](../../.github/workflows/sycl-parity.yml)
 for pushes to `master`, `workflow_dispatch`, and non-draft pull requests
-whose head branch lives in `VMAFx/vmafx`.
+whose head branch lives in `vidiko/vmafx`.
 
 What never runs on it: fork pull requests (the workflow's `if:` requires
 `github.event.pull_request.head.repo.full_name == github.repository`), draft
@@ -94,9 +94,9 @@ repository variable `SYCL_ARC_RUNNER_ENABLED`:
 | `true`, probe token missing / 403 | `::error::`, exit 1 | skipped | **fails** (same path) |
 
 Offline is loud, never silently green. While the lane is enabled, the probe
-queries `GET /repos/VMAFx/vmafx/actions/runners` with the repository secret
+queries `GET /repos/vidiko/vmafx/actions/runners` with the repository secret
 `SYCL_RUNNER_PROBE_TOKEN` (a fine-grained personal access token restricted to
-`VMAFx/vmafx` with *Administration: Read-only*; it falls back to
+`vidiko/vmafx` with *Administration: Read-only*; it falls back to
 `github.token`, which fails with 403 — deliberately loud).
 
 ---
@@ -111,16 +111,16 @@ authenticated as a repository admin. Nothing here is run by CI.
 ```bash
 # Fork PRs: require approval for every outside collaborator before any
 # workflow runs (defence in depth; the SYCL jobs already exclude fork heads).
-gh api -X PUT repos/VMAFx/vmafx/actions/permissions/fork-pr-contributor-approval \
+gh api -X PUT repos/vidiko/vmafx/actions/permissions/fork-pr-contributor-approval \
   -f approval_policy=all_external_contributors
 
-# Probe token: fine-grained PAT, resource owner VMAFx, repository access
-# "Only select repositories" -> VMAFx/vmafx, permission Administration: Read-only.
+# Probe token: fine-grained PAT, resource owner vidiko, repository access
+# "Only select repositories" -> vidiko/vmafx, permission Administration: Read-only.
 # Note: during initial lane bootstrap, SYCL_RUNNER_PROBE_TOKEN was seeded with
 # the maintainer's personal `gh` OAuth token. It should be rotated to a dedicated
-# fine-grained PAT with Administration: Read-only scoped strictly to VMAFx/vmafx.
+# fine-grained PAT with Administration: Read-only scoped strictly to vidiko/vmafx.
 # Create it at https://github.com/settings/personal-access-tokens/new, then:
-gh secret set SYCL_RUNNER_PROBE_TOKEN -R VMAFx/vmafx   # paste the token
+gh secret set SYCL_RUNNER_PROBE_TOKEN -R vidiko/vmafx   # paste the token
 
 # Confirm no workflow targets the label via pull_request_target (must print nothing):
 git grep -l 'pull_request_target' -- .github/workflows | xargs -r grep -l 'sycl-arc'
@@ -130,7 +130,7 @@ Runner groups: registering with the repository token (Step 3) creates a
 repository-level runner, which lives outside org runner groups and cannot be
 shared with other repositories. If the runner is ever moved to the `VMAFx`
 org level, restrict its group first:
-`gh api -X PATCH orgs/VMAFx/actions/runner-groups/<id> -f visibility=selected`
+`gh api -X PATCH orgs/vidiko/actions/runner-groups/<id> -f visibility=selected`
 plus `selected_repository_ids`.
 
 ### Step 1 — build the image
@@ -221,11 +221,11 @@ dev/scripts/runner-supervisor.sh
 #### Token source & headless host configuration
 
 By default, `runner-supervisor.sh` uses `gh` on the host, running under the maintainer's
-authenticated CLI user to mint registration tokens (`gh api -X POST repos/VMAFx/vmafx/actions/runners/registration-token`).
+authenticated CLI user to mint registration tokens (`gh api -X POST repos/vidiko/vmafx/actions/runners/registration-token`).
 
 For an unattended or headless server where interactive `gh auth login` is unavailable,
 set up an environment file with a fine-grained PAT with *Administration: read-write* permissions
-scoped to `VMAFx/vmafx`:
+scoped to `vidiko/vmafx`:
 
 ```bash
 mkdir -p ~/.config/vmafx-runner
@@ -240,7 +240,7 @@ Then un-comment `EnvironmentFile=-%h/.config/vmafx-runner/env` in `~/.config/sys
 Once the runner is running and confirmed online, enable the lane variable in GitHub:
 
 ```bash
-gh variable set SYCL_ARC_RUNNER_ENABLED -b true -R VMAFx/vmafx   # enable the lane LAST
+gh variable set SYCL_ARC_RUNNER_ENABLED -b true -R vidiko/vmafx   # enable the lane LAST
 ```
 
 ### Step 4 — verify registration and post-job re-registration
@@ -248,7 +248,7 @@ gh variable set SYCL_ARC_RUNNER_ENABLED -b true -R VMAFx/vmafx   # enable the la
 Check that the runner is registered and online:
 
 ```bash
-gh api repos/VMAFx/vmafx/actions/runners --jq '.runners[] | {name,status,labels:[.labels[].name]}'
+gh api repos/vidiko/vmafx/actions/runners --jq '.runners[] | {name,status,labels:[.labels[].name]}'
 # -> {"name":"cachyos-arc-a380-ephemeral","status":"online","labels":["self-hosted","linux","x64","sycl-arc"]}
 
 docker ps --filter "name=vmaf-sycl-arc-runner"
@@ -278,7 +278,7 @@ does not contend for the Arc GPU or CPU resources:
 
 ```bash
 # 1. Disable the lane variable first so incoming PRs skip cleanly without failing the probe:
-gh variable set SYCL_ARC_RUNNER_ENABLED -b false -R VMAFx/vmafx
+gh variable set SYCL_ARC_RUNNER_ENABLED -b false -R vidiko/vmafx
 
 # 2. Touch the pause file (stops the supervisor from spawning any new containers):
 mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/vmafx-runner"
@@ -298,10 +298,10 @@ To resume runner service:
 rm -f "${XDG_STATE_HOME:-$HOME/.local/state}/vmafx-runner/pause"
 
 # 2. Verify runner is online (Step 4):
-gh api repos/VMAFx/vmafx/actions/runners --jq '.runners[] | select(.status=="online") | .name'
+gh api repos/vidiko/vmafx/actions/runners --jq '.runners[] | select(.status=="online") | .name'
 
 # 3. Re-enable the lane:
-gh variable set SYCL_ARC_RUNNER_ENABLED -b true -R VMAFx/vmafx
+gh variable set SYCL_ARC_RUNNER_ENABLED -b true -R vidiko/vmafx
 ```
 
 ### Step 6 — rotate / remove
@@ -309,10 +309,10 @@ gh variable set SYCL_ARC_RUNNER_ENABLED -b true -R VMAFx/vmafx
 ```bash
 # Registration tokens expire after 1 h and are single-use with --ephemeral; nothing to rotate.
 # Rotate the probe PAT: create a new one (Step 0), then
-gh secret set SYCL_RUNNER_PROBE_TOKEN -R VMAFx/vmafx
+gh secret set SYCL_RUNNER_PROBE_TOKEN -R vidiko/vmafx
 # Remove a stale registration (e.g. container killed mid-job):
-gh api repos/VMAFx/vmafx/actions/runners --jq '.runners[] | select(.labels[].name=="sycl-arc") | .id' \
-  | xargs -r -I{} gh api -X DELETE repos/VMAFx/vmafx/actions/runners/{}
+gh api repos/vidiko/vmafx/actions/runners --jq '.runners[] | select(.labels[].name=="sycl-arc") | .id' \
+  | xargs -r -I{} gh api -X DELETE repos/vidiko/vmafx/actions/runners/{}
 docker compose -f dev/docker-compose.runner.yml down -v            # also drops the scratch volume
 ```
 

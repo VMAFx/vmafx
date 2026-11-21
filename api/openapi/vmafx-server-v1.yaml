@@ -15,10 +15,10 @@ info:
   version: "1.0.0"
   license:
     name: EUPL-1.2
-    url: https://github.com/VMAFx/vmafx/blob/master/LICENSES/EUPL-1.2.txt
+    url: https://github.com/vidiko/vmafx/blob/master/LICENSES/EUPL-1.2.txt
   contact:
     name: VMAFX fork
-    url: https://github.com/VMAFx/vmafx
+    url: https://github.com/vidiko/vmafx
 
 servers:
   - url: http://localhost:8080
@@ -510,7 +510,7 @@ components:
           description: "Caller annotations; see vmafx_context_annotation(). Added in ABI 0.1.5."
         encode_record:
           type: "string"
-          description: "Digest of the encode record of the distorted input (`sha256:` and 64 hex digits, VMAFx/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI 0.1.5."
+          description: "Digest of the encode record of the distorted input (`sha256:` and 64 hex digits, vidiko/pelorus#81), set with vmafx_context_set_encode_record(); empty when none. Added in ABI 0.1.5."
         scores_digest:
           type: "string"
           description: "`sha256:` and the SHA-256 of every per-frame score written so far: one line `<feature> <index> <16 hex digits of the IEEE-754 bits>` per score, features in byte order, frames in index order. Added in ABI 0.1.5."

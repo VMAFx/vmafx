@@ -61,7 +61,7 @@ No sponsors at this tier yet.
 ## Recognition rules
 
 - **Staying anonymous.** Tell the maintainer in your sponsorship message or in
-  a discussion at <https://github.com/VMAFx/vmafx/discussions>, and nothing is
+  a discussion at <https://github.com/vidiko/vmafx/discussions>, and nothing is
   listed for you. Nobody is listed without being a sponsor.
 - **Logos.** Company and Lead logos are placed by the maintainer after you
   send them. Send an SVG or a transparent PNG; the maintainer checks that the
@@ -76,4 +76,4 @@ No sponsors at this tier yet.
   access, support or a changed licence.
 
 Contact is through GitHub: an issue or a discussion on
-[VMAFx/vmafx](https://github.com/VMAFx/vmafx).
+[vidiko/vmafx](https://github.com/vidiko/vmafx).

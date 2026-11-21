@@ -97,7 +97,7 @@ With the option on and no `cargo` in `PATH`, configure stops with
 `enable_rust_features=true but cargo was not found: install the toolchain
 pinned in rust-toolchain.toml (RUST_VERSION in build-config.env) or configure
 with -Denable_rust_features=false`. The pinned version is the one in
-[`rust-toolchain.toml`](https://github.com/VMAFx/vmafx/blob/master/rust-toolchain.toml);
+[`rust-toolchain.toml`](https://github.com/vidiko/vmafx/blob/master/rust-toolchain.toml);
 rustup installs it on the first `cargo` call in the checkout.
 
 ---

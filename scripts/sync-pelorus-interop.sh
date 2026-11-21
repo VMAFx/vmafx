@@ -185,7 +185,7 @@ if include_from:
     )
 banner = (
     "\n/*\n"
-    f" * VENDORED FROM VMAFx/pelorus@{sha} — DO NOT EDIT.\n"
+    f" * VENDORED FROM vidiko/pelorus@{sha} — DO NOT EDIT.\n"
     " * Append-only ABI; single\n"
     " * source of truth is pelorus. Re-sync via scripts/sync-pelorus-interop.sh.\n"
     " * See docs/adr/1113-vendor-pelorus-interop-abi.md.\n"
@@ -358,7 +358,7 @@ prefix = f"""/**
 
 /*
  * test_pelorus_interop.c — vmafx side of the SHARED Pelorus interop ABI
- * conformance fixture (VMAFx/pelorus@{sha}
+ * conformance fixture (vidiko/pelorus@{sha}
  * test/interop_test.c, ABI {major}.{minor}).
  *
  * Both repos run byte-for-byte the same checks against their own copy of

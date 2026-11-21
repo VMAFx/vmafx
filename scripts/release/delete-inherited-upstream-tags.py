@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Delete the release tags VMAFx/vmafx inherited from Netflix/vmaf (ADR-1805).
+"""Delete the release tags vidiko/vmafx inherited from Netflix/vmaf (ADR-1805).
 
 A tag is selected only when Netflix/vmaf defines a tag of the same name that
 points at the same object. A tag with an inherited-looking name on another
 object is a fork tag and is refused. The default run changes nothing;
-``--apply`` deletes through ``DELETE repos/VMAFx/vmafx/git/refs/tags/<name>``.
+``--apply`` deletes through ``DELETE repos/vidiko/vmafx/git/refs/tags/<name>``.
 Recreate a deleted tag with ``git tag <name> <sha> && git push origin
 refs/tags/<name>`` using the object recorded in
 ``scripts/release/inherited-upstream-tags.json``.
@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.lib.safe_subprocess import CommandFailed
 from scripts.lib.safe_subprocess import run as run_command
 
-REPO = "VMAFx/vmafx"
+REPO = "vidiko/vmafx"
 UPSTREAM_URL = "https://github.com/Netflix/vmaf"
 TIMEOUT_SECONDS = 120
 PEELED_SUFFIX = "^{}"

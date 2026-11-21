@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 
 # ffmpeg-shared-series.sh — fetch, verify and apply the shared FFmpeg fix
-# series (VMAFx/ffmpeg-patches) that every VMAFx FFmpeg build applies before
+# series (vidiko/ffmpeg-patches) that every VMAFx FFmpeg build applies before
 # ffmpeg-patches/series.txt (ADR-3143).
 #
 # The series is a release tarball pinned in build-config.env:

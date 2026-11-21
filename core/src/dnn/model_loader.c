@@ -1342,7 +1342,7 @@ static int resolve_bundle_abs(const char *reg_path, const char *bundle_rel, char
  * it. Returns 0 only when cosign exits 0 (fail-closed).
  *
  * The certificate-identity-regexp + oidc-issuer mirror docs/ai/security.md;
- * they pin verification to VMAFx/vmafx's supply-chain workflow identity. */
+ * they pin verification to vidiko/vmafx's supply-chain workflow identity. */
 static int run_cosign_verify(const char *cosign_path, const char *bundle_abs, const char *onnx_path)
 {
     /* Build the --bundle=<path> argument. */
@@ -1357,7 +1357,7 @@ static int run_cosign_verify(const char *cosign_path, const char *bundle_abs, co
         (char *)"verify-blob",
         bundle_arg,
         (char *)"--certificate-identity-regexp",
-        (char *)"https://github.com/VMAFx/vmafx/.github/workflows/.+",
+        (char *)"https://github.com/vidiko/vmafx/.github/workflows/.+",
         (char *)"--certificate-oidc-issuer",
         (char *)"https://token.actions.githubusercontent.com",
         (char *)onnx_path,

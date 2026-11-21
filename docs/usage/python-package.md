@@ -7,15 +7,15 @@ The `vmafx` Python package (`bindings/python/`) provides Python bindings for
 the modernized VMAFx C API (`libvmafx.so.1`).
 
 Every class, enum, record dataclass, and method in `vmafx` is generated directly
-from the single-source API definition in [`core/api/vmafx.toml`](https://github.com/VMAFx/vmafx/blob/master/core/api/vmafx.toml)
+from the single-source API definition in [`core/api/vmafx.toml`](https://github.com/vidiko/vmafx/blob/master/core/api/vmafx.toml)
 by `scripts/codegen/vmafx-api.py` ([ADR-1852](../adr/1852-vmafx-api-redesign.md)).
 The generated code lives in `bindings/python/vmafx/_api.py`, and
-[`bindings/python/vmafx/__init__.py`](https://github.com/VMAFx/vmafx/blob/master/bindings/python/vmafx/__init__.py)
+[`bindings/python/vmafx/__init__.py`](https://github.com/vidiko/vmafx/blob/master/bindings/python/vmafx/__init__.py)
 re-exports the public API.
 
 The package uses only the Python standard library (`ctypes`). It has zero
-runtime dependencies (`dependencies = []` in [`bindings/python/pyproject.toml`](https://github.com/VMAFx/vmafx/blob/master/bindings/python/pyproject.toml)),
-ships a `py.typed` marker file ([`bindings/python/vmafx/py.typed`](https://github.com/VMAFx/vmafx/blob/master/bindings/python/vmafx/py.typed))
+runtime dependencies (`dependencies = []` in [`bindings/python/pyproject.toml`](https://github.com/vidiko/vmafx/blob/master/bindings/python/pyproject.toml)),
+ships a `py.typed` marker file ([`bindings/python/vmafx/py.typed`](https://github.com/vidiko/vmafx/blob/master/bindings/python/vmafx/py.typed))
 for PEP 561 type checkers, and supports zero-copy frame ingestion from contiguous
 buffer-protocol objects whose planes match a supported `FrameDesc` geometry.
 
@@ -33,7 +33,7 @@ from `core/api/vmafx.toml`.
 ## Supported Python versions
 
 The package requires Python 3.12 or higher, declared in
-[`bindings/python/pyproject.toml`](https://github.com/VMAFx/vmafx/blob/master/bindings/python/pyproject.toml):
+[`bindings/python/pyproject.toml`](https://github.com/vidiko/vmafx/blob/master/bindings/python/pyproject.toml):
 
 ```toml
 requires-python = ">=3.12"
@@ -82,7 +82,7 @@ explicit filesystem path, that exact file is loaded. When given a bare soname
 dynamic loader using its standard search paths (`LD_LIBRARY_PATH`, system library
 cache, or platform equivalent).
 
-In [`bindings/python/vmafx/_api.py`](https://github.com/VMAFx/vmafx/blob/master/bindings/python/vmafx/_api.py),
+In [`bindings/python/vmafx/_api.py`](https://github.com/vidiko/vmafx/blob/master/bindings/python/vmafx/_api.py),
 the loader function `load()` defines how the shared library is resolved:
 
 ```python
@@ -237,7 +237,7 @@ The underlying functions used above match the verified symbols in
 ## Error handling
 
 Failed library calls raise exceptions defined in
-[`bindings/python/vmafx/_api.py`](https://github.com/VMAFx/vmafx/blob/master/bindings/python/vmafx/_api.py):
+[`bindings/python/vmafx/_api.py`](https://github.com/vidiko/vmafx/blob/master/bindings/python/vmafx/_api.py):
 
 - **`vmafx.VmafxError`**: Base exception raised whenever a C function returns
   a non-zero status code (except `WindowClock.frame()` and `WindowClock.finish()`,
@@ -295,7 +295,7 @@ except VmafxError as err:
 ## Wheels
 
 Prebuilt wheels on PyPI are planned for the upcoming 0.1.0 release as part of
-[issue 2318](https://github.com/VMAFx/vmafx/issues/2318) and
+[issue 2318](https://github.com/vidiko/vmafx/issues/2318) and
 [ADR-3292](../adr/3292-release-line-restart-0x.md).
 
 Prebuilt wheels are **not yet published** on PyPI. Users must install from

@@ -12,7 +12,7 @@ the project a report it cannot produce itself, and you can be credited for it.
 2. Follow that package's section of the [tester guide](tester-image.md). You build
    nothing and install no toolchain; you run one container image (or, on a Mac or a
    Windows PC, one archive) and it prints a JSON report.
-3. Open a [hardware report issue](https://github.com/VMAFx/vmafx/issues/new?template=hardware_report.yml)
+3. Open a [hardware report issue](https://github.com/vidiko/vmafx/issues/new?template=hardware_report.yml)
    and attach the report. A report with verdict `fail` is welcome: it is a finding.
 
 If your machine is not in the table, run the [container image](tester-image.md#b-container-image)

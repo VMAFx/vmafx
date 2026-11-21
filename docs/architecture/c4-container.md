@@ -58,7 +58,7 @@ stores; ONNX Runtime and GitHub are outside the VMAFx boundary.
 | cmd/vmafx-server, vmafx-controller, vmafx-node, vmafx-operator | Go | Scoring service, job controller, worker node, Kubernetes operator (see [phase4b-distributed-platform.md](phase4b-distributed-platform.md)) | [../../cmd/AGENTS.md](../../cmd/AGENTS.md) |
 | cmd/vmafx-tune, cmd/vmafx-ort-runner | Go | Encoder-tuning CLI; one-shot ONNX Runtime subprocess | [../../cmd/AGENTS.md](../../cmd/AGENTS.md) |
 | pkg/, proto/, deploy/helm/vmafx | Go, protobuf, YAML | Shared Go packages, gRPC contracts, Helm chart and CRDs | [../../cmd/AGENTS.md](../../cmd/AGENTS.md) |
-| compat/python-vmaf | Python | Classic SVM harness + bindings; `python/` re-exports it and holds the golden-data tests in `python/test/` | [Python compatibility invariants](https://github.com/VMAFx/vmafx/blob/master/compat/python-vmaf/AGENTS.md) |
+| compat/python-vmaf | Python | Classic SVM harness + bindings; `python/` re-exports it and holds the golden-data tests in `python/test/` | [Python compatibility invariants](https://github.com/vidiko/vmafx/blob/master/compat/python-vmaf/AGENTS.md) |
 | model/ | Files | Shipped models (`.json`, `.pkl`, `.onnx` + registry.json) | n/a |
 | testdata/ | Files | YUV fixtures + fork benchmark JSONs | n/a |
 

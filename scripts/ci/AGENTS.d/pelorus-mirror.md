@@ -21,7 +21,7 @@ required Pre-Commit through `.pre-commit-config.yaml`.
 
 real CI check belongs in existing `Pre-Commit` job in
 `lint-and-format.yml`: derive 40-character pin from
-`scripts/sync-pelorus-interop.sh`, check out `VMAFx/pelorus` at that object,
+`scripts/sync-pelorus-interop.sh`, check out `vidiko/pelorus` at that object,
 then run script's default mode. Never replace object with branch/tag
 or restore its working-tree fallback; green check must bind every complete
 rendered mirror and exact tracked lint-exemption set to reviewed source
