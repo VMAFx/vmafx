@@ -25,6 +25,7 @@ from __future__ import annotations
 import ast
 import concurrent.futures
 import datetime
+import importlib
 import json
 import os
 import re
@@ -37,8 +38,6 @@ from functools import partial
 from pathlib import Path
 from typing import Any, TypeGuard
 from unittest.mock import patch
-
-import yaml  # type: ignore[import-untyped]  # no PyYAML stubs in the hook environment, as in scripts/ci/check_fixture_bundle_jobs.py
 
 try:  # the hooks run this file with plain `python3`; only the tooling suite brings pytest
     import pytest
@@ -887,19 +886,29 @@ def make_sentinel(root: Path) -> Path:
 
 
 def declared_failure_report(stderr: str, returncode: int, declared: frozenset[str]) -> str:
-    """Validate the unittest report before accepting a declared failure."""
+    """Accept only the exact ordinary unittest failure report declared for a script."""
+    if returncode != 1:
+        return f"declared expected-fail exited {returncode}, expected unittest exit 1"
+
     lines = stderr.splitlines()
     ran = any(re.match(r"^Ran [1-9][0-9]* tests? in ", line) for line in lines)
     if not ran:
         last = next((line.strip() for line in reversed(lines) if line.strip()), "")
         return f"exit {returncode} before unittest ran: {last[:200]}"
-    found = {
-        match.group(1)
-        for line in lines
-        if (match := re.match(r"^(?:FAIL|ERROR): (test\w*) \(", line))
+
+    errors = {
+        match.group(1) for line in lines if (match := re.match(r"^ERROR: (test\w*) \(", line))
     }
+    if errors:
+        return f"declared failures reported as errors: {sorted(errors)}"
+
+    found = {match.group(1) for line in lines if (match := re.match(r"^FAIL: (test\w*) \(", line))}
     if found != declared:
         return f"declared failures {sorted(declared)}, got {sorted(found)}"
+
+    summary = f"FAILED (failures={len(declared)})"
+    if next((line.strip() for line in reversed(lines) if line.strip()), "") != summary:
+        return f"expected final unittest summary {summary!r}"
     return ""
 
 
@@ -947,7 +956,8 @@ def sentinel_hook_requirements(lock: str) -> dict[str, str]:
 
 
 def sentinel_hook_dependencies(config: str) -> list[object] | None:
-    """Return the sentinel hook's additional_dependencies when it is a python hook."""
+    """Return Python hook dependencies; a missing required PyYAML import is an error."""
+    yaml = importlib.import_module("yaml")
     data: object = yaml.safe_load(config)
     if not isinstance(data, dict) or not isinstance(data.get("repos"), list):
         return None
@@ -1320,6 +1330,56 @@ class GitFixtureIsolation(unittest.TestCase):
                         "exit 1 before unittest ran: ModuleNotFoundError: No module named 'vmafx_planted_missing_module'"
                     ],
                 )
+
+    def test_sentinel_declared_same_name_error_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sentinel-declared-error-") as directory:
+            root = Path(directory)
+            script = root / "test-error.py"
+            script.write_text(
+                "import unittest\nclass Planted(unittest.TestCase):\n"
+                "    def test_planted(self): raise RuntimeError('planted')\n"
+                "unittest.main()\n"
+            )
+            with patch.dict(
+                SENTINEL_EXPECTED_FAILURES, {str(script): ("planted", frozenset({"test_planted"}))}
+            ):
+                self.assertEqual(
+                    sentinel_damage(str(script), root),
+                    ["declared failures reported as errors: ['test_planted']"],
+                )
+
+    def test_sentinel_declared_nonstandard_exit_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sentinel-declared-exit-") as directory:
+            root = Path(directory)
+            script = root / "test-exit.py"
+            script.write_text(
+                "import unittest\nclass Planted(unittest.TestCase):\n"
+                "    def test_planted(self): self.fail('planted')\n"
+                "unittest.main(exit=False)\nraise SystemExit(2)\n"
+            )
+            with patch.dict(
+                SENTINEL_EXPECTED_FAILURES, {str(script): ("planted", frozenset({"test_planted"}))}
+            ):
+                self.assertEqual(
+                    sentinel_damage(str(script), root),
+                    ["declared expected-fail exited 2, expected unittest exit 1"],
+                )
+
+    def test_sentinel_declared_post_report_exception_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="sentinel-declared-post-report-") as directory:
+            root = Path(directory)
+            script = root / "test-post-report.py"
+            script.write_text(
+                "import unittest\nclass Planted(unittest.TestCase):\n"
+                "    def test_planted(self): self.fail('planted')\n"
+                "unittest.main(exit=False)\nraise RuntimeError('after report')\n"
+            )
+            with patch.dict(
+                SENTINEL_EXPECTED_FAILURES, {str(script): ("planted", frozenset({"test_planted"}))}
+            ):
+                damage = sentinel_damage(str(script), root)
+                self.assertEqual(len(damage), 1)
+                self.assertIn("expected final unittest summary", damage[0])
 
     def test_sentinel_declared_failure_differs(self) -> None:
         with tempfile.TemporaryDirectory(prefix="sentinel-declared-diff-") as directory:
@@ -1746,6 +1806,59 @@ class GitFixtureIsolation(unittest.TestCase):
                 self.assertTrue(reason)
                 text = (ROOT / name).read_text(encoding="utf-8", errors="replace")
                 self.assertTrue(unisolated_git(name, text), "no longer needed: remove it")
+
+    def test_sentinel_hook_dependencies_do_not_require_system_pyyaml(self) -> None:
+        source = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+        top_level_yaml_imports = [
+            node
+            for node in source.body
+            if (
+                (isinstance(node, ast.ImportFrom) and node.module == "yaml")
+                or (
+                    isinstance(node, ast.Import)
+                    and any(alias.name == "yaml" for alias in node.names)
+                )
+            )
+        ]
+        self.assertEqual(top_level_yaml_imports, [])
+        result = run_command(
+            [
+                sys.executable,
+                "-I",
+                "-S",
+                str(Path(__file__).resolve()),
+                "GitFixtureIsolation.test_isolation_rule_refuses_underscore_git_helpers",
+            ],
+            allowed_executables=(sys.executable,),
+            text=True,
+            capture_output=True,
+            timeout_seconds=30,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Ran 1 test", result.stderr)
+
+    def test_sentinel_hook_missing_pyyaml_fails_lock_comparison(self) -> None:
+        with patch.object(importlib, "import_module", side_effect=ImportError("no PyYAML")):
+            with self.assertRaisesRegex(ImportError, "no PyYAML"):
+                sentinel_hook_dependencies("repos: []\n")
+        result = run_command(
+            [
+                sys.executable,
+                "-I",
+                "-S",
+                str(Path(__file__).resolve()),
+                "GitFixtureIsolation.test_sentinel_hook_dependencies_match_tooling_lock",
+            ],
+            allowed_executables=(sys.executable,),
+            text=True,
+            capture_output=True,
+            timeout_seconds=30,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("ModuleNotFoundError: No module named 'yaml'", result.stderr)
+        self.assertIn("FAILED (errors=1)", result.stderr)
 
     def test_sentinel_hook_dependencies_match_tooling_lock(self) -> None:
         config = (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
