@@ -48,7 +48,16 @@ and follows the structure in [0000-template.md](0000-template.md):
   and never reused.
 - **Immutable once Accepted**: the body is frozen. To change a decision, write
   a new ADR with `Status: Supersedes ADR-NNNN` and flip the old one to
-  `Superseded by ADR-MMMM`.
+  `Superseded by ADR-MMMM`. The status line and References section may be
+  edited; dated `## Status update YYYY-MM-DD` or `### Status update YYYY-MM-DD`
+  sections and a supersession note below the status may be added. Markdown link
+  targets may be repaired. Whole-line markdownlint directives may be edited
+  anywhere. Headings inside code fences are content, not sections. Prose may be
+  rewrapped or respaced without changing its words, including blank lines and
+  table spacing. A commit trailer `ADR-Body-Edit: <reason>` of at least 20
+  characters permits other body edits; carry the trailer into the squash commit
+  body so the reason remains in master history.
+  `scripts/ci/check-adr-body-freeze.py` enforces this rule.
 - **One decision per ADR** — if you find yourself writing "and also…", split it.
 - **Tagging**: use the flat tag palette below so `grep -l 'Tags:.*cuda'
   docs/adr/*.md` works. New tags are fine when justified.

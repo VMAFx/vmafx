@@ -87,6 +87,22 @@ class AdrCollisionGuardWorkflowContract(unittest.TestCase):
         self.assertIn("name: ADR Collision Guard", job)
         verify_adr_collision_guard(job)
 
+    def test_body_freeze_step(self) -> None:
+        content = DEFAULT_WORKFLOW.read_text(encoding="utf-8")
+        job = extract_job(content)
+        pattern = (
+            r"(?ms)- name: Check frozen ADR bodies\n"
+            r"\s+env:\n\s+BASE_SHA: \${{ github.event.pull_request.base.sha }}\n"
+            r"\s+HEAD_SHA: \${{ github.event.pull_request.head.sha }}\n"
+            r"\s+run: >-\n\s+python3 scripts/ci/check-adr-body-freeze\.py\n\s+"
+            r'--base "\${BASE_SHA}" --head "\${HEAD_SHA}"'
+        )
+        self.assertRegex(job, pattern)
+        self.assertLess(
+            job.index("Check for ADR number collisions with origin/master"),
+            job.index("Check frozen ADR bodies"),
+        )
+
     def test_planted_depth_fetch_rejected(self) -> None:
         """Planted negative case: a shallow git fetch must fail the contract."""
         synthetic_job = (
