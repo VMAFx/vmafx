@@ -101,6 +101,26 @@ cc -o build/tools/vmaf build/vmaf.c -Lbuild/src -l:libvmaf.so.3.0.0 -l:libvmafx.
 STUB
 chmod +x "$stub_bin/meson"
 
+# Stub rpm ownership lookup used by zimg_source_package.py. The fixture record
+# remains the expected source package, while modes cover mismatch and failures.
+cat >"$stub_bin/rpm" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$#" -eq 4 && "$1" == -qf && "$2" == --qf && "$3" == '%{SOURCERPM}' ]] || exit 64
+[[ "$4" == */build/fakezimg/libzimg.so.* && -f "$4" ]] || exit 65
+printf '%s\n' "$4" >>"$STUB_RPM_LOG"
+case "${STUB_RPM_MODE:-ok}" in
+  ok) cat tools/rc1-tester/image/zimg-source-rpm.txt ;;
+  mismatch) printf '%s\n' 'zimg-fixture-other.src.rpm' ;;
+  query-fail)
+    printf '%s\n' 'rpm stub: package ownership unavailable' >&2
+    exit 1
+    ;;
+  *) exit 64 ;;
+esac
+STUB
+chmod +x "$stub_bin/rpm"
+
 # Stub licensing.py (ADR-1513). The real tool reads the build's ninja deps and
 # the recorded licence texts, which a stub meson does not produce; this one
 # records each call, writes a deterministic notices tree under --root, and
@@ -154,12 +174,17 @@ origin='$ORIGIN'
 # new_repo <dir> — a committed tree holding only what the build script reads.
 new_repo() {
   local dir="$1"
-  mkdir -p "$dir/scripts/ci" "$dir/scripts/release" "$dir/model" "$dir/LICENSES" "$dir/core" \
-    "$dir/tools/rc1-tester/image"
+  mkdir -p "$dir/scripts/ci" "$dir/scripts/lib" "$dir/scripts/release" "$dir/model" \
+    "$dir/LICENSES" "$dir/core" "$dir/tools/rc1-tester/image"
   cp -- "$REPO_ROOT/scripts/ci/check-container-build.sh" "$dir/scripts/ci/"
+  cp -- "$REPO_ROOT/scripts/__init__.py" "$dir/scripts/"
+  cp -- "$REPO_ROOT/scripts/lib/__init__.py" \
+    "$REPO_ROOT/scripts/lib/safe_subprocess.py" "$dir/scripts/lib/"
   cp -- "$licensing_stub" "$dir/tools/rc1-tester/image/licensing.py"
   cp -- "$REPO_ROOT/scripts/release/build-native-release-artifacts.sh" \
-    "$REPO_ROOT/scripts/release/verify-native-release-artifacts.sh" "$dir/scripts/release/"
+    "$REPO_ROOT/scripts/release/verify-native-release-artifacts.sh" \
+    "$REPO_ROOT/scripts/release/zimg_source_package.py" "$dir/scripts/release/"
+  cp -- "$REPO_ROOT/tools/rc1-tester/image/zimg-source-rpm.txt" "$dir/tools/rc1-tester/image/"
   printf '{"model": "fixture"}\n' >"$dir/model/vmaf_fixture.json"
   printf 'Apache-2.0 fixture\n' >"$dir/LICENSES/LicenseRef-Apache-2.0-u2netp.txt"
   git -C "$dir" -c init.defaultBranch=main init -q
@@ -187,6 +212,7 @@ run_build() {
     fi
     env PATH="${RUN_PATH_PREFIX:+$RUN_PATH_PREFIX:}$stub_bin:$PATH" \
       STUB_MESON_LOG="$dir/meson.log" \
+      STUB_RPM_LOG="$dir/rpm.log" \
       STUB_LICENSING_LOG="$dir/licensing.log" \
       VMAFX_CONTAINER_MARKER="$marker_path" \
       bash scripts/release/build-native-release-artifacts.sh "$@"
@@ -269,6 +295,7 @@ check 'no u2netp license without the mirror binary' absent \
   "$good/artifacts/LicenseRef-Apache-2.0-u2netp.txt"
 check 'no libzimg staged when libvmafx does not need it' absent \
   "$good/artifacts/libzimg.so.2"
+check 'rpm is not queried when libvmafx does not need zimg' absent "$good/rpm.log"
 check 'stamp records the checked-out commit' grep -qx \
   "git_commit=$(git -C "$good" rev-parse HEAD)" "$good/artifacts/container-build-provenance.txt"
 
@@ -350,6 +377,30 @@ check 'container build with zimg exits 0' expect_status 0 "$zimg" "$marker" 3.2.
 unset STUB_MESON_MODE
 check 'stages libzimg.so.2 as a regular non-empty file' regular_nonempty "$zimg/artifacts/libzimg.so.2"
 check "staged libvmafx has RUNPATH exactly $origin" runpath_is "$zimg/artifacts/libvmafx.so.1" "$origin"
+check 'rpm queries the libzimg resolved by the loader' grep -qxF \
+  "$zimg/build/fakezimg/libzimg.so.2" "$zimg/rpm.log"
+check 'staged libzimg is the queried library byte for byte' cmp -s \
+  "$zimg/build/fakezimg/libzimg.so.2" "$zimg/artifacts/libzimg.so.2"
+
+# --- negative: source-package mismatch and a failed ownership query ---
+for rpm_mode in mismatch query-fail; do
+  refused_zimg="$scratch/zimg-$rpm_mode"
+  new_repo "$refused_zimg"
+  export STUB_MESON_MODE=zimg STUB_RPM_MODE="$rpm_mode"
+  check "zimg source $rpm_mode exits 1" expect_status 1 "$refused_zimg" "$marker" 3.2.1
+  unset STUB_MESON_MODE STUB_RPM_MODE
+  if [[ "$rpm_mode" == mismatch ]]; then
+    check 'source mismatch names the measured and recorded packages' grep -qF \
+      "comes from zimg-fixture-other.src.rpm, but the licence record names $(<"$refused_zimg/tools/rc1-tester/image/zimg-source-rpm.txt")" \
+      "$refused_zimg/run.log"
+  else
+    check 'failed rpm query reports the ownership error' grep -qF \
+      'rpm stub: package ownership unavailable' "$refused_zimg/run.log"
+  fi
+  check "zimg source $rpm_mode stages no libzimg" absent "$refused_zimg/artifacts/libzimg.so.2"
+  check "zimg source $rpm_mode writes no provenance stamp" absent \
+    "$refused_zimg/artifacts/container-build-provenance.txt"
+done
 
 # --- negative: a host build is refused before anything is compiled ---
 host="$scratch/host"
