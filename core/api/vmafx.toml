@@ -3675,6 +3675,63 @@ file = "core/src/compat/libvmaf/backend_absent_hip.c"
 calls = ["vmafx_device_count"]
 
 [[compat]]
+name = "vmaf_vulkan_available"
+header = "libvmaf/libvmaf_vulkan.h"
+kind = "manual"
+target = "compat-internal"
+returns = "int"
+params = []
+engine_with = "vulkan"
+until = "the Vulkan lane of RC4 WP3 lands: then the compat function serves Vulkan builds too"
+file = "core/src/compat/libvmaf/backend_absent_vulkan.c"
+calls = []
+note = "builds without Vulkan; Vulkan builds keep the engine definition"
+
+[[compat]]
+name = "vmaf_vulkan_state_init"
+header = "libvmaf/libvmaf_vulkan.h"
+kind = "manual"
+target = "compat-internal"
+returns = "int"
+params = [
+  { name = "out", c = "VmafVulkanState **" },
+  { name = "cfg", c = "VmafVulkanConfiguration" },
+]
+engine_with = "vulkan"
+until = "the Vulkan lane of RC4 WP3 lands: then the compat function serves Vulkan builds too"
+file = "core/src/compat/libvmaf/backend_absent_vulkan.c"
+calls = []
+
+[[compat]]
+name = "vmaf_vulkan_import_state"
+header = "libvmaf/libvmaf_vulkan.h"
+kind = "manual"
+target = "compat-internal"
+returns = "int"
+params = [
+  { name = "ctx", c = "VmafContext *" },
+  { name = "state", c = "VmafVulkanState *" },
+]
+engine_with = "vulkan"
+until = "the Vulkan lane of RC4 WP3 lands: then the compat function serves Vulkan builds too"
+file = "core/src/compat/libvmaf/backend_absent_vulkan.c"
+calls = []
+
+[[compat]]
+name = "vmaf_vulkan_state_free"
+header = "libvmaf/libvmaf_vulkan.h"
+kind = "manual"
+target = "compat-internal"
+returns = "void"
+params = [
+  { name = "state", c = "VmafVulkanState **" },
+]
+engine_with = "vulkan"
+until = "the Vulkan lane of RC4 WP3 lands: then the compat function serves Vulkan builds too"
+file = "core/src/compat/libvmaf/backend_absent_vulkan.c"
+calls = []
+
+[[compat]]
 name = "vmaf_mcp_available"
 header = "libvmaf/libvmaf_mcp.h"
 kind = "shim"
@@ -4902,6 +4959,14 @@ doc = "Disable the Metal (Apple silicon) backend."
 surfaces = ["cli"]
 cli = ["--no_metal"]
 
+[[option_groups.options]]
+name = "no_vulkan"
+type = "bool"
+default = false
+doc = "Disable the Vulkan backend."
+surfaces = ["cli"]
+cli = ["--no_vulkan"]
+
 [[option_groups]]
 name = "feature"
 since = "0.1"
@@ -5193,6 +5258,13 @@ doc = "Metal GPU by index (opt-in: Metal is off unless this or --backend metal i
 surfaces = ["cli", "mcp"]
 cli = ["--metal_device"]
 mcp = "metal_device"
+
+[[option_groups.options]]
+name = "vulkan_device"
+type = "uint"
+doc = "Vulkan GPU by index (opt-in: Vulkan is off unless this or --backend vulkan is given)."
+surfaces = ["cli"]
+cli = ["--vulkan_device"]
 
 [[option_groups]]
 name = "subsample"

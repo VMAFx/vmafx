@@ -78,7 +78,7 @@ enum VmafBackend {
     VMAF_BACKEND_SYCL = 2,    /**< SYCL backend (vmaf_sycl_import_state()). */
     VMAF_BACKEND_METAL = 3,   /**< Metal backend (vmaf_metal_import_state()). */
     VMAF_BACKEND_HIP = 4,     /**< HIP/ROCm backend (vmaf_hip_import_state()). */
-    VMAF_BACKEND_VULKAN = 5,  /**< Vulkan backend (reserved; ADR-0726 removed Vulkan). */
+    VMAF_BACKEND_VULKAN = 5,  /**< Vulkan backend (vmaf_vulkan_import_state(), ADR-3402). */
 };
 /* NOLINTEND(performance-enum-size) */
 

@@ -22,6 +22,7 @@
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/libvmaf_mcp.h"
 #include "libvmaf/libvmaf_metal.h"
+#include "libvmaf/libvmaf_vulkan.h"
 #include "libvmaf/model.h"
 #include "libvmaf/perceptual_weight.h"
 #include "libvmaf/picture.h"
@@ -71,6 +72,10 @@ enum VmafCompatIndex {
     VMAF_COMPAT_HIP_IMPORT_STATE,
     VMAF_COMPAT_HIP_STATE_FREE,
     VMAF_COMPAT_HIP_LIST_DEVICES,
+    VMAF_COMPAT_VULKAN_AVAILABLE,
+    VMAF_COMPAT_VULKAN_STATE_INIT,
+    VMAF_COMPAT_VULKAN_IMPORT_STATE,
+    VMAF_COMPAT_VULKAN_STATE_FREE,
     VMAF_COMPAT_MCP_AVAILABLE,
     VMAF_COMPAT_MCP_TRANSPORT_AVAILABLE,
     VMAF_COMPAT_MCP_INIT,
@@ -182,6 +187,10 @@ typedef struct VmafCompatApi {
     int (*hip_import_state)(VmafContext *ctx, VmafHipState *state);
     void (*hip_state_free)(VmafHipState **state);
     int (*hip_list_devices)(void);
+    int (*vulkan_available)(void);
+    int (*vulkan_state_init)(VmafVulkanState **out, VmafVulkanConfiguration cfg);
+    int (*vulkan_import_state)(VmafContext *ctx, VmafVulkanState *state);
+    void (*vulkan_state_free)(VmafVulkanState **state);
     int (*mcp_available)(void);
     int (*mcp_transport_available)(VmafMcpTransport transport);
     int (*mcp_init)(VmafMcpServer **out, VmafContext *ctx, const VmafMcpConfig *cfg);
@@ -315,6 +324,10 @@ const VmafCompatEntry vmaf_compat_entries[VMAF_COMPAT_COUNT + 1] = {
     VMAF_COMPAT_ENTRY("vmaf_hip_import_state", !VMAFX_ENGINE_EXPORTS_HIP),
     VMAF_COMPAT_ENTRY("vmaf_hip_state_free", !VMAFX_ENGINE_EXPORTS_HIP),
     VMAF_COMPAT_ENTRY("vmaf_hip_list_devices", !VMAFX_ENGINE_EXPORTS_HIP),
+    VMAF_COMPAT_ENTRY("vmaf_vulkan_available", !VMAFX_ENGINE_EXPORTS_VULKAN),
+    VMAF_COMPAT_ENTRY("vmaf_vulkan_state_init", !VMAFX_ENGINE_EXPORTS_VULKAN),
+    VMAF_COMPAT_ENTRY("vmaf_vulkan_import_state", !VMAFX_ENGINE_EXPORTS_VULKAN),
+    VMAF_COMPAT_ENTRY("vmaf_vulkan_state_free", !VMAFX_ENGINE_EXPORTS_VULKAN),
     VMAF_COMPAT_ENTRY("vmaf_mcp_available", VMAFX_BUILD_MCP),
     VMAF_COMPAT_ENTRY("vmaf_mcp_transport_available", VMAFX_BUILD_MCP),
     VMAF_COMPAT_ENTRY("vmaf_mcp_init", VMAFX_BUILD_MCP),

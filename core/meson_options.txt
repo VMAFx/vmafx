@@ -149,6 +149,16 @@ option('enable_metal',
     value: 'auto',
     description: 'Build the Metal (Apple Silicon) compute backend (ADR-0361). Default `auto`: probes for Metal.framework / MetalKit.framework on macOS, disabled elsewhere. Apple Silicon (M1+ / GPU Family Apple 7+) only; Intel Macs surface as -ENODEV at runtime. The runtime, IOSurface import and the feature extractors listed in docs/backends/metal/index.md are live; the SpEED family is the remaining gap.')
 
+option('enable_vulkan',
+    type: 'boolean',
+    value: false,
+    description: 'Build the Vulkan compute backend (ADR-3402, integer path). Default OFF: with it off every libvmaf_vulkan.h entry point returns -ENOSYS. Needs Vulkan headers only — the loader (vulkan-1 / libvulkan.so.1) is loaded dynamically at run time (VK_NO_PROTOTYPES, no SDK linkage, no volk, no VMA) — plus a GLSL-to-SPIR-V compiler (glslangValidator, glslc or glslang) for the embedded shaders. The first consumer is the fp64-free integer ADM twin (feature adm_vulkan); a device must report shaderInt64.')
+
+option('vulkan_include_dir',
+    type: 'string',
+    value: '',
+    description: 'Path to the directory that contains vulkan/vulkan.h (e.g. a Vulkan SDK Include directory) when pkg-config cannot find the vulkan headers on its own. Empty (default): the build probes pkg-config first and errors with instructions when the headers are not found and this option is unset.')
+
 option('fuzz',
     type: 'boolean',
     value: false,

@@ -209,7 +209,7 @@ class Function:
 # functions keep the engine's own definition in builds with `engine_with`
 # (declared exception, `until` names what ends it) and exist nowhere else.
 COMPAT_KINDS = ("shim", "glue", "manual", "engine")
-COMPAT_BACKENDS = ("cuda", "sycl", "hip", "metal")
+COMPAT_BACKENDS = ("cuda", "sycl", "hip", "metal", "vulkan")
 COMPAT_FEATURES = ("mcp",)
 # Operating systems a libvmaf function may be limited to (`#ifdef _WIN32` in its header).
 COMPAT_PLATFORMS = ("windows",)

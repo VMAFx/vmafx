@@ -50,6 +50,16 @@ if is_metal_enabled
     vmaf_tool_cflags += ['-DHAVE_METAL=1']
     vmaf_tool_deps += metal_deps
 endif
+if is_vulkan_enabled
+    # The vmaf CLI gates Vulkan support on `#ifdef HAVE_VULKAN` (see
+    # `core/tools/vmaf.cpp` — include of `libvmaf_vulkan.h`, init/cleanup
+    # of `VmafVulkanState`, the `--backend vulkan` strict-mode arm).
+    # Without this define the CLI compiles the "built without Vulkan
+    # support" strict-mode error path even when the library itself was
+    # built with Vulkan enabled — the same failure mode ADR-0514 records
+    # for HIP.
+    vmaf_tool_cflags += ['-DHAVE_VULKAN=1']
+endif
 
 vmaf_tool_link_target = libvmaf_public_libs
 vmaf_close_retry_source = files('vmaf_close_retry.c')

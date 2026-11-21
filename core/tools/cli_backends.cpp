@@ -26,6 +26,9 @@
 #ifdef HAVE_METAL
 #include "libvmaf/libvmaf_metal.h"
 #endif
+#ifdef HAVE_VULKAN
+#include "libvmaf/libvmaf_vulkan.h"
+#endif
 
 namespace
 {
@@ -101,6 +104,22 @@ constexpr InitStatusFn kMetalInit = metal_init_status;
 constexpr InitStatusFn kMetalInit = nullptr;
 #endif
 
+#ifdef HAVE_VULKAN
+int vulkan_init_status()
+{
+    VmafVulkanState *state = nullptr;
+    const VmafVulkanConfiguration cfg = {.device_index = -1, .flags = 0};
+    const int err = vmaf_vulkan_state_init(&state, cfg);
+    if (err)
+        return err;
+    vmaf_vulkan_state_free(&state);
+    return 0;
+}
+constexpr InitStatusFn kVulkanInit = vulkan_init_status;
+#else
+constexpr InitStatusFn kVulkanInit = nullptr;
+#endif
+
 /* A backend the CLI knows; `init` is nullptr when it is not compiled in. */
 struct CliBackend {
     const char *name;
@@ -108,12 +127,13 @@ struct CliBackend {
 };
 
 /* The order of the report; the names `--backend` accepts. */
-constexpr std::array<CliBackend, 5> kBackends = {{
+constexpr std::array<CliBackend, 6> kBackends = {{
     {.name = "cpu", .init = cpu_init_status},
     {.name = "cuda", .init = kCudaInit},
     {.name = "sycl", .init = kSyclInit},
     {.name = "hip", .init = kHipInit},
     {.name = "metal", .init = kMetalInit},
+    {.name = "vulkan", .init = kVulkanInit},
 }};
 
 /* One backend's line of the report: 0, or -EIO when a write fails. */

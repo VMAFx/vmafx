@@ -1,0 +1,917 @@
+/* Copyright 2026 luoye-cpu
+ * SPDX-License-Identifier: EUPL-1.2
+ *
+ * integer_adm.comp — Vulkan compute shader for the integer ADM
+ * (Adaptive Detail Model) feature extractor.
+ *
+ * Derived from `integer_adm.comp` / `integer_adm_vulkan.c` as they stood in
+ * the Vulkan backend removed by ADR-0726 (fork history up to that commit;
+ * the same file is described by ADR-0586, which made it the canonical
+ * Vulkan integer-ADM extractor). The GPU-side pipeline below is that
+ * snapshot's; every deviation is listed under "PoC patches" with the CPU
+ * source line it is anchored to.
+ *
+ * Pipeline: 4 stages x 4 scales, CDF 9/7 (DB2) wavelet + decouple + CSF +
+ * contrast measure, mirroring the CPU integer ADM of VMAFx master.
+ *
+ * Stages (selected via STAGE specialization constant):
+ *   0 = DWT vertical pass (ref+dis fused)        -> dwt_tmp lo/hi
+ *   1 = DWT horizontal pass (ref+dis fused)      -> 4 sub-bands
+ *   2 = Decouple + CSF fused pass                -> csf_f
+ *   3 = CSF denominator + contrast measure fused -> per-WG int64 accums
+ *   (stage 4 was originally planned as a separate cm reduction but
+ *    is folded into stage 3 — same fused kernel pattern as SYCL.)
+ *
+ * Per-WG int64 reduction
+ * ----------------------
+ * Stage 3 writes one int64 per (workgroup, band, accumulator-kind) into
+ * the global SSBO. Host CPU sums the per-WG slots after the dispatch —
+ * same approach as vif.comp / motion.comp, no atomic-int64 capability
+ * required. GL_EXT_shader_explicit_arithmetic_types_int64 gives us
+ * native i64 for the per-thread / per-subgroup reductions.
+ *
+ * Specialization constants (set per-pipeline via VkSpecializationInfo):
+ *   constant_id = 0  WIDTH    base frame width (scale 0)
+ *   constant_id = 1  HEIGHT   base frame height (scale 0)
+ *   constant_id = 2  BPC      8 / 10 / 12 / 16
+ *   constant_id = 3  SCALE    0..3
+ *   constant_id = 4  STAGE    0..3 (see above)
+ *
+ * The host always passes the *current scale's* (cur_w, cur_h) and the
+ * (half_w, half_h) of the band outputs through push constants — the
+ * specialization constants only encode the discrete switches that
+ * change the algorithmic shape of the kernel.
+ *
+ * ------------------------------------------------------------------
+ * PoC patches vs the removed-backend snapshot (bit-exactness against the
+ * CPU integer ADM of VMAFx master af5ec5c9435b396ae13f0fffc9b29d040786cea8
+ * — `core/src/feature/integer_adm.c` + `integer_adm_kernels.h` +
+ * `adm_angle_flag.h`; every citation below is to that public commit,
+ * verified line by line; do not revert on rebase):
+ *
+ * 1. Stage-3 workgroup reduction: the snapshot used subgroupAdd(int64_t)
+ *    (its integer_adm.comp stage 3 + integer_adm_reduce.comp), the NVIDIA
+ *    lowering defect documented publicly in ADR-0269 ("driver bug in
+ *    NVIDIA's int64 emulation of subgroupAdd(int64_t)", ~10^14 sign
+ *    flips) and ADR-0264. Replaced with a shared-memory serial sum by
+ *    thread 0 (two's-complement addition is associative, so the total is
+ *    order-independent). The subgroup extensions are no longer required
+ *    and were dropped.
+ *
+ * 2. int16 truncation points replicated from the CPU scale-0 path
+ *    (CPU keeps scale-0 dwt tmp / bands / csf_a / csf_f in int16_t
+ *    arrays; VMAFx sites in integer_adm_kernels.h):
+ *      - stage 0 (SCALE==0): lo/hi outputs wrap to int16 before the
+ *        dwt_tmp write (CPU int16_t tmplo/tmphi stores, :1351-1356,
+ *        :1377-1383).
+ *      - stage 1 (SCALE==0): a/h/v/d outputs wrap to int16 (CPU stores
+ *        scale-0 bands in int16_t; i16_to_i32 widens them for scale 1).
+ *      - decouple r_val at SCALE==0 wraps to int16 (CPU int16_t rst_h,
+ *        :316-318); a_val = th - rst wraps to int16 (CPU stores it into
+ *        the int16 band array, :324-326).
+ *      - compute_csf_a at SCALE==0 wraps its result to int16 (CPU
+ *        i16_dst_val) AND uses the CPU's exact rounding constants
+ *        adm_csf_shiftsadd = {16384, 16384, 65535} — note 65535, not
+ *        1<<16, for the diagonal band (:439, applied :487; shifts
+ *        {15,15,17} :438).
+ *      - csf_a_to_csf_f at SCALE==0 wraps its result to int16 (CPU
+ *        casts the scale-0 flt term to int16_t, :490).
+ *      - stage-3 CM threshold own-term at SCALE==0 does NOT wrap to
+ *        int16: VMAFx master keeps the tap in int32 (ADR-1402, :816 —
+ *        the snapshot's wrap is a Netflix-style defect this port does
+ *        not carry; bit-exactness against the VMAFx CPU reference
+ *        requires the int32 form).
+ *
+ * 3. Angle test is the fp64-free, bit-identical reformulation
+ *    adm_angle_flag_i64() (core/src/feature/adm_angle_flag.h:219-262,
+ *    derivation in docs/research/2030-adm-angle-flag-fp64-free.md) —
+ *    the same predicate shape the SYCL and Metal twins run. The frozen
+ *    CPU/CUDA/HIP expression (adm_angle_flag_fp64) is carried in
+ *    binary64, which would require the shaderFloat64 device feature;
+ *    Intel iGPUs report shaderFloat64=0 and a whole SPIR-V module with
+ *    one fp64 instruction is rejected there (observed 2026-11-06:
+ *    vkCreateDevice SIGSEGV when requesting the absent feature,
+ *    VK_ERROR_DEVICE_LOST at fence otherwise). The i64 port removes
+ *    the GL_EXT_shader_explicit_arithmetic_types_float64 dependency
+ *    entirely.
+ * ------------------------------------------------------------------
+ */
+
+#version 460
+#extension GL_EXT_shader_explicit_arithmetic_types_int64   : require
+
+/* Workgroup geometry: 16 x 16 = 256 threads. Stage 3 is 1D-launched
+ * with WG_SIZE_X = 256 (band/row mapping), other stages use the 2D
+ * geometry. We pick the maximum across stages and let stage-specific
+ * code mask out idle threads. */
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(constant_id = 0) const int WIDTH       = 0;
+layout(constant_id = 1) const int HEIGHT      = 0;
+layout(constant_id = 2) const int BPC         = 8;
+layout(constant_id = 3) const int SCALE       = 0;
+layout(constant_id = 4) const int STAGE       = 0;
+
+const int ADM_NUM_BANDS = 3;
+
+/* DWT filter coefficients (DB2, 4-tap). */
+const int DWT_LO_0 =  15826;
+const int DWT_LO_1 =  27411;
+const int DWT_LO_2 =   7345;
+const int DWT_LO_3 =  -4240;
+const int DWT_HI_0 =  -4240;
+const int DWT_HI_1 =  -7345;
+const int DWT_HI_2 =  27411;
+const int DWT_HI_3 = -15826;
+const int DWT_LO_SUM = 46342;
+
+const int ONE_BY_15    = 8738;
+const int I4_ONE_BY_15 = 286331153;
+
+/* ------------------------------------------------------------------
+ * Resource bindings.
+ *
+ *   binding 0:  scale-0 source plane (BPC<=8: u8 packed, BPC>8: u16
+ *               packed); ignored for SCALE>0.
+ *   binding 1:  dwt_tmp_ref (int32 per element, lo|hi interleaved row).
+ *   binding 2:  dwt_tmp_dis.
+ *   binding 3:  ref_band[0..3] (LL,HL,LH,HH packed as int32 contiguous,
+ *               4 bands × buf_stride × half_h elements).
+ *   binding 4:  dis_band[0..3].
+ *   binding 5:  csf_f[0..2] (3 bands × buf_stride × half_h int32).
+ *   binding 6:  div_lookup (int32[65537]).
+ *   binding 7:  per-WG int64 accumulator slots. Layout per WG:
+ *               [csf_h][csf_v][csf_d][cm_h][cm_v][cm_d] = 6 × int64.
+ *   binding 8:  ref source for dis (mirror of binding 0 for stage-0
+ *               dis half).
+ * ------------------------------------------------------------------ */
+layout(set = 0, binding = 0, std430) readonly  buffer RefSrc { uint pix[];   } ref_src;
+layout(set = 0, binding = 1, std430)           buffer DwtR   { int  v[];     } dwt_tmp_ref;
+layout(set = 0, binding = 2, std430)           buffer DwtD   { int  v[];     } dwt_tmp_dis;
+layout(set = 0, binding = 3, std430)           buffer RefB   { int  v[];     } ref_band;
+layout(set = 0, binding = 4, std430)           buffer DisB   { int  v[];     } dis_band;
+layout(set = 0, binding = 5, std430)           buffer CsfF   { int  v[];     } csf_f;
+layout(set = 0, binding = 6, std430) readonly  buffer DivL   { int  lut[];   } div_lookup;
+layout(set = 0, binding = 7, std430)           buffer Acc    { int64_t v[];  } accum_out;
+layout(set = 0, binding = 8, std430) readonly  buffer DisSrc { uint pix[];   } dis_src;
+
+layout(push_constant) uniform Params {
+    uint cur_w;        /* scale's input width  (i.e. parent LL width) */
+    uint cur_h;        /* scale's input height */
+    uint half_w;       /* (cur_w  + 1) / 2 */
+    uint half_h;       /* (cur_h  + 1) / 2 */
+    uint buf_stride;   /* aligned stride of band buffers (in int32 elems) */
+    uint in_stride;    /* input stride (bytes for scale 0; int32 elems for scale>0) */
+    uint v_shift;      /* DWT vertical quantisation shift */
+    uint v_add;        /* DWT vertical DC offset (scale 0 only) */
+    uint h_shift;      /* DWT horizontal quantisation shift */
+    uint i_rfactor_h;
+    uint i_rfactor_v;
+    uint i_rfactor_d;
+    uint num_workgroups_x; /* for stage 3 WG-index packing */
+    int  gain_hi;      /* enhancement-gain Q31 split, upper 22 bits */
+    int  gain_lo;      /* enhancement-gain Q31 split, lower 16 bits */
+    int  active_left;
+    int  active_top;
+    int  active_right;
+    int  active_bottom;
+    uint csf_shift_sq;
+    uint csf_shift_cub;
+    uint csf_shift_accum;
+    uint cm_shift_inner;
+    uint cm_shift_sub_h;  /* sub shift, band 0 */
+    uint cm_shift_sub_d;  /* sub shift, band 2 */
+    uint cm_shift_xsq_h;
+    uint cm_shift_xsq_d;
+    uint cm_shift_xcub_h;
+    uint cm_shift_xcub_d;
+} pc;
+
+/* ------------------------------------------------------------------
+ * Helpers.
+ * ------------------------------------------------------------------ */
+
+int dev_mirror(int idx, int sup) {
+    if (idx < 0) return -idx;
+    if (idx >= sup) return 2 * sup - idx - 1;
+    return idx;
+}
+
+/* C `(int16_t)` cast semantics: truncate to low 16 bits, sign-extend. */
+int wrap16(int v) {
+    return (v << 16) >> 16;
+}
+
+/* C `(int32_t)` cast of an int64 expression: truncate to low 32 bits,
+ * sign-extend. Explicit shifts instead of int() so the semantics do not
+ * rely on implementation-defined narrowing conversion behaviour.
+ * CPU sites (VMAFx master integer_adm_kernels.h): DWT s123 tmp/band
+ * stores (:1471-1479, :1493-1501), i4_adm_csf dst/flt (:585-591),
+ * i4_adm_cm scaled_r (:1186-1189), i4_adm_cm x_sq (:879-885). */
+int wrap32(int64_t v) {
+    return int((v << 32) >> 32);
+}
+
+int read_src_pixel(uint plane_is_dis, int y, int x, int w, int h) {
+    /* Mirror in y (matches CPU edge convention). */
+    y = dev_mirror(y, h);
+    if (x >= w || x < 0) return 0;
+    if (BPC <= 8) {
+        uint stride_words = (uint(w) + 3u) >> 2;
+        uint row = uint(y) * stride_words;
+        uint word = (plane_is_dis == 0u) ?
+            ref_src.pix[row + (uint(x) >> 2)] :
+            dis_src.pix[row + (uint(x) >> 2)];
+        uint sh = (uint(x) & 3u) * 8u;
+        return int((word >> sh) & 0xFFu);
+    } else {
+        uint stride_words = (uint(w) + 1u) >> 1;
+        uint row = uint(y) * stride_words;
+        uint word = (plane_is_dis == 0u) ?
+            ref_src.pix[row + (uint(x) >> 1)] :
+            dis_src.pix[row + (uint(x) >> 1)];
+        uint sh = (uint(x) & 1u) * 16u;
+        return int((word >> sh) & 0xFFFFu);
+    }
+}
+
+int read_band_int32(uint plane_is_dis, int y, int x) {
+    /* SCALE>0: parent LL band buffer (int32 per element). The band
+     * buffer is contiguous (band_index 0 = LL = ref_band slice 0) and
+     * uses pc.buf_stride. */
+    uint stride = pc.buf_stride;
+    uint base = uint(y) * stride + uint(x);
+    return (plane_is_dis == 0u) ? ref_band.v[base] : dis_band.v[base];
+}
+
+int read_dwt_input(uint plane_is_dis, int y, int x) {
+    if (SCALE == 0) {
+        return read_src_pixel(plane_is_dis, y, x, int(pc.cur_w), int(pc.cur_h));
+    } else {
+        y = dev_mirror(y, int(pc.cur_h));
+        if (x < 0 || x >= int(pc.cur_w)) return 0;
+        return read_band_int32(plane_is_dis, y, x);
+    }
+}
+
+/* ------------------------------------------------------------------
+ * Stage 0: DWT vertical pass (ref+dis fused).
+ *
+ * Output: dwt_tmp[ref|dis] writes interleaved lo/hi rows. For each
+ * output row n in [0..half_h), input rows are 2n-1..2n+2 (4 taps).
+ * Layout: dwt_tmp[gy * (cur_w*2) + gx]   = lo
+ *         dwt_tmp[gy * (cur_w*2) + cur_w + gx] = hi
+ * ------------------------------------------------------------------ */
+void run_stage_dwt_vert() {
+    uint gx_u = gl_GlobalInvocationID.x;
+    uint gy_u = gl_GlobalInvocationID.y;
+    uint plane_is_dis = gl_GlobalInvocationID.z; /* 0=ref, 1=dis */
+
+    int gx = int(gx_u);
+    int gy = int(gy_u);
+    if (gx >= int(pc.cur_w) || gy >= int(pc.half_h)) return;
+
+    int row_start = 2 * gy - 1;
+    int s0 = read_dwt_input(plane_is_dis, row_start + 0, gx);
+    int s1 = read_dwt_input(plane_is_dis, row_start + 1, gx);
+    int s2 = read_dwt_input(plane_is_dis, row_start + 2, gx);
+    int s3 = read_dwt_input(plane_is_dis, row_start + 3, gx);
+
+    int64_t lo_val = int64_t(DWT_LO_0) * int64_t(s0)
+                   + int64_t(DWT_LO_1) * int64_t(s1)
+                   + int64_t(DWT_LO_2) * int64_t(s2)
+                   + int64_t(DWT_LO_3) * int64_t(s3);
+    int64_t hi_val = int64_t(DWT_HI_0) * int64_t(s0)
+                   + int64_t(DWT_HI_1) * int64_t(s1)
+                   + int64_t(DWT_HI_2) * int64_t(s2)
+                   + int64_t(DWT_HI_3) * int64_t(s3);
+
+    if (SCALE == 0) {
+        lo_val -= int64_t(DWT_LO_SUM) * int64_t(pc.v_add);
+    }
+
+    int lo_out;
+    int hi_out;
+    if (pc.v_shift > 0u) {
+        int64_t rnd = int64_t(1) << (pc.v_shift - 1u);
+        lo_out = int((lo_val + rnd) >> pc.v_shift);
+        hi_out = int((hi_val + rnd) >> pc.v_shift);
+    } else {
+        lo_out = int(lo_val);
+        hi_out = int(hi_val);
+    }
+
+    /* CPU adm_dwt2_8 stores the vertical-pass tmp in int16_t arrays;
+     * adm_dwt2_s123_combined stores it in int32_t. */
+    if (SCALE == 0) {
+        lo_out = wrap16(lo_out);
+        hi_out = wrap16(hi_out);
+    } else {
+        lo_out = wrap32(lo_out);
+        hi_out = wrap32(hi_out);
+    }
+
+    uint out_stride = pc.cur_w * 2u;
+    if (plane_is_dis == 0u) {
+        dwt_tmp_ref.v[uint(gy) * out_stride + uint(gx)] = lo_out;
+        dwt_tmp_ref.v[uint(gy) * out_stride + pc.cur_w + uint(gx)] = hi_out;
+    } else {
+        dwt_tmp_dis.v[uint(gy) * out_stride + uint(gx)] = lo_out;
+        dwt_tmp_dis.v[uint(gy) * out_stride + pc.cur_w + uint(gx)] = hi_out;
+    }
+}
+
+/* ------------------------------------------------------------------
+ * Stage 1: DWT horizontal pass (ref+dis fused).
+ *
+ * Reads dwt_tmp[lo|hi] rows, applies horizontal DWT, writes 4 bands
+ * into ref_band[0..3] / dis_band[0..3]. Each band slice is at offset
+ * `band_index * buf_stride * half_h` inside the SSBO.
+ * ------------------------------------------------------------------ */
+int read_dwt_tmp(uint plane_is_dis, int gy, int x_in_lo_or_hi, uint half_offset) {
+    /* x_in_lo_or_hi is the column inside the lo (half_offset=0) or hi
+     * (half_offset=cur_w) sub-row. */
+    x_in_lo_or_hi = dev_mirror(x_in_lo_or_hi, int(pc.cur_w));
+    uint stride = pc.cur_w * 2u;
+    uint idx = uint(gy) * stride + half_offset + uint(x_in_lo_or_hi);
+    return (plane_is_dis == 0u) ? dwt_tmp_ref.v[idx] : dwt_tmp_dis.v[idx];
+}
+
+void write_band(uint plane_is_dis, uint band, int x, int y, int val) {
+    uint slice_size = pc.buf_stride * pc.half_h;
+    uint idx = band * slice_size + uint(y) * pc.buf_stride + uint(x);
+    if (plane_is_dis == 0u) ref_band.v[idx] = val;
+    else                     dis_band.v[idx] = val;
+}
+
+void run_stage_dwt_hori() {
+    uint gx_u = gl_GlobalInvocationID.x;
+    uint gy_u = gl_GlobalInvocationID.y;
+    uint plane_is_dis = gl_GlobalInvocationID.z;
+
+    int gx = int(gx_u);
+    int gy = int(gy_u);
+    if (gx >= int(pc.half_w) || gy >= int(pc.half_h)) return;
+
+    int base_x = 2 * gx;
+
+    int l0 = read_dwt_tmp(plane_is_dis, gy, base_x - 1, 0u);
+    int l1 = read_dwt_tmp(plane_is_dis, gy, base_x + 0, 0u);
+    int l2 = read_dwt_tmp(plane_is_dis, gy, base_x + 1, 0u);
+    int l3 = read_dwt_tmp(plane_is_dis, gy, base_x + 2, 0u);
+
+    int64_t a_val = int64_t(DWT_LO_0) * int64_t(l0)
+                  + int64_t(DWT_LO_1) * int64_t(l1)
+                  + int64_t(DWT_LO_2) * int64_t(l2)
+                  + int64_t(DWT_LO_3) * int64_t(l3);
+    int64_t h_val = int64_t(DWT_HI_0) * int64_t(l0)
+                  + int64_t(DWT_HI_1) * int64_t(l1)
+                  + int64_t(DWT_HI_2) * int64_t(l2)
+                  + int64_t(DWT_HI_3) * int64_t(l3);
+
+    int h0 = read_dwt_tmp(plane_is_dis, gy, base_x - 1, pc.cur_w);
+    int h1 = read_dwt_tmp(plane_is_dis, gy, base_x + 0, pc.cur_w);
+    int h2 = read_dwt_tmp(plane_is_dis, gy, base_x + 1, pc.cur_w);
+    int h3 = read_dwt_tmp(plane_is_dis, gy, base_x + 2, pc.cur_w);
+
+    int64_t v_val = int64_t(DWT_LO_0) * int64_t(h0)
+                  + int64_t(DWT_LO_1) * int64_t(h1)
+                  + int64_t(DWT_LO_2) * int64_t(h2)
+                  + int64_t(DWT_LO_3) * int64_t(h3);
+    int64_t d_val = int64_t(DWT_HI_0) * int64_t(h0)
+                  + int64_t(DWT_HI_1) * int64_t(h1)
+                  + int64_t(DWT_HI_2) * int64_t(h2)
+                  + int64_t(DWT_HI_3) * int64_t(h3);
+
+    int a_out, h_out, v_out, d_out;
+    if (pc.h_shift > 0u) {
+        int64_t rnd = int64_t(1) << (pc.h_shift - 1u);
+        a_out = int((a_val + rnd) >> pc.h_shift);
+        h_out = int((h_val + rnd) >> pc.h_shift);
+        v_out = int((v_val + rnd) >> pc.h_shift);
+        d_out = int((d_val + rnd) >> pc.h_shift);
+    } else {
+        a_out = int(a_val);
+        h_out = int(h_val);
+        v_out = int(v_val);
+        d_out = int(d_val);
+    }
+
+    /* CPU adm_dwt2_8 stores scale-0 bands in int16_t arrays (and
+     * i16_to_i32 widens them again for the scale-1 input);
+     * adm_dwt2_s123_combined stores s123 bands in int32_t. */
+    if (SCALE == 0) {
+        a_out = wrap16(a_out);
+        h_out = wrap16(h_out);
+        v_out = wrap16(v_out);
+        d_out = wrap16(d_out);
+    } else {
+        a_out = wrap32(a_out);
+        h_out = wrap32(h_out);
+        v_out = wrap32(v_out);
+        d_out = wrap32(d_out);
+    }
+
+    write_band(plane_is_dis, 0u, gx, gy, a_out);
+    write_band(plane_is_dis, 1u, gx, gy, h_out);
+    write_band(plane_is_dis, 2u, gx, gy, v_out);
+    write_band(plane_is_dis, 3u, gx, gy, d_out);
+}
+
+/* ------------------------------------------------------------------
+ * Decouple + CSF helpers (shared between stage 2 and stage 3).
+ * ------------------------------------------------------------------ */
+
+/* cos(1 deg)^2 enters the angle predicate only through its exact
+ * 24-bit significand MC = 16772106 (c * 2^24) and D = 2^24 - MC = 5110
+ * in adm_angle_flag_i64() below — see adm_angle_flag.h:96-104. */
+
+int read_band_at(uint plane_is_dis, uint band, int y, int x) {
+    uint slice_size = pc.buf_stride * pc.half_h;
+    uint idx = band * slice_size + uint(y) * pc.buf_stride + uint(x);
+    return (plane_is_dis == 0u) ? ref_band.v[idx] : dis_band.v[idx];
+}
+
+int read_csf_f_at(uint band, int y, int x) {
+    /* Mirror clamp like CPU adm_cm_thresh / i4_adm_cm_thresh (padding the
+     * 3x3 CM neighborhood): the top and left edge taps read the SECOND
+     * row/column ((i == 0) ? 1 : i - 1), the bottom and right edges read
+     * the last one ((i == h - 1) ? h - 1 : i + 1). The active CM region
+     * only includes an edge row/column when the band height/width is
+     * small (adm_cm_bounds: an edge is active iff b.top <= 0, i.e.
+     * hh * ADM_BORDER_FACTOR - 0.5 < 0.5), which is where the asymmetry
+     * is observable. */
+    if (x < 0) x = 1;
+    if (x >= int(pc.half_w)) x = int(pc.half_w) - 1;
+    if (y < 0) y = 1;
+    if (y >= int(pc.half_h)) y = int(pc.half_h) - 1;
+    uint slice_size = pc.buf_stride * pc.half_h;
+    return csf_f.v[band * slice_size + uint(y) * pc.buf_stride + uint(x)];
+}
+
+void write_csf_f(uint band, int x, int y, int val) {
+    uint slice_size = pc.buf_stride * pc.half_h;
+    csf_f.v[band * slice_size + uint(y) * pc.buf_stride + uint(x)] = val;
+}
+
+/* Compute decouple r_val and k for a single band. Returns r_val
+ * (and writes k via out parameter). Mirrors the SYCL inline logic. */
+/* ------------------------------------------------------------------ */
+/* Angle predicate: fp64-free, bit-identical port of adm_angle_flag_i64()
+ * (core/src/feature/adm_angle_flag.h:219-262; derivation:
+ * docs/research/2030-adm-angle-flag-fp64-free.md). Same predicate shape
+ * as the SYCL and Metal twins; needs no fp64 of any width, so the
+ * shader no longer requires the shaderFloat64 device feature. */
+const uint64_t AF_MC = 16772106UL;
+const uint64_t AF_D  = 5110UL;
+
+int af_bitlen(uint64_t v) {
+    int n = 0;
+    if ((v >> 32UL) != 0UL) { v >>= 32UL; n += 32; }
+    if ((v >> 16UL) != 0UL) { v >>= 16UL; n += 16; }
+    if ((v >> 8UL)  != 0UL) { v >>= 8UL;  n += 8; }
+    if ((v >> 4UL)  != 0UL) { v >>= 4UL;  n += 4; }
+    if ((v >> 2UL)  != 0UL) { v >>= 2UL;  n += 2; }
+    if ((v >> 1UL)  != 0UL) { v >>= 1UL;  n += 1; }
+    return n + int(v);
+}
+
+void af_norm24(uint64_t v, out uint64_t m, out int e) {
+    const int n = af_bitlen(v);
+    if (n <= 24) {
+        m = v << uint(24 - n);
+        e = n - 24;
+        return;
+    }
+    int s = n - 24;
+    uint64_t q = v >> uint(s);
+    uint64_t rem = v & ((1UL << uint(s)) - 1UL);
+    uint64_t af_half = 1UL << uint(s - 1);
+    if ((rem > af_half) || ((rem == af_half) && ((q & 1UL) != 0UL))) {
+        q++;
+        if (q == (1UL << 24UL)) {
+            q >>= 1UL;
+            s++;
+        }
+    }
+    m = q;
+    e = s;
+}
+
+uint64_t af_round53_v(uint64_t mo, uint64_t mt, out int p_out) {
+    uint64_t g = mo * mt;                /* < 2^48 */
+    uint64_t r = g & 0xFFFFFFUL;
+    uint64_t s_val = g - AF_D * (g >> 24UL);
+    uint64_t dr = AF_D * r;              /* < 2^37 */
+
+    int n = af_bitlen(s_val);
+    uint64_t below = s_val - (1UL << uint(n - 1));
+    if ((below < AF_D) && ((below << 24UL) < dr)) {
+        n--;
+    }
+
+    int p = 53 - n;                      /* 5 <= p <= 8 */
+    uint64_t u = dr << uint(p);
+    uint64_t ui = u >> 24UL;
+    uint64_t uf = u & 0xFFFFFFUL;
+    uint64_t rounded = (s_val << uint(p)) - ui;
+
+    if (uf != 0UL) {
+        uint64_t af_frac = 0x1000000UL - uf;
+        rounded -= 1UL;
+        if (af_frac > 0x800000UL) {
+            rounded += 1UL;
+        } else if (af_frac == 0x800000UL) {
+            rounded += (rounded & 1UL);  /* ties to even */
+        }
+    }
+    p_out = p;
+    return rounded;
+}
+
+int adm_angle_flag_i64(int64_t ot_dp, int64_t o_mag_sq, int64_t t_mag_sq) {
+    if (ot_dp < int64_t(0)) {
+        return 0;
+    }
+    bool rhs_negative = ((o_mag_sq < int64_t(0)) != (t_mag_sq < int64_t(0)));
+    uint64_t ao = (o_mag_sq < int64_t(0)) ? (0UL - uint64_t(o_mag_sq)) : uint64_t(o_mag_sq);
+    uint64_t at = (t_mag_sq < int64_t(0)) ? (0UL - uint64_t(t_mag_sq)) : uint64_t(t_mag_sq);
+    if ((ao == 0UL) || (at == 0UL) || rhs_negative) {
+        return 1;
+    }
+    if (ot_dp == int64_t(0)) {
+        return 0;
+    }
+    uint64_t mp, mo, mt;
+    int ep, eo, et;
+    af_norm24(uint64_t(ot_dp), mp, ep);
+    af_norm24(ao, mo, eo);
+    af_norm24(at, mt, et);
+    const int sp = 2 * ep - eo - et;
+    if (sp >= 3) {
+        return 1;
+    }
+    if (sp <= -3) {
+        return 0;
+    }
+    int p;
+    uint64_t rounded = af_round53_v(mo, mt, p);
+    return ((mp * mp) << uint(sp + p)) >= rounded ? 1 : 0;
+}
+
+int decouple_one_band(int oh, int bth, out int k_out) {
+    int r_val = 0;
+    int k = 0;
+    if (oh == 0) {
+        k = 32768;
+        r_val = 0;
+    } else {
+        int abs_oh = oh < 0 ? -oh : oh;
+        int sign_oh = oh < 0 ? -1 : 1;
+        int div_val;
+        int kh_shift = 0;
+
+        if (SCALE == 0) {
+            div_val = div_lookup.lut[32768 + abs_oh] * sign_oh;
+        } else {
+            if (abs_oh < 32768) {
+                div_val = div_lookup.lut[32768 + abs_oh] * sign_oh;
+            } else {
+                uint tmp = uint(abs_oh);
+                int n = 0;
+                uint v = tmp;
+                if (v >= (1u << 16)) { n += 16; v >>= 16; }
+                if (v >= (1u <<  8)) { n +=  8; v >>=  8; }
+                if (v >= (1u <<  4)) { n +=  4; v >>=  4; }
+                if (v >= (1u <<  2)) { n +=  2; v >>=  2; }
+                if (v >= (1u <<  1)) { n +=  1; v >>=  1; }
+                int clz = 31 - n;
+                int ks = 17 - clz;
+                uint rounded = (tmp + (1u << uint(ks - 1))) >> uint(ks);
+                kh_shift = ks;
+                div_val = div_lookup.lut[32768 + int(rounded)] * sign_oh;
+            }
+        }
+
+        int64_t k64 = int64_t(div_val) * int64_t(bth);
+        if (SCALE == 0) {
+            k = int((k64 + int64_t(1 << 14)) >> 15);
+        } else {
+            int shift = 15 + kh_shift;
+            k = int((k64 + (int64_t(1) << uint(shift - 1))) >> uint(shift));
+        }
+        if (k < 0) k = 0;
+        if (k > 32768) k = 32768;
+        r_val = int((int64_t(k) * int64_t(oh) + int64_t(16384)) >> 15);
+    }
+    k_out = k;
+    /* CPU stores scale-0 rst in int16_t (adm_decouple: int16_t rst_h). */
+    if (SCALE == 0) {
+        r_val = wrap16(r_val);
+    }
+    return r_val;
+}
+
+/* Apply enhancement-gain limit. Returns updated r_val. */
+int apply_gain_limit(int r_val, int oh, int k, int bth, bool angle_flag) {
+    if (!angle_flag) return r_val;
+    /* `precise` matches CPU's `-ffp-contract=off` so the rst_f sign
+     * test agrees with CPU at the rounding boundary (T7-16; CPU site:
+     * integer_adm_kernels.h:283-289 — float product, then
+     * `angle_flag && (rst_f > 0.)` / `< 0.` selects the clamp). */
+    precise float a = float(k) / 32768.0f;
+    precise float b = float(oh) / 64.0f;
+    precise float rst_f = a * b;
+    int64_t prod_hi = int64_t(r_val) * int64_t(pc.gain_hi);
+    int64_t prod_lo = int64_t(r_val) * int64_t(pc.gain_lo);
+    int64_t main_part = prod_hi >> 15;
+    int64_t rem = ((prod_hi - (main_part << 15)) << 16) + prod_lo;
+    int64_t gained = main_part + (rem >> 31);
+    if (rst_f > 0.0f) {
+        int64_t c = (gained < int64_t(bth)) ? gained : int64_t(bth);
+        return int(c);
+    } else if (rst_f < 0.0f) {
+        int64_t c = (gained > int64_t(bth)) ? gained : int64_t(bth);
+        return int(c);
+    }
+    return r_val;
+}
+
+int compute_csf_a(int a_val, uint i_rf, int band) {
+    if (SCALE == 0) {
+        int shift = (band < 2) ? 15 : 17;
+        /* CPU adm_csf_shiftsadd = {16384, 16384, 65535} — the diagonal
+         * band rounding constant is 65535, NOT 1<<16
+         * (integer_adm_kernels.h:439, applied :487; shifts :438). */
+        int64_t rnd = (band < 2) ? int64_t(16384) : int64_t(65535);
+        /* CPU adm_csf stores csf_a in int16_t (i16_dst_val, :486-488). */
+        return wrap16(int((int64_t(i_rf) * int64_t(a_val) + rnd) >> uint(shift)));
+    } else {
+        /* CPU i4_adm_csf_cols casts to int32_t (:585-588). */
+        return wrap32((int64_t(i_rf) * int64_t(a_val) + (int64_t(1) << 27)) >> 28);
+    }
+}
+
+int csf_a_to_csf_f(int csf_a) {
+    int abs_csf = csf_a < 0 ? -csf_a : csf_a;
+    if (SCALE == 0) {
+        /* CPU casts the scale-0 flt term to int16_t (:490). */
+        return wrap16(int((int64_t(4369) * int64_t(abs_csf) + int64_t(2048)) >> 12));
+    } else {
+        /* CPU i4_adm_csf_cols casts to int32_t (:589-591), with
+         * add_bef_shift_flt = (int32_t)(1u << 31) — which WRAPS to
+         * -2147483648 (integer_adm_kernels.h:520-528; documented
+         * deliberately-preserved behaviour: ADR-0155 / Netflix#955,
+         * comment :507-519). So the real CPU expression is
+         * (143165577*|csf_a| - 2^31) >> 32 — minus, not plus, and the
+         * CUDA/HIP/SYCL twins encode the same minus on purpose. */
+        return wrap32((int64_t(143165577) * int64_t(abs_csf) - (int64_t(1) << 31)) >> 32);
+    }
+}
+
+/* ------------------------------------------------------------------
+ * Stage 2: Decouple + CSF (writes csf_f only — r and csf_a are
+ * recomputed in stage 3, mirroring the SYCL fused approach).
+ * ------------------------------------------------------------------ */
+void run_stage_decouple_csf() {
+    uint gx_u = gl_GlobalInvocationID.x;
+    uint gy_u = gl_GlobalInvocationID.y;
+    int gx = int(gx_u);
+    int gy = int(gy_u);
+    if (gx >= int(pc.half_w) || gy >= int(pc.half_h)) return;
+
+    /* Load all 3 bands (H,V,D) for ref and dis. */
+    int o0 = read_band_at(0u, 1u, gy, gx);
+    int o1 = read_band_at(0u, 2u, gy, gx);
+    int o2 = read_band_at(0u, 3u, gy, gx);
+    int t0 = read_band_at(1u, 1u, gy, gx);
+    int t1 = read_band_at(1u, 2u, gy, gx);
+    int t2 = read_band_at(1u, 3u, gy, gx);
+
+    /* Angle test (uses H,V bands only). `precise` blocks FMA
+     * contraction so this matches CPU's `-ffp-contract=off` order
+     * — see the parallel block in launch_decouple_csf for the full
+     * rationale (T7-16). CPU call site: adm_angle_flag() from
+     * integer_adm_kernels.h:312-314 (scale 0) / :407-409 (s1..3). */
+    int64_t ot_dp = int64_t(o0) * int64_t(t0) + int64_t(o1) * int64_t(t1);
+    int64_t o_mag_sq = int64_t(o0) * int64_t(o0) + int64_t(o1) * int64_t(o1);
+    int64_t t_mag_sq = int64_t(t0) * int64_t(t0) + int64_t(t1) * int64_t(t1);
+    /* fp64-free bit-identical predicate (see adm_angle_flag_i64 above);
+     * the CPU's frozen expression is carried in binary64, this integer
+     * reformulation returns the same flag for every input triple. */
+    bool angle_flag = (adm_angle_flag_i64(ot_dp, o_mag_sq, t_mag_sq) != 0);
+
+    int oarr[3];   oarr[0] = o0; oarr[1] = o1; oarr[2] = o2;
+    int tarr[3];   tarr[0] = t0; tarr[1] = t1; tarr[2] = t2;
+    uint irf[3];   irf[0] = pc.i_rfactor_h; irf[1] = pc.i_rfactor_v; irf[2] = pc.i_rfactor_d;
+
+    for (int b = 0; b < ADM_NUM_BANDS; b++) {
+        int oh = oarr[b];
+        int bth = tarr[b];
+        int k;
+        int r_val = decouple_one_band(oh, bth, k);
+        r_val = apply_gain_limit(r_val, oh, k, bth, angle_flag);
+        /* CPU: decouple_a = (int16_t)(th - rst) at scale 0. */
+        int a_val = (SCALE == 0) ? wrap16(bth - r_val) : (bth - r_val);
+        int csf_a_val = compute_csf_a(a_val, irf[b], b);
+        int csf_f_val = csf_a_to_csf_f(csf_a_val);
+        write_csf_f(uint(b), gx, gy, csf_f_val);
+    }
+}
+
+/* ------------------------------------------------------------------
+ * Stage 3: CSF denominator + Contrast measure fused (per-band per-row
+ * 1D workgroups), with inline decouple+CSF. Mirrors the SYCL
+ * launch_csf_den_cm_3band.
+ *
+ * Workgroup grid: dispatch (3 * num_rows, 1, 1) workgroups, each WG
+ * = 256 threads in a 16x16 layout but treated as a 1D pool. WG index:
+ *     band_idx = wg / num_rows
+ *     row_idx  = wg % num_rows
+ * Each WG sums its row's CSF and CM contributions for one band into
+ * (per-WG, 6-slot) int64 accumulators. The host adds slots later.
+ * ------------------------------------------------------------------ */
+
+/* Worst-case subgroup count: WG is local_size 16x16 = 256 threads.
+ * On NVIDIA / Mesa anv subgroupSize is 32 → n_subgroups = 8.
+ * On Mesa lavapipe subgroupSize can be 1 → n_subgroups = 256.
+ * Sizing for 256 covers every Vulkan-capable driver. The previous
+ * `[16]` overflowed on lavapipe, corrupting the heap (T7-16 follow-up
+ * uncovered by the lavapipe CI gate). */
+shared int64_t s_csf[256];  /* per-subgroup scratch */
+shared int64_t s_cm[256];
+
+void run_stage_csf_cm() {
+    uint wg_id = gl_WorkGroupID.x;
+    uint num_rows = uint(pc.active_bottom - pc.active_top);
+    uint band_idx = wg_id / num_rows;
+    uint row_idx  = wg_id - band_idx * num_rows;
+    int row = pc.active_top + int(row_idx);
+
+    uint lid = gl_LocalInvocationID.y * 16u + gl_LocalInvocationID.x;
+    const uint WG_SIZE = 256u;
+
+    uint i_rfactor_band = (band_idx == 0u) ? pc.i_rfactor_h :
+                          (band_idx == 1u) ? pc.i_rfactor_v : pc.i_rfactor_d;
+    uint cm_shift_sub  = (band_idx < 2u) ? pc.cm_shift_sub_h  : pc.cm_shift_sub_d;
+    uint cm_shift_xsq  = (band_idx < 2u) ? pc.cm_shift_xsq_h  : pc.cm_shift_xsq_d;
+    uint cm_shift_xcub = (band_idx < 2u) ? pc.cm_shift_xcub_h : pc.cm_shift_xcub_d;
+
+    int64_t local_csf_sum = int64_t(0);
+    int64_t local_cm_sum  = int64_t(0);
+
+    for (int col = pc.active_left + int(lid); col < pc.active_right; col += int(WG_SIZE)) {
+        /* CSF denominator: |ref|^3 for this band. */
+        int t = read_band_at(0u, band_idx + 1u, row, col);
+        int abs_t = t < 0 ? -t : t;
+        int64_t t_cub;
+        if (SCALE == 0) {
+            t_cub = int64_t(abs_t) * int64_t(abs_t) * int64_t(abs_t);
+        } else {
+            int64_t rnd_sq = int64_t(1) << pc.csf_shift_sq;
+            int64_t t_sq = (int64_t(abs_t) * int64_t(abs_t) + rnd_sq) >> pc.csf_shift_sq;
+            int64_t rnd_cub = pc.csf_shift_cub > 0u ? (int64_t(1) << (pc.csf_shift_cub - 1u)) : int64_t(0);
+            t_cub = (t_sq * int64_t(abs_t) + rnd_cub) >> pc.csf_shift_cub;
+        }
+        local_csf_sum += t_cub;
+
+        /* Inline decouple+CSF for all 3 bands. */
+        int o0 = read_band_at(0u, 1u, row, col);
+        int o1 = read_band_at(0u, 2u, row, col);
+        int o2 = read_band_at(0u, 3u, row, col);
+        int b0 = read_band_at(1u, 1u, row, col);
+        int b1 = read_band_at(1u, 2u, row, col);
+        int b2 = read_band_at(1u, 3u, row, col);
+
+        int64_t ot_dp = int64_t(o0) * int64_t(b0) + int64_t(o1) * int64_t(b1);
+        int64_t o_mag_sq = int64_t(o0) * int64_t(o0) + int64_t(o1) * int64_t(o1);
+        int64_t t_mag_sq = int64_t(b0) * int64_t(b0) + int64_t(b1) * int64_t(b1);
+        /* `precise` blocks FMA contraction so the compiler can't fuse
+         * `cos_sq * om_f * tm_f` into an fma() — different drivers
+         * (NVIDIA proprietary vs Mesa anv) make different fusion
+         * choices, producing different angle_flag at the rounding
+         * boundary. Frame 10 of the Netflix normal pair flips the
+         * boundary and triggers a 2.4e-4 adm_scale2 drift on RTX/SYCL
+         * vs Arc/Vulkan. CPU's `(float)ot_dp / 4096.0` path doesn't
+         * fuse (host gcc `-O2` defaults to `-ffp-contract=off` for
+         * non-`*=`/`+=` operators), so matching that here is the
+         * portable fix. T7-16. */
+        /* fp64-free bit-identical predicate (see stage-2 note). */
+        bool angle_flag = (adm_angle_flag_i64(ot_dp, o_mag_sq, t_mag_sq) != 0);
+
+        int oarr[3]; oarr[0] = o0; oarr[1] = o1; oarr[2] = o2;
+        int tarr[3]; tarr[0] = b0; tarr[1] = b1; tarr[2] = b2;
+        uint irf[3]; irf[0] = pc.i_rfactor_h; irf[1] = pc.i_rfactor_v; irf[2] = pc.i_rfactor_d;
+
+        int r_vals[3];
+        int csf_a_vals[3];
+        for (int b = 0; b < ADM_NUM_BANDS; b++) {
+            int k;
+            int r_val = decouple_one_band(oarr[b], tarr[b], k);
+            r_val = apply_gain_limit(r_val, oarr[b], k, tarr[b], angle_flag);
+            r_vals[b] = r_val;
+            /* CPU: decouple_a = (int16_t)(th - rst) at scale 0. */
+            int a_val = (SCALE == 0) ? wrap16(tarr[b] - r_val) : (tarr[b] - r_val);
+            csf_a_vals[b] = compute_csf_a(a_val, irf[b], b);
+        }
+
+        /* Contrast measure: 3x3 neighborhood threshold sum then CM subtract. */
+        int64_t thr = int64_t(0);
+        for (int b = 0; b < ADM_NUM_BANDS; b++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dx = -1; dx <= 1; dx++) {
+                    if (dx == 0 && dy == 0) continue;
+                    thr += int64_t(read_csf_f_at(uint(b), row + dy, col + dx));
+                }
+            }
+            int abs_ca = csf_a_vals[b] < 0 ? -csf_a_vals[b] : csf_a_vals[b];
+            if (SCALE == 0) {
+                /* VMAFx master keeps the own-term tap in int32
+                 * (ADR-1402, adm_cm_thresh() :816) — the Netflix-style
+                 * int16 wrap is a defect this port does not carry. */
+                thr += int64_t((int64_t(ONE_BY_15) * int64_t(abs_ca) + int64_t(2048)) >> 12);
+            } else {
+                /* CPU i4_adm_cm_thresh own-term (:847-848):
+                 * add_bef_shift_flt is (int32_t)(1u<<31) = -2147483648
+                 * (:520-528, ADR-0155), so the real expression is
+                 * (I4_ONE_BY_15*|csf_a| - 2^31) >> 32. */
+                thr += (int64_t(I4_ONE_BY_15) * int64_t(abs_ca) - (int64_t(1) << 31)) >> 32;
+            }
+        }
+
+        int r_band = r_vals[band_idx];
+        int64_t cm;
+        if (SCALE == 0) {
+            cm = int64_t(i_rfactor_band) * int64_t(r_band);
+            cm = cm < 0 ? -cm : cm;
+            cm -= (thr << cm_shift_sub);
+            if (cm < 0) cm = int64_t(0);
+
+            int64_t rnd_sq2 = cm_shift_xsq > 0u ? (int64_t(1) << (cm_shift_xsq - 1u)) : int64_t(0);
+            /* CPU adm_cm_accum_round (:870-875) casts v_sq to int32_t. */
+            int x_sq = wrap32((cm * cm + rnd_sq2) >> cm_shift_xsq);
+            int64_t rnd_cub2 = cm_shift_xcub > 0u ? (int64_t(1) << (cm_shift_xcub - 1u)) : int64_t(0);
+            int64_t x_cub = ((int64_t(x_sq) * cm) + rnd_cub2) >> cm_shift_xcub;
+            local_cm_sum += x_cub;
+        } else {
+            /* CPU i4_adm_cm_scale (:1186-1189) casts the CSF-weighted
+             * product to int32_t — at scale>=1 the int64 product can
+             * exceed int32 range, so the narrowing (wrap32) is
+             * load-bearing, not incidental. */
+            int scaled_r = wrap32((int64_t(i_rfactor_band) * int64_t(r_band) + (int64_t(1) << 27)) >> 28);
+            int64_t cm = scaled_r < 0 ? -int64_t(scaled_r) : int64_t(scaled_r);
+            cm -= thr;
+            if (cm < 0) cm = int64_t(0);
+
+            int64_t rnd_sq2 = cm_shift_xsq > 0u ? (int64_t(1) << (cm_shift_xsq - 1u)) : int64_t(0);
+            /* CPU i4_adm_cm_accum_round (:879-885) casts v_sq to int32_t. */
+            int x_sq = wrap32((cm * cm + rnd_sq2) >> cm_shift_xsq);
+            int64_t rnd_cub2 = cm_shift_xcub > 0u ? (int64_t(1) << (cm_shift_xcub - 1u)) : int64_t(0);
+            int64_t x_cub = ((int64_t(x_sq) * cm) + rnd_cub2) >> cm_shift_xcub;
+            local_cm_sum += x_cub;
+        }
+    }
+
+    /* Workgroup reduction: each thread publishes its per-thread partial,
+     * thread 0 sums all 256 slots serially. Two's-complement addition is
+     * associative, so the total is order-independent. This replaces the
+     * snapshot's subgroupAdd(int64_t), which has the known NVIDIA lowering
+     * bug (~1e14-scale sign flips) — do not restore it on rebase. */
+    s_csf[lid] = local_csf_sum;
+    s_cm[lid]  = local_cm_sum;
+    barrier();
+    if (lid == 0u) {
+        int64_t total_csf = int64_t(0);
+        int64_t total_cm  = int64_t(0);
+        for (uint t = 0u; t < WG_SIZE; t++) {
+            total_csf += s_csf[t];
+            total_cm  += s_cm[t];
+        }
+        /* Apply outer-shift per SYCL: csf_shift_accum and
+         * cm_shift_inner are applied here pre-write. */
+        int64_t rnd_csf = pc.csf_shift_accum > 0u ?
+            (int64_t(1) << (pc.csf_shift_accum - 1u)) : int64_t(0);
+        int64_t rnd_cm = pc.cm_shift_inner > 0u ?
+            (int64_t(1) << (pc.cm_shift_inner - 1u)) : int64_t(0);
+        int64_t shifted_csf = (total_csf + rnd_csf) >> pc.csf_shift_accum;
+        int64_t shifted_cm  = (total_cm  + rnd_cm)  >> pc.cm_shift_inner;
+
+        /* Per-WG accumulator slot layout: 6 int64 per WG.
+         *   slot 0..2 = csf_h / csf_v / csf_d
+         *   slot 3..5 = cm_h  / cm_v  / cm_d
+         * Index by linear WG id. */
+        uint slot_base = wg_id * 6u;
+        accum_out.v[slot_base + band_idx]      = shifted_csf;
+        accum_out.v[slot_base + 3u + band_idx] = shifted_cm;
+    }
+}
+
+/* ------------------------------------------------------------------ */
+
+void main()
+{
+    if (STAGE == 0) run_stage_dwt_vert();
+    else if (STAGE == 1) run_stage_dwt_hori();
+    else if (STAGE == 2) run_stage_decouple_csf();
+    else                 run_stage_csf_cm();
+}
