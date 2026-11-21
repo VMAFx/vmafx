@@ -54,6 +54,11 @@ endef
 # Build types and options
 BUILDTYPE_RELEASE := --buildtype release
 BUILDTYPE_DEBUG := --buildtype debug
+SANITIZER_MESON_ARGS := -Db_sanitize=address,undefined \
+    -Denable_cuda=false -Denable_sycl=false
+COVERAGE_MESON_ARGS := -Db_coverage=true \
+    -Denable_cuda=false -Denable_sycl=false \
+    -Dc_args=-fprofile-update=atomic -Dcpp_args=-fprofile-update=atomic
 ENABLE_FLOAT := -Denable_float=true
 ENABLE_NVCC :=	true
 ENABLE_CUDA := -Denable_cuda=true -Denable_nvcc=$(ENABLE_NVCC)
@@ -797,12 +802,10 @@ INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER := 3
 test-sanitizers:
 	@mkdir -p build-san
 	meson setup build-san $(LIBVMAF_DIR) --buildtype=debug \
-	    -Db_sanitize=address,undefined \
-	    -Denable_cuda=false -Denable_sycl=false \
+	    $(SANITIZER_MESON_ARGS) \
 	    --reconfigure 2>/dev/null || \
 	meson setup build-san $(LIBVMAF_DIR) --buildtype=debug \
-	    -Db_sanitize=address,undefined \
-	    -Denable_cuda=false -Denable_sycl=false
+	    $(SANITIZER_MESON_ARGS)
 	ninja -C build-san
 	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- -C build-san --print-errorlogs \
 	    --timeout-multiplier $(INSTRUMENTED_TEST_TIMEOUT_MULTIPLIER)
@@ -839,12 +842,10 @@ coverage:
 	@command -v gcovr >/dev/null || { echo "gcovr not found - install gcovr (requirements/locks/gcovr.txt)"; exit 1; }
 	@command -v gcov >/dev/null || { echo "gcov not found - install gcc"; exit 1; }
 	@mkdir -p $(COVERAGE_DIR)
-	meson setup $(COVERAGE_DIR) $(LIBVMAF_DIR) --buildtype=debug -Db_coverage=true \
-	    -Denable_cuda=false -Denable_sycl=false \
-	    -Dc_args=-fprofile-update=atomic -Dcpp_args=-fprofile-update=atomic --reconfigure 2>/dev/null || \
-	meson setup $(COVERAGE_DIR) $(LIBVMAF_DIR) --buildtype=debug -Db_coverage=true \
-	    -Denable_cuda=false -Denable_sycl=false \
-	    -Dc_args=-fprofile-update=atomic -Dcpp_args=-fprofile-update=atomic
+	meson setup $(COVERAGE_DIR) $(LIBVMAF_DIR) --buildtype=debug \
+	    $(COVERAGE_MESON_ARGS) --reconfigure 2>/dev/null || \
+	meson setup $(COVERAGE_DIR) $(LIBVMAF_DIR) --buildtype=debug \
+	    $(COVERAGE_MESON_ARGS)
 	ninja -C $(COVERAGE_DIR)
 	$(PYTHON_INTERPRETER) scripts/ci/run_meson_test.py -- \
 	    -C $(COVERAGE_DIR) --print-errorlogs --num-processes 1 \
