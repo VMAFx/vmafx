@@ -100,8 +100,13 @@ contains the guard's positive, negative, and boundary fixtures.
   is a finding; an unrelated variable containing an ONNX Runtime package name
   does not make a different package's URL a finding.
 - ClangBuildAnalyzer retains its digest check. Checksum and extraction order
-  is checked after the target download; unrelated earlier checksum or `tar`
-  commands do not satisfy or invalidate that download's order check.
+  is checked after the target download across logical `RUN` instructions in
+  the same build stage, stopping before the next real `FROM`. Unrelated
+  earlier checksum or `tar` commands do not satisfy or invalidate that
+  download's order check. Comments and heredoc payloads do not provide
+  executable checksum evidence. Workflow checks remain bounded by their step.
+  Heredoc body newlines remain separate during source detection; only header
+  continuations are joined.
 - Repository discovery uses Git-tracked workflow files and container files
   named exactly `Dockerfile` or `Containerfile`, prefixed by `Dockerfile.` or
   `Containerfile.`, or suffixed by `.Dockerfile` or `.Containerfile` (including

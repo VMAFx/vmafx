@@ -216,13 +216,15 @@ def _docker_instructions(lines: list[str]) -> list[tuple[int, int, str | None, s
         if idx < next_idx or not lines[idx].strip() or lines[idx].lstrip().startswith("#"):
             continue
         end = _docker_instruction_end(lines, idx)
+        header_end = _docker_continuation_end(lines, idx)
         parts = [
             raw.strip().removesuffix("\\")
-            for raw in lines[idx : end + 1]
+            for raw in lines[idx : header_end + 1]
             if raw.strip() and not raw.lstrip().startswith("#")
         ]
-        command = " ".join(parts) if end - idx < MAX_COMMAND_LINES else None
-        instructions.append((idx, end, command, "".join(parts)))
+        payload = "\n" + "\n".join(lines[header_end + 1 : end + 1]) if end > header_end else ""
+        command = " ".join(parts) + payload if end - idx < MAX_COMMAND_LINES else None
+        instructions.append((idx, end, command, "".join(parts) + payload))
         next_idx = end + 1
     return instructions
 
@@ -335,17 +337,54 @@ def _check_sha_pin(
     return sha_val, sha_line_num, findings
 
 
+def _shell_without_comment(line: str) -> str:
+    """Remove shell comments without truncating quoted or embedded hash characters."""
+    result: list[str] = []
+    quote: str | None = None
+    escaped = False
+    word_boundary = True
+    for char in line:
+        if escaped:
+            result.append(char)
+            escaped = False
+            word_boundary = False
+            continue
+        if quote == "'":
+            result.append(char)
+            if char == "'":
+                quote = None
+            continue
+        if char == "\\" and quote != "'":
+            result.append(char)
+            escaped = True
+            word_boundary = False
+            continue
+        if quote is not None:
+            result.append(char)
+            if char == quote:
+                quote = None
+            continue
+        if char in "'\"":
+            result.append(char)
+            quote = char
+            word_boundary = False
+            continue
+        if char == "#" and word_boundary:
+            break
+        result.append(char)
+        word_boundary = char.isspace()
+    return "".join(result)
+
+
 def _docker_verification_lines(lines: list[str]) -> list[str]:
     """Keep executable RUN text in stage order, excluding comments and heredoc payloads."""
     executable = [""] * len(lines)
-    for start, end, command, fused in _docker_instructions(lines):
+    for start, _, command, fused in _docker_instructions(lines):
         if not re.match(r"^RUN\b", command or fused, re.I):
             continue
-        if _docker_heredocs(lines[start]):
-            continue
-        for idx in range(start, end + 1):
-            if not lines[idx].lstrip().startswith("#"):
-                executable[idx] = lines[idx]
+        header_end = _docker_continuation_end(lines, start)
+        for idx in range(start, header_end + 1):
+            executable[idx] = _shell_without_comment(lines[idx])
     return executable
 
 
@@ -355,9 +394,12 @@ def _check_verification_order(
     start_idx: int,
     site_line_num: int,
     path: Path,
+    is_workflow: bool = True,
 ) -> list[str]:
-    """Verify sha256sum --check occurs after download and before tar -x."""
+    """Verify same-stage sha256sum --check follows download and precedes tar -x."""
     findings: list[str] = []
+    if not is_workflow:
+        block_lines = _docker_verification_lines(block_lines)
     relative_site = site_line_num - start_idx - 1
     tail_lines = block_lines[relative_site:]
     # Ignore all earlier commands, including those on the download's physical line.
@@ -940,7 +982,9 @@ def scan_file(
         )
         findings.extend(sha_findings)
         findings.extend(
-            _check_verification_order(entry, block_lines, start_idx, site_line_num, path)
+            _check_verification_order(
+                entry, block_lines, start_idx, site_line_num, path, is_workflow
+            )
         )
 
         flavour, version = _extract_site_metadata(entry, block_text)

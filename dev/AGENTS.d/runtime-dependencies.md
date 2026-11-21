@@ -61,8 +61,11 @@ invariant: LD_LIBRARY_PATH includes tbb; NEO/ROCm pinned to kernel UAPI; ORT_VER
    that stage and instruction. Unrelated variables carrying an ORT package
    name do not cause a finding.
 
-   CBA checks associate validation with each target download: checksum must
-   follow download, and tar extraction must follow checksum. Discovery uses
+   CBA checks span logical `RUN` instructions after each target download in
+   the same stage, stopping before the next real `FROM`. Checksum must
+   follow download, and tar extraction must follow checksum. Comments and
+   heredoc payloads do not supply checksum evidence. Heredoc body newlines
+   remain separate during source detection. Discovery uses
    Git-tracked workflow and container files named exactly `Dockerfile` or
    `Containerfile`, prefixed by `Dockerfile.` or `Containerfile.`, or suffixed
    by `.Dockerfile` or `.Containerfile`, including `docker/dev/*.Dockerfile`;

@@ -345,6 +345,31 @@ class TestOrtGuard(unittest.TestCase):
         )
         self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
 
+    def test_container_escaped_heredoc_operator_does_not_hide_next_run(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        container.write_text(
+            "FROM base\nARG ORT_VERSION=1.30.0\n"
+            "RUN printf '%s' \\<<TEXT\n"
+            "RUN python3 scripts/ci/ort_nuget_install.py --version $ORT_VERSION --prefix /opt/ort\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
+
+    def test_heredoc_payload_newlines_are_not_continuations(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        for payload in (
+            "ort_nuget_\ninstall.py",
+            "https://api.nuget.org/v3-flatcontainer/\nmicrosoft.ml.onnxruntime/file",
+        ):
+            with self.subTest(payload=payload):
+                container.write_text(
+                    "FROM base\nARG ORT_VERSION=1.30.0\n"
+                    "RUN cat <<'END-TEXT'\nFROM payload\n" + payload + "\nEND-TEXT\n"
+                    "RUN python3 scripts/ci/ort_nuget_install.py --version $ORT_VERSION --prefix /opt/ort\n",
+                    encoding="utf-8",
+                )
+                self.assertEqual(guard.check_tarball_pins(files=[container]), (0, []))
+
     def test_container_unresolved_version_assignment_fails_closed_if_used(self) -> None:
         container = Path(self.temp.name) / "Containerfile"
         source = "FROM base\nARG ORT_VERSION=1.30.0\nENV ORT_VERSION=$UNKNOWN_VERSION\n"
@@ -1014,6 +1039,46 @@ class TestOrtGuard(unittest.TestCase):
                 else:
                     self.assertIn(expected, "\n".join(findings))
 
+    def test_cba_order_spans_runs_but_stays_in_build_stage(self) -> None:
+        container = Path(self.temp.name) / "Containerfile"
+        prefix = (
+            "FROM base\n"
+            f"ARG CLANGBUILDANALYZER_SHA256={'a' * 64}\n"
+            "RUN sha256sum --check /tmp/earlier.sha256\n"
+            "RUN tar -xf /tmp/earlier.tar.gz\n"
+            "RUN curl https://github.com/aras-p/ClangBuildAnalyzer/archive/v1.tar.gz -o /tmp/cba.tar.gz\n"
+        )
+        check = "RUN sha256sum --check /tmp/cba.sha256\n"
+        extract = "RUN tar -xf /tmp/cba.tar.gz\n"
+        cases = (
+            (check + extract, None),
+            ("RUN cat <<'TEXT'\nFROM payload\nTEXT\n" + check + extract, None),
+            (
+                "RUN sha256sum --check /tmp/cba.sha256 && cat <<'TEXT'\n"
+                "payload\nTEXT\n" + extract,
+                None,
+            ),
+            (extract, "missing sha256sum --check"),
+            (extract + check, "tar extraction occurs before"),
+            ("FROM other\n" + check + extract, "missing sha256sum --check"),
+            (
+                "RUN cat <<'TEXT'\nsha256sum --check /tmp/cba.sha256\nTEXT\n" + extract,
+                "missing sha256sum --check",
+            ),
+            ("# sha256sum --check /tmp/cba.sha256\n" + extract, "missing sha256sum --check"),
+            (
+                "RUN echo ignored # sha256sum --check /tmp/cba.sha256\n" + extract,
+                "missing sha256sum --check",
+            ),
+        )
+        for suffix, expected in cases:
+            with self.subTest(suffix=suffix):
+                container.write_text(prefix + suffix, encoding="utf-8")
+                rc, findings = guard.check_tarball_pins(files=[container])
+                self.assertEqual(rc, int(expected is not None), findings)
+                if expected is not None:
+                    self.assertIn(expected, "\n".join(findings))
+
     def test_cba_workflow_order_starts_at_download_even_on_same_line(self) -> None:
         workflow = Path(self.temp.name) / "workflow.yml"
         pin = "a" * 64
@@ -1186,6 +1251,33 @@ class TestOrtGuardDiscovery(unittest.TestCase):
             findings,
             [f"{path}:1: ONNX Runtime download must use helper" for path in (yaml, suffix)],
         )
+
+    def test_linked_worktree_discovery_and_broken_pointer_fail_closed(self) -> None:
+        self.git("init", "--quiet", "--template=")
+        linked = self.root / "linked"
+        self.git("worktree", "add", "--orphan", "-b", "linked-fixture", str(linked))
+        self.assertTrue((linked / ".git").is_file())
+        pins = linked / "scripts/ci/ort-nuget-pins.json"
+        pins.parent.mkdir(parents=True)
+        shutil.copyfile(ROOT / "scripts/ci/ort-nuget-pins.json", pins)
+        self.root = linked
+        self.container("Containerfile", clean=True)
+        self.container("Containerfile.backup")
+        self.git("add", "--", "Containerfile")
+        self.assertEqual(guard.check_tarball_pins(root=linked), (0, []))
+        suffix = self.container("docker/dev/test.Containerfile")
+        self.git("add", "--", "docker/dev/test.Containerfile")
+        self.assertEqual(
+            guard.check_tarball_pins(root=linked),
+            (1, [f"{suffix}:1: ONNX Runtime download must use helper"]),
+        )
+        # Git marks this file hidden on Windows; r+ preserves that file attribute.
+        with (linked / ".git").open("r+", encoding="utf-8") as pointer:
+            pointer.write("gitdir: missing-git-metadata\n")
+            pointer.truncate()
+        rc, findings = guard.check_tarball_pins(root=linked)
+        self.assertEqual(rc, 2, findings)
+        self.assertIn("git ls-files", "\n".join(findings))
 
     def test_non_git_discovery_falls_back_to_filename_matching(self) -> None:
         yaml = self.container("dev/Containerfile.yaml")
