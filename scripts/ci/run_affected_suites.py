@@ -48,6 +48,7 @@ from typing import IO, overload
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.ci import suite_registry as registry_lib
+from scripts.lib.file_lock import lock_file
 from scripts.lib.push_head import outgoing_head
 from scripts.lib.safe_subprocess import CommandTimedOut, TextCommandResult
 from scripts.lib.safe_subprocess import run as run_command
@@ -68,6 +69,21 @@ VENV_FORMAT = "2-compile-bytecode"
 # inputs CI provides (fail_on_skip in the registry).
 MISSING_DEPENDENCY_SKIP = r"could not import|No module named|[Nn]ot installed"
 LISTED_FAILURES = 10
+# A public pytest hook stops after normal argument/conftest loading, before any tests.
+# Unlike importing the module, this observes blocked and explicitly loaded plugins.
+TIMEOUT_PROBE = """import sys
+import pytest
+
+class Probe:
+    @pytest.hookimpl(tryfirst=True)
+    def pytest_cmdline_main(self, config):
+        loaded = any(getattr(plugin, '__name__', '') == 'pytest_timeout'
+                     for plugin in config.pluginmanager.get_plugins())
+        print('VMAFX_PYTEST_TIMEOUT=' + str(int(loaded)))
+        return 0
+
+raise SystemExit(pytest.main(sys.argv[1:], plugins=[Probe()]))
+"""
 
 
 class RunnerError(Exception):
@@ -289,28 +305,37 @@ class VenvLock:
 
     def __init__(self, path: Path, wait_seconds: float) -> None:
         self.path, self.wait_seconds = path, wait_seconds
-        self._handle: IO[str] | None = None
+        self._handle: IO[bytes] | None = None
 
     def __enter__(self) -> VenvLock:
-        try:
-            import fcntl  # noqa: PLC0415 - POSIX only; Windows runs without the lock
-        except ImportError:
-            return self
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._handle = self.path.open("a")
+        handle = self.path.open("a+b")
+        try:
+            self._acquire(handle)
+        except BaseException:
+            handle.close()
+            raise
+        self._handle = handle
+        return self
+
+    def _acquire(self, handle: IO[bytes]) -> None:
         deadline = time.monotonic() + self.wait_seconds
         while time.monotonic() <= deadline:
             try:
-                fcntl.flock(self._handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                return self
+                lock_file(handle, acquire=True)
+                return
             except BlockingIOError:
-                time.sleep(LOCK_POLL_SECONDS)
-        self._handle.close()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                time.sleep(min(LOCK_POLL_SECONDS, remaining))
         raise RunnerError(f"timed out waiting for {self.path}")
 
     def __exit__(self, *_exc: object) -> None:
         if self._handle is not None:
-            self._handle.close()
+            with self._handle as handle:
+                lock_file(handle, acquire=False)
+            self._handle = None
 
 
 def _run(
@@ -476,18 +501,28 @@ def scaled_time_cap(base: float, load1: float, load5: float, cpus: int) -> float
 
 def read_host_load() -> tuple[float, float, int] | None:
     """Read host load and available CPUs, or report unavailable load."""
+    getloadavg = getattr(os, "getloadavg", None)
+    if getloadavg is None:
+        return None
     try:
-        load1, load5, _ = os.getloadavg()
-    except (AttributeError, OSError):
+        load1, load5, _ = getloadavg()
+    except OSError:
         return None
     process_count = getattr(os, "process_cpu_count", os.cpu_count)()
     return load1, load5, process_count or os.cpu_count() or 1
 
 
 def _pytest_argv(
-    python: str, suite: registry_lib.Suite, junit: Path, files: Sequence[str], timeout: float | None
+    python: str,
+    suite: registry_lib.Suite,
+    junit: Path,
+    files: Sequence[str],
+    timeout: float | None,
+    *,
+    probe: bool = False,
 ) -> list[str]:
-    argv = [python, "-m", "pytest", "-p", "no:cacheprovider", "-rs", "-q", f"--junitxml={junit}"]
+    entrypoint = ["-c", TIMEOUT_PROBE] if probe else ["-m", "pytest"]
+    argv = [python, *entrypoint, "-p", "no:cacheprovider", "-rs", "-q", f"--junitxml={junit}"]
     if timeout is not None:
         argv += [f"--timeout={timeout:g}", f"--timeout-method={suite.pytest_timeout_method}"]
     return _via_env([*argv, *(_rewritten(suite, f) for f in files)])
@@ -506,16 +541,31 @@ def _cap_description(suite: str, base: float) -> tuple[float, str]:
 
 
 def _suite_timeout(
-    root: Path, suite: registry_lib.Suite, python: str, env: dict[str, str], per_test_timeout: float
+    root: Path,
+    suite: registry_lib.Suite,
+    python: str,
+    env: dict[str, str],
+    per_test_timeout: float,
+    files: Sequence[str],
+    junit: Path,
 ) -> float | None:
+    """Check stock pytest-timeout registration before pytest configures the suite."""
+    argv = _pytest_argv(python, suite, junit, files, None, probe=True)
     try:
-        installed = _run(_via_env([python, "-c", "import pytest_timeout"]), root, 60, env)
+        probe = _run(argv, root, 60, env)
     except CommandTimedOut:
-        raise RunnerError(f"{suite.name}: pytest-timeout import check timed out") from None
-    if installed.returncode != 0:
-        print(
-            f"{suite.name}: runs without a per-test timeout because pytest-timeout is not installed there"
+        raise RunnerError(f"{suite.name}: pytest-timeout plugin check timed out") from None
+    states = re.findall(r"^VMAFX_PYTEST_TIMEOUT=([01])\r?$", probe.stdout, re.MULTILINE)
+    if probe.returncode != 0 or len(states) != 1:
+        raise RunnerError(f"{suite.name}: pytest plugin check failed:\n{probe.stdout[-3000:]}")
+    if states[0] == "0":
+        reason = (
+            "pytest-timeout is not loaded (missing or disabled); check its installation, "
+            "PYTEST_DISABLE_PLUGIN_AUTOLOAD and PYTEST_ADDOPTS"
         )
+        if suite.pytest_timeout is not None:
+            raise RunnerError(f"{suite.name}: requires a per-test timeout, but {reason}")
+        print(f"{suite.name}: runs without a per-test timeout because {reason}", flush=True)
         return None
     return suite.pytest_timeout if suite.pytest_timeout is not None else per_test_timeout
 
@@ -536,7 +586,7 @@ def run_pytest(
     junit = Path(tempfile.gettempdir()) / f"vmafx-affected-{suite.name}-{os.getpid()}.xml"
     junit.unlink(missing_ok=True)
     details: list[str] = []
-    timeout = _suite_timeout(root, suite, python, env, per_test_timeout)
+    timeout = _suite_timeout(root, suite, python, env, per_test_timeout, files, junit)
     if timeout is None:
         effective_cap = cap
         description = (
@@ -545,6 +595,8 @@ def run_pytest(
     else:
         effective_cap, description = _cap_description(suite.name, cap)
     print(description, flush=True)
+    # A startup hook may have written the probe's --junitxml path.
+    junit.unlink(missing_ok=True)
     try:
         proc = _run(_pytest_argv(python, suite, junit, files, timeout), root, effective_cap, env)
     except CommandTimedOut:

@@ -19,10 +19,11 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import IO, TypedDict
+from typing import TypedDict
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.lib.file_lock import lock_file
 from scripts.lib.safe_subprocess import CommandTimedOut
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -271,20 +272,6 @@ def cache_root() -> Path:
     return base / "vmafx" / "ffmpeg-patch-stack"
 
 
-def _lock_once(handle: IO[bytes], acquire: bool) -> None:
-    """Take (or drop) the byte-range lock without blocking; raise OSError when held."""
-    if sys.platform == "win32":
-        import msvcrt  # noqa: PLC0415 - platform-specific
-
-        handle.seek(0)
-        mode = msvcrt.LK_NBLCK if acquire else msvcrt.LK_UNLCK  # type: ignore[attr-defined]
-        msvcrt.locking(handle.fileno(), mode, 1)  # type: ignore[attr-defined]
-    else:
-        import fcntl  # noqa: PLC0415 - platform-specific
-
-        fcntl.flock(handle.fileno(), (fcntl.LOCK_EX | fcntl.LOCK_NB) if acquire else fcntl.LOCK_UN)
-
-
 @contextmanager
 def exclusive_lock(path: Path) -> Iterator[None]:
     """Cross-process lock with a bounded wait; the cache has one writer at a time."""
@@ -292,7 +279,7 @@ def exclusive_lock(path: Path) -> Iterator[None]:
     with path.open("a+b") as handle:
         for _ in range(CACHE_LOCK_SECONDS * 10):
             try:
-                _lock_once(handle, True)
+                lock_file(handle, acquire=True)
                 break
             except OSError:
                 time.sleep(0.1)
@@ -301,7 +288,7 @@ def exclusive_lock(path: Path) -> Iterator[None]:
         try:
             yield
         finally:
-            _lock_once(handle, False)
+            lock_file(handle, acquire=False)
 
 
 class SourceCache:

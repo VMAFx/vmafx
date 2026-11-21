@@ -279,8 +279,24 @@ serves every worktree, and a per-venv file lock serialises two runs that share
 it. A suite with `venv_of` runs in another suite's venv, as in CI (no suite uses it
 since the predictor trainer moved into `ai`, ADR-1886). The tests
 run with `pytest -p no:cacheprovider -rs` and a 300 s per-test timeout
-(`--per-test-timeout`), unless the suite specifies its own. If its interpreter
-lacks pytest-timeout, the runner reports that tests run without this timeout.
+(`--per-test-timeout`), unless the suite specifies its own. Before the test run,
+a separate pytest startup checks whether the stock `pytest_timeout` module is
+registered. It uses the same interpreter, environment and selected test paths,
+but starts with `python -c` rather than `python -m pytest`, omits the runner's
+`--timeout` and `--timeout-method` flags, and stops before `pytest_configure`.
+A wrapper registered under another module name or a plugin registered only
+later or only with those flags is not covered by this check. Initial conftests
+are imported during both startups. The probe has a separate 60 s cap before
+the test run's wall cap.
+
+An importable but disabled plugin is unavailable. `PYTEST_DISABLE_PLUGIN_AUTOLOAD`
+and plugin options in `PYTEST_ADDOPTS` or pytest configuration are respected.
+When disabling autoload, explicitly load an installed timeout plugin with
+`PYTEST_ADDOPTS='-p pytest_timeout'` if it is needed.
+A suite with an explicit registry timeout fails before running tests if
+pytest-timeout is missing or disabled. Only suites without an explicit timeout
+retain the existing fallback: a visible warning and no per-test timeout.
+A failed plugin probe is an error, never grounds for that fallback.
 For suites with a per-test timeout, the 900 s base cap (`--time-cap`) is multiplied by
 `min(4, 1 + max(load1, load5) / CPUs)`; if load is unavailable, the multiplier is 1.
 Suites without a per-test timeout retain the unscaled base cap.
