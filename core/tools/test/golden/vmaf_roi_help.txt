@@ -1,0 +1,20 @@
+usage: vmaf-roi --reference REF.yuv --width W --height H \
+                --frame N --output qpfile [options]
+
+Required:
+  --reference PATH         Raw planar YUV input.
+  --width W                Frame width in luma samples.
+  --height H               Frame height in luma samples.
+  --frame N                0-based frame index to score.
+  --output PATH            Sidecar file (use '-' for stdout).
+
+Optional:
+  --pixel_format 420|422|444   Default 420.
+  --bitdepth 8|10|12|16        Default 8.
+  --ctu-size N                 8..128, default 64 (x265 max-ctu).
+  --encoder x265|svt-av1       Default x265.
+  --strength F                 QP-offset gain, default 6.0.
+  --saliency-model PATH        Optional ONNX [1,1,H,W] luma->[0,1].
+                               If absent, a center-weighted radial
+                               placeholder is used (smoke-test only).
+  -h, --help                   Show this help.

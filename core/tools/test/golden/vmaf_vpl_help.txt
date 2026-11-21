@@ -1,0 +1,13 @@
+Usage: <app> --ref <file> --dis <file> [options]
+
+Options:
+  --ref <file>        Reference video file
+  --dis <file>        Distorted video file
+  --model <name>      VMAF model name (default: vmaf_v1.0.16_3d0h)
+  --frames <N>        Max frames to process (0 = all)
+  --device <N>        SYCL device index (default: 0)
+  --render-node <path> VA-API render node (default: /dev/dri/renderD128)
+  --fallback          Use host upload if zero-copy import fails
+  --help              Show this help
+
+Pipeline: VPL decode → VA surface → DMA-BUF → Level Zero → SYCL → VMAF
