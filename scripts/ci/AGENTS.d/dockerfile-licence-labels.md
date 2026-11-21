@@ -2,7 +2,7 @@
 paths:
   - scripts/ci/check_licence_metadata.py
   - scripts/ci/tests/test_check_licence_metadata.py
-invariant: Every published production image stage's OCI licence label equals the union of its manifest record's licence-bearing components.
+invariant: Published production stages' effective OCI licence label equals manifest record's licence-bearing component union.
 area: release
 ---
 <!-- markdownlint-disable MD013 MD060 -->
@@ -20,6 +20,12 @@ not inherited by the published stage, while labels on a parent stage are.
 `IMAGE_STAGE_RECORDS` names the published stages of each Dockerfile and the
 manifest record each stage must match; a listed stage that the Dockerfile
 does not have is reported, and there is no last-stage fallback.
+
+`FROM --platform=...` flags preserve stage identity. Comment lines inside
+`LABEL` continuations are skipped. Quoted and unquoted `key=value` labels
+and legacy `key value` labels are parsed; later assignments override inherited
+or earlier values. Legacy label values cannot assign a second key; malformed
+quoting or a legacy key without a value is a `ModelError`.
 
 `licence` values that are not a plain `AND` list of SPDX terms stay in the
 notices and are not part of the OCI label. `NOTICE_ONLY_COMPONENTS` names

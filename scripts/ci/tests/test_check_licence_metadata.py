@@ -577,6 +577,78 @@ class DockerfileLabelTests(GateTestCase):
             handle.write(f'label org.opencontainers.image.licenses="{self.LABEL}"\n')
         self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
 
+    def test_a_platform_flag_preserves_the_stage_and_parent_labels(self) -> None:
+        self._tree(controller_label=None)
+        (self.root / "docker/Dockerfile.controller").write_text(
+            "FROM --platform=$BUILDPLATFORM scratch AS builder\n"
+            f'LABEL org.opencontainers.image.licenses="{self.LABEL}"\n'
+            "FROM --platform=$TARGETPLATFORM builder AS controller\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
+    def test_a_comment_does_not_end_a_label_continuation(self) -> None:
+        for label in (self.LABEL, "MIT"):
+            with self.subTest(label=label):
+                self._tree(controller_label=None)
+                (self.root / "docker/Dockerfile.controller").write_text(
+                    "FROM scratch AS controller\n"
+                    'LABEL org.opencontainers.image.title="VMAFx" \\\n'
+                    "  # Docker ignores comments in continued instructions.\n"
+                    f'  org.opencontainers.image.licenses="{label}"\n',
+                    encoding="utf-8",
+                )
+                problems = gate.dockerfile_licence_label_problems(self.root)
+                if label == self.LABEL:
+                    self.assertEqual(problems, [])
+                else:
+                    self.assertEqual(len(problems), 1)
+                    self.assertIn("missing ['BSD-2-Clause']", problems[0])
+
+    def test_an_unquoted_label_overrides_an_earlier_quoted_value(self) -> None:
+        for value in ("MIT", "'MIT'", f'"{self.LABEL}" {gate.LICENCES_KEY}=MIT'):
+            with self.subTest(value=value):
+                self._tree()
+                with (self.root / "docker/Dockerfile.controller").open(
+                    "a", encoding="utf-8"
+                ) as handle:
+                    handle.write(f"LABEL org.opencontainers.image.licenses={value}\n")
+                problems = gate.dockerfile_licence_label_problems(self.root)
+                self.assertEqual(len(problems), 1)
+                self.assertIn("missing ['BSD-2-Clause']", problems[0])
+
+    def test_a_legacy_label_overrides_an_earlier_value(self) -> None:
+        for value in (self.LABEL, f"'{self.LABEL}'", '"MIT"', "MIT"):
+            with self.subTest(value=value):
+                self._tree(controller_label=self.LABEL + " AND Apache-2.0")
+                with (self.root / "docker/Dockerfile.controller").open(
+                    "a", encoding="utf-8"
+                ) as handle:
+                    handle.write(f"LABEL {gate.LICENCES_KEY}\t{value}\n")
+                problems = gate.dockerfile_licence_label_problems(self.root)
+                if "BSD-2-Clause" in value:
+                    self.assertEqual(problems, [])
+                else:
+                    self.assertEqual(len(problems), 1)
+                    self.assertIn("missing ['BSD-2-Clause']", problems[0])
+
+    def test_a_legacy_label_value_does_not_assign_another_key(self) -> None:
+        self._tree()
+        with (self.root / "docker/Dockerfile.controller").open("a", encoding="utf-8") as handle:
+            handle.write(f"LABEL description {gate.LICENCES_KEY}=MIT\n")
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
+    def test_a_malformed_label_is_a_model_error(self) -> None:
+        for assignment in (f'{gate.LICENCES_KEY}="MIT', gate.LICENCES_KEY):
+            with self.subTest(assignment=assignment):
+                self._tree()
+                with (self.root / "docker/Dockerfile.controller").open(
+                    "a", encoding="utf-8"
+                ) as handle:
+                    handle.write(f"LABEL {assignment}\n")
+                with self.assertRaisesRegex(gate.ModelError, "cannot parse Dockerfile LABEL"):
+                    gate.dockerfile_licence_label_problems(self.root)
+
     def test_a_fixed_component_licence_is_required(self) -> None:
         self._tree()
         manifest = self.root / "tools/rc1-tester/image/licensing.json"

@@ -39,6 +39,7 @@ import json
 import os
 import re
 import runpy
+import shlex
 import sys
 import tarfile
 import tomllib
@@ -701,10 +702,8 @@ NOTICE_ONLY_COMPONENTS = {
     "nvidia-cuda-device-code": "NVIDIA CUDA EULA with Attachment A prose",
     "rocm-sysdeps": "compound LGPL/GPL/MIT/Zlib/BSD expression",
 }
-FROM_RE = re.compile(r"^FROM\s+(\S+)(?:\s+AS\s+(\S+))?", re.IGNORECASE)
-LABEL_RE = re.compile(
-    r'^\s*LABEL\s+.*?org\.opencontainers\.image\.licenses="([^"]*)"', re.IGNORECASE
-)
+FROM_RE = re.compile(r"^\s*FROM\s+(?:--\S+\s+)*(\S+)(?:\s+AS\s+(\S+))?", re.IGNORECASE)
+LABEL_RE = re.compile(r"^\s*LABEL\s+(.*)$", re.IGNORECASE)
 SPDX_TERM = re.compile(r"^[A-Za-z0-9.+-]+(?: WITH [A-Za-z0-9.+-]+)?$")
 LICENCES_KEY = "org.opencontainers.image.licenses"
 
@@ -799,6 +798,8 @@ def _logical_lines(text: str) -> list[str]:
     pending = ""
     for raw in text.splitlines():
         line = raw.rstrip()
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
         if pending:
             line = pending + " " + line.lstrip()
         if line.endswith("\\"):
@@ -821,7 +822,20 @@ def _dockerfile_stages(text: str) -> list[dict[str, Any]]:
             continue
         label = LABEL_RE.match(line)
         if label and stages:
-            stages[-1]["labels"][LICENCES_KEY] = label.group(1)
+            try:
+                assignments = shlex.split(label.group(1))
+                if assignments and "=" not in assignments[0]:
+                    _, value = label.group(1).split(None, 1)
+                    lexer = shlex.shlex(value, posix=True)
+                    lexer.whitespace = lexer.commenters = ""
+                    lexer.whitespace_split = True
+                    assignments = [f"{assignments[0]}={''.join(lexer)}"]
+            except ValueError as error:
+                raise ModelError(f"cannot parse Dockerfile LABEL: {error}") from error
+            for assignment in assignments:
+                key, separator, value = assignment.partition("=")
+                if key == LICENCES_KEY and separator:
+                    stages[-1]["labels"][LICENCES_KEY] = value
     return stages
 
 
