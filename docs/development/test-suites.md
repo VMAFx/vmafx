@@ -313,3 +313,62 @@ same files on every pull request and push:
 entry runs only tooling tests, and the job passes that list in `SKIP`. A hook
 that runs anything else as well (a check of the live tree, a test of another
 suite) keeps running in CI.
+
+## Exit-code-only test check (`scripts/ci/tests/`)
+
+A test that runs a checker and asserts only that it exited `0` also passes when
+the checker silently drops its input. The pre-push hook
+`check-exit-code-only-tests` runs `scripts/ci/check_exit_code_only_tests.py`
+over `scripts/ci/tests/test_*.py`:
+
+```bash
+python3 scripts/ci/check_exit_code_only_tests.py
+python3 scripts/ci/check_exit_code_only_tests.py --changed-against origin/master
+```
+
+- **What is refused**: a `def test_*` function or method (with `subTest` blocks
+  counted as part of the function) that obtains a process or checker result via
+  `subprocess.run`, a helper named `run*` or `_run*`, or a `main(...)` call,
+  and in which every assertion checks only that a return code is `0`
+  (`assertEqual(x.returncode, 0)`, `assert rc == 0`,
+  `assertEqual(main([...]), 0)`, `assert not proc.returncode`,
+  `assertFalse(proc.returncode)`, `assertFalse(rc)`), with no assertion on
+  output, a file, or any other value (`asserts only exit code 0`), or that runs
+  such a command and has no assertion at all, or only `proc.check_returncode()`
+  / `check=True` (`runs a command and asserts nothing`). A test that asserts a
+  non-zero exit code checks a refusal path and is not flagged.
+- **Assertion scope**: the checker recognises assertion syntax in the test body
+  (`assert`, `self.assert*`, and `pytest.raises`); assertions inside helpers such
+  as `check_output(out)` are not visible. Add an inline output assertion, for
+  example `assert out.stdout == "expected"`.
+- **Escape comment**: place `# exit-code-only: <reason>` on the `def` line or
+  the line immediately above it (or its first decorator), with `<reason>` at
+  least 10 characters long. An empty or shorter reason is reported as a finding.
+- **Modes and exit codes**: default mode reports all existing findings with an
+  informational count and the top 5 files, and exits `0`. `--changed-against
+  <ref>` resolves `git merge-base <ref> HEAD`, lists changed and untracked
+  files under `<pathspec>` (`scripts/ci/tests` in default discovery and the
+  normalised root-relative explicit paths otherwise) via
+  `git diff --name-status -z -M --no-color --no-ext-diff <merge-base> -- <pathspec>`
+  and `git ls-files -z --others --exclude-standard -- <pathspec>`, and checks
+  weak tests when a zero-context diff hunk touches their span (including
+  decorators), or a definition or decorator line of an enclosing function or
+  class. A pure deletion touches its new-side start and the next line. A comment
+  edit inside an old weak test therefore reports it. A test's span extends to
+  the line before the next statement in its enclosing body, or to the end of
+  its enclosing definition's extended span (file end at top level). Consequently,
+  editing a comment between tests reports an upper test that is already weak.
+  Added, type-changed, and
+  untracked files, and files renamed from outside `<pathspec>`, are checked in
+  full; a pure rename within the pathspec has no hunks and reports nothing.
+  When `PRE_COMMIT_TO_REF` is set, it compares the merge base with that
+  outgoing commit and reads its files, ignoring working-tree and untracked files.
+  The check exits `1` on findings (`0` when clean). An
+  unreadable file, a file above 1 MiB, an explicit path outside the repository
+  root, a changed or untracked Python path inside `<pathspec>` that is not one
+  of the discovered test files, an unsupported diff status letter, an exceeded
+  file or AST bound, a syntax error in a current test file, a bad ref, or a
+  `git merge-base` / `git diff` / `git ls-files` failure exits `2`
+  with the cause on `stderr`, never `0`.
+- **Scope limit**: the check verifies that another assertion is present; it
+  does not judge whether an output assertion is strong.
