@@ -260,7 +260,8 @@ def sycl_bundle(root: Path) -> None:
         write_pe(root, f"{directory}/sycl9.dll",
                  make_pe(0x8664, ["ur_win_proxy_loader.dll", "vcruntime140.dll"]))  # fmt: skip
         write_pe(root, f"{directory}/ur_win_proxy_loader.dll", make_pe(0x8664, ["ucrtbase.dll"]))
-        write_pe(root, f"{directory}/ur_loader_shared.dll", make_pe(0x8664, ["msvcp140.dll"]))
+        for adapter in builder.LOADED_AT_RUN_TIME:
+            write_pe(root, f"{directory}/{adapter}", make_pe(0x8664, ["kernel32.dll"]))
         write_pe(root, f"{directory}/ze_loader.dll",
                  make_pe(0x8664, ["kernel32.dll", "cfgmgr32.dll"]))  # fmt: skip
         write_pe(root, f"{directory}/vcruntime140.dll", make_pe(0x8664, ["kernel32.dll"]))
@@ -269,21 +270,36 @@ def sycl_bundle(root: Path) -> None:
 
 def test_a_md_bundle_passes_with_its_runtime_beside_each_program(tmp_path: Path) -> None:
     sycl_bundle(tmp_path)
-    assert imports_check.check(tmp_path, "x64", "md", ("ur_loader_shared.dll",)) == []
-    assert imports_check.main([str(tmp_path), "--machine", "x64", "--runtime", "md",
-                               "--loaded-at-run-time", "ur_loader_shared.dll"]) == 0  # fmt: skip
+    loaded = builder.LOADED_AT_RUN_TIME
+    assert imports_check.check(tmp_path, "x64", "md", loaded) == []
+    assert (
+        imports_check.main(
+            [str(tmp_path), "--machine", "x64", *builder.import_check_arguments("windows-sycl-zip")]
+        )
+        == 0
+    )
     # The same tree is refused by the /MT check of the CPU and CUDA zips.
     assert any("imports the runtime DLL" in p for p in imports_check.check(tmp_path, "x64"))
+
+
+def test_a_md_bundle_refuses_unimported_ur_loader_shared(tmp_path: Path) -> None:
+    sycl_bundle(tmp_path)
+    write_pe(tmp_path, "build/tools/ur_loader_shared.dll", make_pe(0x8664, ["kernel32.dll"]))
+    problems = imports_check.check(tmp_path, "x64", "md", builder.LOADED_AT_RUN_TIME)
+    msg = ("build/tools/ur_loader_shared.dll: no file in its directory imports it, "
+           "and it is not loaded at run time")  # fmt: skip
+    assert msg in problems
 
 
 def test_cfgmgr32_is_a_windows_dll_and_an_unknown_one_is_not(tmp_path: Path) -> None:
     """The Level Zero loader imports cfgmgr32.dll (System32); an unknown DLL still fails."""
     sycl_bundle(tmp_path)
-    assert imports_check.check(tmp_path, "x64", "md", ("ur_loader_shared.dll",)) == []
+    loaded = builder.LOADED_AT_RUN_TIME
+    assert imports_check.check(tmp_path, "x64", "md", loaded) == []
     write_pe(tmp_path, "tests/ze_loader.dll", make_pe(0x8664, ["kernel32.dll", "libvendor.dll"]))
     assert (
         "tests/ze_loader.dll: imports libvendor.dll, neither part of Windows nor in its directory"
-        in imports_check.check(tmp_path, "x64", "md", ("ur_loader_shared.dll",))
+        in imports_check.check(tmp_path, "x64", "md", loaded)
     )
 
 
@@ -291,7 +307,8 @@ def test_a_md_bundle_refuses_a_missing_or_unused_dll(tmp_path: Path) -> None:
     sycl_bundle(tmp_path)
     (tmp_path / "tests/msvcp140.dll").unlink()
     write_pe(tmp_path, "tests/opencl_adapter.dll", make_pe(0x8664, ["kernel32.dll"]))
-    problems = imports_check.check(tmp_path, "x64", "md", ("ur_loader_shared.dll",))
+    loaded = builder.LOADED_AT_RUN_TIME
+    problems = imports_check.check(tmp_path, "x64", "md", loaded)
     assert (
         "tests/test_sycl_psnr.exe: imports msvcp140.dll, neither part of Windows nor in its directory"
         in problems
@@ -301,6 +318,7 @@ def test_a_md_bundle_refuses_a_missing_or_unused_dll(tmp_path: Path) -> None:
         for p in problems
     )
     # The fixture models a dynamic load. The import check needs the run-time allowance.
+    write_pe(tmp_path, "build/tools/ur_loader_shared.dll", make_pe(0x8664, ["msvcp140.dll"]))
     assert any(
         p.startswith("build/tools/ur_loader_shared.dll: no file")
         for p in imports_check.check(tmp_path, "x64", "md")
@@ -759,20 +777,23 @@ def test_shared_ur_loader_is_not_loaded_by_name() -> None:
 
 
 @pytest.mark.parametrize("encoding", ["ascii", "utf-16le"])
-@pytest.mark.parametrize("token", ["xur_loader_shared.dll", "ur_loader_shared.dll.mui"])
+@pytest.mark.parametrize("token", ["xur_adapter_level_zero.dll", "ur_adapter_level_zero.dll.mui"])
 def test_runtime_dll_reference_rejects_partial_tokens(
     tmp_path: Path, staged_intel_proxy: Path, encoding: str, token: str
 ) -> None:
     name = "ur_adapter_level_zero.dll"
+    v2 = "ur_adapter_level_zero_v2.dll"
     assert (staged_intel_proxy.parent / name).write_bytes(b"\0") == 1
     payload = token.encode(encoding)
     assert staged_intel_proxy.write_bytes(payload) == len(payload)
+    write_pe(tmp_path, "build/tools/sycl9.dll", v2.encode(encoding))
 
     with pytest.raises(builder.BuildError, match="no other staged Intel DLL") as caught:
         builder.check_runtime_dll_references(tmp_path, builder.vendor_dll_names())
 
     failures, listing = str(caught.value).split(". UR DLL names found: ")
-    assert f"{name} (no other staged Intel DLL references it)" in failures
+    want = f"{name} (no other staged Intel DLL references it)"
+    assert failures == f"Intel run-time DLL check failed: {want}"
     assert name not in listing.split(", ")
 
 
