@@ -39,12 +39,13 @@ import json
 import os
 import re
 import runpy
+import shlex
 import sys
 import tarfile
 import tomllib
 import types
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -677,6 +678,274 @@ def manifest_problems(root: Path, manifest: Path) -> list[str]:
     return checks[manifest.name](root, manifest)
 
 
+IMAGE_STAGE_RECORDS = {
+    "docker/Dockerfile.controller": {"controller": "production-controller-image"},
+    "docker/Dockerfile.production": {
+        "cli": "production-cli-image",
+        "server": "production-server-image",
+    },
+    "docker/Dockerfile.production-gpu": {
+        "final-cuda13": "production-cuda-image",
+        "final-rocm10": "production-rocm-image",
+        "final-oneapi2026": "production-oneapi-image",
+        "final-oneapi2025": "production-oneapi-image",
+    },
+}
+# Components whose `licence` value is prose or a compound SPDX expression that
+# cannot be a single OCI label term. The value stays in the licensing notices;
+# naming the component here makes the omission visible in review.
+NOTICE_ONLY_COMPONENTS = {
+    "cpython": "prose in the PSF-2.0 sentence",
+    "intel-gpu-stack": "compound MIT/LLVM sentence",
+    "intel-oneapi-dpcpp-runtime": "Intel EULA reference with prose",
+    "intel-oneapi-tcm-hwloc": "BSD-3-Clause plus Intel Simplified Software License prose",
+    "nvidia-cuda-device-code": "NVIDIA CUDA EULA with Attachment A prose",
+    "rocm-sysdeps": "compound LGPL/GPL/MIT/Zlib/BSD expression",
+}
+FROM_RE = re.compile(r"^\s*FROM\s+(?:--\S+\s+)*(\S+)(?:\s+AS\s+(\S+))?", re.IGNORECASE)
+LABEL_RE = re.compile(r"^\s*LABEL\s+(.*)$", re.IGNORECASE)
+SPDX_TERM = re.compile(r"^[A-Za-z0-9.+-]+(?: WITH [A-Za-z0-9.+-]+)?$")
+LICENCES_KEY = "org.opencontainers.image.licenses"
+
+
+def _record_component(
+    records: dict[str, dict[str, Any]], record_name: str, component_id: str
+) -> dict[str, Any]:
+    """Resolve a component through the manifest's `from` references."""
+    seen: set[str] = set()
+    current = record_name
+    while current not in seen:
+        seen.add(current)
+        components = cast(list[dict[str, Any]], records[current].get("components", []))
+        try:
+            component = next(
+                component for component in components if component.get("id") == component_id
+            )
+        except StopIteration as error:
+            raise ModelError(
+                f"{record_name}: no component {component_id!r} in {current}"
+            ) from error
+        if "from" not in component:
+            return component
+        current = component["from"]
+    raise ModelError(f"{record_name}: cyclic reference while resolving {component_id}")
+
+
+def _component_licences(component: dict[str, Any]) -> set[str]:
+    """The label terms one resolved component carries.
+
+    ``licence`` may hold prose or a compound expression that cannot be an OCI
+    label term (the NVIDIA EULA text, a per-package sentence). Those components
+    are named in ``NOTICE_ONLY_COMPONENTS`` and stay in the notices; an
+    unlisted value that is not a plain ``AND`` list is a model error.
+    """
+    found: set[str] = set()
+    for value in component.get("licences", ()):
+        found.add(str(value))
+    licence = component.get("licence")
+    if isinstance(licence, str):
+        if component.get("id") in NOTICE_ONLY_COMPONENTS:
+            return found
+        terms = [raw.strip() for raw in licence.split(" AND ")]
+        if terms and all(SPDX_TERM.fullmatch(term) for term in terms):
+            found.update(terms)
+        else:
+            raise ModelError(
+                f"{component.get('id')}: licence value is not a list of SPDX terms: " f"{licence!r}"
+            )
+    return found
+
+
+def _record_label_licences(records: dict[str, dict[str, Any]], record_name: str) -> set[str]:
+    """The licence labels of every component in a licensing record."""
+    found: set[str] = set()
+    components = cast(list[dict[str, Any]], records[record_name].get("components", []))
+    for component in components:
+        resolved = _record_component(records, record_name, component["id"])
+        found |= _component_licences(resolved)
+    return found
+
+
+def _checked_component_ids(records: dict[str, dict[str, Any]]) -> set[str]:
+    """Every component id the published-image records resolve to."""
+    found: set[str] = set()
+    for record_name in {
+        record
+        for stage_records in IMAGE_STAGE_RECORDS.values()
+        for record in stage_records.values()
+    }:
+        if record_name not in records:
+            continue
+        components = cast(list[dict[str, Any]], records[record_name].get("components", []))
+        for component in components:
+            found.add(component["id"])
+            found.add(_record_component(records, record_name, component["id"])["id"])
+    return found
+
+
+def _unused_notice_only_problems(records: dict[str, dict[str, Any]]) -> list[str]:
+    """Entries in NOTICE_ONLY_COMPONENTS that no checked record resolves to."""
+    used = _checked_component_ids(records)
+    return [
+        f"NOTICE_ONLY_COMPONENTS entry {component_id} is not used by any checked record"
+        for component_id in sorted(set(NOTICE_ONLY_COMPONENTS) - used)
+    ]
+
+
+def _logical_lines(text: str) -> list[str]:
+    """Join Dockerfile lines that continue with a trailing backslash."""
+    logical: list[str] = []
+    pending = ""
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if pending:
+            line = pending + " " + line.lstrip()
+        if line.endswith("\\"):
+            pending = line[:-1].rstrip()
+            continue
+        logical.append(line)
+        pending = ""
+    if pending:
+        logical.append(pending)
+    return logical
+
+
+def _dockerfile_stages(text: str) -> list[dict[str, Any]]:
+    """Every build stage with the labels declared directly in it."""
+    stages: list[dict[str, Any]] = []
+    for line in _logical_lines(text):
+        match = FROM_RE.match(line)
+        if match:
+            stages.append({"base": match.group(1), "name": match.group(2), "labels": {}})
+            continue
+        label = LABEL_RE.match(line)
+        if label and stages:
+            try:
+                assignments = shlex.split(label.group(1))
+                if assignments and "=" not in assignments[0]:
+                    _, value = label.group(1).split(None, 1)
+                    lexer = shlex.shlex(value, posix=True)
+                    lexer.whitespace = lexer.commenters = ""
+                    lexer.whitespace_split = True
+                    assignments = [f"{assignments[0]}={''.join(lexer)}"]
+            except ValueError as error:
+                raise ModelError(f"cannot parse Dockerfile LABEL: {error}") from error
+            for assignment in assignments:
+                key, separator, value = assignment.partition("=")
+                if key == LICENCES_KEY and separator:
+                    stages[-1]["labels"][LICENCES_KEY] = value
+    return stages
+
+
+def _stage_index(stages: list[dict[str, Any]], reference: str) -> int | None:
+    """The index of the stage a ``FROM`` reference names, or None for an external base."""
+    wanted = reference.lower()
+    for index, stage in enumerate(stages):
+        if stage.get("name") and stage["name"].lower() == wanted:
+            return index
+    if reference.isdigit():
+        index = int(reference) - 1
+        return index if 0 <= index < len(stages) else None
+    return None
+
+
+def _effective_labels(stages: list[dict[str, Any]], index: int) -> dict[str, str]:
+    """The labels a stage inherits from its parent chain plus its own declarations."""
+    chain: list[int] = []
+    current: int | None = index
+    for _ in range(len(stages) + 1):
+        if current is None:
+            break
+        if current in chain:
+            raise ModelError("Dockerfile stage cycle")
+        chain.append(current)
+        current = _stage_index(stages, stages[current]["base"])
+    labels: dict[str, str] = {}
+    for position in reversed(chain):
+        labels.update(stages[position]["labels"])
+    return labels
+
+
+def _image_stage_labels(
+    path: Path, relative: str, stage_records: dict[str, str]
+) -> tuple[list[tuple[str, str | None]], list[str]]:
+    """The effective licence label of each published stage, and missing stages."""
+    stages = _dockerfile_stages(path.read_text(encoding="utf-8"))
+    if not stages:
+        return [], [f"{relative}: listed in IMAGE_STAGE_RECORDS but missing"]
+    found: list[tuple[str, str | None]] = []
+    problems: list[str] = []
+    for stage in stage_records:
+        index = _stage_index(stages, stage)
+        if index is None:
+            problems.append(f"{relative}: listed stage {stage} is missing")
+            continue
+        found.append((stage, _effective_labels(stages, index).get(LICENCES_KEY)))
+    return found, problems
+
+
+def _dockerfile_label_problems(
+    root: Path,
+    records: dict[str, dict[str, Any]],
+    relative: str,
+    stage_records: dict[str, str],
+) -> list[str]:
+    """The label problems of one Dockerfile and its per-stage manifest records."""
+    path = root / relative
+    if not path.is_file():
+        if any(record_name in records for record_name in stage_records.values()):
+            return [f"{relative}: listed in IMAGE_STAGE_RECORDS but missing"]
+        return []
+    labels, problems = _image_stage_labels(path, relative, stage_records)
+    expected_by_record: dict[str, set[str]] = {}
+    for stage, label in labels:
+        record_name = stage_records[stage]
+        if record_name not in expected_by_record:
+            try:
+                expected_by_record[record_name] = _record_label_licences(records, record_name)
+            except (KeyError, StopIteration) as error:
+                raise ModelError(f"{record_name}: no licensing record") from error
+        expected = expected_by_record[record_name]
+        if label is None:
+            problems.append(f"{relative} stage {stage}: no org.opencontainers.image.licenses label")
+            continue
+        found = {term.strip() for term in label.split(" AND ")}
+        if found != expected:
+            missing = sorted(expected - found)
+            extra = sorted(found - expected)
+            problems.append(
+                f"{relative} stage {stage}: licences label differs from {record_name}: "
+                f"missing {missing}, extra {extra}"
+            )
+    return problems
+
+
+def dockerfile_licence_label_problems(root: Path) -> list[str]:
+    """Each published image stage's licence label is its manifest record's union."""
+    manifest = root / LICENSING_MANIFEST
+    if not manifest.is_file():
+        return [f"{LICENSING_MANIFEST.as_posix()} is missing"]
+    # Read the raw records: `_record_component` follows `from` references and
+    # reports a cycle, while `licensing.load_manifest` expands them away.
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    raw_records = payload.get("artifacts")
+    if not isinstance(raw_records, dict):
+        # Shared fixture layouts only carry the root licence metadata; the real
+        # tree's manifest must name the production artifacts.
+        if root.resolve() == REPO_ROOT.resolve():
+            raise ModelError(f"{LICENSING_MANIFEST.as_posix()} has no artifacts record")
+        return []
+    records = cast(dict[str, dict[str, Any]], raw_records)
+    problems: list[str] = []
+    if root.resolve() == REPO_ROOT.resolve():
+        problems += _unused_notice_only_problems(records)
+    for relative, stage_records in IMAGE_STAGE_RECORDS.items():
+        problems += _dockerfile_label_problems(root, records, relative, stage_records)
+    return problems
+
+
 def check(root: Path) -> tuple[list[str], int]:
     """(problems, number of manifests read) for the tree at `root`."""
     names = [_relative(root, path) for path in tracked_files(root, [root])]
@@ -684,6 +953,7 @@ def check(root: Path) -> tuple[list[str], int]:
     manifests = sorted(root / name for name in names if Path(name).name in MANIFEST_NAMES)
     for manifest in manifests:
         problems += manifest_problems(root, manifest)
+    problems += dockerfile_licence_label_problems(root)
     return problems, len(manifests)
 
 

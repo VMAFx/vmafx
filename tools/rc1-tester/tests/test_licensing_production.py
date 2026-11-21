@@ -22,6 +22,13 @@ _spec.loader.exec_module(lic)
 
 REPO = Path(__file__).resolve().parents[3]
 
+_CHECKER_SPEC = importlib.util.spec_from_file_location(
+    "check_licence_metadata", REPO / "scripts/ci/check_licence_metadata.py"
+)
+assert _CHECKER_SPEC is not None and _CHECKER_SPEC.loader is not None
+checker = importlib.util.module_from_spec(_CHECKER_SPEC)
+_CHECKER_SPEC.loader.exec_module(checker)
+
 
 def write(path: Path, text: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -190,19 +197,19 @@ def test_the_licence_artifacts_action_attests_spdx_with_the_pinned_tools() -> No
 
 
 @pytest.mark.parametrize(("dockerfile", "kinds"), [
+    ("docker/Dockerfile.controller", ["production-controller-image"]),
     ("docker/Dockerfile.production", ["production-cli-image", "production-server-image"]),
     ("docker/Dockerfile.production-gpu",
      ["production-cuda-image", "production-rocm-image", "production-oneapi-image"]),
 ])  # fmt: skip
 def test_the_image_licence_label_is_the_compiled_licence_set(dockerfile: str, kinds: list) -> None:
-    records = lic.load_manifest()["artifacts"]
-    expected = set()
-    for kind in kinds:
-        binaries = next(c for c in records[kind]["components"] if c["id"] == "vmafx-binaries")
-        expected.add(" AND ".join(binaries["licences"]))
+    manifest = REPO / "tools/rc1-tester/image/licensing.json"
+    records = json.loads(manifest.read_text(encoding="utf-8"))["artifacts"]
+    expected = {frozenset(checker._record_label_licences(records, kind)) for kind in kinds}
     labels = re.findall(r'org\.opencontainers\.image\.licenses="([^"]*)"',
                         (REPO / dockerfile).read_text())  # fmt: skip
-    assert labels and set(labels) == expected
+    found = {frozenset(term.strip() for term in label.split(" AND ")) for label in labels}
+    assert labels and found == expected
 
 
 def test_the_production_records_name_every_text_they_fetch() -> None:

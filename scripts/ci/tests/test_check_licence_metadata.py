@@ -124,6 +124,9 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(problems, [])
         self.assertGreater(count, 10)
 
+    def test_image_licence_labels_match_their_manifest_records(self) -> None:
+        self.assertEqual(gate.dockerfile_licence_label_problems(REPO_ROOT), [])
+
     def test_the_main_entry_point_exits_zero_on_the_repository(self) -> None:
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
@@ -497,6 +500,327 @@ class NativeWheelTests(unittest.TestCase):
         found = gate.record_licences(REPO_ROOT, gate.NATIVE_RECORD)
         self.assertIn("EUPL-1.2", found)
         self.assertIn("BSD-2-Clause-Patent", found)
+
+
+class DockerfileLabelTests(GateTestCase):
+    LICENCES = ("BSD-2-Clause", "MIT")
+    LABEL = " AND ".join(LICENCES)
+
+    def _tree(
+        self,
+        *,
+        controller_label: str | None = LABEL,
+        include_controller: bool = True,
+        cycle: bool = False,
+    ) -> None:
+        records = {
+            name: {"components": [{"id": "vmafx-binaries", "licences": list(self.LICENCES)}]}
+            for name in {
+                record
+                for stage_records in gate.IMAGE_STAGE_RECORDS.values()
+                for record in stage_records.values()
+            }
+        }
+        if cycle:
+            records["production-controller-image"]["components"] = [
+                {"from": "production-cli-image", "id": "vmafx-binaries"}
+            ]
+            records["production-cli-image"]["components"] = [
+                {"from": "production-controller-image", "id": "vmafx-binaries"}
+            ]
+        files = _root_layout()
+        files["tools/rc1-tester/image/licensing.json"] = json.dumps({"artifacts": records})
+        for relative, stage_records in gate.IMAGE_STAGE_RECORDS.items():
+            if (
+                next(iter(stage_records.values())) == "production-controller-image"
+                and not include_controller
+            ):
+                continue
+            label = (
+                controller_label
+                if "production-controller-image" in stage_records.values()
+                else self.LABEL
+            )
+            text = "".join(
+                f"FROM scratch AS {stage}\n"
+                + (
+                    f'LABEL org.opencontainers.image.licenses="{label}"\n'
+                    if label is not None
+                    else ""
+                )
+                for stage in stage_records
+            )
+            files[relative] = text
+        _write(self.root, files)
+
+    def test_a_label_missing_one_licence_is_refused(self) -> None:
+        self._tree(controller_label="MIT")
+        problems = gate.dockerfile_licence_label_problems(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("missing ['BSD-2-Clause']", problems[0])
+
+    def test_a_dockerfile_without_a_licences_label_is_refused(self) -> None:
+        self._tree(controller_label=None)
+        problems = gate.dockerfile_licence_label_problems(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("no org.opencontainers.image.licenses label", problems[0])
+
+    def test_a_label_with_an_extra_licence_is_refused(self) -> None:
+        self._tree(controller_label=self.LABEL + " AND Apache-2.0")
+        problems = gate.dockerfile_licence_label_problems(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("extra ['Apache-2.0']", problems[0])
+
+    def test_a_lowercase_label_instruction_is_read(self) -> None:
+        self._tree(controller_label=None)
+        with (self.root / "docker/Dockerfile.controller").open("a", encoding="utf-8") as handle:
+            handle.write(f'label org.opencontainers.image.licenses="{self.LABEL}"\n')
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
+    def test_a_platform_flag_preserves_the_stage_and_parent_labels(self) -> None:
+        self._tree(controller_label=None)
+        (self.root / "docker/Dockerfile.controller").write_text(
+            "FROM --platform=$BUILDPLATFORM scratch AS builder\n"
+            f'LABEL org.opencontainers.image.licenses="{self.LABEL}"\n'
+            "FROM --platform=$TARGETPLATFORM builder AS controller\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
+    def test_a_comment_does_not_end_a_label_continuation(self) -> None:
+        for label in (self.LABEL, "MIT"):
+            with self.subTest(label=label):
+                self._tree(controller_label=None)
+                (self.root / "docker/Dockerfile.controller").write_text(
+                    "FROM scratch AS controller\n"
+                    'LABEL org.opencontainers.image.title="VMAFx" \\\n'
+                    "  # Docker ignores comments in continued instructions.\n"
+                    f'  org.opencontainers.image.licenses="{label}"\n',
+                    encoding="utf-8",
+                )
+                problems = gate.dockerfile_licence_label_problems(self.root)
+                if label == self.LABEL:
+                    self.assertEqual(problems, [])
+                else:
+                    self.assertEqual(len(problems), 1)
+                    self.assertIn("missing ['BSD-2-Clause']", problems[0])
+
+    def test_an_unquoted_label_overrides_an_earlier_quoted_value(self) -> None:
+        for value in ("MIT", "'MIT'", f'"{self.LABEL}" {gate.LICENCES_KEY}=MIT'):
+            with self.subTest(value=value):
+                self._tree()
+                with (self.root / "docker/Dockerfile.controller").open(
+                    "a", encoding="utf-8"
+                ) as handle:
+                    handle.write(f"LABEL org.opencontainers.image.licenses={value}\n")
+                problems = gate.dockerfile_licence_label_problems(self.root)
+                self.assertEqual(len(problems), 1)
+                self.assertIn("missing ['BSD-2-Clause']", problems[0])
+
+    def test_a_legacy_label_overrides_an_earlier_value(self) -> None:
+        for value in (self.LABEL, f"'{self.LABEL}'", '"MIT"', "MIT"):
+            with self.subTest(value=value):
+                self._tree(controller_label=self.LABEL + " AND Apache-2.0")
+                with (self.root / "docker/Dockerfile.controller").open(
+                    "a", encoding="utf-8"
+                ) as handle:
+                    handle.write(f"LABEL {gate.LICENCES_KEY}\t{value}\n")
+                problems = gate.dockerfile_licence_label_problems(self.root)
+                if "BSD-2-Clause" in value:
+                    self.assertEqual(problems, [])
+                else:
+                    self.assertEqual(len(problems), 1)
+                    self.assertIn("missing ['BSD-2-Clause']", problems[0])
+
+    def test_a_legacy_label_value_does_not_assign_another_key(self) -> None:
+        self._tree()
+        with (self.root / "docker/Dockerfile.controller").open("a", encoding="utf-8") as handle:
+            handle.write(f"LABEL description {gate.LICENCES_KEY}=MIT\n")
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
+    def test_a_malformed_label_is_a_model_error(self) -> None:
+        for assignment in (f'{gate.LICENCES_KEY}="MIT', gate.LICENCES_KEY):
+            with self.subTest(assignment=assignment):
+                self._tree()
+                with (self.root / "docker/Dockerfile.controller").open(
+                    "a", encoding="utf-8"
+                ) as handle:
+                    handle.write(f"LABEL {assignment}\n")
+                with self.assertRaisesRegex(gate.ModelError, "cannot parse Dockerfile LABEL"):
+                    gate.dockerfile_licence_label_problems(self.root)
+
+    def test_a_fixed_component_licence_is_required(self) -> None:
+        self._tree()
+        manifest = self.root / "tools/rc1-tester/image/licensing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["artifacts"]["production-controller-image"]["components"].append(
+            {"id": "zimg", "kind": "fixed", "licence": "WTFPL"}
+        )
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        problems = gate.dockerfile_licence_label_problems(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("missing ['WTFPL']", problems[0])
+
+    def test_a_fixed_component_licence_in_the_label_passes(self) -> None:
+        self._tree(controller_label=self.LABEL + " AND WTFPL")
+        manifest = self.root / "tools/rc1-tester/image/licensing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["artifacts"]["production-controller-image"]["components"].append(
+            {"id": "zimg", "kind": "fixed", "licence": "WTFPL"}
+        )
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
+    def test_a_label_before_the_published_from_is_not_inherited(self) -> None:
+        self._tree(controller_label=None)
+        (self.root / "docker/Dockerfile.controller").write_text(
+            "FROM scratch AS builder\n"
+            f'LABEL org.opencontainers.image.licenses="{self.LABEL}"\n'
+            "FROM scratch AS controller\n",
+            encoding="utf-8",
+        )
+        problems = gate.dockerfile_licence_label_problems(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("stage controller: no org.opencontainers.image.licenses label", problems[0])
+
+    def test_a_label_on_the_parent_stage_is_inherited(self) -> None:
+        self._tree(controller_label=None)
+        (self.root / "docker/Dockerfile.controller").write_text(
+            "FROM scratch AS builder\n"
+            f'LABEL org.opencontainers.image.licenses="{self.LABEL}"\n'
+            "FROM builder AS controller\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
+    def test_a_from_cycle_is_refused(self) -> None:
+        self._tree(cycle=True)
+        with self.assertRaises(gate.ModelError) as error:
+            gate.dockerfile_licence_label_problems(self.root)
+        self.assertIn("cyclic reference", str(error.exception))
+
+    def test_a_licences_key_on_a_continuation_line_is_read(self) -> None:
+        self._tree(controller_label=None)
+        (self.root / "docker/Dockerfile.controller").write_text(
+            "FROM scratch AS controller\n"
+            'LABEL org.opencontainers.image.title="VMAFx" \\\n'
+            f'  org.opencontainers.image.licenses="{self.LABEL}"\n',
+            encoding="utf-8",
+        )
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
+    def test_two_stages_of_one_dockerfile_use_their_own_records(self) -> None:
+        self._tree()
+        manifest = self.root / "tools/rc1-tester/image/licensing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["artifacts"]["production-server-image"]["components"].append(
+            {"id": "python", "kind": "fixed", "licence": "PSF-2.0"}
+        )
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        (self.root / "docker/Dockerfile.production").write_text(
+            "FROM scratch AS cli\n"
+            f'LABEL org.opencontainers.image.licenses="{self.LABEL}"\n'
+            "FROM scratch AS server\n"
+            f'LABEL org.opencontainers.image.licenses="{self.LABEL} AND PSF-2.0"\n',
+            encoding="utf-8",
+        )
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
+    def test_a_stage_with_the_other_record_s_licence_is_refused(self) -> None:
+        self._tree()
+        manifest = self.root / "tools/rc1-tester/image/licensing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["artifacts"]["production-server-image"]["components"].append(
+            {"id": "python", "kind": "fixed", "licence": "PSF-2.0"}
+        )
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        (self.root / "docker/Dockerfile.production").write_text(
+            "FROM scratch AS cli\n"
+            f'LABEL org.opencontainers.image.licenses="{self.LABEL}"\n'
+            "FROM scratch AS server\n"
+            f'LABEL org.opencontainers.image.licenses="{self.LABEL}"\n',
+            encoding="utf-8",
+        )
+        problems = gate.dockerfile_licence_label_problems(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("stage server", problems[0])
+        self.assertIn("missing ['PSF-2.0']", problems[0])
+
+    def test_a_missing_dockerfile_with_a_manifest_record_is_refused(self) -> None:
+        self._tree(include_controller=False)
+        problems = gate.dockerfile_licence_label_problems(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn(
+            "docker/Dockerfile.controller: listed in IMAGE_STAGE_RECORDS but missing",
+            problems[0],
+        )
+
+    def test_a_renamed_published_stage_is_refused(self) -> None:
+        self._tree()
+        (self.root / "docker/Dockerfile.controller").write_text(
+            "FROM scratch AS final-controller\n"
+            f'LABEL org.opencontainers.image.licenses="{self.LABEL}"\n',
+            encoding="utf-8",
+        )
+        problems = gate.dockerfile_licence_label_problems(self.root)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("listed stage controller is missing", problems[0])
+
+    def test_a_notice_only_component_is_named_and_not_in_the_label(self) -> None:
+        self._tree()
+        manifest = self.root / "tools/rc1-tester/image/licensing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["artifacts"]["production-controller-image"]["components"].append(
+            {
+                "id": "nvidia-cuda-device-code",
+                "kind": "fixed",
+                "licence": "LicenseRef-NVIDIA-CUDA-EULA (Attachment A prose)",
+            }
+        )
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
+    def test_a_with_expression_is_one_label_term(self) -> None:
+        self._tree(controller_label=self.LABEL + " AND Apache-2.0 WITH LLVM-exception")
+        manifest = self.root / "tools/rc1-tester/image/licensing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["artifacts"]["production-controller-image"]["components"].append(
+            {
+                "id": "rocm-comgr",
+                "kind": "fixed",
+                "licence": "Apache-2.0 WITH LLVM-exception",
+            }
+        )
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        self.assertEqual(gate.dockerfile_licence_label_problems(self.root), [])
+
+    def test_an_unused_notice_only_component_is_reported(self) -> None:
+        self._tree()
+        records = json.loads(
+            (self.root / "tools/rc1-tester/image/licensing.json").read_text(encoding="utf-8")
+        )["artifacts"]
+        with mock.patch.object(
+            gate,
+            "NOTICE_ONLY_COMPONENTS",
+            {"vmafx-binaries": "used", "ghost": "never resolved"},
+        ):
+            problems = gate._unused_notice_only_problems(records)
+        self.assertEqual(
+            problems,
+            ["NOTICE_ONLY_COMPONENTS entry ghost is not used by any checked record"],
+        )
+
+    def test_an_unlisted_complex_licence_is_a_model_error(self) -> None:
+        self._tree()
+        manifest = self.root / "tools/rc1-tester/image/licensing.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["artifacts"]["production-controller-image"]["components"].append(
+            {"id": "mystery", "kind": "fixed", "licence": "MIT (vendor note)"}
+        )
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        with self.assertRaises(gate.ModelError) as error:
+            gate.dockerfile_licence_label_problems(self.root)
+        self.assertIn("mystery", str(error.exception))
 
 
 if __name__ == "__main__":
