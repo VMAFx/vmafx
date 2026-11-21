@@ -1314,6 +1314,7 @@ CHECKOUT_USES_RE = re.compile(r"^actions/checkout@[0-9a-fA-F]{40}$")
 ACCEPTED_LOCAL_REPOSITORIES = {
     "${{ github.repository }}",
     "${{github.repository}}",
+    "vidiko/vmafx",
     "vmafx/vmafx",
 }
 

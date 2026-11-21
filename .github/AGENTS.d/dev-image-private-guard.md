@@ -8,12 +8,12 @@ invariant: Dev image pushed only when GHCR says `private`; guard step first, unc
 <!-- markdownlint-disable MD013 -->
 # Dev image goes only into a private package (ADR-1564)
 
-`ghcr.io/vmafx/vmafx-dev-mcp` = `libvmaf-build` stage: full CUDA toolkit,
+`ghcr.io/vidiko/vmafx-dev-mcp` = `libvmaf-build` stage: full CUDA toolkit,
 Intel oneAPI Base Kit, ROCm payload. Licences allow internal use, not
 redistribution. `dev-container-publish.yml` step "Refuse to push unless
-package is private" runs `require-private-ghcr-package.sh VMAFx vmafx-dev-mcp`
+package is private" runs `require-private-ghcr-package.sh vidiko vmafx-dev-mcp`
 right after checkout, before Buildx, login and build-push. Script reads
-`GET /orgs/VMAFx/packages/container/vmafx-dev-mcp` via `gh api` with job
+`GET /orgs/vidiko/packages/container/vmafx-dev-mcp` via `gh api` with job
 token; exit 0 only on `visibility == "private"` exactly. API error, 401/403/404,
 missing or non-string `visibility`, `public`, `internal` -> exit 1. Never give
 step `if:` or `continue-on-error`, never move it after push, never

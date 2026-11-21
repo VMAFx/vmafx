@@ -5,7 +5,7 @@
 # require-private-ghcr-package.sh — exit 0 only when an organisation's GHCR
 # container package is private (ADR-1564).
 #
-# The dev container (`ghcr.io/vmafx/vmafx-dev-mcp`, the `libvmaf-build` stage
+# The dev container (`ghcr.io/vidiko/vmafx-dev-mcp`, the `libvmaf-build` stage
 # of dev/Containerfile) holds the full CUDA toolkit, Intel's oneAPI Base Kit
 # and the ROCm payload. Their licences allow internal use; they do not allow
 # the toolkit files to be redistributed (CUDA EULA 1.1.1 and Attachment A;

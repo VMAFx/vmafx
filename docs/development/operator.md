@@ -27,7 +27,7 @@ broader Phase 4b context.
 
 ```bash
 # Clone the repository.
-git clone https://github.com/VMAFx/vmafx.git && cd vmafx
+git clone https://github.com/vidiko/vmafx.git && cd vmafx
 
 # Install CRDs + operator. The image tag defaults to v<Chart.AppVersion>;
 # pass --set operator.image.tag=<release tag> to pin another release.
@@ -114,7 +114,7 @@ metadata:
 spec:
   baseModel:      "vmaf_v0.6.1"
   algorithm:      "online-sgd-ema"
-  outputRegistry: "ghcr.io/vmafx/models"
+  outputRegistry: "ghcr.io/vidiko/models"
   dataSource:
     nodeSelector:
       gpu.vendor: nvidia
@@ -151,7 +151,7 @@ operator-reconcilers
 | --- | --- | --- |
 | `operator.enabled` | `false` | Deploy the operator Deployment + RBAC |
 | `operator.replicaCount` | `1` | Number of operator Pods |
-| `operator.image.repository` | `ghcr.io/vmafx/vmafx-operator` | Image repository |
+| `operator.image.repository` | `ghcr.io/vidiko/vmafx-operator` | Image repository |
 | `operator.image.tag` | `""` (→ `v<Chart.AppVersion>`) | Image tag |
 | `operator.image.pullPolicy` | `IfNotPresent` | Pull policy |
 | `operator.logLevel` | `info` | Log level: debug \| info \| warn \| error |

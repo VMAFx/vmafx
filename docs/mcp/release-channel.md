@@ -108,7 +108,7 @@ current repository identities:
 | PyPI field   | Value              |
 | ------------ | ------------------ |
 | Project name | `vmaf-mcp`         |
-| GitHub owner | `VMAFx`            |
+| GitHub owner | `vidiko`           |
 | Repository   | `vmafx`            |
 | Workflow     | `supply-chain.yml` |
 | Environment  | `pypi-publish`     |

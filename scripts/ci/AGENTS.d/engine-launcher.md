@@ -32,7 +32,7 @@ never format. `praetorctl audit` skips both files. Conflict: take one
 side or regenerate with `adopt --lock-source-root=<praetor clone at pin>`
 in throwaway clone.
 
-Launcher not shfmt-stable, no licence line (cordanaLLM/praetor issues
+Launcher not shfmt-stable, no licence line (tekmora/praetor issues
 1282, 1281) -> dated exceptions in `.config/lint-exceptions.d/shfmt.toml`
 and `spdx.toml`. Three places skip shfmt for listed files: `exclude` of
 `shfmt-src` hook, `SHFMT_FILES` in `Makefile`, shell branch of

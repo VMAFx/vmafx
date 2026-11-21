@@ -192,7 +192,7 @@ by `--port`), `VMAFX_LOG_LEVEL`, `VMAFX_VMAF_BINARY` (same as `VMAF_BIN`) and
 ## Go services (golusoris)
 
 The controller, server and node run on the
-[golusoris](https://github.com/golusoris/golusoris) `fx` framework
+[golusoris](https://github.com/plurano/golusoris) `fx` framework
 ([ADR-1119](../adr/1119-golusoris-go-framework-adoption.md)). Configuration is
 loaded with koanf: the `VMAFX_` prefix is stripped, the name is lowercased, and
 every underscore becomes the `.` key delimiter, so the table columns show the

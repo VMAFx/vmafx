@@ -2,7 +2,7 @@
 
 This page covers how a security advisory against a third-party dependency is
 triaged. Vulnerabilities in VMAFx's own code are reported through
-[SECURITY.md](https://github.com/VMAFx/vmafx/blob/master/SECURITY.md).
+[SECURITY.md](https://github.com/vidiko/vmafx/blob/master/SECURITY.md).
 
 ## Where advisories show up
 

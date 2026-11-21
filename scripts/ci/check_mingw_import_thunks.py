@@ -7,7 +7,7 @@ When a MinGW GCC DLL is linked with LTO, GNU ``ld --out-implib`` emits ``I __imp
 pointer entries and ``I __nm_<fn>`` data aliases, omitting the ``T <fn>`` function
 thunks.  An executable linked against that import library auto-imports every missing
 function call as data, creating a 32-bit PEI runtime pseudo-relocation per call site
-that aborts before ``main`` under 64-bit high-entropy ASLR (VMAFx/vmafx#3257).
+that aborts before ``main`` under 64-bit high-entropy ASLR (vidiko/vmafx#3257).
 
 For every ``*.dll.a`` under ``<build>/src``, this script pairs the archive with its DLL
 (``lib<name>.dll`` or ``lib<name>-*.dll`` in ``--dll-dir``, defaulting to ``<build>/src``),
@@ -516,7 +516,7 @@ def _report_thunk_coverage(
     print(
         f"check_mingw_import_thunks: FAIL {archive} ({dll_path.name}): "
         f"func_exports={len(func_exports)}, thunks={present}, missing={len(missing)} "
-        f"[{preview}{extra}] (LTO-linked DLL import library, VMAFx/vmafx#3257, ADR-3397)",
+        f"[{preview}{extra}] (LTO-linked DLL import library, vidiko/vmafx#3257, ADR-3397)",
         file=sys.stderr,
     )
     return False

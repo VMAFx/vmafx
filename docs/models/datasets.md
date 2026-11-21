@@ -8,8 +8,8 @@ harness at the dataset file, and put the downloaded videos where the file's
 
 | Dataset | Dataset file | Reference / distorted videos | Access |
 | --- | --- | --- | --- |
-| [Netflix Public Dataset](#netflix-public-dataset) | [`NFLX_dataset_public.py`](https://github.com/VMAFx/vmafx/blob/master/compat/python-vmaf/resource/dataset/NFLX_dataset_public.py) | 9 / 79 | Public download, access granted on request |
-| [VQEG HD3 Dataset](#vqeg-hd3-dataset) | [`VQEGHD3_dataset.py`](https://github.com/VMAFx/vmafx/blob/master/compat/python-vmaf/resource/dataset/VQEGHD3_dataset.py) | 8 / 63 | CDVL account, then convert to YUV420P |
+| [Netflix Public Dataset](#netflix-public-dataset) | [`NFLX_dataset_public.py`](https://github.com/vidiko/vmafx/blob/master/compat/python-vmaf/resource/dataset/NFLX_dataset_public.py) | 9 / 79 | Public download, access granted on request |
+| [VQEG HD3 Dataset](#vqeg-hd3-dataset) | [`VQEGHD3_dataset.py`](https://github.com/vidiko/vmafx/blob/master/compat/python-vmaf/resource/dataset/VQEGHD3_dataset.py) | 8 / 63 | CDVL account, then convert to YUV420P |
 
 ## Use a dataset
 

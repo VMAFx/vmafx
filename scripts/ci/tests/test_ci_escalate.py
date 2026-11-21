@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from scripts.ci import ci_escalate, ci_tier
 
-REPO = "VMAFx/vmafx"
+REPO = "vidiko/vmafx"
 SHA = "a" * 40
 
 

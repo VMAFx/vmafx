@@ -287,8 +287,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--repo",
-        default=os.environ.get("GH_REPO", "VMAFx/vmafx"),
-        help="GitHub repository (default: VMAFx/vmafx).",
+        default=os.environ.get("GH_REPO", "vidiko/vmafx"),
+        help="GitHub repository (default: vidiko/vmafx).",
     )
     parser.add_argument(
         "--harness-tasks-glob",

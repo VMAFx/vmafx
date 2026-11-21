@@ -399,5 +399,5 @@ static gboolean plugin_init(GstPlugin *plugin)
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, vmafx, "VMAFx video quality scoring",
                   plugin_init, GST_VMAFX_VERSION_STRING, GST_LICENSE_PLACEHOLDER, "gst-vmafx",
-                  "https://github.com/VMAFx/vmafx")
+                  "https://github.com/vidiko/vmafx")
 #pragma GCC diagnostic pop

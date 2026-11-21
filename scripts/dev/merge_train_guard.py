@@ -39,7 +39,7 @@ sys.path.insert(
 
 from scripts.lib.safe_subprocess import run as run_command
 
-REPO = "VMAFx/vmafx"
+REPO = "vidiko/vmafx"
 RELEASE_PR = 1213
 LANDING_IDENTITY = "lusoris <lusoris@proton.me>"
 KEY_BYTES = 32
@@ -393,7 +393,7 @@ class Train:
         runs = self.state / "worktrees"
         if any(runs.glob(f"pr-{number}-*/checkout")):
             raise Refused("a retained train checkout needs an explicit owner handoff before retry")
-        canonical = {"https://github.com/VMAFx/vmafx.git", "git@github.com:VMAFx/vmafx.git"}
+        canonical = {"https://github.com/vidiko/vmafx.git", "git@github.com:vidiko/vmafx.git"}
         for direction in ((), ("--push",)):
             urls = self.git("remote", "get-url", "--all", *direction, "origin").splitlines()
             if len(urls) != 1 or urls[0] not in canonical:

@@ -9,7 +9,7 @@
  * test_pelorus_udu_wrap.c — replays testdata/pelorus/udu-wrap-vectors.txt
  * against vmaf_pelorus_udu_classify() (ADR-3340, Pelorus ADR-0210). The file
  * is a copy of Pelorus' ffmpeg-patches/test/fixtures/udu-wrap-vectors.txt at
- * VMAFx/pelorus 7f6bd706 (git blob 3a115ee3), which Pelorus' own classifier
+ * vidiko/pelorus 7f6bd706 (git blob 3a115ee3), which Pelorus' own classifier
  * replays too. The test fails on a missing file, on fewer vectors than the copy
  * holds, and on a class without a vector.
  */

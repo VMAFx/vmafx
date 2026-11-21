@@ -177,7 +177,7 @@ jobs:
   a:
     container: mirror.gcr.io/semgrep/semgrep:latest@sha256:0123
     services:
-      db: {image: ghcr.io/vmafx/db:1}
+      db: {image: ghcr.io/vidiko/db:1}
       local: localhost:5000/x
     steps:
       - uses: actions/checkout@v6

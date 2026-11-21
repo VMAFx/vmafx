@@ -2,13 +2,13 @@
 
 Run the setup script from the repository root, then build. On Apple silicon the
 build includes the Metal GPU backend automatically
-([`scripts/setup/macos.sh`](https://github.com/VMAFx/vmafx/blob/master/scripts/setup/macos.sh)).
+([`scripts/setup/macos.sh`](https://github.com/vidiko/vmafx/blob/master/scripts/setup/macos.sh)).
 
 ## Homebrew (after 0.1.0)
 
 After the 0.1.0 release, the Homebrew formula in the Vidiko tap is available
 once the generated pull request merges into the tap
-(tracking [#2319](https://github.com/VMAFx/vmafx/issues/2319),
+(tracking [#2319](https://github.com/vidiko/vmafx/issues/2319),
 [ADR-3387](../../adr/3387-homebrew-tap-publish.md)):
 
 ```bash

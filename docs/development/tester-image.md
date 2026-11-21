@@ -16,7 +16,7 @@ and how reports reach the tree. The tester-facing steps are in
 
 | Piece | Where |
 | :--- | :--- |
-| Container image | [`docker/Dockerfile.tester`](https://github.com/VMAFx/vmafx/blob/master/docker/Dockerfile.tester), build inputs in `tools/rc1-tester/image/` |
+| Container image | [`docker/Dockerfile.tester`](https://github.com/vidiko/vmafx/blob/master/docker/Dockerfile.tester), build inputs in `tools/rc1-tester/image/` |
 | Intel GPU image | target `final-sycl` of the same Dockerfile; `image/sycl-tests.txt` (device tests), `sycl-rows.json` (state rows), `sycl-runtime.json` (the Intel runtime files it ships); its licence record is the `sycl-image` artifact of `licensing.json` |
 | AMD GPU image | target `final-hip` of the same Dockerfile; `image/hip-tests.txt` (device tests), `hip-rows.json` (state rows), `hip-runtime.json` (the ROCm runtime files it ships); `image/hip-targets.json` is written by the build from its offload targets; its licence record is the `hip-image` artifact of `licensing.json` |
 | NVIDIA GPU image | target `final-cuda` of the same Dockerfile; `image/cuda-tests.txt` (device tests), `cuda-rows.json` (state rows); `image/cuda-targets.json` is written by the build from its gencode list; its licence record is the `cuda-image` artifact of `licensing.json` |
@@ -46,8 +46,8 @@ Nothing publishes on merge except build-and-test runs of the image and of the Wi
    environment (master only); `release-publish` is for product releases and is not used. The workflow builds both architectures on native runners, runs the
    documented `docker run` line on each, validates the report, pushes by digest, merges
    one index, signs it keyless and attests it, and publishes
-   `ghcr.io/vmafx/vmafx:<tag>-tester`. The package `ghcr.io/vmafx/vmafx` is already public,
-   so nothing needs a click; check once with a logged-out `docker pull`.
+   `ghcr.io/vidiko/vmafx:<tag>-tester`. Verify that the package is public
+   by pulling the published tag without signing in.
 2. **macOS bundle**: dispatch `Publish macOS Tester Bundle` on `master` with `ref` (or
    `tag`) and `publish: true`; the file is `vmafx-tester-macos-arm64-<git describe>.tar.xz`. `publish: false` builds, runs the bundle's own report on the hosted
    runner and uploads a 14-day workflow artifact only. With `publish: true` the
@@ -69,7 +69,7 @@ Nothing publishes on merge except build-and-test runs of the image and of the Wi
    `final-hip` (job `build-gpu`, one matrix leg per kit, linux/amd64 only) and runs the
    documented command without a GPU (the report must say `gpu.status` `no_device` with
    the missing option, `--device /dev/dri`, `--gpus all` or `--device /dev/kfd`, every
-   CPU check passing); the dispatch publishes `ghcr.io/vmafx/vmafx:<describe>-tester-sycl`,
+   CPU check passing); the dispatch publishes `ghcr.io/vidiko/vmafx:<describe>-tester-sycl`,
    `-tester-cuda` and `-tester-hip` in job `publish-gpu`: signed, with provenance and an attested SPDX SBOM (syft), each with its
    source image `<describe>-tester-<kit>-source` (target `<kit>-source-export`). Like the
    CPU image, each build cannot finish without its licence check (stage
@@ -139,7 +139,7 @@ the kits for other hardware follow the same rules. What the two packages do:
   stage, which the `final` stage depends on through its receipt
   (`/opt/vmafx/licence-check.json`); in the bundle it runs right before `pack`.
 - **Source.** The container's copyleft parts have their source in
-  `ghcr.io/vmafx/vmafx:<tag>-tester-source`, the Dockerfile's `source-export` target, built
+  `ghcr.io/vidiko/vmafx:<tag>-tester-source`, the Dockerfile's `source-export` target, built
   and pushed per architecture by the publishing run and merged into one signed index:
   `licensing.py sources` lists the Debian source packages of every installed package at its
   version (with `Built-Using` and `Static-Built-Using`) and the recorded source RPMs of the

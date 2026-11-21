@@ -28,9 +28,9 @@
 # (production-cuda-image, production-rocm-image, production-oneapi-image).
 #
 # Tag matrix (built by CI):
-#   ghcr.io/vmafx/vmafx:<tag>-cuda13       (and <tag>-cuda13-source)
-#   ghcr.io/vmafx/vmafx:<tag>-rocm10       (and <tag>-rocm10-source)
-#   ghcr.io/vmafx/vmafx:<tag>-oneapi2026   (also tagged -oneapi2025, ADR-1368;
+#   ghcr.io/vidiko/vmafx:<tag>-cuda13       (and <tag>-cuda13-source)
+#   ghcr.io/vidiko/vmafx:<tag>-rocm10       (and <tag>-rocm10-source)
+#   ghcr.io/vidiko/vmafx:<tag>-oneapi2026   (also tagged -oneapi2025, ADR-1368;
 #                                           and <tag>-oneapi2026-source)
 #
 # Build args (all optional):
@@ -260,7 +260,7 @@ RUN bash scripts/ci/build-oneapi-libvmaf.sh
 # (ADR-0726: Vulkan backend removed; builder-vulkan stage deleted)
 
 # ===========================================================================
-# NVIDIA GPU image: ghcr.io/vmafx/vmafx:<tag>-cuda13
+# NVIDIA GPU image: ghcr.io/vidiko/vmafx:<tag>-cuda13
 # No NVIDIA library: libvmaf loads the host driver's libcuda.so.1 at run time,
 # which the NVIDIA Container Toolkit mounts with --gpus all (Docker Desktop:
 # /usr/lib/wsl/lib); the kernels are fatbins inside libvmaf.
@@ -268,7 +268,7 @@ RUN bash scripts/ci/build-oneapi-libvmaf.sh
 FROM ${RELEASE_BUILDER_BASE} AS cuda13-assembled
 LABEL org.opencontainers.image.title="vmafx"
 LABEL org.opencontainers.image.description="VMAFX production CUDA 13.4.3 runtime (the host driver provides libcuda). Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
-LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.source="https://github.com/vidiko/vmafx"
 LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
 LABEL org.opencontainers.image.vendor="Lusoris"
 # NVIDIA_DRIVER_CAPABILITIES asks the NVIDIA Container Toolkit for the compute
@@ -343,7 +343,7 @@ RUN --mount=type=bind,from=cuda13-with-notices,target=/rootfs \
 
 # ---------------------------------------------------------------------------
 # cuda13-source-export: the corresponding source of the image's copyleft parts,
-# published as ghcr.io/vmafx/vmafx:<tag>-cuda13-source (ADR-1503 rule 5)
+# published as ghcr.io/vidiko/vmafx:<tag>-cuda13-source (ADR-1503 rule 5)
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_PYTHON_BASE} AS cuda13-source-fetch
 # Only /sources leaves this stage, so its package lists need no cleanup.
@@ -372,14 +372,14 @@ USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/vmaf"]
 
 # ===========================================================================
-# AMD GPU image: ghcr.io/vmafx/vmafx:<tag>-rocm10
+# AMD GPU image: ghcr.io/vidiko/vmafx:<tag>-rocm10
 # The ROCm runtime files of hip-runtime.json in /usr/local/lib/rocm; the GPU
 # kernel driver (amdgpu, /dev/kfd) is the host's.
 # ===========================================================================
 FROM ${RELEASE_BUILDER_BASE} AS rocm10-assembled
 LABEL org.opencontainers.image.title="vmafx"
 LABEL org.opencontainers.image.description="VMAFX production ROCm 10.1.0 HIP runtime. Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
-LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.source="https://github.com/vidiko/vmafx"
 LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
 LABEL org.opencontainers.image.vendor="Lusoris"
 ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/local/lib/rocm" \
@@ -451,7 +451,7 @@ RUN --mount=type=bind,from=rocm10-with-notices,target=/rootfs \
 
 # ---------------------------------------------------------------------------
 # rocm10-source-export: the corresponding source of the image's copyleft parts,
-# published as ghcr.io/vmafx/vmafx:<tag>-rocm10-source (ADR-1503 rule 5)
+# published as ghcr.io/vidiko/vmafx:<tag>-rocm10-source (ADR-1503 rule 5)
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_PYTHON_BASE} AS rocm10-source-fetch
 # Only /sources leaves this stage, so its package lists need no cleanup. git fetches the
@@ -481,7 +481,7 @@ USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/vmaf"]
 
 # ===========================================================================
-# Intel GPU image: ghcr.io/vmafx/vmafx:<tag>-oneapi2026 (ADR-1368, ADR-1517)
+# Intel GPU image: ghcr.io/vidiko/vmafx:<tag>-oneapi2026 (ADR-1368, ADR-1517)
 # Debian 13, the Intel SYCL runtime files of sycl-runtime.json in
 # /usr/local/lib/intel, and the Intel GPU user-mode stack of the pinned
 # compute-runtime release (scripts/ci/install-intel-ocloc.sh): the Level Zero
@@ -497,7 +497,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 LABEL org.opencontainers.image.title="vmafx"
 LABEL org.opencontainers.image.description="VMAFX production oneAPI 2026.1 SYCL runtime with the Intel compute-runtime GPU stack. Licences: /usr/local/share/vmafx/licenses/THIRD_PARTY_NOTICES.txt"
-LABEL org.opencontainers.image.source="https://github.com/VMAFx/vmafx"
+LABEL org.opencontainers.image.source="https://github.com/vidiko/vmafx"
 LABEL org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE"
 LABEL org.opencontainers.image.vendor="Lusoris"
 COPY build-config.env /tmp/vmafx/build-config.env
@@ -596,7 +596,7 @@ RUN --mount=type=bind,from=oneapi2026-with-notices,target=/rootfs \
 
 # ---------------------------------------------------------------------------
 # oneapi2026-source-export: the corresponding source of the image's copyleft parts,
-# published as ghcr.io/vmafx/vmafx:<tag>-oneapi2026-source (ADR-1503 rule 5)
+# published as ghcr.io/vidiko/vmafx:<tag>-oneapi2026-source (ADR-1503 rule 5)
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_PYTHON_BASE} AS oneapi2026-source-fetch
 # Only /sources leaves this stage, so its package lists need no cleanup.

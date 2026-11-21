@@ -9,19 +9,19 @@
 
   <!-- README-STANDARD badge block: one group, fixed order (docs/README-STANDARD.md) -->
   <!-- 1 release/version -->
-  [![Release](https://img.shields.io/static/v1?label=release&message=v1.0.0-rc.3&style=for-the-badge&color=3b82f6&labelColor=111a35)](https://github.com/VMAFx/vmafx/releases) <!-- x-release-please-version -->
+  [![Release](https://img.shields.io/static/v1?label=release&message=v1.0.0-rc.3&style=for-the-badge&color=3b82f6&labelColor=111a35)](https://github.com/vidiko/vmafx/releases) <!-- x-release-please-version -->
   <!-- 2 CI/build -->
-  [![Tests](https://raw.githubusercontent.com/VMAFx/vmafx/badges/tests.svg)](https://github.com/VMAFx/vmafx/actions/workflows/tests-and-quality-gates.yml)
-  [![Builds](https://raw.githubusercontent.com/VMAFx/vmafx/badges/builds.svg)](https://github.com/VMAFx/vmafx/actions/workflows/libvmaf-build-matrix.yml)
-  [![Lint](https://raw.githubusercontent.com/VMAFx/vmafx/badges/lint.svg)](https://github.com/VMAFx/vmafx/actions/workflows/lint-and-format.yml)
-  [![FFmpeg](https://raw.githubusercontent.com/VMAFx/vmafx/badges/ffmpeg.svg)](https://github.com/VMAFx/vmafx/actions/workflows/ffmpeg-integration.yml)
-  [![Go](https://raw.githubusercontent.com/VMAFx/vmafx/badges/go.svg)](https://github.com/VMAFx/vmafx/actions/workflows/go-ci.yml)
-  [![Rust](https://raw.githubusercontent.com/VMAFx/vmafx/badges/rust.svg)](https://github.com/VMAFx/vmafx/actions/workflows/rust-ci.yml)
+  [![Tests](https://raw.githubusercontent.com/vidiko/vmafx/badges/tests.svg)](https://github.com/vidiko/vmafx/actions/workflows/tests-and-quality-gates.yml)
+  [![Builds](https://raw.githubusercontent.com/vidiko/vmafx/badges/builds.svg)](https://github.com/vidiko/vmafx/actions/workflows/libvmaf-build-matrix.yml)
+  [![Lint](https://raw.githubusercontent.com/vidiko/vmafx/badges/lint.svg)](https://github.com/vidiko/vmafx/actions/workflows/lint-and-format.yml)
+  [![FFmpeg](https://raw.githubusercontent.com/vidiko/vmafx/badges/ffmpeg.svg)](https://github.com/vidiko/vmafx/actions/workflows/ffmpeg-integration.yml)
+  [![Go](https://raw.githubusercontent.com/vidiko/vmafx/badges/go.svg)](https://github.com/vidiko/vmafx/actions/workflows/go-ci.yml)
+  [![Rust](https://raw.githubusercontent.com/vidiko/vmafx/badges/rust.svg)](https://github.com/vidiko/vmafx/actions/workflows/rust-ci.yml)
   <!-- 3 security/scorecard -->
-  [![Security](https://raw.githubusercontent.com/VMAFx/vmafx/badges/security.svg)](https://github.com/VMAFx/vmafx/actions/workflows/security-scans.yml)
-  [![OpenSSF Scorecard](https://raw.githubusercontent.com/VMAFx/vmafx/badges/scorecard.svg)](https://scorecard.dev/viewer/?uri=github.com/VMAFx/vmafx)
-  [![OpenSSF Best Practices](https://raw.githubusercontent.com/VMAFx/vmafx/badges/best-practices.svg)](https://www.bestpractices.dev/projects/14549)
-  [![Codacy](https://raw.githubusercontent.com/VMAFx/vmafx/badges/codacy.svg)](https://app.codacy.com/gh/VMAFx/vmafx/dashboard)
+  [![Security](https://raw.githubusercontent.com/vidiko/vmafx/badges/security.svg)](https://github.com/vidiko/vmafx/actions/workflows/security-scans.yml)
+  [![OpenSSF Scorecard](https://raw.githubusercontent.com/vidiko/vmafx/badges/scorecard.svg)](https://scorecard.dev/viewer/?uri=github.com/vidiko/vmafx)
+  [![OpenSSF Best Practices](https://raw.githubusercontent.com/vidiko/vmafx/badges/best-practices.svg)](https://www.bestpractices.dev/projects/14549)
+  [![Codacy](https://raw.githubusercontent.com/vidiko/vmafx/badges/codacy.svg)](https://app.codacy.com/gh/vidiko/vmafx/dashboard)
   [![CodeRabbit](https://img.shields.io/badge/Reviews-CodeRabbit-8b5cf6?style=for-the-badge&logo=coderabbit&logoColor=white&labelColor=111a35)](https://coderabbit.ai)
   <!-- 4 standards -->
   [![HISS-21](https://img.shields.io/badge/Standards-HISS--21-06b6d4?style=for-the-badge&logo=nasa&labelColor=111a35)](AGENTS.md)
@@ -177,12 +177,12 @@ pull-request expectations. The [engineering principles](docs/principles.md)
 cover coding and numerical-correctness standards; the
 [repository guide](docs/architecture/index.md) explains the source layout.
 
-- [Report a bug or request a feature](https://github.com/VMAFx/vmafx/issues)
-- [Good first issues](https://github.com/VMAFx/vmafx/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+- [Report a bug or request a feature](https://github.com/vidiko/vmafx/issues)
+- [Good first issues](https://github.com/vidiko/vmafx/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
   for a first contribution
-- [Help wanted](https://github.com/VMAFx/vmafx/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
+- [Help wanted](https://github.com/vidiko/vmafx/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
   for issues open to anyone
-- [Ask a question](https://github.com/VMAFx/vmafx/discussions) or read
+- [Ask a question](https://github.com/vidiko/vmafx/discussions) or read
   [how to get support](SUPPORT.md)
 - [Code of conduct](CODE_OF_CONDUCT.md)
 - [Accessibility](ACCESSIBILITY.md)
@@ -212,7 +212,7 @@ Sponsors are thanked in [SPONSORS.md](SPONSORS.md);
 ## 📈 Roadmap and releases
 
 - [Roadmap and release goals](docs/roadmap.md)
-- [Releases and downloads](https://github.com/VMAFx/vmafx/releases)
+- [Releases and downloads](https://github.com/vidiko/vmafx/releases)
 - [Changelog](CHANGELOG.md)
 - [Release process](docs/development/release.md)
 
@@ -269,6 +269,6 @@ private scratch-link policy.
 **Debt Baseline**: `.standards-baseline.json` anchors the debt ratchet at
 0 recorded infractions; audit forbids growth.
 
-[praetor-docs-badge]: https://github.com/vmafx/vmafx/actions/workflows/praetor-docs.yml/badge.svg
-[praetor-docs-runs]: https://github.com/vmafx/vmafx/actions/workflows/praetor-docs.yml
+[praetor-docs-badge]: https://github.com/vidiko/vmafx/actions/workflows/praetor-docs.yml/badge.svg
+[praetor-docs-runs]: https://github.com/vidiko/vmafx/actions/workflows/praetor-docs.yml
 <!-- praetor:readme-governance:end -->

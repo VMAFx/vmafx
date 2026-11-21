@@ -4998,7 +4998,7 @@ class Context:
         return Annotation.from_c(out)
 
     def set_encode_record(self, record: str | None) -> None:
-        """Record the digest of the encode record of the distorted input (VMAFx/pelorus#81): `sha256:` and 64 lower-case hex digits, copied; NULL or empty clears it. VMAFX_E_INVALID names any other form. Added in ABI 0.1.5."""
+        """Record the digest of the encode record of the distorted input (vidiko/pelorus#81): `sha256:` and 64 lower-case hex digits, copied; NULL or empty clears it. VMAFX_E_INVALID names any other form. Added in ABI 0.1.5."""
         error = ctypes.c_void_p()
         status = self._lib.vmafx_context_set_encode_record(
             self._handle, record.encode() if record is not None else None, ctypes.byref(error)

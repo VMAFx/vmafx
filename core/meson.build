@@ -60,7 +60,7 @@ if host_machine.system() == 'windows' and (cc.get_id() == 'gcc' or cxx.get_id() 
     vmafx_effective_lto = false
     add_project_arguments('-fno-lto', language: ['c', 'cpp'])
     add_project_link_arguments('-fno-lto', language: ['c', 'cpp'])
-    warning('MinGW GCC (c=' + cc.get_id() + ', cpp=' + cxx.get_id() + ') with default_library=' + get_option('default_library') + ' and b_lto=true: substituting -fno-lto because an LTO-linked DLL import library lacks function thunks and executables abort before main (32-bit pseudo relocation out of range; static builds keep LTO; VMAFx/vmafx#3257, ADR-3397).')
+    warning('MinGW GCC (c=' + cc.get_id() + ', cpp=' + cxx.get_id() + ') with default_library=' + get_option('default_library') + ' and b_lto=true: substituting -fno-lto because an LTO-linked DLL import library lacks function thunks and executables abort before main (32-bit pseudo relocation out of range; static builds keep LTO; vidiko/vmafx#3257, ADR-3397).')
 endif
 
 # The DLLs carry no dllexport, so GNU ld auto-exports every global it links. Its

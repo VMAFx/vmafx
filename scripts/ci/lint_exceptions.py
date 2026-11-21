@@ -10,7 +10,7 @@ third-party source that carries no notice) is named here, once, per rule:
 
     [[exception]]
     path = "core/src/interop/pelorus_version.c"     # one tracked file, never a pattern
-    reason = "byte-identical mirror of VMAFx/pelorus (ADR-1113)"
+    reason = "byte-identical mirror of vidiko/pelorus (ADR-1113)"
     expires = 2026-12-31                            # the day the exception stops holding
 
 An exception stops holding on its ``expires`` date: ``filter`` no longer drops the file, so

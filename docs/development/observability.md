@@ -28,7 +28,7 @@ fx framework whose `otel.Module` now does the wiring).
 ## How OTel is wired (one place)
 
 Every fx binary composes `internal/app/bootstrap.Base`, which carries the
-[golusoris](https://github.com/golusoris/golusoris) `otel.Module`
+[golusoris](https://github.com/plurano/golusoris) `otel.Module`
 (ADR-1119). That module builds the OTLP/gRPC trace, metric and log
 exporters, installs the SDK providers as the OTel globals, installs the
 W3C `TraceContext` + `Baggage` propagators, and registers an fx `OnStop`
@@ -459,9 +459,9 @@ collector has no logs pipeline.
 !!! note "Waiting on golusoris"
     Two golusoris changes complete this: the bridge must also cover the
     `*slog.Logger` each service gets from the graph, not only `slog.Default`
-    ([golusoris#617](https://github.com/golusoris/golusoris/issues/617)), and
+    ([golusoris#617](https://github.com/plurano/golusoris/issues/617)), and
     the stdout lines must carry `trace_id` and `span_id`
-    ([golusoris#618](https://github.com/golusoris/golusoris/issues/618)).
+    ([golusoris#618](https://github.com/plurano/golusoris/issues/618)).
     `internal/app/bootstrap/logs_test.go` holds both; they pass with the
     golusoris release that ships them.
 

@@ -14,7 +14,7 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "pull-dev-image.sh"
 BASH = shutil.which("bash") or "/bin/bash"
-IMAGE = "ghcr.io/vmafx/dev@sha256:" + "0" * 64
+IMAGE = "ghcr.io/vidiko/dev@sha256:" + "0" * 64
 
 STUB = """#!/usr/bin/env bash
 # Stand-in docker: login succeeds, pull fails until FAILS pulls have failed.
@@ -75,7 +75,7 @@ class PullDevImageTest(unittest.TestCase):
         self.assertIn(IMAGE, result.stdout)
 
     def test_unpinned_image_refused(self) -> None:
-        result, pulls = run(0, image="ghcr.io/vmafx/dev:latest")
+        result, pulls = run(0, image="ghcr.io/vidiko/dev:latest")
         self.assertEqual(result.returncode, 1)
         self.assertEqual(pulls, 0)
         self.assertIn("pinned by digest", result.stdout)

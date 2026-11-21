@@ -1101,7 +1101,7 @@ help:
 # Issue 3468: governance targets run the engine the repository pins, the same one
 # lefthook and the Standards job run; never call standardsctl or praetorctl by name here.
 -include .config/praetor/engine.mk
-# cordanaLLM/praetor Governance Targets
+# tekmora/praetor Governance Targets
 .PHONY: verify-all compile-context audit hiss-coverage dedupe-check
 
 verify-all:

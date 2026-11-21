@@ -5,7 +5,7 @@
 
 The Coverage Gate runs the instrumented Python suite (about 890 items, 33
 minutes on the hosted runner, measured on master 777647fc0, job 117249828983).
-praetor bounds a test step at 30 minutes (cordanaLLM/praetor#1381), so the
+praetor bounds a test step at 30 minutes (tekmora/praetor#1381), so the
 suite runs as N steps of one shard each::
 
     python3 scripts/ci/run_pytest_shard.py --shard 1/4 -- python/test/ -v ...

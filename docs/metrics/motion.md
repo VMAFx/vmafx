@@ -553,7 +553,7 @@ minimum 3x3; refusing to avoid out-of-bounds mirror reads
 ## Rust implementation
 
 The integer `motion` extractor has a Rust twin, `motion_rust`
-([`core/src/rust/feature/motion`](https://github.com/VMAFx/vmafx/tree/master/core/src/rust/feature/motion)),
+([`core/src/rust/feature/motion`](https://github.com/vidiko/vmafx/tree/master/core/src/rust/feature/motion)),
 a port of `integer_motion.c` that returns the C extractor's scores bit for bit:
 `VMAF_integer_feature_motion_sad_score`, `motion2` and `motion3` (and `motion`
 with `debug`), with every option of the table, including

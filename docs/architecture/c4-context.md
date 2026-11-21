@@ -32,9 +32,9 @@ platform.
 | VMAFx | Netflix/vmaf | git fetch upstream; port-upstream-commit skill |
 | VMAFx | GitHub | CI; release-please publishes tagged builds |
 | GitHub | Sigstore | Signs release artefacts keyless (OIDC) |
-| GitHub | ghcr.io/vmafx/* | Publishes images |
+| GitHub | ghcr.io/vidiko/* | Publishes images |
 | GitHub | PyPI | Publishes the Python MCP server |
-| ghcr.io/vmafx/* | Kubernetes | Images deployed by the Helm chart |
+| GHCR | Kubernetes | Images deployed by the Helm chart |
 
 ## External actors and systems
 

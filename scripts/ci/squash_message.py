@@ -32,7 +32,7 @@ declares additional conventional types (port, sycl, cuda, simd) in
 validation of breaking changes and 'Migration:' footers, check_message()
 maps declared non-engine types to 'chore' for the engine check. The original
 type is preserved in the squash commit subject. Removal trigger: remove this
-substitution once cordanaLLM/praetor issue 1861 lands and the engine natively
+substitution once tekmora/praetor issue 1861 lands and the engine natively
 accepts repository-declared types.
 
 Functions:
@@ -93,7 +93,7 @@ SQUASH_SUFFIX_RE = re.compile(r" \(#\d+\)$")
 
 # Fixed commit subject types supported by praetor internal/forge/commit_message.go
 # (commitSubjectTypes) at pin 4ae64cb27e56.
-# Removal trigger: remove ENGINE_TYPES and substitution when cordanaLLM/praetor 1861 lands.
+# Removal trigger: remove ENGINE_TYPES and substitution when tekmora/praetor 1861 lands.
 ENGINE_TYPES: tuple[str, ...] = (
     "build",
     "chore",
@@ -186,7 +186,7 @@ def engine_message(message: str, declared: Sequence[str]) -> str:
         commit_type = line1.split(":", 1)[0].split("(", 1)[0].rstrip("!")
         print(
             f"squash_message: type '{commit_type}' (declared in .pre-commit-config.yaml) "
-            "judged as 'chore' until cordanaLLM/praetor 1861 lands",
+            "judged as 'chore' until tekmora/praetor 1861 lands",
             file=sys.stderr,
         )
     return f"{judged}{sep}{rest}"

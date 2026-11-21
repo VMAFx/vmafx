@@ -134,7 +134,7 @@ schema=vmafx-container-build-provenance/1
 vmafx_dev_container=1
 image_title=vmaf-dev-mcp
 containerfile=dev/Containerfile
-source=https://github.com/VMAFx/vmafx
+source=https://github.com/vidiko/vmafx
 git_commit=testcommit
 stamped_at=1970-01-01T00:00:00Z
 EOF

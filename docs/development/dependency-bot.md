@@ -10,9 +10,9 @@ grouped dependency-update PRs on the configured weekday schedule.
 ## Quick start
 
 1. Visit <https://github.com/apps/renovate> and install the App on
-   `VMAFx/vmafx`.
+   `vidiko/vmafx`.
 2. The App posts a Dependency Dashboard issue (currently
-   [#749](https://github.com/VMAFx/vmafx/issues/749)) listing pending /
+   [#749](https://github.com/vidiko/vmafx/issues/749)) listing pending /
    awaiting / errored updates.
 3. Tick a checkbox in the dashboard issue to force creation of any
    awaiting update; the App reacts within a minute or two.

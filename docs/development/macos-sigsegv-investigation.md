@@ -107,7 +107,7 @@ The tmate SSH debug step added by ADR-0626 remains in place in
 To use it for any future macOS failure:
 
 ```bash
-gh -R VMAFx/vmafx workflow run "Builds" --ref <branch>
+gh -R vidiko/vmafx workflow run "Builds" --ref <branch>
 # Wait for "SSH debug session on test failure" step to print the tmate URL
 # Then: ssh <id>@nyc1.tmate.io
 # Then: lldb core/build/test/<failing_test>

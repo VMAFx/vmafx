@@ -34,7 +34,7 @@ report_paths() {
 }
 
 # Praetor hard-codes the retired root as a private scratch root
-# (cordanaLLM/praetor#641, ADR-1351). Its managed tail block in .gitignore,
+# (tekmora/praetor#641, ADR-1351). Its managed tail block in .gitignore,
 # which `praetorctl audit` verifies byte for byte, ignores it, and its locked
 # documentation gate under tools/markdownlint/ names it. Only those
 # praetor-owned lines are tolerated; the local-existence check below still

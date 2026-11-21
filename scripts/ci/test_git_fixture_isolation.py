@@ -159,7 +159,7 @@ ISOLATION_EXCEPTIONS = {
     "tools/apicompat/gate/main.go": "main() unsets gitRepositoryVariables before any git call",
     # NOT isolated: the fixtures of its --self-test mode inherit the environment. The file is the
     # governance engine's template and no hook or workflow of this repository runs that mode.
-    # Reported upstream as cordanaLLM/praetor#1190; drop the entry with the engine bump that fixes it.
+    # Reported upstream as tekmora/praetor#1190; drop the entry with the engine bump that fixes it.
     "tools/markdownlint/verify.mjs": (
         "engine template; --self-test fixtures inherit GIT_*; that mode is not run here"
     ),

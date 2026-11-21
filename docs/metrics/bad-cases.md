@@ -13,11 +13,11 @@ in or out for public sharing:
 - [Bad-case submission
   form](https://docs.google.com/forms/d/e/1FAIpQLSdJntNoBuucMSiYoK3SDWoY1QN0yiFAi5LyEXuOyXEWJbQBtQ/viewform?usp=sf_link)
 
-## Fork channel (VMAFx/vmafx)
+## Fork channel (vidiko/vmafx)
 
 For bad cases that are specific to fork-added surfaces — SYCL / CUDA / HIP
 numerical divergence, `--precision` output correctness, tiny-AI model
-drift — open an issue on [VMAFx/vmafx](https://github.com/VMAFx/vmafx/issues)
+drift — open an issue on [vidiko/vmafx](https://github.com/vidiko/vmafx/issues)
 with reproducer inputs and, if possible, the backend that produced the
 anomalous result.
 
@@ -41,7 +41,7 @@ without a round trip. Include:
 6. A short clip, or a way to fetch the input, that reproduces the result.
 
 File the report through the
-[issue templates](https://github.com/VMAFx/vmafx/issues/new/choose): use
+[issue templates](https://github.com/vidiko/vmafx/issues/new/choose): use
 "bug report" for a wrong score, "performance regression" for a slowdown and
 "hardware report" for a result from a device the project does not test. Open
 and confirmed bugs are tracked in [the state ledger](../state.md).

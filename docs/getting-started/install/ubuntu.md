@@ -3,7 +3,7 @@
 
 Run the setup script from the repository root, then build. The script also
 works on Debian 12 and Linux Mint 21
-([`scripts/setup/ubuntu.sh`](https://github.com/VMAFx/vmafx/blob/master/scripts/setup/ubuntu.sh)).
+([`scripts/setup/ubuntu.sh`](https://github.com/vidiko/vmafx/blob/master/scripts/setup/ubuntu.sh)).
 
 ## Setup script
 
@@ -64,7 +64,7 @@ example inside a container build), set `VMAFX_REPO_ROOT` to a directory holding
 
 Requires an NVIDIA GPU. Ubuntu's `nvidia-cuda-toolkit` is usually behind; the
 project builds and tests with CUDA 13.4 (`CUDA_VERSION` in
-[`build-config.env`](https://github.com/VMAFx/vmafx/blob/master/build-config.env)).
+[`build-config.env`](https://github.com/vidiko/vmafx/blob/master/build-config.env)).
 Install it from NVIDIA's repository, using `ubuntu2404` or `ubuntu2604` in the
 URL to match your release:
 

@@ -1651,7 +1651,7 @@ jobs:
       - name: Load config
         run: scripts/ci/load-build-config.sh
 """
-        foreign_repos = ["foreign/repo", "VMAFx/pelorus", "Netflix/vmaf", "evil/checkout"]
+        foreign_repos = ["foreign/repo", "vidiko/pelorus", "Netflix/vmaf", "evil/checkout"]
         for repo in foreign_repos:
             text = template.format(repo=repo)
             pyyaml_res, fallback_res = self._scan_both_modes(
@@ -1662,7 +1662,7 @@ jobs:
             self.assertIn("consumes repo-local helper file", pyyaml_res[0])
             self.assertIn("consumes repo-local helper file", fallback_res[0])
 
-        for local_repo in ["${{ github.repository }}", "VMAFx/vmafx", "vmafx/vmafx"]:
+        for local_repo in ["${{ github.repository }}", "vidiko/vmafx", "vmafx/vmafx"]:
             valid_text = template.format(repo=local_repo)
             pyyaml_res, fallback_res = self._scan_both_modes(
                 Path(".github/workflows/test.yml"), valid_text
