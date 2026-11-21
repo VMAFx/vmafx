@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import json
 import os
@@ -444,7 +445,11 @@ def mirrors(repo: Path, remote: str, tag: str) -> dict[Path, bytes]:
         original = read_repo_text_bytes(path).decode("utf-8")
         updated = original
         for key, value in {"FFMPEG_TAG": tag, "FFMPEG_REMOTE": remote}.items():
-            updated, count = re.subn(rf"(?m)^ARG {key}=\S+$", f"ARG {key}={value}", updated)
+            updated, count = re.subn(
+                rf"(?m)^ARG {key}=\S+$",
+                lambda _match, key=key, value=value: f"ARG {key}={value}",
+                updated,
+            )
             if count != 1:
                 raise ValueError(f"expected one {key} mirror in {name}, found {count}")
         changed[path] = updated.encode()
@@ -816,15 +821,60 @@ def keep_patched_tree(checkout: Path, destination: Path) -> None:
     shutil.copytree(checkout, destination, symlinks=True, ignore=shutil.ignore_patterns(".git"))
 
 
-def settle_updates(repo: Path, updates: dict[Path, bytes], refresh: bool, receipt: Receipt) -> None:
-    """Write the rendered patch and configuration mirrors, or fail on drift in check mode."""
+def proposed_patch(repo: Path, updates: dict[Path, bytes]) -> bytes:
+    """Render text-only candidate updates as a reviewable unified diff."""
+    chunks = []
+    for path, data in updates.items():
+        original = read_repo_text_bytes(path)
+        candidate = data.replace(b"\r\n", b"\n")
+        if original == candidate:
+            continue
+        try:
+            before = original.decode("utf-8").splitlines(keepends=True)
+            after = candidate.decode("utf-8").splitlines(keepends=True)
+        except UnicodeDecodeError as error:
+            raise ValueError(f"artifact-only proposal cannot render binary file: {path}") from error
+        chunks.extend(
+            difflib.unified_diff(
+                before,
+                after,
+                fromfile=f"a/{path.relative_to(repo).as_posix()}",
+                tofile=f"b/{path.relative_to(repo).as_posix()}",
+            )
+        )
+    return "".join(chunks).encode("utf-8")
+
+
+def settle_updates(
+    repo: Path,
+    updates: dict[Path, bytes],
+    refresh: bool,
+    receipt: Receipt,
+    artifact_only: bool = False,
+    output: Path | None = None,
+) -> None:
+    """Write maintained files, check for drift, or retain an artifact-only proposal."""
+    artifact_updates = {
+        path: data
+        for path, data in updates.items()
+        if path.relative_to(repo).as_posix().startswith("ffmpeg-patches/")
+    }
+    selected = artifact_updates if artifact_only else updates
     changed = [
         str(path.relative_to(repo))
-        for path, data in updates.items()
+        for path, data in selected.items()
         if read_repo_text_bytes(path) != data.replace(b"\r\n", b"\n")
     ]
-    receipt.update({"changed": changed, "status": "refreshed" if refresh else "checked"})
-    if refresh:
+    if artifact_only:
+        status = "proposed" if changed else "no-op"
+    else:
+        status = "refreshed" if refresh else "checked"
+    receipt.update({"changed": changed, "status": status})
+    if artifact_only:
+        if output is None:
+            raise ValueError("artifact-only mode requires an output directory")
+        (output / "proposed-refresh.patch").write_bytes(proposed_patch(repo, artifact_updates))
+    elif refresh:
         replace_files(updates, repo=repo)
     elif changed:
         raise ValueError(
@@ -848,11 +898,14 @@ def maintain(
     latest: bool,
     cache_dir: Path | None = None,
     keep_tree: Path | None = None,
+    artifact_only: bool = False,
 ) -> Receipt:
     receipt: Receipt = {}
     output.mkdir(parents=True, exist_ok=True)
     (output / "replay.log").write_text("")
     try:
+        if artifact_only and os.environ.get("FFMPEG_FIX_SERIES_VERIFY") != "cosign":
+            raise ValueError("--scan-latest requires FFMPEG_FIX_SERIES_VERIFY=cosign")
         with maintain_lock(repo, refresh):
             remote, current_tag, pinned, names = configured_series(repo, receipt)
             with tempfile.TemporaryDirectory(prefix="vmafx-ffmpeg-") as temporary:
@@ -882,9 +935,29 @@ def maintain(
                     raise ValueError(
                         "refresh changed the number of patches; review upstreamed/empty patches"
                     )
+                if artifact_only and target_tag == current_tag:
+                    receipt.update(
+                        {
+                            "status": "no-op",
+                            "changed": [],
+                            "reason": "no newer stable FFmpeg release candidate",
+                        }
+                    )
+                    (output / "proposed-refresh.patch").write_bytes(b"")
+                    return receipt
                 # The shared series' commits come first and are not ours to render.
                 updates = format_patch_updates(repo, output, replay, names, commits[shared_count:])
                 if shared is not None and target_tag != current_tag:
+                    if artifact_only:
+                        receipt.update(
+                            {
+                                "status": "no-op",
+                                "changed": [],
+                                "reason": unpinned_release(shared, target_tag, current_tag, output),
+                            }
+                        )
+                        (output / "proposed-refresh.patch").write_bytes(b"")
+                        return receipt
                     raise ValueError(unpinned_release(shared, target_tag, current_tag, output))
                 updates.update(mirrors(repo, remote, target_tag))
                 config = repo / "build-config.env"
@@ -892,7 +965,7 @@ def maintain(
                     read_repo_text_bytes(config).decode("utf-8"), target_tag, target
                 ).encode("utf-8")
                 updates.update(readme_claim(repo, receipt))
-                settle_updates(repo, updates, refresh, receipt)
+                settle_updates(repo, updates, refresh, receipt, artifact_only, output)
     except (KeyError, ValueError, RuntimeError, OSError, CommandTimedOut) as error:
         receipt.update({"status": "failed", "error": str(error)})
         raise
@@ -914,6 +987,11 @@ def main() -> int:
         action="store_true",
         help="regenerate patches and configuration mirrors after complete replay",
     )
+    mode.add_argument(
+        "--scan-latest",
+        action="store_true",
+        help="scan the latest stable release and write an artifact-only proposal",
+    )
     parser.add_argument(
         "--latest",
         action="store_true",
@@ -933,8 +1011,12 @@ def main() -> int:
         help="copy the patched FFmpeg source tree (no .git) to this new directory",
     )
     args = parser.parse_args()
-    if args.latest and not args.refresh:
-        parser.error("--latest requires --refresh")
+    if args.latest and not (args.refresh or args.scan_latest):
+        parser.error("--latest requires --refresh or --scan-latest")
+    if args.scan_latest and not args.latest:
+        parser.error("--scan-latest requires --latest")
+    if args.scan_latest and args.output_dir is None:
+        parser.error("--scan-latest requires --output-dir to retain its receipt and proposal")
     repo = Path(__file__).resolve().parents[2]
     output = args.output_dir or Path(tempfile.mkdtemp(prefix="vmafx-ffmpeg-report-"))
     try:
@@ -942,19 +1024,20 @@ def main() -> int:
             repo,
             output.resolve(),
             args.refresh,
-            args.latest,
+            args.latest or args.scan_latest,
             args.cache_dir,
             args.keep_tree.resolve() if args.keep_tree else None,
+            args.scan_latest,
         )
     except (KeyError, ValueError, RuntimeError, OSError, CommandTimedOut) as error:
         print(f"FFmpeg patch stack FAILED: {error}\nDiagnostics: {output}")
         return 1
     print(
         f"FFmpeg {result['tag']} ({result['upstream_commit']}): {result['patch_count']} patches "
-        f"{result['status']} on shared fix series {result['shared_series']} "
-        f"({result['shared_patch_count']} patches); source: {result['source']}"
+        f"{result['status']} on shared fix series {result.get('shared_series', 'not replayed')} "
+        f"({result.get('shared_patch_count', 0)} patches); source: {result.get('source', 'not fetched')}"
         + (f", {result['target_source']}" if "target_source" in result else "")
-        + f" [{result['cache']}]"
+        + (f" [{result['cache']}]" if "cache" in result else "")
     )
     if args.output_dir:
         print(f"Diagnostics: {output}")

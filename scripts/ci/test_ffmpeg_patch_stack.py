@@ -290,6 +290,41 @@ class RealReplay(unittest.TestCase):
         self.assertEqual(result["target_source"], "fetched (unpinned)")
         STACK.maintain(self.repo, self.output, False, False)
 
+    def test_artifact_scan_replays_without_changing_pins_or_patch_files(self) -> None:
+        self.git(self.upstream, "switch", "--detach", "n9.0.1")
+        (self.upstream / "other").write_text("new release\n")
+        self.git(self.upstream, "add", "other")
+        self.git(self.upstream, "commit", "-qm", "release")
+        self.git(self.upstream, "tag", "n9.1")
+        before = self.contents()
+        with patch.dict(os.environ, {"FFMPEG_FIX_SERIES_VERIFY": "cosign"}):
+            result = STACK.maintain(
+                self.repo, self.output, False, True, artifact_only=True
+            )
+        self.assertEqual(result["status"], "proposed")
+        self.assertEqual(result["tag"], "n9.1")
+        self.assertTrue((self.output / "proposed-refresh.patch").is_file())
+        self.assertIn(
+            b"ffmpeg-patches/README.md",
+            (self.output / "proposed-refresh.patch").read_bytes(),
+        )
+        self.assertEqual(self.contents(), before)
+        receipt = json.loads((self.output / "receipt.json").read_text())
+        self.assertEqual(receipt["status"], "proposed")
+        self.assertNotIn("build-config.env", receipt["changed"])
+        self.assertFalse(any(name in receipt["changed"] for name in STACK.MIRRORS))
+
+    def test_artifact_scan_without_new_stable_release_is_explicit_noop(self) -> None:
+        before = self.contents()
+        with patch.dict(os.environ, {"FFMPEG_FIX_SERIES_VERIFY": "cosign"}):
+            result = STACK.maintain(
+                self.repo, self.output, False, True, artifact_only=True
+            )
+        self.assertEqual(result["status"], "no-op")
+        self.assertIn("no newer stable", result["reason"])
+        self.assertEqual((self.output / "proposed-refresh.patch").read_bytes(), b"")
+        self.assertEqual(self.contents(), before)
+
     def test_conflicting_release_preserves_every_input(self) -> None:
         self.git(self.upstream, "switch", "--detach", "n9.0.1")
         (self.upstream / "sample").write_text("incompatible upstream\n")
